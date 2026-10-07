@@ -801,77 +801,77 @@
       <a id="tui.clip-chat.failure"></a><br>Why an operation failed, as its messages say.
     - type [Asked](../../src/tui/clip-chat.ts#L146) <!-- internal -->
       <a id="tui.clip-chat.Asked"></a><br>The model's request in flight: the agent it was sent with, and its record once it started.
-    - type [Ending](../../src/tui/clip-chat.ts#L158) <!-- internal -->
+    - type [Ending](../../src/tui/clip-chat.ts#L165) <!-- internal -->
       <a id="tui.clip-chat.Ending"></a><br>How an answer ends its exchange in the log: the person's message it answers (null: nothing goes into the log — a cancelled request, or no one asked), the model that answered, the proposal written from it.
-    - module [ClipChat](../../src/tui/clip-chat.ts#L169)
+    - module [ClipChat](../../src/tui/clip-chat.ts#L176)
       <a id="tui.clip-chat.ClipChat"></a><br>The chat's answers: a command, or the model's reply as the session's `assistant-reply` operation. The conversation is `state.clip.chat`; the eyes follow `state.clip.waiting`.
-      - fn [constructor](../../src/tui/clip-chat.ts#L178) (host: ChatHost)
+      - fn [constructor](../../src/tui/clip-chat.ts#L185) (host: ChatHost)
         <a id="tui.clip-chat.ClipChat.constructor"></a>
         - calls [tui.clip-memory.ChatLog](tui.md#tui.clip-memory.ChatLog)
-      - fn [state](../../src/tui/clip-chat.ts#L183) () → State <!-- internal -->
+      - fn [state](../../src/tui/clip-chat.ts#L190) () → State <!-- internal -->
         <a id="tui.clip-chat.ClipChat.state"></a>
-      - fn [restore](../../src/tui/clip-chat.ts#L188) () → void
+      - fn [restore](../../src/tui/clip-chat.ts#L195) () → void
         <a id="tui.clip-chat.ClipChat.restore"></a><br>The session starts: the history goes on with today's last conversation in the log.
         - calls [tui.clip-memory.ChatLog.restore](tui.md#tui.clip-memory.ChatLog.restore)
-      - fn [said](../../src/tui/clip-chat.ts#L193) (text: string) → void
+      - fn [said](../../src/tui/clip-chat.ts#L200) (text: string) → void
         <a id="tui.clip-chat.ClipChat.said"></a><br>The person sent `text` (already in the history): a command runs, anything else goes to the model.
         - calls [tui.clip-chat.ClipChat.command](tui.md#tui.clip-chat.ClipChat.command), [tui.clip-chat.ClipChat.ask](tui.md#tui.clip-chat.ClipChat.ask)
-      - fn [opened](../../src/tui/clip-chat.ts#L209) () → void
+      - fn [opened](../../src/tui/clip-chat.ts#L216) () → void
         <a id="tui.clip-chat.ClipChat.opened"></a><br>The person opened the chat or gave it the focus (a click on the clip, F7): with open questions the clip lists them, unless that list is its last message already, and asks the model nothing. The new fails are told then and count no more (spec §4.6).
         - calls [tui.clip-questions.openQuestions](tui.md#tui.clip-questions.openQuestions), [tui.clip-questions.questionsAnswer](tui.md#tui.clip-questions.questionsAnswer)
-      - fn [cancel](../../src/tui/clip-chat.ts#L223) () → void
+      - fn [cancel](../../src/tui/clip-chat.ts#L230) () → void
         <a id="tui.clip-chat.ClipChat.cancel"></a><br>Esc while the model answers: the request is cancelled, nothing is written, and the history says `скасовано`.
         - calls [tui.clip-chat.ClipChat.stopWaiting](tui.md#tui.clip-chat.ClipChat.stopWaiting), [tui.clip-chat.ClipChat.answer](tui.md#tui.clip-chat.ClipChat.answer)
-      - fn [close](../../src/tui/clip-chat.ts#L236) () → void
+      - fn [close](../../src/tui/clip-chat.ts#L243) () → void
         <a id="tui.clip-chat.ClipChat.close"></a><br>The session ends: a request still being looked up is never started.
         - calls [tui.clip-chat.ClipChat.stopWaiting](tui.md#tui.clip-chat.ClipChat.stopWaiting)
-      - fn [command](../../src/tui/clip-chat.ts#L242) (line: string) → void <!-- internal -->
+      - fn [command](../../src/tui/clip-chat.ts#L249) (line: string) → void <!-- internal -->
         <a id="tui.clip-chat.ClipChat.command"></a>
         - calls [tui.clip-chat.ClipChat.answer](tui.md#tui.clip-chat.ClipChat.answer), [tui.clip-chat.commandRows](tui.md#tui.clip-chat.commandRows)
-      - fn [explain](../../src/tui/clip-chat.ts#L251) (arg: string) → void
+      - fn [explain](../../src/tui/clip-chat.ts#L258) (arg: string) → void
         <a id="tui.clip-chat.ClipChat.explain"></a><br>`/explain <code|ID>`: the offline `explain` operation, its text as `keylang explain` prints it.
         - calls [tui.clip-chat.ClipChat.answer](tui.md#tui.clip-chat.ClipChat.answer), [tui.clip-chat.ClipChat.operation](tui.md#tui.clip-chat.ClipChat.operation)
-      - fn [feature](../../src/tui/clip-chat.ts#L258) (arg: string) → void
+      - fn [feature](../../src/tui/clip-chat.ts#L265) (arg: string) → void
         <a id="tui.clip-chat.ClipChat.feature"></a><br>`/feature <slug>`: the `feature` operation, its gaps and stage as `keylang feature` prints them.
         - calls [operations.feature.featureSlugOf](operations.md#operations.feature.featureSlugOf), [tui.clip-chat.ClipChat.answer](tui.md#tui.clip-chat.ClipChat.answer), [base.config.specPath](base.md#base.config.specPath), [tui.clip-chat.ClipChat.operation](tui.md#tui.clip-chat.ClipChat.operation), [tui.clip-chat.featureAnswer](tui.md#tui.clip-chat.featureAnswer)
-      - fn [check](../../src/tui/clip-chat.ts#L266) () → void
+      - fn [check](../../src/tui/clip-chat.ts#L273) () → void
         <a id="tui.clip-chat.ClipChat.check"></a><br>`/check`: the session's analysis as it is; nothing runs.
         - calls [tui.clip-chat.ClipChat.answer](tui.md#tui.clip-chat.ClipChat.answer), [tui.clip-chat.checkAnswer](tui.md#tui.clip-chat.checkAnswer)
-      - fn [questions](../../src/tui/clip-chat.ts#L271) () → void
+      - fn [questions](../../src/tui/clip-chat.ts#L278) () → void
         <a id="tui.clip-chat.ClipChat.questions"></a><br>`/questions`: the open questions with their places, the list the clip says when its chat opens.
         - calls [tui.clip-chat.ClipChat.answer](tui.md#tui.clip-chat.ClipChat.answer), [tui.clip-questions.questionsAnswer](tui.md#tui.clip-questions.questionsAnswer), [tui.clip-questions.openQuestions](tui.md#tui.clip-questions.openQuestions)
-      - fn [restart](../../src/tui/clip-chat.ts#L276) () → void
+      - fn [restart](../../src/tui/clip-chat.ts#L283) () → void
         <a id="tui.clip-chat.ClipChat.restart"></a><br>`/new`: a new conversation; the old one is gone from the window, and the log starts a section.
         - calls [tui.clip-chat.ClipChat.note](tui.md#tui.clip-chat.ClipChat.note), [tui.clip-memory.ChatLog.restart](tui.md#tui.clip-memory.ChatLog.restart), [tui.clip-chat.ClipChat.browsing](tui.md#tui.clip-chat.ClipChat.browsing)
-      - fn [help](../../src/tui/clip-chat.ts#L284) () → void
+      - fn [help](../../src/tui/clip-chat.ts#L291) () → void
         <a id="tui.clip-chat.ClipChat.help"></a><br>`/help`: the commands and the keys.
         - calls [tui.clip-chat.ClipChat.answer](tui.md#tui.clip-chat.ClipChat.answer), [tui.clip-chat.helpAnswer](tui.md#tui.clip-chat.helpAnswer)
-      - fn [operation](../../src/tui/clip-chat.ts#L289) (action: string, request: OperationRequest, text: (result: OperationResult) => string | null) → void <!-- internal -->
+      - fn [operation](../../src/tui/clip-chat.ts#L296) (action: string, request: OperationRequest, text: (result: OperationResult) => string | null) → void <!-- internal -->
         <a id="tui.clip-chat.ClipChat.operation"></a><br>A command's shared operation, as the session runs any: one at a time, after the save step when it reads dirty buffers.
         - calls [tui.clip-chat.ClipChat.answer](tui.md#tui.clip-chat.ClipChat.answer), [tui.clip-chat.outcomeAnswer](tui.md#tui.clip-chat.outcomeAnswer), [tui.clip-chat.cancelled](tui.md#tui.clip-chat.cancelled)
-      - fn [ask](../../src/tui/clip-chat.ts#L302) () → void <!-- internal -->
+      - fn [ask](../../src/tui/clip-chat.ts#L309) () → void <!-- internal -->
         <a id="tui.clip-chat.ClipChat.ask"></a><br>Free text: the model's reply as the session's `assistant-reply` operation. Without an analysis, a model or a free slot for the operation it answers at once and asks nothing.
-        - calls [tui.clip-chat.ClipChat.answer](tui.md#tui.clip-chat.ClipChat.answer), [features.agent-cli.selectedAgent](features.md#features.agent-cli.selectedAgent), [tui.clip-chat.noModelAnswer](tui.md#tui.clip-chat.noModelAnswer), [tui.clip-chat.ClipChat.start](tui.md#tui.clip-chat.ClipChat.start), [tui.clip-chat.ClipChat.request](tui.md#tui.clip-chat.ClipChat.request)
-      - fn [request](../../src/tui/clip-chat.ts#L319) () → AssistantReplyRequest <!-- internal -->
+        - calls [tui.clip-chat.ClipChat.answer](tui.md#tui.clip-chat.ClipChat.answer), [features.agent-cli.selectedAgent](features.md#features.agent-cli.selectedAgent), [tui.clip-chat.noModelAnswer](tui.md#tui.clip-chat.noModelAnswer), [tui.clip-chat.ClipChat.request](tui.md#tui.clip-chat.ClipChat.request), [lang.files.existingText](lang.md#lang.files.existingText), [tui.clip-chat.ClipChat.start](tui.md#tui.clip-chat.ClipChat.start)
+      - fn [request](../../src/tui/clip-chat.ts#L329) () → AssistantReplyRequest <!-- internal -->
         <a id="tui.clip-chat.ClipChat.request"></a><br>What the model reads, frozen when the message is sent: the conversation, the open buffer with the cursor's line and the ID under it, the F4 pack without the buffer it already shows, the open feature's stage and gaps as the status line has them, and the open questions the clip…
         - calls [features.agent-context.contextText](features.md#features.agent-context.contextText), [tui.clip-questions.questionRows](tui.md#tui.clip-questions.questionRows), [tui.clip-questions.openQuestions](tui.md#tui.clip-questions.openQuestions)
-      - fn [start](../../src/tui/clip-chat.ts#L336) (asked: Asked, request: AssistantReplyRequest) → Promise<void> <!-- internal -->
+      - fn [start](../../src/tui/clip-chat.ts#L346) (asked: Asked, request: AssistantReplyRequest) → Promise<void> <!-- internal -->
         <a id="tui.clip-chat.ClipChat.start"></a><br>The model's client is looked up off the key path (as `Ctrl+Space` does); then the operation starts, unless Esc came first.
         - calls [base.diag.errorText](base.md#base.diag.errorText), [tui.clip-chat.ClipChat.stopWaiting](tui.md#tui.clip-chat.ClipChat.stopWaiting), [tui.clip-chat.ClipChat.answer](tui.md#tui.clip-chat.ClipChat.answer), [tui.clip-chat.noModelAnswer](tui.md#tui.clip-chat.noModelAnswer), [tui.clip-chat.ClipChat.replied](tui.md#tui.clip-chat.ClipChat.replied)
-      - fn [replied](../../src/tui/clip-chat.ts#L359) (asked: Asked, record: OperationRecord) → void <!-- internal -->
+      - fn [replied](../../src/tui/clip-chat.ts#L369) (asked: Asked, record: OperationRecord) → void <!-- internal -->
         <a id="tui.clip-chat.ClipChat.replied"></a><br>The operation ended: its reply, `скасовано`, or the model's error with its reason. Nothing was written.
         - calls [tui.clip-chat.ClipChat.stopWaiting](tui.md#tui.clip-chat.ClipChat.stopWaiting), [tui.clip-chat.cancelled](tui.md#tui.clip-chat.cancelled), [tui.clip-chat.ClipChat.answer](tui.md#tui.clip-chat.ClipChat.answer), [tui.clip-chat.failure](tui.md#tui.clip-chat.failure), [tui.clip-chat.ClipChat.propose](tui.md#tui.clip-chat.ClipChat.propose), [tui.clip-chat.proposalWritten](tui.md#tui.clip-chat.proposalWritten)
-      - fn [propose](../../src/tui/clip-chat.ts#L380) ({ path, text }: NonNullable<AssistantReplyPayload["proposal"]>) → string <!-- internal -->
+      - fn [propose](../../src/tui/clip-chat.ts#L395) ({ path, text }: NonNullable<AssistantReplyPayload["proposal"]>, basis: Asked["basis"]) → string <!-- internal -->
         <a id="tui.clip-chat.ClipChat.propose"></a><br>The model's block as a proposal, by the gate of MCP `apply_diff` (`proposalProblem` with the analysis's generated documents) and the refusals before it: Browse writes nothing, code is the harness's, a target with unsaved edits would come back as hunks reverting them, and a…
-        - calls [features.proposals.proposalProblem](features.md#features.proposals.proposalProblem), [tui.buffer.isDirty](tui.md#tui.buffer.isDirty), [features.proposals.writeProposal](features.md#features.proposals.writeProposal), [lang.files.existingText](lang.md#lang.files.existingText), [base.diag.errorText](base.md#base.diag.errorText), [tui.clip-chat.proposalWritten](tui.md#tui.clip-chat.proposalWritten)
-      - fn [stopWaiting](../../src/tui/clip-chat.ts#L401) () → void <!-- internal -->
+        - calls [features.proposals.proposalProblem](features.md#features.proposals.proposalProblem), [tui.buffer.isDirty](tui.md#tui.buffer.isDirty), [lang.files.existingText](lang.md#lang.files.existingText), [features.proposals.writeProposal](features.md#features.proposals.writeProposal), [base.diag.errorText](base.md#base.diag.errorText), [tui.clip-chat.proposalWritten](tui.md#tui.clip-chat.proposalWritten)
+      - fn [stopWaiting](../../src/tui/clip-chat.ts#L418) () → void <!-- internal -->
         <a id="tui.clip-chat.ClipChat.stopWaiting"></a>
-      - fn [answer](../../src/tui/clip-chat.ts#L411) (text: string, ending: Ending = { said: this.sent }) → void <!-- internal -->
+      - fn [answer](../../src/tui/clip-chat.ts#L428) (text: string, ending: Ending = { said: this.sent }) → void <!-- internal -->
         <a id="tui.clip-chat.ClipChat.answer"></a><br>The clip's message ends an exchange: it joins the history, and the history shows its end. The exchange goes into today's log; `ending` names the message it answers — by default the one `said` answers now.
         - calls [tui.clip-chat.proposalWritten](tui.md#tui.clip-chat.proposalWritten), [tui.clip-chat.ClipChat.note](tui.md#tui.clip-chat.ClipChat.note), [tui.clip-memory.ChatLog.exchange](tui.md#tui.clip-memory.ChatLog.exchange), [tui.clip-chat.ClipChat.browsing](tui.md#tui.clip-chat.ClipChat.browsing)
-      - fn [note](../../src/tui/clip-chat.ts#L423) (why: string | null) → void <!-- internal -->
+      - fn [note](../../src/tui/clip-chat.ts#L440) (why: string | null) → void <!-- internal -->
         <a id="tui.clip-chat.ClipChat.note"></a><br>Why the log is not written, said once a session: the clip's message after the answer, and no exchange itself.
-      - fn [browsing](../../src/tui/clip-chat.ts#L431) () → boolean <!-- internal -->
+      - fn [browsing](../../src/tui/clip-chat.ts#L448) () → boolean <!-- internal -->
         <a id="tui.clip-chat.ClipChat.browsing"></a><br>Browse writes nothing: not the log either.
   - module [clip-memory](../../src/tui/clip-memory.ts#L1)
     <a id="tui.clip-memory"></a><br>The clip's memory (ADR 0021 п. 6, .scratch/tui-clip/06). Where the person left the clip and its window is theirs, not the repository's: it lives in `~/.config/keylang/tui.json` beside `agents.json`, read when a session starts and written atomically when a drag, a keyboard move…

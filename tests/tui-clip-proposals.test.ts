@@ -5,11 +5,11 @@
 // with the reason, and nothing but `.keylang/proposals/` changes before `w`.
 
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { checkoutRepo, KEY } from "./tui-fixture.ts";
-import { esc, FLOW_PATH, mockModel, PAID, propose, REFUND, session, treeBytes, withConfig, withoutChatLog } from "./tui-helpers.ts";
+import { CHECKOUT_FLOW, checkoutRepo, KEY } from "./tui-fixture.ts";
+import { esc, FLOW_PATH, mockModel, PAID, propose, REFUND, session, treeBytes, waitUntil, withConfig, withoutChatLog } from "./tui-helpers.ts";
 
 const AGENT = { agent: "anthropic:claude-opus-5" };
 
@@ -163,4 +163,73 @@ test("tui-clip-proposals: Browse writes nothing: a block from the model is refus
   assert.equal(lastAnswer(s), `пропозицію для ${FLOW_PATH} не записано: режим перегляду нічого не пише; keylang init створює keylang.json`);
   assert.deepEqual(treeBytes(root), before, "nothing written");
   assert.ok(!existsSync(join(root, ".keylang")));
+});
+
+test("tui-clip-proposals: the open file saved while the model answers — from outside or with Ctrl+S inside the TUI — refuses the proposal built on the text the model saw: nothing written, the saved line stays", async (t) => {
+  const LINE = "- ? who refunds a failed payment";
+  // The file as saved meanwhile: the person's line the model never saw.
+  const SAVED = `${CHECKOUT_FLOW}${LINE}\n`;
+  const refusal = `пропозицію для ${FLOW_PATH} не записано: ${FLOW_PATH}: changed on disk while the proposal was prepared; nothing written`;
+
+  // A. Saved from outside the session (another editor, git).
+  {
+    const root = checkoutRepo(t);
+    withConfig(root, AGENT);
+    const model = await mockModel(t, `Додав.\n\n${block(FLOW_PATH, PAID)}`, 400);
+    const s = session(root);
+    t.after(() => s.app.close());
+    await s.app.idle();
+    s.send(KEY.f7);
+    say(s, "додай оплату");
+    await waitUntil(() => model.prompts.length === 1, "the request");
+    assert.ok(model.prompts[0]!.includes(`The open file ${FLOW_PATH}`), "the model reads the file as it was");
+    writeFileSync(join(root, FLOW_PATH), SAVED);
+    await s.app.idle();
+    assert.equal(lastAnswer(s), `Додав.\n${refusal}`);
+    assert.ok(!existsSync(join(root, ".keylang/proposals", FLOW_PATH)), "no proposal against a file the model did not see");
+    assert.equal(readFileSync(join(root, FLOW_PATH), "utf8"), SAVED, "the saved line stays");
+    assert.doesNotMatch(s.lines().at(-1)!, /proposal\(s\): m/);
+  }
+
+  // B. Saved inside the TUI: the window folded with F7, a line typed in edit mode and Ctrl+S while the clip thinks.
+  {
+    const root = checkoutRepo(t);
+    withConfig(root, AGENT);
+    const model = await mockModel(t, `Додав.\n\n${block(FLOW_PATH, PAID)}`, 600);
+    const s = session(root);
+    t.after(() => s.app.close());
+    await s.app.idle();
+    s.send(KEY.f7);
+    say(s, "додай оплату");
+    await waitUntil(() => model.prompts.length === 1, "the request");
+    assert.equal(s.app.state.clip.waiting, true);
+    s.send(KEY.f7);
+    assert.equal(s.app.state.clip.chat.focused, false, "the window folded, the keys go to the editor");
+    s.send("G");
+    s.send("i");
+    assert.equal(s.app.state.mode, "edit");
+    for (const ch of LINE) s.send(ch);
+    s.send(KEY.ctrlS);
+    assert.ok(readFileSync(join(root, FLOW_PATH), "utf8").includes(LINE), "saved while the model answers");
+    assert.equal(s.app.state.clip.waiting, true, "the model is still answering");
+    await s.app.idle();
+    assert.equal(lastAnswer(s), `Додав.\n${refusal}`);
+    assert.ok(!existsSync(join(root, ".keylang/proposals", FLOW_PATH)), "no proposal against a file the model did not see");
+    assert.ok(readFileSync(join(root, FLOW_PATH), "utf8").includes(LINE), "the saved line stays");
+  }
+
+  // Control: a proposal for the open file as the model saw it is written as before.
+  {
+    const root = checkoutRepo(t);
+    withConfig(root, AGENT);
+    await mockModel(t, `Додав.\n\n${block(FLOW_PATH, PAID)}`);
+    const s = session(root);
+    t.after(() => s.app.close());
+    await s.app.idle();
+    s.send(KEY.f7);
+    say(s, "додай оплату");
+    await s.app.idle();
+    assert.equal(lastAnswer(s), `Додав.\nпропозиція: ${FLOW_PATH} · m — MERGE`);
+    assert.equal(readFileSync(join(root, ".keylang/proposals", FLOW_PATH), "utf8"), PAID);
+  }
 });

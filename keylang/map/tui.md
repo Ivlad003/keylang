@@ -537,52 +537,52 @@
     - fn [proposalWritten](../../src/tui/clip-chat.ts#L135) (path: string) → string <!-- internal -->
     - fn [failure](../../src/tui/clip-chat.ts#L140) (result: OperationResult) → string <!-- internal -->
     - type [Asked](../../src/tui/clip-chat.ts#L146) <!-- internal -->
-    - type [Ending](../../src/tui/clip-chat.ts#L158) <!-- internal -->
-    - module [ClipChat](../../src/tui/clip-chat.ts#L169)
-      - fn [constructor](../../src/tui/clip-chat.ts#L178) (host: ChatHost)
+    - type [Ending](../../src/tui/clip-chat.ts#L165) <!-- internal -->
+    - module [ClipChat](../../src/tui/clip-chat.ts#L176)
+      - fn [constructor](../../src/tui/clip-chat.ts#L185) (host: ChatHost)
         - calls tui.clip-memory.ChatLog
-      - fn [state](../../src/tui/clip-chat.ts#L183) () → State <!-- internal -->
-      - fn [restore](../../src/tui/clip-chat.ts#L188) () → void
+      - fn [state](../../src/tui/clip-chat.ts#L190) () → State <!-- internal -->
+      - fn [restore](../../src/tui/clip-chat.ts#L195) () → void
         - calls tui.clip-memory.ChatLog.restore
-      - fn [said](../../src/tui/clip-chat.ts#L193) (text: string) → void
+      - fn [said](../../src/tui/clip-chat.ts#L200) (text: string) → void
         - calls tui.clip-chat.ClipChat.command, tui.clip-chat.ClipChat.ask
-      - fn [opened](../../src/tui/clip-chat.ts#L209) () → void
+      - fn [opened](../../src/tui/clip-chat.ts#L216) () → void
         - calls tui.clip-questions.openQuestions, tui.clip-questions.questionsAnswer
-      - fn [cancel](../../src/tui/clip-chat.ts#L223) () → void
+      - fn [cancel](../../src/tui/clip-chat.ts#L230) () → void
         - calls tui.clip-chat.ClipChat.stopWaiting, tui.clip-chat.ClipChat.answer
-      - fn [close](../../src/tui/clip-chat.ts#L236) () → void
+      - fn [close](../../src/tui/clip-chat.ts#L243) () → void
         - calls tui.clip-chat.ClipChat.stopWaiting
-      - fn [command](../../src/tui/clip-chat.ts#L242) (line: string) → void <!-- internal -->
+      - fn [command](../../src/tui/clip-chat.ts#L249) (line: string) → void <!-- internal -->
         - calls tui.clip-chat.ClipChat.answer, tui.clip-chat.commandRows
-      - fn [explain](../../src/tui/clip-chat.ts#L251) (arg: string) → void
+      - fn [explain](../../src/tui/clip-chat.ts#L258) (arg: string) → void
         - calls tui.clip-chat.ClipChat.answer, tui.clip-chat.ClipChat.operation
-      - fn [feature](../../src/tui/clip-chat.ts#L258) (arg: string) → void
+      - fn [feature](../../src/tui/clip-chat.ts#L265) (arg: string) → void
         - calls operations.feature.featureSlugOf, tui.clip-chat.ClipChat.answer, base.config.specPath, tui.clip-chat.ClipChat.operation, tui.clip-chat.featureAnswer
-      - fn [check](../../src/tui/clip-chat.ts#L266) () → void
+      - fn [check](../../src/tui/clip-chat.ts#L273) () → void
         - calls tui.clip-chat.ClipChat.answer, tui.clip-chat.checkAnswer
-      - fn [questions](../../src/tui/clip-chat.ts#L271) () → void
+      - fn [questions](../../src/tui/clip-chat.ts#L278) () → void
         - calls tui.clip-chat.ClipChat.answer, tui.clip-questions.questionsAnswer, tui.clip-questions.openQuestions
-      - fn [restart](../../src/tui/clip-chat.ts#L276) () → void
+      - fn [restart](../../src/tui/clip-chat.ts#L283) () → void
         - calls tui.clip-chat.ClipChat.note, tui.clip-memory.ChatLog.restart, tui.clip-chat.ClipChat.browsing
-      - fn [help](../../src/tui/clip-chat.ts#L284) () → void
+      - fn [help](../../src/tui/clip-chat.ts#L291) () → void
         - calls tui.clip-chat.ClipChat.answer, tui.clip-chat.helpAnswer
-      - fn [operation](../../src/tui/clip-chat.ts#L289) (action: string, request: OperationRequest, text: (result: OperationResult) => string | null) → void <!-- internal -->
+      - fn [operation](../../src/tui/clip-chat.ts#L296) (action: string, request: OperationRequest, text: (result: OperationResult) => string | null) → void <!-- internal -->
         - calls tui.clip-chat.ClipChat.answer, tui.clip-chat.outcomeAnswer, tui.clip-chat.cancelled
-      - fn [ask](../../src/tui/clip-chat.ts#L302) () → void <!-- internal -->
-        - calls tui.clip-chat.ClipChat.answer, features.agent-cli.selectedAgent, tui.clip-chat.noModelAnswer, tui.clip-chat.ClipChat.start, tui.clip-chat.ClipChat.request
-      - fn [request](../../src/tui/clip-chat.ts#L319) () → AssistantReplyRequest <!-- internal -->
+      - fn [ask](../../src/tui/clip-chat.ts#L309) () → void <!-- internal -->
+        - calls tui.clip-chat.ClipChat.answer, features.agent-cli.selectedAgent, tui.clip-chat.noModelAnswer, tui.clip-chat.ClipChat.request, lang.files.existingText, tui.clip-chat.ClipChat.start
+      - fn [request](../../src/tui/clip-chat.ts#L329) () → AssistantReplyRequest <!-- internal -->
         - calls features.agent-context.contextText, tui.clip-questions.questionRows, tui.clip-questions.openQuestions
-      - fn [start](../../src/tui/clip-chat.ts#L336) (asked: Asked, request: AssistantReplyRequest) → Promise<void> <!-- internal -->
+      - fn [start](../../src/tui/clip-chat.ts#L346) (asked: Asked, request: AssistantReplyRequest) → Promise<void> <!-- internal -->
         - calls base.diag.errorText, tui.clip-chat.ClipChat.stopWaiting, tui.clip-chat.ClipChat.answer, tui.clip-chat.noModelAnswer, tui.clip-chat.ClipChat.replied
-      - fn [replied](../../src/tui/clip-chat.ts#L359) (asked: Asked, record: OperationRecord) → void <!-- internal -->
+      - fn [replied](../../src/tui/clip-chat.ts#L369) (asked: Asked, record: OperationRecord) → void <!-- internal -->
         - calls tui.clip-chat.ClipChat.stopWaiting, tui.clip-chat.cancelled, tui.clip-chat.ClipChat.answer, tui.clip-chat.failure, tui.clip-chat.ClipChat.propose, tui.clip-chat.proposalWritten
-      - fn [propose](../../src/tui/clip-chat.ts#L380) ({ path, text }: NonNullable<AssistantReplyPayload["proposal"]>) → string <!-- internal -->
-        - calls features.proposals.proposalProblem, tui.buffer.isDirty, features.proposals.writeProposal, lang.files.existingText, base.diag.errorText, tui.clip-chat.proposalWritten
-      - fn [stopWaiting](../../src/tui/clip-chat.ts#L401) () → void <!-- internal -->
-      - fn [answer](../../src/tui/clip-chat.ts#L411) (text: string, ending: Ending = { said: this.sent }) → void <!-- internal -->
+      - fn [propose](../../src/tui/clip-chat.ts#L395) ({ path, text }: NonNullable<AssistantReplyPayload["proposal"]>, basis: Asked["basis"]) → string <!-- internal -->
+        - calls features.proposals.proposalProblem, tui.buffer.isDirty, lang.files.existingText, features.proposals.writeProposal, base.diag.errorText, tui.clip-chat.proposalWritten
+      - fn [stopWaiting](../../src/tui/clip-chat.ts#L418) () → void <!-- internal -->
+      - fn [answer](../../src/tui/clip-chat.ts#L428) (text: string, ending: Ending = { said: this.sent }) → void <!-- internal -->
         - calls tui.clip-chat.proposalWritten, tui.clip-chat.ClipChat.note, tui.clip-memory.ChatLog.exchange, tui.clip-chat.ClipChat.browsing
-      - fn [note](../../src/tui/clip-chat.ts#L423) (why: string | null) → void <!-- internal -->
-      - fn [browsing](../../src/tui/clip-chat.ts#L431) () → boolean <!-- internal -->
+      - fn [note](../../src/tui/clip-chat.ts#L440) (why: string | null) → void <!-- internal -->
+      - fn [browsing](../../src/tui/clip-chat.ts#L448) () → boolean <!-- internal -->
   - module [clip-memory](../../src/tui/clip-memory.ts#L1)
     - node external.node
     - diag base.diag

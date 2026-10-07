@@ -148,6 +148,13 @@ interface Asked {
   record: number | null;
   /** The person's message it answers: the log keeps them as one exchange. */
   said: string | null;
+  /**
+   * The open file when the model was asked, as it was on disk then (null:
+   * not on disk yet): the basis of a proposal for it, as every operation
+   * that prepares a proposal fixes its target before the model answers (ADR
+   * 0008). A file saved meanwhile refuses the proposal; nothing is written.
+   */
+  basis: { path: string; disk: string | null } | null;
 }
 
 /**
@@ -304,10 +311,13 @@ export class ClipChat {
     if (analysis === null) return this.answer("аналіз ще триває: спитайте, коли він закінчиться");
     if (selectedAgent(analysis.config.agent) === null) return this.answer(noModelAnswer(null));
     if (this.state.activeOperation !== null) return this.answer(BUSY);
-    const asked: Asked = { agent: analysis.config.agent, record: null, said: this.sent };
+    const request = this.request();
+    // The file the model reads is the basis of a proposal for it: fixed now, before the answer.
+    const basis = request.file === null ? null : { path: request.file.path, disk: existingText(join(this.state.root, request.file.path)) };
+    const asked: Asked = { agent: analysis.config.agent, record: null, said: this.sent, basis };
     this.asked = asked;
     this.state.clip.waiting = true;
-    this.host.track(this.start(asked, this.request()));
+    this.host.track(this.start(asked, request));
   }
 
   /**
@@ -362,7 +372,7 @@ export class ClipChat {
     if (cancelled(record) || result === null) return this.answer(CANCELLED, { said: null });
     if (result.kind !== "assistant-reply" || result.payload === null) return this.answer(`помилка моделі: ${failure(result)}`, { said: asked.said });
     const { agent, reply, proposal, dropped } = result.payload;
-    const proposed = proposal === null ? null : this.propose(proposal);
+    const proposed = proposal === null ? null : this.propose(proposal, asked.basis);
     const notes = [...(proposed === null ? [] : [proposed]), ...(dropped.length > 0 ? [`відкинуто: ${dropped.join(", ")} — береться лише перший закритий блок keylang path=`] : [])];
     const written = proposal !== null && proposed === proposalWritten(proposal.path) ? { proposal: proposal.path } : {};
     this.answer([reply, ...notes].filter((line) => line !== "").join("\n"), { said: asked.said, agent, ...written });
@@ -373,11 +383,16 @@ export class ClipChat {
    * (`proposalProblem` with the analysis's generated documents) and the
    * refusals before it: Browse writes nothing, code is the harness's, a
    * target with unsaved edits would come back as hunks reverting them, and a
-   * proposal waiting for it is never covered. Only `.keylang/proposals/<p>`
-   * is written; the file itself changes in MERGE on `w`. Returns the chat's
-   * line about it.
+   * proposal waiting for it is never covered. The open file the model read
+   * is taken against its text on disk when the model was asked (`basis`):
+   * one saved meanwhile — from inside the session or outside it — holds
+   * lines the model never saw, and the proposal would come back as hunks
+   * deleting them, so it is refused as any operation refuses an input that
+   * changed while the proposal was prepared. Any other target is taken
+   * against the disk as it is now. Only `.keylang/proposals/<p>` is written;
+   * the file itself changes in MERGE on `w`. Returns the chat's line about it.
    */
-  private propose({ path, text }: NonNullable<AssistantReplyPayload["proposal"]>): string {
+  private propose({ path, text }: NonNullable<AssistantReplyPayload["proposal"]>, basis: Asked["basis"]): string {
     const state = this.state;
     const refused = (why: string): string => `пропозицію для ${path} не записано: ${why}`;
     if (state.config.kind === "missing-config") return refused("режим перегляду нічого не пише; keylang init створює keylang.json");
@@ -389,8 +404,10 @@ export class ClipChat {
       const buffer = state.buffers.get(path);
       if (buffer !== undefined && isDirty(buffer)) return refused("файл має незбережені правки: збережіть (Ctrl+S) чи відкотіть їх і спитайте знову");
       if (this.host.proposalWaiting(path)) return refused("для нього вже чекає пропозиція: m — MERGE, потім спитайте знову");
-      // Against the target as it is now and no proposal: one that appears meanwhile is never overwritten.
-      writeProposal(state.root, path, text, { target: existingText(join(state.root, path)), proposal: null });
+      // Against the target the model read, else as it is now, and no proposal: a target saved or a proposal
+      // appearing meanwhile is never overwritten (`changed on disk while the proposal was prepared`).
+      const target = basis !== null && basis.path === path ? basis.disk : existingText(join(state.root, path));
+      writeProposal(state.root, path, text, { target, proposal: null });
     } catch (error) {
       return refused(errorText(error));
     }
