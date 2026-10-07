@@ -17,10 +17,16 @@ import { components } from "./scc.ts";
 
 export const SNAPSHOT_SCHEMA = 7;
 /** Bump when extraction or resolution changes the facts that `snapshotId` covers. */
-export const EXTRACTOR_VERSION = "m1.12";
+export const EXTRACTOR_VERSION = "m1.13";
 
 export type Resolution = "resolved" | "ambiguous" | "unresolved";
-export type Provenance = "syntactic";
+/**
+ * `syntactic`: a fact of the code the language runs. `docblock`: a fact written
+ * only in a documentation comment the language does not check (PHP `@var Foo`
+ * above an untyped property, `@param Foo $x`): static analysers trust it, and
+ * so does keylang, naming it in the verdict.
+ */
+export type Provenance = "syntactic" | "docblock";
 export type EdgeKind = "import" | "call" | "type" | "reexport";
 
 export interface SnapshotEdge {
@@ -56,6 +62,8 @@ export interface SnapshotEdge {
   site?: string;
   /** The call sits in a closure of `source`: whoever holds that function value may run it. */
   closure?: true;
+  /** `file:line:col` of the docblock a `docblock` edge rests on: the `@var` or `@param` that types the receiver, or the import's own position. */
+  docblock?: string;
   /**
    * An import or re-export of types only (TypeScript `import type`, `export type … from`,
    * `export type * from`; `import { type A }` and `export { type A } from` with every name `type`
@@ -339,7 +347,8 @@ export function buildSnapshot(
         endCol: d.endCol,
         text: d.text,
         resolution: "resolved",
-        provenance: "syntactic",
+        provenance: d.docblock ? "docblock" : "syntactic",
+        ...(d.docblock ? { docblock: `${d.file}:${d.line}:${d.col}` } : {}),
         ...(d.typeOnly ? { typeOnly: true as const } : {}),
       });
     }
@@ -356,7 +365,8 @@ export function buildSnapshot(
           endCol: c.endCol,
           text: c.text,
           resolution: "resolved",
-          provenance: "syntactic",
+          provenance: c.docblock ? "docblock" : "syntactic",
+          ...(c.docblock ? { docblock: c.docblock } : {}),
           ...(c.via ? { via: c.via } : {}),
           ...(c.hook ? { hook: c.hook } : {}),
           ...(c.site ? { site: c.site } : {}),

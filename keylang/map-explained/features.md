@@ -5,7 +5,7 @@
 # map
 
 - features
-  <a id="features"></a><br>The layer holds keylang's user-facing capabilities: checking and reports ([`features.check-results`](features.md#features.check-results), [`features.changed`](features.md#features.changed)), model-backed drafting and explanations ([`features.llm`](features.md#features.llm), [`features.draft-llm`](features.md#features.draft-llm)), and editor, git and voice support ([`features.lsp-features`](features.md#features.lsp-features)… _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+  <a id="features"></a><br>The layer holds keylang's user-facing capabilities: checking and reports ([`features.check-results`](features.md#features.check-results), [`features.changed`](features.md#features.changed)), model-backed drafting and explanations ([`features.llm`](features.md#features.llm), [`features.draft-llm`](features.md#features.draft-llm)), and editor, git and voice support ([`features.lsp-features`](features.md#features.lsp-features)… _(llm · claude:claude-opus-5-5 · 2026-10-06 · stale)_
   - module [agent-cli](../../src/agent-cli.ts#L1)
     <a id="features.agent-cli"></a><br>An agent CLI as a text model (ADR 0009): `cli:claude`, `cli:codex`, `cli:opencode`, `cli:cursor` or a command defined in `~/.config/keylang/agents.json`. One request is one run of the CLI in "answer only" form: no project hooks, MCP servers or instructions where the CLI can…
     - node [external.node](external.md#external.node)
@@ -434,9 +434,9 @@
       - calls [features.explain-edge.under](features.md#features.explain-edge.under), [base.span.compareText](base.md#base.span.compareText), [map.snapshot.leavesUnresolved](map.md#map.snapshot.leavesUnresolved)
     - fn [edgeLine](../../src/explain-edge.ts#L59) (edge: SnapshotEdge) → string
       <a id="features.explain-edge.edgeLine"></a><br>One edge as the CLI prints it: kind, resolution, provenance, range, fragment, `source → target`, candidates, hook, reason.
-    - fn [holeLine](../../src/explain-edge.ts#L67) (hole: CoverageItem) → string
+    - fn [holeLine](../../src/explain-edge.ts#L68) (hole: CoverageItem) → string
       <a id="features.explain-edge.holeLine"></a><br>One unresolved construct as the CLI prints it.
-    - fn [edgeExplanationLines](../../src/explain-edge.ts#L72) (explanation: EdgeExplanation) → string[]
+    - fn [edgeExplanationLines](../../src/explain-edge.ts#L73) (explanation: EdgeExplanation) → string[]
       <a id="features.explain-edge.edgeExplanationLines"></a><br>The CLI's stdout of `check --explain-edge`, line by line.
       - calls [features.explain-edge.edgeLine](features.md#features.explain-edge.edgeLine)
   - module [explain-inventory](../../src/explain-inventory.ts#L1)

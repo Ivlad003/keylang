@@ -123,15 +123,17 @@
     - fn [globPrefix](../../src/glob.ts#L112) (glob: string) → string
   - module [languages](../../src/languages.ts#L1)
     - type [LanguageInfo](../../src/languages.ts#L5)
-    - type [Language](../../src/languages.ts#L34) = keyof typeof LANGUAGES
-    - fn [isLanguage](../../src/languages.ts#L38) (name: unknown) → name is Language
-    - fn [languageOf](../../src/languages.ts#L42) (path: string) → Language | undefined
-    - fn [constructorName](../../src/languages.ts#L50) (file: string | null | undefined) → string | null
+    - type [Language](../../src/languages.ts#L36) = keyof typeof LANGUAGES
+    - fn [isLanguage](../../src/languages.ts#L40) (name: unknown) → name is Language
+    - fn [languageOf](../../src/languages.ts#L44) (path: string) → Language | undefined
+    - fn [constructorName](../../src/languages.ts#L52) (file: string | null | undefined) → string | null
       - calls base.languages.languageOf
-    - fn [caselessNames](../../src/languages.ts#L56) (file: string | null | undefined) → boolean
+    - fn [caselessNames](../../src/languages.ts#L58) (file: string | null | undefined) → boolean
       - calls base.languages.languageOf
-    - fn [asciiLowerCase](../../src/languages.ts#L67) (name: string) → string
-    - fn [implicitMember](../../src/languages.ts#L72) (file: string | null | undefined, name: string) → boolean
+    - fn [asciiLowerCase](../../src/languages.ts#L69) (name: string) → string
+    - fn [interfaceTypes](../../src/languages.ts#L74) (file: string | null | undefined) → boolean
+      - calls base.languages.languageOf
+    - fn [implicitMember](../../src/languages.ts#L80) (file: string | null | undefined, name: string) → boolean
       - calls base.languages.languageOf
   - module [safe-write](../../src/safe-write.ts#L1)
     - node external.node
