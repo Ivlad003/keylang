@@ -10,7 +10,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { CONFIG_FILE, parseConfig } from "./config.ts";
-import { allCrlf, landing, writeAtomic, writeProblem } from "./safe-write.ts";
+import { allCrlf, landing, targetProblem, writeAtomic, writeProblem } from "./safe-write.ts";
 
 /** Files `init` / `agents` may create or edit. The plan reads each one before it is computed. */
 export const HARNESS_PATHS = [
@@ -624,7 +624,8 @@ function readInputs(root: string): Map<string, string | null> {
  * Why the plan may not be committed now (`path: reason` lines; empty when it
  * may): every harness path must still hold the bytes the plan read,
  * keylang.json must still name the same spec directory, a target must pass
- * the repository's write rules, and `auto` must still detect the same
+ * the repository's write rules (a removal too: the entry must be inside the
+ * repository with links followed), and `auto` must still detect the same
  * harnesses.
  */
 export function agentsPlanProblems(plan: AgentsPlan): string[] {
@@ -640,8 +641,8 @@ export function agentsPlanProblems(plan: AgentsPlan): string[] {
   if (dir !== plan.dir) problems.push(`${CONFIG_FILE}: \`dir\` changed on disk while the integrations were planned (${plan.dir} → ${dir}); nothing written`);
   if (problems.length > 0) return problems;
   for (const target of plan.targets) {
-    if (target.action !== "write") continue;
-    const problem = writeProblem(plan.root, target.path, { expect: plan.inputs.get(target.path) ?? null });
+    if (target.action === "keep") continue;
+    const problem = target.action === "write" ? writeProblem(plan.root, target.path, { expect: plan.inputs.get(target.path) ?? null }) : targetProblem(plan.root, target.path);
     if (problem !== null) problems.push(`${target.path}: ${problem}`);
   }
   if (plan.choice === "auto") {
@@ -665,9 +666,11 @@ export interface HarnessStep {
 /**
  * Writes and removes the changed targets one by one, in plan order. A write
  * is atomic at the target (a link inside the repository is followed; CRLF of
- * the old file kept); a removal removes the entry itself. The first error
- * stops: that step is `failed`, the rest `not-attempted`, nothing is rolled
- * back. The signal is checked between steps.
+ * the old file kept); a removal removes the entry itself, and only when the
+ * entry is inside the repository with links followed — a harness directory
+ * linked out of it is never emptied. The first error stops: that step is
+ * `failed`, the rest `not-attempted`, nothing is rolled back. The signal is
+ * checked between steps.
  */
 export async function commitAgents(
   plan: AgentsPlan,
@@ -683,8 +686,11 @@ export async function commitAgents(
     options.onStep?.({ path: step.path, action: step.action });
     const abs = join(plan.root, target.path);
     try {
-      if (target.text === null) rmSync(abs, { force: true });
-      else {
+      if (target.text === null) {
+        const problem = targetProblem(plan.root, target.path);
+        if (problem !== null) throw new Error(problem);
+        rmSync(abs, { force: true });
+      } else {
         const at = landing(abs);
         if (at === null) throw new Error("leads through a loop of links");
         writeAtomic(at, target.text);

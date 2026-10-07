@@ -3,10 +3,11 @@
 // approval) and the git pre-commit hook of `hook install`.
 
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { git, keylang, LAYERS, ORDER, PAY, root, tempDir, treeBytes, writeTree } from "./cli-helpers.ts";
+import { bin, git, keylang, LAYERS, ORDER, PAY, root, tempDir, treeBytes, writeTree } from "./cli-helpers.ts";
 
 const VERSION = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version as string;
 
@@ -77,6 +78,53 @@ test("agents: --agents=none writes no harness files; unknown name and broken mar
   assert.match(broken.stderr, /AGENTS\.md: broken markers/);
   assert.equal(readFileSync(join(bad, "AGENTS.md"), "utf8"), marked);
   assert.equal(existsSync(join(bad, "keylang.json")), false);
+});
+
+test("agents: a removal through a harness directory linked out of the repository is refused before the first step (init --agents=none and clone)", (t) => {
+  // The repository commits `.cursor` and `.claude` as links to a person's dotfiles outside it.
+  const make = (prefix: string): { repo: string; outside: string } => {
+    const dir = tempDir(t, prefix);
+    const repo = join(dir, "repo");
+    const outside = join(dir, "outside");
+    writeTree(repo, { "src/app/pay.ts": PAY, "src/domain/order.ts": ORDER });
+    writeTree(outside, {
+      "cur/mcp.json": `${JSON.stringify({ mcpServers: { keylang: { command: "npx", args: ["-y", "keylang@0.0.1", "mcp"] } } }, null, 2)}\n`,
+      "claude/skills/keylang-feature/SKILL.md": "USER DATA\n",
+      "claude/keep.txt": "keep\n",
+    });
+    symlinkSync(join(outside, "cur"), join(repo, ".cursor"), "dir");
+    symlinkSync(join(outside, "claude"), join(repo, ".claude"), "dir");
+    return { repo, outside };
+  };
+
+  const local = make("keylang-linked-remove-");
+  const before = treeBytes(local.outside);
+  const none = keylang(local.repo, ["init", "--agents=none"]);
+  assert.equal(none.status, 1, none.stdout + none.stderr);
+  assert.match(none.stdout, /^\.cursor\/mcp\.json: leads out of the repository through a link$/m);
+  assert.match(none.stdout, /^\.claude\/skills\/keylang-feature\/SKILL\.md: leads out of the repository through a link$/m);
+  assert.doesNotMatch(none.stdout, /removed/);
+  assert.match(none.stderr, /nothing was written/);
+  assert.deepEqual(treeBytes(local.outside), before, "the files behind the links stay");
+  const again = keylang(local.repo, ["agents", "--agents=none"]);
+  assert.equal(again.status, 1, again.stdout + again.stderr);
+  assert.deepEqual(treeBytes(local.outside), before);
+
+  // `clone` runs `init --agents=none` on a checkout the repository's own commit shaped.
+  const cloned = make("keylang-linked-clone-");
+  git(cloned.repo, ["init", "-q"]);
+  git(cloned.repo, ["add", "-A"]);
+  git(cloned.repo, ["-c", "commit.gpgsign=false", "commit", "-qm", "links"]);
+  const sandbox = tempDir(t, "keylang-linked-clone-home-");
+  const r = spawnSync(process.execPath, [bin, "clone", `file://${cloned.repo}`], {
+    cwd: sandbox,
+    encoding: "utf8",
+    env: { ...process.env, HOME: join(sandbox, "home"), XDG_CACHE_HOME: join(sandbox, "cache"), XDG_CONFIG_HOME: join(sandbox, "config") },
+  });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.stdout, /SKILL\.md: leads out of the repository through a link/);
+  assert.doesNotMatch(r.stdout, /removed/);
+  assert.deepEqual(treeBytes(cloned.outside), before, "a clone never removes files behind the repository's links");
 });
 
 test("agents: MCP servers, skill copies, Claude deny and a stale --check that writes nothing", (t) => {
