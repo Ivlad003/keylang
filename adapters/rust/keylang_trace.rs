@@ -172,7 +172,8 @@ pub fn finish() {
     let open: Vec<String> = tracer.open.lock().unwrap().iter().cloned().collect();
     let list = |items: &[String]| items.iter().map(|x| json_string(x)).collect::<Vec<_>>().join(",");
     tracer.write(&format!(
-        "\"event\":\"run\",\"complete\":{},\"dropped\":0,\"instrumented\":[{}],\"open\":[{}]",
+        "\"event\":\"run\",\"clockId\":{},\"complete\":{},\"dropped\":0,\"instrumented\":[{}],\"open\":[{}]",
+        json_string(&tracer.clock),
         open.is_empty() && !tracer.interleaved.load(Ordering::SeqCst),
         list(&tracer.instrumented),
         list(&open)
