@@ -342,3 +342,21 @@ test("mcp: the command .mcp.json pins starts a server that answers tools/list", 
     assert.ok(listed.tools.some((tool) => tool.name === name), name);
   }
 });
+
+test("mcp: list_entries gives the entry points of the fresh snapshot, narrowed by kind", async (t) => {
+  const mcp = await connect(t);
+  assert.ok((await mcp.list()).includes("list_entries"));
+  const none = JSON.parse((await mcp.call("list_entries")).text) as { snapshotId: string; kind: null; entries: unknown[] };
+  assert.match(none.snapshotId, /^[0-9a-f]{64}$/);
+  assert.deepEqual(none.entries, []);
+  // A route registered in the code since the last call: the next answer is for the current inputs.
+  writeFileSync(join(mcp.dir, "src/app/server.ts"), 'import { checkout } from "./checkout.ts";\nconst app = { post: (_p: string, _h: unknown) => 0 };\napp.post("/checkout", checkout);\n');
+  const all = JSON.parse((await mcp.call("list_entries")).text) as { snapshotId: string; entries: { kind: string; id: string; label: string; file: string; line: number; source: string; framework: null }[] };
+  assert.notEqual(all.snapshotId, none.snapshotId);
+  assert.deepEqual(all.entries, [{ kind: "route", id: "app.checkout.checkout", label: "POST /checkout", framework: null, file: "src/app/checkout.ts", line: all.entries[0]!.line, source: "src/app/server.ts:3" }]);
+  const cli = JSON.parse((await mcp.call("list_entries", { kind: "cli" })).text) as { kind: string; entries: unknown[] };
+  assert.equal(cli.kind, "cli");
+  assert.deepEqual(cli.entries, []);
+  const bad = await mcp.call("list_entries", { kind: "nope" });
+  assert.equal(bad.isError, true);
+});
