@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { bin, git, keylang, LAYERS, ORDER, PAY, tempDir, treeBytes, writeTree } from "./cli-helpers.ts";
@@ -407,6 +407,72 @@ test("check --changed, hook stop and feature keep K105 of `no-cycles` under a mo
   const outside = keylang(dir, ["check", "--changed"]);
   assert.equal(outside.status, 0, outside.stdout);
   assert.doesNotMatch(outside.stdout, /no-cycles/);
+});
+
+// review-2026-10-06/03: with core.ignorecase=true git keeps the index's spelling of a file renamed by case only; the slice must find the module by the disk's.
+const CASE_FIXTURE = {
+  ".gitignore": ".keylang/\n",
+  "keylang.json": `${JSON.stringify(LAYERS)}\n`,
+  "src/app/view.ts": "export function view(): number {\n  return 1;\n}\n",
+  "src/domain/order.ts": ORDER,
+  "keylang/rules.md": "# rules\n\n- deny app domain\n",
+};
+const CASE_EDIT = 'import { price } from "../domain/order.ts";\nexport function view(): number {\n  return price();\n}\n';
+
+test("check --changed and hook stop find a file renamed by case only when git has core.ignorecase=true", (t) => {
+  const dir = tempDir(t, "keylang-ignorecase-");
+  writeTree(dir, CASE_FIXTURE);
+  git(dir, ["init"]);
+  git(dir, ["config", "core.ignorecase", "true"]);
+  git(dir, ["add", "."]);
+  git(dir, ["commit", "-m", "base"]);
+  // A plain mv, not git mv: on a case-sensitive disk git with ignorecase reports ` D src/app/view.ts` and no untracked View.ts, as macOS reports ` M src/app/view.ts`.
+  renameSync(join(dir, "src/app/view.ts"), join(dir, "src/app/tmp.ts"));
+  renameSync(join(dir, "src/app/tmp.ts"), join(dir, "src/app/View.ts"));
+  writeFileSync(join(dir, "src/app/View.ts"), CASE_EDIT);
+  const status = spawnSync("git", ["status", "--short"], { cwd: dir, encoding: "utf8" }).stdout;
+  assert.match(status, /src\/app\/view\.ts/, status);
+  assert.doesNotMatch(status, /View\.ts/, status);
+  const k102 = /src\/app\/View\.ts:1:1: K102 divergence: `app\.View` depends on `domain\.order`/;
+  const full = keylang(dir, ["check"]);
+  assert.equal(full.status, 1, full.stdout);
+  assert.match(full.stdout, k102);
+  const changed = keylang(dir, ["check", "--changed"]);
+  assert.equal(changed.status, 1, changed.stdout);
+  assert.match(changed.stdout, k102);
+  const hook = spawnSync(process.execPath, [bin, "hook", "stop"], { cwd: dir, input: "{}", encoding: "utf8" });
+  assert.equal(hook.status, 0, hook.stderr);
+  const decision = JSON.parse(hook.stdout) as { decision?: string; reason?: string };
+  assert.equal(decision.decision, "block", hook.stdout);
+  assert.match(decision.reason ?? "", /K102/);
+});
+
+test("check --changed finds a file renamed by case only on a case-insensitive file system (casefold tmpfs in a user namespace)", { skip: process.platform !== "linux" }, (t) => {
+  const probe = spawnSync("unshare", ["-rm", "true"], { encoding: "utf8" });
+  if (probe.status !== 0) return t.skip("unshare -rm is not available here");
+  const fixture = tempDir(t, "keylang-casefold-src-");
+  writeTree(fixture, CASE_FIXTURE);
+  const mount = tempDir(t, "keylang-casefold-");
+  const script = [
+    'mount -t tmpfs -o casefold tmpfs "$1" 2>/dev/null || { echo SKIP:mount; exit 0; }',
+    'mkdir "$1/repo" && chattr +F "$1/repo" 2>/dev/null || { echo SKIP:chattr; exit 0; }',
+    'cp -r "$2/." "$1/repo/" && cd "$1/repo" || exit 1',
+    "git init -q && git -c user.email=t@e -c user.name=t add . && git -c user.email=t@e -c user.name=t commit -qm base",
+    'echo "IGNORECASE:$(git config --get core.ignorecase)"',
+    "mv src/app/view.ts src/app/tmp.ts && mv src/app/tmp.ts src/app/View.ts",
+    'printf %s "$4" > src/app/View.ts',
+    'echo "STATUS:$(git status --short)"',
+    '"$3" "$5" check --changed; echo "CHANGED:$?"',
+    'echo "{}" | "$3" "$5" hook stop',
+  ].join("\n");
+  const run = spawnSync("unshare", ["-rm", "sh", "-c", script, "sh", mount, fixture, process.execPath, CASE_EDIT, bin], { encoding: "utf8" });
+  assert.equal(run.status, 0, run.stderr);
+  if (/^SKIP:/m.test(run.stdout)) return t.skip(`casefold tmpfs is not available here (${run.stdout.match(/^SKIP:(\w+)/m)?.[1]})`);
+  assert.match(run.stdout, /^IGNORECASE:true$/m, run.stdout);
+  assert.match(run.stdout, /^STATUS: M src\/app\/view\.ts$/m, run.stdout);
+  assert.match(run.stdout, /K102 divergence: `app\.View` depends on `domain\.order`/, run.stdout);
+  assert.match(run.stdout, /^CHANGED:1$/m, run.stdout);
+  assert.match(run.stdout, /"decision":"block"/, run.stdout);
 });
 
 // DX commands (design §7.5): spec skeletons.
