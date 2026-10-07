@@ -240,53 +240,53 @@
     - type [Mark](../../src/trace-evidence.ts#L13) <!-- internal -->
     - type [TraceSpan](../../src/trace-evidence.ts#L19)
     - type [TraceRun](../../src/trace-evidence.ts#L28)
-    - type [RunDraft](../../src/trace-evidence.ts#L51) <!-- internal -->
-    - fn [loadTraces](../../src/trace-evidence.ts#L71) (root: string, files: readonly string[]) → TraceRun[]
+    - type [RunDraft](../../src/trace-evidence.ts#L56) <!-- internal -->
+    - fn [loadTraces](../../src/trace-evidence.ts#L82) (root: string, files: readonly string[]) → TraceRun[]
       - calls check.trace-evidence.eachLine, check.trace-evidence.readEvent
-    - fn [eachLine](../../src/trace-evidence.ts#L84) (path: string, visit: (text: string, line: number) => void) → void <!-- internal -->
-    - fn [readEvent](../../src/trace-evidence.ts#L102) (runs: Map<string, RunDraft>, file: string, line: number, text: string) → void <!-- internal -->
-    - fn [finishRun](../../src/trace-evidence.ts#L179) (draft: RunDraft) → TraceRun <!-- internal -->
-    - type [ShapeNode](../../src/trace-evidence.ts#L204)
-    - type [TraceEvidence](../../src/trace-evidence.ts#L206)
-    - type [Outcome](../../src/trace-evidence.ts#L213) = TraceEvidence <!-- internal -->
-    - fn [traceFlow](../../src/trace-evidence.ts#L221) (runs: readonly TraceRun[], flow: string, trigger: { key: number; id: string } | null, shape: readonly ShapeNode[], snapshotId: string | null) → Map<number, TraceEvidence>
+    - fn [eachLine](../../src/trace-evidence.ts#L95) (path: string, visit: (text: string, line: number) => void) → void <!-- internal -->
+    - fn [readEvent](../../src/trace-evidence.ts#L113) (runs: Map<string, RunDraft>, file: string, line: number, text: string) → void <!-- internal -->
+    - fn [finishRun](../../src/trace-evidence.ts#L197) (draft: RunDraft) → TraceRun <!-- internal -->
+    - type [ShapeNode](../../src/trace-evidence.ts#L226)
+    - type [TraceEvidence](../../src/trace-evidence.ts#L228)
+    - type [Outcome](../../src/trace-evidence.ts#L235) = TraceEvidence <!-- internal -->
+    - fn [traceFlow](../../src/trace-evidence.ts#L243) (runs: readonly TraceRun[], flow: string, trigger: { key: number; id: string } | null, shape: readonly ShapeNode[], snapshotId: string | null) → Map<number, TraceEvidence>
       - calls check.trace-evidence.keysOf, check.trace-evidence.Matcher.match, check.trace-evidence.Matcher
-    - fn [keysOf](../../src/trace-evidence.ts#L264) (nodes: readonly ShapeNode[]) → number[] <!-- internal -->
-    - module [OverBudget](../../src/trace-evidence.ts#L271) <!-- internal -->
-    - type [Assignment](../../src/trace-evidence.ts#L274) <!-- internal -->
-    - fn [assignment](../../src/trace-evidence.ts#L283) (outcomes: [number, Outcome][], spans: string[] = []) → Assignment <!-- internal -->
-    - fn [combine](../../src/trace-evidence.ts#L287) (...parts: Assignment[]) → Assignment <!-- internal -->
-    - fn [better](../../src/trace-evidence.ts#L292) (a: Assignment, b: Assignment) → boolean <!-- internal -->
-    - module [Matcher](../../src/trace-evidence.ts#L302) <!-- internal -->
-      - fn [constructor](../../src/trace-evidence.ts#L315) (run: TraceRun)
-      - fn [match](../../src/trace-evidence.ts#L326) (nodes: readonly ShapeNode[], trigger: boolean) → [number, Outcome][]
+    - fn [keysOf](../../src/trace-evidence.ts#L286) (nodes: readonly ShapeNode[]) → number[] <!-- internal -->
+    - module [OverBudget](../../src/trace-evidence.ts#L293) <!-- internal -->
+    - type [Assignment](../../src/trace-evidence.ts#L296) <!-- internal -->
+    - fn [assignment](../../src/trace-evidence.ts#L305) (outcomes: [number, Outcome][], spans: string[] = []) → Assignment <!-- internal -->
+    - fn [combine](../../src/trace-evidence.ts#L309) (...parts: Assignment[]) → Assignment <!-- internal -->
+    - fn [better](../../src/trace-evidence.ts#L314) (a: Assignment, b: Assignment) → boolean <!-- internal -->
+    - module [Matcher](../../src/trace-evidence.ts#L324) <!-- internal -->
+      - fn [constructor](../../src/trace-evidence.ts#L337) (run: TraceRun)
+      - fn [match](../../src/trace-evidence.ts#L348) (nodes: readonly ShapeNode[], trigger: boolean) → [number, Outcome][]
         - calls check.trace-evidence.Matcher.list, check.trace-evidence.keysOf, check.trace-evidence.Matcher.base, check.trace-evidence.Matcher.incompleteness
-      - fn [base](../../src/trace-evidence.ts#L340) () → { runId: string; testId: string } <!-- internal -->
-      - fn [descendants](../../src/trace-evidence.ts#L345) (parent: TraceSpan | null) → TraceSpan[] <!-- internal -->
-      - fn [candidates](../../src/trace-evidence.ts#L364) (parent: TraceSpan | null, id: string) → TraceSpan[] <!-- internal -->
+      - fn [base](../../src/trace-evidence.ts#L362) () → { runId: string; testId: string } <!-- internal -->
+      - fn [descendants](../../src/trace-evidence.ts#L367) (parent: TraceSpan | null) → TraceSpan[] <!-- internal -->
+      - fn [candidates](../../src/trace-evidence.ts#L386) (parent: TraceSpan | null, id: string) → TraceSpan[] <!-- internal -->
         - calls check.trace-evidence.Matcher.descendants
-      - fn [incompleteness](../../src/trace-evidence.ts#L369) () → string | null <!-- internal -->
-      - fn [absenceDoubt](../../src/trace-evidence.ts#L378) (id: string) → string | null <!-- internal -->
+      - fn [incompleteness](../../src/trace-evidence.ts#L391) () → string | null <!-- internal -->
+      - fn [absenceDoubt](../../src/trace-evidence.ts#L401) (id: string) → string | null <!-- internal -->
         - calls check.trace-evidence.Matcher.incompleteness
-      - fn [bound](../../src/trace-evidence.ts#L387) (parent: TraceSpan | null, node: ShapeNode) → number <!-- internal -->
+      - fn [bound](../../src/trace-evidence.ts#L410) (parent: TraceSpan | null, node: ShapeNode) → number <!-- internal -->
         - calls check.trace-evidence.Matcher.descendants
-      - fn [symbolsFrom](../../src/trace-evidence.ts#L399) (nodes: readonly ShapeNode[], i: number) → Set<string> <!-- internal -->
-      - fn [list](../../src/trace-evidence.ts#L423) (parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, previous: TraceSpan | null, trigger: boolean) → Assignment <!-- internal -->
+      - fn [symbolsFrom](../../src/trace-evidence.ts#L422) (nodes: readonly ShapeNode[], i: number) → Set<string> <!-- internal -->
+      - fn [list](../../src/trace-evidence.ts#L446) (parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, previous: TraceSpan | null, trigger: boolean) → Assignment <!-- internal -->
         - calls check.trace-evidence.Matcher.symbolsFrom, check.trace-evidence.Matcher.descendants, check.trace-evidence.Matcher.solve
-      - fn [solve](../../src/trace-evidence.ts#L447) (parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, previous: TraceSpan | null, trigger: boolean) → Assignment <!-- internal -->
+      - fn [solve](../../src/trace-evidence.ts#L470) (parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, previous: TraceSpan | null, trigger: boolean) → Assignment <!-- internal -->
         - calls check.trace-evidence.Matcher.branch, check.trace-evidence.Matcher.candidates, check.trace-evidence.startsBefore, check.trace-evidence.Matcher.bound, check.trace-evidence.Matcher.take, check.trace-evidence.Matcher.orderOutcome, check.trace-evidence.better, check.trace-evidence.Matcher.base, check.trace-evidence.Matcher.absenceDoubt, check.trace-evidence.Matcher.outsideRoot, check.trace-evidence.combine, check.trace-evidence.assignment, check.trace-evidence.keysOf, check.trace-evidence.Matcher.list
-      - fn [take](../../src/trace-evidence.ts#L478) (parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, node: ShapeNode, span: TraceSpan, outcome: Outcome, trigger: boolean) → Assignment <!-- internal -->
+      - fn [take](../../src/trace-evidence.ts#L501) (parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, node: ShapeNode, span: TraceSpan, outcome: Outcome, trigger: boolean) → Assignment <!-- internal -->
         - calls check.trace-evidence.OverBudget, check.trace-evidence.Matcher.list, check.trace-evidence.combine, check.trace-evidence.assignment
-      - fn [branch](../../src/trace-evidence.ts#L490) (parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, node: ShapeNode, previous: TraceSpan | null, trigger: boolean) → Assignment <!-- internal -->
+      - fn [branch](../../src/trace-evidence.ts#L513) (parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, node: ShapeNode, previous: TraceSpan | null, trigger: boolean) → Assignment <!-- internal -->
         - calls check.trace-evidence.Matcher.candidates, check.trace-evidence.Matcher.base, check.trace-evidence.combine, check.trace-evidence.assignment, check.trace-evidence.keysOf, check.trace-evidence.Matcher.list
-      - fn [rootSpan](../../src/trace-evidence.ts#L504) (span: TraceSpan) → TraceSpan <!-- internal -->
-      - fn [outsideRoot](../../src/trace-evidence.ts#L521) (parent: TraceSpan, id: string) → TraceSpan | null <!-- internal -->
+      - fn [rootSpan](../../src/trace-evidence.ts#L527) (span: TraceSpan) → TraceSpan <!-- internal -->
+      - fn [outsideRoot](../../src/trace-evidence.ts#L544) (parent: TraceSpan, id: string) → TraceSpan | null <!-- internal -->
         - calls check.trace-evidence.Matcher.rootSpan, check.trace-evidence.startsBefore
-      - fn [nestedIn](../../src/trace-evidence.ts#L533) (span: TraceSpan, ancestor: TraceSpan) → boolean <!-- internal -->
-      - fn [orderOutcome](../../src/trace-evidence.ts#L544) (parent: TraceSpan | null, span: TraceSpan, after: TraceSpan | null) → Outcome <!-- internal -->
+      - fn [nestedIn](../../src/trace-evidence.ts#L556) (span: TraceSpan, ancestor: TraceSpan) → boolean <!-- internal -->
+      - fn [orderOutcome](../../src/trace-evidence.ts#L567) (parent: TraceSpan | null, span: TraceSpan, after: TraceSpan | null) → Outcome <!-- internal -->
         - calls check.trace-evidence.Matcher.nestedIn, check.trace-evidence.Matcher.base, check.trace-evidence.sameClock
-    - fn [sameClock](../../src/trace-evidence.ts#L564) (a: Mark, b: Mark) → boolean <!-- internal -->
-    - fn [startsBefore](../../src/trace-evidence.ts#L568) (span: TraceSpan, other: TraceSpan) → boolean <!-- internal -->
+    - fn [sameClock](../../src/trace-evidence.ts#L587) (a: Mark, b: Mark) → boolean <!-- internal -->
+    - fn [startsBefore](../../src/trace-evidence.ts#L591) (span: TraceSpan, other: TraceSpan) → boolean <!-- internal -->
       - calls check.trace-evidence.sameClock
   - module [verdict](../../src/verdict.ts#L1)
     - type [VerdictKind](../../src/verdict.ts#L3) = "ok" | "fail" | "unverified"

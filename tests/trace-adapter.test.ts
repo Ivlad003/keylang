@@ -176,3 +176,70 @@ test("trace evidence: a clock with spans but no run record of its own makes the 
   writeFileSync(join(dir, ".keylang/trace/f.jsonl"), `${lines.map((l) => JSON.stringify(l)).join("\n")}\n`);
   assert.equal(traceOf(check(dir).rows, "app.main.never"), "fail: fail app.main.never: missing step in t");
 });
+
+// ---------- the Python adapter ----------
+
+const python3 = spawnSync("python3", ["--version"], { encoding: "utf8" }).status === 0;
+const pythonAdapter = join(root, "adapters/python/keylang_trace.py");
+
+/** A Python repository whose `main()` runs `crunch` as `body` says, traced under the adapter for flow `crunch`. */
+function pythonRun(t: Context, body: string): { dir: string; stdout: string; stderr: string; status: number | null } {
+  const dir = repo(t, { languages: ["python"], layers: { app: ["app/**"] }, exclude: ["run.py"], check: { trace: ".keylang/trace/*.jsonl" } }, {
+    "app/__init__.py": "",
+    "app/work.py": "def crunch(x):\n    return x * 2\n",
+    "app/main.py": `import os\nimport sys\nfrom multiprocessing import Pool\n\nfrom app.work import crunch\n\n\ndef main():\n${body}`,
+    "run.py": "from app.main import main\n\nprint(main())\n",
+    "keylang/flows.md": "# flow crunch\n\n- trigger app.main.main\n  - step app.work.crunch\n",
+  });
+  const plan = keylang(dir, ["trace-plan", "crunch"]);
+  assert.equal(plan.status, 0, plan.stderr);
+  writeFileSync(join(dir, "plan.json"), plan.stdout);
+  const env: Record<string, string | undefined> = { ...process.env, KEYLANG_TRACE: ".keylang/trace/crunch.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_TRACE_TEST: "run.py > @flow crunch" };
+  delete env.KEYLANG_TRACE_RUN;
+  const r = spawnSync("python3", [pythonAdapter, "run.py"], { cwd: dir, encoding: "utf8", env, timeout: 60_000 });
+  return { dir, stdout: r.stdout, stderr: r.stderr, status: r.status };
+}
+
+test("python: a step run in a forked multiprocessing worker is recorded by the worker, so it is unverified, not missing", { skip: python3 ? false : "python3 is not installed" }, (t) => {
+  // A pool closed and joined lets its worker leave through `_exit_function` and `os._exit`: the finalizer writes the record.
+  const r = pythonRun(t, "    pool = Pool(1)\n    try:\n        return pool.map(crunch, [1, 2])\n    finally:\n        pool.close()\n        pool.join()\n");
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout, "[2, 4]\n");
+  const all = events(r.dir, "crunch.jsonl");
+  const runs = all.filter((e) => e.event === "run");
+  // The worker wrote its own spans and its own run record, on a clock of its own pid.
+  assert.ok(all.some((e) => e.event === "start" && e.symbolId === "app.work.crunch"), JSON.stringify(all));
+  assert.equal(runs.length, 2, JSON.stringify(runs));
+  assert.equal(new Set(runs.map((e) => e.clockId)).size, 2, JSON.stringify(runs));
+  assert.equal(new Set(runs.map((e) => e.runId)).size, 1);
+  const c = check(r.dir);
+  assert.notEqual(c.status, 2, c.stderr);
+  assert.match(traceOf(c.rows, "app.work.crunch"), /^unverified: unverified app\.work\.crunch: observed outside `app\.main\.main` in another call tree/);
+  // `with Pool(1)` ends with `terminate()`: SIGTERM may end the worker before its finalizer, or the sentinel may win.
+  // Either way its spans are on disk, and a missing record makes the run incomplete rather than the step missing.
+  const killed = pythonRun(t, "    with Pool(1) as pool:\n        return pool.map(crunch, [1, 2])\n");
+  assert.equal(killed.status, 0, killed.stderr);
+  assert.equal(killed.stdout, "[2, 4]\n");
+  const rest = events(killed.dir, "crunch.jsonl");
+  assert.ok(rest.some((e) => e.event === "start" && e.symbolId === "app.work.crunch"), JSON.stringify(rest));
+  const records = rest.filter((e) => e.event === "run").length;
+  assert.ok(records === 1 || records === 2, JSON.stringify(rest));
+  const k = check(killed.dir);
+  assert.notEqual(k.status, 2, k.stderr);
+  assert.match(traceOf(k.rows, "app.work.crunch"), records === 1 ? /^unverified: unverified app\.work\.crunch: incomplete trace \(1 process ended without its run record\)/ : /^unverified: unverified app\.work\.crunch: observed outside/);
+});
+
+test("python: a process forked with os.fork() records only its own events, with span ids of its own", { skip: python3 ? false : "python3 is not installed" }, (t) => {
+  // The child exits normally, so its `atexit` runs: before the fix it replayed the parent's buffered events under the same span ids.
+  const r = pythonRun(t, "    pid = os.fork()\n    if pid == 0:\n        crunch(1)\n        sys.exit(0)\n    os.waitpid(pid, 0)\n    return crunch(2)\n");
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout, "4\n");
+  const all = events(r.dir, "crunch.jsonl");
+  const starts = all.filter((e) => e.event === "start");
+  assert.equal(new Set(starts.map((e) => e.spanId)).size, starts.length, `span ids repeat: ${JSON.stringify(starts)}`);
+  // The child inherited the parent's open `main` span but does not end it: that span belongs to the parent's clock.
+  assert.equal(all.filter((e) => e.event === "end" && e.spanId === starts[0]!.spanId).length, 1, JSON.stringify(all));
+  const c = check(r.dir);
+  assert.notEqual(c.status, 2, c.stderr);
+  assert.equal(traceOf(c.rows, "app.work.crunch"), "ok: ok app.work.crunch: observed in run.py > @flow crunch");
+});
