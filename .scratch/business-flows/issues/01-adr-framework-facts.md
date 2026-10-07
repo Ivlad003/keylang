@@ -1,6 +1,6 @@
 # 01: ADR: факти фреймворків — прив'язки, перехоплення, події й точки входу
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** docs
 
@@ -27,9 +27,9 @@
 
 ## Критерії готовності
 
-- [ ] ADR 0022 записано з рішенням по кожному з 6 пунктів і прикладом на `QuoteManagement::submitQuote`
-- [ ] `docs/snapshot.md` і `docs/semantics.md` отримали розділ «Дорожня карта» з посиланням на ADR
-- [ ] `CONTEXT.md`: терміни **Framework adapter**, **Binding**, **Entry point** (з _Avoid_)
+- [x] ADR 0022 записано з рішенням по кожному з 6 пунктів і прикладом на `QuoteManagement::submitQuote`
+- [x] `docs/snapshot.md` і `docs/semantics.md` отримали розділ «Дорожня карта» з посиланням на ADR
+- [x] `CONTEXT.md`: терміни **Framework adapter**, **Binding**, **Entry point** (з _Avoid_)
 
 **Межі:** лише рішення й документація; коду немає.
 
@@ -43,3 +43,7 @@
 - **Вмикання адаптера:** автовиявлення (Magento — `registration.php` / `app/etc/di.xml`); `frameworks: []` у `keylang.json` вимикає, `frameworks: ["magento"]` вмикає явно.
 - **Мови:** механізм адаптерів і `via`-ребер мовно-незалежний — працює для всіх мов, які keylang читає (TS/JS, Python, Rust, PHP) і в поліглотному репо одночасно; Magento — перший адаптер, не особливий випадок.
 - Пріоритет: Magento-гілка (01 → 04 → 06–10) іде першою.
+
+### Зведення
+
+- 2026-10-07: записано `docs/adr/0022-framework-facts.md` за рішеннями автора (spec §3a); терміни Framework adapter, Binding, Entry point, Event — у `CONTEXT.md`. Розділи «Дорожня карта» в snapshot.md/semantics.md/grammar.md додадуть тікети реалізації, щоб не конфліктувати з паралельними правками цих файлів.
