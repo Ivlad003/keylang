@@ -6,10 +6,10 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { gitUnavailable } from "./git-changes.ts";
-import { writeAtomic } from "./safe-write.ts";
+import { safeWrite, targetProblem, writeAtomic } from "./safe-write.ts";
 
 /** What to clone and where it sits under the cache root. */
 export interface RepoSource {
@@ -97,13 +97,23 @@ export interface CloneSync {
 /**
  * Clones `source` into `dir`, or brings a clone keylang made there up to the
  * remote's default branch. A directory keylang did not clone is never touched:
- * the reset would drop its work.
+ * the reset would drop its work. The marker is written under the repository's
+ * write rules: a `.keylang` the clone's own commit made a link out of the
+ * clone is refused, and the fresh clone is removed again, so nothing of the
+ * cloned repository's choosing is written outside it.
  */
 export function syncClone(source: RepoSource, dir: string): CloneSync {
-  if (!existsSync(dir) || (statSync(dir).isDirectory() && readdirSync(dir).length === 0)) {
+  const existed = existsSync(dir);
+  if (!existed || (statSync(dir).isDirectory() && readdirSync(dir).length === 0)) {
     mkdirSync(dirname(dir), { recursive: true });
     git(dirname(dir), ["clone", "--quiet", "--depth", "1", "--", source.url, dir]);
-    writeAtomic(join(dir, CLONE_MARKER), `${JSON.stringify({ url: source.url, key: source.key }, null, 2)}\n`);
+    try {
+      safeWrite(dir, CLONE_MARKER, `${JSON.stringify({ url: source.url, key: source.key }, null, 2)}\n`, { under: ".keylang" });
+    } catch (error) {
+      rmSync(dir, { recursive: true, force: true });
+      if (existed) mkdirSync(dir);
+      throw new Error(`clone: ${error instanceof Error ? error.message : String(error)}; the clone of ${source.url} was removed`);
+    }
     return { action: "cloned", dir };
   }
   const cloned = readMarker(dir);
@@ -115,7 +125,9 @@ export function syncClone(source: RepoSource, dir: string): CloneSync {
   return { action: "updated", dir };
 }
 
+/** The marker of `dir`, or undefined: absent, unreadable, or behind a link out of the directory — a file elsewhere is no proof keylang cloned `dir`. */
 function readMarker(dir: string): { url: string; key: string[] } | undefined {
+  if (targetProblem(dir, CLONE_MARKER, { under: ".keylang" }) !== null) return undefined;
   const marker = join(dir, CLONE_MARKER);
   if (!existsSync(marker)) return undefined;
   try {
