@@ -60,16 +60,16 @@
     - trace-evidence [check.trace-evidence](check.md#check.trace-evidence)
     - run-id [cli.run-id](cli.md#cli.run-id)
     - trace-hooks [cli.trace-hooks](cli.md#cli.trace-hooks)
-    - type [Span](../../src/adapters/trace.ts#L22) <!-- internal -->
+    - type [Span](../../src/adapters/trace.ts#L26) <!-- internal -->
       <a id="cli.trace.Span"></a><br>Describes the shape of a tracing span record held by [`cli.trace`](cli.md#cli.trace): a string identifier for the span plus a boolean flag marking whether the span has already been closed. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Plan](../../src/adapters/trace.ts#L27) = Extract<TracePlanMessage, { kind: "plan" }> <!-- internal -->
+    - type [Plan](../../src/adapters/trace.ts#L31) = Extract<TracePlanMessage, { kind: "plan" }> <!-- internal -->
       <a id="cli.trace.Plan"></a>
-    - fn [record](../../src/adapters/trace.ts#L33) (file: string) → void <!-- internal -->
+    - fn [record](../../src/adapters/trace.ts#L37) (file: string) → void <!-- internal -->
       <a id="cli.trace.record"></a>
       - calls [cli.run-id.runId](cli.md#cli.run-id.runId), [cli.trace.instrumented](cli.md#cli.trace.instrumented)
-    - type [Loads](../../src/adapters/trace.ts#L141) <!-- internal -->
+    - type [Loads](../../src/adapters/trace.ts#L183) <!-- internal -->
       <a id="cli.trace.Loads"></a><br>What the hooks did with the planned files in this process.
-    - fn [instrumented](../../src/adapters/trace.ts#L159) (plan: Plan, loads: Loads) → string[] <!-- internal -->
+    - fn [instrumented](../../src/adapters/trace.ts#L201) (plan: Plan, loads: Loads) → string[] <!-- internal -->
       <a id="cli.trace.instrumented"></a><br>The plan's functions this process would have recorded had it called them: every function a wrapper was planned for, whether or not the process loaded its file (code it never loaded never ran here). Left out: a file that loaded with other content than the snapshot saw, and a…
   - module [cli](../../src/cli.ts#L1)
     <a id="cli.cli"></a><br>`keylang` command line: the TUI (no command), web, clone, init, map, check, parse, fmt.

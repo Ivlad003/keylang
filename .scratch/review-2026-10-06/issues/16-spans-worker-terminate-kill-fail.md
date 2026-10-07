@@ -1,6 +1,6 @@
 # 16: Spans, що буферизуються до виходу, губляться при worker.terminate() чи kill дочірнього процесу, а крок стає хибним `fail missing step`
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -57,11 +57,13 @@ TS-адаптер тримає всі події в пам'яті (`lines`) і �
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/adapters/trace.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/adapters/trace.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+- 2026-10-07 — відтворено тестами `tests/trace-adapter.test.ts` («a worker stopped by worker.terminate()…», «a child killed with SIGTERM…», «trace evidence: a clock with spans but no run record…»): на HEAD усі три давали `fail … missing step`. Виправлення: (1) `src/adapters/trace.ts` дописує події у файл на кожному `end` і пачками по 64 рядки, запис `run` тепер має `clockId`; на SIGTERM/SIGINT без інших обробників адаптер пише буфер і `run` з `complete: false`, після чого повторно надсилає сигнал собі (`process.kill(process.pid, signal)`), а якщо програма має власний обробник — лише скидає буфер (тест «a SIGTERM handler of the program keeps its turn»). (2) `src/trace-evidence.ts`: `run` приймає необов'язковий `clockId`; годинник зі span-ами без власного запису `run` робить запуск неповним — «incomplete trace (N process ended without its run record)», не `missing step`. Запис `run` без `clockId` (старі адаптери, рукописні фікстури) годинники не судить — так зберігаються тести `flows.test.ts` із двома годинниками й одним `run`. (3) Rust-адаптер теж пише `clockId` у `run` (один рядок), щоб формат був однаковий; Python і PHP — у тікетах 09 і 17. Повідомлення для кроку, спостереженого лише у втраченому процесі, — «incomplete trace (…)», а не «observed outside …»: за наявним порядком у `solve()` сумнів щодо повноти передує пошуку в іншому дереві; порядок не змінювався. Документація: `docs/semantics.md` (схема `run.clockId`, правило неповноти, потоковий запис), `docs/cli.md` (абзац адаптера TS/JS). `llm.txt` контракту trace не описує — без змін. Перевірки: `node --test tests/trace-adapter.test.ts` (TS-частина 4/4), `node --test --test-name-pattern="trace|rust" tests/trace-adapter.test.ts tests/flows.test.ts tests/review-evidence.test.ts` — 35 pass, 0 fail; `node --test --test-name-pattern="@flow check" tests/cli-repository.test.ts` — pass; `npm run typecheck` — чисто. Повний `npm test` за вказівкою не запускався.

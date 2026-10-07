@@ -40,12 +40,12 @@
     - trace-evidence check.trace-evidence
     - run-id cli.run-id
     - trace-hooks cli.trace-hooks
-    - type [Span](../../src/adapters/trace.ts#L22) <!-- internal -->
-    - type [Plan](../../src/adapters/trace.ts#L27) = Extract<TracePlanMessage, { kind: "plan" }> <!-- internal -->
-    - fn [record](../../src/adapters/trace.ts#L33) (file: string) → void <!-- internal -->
+    - type [Span](../../src/adapters/trace.ts#L26) <!-- internal -->
+    - type [Plan](../../src/adapters/trace.ts#L31) = Extract<TracePlanMessage, { kind: "plan" }> <!-- internal -->
+    - fn [record](../../src/adapters/trace.ts#L37) (file: string) → void <!-- internal -->
       - calls cli.run-id.runId, cli.trace.instrumented
-    - type [Loads](../../src/adapters/trace.ts#L141) <!-- internal -->
-    - fn [instrumented](../../src/adapters/trace.ts#L159) (plan: Plan, loads: Loads) → string[] <!-- internal -->
+    - type [Loads](../../src/adapters/trace.ts#L183) <!-- internal -->
+    - fn [instrumented](../../src/adapters/trace.ts#L201) (plan: Plan, loads: Loads) → string[] <!-- internal -->
   - module [cli](../../src/cli.ts#L1)
     - node external.node
     - safe-write base.safe-write

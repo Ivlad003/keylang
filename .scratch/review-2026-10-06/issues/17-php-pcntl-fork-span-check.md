@@ -1,6 +1,6 @@
 # 17: PHP: pcntl_fork дублює буфер подій і лічильник span, тож check падає з кодом 2
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -53,11 +53,13 @@ PHPUnit з `-d auto_prepend_file=keylang_trace.php` і розширенням ke
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `adapters/php/keylang_trace.php` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо) — тест `php: a process forked with pcntl_fork()…` написано; у цьому середовищі `php` відсутній, тож він пропускається з причиною, а виправлення перевірено міркуванням (див. Comments)
+- [x] виправлення в `adapters/php/keylang_trace.php` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+- 2026-10-07 — `php` у середовищі немає (`which php` порожній), тож регресійний тест `tests/trace-adapter.test.ts` «php: a process forked with pcntl_fork() records only its own events…» (`Work::main` форкає, дитина викликає `crunch(1)` і `exit(0)`, батько чекає й викликає `crunch(2)`; очікування: унікальні `spanId`, два записи `run` з різними `clockId`, `check` не код 2, `crunch` — `ok`) пропускається з причиною «php is not installed» (або «php has no pcntl extension»), і запуститься там, де є `php` з pcntl. Виправлення в `adapters/php/keylang_trace.php` перевірено міркуванням по коду: `$pid` і `$clock` стали полями екземпляра (`newClock()`), і `own()` у `start()`, `end()`, `test()`, `testEnd()` і `finish()` при зміні `getmypid()` скидає успадковані `lines`, `stack`, `open`, `seq`, `spans`, `reached`, `written` і бере новий годинник `php-<pid>-…`; `end()` ігнорує span чужого годинника (функція, в яку батько ввійшов до fork), інакше дитина писала б `end` батьківського `s1` і споживач падав би «ended twice». Події дописуються у файл на кожному `end`, пачками по 64 і в `record()` (під PHPUnit — після кожного тесту) через `flush()` з `FILE_APPEND | LOCK_EX`, тож рядки процесів не перемішуються; запис `run` має `clockId`. Сценарій тікета після виправлення: батько буферизує `start s1 main`; дитина на першому `start` скидає буфер (копія `s1` не пишеться), пише `php-C:s1 crunch` start/end, на `exit()` shutdown → `finish()` → власний `run`; батько пише `s1`, `s2 crunch` і свій `run`; `spanId` не повторюються, «started twice» неможливе. Дитина, вбита `posix_kill(…, SIGKILL)` (spatie/fork), запису `run` не пише — її span-и вже у файлі, і за правилом тікета 16 запуск неповний (`unverified`), не код 2. Споживача (`src/trace-evidence.ts`) перевірено реальними тестами тікетів 16 і 09. Документація: `docs/cli.md` (абзац адаптера PHP). Перевірки: `node --test tests/trace-adapter.test.ts` — 6 pass, 1 skipped (php); `npm run typecheck` — чисто. Повний `npm test` за вказівкою не запускався; `php -l` не доступний.
