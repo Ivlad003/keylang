@@ -107,41 +107,43 @@
       - calls [base.config.matchesAny](base.md#base.config.matchesAny)
     - fn [toPosix](../../src/config.ts#L592) (p: string) → string
       <a id="base.config.toPosix"></a><br>Replaces every backslash in a path string with a forward slash, normalizing Windows-style separators into the POSIX form used for relative paths across the codebase; it is a pure one-liner with no filesystem access, so the "2 dynamic-call" entries keylang could not resolve are… _(llm · claude · 2026-10-04)_
-    - fn [detectLanguages](../../src/config.ts#L596) (root: string) → Language[] <!-- internal -->
+    - fn [specPath](../../src/config.ts#L603) (dir: string, rest: string) → string
+      <a id="base.config.specPath"></a><br>`rest` under the spec directory `dir`, relative to the root and POSIX, as the analysis names its documents: `keylang/features/f1.md`, or plain `features/f1.md` when `dir` is `.` (the root). Every path keylang builds under `dir` goes through here: `./features/f1.md` would match…
+    - fn [detectLanguages](../../src/config.ts#L607) (root: string) → Language[] <!-- internal -->
       <a id="base.config.detectLanguages"></a><br>Walks the directory tree under the given root up to four levels deep, skipping directories that [`base.config.skipDir`](base.md#base.config.skipDir) rejects, and collects every distinct language that [`base.languages.languageOf`](base.md#base.languages.languageOf) maps a file name to (ignoring `.d.ts` files), returning them as a sorted array so… _(llm · claude · 2026-10-04)_
       - calls [base.config.skipDir](base.md#base.config.skipDir), [base.languages.languageOf](base.md#base.languages.languageOf)
-    - fn [guessLayers](../../src/config.ts#L623) (root: string, exclude: readonly string[]) → Map<string, string[]>
+    - fn [guessLayers](../../src/config.ts#L634) (root: string, exclude: readonly string[]) → Map<string, string[]>
       <a id="base.config.guessLayers"></a><br>Zero-config layering: the source root is `src/` (or `lib/`) when present, else the one Python package in the repository root when it is the only layer candidate there and has subdirectories with code (`app/` with `app/__init__.py`), else the repository root. Each directory…
       - calls [base.config.guessLayout](base.md#base.config.guessLayout)
-    - fn [guessLayout](../../src/config.ts#L632) (root: string, exclude: readonly string[]) → { layers: Map<string, string[]>; notes: string[] }
+    - fn [guessLayout](../../src/config.ts#L643) (root: string, exclude: readonly string[]) → { layers: Map<string, string[]>; notes: string[] }
       <a id="base.config.guessLayout"></a><br>The guessed layers, and a note for every directory whose layer name had to change: a reserved name (`src/external/` → `external_`) or one that another directory already sanitizes to (`2fa` and `_2fa` → `_2fa`, `_2fa_2`).
       - calls [base.config.sourceRoot](base.md#base.config.sourceRoot), [base.config.freeLayerName](base.md#base.config.freeLayerName), [base.config.reservedReason](base.md#base.config.reservedReason), [base.config.hasRootFiles](base.md#base.config.hasRootFiles), [base.config.hasSource](base.md#base.config.hasSource), [base.config.layerDirs](base.md#base.config.layerDirs), [base.config.layerName](base.md#base.config.layerName)
-    - fn [sourceRoot](../../src/config.ts#L663) (root: string, exclude: readonly string[]) → string <!-- internal -->
+    - fn [sourceRoot](../../src/config.ts#L674) (root: string, exclude: readonly string[]) → string <!-- internal -->
       <a id="base.config.sourceRoot"></a><br>`src` or `lib`; else the one directory the root `composer.json` maps its PSR-4 namespaces to (Laravel's `app/`); else the single layer candidate of the repository root when it is a Python package (`__init__.py`) whose subdirectories hold code — one layer for the whole…
       - calls [base.config.composerSourceRoot](base.md#base.config.composerSourceRoot), [base.config.layerDirs](base.md#base.config.layerDirs)
-    - fn [composerSourceRoot](../../src/config.ts#L675) (root: string) → string | null <!-- internal -->
+    - fn [composerSourceRoot](../../src/config.ts#L686) (root: string) → string | null <!-- internal -->
       <a id="base.config.composerSourceRoot"></a><br>The single directory of the root `composer.json`'s `autoload.psr-4`, when it maps every namespace there; null otherwise.
       - calls [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [layerDirs](../../src/config.ts#L698) (root: string, dir: string, exclude: readonly string[]) → { name: string; rel: string }[] <!-- internal -->
+    - fn [layerDirs](../../src/config.ts#L709) (root: string, dir: string, exclude: readonly string[]) → { name: string; rel: string }[] <!-- internal -->
       <a id="base.config.layerDirs"></a><br>The directories directly under `dir` (repository-relative, `""` for the root) that become layers.
       - calls [base.config.skipDir](base.md#base.config.skipDir), [base.glob.matchesGlob](base.md#base.glob.matchesGlob), [base.config.hasSource](base.md#base.config.hasSource)
-    - fn [freeLayerName](../../src/config.ts#L713) (wanted: string, taken: ReadonlyMap<string, unknown>) → string <!-- internal -->
+    - fn [freeLayerName](../../src/config.ts#L724) (wanted: string, taken: ReadonlyMap<string, unknown>) → string <!-- internal -->
       <a id="base.config.freeLayerName"></a><br>`wanted`, or the first free variant: a reserved name gets `_`, a taken one a number (`_2fa_2`).
-    - fn [reservedReason](../../src/config.ts#L722) (name: string) → string <!-- internal -->
+    - fn [reservedReason](../../src/config.ts#L733) (name: string) → string <!-- internal -->
       <a id="base.config.reservedReason"></a><br>Produces the human-readable explanation of why a given layer name cannot be used: it returns a specific message for `external`, `unassigned`, and the `OUTSIDE_LAYER` constant, and otherwise a generic message saying the name is a top-of-map keyword. [`base.config.guessLayout`](base.md#base.config.guessLayout) and… _(llm · claude · 2026-10-04)_
-    - fn [hasRootFiles](../../src/config.ts#L729) (root: string, dir: string, exclude: readonly string[]) → boolean <!-- internal -->
+    - fn [hasRootFiles](../../src/config.ts#L740) (root: string, dir: string, exclude: readonly string[]) → boolean <!-- internal -->
       <a id="base.config.hasRootFiles"></a><br>Reports whether a directory directly holds at least one source file whose language [`base.languages.languageOf`](base.md#base.languages.languageOf) recognizes and that [`base.config.isExcluded`](base.md#base.config.isExcluded) does not filter out; [`base.config.guessLayout`](base.md#base.config.guessLayout) uses it. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
       - calls [base.languages.languageOf](base.md#base.languages.languageOf), [base.config.isExcluded](base.md#base.config.isExcluded)
-    - fn [hasSource](../../src/config.ts#L733) (absDir: string, rel: string, exclude: readonly string[]) → boolean <!-- internal -->
+    - fn [hasSource](../../src/config.ts#L744) (absDir: string, rel: string, exclude: readonly string[]) → boolean <!-- internal -->
       <a id="base.config.hasSource"></a><br>Recursively walks a directory and returns true as soon as it finds a file with a recognized language ([`base.languages.languageOf`](base.md#base.languages.languageOf)) that is not excluded ([`base.config.isExcluded`](base.md#base.config.isExcluded)). Subdirectories rejected by [`base.config.skipDir`](base.md#base.config.skipDir) are not searched. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
       - calls [base.config.skipDir](base.md#base.config.skipDir), [base.languages.languageOf](base.md#base.languages.languageOf), [base.config.isExcluded](base.md#base.config.isExcluded)
-    - fn [isIdSegment](../../src/config.ts#L746) (s: string) → boolean <!-- internal -->
+    - fn [isIdSegment](../../src/config.ts#L757) (s: string) → boolean <!-- internal -->
       <a id="base.config.isIdSegment"></a><br>Same predicate as `isSegment`. Duplicated so `base` does not import `lang`.
-    - fn [encodeBracketSegment](../../src/config.ts#L774) (name: string) → string <!-- internal -->
+    - fn [encodeBracketSegment](../../src/config.ts#L785) (name: string) → string <!-- internal -->
       <a id="base.config.encodeBracketSegment"></a><br>A path segment that is not an ID and contains `()[]`, written so `decodeLayerName` restores it. A Next route form (`(shop)`, `[id]`, `[...slug]`, `[[...slug]]`) gets a readable prefix (`$g-shop`, `$p-id`, `$all-slug`, `$opt-slug`); any other name keeps its letters and writes…
-    - fn [decodeLayerName](../../src/config.ts#L795) (segment: string) → string
+    - fn [decodeLayerName](../../src/config.ts#L806) (segment: string) → string
       <a id="base.config.decodeLayerName"></a><br>Inverse of the bracket encoding in `layerName`. A segment without a route prefix or `$HH` is unchanged.
-    - fn [layerName](../../src/config.ts#L819) (written: string) → string
+    - fn [layerName](../../src/config.ts#L830) (written: string) → string
       <a id="base.config.layerName"></a><br>Make a directory or file name a valid ID segment, in Unicode NFC. An existing segment is kept.
       - calls [base.config.isIdSegment](base.md#base.config.isIdSegment), [base.config.encodeBracketSegment](base.md#base.config.encodeBracketSegment)
   - module [diag](../../src/diag.ts#L1)

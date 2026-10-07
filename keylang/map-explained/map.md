@@ -222,6 +222,7 @@
       <a id="map.explanations.formatStoredExplanation"></a><br>Serializes a stored explanation into the on-disk text form: an HTML comment header carrying agent, date, closure, lang and detail fields, followed by the explanation body and a trailing newline. Used by `operations.operations.runExplainBatch` and… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [explainDir](../../src/explanations.ts#L48) (config: Pick<Config, "dir">) → string
       <a id="map.explanations.explainDir"></a><br>Where explanations are saved, relative to the root: `<dir>/explain`, committed next to the map.
+      - calls [base.config.specPath](base.md#base.config.specPath)
     - fn [explanationPath](../../src/explanations.ts#L56) (config: Pick<Config, "dir">, id: string, detail: ExplanationDetail) → string
       <a id="map.explanations.explanationPath"></a><br>File of an explanation relative to the root: `<dir>/explain/<id>.md`, a brief in `<dir>/explain/brief/<id>.md`.
       - calls [map.explanations.explainDir](map.md#map.explanations.explainDir)

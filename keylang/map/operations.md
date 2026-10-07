@@ -200,8 +200,9 @@
     - shared operations.shared
     - llm features.llm
     - fn [featureSlugOf](../../src/operations/feature.ts#L23) (path: string, dir: string) → string | null
+      - calls base.config.specPath
     - fn [runFeature](../../src/operations/feature.ts#L37) (request: FeatureRequest, context: OperationContext) → Promise<OperationEnvelope<"feature">>
-      - calls operations.shared.empty, base.config.loadConfig, base.diag.errorText, features.git-changes.readFeatureBase, operations.feature.featureReportOf, operations.feature.gapLine, operations.feature.hintLine, operations.feature.featureSummary
+      - calls operations.shared.empty, base.config.loadConfig, base.diag.errorText, base.config.specPath, features.git-changes.readFeatureBase, operations.feature.featureReportOf, operations.feature.gapLine, operations.feature.hintLine, operations.feature.featureSummary
     - fn [featureReportOf](../../src/operations/feature.ts#L83) (analyzed: Analysis, slug: string, base: FeatureBase) → FeatureReport | null
       - calls features.git-changes.deletedModuleIds, features.feature-status.featureStatus
     - fn [gapLine](../../src/operations/feature.ts#L106) (gap: Gap) → string
@@ -210,7 +211,7 @@
     - fn [questionLines](../../src/operations/feature.ts#L124) (answer: string) → { questions: string[]; dropped: number }
     - fn [withQuestions](../../src/operations/feature.ts#L137) (text: string, questions: readonly string[], slug: string) → string
     - fn [runFeatureQuestions](../../src/operations/feature.ts#L161) (request: FeatureQuestionsRequest, context: OperationContext) → Promise<OperationEnvelope<"feature-questions">>
-      - calls operations.shared.empty, base.diag.errorText, operations.shared.modelSetup, operations.shared.rootRelative, operations.shared.generatedIn, features.proposals.proposalProblem, lang.files.existingText, base.safe-write.writeProblem, operations.shared.proposalRefusal, map.map.sourceInputs, features.agent-context.contextText, features.agent-context.contextForIds, features.feature-status.idsIn, operations.feature.questionLines, operations.shared.commitProposal, operations.feature.withQuestions
+      - calls operations.shared.empty, base.diag.errorText, base.config.specPath, operations.shared.modelSetup, operations.shared.rootRelative, operations.shared.generatedIn, features.proposals.proposalProblem, lang.files.existingText, base.safe-write.writeProblem, operations.shared.proposalRefusal, map.map.sourceInputs, features.agent-context.contextText, features.agent-context.contextForIds, features.feature-status.idsIn, operations.feature.questionLines, operations.shared.commitProposal, operations.feature.withQuestions
   - module [generate](../../src/operations/generate.ts#L1)
     - node external.node
     - analyze map.analyze

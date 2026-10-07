@@ -10,7 +10,7 @@ import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { analyze, within } from "./analyze.ts";
-import { loadConfig, toPosix, type Config } from "./config.ts";
+import { loadConfig, specPath, toPosix, type Config } from "./config.ts";
 import { errorText } from "./diag.ts";
 import { snapshotBaseline } from "./explanations.ts";
 import { existingText } from "./files.ts";
@@ -61,7 +61,7 @@ export interface StaleReport {
 
 /** Where the accepted fingerprints live, relative to the root, POSIX. */
 export function staleBaselinePath(config: Pick<Config, "dir">): string {
-  return `${config.dir}/baseline.json`;
+  return specPath(config.dir, "baseline.json");
 }
 
 /**

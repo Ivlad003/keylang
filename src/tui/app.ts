@@ -27,7 +27,7 @@ import { homedir } from "node:os";
 import { basename, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { analyze, within, type Analysis, type AnalysisRequest } from "../analyze.ts";
-import { CONFIG_FILE, guessLayout, loadConfig, parseConfig, toPosix, withLayers } from "../config.ts";
+import { CONFIG_FILE, guessLayout, loadConfig, parseConfig, specPath, toPosix, withLayers } from "../config.ts";
 import { collectMdFiles } from "../files.ts";
 import { sectionNodes, walk, type Document, type Node } from "../ir.ts";
 import { completions, definition, hoverContent, references, runsText, targetAt, workspace, type LspPosition, type Workspace } from "../lsp-features.ts";
@@ -658,7 +658,7 @@ export class App {
 
   /** Files and clean buffers follow the new analysis (a regenerated map, a change on disk). */
   private adopt(analysis: Analysis): void {
-    const explained = [...(analysis.map?.explained?.keys() ?? [])].map((name) => `${analysis.config.dir}/${EXPLAINED_MAP_DIR}/${name}`);
+    const explained = [...(analysis.map?.explained?.keys() ?? [])].map((name) => specPath(analysis.config.dir, `${EXPLAINED_MAP_DIR}/${name}`));
     // A new specification is listed from the moment its buffer opens, before any file exists.
     const fresh = [...this.state.buffers.values()].filter((buffer) => buffer.newFile).map((buffer) => buffer.path);
     const paths = new Set([...this.diskFiles(), ...analysis.docs.map((doc) => doc.path), ...explained, ...fresh]);
@@ -1186,7 +1186,7 @@ export class App {
 
   /** The map directory of each variant, relative to the root. */
   private mapDirs(analysis: Analysis): { map: string; explained: string } {
-    return { map: `${analysis.config.dir}/map/`, explained: `${analysis.config.dir}/${EXPLAINED_MAP_DIR}/` };
+    return { map: specPath(analysis.config.dir, "map/"), explained: specPath(analysis.config.dir, `${EXPLAINED_MAP_DIR}/`) };
   }
 
   /** `t`: the same layer file in the other map, the cursor on the same node. */

@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { briefOf } from "./brief.ts";
-import type { Config } from "./config.ts";
+import { specPath, type Config } from "./config.ts";
 import { EXTERNAL } from "./graph.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
 
@@ -46,7 +46,7 @@ export function formatStoredExplanation(e: StoredExplanation): string {
 
 /** Where explanations are saved, relative to the root: `<dir>/explain`, committed next to the map. */
 export function explainDir(config: Pick<Config, "dir">): string {
-  return `${config.dir}/explain`;
+  return specPath(config.dir, "explain");
 }
 
 /** The explanation store of keylang 0.1: not read any more, only named so its files can be moved. */

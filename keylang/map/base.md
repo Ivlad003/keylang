@@ -64,28 +64,29 @@
     - fn [isExcluded](../../src/config.ts#L588) (rel: string, extra: readonly string[]) → boolean
       - calls base.config.matchesAny
     - fn [toPosix](../../src/config.ts#L592) (p: string) → string
-    - fn [detectLanguages](../../src/config.ts#L596) (root: string) → Language[] <!-- internal -->
+    - fn [specPath](../../src/config.ts#L603) (dir: string, rest: string) → string
+    - fn [detectLanguages](../../src/config.ts#L607) (root: string) → Language[] <!-- internal -->
       - calls base.config.skipDir, base.languages.languageOf
-    - fn [guessLayers](../../src/config.ts#L623) (root: string, exclude: readonly string[]) → Map<string, string[]>
+    - fn [guessLayers](../../src/config.ts#L634) (root: string, exclude: readonly string[]) → Map<string, string[]>
       - calls base.config.guessLayout
-    - fn [guessLayout](../../src/config.ts#L632) (root: string, exclude: readonly string[]) → { layers: Map<string, string[]>; notes: string[] }
+    - fn [guessLayout](../../src/config.ts#L643) (root: string, exclude: readonly string[]) → { layers: Map<string, string[]>; notes: string[] }
       - calls base.config.sourceRoot, base.config.freeLayerName, base.config.reservedReason, base.config.hasRootFiles, base.config.hasSource, base.config.layerDirs, base.config.layerName
-    - fn [sourceRoot](../../src/config.ts#L663) (root: string, exclude: readonly string[]) → string <!-- internal -->
+    - fn [sourceRoot](../../src/config.ts#L674) (root: string, exclude: readonly string[]) → string <!-- internal -->
       - calls base.config.composerSourceRoot, base.config.layerDirs
-    - fn [composerSourceRoot](../../src/config.ts#L675) (root: string) → string | null <!-- internal -->
+    - fn [composerSourceRoot](../../src/config.ts#L686) (root: string) → string | null <!-- internal -->
       - calls base.config.toPosix
-    - fn [layerDirs](../../src/config.ts#L698) (root: string, dir: string, exclude: readonly string[]) → { name: string; rel: string }[] <!-- internal -->
+    - fn [layerDirs](../../src/config.ts#L709) (root: string, dir: string, exclude: readonly string[]) → { name: string; rel: string }[] <!-- internal -->
       - calls base.config.skipDir, base.glob.matchesGlob, base.config.hasSource
-    - fn [freeLayerName](../../src/config.ts#L713) (wanted: string, taken: ReadonlyMap<string, unknown>) → string <!-- internal -->
-    - fn [reservedReason](../../src/config.ts#L722) (name: string) → string <!-- internal -->
-    - fn [hasRootFiles](../../src/config.ts#L729) (root: string, dir: string, exclude: readonly string[]) → boolean <!-- internal -->
+    - fn [freeLayerName](../../src/config.ts#L724) (wanted: string, taken: ReadonlyMap<string, unknown>) → string <!-- internal -->
+    - fn [reservedReason](../../src/config.ts#L733) (name: string) → string <!-- internal -->
+    - fn [hasRootFiles](../../src/config.ts#L740) (root: string, dir: string, exclude: readonly string[]) → boolean <!-- internal -->
       - calls base.languages.languageOf, base.config.isExcluded
-    - fn [hasSource](../../src/config.ts#L733) (absDir: string, rel: string, exclude: readonly string[]) → boolean <!-- internal -->
+    - fn [hasSource](../../src/config.ts#L744) (absDir: string, rel: string, exclude: readonly string[]) → boolean <!-- internal -->
       - calls base.config.skipDir, base.languages.languageOf, base.config.isExcluded
-    - fn [isIdSegment](../../src/config.ts#L746) (s: string) → boolean <!-- internal -->
-    - fn [encodeBracketSegment](../../src/config.ts#L774) (name: string) → string <!-- internal -->
-    - fn [decodeLayerName](../../src/config.ts#L795) (segment: string) → string
-    - fn [layerName](../../src/config.ts#L819) (written: string) → string
+    - fn [isIdSegment](../../src/config.ts#L757) (s: string) → boolean <!-- internal -->
+    - fn [encodeBracketSegment](../../src/config.ts#L785) (name: string) → string <!-- internal -->
+    - fn [decodeLayerName](../../src/config.ts#L806) (segment: string) → string
+    - fn [layerName](../../src/config.ts#L830) (written: string) → string
       - calls base.config.isIdSegment, base.config.encodeBracketSegment
   - module [diag](../../src/diag.ts#L1)
     - span base.span

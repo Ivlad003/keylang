@@ -15,6 +15,7 @@
 import { join } from "node:path";
 import { contextText, type ContextPack } from "../agent-context.ts";
 import { selectedAgent } from "../agent-cli.ts";
+import { specPath } from "../config.ts";
 import { errorText } from "../diag.ts";
 import type { FeatureReport } from "../feature-status.ts";
 import { existingText } from "../files.ts";
@@ -257,7 +258,7 @@ export class ClipChat {
   feature(arg: string): void {
     const dir = this.state.analysis?.config.dir ?? "keylang";
     const slug = arg !== "" ? arg : this.state.current === null ? null : featureSlugOf(this.state.current, dir);
-    if (slug === null) return this.answer(`/feature <slug>: стадія й прогалини файла ${dir}/features/<slug>.md; без аргументу — відкритий файл фічі`);
+    if (slug === null) return this.answer(`/feature <slug>: стадія й прогалини файла ${specPath(dir, "features/<slug>.md")}; без аргументу — відкритий файл фічі`);
     this.operation("feature", { kind: "feature", root: this.state.root, slug }, (result) => (result.kind === "feature" && result.payload !== null ? featureAnswer(result.payload.report) : null));
   }
 
