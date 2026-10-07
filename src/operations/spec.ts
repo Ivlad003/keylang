@@ -238,7 +238,11 @@ export async function runCheck(request: CheckRequest, context: OperationContext)
   if (git !== null) {
     // The whole analysis, then the slice: only findings that touch the changed files stay.
     const deleted = deletedModuleIds(config, git.deleted);
-    const filtered = filterChanged({ docs: analyzed.docs, spec: analyzed.spec, diagnostics: analyzed.diagnostics, verdicts: analyzed.verdicts, nodes: analyzed.snapshot?.nodes ?? {} }, changedPathSet(request.root, git.paths, base), deleted);
+    const filtered = filterChanged(
+      { docs: analyzed.docs, spec: analyzed.spec, diagnostics: analyzed.diagnostics, verdicts: analyzed.verdicts, nodes: analyzed.snapshot?.nodes ?? {}, edges: analyzed.snapshot?.edges ?? [] },
+      changedPathSet(request.root, git.paths, base),
+      deleted,
+    );
     report = checkReport(filtered.verdicts, snapshotId, filtered.diagnostics);
     changed = { since, unborn: git.unborn, files: [...git.paths].sort(compareText), deleted, shown: report.results.length, hidden: full.results.length - report.results.length };
   }

@@ -16,6 +16,17 @@ export interface ChangedInput {
   diagnostics: readonly Diagnostic[];
   verdicts: readonly Verdict[];
   nodes: Readonly<Record<string, { kind: string; file: string | null; layer?: string }>>;
+  /** Snapshot edges: what the area of `no-cycles` under a module reaches by import or re-export. Omitted, that area is the module alone. */
+  edges?: readonly ChangedEdge[];
+}
+
+/** The part of a snapshot edge the `--changed` slice reads; a `call` or `type` edge, an unresolved or a types-only import is not a dependency a cycle runs through. */
+export interface ChangedEdge {
+  kind: string;
+  source: string;
+  target: string | null;
+  resolution?: string;
+  typeOnly?: true;
 }
 
 export interface HookFail {
@@ -43,7 +54,7 @@ export function filterChanged(input: ChangedInput, changed: ReadonlySet<string>,
   const modules = Object.entries(input.nodes)
     .filter(([, node]) => node.kind === "module" && node.file !== null && changed.has(node.file))
     .map(([id, node]) => ({ id, layer: node.layer ?? id.split(".")[0] ?? id }));
-  const rules = modules.length === 0 ? [] : ruleHits(input.spec).filter((rule) => modules.some((mod) => covers(rule.scope, mod.id, mod.layer)));
+  const rules = modules.length === 0 ? [] : ruleHits(input).filter((rule) => modules.some((mod) => covers(rule.scope, mod.id, mod.layer)));
   const flowLines = flowLinesTouching(input, changed, gone);
   const ruleLine = (file: string, line: number): boolean => rules.some((rule) => rule.file === file && rule.line === line);
   const ruleCriterion = (criterion: string): boolean => rules.some((rule) => rule.criterion === criterion);
@@ -110,20 +121,63 @@ function covers(scope: readonly string[], moduleId: string, layer: string): bool
 }
 
 /** Scope and the verdict criterion `--changed` already matches. `no-cycles` stays the literal criterion, not the hashed `no-cycles <module|*>`. */
-function ruleHits(spec: SpecIR): RuleHit[] {
+function ruleHits(input: ChangedInput): RuleHit[] {
+  const { spec } = input;
   const hits: RuleHit[] = [];
   for (const rule of spec.rules) {
     const line = rule.span.start.line;
     if (rule.kind === "dependency") hits.push({ file: rule.file, line, criterion: rule.text, scope: [rule.from.target] });
     else if (rule.kind === "layers" && rule.layers.length > 0) hits.push({ file: rule.file, line, criterion: rule.text, scope: [...rule.layers] });
     else if (rule.kind === "entry") hits.push({ file: rule.file, line, criterion: rule.text, scope: rule.entries.map((ref) => ref.target) });
-    else if (rule.kind === "no-cycles") hits.push({ file: rule.file, line, criterion: "no-cycles", scope: rule.under === null ? [] : [rule.under.target] });
+    // Under M the area is M, its submodules and what they reach (semantics.md `area(no-cycles під M, U)`): a file
+    // outside M that closes a cycle through M is a change of this rule.
+    else if (rule.kind === "no-cycles") hits.push({ file: rule.file, line, criterion: "no-cycles", scope: rule.under === null ? [] : noCyclesArea(input, rule.under.target) });
+    // K104 sits on the rules line, never in the code: the area is the module whose export table it describes.
+    else if (rule.kind === "exports") hits.push({ file: rule.file, line, criterion: `exports ${rule.module.target}`, scope: [rule.module.target] });
   }
   for (const line of spec.rejectedLayers) {
     if (line.order.length === 0) continue;
     hits.push({ file: line.file, line: line.span.start.line, criterion: line.text, scope: line.order.map((ref) => ref.target) });
   }
   return hits;
+}
+
+/**
+ * `under`, its submodules, and every module they reach by a resolved `import`
+ * or `reexport` that is not types-only: the area `rules.ts` judges the rule
+ * over. Edges are between symbols; their module is the nearest `module` node
+ * up the id (a class is one too, and lies under its file's module).
+ */
+function noCyclesArea(input: ChangedInput, under: string): string[] {
+  const moduleOf = (id: string): string | null => {
+    for (let cur = id; ; cur = cur.slice(0, cur.lastIndexOf("."))) {
+      if (input.nodes[cur]?.kind === "module") return cur;
+      if (!cur.includes(".")) return null;
+    }
+  };
+  const adj = new Map<string, Set<string>>();
+  for (const edge of input.edges ?? []) {
+    if ((edge.kind !== "import" && edge.kind !== "reexport") || edge.typeOnly === true || edge.target === null) continue;
+    if (edge.resolution !== undefined && edge.resolution !== "resolved") continue;
+    const from = moduleOf(edge.source);
+    const to = moduleOf(edge.target);
+    if (from === null || to === null || from === to) continue;
+    const list = adj.get(from) ?? new Set<string>();
+    list.add(to);
+    adj.set(from, list);
+  }
+  const reached = new Set<string>();
+  const stack = Object.entries(input.nodes)
+    .filter(([id, node]) => node.kind === "module" && (id === under || id.startsWith(`${under}.`)))
+    .map(([id]) => id);
+  while (stack.length > 0) {
+    const id = stack.pop();
+    if (id === undefined || reached.has(id)) continue;
+    reached.add(id);
+    for (const next of adj.get(id) ?? []) stack.push(next);
+  }
+  reached.delete(under);
+  return [under, ...reached];
 }
 
 /** `file:line` of every verdict in a flow that names a symbol whose file changed or was deleted. */

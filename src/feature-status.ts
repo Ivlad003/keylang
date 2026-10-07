@@ -145,8 +145,8 @@ export interface FeatureInput {
   verdicts: readonly Verdict[];
   /** Snapshot nodes: whether a `planned` removed since the base is implemented; the modules a rule fail touches. */
   nodes?: Readonly<Record<string, { kind: string; signature?: string | null; file: string | null; layer?: string }>>;
-  /** Snapshot edges: the ends of a rule fail reported at a code position. */
-  edges?: readonly { source: string; target: string | null; file: string | null; line: number; col: number }[];
+  /** Snapshot edges: the ends of a rule fail reported at a code position, and what the area of `no-cycles` under a module reaches. */
+  edges?: readonly { kind: string; source: string; target: string | null; file: string | null; line: number; col: number; resolution?: string; typeOnly?: true }[];
   /** The feature file at its base commit (and at HEAD with a merge-base); omitted, the plan is not compared. */
   base?: FeatureBase;
   /**
@@ -332,12 +332,15 @@ function ruleFails(input: FeatureInput): RuleFail[] {
  * Whether a rule fail is this change's. Without what changed since the base,
  * every one is. Otherwise: one reported in the feature file, one `check
  * --changed` keeps for the changed files (`filterChanged`), or one with an
- * end of its edge that is an id the feature names or lies under one.
+ * end of its edge that is an id the feature names or lies under one. The
+ * ends of a K104 include the export row it is about (`<module>.<name>`), so
+ * a feature that plans that member owns the fail; the rule's module alone is
+ * no end, or a feature stepping into a module with an old fail would own it.
  */
 function thisChange(input: FeatureInput, path: string, named: readonly string[]): (fail: RuleFail) => boolean {
   if (input.changed === undefined) return () => true;
   const nodes = input.nodes ?? {};
-  const slice = filterChanged({ docs: input.docs, spec: input.spec, diagnostics: input.diagnostics, verdicts: input.verdicts, nodes }, input.changed.files, input.changed.deleted);
+  const slice = filterChanged({ docs: input.docs, spec: input.spec, diagnostics: input.diagnostics, verdicts: input.verdicts, nodes, edges: input.edges ?? [] }, input.changed.files, input.changed.deleted);
   const kept = new Set<Diagnostic | Verdict>([...slice.diagnostics, ...slice.verdicts]);
   const moduleOf = (id: string): string | null => {
     for (let cur = id; ; cur = cur.slice(0, cur.lastIndexOf("."))) {
@@ -349,7 +352,7 @@ function thisChange(input: FeatureInput, path: string, named: readonly string[])
   return (fail) => {
     if (fail.file === path || (fail.diag !== undefined && kept.has(fail.diag)) || (fail.verdict !== undefined && kept.has(fail.verdict))) return true;
     // The area is the edge's source module (or the rule's module); the edges at the fail's position give both ends.
-    const ends = [fail.id];
+    const ends = fail.diag?.target === undefined ? [fail.id] : [fail.id, fail.diag.target];
     for (const edge of input.edges ?? []) {
       if (edge.file !== fail.file || edge.line !== fail.line || edge.col !== fail.col) continue;
       for (const id of [edge.source, edge.target]) {

@@ -1,6 +1,6 @@
 # 02: `--changed` бере для `no-cycles` під модулем лише сам модуль, а не його область
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -43,11 +43,14 @@
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/changed.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/changed.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
 - [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+- 2026-10-07 (agent): regression test `check --changed, hook stop and feature keep K105 of \`no-cycles\` under a module when a file it reaches closed the cycle` in `tests/cli-feature.test.ts` (real CLI on a temp repository: before the fix `check --changed` exit 0, `hook stop` `{}`, `feature` inherited; also checks a new file the area does not reach keeps the rule out of the slice). Fix: `ChangedInput` in `src/changed.ts` takes the snapshot edges (`edges?`, `ChangedEdge`), and `ruleHits` computes the scope of `no-cycles` under M as `noCyclesArea`: M, its submodules and every module reached by a resolved `import`/`reexport` edge without `typeOnly` (edge ends mapped to their nearest `module` node, as `scopeOf` does in `rules.ts`), the `area()` of semantics.md rather than the SCC members: a rule whose area contains the changed module stays, whether or not it currently fails. The three callers (`cli.ts` hook stop, `operations/spec.ts` check --changed, `feature-status.ts` thisChange via the widened `FeatureInput.edges`) pass `snapshot.edges`. The contract in docs/cli.md is unchanged in substance; the `--changed` paragraph now spells out the areas per rule kind. Verified: `node --test tests/cli-feature.test.ts`, `npm run typecheck`, `node bin/keylang.js check`, `node bin/keylang.js map --check`.
+- 2026-10-07 (agent): `docs/review-2026-10-06.md` is untracked in the main checkout only; its ✔ is left to the merger (checkbox not ticked).

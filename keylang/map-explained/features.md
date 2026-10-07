@@ -198,28 +198,33 @@
     - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
     - verdict [check.verdict](check.md#check.verdict)
     - type [ChangedInput](../../src/changed.ts#L13)
-      <a id="features.changed.ChangedInput"></a><br>Bundles everything the change-detection step needs: the parsed documents, the spec IR, prior diagnostics and verdicts, plus a map of graph nodes to their kind, source file, and optional layer. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [HookFail](../../src/changed.ts#L21)
+      <a id="features.changed.ChangedInput"></a><br>Bundles everything the change-detection step needs: the parsed documents, the spec IR, prior diagnostics and verdicts, plus a map of graph nodes to their kind, source file, and optional layer. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+    - type [ChangedEdge](../../src/changed.ts#L24)
+      <a id="features.changed.ChangedEdge"></a><br>The part of a snapshot edge the `--changed` slice reads; a `call` or `type` edge, an unresolved or a types-only import is not a dependency a cycle runs through.
+    - type [HookFail](../../src/changed.ts#L32)
       <a id="features.changed.HookFail"></a><br>Describes a single failure reported by a hook: the file path, the line number, and the message text associated with that failure. It is a plain data shape with no behavior, used to carry per-location hook results. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [RuleHit](../../src/changed.ts#L27) <!-- internal -->
+    - type [RuleHit](../../src/changed.ts#L38) <!-- internal -->
       <a id="features.changed.RuleHit"></a><br>Record of one dependency rule that fired on a changed file: the file path and line it hit, the verdict criterion to report when that line fails, and the module scope the rule applies to (empty when it covers all modules). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [filterChanged](../../src/changed.ts#L41) (input: ChangedInput, changed: ReadonlySet<string>, deleted: readonly string[] = []) → { diagnostics: Diagnostic[]; verdicts: Verdict[] }
+    - fn [filterChanged](../../src/changed.ts#L52) (input: ChangedInput, changed: ReadonlySet<string>, deleted: readonly string[] = []) → { diagnostics: Diagnostic[]; verdicts: Verdict[] }
       <a id="features.changed.filterChanged"></a><br>Diagnostics and verdicts that touch `changed` (paths as check prints them). `deleted` are module ids whose file git removed: the node is gone, so a flow step that named it is still in the report. Order is preserved.
       - calls [features.changed.ruleHits](features.md#features.changed.ruleHits), [features.changed.covers](features.md#features.changed.covers), [features.changed.flowLinesTouching](features.md#features.changed.flowLinesTouching), [check.assess.sameFinding](check.md#check.assess.sameFinding)
-    - fn [hookFails](../../src/changed.ts#L60) (report: { diagnostics: readonly Diagnostic[]; verdicts: readonly Verdict[] }) → HookFail[]
+    - fn [hookFails](../../src/changed.ts#L71) (report: { diagnostics: readonly Diagnostic[]; verdicts: readonly Verdict[] }) → HookFail[]
       <a id="features.changed.hookFails"></a><br>Error diagnostics, then fail verdicts that are not the same finding.
       - calls [check.assess.sameFinding](check.md#check.assess.sameFinding)
-    - fn [hookDecision](../../src/changed.ts#L71) (event: { stop_hook_active?: boolean }, fails: readonly HookFail[]) → string
+    - fn [hookDecision](../../src/changed.ts#L82) (event: { stop_hook_active?: boolean }, fails: readonly HookFail[]) → string
       <a id="features.changed.hookDecision"></a><br>Stdin event plus the fails of one changed check. `stop_hook_active` never blocks. The same inputs return the same JSON.
-    - fn [uncheckedTurn](../../src/changed.ts#L85) (error: string) → { line: string; decision: string }
+    - fn [uncheckedTurn](../../src/changed.ts#L96) (error: string) → { line: string; decision: string }
       <a id="features.changed.uncheckedTurn"></a><br>A turn the hook could not check — stdin that is no event, no git, a broken keylang.json, a failed analysis — as the line a person reads and the JSON that carries it: a `systemMessage`, which Claude Code and Codex show the person as a warning without blocking the agent (stderr…
-    - fn [parseHookEvent](../../src/changed.ts#L92) (text: string) → { stop_hook_active?: boolean }
+    - fn [parseHookEvent](../../src/changed.ts#L103) (text: string) → { stop_hook_active?: boolean }
       <a id="features.changed.parseHookEvent"></a><br>The object on stdin. Empty stdin is an event with no `stop_hook_active`.
-    - fn [covers](../../src/changed.ts#L107) (scope: readonly string[], moduleId: string, layer: string) → boolean <!-- internal -->
+    - fn [covers](../../src/changed.ts#L118) (scope: readonly string[], moduleId: string, layer: string) → boolean <!-- internal -->
       <a id="features.changed.covers"></a><br>Decides whether a module falls inside a scope: an empty scope matches everything, otherwise any scope entry must equal the layer name, equal the module ID, or be a dotted prefix of it. Used by [`features.changed.filterChanged`](features.md#features.changed.filterChanged) to limit which modules are considered. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [ruleHits](../../src/changed.ts#L113) (spec: SpecIR) → RuleHit[] <!-- internal -->
+    - fn [ruleHits](../../src/changed.ts#L124) (input: ChangedInput) → RuleHit[] <!-- internal -->
       <a id="features.changed.ruleHits"></a><br>Scope and the verdict criterion `--changed` already matches. `no-cycles` stays the literal criterion, not the hashed `no-cycles <module|*>`.
-    - fn [flowLinesTouching](../../src/changed.ts#L130) (input: ChangedInput, changed: ReadonlySet<string>, gone: (id: string) => boolean) → Set<string> <!-- internal -->
+      - calls [features.changed.noCyclesArea](features.md#features.changed.noCyclesArea)
+    - fn [noCyclesArea](../../src/changed.ts#L151) (input: ChangedInput, under: string) → string[] <!-- internal -->
+      <a id="features.changed.noCyclesArea"></a><br>`under`, its submodules, and every module they reach by a resolved `import` or `reexport` that is not types-only: the area `rules.ts` judges the rule over. Edges are between symbols; their module is the nearest `module` node up the id (a class is one too, and lies under its…
+    - fn [flowLinesTouching](../../src/changed.ts#L184) (input: ChangedInput, changed: ReadonlySet<string>, gone: (id: string) => boolean) → Set<string> <!-- internal -->
       <a id="features.changed.flowLinesTouching"></a><br>`file:line` of every verdict in a flow that names a symbol whose file changed or was deleted.
       - calls [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow)
   - module [check-format](../../src/check-format.ts#L1)
@@ -663,7 +668,7 @@
     - type [FeatureReport](../../src/feature-status.ts#L122)
       <a id="features.feature-status.FeatureReport"></a><br>Result of checking a feature: whether it is done, its current stage, blocking gaps and hints, plus test, trace and base details and inherited rule failures that do not block (null without git, making every rule failure a gap). _(llm · claude:claude-opus-5-5 · 2026-10-05)_
     - type [FeatureInput](../../src/feature-status.ts#L140)
-      <a id="features.feature-status.FeatureInput"></a><br>Input bundle for computing a feature's status: parsed docs, spec, diagnostics and verdicts, plus optional snapshot nodes/edges, base plan, changed files, resolver index and layers that refine planned-edge and rule-fail checks. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
+      <a id="features.feature-status.FeatureInput"></a><br>Input bundle for computing a feature's status: parsed docs, spec, diagnostics and verdicts, plus optional snapshot nodes/edges, base plan, changed files, resolver index and layers that refine planned-edge and rule-fail checks. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
     - fn [idsIn](../../src/feature-status.ts#L174) (doc: Document) → string[]
       <a id="features.feature-status.idsIn"></a><br>Ids declared or named in one spec, in first-seen order.
       - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)
@@ -677,28 +682,28 @@
     - fn [ruleFails](../../src/feature-status.ts#L318) (input: FeatureInput) → RuleFail[] <!-- internal -->
       <a id="features.feature-status.ruleFails"></a><br>Every rule fail of the analysis, in the order of its diagnostics, then its verdicts.
       - calls [base.diag.isError](base.md#base.diag.isError), [check.assess.sameFinding](check.md#check.assess.sameFinding)
-    - fn [thisChange](../../src/feature-status.ts#L337) (input: FeatureInput, path: string, named: readonly string[]) → (fail: RuleFail) => boolean <!-- internal -->
+    - fn [thisChange](../../src/feature-status.ts#L340) (input: FeatureInput, path: string, named: readonly string[]) → (fail: RuleFail) => boolean <!-- internal -->
       <a id="features.feature-status.thisChange"></a><br>Whether a rule fail is this change's. Without what changed since the base, every one is.
       - calls [features.changed.filterChanged](features.md#features.changed.filterChanged)
-    - fn [stageOf](../../src/feature-status.ts#L365) (hasFlow: boolean, gaps: readonly Gap[], hints: readonly Hint[]) → Stage <!-- internal -->
+    - fn [stageOf](../../src/feature-status.ts#L368) (hasFlow: boolean, gaps: readonly Gap[], hints: readonly Hint[]) → Stage <!-- internal -->
       <a id="features.feature-status.stageOf"></a><br>The first stage that holds, from `done` down: see `Stage`.
-    - fn [denyGaps](../../src/feature-status.ts#L385) (input: FeatureInput, path: string, flows: readonly Flow[]) → Gap[] <!-- internal -->
+    - fn [denyGaps](../../src/feature-status.ts#L388) (input: FeatureInput, path: string, flows: readonly Flow[]) → Gap[] <!-- internal -->
       <a id="features.feature-status.denyGaps"></a><br>Edges a flow of the feature asks for that a rule would deny once they are code: a `step` or `calls` target under its parent `trigger` or `step` (a top-level one under the first trigger), while one end is still `planned` and not implemented. Once both ends are code, `check`…
       - calls [check.rules.dependencyKindOf](check.md#check.rules.dependencyKindOf), [check.rules.denyingRule](check.md#check.rules.denyingRule)
-    - fn [claimsOf](../../src/feature-status.ts#L427) (flow: Flow) → { id: string; span: Span }[] <!-- internal -->
+    - fn [claimsOf](../../src/feature-status.ts#L430) (flow: Flow) → { id: string; span: Span }[] <!-- internal -->
       <a id="features.feature-status.claimsOf"></a><br>The static claims of a flow, in order: every `step`, and every target of a `calls` line.
       - calls [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow)
-    - fn [weakenedPlan](../../src/feature-status.ts#L442) (input: FeatureInput, path: string, base: Extract<FeatureBase, { state: "compared" | "absent" }>) → Gap[] <!-- internal -->
+    - fn [weakenedPlan](../../src/feature-status.ts#L445) (input: FeatureInput, path: string, base: Extract<FeatureBase, { state: "compared" | "absent" }>) → Gap[] <!-- internal -->
       <a id="features.feature-status.weakenedPlan"></a><br>Where the plan was weakened: against the base, then — with a merge-base — against HEAD as well, so a file new on the branch keeps its committed plan. A removal both find is the base's gap alone.
       - calls [features.feature-status.planGaps](features.md#features.feature-status.planGaps)
-    - fn [planGaps](../../src/feature-status.ts#L459) (input: FeatureInput, path: string, at: string, baseDoc: Document) → { key: string; gap: Gap }[] <!-- internal -->
+    - fn [planGaps](../../src/feature-status.ts#L462) (input: FeatureInput, path: string, at: string, baseDoc: Document) → { key: string; gap: Gap }[] <!-- internal -->
       <a id="features.feature-status.planGaps"></a><br>Where the feature file weakened its plan since `at` (how a sentence names the commit): a `planned` removed while the code does not implement it (no K202), and a `trigger`, `step` or open question that is no longer there under the same flow and parents: a question is answered in…
       - calls [lang.spec-ir.compileSpec](lang.md#lang.spec-ir.compileSpec), [check.flows.plannedMismatch](check.md#check.flows.plannedMismatch), [features.feature-status.planItems](features.md#features.feature-status.planItems)
-    - type [PlanItem](../../src/feature-status.ts#L495) = Trigger | FlowStep | QuestionItem <!-- internal -->
+    - type [PlanItem](../../src/feature-status.ts#L498) = Trigger | FlowStep | QuestionItem <!-- internal -->
       <a id="features.feature-status.PlanItem"></a><br>Internal union type for a single feature-plan entry, which can be a trigger, a flow step, or a question item, so code in feature status handling can treat all three kinds of plan entry uniformly. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
-    - fn [planItems](../../src/feature-status.ts#L498) (flow: Flow) → { key: string; item: PlanItem }[] <!-- internal -->
+    - fn [planItems](../../src/feature-status.ts#L501) (flow: Flow) → { key: string; item: PlanItem }[] <!-- internal -->
       <a id="features.feature-status.planItems"></a><br>Every `trigger`, `step` and open question of a flow with a key: the flow, its parents, and itself.
-    - fn [finding](../../src/feature-status.ts#L512) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
+    - fn [finding](../../src/feature-status.ts#L515) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
       <a id="features.feature-status.finding"></a><br>Returns the first diagnostic whose file, starting line, and code all match the given values, or undefined when none does. Used by [`features.feature-status.featureStatus`](features.md#features.feature-status.featureStatus) to look up a specific expected finding. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [ghost](../../src/ghost.ts#L1)
     <a id="features.ghost"></a><br>Ghost text (design §7.3): one next line of a flow from the agent, shown grey after a pause and only on a cheap signal — the cursor on a new `- ` item of a flow that has a trigger. A suggestion is checked where it would stand, in the buffer: one that does not parse there (a step…
@@ -722,40 +727,42 @@
     - graph [map.graph](map.md#map.graph)
     - parser [lang.parser](lang.md#lang.parser)
     - span [base.span](base.md#base.span)
-    - type [ChangedFiles](../../src/git-changes.ts#L20)
+    - type [ChangedFiles](../../src/git-changes.ts#L24)
       <a id="features.git-changes.ChangedFiles"></a><br>Files changed since a ref. Paths are POSIX, relative to the root.
-    - fn [gitIn](../../src/git-changes.ts#L30) (root: string, label: string) → { run: (args: string[]) => SpawnSyncReturns<string>; git: (args: string[]) => string } <!-- internal -->
+    - fn [gitIn](../../src/git-changes.ts#L34) (root: string, label: string) → { run: (args: string[]) => SpawnSyncReturns<string>; git: (args: string[]) => string } <!-- internal -->
       <a id="features.git-changes.gitIn"></a><br>A git runner for `root`; `label` names the caller in its errors (`check --changed`).
       - calls [features.git-changes.gitUnavailable](features.md#features.git-changes.gitUnavailable)
-    - fn [gitUnavailable](../../src/git-changes.ts#L46) (label: string, error: Error & { code?: string }) → string
+    - fn [gitUnavailable](../../src/git-changes.ts#L50) (label: string, error: Error & { code?: string }) → string
       <a id="features.git-changes.gitUnavailable"></a><br>Why git did not run; a refusal (EPERM, EACCES) is most likely a sandbox, and says what still works.
-    - fn [assertRef](../../src/git-changes.ts#L53) (ref: string, label: string) → void <!-- internal -->
+    - fn [assertRef](../../src/git-changes.ts#L57) (ref: string, label: string) → void <!-- internal -->
       <a id="features.git-changes.assertRef"></a><br>A ref git would read as an option (`--output=…`) is refused: it is never passed on.
-    - fn [diffArgs](../../src/git-changes.ts#L59) (base: string) → string[] <!-- internal -->
+    - fn [diffArgs](../../src/git-changes.ts#L63) (base: string) → string[] <!-- internal -->
       <a id="features.git-changes.diffArgs"></a><br>Builds the fixed argument list for a `git diff` against a base ref: relative paths, no renames, zero context lines, no color or external diff, and `a/`/`b/` prefixes. Shared by [`features.git-changes.gitChangedFiles`](features.md#features.git-changes.gitChangedFiles) and [`features.git-changes.gitChangedLines`](features.md#features.git-changes.gitChangedLines) so both parse… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [untracked](../../src/git-changes.ts#L61) (git: (args: string[]) => string) → string[] <!-- internal -->
+    - fn [untracked](../../src/git-changes.ts#L65) (git: (args: string[]) => string) → string[] <!-- internal -->
       <a id="features.git-changes.untracked"></a><br>Lists files in the working tree that git does not track and that are not ignored, by running `ls-files` with NUL-separated output and splitting it into a path array. Both [`features.git-changes.gitChangedFiles`](features.md#features.git-changes.gitChangedFiles) and [`features.git-changes.gitChangedLines`](features.md#features.git-changes.gitChangedLines) fold these into their… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [ownState](../../src/git-changes.ts#L71) (path: string) → boolean <!-- internal -->
+    - fn [ownState](../../src/git-changes.ts#L75) (path: string) → boolean <!-- internal -->
       <a id="features.git-changes.ownState"></a><br>keylang's own local state under `.keylang/` — the index, the fact cache an analysis saves, proposals, reports — is never a source or a spec, so it is never a change, tracked or not, gitignored or not.
-    - fn [gitChangedFiles](../../src/git-changes.ts#L74) (root: string, ref: string, label = "check --changed") → ChangedFiles
+    - fn [gitChangedFiles](../../src/git-changes.ts#L78) (root: string, ref: string, label = "check --changed") → ChangedFiles
       <a id="features.git-changes.gitChangedFiles"></a><br>Files changed since `ref` in the working tree, plus files git does not track yet; keylang's own `.keylang/` left out.
-      - calls [features.git-changes.assertRef](features.md#features.git-changes.assertRef), [features.git-changes.gitIn](features.md#features.git-changes.gitIn), [features.git-changes.diffArgs](features.md#features.git-changes.diffArgs), [features.draft.deletedDiffPaths](features.md#features.draft.deletedDiffPaths), [features.draft.diffHunks](features.md#features.draft.diffHunks), [features.git-changes.untracked](features.md#features.git-changes.untracked), [features.git-changes.ownState](features.md#features.git-changes.ownState)
-    - fn [gitChangedLines](../../src/git-changes.ts#L89) (root: string, ref: string, label = "code-to-spec --since") → ChangedLines
+      - calls [features.git-changes.assertRef](features.md#features.git-changes.assertRef), [features.git-changes.gitIn](features.md#features.git-changes.gitIn), [features.git-changes.diffArgs](features.md#features.git-changes.diffArgs), [features.draft.deletedDiffPaths](features.md#features.draft.deletedDiffPaths), [features.draft.diffHunks](features.md#features.draft.diffHunks), [features.git-changes.untracked](features.md#features.git-changes.untracked), [features.git-changes.ownState](features.md#features.git-changes.ownState), [features.git-changes.diskCaseResolver](features.md#features.git-changes.diskCaseResolver)
+    - fn [diskCaseResolver](../../src/git-changes.ts#L105) (root: string) → (path: string) => string | null
+      <a id="features.git-changes.diskCaseResolver"></a><br>Paths (POSIX, relative to `root`) as the disk spells them: each segment is matched against its directory's entries, exactly first, then without regard to case (and Unicode normalization, as macOS compares names); null when no file is there. Directories are read once per call.
+    - fn [gitChangedLines](../../src/git-changes.ts#L134) (root: string, ref: string, label = "code-to-spec --since") → ChangedLines
       <a id="features.git-changes.gitChangedLines"></a><br>The lines changed since `ref` in the working tree, and the files git does not track yet (`all`), relative to `root`.
       - calls [features.git-changes.assertRef](features.md#features.git-changes.assertRef), [features.git-changes.gitIn](features.md#features.git-changes.gitIn), [features.draft.diffHunks](features.md#features.draft.diffHunks), [features.git-changes.diffArgs](features.md#features.git-changes.diffArgs), [features.git-changes.untracked](features.md#features.git-changes.untracked)
-    - fn [changedPathSet](../../src/git-changes.ts#L98) (root: string, files: Iterable<string>, base: string) → Set<string>
+    - fn [changedPathSet](../../src/git-changes.ts#L143) (root: string, files: Iterable<string>, base: string) → Set<string>
       <a id="features.git-changes.changedPathSet"></a><br>Git paths are relative to `root`; check reports spec paths relative to `base`. Both forms match.
       - calls [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [gitFileAt](../../src/git-changes.ts#L112) (root: string, ref: string, path: string, label: string) → string | null
+    - fn [gitFileAt](../../src/git-changes.ts#L157) (root: string, ref: string, path: string, label: string) → string | null
       <a id="features.git-changes.gitFileAt"></a><br>The text of `path` (POSIX, relative to `root`) at `ref`, or null when the file is not in that commit or `HEAD` has no commit yet. An unknown ref, no git, or no repository is an error naming the caller.
       - calls [features.git-changes.assertRef](features.md#features.git-changes.assertRef), [features.git-changes.gitIn](features.md#features.git-changes.gitIn)
-    - fn [readFeatureBase](../../src/git-changes.ts#L134) (root: string, path: string, since: string | undefined, label: string) → FeatureBase
+    - fn [readFeatureBase](../../src/git-changes.ts#L179) (root: string, path: string, since: string | undefined, label: string) → FeatureBase
       <a id="features.git-changes.readFeatureBase"></a><br>The feature file at its base commit, and the files changed since that commit as `check --changed --since <base>` reads them: a rule fail of this change is one that touches them. The base is `since`, else `featureBaseOrigin`.
       - calls [features.git-changes.featureBaseOrigin](features.md#features.git-changes.featureBaseOrigin), [features.git-changes.gitFileAt](features.md#features.git-changes.gitFileAt), [features.git-changes.gitChangedFiles](features.md#features.git-changes.gitChangedFiles), [lang.parser.parse](lang.md#lang.parser.parse)
-    - fn [featureBaseOrigin](../../src/git-changes.ts#L173) (root: string, label: string) → BaseOrigin
+    - fn [featureBaseOrigin](../../src/git-changes.ts#L218) (root: string, label: string) → BaseOrigin
       <a id="features.git-changes.featureBaseOrigin"></a><br>The base `feature` judges a change against when no `since` is given: the merge-base of HEAD with the main branch, so a fail committed on a feature branch is still the change's own. The main branch is the one `refs/remotes/origin/HEAD` points at, else a local `main`, `master`…
       - calls [features.git-changes.gitIn](features.md#features.git-changes.gitIn)
-    - fn [deletedModuleIds](../../src/git-changes.ts#L196) (config: Config, files: readonly string[]) → string[]
+    - fn [deletedModuleIds](../../src/git-changes.ts#L241) (config: Config, files: readonly string[]) → string[]
       <a id="features.git-changes.deletedModuleIds"></a><br>Module id a deleted source file had, so a flow step that named it is still "changed".
       - calls [map.graph.placeFile](map.md#map.graph.placeFile)
   - module [git-hook](../../src/git-hook.ts#L1)

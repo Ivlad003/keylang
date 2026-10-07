@@ -1054,7 +1054,7 @@ async function stopDecision(input: string, cwd: string): Promise<string> {
   const gitChanged = gitChangedFiles(root, "HEAD", "hook stop");
   const changed = changedPathSet(root, gitChanged.paths, cwd);
   const filtered = filterChanged(
-    { docs: analyzed.docs, spec: analyzed.spec, diagnostics: analyzed.diagnostics, verdicts: analyzed.verdicts, nodes: analyzed.snapshot?.nodes ?? {} },
+    { docs: analyzed.docs, spec: analyzed.spec, diagnostics: analyzed.diagnostics, verdicts: analyzed.verdicts, nodes: analyzed.snapshot?.nodes ?? {}, edges: analyzed.snapshot?.edges ?? [] },
     changed,
     deletedModuleIds(analyzed.config, gitChanged.deleted),
   );

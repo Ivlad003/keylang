@@ -124,18 +124,21 @@
     - spec-ir lang.spec-ir
     - verdict check.verdict
     - type [ChangedInput](../../src/changed.ts#L13)
-    - type [HookFail](../../src/changed.ts#L21)
-    - type [RuleHit](../../src/changed.ts#L27) <!-- internal -->
-    - fn [filterChanged](../../src/changed.ts#L41) (input: ChangedInput, changed: ReadonlySet<string>, deleted: readonly string[] = []) → { diagnostics: Diagnostic[]; verdicts: Verdict[] }
+    - type [ChangedEdge](../../src/changed.ts#L24)
+    - type [HookFail](../../src/changed.ts#L32)
+    - type [RuleHit](../../src/changed.ts#L38) <!-- internal -->
+    - fn [filterChanged](../../src/changed.ts#L52) (input: ChangedInput, changed: ReadonlySet<string>, deleted: readonly string[] = []) → { diagnostics: Diagnostic[]; verdicts: Verdict[] }
       - calls features.changed.ruleHits, features.changed.covers, features.changed.flowLinesTouching, check.assess.sameFinding
-    - fn [hookFails](../../src/changed.ts#L60) (report: { diagnostics: readonly Diagnostic[]; verdicts: readonly Verdict[] }) → HookFail[]
+    - fn [hookFails](../../src/changed.ts#L71) (report: { diagnostics: readonly Diagnostic[]; verdicts: readonly Verdict[] }) → HookFail[]
       - calls check.assess.sameFinding
-    - fn [hookDecision](../../src/changed.ts#L71) (event: { stop_hook_active?: boolean }, fails: readonly HookFail[]) → string
-    - fn [uncheckedTurn](../../src/changed.ts#L85) (error: string) → { line: string; decision: string }
-    - fn [parseHookEvent](../../src/changed.ts#L92) (text: string) → { stop_hook_active?: boolean }
-    - fn [covers](../../src/changed.ts#L107) (scope: readonly string[], moduleId: string, layer: string) → boolean <!-- internal -->
-    - fn [ruleHits](../../src/changed.ts#L113) (spec: SpecIR) → RuleHit[] <!-- internal -->
-    - fn [flowLinesTouching](../../src/changed.ts#L130) (input: ChangedInput, changed: ReadonlySet<string>, gone: (id: string) => boolean) → Set<string> <!-- internal -->
+    - fn [hookDecision](../../src/changed.ts#L82) (event: { stop_hook_active?: boolean }, fails: readonly HookFail[]) → string
+    - fn [uncheckedTurn](../../src/changed.ts#L96) (error: string) → { line: string; decision: string }
+    - fn [parseHookEvent](../../src/changed.ts#L103) (text: string) → { stop_hook_active?: boolean }
+    - fn [covers](../../src/changed.ts#L118) (scope: readonly string[], moduleId: string, layer: string) → boolean <!-- internal -->
+    - fn [ruleHits](../../src/changed.ts#L124) (input: ChangedInput) → RuleHit[] <!-- internal -->
+      - calls features.changed.noCyclesArea
+    - fn [noCyclesArea](../../src/changed.ts#L151) (input: ChangedInput, under: string) → string[] <!-- internal -->
+    - fn [flowLinesTouching](../../src/changed.ts#L184) (input: ChangedInput, changed: ReadonlySet<string>, gone: (id: string) => boolean) → Set<string> <!-- internal -->
       - calls lang.spec-ir.walkFlow
   - module [check-format](../../src/check-format.ts#L1)
     - check-results features.check-results
@@ -430,20 +433,20 @@
     - type [RuleFail](../../src/feature-status.ts#L307) <!-- internal -->
     - fn [ruleFails](../../src/feature-status.ts#L318) (input: FeatureInput) → RuleFail[] <!-- internal -->
       - calls base.diag.isError, check.assess.sameFinding
-    - fn [thisChange](../../src/feature-status.ts#L337) (input: FeatureInput, path: string, named: readonly string[]) → (fail: RuleFail) => boolean <!-- internal -->
+    - fn [thisChange](../../src/feature-status.ts#L340) (input: FeatureInput, path: string, named: readonly string[]) → (fail: RuleFail) => boolean <!-- internal -->
       - calls features.changed.filterChanged
-    - fn [stageOf](../../src/feature-status.ts#L365) (hasFlow: boolean, gaps: readonly Gap[], hints: readonly Hint[]) → Stage <!-- internal -->
-    - fn [denyGaps](../../src/feature-status.ts#L385) (input: FeatureInput, path: string, flows: readonly Flow[]) → Gap[] <!-- internal -->
+    - fn [stageOf](../../src/feature-status.ts#L368) (hasFlow: boolean, gaps: readonly Gap[], hints: readonly Hint[]) → Stage <!-- internal -->
+    - fn [denyGaps](../../src/feature-status.ts#L388) (input: FeatureInput, path: string, flows: readonly Flow[]) → Gap[] <!-- internal -->
       - calls check.rules.dependencyKindOf, check.rules.denyingRule
-    - fn [claimsOf](../../src/feature-status.ts#L427) (flow: Flow) → { id: string; span: Span }[] <!-- internal -->
+    - fn [claimsOf](../../src/feature-status.ts#L430) (flow: Flow) → { id: string; span: Span }[] <!-- internal -->
       - calls lang.spec-ir.walkFlow
-    - fn [weakenedPlan](../../src/feature-status.ts#L442) (input: FeatureInput, path: string, base: Extract<FeatureBase, { state: "compared" | "absent" }>) → Gap[] <!-- internal -->
+    - fn [weakenedPlan](../../src/feature-status.ts#L445) (input: FeatureInput, path: string, base: Extract<FeatureBase, { state: "compared" | "absent" }>) → Gap[] <!-- internal -->
       - calls features.feature-status.planGaps
-    - fn [planGaps](../../src/feature-status.ts#L459) (input: FeatureInput, path: string, at: string, baseDoc: Document) → { key: string; gap: Gap }[] <!-- internal -->
+    - fn [planGaps](../../src/feature-status.ts#L462) (input: FeatureInput, path: string, at: string, baseDoc: Document) → { key: string; gap: Gap }[] <!-- internal -->
       - calls lang.spec-ir.compileSpec, check.flows.plannedMismatch, features.feature-status.planItems
-    - type [PlanItem](../../src/feature-status.ts#L495) = Trigger | FlowStep | QuestionItem <!-- internal -->
-    - fn [planItems](../../src/feature-status.ts#L498) (flow: Flow) → { key: string; item: PlanItem }[] <!-- internal -->
-    - fn [finding](../../src/feature-status.ts#L512) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
+    - type [PlanItem](../../src/feature-status.ts#L498) = Trigger | FlowStep | QuestionItem <!-- internal -->
+    - fn [planItems](../../src/feature-status.ts#L501) (flow: Flow) → { key: string; item: PlanItem }[] <!-- internal -->
+    - fn [finding](../../src/feature-status.ts#L515) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
   - module [ghost](../../src/ghost.ts#L1)
     - analyze map.analyze
     - agent-context features.agent-context
@@ -462,27 +465,28 @@
     - graph map.graph
     - parser lang.parser
     - span base.span
-    - type [ChangedFiles](../../src/git-changes.ts#L20)
-    - fn [gitIn](../../src/git-changes.ts#L30) (root: string, label: string) → { run: (args: string[]) => SpawnSyncReturns<string>; git: (args: string[]) => string } <!-- internal -->
+    - type [ChangedFiles](../../src/git-changes.ts#L24)
+    - fn [gitIn](../../src/git-changes.ts#L34) (root: string, label: string) → { run: (args: string[]) => SpawnSyncReturns<string>; git: (args: string[]) => string } <!-- internal -->
       - calls features.git-changes.gitUnavailable
-    - fn [gitUnavailable](../../src/git-changes.ts#L46) (label: string, error: Error & { code?: string }) → string
-    - fn [assertRef](../../src/git-changes.ts#L53) (ref: string, label: string) → void <!-- internal -->
-    - fn [diffArgs](../../src/git-changes.ts#L59) (base: string) → string[] <!-- internal -->
-    - fn [untracked](../../src/git-changes.ts#L61) (git: (args: string[]) => string) → string[] <!-- internal -->
-    - fn [ownState](../../src/git-changes.ts#L71) (path: string) → boolean <!-- internal -->
-    - fn [gitChangedFiles](../../src/git-changes.ts#L74) (root: string, ref: string, label = "check --changed") → ChangedFiles
-      - calls features.git-changes.assertRef, features.git-changes.gitIn, features.git-changes.diffArgs, features.draft.deletedDiffPaths, features.draft.diffHunks, features.git-changes.untracked, features.git-changes.ownState
-    - fn [gitChangedLines](../../src/git-changes.ts#L89) (root: string, ref: string, label = "code-to-spec --since") → ChangedLines
+    - fn [gitUnavailable](../../src/git-changes.ts#L50) (label: string, error: Error & { code?: string }) → string
+    - fn [assertRef](../../src/git-changes.ts#L57) (ref: string, label: string) → void <!-- internal -->
+    - fn [diffArgs](../../src/git-changes.ts#L63) (base: string) → string[] <!-- internal -->
+    - fn [untracked](../../src/git-changes.ts#L65) (git: (args: string[]) => string) → string[] <!-- internal -->
+    - fn [ownState](../../src/git-changes.ts#L75) (path: string) → boolean <!-- internal -->
+    - fn [gitChangedFiles](../../src/git-changes.ts#L78) (root: string, ref: string, label = "check --changed") → ChangedFiles
+      - calls features.git-changes.assertRef, features.git-changes.gitIn, features.git-changes.diffArgs, features.draft.deletedDiffPaths, features.draft.diffHunks, features.git-changes.untracked, features.git-changes.ownState, features.git-changes.diskCaseResolver
+    - fn [diskCaseResolver](../../src/git-changes.ts#L105) (root: string) → (path: string) => string | null
+    - fn [gitChangedLines](../../src/git-changes.ts#L134) (root: string, ref: string, label = "code-to-spec --since") → ChangedLines
       - calls features.git-changes.assertRef, features.git-changes.gitIn, features.draft.diffHunks, features.git-changes.diffArgs, features.git-changes.untracked
-    - fn [changedPathSet](../../src/git-changes.ts#L98) (root: string, files: Iterable<string>, base: string) → Set<string>
+    - fn [changedPathSet](../../src/git-changes.ts#L143) (root: string, files: Iterable<string>, base: string) → Set<string>
       - calls base.config.toPosix
-    - fn [gitFileAt](../../src/git-changes.ts#L112) (root: string, ref: string, path: string, label: string) → string | null
+    - fn [gitFileAt](../../src/git-changes.ts#L157) (root: string, ref: string, path: string, label: string) → string | null
       - calls features.git-changes.assertRef, features.git-changes.gitIn
-    - fn [readFeatureBase](../../src/git-changes.ts#L134) (root: string, path: string, since: string | undefined, label: string) → FeatureBase
+    - fn [readFeatureBase](../../src/git-changes.ts#L179) (root: string, path: string, since: string | undefined, label: string) → FeatureBase
       - calls features.git-changes.featureBaseOrigin, features.git-changes.gitFileAt, features.git-changes.gitChangedFiles, lang.parser.parse
-    - fn [featureBaseOrigin](../../src/git-changes.ts#L173) (root: string, label: string) → BaseOrigin
+    - fn [featureBaseOrigin](../../src/git-changes.ts#L218) (root: string, label: string) → BaseOrigin
       - calls features.git-changes.gitIn
-    - fn [deletedModuleIds](../../src/git-changes.ts#L196) (config: Config, files: readonly string[]) → string[]
+    - fn [deletedModuleIds](../../src/git-changes.ts#L241) (config: Config, files: readonly string[]) → string[]
       - calls map.graph.placeFile
   - module [git-hook](../../src/git-hook.ts#L1)
     - node external.node

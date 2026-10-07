@@ -242,8 +242,8 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
   const orphans = snapshot.coverage.filter((item) => DEPENDENCY_HOLES.has(item.kind) && item.source !== null && snapshot.nodes[item.source] === undefined);
   const scopeHole = (scope: string | null): Hole | null => orphans.find((item) => scope === null || within(item.source!, scope) || within(scope, item.source!)) ?? null;
 
-  const pushFail = (code: Exclude<Diagnostic["code"], "K005">, file: string, line: number, col: number, message: string, criterion: string, area: string, spec = criterion): void => {
-    diagnostics.push(diagnostic(code, file, pointAt(line, col), message));
+  const pushFail = (code: Exclude<Diagnostic["code"], "K005">, file: string, line: number, col: number, message: string, criterion: string, area: string, spec = criterion, target?: string): void => {
+    diagnostics.push(diagnostic(code, file, pointAt(line, col), message, target));
     verdicts.push(base(snapshot, criterion, area, "fail", file, line, col, code, message, spec));
   };
   /** `hole`: the coverage entry that leaves the rule unverified, named by its position on the verdict. */
@@ -455,7 +455,7 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
       if (row.name === "*" || rule.names.has(row.name.normalize("NFC"))) continue;
       failed = true;
       const how = row.form === "reexport" && row.from ? `${row.kind}, re-exported from \`${row.from}\`` : row.form && row.form !== "reexport" ? `${row.kind}, ${row.form}` : row.kind;
-      pushFail("K104", ...at, `divergence: \`${rule.module}\` exports \`${row.name}\` (${how}), which is not listed in \`exports\``, criterion, rule.module, spec);
+      pushFail("K104", ...at, `divergence: \`${rule.module}\` exports \`${row.name}\` (${how}), which is not listed in \`exports\``, criterion, rule.module, spec, `${rule.module}.${row.name.normalize("NFC")}`);
     }
     const missing = [...rule.names].sort().filter((name) => !names.has(name));
     // An opaque module (excluded, or with a syntax error) may export what the table does not show.
@@ -467,7 +467,7 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
     if (!unknown && !opaque) {
       for (const name of missing) {
         failed = true;
-        pushFail("K104", ...at, `absence: \`${rule.module}\` does not export \`${name}\``, criterion, rule.module, spec);
+        pushFail("K104", ...at, `absence: \`${rule.module}\` does not export \`${name}\``, criterion, rule.module, spec, `${rule.module}.${name}`);
       }
     }
     if (failed) continue;

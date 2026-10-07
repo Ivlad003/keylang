@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { bin, git, keylang, LAYERS, ORDER, PAY, tempDir, treeBytes, writeTree } from "./cli-helpers.ts";
@@ -302,6 +302,177 @@ test("check --changed keeps a flow of an unchanged spec whose step is in a chang
   assert.equal(changed.status, 1, changed.stdout);
   assert.match(changed.stdout, /keylang\/flows\/pay\.md:4:\d+: static fail/);
   assert.doesNotMatch(changed.stdout, /flows\/stock\.md/);
+});
+
+// review-2026-10-06/01: the `exports` rule's area is its module, so K104 on the rules line stays when that module's file changed.
+test("check --changed, hook stop and feature keep K104 of an `exports` rule when the module's file changed", (t) => {
+  const dir = tempDir(t, "keylang-changed-exports-");
+  writeTree(dir, {
+    ".gitignore": ".keylang/\n",
+    "keylang.json": `${JSON.stringify(LAYERS)}\n`,
+    "src/app/a.ts": 'import { b } from "../domain/b.ts";\nexport function a(): number {\n  return b();\n}\n',
+    "src/domain/b.ts": "export function b(): number {\n  return 1;\n}\n",
+    "keylang/rules.md": "# rules\n\n- module domain.b\n  - exports b\n",
+  });
+  git(dir, ["init", "-b", "main"]);
+  git(dir, ["add", "."]);
+  git(dir, ["commit", "-m", "base"]);
+  const clean = keylang(dir, ["check", "--changed"]);
+  assert.equal(clean.status, 0, clean.stdout);
+  writeFileSync(join(dir, "src/domain/b.ts"), "export function b(): number {\n  return 1;\n}\nexport function leaked(): number {\n  return 2;\n}\n");
+  const k104 = /K104 divergence: `domain\.b` exports `leaked`/;
+  const full = keylang(dir, ["check"]);
+  assert.equal(full.status, 1, full.stdout);
+  assert.match(full.stdout, k104);
+  const changed = keylang(dir, ["check", "--changed"]);
+  assert.equal(changed.status, 1, changed.stdout);
+  assert.match(changed.stdout, k104);
+  const hook = spawnSync(process.execPath, [bin, "hook", "stop"], { cwd: dir, input: "{}", encoding: "utf8" });
+  assert.equal(hook.status, 0, hook.stderr);
+  const decision = JSON.parse(hook.stdout) as { decision?: string; reason?: string };
+  assert.equal(decision.decision, "block", hook.stdout);
+  assert.match(decision.reason ?? "", /K104/);
+
+  // On a feature branch the leaked export implements the feature's planned fn: the fail is this change's, not inherited.
+  git(dir, ["checkout", "-q", "-b", "feat"]);
+  writeTree(dir, {
+    "keylang/features/leak.md": "# flow leak\n\n- planned fn domain.b.leaked () → number\n- trigger app.a.a\n  - step domain.b.leaked\n",
+    "keylang/features/use.md": "# flow use\n\n- trigger app.a.a\n  - step domain.b.b\n",
+    "src/app/a.ts": 'import { b, leaked } from "../domain/b.ts";\nexport function a(): number {\n  return b() + leaked();\n}\n',
+  });
+  git(dir, ["add", "."]);
+  git(dir, ["commit", "-m", "leak"]);
+  type Body = { done: boolean; gaps: { kind: string; id: string; reason: string }[]; hints: { kind: string; reason: string }[]; info: { rules: unknown[] | null } };
+  const feature = keylang(dir, ["feature", "leak", "--format", "json"]);
+  assert.equal(feature.status, 1, feature.stdout);
+  const body = JSON.parse(feature.stdout) as Body;
+  assert.equal(body.done, false);
+  assert.ok(body.gaps.some((gap) => gap.kind === "rule" && gap.id === "domain.b" && /exports `leaked`/.test(gap.reason)), JSON.stringify(body.gaps));
+  assert.deepEqual(body.info.rules, []);
+
+  // Merged into main, nothing changed since the base: K104 is about `domain.b.leaked`, which this feature plans, so it is
+  // still this feature's; a feature that only steps into `domain.b` inherits it, as any old fail of a module it uses.
+  git(dir, ["checkout", "-q", "main"]);
+  git(dir, ["merge", "-q", "feat"]);
+  const merged = keylang(dir, ["feature", "leak", "--format", "json"]);
+  assert.equal(merged.status, 1, merged.stdout);
+  const after = JSON.parse(merged.stdout) as Body;
+  assert.ok(after.gaps.some((gap) => gap.kind === "rule" && gap.id === "domain.b"), JSON.stringify(after.gaps));
+  assert.ok(!after.hints.some((hint) => hint.kind === "rule"), JSON.stringify(after.hints));
+  const use = keylang(dir, ["feature", "use", "--format", "json"]);
+  assert.equal(use.status, 0, use.stdout);
+  const other = JSON.parse(use.stdout) as Body;
+  assert.ok(!other.gaps.some((gap) => gap.kind === "rule"), JSON.stringify(other.gaps));
+  assert.ok(other.hints.some((hint) => hint.kind === "rule" && /inherited/.test(hint.reason)), JSON.stringify(other.hints));
+});
+
+// review-2026-10-06/02: the area of `no-cycles` under M is M, its submodules and what they reach by import, not M alone.
+test("check --changed, hook stop and feature keep K105 of `no-cycles` under a module when a file it reaches closed the cycle", (t) => {
+  const dir = tempDir(t, "keylang-changed-cycle-");
+  writeTree(dir, {
+    ".gitignore": ".keylang/\n",
+    "keylang.json": `${JSON.stringify(LAYERS)}\n`,
+    "src/app/a.ts": 'import { b } from "../domain/b.ts";\nexport function a(): number {\n  return b();\n}\n',
+    "src/domain/b.ts": "export function b(): number {\n  return 1;\n}\n",
+    "keylang/rules.md": "# rules\n\n- module app\n  - no-cycles\n",
+    "keylang/features/pay.md": "# flow pay\n\n- trigger app.a.a\n  - step domain.b.b\n",
+  });
+  git(dir, ["init", "-b", "main"]);
+  git(dir, ["add", "."]);
+  git(dir, ["commit", "-m", "base"]);
+  const clean = keylang(dir, ["check", "--changed"]);
+  assert.equal(clean.status, 0, clean.stdout);
+  // Only the domain file changes: the cycle runs through app, which the rule guards.
+  writeFileSync(join(dir, "src/domain/b.ts"), 'import { a } from "../app/a.ts";\nexport function b(): number {\n  return a() ? 1 : 2;\n}\n');
+  const k105 = /K105 divergence: dependency cycle app\.a → domain\.b → app\.a/;
+  const full = keylang(dir, ["check"]);
+  assert.equal(full.status, 1, full.stdout);
+  assert.match(full.stdout, k105);
+  const changed = keylang(dir, ["check", "--changed"]);
+  assert.equal(changed.status, 1, changed.stdout);
+  assert.match(changed.stdout, k105);
+  const hook = spawnSync(process.execPath, [bin, "hook", "stop"], { cwd: dir, input: "{}", encoding: "utf8" });
+  assert.equal(hook.status, 0, hook.stderr);
+  const decision = JSON.parse(hook.stdout) as { decision?: string; reason?: string };
+  assert.equal(decision.decision, "block", hook.stdout);
+  assert.match(decision.reason ?? "", /K105/);
+  const feature = keylang(dir, ["feature", "pay", "--format", "json"]);
+  assert.equal(feature.status, 1, feature.stdout);
+  const body = JSON.parse(feature.stdout) as { done: boolean; gaps: { kind: string; id: string; reason: string }[]; info: { rules: unknown[] | null } };
+  assert.ok(body.gaps.some((gap) => gap.kind === "rule" && gap.id === "app" && /dependency cycle/.test(gap.reason)), JSON.stringify(body.gaps));
+  assert.deepEqual(body.info.rules, []);
+  // A change in a file the area does not reach leaves the rule out of the slice.
+  writeFileSync(join(dir, "src/domain/b.ts"), "export function b(): number {\n  return 1;\n}\n");
+  writeTree(dir, { "src/domain/c.ts": 'import { b } from "./b.ts";\nexport function c(): number {\n  return b();\n}\n' });
+  const outside = keylang(dir, ["check", "--changed"]);
+  assert.equal(outside.status, 0, outside.stdout);
+  assert.doesNotMatch(outside.stdout, /no-cycles/);
+});
+
+// review-2026-10-06/03: with core.ignorecase=true git keeps the index's spelling of a file renamed by case only; the slice must find the module by the disk's.
+const CASE_FIXTURE = {
+  ".gitignore": ".keylang/\n",
+  "keylang.json": `${JSON.stringify(LAYERS)}\n`,
+  "src/app/view.ts": "export function view(): number {\n  return 1;\n}\n",
+  "src/domain/order.ts": ORDER,
+  "keylang/rules.md": "# rules\n\n- deny app domain\n",
+};
+const CASE_EDIT = 'import { price } from "../domain/order.ts";\nexport function view(): number {\n  return price();\n}\n';
+
+test("check --changed and hook stop find a file renamed by case only when git has core.ignorecase=true", (t) => {
+  const dir = tempDir(t, "keylang-ignorecase-");
+  writeTree(dir, CASE_FIXTURE);
+  git(dir, ["init"]);
+  git(dir, ["config", "core.ignorecase", "true"]);
+  git(dir, ["add", "."]);
+  git(dir, ["commit", "-m", "base"]);
+  // A plain mv, not git mv: on a case-sensitive disk git with ignorecase reports ` D src/app/view.ts` and no untracked View.ts, as macOS reports ` M src/app/view.ts`.
+  renameSync(join(dir, "src/app/view.ts"), join(dir, "src/app/tmp.ts"));
+  renameSync(join(dir, "src/app/tmp.ts"), join(dir, "src/app/View.ts"));
+  writeFileSync(join(dir, "src/app/View.ts"), CASE_EDIT);
+  const status = spawnSync("git", ["status", "--short"], { cwd: dir, encoding: "utf8" }).stdout;
+  assert.match(status, /src\/app\/view\.ts/, status);
+  assert.doesNotMatch(status, /View\.ts/, status);
+  const k102 = /src\/app\/View\.ts:1:1: K102 divergence: `app\.View` depends on `domain\.order`/;
+  const full = keylang(dir, ["check"]);
+  assert.equal(full.status, 1, full.stdout);
+  assert.match(full.stdout, k102);
+  const changed = keylang(dir, ["check", "--changed"]);
+  assert.equal(changed.status, 1, changed.stdout);
+  assert.match(changed.stdout, k102);
+  const hook = spawnSync(process.execPath, [bin, "hook", "stop"], { cwd: dir, input: "{}", encoding: "utf8" });
+  assert.equal(hook.status, 0, hook.stderr);
+  const decision = JSON.parse(hook.stdout) as { decision?: string; reason?: string };
+  assert.equal(decision.decision, "block", hook.stdout);
+  assert.match(decision.reason ?? "", /K102/);
+});
+
+test("check --changed finds a file renamed by case only on a case-insensitive file system (casefold tmpfs in a user namespace)", { skip: process.platform !== "linux" }, (t) => {
+  const probe = spawnSync("unshare", ["-rm", "true"], { encoding: "utf8" });
+  if (probe.status !== 0) return t.skip("unshare -rm is not available here");
+  const fixture = tempDir(t, "keylang-casefold-src-");
+  writeTree(fixture, CASE_FIXTURE);
+  const mount = tempDir(t, "keylang-casefold-");
+  const script = [
+    'mount -t tmpfs -o casefold tmpfs "$1" 2>/dev/null || { echo SKIP:mount; exit 0; }',
+    'mkdir "$1/repo" && chattr +F "$1/repo" 2>/dev/null || { echo SKIP:chattr; exit 0; }',
+    'cp -r "$2/." "$1/repo/" && cd "$1/repo" || exit 1',
+    "git init -q && git -c user.email=t@e -c user.name=t add . && git -c user.email=t@e -c user.name=t commit -qm base",
+    'echo "IGNORECASE:$(git config --get core.ignorecase)"',
+    "mv src/app/view.ts src/app/tmp.ts && mv src/app/tmp.ts src/app/View.ts",
+    'printf %s "$4" > src/app/View.ts',
+    'echo "STATUS:$(git status --short)"',
+    '"$3" "$5" check --changed; echo "CHANGED:$?"',
+    'echo "{}" | "$3" "$5" hook stop',
+  ].join("\n");
+  const run = spawnSync("unshare", ["-rm", "sh", "-c", script, "sh", mount, fixture, process.execPath, CASE_EDIT, bin], { encoding: "utf8" });
+  assert.equal(run.status, 0, run.stderr);
+  if (/^SKIP:/m.test(run.stdout)) return t.skip(`casefold tmpfs is not available here (${run.stdout.match(/^SKIP:(\w+)/m)?.[1]})`);
+  assert.match(run.stdout, /^IGNORECASE:true$/m, run.stdout);
+  assert.match(run.stdout, /^STATUS: M src\/app\/view\.ts$/m, run.stdout);
+  assert.match(run.stdout, /K102 divergence: `app\.View` depends on `domain\.order`/, run.stdout);
+  assert.match(run.stdout, /^CHANGED:1$/m, run.stdout);
+  assert.match(run.stdout, /"decision":"block"/, run.stdout);
 });
 
 // DX commands (design §7.5): spec skeletons.

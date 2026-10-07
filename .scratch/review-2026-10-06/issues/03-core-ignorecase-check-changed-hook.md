@@ -1,6 +1,6 @@
 # 03: Перейменування файла лише регістром (core.ignorecase) ховає зміни від `check --changed` і `hook stop`
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -68,11 +68,14 @@ macOS або Windows: `deny ui db`, закомічений `src/ui/view.ts` бе
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/git-changes.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/git-changes.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
 - [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+- 2026-10-07 (agent): two regression tests in `tests/cli-feature.test.ts`, both through the real CLI on a temp repository. (1) Emulation on a case-sensitive disk: `core.ignorecase=true` set by hand, then a plain rename `view.ts` → `View.ts` plus the denied import; git then reports ` D src/app/view.ts` and no untracked `View.ts`, and before the fix `check --changed` exited 0 and `hook stop` answered `{}`. (2) The real scenario: a casefold tmpfs mounted in a user namespace (`unshare -rm`, `mount -t tmpfs -o casefold`, `chattr +F`), where `git init` sets `core.ignorecase=true` itself and `git status` shows ` M src/app/view.ts`; the test skips when `unshare -rm` or the casefold mount is unavailable (non-Linux, CI without user namespaces). Fix in `src/git-changes.ts`: when `git config --type=bool --get core.ignorecase` is `true`, `gitChangedFiles` maps every path through `diskCaseResolver(root)` (segment by segment against `readdir`, exact first, then case- and NFC-insensitive; one listing per directory) and drops from `deleted` a path the disk has under another case (a rename, not a removal). Done in `gitChangedFiles` rather than `changedPathSet` so `feature` (`readFeatureBase`) and `code-to-spec --since` callers get it too; `filterChanged` keeps exact matching. The optional stderr warning suggesting `git mv` is not added: `hook stop`'s stderr reaches only a debug log, and `check --changed` already reports the finding at the disk's path. Docs: the `--changed` paragraph of `docs/cli.md`. Verified: `node --test tests/cli-feature.test.ts`, `npm run typecheck`, `node bin/keylang.js check`, `node bin/keylang.js map --check`.
+- 2026-10-07 (agent): `docs/review-2026-10-06.md` is untracked in the main checkout only; its ✔ is left to the merger (checkbox not ticked).

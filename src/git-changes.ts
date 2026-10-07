@@ -5,9 +5,13 @@
 // since. Git runs as an argument array in the given root, never through a
 // shell; a ref that looks like an option is refused before git sees it.
 // Every failure (no git, not a repository, an unknown ref) is an error naming
-// the caller, never an empty change set.
+// the caller, never an empty change set. With `core.ignorecase=true` (macOS,
+// Windows) git keeps the index's spelling of a file renamed by case only;
+// the paths here are spelled as the disk spells them, which is how the
+// analysis names a module's file.
 
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
+import { readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 import { toPosix, type Config } from "./config.ts";
 import { deletedDiffPaths, diffHunks, type ChangedLines } from "./draft.ts";
@@ -79,10 +83,51 @@ export function gitChangedFiles(root: string, ref: string, label = "check --chan
   // `--stdin` reads the null device: the empty tree of this repository's hash.
   const base = unborn ? git(["hash-object", "-t", "tree", "--stdin"]).trim() : ref;
   const diff = git(diffArgs(base));
-  const deleted = deletedDiffPaths(diff).filter((path) => !ownState(path));
-  const paths = new Set<string>([...diffHunks(diff).keys(), ...deleted].filter((path) => !ownState(path)));
+  let deleted = deletedDiffPaths(diff).filter((path) => !ownState(path));
+  let paths = new Set<string>([...diffHunks(diff).keys(), ...deleted].filter((path) => !ownState(path)));
   for (const file of untracked(git)) if (!ownState(file)) paths.add(file);
+  // Unset, the option is false: `--get` exits 1 and prints nothing.
+  if (run(["config", "--type=bool", "--get", "core.ignorecase"]).stdout.trim() === "true") {
+    const onDisk = diskCaseResolver(root);
+    paths = new Set([...paths].map((path) => onDisk(path) ?? path));
+    // A file git calls deleted that the disk has under another case was renamed, not removed.
+    deleted = deleted.filter((path) => onDisk(path) === null);
+  }
   return { paths, deleted, unborn };
+}
+
+/**
+ * Paths (POSIX, relative to `root`) as the disk spells them: each segment is
+ * matched against its directory's entries, exactly first, then without regard
+ * to case (and Unicode normalization, as macOS compares names); null when no
+ * file is there. Directories are read once per call.
+ */
+export function diskCaseResolver(root: string): (path: string) => string | null {
+  const listings = new Map<string, readonly string[] | null>();
+  const entries = (dir: string): readonly string[] | null => {
+    if (!listings.has(dir)) {
+      try {
+        listings.set(dir, readdirSync(dir));
+      } catch {
+        listings.set(dir, null);
+      }
+    }
+    return listings.get(dir) ?? null;
+  };
+  const fold = (name: string): string => name.normalize("NFC").toLowerCase();
+  return (path) => {
+    const spelled: string[] = [];
+    let dir = root;
+    for (const part of path.split("/")) {
+      const names = entries(dir);
+      if (names === null) return null;
+      const name = names.includes(part) ? part : names.find((candidate) => fold(candidate) === fold(part));
+      if (name === undefined) return null;
+      spelled.push(name);
+      dir = join(dir, name);
+    }
+    return spelled.join("/");
+  };
 }
 
 /** The lines changed since `ref` in the working tree, and the files git does not track yet (`all`), relative to `root`. */
