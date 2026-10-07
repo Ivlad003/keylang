@@ -198,28 +198,33 @@
     - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
     - verdict [check.verdict](check.md#check.verdict)
     - type [ChangedInput](../../src/changed.ts#L13)
-      <a id="features.changed.ChangedInput"></a><br>Bundles everything the change-detection step needs: the parsed documents, the spec IR, prior diagnostics and verdicts, plus a map of graph nodes to their kind, source file, and optional layer. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [HookFail](../../src/changed.ts#L21)
+      <a id="features.changed.ChangedInput"></a><br>Bundles everything the change-detection step needs: the parsed documents, the spec IR, prior diagnostics and verdicts, plus a map of graph nodes to their kind, source file, and optional layer. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+    - type [ChangedEdge](../../src/changed.ts#L24)
+      <a id="features.changed.ChangedEdge"></a><br>The part of a snapshot edge the `--changed` slice reads; a `call` or `type` edge, an unresolved or a types-only import is not a dependency a cycle runs through.
+    - type [HookFail](../../src/changed.ts#L32)
       <a id="features.changed.HookFail"></a><br>Describes a single failure reported by a hook: the file path, the line number, and the message text associated with that failure. It is a plain data shape with no behavior, used to carry per-location hook results. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [RuleHit](../../src/changed.ts#L27) <!-- internal -->
+    - type [RuleHit](../../src/changed.ts#L38) <!-- internal -->
       <a id="features.changed.RuleHit"></a><br>Record of one dependency rule that fired on a changed file: the file path and line it hit, the verdict criterion to report when that line fails, and the module scope the rule applies to (empty when it covers all modules). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [filterChanged](../../src/changed.ts#L41) (input: ChangedInput, changed: ReadonlySet<string>, deleted: readonly string[] = []) → { diagnostics: Diagnostic[]; verdicts: Verdict[] }
+    - fn [filterChanged](../../src/changed.ts#L52) (input: ChangedInput, changed: ReadonlySet<string>, deleted: readonly string[] = []) → { diagnostics: Diagnostic[]; verdicts: Verdict[] }
       <a id="features.changed.filterChanged"></a><br>Diagnostics and verdicts that touch `changed` (paths as check prints them). `deleted` are module ids whose file git removed: the node is gone, so a flow step that named it is still in the report. Order is preserved.
       - calls [features.changed.ruleHits](features.md#features.changed.ruleHits), [features.changed.covers](features.md#features.changed.covers), [features.changed.flowLinesTouching](features.md#features.changed.flowLinesTouching), [check.assess.sameFinding](check.md#check.assess.sameFinding)
-    - fn [hookFails](../../src/changed.ts#L60) (report: { diagnostics: readonly Diagnostic[]; verdicts: readonly Verdict[] }) → HookFail[]
+    - fn [hookFails](../../src/changed.ts#L71) (report: { diagnostics: readonly Diagnostic[]; verdicts: readonly Verdict[] }) → HookFail[]
       <a id="features.changed.hookFails"></a><br>Error diagnostics, then fail verdicts that are not the same finding.
       - calls [check.assess.sameFinding](check.md#check.assess.sameFinding)
-    - fn [hookDecision](../../src/changed.ts#L71) (event: { stop_hook_active?: boolean }, fails: readonly HookFail[]) → string
+    - fn [hookDecision](../../src/changed.ts#L82) (event: { stop_hook_active?: boolean }, fails: readonly HookFail[]) → string
       <a id="features.changed.hookDecision"></a><br>Stdin event plus the fails of one changed check. `stop_hook_active` never blocks. The same inputs return the same JSON.
-    - fn [uncheckedTurn](../../src/changed.ts#L85) (error: string) → { line: string; decision: string }
+    - fn [uncheckedTurn](../../src/changed.ts#L96) (error: string) → { line: string; decision: string }
       <a id="features.changed.uncheckedTurn"></a><br>A turn the hook could not check — stdin that is no event, no git, a broken keylang.json, a failed analysis — as the line a person reads and the JSON that carries it: a `systemMessage`, which Claude Code and Codex show the person as a warning without blocking the agent (stderr…
-    - fn [parseHookEvent](../../src/changed.ts#L92) (text: string) → { stop_hook_active?: boolean }
+    - fn [parseHookEvent](../../src/changed.ts#L103) (text: string) → { stop_hook_active?: boolean }
       <a id="features.changed.parseHookEvent"></a><br>The object on stdin. Empty stdin is an event with no `stop_hook_active`.
-    - fn [covers](../../src/changed.ts#L107) (scope: readonly string[], moduleId: string, layer: string) → boolean <!-- internal -->
+    - fn [covers](../../src/changed.ts#L118) (scope: readonly string[], moduleId: string, layer: string) → boolean <!-- internal -->
       <a id="features.changed.covers"></a><br>Decides whether a module falls inside a scope: an empty scope matches everything, otherwise any scope entry must equal the layer name, equal the module ID, or be a dotted prefix of it. Used by [`features.changed.filterChanged`](features.md#features.changed.filterChanged) to limit which modules are considered. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [ruleHits](../../src/changed.ts#L113) (spec: SpecIR) → RuleHit[] <!-- internal -->
+    - fn [ruleHits](../../src/changed.ts#L124) (input: ChangedInput) → RuleHit[] <!-- internal -->
       <a id="features.changed.ruleHits"></a><br>Scope and the verdict criterion `--changed` already matches. `no-cycles` stays the literal criterion, not the hashed `no-cycles <module|*>`.
-    - fn [flowLinesTouching](../../src/changed.ts#L132) (input: ChangedInput, changed: ReadonlySet<string>, gone: (id: string) => boolean) → Set<string> <!-- internal -->
+      - calls [features.changed.noCyclesArea](features.md#features.changed.noCyclesArea)
+    - fn [noCyclesArea](../../src/changed.ts#L151) (input: ChangedInput, under: string) → string[] <!-- internal -->
+      <a id="features.changed.noCyclesArea"></a><br>`under`, its submodules, and every module they reach by a resolved `import` or `reexport` that is not types-only: the area `rules.ts` judges the rule over. Edges are between symbols; their module is the nearest `module` node up the id (a class is one too, and lies under its…
+    - fn [flowLinesTouching](../../src/changed.ts#L184) (input: ChangedInput, changed: ReadonlySet<string>, gone: (id: string) => boolean) → Set<string> <!-- internal -->
       <a id="features.changed.flowLinesTouching"></a><br>`file:line` of every verdict in a flow that names a symbol whose file changed or was deleted.
       - calls [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow)
   - module [check-format](../../src/check-format.ts#L1)
@@ -663,7 +668,7 @@
     - type [FeatureReport](../../src/feature-status.ts#L122)
       <a id="features.feature-status.FeatureReport"></a><br>Result of checking a feature: whether it is done, its current stage, blocking gaps and hints, plus test, trace and base details and inherited rule failures that do not block (null without git, making every rule failure a gap). _(llm · claude:claude-opus-5-5 · 2026-10-05)_
     - type [FeatureInput](../../src/feature-status.ts#L140)
-      <a id="features.feature-status.FeatureInput"></a><br>Input bundle for computing a feature's status: parsed docs, spec, diagnostics and verdicts, plus optional snapshot nodes/edges, base plan, changed files, resolver index and layers that refine planned-edge and rule-fail checks. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
+      <a id="features.feature-status.FeatureInput"></a><br>Input bundle for computing a feature's status: parsed docs, spec, diagnostics and verdicts, plus optional snapshot nodes/edges, base plan, changed files, resolver index and layers that refine planned-edge and rule-fail checks. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
     - fn [idsIn](../../src/feature-status.ts#L174) (doc: Document) → string[]
       <a id="features.feature-status.idsIn"></a><br>Ids declared or named in one spec, in first-seen order.
       - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)

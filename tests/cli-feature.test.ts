@@ -359,6 +359,49 @@ test("check --changed, hook stop and feature keep K104 of an `exports` rule when
   assert.ok(!after.hints.some((hint) => hint.kind === "rule"), JSON.stringify(after.hints));
 });
 
+// review-2026-10-06/02: the area of `no-cycles` under M is M, its submodules and what they reach by import, not M alone.
+test("check --changed, hook stop and feature keep K105 of `no-cycles` under a module when a file it reaches closed the cycle", (t) => {
+  const dir = tempDir(t, "keylang-changed-cycle-");
+  writeTree(dir, {
+    ".gitignore": ".keylang/\n",
+    "keylang.json": `${JSON.stringify(LAYERS)}\n`,
+    "src/app/a.ts": 'import { b } from "../domain/b.ts";\nexport function a(): number {\n  return b();\n}\n',
+    "src/domain/b.ts": "export function b(): number {\n  return 1;\n}\n",
+    "keylang/rules.md": "# rules\n\n- module app\n  - no-cycles\n",
+    "keylang/features/pay.md": "# flow pay\n\n- trigger app.a.a\n  - step domain.b.b\n",
+  });
+  git(dir, ["init", "-b", "main"]);
+  git(dir, ["add", "."]);
+  git(dir, ["commit", "-m", "base"]);
+  const clean = keylang(dir, ["check", "--changed"]);
+  assert.equal(clean.status, 0, clean.stdout);
+  // Only the domain file changes: the cycle runs through app, which the rule guards.
+  writeFileSync(join(dir, "src/domain/b.ts"), 'import { a } from "../app/a.ts";\nexport function b(): number {\n  return a() ? 1 : 2;\n}\n');
+  const k105 = /K105 divergence: dependency cycle app\.a → domain\.b → app\.a/;
+  const full = keylang(dir, ["check"]);
+  assert.equal(full.status, 1, full.stdout);
+  assert.match(full.stdout, k105);
+  const changed = keylang(dir, ["check", "--changed"]);
+  assert.equal(changed.status, 1, changed.stdout);
+  assert.match(changed.stdout, k105);
+  const hook = spawnSync(process.execPath, [bin, "hook", "stop"], { cwd: dir, input: "{}", encoding: "utf8" });
+  assert.equal(hook.status, 0, hook.stderr);
+  const decision = JSON.parse(hook.stdout) as { decision?: string; reason?: string };
+  assert.equal(decision.decision, "block", hook.stdout);
+  assert.match(decision.reason ?? "", /K105/);
+  const feature = keylang(dir, ["feature", "pay", "--format", "json"]);
+  assert.equal(feature.status, 1, feature.stdout);
+  const body = JSON.parse(feature.stdout) as { done: boolean; gaps: { kind: string; id: string; reason: string }[]; info: { rules: unknown[] | null } };
+  assert.ok(body.gaps.some((gap) => gap.kind === "rule" && gap.id === "app" && /dependency cycle/.test(gap.reason)), JSON.stringify(body.gaps));
+  assert.deepEqual(body.info.rules, []);
+  // A change in a file the area does not reach leaves the rule out of the slice.
+  writeFileSync(join(dir, "src/domain/b.ts"), "export function b(): number {\n  return 1;\n}\n");
+  writeTree(dir, { "src/domain/c.ts": 'import { b } from "./b.ts";\nexport function c(): number {\n  return b();\n}\n' });
+  const outside = keylang(dir, ["check", "--changed"]);
+  assert.equal(outside.status, 0, outside.stdout);
+  assert.doesNotMatch(outside.stdout, /no-cycles/);
+});
+
 // DX commands (design §7.5): spec skeletons.
 
 test("new flow and new module write a skeleton that check accepts and never overwrite", (t) => {

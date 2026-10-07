@@ -145,8 +145,8 @@ export interface FeatureInput {
   verdicts: readonly Verdict[];
   /** Snapshot nodes: whether a `planned` removed since the base is implemented; the modules a rule fail touches. */
   nodes?: Readonly<Record<string, { kind: string; signature?: string | null; file: string | null; layer?: string }>>;
-  /** Snapshot edges: the ends of a rule fail reported at a code position. */
-  edges?: readonly { source: string; target: string | null; file: string | null; line: number; col: number }[];
+  /** Snapshot edges: the ends of a rule fail reported at a code position, and what the area of `no-cycles` under a module reaches. */
+  edges?: readonly { kind: string; source: string; target: string | null; file: string | null; line: number; col: number; resolution?: string; typeOnly?: true }[];
   /** The feature file at its base commit (and at HEAD with a merge-base); omitted, the plan is not compared. */
   base?: FeatureBase;
   /**
@@ -339,7 +339,7 @@ function ruleFails(input: FeatureInput): RuleFail[] {
 function thisChange(input: FeatureInput, path: string, named: readonly string[]): (fail: RuleFail) => boolean {
   if (input.changed === undefined) return () => true;
   const nodes = input.nodes ?? {};
-  const slice = filterChanged({ docs: input.docs, spec: input.spec, diagnostics: input.diagnostics, verdicts: input.verdicts, nodes }, input.changed.files, input.changed.deleted);
+  const slice = filterChanged({ docs: input.docs, spec: input.spec, diagnostics: input.diagnostics, verdicts: input.verdicts, nodes, edges: input.edges ?? [] }, input.changed.files, input.changed.deleted);
   const kept = new Set<Diagnostic | Verdict>([...slice.diagnostics, ...slice.verdicts]);
   const moduleOf = (id: string): string | null => {
     for (let cur = id; ; cur = cur.slice(0, cur.lastIndexOf("."))) {
