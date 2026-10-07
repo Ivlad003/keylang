@@ -60,7 +60,11 @@ export interface Diagnostic {
   message: string;
   file: string;
   span: Span;
-  /** K001: the ID the dangling reference names, so a `planned` declaration matches it exactly. */
+  /**
+   * K001: the ID the dangling reference names, so a `planned` declaration
+   * matches it exactly. K104: the export row the finding is about
+   * (`<module>.<name>`), so a feature that plans that member owns the fail.
+   */
   target?: string;
   /**
    * The rule a warning-level rule finding belongs to (K103: `entry` and the

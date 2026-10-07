@@ -337,6 +337,7 @@ test("check --changed, hook stop and feature keep K104 of an `exports` rule when
   git(dir, ["checkout", "-q", "-b", "feat"]);
   writeTree(dir, {
     "keylang/features/leak.md": "# flow leak\n\n- planned fn domain.b.leaked () → number\n- trigger app.a.a\n  - step domain.b.leaked\n",
+    "keylang/features/use.md": "# flow use\n\n- trigger app.a.a\n  - step domain.b.b\n",
     "src/app/a.ts": 'import { b, leaked } from "../domain/b.ts";\nexport function a(): number {\n  return b() + leaked();\n}\n',
   });
   git(dir, ["add", "."]);
@@ -349,7 +350,8 @@ test("check --changed, hook stop and feature keep K104 of an `exports` rule when
   assert.ok(body.gaps.some((gap) => gap.kind === "rule" && gap.id === "domain.b" && /exports `leaked`/.test(gap.reason)), JSON.stringify(body.gaps));
   assert.deepEqual(body.info.rules, []);
 
-  // Merged into main, nothing changed since the base: the fail still names the feature's own module, so it is not inherited.
+  // Merged into main, nothing changed since the base: K104 is about `domain.b.leaked`, which this feature plans, so it is
+  // still this feature's; a feature that only steps into `domain.b` inherits it, as any old fail of a module it uses.
   git(dir, ["checkout", "-q", "main"]);
   git(dir, ["merge", "-q", "feat"]);
   const merged = keylang(dir, ["feature", "leak", "--format", "json"]);
@@ -357,6 +359,11 @@ test("check --changed, hook stop and feature keep K104 of an `exports` rule when
   const after = JSON.parse(merged.stdout) as Body;
   assert.ok(after.gaps.some((gap) => gap.kind === "rule" && gap.id === "domain.b"), JSON.stringify(after.gaps));
   assert.ok(!after.hints.some((hint) => hint.kind === "rule"), JSON.stringify(after.hints));
+  const use = keylang(dir, ["feature", "use", "--format", "json"]);
+  assert.equal(use.status, 0, use.stdout);
+  const other = JSON.parse(use.stdout) as Body;
+  assert.ok(!other.gaps.some((gap) => gap.kind === "rule"), JSON.stringify(other.gaps));
+  assert.ok(other.hints.some((hint) => hint.kind === "rule" && /inherited/.test(hint.reason)), JSON.stringify(other.hints));
 });
 
 // review-2026-10-06/02: the area of `no-cycles` under M is M, its submodules and what they reach by import, not M alone.
