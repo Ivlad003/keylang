@@ -6,6 +6,23 @@
 2. `keylang check` на згенерованій карті;
 3. негативні проби `bench/inject.ts` (з M1.1 — п'ять, див. нижче); кожна ламає копію в один спосіб, запускає справжній CLI й відновлює файли.
 
+## Business-flows: Magento 2.4.9 — базова лінія 2026-10-07
+
+Окремий бенч [`bench/magento/`](magento/README.md) (`node bench/magento/run.mjs`, повний звіт — [`bench/magento/results.md`](magento/results.md)); тікет 03 business-flows. П'ять модулів `Checkout`, `Quote`, `Sales`, `SalesRule`, `Payment` як шари, `lib/internal/Magento/Framework/{App,Event,Model,Api}` як `outside`, `exclude: ["**/Test/**"]`; keylang `661886b`, Node v24.20.0.
+
+| Метрика | Базова лінія | Ціль spec §6 |
+|---|---|---|
+| розв'язані виклики | **17.7 %** (4892 з 27 703: 2707 external, 14 417 dynamic, 5687 unresolved) | ≥ 60 % |
+| дірки | 22 443: `dynamic-call` 14 417, `unresolved-call` 5687, `unresolved-import` 2327, `unsupported` 12; top-1 причина — «call through a local value `X`» 7625 | — |
+| точки входу за видами | n/a (`entries` у знімку немає — тікет 09) | ≥ 95 % webapi, усі cron/consumers/observers |
+| `draft flow …placeOrder --mode algo` | **1 крок** (лише тригер: `$this->cartMutex->execute(…)` нерозв'язаний) | містить золотий список |
+| `draft flow …submitQuote --mode algo` | 68 кроків, зокрема `SubmitQuoteValidator.validateQuote` і `validateOrder` (після тікета 32; у spec §2 було 20) | — |
+| золотий список у `placeOrder` | **found 0/5**; усі 5 ID є в карті, `OrderService.place` і `placeOrderRun` немає в жодній чернетці | 5/5 + події |
+| події `checkout_submit_before` / `checkout_submit_all_after` | n/a (вузлів `event.*` немає — тікет 08) | у флоу з observers |
+| `map` без кешу / `check --format json` | 5,8 с, maxRSS 705 МБ / 1,8 с, 444 МБ (`--max-old-space-size=4096`) | — |
+
+Той самий формат звіту для TS/JS, Python і Rust дає `node bench/run.ts` (`<repo>.metrics.md` у робочій теці та рядок `resolved … | holes … | entries …`) через `bench/lib/metrics.mjs`.
+
 ## M7: голос на реальному залізі — 2026-09-28
 
 Ручна перевірка, не CI: Intel i5-1145G7 (8 потоків), Node v24.20.0, `@fugood/whisper.node` 1.1.3 (CPU-варіант), `decibri` 5.7.0.
