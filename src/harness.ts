@@ -14,6 +14,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { CONFIG_FILE, parseConfig } from "./config.ts";
+import { parseJsoncStrict } from "./imports.ts";
 import { allCrlf, landing, targetProblem, writeAtomic, writeProblem } from "./safe-write.ts";
 
 /** Files `init` / `agents` may create or edit. The plan reads each one before it is computed. */
@@ -262,7 +263,7 @@ export function planHarness(input: { selection: HarnessSelection; version: strin
 
   const opencodePath = opencodeFile(input.files);
   if ((input.selection.instructions && selected.has("opencode")) || (!input.selection.instructions && input.files.get(opencodePath) != null)) {
-    const open = mergeOpencode(input.files.get(opencodePath) ?? null, input.selection.instructions && selected.has("opencode") ? input.version : null);
+    const open = mergeOpencode(input.files.get(opencodePath) ?? null, input.selection.instructions && selected.has("opencode") ? input.version : null, opencodePath.endsWith(".jsonc"));
     const stoppedOpen = push(opencodePath, open);
     if (stoppedOpen) return stoppedOpen;
   }
@@ -350,9 +351,10 @@ function mergeMcpJson(existing: string | null, version: string | null): { text: 
   return mergeJsonKey(existing, ["mcpServers"], version === null ? null : mcpCommand(version));
 }
 
-function mergeOpencode(existing: string | null, version: string | null): { text: string | null } | { error: string } {
+/** `jsonc`: the file is `opencode.jsonc`, so comments and trailing commas parse; a rewrite is still plain JSON. */
+function mergeOpencode(existing: string | null, version: string | null, jsonc: boolean): { text: string | null } | { error: string } {
   const server = version === null ? null : { type: "local", command: ["npx", "-y", `keylang@${version}`, "mcp"] };
-  return mergeJsonKey(existing, ["mcp"], server);
+  return mergeJsonKey(existing, ["mcp"], server, jsonc);
 }
 
 /**
@@ -562,8 +564,8 @@ function holdsOurHook(hooks: unknown): boolean {
   return Array.isArray(stop) && stop.some((group) => isRecord(group) && Array.isArray(group.hooks) && group.hooks.some((hook) => isRecord(hook) && typeof hook.command === "string" && isOurHook(hook.command)));
 }
 
-function mergeJsonKey(existing: string | null, path: readonly string[], server: unknown): { text: string | null } | { error: string } {
-  const parsed = parseObject(existing);
+function mergeJsonKey(existing: string | null, path: readonly string[], server: unknown, jsonc = false): { text: string | null } | { error: string } {
+  const parsed = parseObject(existing, jsonc);
   if ("error" in parsed) return parsed;
   const key = path[0]!;
   const current = parsed.value[key];
@@ -578,10 +580,11 @@ function mergeJsonKey(existing: string | null, path: readonly string[], server: 
   return finishJson(parsed.value);
 }
 
-function parseObject(existing: string | null): { value: Record<string, unknown> } | { error: string } {
+/** The object in a JSON file; with `jsonc`, comments and trailing commas are allowed (`opencode.jsonc`). */
+function parseObject(existing: string | null, jsonc = false): { value: Record<string, unknown> } | { error: string } {
   if (existing === null || existing.trim() === "") return { value: {} };
   try {
-    const value: unknown = JSON.parse(existing);
+    const value: unknown = jsonc ? parseJsoncStrict(existing) : JSON.parse(existing);
     if (!isRecord(value)) return { error: "expected a JSON object" };
     return { value: { ...value } };
   } catch (error) {

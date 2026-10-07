@@ -506,89 +506,90 @@
     - node external.node
     - smol-toml external.smol-toml
     - config base.config
+    - imports map.imports
     - safe-write base.safe-write
-    - fn [skillFile](../../src/harness.ts#L35) () → string
-    - type [HarnessName](../../src/harness.ts#L40) = (typeof HARNESS_NAMES)[number]
-    - fn [denyRules](../../src/harness.ts#L59) (dir: string) → string[] <!-- internal -->
-    - fn [specDir](../../src/harness.ts#L64) (root: string) → string <!-- internal -->
+    - fn [skillFile](../../src/harness.ts#L36) () → string
+    - type [HarnessName](../../src/harness.ts#L41) = (typeof HARNESS_NAMES)[number]
+    - fn [denyRules](../../src/harness.ts#L60) (dir: string) → string[] <!-- internal -->
+    - fn [specDir](../../src/harness.ts#L65) (root: string) → string <!-- internal -->
       - calls base.config.parseConfig
-    - type [HarnessSelection](../../src/harness.ts#L73)
-    - type [HarnessFile](../../src/harness.ts#L79)
-    - type [HarnessPlan](../../src/harness.ts#L85)
-    - fn [parseAgents](../../src/harness.ts#L91) (value: string) → HarnessSelection
-    - type [HarnessProbe](../../src/harness.ts#L105)
-    - fn [detectHarnesses](../../src/harness.ts#L115) (probe: HarnessProbe) → HarnessName[]
+    - type [HarnessSelection](../../src/harness.ts#L74)
+    - type [HarnessFile](../../src/harness.ts#L80)
+    - type [HarnessPlan](../../src/harness.ts#L86)
+    - fn [parseAgents](../../src/harness.ts#L92) (value: string) → HarnessSelection
+    - type [HarnessProbe](../../src/harness.ts#L106)
+    - fn [detectHarnesses](../../src/harness.ts#L116) (probe: HarnessProbe) → HarnessName[]
       - calls features.harness.claudePresent
-    - fn [claudePresent](../../src/harness.ts#L126) (probe: HarnessProbe) → boolean <!-- internal -->
+    - fn [claudePresent](../../src/harness.ts#L127) (probe: HarnessProbe) → boolean <!-- internal -->
       - calls features.harness.claudeHasUserFile
-    - fn [claudeHasUserFile](../../src/harness.ts#L134) (probe: HarnessProbe, dir: string) → boolean <!-- internal -->
-    - fn [agentsBody](../../src/harness.ts#L148) (version: string, dir: string) → string
+    - fn [claudeHasUserFile](../../src/harness.ts#L135) (probe: HarnessProbe, dir: string) → boolean <!-- internal -->
+    - fn [agentsBody](../../src/harness.ts#L149) (version: string, dir: string) → string
       - calls features.harness.cliCommand
-    - fn [mcpCommand](../../src/harness.ts#L184) (version: string) → { command: string; args: string[] }
-    - fn [cliCommand](../../src/harness.ts#L189) (version: string) → string
-    - fn [pinSkill](../../src/harness.ts#L198) (skill: string, version: string, dir: string) → string
-    - fn [hookCommand](../../src/harness.ts#L203) (version: string) → string
+    - fn [mcpCommand](../../src/harness.ts#L185) (version: string) → { command: string; args: string[] }
+    - fn [cliCommand](../../src/harness.ts#L190) (version: string) → string
+    - fn [pinSkill](../../src/harness.ts#L199) (skill: string, version: string, dir: string) → string
+    - fn [hookCommand](../../src/harness.ts#L204) (version: string) → string
       - calls features.harness.cliCommand
-    - fn [planHarness](../../src/harness.ts#L213) (input: { selection: HarnessSelection; version: string; dir: string; skill: string; files: ReadonlyMap<string, string | null> }) → HarnessPlan
+    - fn [planHarness](../../src/harness.ts#L214) (input: { selection: HarnessSelection; version: string; dir: string; skill: string; files: ReadonlyMap<string, string | null> }) → HarnessPlan
       - calls features.harness.agentsBody, features.harness.mergeMarked, features.harness.mergeClaude, features.harness.mergeMcpJson, features.harness.mergeCodexToml, features.harness.opencodeFile, features.harness.mergeOpencode, features.harness.pinSkill, features.harness.mergeSettings, features.harness.mergeHooksFile
-    - fn [mergeMarked](../../src/harness.ts#L297) (existing: string | null, body: string | null) → { text: string | null } | { error: string }
+    - fn [mergeMarked](../../src/harness.ts#L298) (existing: string | null, body: string | null) → { text: string | null } | { error: string }
       - calls base.safe-write.allCrlf, features.harness.marked
-    - fn [marked](../../src/harness.ts#L323) (body: string, nl: "\n" | "\r\n") → string <!-- internal -->
-    - fn [mergeClaude](../../src/harness.ts#L332) (existing: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [marked](../../src/harness.ts#L324) (body: string, nl: "\n" | "\r\n") → string <!-- internal -->
+    - fn [mergeClaude](../../src/harness.ts#L333) (existing: string | null) → { text: string | null } | { error: string } <!-- internal -->
       - calls features.harness.outsideMarkers, features.harness.mergeMarked
-    - fn [outsideMarkers](../../src/harness.ts#L339) (existing: string | null) → string | { error: string } <!-- internal -->
-    - fn [mergeMcpJson](../../src/harness.ts#L349) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [outsideMarkers](../../src/harness.ts#L340) (existing: string | null) → string | { error: string } <!-- internal -->
+    - fn [mergeMcpJson](../../src/harness.ts#L350) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
       - calls features.harness.mergeJsonKey, features.harness.mcpCommand
-    - fn [mergeOpencode](../../src/harness.ts#L353) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeOpencode](../../src/harness.ts#L355) (existing: string | null, version: string | null, jsonc: boolean) → { text: string | null } | { error: string } <!-- internal -->
       - calls features.harness.mergeJsonKey
-    - fn [mergeCodexToml](../../src/harness.ts#L379) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeCodexToml](../../src/harness.ts#L381) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
       - calls features.harness.isRecord, features.harness.codexTableRegion, features.harness.rewriteCodexToml, features.harness.withoutLines, features.harness.codexEntryIs, features.harness.mcpCommand
-    - fn [codexTableRegion](../../src/harness.ts#L417) (lines: readonly string[]) → { start: number; end: number } | null <!-- internal -->
-    - fn [withoutLines](../../src/harness.ts#L426) (lines: readonly string[], region: { start: number; end: number }) → string[] <!-- internal -->
-    - fn [codexEntryIs](../../src/harness.ts#L437) (text: string, entry: Record<string, unknown> | undefined) → boolean <!-- internal -->
+    - fn [codexTableRegion](../../src/harness.ts#L419) (lines: readonly string[]) → { start: number; end: number } | null <!-- internal -->
+    - fn [withoutLines](../../src/harness.ts#L428) (lines: readonly string[], region: { start: number; end: number }) → string[] <!-- internal -->
+    - fn [codexEntryIs](../../src/harness.ts#L439) (text: string, entry: Record<string, unknown> | undefined) → boolean <!-- internal -->
       - calls features.harness.isRecord
-    - fn [rewriteCodexToml](../../src/harness.ts#L449) (data: Record<string, unknown>, entry: Record<string, unknown> | null) → { text: string | null } <!-- internal -->
-    - fn [mergeSettings](../../src/harness.ts#L460) (existing: string | null, version: string | null, dir: string) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [rewriteCodexToml](../../src/harness.ts#L451) (data: Record<string, unknown>, entry: Record<string, unknown> | null) → { text: string | null } <!-- internal -->
+    - fn [mergeSettings](../../src/harness.ts#L462) (existing: string | null, version: string | null, dir: string) → { text: string | null } | { error: string } <!-- internal -->
       - calls features.harness.parseObject, features.harness.holdsKeylangSettings, features.harness.mergeDeny, features.harness.mergeHooksValue, features.harness.finishJson
-    - fn [mergeHooksFile](../../src/harness.ts#L476) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeHooksFile](../../src/harness.ts#L478) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
       - calls features.harness.parseObject, features.harness.holdsOurHook, features.harness.mergeHooksValue, features.harness.finishJson
-    - fn [mergeDeny](../../src/harness.ts#L493) (permissions: unknown, install: boolean, dir: string) → { value: unknown } | { error: string } <!-- internal -->
+    - fn [mergeDeny](../../src/harness.ts#L495) (permissions: unknown, install: boolean, dir: string) → { value: unknown } | { error: string } <!-- internal -->
       - calls features.harness.isRecord, features.harness.denyRules
-    - fn [mergeHooksValue](../../src/harness.ts#L509) (hooks: unknown, version: string | null) → { value: unknown } | { error: string } <!-- internal -->
+    - fn [mergeHooksValue](../../src/harness.ts#L511) (hooks: unknown, version: string | null) → { value: unknown } | { error: string } <!-- internal -->
       - calls features.harness.isRecord, features.harness.rewriteGroup, features.harness.hookCommand, features.harness.emptyGroup
-    - fn [rewriteGroup](../../src/harness.ts#L528) (group: unknown, version: string | null) → Record<string, unknown> | { error: string } <!-- internal -->
+    - fn [rewriteGroup](../../src/harness.ts#L530) (group: unknown, version: string | null) → Record<string, unknown> | { error: string } <!-- internal -->
       - calls features.harness.isRecord, features.harness.isOurHook, features.harness.hookCommand
-    - fn [emptyGroup](../../src/harness.ts#L544) (group: Record<string, unknown>) → boolean <!-- internal -->
-    - fn [isOurHook](../../src/harness.ts#L548) (command: string) → boolean <!-- internal -->
-    - fn [holdsKeylangSettings](../../src/harness.ts#L553) (data: Record<string, unknown>, dir: string) → boolean <!-- internal -->
+    - fn [emptyGroup](../../src/harness.ts#L546) (group: Record<string, unknown>) → boolean <!-- internal -->
+    - fn [isOurHook](../../src/harness.ts#L550) (command: string) → boolean <!-- internal -->
+    - fn [holdsKeylangSettings](../../src/harness.ts#L555) (data: Record<string, unknown>, dir: string) → boolean <!-- internal -->
       - calls features.harness.isRecord, features.harness.denyRules, features.harness.holdsOurHook
-    - fn [holdsOurHook](../../src/harness.ts#L560) (hooks: unknown) → boolean <!-- internal -->
+    - fn [holdsOurHook](../../src/harness.ts#L562) (hooks: unknown) → boolean <!-- internal -->
       - calls features.harness.isRecord, features.harness.isOurHook
-    - fn [mergeJsonKey](../../src/harness.ts#L565) (existing: string | null, path: readonly string[], server: unknown) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeJsonKey](../../src/harness.ts#L567) (existing: string | null, path: readonly string[], server: unknown, jsonc = false) → { text: string | null } | { error: string } <!-- internal -->
       - calls features.harness.parseObject, features.harness.isRecord, features.harness.finishJson
-    - fn [parseObject](../../src/harness.ts#L581) (existing: string | null) → { value: Record<string, unknown> } | { error: string } <!-- internal -->
-      - calls features.harness.isRecord
-    - fn [finishJson](../../src/harness.ts#L592) (data: Record<string, unknown>) → { text: string | null } <!-- internal -->
-    - fn [opencodeFile](../../src/harness.ts#L597) (files: ReadonlyMap<string, string | null>) → string <!-- internal -->
-    - fn [isRecord](../../src/harness.ts#L603) (value: unknown) → value is Record<string, unknown> <!-- internal -->
-    - type [HarnessChoice](../../src/harness.ts#L610) = "auto" | "none" | readonly HarnessName[]
-    - fn [harnessChoice](../../src/harness.ts#L613) (flag: string | undefined) → HarnessChoice
+    - fn [parseObject](../../src/harness.ts#L584) (existing: string | null, jsonc = false) → { value: Record<string, unknown> } | { error: string } <!-- internal -->
+      - calls map.imports.parseJsoncStrict, features.harness.isRecord
+    - fn [finishJson](../../src/harness.ts#L595) (data: Record<string, unknown>) → { text: string | null } <!-- internal -->
+    - fn [opencodeFile](../../src/harness.ts#L600) (files: ReadonlyMap<string, string | null>) → string <!-- internal -->
+    - fn [isRecord](../../src/harness.ts#L606) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - type [HarnessChoice](../../src/harness.ts#L613) = "auto" | "none" | readonly HarnessName[]
+    - fn [harnessChoice](../../src/harness.ts#L616) (flag: string | undefined) → HarnessChoice
       - calls features.harness.parseAgents
-    - fn [keylangVersion](../../src/harness.ts#L620) () → string
-    - type [HarnessCategory](../../src/harness.ts#L625) = "instructions" | "mcp" | "skill" | "settings" | "hooks"
-    - fn [harnessCategory](../../src/harness.ts#L627) (path: string) → HarnessCategory
-    - fn [diskProbe](../../src/harness.ts#L636) (root: string) → HarnessProbe
-    - fn [resolveChoice](../../src/harness.ts#L657) (choice: HarnessChoice, probe: HarnessProbe) → HarnessSelection
+    - fn [keylangVersion](../../src/harness.ts#L623) () → string
+    - type [HarnessCategory](../../src/harness.ts#L628) = "instructions" | "mcp" | "skill" | "settings" | "hooks"
+    - fn [harnessCategory](../../src/harness.ts#L630) (path: string) → HarnessCategory
+    - fn [diskProbe](../../src/harness.ts#L639) (root: string) → HarnessProbe
+    - fn [resolveChoice](../../src/harness.ts#L660) (choice: HarnessChoice, probe: HarnessProbe) → HarnessSelection
       - calls features.harness.detectHarnesses
-    - type [HarnessTarget](../../src/harness.ts#L667)
-    - type [AgentsPlan](../../src/harness.ts#L679)
-    - fn [planAgents](../../src/harness.ts#L695) (root: string, choice: HarnessChoice) → AgentsPlan
+    - type [HarnessTarget](../../src/harness.ts#L670)
+    - type [AgentsPlan](../../src/harness.ts#L682)
+    - fn [planAgents](../../src/harness.ts#L698) (root: string, choice: HarnessChoice) → AgentsPlan
       - calls features.harness.resolveChoice, features.harness.diskProbe, features.harness.specDir, features.harness.readInputs, features.harness.skillFile, features.harness.keylangVersion, features.harness.planHarness, features.harness.harnessCategory
-    - fn [readInputs](../../src/harness.ts#L711) (root: string) → Map<string, string | null> <!-- internal -->
-    - fn [agentsPlanProblems](../../src/harness.ts#L723) (plan: AgentsPlan) → string[]
+    - fn [readInputs](../../src/harness.ts#L714) (root: string) → Map<string, string | null> <!-- internal -->
+    - fn [agentsPlanProblems](../../src/harness.ts#L726) (plan: AgentsPlan) → string[]
       - calls features.harness.readInputs, features.harness.specDir, base.safe-write.writeProblem, base.safe-write.targetProblem, features.harness.detectHarnesses, features.harness.diskProbe
-    - type [HarnessStep](../../src/harness.ts#L750)
-    - fn [commitAgents](../../src/harness.ts#L767) ( plan: AgentsPlan, options: { signal?: AbortSignal; onStep?: (step: { path: string; action: "write" | "remove" }) => void } = {}, ) → Promise<{ steps: HarnessStep[]; outcome: "completed" | "failed" | "cancelled" }>
+    - type [HarnessStep](../../src/harness.ts#L753)
+    - fn [commitAgents](../../src/harness.ts#L770) ( plan: AgentsPlan, options: { signal?: AbortSignal; onStep?: (step: { path: string; action: "write" | "remove" }) => void } = {}, ) → Promise<{ steps: HarnessStep[]; outcome: "completed" | "failed" | "cancelled" }>
       - calls base.safe-write.targetProblem, base.safe-write.landing, base.safe-write.writeAtomic
   - module [keys](../../src/keys.ts#L1)
     - node external.node

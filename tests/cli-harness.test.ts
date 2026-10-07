@@ -412,3 +412,36 @@ test("hook install from a keylang root below the git top level: the hook runs `c
   assert.equal(keylang(pkg, ["hook", "install"]).status, 0);
   assert.equal(readFileSync(hook, "utf8"), text);
 });
+
+test("init on a repository with opencode.jsonc (comments, trailing comma): JSONC is read; --agents=none leaves the file byte for byte, auto init adds the mcp.keylang entry", (t) => {
+  const jsonc = '{\n  // opencode config\n  "$schema": "https://opencode.ai/config.json",\n  "model": "x",\n}\n';
+  const make = (): string => {
+    const dir = tempDir(t, "keylang-opencode-jsonc-");
+    writeTree(dir, { "opencode.jsonc": jsonc, "src/app/pay.ts": PAY, "src/domain/order.ts": ORDER });
+    return dir;
+  };
+  // `clone` and `web <url>` run `init --agents=none` on the clone: the file is parsed, nothing of keylang's is in it, so it stays.
+  const none = make();
+  const o = keylang(none, ["init", "--agents=none"]);
+  assert.equal(o.status, 0, o.stderr);
+  assert.ok(existsSync(join(none, "keylang.json")));
+  assert.equal(readFileSync(join(none, "opencode.jsonc"), "utf8"), jsonc);
+
+  const auto = make();
+  const init = keylang(auto, ["init"]);
+  assert.equal(init.status, 0, init.stderr);
+  const parsed = JSON.parse(readFileSync(join(auto, "opencode.jsonc"), "utf8")) as { model: string; mcp: { keylang: { command: string[] } } };
+  assert.equal(parsed.model, "x");
+  assert.deepEqual(parsed.mcp.keylang.command, ["npx", "-y", `keylang@${VERSION}`, "mcp"]);
+  assert.equal(keylang(auto, ["agents", "--check"]).status, 0);
+  assert.equal(keylang(auto, ["agents", "--agents=none"]).status, 0);
+  assert.equal((JSON.parse(readFileSync(join(auto, "opencode.jsonc"), "utf8")) as { mcp?: unknown }).mcp, undefined);
+
+  // A broken file is still code 2 and nothing is written.
+  const broken = make();
+  writeFileSync(join(broken, "opencode.jsonc"), "{ // comment\n  \"model\": \n}\n");
+  const bad = keylang(broken, ["init"]);
+  assert.equal(bad.status, 2);
+  assert.match(bad.stderr, /opencode\.jsonc: invalid JSON/);
+  assert.equal(existsSync(join(broken, "keylang.json")), false);
+});
