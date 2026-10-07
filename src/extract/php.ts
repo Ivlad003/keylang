@@ -10,7 +10,10 @@
 // unqualified function falls back to the global namespace, as PHP does. Calls
 // PHP resolves at run time (`$f()`, `$obj->$m()`, `new $class`,
 // `call_user_func`) are holes; so is a method through a value whose class the
-// syntax does not name.
+// syntax does not name. An untyped property (PHP 7) has the class of the
+// constructor parameter assigned to it (`$this->x = $x` with `X $x`), a fact of
+// the syntax; without one, the class its `@var` (or the parameter's `@param`)
+// writes, which PHP does not check: provenance `docblock`.
 
 import { asciiLowerCase } from "../languages.ts";
 import type { CallFact, DeclFact, ExportRow, FileFacts, ImportFact, TypeRefFact, UnsupportedFact, ValueRefFact } from "./facts.ts";
@@ -56,8 +59,42 @@ interface ClassContext {
   name: string;
   /** Names of the static methods, in ASCII lower case. */
   statics: ReadonlySet<string>;
-  /** Property → its class as written, for a property typed with one class (`private Store $store`, a promoted constructor parameter). */
-  fields: ReadonlyMap<string, string>;
+  /**
+   * Property → its class, for a property typed with one class: `private Store $store`, a promoted
+   * constructor parameter, the constructor parameter assigned to it, or its `@var`.
+   */
+  fields: ReadonlyMap<string, FieldType>;
+}
+
+/** The class of a property, and the docblock it comes from when no checked syntax names it. */
+interface FieldType {
+  /** The class's binding in the file, as `Collector.klass` gives it. */
+  cls: string;
+  docblock?: { line: number; col: number };
+}
+
+/** A position in the file with its source fragment. */
+interface At {
+  line: number;
+  col: number;
+  endLine: number;
+  endCol: number;
+  text: string;
+}
+
+/** A class name written in a docblock tag: `@var Foo`, `@param Foo $x`. */
+interface DocType {
+  written: string;
+  at: At;
+}
+
+/** Where the class of a property comes from: a constructor parameter (typed, or by its `@param`) or a `@var`. */
+interface TypeSource {
+  written: string;
+  /** The qualified name PHP gives it, in ASCII lower case: two spellings of one class compare equal. */
+  key: string;
+  local: string;
+  docblock?: { line: number; col: number };
 }
 
 /** Per file: the imports, values read and holes the names of the code add. */
@@ -70,24 +107,30 @@ class Collector {
 
   /** A class the code names: the binding it goes through, registered as an optional import unless a `use` binds it. */
   klass(written: string, node: Node, names: Names): string {
+    return this.klassAt(written, located(node), names, false);
+  }
+
+  /** The same for a name at `at`; `docblock`: written only in a docblock, so the import is one of provenance `docblock` unless the code names it too. */
+  klassAt(written: string, at: At, names: Names, docblock: boolean): string {
     const name = canonicalClass(written.trim(), names);
-    if (!name.explicit && name.qualified !== null) this.implicit(name.local, name.qualified, node);
+    if (!name.explicit && name.qualified !== null) this.implicit(name.local, name.qualified, at, docblock);
     return name.local;
   }
 
   /** A function the code calls by name, likewise. */
   fn(written: string, node: Node, names: Names): string {
     const name = canonicalFunction(written.trim(), names);
-    if (!name.explicit) this.implicit(name.local, name.spec, node);
+    if (!name.explicit) this.implicit(name.local, name.spec, located(node), false);
     return name.local;
   }
 
-  private implicit(local: string, spec: string, node: Node): void {
+  /** A name's first use is its import; a use in the code replaces one in a docblock, whichever came first. */
+  private implicit(local: string, spec: string, at: At, docblock: boolean): void {
     const key = `${spec}\0${local}`;
-    if (this.imports.has(key)) return;
-    const at = located(node);
+    const existing = this.imports.get(key);
+    if (existing && (docblock || !existing.docblock)) return;
     const imported = spec.replace(/^(function|const) /, "").replace(/ \?\? .*$/, "");
-    this.imports.set(key, { source: spec, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, text: firstLine(at.text), bindings: [{ kind: "named", local, imported: lastSegment(imported) }], reexport: false, optional: true });
+    this.imports.set(key, { source: spec, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, text: firstLine(at.text), bindings: [{ kind: "named", local, imported: lastSegment(imported) }], reexport: false, optional: true, ...(docblock ? { docblock: true as const } : {}) });
   }
 
   value(name: string, node: Node, member: boolean): void {
@@ -306,14 +349,20 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
   const items = body?.namedChildren ?? [];
   const methods = items.filter((item) => item.type === "method_declaration");
   const statics = new Set(methods.filter((m) => m.namedChildren.some((c) => c.type === "static_modifier")).map((m) => asciiLowerCase(m.childForFieldName("name")?.text ?? "")));
-  const fields = new Map<string, string>();
+  const fields = new Map<string, FieldType>();
+  /** Untyped properties: their declarations and their `@var`, for the constructor to type. */
+  const untyped = new Map<string, { node: Node; doc: DocType | null }>();
+  /** Properties the constructor settled: typed, or a hole for conflicting classes. */
+  const decided = new Set<string>();
   const traits: string[] = [];
   for (const item of items) {
     if (item.type === "property_declaration") {
       const type = singleClass(item.childForFieldName("type"));
       for (const element of item.namedChildren.filter((c) => c.type === "property_element")) {
         const prop = element.childForFieldName("name")?.text.replace(/^\$/, "");
-        if (prop && type) fields.set(prop, collector.klass(type, item, names));
+        if (!prop) continue;
+        if (type) fields.set(prop, { cls: collector.klass(type, item, names) });
+        else if (!item.childForFieldName("type")) untyped.set(prop, { node: item, doc: docTag(item, collector.header, /@var\s+(\S+)/) });
       }
       for (const named of namedTypes(item.childForFieldName("type"))) types.push(typeRef(collector.klass(named.text, named.node, names), named.node));
     } else if (item.type === "use_declaration") {
@@ -334,8 +383,15 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
       const typeNode = param.childForFieldName("type");
       const type = singleClass(typeNode);
       const prop = param.childForFieldName("name")?.text.replace(/^\$/, "");
-      if (prop && type && typeNode) fields.set(prop, collector.klass(type, typeNode, names));
+      if (prop && type && typeNode) fields.set(prop, { cls: collector.klass(type, typeNode, names) });
     }
+    for (const prop of constructorFields(method, name, names, collector, fields, untyped)) decided.add(prop);
+  }
+  // A property the constructor neither types nor contradicts: its `@var`.
+  for (const [prop, { doc }] of untyped) {
+    if (fields.has(prop) || decided.has(prop) || !doc) continue;
+    const source = docSource(doc, names, collector);
+    if (source) fields.set(prop, { cls: source.local, docblock: source.docblock! });
   }
   const ctx: ClassContext = { name, statics, fields };
   const members: DeclFact[] = [];
@@ -351,6 +407,106 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
     members.push(decl);
   }
   return { kind: "class", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature: null, exported: true, calls: [], types, members, fingerprint: fingerprint(node), ...(base !== undefined ? { base } : {}), ...(traits.length > 0 ? { traits } : {}), ...(doc !== undefined ? { doc } : {}) };
+}
+
+/**
+ * The classes the constructor gives the class's untyped properties. `$this->x = $x`
+ * with a parameter `X $x` is a fact of the syntax; with an untyped `$x` and
+ * `@param X $x`, or no assignment and `@var X` above the property, the class
+ * comes from a docblock PHP does not check. Only a parameter assigned as it is
+ * counts: an expression (`$x ?: new X()`) has no class the syntax names.
+ * Assignments of two classes, or a `@var` the constructor contradicts, type
+ * nothing: a hole `ambiguous property type` of the class. Returns the
+ * properties settled either way; the rest may still have a `@var`.
+ */
+function constructorFields(method: Node, className: string, names: Names, collector: Collector, fields: Map<string, FieldType>, untyped: ReadonlyMap<string, { node: Node; doc: DocType | null }>): Set<string> {
+  const decided = new Set<string>();
+  const paramDocs = new Map<string, DocType>();
+  for (const doc of docTags(method, collector.header, /@param\s+(\S+)\s+(?:\.\.\.)?&?\$([A-Za-z_\x80-\uffff][A-Za-z0-9_\x80-\uffff]*)/)) if (doc.name && !paramDocs.has(doc.name)) paramDocs.set(doc.name, doc);
+  /** Parameter → the class it names, or null for one of no single class. */
+  const params = new Map<string, TypeSource | null>();
+  for (const param of method.childForFieldName("parameters")?.namedChildren ?? []) {
+    const variable = param.childForFieldName("name")?.text.replace(/^\$/, "");
+    if (!variable) continue;
+    const typeNode = param.childForFieldName("type");
+    if (typeNode) {
+      const written = singleClass(typeNode);
+      params.set(variable, written ? { written, key: classKey(written, names), local: collector.klass(written, typeNode, names) } : null);
+      continue;
+    }
+    const doc = paramDocs.get(variable);
+    params.set(variable, doc ? docSource(doc, names, collector) : null);
+  }
+  /** Property → what each constructor assignment gives it, in order; null for a value of no known class. */
+  const assigned = new Map<string, { node: Node; sources: (TypeSource | null)[] }>();
+  const body = method.childForFieldName("body");
+  if (body) {
+    walkScope(body, (n) => {
+      if (n.type !== "assignment_expression") return;
+      const left = n.childForFieldName("left");
+      if (left?.type !== "member_access_expression" || left.childForFieldName("object")?.text !== "$this") return;
+      const prop = left.childForFieldName("name");
+      if (prop?.type !== "name" || fields.has(prop.text)) return;
+      const right = n.childForFieldName("right");
+      const value = right ? unparenthesized(right) : null;
+      const source = value?.type === "variable_name" ? (params.get(value.text.replace(/^\$/, "")) ?? null) : null;
+      const entry = assigned.get(prop.text) ?? { node: n, sources: [] };
+      entry.sources.push(source);
+      assigned.set(prop.text, entry);
+    });
+  }
+  for (const [prop, { node, sources }] of assigned) {
+    const known = sources.filter((source): source is TypeSource => source !== null);
+    if (known.length === 0) continue;
+    decided.add(prop);
+    const declared = untyped.get(prop);
+    const where = declared?.node ?? node;
+    const distinct = [...new Map(known.map((source) => [source.key, source.written])).values()];
+    if (distinct.length > 1 || known.length < sources.length) {
+      const listed = [...distinct, ...(known.length < sources.length ? ["a value of no known class"] : [])].map((item, i) => (i < distinct.length ? `\`${item}\`` : item));
+      collector.hole(where, `ambiguous property type \`$${prop}\`: assigned ${listed.join(" and ")} in the constructor`, className);
+      continue;
+    }
+    const first = known[0]!;
+    const doc = declared?.doc ? docSource(declared.doc, names, collector) : null;
+    if (doc && doc.key !== first.key) {
+      collector.hole(where, `ambiguous property type \`$${prop}\`: \`@var ${doc.written}\`, assigned \`${first.written}\` in the constructor`, className);
+      continue;
+    }
+    // One class from every assignment: a fact of the syntax when any parameter is typed.
+    const syntactic = known.find((source) => !source.docblock);
+    fields.set(prop, syntactic ? { cls: syntactic.local } : { cls: first.local, docblock: first.docblock! });
+  }
+  return decided;
+}
+
+/** The qualified name of a class as written, in ASCII lower case: how two spellings compare. */
+function classKey(written: string, names: Names): string {
+  return asciiLowerCase(canonicalClass(written, names).qualified ?? written);
+}
+
+/** The class a docblock type names, registered as a docblock import; null when it names no single class. */
+function docSource(doc: DocType, names: Names, collector: Collector): TypeSource | null {
+  const written = singleDocClass(doc.written);
+  if (!written) return null;
+  return { written, key: classKey(written, names), local: collector.klassAt(written, doc.at, names, true), docblock: { line: doc.at.line, col: doc.at.col } };
+}
+
+/**
+ * The one class a docblock type names: `Foo`, `?Foo`, `Foo|null`, `\App\Foo`.
+ * Null for a union of classes, an array (`Foo[]`, `array<Foo>`), a built-in
+ * type or anything else PHPDoc writes.
+ */
+function singleDocClass(written: string): string | null {
+  const parts = written
+    .replace(/^\?/, "")
+    .split("|")
+    .map((part) => part.trim())
+    .filter((part) => part !== "" && asciiLowerCase(part) !== "null");
+  if (parts.length !== 1) return null;
+  const name = parts[0]!;
+  if (!/^\\?[A-Za-z_\x80-\uffff][A-Za-z0-9_\x80-\uffff]*(\\[A-Za-z_\x80-\uffff][A-Za-z0-9_\x80-\uffff]*)*$/.test(name)) return null;
+  return BUILTIN_TYPES.has(asciiLowerCase(name)) ? null : name;
 }
 
 /** The one class a type names: `Store`, `?Store`; null for a union, an intersection, a built-in type or none. */
@@ -541,7 +697,7 @@ function firstClassCallable(n: Node): boolean {
  * an opaque expression. Null for a first-class callable (`f(...)`), which is a
  * value.
  */
-function callOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "callee" | "bound" | "receiver" | "opaque"> | null {
+function callOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "callee" | "bound" | "receiver" | "opaque" | "docblock"> | null {
   const opaque = (): Pick<CallFact, "callee" | "opaque"> => ({ callee: n.text.replace(/\s+/g, " ").slice(0, MAX_CALLEE), opaque: true });
   if (n.type === "object_creation_expression") {
     const target = n.namedChildren[0];
@@ -601,9 +757,10 @@ function callOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "ca
   if ((object?.type === "member_access_expression" || object?.type === "nullsafe_member_access_expression") && object.childForFieldName("object")?.text === "$this") {
     const prop = object.childForFieldName("name");
     if (prop?.type === "name") {
-      const receiver = scope.ctx?.fields.get(prop.text);
+      const field = scope.ctx?.fields.get(prop.text);
       // A property of unknown class: a call through a value, as `self.queue.put()` in Python.
-      return receiver ? { callee: `this.${prop.text}.${member}`, receiver } : { callee: `this.${prop.text}.${member}`, bound: "local" };
+      if (!field) return { callee: `this.${prop.text}.${member}`, bound: "local" };
+      return { callee: `this.${prop.text}.${member}`, receiver: field.cls, ...(field.docblock ? { docblock: field.docblock } : {}) };
     }
   }
   // `(new Order())->total()` and `new Order()->total()`: a method of the class `new` names. The
@@ -718,11 +875,41 @@ function normalize(path: string): string {
  * before the first tag (`@param` and the rest).
  */
 function docOf(node: Node, header: number | null): string | undefined {
-  let at = node.previousNamedSibling;
-  while (at?.type === "comment" && !at.text.startsWith("/*")) at = at.previousNamedSibling;
-  if (at?.type !== "comment" || !at.text.startsWith("/**") || at.id === header) return undefined;
+  const at = docComment(node, header);
+  if (!at) return undefined;
   const text = jsdocDescription(blockCommentBody(at.text)).trim();
   return isLicense(text) ? undefined : (nonEmpty(text) ?? undefined);
+}
+
+/** The PHPDoc comment node right above a declaration, as `docOf` finds it; null without one. */
+function docComment(node: Node, header: number | null): Node | null {
+  let at = node.previousNamedSibling;
+  while (at?.type === "comment" && !at.text.startsWith("/*")) at = at.previousNamedSibling;
+  return at?.type === "comment" && at.text.startsWith("/**") && at.id !== header ? at : null;
+}
+
+/**
+ * The tags of a declaration's PHPDoc that `tag` matches, one per line, with
+ * the type (first group) and the variable name (second group, if any) and the
+ * position of the `@`. The fragment is the tag's line.
+ */
+function docTags(node: Node, header: number | null, tag: RegExp): (DocType & { name?: string })[] {
+  const comment = docComment(node, header);
+  if (!comment) return [];
+  const out: (DocType & { name?: string })[] = [];
+  comment.text.split("\n").forEach((text, i) => {
+    const match = tag.exec(text);
+    if (!match?.[1]) return;
+    const line = comment.startPosition.row + 1 + i;
+    const col = (i === 0 ? comment.startPosition.column : 0) + match.index + match[0].indexOf("@") + 1;
+    out.push({ written: match[1], at: { line, col, endLine: line, endCol: col + match[0].length, text: text.trim() }, ...(match[2] ? { name: match[2] } : {}) });
+  });
+  return out;
+}
+
+/** The first tag of a declaration's PHPDoc that `tag` matches; null without one. */
+function docTag(node: Node, header: number | null, tag: RegExp): DocType | null {
+  return docTags(node, header, tag)[0] ?? null;
 }
 
 /**

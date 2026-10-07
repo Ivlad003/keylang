@@ -16,7 +16,7 @@ import type { Verdict } from "./verdict.ts";
 interface SnapshotView {
   snapshotId: string;
   nodes: Record<string, { kind: string; file: string | null; line: number | null; col?: number | null; members?: string; class?: true }>;
-  edges: { kind: string; source: string; target: string | null; file: string | null; line: number; col: number; resolution: string; reason?: string; via?: string; typeOnly?: true }[];
+  edges: { kind: string; source: string; target: string | null; file: string | null; line: number; col: number; resolution: string; reason?: string; via?: string; typeOnly?: true; provenance?: string; docblock?: string }[];
   coverage: { kind: string; file: string; line: number; col: number; reason: string; source: string | null }[];
   exports: { module: string; name: string; kind: string; form?: string; from?: string; reason?: string }[];
 }
@@ -53,6 +53,13 @@ interface UseEdge {
   line: number;
   col: number;
   resolution: string;
+  /** `file:line:col` of the docblock the edge rests on (PHP `@var`, `@param`): the verdict names it, since PHP does not check it. */
+  docblock?: string;
+}
+
+/** The note a verdict adds to a dependency that exists only thanks to a docblock. */
+function docblockNote(edge: Pick<UseEdge, "docblock">): string {
+  return edge.docblock ? ` (typed by a docblock at ${edge.docblock})` : "";
 }
 
 export const UNORDERED_LAYERS: ReadonlySet<string> = new Set(SYNTHETIC_LAYERS);
@@ -187,7 +194,7 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
       if (edge.kind !== "call" && edge.kind !== "type" && edge.resolution === "resolved" && !edge.typeOnly) selfLoops.add(fromUnit);
       continue;
     }
-    edges.push({ from, to, fromUnit, toUnit, kind: edge.kind, typeOnly: edge.typeOnly === true, file: edge.file, line: edge.line, col: edge.col, resolution: edge.resolution });
+    edges.push({ from, to, fromUnit, toUnit, kind: edge.kind, typeOnly: edge.typeOnly === true, file: edge.file, line: edge.line, col: edge.col, resolution: edge.resolution, ...(edge.provenance === "docblock" ? { docblock: edge.docblock ?? `${edge.file}:${edge.line}:${edge.col}` } : {}) });
   }
   /** Every module node, classes included: the area of a scope. */
   const modules = new Set<string>();
@@ -267,7 +274,7 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
     if (layerOf(edge.toUnit) === OUTSIDE_LAYER && layerOf(edge.fromUnit) !== OUTSIDE_LAYER && !outsidePairs.has(pair)) {
       outsidePairs.add(pair);
       const file = snapshot.nodes[edge.toUnit]?.file;
-      pushFail("K107", edge.file, edge.line, edge.col, `divergence: \`${edge.fromUnit}\` depends on \`${edge.toUnit}\`${file ? ` (${file})` : ""}, which \`outside\` in keylang.json puts outside the architecture`, OUTSIDE_LAYER, edge.fromUnit);
+      pushFail("K107", edge.file, edge.line, edge.col, `divergence: \`${edge.fromUnit}\` depends on \`${edge.toUnit}\`${docblockNote(edge)}${file ? ` (${file})` : ""}, which \`outside\` in keylang.json puts outside the architecture`, OUTSIDE_LAYER, edge.fromUnit);
     }
     const hits = ruleHits(rules, edge.from, edge.to, within);
     const decision = decide(hits, format);
@@ -299,7 +306,7 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
         deniedPairs.set(hit.rule, seen);
         if (seen.has(pair)) continue;
         seen.add(pair);
-        pushFail("K102", edge.file, edge.line, edge.col, `divergence: \`${edge.from}\` depends on \`${edge.to}\`, which is denied by \`${hit.rule.text}\` (${hit.rule.file}:${hit.rule.span.start.line})${incomparableAside(hit, hits, format)}`, hit.rule.text, edge.from);
+        pushFail("K102", edge.file, edge.line, edge.col, `divergence: \`${edge.from}\` depends on \`${edge.to}\`${docblockNote(edge)}, which is denied by \`${hit.rule.text}\` (${hit.rule.file}:${hit.rule.span.start.line})${incomparableAside(hit, hits, format)}`, hit.rule.text, edge.from);
       }
       // The deny is the finding. The layers line stays without `ok` and without a second K101.
       if (upward) {
@@ -321,7 +328,7 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
     violated.add(toLayer);
     if (layeredPairs.has(pair)) continue;
     layeredPairs.add(pair);
-    pushFail("K101", edge.file, edge.line, edge.col, `divergence: \`${edge.fromUnit}\` depends on \`${edge.toUnit}\` (${upward})`, `layers ${fromLayer} ${toLayer}`, edge.fromUnit, componentSpec(rules, toLayer));
+    pushFail("K101", edge.file, edge.line, edge.col, `divergence: \`${edge.fromUnit}\` depends on \`${edge.toUnit}\`${docblockNote(edge)} (${upward})`, `layers ${fromLayer} ${toLayer}`, edge.fromUnit, componentSpec(rules, toLayer));
   }
 
   for (const order of rules.orders) {

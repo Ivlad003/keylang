@@ -46,7 +46,7 @@ interface Snapshot {
   system: { name: string | null; brief: string | null; source: string | null };
   manifest: { files: { path: string }[] };
   nodes: Record<string, { kind: string; doc: string | null; escapes?: { reason: string } }>;
-  edges: { kind: string; source: string; target: string | null; resolution: string; text: string }[];
+  edges: { kind: string; source: string; target: string | null; resolution: string; text: string; provenance: string; docblock?: string }[];
   coverage: { kind: string; file: string; line: number; reason: string; source: string | null }[];
 }
 
@@ -193,7 +193,7 @@ test("php: names resolve as PHP resolves them: a global function after the names
   assert.ok(!Object.keys(index.nodes).some((id) => id.startsWith("external.")));
   // An interface is a type: a call through a value typed with it is a hole, as in TypeScript.
   assert.equal(index.nodes["core.Repo.Repo"]?.kind, "type");
-  assert.ok(index.coverage.some((c) => c.kind === "unresolved-call" && c.source === "web.Page.Page.run" && c.reason === "unresolved call `this.repo.find`"));
+  assert.ok(index.coverage.some((c) => c.kind === "dynamic-call" && c.source === "web.Page.Page.run" && c.reason === "call through an interface `Core\\Repo`"), JSON.stringify(index.coverage));
   // A path computed at run time is a hole of the module's dependencies.
   assert.ok(index.coverage.some((c) => c.kind === "unsupported" && c.reason === "an include of a path computed at run time" && c.source === "web.Page"));
   // The file's docblock documents the module, not the function under it.
@@ -242,6 +242,125 @@ test("php: what PHP chooses at run time is a hole or an escape: `$obj->$m()`, `n
   assert.equal(index.nodes["web.Page.Page.__toString"]?.escapes?.reason, "`__toString` is called implicitly");
   // `strlen(...)` makes a callable: no call of `strlen`.
   assert.ok(!index.edges.some((e) => e.text === "strlen"));
+});
+
+/** A PHP 7 class: untyped properties whose classes the constructor and the docblocks say. */
+const PROPERTY_FILES = {
+  "keylang.json": JSON.stringify({ languages: ["php"], layers: { app: ["src/App/**"], domain: ["src/Domain/**"] } }),
+  "src/Domain/Store.php": "<?php\nnamespace Shop\\Domain;\n\nclass Store\n{\n    public function save(): void {}\n}\n",
+  "src/Domain/Mailer.php": "<?php\nnamespace Shop\\Domain;\n\nclass Mailer\n{\n    public function send(): void {}\n}\n",
+  "src/Domain/Audit.php": "<?php\nnamespace Shop\\Domain;\n\nclass Audit\n{\n    public function log(): void {}\n}\n",
+  "src/Domain/Cache.php": "<?php\nnamespace Shop\\Domain;\n\nclass Cache\n{\n    public function get(): void {}\n}\n",
+  "src/Domain/Repo.php": "<?php\nnamespace Shop\\Domain;\n\ninterface Repo\n{\n    public function find(int $id): ?array;\n}\n",
+  "src/App/Checkout.php": [
+    "<?php",
+    "namespace Shop\\App;",
+    "",
+    "use Shop\\Domain\\Audit;",
+    "use Shop\\Domain\\Cache;",
+    "// Mailer is named by its docblock only, with its full name.",
+    "use Shop\\Domain\\Repo;",
+    "use Shop\\Domain\\Store;",
+    "",
+    "/**",
+    " * @method Audit audit()",
+    " * @property Cache $magic",
+    " */",
+    "class Checkout",
+    "{",
+    "    private $store;",
+    "    /** @var \\Shop\\Domain\\Mailer|null */",
+    "    private $mailer;",
+    "    private $repo;",
+    "    private $audit;",
+    "    private $cache;",
+    "    /** @var Store */",
+    "    private $mixed;",
+    "",
+    "    /**",
+    "     * @param Store $store",
+    "     * @param Audit $audit",
+    "     */",
+    "    public function __construct(Store $store, Repo $repo, $audit, Cache $cache, Mailer $other)",
+    "    {",
+    "        $this->store = $store;",
+    "        $this->repo = $repo;",
+    "        $this->audit = $audit;",
+    "        $this->cache = $cache;",
+    "        $this->cache = $store;",
+    "        $this->mixed = $other;",
+    "    }",
+    "",
+    "    public function buy(): void",
+    "    {",
+    "        $this->store->save();",
+    "        $this->mailer->send();",
+    "        $this->repo->find(1);",
+    "        $this->audit->log();",
+    "        $this->cache->get();",
+    "        $this->mixed->send();",
+    "        $this->audit();",
+    "        $this->magic->get();",
+    "    }",
+    "}",
+    "",
+  ].join("\n"),
+};
+
+test("php: an untyped property has the class of the constructor parameter assigned to it, or of its `@var`; a docblock type is provenance `docblock`, an interface a hole, a conflict a hole", (t) => {
+  const dir = repo(t, PROPERTY_FILES);
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const index = snapshot(dir);
+  const call = (target: string) => index.edges.find((e) => e.kind === "call" && e.source === "app.Checkout.Checkout.buy" && e.target === target);
+  // `$this->store = $store` with `Store $store`: a fact of the syntax; the `@param` repeats it and adds nothing.
+  assert.equal(call("domain.Store.Store.save")?.provenance, "syntactic", JSON.stringify(index.edges));
+  assert.equal(call("domain.Store.Store.save")?.docblock, undefined);
+  // `@var \Shop\Domain\Mailer|null` alone: the call and the import exist thanks to the docblock, at its line.
+  assert.equal(call("domain.Mailer.Mailer.send")?.provenance, "docblock", JSON.stringify(index.edges));
+  assert.equal(call("domain.Mailer.Mailer.send")?.docblock, "src/App/Checkout.php:17:9");
+  const imported = index.edges.find((e) => e.kind === "import" && e.source === "app.Checkout" && e.target === "domain.Mailer");
+  assert.equal(imported?.provenance, "docblock", JSON.stringify(index.edges));
+  assert.equal(imported?.docblock, "src/App/Checkout.php:17:9");
+  // `Store` stands in a `use`: the import is a statement of the code, whatever the docblocks say.
+  assert.equal(index.edges.find((e) => e.kind === "import" && e.source === "app.Checkout" && e.target === "domain.Store")?.provenance, "syntactic");
+  // `@param Audit $audit` for an untyped constructor parameter, assigned to the property.
+  assert.equal(call("domain.Audit.Audit.log")?.provenance, "docblock");
+  assert.equal(call("domain.Audit.Audit.log")?.docblock, "src/App/Checkout.php:27:8");
+  // Every other edge is a fact of the syntax.
+  assert.ok(index.edges.every((e) => e.provenance === "syntactic" || e.docblock !== undefined));
+  const hole = (kind: string, reason: string): boolean => index.coverage.some((c) => c.kind === kind && c.reason === reason && c.source === "app.Checkout.Checkout.buy");
+  // `Repo` is an interface: the call is dispatched at run time; a binding may name the class later.
+  assert.ok(hole("dynamic-call", "call through an interface `Repo`"), JSON.stringify(index.coverage));
+  // Two assignments of different classes, and a `@var` that contradicts the constructor: no type, a hole of the class.
+  assert.ok(index.coverage.some((c) => c.kind === "unsupported" && c.reason === "ambiguous property type `$cache`: assigned `Cache` and `Store` in the constructor" && c.source === "app.Checkout.Checkout"), JSON.stringify(index.coverage));
+  assert.ok(index.coverage.some((c) => c.kind === "unsupported" && c.reason === "ambiguous property type `$mixed`: `@var Store`, assigned `Mailer` in the constructor" && c.source === "app.Checkout.Checkout"), JSON.stringify(index.coverage));
+  assert.equal(call("domain.Cache.Cache.get"), undefined);
+  assert.equal(call("domain.Mailer.Mailer.send")?.text, "this.mailer.send");
+  assert.ok(hole("dynamic-call", "call through `this` of a function value `this.cache.get`"));
+  assert.ok(hole("dynamic-call", "call through `this` of a function value `this.mixed.send`"));
+  // `@method` and `@property` are magic: holes, as before.
+  assert.ok(hole("unresolved-call", "unresolved call `this.audit`"));
+  assert.ok(hole("dynamic-call", "call through `this` of a function value `this.magic.get`"));
+  assert.equal(keylang(dir, ["map", "--check"]).status, 0);
+});
+
+test("php: a flow step and a rule through a docblock-typed property name the docblock in the verdict", (t) => {
+  const dir = repo(t, {
+    ...PROPERTY_FILES,
+    "keylang/flows.md": "# flow buy\n\n- trigger app.Checkout.Checkout.buy\n  - step domain.Store.Store.save\n  - step domain.Mailer.Mailer.send\n  - step domain.Audit.Audit.log\n",
+    "keylang/rules.md": "# rules\n\n- deny app domain.Mailer\n",
+  });
+  const o = keylang(dir, ["check"]);
+  assert.equal(o.status, 1, o.stdout);
+  assert.match(o.stdout, /flows\.md:4:3: static ok domain\.Store\.Store\.save: called from app\.Checkout\.Checkout\.buy\n/);
+  assert.match(o.stdout, /flows\.md:5:3: static ok domain\.Mailer\.Mailer\.send: called from app\.Checkout\.Checkout\.buy, typed by a docblock at src\/App\/Checkout\.php:17:9\n/);
+  assert.match(o.stdout, /flows\.md:6:3: static ok domain\.Audit\.Audit\.log: called from app\.Checkout\.Checkout\.buy, typed by a docblock at src\/App\/Checkout\.php:27:8\n/);
+  // One dependency is one finding: the import the docblock makes, at the docblock.
+  assert.match(o.stdout, /src\/App\/Checkout\.php:17:9: K102 divergence: `app\.Checkout` depends on `domain\.Mailer` \(typed by a docblock at src\/App\/Checkout\.php:17:9\), which is denied by `deny app domain\.Mailer`/);
+  assert.equal(o.stdout.split("\n").filter((line) => line.includes("K102")).length, 1, o.stdout);
+  // In `shape` mode a docblock edge is a type, not a hook: the step stays ok.
+  const shape = keylang(dir, ["check", "--static", "shape"]);
+  assert.match(shape.stdout, /flows\.md:5:3: static ok domain\.Mailer\.Mailer\.send: called from app\.Checkout\.Checkout\.buy, typed by a docblock/);
 });
 
 test("php: init on a Laravel layout takes composer's PSR-4 root for the layers; tests and the framework's caches are not indexed", (t) => {

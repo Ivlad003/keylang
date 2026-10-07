@@ -15,20 +15,22 @@ export interface LanguageInfo {
   implicit: (name: string) => boolean;
   /** Class, function and method names compare without ASCII case, by `asciiLowerCase` (PHP: `new ORDER()` makes an `Order`, `$o->TOTAL()` runs `total()`, `äpfel` is no `Äpfel`). */
   caselessNames: boolean;
+  /** Every type declaration is an interface (PHP): a call through a value typed with one is dispatched at run time to a class a binding may name. */
+  interfaceTypes: boolean;
 }
 
 const JS_IMPLICIT = new Set(["then", "next", "return", "throw", "toString", "valueOf", "toJSON"]);
 
 export const LANGUAGES = {
-  javascript: { extensions: [".js", ".jsx", ".mjs", ".cjs"], module: "file", index: ["index"], constructor: "constructor", implicit: (name) => JS_IMPLICIT.has(name), caselessNames: false },
+  javascript: { extensions: [".js", ".jsx", ".mjs", ".cjs"], module: "file", index: ["index"], constructor: "constructor", implicit: (name) => JS_IMPLICIT.has(name), caselessNames: false, interfaceTypes: false },
   // Dunder methods other than `__init__` run through syntax and built-ins: `with`, `for`, `str()`, operators, `x()`.
-  python: { extensions: [".py"], module: "file", index: ["__init__"], constructor: "__init__", implicit: (name) => /^__.+__$/.test(name) && name !== "__init__", caselessNames: false },
+  python: { extensions: [".py"], module: "file", index: ["__init__"], constructor: "__init__", implicit: (name) => /^__.+__$/.test(name) && name !== "__init__", caselessNames: false, interfaceTypes: false },
   // PHP: magic methods other than `__construct` run through syntax: `__toString`, `__get`, `__call`, `__invoke`, `__destruct`…
   // A file is no directory's module: `index.php` is an entry script, not an index.
-  php: { extensions: [".php"], module: "file", index: [] as string[], constructor: "__construct", implicit: (name) => name.startsWith("__") && asciiLowerCase(name) !== "__construct", caselessNames: true },
+  php: { extensions: [".php"], module: "file", index: [] as string[], constructor: "__construct", implicit: (name) => name.startsWith("__") && asciiLowerCase(name) !== "__construct", caselessNames: true, interfaceTypes: true },
   // Rust: the extractor marks the methods of `impl Drop`, `impl Display`, … (a name alone does not say it).
-  rust: { extensions: [".rs"], module: "file", index: ["mod"], constructor: null, implicit: () => false, caselessNames: false },
-  typescript: { extensions: [".ts", ".tsx", ".mts", ".cts"], module: "file", index: ["index"], constructor: "constructor", implicit: (name) => JS_IMPLICIT.has(name), caselessNames: false },
+  rust: { extensions: [".rs"], module: "file", index: ["mod"], constructor: null, implicit: () => false, caselessNames: false, interfaceTypes: false },
+  typescript: { extensions: [".ts", ".tsx", ".mts", ".cts"], module: "file", index: ["index"], constructor: "constructor", implicit: (name) => JS_IMPLICIT.has(name), caselessNames: false, interfaceTypes: false },
 } satisfies Record<string, LanguageInfo>;
 
 export type Language = keyof typeof LANGUAGES;
@@ -66,6 +68,12 @@ export function caselessNames(file: string | null | undefined): boolean {
  */
 export function asciiLowerCase(name: string): string {
   return name.replace(/[A-Z]+/g, (letters) => letters.toLowerCase());
+}
+
+/** The type declarations of `file`'s language are interfaces: a call through a value typed with one goes to a class the code does not name. */
+export function interfaceTypes(file: string | null | undefined): boolean {
+  const language = file ? languageOf(file) : undefined;
+  return language !== undefined && LANGUAGES[language].interfaceTypes;
 }
 
 /** A member of a class in `file` that the language calls without naming it. */

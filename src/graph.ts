@@ -11,7 +11,7 @@ import { assignExternalIds, EXTERNAL, externalSegment } from "./external-ids.ts"
 import { globPrefix, matchesGlob } from "./glob.ts";
 import { frontendFor, frontendOf, type Frontend, type SourceResolver } from "./frontends.ts";
 import { assumedTarget, type Resolution } from "./imports.ts";
-import { asciiLowerCase, caselessNames, constructorName, implicitMember, LANGUAGES, languageOf } from "./languages.ts";
+import { asciiLowerCase, caselessNames, constructorName, implicitMember, interfaceTypes, languageOf, LANGUAGES } from "./languages.ts";
 import { compareText } from "./span.ts";
 
 export { EXTERNAL };
@@ -118,6 +118,8 @@ export interface Dep {
    * the code that runs, so `no-cycles` skips it.
    */
   typeOnly?: true;
+  /** The import stands only in a docblock the language does not check (PHP `@var Foo`): provenance `docblock`. */
+  docblock?: true;
 }
 
 export interface Fn {
@@ -170,6 +172,8 @@ export interface Call {
   site?: string;
   /** The call sits in a closure of the function: whoever holds that value may run it. */
   closure?: true;
+  /** `file:line:col` of the docblock that types the receiver (PHP `@var`, `@param`): the edge's provenance is `docblock`. */
+  docblock?: string;
 }
 
 export interface TypeNode {
@@ -489,16 +493,22 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
       // tell keeps it). An edge like any other, which `no-cycles` alone skips.
       const erased = imp.typeOnly === true || (imp.inlineTypeOnly === true && resolverFor(facts.path)?.verbatimModuleSyntax?.(facts.path) === false);
       const typeOnly = erased ? { typeOnly: true as const } : {};
+      // A name written only in a docblock (PHP `@var Foo`): an edge of provenance `docblock`, until the code names the module.
+      const docblock = imp.docblock ? { docblock: true as const } : {};
       const at = { file: facts.path, line: imp.line, col: imp.col, endLine: imp.endLine, endCol: imp.endCol, text: imp.text };
       // `import { a } from "./x"` and `export { b } from "./x"`: one dependency, an edge of each kind.
       const same = module.deps.filter((d) => d.target === target.id);
       if (same.length > 0) {
         const kind = same.find((d) => d.reexport === imp.reexport);
-        if (!kind) module.deps.push({ alias: same[0]!.alias, target: target.id, ...at, reexport: imp.reexport, ...typeOnly });
+        if (!kind) module.deps.push({ alias: same[0]!.alias, target: target.id, ...at, reexport: imp.reexport, ...typeOnly, ...docblock });
         // `import type { A }`, then `import { a }` of the same module: the module runs, from the second import on.
         else if (kind.typeOnly && !erased) {
           Object.assign(kind, at);
           delete kind.typeOnly;
+          if (!imp.docblock) delete kind.docblock;
+        } else if (kind.docblock && !imp.docblock) {
+          Object.assign(kind, at);
+          delete kind.docblock;
         }
         continue;
       }
@@ -518,7 +528,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
         alias = `${alias}${n}`;
       }
       aliases.set(alias, target.id);
-      module.deps.push({ alias, target: target.id, ...at, reexport: imp.reexport, ...typeOnly });
+      module.deps.push({ alias, target: target.id, ...at, reexport: imp.reexport, ...typeOnly, ...docblock });
       stats.deps++;
     }
   }
@@ -699,6 +709,20 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
       const classes = [...ids].filter((id) => decls.classes.has(id));
       return classes.length === 1 ? classes[0]! : null;
     };
+    /** A type declaration (an interface) by the name this file uses for it, when no class has that name. */
+    const typeNamed = (name: string): string | null => {
+      const ids = new Set<string>();
+      const local = localDecls.get(name);
+      if (local) ids.add(local);
+      for (const imp of locals.get(name) ?? []) {
+        const id = importedSymbol(imp);
+        if (id) ids.add(id);
+      }
+      for (const id of globbed(name)) ids.add(id);
+      if ([...ids].some((id) => decls.classes.has(id))) return null;
+      const types = [...ids].filter((id) => decls.types.has(id));
+      return types.length === 1 ? types[0]! : null;
+    };
     /** `isStatic`: the call sits in a static member, where `this` is the class itself. */
     const resolveCallees = (callee: string, cls: Module | null, isStatic: boolean): string[] => {
       const parts = callee.split(".");
@@ -784,7 +808,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
     };
     /** A name of the language or of a package: calls through it are external. */
     const external = (head: string): boolean => globalsOf(facts.path).values.has(head) || (locals.get(head) ?? []).some((imp) => imp.module.layer === EXTERNAL);
-    return { locals, localDecls, importedSymbol, classNamed, resolveCallees, receiverTarget, single, external, globOrigin };
+    return { locals, localDecls, importedSymbol, classNamed, typeNamed, resolveCallees, receiverTarget, single, external, globOrigin };
   };
   const scopes = new Map<string, ReturnType<typeof scopeOf>>();
   for (const { facts } of byFile.values()) scopes.set(facts.path, scopeOf(facts));
@@ -816,7 +840,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
     return { target: found.target, last: found.last ?? base };
   };
   for (const { facts, module } of byFile.values()) {
-    const { locals, localDecls, importedSymbol, resolveCallees, receiverTarget, single, external, globOrigin } = scopes.get(facts.path)!;
+    const { locals, localDecls, importedSymbol, typeNamed, resolveCallees, receiverTarget, single, external, globOrigin } = scopes.get(facts.path)!;
     const attach = (factDecls: DeclFact[], cls: Module | null): void => {
       for (const d of factDecls) {
         if (d.kind === "class") {
@@ -883,12 +907,17 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
           }
           const typed = receiverTarget(c.callee, c.receiver);
           if (typed) {
-            push(typed, c);
+            push(typed, c, c.docblock ? { docblock: `${facts.path}:${c.docblock.line}:${c.docblock.col}` } : {});
             continue;
           }
           // `this.waiting.get()` with `waiting = new Map()`: a method of a global or package class.
           if (c.receiver && external(c.receiver)) {
             stats.callsExternal++;
+            continue;
+          }
+          // `$this->repo->find()` with `Repo` an interface: PHP dispatches to a class the code does not name; a binding may.
+          if (c.receiver && interfaceTypes(facts.path) && typeNamed(c.receiver)) {
+            dynamic(c, `call through an interface \`${c.receiver}\``);
             continue;
           }
           if (c.bound) {

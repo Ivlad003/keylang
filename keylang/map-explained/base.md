@@ -5,7 +5,7 @@
 # map
 
 - base
-  <a id="base"></a><br>Dependency-free foundations shared by the rest of keylang: [`base.config`](base.md#base.config), [`base.glob`](base.md#base.glob), [`base.span`](base.md#base.span), [`base.diag`](base.md#base.diag), [`base.external-ids`](base.md#base.external-ids), [`base.brief`](base.md#base.brief) and [`base.safe-write`](base.md#base.safe-write). Rules forbid it from loading [`external.web-tree-sitter`](external.md#external.web-tree-sitter). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+  <a id="base"></a><br>Dependency-free foundations shared by the rest of keylang: [`base.config`](base.md#base.config), [`base.glob`](base.md#base.glob), [`base.span`](base.md#base.span), [`base.diag`](base.md#base.diag), [`base.external-ids`](base.md#base.external-ids), [`base.brief`](base.md#base.brief) and [`base.safe-write`](base.md#base.safe-write). Rules forbid it from loading [`external.web-tree-sitter`](external.md#external.web-tree-sitter). _(llm · claude:claude-opus-5-5 · 2026-10-06 · stale)_
   - module [brief](../../src/brief.ts#L1)
     <a id="base.brief"></a><br>Plain-language text → a brief: its first paragraph cut to two sentences. Doc comments (once an extractor strips their syntax) and model answers go through the same rule, so a brief reads the same whatever wrote it.
     - fn [briefOf](../../src/brief.ts#L16) (text: string) → string | null
@@ -206,22 +206,25 @@
   - module [languages](../../src/languages.ts#L1)
     <a id="base.languages"></a><br>Languages keylang indexes: names, file extensions and the default module granularity. Plain data, so config and the language core know which files are source without loading any frontend or grammar.
     - type [LanguageInfo](../../src/languages.ts#L5)
-      <a id="base.languages.LanguageInfo"></a><br>Per-language settings: file extensions, default module granularity, index file names, the constructor member a class call runs, which members get called implicitly, and whether names compare case-insensitively. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
-    - type [Language](../../src/languages.ts#L34) = keyof typeof LANGUAGES
+      <a id="base.languages.LanguageInfo"></a><br>Per-language settings: file extensions, default module granularity, index file names, the constructor member a class call runs, which members get called implicitly, and whether names compare case-insensitively. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
+    - type [Language](../../src/languages.ts#L36) = keyof typeof LANGUAGES
       <a id="base.languages.Language"></a><br>A string-literal union derived from the keys of the `LANGUAGES` constant in the same file, so any value typed this way must be one of the language names registered there; the input does not show the contents of `LANGUAGES` or where this alias is consumed. _(llm · claude · 2026-10-04)_
-    - fn [isLanguage](../../src/languages.ts#L38) (name: unknown) → name is Language
+    - fn [isLanguage](../../src/languages.ts#L40) (name: unknown) → name is Language
       <a id="base.languages.isLanguage"></a><br>Type guard that checks whether an arbitrary value is a string present as an own key of the `LANGUAGES` table, narrowing it to `Language`; used by [`base.config.parseConfig`](base.md#base.config.parseConfig) to validate language names read from configuration. The input does not show how `LANGUAGES` is defined. _(llm · claude · 2026-10-04)_
-    - fn [languageOf](../../src/languages.ts#L42) (path: string) → Language | undefined
+    - fn [languageOf](../../src/languages.ts#L44) (path: string) → Language | undefined
       <a id="base.languages.languageOf"></a><br>Maps a file path to a language name by iterating `LANGUAGE_NAMES` in order and returning the first whose `LANGUAGES` entry lists an extension the path ends with, or undefined if none match; this is the single extension-based language lookup that the config walkers, map… _(llm · claude · 2026-10-04)_
-    - fn [constructorName](../../src/languages.ts#L50) (file: string | null | undefined) → string | null
+    - fn [constructorName](../../src/languages.ts#L52) (file: string | null | undefined) → string | null
       <a id="base.languages.constructorName"></a><br>The member a call of a class declared in `file` runs; JS `constructor` for a file of no known language.
       - calls [base.languages.languageOf](base.md#base.languages.languageOf)
-    - fn [caselessNames](../../src/languages.ts#L56) (file: string | null | undefined) → boolean
+    - fn [caselessNames](../../src/languages.ts#L58) (file: string | null | undefined) → boolean
       <a id="base.languages.caselessNames"></a><br>Classes, functions and methods declared in `file` compare their names without ASCII case: by `asciiLowerCase`.
       - calls [base.languages.languageOf](base.md#base.languages.languageOf)
-    - fn [asciiLowerCase](../../src/languages.ts#L67) (name: string) → string
+    - fn [asciiLowerCase](../../src/languages.ts#L69) (name: string) → string
       <a id="base.languages.asciiLowerCase"></a><br>`name` with A–Z lowered and every other character kept: how PHP compares class, function and method names (from 8.2 whatever the locale). `ORDER` is `order`, while `Äpfel` and `äpfel` stay two names, which `toLowerCase` would make one.
-    - fn [implicitMember](../../src/languages.ts#L72) (file: string | null | undefined, name: string) → boolean
+    - fn [interfaceTypes](../../src/languages.ts#L74) (file: string | null | undefined) → boolean
+      <a id="base.languages.interfaceTypes"></a><br>The type declarations of `file`'s language are interfaces: a call through a value typed with one goes to a class the code does not name.
+      - calls [base.languages.languageOf](base.md#base.languages.languageOf)
+    - fn [implicitMember](../../src/languages.ts#L80) (file: string | null | undefined, name: string) → boolean
       <a id="base.languages.implicitMember"></a><br>A member of a class in `file` that the language calls without naming it.
       - calls [base.languages.languageOf](base.md#base.languages.languageOf)
   - module [safe-write](../../src/safe-write.ts#L1)

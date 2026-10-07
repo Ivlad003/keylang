@@ -272,8 +272,8 @@
     - fn [explainEdge](../../src/explain-edge.ts#L40) (snapshot: AnalysisSnapshot, from: string, to: string) → EdgeExplanation
       - calls features.explain-edge.under, base.span.compareText, map.snapshot.leavesUnresolved
     - fn [edgeLine](../../src/explain-edge.ts#L59) (edge: SnapshotEdge) → string
-    - fn [holeLine](../../src/explain-edge.ts#L67) (hole: CoverageItem) → string
-    - fn [edgeExplanationLines](../../src/explain-edge.ts#L72) (explanation: EdgeExplanation) → string[]
+    - fn [holeLine](../../src/explain-edge.ts#L68) (hole: CoverageItem) → string
+    - fn [edgeExplanationLines](../../src/explain-edge.ts#L73) (explanation: EdgeExplanation) → string[]
       - calls features.explain-edge.edgeLine
   - module [explain-inventory](../../src/explain-inventory.ts#L1)
     - analyze map.analyze

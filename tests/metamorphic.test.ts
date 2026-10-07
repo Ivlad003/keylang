@@ -194,6 +194,15 @@ const STANDARD = `# rules
   - exports Order, place
 `;
 
+/** PHP 7: a property typed only by its `@var`; the call through it is an edge of provenance `docblock`. */
+const PHP_DOCBLOCK: Record<string, string> = {
+  "keylang.json": `${JSON.stringify({ languages: ["php"], layers: { app: ["src/App/**"], domain: ["src/Domain/**"] } })}\n`,
+  "src/Domain/Store.php": "<?php\nnamespace Shop\\Domain;\n\nclass Store\n{\n    public function save(): void {}\n}\n",
+  "src/Domain/Mailer.php": "<?php\nnamespace Shop\\Domain;\n\nclass Mailer\n{\n    public function send(): void {}\n}\n",
+  "src/App/Checkout.php": "<?php\nnamespace Shop\\App;\n\nuse Shop\\Domain\\Mailer;\nuse Shop\\Domain\\Store;\n\nclass Checkout\n{\n    private $store;\n    /** @var Mailer */\n    private $mailer;\n\n    public function __construct(Store $store)\n    {\n        $this->store = $store;\n    }\n\n    public function buy(): void\n    {\n        $this->store->save();\n        $this->mailer->send();\n    }\n}\n",
+  "keylang/flows.md": "# flow buy\n\n- trigger app.Checkout.Checkout.buy\n  - step domain.Store.Store.save\n  - step domain.Mailer.Mailer.send\n",
+};
+
 test("exclude and --static shape never switch ok and fail", (t) => {
   const repo = copyFixture(t, "repo");
   const original = readFileSync(join(repo, "keylang/rules.md"), "utf8");
@@ -223,6 +232,19 @@ test("exclude and --static shape never switch ok and fail", (t) => {
   const wiring = copyFixture(t, "wiring-shop");
   write(wiring, "keylang/rules.md", STANDARD.replace("- module domain.order\n  - no-cycles\n  - exports Order, place", "- module domain.store\n  - no-cycles\n  - exports Store"));
   excludePair(t, "wiring-shop", wiring);
+
+  const php = mkdtempSync(join(tmpdir(), "keylang-meta-php-"));
+  t.after(() => rmSync(php, { recursive: true, force: true }));
+  for (const [path, text] of Object.entries(PHP_DOCBLOCK)) write(php, path, text);
+  const withDocblock = aggregate(results(php), []);
+  write(php, "src/App/Checkout.php", PHP_DOCBLOCK["src/App/Checkout.php"]!.replace("    /** @var Mailer */\n", ""));
+  const withoutDocblock = aggregate(results(php), []);
+  monotonic("php-docblock", "remove @var", withDocblock, withoutDocblock);
+  const moved = [...withDocblock]
+    .filter(([key, left]) => left.verdict !== (withoutDocblock.get(key)?.verdict ?? "unverified"))
+    .map(([key, left]) => `${key.split(":")[2]} ${left.verdict} → ${withoutDocblock.get(key)?.verdict ?? "unverified"}`)
+    .sort();
+  assert.deepEqual(moved, ["domain.Mailer.Mailer.send ok → unverified"]);
 
   const hooks = mkdtempSync(join(tmpdir(), "keylang-meta-hooks-"));
   t.after(() => rmSync(hooks, { recursive: true, force: true }));

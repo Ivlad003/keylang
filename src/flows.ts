@@ -31,6 +31,9 @@ interface SnapshotEdge {
   closure?: true;
   /** An `import` or `reexport` of types only (`import type`, `export type … from`): erased from the code that runs. */
   typeOnly?: true;
+  /** `docblock`: the edge rests on a docblock the language does not check (PHP `@var`, `@param`), at `docblock`; the verdict names it. */
+  provenance?: string;
+  docblock?: string;
 }
 
 interface SnapshotNodeView {
@@ -594,10 +597,23 @@ function externalImport(input: FlowInput, parent: string, target: string): { ver
   return { verdict: "unverified", message: `no import of \`${target}\` from \`${moduleId}\`${erased}` };
 }
 
+/** An edge that rests on a docblock: where PHP's `@var` or `@param` types the receiver. */
+function describeDocblock(edge: SnapshotEdge): string {
+  return `typed by a docblock at ${edge.docblock ?? at(edge)}`;
+}
+
+/**
+ * The route as the verdict prints it, with a note on every step that is not a
+ * plain call of the code: a hook (its default, or the value injected at a site)
+ * or a call whose receiver only a docblock types.
+ */
 function routeMessage(parent: string, target: string, previous: Map<string, Step>): string {
   const steps = routeSteps(parent, target, previous);
-  const notes = steps.filter((step) => step.edge.via).map((step) => (steps.length === 1 ? describeVia(step.edge) : `${step.from} → ${step.to}: ${describeVia(step.edge)}`));
-  if (steps.length === 1) return `called from ${parent}${notes.length > 0 ? ` through ${notes[0]}` : ""}`;
+  const label = (step: Step, note: string): string => (steps.length === 1 ? note : `${step.from} → ${step.to}: ${note}`);
+  const hooks = steps.filter((step) => step.edge.via).map((step) => label(step, describeVia(step.edge)));
+  const docblocks = steps.filter((step) => step.edge.provenance === "docblock").map((step) => label(step, describeDocblock(step.edge)));
+  if (steps.length === 1) return `called from ${parent}${hooks.length > 0 ? ` through ${hooks[0]}` : ""}${docblocks.length > 0 ? `, ${docblocks[0]}` : ""}`;
+  const notes = [...hooks, ...docblocks];
   const through = notes.length > 0 ? ` (${notes.join("; ")})` : "";
   return `reachable from ${parent} via ${steps.slice(0, -1).map((step) => step.to).join(" → ")}${through}`;
 }

@@ -90,6 +90,11 @@ export interface ImportFact {
    * without an extension. An edge when it resolves to a source file, nothing otherwise.
    */
   optional?: true;
+  /**
+   * The name is written only in a docblock the language does not check (PHP `@var Foo` above a
+   * property, `@param Foo $x`), never in the code: the edge's provenance is `docblock`.
+   */
+  docblock?: true;
 }
 
 export type ImportBinding =
@@ -163,6 +168,12 @@ export interface CallFact {
    * with `const worker = new SnapshotWorker()` or a parameter `worker: SnapshotWorker`.
    */
   receiver?: string;
+  /**
+   * The receiver's class is written in a docblock the language does not check (PHP `@var Foo`
+   * above the property, `@param Foo $x` of the constructor parameter assigned to it), at this
+   * position: the edge's provenance is `docblock`, not `syntactic`.
+   */
+  docblock?: { line: number; col: number };
   /** The callee is a hook with a default: `const generate = request.generate ?? generateMap; generate()`. */
   hook?: HookFact;
   /** Function values the call passes: `analyze({ generate: worker.generate })`, `later(save)`. */

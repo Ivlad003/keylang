@@ -60,7 +60,8 @@ export function edgeLine(edge: SnapshotEdge): string {
   const via = edge.candidates?.length ? ` [${edge.candidates.join(", ")}]` : "";
   const hook = edge.via === "default" ? ` (default of the hook \`${edge.hook ?? ""}\`)` : edge.via === "injected" ? ` (injected as \`${edge.hook ?? ""}\` at ${edge.site ?? "?"})` : "";
   const fragment = edge.text ? ` \`${edge.text.replace(/\s+/g, " ")}\`` : "";
-  return `${edge.kind} ${edge.resolution} ${edge.provenance} ${edge.file}:${edge.line}:${edge.col}-${edge.endLine}:${edge.endCol}${fragment} ${edge.source} → ${edge.target ?? "?"}${via}${hook}${edge.reason ? ` (${edge.reason})` : ""}`;
+  const docblock = edge.provenance === "docblock" && edge.docblock ? ` (typed by a docblock at ${edge.docblock})` : "";
+  return `${edge.kind} ${edge.resolution} ${edge.provenance} ${edge.file}:${edge.line}:${edge.col}-${edge.endLine}:${edge.endCol}${fragment} ${edge.source} → ${edge.target ?? "?"}${via}${hook}${docblock}${edge.reason ? ` (${edge.reason})` : ""}`;
 }
 
 /** One unresolved construct as the CLI prints it. */
