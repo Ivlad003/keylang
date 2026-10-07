@@ -78,7 +78,7 @@ keylang має допомагати швидко зануритись у чуж�
 | [06](issues/06-magento-di-bindings.md) | Magento: `di.xml` (preference, type arguments, virtualType) → прив'язки | ready-for-agent | 04 |
 | [07](issues/07-magento-plugins.md) | Magento: plugins (before/around/after) як перехоплення викликів | ready-for-agent | 04 |
 | [08](issues/08-magento-events.md) | Magento: `events.xml` і `dispatch()` → події та підписники | ready-for-agent | 01, 09 |
-| [09](issues/09-entries-snapshot.md) | Знімок: точки входу як факти й команда `keylang entries` | ready-for-agent | 01 |
+| [09](issues/09-entries-snapshot.md) | Знімок: точки входу як факти й команда `keylang entries` | resolved | 01 |
 | [10](issues/10-magento-entries.md) | Magento: точки входу — routes/controllers, webapi, GraphQL, cron, queue, console | ready-for-agent | 06, 09 |
 | [11](issues/11-flows-discover.md) | `keylang flows discover`: чернетка флоу для кожної точки входу | ready-for-agent | 09 |
 | [12](issues/12-flows-business-names.md) | Бізнес-назви, описи й групування флоу в процеси (модель) | ready-for-agent | 11 |

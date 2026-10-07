@@ -63,6 +63,7 @@ function extractTree(path: string, root: Node): FileFacts {
   }
   const names = new Set([...facts.decls.map((d) => d.name), ...facts.imports.flatMap((imp) => imp.bindings.map((b) => b.local))]);
   facts.moduleCalls = moduleCalls(root);
+  collectMainEntries(root, names, facts);
   facts.valueRefs = [...facts.valueRefs, ...valueRefs(root, names, facts.imports.some((imp) => imp.glob))].sort((a, b) => a.line - b.line || a.col - b.col);
   collectDynamic(root, facts);
   const doc = docstring(root);
@@ -407,6 +408,37 @@ function callOf(fn: Node | null, scope: CallScope): Pick<CallFact, "callee" | "b
   // `repo.save()` with `repo: Repo` or `repo = Repo()`: the graph looks `save` up in `Repo`.
   const receiver = parts.length === 1 ? scope.classes.get(head) : undefined;
   return { callee, ...(bound ? { bound } : {}), ...(receiver ? { receiver } : {}) };
+}
+
+/**
+ * `if __name__ == "__main__":` at module level: the script's entry. Its
+ * callee is the first fn of the file (a `def`, or an imported name) the block
+ * calls directly (`main()`, `sys.exit(main())`, `asyncio.run(main())`); null
+ * when the block calls no such name, and the module's top level is the entry.
+ */
+function collectMainEntries(root: Node, names: ReadonlySet<string>, facts: FileFacts): void {
+  const entries: NonNullable<FileFacts["entries"]> = [];
+  for (const node of root.namedChildren) {
+    if (node.type !== "if_statement") continue;
+    const condition = node.childForFieldName("condition")?.text.replace(/\s+/g, "") ?? "";
+    if (!/^(__name__==["']__main__["']|["']__main__["']==__name__)$/.test(condition)) continue;
+    let callee: string | null = null;
+    const walk = (at: Node): void => {
+      if (callee !== null || at.type === "function_definition" || at.type === "class_definition") return;
+      if (at.type === "call") {
+        const fn = at.childForFieldName("function");
+        if (fn?.type === "identifier" && names.has(fn.text)) {
+          callee = fn.text;
+          return;
+        }
+      }
+      for (const child of at.namedChildren) walk(child);
+    };
+    for (const child of node.namedChildren) if (child.type !== "comparison_operator") walk(child);
+    const at = located(node);
+    entries.push({ kind: "main", label: "__main__", callee, line: at.line, col: at.col });
+  }
+  if (entries.length > 0) facts.entries = entries;
 }
 
 /** Calls outside every `def`: module level and class bodies run when the module loads; so does a decorator. */

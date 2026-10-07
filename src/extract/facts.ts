@@ -44,6 +44,27 @@ export interface FileFacts {
    * declares it). The resolver finds a name's file by them.
    */
   symbols?: QualifiedSymbol[];
+  /**
+   * Places where execution starts, as the code writes them (ADR 0022 п. 5):
+   * a handler registered on a literal path, a script block that calls a fn.
+   * The snapshot resolves each to a fn of the graph (`entries` of the index).
+   */
+  entries?: EntryFact[];
+}
+
+/**
+ * A language-level entry point written in the code, before resolution.
+ * `route`: `app.get('/x', h)` with a literal path and a named handler —
+ * `label` is `GET /x`, `callee` is `h` as written. `main`: a Python
+ * `if __name__ == "__main__":` block — `callee` is the fn it calls, or null
+ * when it names none directly (the module's top level is the entry then).
+ */
+export interface EntryFact {
+  kind: "route" | "main";
+  label: string;
+  callee: string | null;
+  line: number;
+  col: number;
 }
 
 /** A top-level declaration by its qualified name. */
