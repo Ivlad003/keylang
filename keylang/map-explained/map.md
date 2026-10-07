@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [analyze](#map.analyze) · [c4-export](#map.c4-export) · [declared-packages](#map.declared-packages) · [emit](#map.emit) · [exact-path](#map.exact-path) · [explanations](#map.explanations) · [exports](#map.exports) · [fact-cache](#map.fact-cache) · [frontends](#map.frontends) · [graph](#map.graph) · [imports](#map.imports) · [map](#map.map) · [php-imports](#map.php-imports) · [python-imports](#map.python-imports) · [python-stdlib](#map.python-stdlib) · [rust-imports](#map.rust-imports) · [snapshot](#map.snapshot) · [trace-plan](#map.trace-plan) · [wire-gen](#map.wire-gen)
+[README](README.md) · modules: [analyze](#map.analyze) · [c4-export](#map.c4-export) · [declared-packages](#map.declared-packages) · [emit](#map.emit) · [entries](#map.entries) · [exact-path](#map.exact-path) · [explanations](#map.explanations) · [exports](#map.exports) · [fact-cache](#map.fact-cache) · [frontends](#map.frontends) · [graph](#map.graph) · [imports](#map.imports) · [map](#map.map) · [php-imports](#map.php-imports) · [python-imports](#map.python-imports) · [python-stdlib](#map.python-stdlib) · [rust-imports](#map.rust-imports) · [snapshot](#map.snapshot) · [trace-plan](#map.trace-plan) · [wire-gen](#map.wire-gen)
 
 # map
 
@@ -203,6 +203,81 @@
     - fn [renderDecl](../../src/emit.ts#L320) (r: Render, id: string, node: SnapshotNode, depth: number) → string <!-- internal -->
       <a id="map.emit.renderDecl"></a><br>Builds one indented markdown bullet for a declaration: a `fn`/`type` keyword, a linked name via [`map.emit.linkedName`](map.md#map.emit.linkedName), its signature, an internal marker, and the description from [`map.emit.describe`](map.md#map.emit.describe). Then appends a "calls" line listing deduplicated resolved, non-self… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [map.emit.linkedName](map.md#map.emit.linkedName), [map.emit.nameOf](map.md#map.emit.nameOf), [map.emit.describe](map.md#map.emit.describe), [map.emit.edgesFrom](map.md#map.emit.edgesFrom), [map.emit.ref](map.md#map.emit.ref)
+  - module [entries](../../src/entries.ts#L1)
+    <a id="map.entries"></a><br>Entry points of a repository without a framework adapter (ADR 0022 п. 5): only what the code and its manifests write down. `bin` of package.json and `[project.scripts]` of pyproject.toml are `cli`; `fn main` of a Rust bin target, a Python `if __name__ == "__main__":` block and…
+    - smol-toml [external.smol-toml](external.md#external.smol-toml)
+    - facts [extract.facts](extract.md#extract.facts)
+    - graph [map.graph](map.md#map.graph)
+    - imports [map.imports](map.md#map.imports)
+    - snapshot [map.snapshot](map.md#map.snapshot)
+    - type [EntryManifests](../../src/entries.ts#L18)
+      <a id="map.entries.EntryManifests"></a><br>The manifests the collectors read, by POSIX path from the root; null when absent.
+    - type [EntryInputs](../../src/entries.ts#L27)
+      <a id="map.entries.EntryInputs"></a>
+    - type [EntryScope](../../src/entries.ts#L36)
+      <a id="map.entries.EntryScope"></a><br>The graph with the facts it was built from, by file, and every fn by id: what resolves a written name to a fn and places it.
+    - fn [entryScope](../../src/entries.ts#L42) (graph: Graph, facts: readonly FileFacts[]) → EntryScope
+      <a id="map.entries.entryScope"></a>
+    - fn [placeOf](../../src/entries.ts#L53) (scope: EntryScope, id: string, fallback: { file: string; line: number }) → { file: string; line: number } <!-- internal -->
+      <a id="map.entries.placeOf"></a><br>Where an entry's id is declared: the fn, else the module's file and first line.
+    - fn [entry](../../src/entries.ts#L61) (scope: EntryScope, kind: EntryPoint["kind"], id: string, label: string, source: string, fallback: { file: string; line: number }) → EntryPoint <!-- internal -->
+      <a id="map.entries.entry"></a><br>A fn's place for the entry, with the manifest or the code position the fact is written at as `source`.
+      - calls [map.entries.placeOf](map.md#map.entries.placeOf)
+    - fn [collectEntries](../../src/entries.ts#L67) (inputs: EntryInputs) → EntryPoint[]
+      <a id="map.entries.collectEntries"></a><br>Every language-level entry point of the inputs, in a deterministic order: kind, label, id.
+      - calls [map.entries.entryScope](map.md#map.entries.entryScope), [map.entries.binEntries](map.md#map.entries.binEntries), [map.entries.nextRouteEntries](map.md#map.entries.nextRouteEntries), [map.entries.expressRouteEntries](map.md#map.entries.expressRouteEntries), [map.entries.pythonMainEntries](map.md#map.entries.pythonMainEntries), [map.entries.pyprojectScriptEntries](map.md#map.entries.pyprojectScriptEntries), [map.entries.rustMainEntries](map.md#map.entries.rustMainEntries), [map.entries.phpScriptEntries](map.md#map.entries.phpScriptEntries)
+    - fn [compareEntries](../../src/entries.ts#L90) (a: EntryPoint, b: EntryPoint) → number
+      <a id="map.entries.compareEntries"></a>
+      - calls [map.entries.cmp](map.md#map.entries.cmp)
+    - fn [binTargets](../../src/entries.ts#L95) (packageJson: string | null) → { name: string; path: string }[]
+      <a id="map.entries.binTargets"></a><br>`bin` of the root package.json: `"bin": "cli.js"` (named after the package) or `"bin": {name: path}`. Paths are POSIX, relative to the manifest.
+      - calls [map.imports.parseJsonc](map.md#map.imports.parseJsonc), [map.entries.isRecord](map.md#map.entries.isRecord), [map.entries.normalizePath](map.md#map.entries.normalizePath)
+    - fn [binSource](../../src/entries.ts#L114) (path: string, has: (path: string) => boolean) → string | null
+      <a id="map.entries.binSource"></a><br>The source file a `bin` path names: itself when the graph has it, else the TypeScript source of a JavaScript path in the same place (`bin/cli.js` → `bin/cli.ts`). A built file outside the sources resolves to nothing.
+    - fn [binEntries](../../src/entries.ts#L119) (packageJson: string | null, scope: EntryScope) → EntryPoint[] <!-- internal -->
+      <a id="map.entries.binEntries"></a>
+      - calls [map.entries.binTargets](map.md#map.entries.binTargets), [map.entries.binSource](map.md#map.entries.binSource), [map.entries.fnIn](map.md#map.entries.fnIn), [map.entries.entry](map.md#map.entries.entry)
+    - fn [nextRoutePath](../../src/entries.ts#L142) (file: string) → string | null
+      <a id="map.entries.nextRoutePath"></a><br>The URL path of a Next.js `app/**\/route.ts`: the directories after `app/`, without route groups (`(marketing)`); `/` for the root handler. Null for a file that is no route handler.
+    - fn [nextRouteEntries](../../src/entries.ts#L149) (facts: readonly FileFacts[], scope: EntryScope) → EntryPoint[] <!-- internal -->
+      <a id="map.entries.nextRouteEntries"></a>
+      - calls [map.entries.nextRoutePath](map.md#map.entries.nextRoutePath), [map.entries.fnIn](map.md#map.entries.fnIn), [map.entries.entry](map.md#map.entries.entry)
+    - fn [expressRouteEntries](../../src/entries.ts#L170) (facts: readonly FileFacts[], scope: EntryScope) → EntryPoint[] <!-- internal -->
+      <a id="map.entries.expressRouteEntries"></a>
+      - calls [map.entries.fnIn](map.md#map.entries.fnIn), [map.entries.entry](map.md#map.entries.entry)
+    - fn [pythonMainEntries](../../src/entries.ts#L182) (facts: readonly FileFacts[], scope: EntryScope) → EntryPoint[] <!-- internal -->
+      <a id="map.entries.pythonMainEntries"></a>
+      - calls [map.entries.fnIn](map.md#map.entries.fnIn), [map.entries.entry](map.md#map.entries.entry)
+    - fn [pyprojectScripts](../../src/entries.ts#L197) (pyproject: string | null) → { name: string; module: string; fn: string | null }[]
+      <a id="map.entries.pyprojectScripts"></a><br>`[project.scripts]` of pyproject.toml: script name → `pkg.module:func` (or `pkg.module` alone). Empty for no manifest or an unreadable one.
+      - calls [map.entries.isRecord](map.md#map.entries.isRecord)
+    - fn [pythonModuleFile](../../src/entries.ts#L218) (module: string, has: (path: string) => boolean) → string | null
+      <a id="map.entries.pythonModuleFile"></a><br>The source file of a dotted Python module name, at the root or under `src/`: `pkg.cli` → `pkg/cli.py`, `pkg/cli/__init__.py`, `src/pkg/cli.py`, …
+    - fn [pyprojectScriptEntries](../../src/entries.ts#L224) (pyproject: string | null, scope: EntryScope) → EntryPoint[] <!-- internal -->
+      <a id="map.entries.pyprojectScriptEntries"></a>
+      - calls [map.entries.pyprojectScripts](map.md#map.entries.pyprojectScripts), [map.entries.pythonModuleFile](map.md#map.entries.pythonModuleFile), [map.entries.fnIn](map.md#map.entries.fnIn), [map.entries.entry](map.md#map.entries.entry)
+    - fn [rustBinTarget](../../src/entries.ts#L243) (file: string, cargoToml: string | null, exists: (path: string) => boolean) → boolean
+      <a id="map.entries.rustBinTarget"></a><br>Whether a Rust file is a bin target by Cargo's layout: `src/main.rs`, `src/bin/<name>.rs` or `src/bin/<name>/main.rs` of a crate (a `Cargo.toml` beside its `src/`), or a `[[bin]] path` of the root manifest.
+      - calls [map.entries.isRecord](map.md#map.entries.isRecord), [map.entries.normalizePath](map.md#map.entries.normalizePath)
+    - fn [rustMainEntries](../../src/entries.ts#L257) (facts: readonly FileFacts[], scope: EntryScope, cargoToml: string | null, exists: (path: string) => boolean) → EntryPoint[] <!-- internal -->
+      <a id="map.entries.rustMainEntries"></a>
+      - calls [map.entries.rustBinTarget](map.md#map.entries.rustBinTarget), [map.entries.fnIn](map.md#map.entries.fnIn), [map.entries.entry](map.md#map.entries.entry)
+    - fn [phpScript](../../src/entries.ts#L272) (file: Pick<FileFacts, "path" | "decls" | "moduleCalls">) → boolean
+      <a id="map.entries.phpScript"></a><br>A PHP file run as a script, by its place: `bin/*.php` or `public/index.php`, with code at its top level. A class in `bin/` is a declaration, not a script.
+    - fn [phpScriptEntries](../../src/entries.ts#L276) (facts: readonly FileFacts[], scope: EntryScope) → EntryPoint[] <!-- internal -->
+      <a id="map.entries.phpScriptEntries"></a>
+      - calls [map.entries.phpScript](map.md#map.entries.phpScript), [map.entries.entry](map.md#map.entries.entry)
+    - fn [fnIn](../../src/entries.ts#L293) (scope: EntryScope, file: string, name: string) → string | null
+      <a id="map.entries.fnIn"></a><br>The fn a name written in `file` stands for: a fn declared there (`h`, or `Class.method`), or one imported under that name (`import { h } from "./handlers"`, `import handlers from`; `handlers.save` through a module import). Null when the graph does not resolve it: a name is no…
+      - calls [map.entries.importedSymbol](map.md#map.entries.importedSymbol)
+    - fn [importedSymbol](../../src/entries.ts#L314) (scope: EntryScope, module: Module, file: string, local: string, member: string | null) → string | null <!-- internal -->
+      <a id="map.entries.importedSymbol"></a><br>The symbol an import of `file` binds `local` to; with `member`, the export of a module import (`ns.member`).
+    - fn [normalizePath](../../src/entries.ts#L335) (path: string) → string <!-- internal -->
+      <a id="map.entries.normalizePath"></a>
+    - fn [isRecord](../../src/entries.ts#L339) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+      <a id="map.entries.isRecord"></a>
+    - fn [cmp](../../src/entries.ts#L343) (a: string, b: string) → number <!-- internal -->
+      <a id="map.entries.cmp"></a>
   - module [exact-path](../../src/exact-path.ts#L1)
     <a id="map.exact-path"></a><br>Whether a path keylang derived from code exists on disk with exactly that spelling. `existsSync` answers for the file system: on APFS and NTFS `src/models/User.rs` exists when `src/models/user.rs` does, so a resolver that trusts it names a file the index does not have, and a…
     - node [external.node](external.md#external.node)
@@ -632,80 +707,81 @@
     - graph [map.graph](map.md#map.graph)
     - fact-cache [map.fact-cache](map.md#map.fact-cache)
     - safe-write [base.safe-write](base.md#base.safe-write)
+    - entries [map.entries](map.md#map.entries)
     - snapshot [map.snapshot](map.md#map.snapshot)
-    - type [MapResult](../../src/map.ts#L21)
+    - type [MapResult](../../src/map.ts#L22)
       <a id="map.map.MapResult"></a><br>Bundles everything one map run produces: the `Graph`, generated map files and optional explanations keyed by file name, the `AnalysisSnapshot`, skip and fact-cache reuse counts, and the serialized fact cache text for the next run. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [generateMap](../../src/map.ts#L43) (config: Config, options: { persist?: boolean | "changed"; overlay?: ReadonlyMap<string, string> } = {}) → Promise<MapResult>
+    - fn [generateMap](../../src/map.ts#L44) (config: Config, options: { persist?: boolean | "changed"; overlay?: ReadonlyMap<string, string> } = {}) → Promise<MapResult>
       <a id="map.map.generateMap"></a><br>`persist` prepares the fact cache for the next process: `true` always (`keylang map`, whose commit step writes it), `"changed"` only when the facts of this run differ from the cache on disk (an analysis that saves it best-effort); generation writes nothing. `overlay` gives…
-      - calls [base.config.classifySources](base.md#base.config.classifySources), [base.config.toPosix](base.md#base.config.toPosix), [base.languages.languageOf](base.md#base.languages.languageOf), [base.config.isAnalysed](base.md#base.config.isAnalysed), [map.map.readSource](map.md#map.map.readSource), [map.snapshot.sha256](map.md#map.snapshot.sha256), [map.graph.placeFile](map.md#map.graph.placeFile), [map.fact-cache.FactCache.open](map.md#map.fact-cache.FactCache.open), [map.map.extractorCode](map.md#map.map.extractorCode), [map.snapshot.grammarVersions](map.md#map.snapshot.grammarVersions), [map.frontends.frontendFor](map.md#map.frontends.frontendFor), [map.map.extractGuarded](map.md#map.map.extractGuarded), [map.map.opaqueFacts](map.md#map.map.opaqueFacts), [map.graph.buildGraph](map.md#map.graph.buildGraph), [base.config.layerGlobWarnings](base.md#base.config.layerGlobWarnings), [map.snapshot.buildSnapshot](map.md#map.snapshot.buildSnapshot), [map.map.readRepositoryDocs](map.md#map.map.readRepositoryDocs), [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs), [map.emit.renderExplainedMap](map.md#map.emit.renderExplainedMap), [map.explanations.explanationOf](map.md#map.explanations.explanationOf), [map.emit.renderMap](map.md#map.emit.renderMap)
-    - fn [readRepositoryDocs](../../src/map.ts#L132) (config: Config) → RepositoryDocs <!-- internal -->
+      - calls [base.config.classifySources](base.md#base.config.classifySources), [base.config.toPosix](base.md#base.config.toPosix), [base.languages.languageOf](base.md#base.languages.languageOf), [base.config.isAnalysed](base.md#base.config.isAnalysed), [map.map.readSource](map.md#map.map.readSource), [map.snapshot.sha256](map.md#map.snapshot.sha256), [map.graph.placeFile](map.md#map.graph.placeFile), [map.fact-cache.FactCache.open](map.md#map.fact-cache.FactCache.open), [map.map.extractorCode](map.md#map.map.extractorCode), [map.snapshot.grammarVersions](map.md#map.snapshot.grammarVersions), [map.frontends.frontendFor](map.md#map.frontends.frontendFor), [map.map.extractGuarded](map.md#map.map.extractGuarded), [map.map.opaqueFacts](map.md#map.map.opaqueFacts), [map.graph.buildGraph](map.md#map.graph.buildGraph), [base.config.layerGlobWarnings](base.md#base.config.layerGlobWarnings), [map.entries.collectEntries](map.md#map.entries.collectEntries), [map.snapshot.buildSnapshot](map.md#map.snapshot.buildSnapshot), [map.map.readRepositoryDocs](map.md#map.map.readRepositoryDocs), [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs), [map.emit.renderExplainedMap](map.md#map.emit.renderExplainedMap), [map.explanations.explanationOf](map.md#map.explanations.explanationOf), [map.emit.renderMap](map.md#map.emit.renderMap)
+    - fn [readRepositoryDocs](../../src/map.ts#L137) (config: Config) → RepositoryDocs <!-- internal -->
       <a id="map.map.readRepositoryDocs"></a><br>What the repository writes about itself (ADR 0014, the system and container levels of C4): the root README or a root manifest, and the README in each layer's own directory. Read on every analysis, so an edit shows in the next map without touching `snapshotId`.
       - calls [base.glob.globDirectory](base.md#base.glob.globDirectory), [map.map.readReadme](map.md#map.map.readReadme), [base.brief.readmeBrief](base.md#base.brief.readmeBrief), [map.map.readSystemDoc](map.md#map.map.readSystemDoc)
-    - fn [readSystemDoc](../../src/map.ts#L143) (root: string) → SystemDoc <!-- internal -->
+    - fn [readSystemDoc](../../src/map.ts#L148) (root: string) → SystemDoc <!-- internal -->
       <a id="map.map.readSystemDoc"></a>
       - calls [map.map.manifestAbout](map.md#map.map.manifestAbout), [map.map.readSource](map.md#map.map.readSource), [map.map.readReadme](map.md#map.map.readReadme), [base.brief.readmeBrief](base.md#base.brief.readmeBrief), [base.brief.briefOf](base.md#base.brief.briefOf)
-    - fn [readReadme](../../src/map.ts#L157) (root: string, dir: string) → { path: string; text: string } | null <!-- internal -->
+    - fn [readReadme](../../src/map.ts#L162) (root: string, dir: string) → { path: string; text: string } | null <!-- internal -->
       <a id="map.map.readReadme"></a><br>`README.md` in `dir` (relative, POSIX; "" for the root), its name in any case; null without one.
       - calls [map.map.readSource](map.md#map.map.readSource)
-    - fn [manifestAbout](../../src/map.ts#L179) (file: (typeof ROOT_MANIFESTS)[number], text: string | null) → { name: string | null; description: string | null } <!-- internal -->
+    - fn [manifestAbout](../../src/map.ts#L184) (file: (typeof ROOT_MANIFESTS)[number], text: string | null) → { name: string | null; description: string | null } <!-- internal -->
       <a id="map.map.manifestAbout"></a><br>`name` and `description` of a root manifest: `package.json` and `composer.json` at the top, `[package]` (or `[workspace.package]`) of `Cargo.toml`, `[project]` of `pyproject.toml`. A manifest that does not parse gives neither: the analysis reports it where it reads the…
-    - fn [opaqueFacts](../../src/map.ts#L205) (path: string) → FileFacts <!-- internal -->
+    - fn [opaqueFacts](../../src/map.ts#L210) (path: string) → FileFacts <!-- internal -->
       <a id="map.map.opaqueFacts"></a><br>Builds an empty `FileFacts` record for a path with completeness set to "opaque": no imports, declarations, exports, or references, and no parse error. [`map.map.extractGuarded`](map.md#map.map.extractGuarded) and [`map.map.generateMap`](map.md#map.map.generateMap) use it as the placeholder when a file cannot or should not be analyzed. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [readSource](../../src/map.ts#L210) (abs: string) → string | null <!-- internal -->
+    - fn [readSource](../../src/map.ts#L215) (abs: string) → string | null <!-- internal -->
       <a id="map.map.readSource"></a><br>A file's text; null when it no longer exists.
-    - fn [extractGuarded](../../src/map.ts#L224) (extract: (path: string, src: string) => Promise<FileFacts>, path: string, src: string) → Promise<FileFacts> <!-- internal -->
+    - fn [extractGuarded](../../src/map.ts#L229) (extract: (path: string, src: string) => Promise<FileFacts>, path: string, src: string) → Promise<FileFacts> <!-- internal -->
       <a id="map.map.extractGuarded"></a><br>Facts of one file; a file whose syntax nests deeper than the extractor's stack (thousands of `+` terms or parentheses) is opaque with a parse error, so one pathological file does not stop the whole analysis.
       - calls [map.map.opaqueFacts](map.md#map.map.opaqueFacts)
-    - type [MapDiff](../../src/map.ts#L235)
+    - type [MapDiff](../../src/map.ts#L240)
       <a id="map.map.MapDiff"></a><br>Describes the result of comparing generated output against the target directory: paths of existing files the generator does not own, and paths of generated files that are missing, changed, or extra. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [targets](../../src/map.ts#L246) (config: Config, r: MapResult) → { dir: string; files: ReadonlyMap<string, string>; artifact: "map" | "explained" }[] <!-- internal -->
+    - fn [targets](../../src/map.ts#L251) (config: Config, r: MapResult) → { dir: string; files: ReadonlyMap<string, string>; artifact: "map" | "explained" }[] <!-- internal -->
       <a id="map.map.targets"></a><br>Directories the generator owns and what they should hold: the map, and the explained map (empty when `explain.map` is off, so its generated files go).
-    - fn [extraGenerated](../../src/map.ts#L254) (dir: string, files: ReadonlyMap<string, string>) → string[] <!-- internal -->
+    - fn [extraGenerated](../../src/map.ts#L259) (dir: string, files: ReadonlyMap<string, string>) → string[] <!-- internal -->
       <a id="map.map.extraGenerated"></a><br>Generated files in `dir` that should not be there.
       - calls [map.emit.isGeneratedMap](map.md#map.emit.isGeneratedMap)
-    - fn [mapConflicts](../../src/map.ts#L262) (config: Config, r: MapResult) → string[]
+    - fn [mapConflicts](../../src/map.ts#L267) (config: Config, r: MapResult) → string[]
       <a id="map.map.mapConflicts"></a><br>Target files of both maps that exist and are not generated. Sorted.
       - calls [map.map.targets](map.md#map.map.targets), [map.emit.isGeneratedMap](map.md#map.emit.isGeneratedMap)
-    - type [MapArtifact](../../src/map.ts#L274) = "map" | "explained" | "index" | "facts"
+    - type [MapArtifact](../../src/map.ts#L279) = "map" | "explained" | "index" | "facts"
       <a id="map.map.MapArtifact"></a><br>What a step of the map's commit touches.
-    - type [MapStep](../../src/map.ts#L277)
+    - type [MapStep](../../src/map.ts#L282)
       <a id="map.map.MapStep"></a><br>One file step of `keylang map`: a path relative to the root, POSIX.
-    - type [PlannedStep](../../src/map.ts#L283) extends MapStep <!-- internal -->
+    - type [PlannedStep](../../src/map.ts#L288) extends MapStep <!-- internal -->
       <a id="map.map.PlannedStep"></a><br>Extends `MapStep` with the bytes a write step should produce and a precondition snapshot: the file's expected current content, null for absent, or undefined when no check applies. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [MapPlan](../../src/map.ts#L299)
+    - type [MapPlan](../../src/map.ts#L304)
       <a id="map.map.MapPlan"></a><br>What `keylang map` will do, computed before anything is written: the expected bytes of every target, the removals, and what the render was made from. Internal to one operation — not a stored format.
-    - type [SourceInputs](../../src/map.ts#L311)
+    - type [SourceInputs](../../src/map.ts#L316)
       <a id="map.map.SourceInputs"></a><br>What a snapshot was computed from: `keylang.json` and the source files. A change in either makes a plan built on it unfit.
-    - type [MapInputs](../../src/map.ts#L319) extends SourceInputs <!-- internal -->
+    - type [MapInputs](../../src/map.ts#L324) extends SourceInputs <!-- internal -->
       <a id="map.map.MapInputs"></a><br>The inputs of the render: a change in any makes the plan unfit.
-    - fn [sourceInputs](../../src/map.ts#L325) (config: Config, sources: readonly { path: string; sha256: string }[]) → SourceInputs
+    - fn [sourceInputs](../../src/map.ts#L330) (config: Config, sources: readonly { path: string; sha256: string }[]) → SourceInputs
       <a id="map.map.sourceInputs"></a><br>The inputs of a snapshot as they are on disk now: the saved `keylang.json` and the snapshot's manifest.
       - calls [map.map.readOrNull](map.md#map.map.readOrNull)
-    - fn [sourceInputProblems](../../src/map.ts#L334) (config: Config, inputs: SourceInputs, subject: string) → string[]
+    - fn [sourceInputProblems](../../src/map.ts#L339) (config: Config, inputs: SourceInputs, subject: string) → string[]
       <a id="map.map.sourceInputProblems"></a><br>How `keylang.json` and the source files differ from the ones `subject` was computed from (`path: reason` lines, empty when none does): a changed config, a source added, changed or removed since.
       - calls [map.map.readOrNull](map.md#map.map.readOrNull), [base.config.sourceTree](base.md#base.config.sourceTree), [map.snapshot.sha256](map.md#map.snapshot.sha256)
-    - type [CommittedStep](../../src/map.ts#L353) extends MapStep
+    - type [CommittedStep](../../src/map.ts#L358) extends MapStep
       <a id="map.map.CommittedStep"></a><br>A step after the commit: done, failed with the reason, or never tried.
-    - type [MapCommit](../../src/map.ts#L358)
+    - type [MapCommit](../../src/map.ts#L363)
       <a id="map.map.MapCommit"></a><br>Result record of a map commit, holding the list of steps that were actually written plus a flag saying whether the run finished, failed, or was cancelled by a signal between steps. Cancelled runs keep whatever steps already landed. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [planMap](../../src/map.ts#L369) (config: Config, r: MapResult) → MapPlan
+    - fn [planMap](../../src/map.ts#L374) (config: Config, r: MapResult) → MapPlan
       <a id="map.map.planMap"></a><br>Plans both maps, the index and the fact cache: a write for every missing or changed generated file, a removal for every generated file of a layer that is gone (or of a map turned off). Reads the disk, writes nothing.
       - calls [base.config.toPosix](base.md#base.config.toPosix), [map.map.targets](map.md#map.map.targets), [map.map.readOrNull](map.md#map.map.readOrNull), [map.map.extraGenerated](map.md#map.map.extraGenerated), [map.map.mapConflicts](map.md#map.map.mapConflicts), [map.map.sourceInputs](map.md#map.map.sourceInputs), [map.map.briefsKey](map.md#map.map.briefsKey)
-    - fn [mapPlanProblems](../../src/map.ts#L403) (plan: MapPlan) → string[]
+    - fn [mapPlanProblems](../../src/map.ts#L408) (plan: MapPlan) → string[]
       <a id="map.map.mapPlanProblems"></a><br>Why the plan may not be committed now, as `path: reason` lines; empty when it may. Every target must pass the repository's write rules (a plain path that stays inside the repository through links) and still hold the bytes the plan saw — a manual file created meanwhile included…
       - calls [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [map.map.sourceInputProblems](map.md#map.map.sourceInputProblems), [map.map.briefsKey](map.md#map.map.briefsKey)
-    - fn [commitMap](../../src/map.ts#L422) (plan: MapPlan, options: { signal?: AbortSignal; onStep?: (step: MapStep) => void } = {}) → Promise<MapCommit>
+    - fn [commitMap](../../src/map.ts#L427) (plan: MapPlan, options: { signal?: AbortSignal; onStep?: (step: MapStep) => void } = {}) → Promise<MapCommit>
       <a id="map.map.commitMap"></a><br>Runs the plan's steps in order, each an atomic write (the generator's exact bytes, the permissions of the file it replaces, links followed inside the repository) or a removal. The signal is checked between steps: the step under way finishes. `onStep` is told before each step…
       - calls [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic), [base.safe-write.landing](base.md#base.safe-write.landing)
-    - fn [briefsKey](../../src/map.ts#L451) (config: Config) → string <!-- internal -->
+    - fn [briefsKey](../../src/map.ts#L456) (config: Config) → string <!-- internal -->
       <a id="map.map.briefsKey"></a><br>A hash of the briefs the explained map reads.
       - calls [map.snapshot.sha256](map.md#map.snapshot.sha256), [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs)
-    - fn [readOrNull](../../src/map.ts#L456) (abs: string) → string | null <!-- internal -->
+    - fn [readOrNull](../../src/map.ts#L461) (abs: string) → string | null <!-- internal -->
       <a id="map.map.readOrNull"></a><br>A file's text, or null when there is none.
-    - fn [diffMap](../../src/map.ts#L465) (config: Config, r: MapResult) → MapDiff
+    - fn [diffMap](../../src/map.ts#L470) (config: Config, r: MapResult) → MapDiff
       <a id="map.map.diffMap"></a><br>Compare both generated maps with the files on disk (`map --check`).
       - calls [map.map.mapConflicts](map.md#map.map.mapConflicts), [map.map.targets](map.md#map.map.targets), [map.map.extraGenerated](map.md#map.map.extraGenerated)
-    - fn [extractorCode](../../src/map.ts#L487) () → string <!-- internal -->
+    - fn [extractorCode](../../src/map.ts#L492) () → string <!-- internal -->
       <a id="map.map.extractorCode"></a><br>A hash of the extractor's own code. Facts cached by a changed extractor are stale even when nobody bumped `EXTRACTOR_VERSION`; in the package the same files are the built `.js`.
       - calls [map.snapshot.sha256](map.md#map.snapshot.sha256)
   - module [php-imports](../../src/php-imports.ts#L1)
@@ -766,38 +842,49 @@
     - exact-path [map.exact-path](map.md#map.exact-path)
     - glob [base.glob](base.md#base.glob)
     - type [Crate](../../src/rust-imports.ts#L24) <!-- internal -->
-      <a id="map.rust-imports.Crate"></a><br>Describes one Cargo package found while mapping Rust imports: its directory, the underscored name, the library root and binary roots, and a table mapping the identifiers code uses for dependencies to package names. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="map.rust-imports.Crate"></a><br>Describes one Cargo package found while mapping Rust imports: its directory, the underscored name, the library root and binary roots, and a table mapping the identifiers code uses for dependencies to package names. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
     - module [RustResolver](../../src/rust-imports.ts#L37)
       <a id="map.rust-imports.RustResolver"></a><br>Resolves Rust `use` paths to project files or external packages using Cargo manifests, workspace members and module-file layout, via [`map.rust-imports.RustResolver.resolve`](map.md#map.rust-imports.RustResolver.resolve); it records manifests read in `inputs`. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
-      - fn [constructor](../../src/rust-imports.ts#L49) (root: string, sources: ReadonlySet<string> = new Set(), fs: ExactFs = nodeFs)
+      - fn [constructor](../../src/rust-imports.ts#L51) (root: string, sources: ReadonlySet<string> = new Set(), fs: ExactFs = nodeFs)
         <a id="map.rust-imports.RustResolver.constructor"></a><br>Stores the repository root and known source files, then registers every named workspace member crate found via [`map.rust-imports.RustResolver.workspaceMembers`](map.md#map.rust-imports.RustResolver.workspaceMembers) and [`map.rust-imports.RustResolver.crateAt`](map.md#map.rust-imports.RustResolver.crateAt), plus the top-level crate, by crate name. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
-        - calls [map.exact-path.exactExistence](map.md#map.exact-path.exactExistence), [map.rust-imports.RustResolver.crateAt](map.md#map.rust-imports.RustResolver.crateAt), [map.rust-imports.RustResolver.workspaceMembers](map.md#map.rust-imports.RustResolver.workspaceMembers)
-      - fn [resolve](../../src/rust-imports.ts#L61) (fromFile: string, spec: string) → Resolution
+        - calls [map.exact-path.exactExistence](map.md#map.exact-path.exactExistence)
+      - fn [resolve](../../src/rust-imports.ts#L57) (fromFile: string, spec: string) → Resolution
         <a id="map.rust-imports.RustResolver.resolve"></a><br>Turns a `use` path from a Rust file into a resolution: toolchain names and `crate.deps` entries become external packages, `crate`/`self`/`super` and workspace members are anchored via [`map.rust-imports.RustResolver.rootOf`](map.md#map.rust-imports.RustResolver.rootOf) and [`map.rust-imports.modulePath`](map.md#map.rust-imports.modulePath), then the longest… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-        - calls [map.rust-imports.RustResolver.crateOf](map.md#map.rust-imports.RustResolver.crateOf), [map.rust-imports.RustResolver.rootOf](map.md#map.rust-imports.RustResolver.rootOf), [map.rust-imports.modulePath](map.md#map.rust-imports.modulePath), [map.rust-imports.RustResolver.moduleFile](map.md#map.rust-imports.RustResolver.moduleFile), [map.rust-imports.RustResolver.declares](map.md#map.rust-imports.RustResolver.declares)
-      - fn [moduleFile](../../src/rust-imports.ts#L119) (rootFile: string, path: string[]) → string | null <!-- internal -->
+        - calls [map.rust-imports.RustResolver.crateOf](map.md#map.rust-imports.RustResolver.crateOf), [map.rust-imports.RustResolver.rootOf](map.md#map.rust-imports.RustResolver.rootOf), [map.rust-imports.modulePath](map.md#map.rust-imports.modulePath), [map.rust-imports.RustResolver.pathDependency](map.md#map.rust-imports.RustResolver.pathDependency), [map.rust-imports.RustResolver.membersOf](map.md#map.rust-imports.RustResolver.membersOf), [map.rust-imports.RustResolver.moduleFile](map.md#map.rust-imports.RustResolver.moduleFile), [map.rust-imports.RustResolver.declares](map.md#map.rust-imports.RustResolver.declares)
+      - fn [moduleFile](../../src/rust-imports.ts#L116) (rootFile: string, path: string[]) → string | null <!-- internal -->
         <a id="map.rust-imports.RustResolver.moduleFile"></a><br>The file of a module path under a target root, or null: `a/b.rs`, `a/b/mod.rs`, the root itself for `[]`.
-      - fn [rootOf](../../src/rust-imports.ts#L130) (crate: Crate, file: string) → string | null <!-- internal -->
+      - fn [rootOf](../../src/rust-imports.ts#L127) (crate: Crate, file: string) → string | null <!-- internal -->
         <a id="map.rust-imports.RustResolver.rootOf"></a><br>The target root whose module tree holds `file`; null for a file outside all of them (`build.rs`).
         - calls [map.rust-imports.modulePath](map.md#map.rust-imports.modulePath), [map.rust-imports.RustResolver.declares](map.md#map.rust-imports.RustResolver.declares)
-      - fn [declares](../../src/rust-imports.ts#L156) (file: string, name: string, inline = false) → boolean <!-- internal -->
+      - fn [declares](../../src/rust-imports.ts#L153) (file: string, name: string, inline = false) → boolean <!-- internal -->
         <a id="map.rust-imports.RustResolver.declares"></a><br>The file declares `mod <name>` (only an inline `mod <name> { … }` with `inline`). A text scan: the resolver does not parse sources.
-      - fn [crateOf](../../src/rust-imports.ts#L168) (file: string) → Crate | null <!-- internal -->
-        <a id="map.rust-imports.RustResolver.crateOf"></a><br>Walks up the directory chain from a file's parent to the repository root, returning the first crate [`map.rust-imports.RustResolver.crateAt`](map.md#map.rust-imports.RustResolver.crateAt) reports for a directory, or null if none matches. Used by [`map.rust-imports.RustResolver.resolve`](map.md#map.rust-imports.RustResolver.resolve) to find the crate a source file belongs… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      - fn [crateOf](../../src/rust-imports.ts#L165) (file: string) → Crate | null <!-- internal -->
+        <a id="map.rust-imports.RustResolver.crateOf"></a><br>Walks up the directory chain from a file's parent to the repository root, returning the first crate [`map.rust-imports.RustResolver.crateAt`](map.md#map.rust-imports.RustResolver.crateAt) reports for a directory, or null if none matches. Used by [`map.rust-imports.RustResolver.resolve`](map.md#map.rust-imports.RustResolver.resolve) to find the crate a source file belongs… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
         - calls [map.rust-imports.RustResolver.crateAt](map.md#map.rust-imports.RustResolver.crateAt)
-      - fn [crateAt](../../src/rust-imports.ts#L177) (dir: string) → Crate | null <!-- internal -->
-        <a id="map.rust-imports.RustResolver.crateAt"></a><br>Builds a cached crate record for a directory by parsing its Cargo.toml via [`map.rust-imports.RustResolver.readToml`](map.md#map.rust-imports.RustResolver.readToml): normalized package name, dependency aliases (including target-specific tables), the lib entry path, and discovered binary entry points. Returns null and caches… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-        - calls [map.rust-imports.RustResolver.readToml](map.md#map.rust-imports.RustResolver.readToml), [map.rust-imports.isObject](map.md#map.rust-imports.isObject)
-      - fn [workspaceMembers](../../src/rust-imports.ts#L216) () → string[] <!-- internal -->
-        <a id="map.rust-imports.RustResolver.workspaceMembers"></a><br>`[workspace] members` of the root manifest, globs expanded one directory level at a time.
-        - calls [map.rust-imports.RustResolver.readToml](map.md#map.rust-imports.RustResolver.readToml), [map.rust-imports.isObject](map.md#map.rust-imports.isObject), [base.glob.globToRegExp](base.md#base.glob.globToRegExp), [map.rust-imports.readdirNames](map.md#map.rust-imports.readdirNames)
-      - fn [readToml](../../src/rust-imports.ts#L235) (file: string) → Record<string, unknown> | null <!-- internal -->
+      - fn [crateAt](../../src/rust-imports.ts#L174) (dir: string) → Crate | null <!-- internal -->
+        <a id="map.rust-imports.RustResolver.crateAt"></a><br>Builds a cached crate record for a directory by parsing its Cargo.toml via [`map.rust-imports.RustResolver.readToml`](map.md#map.rust-imports.RustResolver.readToml): normalized package name, dependency aliases (including target-specific tables), the lib entry path, and discovered binary entry points. Returns null and caches… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+        - calls [map.rust-imports.RustResolver.manifestAt](map.md#map.rust-imports.RustResolver.manifestAt), [map.rust-imports.isObject](map.md#map.rust-imports.isObject), [map.rust-imports.insideRoot](map.md#map.rust-imports.insideRoot)
+      - fn [pathDependency](../../src/rust-imports.ts#L214) (crate: Crate, name: string) → Crate | null <!-- internal -->
+        <a id="map.rust-imports.RustResolver.pathDependency"></a><br>The crate a `path` dependency named `name` in code points at, when it is inside the repository; null otherwise.
+        - calls [map.rust-imports.RustResolver.crateAt](map.md#map.rust-imports.RustResolver.crateAt)
+      - fn [membersOf](../../src/rust-imports.ts#L224) (crate: Crate) → Map<string, Crate> <!-- internal -->
+        <a id="map.rust-imports.RustResolver.membersOf"></a><br>The members of the crate's workspace by name, as Cargo finds it: the nearest `Cargo.toml` with `[workspace]` from the crate's directory up to the analysis root, its `members` expanded relative to that manifest's directory, plus the root package itself; a crate under no…
+        - calls [map.rust-imports.RustResolver.manifestAt](map.md#map.rust-imports.RustResolver.manifestAt), [map.rust-imports.isObject](map.md#map.rust-imports.isObject), [map.rust-imports.RustResolver.workspaceMembers](map.md#map.rust-imports.RustResolver.workspaceMembers), [map.rust-imports.RustResolver.crateAt](map.md#map.rust-imports.RustResolver.crateAt)
+      - fn [workspaceMembers](../../src/rust-imports.ts#L247) (dir: string) → string[] <!-- internal -->
+        <a id="map.rust-imports.RustResolver.workspaceMembers"></a><br>`[workspace] members` of the manifest in `dir`, root-relative, globs expanded one directory level at a time.
+        - calls [map.rust-imports.RustResolver.manifestAt](map.md#map.rust-imports.RustResolver.manifestAt), [map.rust-imports.isObject](map.md#map.rust-imports.isObject), [map.rust-imports.insideRoot](map.md#map.rust-imports.insideRoot), [base.glob.globToRegExp](base.md#base.glob.globToRegExp), [map.rust-imports.readdirNames](map.md#map.rust-imports.readdirNames)
+      - fn [manifestAt](../../src/rust-imports.ts#L271) (dir: string) → Record<string, unknown> | null <!-- internal -->
+        <a id="map.rust-imports.RustResolver.manifestAt"></a><br>The parsed `Cargo.toml` of a directory (root-relative, "" for the root), read once; null without one.
+        - calls [map.rust-imports.RustResolver.readToml](map.md#map.rust-imports.RustResolver.readToml)
+      - fn [readToml](../../src/rust-imports.ts#L279) (file: string) → Record<string, unknown> | null <!-- internal -->
         <a id="map.rust-imports.RustResolver.readToml"></a><br>Reads a TOML file relative to the resolver root, recording its text (or null if absent) in the inputs map for fingerprinting, and returns the parsed table. Throws with the file name if the TOML is malformed; serves [`map.rust-imports.RustResolver.crateAt`](map.md#map.rust-imports.RustResolver.crateAt) and… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [modulePath](../../src/rust-imports.ts#L252) (rootFile: string, file: string) → string[] <!-- internal -->
+    - fn [modulePath](../../src/rust-imports.ts#L296) (rootFile: string, file: string) → string[] <!-- internal -->
       <a id="map.rust-imports.modulePath"></a><br>Module path of a file under a target root: `src/a/b.rs` → `[a, b]`, `src/a/mod.rs` → `[a]`, the root → `[]`.
-    - fn [readdirNames](../../src/rust-imports.ts#L260) (abs: string) → string[] <!-- internal -->
+    - fn [insideRoot](../../src/rust-imports.ts#L305) (dir: string) → string | null <!-- internal -->
+      <a id="map.rust-imports.insideRoot"></a><br>A normalized root-relative directory when it stays inside the repository ("" for the root); null when it leaves it.
+    - fn [readdirNames](../../src/rust-imports.ts#L310) (abs: string) → string[] <!-- internal -->
       <a id="map.rust-imports.readdirNames"></a><br>Lists the names of the immediate subdirectories of a path, synchronously, excluding files and sorted alphabetically. [`map.rust-imports.RustResolver.workspaceMembers`](map.md#map.rust-imports.RustResolver.workspaceMembers) uses it to expand Cargo workspace member entries. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [isObject](../../src/rust-imports.ts#L264) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isObject](../../src/rust-imports.ts#L314) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       <a id="map.rust-imports.isObject"></a><br>Type guard that returns true only for non-null, non-array object values, narrowing them to a string-keyed record. Used by [`map.rust-imports.RustResolver.crateAt`](map.md#map.rust-imports.RustResolver.crateAt) and [`map.rust-imports.RustResolver.workspaceMembers`](map.md#map.rust-imports.RustResolver.workspaceMembers) to validate parsed Cargo.toml tables before reading fields. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [snapshot](../../src/snapshot.ts#L1)
     <a id="map.snapshot"></a><br>Analysis snapshot: the versioned fact store written to `.keylang/index.json`. Markdown maps are a projection of the graph; `check` in later tickets reads this file. `generated` is wall-clock metadata and is not part of `snapshotId`.
@@ -829,39 +916,45 @@
       <a id="map.snapshot.SystemDoc"></a><br>What the repository says about itself: the system level of C4. A node of the explained map and the zoom screen, never an ID of the language (ADR 0014).
     - type [RepositoryDocs](../../src/snapshot.ts#L186)
       <a id="map.snapshot.RepositoryDocs"></a><br>Text the repository writes about itself and its layers, read at the edge (`map.ts`).
-    - type [AnalysisSnapshot](../../src/snapshot.ts#L192)
-      <a id="map.snapshot.AnalysisSnapshot"></a><br>A versioned, serialisable record of one analysis run: extractor, grammars, config and file hashes, plus the resulting nodes, edges, exports, coverage and stats. It also carries the repo description, which is kept out of its ID. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
-    - fn [sha256](../../src/snapshot.ts#L224) (text: string) → string
+    - type [EntryKind](../../src/snapshot.ts#L194) = (typeof ENTRY_KINDS)[number]
+      <a id="map.snapshot.EntryKind"></a>
+    - fn [isEntryKind](../../src/snapshot.ts#L196) (value: string) → value is EntryKind
+      <a id="map.snapshot.isEntryKind"></a>
+    - type [EntryPoint](../../src/snapshot.ts#L205)
+      <a id="map.snapshot.EntryPoint"></a><br>An entry point: a fn (or a module's top level) execution starts from, as the code or a manifest writes it. A fact, not an edge: nothing calls it from inside the repository.
+    - type [AnalysisSnapshot](../../src/snapshot.ts#L220)
+      <a id="map.snapshot.AnalysisSnapshot"></a><br>A versioned, serialisable record of one analysis run: extractor, grammars, config and file hashes, plus the resulting nodes, edges, exports, coverage and stats. It also carries the repo description, which is kept out of its ID. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
+    - fn [sha256](../../src/snapshot.ts#L254) (text: string) → string
       <a id="map.snapshot.sha256"></a><br>Hashes the given text with SHA-256 and returns the hex digest. Used across the codebase as the single content-fingerprinting primitive, e.g. by [`map.snapshot.buildSnapshot`](map.md#map.snapshot.buildSnapshot) and `operations.operations.hashOrNull`. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [buildSnapshot](../../src/snapshot.ts#L228) ( graph: Graph, config: Config, files: readonly { path: string; sha256: string }[], /** Files (or an unreadable directory) left out; `source`: the ID scope they belong to when no module has the file. */ skipped: readonly { file: string; reason: string; source?: string; kind?: "skipped-file" | "outside-file" }[], docs: RepositoryDocs = { system: { name: null, brief: null, source: null }, layers: new Map() }, ) → AnalysisSnapshot
+    - fn [buildSnapshot](../../src/snapshot.ts#L258) ( graph: Graph, config: Config, files: readonly { path: string; sha256: string }[], /** Files (or an unreadable directory) left out; `source`: the ID scope they belong to when no module has the file. */ skipped: readonly { file: string; reason: string; source?: string; kind?: "skipped-file" | "outside-file" }[], docs: RepositoryDocs = { system: { name: null, brief: null, source: null }, layers: new Map() }, /** The entry points and the manifests they were read from (path → text or null), which `snapshotId` covers like the sources. */ entries: { list: readonly EntryPoint[]; inputs: readonly (readonly [string, string | null])[] } = { list: [], inputs: [] }, ) → AnalysisSnapshot
       <a id="map.snapshot.buildSnapshot"></a><br>Converts the analyzed graph into a sorted snapshot of layer/module/fn/type nodes with reverse links, resolved and unresolved edges, and coverage gaps, keyed by a hash of config, files and grammars; [`map.snapshot.closures`](map.md#map.snapshot.closures) finishes it. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [map.snapshot.grammarVersions](map.md#map.snapshot.grammarVersions), [map.snapshot.sha256](map.md#map.snapshot.sha256), [map.snapshot.docBrief](map.md#map.snapshot.docBrief), [map.snapshot.indexDoc](map.md#map.snapshot.indexDoc), [base.glob.globDirectory](base.md#base.glob.globDirectory), [map.snapshot.closures](map.md#map.snapshot.closures)
-    - fn [closures](../../src/snapshot.ts#L445) (nodes: Record<string, SnapshotNode>, coverage: readonly CoverageItem[]) → void <!-- internal -->
+    - fn [closures](../../src/snapshot.ts#L480) (nodes: Record<string, SnapshotNode>, coverage: readonly CoverageItem[]) → void <!-- internal -->
       <a id="map.snapshot.closures"></a><br>`closure` of every fn and type, bottom-up over strongly connected components of the call graph: a component hashes its members' own fingerprints with the closures it calls outside itself, so a cycle terminates and every member of it changes together.
       - calls [base.languages.constructorName](base.md#base.languages.constructorName), [check.scc.components](check.md#check.scc.components), [map.snapshot.sha256](map.md#map.snapshot.sha256)
-    - fn [docBrief](../../src/snapshot.ts#L488) (doc: string | null | undefined) → string | null <!-- internal -->
+    - fn [docBrief](../../src/snapshot.ts#L523) (doc: string | null | undefined) → string | null <!-- internal -->
       <a id="map.snapshot.docBrief"></a><br>Returns null for an empty, null, or undefined doc string; otherwise hands the text to [`base.brief.briefOf`](base.md#base.brief.briefOf) and returns its result. Used by [`map.snapshot.buildSnapshot`](map.md#map.snapshot.buildSnapshot) to produce short summaries for the snapshot. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [base.brief.briefOf](base.md#base.brief.briefOf)
-    - fn [indexDoc](../../src/snapshot.ts#L497) (modules: readonly Module[], dir: string | null) → string | null <!-- internal -->
+    - fn [indexDoc](../../src/snapshot.ts#L532) (modules: readonly Module[], dir: string | null) → string | null <!-- internal -->
       <a id="map.snapshot.indexDoc"></a><br>The doc comment of the index module right in a layer's own directory (`src/tui/index.ts`, `mod.rs`, `__init__.py`: the index names of its language), as a brief.
       - calls [base.languages.languageOf](base.md#base.languages.languageOf), [map.snapshot.docBrief](map.md#map.snapshot.docBrief)
-    - fn [exportRow](../../src/snapshot.ts#L509) (entry: ExportEntry) → SnapshotExport <!-- internal -->
+    - fn [exportRow](../../src/snapshot.ts#L544) (entry: ExportEntry) → SnapshotExport <!-- internal -->
       <a id="map.snapshot.exportRow"></a><br>A row of the graph's export table, with its fields in a fixed order.
-    - fn [compareCoverage](../../src/snapshot.ts#L522) (a: CoverageItem, b: CoverageItem) → number <!-- internal -->
+    - fn [compareCoverage](../../src/snapshot.ts#L557) (a: CoverageItem, b: CoverageItem) → number <!-- internal -->
       <a id="map.snapshot.compareCoverage"></a><br>Orders two coverage entries for stable sorting: first by file path via [`map.snapshot.cmp`](map.md#map.snapshot.cmp), then numerically by line, then by kind, and finally by reason, returning the first nonzero comparison. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [map.snapshot.cmp](map.md#map.snapshot.cmp)
-    - fn [cmp](../../src/snapshot.ts#L526) (a: string, b: string) → number <!-- internal -->
+    - fn [cmp](../../src/snapshot.ts#L561) (a: string, b: string) → number <!-- internal -->
       <a id="map.snapshot.cmp"></a><br>Compares two strings by plain lexical ordering and returns -1, 1, or 0, giving [`map.snapshot.compareCoverage`](map.md#map.snapshot.compareCoverage) a stable tiebreaker when it sorts coverage items. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [grammarVersions](../../src/snapshot.ts#L540) () → Record<string, string>
+    - fn [grammarVersions](../../src/snapshot.ts#L575) () → Record<string, string>
       <a id="map.snapshot.grammarVersions"></a><br>What parses the code, in `snapshotId` and the fact-cache key: the web-tree-sitter runtime as Node resolves it, and the grammars as the extractor loads them — from `dist/wasm` in the package, whose version prepack writes beside them, else from the installed…
       - calls [map.snapshot.installedVersion](map.md#map.snapshot.installedVersion), [map.snapshot.bundledGrammarsVersion](map.md#map.snapshot.bundledGrammarsVersion)
-    - fn [bundledGrammarsVersion](../../src/snapshot.ts#L551) () → string | null <!-- internal -->
+    - fn [bundledGrammarsVersion](../../src/snapshot.ts#L586) () → string | null <!-- internal -->
       <a id="map.snapshot.bundledGrammarsVersion"></a><br>The version prepack recorded beside the grammars in `dist/wasm`; null in a checkout.
       - calls [map.snapshot.readJson](map.md#map.snapshot.readJson)
-    - fn [installedVersion](../../src/snapshot.ts#L562) (name: string, resolve: () => string) → string | null <!-- internal -->
+    - fn [installedVersion](../../src/snapshot.ts#L597) (name: string, resolve: () => string) → string | null <!-- internal -->
       <a id="map.snapshot.installedVersion"></a><br>The version in the nearest `package.json` of that name above the file `resolve` finds: a package's `exports` may not list `./package.json` (web-tree-sitter does not), so reading it by name fails. Null when the package is not installed.
       - calls [map.snapshot.readJson](map.md#map.snapshot.readJson)
-    - fn [readJson](../../src/snapshot.ts#L578) (file: string) → Record<string, unknown> | null <!-- internal -->
+    - fn [readJson](../../src/snapshot.ts#L613) (file: string) → Record<string, unknown> | null <!-- internal -->
       <a id="map.snapshot.readJson"></a>
   - module [trace-plan](../../src/trace-plan.ts#L1)
     <a id="map.trace-plan"></a><br>The functions of one flow that a trace adapter instruments: the flow's `trigger` and `step` IDs that are functions of a fresh snapshot, with the file, position and file hash the snapshot saw. Adapters of languages without Node hooks (Python, Rust) read this plan instead of the…
