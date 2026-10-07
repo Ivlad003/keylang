@@ -35,8 +35,15 @@ export interface PlannedWrite {
 
 const LINK_HOPS = 32;
 
-/** Why `path` (relative to `root`, POSIX) may not be written, or null. Reads nothing outside the repository. */
-export function writeProblem(root: string, path: string, options: WriteOptions = {}): string | null {
+/**
+ * Why `path` (relative to `root`, POSIX) may not be a target of keylang's at
+ * all — written, removed or read as keylang's own file — or null: not a plain
+ * relative path, a loop of links, or a place outside the repository (or
+ * outside `under`) once every link on the way is followed. A removal needs
+ * this check as much as a write: `rm` of `.cursor/x` follows a linked
+ * `.cursor` to wherever it points.
+ */
+export function targetProblem(root: string, path: string, options: Pick<WriteOptions, "under"> = {}): string | null {
   if (path === "" || path.includes("\\") || posix.isAbsolute(path) || win32.isAbsolute(path)) return "not a plain relative path";
   if (path.split("/").some((part) => part === ".." || part === "." || part === "")) return "not a plain relative path";
   const target = landing(join(root, path));
@@ -46,6 +53,14 @@ export function writeProblem(root: string, path: string, options: WriteOptions =
     const base = landing(join(root, options.under));
     if (base === null || !inside(target, base)) return `leads out of ${options.under}/ through a link`;
   }
+  return null;
+}
+
+/** Why `path` (relative to `root`, POSIX) may not be written, or null. Reads nothing outside the repository. */
+export function writeProblem(root: string, path: string, options: WriteOptions = {}): string | null {
+  const place = targetProblem(root, path, options);
+  if (place !== null) return place;
+  const target = landing(join(root, path))!;
   const entry = statOrNull(target);
   if (entry?.isDirectory()) return "a directory";
   const current = entry ? readFileSync(target, "utf8") : null;

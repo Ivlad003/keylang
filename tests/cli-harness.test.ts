@@ -3,10 +3,11 @@
 // approval) and the git pre-commit hook of `hook install`.
 
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { git, keylang, LAYERS, ORDER, PAY, root, tempDir, treeBytes, writeTree } from "./cli-helpers.ts";
+import { bin, git, keylang, LAYERS, ORDER, PAY, root, tempDir, treeBytes, writeTree } from "./cli-helpers.ts";
 
 const VERSION = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version as string;
 
@@ -77,6 +78,105 @@ test("agents: --agents=none writes no harness files; unknown name and broken mar
   assert.match(broken.stderr, /AGENTS\.md: broken markers/);
   assert.equal(readFileSync(join(bad, "AGENTS.md"), "utf8"), marked);
   assert.equal(existsSync(join(bad, "keylang.json")), false);
+});
+
+test("agents: a removal through a harness directory linked out of the repository is refused before the first step (init --agents=none and clone)", (t) => {
+  // The repository commits `.cursor` and `.claude` as links to a person's dotfiles outside it.
+  const make = (prefix: string): { repo: string; outside: string } => {
+    const dir = tempDir(t, prefix);
+    const repo = join(dir, "repo");
+    const outside = join(dir, "outside");
+    writeTree(repo, { "src/app/pay.ts": PAY, "src/domain/order.ts": ORDER });
+    writeTree(outside, {
+      "cur/mcp.json": `${JSON.stringify({ mcpServers: { keylang: { command: "npx", args: ["-y", "keylang@0.0.1", "mcp"] } } }, null, 2)}\n`,
+      "claude/skills/keylang-feature/SKILL.md": "USER DATA\n",
+      "claude/keep.txt": "keep\n",
+    });
+    symlinkSync(join(outside, "cur"), join(repo, ".cursor"), "dir");
+    symlinkSync(join(outside, "claude"), join(repo, ".claude"), "dir");
+    return { repo, outside };
+  };
+
+  const local = make("keylang-linked-remove-");
+  const before = treeBytes(local.outside);
+  const none = keylang(local.repo, ["init", "--agents=none"]);
+  assert.equal(none.status, 1, none.stdout + none.stderr);
+  assert.match(none.stdout, /^\.cursor\/mcp\.json: leads out of the repository through a link$/m);
+  assert.match(none.stdout, /^\.claude\/skills\/keylang-feature\/SKILL\.md: leads out of the repository through a link$/m);
+  assert.doesNotMatch(none.stdout, /removed/);
+  assert.match(none.stderr, /nothing was written/);
+  assert.deepEqual(treeBytes(local.outside), before, "the files behind the links stay");
+  const again = keylang(local.repo, ["agents", "--agents=none"]);
+  assert.equal(again.status, 1, again.stdout + again.stderr);
+  assert.deepEqual(treeBytes(local.outside), before);
+
+  // `clone` runs `init --agents=none` on a checkout the repository's own commit shaped.
+  const cloned = make("keylang-linked-clone-");
+  git(cloned.repo, ["init", "-q"]);
+  git(cloned.repo, ["add", "-A"]);
+  git(cloned.repo, ["-c", "commit.gpgsign=false", "commit", "-qm", "links"]);
+  const sandbox = tempDir(t, "keylang-linked-clone-home-");
+  const r = spawnSync(process.execPath, [bin, "clone", `file://${cloned.repo}`], {
+    cwd: sandbox,
+    encoding: "utf8",
+    env: { ...process.env, HOME: join(sandbox, "home"), XDG_CACHE_HOME: join(sandbox, "cache"), XDG_CONFIG_HOME: join(sandbox, "config") },
+  });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.stdout, /SKILL\.md: leads out of the repository through a link/);
+  assert.doesNotMatch(r.stdout, /removed/);
+  assert.deepEqual(treeBytes(cloned.outside), before, "a clone never removes files behind the repository's links");
+});
+
+test("agents: --agents=none leaves a harness file without a keylang entry byte for byte, and removes a file only when nothing but keylang's entries was in it", (t) => {
+  // Comments only, `{}`, an empty server table, a person's settings with four-space indentation: nothing of keylang's in any of them.
+  const dir = tempDir(t, "keylang-none-foreign-");
+  const files = {
+    ".codex/config.toml": "# my codex settings\n# model = \"gpt-5\"\n",
+    ".claude/settings.json": "{}\n",
+    ".cursor/mcp.json": '{"mcpServers":{}}\n',
+    ".mcp.json": '{\n    "mcpServers": {\n        "other": { "command": "echo" }\n    }\n}\n',
+    "opencode.json": '{"mcp": {"other": {"type": "local", "command": ["echo"]}}}',
+    ".codex/hooks.json": '{\n  "hooks": {}\n}\n',
+    "AGENTS.md": "\n",
+  };
+  writeTree(dir, { "src/app/pay.ts": PAY, "src/domain/order.ts": ORDER, ...files });
+  const init = keylang(dir, ["init", "--agents=none"]);
+  assert.equal(init.status, 0, init.stdout + init.stderr);
+  for (const [path, text] of Object.entries(files)) {
+    assert.equal(readFileSync(join(dir, path), "utf8"), text, path);
+    assert.ok(!init.stdout.includes(`${path}:`), `${path} is not a step: ${init.stdout}`);
+  }
+  const again = keylang(dir, ["agents", "--agents=none"]);
+  assert.equal(again.status, 0, again.stdout + again.stderr);
+  assert.equal(again.stdout, "");
+  for (const [path, text] of Object.entries(files)) assert.equal(readFileSync(join(dir, path), "utf8"), text, path);
+  assert.equal(keylang(dir, ["agents", "--check", "--agents=none"]).status, 0);
+
+  // A file keylang filled alone goes with its entries; a file that also holds the person's data keeps that data.
+  const mixed = tempDir(t, "keylang-none-strip-");
+  writeTree(mixed, {
+    "src/app/pay.ts": PAY,
+    "src/domain/order.ts": ORDER,
+    ".codex/config.toml": '# keep me\nmodel = "gpt-5" # note\n\n[mcp_servers.other]\ncommand = "echo"\n',
+  });
+  mkdirSync(join(mixed, ".claude"));
+  mkdirSync(join(mixed, ".cursor"));
+  const install = keylang(mixed, ["init", "--agents=claude,codex,cursor"]);
+  assert.equal(install.status, 0, install.stderr);
+  const toml = readFileSync(join(mixed, ".codex/config.toml"), "utf8");
+  assert.ok(toml.startsWith('# keep me\nmodel = "gpt-5" # note\n'), `comments stay on install: ${toml}`);
+  assert.match(toml, /\[mcp_servers\.keylang\]/);
+  assert.ok(existsSync(join(mixed, ".mcp.json")), "created for Claude");
+  const stripped = keylang(mixed, ["agents", "--agents=none"]);
+  assert.equal(stripped.status, 0, stripped.stdout + stripped.stderr);
+  assert.equal(readFileSync(join(mixed, ".codex/config.toml"), "utf8"), '# keep me\nmodel = "gpt-5" # note\n\n[mcp_servers.other]\ncommand = "echo"\n', "the table went, the rest is as before");
+  assert.ok(!existsSync(join(mixed, ".mcp.json")), "only keylang's server was in it");
+  assert.ok(!existsSync(join(mixed, ".cursor/mcp.json")));
+  assert.ok(!existsSync(join(mixed, ".claude/settings.json")), "only keylang's deny rules and hook were in it");
+  assert.ok(!existsSync(join(mixed, ".codex/hooks.json")));
+  assert.ok(!existsSync(join(mixed, "AGENTS.md")));
+  assert.ok(!existsSync(join(mixed, "CLAUDE.md")));
+  assert.ok(!existsSync(join(mixed, ".claude/skills/keylang-feature/SKILL.md")));
 });
 
 test("agents: MCP servers, skill copies, Claude deny and a stale --check that writes nothing", (t) => {

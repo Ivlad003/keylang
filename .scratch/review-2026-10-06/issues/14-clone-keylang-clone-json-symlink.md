@@ -1,6 +1,6 @@
 # 14: `clone` пише маркер `.keylang/clone.json` крізь symlink `.keylang` з клонованого репо
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -43,11 +43,15 @@ syncClone записує маркер через `writeAtomic(join(dir, CLONE_MA
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/clone.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/clone.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+- 2026-10-07: Регресійний тест `tests/clone.test.ts` «clone: a repository whose `.keylang` is a link out of the clone gets no marker written through it…»: локальний git-репозиторій `origin` з закоміченим `.keylang -> <sandbox>/outside/kl`, де лежить `clone.json` = `ORIGINAL`; `keylang clone origin` (HOME і XDG_CACHE_HOME у пісочниці, без мережі) має відмовити кодом 2 з `.keylang/clone.json: leads out of the repository through a link`, лишити `ORIGINAL` і не залишити напівзробленого клону в кеші; повторний запуск — та сама відмова. Другий блок: `--dir mine`, де `mine/.keylang` — посилання на теку з валідним маркером, — `mine exists and keylang did not clone it`, вміст `mine` цілий. На поточному коді падав: маркер було записано крізь посилання (далі `map` відмовляв `index.json`, код 1).
+- 2026-10-07: Виправлення в `src/clone.ts`: маркер пишеться через `safeWrite(dir, CLONE_MARKER, …, { under: ".keylang" })`; на відмову свіжий клон прибирається (`rmSync`; якщо тека існувала порожньою — створюється знову порожня) і кидається `clone: <шлях>: <причина>; the clone of <url> was removed` (CLI — код 2). `readMarker` спершу перевіряє `targetProblem(dir, CLONE_MARKER, { under: ".keylang" })` з `src/safe-write.ts` (спільна перевірка місця з тікета 12): маркер за посиланням поза текою не читається → «did not clone it», скидання не буде.
+- 2026-10-07: Суміжна знахідка поза межами тікета (не виправляв): `enableExplainedMap` пише `keylang.json` клону через `writeAtomic` напряму, без `writeProblem` — закомічений `keylang.json -> …` поза клоном при `clone --explain map-and-ai|all` піде за посиланням; варто окремого тікета. Контракт: `docs/cli.md` (§ clone — маркер за правилами запису, відмова, прибирання клону, маркер за посиланням не читається); `llm.txt` без змін (clone там не описано). `docs/review-2026-10-06.md` п. 13 позначено ✔ (тікет 14 відповідає п. 13 рев'ю). Перевірки: `node --test tests/clone.test.ts tests/safe-write.test.ts tests/web.test.ts` — 32/32, `npm run typecheck` — ок, `node bin/keylang.js check` — 0 fail.

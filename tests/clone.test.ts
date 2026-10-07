@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
@@ -129,6 +129,39 @@ test("clone: refuses a directory it did not clone, a bad --explain, --dry-run wi
   assert.match(noModel.stderr, /clone --explain map-and-ai: no model configured; set KEYLANG_AGENT/);
   assert.ok(existsSync(join(clonePath(dir), "keylang/map/api.md")), "the map is built before the model is asked for");
   assert.equal(JSON.parse(readFileSync(join(clonePath(dir), "keylang.json"), "utf8")).explain, undefined);
+});
+
+test("clone: a repository whose `.keylang` is a link out of the clone gets no marker written through it, and such a marker is never read", async (t) => {
+  const { dir, origin } = sandbox(t);
+  const outside = join(dir, "outside/kl");
+  mkdirSync(outside, { recursive: true });
+  writeFileSync(join(outside, "clone.json"), "ORIGINAL\n");
+  symlinkSync(outside, join(origin, ".keylang"), "dir");
+  git(origin, ["add", "-A"]);
+  git(origin, ["commit", "-qm", "link"]);
+
+  const refused = await keylang(dir, ["clone", "origin"]);
+  assert.equal(refused.status, 2, refused.stdout + refused.stderr);
+  assert.match(refused.stderr, /\.keylang\/clone\.json: leads out of the repository through a link/);
+  assert.equal(readFileSync(join(outside, "clone.json"), "utf8"), "ORIGINAL\n", "the file behind the link is untouched");
+  assert.deepEqual(readdirSync(outside), ["clone.json"]);
+  assert.ok(!existsSync(join(dir, "cache/keylang/repos/local")) || readdirSync(join(dir, "cache/keylang/repos/local")).length === 0, "no half-made clone is left in the cache");
+  const again = await keylang(dir, ["clone", "origin"]);
+  assert.equal(again.status, 2);
+  assert.match(again.stderr, /leads out of the repository through a link/);
+
+  // A marker behind a link is no proof keylang cloned the directory: the directory is not reset.
+  const mine = join(dir, "mine");
+  const elsewhere = join(dir, "outside/marker");
+  mkdirSync(elsewhere, { recursive: true });
+  writeFileSync(join(elsewhere, "clone.json"), `${JSON.stringify({ url: origin, key: ["local", "origin-x"] })}\n`);
+  mkdirSync(mine);
+  writeFileSync(join(mine, "notes.txt"), "keep me\n");
+  symlinkSync(elsewhere, join(mine, ".keylang"), "dir");
+  const taken = await keylang(dir, ["clone", "origin", "--dir", "mine"]);
+  assert.equal(taken.status, 2, taken.stdout + taken.stderr);
+  assert.match(taken.stderr, /mine exists and keylang did not clone it/);
+  assert.equal(readFileSync(join(mine, "notes.txt"), "utf8"), "keep me\n");
 });
 
 test("clone --explain map-and-ai --dry-run estimates and asks nothing; map-and-ai writes briefs and the explained map; all adds a full explanation per layer", async (t) => {

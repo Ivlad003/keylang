@@ -1,6 +1,6 @@
 # 12: Видалення файлів харнеса йде за symlink-текою за межі репозиторію (через clone чужого репо)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -69,11 +69,15 @@ scratchpad/review/cli/evil: git-репо з src/a.ts і закоміченими
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/harness.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/harness.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+- 2026-10-07: Регресійний тест `tests/cli-harness.test.ts` «agents: a removal through a harness directory linked out of the repository is refused…»: `.cursor` і `.claude` — абсолютні symlink на теку поза репозиторієм (`mcp.json` лише з сервером keylang, `skills/keylang-feature/SKILL.md` з текстом користувача); `init --agents=none`, `agents --agents=none` і `clone file://<локальний git-репо з закоміченими посиланнями>`. На поточному коді падав: stdout містив `.cursor/mcp.json: removed`, `.claude/skills/keylang-feature/SKILL.md: removed`, і файли за посиланнями зникали.
+- 2026-10-07: Виправлення. У `src/safe-write.ts` виділено `targetProblem(root, path, {under})` — перевірка місця (плоский відносний шлях, петля посилань, landing у межах `realpath(root)` / `under`), спільна для запису й видалення; `writeProblem` її викликає. `agentsPlanProblems` тепер перевіряє і цілі `remove` через `targetProblem` (відмова `leads out of the repository through a link` до першого кроку, код 1, як для записів), а `commitAgents` робить ту саму перевірку перед `rmSync` — видаляється лише перевірений запис. Код виходу `clone` у цьому сценарії — 1 (init дійшов до стадії agents, яка відмовила), а не 0.
+- 2026-10-07: Контракт: `docs/cli.md` (§ агенти) — речення про відмову через посилання тепер явно охоплює й видалення; `llm.txt` не змінено (протокол запису там не описаний). `docs/review-2026-10-06.md` п. 11 позначено ✔ (тікет 12 відповідає п. 11 рев'ю). Перевірки: `node --test tests/cli-harness.test.ts tests/safe-write.test.ts tests/review-harness.test.ts` — 22/22, `npm run typecheck` — ок, `node bin/keylang.js check` — 0 fail.
