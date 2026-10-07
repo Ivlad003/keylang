@@ -118,6 +118,8 @@ function ruleHits(spec: SpecIR): RuleHit[] {
     else if (rule.kind === "layers" && rule.layers.length > 0) hits.push({ file: rule.file, line, criterion: rule.text, scope: [...rule.layers] });
     else if (rule.kind === "entry") hits.push({ file: rule.file, line, criterion: rule.text, scope: rule.entries.map((ref) => ref.target) });
     else if (rule.kind === "no-cycles") hits.push({ file: rule.file, line, criterion: "no-cycles", scope: rule.under === null ? [] : [rule.under.target] });
+    // K104 sits on the rules line, never in the code: the area is the module whose export table it describes.
+    else if (rule.kind === "exports") hits.push({ file: rule.file, line, criterion: `exports ${rule.module.target}`, scope: [rule.module.target] });
   }
   for (const line of spec.rejectedLayers) {
     if (line.order.length === 0) continue;

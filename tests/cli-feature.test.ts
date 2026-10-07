@@ -304,6 +304,61 @@ test("check --changed keeps a flow of an unchanged spec whose step is in a chang
   assert.doesNotMatch(changed.stdout, /flows\/stock\.md/);
 });
 
+// review-2026-10-06/01: the `exports` rule's area is its module, so K104 on the rules line stays when that module's file changed.
+test("check --changed, hook stop and feature keep K104 of an `exports` rule when the module's file changed", (t) => {
+  const dir = tempDir(t, "keylang-changed-exports-");
+  writeTree(dir, {
+    ".gitignore": ".keylang/\n",
+    "keylang.json": `${JSON.stringify(LAYERS)}\n`,
+    "src/app/a.ts": 'import { b } from "../domain/b.ts";\nexport function a(): number {\n  return b();\n}\n',
+    "src/domain/b.ts": "export function b(): number {\n  return 1;\n}\n",
+    "keylang/rules.md": "# rules\n\n- module domain.b\n  - exports b\n",
+  });
+  git(dir, ["init", "-b", "main"]);
+  git(dir, ["add", "."]);
+  git(dir, ["commit", "-m", "base"]);
+  const clean = keylang(dir, ["check", "--changed"]);
+  assert.equal(clean.status, 0, clean.stdout);
+  writeFileSync(join(dir, "src/domain/b.ts"), "export function b(): number {\n  return 1;\n}\nexport function leaked(): number {\n  return 2;\n}\n");
+  const k104 = /K104 divergence: `domain\.b` exports `leaked`/;
+  const full = keylang(dir, ["check"]);
+  assert.equal(full.status, 1, full.stdout);
+  assert.match(full.stdout, k104);
+  const changed = keylang(dir, ["check", "--changed"]);
+  assert.equal(changed.status, 1, changed.stdout);
+  assert.match(changed.stdout, k104);
+  const hook = spawnSync(process.execPath, [bin, "hook", "stop"], { cwd: dir, input: "{}", encoding: "utf8" });
+  assert.equal(hook.status, 0, hook.stderr);
+  const decision = JSON.parse(hook.stdout) as { decision?: string; reason?: string };
+  assert.equal(decision.decision, "block", hook.stdout);
+  assert.match(decision.reason ?? "", /K104/);
+
+  // On a feature branch the leaked export implements the feature's planned fn: the fail is this change's, not inherited.
+  git(dir, ["checkout", "-q", "-b", "feat"]);
+  writeTree(dir, {
+    "keylang/features/leak.md": "# flow leak\n\n- planned fn domain.b.leaked () → number\n- trigger app.a.a\n  - step domain.b.leaked\n",
+    "src/app/a.ts": 'import { b, leaked } from "../domain/b.ts";\nexport function a(): number {\n  return b() + leaked();\n}\n',
+  });
+  git(dir, ["add", "."]);
+  git(dir, ["commit", "-m", "leak"]);
+  type Body = { done: boolean; gaps: { kind: string; id: string; reason: string }[]; hints: { kind: string; reason: string }[]; info: { rules: unknown[] | null } };
+  const feature = keylang(dir, ["feature", "leak", "--format", "json"]);
+  assert.equal(feature.status, 1, feature.stdout);
+  const body = JSON.parse(feature.stdout) as Body;
+  assert.equal(body.done, false);
+  assert.ok(body.gaps.some((gap) => gap.kind === "rule" && gap.id === "domain.b" && /exports `leaked`/.test(gap.reason)), JSON.stringify(body.gaps));
+  assert.deepEqual(body.info.rules, []);
+
+  // Merged into main, nothing changed since the base: the fail still names the feature's own module, so it is not inherited.
+  git(dir, ["checkout", "-q", "main"]);
+  git(dir, ["merge", "-q", "feat"]);
+  const merged = keylang(dir, ["feature", "leak", "--format", "json"]);
+  assert.equal(merged.status, 1, merged.stdout);
+  const after = JSON.parse(merged.stdout) as Body;
+  assert.ok(after.gaps.some((gap) => gap.kind === "rule" && gap.id === "domain.b"), JSON.stringify(after.gaps));
+  assert.ok(!after.hints.some((hint) => hint.kind === "rule"), JSON.stringify(after.hints));
+});
+
 // DX commands (design §7.5): spec skeletons.
 
 test("new flow and new module write a skeleton that check accepts and never overwrite", (t) => {

@@ -135,7 +135,7 @@
     - fn [parseHookEvent](../../src/changed.ts#L92) (text: string) → { stop_hook_active?: boolean }
     - fn [covers](../../src/changed.ts#L107) (scope: readonly string[], moduleId: string, layer: string) → boolean <!-- internal -->
     - fn [ruleHits](../../src/changed.ts#L113) (spec: SpecIR) → RuleHit[] <!-- internal -->
-    - fn [flowLinesTouching](../../src/changed.ts#L130) (input: ChangedInput, changed: ReadonlySet<string>, gone: (id: string) => boolean) → Set<string> <!-- internal -->
+    - fn [flowLinesTouching](../../src/changed.ts#L132) (input: ChangedInput, changed: ReadonlySet<string>, gone: (id: string) => boolean) → Set<string> <!-- internal -->
       - calls lang.spec-ir.walkFlow
   - module [check-format](../../src/check-format.ts#L1)
     - check-results features.check-results
@@ -430,20 +430,20 @@
     - type [RuleFail](../../src/feature-status.ts#L307) <!-- internal -->
     - fn [ruleFails](../../src/feature-status.ts#L318) (input: FeatureInput) → RuleFail[] <!-- internal -->
       - calls base.diag.isError, check.assess.sameFinding
-    - fn [thisChange](../../src/feature-status.ts#L337) (input: FeatureInput, path: string, named: readonly string[]) → (fail: RuleFail) => boolean <!-- internal -->
+    - fn [thisChange](../../src/feature-status.ts#L339) (input: FeatureInput, path: string, named: readonly string[]) → (fail: RuleFail) => boolean <!-- internal -->
       - calls features.changed.filterChanged
-    - fn [stageOf](../../src/feature-status.ts#L365) (hasFlow: boolean, gaps: readonly Gap[], hints: readonly Hint[]) → Stage <!-- internal -->
-    - fn [denyGaps](../../src/feature-status.ts#L385) (input: FeatureInput, path: string, flows: readonly Flow[]) → Gap[] <!-- internal -->
+    - fn [stageOf](../../src/feature-status.ts#L368) (hasFlow: boolean, gaps: readonly Gap[], hints: readonly Hint[]) → Stage <!-- internal -->
+    - fn [denyGaps](../../src/feature-status.ts#L388) (input: FeatureInput, path: string, flows: readonly Flow[]) → Gap[] <!-- internal -->
       - calls check.rules.dependencyKindOf, check.rules.denyingRule
-    - fn [claimsOf](../../src/feature-status.ts#L427) (flow: Flow) → { id: string; span: Span }[] <!-- internal -->
+    - fn [claimsOf](../../src/feature-status.ts#L430) (flow: Flow) → { id: string; span: Span }[] <!-- internal -->
       - calls lang.spec-ir.walkFlow
-    - fn [weakenedPlan](../../src/feature-status.ts#L442) (input: FeatureInput, path: string, base: Extract<FeatureBase, { state: "compared" | "absent" }>) → Gap[] <!-- internal -->
+    - fn [weakenedPlan](../../src/feature-status.ts#L445) (input: FeatureInput, path: string, base: Extract<FeatureBase, { state: "compared" | "absent" }>) → Gap[] <!-- internal -->
       - calls features.feature-status.planGaps
-    - fn [planGaps](../../src/feature-status.ts#L459) (input: FeatureInput, path: string, at: string, baseDoc: Document) → { key: string; gap: Gap }[] <!-- internal -->
+    - fn [planGaps](../../src/feature-status.ts#L462) (input: FeatureInput, path: string, at: string, baseDoc: Document) → { key: string; gap: Gap }[] <!-- internal -->
       - calls lang.spec-ir.compileSpec, check.flows.plannedMismatch, features.feature-status.planItems
-    - type [PlanItem](../../src/feature-status.ts#L495) = Trigger | FlowStep | QuestionItem <!-- internal -->
-    - fn [planItems](../../src/feature-status.ts#L498) (flow: Flow) → { key: string; item: PlanItem }[] <!-- internal -->
-    - fn [finding](../../src/feature-status.ts#L512) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
+    - type [PlanItem](../../src/feature-status.ts#L498) = Trigger | FlowStep | QuestionItem <!-- internal -->
+    - fn [planItems](../../src/feature-status.ts#L501) (flow: Flow) → { key: string; item: PlanItem }[] <!-- internal -->
+    - fn [finding](../../src/feature-status.ts#L515) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
   - module [ghost](../../src/ghost.ts#L1)
     - analyze map.analyze
     - agent-context features.agent-context

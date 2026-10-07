@@ -332,7 +332,9 @@ function ruleFails(input: FeatureInput): RuleFail[] {
  * Whether a rule fail is this change's. Without what changed since the base,
  * every one is. Otherwise: one reported in the feature file, one `check
  * --changed` keeps for the changed files (`filterChanged`), or one with an
- * end of its edge that is an id the feature names or lies under one.
+ * end of its edge that is an id the feature names or lies under one, or a
+ * module end (an `exports` or `no-cycles` rule's module, a `deny` source) that
+ * an id of the feature lies under: the feature plans that module's members.
  */
 function thisChange(input: FeatureInput, path: string, named: readonly string[]): (fail: RuleFail) => boolean {
   if (input.changed === undefined) return () => true;
@@ -345,7 +347,8 @@ function thisChange(input: FeatureInput, path: string, named: readonly string[])
       if (!cur.includes(".")) return null;
     }
   };
-  const isNamed = (end: string): boolean => named.some((id) => end === id || end.startsWith(`${id}.`));
+  // A layer end (`layers`, a global `no-cycles`) is not a module: owning every fail of a layer would be too wide.
+  const isNamed = (end: string): boolean => named.some((id) => end === id || end.startsWith(`${id}.`) || (nodes[end]?.kind === "module" && id.startsWith(`${end}.`)));
   return (fail) => {
     if (fail.file === path || (fail.diag !== undefined && kept.has(fail.diag)) || (fail.verdict !== undefined && kept.has(fail.verdict))) return true;
     // The area is the edge's source module (or the rule's module); the edges at the fail's position give both ends.

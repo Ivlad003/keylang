@@ -5,7 +5,7 @@
 # map
 
 - operations
-  <a id="operations"></a><br>Transport-independent actions the CLI and TUI both call, each a typed request and result defined in [`operations.types`](operations.md#operations.types) and orchestrated by [`operations.operations`](operations.md#operations.operations): generating maps, checking specs, drafting, explaining nodes and exporting. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+  <a id="operations"></a><br>Transport-independent actions the CLI and TUI both call, each a typed request and result defined in [`operations.types`](operations.md#operations.types) and orchestrated by [`operations.operations`](operations.md#operations.operations): generating maps, checking specs, drafting, explaining nodes and exporting. _(llm · claude:claude-opus-5-5 · 2026-10-06 · stale)_
   - module [operations](../../src/operations.ts#L1)
     <a id="operations.operations"></a><br>Shared workspace operations (ADR 0008): transport-independent orchestration of the application-level actions. The CLI and the TUI call the same interface: a typed request with an explicit absolute root, a typed result with a domain payload.
     - types [operations.types](operations.md#operations.types)
