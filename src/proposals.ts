@@ -17,7 +17,7 @@ import { existingText } from "./files.ts";
 import { languageOf } from "./languages.ts";
 import { EXPLAINED_MAP_DIR } from "./map.ts";
 import { parse } from "./parser.ts";
-import { isGeneratedText, landing, safeWrite, writeProblem } from "./safe-write.ts";
+import { allCrlf, isGeneratedText, landing, safeWrite, writeProblem } from "./safe-write.ts";
 import { compareText } from "./span.ts";
 import { addDrafts, statusesIn, updateStats } from "./stats.ts";
 import { WIRE_MARKER } from "./wire-gen.ts";
@@ -222,10 +222,17 @@ export function writeProposal(root: string, path: string, text: string, basis?: 
   return safeWrite(root, `${PROPOSALS_DIR}/${path}`, text, { under: PROPOSALS_DIR, generated: true, ...(basis !== undefined ? { expect: basis.proposal } : {}) });
 }
 
-/** `-`/`+` lines between a common prefix and suffix: enough to see what a proposal changes. */
+/**
+ * `-`/`+` lines between a common prefix and suffix: enough to see what a
+ * proposal changes. Line endings are compared as MERGE compares them: a
+ * target that is CRLF throughout is read as LF (mixed endings stay), and the
+ * proposal (an agent writes LF) is read as LF, so a CRLF file and an LF
+ * proposal differ by their lines, not by every line. The write keeps the
+ * target's endings (`safe-write.ts`).
+ */
 export function lineDiff(before: string, after: string): string {
-  const a = before.split("\n");
-  const b = after.split("\n");
+  const a = (allCrlf(before) ? before.replace(/\r\n/g, "\n") : before).split("\n");
+  const b = after.replace(/\r\n/g, "\n").split("\n");
   let start = 0;
   while (start < a.length && start < b.length && a[start] === b[start]) start++;
   let endA = a.length;
