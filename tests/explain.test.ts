@@ -260,6 +260,42 @@ test("doctor: reports what is set up and what is optional, exit 0, nothing writt
   assert.ok(!existsSync(join(dir, ".keylang/stats.json")));
 });
 
+test("explain --llm: an answer the token limit cut (stop_reason max_tokens, finish_reason length in JSON and SSE) is exit 2 naming the limit; nothing is saved", async (t) => {
+  const dir = copy(t);
+  withAgent(dir);
+  const saved = join(dir, "keylang/explain/app.checkout.checkout.md");
+  const cutText = "Функція підсумовує ціни позицій замовлення і повертає загальну су";
+  const anthropic = createServer((req, res) => {
+    req.resume();
+    req.on("end", () => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ id: "msg_1", type: "message", role: "assistant", model: "claude-opus-5", content: [{ type: "text", text: cutText }], stop_reason: "max_tokens", stop_details: null, usage: { input_tokens: 10, output_tokens: 4096 } }));
+    });
+  });
+  await new Promise<void>((resolve) => anthropic.listen(0, "127.0.0.1", resolve));
+  t.after(() => anthropic.close());
+  const cut = await keylangAsync(dir, ["explain", "app.checkout.checkout", "--llm"], { ANTHROPIC_BASE_URL: `http://127.0.0.1:${(anthropic.address() as AddressInfo).port}`, ANTHROPIC_API_KEY: "k", HOME: dir });
+  assert.equal(cut.status, 2, cut.stdout);
+  assert.match(cut.stderr, /^keylang: claude-opus-5: the answer was cut by the token limit \(max_tokens\)$/m);
+  assert.doesNotMatch(cut.stdout, /загальну су/);
+  assert.equal(existsSync(saved), false, "a cut answer is not saved as fresh");
+
+  const file = join(dir, "keylang.json");
+  writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), agent: "openrouter:some/model" }));
+  const env = { OPENROUTER_API_KEY: "or-key", HOME: dir };
+  const cases: [string, (res: import("node:http").ServerResponse) => void][] = [
+    ["JSON", (res) => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ choices: [{ message: { content: cutText }, finish_reason: "length" }] }))],
+    ["SSE", (res) => res.writeHead(200, { "content-type": "text/event-stream" }).end(`data: ${JSON.stringify({ choices: [{ delta: { content: cutText }, finish_reason: null }] })}\n\ndata: ${JSON.stringify({ choices: [{ delta: { content: "" }, finish_reason: "length" }] })}\n\ndata: [DONE]\n\n`)],
+  ];
+  for (const [name, respond] of cases) {
+    const url = await mockOpenRouter(t, respond);
+    const o = await keylangAsync(dir, ["explain", "app.checkout.checkout", "--llm"], { ...env, OPENROUTER_BASE_URL: url });
+    assert.equal(o.status, 2, `${name}: ${o.stdout}`);
+    assert.match(o.stderr, /^keylang: openrouter: some\/model: the answer was cut by the token limit \(length\)$/m, name);
+    assert.equal(existsSync(saved), false, name);
+  }
+});
+
 // Real whisper.cpp needs a model file and a recording, which a checkout does
 // not carry: set KEYLANG_TEST_WHISPER_MODEL (a ggml model) and
 // KEYLANG_TEST_WHISPER_WAV (16 kHz mono s16le speech) to run it.

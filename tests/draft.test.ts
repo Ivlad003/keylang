@@ -340,6 +340,13 @@ test("spec-to-code --mode llm: the model's body is analyzed as a new snapshot be
   assert.equal(bad.status, 2);
   assert.match(bad.stderr, /did not return a function named `refund`; nothing written/);
   assert.ok(!existsSync(join(dir, "src/app/refund.ts")));
+
+  // An answer cut inside its code block (an opening fence, no closing one) is not code: 2, nothing written.
+  const cut = await mockModel(t, ["```typescript\nexport function refund(order: Order): Order {\n  const items = [1, 2];\n  return items.reduce((a, b) => a +"]);
+  const truncated = await run(dir, ["spec-to-code", "app.refund.refund", "--mode", "llm", "--apply"], { ...env, ANTHROPIC_BASE_URL: cut.url });
+  assert.equal(truncated.status, 2, truncated.stdout);
+  assert.match(truncated.stderr, /code block is not closed[\s\S]*nothing written/);
+  assert.ok(!existsSync(join(dir, "src/app/refund.ts")));
 });
 
 test("code-to-spec --mode hybrid: the model's flow for the fn at the line, reconciled with the snapshot", async (t) => {

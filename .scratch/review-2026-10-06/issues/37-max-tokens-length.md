@@ -1,6 +1,6 @@
 # 37: Обрізана відповідь моделі (max_tokens / length) приймається як повна і записується
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -50,11 +50,13 @@
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/llm.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/llm.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+- 2026-10-07: Регресійні тести через справжній CLI з локальними фейковими серверами: `tests/explain.test.ts` («explain --llm: an answer the token limit cut…») — Anthropic `stop_reason: max_tokens`, OpenRouter `finish_reason: length` у JSON- і SSE-гілці → код 2, `keylang/explain/<id>.md` не записано (на старому коді exit 0 і файл `fresh`); `tests/draft.test.ts` (у тесті spec-to-code --mode llm) — відповідь з відкритою огорожею без закриття при `--apply` → код 2, нічого не записано. Виправлення: `src/llm.ts` — `truncatedMessage()`, `anthropicComplete` кидає на `max_tokens`, `openrouterComplete` — на `finish_reason: "length"` в обох гілках; `src/spec-to-code.ts` `modelBody` — відкрита огорожа без закриття є помилкою «code block is not closed … nothing written» (відповідь зовсім без огорожі й далі береться цілком, бо ліміт токенів тепер ловиться на рівні провайдера). Docs: `docs/cli.md` (§Команди, рядок про помилки провайдера), `docs/tui.md` (spec-to-code llm). `node --test tests/explain.test.ts`: 10 pass, 1 skipped (whisper); `tests/draft.test.ts`: 32/32; typecheck чистий; `keylang check` 0 fail.

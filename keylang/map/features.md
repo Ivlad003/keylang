@@ -617,12 +617,13 @@
     - type [Deadline](../../src/llm.ts#L148) <!-- internal -->
     - fn [deadline](../../src/llm.ts#L153) (variable: number, own: number | undefined) → Deadline <!-- internal -->
     - fn [timeoutMessage](../../src/llm.ts#L157) (provider: string, bound: Deadline) → string <!-- internal -->
-    - fn [callSignal](../../src/llm.ts#L166) (timeout: number, outer: AbortSignal | undefined) → { signal: AbortSignal; timedOut: () => boolean; cancelled: () => boolean; dispose: () => void } <!-- internal -->
-    - fn [anthropicComplete](../../src/llm.ts#L190) (client: Anthropic, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal) → Promise<string> <!-- internal -->
-      - calls features.llm.callSignal, features.llm.LlmCancelled, features.llm.timeoutMessage
-    - fn [openrouterComplete](../../src/llm.ts#L224) (base: string, key: string, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal) → Promise<string> <!-- internal -->
-      - calls features.llm.callSignal, features.llm.parseJson, features.llm.LlmCancelled, features.llm.timeoutMessage
-    - fn [parseJson](../../src/llm.ts#L283) (text: string) → unknown <!-- internal -->
+    - fn [truncatedMessage](../../src/llm.ts#L162) (model: string, reason: "max_tokens" | "length") → string <!-- internal -->
+    - fn [callSignal](../../src/llm.ts#L171) (timeout: number, outer: AbortSignal | undefined) → { signal: AbortSignal; timedOut: () => boolean; cancelled: () => boolean; dispose: () => void } <!-- internal -->
+    - fn [anthropicComplete](../../src/llm.ts#L195) (client: Anthropic, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal) → Promise<string> <!-- internal -->
+      - calls features.llm.callSignal, features.llm.LlmCancelled, features.llm.timeoutMessage, features.llm.truncatedMessage
+    - fn [openrouterComplete](../../src/llm.ts#L231) (base: string, key: string, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal) → Promise<string> <!-- internal -->
+      - calls features.llm.callSignal, features.llm.parseJson, features.llm.truncatedMessage, features.llm.LlmCancelled, features.llm.timeoutMessage
+    - fn [parseJson](../../src/llm.ts#L293) (text: string) → unknown <!-- internal -->
   - module [lsp-features](../../src/lsp-features.ts#L1)
     - node external.node
     - analyze map.analyze
