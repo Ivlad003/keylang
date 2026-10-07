@@ -61,6 +61,19 @@ function extractTree(path: string, root: Node): FileFacts {
   for (const imp of facts.imports) {
     for (const b of imp.bindings) if (imp.reexport) exportRow(facts, b.local, "reexport");
   }
+  if (all === null) {
+    // Without `__all__`, `from m import *` brings every public name of the namespace, the imported ones
+    // included: a plain module lists them in its table too. Only a package re-exports them (`reexport` above);
+    // here the dependency stays an ordinary import.
+    if (!pkg) {
+      for (const node of topLevel) {
+        if (node.type !== "import_statement" && node.type !== "import_from_statement") continue;
+        for (const imp of importsOf(node, () => false)) for (const b of imp.bindings) if (!b.local.includes(".") && isPublic(b.local)) exportRow(facts, b.local, "value");
+      }
+    }
+    const open = topLevel.find((node) => bindsUnlisted(node) !== null);
+    if (open) facts.exportsIncomplete = `a module-level ${bindsUnlisted(open)} binds names keylang does not list`;
+  }
   const names = new Set([...facts.decls.map((d) => d.name), ...facts.imports.flatMap((imp) => imp.bindings.map((b) => b.local))]);
   facts.moduleCalls = moduleCalls(root);
   facts.valueRefs = [...facts.valueRefs, ...valueRefs(root, names, facts.imports.some((imp) => imp.glob))].sort((a, b) => a.line - b.line || a.col - b.col);
@@ -117,6 +130,19 @@ function dunderAll(topLevel: Node[]): Set<string> | null {
     }
   }
   return out;
+}
+
+/**
+ * What a module-level statement that binds names the export table does not
+ * list is, for the reason (`for`, `with`, `while`, `match`, `except … as`,
+ * tuple unpacking); null for one whose bindings the table has.
+ */
+function bindsUnlisted(node: Node): string | null {
+  if (node.type === "for_statement" || node.type === "while_statement" || node.type === "with_statement" || node.type === "match_statement") return `\`${node.type.replace(/_statement$/, "")}\``;
+  if (node.type === "as_pattern") return "`except … as`";
+  const assignment = node.type === "expression_statement" ? node.namedChildren[0] : undefined;
+  const left = assignment?.type === "assignment" ? assignment.childForFieldName("left") : null;
+  return left && (left.type === "pattern_list" || left.type === "tuple_pattern" || left.type === "list_pattern") ? "tuple assignment" : null;
 }
 
 function exportRow(facts: FileFacts, name: string, kind: ExportRow["kind"]): void {

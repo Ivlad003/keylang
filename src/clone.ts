@@ -9,7 +9,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { gitUnavailable } from "./git-changes.ts";
-import { safeWrite, targetProblem, writeAtomic } from "./safe-write.ts";
+import { safeWrite, targetProblem } from "./safe-write.ts";
 
 /** What to clone and where it sits under the cache root. */
 export interface RepoSource {
@@ -156,8 +156,13 @@ function git(cwd: string, args: string[]): void {
 /**
  * Turns on the explained map (`"explain": {"map": true}`) in the clone's
  * keylang.json; the rest of the file stays. Returns an error to name, or null.
+ * The file is written under the repository's write rules, as the marker is: a
+ * `keylang.json` the clone's own commit made a link out of the clone is
+ * neither read as the clone's configuration nor written through.
  */
 export function enableExplainedMap(root: string): string | null {
+  const place = targetProblem(root, "keylang.json");
+  if (place !== null) return `keylang.json: ${place}`;
   const file = join(root, "keylang.json");
   let config: unknown;
   try {
@@ -171,6 +176,10 @@ export function enableExplainedMap(root: string): string | null {
   if (explain !== undefined && (typeof explain !== "object" || explain === null || Array.isArray(explain))) return "keylang.json: `explain` is not an object";
   if ((explain as Record<string, unknown> | undefined)?.map === true) return null;
   record.explain = { ...(explain as Record<string, unknown> | undefined), map: true };
-  writeAtomic(file, `${JSON.stringify(record, null, 2)}\n`);
+  try {
+    safeWrite(root, "keylang.json", `${JSON.stringify(record, null, 2)}\n`);
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
   return null;
 }

@@ -5,7 +5,7 @@
 // command's handler, so `--version` and `check` do not compile it. The
 // specifiers stay literal: the map keeps the import edge.
 
-import { chmodSync, existsSync, readFileSync, statSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, rmSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { join, relative, resolve } from "node:path";
@@ -532,7 +532,10 @@ async function prepareClone(sourceText: string | undefined, opts: { dir: string 
   }
   const problem = enableExplainedMap(dir);
   if (problem !== null) {
-    process.stderr.write(`keylang: ${problem}\n`);
+    // A clone whose keylang.json keylang may not write is no place for --explain; it is keylang's own
+    // (fresh or marked), so it goes the way a clone with an unwritable marker does.
+    rmSync(dir, { recursive: true, force: true });
+    process.stderr.write(`keylang: clone: ${problem}; the clone of ${source.url} was removed\n`);
     return { code: 2, root: null };
   }
   let code = await cmdExplainBatch(dir, "missing", { llm: true, dryRun: false, limit: undefined, jobs: undefined });

@@ -16,7 +16,7 @@ import type { Verdict } from "./verdict.ts";
 interface SnapshotView {
   snapshotId: string;
   nodes: Record<string, { kind: string; file: string | null; line: number | null; col?: number | null; members?: string; class?: true }>;
-  edges: { kind: string; source: string; target: string | null; file: string | null; line: number; col: number; resolution: string; reason?: string; via?: string; typeOnly?: true; provenance?: string; docblock?: string }[];
+  edges: { kind: string; source: string; target: string | null; file: string | null; line: number; col: number; resolution: string; reason?: string; via?: string; typeOnly?: true }[];
   coverage: { kind: string; file: string; line: number; col: number; reason: string; source: string | null }[];
   exports: { module: string; name: string; kind: string; form?: string; from?: string; reason?: string }[];
 }
@@ -53,13 +53,6 @@ interface UseEdge {
   line: number;
   col: number;
   resolution: string;
-  /** `file:line:col` of the docblock the edge rests on (PHP `@var`, `@param`): the verdict names it, since PHP does not check it. */
-  docblock?: string;
-}
-
-/** The note a verdict adds to a dependency that exists only thanks to a docblock. */
-function docblockNote(edge: Pick<UseEdge, "docblock">): string {
-  return edge.docblock ? ` (typed by a docblock at ${edge.docblock})` : "";
 }
 
 export const UNORDERED_LAYERS: ReadonlySet<string> = new Set(SYNTHETIC_LAYERS);
@@ -194,7 +187,7 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
       if (edge.kind !== "call" && edge.kind !== "type" && edge.resolution === "resolved" && !edge.typeOnly) selfLoops.add(fromUnit);
       continue;
     }
-    edges.push({ from, to, fromUnit, toUnit, kind: edge.kind, typeOnly: edge.typeOnly === true, file: edge.file, line: edge.line, col: edge.col, resolution: edge.resolution, ...(edge.provenance === "docblock" ? { docblock: edge.docblock ?? `${edge.file}:${edge.line}:${edge.col}` } : {}) });
+    edges.push({ from, to, fromUnit, toUnit, kind: edge.kind, typeOnly: edge.typeOnly === true, file: edge.file, line: edge.line, col: edge.col, resolution: edge.resolution });
   }
   /** Every module node, classes included: the area of a scope. */
   const modules = new Set<string>();
@@ -242,8 +235,8 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
   const orphans = snapshot.coverage.filter((item) => DEPENDENCY_HOLES.has(item.kind) && item.source !== null && snapshot.nodes[item.source] === undefined);
   const scopeHole = (scope: string | null): Hole | null => orphans.find((item) => scope === null || within(item.source!, scope) || within(scope, item.source!)) ?? null;
 
-  const pushFail = (code: Exclude<Diagnostic["code"], "K005">, file: string, line: number, col: number, message: string, criterion: string, area: string, spec = criterion, target?: string): void => {
-    diagnostics.push(diagnostic(code, file, pointAt(line, col), message, target));
+  const pushFail = (code: Exclude<Diagnostic["code"], "K005">, file: string, line: number, col: number, message: string, criterion: string, area: string, spec = criterion): void => {
+    diagnostics.push(diagnostic(code, file, pointAt(line, col), message));
     verdicts.push(base(snapshot, criterion, area, "fail", file, line, col, code, message, spec));
   };
   /** `hole`: the coverage entry that leaves the rule unverified, named by its position on the verdict. */
@@ -274,7 +267,7 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
     if (layerOf(edge.toUnit) === OUTSIDE_LAYER && layerOf(edge.fromUnit) !== OUTSIDE_LAYER && !outsidePairs.has(pair)) {
       outsidePairs.add(pair);
       const file = snapshot.nodes[edge.toUnit]?.file;
-      pushFail("K107", edge.file, edge.line, edge.col, `divergence: \`${edge.fromUnit}\` depends on \`${edge.toUnit}\`${docblockNote(edge)}${file ? ` (${file})` : ""}, which \`outside\` in keylang.json puts outside the architecture`, OUTSIDE_LAYER, edge.fromUnit);
+      pushFail("K107", edge.file, edge.line, edge.col, `divergence: \`${edge.fromUnit}\` depends on \`${edge.toUnit}\`${file ? ` (${file})` : ""}, which \`outside\` in keylang.json puts outside the architecture`, OUTSIDE_LAYER, edge.fromUnit);
     }
     const hits = ruleHits(rules, edge.from, edge.to, within);
     const decision = decide(hits, format);
@@ -306,7 +299,7 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
         deniedPairs.set(hit.rule, seen);
         if (seen.has(pair)) continue;
         seen.add(pair);
-        pushFail("K102", edge.file, edge.line, edge.col, `divergence: \`${edge.from}\` depends on \`${edge.to}\`${docblockNote(edge)}, which is denied by \`${hit.rule.text}\` (${hit.rule.file}:${hit.rule.span.start.line})${incomparableAside(hit, hits, format)}`, hit.rule.text, edge.from);
+        pushFail("K102", edge.file, edge.line, edge.col, `divergence: \`${edge.from}\` depends on \`${edge.to}\`, which is denied by \`${hit.rule.text}\` (${hit.rule.file}:${hit.rule.span.start.line})${incomparableAside(hit, hits, format)}`, hit.rule.text, edge.from);
       }
       // The deny is the finding. The layers line stays without `ok` and without a second K101.
       if (upward) {
@@ -328,7 +321,7 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
     violated.add(toLayer);
     if (layeredPairs.has(pair)) continue;
     layeredPairs.add(pair);
-    pushFail("K101", edge.file, edge.line, edge.col, `divergence: \`${edge.fromUnit}\` depends on \`${edge.toUnit}\`${docblockNote(edge)} (${upward})`, `layers ${fromLayer} ${toLayer}`, edge.fromUnit, componentSpec(rules, toLayer));
+    pushFail("K101", edge.file, edge.line, edge.col, `divergence: \`${edge.fromUnit}\` depends on \`${edge.toUnit}\` (${upward})`, `layers ${fromLayer} ${toLayer}`, edge.fromUnit, componentSpec(rules, toLayer));
   }
 
   for (const order of rules.orders) {
@@ -357,29 +350,6 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
     else pushOk(order.file, order.span, order.text, order.layers.join(","), `convergence: every dependency between ${names} points down${allowed}, and no dependency hole in the area`, order.text);
   }
 
-  // A module the source imports a name from may re-export the denied target: while it is transparent the edge
-  // runs through it to the target, so when it is opaque (excluded, unparsed) it is in the deny's area too.
-  // A re-export chain is followed; a plain import of an import is the imported module's own dependency.
-  const importsOf = new Map<string, string[]>();
-  const reexportsOf = new Map<string, string[]>();
-  for (const edge of edges) {
-    if (edge.resolution !== "resolved" || (edge.kind !== "import" && edge.kind !== "reexport")) continue;
-    listAt(importsOf, edge.from).push(edge.to);
-    if (edge.kind === "reexport") listAt(reexportsOf, edge.from).push(edge.to);
-  }
-  const importedBy = (scope: readonly string[]): string[] => {
-    const inScope = new Set(scope);
-    const seen = new Set<string>();
-    const stack = scope.flatMap((id) => importsOf.get(id) ?? []);
-    while (stack.length > 0) {
-      const id = stack.pop();
-      if (id === undefined || seen.has(id) || inScope.has(id)) continue;
-      seen.add(id);
-      for (const next of reexportsOf.get(id) ?? []) stack.push(next);
-    }
-    return [...seen];
-  };
-
   for (const deny of rules.denies) {
     if (failedDenies.has(deny)) continue;
     const scope = [...modules].filter((id) => within(id, deny.a));
@@ -392,8 +362,7 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
       pushUnverified(...at, deny.text, area, `\`${intended}\` is planned: no code in the area yet`);
       continue;
     }
-    // An imported file outside every layer has known edges; any other hole in it may hide a re-export of a target.
-    const hole = holeAmong(scope) ?? holeAmong(importedBy(scope), UNASSIGNED_FILE) ?? scopeHole(deny.a);
+    const hole = holeAmong(scope) ?? scopeHole(deny.a);
     const winners = overridden.get(deny);
     if (hole) pushUnverified(...at, deny.text, area, holeText(hole), deny.text, hole);
     else if (scope.length === 0) pushOk(deny.file, deny.span, deny.text, area, `convergence: no module under \`${deny.a}\` yet, so no edge to ${targets}`);
@@ -478,8 +447,9 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
     for (const row of actual) {
       if (row.name === "*" || rule.names.has(row.name.normalize("NFC"))) continue;
       failed = true;
-      const how = row.form === "reexport" && row.from ? `${row.kind}, re-exported from \`${row.from}\`` : row.form && row.form !== "reexport" ? `${row.kind}, ${row.form}` : row.kind;
-      pushFail("K104", ...at, `divergence: \`${rule.module}\` exports \`${row.name}\` (${how}), which is not listed in \`exports\``, criterion, rule.module, spec, `${rule.module}.${row.name.normalize("NFC")}`);
+      // A name a Python module without `__all__` imports is public too, and no declaration of the module: say where it is from.
+      const how = row.form === "reexport" && row.from ? `${row.kind}, re-exported from \`${row.from}\`` : row.form && row.form !== "reexport" ? `${row.kind}, ${row.form}` : row.from ? `${row.kind}, imported from \`${row.from}\`` : row.kind;
+      pushFail("K104", ...at, `divergence: \`${rule.module}\` exports \`${row.name}\` (${how}), which is not listed in \`exports\``, criterion, rule.module, spec);
     }
     const missing = [...rule.names].sort().filter((name) => !names.has(name));
     // An opaque module (excluded, or with a syntax error) may export what the table does not show.
@@ -491,7 +461,7 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
     if (!unknown && !opaque) {
       for (const name of missing) {
         failed = true;
-        pushFail("K104", ...at, `absence: \`${rule.module}\` does not export \`${name}\``, criterion, rule.module, spec, `${rule.module}.${name}`);
+        pushFail("K104", ...at, `absence: \`${rule.module}\` does not export \`${name}\``, criterion, rule.module, spec);
       }
     }
     if (failed) continue;
