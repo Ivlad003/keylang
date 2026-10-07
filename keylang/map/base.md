@@ -137,21 +137,23 @@
     - node external.node
     - type [WriteOptions](../../src/safe-write.ts#L16)
     - type [PlannedWrite](../../src/safe-write.ts#L29)
-    - fn [writeProblem](../../src/safe-write.ts#L39) (root: string, path: string, options: WriteOptions = {}) → string | null
-      - calls base.safe-write.landing, base.safe-write.inside, base.safe-write.statOrNull, base.safe-write.isGeneratedText
-    - fn [safeWrite](../../src/safe-write.ts#L64) (root: string, path: string, text: string, options: WriteOptions = {}) → string
+    - fn [targetProblem](../../src/safe-write.ts#L46) (root: string, path: string, options: Pick<WriteOptions, "under"> = {}) → string | null
+      - calls base.safe-write.landing, base.safe-write.inside
+    - fn [writeProblem](../../src/safe-write.ts#L60) (root: string, path: string, options: WriteOptions = {}) → string | null
+      - calls base.safe-write.targetProblem, base.safe-write.landing, base.safe-write.statOrNull, base.safe-write.isGeneratedText
+    - fn [safeWrite](../../src/safe-write.ts#L79) (root: string, path: string, text: string, options: WriteOptions = {}) → string
       - calls base.safe-write.safeWriteAll
-    - fn [safeWriteAll](../../src/safe-write.ts#L69) (root: string, writes: readonly PlannedWrite[]) → string[]
+    - fn [safeWriteAll](../../src/safe-write.ts#L84) (root: string, writes: readonly PlannedWrite[]) → string[]
       - calls base.safe-write.writeProblem, base.safe-write.writeAtomic, base.safe-write.landing
-    - fn [writeAtomic](../../src/safe-write.ts#L88) (abs: string, text: string, options: { exact?: boolean } = {}) → void
+    - fn [writeAtomic](../../src/safe-write.ts#L103) (abs: string, text: string, options: { exact?: boolean } = {}) → void
       - calls base.safe-write.statOrNull, base.safe-write.allCrlf
-    - fn [isGeneratedText](../../src/safe-write.ts#L110) (text: string) → boolean
-    - fn [allCrlf](../../src/safe-write.ts#L116) (text: string) → boolean
-    - fn [landing](../../src/safe-write.ts#L126) (abs: string, hops = 0) → string | null
+    - fn [isGeneratedText](../../src/safe-write.ts#L125) (text: string) → boolean
+    - fn [allCrlf](../../src/safe-write.ts#L131) (text: string) → boolean
+    - fn [landing](../../src/safe-write.ts#L141) (abs: string, hops = 0) → string | null
       - calls base.safe-write.lstatOrNull
-    - fn [inside](../../src/safe-write.ts#L140) (abs: string, dir: string) → boolean <!-- internal -->
-    - fn [lstatOrNull](../../src/safe-write.ts#L145) (abs: string) → Stats | null <!-- internal -->
-    - fn [statOrNull](../../src/safe-write.ts#L153) (abs: string) → Stats | null <!-- internal -->
+    - fn [inside](../../src/safe-write.ts#L155) (abs: string, dir: string) → boolean <!-- internal -->
+    - fn [lstatOrNull](../../src/safe-write.ts#L160) (abs: string) → Stats | null <!-- internal -->
+    - fn [statOrNull](../../src/safe-write.ts#L168) (abs: string) → Stats | null <!-- internal -->
   - module [span](../../src/span.ts#L1)
     - type [Pos](../../src/span.ts#L9)
     - type [Span](../../src/span.ts#L16)

@@ -668,3 +668,43 @@ test("python: the standard library is no `external.*` node, edge or K102; anothe
   assert.match(o.stdout, /K102 divergence: `app\.mail` depends on `external\.httpx`/);
   assert.doesNotMatch(o.stdout, /external\.(asyncio|email|typing|json|smtplib)/);
 });
+
+test("rust and python: `use crate::models::User` / `from app.models import User` through a `mod.rs` / `__init__.py` re-export is a dependency `deny` fails on, whatever the file system (the resolver never names a file by another spelling)", (t) => {
+  // `models/User.rs` does not exist; on APFS and NTFS `existsSync` says it does through `user.rs`. The exact
+  // check (tests/exact-path.test.ts) keeps the longest-prefix walk at `models/mod.rs`, so this is the verdict everywhere.
+  const rust = repo(t, {
+    "Cargo.toml": '[package]\nname = "shop"\nversion = "0.1.0"\n',
+    "src/lib.rs": "pub mod api;\npub mod models;\n",
+    "src/models/mod.rs": "mod user;\npub use user::User;\n",
+    "src/models/user.rs": "pub struct User;\n\nimpl User {\n    pub fn new() -> Self {\n        User\n    }\n}\n",
+    "src/api/mod.rs": "use crate::models::User;\n\npub fn handle() -> User {\n    User::new()\n}\n",
+    "keylang.json": JSON.stringify({ languages: ["rust"], layers: { api: ["src/api/**"], domain: ["src/models/**"] } }),
+    "keylang/rules.md": "# rules\n\n- deny api domain\n",
+  });
+  assert.equal(keylang(rust, ["map"]).status, 0);
+  const r = keylang(rust, ["check"]);
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.stdout, /src\/api\/mod\.rs:1:1: K102 divergence: `api\.mod` depends on `domain\.mod`/);
+  assert.match(r.stderr, /2 fail, 0 unverified/);
+  assert.doesNotMatch(r.stdout, /is not indexed/);
+  const rustIndex = snapshot(rust);
+  assert.ok(rustIndex.edges.some((e) => e.kind === "call" && e.source === "api.mod.handle" && e.target === "domain.user.User.new"), "`User::new()` through the re-export");
+
+  const py = repo(t, {
+    "app/__init__.py": "",
+    "app/models/__init__.py": "from .user import User\n",
+    "app/models/user.py": "class User:\n    def __init__(self):\n        pass\n",
+    "app/api/__init__.py": "",
+    "app/api/views.py": "from app.models import User\n\n\ndef handle():\n    return User()\n",
+    "keylang.json": JSON.stringify({ languages: ["python"], layers: { api: ["app/api/**"], domain: ["app/models/**"] } }),
+    "keylang/rules.md": "# rules\n\n- deny api domain\n",
+  });
+  assert.equal(keylang(py, ["map"]).status, 0);
+  const p = keylang(py, ["check"]);
+  assert.equal(p.status, 1, p.stdout + p.stderr);
+  assert.match(p.stdout, /app\/api\/views\.py:1:1: K102 divergence: `api\.views` depends on `domain\.__init__`/);
+  assert.match(p.stderr, /2 fail, 0 unverified/);
+  assert.doesNotMatch(p.stdout, /is not indexed/);
+  const pyIndex = snapshot(py);
+  assert.ok(pyIndex.edges.some((e) => e.kind === "call" && e.source === "api.views.handle" && e.target === "domain.user.User"), "`User()` through the re-export");
+});

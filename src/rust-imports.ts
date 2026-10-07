@@ -15,6 +15,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, posix } from "node:path";
 import { parse as parseToml } from "smol-toml";
 import type { Resolution, SourceResolver } from "./imports.ts";
+import { exactExistence, nodeFs, type ExactFs } from "./exact-path.ts";
 import { globToRegExp } from "./glob.ts";
 
 /** Crates of the toolchain: always there, never in `Cargo.toml`. */
@@ -42,10 +43,13 @@ export class RustResolver implements SourceResolver {
   readonly inputs = new Map<string, string | null>();
   /** Files of the analysis (unsaved buffers included): they exist for resolution, on disk or not. */
   private readonly sources: ReadonlySet<string>;
+  /** A file on disk, spelled exactly so: `existsSync` alone finds `User.rs` through `user.rs` on APFS and NTFS. */
+  private readonly onDisk: (file: string) => boolean;
 
-  constructor(root: string, sources: ReadonlySet<string> = new Set()) {
+  constructor(root: string, sources: ReadonlySet<string> = new Set(), fs: ExactFs = nodeFs) {
     this.root = root;
     this.sources = sources;
+    this.onDisk = exactExistence(root, fs);
     const top = this.crateAt("");
     for (const dir of this.workspaceMembers()) {
       const crate = this.crateAt(dir);
@@ -117,7 +121,7 @@ export class RustResolver implements SourceResolver {
     const dir = posix.dirname(rootFile);
     for (const c of [`${path.join("/")}.rs`, `${path.join("/")}/mod.rs`]) {
       const file = dir === "." ? c : posix.join(dir, c);
-      if (this.sources.has(file) || existsSync(join(this.root, file))) return file;
+      if (this.sources.has(file) || this.onDisk(file)) return file;
     }
     return null;
   }

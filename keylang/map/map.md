@@ -132,6 +132,10 @@
       - calls map.emit.edgesFrom
     - fn [renderDecl](../../src/emit.ts#L320) (r: Render, id: string, node: SnapshotNode, depth: number) → string <!-- internal -->
       - calls map.emit.linkedName, map.emit.nameOf, map.emit.describe, map.emit.edgesFrom, map.emit.ref
+  - module [exact-path](../../src/exact-path.ts#L1)
+    - node external.node
+    - type [ExactFs](../../src/exact-path.ts#L14)
+    - fn [exactExistence](../../src/exact-path.ts#L26) (root: string, fs: ExactFs = nodeFs) → (file: string) => boolean
   - module [explanations](../../src/explanations.ts#L1)
     - node external.node
     - brief base.brief
@@ -313,70 +317,71 @@
     - config base.config
     - ts extract.ts
     - languages base.languages
-    - type [Resolution](../../src/imports.ts#L24)
-    - type [SourceResolver](../../src/imports.ts#L38)
-    - fn [assumedTarget](../../src/imports.ts#L64) (r: Resolution, wouldName: () => readonly string[], assumed: (path: string) => boolean) → string | null
+    - exact-path map.exact-path
+    - type [Resolution](../../src/imports.ts#L25)
+    - type [SourceResolver](../../src/imports.ts#L39)
+    - fn [assumedTarget](../../src/imports.ts#L65) (r: Resolution, wouldName: () => readonly string[], assumed: (path: string) => boolean) → string | null
       - calls base.languages.languageOf
-    - type [PathRule](../../src/imports.ts#L74) <!-- internal -->
-    - module [ImportResolver](../../src/imports.ts#L80)
-      - fn [constructor](../../src/imports.ts#L104) (root: string, sources: ReadonlySet<string> = new Set())
-        - calls map.imports.readText, map.imports.parseJsonc, map.imports.loadTsconfig, map.imports.isObject
-      - fn [verbatimModuleSyntax](../../src/imports.ts#L140) (file: string) → boolean
+    - type [PathRule](../../src/imports.ts#L75) <!-- internal -->
+    - module [ImportResolver](../../src/imports.ts#L81)
+      - fn [constructor](../../src/imports.ts#L107) (root: string, sources: ReadonlySet<string> = new Set(), fs: ExactFs = nodeFs)
+        - calls map.exact-path.exactExistence, map.imports.readText, map.imports.parseJsonc, map.imports.loadTsconfig, map.imports.isObject
+      - fn [verbatimModuleSyntax](../../src/imports.ts#L144) (file: string) → boolean
         - calls map.imports.ImportResolver.governingConfig, map.imports.ImportResolver.verbatimSetting, map.imports.isObject, base.config.toPosix
-      - fn [governingConfig](../../src/imports.ts#L160) (dir: string) → string | null <!-- internal -->
-      - fn [verbatimSetting](../../src/imports.ts#L178) (file: string, depth: number) → boolean | "unset" | "unknown" <!-- internal -->
+      - fn [governingConfig](../../src/imports.ts#L164) (dir: string) → string | null <!-- internal -->
+      - fn [verbatimSetting](../../src/imports.ts#L182) (file: string, depth: number) → boolean | "unset" | "unknown" <!-- internal -->
         - calls map.imports.isObject, map.imports.ImportResolver.extendedConfig
-      - fn [extendedConfig](../../src/imports.ts#L203) (dir: string, spec: string) → string | null <!-- internal -->
+      - fn [extendedConfig](../../src/imports.ts#L207) (dir: string, spec: string) → string | null <!-- internal -->
         - calls base.config.toPosix
-      - fn [known](../../src/imports.ts#L222) (pkg: string) → boolean <!-- internal -->
+      - fn [known](../../src/imports.ts#L226) (pkg: string) → boolean <!-- internal -->
         - calls map.imports.ImportResolver.locate
-      - fn [locate](../../src/imports.ts#L233) (pkg: string) → Located <!-- internal -->
+      - fn [locate](../../src/imports.ts#L237) (pkg: string) → Located <!-- internal -->
         - calls map.imports.inside, map.imports.ImportResolver.workspaceDirs
-      - fn [workspaceDirs](../../src/imports.ts#L262) () → string[] <!-- internal -->
+      - fn [workspaceDirs](../../src/imports.ts#L266) () → string[] <!-- internal -->
         - calls base.config.toPosix
-      - fn [packageEntry](../../src/imports.ts#L286) (dir: string, subpath: string) → string | null <!-- internal -->
+      - fn [packageEntry](../../src/imports.ts#L290) (dir: string, subpath: string) → string | null <!-- internal -->
         - calls map.imports.flattenTarget, map.imports.isObject, map.imports.matchPattern, map.imports.ImportResolver.probe, base.config.toPosix
-      - fn [resolve](../../src/imports.ts#L316) (fromFile: string, spec: string) → Resolution
+      - fn [resolve](../../src/imports.ts#L320) (fromFile: string, spec: string) → Resolution
         - calls map.imports.ImportResolver.resolveUncached
-      - fn [resolveUncached](../../src/imports.ts#L326) (fromFile: string, spec: string) → Resolution <!-- internal -->
+      - fn [resolveUncached](../../src/imports.ts#L330) (fromFile: string, spec: string) → Resolution <!-- internal -->
         - calls map.imports.ImportResolver.probe, map.imports.ImportResolver.resolveSubpathImport, map.imports.bestMatch, extract.ts.isNodeBuiltin, map.imports.ImportResolver.resolvePackage
-      - fn [resolveSubpathImport](../../src/imports.ts#L355) (fromFile: string, spec: string) → Resolution <!-- internal -->
+      - fn [resolveSubpathImport](../../src/imports.ts#L359) (fromFile: string, spec: string) → Resolution <!-- internal -->
         - calls map.imports.ImportResolver.scopeImports, map.imports.bestMatch, base.config.toPosix, map.imports.ImportResolver.resolve, map.imports.ImportResolver.probe
-      - fn [scopeImports](../../src/imports.ts#L378) (dir: string) → PathRule[] | null <!-- internal -->
+      - fn [scopeImports](../../src/imports.ts#L382) (dir: string) → PathRule[] | null <!-- internal -->
         - calls map.imports.isObject, map.imports.flattenTarget
-      - fn [resolvePackage](../../src/imports.ts#L388) (fromFile: string, spec: string) → Resolution <!-- internal -->
+      - fn [resolvePackage](../../src/imports.ts#L392) (fromFile: string, spec: string) → Resolution <!-- internal -->
         - calls map.imports.packageName, map.imports.ImportResolver.locate, map.imports.ImportResolver.packageEntry, map.imports.ImportResolver.known, map.imports.ImportResolver.knownNear
-      - fn [knownNear](../../src/imports.ts#L399) (fromFile: string, pkg: string) → boolean <!-- internal -->
+      - fn [knownNear](../../src/imports.ts#L403) (fromFile: string, pkg: string) → boolean <!-- internal -->
         - calls map.imports.isObject
-      - fn [probe](../../src/imports.ts#L418) (candidate: string) → string | null <!-- internal -->
+      - fn [probe](../../src/imports.ts#L422) (candidate: string) → string | null <!-- internal -->
         - calls map.imports.probeCandidates
-      - fn [wouldName](../../src/imports.ts#L432) (fromFile: string, spec: string) → string[]
+      - fn [wouldName](../../src/imports.ts#L436) (fromFile: string, spec: string) → string[]
         - calls map.imports.probeCandidates, map.imports.ImportResolver.scopeImports, map.imports.bestMatch, base.config.toPosix
-    - fn [probeCandidates](../../src/imports.ts#L466) (candidate: string) → string[] <!-- internal -->
-    - type [Located](../../src/imports.ts#L473) <!-- internal -->
-    - fn [inside](../../src/imports.ts#L476) (root: string, abs: string) → string | null <!-- internal -->
+    - fn [probeCandidates](../../src/imports.ts#L470) (candidate: string) → string[] <!-- internal -->
+    - type [Located](../../src/imports.ts#L477) <!-- internal -->
+    - fn [inside](../../src/imports.ts#L480) (root: string, abs: string) → string | null <!-- internal -->
       - calls base.config.toPosix
-    - fn [isObject](../../src/imports.ts#L491) (value: unknown) → value is Record<string, unknown> <!-- internal -->
-    - fn [bestMatch](../../src/imports.ts#L501) (rules: readonly PathRule[], spec: string) → { rule: PathRule; star: string } | null <!-- internal -->
+    - fn [isObject](../../src/imports.ts#L495) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [bestMatch](../../src/imports.ts#L505) (rules: readonly PathRule[], spec: string) → { rule: PathRule; star: string } | null <!-- internal -->
       - calls map.imports.matchPattern
-    - fn [matchPattern](../../src/imports.ts#L513) (pattern: string, spec: string) → string | null <!-- internal -->
-    - fn [flattenTarget](../../src/imports.ts#L524) (t: unknown) → string[] <!-- internal -->
-    - fn [packageName](../../src/imports.ts#L531) (spec: string) → string
-    - fn [readJsonc](../../src/imports.ts#L537) (path: string) → unknown
+    - fn [matchPattern](../../src/imports.ts#L517) (pattern: string, spec: string) → string | null <!-- internal -->
+    - fn [flattenTarget](../../src/imports.ts#L528) (t: unknown) → string[] <!-- internal -->
+    - fn [packageName](../../src/imports.ts#L535) (spec: string) → string
+    - fn [readJsonc](../../src/imports.ts#L541) (path: string) → unknown
       - calls map.imports.readText, map.imports.parseJsonc
-    - fn [parseJsonc](../../src/imports.ts#L543) (text: string) → unknown
+    - fn [parseJsonc](../../src/imports.ts#L547) (text: string) → unknown
       - calls map.imports.stripJsonc
-    - fn [parseJsoncStrict](../../src/imports.ts#L552) (text: string) → unknown
+    - fn [parseJsoncStrict](../../src/imports.ts#L556) (text: string) → unknown
       - calls map.imports.stripJsonc
-    - fn [readText](../../src/imports.ts#L557) (path: string) → string | null <!-- internal -->
-    - fn [stripJsonc](../../src/imports.ts#L562) (text: string) → string <!-- internal -->
-    - type [Tsconfig](../../src/imports.ts#L583) <!-- internal -->
-    - type [MergedOptions](../../src/imports.ts#L589) <!-- internal -->
-    - fn [loadTsconfig](../../src/imports.ts#L602) (read: (file: string) => unknown, file: string) → Tsconfig <!-- internal -->
+    - fn [readText](../../src/imports.ts#L561) (path: string) → string | null <!-- internal -->
+    - fn [stripJsonc](../../src/imports.ts#L566) (text: string) → string <!-- internal -->
+    - type [Tsconfig](../../src/imports.ts#L587) <!-- internal -->
+    - type [MergedOptions](../../src/imports.ts#L593) <!-- internal -->
+    - fn [loadTsconfig](../../src/imports.ts#L606) (read: (file: string) => unknown, file: string) → Tsconfig <!-- internal -->
       - calls map.imports.mergedOptions, map.imports.placePaths, map.imports.isObject, base.config.toPosix
-    - fn [mergedOptions](../../src/imports.ts#L621) (read: (file: string) => unknown, file: string, depth: number) → MergedOptions <!-- internal -->
+    - fn [mergedOptions](../../src/imports.ts#L625) (read: (file: string) => unknown, file: string, depth: number) → MergedOptions <!-- internal -->
       - calls map.imports.isObject, base.config.toPosix
-    - fn [placePaths](../../src/imports.ts#L640) (options: MergedOptions) → PathRule[] <!-- internal -->
+    - fn [placePaths](../../src/imports.ts#L644) (options: MergedOptions) → PathRule[] <!-- internal -->
       - calls base.config.toPosix
   - module [map](../../src/map.ts#L1)
     - node external.node
@@ -457,44 +462,46 @@
   - module [python-imports](../../src/python-imports.ts#L1)
     - node external.node
     - imports map.imports
+    - exact-path map.exact-path
     - python-stdlib map.python-stdlib
-    - module [PythonResolver](../../src/python-imports.ts#L21)
-      - fn [constructor](../../src/python-imports.ts#L30) (root: string, sources: ReadonlySet<string> = new Set())
-        - calls map.python-imports.directoriesOf, map.python-imports.PythonResolver.isDir
-      - fn [resolve](../../src/python-imports.ts#L37) (fromFile: string, spec: string) → Resolution
+    - module [PythonResolver](../../src/python-imports.ts#L22)
+      - fn [constructor](../../src/python-imports.ts#L33) (root: string, sources: ReadonlySet<string> = new Set(), fs: ExactFs = nodeFs)
+        - calls map.exact-path.exactExistence, map.python-imports.directoriesOf, map.python-imports.PythonResolver.isDir
+      - fn [resolve](../../src/python-imports.ts#L41) (fromFile: string, spec: string) → Resolution
         - calls map.python-imports.PythonResolver.longest, map.python-imports.PythonResolver.moduleFile, map.python-imports.PythonResolver.isDir, map.python-stdlib.isPythonStdlib
-      - fn [longest](../../src/python-imports.ts#L62) (base: string, segments: string[], fromFile: string, least: number) → Resolution | null <!-- internal -->
+      - fn [longest](../../src/python-imports.ts#L66) (base: string, segments: string[], fromFile: string, least: number) → Resolution | null <!-- internal -->
         - calls map.python-imports.PythonResolver.moduleFile
-      - fn [moduleFile](../../src/python-imports.ts#L74) (path: string) → string | null <!-- internal -->
-      - fn [isDir](../../src/python-imports.ts#L79) (path: string) → boolean <!-- internal -->
-    - fn [directoriesOf](../../src/python-imports.ts#L87) (files: ReadonlySet<string>) → Set<string> <!-- internal -->
+      - fn [moduleFile](../../src/python-imports.ts#L78) (path: string) → string | null <!-- internal -->
+      - fn [isDir](../../src/python-imports.ts#L83) (path: string) → boolean <!-- internal -->
+    - fn [directoriesOf](../../src/python-imports.ts#L91) (files: ReadonlySet<string>) → Set<string> <!-- internal -->
   - module [python-stdlib](../../src/python-stdlib.ts#L1)
     - fn [isPythonStdlib](../../src/python-stdlib.ts#L49) (name: string) → boolean
   - module [rust-imports](../../src/rust-imports.ts#L1)
     - node external.node
     - smol-toml external.smol-toml
     - imports map.imports
+    - exact-path map.exact-path
     - glob base.glob
-    - type [Crate](../../src/rust-imports.ts#L23) <!-- internal -->
-    - module [RustResolver](../../src/rust-imports.ts#L36)
-      - fn [constructor](../../src/rust-imports.ts#L46) (root: string, sources: ReadonlySet<string> = new Set())
-        - calls map.rust-imports.RustResolver.crateAt, map.rust-imports.RustResolver.workspaceMembers
-      - fn [resolve](../../src/rust-imports.ts#L57) (fromFile: string, spec: string) → Resolution
+    - type [Crate](../../src/rust-imports.ts#L24) <!-- internal -->
+    - module [RustResolver](../../src/rust-imports.ts#L37)
+      - fn [constructor](../../src/rust-imports.ts#L49) (root: string, sources: ReadonlySet<string> = new Set(), fs: ExactFs = nodeFs)
+        - calls map.exact-path.exactExistence, map.rust-imports.RustResolver.crateAt, map.rust-imports.RustResolver.workspaceMembers
+      - fn [resolve](../../src/rust-imports.ts#L61) (fromFile: string, spec: string) → Resolution
         - calls map.rust-imports.RustResolver.crateOf, map.rust-imports.RustResolver.rootOf, map.rust-imports.modulePath, map.rust-imports.RustResolver.moduleFile, map.rust-imports.RustResolver.declares
-      - fn [moduleFile](../../src/rust-imports.ts#L115) (rootFile: string, path: string[]) → string | null <!-- internal -->
-      - fn [rootOf](../../src/rust-imports.ts#L126) (crate: Crate, file: string) → string | null <!-- internal -->
+      - fn [moduleFile](../../src/rust-imports.ts#L119) (rootFile: string, path: string[]) → string | null <!-- internal -->
+      - fn [rootOf](../../src/rust-imports.ts#L130) (crate: Crate, file: string) → string | null <!-- internal -->
         - calls map.rust-imports.modulePath, map.rust-imports.RustResolver.declares
-      - fn [declares](../../src/rust-imports.ts#L152) (file: string, name: string, inline = false) → boolean <!-- internal -->
-      - fn [crateOf](../../src/rust-imports.ts#L164) (file: string) → Crate | null <!-- internal -->
+      - fn [declares](../../src/rust-imports.ts#L156) (file: string, name: string, inline = false) → boolean <!-- internal -->
+      - fn [crateOf](../../src/rust-imports.ts#L168) (file: string) → Crate | null <!-- internal -->
         - calls map.rust-imports.RustResolver.crateAt
-      - fn [crateAt](../../src/rust-imports.ts#L173) (dir: string) → Crate | null <!-- internal -->
+      - fn [crateAt](../../src/rust-imports.ts#L177) (dir: string) → Crate | null <!-- internal -->
         - calls map.rust-imports.RustResolver.readToml, map.rust-imports.isObject
-      - fn [workspaceMembers](../../src/rust-imports.ts#L212) () → string[] <!-- internal -->
+      - fn [workspaceMembers](../../src/rust-imports.ts#L216) () → string[] <!-- internal -->
         - calls map.rust-imports.RustResolver.readToml, map.rust-imports.isObject, base.glob.globToRegExp, map.rust-imports.readdirNames
-      - fn [readToml](../../src/rust-imports.ts#L231) (file: string) → Record<string, unknown> | null <!-- internal -->
-    - fn [modulePath](../../src/rust-imports.ts#L248) (rootFile: string, file: string) → string[] <!-- internal -->
-    - fn [readdirNames](../../src/rust-imports.ts#L256) (abs: string) → string[] <!-- internal -->
-    - fn [isObject](../../src/rust-imports.ts#L260) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+      - fn [readToml](../../src/rust-imports.ts#L235) (file: string) → Record<string, unknown> | null <!-- internal -->
+    - fn [modulePath](../../src/rust-imports.ts#L252) (rootFile: string, file: string) → string[] <!-- internal -->
+    - fn [readdirNames](../../src/rust-imports.ts#L260) (abs: string) → string[] <!-- internal -->
+    - fn [isObject](../../src/rust-imports.ts#L264) (value: unknown) → value is Record<string, unknown> <!-- internal -->
   - module [snapshot](../../src/snapshot.ts#L1)
     - node external.node
     - config base.config

@@ -5,7 +5,7 @@
 # map
 
 - base
-  <a id="base"></a><br>Dependency-free foundations shared by the rest of keylang: [`base.config`](base.md#base.config), [`base.glob`](base.md#base.glob), [`base.span`](base.md#base.span), [`base.diag`](base.md#base.diag), [`base.external-ids`](base.md#base.external-ids), [`base.brief`](base.md#base.brief) and [`base.safe-write`](base.md#base.safe-write). Rules forbid it from loading [`external.web-tree-sitter`](external.md#external.web-tree-sitter). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+  <a id="base"></a><br>Dependency-free foundations shared by the rest of keylang: [`base.config`](base.md#base.config), [`base.glob`](base.md#base.glob), [`base.span`](base.md#base.span), [`base.diag`](base.md#base.diag), [`base.external-ids`](base.md#base.external-ids), [`base.brief`](base.md#base.brief) and [`base.safe-write`](base.md#base.safe-write). Rules forbid it from loading [`external.web-tree-sitter`](external.md#external.web-tree-sitter). _(llm · claude:claude-opus-5-5 · 2026-10-06 · stale)_
   - module [brief](../../src/brief.ts#L1)
     <a id="base.brief"></a><br>Plain-language text → a brief: its first paragraph cut to two sentences. Doc comments (once an extractor strips their syntax) and model answers go through the same rule, so a brief reads the same whatever wrote it.
     - fn [briefOf](../../src/brief.ts#L16) (text: string) → string | null
@@ -231,30 +231,33 @@
       <a id="base.safe-write.WriteOptions"></a><br>Options for a guarded file write: `under` confines the target (with symlinks resolved) to a root-relative POSIX directory, `generated` lets the writer overwrite a file carrying a `keylang:generated` marker that would otherwise be refused, and `expect` makes the write… _(llm · claude · 2026-10-04)_
     - type [PlannedWrite](../../src/safe-write.ts#L29)
       <a id="base.safe-write.PlannedWrite"></a><br>A plain data record describing one file write to be performed later: the target `path` (relative to the root, in POSIX form), the full `text` content to write, and optional `options` whose type (`WriteOptions`) is referenced but not shown in the input, so what it controls is… _(llm · claude · 2026-10-04)_
-    - fn [writeProblem](../../src/safe-write.ts#L39) (root: string, path: string, options: WriteOptions = {}) → string | null
+    - fn [targetProblem](../../src/safe-write.ts#L46) (root: string, path: string, options: Pick<WriteOptions, "under"> = {}) → string | null
+      <a id="base.safe-write.targetProblem"></a><br>Why `path` (relative to `root`, POSIX) may not be a target of keylang's at all — written, removed or read as keylang's own file — or null: not a plain relative path, a loop of links, or a place outside the repository (or outside `under`) once every link on the way is followed.…
+      - calls [base.safe-write.landing](base.md#base.safe-write.landing), [base.safe-write.inside](base.md#base.safe-write.inside)
+    - fn [writeProblem](../../src/safe-write.ts#L60) (root: string, path: string, options: WriteOptions = {}) → string | null
       <a id="base.safe-write.writeProblem"></a><br>Why `path` (relative to `root`, POSIX) may not be written, or null. Reads nothing outside the repository.
-      - calls [base.safe-write.landing](base.md#base.safe-write.landing), [base.safe-write.inside](base.md#base.safe-write.inside), [base.safe-write.statOrNull](base.md#base.safe-write.statOrNull), [base.safe-write.isGeneratedText](base.md#base.safe-write.isGeneratedText)
-    - fn [safeWrite](../../src/safe-write.ts#L64) (root: string, path: string, text: string, options: WriteOptions = {}) → string
+      - calls [base.safe-write.targetProblem](base.md#base.safe-write.targetProblem), [base.safe-write.landing](base.md#base.safe-write.landing), [base.safe-write.statOrNull](base.md#base.safe-write.statOrNull), [base.safe-write.isGeneratedText](base.md#base.safe-write.isGeneratedText)
+    - fn [safeWrite](../../src/safe-write.ts#L79) (root: string, path: string, text: string, options: WriteOptions = {}) → string
       <a id="base.safe-write.safeWrite"></a><br>Writes `text` to `path` (relative to `root`, POSIX) when `writeProblem` finds nothing, and returns the absolute path; throws `path: problem` otherwise. A symlinked file is written at its target, so the link stays.
       - calls [base.safe-write.safeWriteAll](base.md#base.safe-write.safeWriteAll)
-    - fn [safeWriteAll](../../src/safe-write.ts#L69) (root: string, writes: readonly PlannedWrite[]) → string[]
+    - fn [safeWriteAll](../../src/safe-write.ts#L84) (root: string, writes: readonly PlannedWrite[]) → string[]
       <a id="base.safe-write.safeWriteAll"></a><br>Every write is checked before the first one happens: either all land, or (short of an I/O error) none does.
       - calls [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic), [base.safe-write.landing](base.md#base.safe-write.landing)
-    - fn [writeAtomic](../../src/safe-write.ts#L88) (abs: string, text: string, options: { exact?: boolean } = {}) → void
+    - fn [writeAtomic](../../src/safe-write.ts#L103) (abs: string, text: string, options: { exact?: boolean } = {}) → void
       <a id="base.safe-write.writeAtomic"></a><br>A temporary file in the target's directory renamed over the target, so a crash never leaves half a file; missing directories are created. The new file keeps the permissions of the one it replaces, and CRLF when that one has CRLF on every line — unless `exact`: a generated…
       - calls [base.safe-write.statOrNull](base.md#base.safe-write.statOrNull), [base.safe-write.allCrlf](base.md#base.safe-write.allCrlf)
-    - fn [isGeneratedText](../../src/safe-write.ts#L110) (text: string) → boolean
+    - fn [isGeneratedText](../../src/safe-write.ts#L125) (text: string) → boolean
       <a id="base.safe-write.isGeneratedText"></a><br>The first non-empty line is a `keylang:generated` marker: `<!-- … -->` of a map file, `// …` of `keylang wire`, `' …` or `%% …` of a PlantUML or Mermaid diagram of `keylang export c4`.
-    - fn [allCrlf](../../src/safe-write.ts#L116) (text: string) → boolean
+    - fn [allCrlf](../../src/safe-write.ts#L131) (text: string) → boolean
       <a id="base.safe-write.allCrlf"></a><br>Every line ends with CRLF (at least one does): the file keeps them when it is rewritten.
-    - fn [landing](../../src/safe-write.ts#L126) (abs: string, hops = 0) → string | null
+    - fn [landing](../../src/safe-write.ts#L141) (abs: string, hops = 0) → string | null
       <a id="base.safe-write.landing"></a><br>Where bytes written to `abs` land: the longest prefix that exists is resolved through links, and a link on the way is followed even when its target does not exist yet. Null for a loop of links.
       - calls [base.safe-write.lstatOrNull](base.md#base.safe-write.lstatOrNull)
-    - fn [inside](../../src/safe-write.ts#L140) (abs: string, dir: string) → boolean <!-- internal -->
+    - fn [inside](../../src/safe-write.ts#L155) (abs: string, dir: string) → boolean <!-- internal -->
       <a id="base.safe-write.inside"></a><br>Returns true when an absolute path is the directory itself or lies under it: the path relative to the directory is empty, or is not `..`, does not start with `..` plus a separator, and is not absolute (another drive on Windows). _(llm · claude · 2026-10-04)_
-    - fn [lstatOrNull](../../src/safe-write.ts#L145) (abs: string) → Stats | null <!-- internal -->
+    - fn [lstatOrNull](../../src/safe-write.ts#L160) (abs: string) → Stats | null <!-- internal -->
       <a id="base.safe-write.lstatOrNull"></a><br>Wraps `lstatSync` on a path, returning the stat result (without following symlinks) or `null` when the call throws for any reason, such as the path not existing. It is only used by [`base.safe-write.landing`](base.md#base.safe-write.landing), which relies on the null return to detect missing paths while walking… _(llm · claude · 2026-10-04)_
-    - fn [statOrNull](../../src/safe-write.ts#L153) (abs: string) → Stats | null <!-- internal -->
+    - fn [statOrNull](../../src/safe-write.ts#L168) (abs: string) → Stats | null <!-- internal -->
       <a id="base.safe-write.statOrNull"></a><br>Wraps a synchronous filesystem stat call so that any failure (missing path, permission error, etc.) yields `null` instead of throwing, giving [`base.safe-write.writeAtomic`](base.md#base.safe-write.writeAtomic) and [`base.safe-write.writeProblem`](base.md#base.safe-write.writeProblem) a non-throwing way to check whether a target path exists and inspect… _(llm · claude · 2026-10-04)_
   - module [span](../../src/span.ts#L1)
     <a id="base.span"></a><br>Source positions. Every node, name, link and reference carries a Span so that diagnostics and the future LSP (hover, definition) can point at it.
