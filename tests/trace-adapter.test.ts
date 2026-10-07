@@ -243,3 +243,29 @@ test("python: a process forked with os.fork() records only its own events, with 
   assert.notEqual(c.status, 2, c.stderr);
   assert.equal(traceOf(c.rows, "app.work.crunch"), "ok: ok app.work.crunch: observed in run.py > @flow crunch");
 });
+
+// ---------- the PHP adapter ----------
+
+const php = spawnSync("php", ["-r", 'echo extension_loaded("pcntl") ? "pcntl" : "no";'], { encoding: "utf8" });
+const pcntl = php.status === 0 && php.stdout === "pcntl";
+
+test("php: a process forked with pcntl_fork() records only its own events, with a clock and span ids of its own", { skip: pcntl ? false : php.status === 0 ? "php has no pcntl extension" : "php is not installed" }, (t) => {
+  const dir = repo(t, { languages: ["php"], layers: { app: ["src/App/**"] }, exclude: ["run.php"], check: { trace: ".keylang/trace/*.jsonl" } }, {
+    "src/App/Work.php": "<?php\nnamespace Shop\\App;\n\nclass Work\n{\n    public function crunch(int $x): int\n    {\n        return $x * 2;\n    }\n\n    public function main(): int\n    {\n        $pid = pcntl_fork();\n        if ($pid === 0) {\n            $this->crunch(1);\n            exit(0);\n        }\n        pcntl_waitpid($pid, $status);\n        return $this->crunch(2);\n    }\n}\n",
+    "run.php": "<?php\nrequire __DIR__ . '/src/App/Work.php';\necho (new Shop\\App\\Work())->main(), \"\\n\";\n",
+    "keylang/flows.md": "# flow crunch\n\n- trigger app.Work.Work.main\n  - step app.Work.Work.crunch\n",
+  });
+  const plan = keylang(dir, ["trace-plan", "crunch"]);
+  assert.equal(plan.status, 0, plan.stderr);
+  writeFileSync(join(dir, "plan.json"), plan.stdout);
+  const r = spawnSync("php", [join(root, "adapters/php/keylang_trace.php"), "run.php"], { cwd: dir, encoding: "utf8", env: { ...process.env, KEYLANG_TRACE: ".keylang/trace/crunch.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_TRACE_TEST: "run.php > @flow crunch" }, timeout: 60_000 });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout, "4\n");
+  const all = events(dir, "crunch.jsonl");
+  const starts = all.filter((e) => e.event === "start");
+  assert.equal(new Set(starts.map((e) => e.spanId)).size, starts.length, `span ids repeat: ${JSON.stringify(starts)}`);
+  assert.equal(new Set(all.filter((e) => e.event === "run").map((e) => e.clockId)).size, 2, JSON.stringify(all));
+  const c = check(dir);
+  assert.notEqual(c.status, 2, c.stderr);
+  assert.equal(traceOf(c.rows, "app.Work.Work.crunch"), "ok: ok app.Work.Work.crunch: observed in run.php > @flow crunch");
+});

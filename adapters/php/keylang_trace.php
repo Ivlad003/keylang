@@ -30,7 +30,11 @@
  * the call stack. A fatal error or an uncaught exception, or a span still open
  * when the process ends, makes the run incomplete. Under a test runner each
  * test that reaches a planned function is a run of the flow; a test that
- * reaches none ran something else and records nothing. Needs PHP 8.1 or newer with
+ * reaches none ran something else and records nothing. Events reach the file as
+ * spans end (and in bounded batches before that); each process's `run` record
+ * names its clock. A child of `pcntl_fork()` records as a process of its own:
+ * a clock of its own pid, none of the parent's buffered events, spans or
+ * counters, and its own `run` record at shutdown. Needs PHP 8.1 or newer with
  * the tokenizer extension, and OPcache off for the CLI (its default).
  */
 
@@ -60,15 +64,66 @@ if (!class_exists('KeylangTrace', false)) {
         /** Spans the current test started: a test that reaches no planned function is no run of the flow. */
         private int $reached = 0;
         private bool $written = false;
+        /** The process whose state this is: after `pcntl_fork()` the child holds the parent's copy until it records. */
+        private int $pid;
+        /** The clock of this process: span ids are unique across the processes of one run. */
+        private string $clock;
+
+        /** Events the file does not have yet are written on every `end` and once this many pile up. */
+        private const BUFFER = 64;
 
         private function __construct(
             private readonly string $output,
             private readonly string $flow,
             private readonly string $snapshot,
             private readonly string $run,
-            private readonly string $clock,
             private ?string $test,
         ) {
+            $this->pid = getmypid();
+            $this->clock = self::newClock();
+        }
+
+        private static function newClock(): string
+        {
+            return 'php-' . getmypid() . '-' . bin2hex(random_bytes(4));
+        }
+
+        /**
+         * Makes the state this process's own. A child of `pcntl_fork()` inherits
+         * the parent's buffered events, open spans, counters, clock and shutdown
+         * functions: written as they are, they would repeat the parent's lines
+         * and span ids. The child records on a clock of its own pid, from nothing;
+         * the `end` of a function the parent entered is not its to write.
+         */
+        private function own(): void
+        {
+            if (getmypid() === $this->pid) {
+                return;
+            }
+            $this->pid = getmypid();
+            $this->clock = self::newClock();
+            $this->lines = [];
+            $this->stack = [];
+            $this->open = [];
+            $this->seq = 0;
+            $this->spans = 0;
+            $this->reached = 0;
+            $this->written = false;
+        }
+
+        /** Appends the events not yet in the file. */
+        private function flush(): void
+        {
+            if ($this->lines === []) {
+                return;
+            }
+            $text = implode("\n", $this->lines) . "\n";
+            $this->lines = [];
+            $dir = dirname($this->output);
+            if (!is_dir($dir)) {
+                @mkdir($dir, 0777, true);
+            }
+            file_put_contents($this->output, $text, FILE_APPEND | LOCK_EX);
         }
 
         /** Reads the environment and starts recording; without `KEYLANG_TRACE` it does nothing. */
@@ -103,7 +158,7 @@ if (!class_exists('KeylangTrace', false)) {
             $run = $run !== false && $run !== '' ? $run : dechex((int) (microtime(true) * 1000)) . '-' . getmypid();
             // Child processes inherit the id, so the processes of one test are one run.
             putenv("KEYLANG_TRACE_RUN={$run}");
-            $trace = new self($output, $plan['flow'], $plan['snapshotId'], $run, 'php-' . getmypid() . '-' . bin2hex(random_bytes(4)), $test !== false && $test !== '' ? $test : null);
+            $trace = new self($output, $plan['flow'], $plan['snapshotId'], $run, $test !== false && $test !== '' ? $test : null);
             $trace->prepare($plan['symbols'], $root);
             self::$active = $trace;
             register_shutdown_function([$trace, 'finish']);
@@ -123,6 +178,7 @@ if (!class_exists('KeylangTrace', false)) {
             if ($trace === null) {
                 return;
             }
+            $trace->own();
             if ($trace->test !== null) {
                 $trace->record(false);
             }
@@ -136,6 +192,7 @@ if (!class_exists('KeylangTrace', false)) {
             if ($trace === null || $trace->test === null) {
                 return;
             }
+            $trace->own();
             $trace->record(false);
             $trace->test = null;
         }
@@ -147,12 +204,16 @@ if (!class_exists('KeylangTrace', false)) {
             if ($trace === null) {
                 return '';
             }
+            $trace->own();
             $span = $trace->clock . ':s' . ++$trace->spans;
             $trace->reached++;
             $parent = $trace->stack === [] ? null : $trace->stack[count($trace->stack) - 1]['span'];
             $trace->event(['event' => 'start', 'spanId' => $span, 'parentSpanId' => $parent, 'symbolId' => $symbol, 'clockId' => $trace->clock, 'seq' => ++$trace->seq, 'ts' => hrtime(true) / 1e6]);
             $trace->stack[] = ['span' => $span, 'failed' => false];
             $trace->open[$span] = true;
+            if (count($trace->lines) >= self::BUFFER) {
+                $trace->flush();
+            }
             return $span;
         }
 
@@ -177,6 +238,11 @@ if (!class_exists('KeylangTrace', false)) {
             if ($trace === null || $span === '') {
                 return;
             }
+            $trace->own();
+            // A span of another clock was started by the parent before `pcntl_fork()`: its end is the parent's to write.
+            if (!str_starts_with($span, $trace->clock . ':')) {
+                return;
+            }
             $failed = false;
             while ($trace->stack !== []) {
                 $entry = array_pop($trace->stack);
@@ -187,6 +253,7 @@ if (!class_exists('KeylangTrace', false)) {
             }
             unset($trace->open[$span]);
             $trace->event(['event' => 'end', 'spanId' => $span, 'outcome' => $failed ? 'error' : 'ok', 'clockId' => $trace->clock, 'seq' => ++$trace->seq, 'ts' => hrtime(true) / 1e6]);
+            $trace->flush();
         }
 
         /** The instrumented source of a planned file still as the plan saw it; null for any other file. */
@@ -205,9 +272,10 @@ if (!class_exists('KeylangTrace', false)) {
             return is_string($content) && hash('sha256', $content) === $trace->hashes[$real] ? $trace->served[$real] : null;
         }
 
-        /** The `run` record of the last test, then everything to the output file. */
+        /** The `run` record of the last test, then everything not yet in the output file. */
         public function finish(): void
         {
+            $this->own();
             if ($this->written) {
                 return;
             }
@@ -218,13 +286,7 @@ if (!class_exists('KeylangTrace', false)) {
             }
             $this->written = true;
             KeylangTraceStream::unregister();
-            $dir = dirname($this->output);
-            if (!is_dir($dir)) {
-                @mkdir($dir, 0777, true);
-            }
-            if ($this->lines !== []) {
-                file_put_contents($this->output, implode("\n", $this->lines) . "\n", FILE_APPEND | LOCK_EX);
-            }
+            $this->flush();
         }
 
         /**
@@ -420,9 +482,10 @@ if (!class_exists('KeylangTrace', false)) {
             }
             $open = array_keys($this->open);
             sort($open);
-            $this->event(['event' => 'run', 'complete' => !$crashed && $open === [], 'dropped' => 0, 'instrumented' => $this->instrumented, 'open' => $open]);
+            $this->event(['event' => 'run', 'clockId' => $this->clock, 'complete' => !$crashed && $open === [], 'dropped' => 0, 'instrumented' => $this->instrumented, 'open' => $open]);
             $this->open = [];
             $this->stack = [];
+            $this->flush();
         }
 
         private static function fail(string $message): never
