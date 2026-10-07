@@ -37,7 +37,7 @@ function statics(dir: string): string[] {
 interface Snapshot {
   snapshotId: string;
   nodes: Record<string, { kind: string; class?: true; static?: true; name?: string; file: string | null; members?: string; escapes?: { reason: string } }>;
-  edges: { kind: string; source: string; target: string | null; resolution: string; text: string; alias?: string; reason?: string; closure?: true }[];
+  edges: { kind: string; source: string; target: string | null; resolution: string; text: string; alias?: string; reason?: string; closure?: true; typeOnly?: true }[];
   coverage: { kind: string; file: string; line: number; reason: string }[];
   exports: { module: string; name: string; symbol: string | null; kind: string; form?: string; local?: string; from?: string; reason?: string }[];
 }
@@ -408,6 +408,25 @@ test("imports: `paths`/`baseUrl` come from the tsconfig that governs the importi
   // A solution config at the root: each referenced project's `paths` apply to the files under its directory only.
   const solution = '{"files":[],"references":[{"path":"./apps/admin/tsconfig.app.json"},{"path":"./apps/web/tsconfig.app.json"}]}';
   denied(repo(t, { ...files, "tsconfig.json": solution, "apps/web/tsconfig.app.json": app, "apps/admin/tsconfig.app.json": app }, layers));
+});
+
+test("imports: a tsconfig `extends` without `.json` beside a directory of the same name reads `<path>.json`, as tsc does, instead of failing with EISDIR", (t) => {
+  const dir = repo(t, {
+    "package.json": '{"name":"fx"}',
+    "tsconfig.json": '{"extends":"./configs/base"}',
+    "configs/base.json": '{"compilerOptions":{"verbatimModuleSyntax":true}}',
+    "configs/base/README.md": "# base\n",
+    "src/a/a.ts": 'import { type B } from "../b/b";\nexport const a: B = 1;\n',
+    "src/b/b.ts": "export type B = number;\n",
+  });
+  const o = keylang(dir, ["map"]);
+  assert.equal(o.status, 0, o.stdout + o.stderr);
+  assert.doesNotMatch(o.stderr, /EISDIR/);
+  // `configs/base.json` sets verbatimModuleSyntax, so the inline-`type` import stays one that loads the module.
+  const edges = snapshot(dir).edges.filter((e) => e.kind === "import" && e.source === "a.a").map((e) => `${e.target} ${e.resolution}${e.typeOnly ? " typeOnly" : ""}`);
+  assert.deepEqual(edges, ["b.b resolved"]);
+  const check = keylang(dir, ["check"]);
+  assert.equal(check.status, 0, check.stdout + check.stderr);
 });
 
 test("calls: `new ns.X()`, `new C().m()`, a class merged with its interface, a default import beside a same-named export, `super()`; an unknown callee is a hole", (t) => {

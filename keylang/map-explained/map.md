@@ -589,23 +589,23 @@
     - fn [parseJsoncStrict](../../src/imports.ts#L680) (text: string) → unknown
       <a id="map.imports.parseJsoncStrict"></a><br>The value of JSONC text; throws the `JSON.parse` error when it does not parse.
       - calls [map.imports.stripJsonc](map.md#map.imports.stripJsonc)
-    - fn [readText](../../src/imports.ts#L685) (path: string) → string | null <!-- internal -->
-      <a id="map.imports.readText"></a><br>A file's text, or null when it is missing.
-    - fn [stripJsonc](../../src/imports.ts#L690) (text: string) → string <!-- internal -->
+    - fn [readText](../../src/imports.ts#L690) (path: string) → string | null <!-- internal -->
+      <a id="map.imports.readText"></a><br>A file's text, or null when the path is no regular file (missing, or a directory, as `configs/base/` beside `configs/base.json` when `extends` names `./configs/base`) or cannot be read — tsc's `fileExists`, so an `extends` without `.json` falls back to `<path>.json` instead of…
+    - fn [stripJsonc](../../src/imports.ts#L699) (text: string) → string <!-- internal -->
       <a id="map.imports.stripJsonc"></a><br>Remove comments and trailing commas outside of strings.
-    - type [Tsconfig](../../src/imports.ts#L711) <!-- internal -->
+    - type [Tsconfig](../../src/imports.ts#L720) <!-- internal -->
       <a id="map.imports.Tsconfig"></a><br>Holds the resolved compiler options from a tsconfig that matter for import resolution: an optional base directory and a list of `PathRule` alias patterns used to rewrite module specifiers. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [LoadedTsconfig](../../src/imports.ts#L717) <!-- internal -->
+    - type [LoadedTsconfig](../../src/imports.ts#L726) <!-- internal -->
       <a id="map.imports.LoadedTsconfig"></a><br>One config file as `optionsFor` combines it: its own options, and those of each project it `references` with that project's directory.
-    - type [MergedOptions](../../src/imports.ts#L723) <!-- internal -->
+    - type [MergedOptions](../../src/imports.ts#L732) <!-- internal -->
       <a id="map.imports.MergedOptions"></a><br>Options of one config after its `extends` chain, before `paths` targets are placed.
-    - fn [loadTsconfig](../../src/imports.ts#L739) (read: (file: string) => unknown, file: string) → LoadedTsconfig <!-- internal -->
+    - fn [loadTsconfig](../../src/imports.ts#L748) (read: (file: string) => unknown, file: string) → LoadedTsconfig <!-- internal -->
       <a id="map.imports.loadTsconfig"></a><br>`compilerOptions.baseUrl`/`paths` of one config following relative `extends` chains. As in `tsc`, `paths` targets resolve against the `baseUrl` of the final options (a child config's `baseUrl` moves inherited `paths` too), or the directory of the config that declares them.
       - calls [map.imports.mergedOptions](map.md#map.imports.mergedOptions), [map.imports.placePaths](map.md#map.imports.placePaths), [map.imports.isObject](map.md#map.imports.isObject), [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [mergedOptions](../../src/imports.ts#L758) (read: (file: string) => unknown, file: string, depth: number) → MergedOptions <!-- internal -->
+    - fn [mergedOptions](../../src/imports.ts#L767) (read: (file: string) => unknown, file: string, depth: number) → MergedOptions <!-- internal -->
       <a id="map.imports.mergedOptions"></a><br>Resolves a tsconfig's effective `baseUrl` and `paths` by recursively following relative `extends` entries (up to depth 5, skipping package names and paths outside the tree), letting child settings override parents. Returned values are anchored to each config's directory, so… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [map.imports.isObject](map.md#map.imports.isObject), [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [placePaths](../../src/imports.ts#L777) (options: MergedOptions) → PathRule[] <!-- internal -->
+    - fn [placePaths](../../src/imports.ts#L786) (options: MergedOptions) → PathRule[] <!-- internal -->
       <a id="map.imports.placePaths"></a><br>Turns the tsconfig `paths` block into rules whose target entries are resolved to normalized POSIX paths under `baseUrl` (or the paths file's directory), dropping non-string targets. Uses [`base.config.toPosix`](base.md#base.config.toPosix) and feeds [`map.imports.loadTsconfig`](map.md#map.imports.loadTsconfig). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [base.config.toPosix](base.md#base.config.toPosix)
   - module [map](../../src/map.ts#L1)
@@ -885,7 +885,7 @@
     - type [Names](../../src/wire-gen.ts#L27) <!-- internal -->
       <a id="map.wire-gen.Names"></a><br>Local names of one ID in the generated file.
     - fn [generateWire](../../src/wire-gen.ts#L35) (input: WireInput) → string
-      <a id="map.wire-gen.generateWire"></a><br>Emits the source of a `wire()` module: sorted imports resolved via [`check.wiring.wireImport`](check.md#check.wiring.wireImport), then memoized async builders in the dependency order from [`check.wiring.wireOrder`](check.md#check.wiring.wireOrder). The generated function tracks `dispose()` methods and releases everything newest first on completion… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="map.wire-gen.generateWire"></a><br>Emits the source of a `wire()` module: sorted imports resolved via [`check.wiring.wireImport`](check.md#check.wiring.wireImport), then memoized async builders in the dependency order from [`check.wiring.wireOrder`](check.md#check.wiring.wireOrder). The generated function tracks `dispose()` methods and releases everything newest first on completion… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [check.wiring.wireOrder](check.md#check.wiring.wireOrder), [map.wire-gen.isClass](map.md#map.wire-gen.isClass), [map.wire-gen.localNames](map.md#map.wire-gen.localNames), [map.wire-gen.importExtension](map.md#map.wire-gen.importExtension), [map.wire-gen.memberAccess](map.md#map.wire-gen.memberAccess), [check.wiring.wireImport](check.md#check.wiring.wireImport), [map.wire-gen.specifier](map.md#map.wire-gen.specifier), [map.wire-gen.key](map.md#map.wire-gen.key), [map.wire-gen.depValue](map.md#map.wire-gen.depValue)
     - fn [depValue](../../src/wire-gen.ts#L136) (d: WireDep, name: (id: string) => Names, callee: (id: string) => string) → string <!-- internal -->
       <a id="map.wire-gen.depValue"></a><br>The value of one dependency: a `when` branch chosen from `env` (else the default), wrapped by `compose` innermost first.

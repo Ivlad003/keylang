@@ -681,9 +681,18 @@ export function parseJsoncStrict(text: string): unknown {
   return JSON.parse(stripJsonc(text));
 }
 
-/** A file's text, or null when it is missing. */
+/**
+ * A file's text, or null when the path is no regular file (missing, or a
+ * directory, as `configs/base/` beside `configs/base.json` when `extends`
+ * names `./configs/base`) or cannot be read — tsc's `fileExists`, so an
+ * `extends` without `.json` falls back to `<path>.json` instead of failing.
+ */
 function readText(path: string): string | null {
-  return existsSync(path) ? readFileSync(path, "utf8") : null;
+  try {
+    return statSync(path).isFile() ? readFileSync(path, "utf8") : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Remove comments and trailing commas outside of strings. */

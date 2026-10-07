@@ -375,16 +375,16 @@
       - calls map.imports.stripJsonc
     - fn [parseJsoncStrict](../../src/imports.ts#L680) (text: string) → unknown
       - calls map.imports.stripJsonc
-    - fn [readText](../../src/imports.ts#L685) (path: string) → string | null <!-- internal -->
-    - fn [stripJsonc](../../src/imports.ts#L690) (text: string) → string <!-- internal -->
-    - type [Tsconfig](../../src/imports.ts#L711) <!-- internal -->
-    - type [LoadedTsconfig](../../src/imports.ts#L717) <!-- internal -->
-    - type [MergedOptions](../../src/imports.ts#L723) <!-- internal -->
-    - fn [loadTsconfig](../../src/imports.ts#L739) (read: (file: string) => unknown, file: string) → LoadedTsconfig <!-- internal -->
+    - fn [readText](../../src/imports.ts#L690) (path: string) → string | null <!-- internal -->
+    - fn [stripJsonc](../../src/imports.ts#L699) (text: string) → string <!-- internal -->
+    - type [Tsconfig](../../src/imports.ts#L720) <!-- internal -->
+    - type [LoadedTsconfig](../../src/imports.ts#L726) <!-- internal -->
+    - type [MergedOptions](../../src/imports.ts#L732) <!-- internal -->
+    - fn [loadTsconfig](../../src/imports.ts#L748) (read: (file: string) => unknown, file: string) → LoadedTsconfig <!-- internal -->
       - calls map.imports.mergedOptions, map.imports.placePaths, map.imports.isObject, base.config.toPosix
-    - fn [mergedOptions](../../src/imports.ts#L758) (read: (file: string) => unknown, file: string, depth: number) → MergedOptions <!-- internal -->
+    - fn [mergedOptions](../../src/imports.ts#L767) (read: (file: string) => unknown, file: string, depth: number) → MergedOptions <!-- internal -->
       - calls map.imports.isObject, base.config.toPosix
-    - fn [placePaths](../../src/imports.ts#L777) (options: MergedOptions) → PathRule[] <!-- internal -->
+    - fn [placePaths](../../src/imports.ts#L786) (options: MergedOptions) → PathRule[] <!-- internal -->
       - calls base.config.toPosix
   - module [map](../../src/map.ts#L1)
     - node external.node
