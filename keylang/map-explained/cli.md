@@ -120,114 +120,114 @@
     - fn [prepareClone](../../src/cli.ts#L508) (sourceText: string | undefined, opts: { dir: string | undefined; explain: string | undefined; dryRun: boolean }) → Promise<{ code: number; root: string | null }> <!-- internal -->
       <a id="cli.cli.prepareClone"></a><br>`clone <source> [--dir D] [--explain MODE] [--dry-run]`, and the first half of `web <source>`: the clone, then the existing printers of init (`--agents=none`: a clone gets no harness files), the brief batch, the layers' full explanations and the map, each over the clone's root.…
       - calls [features.clone.isCloneExplain](features.md#features.clone.isCloneExplain), [features.clone.parseRepoSource](features.md#features.clone.parseRepoSource), [features.clone.cloneCacheRoot](features.md#features.clone.cloneCacheRoot), [features.clone.syncClone](features.md#features.clone.syncClone), [cli.cli.cmdInit](cli.md#cli.cli.cmdInit), [base.config.loadConfig](base.md#base.config.loadConfig), [cli.cli.cmdExplainBatch](cli.md#cli.cli.cmdExplainBatch), [features.agent-cli.selectedAgent](features.md#features.agent-cli.selectedAgent), [features.clone.enableExplainedMap](features.md#features.clone.enableExplainedMap), [operations.operations.runOperation](operations.md#operations.operations.runOperation), [base.config.toPosix](base.md#base.config.toPosix), [cli.cli.printMap](cli.md#cli.cli.printMap)
-    - fn [positiveInteger](../../src/cli.ts#L553) (flag: string, text: string) → number <!-- internal -->
+    - fn [positiveInteger](../../src/cli.ts#L556) (flag: string, text: string) → number <!-- internal -->
       <a id="cli.cli.positiveInteger"></a><br>Validates a CLI flag's text via [`features.explain-inventory.positiveIntegerProblem`](features.md#features.explain-inventory.positiveIntegerProblem), throwing an Error with the returned message when it fails. Otherwise converts the text to a number for [`cli.cli.cmdExplainBatch`](cli.md#cli.cli.cmdExplainBatch). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.explain-inventory.positiveIntegerProblem](features.md#features.explain-inventory.positiveIntegerProblem)
-    - fn [cmdDraft](../../src/cli.ts#L559) (args: string[], opts: { mode: string; name: string | undefined; into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
+    - fn [cmdDraft](../../src/cli.ts#L562) (args: string[], opts: { mode: string; name: string | undefined; into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdDraft"></a><br>Dispatches the draft subcommand: `rules`/`map` go to [`cli.cli.cmdDraftLayout`](cli.md#cli.cli.cmdDraftLayout), while `flow <trigger>` validates the trigger and algo/llm/hybrid mode, then calls [`cli.cli.draftFlowPrinter`](cli.md#cli.cli.draftFlowPrinter) at the root from [`map.analyze.findRoot`](map.md#map.analyze.findRoot). _(llm · claude:claude-opus-5-5 · 2026-10-06 · stale)_
       - calls [cli.cli.cmdDraftLayout](cli.md#cli.cli.cmdDraftLayout), [cli.cli.draftFlowPrinter](cli.md#cli.cli.draftFlowPrinter), [map.analyze.findRoot](map.md#map.analyze.findRoot)
-    - fn [draftFlowPrinter](../../src/cli.ts#L574) (root: string, trigger: string, mode: "algo" | "llm" | "hybrid", opts: { name: string | undefined; into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
+    - fn [draftFlowPrinter](../../src/cli.ts#L577) (root: string, trigger: string, mode: "algo" | "llm" | "hybrid", opts: { name: string | undefined; into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
       <a id="cli.cli.draftFlowPrinter"></a><br>`draft flow <trigger> --mode algo|llm|hybrid`: a printer over the shared `draft-flow` operation. The proposal replaces one already waiting, as the CLI always did.
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [cmdSpecToCode](../../src/cli.ts#L599) (id: string | undefined, opts: { into: string | undefined; apply: boolean; print: boolean; mode: string }) → Promise<number> <!-- internal -->
+    - fn [cmdSpecToCode](../../src/cli.ts#L602) (id: string | undefined, opts: { into: string | undefined; apply: boolean; print: boolean; mode: string }) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdSpecToCode"></a><br>Validates CLI options (requires a planned id, rejects `--apply` with `--print`, mode must be algo or llm) and locates the repo root via [`map.analyze.findRoot`](map.md#map.analyze.findRoot). Dispatches to [`cli.cli.specToCodeApplyPrinter`](cli.md#cli.cli.specToCodeApplyPrinter) or [`cli.cli.specToCodePrinter`](cli.md#cli.cli.specToCodePrinter). _(llm · claude:claude-opus-5-5 · 2026-10-06 · stale)_
       - calls [map.analyze.findRoot](map.md#map.analyze.findRoot), [base.config.toPosix](base.md#base.config.toPosix), [cli.cli.specToCodeApplyPrinter](cli.md#cli.cli.specToCodeApplyPrinter), [cli.cli.specToCodePrinter](cli.md#cli.cli.specToCodePrinter)
-    - fn [specToCodeApplyPrinter](../../src/cli.ts#L619) (root: string, id: string, into: string | undefined, mode: "algo" | "llm") → Promise<number> <!-- internal -->
+    - fn [specToCodeApplyPrinter](../../src/cli.ts#L622) (root: string, id: string, into: string | undefined, mode: "algo" | "llm") → Promise<number> <!-- internal -->
       <a id="cli.cli.specToCodeApplyPrinter"></a><br>`spec-to-code <id> [--into] [--mode algo|llm] --apply`: the candidate is built as a preview (stdout and the test notes as `--print`), then the shared `apply-code` operation writes its files; a proposal waiting for one stays, as it always did. The operation's code is the CLI's…
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation)
-    - fn [specToCodePrinter](../../src/cli.ts#L647) (root: string, id: string, into: string | undefined, print: boolean, mode: "algo" | "llm") → Promise<number> <!-- internal -->
+    - fn [specToCodePrinter](../../src/cli.ts#L650) (root: string, id: string, into: string | undefined, print: boolean, mode: "algo" | "llm") → Promise<number> <!-- internal -->
       <a id="cli.cli.specToCodePrinter"></a><br>`spec-to-code <id> [--into] [--mode algo|llm] [--print]`: a printer over the shared `spec-to-code` operation. stdout is the candidate's files and findings, stderr the test notes and then what was (not) written. The proposals replace ones already waiting, as the CLI always did.
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation)
-    - fn [cmdCodeToSpec](../../src/cli.ts#L661) (at: string | undefined, opts: { into: string | undefined; print: boolean; mode: string; since: string | undefined }) → Promise<number> <!-- internal -->
+    - fn [cmdCodeToSpec](../../src/cli.ts#L664) (at: string | undefined, opts: { into: string | undefined; print: boolean; mode: string; since: string | undefined }) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdCodeToSpec"></a><br>Validates that exactly one of a `file[:line]` target or a `--since` git ref is given, runs [`map.analyze.analyze`](map.md#map.analyze.analyze) from the [`map.analyze.findRoot`](map.md#map.analyze.findRoot) root, and passes the resolved source to [`cli.cli.codeToSpecPrinter`](cli.md#cli.cli.codeToSpecPrinter). _(llm · claude:claude-opus-5-5 · 2026-10-06 · stale)_
       - calls [map.analyze.findRoot](map.md#map.analyze.findRoot), [map.analyze.analyze](map.md#map.analyze.analyze), [base.config.toPosix](base.md#base.config.toPosix), [cli.cli.codeToSpecPrinter](cli.md#cli.cli.codeToSpecPrinter)
-    - fn [codeToSpecPrinter](../../src/cli.ts#L688) (root: string, source: CodeToSpecSource, analysis: Analysis, opts: { into: string | undefined; print: boolean; mode: string }) → Promise<number> <!-- internal -->
+    - fn [codeToSpecPrinter](../../src/cli.ts#L691) (root: string, source: CodeToSpecSource, analysis: Analysis, opts: { into: string | undefined; print: boolean; mode: string }) → Promise<number> <!-- internal -->
       <a id="cli.cli.codeToSpecPrinter"></a><br>`code-to-spec <path[:line]> | --since <ref> [--mode] [--into] [--print]`: a printer over the shared `code-to-spec` operation, on the analysis already made. The path is relative to the working directory, `--into` to the root.
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [cmdDraftLayout](../../src/cli.ts#L722) (what: "rules" | "map", opts: { mode: string; into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
+    - fn [cmdDraftLayout](../../src/cli.ts#L725) (what: "rules" | "map", opts: { mode: string; into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdDraftLayout"></a><br>Validates that the draft mode is algo, llm or hybrid, locates the project root via [`map.analyze.findRoot`](map.md#map.analyze.findRoot), then dispatches to [`cli.cli.draftMapPrinter`](cli.md#cli.cli.draftMapPrinter) or [`cli.cli.draftRulesPrinter`](cli.md#cli.cli.draftRulesPrinter) depending on the requested target. _(llm · claude:claude-opus-5-5 · 2026-10-06 · stale)_
       - calls [map.analyze.findRoot](map.md#map.analyze.findRoot), [cli.cli.draftMapPrinter](cli.md#cli.cli.draftMapPrinter), [cli.cli.draftRulesPrinter](cli.md#cli.cli.draftRulesPrinter)
-    - fn [draftMapPrinter](../../src/cli.ts#L734) (root: string, mode: "algo" | "llm" | "hybrid") → Promise<number> <!-- internal -->
+    - fn [draftMapPrinter](../../src/cli.ts#L737) (root: string, mode: "algo" | "llm" | "hybrid") → Promise<number> <!-- internal -->
       <a id="cli.cli.draftMapPrinter"></a><br>`draft map [--mode algo|llm|hybrid]`: a printer over the shared `draft-layout` operation. Stdout: the config with the drafted layers; on stderr the fallback of a hybrid without a model, then that nothing was written. keylang.json never changes.
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation)
-    - fn [draftRulesPrinter](../../src/cli.ts#L752) (root: string, mode: "algo" | "llm" | "hybrid", opts: { into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
+    - fn [draftRulesPrinter](../../src/cli.ts#L755) (root: string, mode: "algo" | "llm" | "hybrid", opts: { into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
       <a id="cli.cli.draftRulesPrinter"></a><br>`draft rules [--mode algo|llm|hybrid] [--into] [--print]`: a printer over the shared `draft-rules` operation. The proposal replaces one already waiting, as the CLI always did.
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [cmdExport](../../src/cli.ts#L780) (args: readonly string[], options: { format: string | undefined; level: string | undefined; layer: string | undefined; out: string | undefined }) → Promise<number> <!-- internal -->
+    - fn [cmdExport](../../src/cli.ts#L783) (args: readonly string[], options: { format: string | undefined; level: string | undefined; layer: string | undefined; out: string | undefined }) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdExport"></a><br>`keylang export c4` (c4-zoom/12): the diagram on stdout, or written to `--out` with a note on stderr and nothing on stdout. Exit code 0 or 2.
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [map.analyze.findRoot](map.md#map.analyze.findRoot), [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [cmdProposals](../../src/cli.ts#L804) (args: readonly string[]) → Promise<number> <!-- internal -->
+    - fn [cmdProposals](../../src/cli.ts#L807) (args: readonly string[]) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdProposals"></a><br>`proposals [show|accept|reject <target>]`: a person takes or drops a proposal without the TUI. A printer over `src/proposals.ts`: the list, a diff and what was written to stdout; notes and refusals to stderr. 0 done; 1 nothing pending for the target, or an accept refused…
       - calls [map.analyze.findRoot](map.md#map.analyze.findRoot), [base.config.toPosix](base.md#base.config.toPosix), [base.config.loadConfig](base.md#base.config.loadConfig)
-    - fn [cmdWire](../../src/cli.ts#L858) (out: string, checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdWire](../../src/cli.ts#L861) (out: string, checkOnly: boolean) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdWire"></a>
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [map.analyze.findRoot](map.md#map.analyze.findRoot), [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [cmdDoctor](../../src/cli.ts#L872) () → Promise<number> <!-- internal -->
+    - fn [cmdDoctor](../../src/cli.ts#L875) () → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdDoctor"></a><br>What is set up. A problem it finds (a key file others can read, a native module without its binary) is a line of the report, not a failure: cli.md, code 0.
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [map.analyze.findRoot](map.md#map.analyze.findRoot)
-    - fn [cmdTracePlan](../../src/cli.ts#L887) (flow: string | undefined) → Promise<number> <!-- internal -->
+    - fn [cmdTracePlan](../../src/cli.ts#L890) (flow: string | undefined) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdTracePlan"></a><br>A printer over the shared trace-plan operation: the plan's JSON to stdout and nothing else.
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [map.analyze.findRoot](map.md#map.analyze.findRoot)
-    - fn [needPaths](../../src/cli.ts#L895) (cmd: string, paths: string[]) → void <!-- internal -->
+    - fn [needPaths](../../src/cli.ts#L898) (cmd: string, paths: string[]) → void <!-- internal -->
       <a id="cli.cli.needPaths"></a><br>Guard that throws an `Error` naming the offending command when the argument list is empty, so [`cli.cli.run`](cli.md#cli.cli.run) can reject subcommands invoked without any path operands before doing any work. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [cmdInit](../../src/cli.ts#L900) (dir: string, opts: { agents: string | undefined; check: boolean }) → Promise<number> <!-- internal -->
+    - fn [cmdInit](../../src/cli.ts#L903) (dir: string, opts: { agents: string | undefined; check: boolean }) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdInit"></a><br>`init [dir] [--agents=LIST] [--check]`: a printer over the shared init operation, stage by stage in the order the stages ran.
       - calls [features.harness.harnessChoice](features.md#features.harness.harnessChoice), [operations.generate.initSources](operations.md#operations.generate.initSources), [operations.operations.runOperation](operations.md#operations.operations.runOperation), [cli.cli.printAgents](cli.md#cli.cli.printAgents), [cli.cli.printBaseline](cli.md#cli.cli.printBaseline), [cli.cli.printGitignore](cli.md#cli.cli.printGitignore), [cli.cli.printMap](cli.md#cli.cli.printMap)
-    - fn [printGitignore](../../src/cli.ts#L952) (stage: GitignoreStage) → void <!-- internal -->
+    - fn [printGitignore](../../src/cli.ts#L955) (stage: GitignoreStage) → void <!-- internal -->
       <a id="cli.cli.printGitignore"></a><br>The `.gitignore` line of init: an I/O error to stderr; added, not listed, or a refusal's reason to stdout, as the file lines of the other stages.
       - calls [operations.generate.gitignoreMessage](operations.md#operations.generate.gitignoreMessage)
-    - fn [cmdAgents](../../src/cli.ts#L960) (root: string, harnesses: HarnessChoice, checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdAgents](../../src/cli.ts#L963) (root: string, harnesses: HarnessChoice, checkOnly: boolean) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdAgents"></a><br>`agents [--agents=LIST] [--check]`: a printer over the shared agents operation.
       - calls [cli.cli.printAgents](cli.md#cli.cli.printAgents), [operations.operations.runOperation](operations.md#operations.operations.runOperation)
-    - fn [printAgents](../../src/cli.ts#L965) (result: OperationEnvelope<"agents">) → number <!-- internal -->
+    - fn [printAgents](../../src/cli.ts#L968) (result: OperationEnvelope<"agents">) → number <!-- internal -->
       <a id="cli.cli.printAgents"></a><br>File lines to stdout (`stale`, `written`, `removed`, a refusal's reasons); failures to stderr.
-    - fn [cmdBaseline](../../src/cli.ts#L984) (root: string, checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdBaseline](../../src/cli.ts#L987) (root: string, checkOnly: boolean) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdBaseline"></a><br>`baseline [--check]`: a printer over the shared baseline operation. Lines for the file go to stdout; failures to stderr.
       - calls [cli.cli.printBaseline](cli.md#cli.cli.printBaseline), [operations.operations.runOperation](operations.md#operations.operations.runOperation)
-    - fn [printBaseline](../../src/cli.ts#L988) (result: OperationEnvelope<"baseline">) → number <!-- internal -->
+    - fn [printBaseline](../../src/cli.ts#L991) (result: OperationEnvelope<"baseline">) → number <!-- internal -->
       <a id="cli.cli.printBaseline"></a><br>Writes the messages of a baseline operation envelope to stdout or stderr, routing them to stderr with a `keylang:` prefix when the payload is missing, errored, or lists refused entries, then returns the envelope's exit code (defaulting to 2). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [cmdFeature](../../src/cli.ts#L1003) (slug: string | undefined, format: string, since: string | undefined) → Promise<number> <!-- internal -->
+    - fn [cmdFeature](../../src/cli.ts#L1006) (slug: string | undefined, format: string, since: string | undefined) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdFeature"></a><br>Whether a feature is done, on the saved files. The CLI is a printer over the shared feature operation.
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [map.analyze.findRoot](map.md#map.analyze.findRoot), [operations.feature.featureSummary](operations.md#operations.feature.featureSummary)
-    - fn [cmdHook](../../src/cli.ts#L1019) (args: readonly string[], checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdHook](../../src/cli.ts#L1022) (args: readonly string[], checkOnly: boolean) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdHook"></a><br>`hook stop` and `hook install [--check]`. A missing or unknown subcommand and an extra argument are a bad invocation (2).
       - calls [cli.cli.cmdHookInstall](cli.md#cli.cli.cmdHookInstall), [cli.cli.cmdHookStop](cli.md#cli.cli.cmdHookStop)
-    - fn [cmdHookStop](../../src/cli.ts#L1034) () → Promise<number> <!-- internal -->
+    - fn [cmdHookStop](../../src/cli.ts#L1037) () → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdHookStop"></a><br>`hook stop`: once the invocation is valid, exactly one JSON object on stdout and code 0. A harness reads code 2 of a Stop hook as a blocking error the agent cannot act on, so a failure — stdin that is not a JSON event, git missing or refused, a broken keylang.json, an analysis…
       - calls [cli.cli.stopDecision](cli.md#cli.cli.stopDecision), [cli.cli.readStdin](cli.md#cli.cli.readStdin), [features.changed.uncheckedTurn](features.md#features.changed.uncheckedTurn)
-    - fn [stopDecision](../../src/cli.ts#L1048) (input: string, cwd: string) → Promise<string> <!-- internal -->
+    - fn [stopDecision](../../src/cli.ts#L1051) (input: string, cwd: string) → Promise<string> <!-- internal -->
       <a id="cli.cli.stopDecision"></a><br>The Stop decision for the event on stdin: the fails of `check --changed` in `cwd`'s repository. Throws when the turn cannot be checked.
       - calls [features.changed.parseHookEvent](features.md#features.changed.parseHookEvent), [features.changed.hookDecision](features.md#features.changed.hookDecision), [map.analyze.findRoot](map.md#map.analyze.findRoot), [map.analyze.analyze](map.md#map.analyze.analyze), [features.git-changes.gitChangedFiles](features.md#features.git-changes.gitChangedFiles), [features.git-changes.changedPathSet](features.md#features.git-changes.changedPathSet), [features.changed.filterChanged](features.md#features.changed.filterChanged), [features.git-changes.deletedModuleIds](features.md#features.git-changes.deletedModuleIds), [features.changed.hookFails](features.md#features.changed.hookFails)
-    - fn [cmdHookInstall](../../src/cli.ts#L1069) (checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdHookInstall](../../src/cli.ts#L1072) (checkOnly: boolean) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdHookInstall"></a><br>`hook install [--check]`: keylang's pre-commit hook in git's hooks directory. A hook without keylang's marker is someone else's: install refuses with 2 and names the line to add; --check counts it as not installed.
       - calls [cli.cli.packageVersion](cli.md#cli.cli.packageVersion), [base.config.toPosix](base.md#base.config.toPosix), [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic)
-    - fn [cmdNew](../../src/cli.ts#L1098) (args: readonly string[], layer: string | undefined) → Promise<number> <!-- internal -->
+    - fn [cmdNew](../../src/cli.ts#L1101) (args: readonly string[], layer: string | undefined) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdNew"></a><br>`new flow <name>`, `new module <name> --layer <layer>`: a skeleton spec, never over an existing file.
       - calls [map.analyze.findRoot](map.md#map.analyze.findRoot), [base.config.loadConfig](base.md#base.config.loadConfig), [cli.cli.plannedModuleTemplate](cli.md#cli.cli.plannedModuleTemplate), [base.config.toPosix](base.md#base.config.toPosix), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite)
-    - fn [plannedModuleTemplate](../../src/cli.ts#L1140) (layer: string, name: string) → string <!-- internal -->
+    - fn [plannedModuleTemplate](../../src/cli.ts#L1143) (layer: string, name: string) → string <!-- internal -->
       <a id="cli.cli.plannedModuleTemplate"></a><br>A module that has no code yet is an intention: `planned module` at the top of a flow section (format §5), in a feature file named after it. The prose says why a module request gets a flow heading; it is not part of the grammar.
-    - fn [cmdCompletions](../../src/cli.ts#L1148) (shell: string | undefined) → Promise<number> <!-- internal -->
+    - fn [cmdCompletions](../../src/cli.ts#L1151) (shell: string | undefined) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdCompletions"></a><br>`completions <shell>`: commands from the help text, flags from the parser's table.
-    - fn [packageVersion](../../src/cli.ts#L1156) () → string <!-- internal -->
+    - fn [packageVersion](../../src/cli.ts#L1159) () → string <!-- internal -->
       <a id="cli.cli.packageVersion"></a><br>Reads the repository's `package.json` via a CommonJS `require` built from the module URL and returns its `version` field. Used by [`cli.cli.cmdHookInstall`](cli.md#cli.cli.cmdHookInstall) to stamp the installed hook with the current version. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [readStdin](../../src/cli.ts#L1160) () → Promise<string> <!-- internal -->
+    - fn [readStdin](../../src/cli.ts#L1163) () → Promise<string> <!-- internal -->
       <a id="cli.cli.readStdin"></a><br>Drains `process.stdin` to completion, buffering each chunk and decoding the concatenated bytes as UTF-8 into a single string. Used by [`cli.cli.cmdHook`](cli.md#cli.cli.cmdHook) to receive the hook payload piped in by the caller. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [cmdMap](../../src/cli.ts#L1166) (dir: string, checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdMap](../../src/cli.ts#L1169) (dir: string, checkOnly: boolean) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdMap"></a><br>Resolves the target directory and runs the shared map operation via [`operations.operations.runOperation`](operations.md#operations.operations.runOperation), printing results with [`cli.cli.printMap`](cli.md#cli.cli.printMap). In check mode it prints conflicts and stale files via [`operations.generate.mapCheckLines`](operations.md#operations.generate.mapCheckLines) and returns the exit code. _(llm · claude:claude-opus-5-5 · 2026-10-06 · stale)_
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [operations.generate.mapCheckLines](operations.md#operations.generate.mapCheckLines), [base.config.toPosix](base.md#base.config.toPosix), [cli.cli.printMap](cli.md#cli.cli.printMap)
-    - fn [printMap](../../src/cli.ts#L1184) (result: OperationEnvelope<"map">, root: string) → number <!-- internal -->
+    - fn [printMap](../../src/cli.ts#L1187) (result: OperationEnvelope<"map">, root: string) → number <!-- internal -->
       <a id="cli.cli.printMap"></a><br>The lines of a map write: paths relative to the working directory; failures and the summary to stderr.
       - calls [base.config.toPosix](base.md#base.config.toPosix), [operations.generate.mapConflictLines](operations.md#operations.generate.mapConflictLines), [operations.generate.mapStepLines](operations.md#operations.generate.mapStepLines), [operations.generate.mapSummary](operations.md#operations.generate.mapSummary)
-    - fn [cmdParse](../../src/cli.ts#L1215) (paths: string[], json: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdParse](../../src/cli.ts#L1218) (paths: string[], json: boolean) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdParse"></a><br>A printer over the shared parse operation: the tree or the JSON to stdout and nothing else; the notes on skipped explanations and the diagnostics to stderr.
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [map.analyze.findRoot](map.md#map.analyze.findRoot), [base.diag.formatDiagnostic](base.md#base.diag.formatDiagnostic)
-    - fn [cmdCheck](../../src/cli.ts#L1226) (paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined; stale: boolean; accept: boolean }) → Promise<number> <!-- internal -->
+    - fn [cmdCheck](../../src/cli.ts#L1229) (paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined; stale: boolean; accept: boolean }) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdCheck"></a><br>Validates check flag combinations, delegating `--stale` to [`cli.cli.cmdCheckStale`](cli.md#cli.cli.cmdCheckStale), and runs either an explain-edge or check operation via [`operations.operations.runOperation`](operations.md#operations.operations.runOperation), printing the formatted report and summary, returning the exit code. _(llm · claude:claude-opus-5-5 · 2026-10-06 · stale)_
       - calls [cli.cli.cmdCheckStale](cli.md#cli.cli.cmdCheckStale), [features.check-format.isCheckFormat](features.md#features.check-format.isCheckFormat), [map.analyze.findRoot](map.md#map.analyze.findRoot), [base.config.loadConfig](base.md#base.config.loadConfig), [operations.operations.runOperation](operations.md#operations.operations.runOperation), [operations.spec.checkSkipNote](operations.md#operations.spec.checkSkipNote), [features.check-format.checkReportText](features.md#features.check-format.checkReportText), [operations.spec.checkSummary](operations.md#operations.spec.checkSummary)
-    - fn [cmdCheckStale](../../src/cli.ts#L1283) (paths: string[], accept: boolean, strict: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdCheckStale](../../src/cli.ts#L1286) (paths: string[], accept: boolean, strict: boolean) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdCheckStale"></a><br>`check --stale`: one line per statement to review on stdout (stale, new, or unchanged but incomplete) and per obsolete baseline entry, the counts on stderr. Stale is a warning: the code is 0 unless the invocation or I/O fails; with `strict`, any such line is 1, so CI can gate…
       - calls [map.analyze.findRoot](map.md#map.analyze.findRoot)
-    - fn [cmdFmt](../../src/cli.ts#L1304) (paths: string[], checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdFmt](../../src/cli.ts#L1307) (paths: string[], checkOnly: boolean) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdFmt"></a><br>Each file is formatted on its own, so one that cannot be read or written does not stop the rest: every such failure is reported, and the code is 2; otherwise 1 for diagnostics or, with `--check`, an unformatted file. The CLI is a printer over the shared fmt operation: stdout…
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [map.analyze.findRoot](map.md#map.analyze.findRoot), [operations.spec.fmtGeneratedNote](operations.md#operations.spec.fmtGeneratedNote)
   - module [completions](../../src/completions.ts#L1)
