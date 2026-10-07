@@ -1,6 +1,6 @@
 # 06: `paths` вкладеного tsconfig ігноруються, і аліас резолвиться через кореневий tsconfig у чужий файл
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -44,11 +44,13 @@ fx/t1b: `EDGE import ui.page -> lib.data.db [resolved]`, `CHECK 0  0 fail, 0 unv
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/imports.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/imports.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔ — файл не в worktree агента (untracked у головному checkout), позначку має поставити той, хто мерджить
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+- 2026-10-07 — виправлено (гілка `worktree-agent-abfc4b05784ac7a0a`). Регресійний тест `tests/analyzer.test.ts` «imports: `paths`/`baseUrl` come from the tsconfig that governs the importing file, not the root's; a solution config lends each referenced project's `paths` to the files under it» на HEAD давав `0 fail, 0 unverified, 1 ok` (ребро в `lib.*`). Три варіанти фікстури: кореневий і вкладений tsconfig з однойменним `@/*`; лише вкладені tsconfig без кореневого; solution-конфіг у корені з `references` на `apps/admin/tsconfig.app.json` і `apps/web/tsconfig.app.json` — кожен застосунок резолвиться у свій `data/db.ts`. Зміни в `src/imports.ts`: глобальні `this.paths`/`this.baseUrl` прибрано; `optionsFor(fromFile)` бере `governingConfig(dirname(file))` (той самий, що й `verbatimModuleSyntax`), завантажує його через `loadTsconfig` з кешем на конфіг (`tsconfigs`) і кешем на теку (`options`); `loadTsconfig` повертає власні опції та `references` з текою кожного проєкту, і для конфігу без власних `paths` застосовуються лише ті referenced-проєкти, чия тека містить файл (конфіг у корені — усім). `resolveUncached` і `wouldName` користуються `optionsFor`. Кореневий конфіг і далі читається в конструкторі, щоб лишатися входом `snapshotId`. Контракт: `docs/snapshot.md` (абзац «Імпорти резолвляться через…»). Перевірено: `npm run typecheck`, `node --test tests/analyzer.test.ts tests/core.test.ts tests/external-ids.test.ts tests/rules-area.test.ts tests/review-graph.test.ts tests/cli-check.test.ts tests/stale.test.ts tests/fingerprint.test.ts` (133/133), `node bin/keylang.js check` (0 fail), `node bin/keylang.js map --check` (карту перегенеровано). Повний `npm test` не запускався за інструкцією.

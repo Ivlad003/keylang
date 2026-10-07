@@ -37,7 +37,7 @@ function statics(dir: string): string[] {
 interface Snapshot {
   snapshotId: string;
   nodes: Record<string, { kind: string; class?: true; static?: true; name?: string; file: string | null; members?: string; escapes?: { reason: string } }>;
-  edges: { kind: string; source: string; target: string | null; resolution: string; text: string; alias?: string; reason?: string; closure?: true }[];
+  edges: { kind: string; source: string; target: string | null; resolution: string; text: string; alias?: string; reason?: string; closure?: true; typeOnly?: true }[];
   coverage: { kind: string; file: string; line: number; reason: string }[];
   exports: { module: string; name: string; symbol: string | null; kind: string; form?: string; local?: string; from?: string; reason?: string }[];
 }
@@ -181,6 +181,45 @@ test("imports: a workspace package is internal through its node_modules link or 
   writeFileSync(join(dir, "packages/lib/dist/index.js"), "exports.f = () => {};\n");
   const holes = snapshot(dir).coverage.filter((c) => c.kind === "unresolved-import").map((c) => `${c.file}:${c.line} ${c.reason}`);
   assert.ok(holes.some((h) => /main\.ts:2 unresolved import `@acme\/lib\/util`/.test(h)), holes.join("\n"));
+});
+
+test("imports: a pnpm workspace package is internal through `pnpm-workspace.yaml`, a nested `node_modules` link into the repository, or a `workspace:` range; never external", (t) => {
+  const files = {
+    "package.json": '{"name":"root","private":true}',
+    "pnpm-workspace.yaml": "packages:\n  - 'apps/*'\n  - \"packages/*\"\n  - '!**/test/**'\n",
+    "apps/web/package.json": '{"name":"web","dependencies":{"@acme/db":"workspace:*"}}',
+    "apps/web/src/page.ts": 'import { query } from "@acme/db";\nexport function page(): void { query(); }\n',
+    "packages/db/package.json": '{"name":"@acme/db","main":"./src/index.ts"}',
+    "packages/db/src/index.ts": "export function query(): void {}\n",
+    "keylang/rules.md": "# rules\n\n- deny web db\n",
+  };
+  const layers = { layers: { web: ["apps/web/src/**"], db: ["packages/db/src/**"] } };
+  const denied = (dir: string): void => {
+    const o = keylang(dir, ["check"]);
+    assert.equal(o.status, 1, o.stdout + o.stderr);
+    assert.match(o.stdout, /apps\/web\/src\/page\.ts:1:1: K102 .*`web\.page` depends on `db\.index`/);
+    assert.doesNotMatch(o.stdout, /external/);
+  };
+  // Not installed: `packages` of pnpm-workspace.yaml names the directory.
+  const dir = repo(t, files, layers);
+  denied(dir);
+  const edges = snapshot(dir).edges.filter((e) => e.kind === "import" && e.source === "web.page").map((e) => `${e.target} ${e.resolution}`);
+  assert.deepEqual(edges, ["db.index resolved"]);
+  // pnpm-style install: the link lives in the app's own node_modules, not the root's.
+  mkdirSync(join(dir, "apps/web/node_modules/@acme"), { recursive: true });
+  symlinkSync("../../../../packages/db", join(dir, "apps/web/node_modules/@acme/db"), "dir");
+  denied(dir);
+  // Without pnpm-workspace.yaml the link alone says the package is this repository's.
+  rmSync(join(dir, "pnpm-workspace.yaml"));
+  denied(dir);
+  // Neither a workspace list nor a link: a `workspace:` range is not an external package but an unresolved import.
+  const bare = repo(t, { ...files, "pnpm-workspace.yaml": "packages: []\n" }, layers);
+  const o = keylang(bare, ["check"]);
+  assert.equal(o.status, 0, o.stdout + o.stderr);
+  assert.match(o.stdout, /unverified/);
+  assert.doesNotMatch(o.stdout, /\b1 ok/);
+  const holes = snapshot(bare).coverage.filter((c) => c.kind === "unresolved-import").map((c) => c.reason);
+  assert.ok(holes.some((h) => /unresolved import `@acme\/db`/.test(h)), holes.join("\n"));
 });
 
 test("imports: `import y = require()` and `import.meta.resolve()` are edges; a computed module URL is a hole", (t) => {
@@ -339,6 +378,55 @@ test("imports: `paths` and `baseUrl` win over built-in names; the most specific 
   assert.match(o.stdout, /src\/app\/a\.ts:5:1: K102 divergence: `app\.a` depends on `lib\.y`/);
   assert.match(o.stdout, /web\/src\/app\/w\.ts:1:1: K102 divergence: `app\.w` depends on `lib\.z`/);
   assert.doesNotMatch(o.stdout, /unverified/);
+});
+
+test("imports: `paths`/`baseUrl` come from the tsconfig that governs the importing file, not the root's; a solution config lends each referenced project's `paths` to the files under it", (t) => {
+  const files = {
+    "src/data/db.ts": "export function db(): void {}\n",
+    "apps/web/src/data/db.ts": "export function db(): void {}\n",
+    "apps/web/src/ui/page.ts": 'import { db } from "@/data/db";\nexport function page(): void { db(); }\n',
+    "apps/admin/src/data/db.ts": "export function db(): void {}\n",
+    "apps/admin/src/ui/page.ts": 'import { db } from "@/data/db";\nexport function page(): void { db(); }\n',
+    "keylang/rules.md": "# rules\n\n- deny ui data\n",
+  };
+  const layers = { layers: { ui: ["apps/*/src/ui/**"], data: ["apps/*/src/data/**"], lib: ["src/**"] } };
+  const app = '{"compilerOptions":{"baseUrl":".","paths":{"@/*":["./src/*"]}}}';
+  const denied = (dir: string): void => {
+    const o = keylang(dir, ["check"]);
+    assert.equal(o.status, 1, o.stdout + o.stderr);
+    assert.match(o.stdout, /apps\/web\/src\/ui\/page\.ts:1:1: K102 .*`ui\.web\.src\.ui\.page` depends on `data\.web\.src\.data\.db`/);
+    assert.match(o.stdout, /apps\/admin\/src\/ui\/page\.ts:1:1: K102 .*`ui\.admin\.src\.ui\.page` depends on `data\.admin\.src\.data\.db`/);
+    assert.doesNotMatch(o.stdout, /lib\.data|unverified/);
+    const edges = snapshot(dir).edges.filter((e) => e.kind === "import" && e.source.startsWith("ui.")).map((e) => `${e.source} -> ${e.target} ${e.resolution}`);
+    assert.deepEqual(edges.sort(), ["ui.admin.src.ui.page -> data.admin.src.data.db resolved", "ui.web.src.ui.page -> data.web.src.data.db resolved"]);
+  };
+  // The root alias names another file: the nested tsconfig's alias governs apps/web/.
+  const root = '{"compilerOptions":{"baseUrl":".","paths":{"@/*":["src/*"]}}}';
+  denied(repo(t, { ...files, "tsconfig.json": root, "apps/web/tsconfig.json": app, "apps/admin/tsconfig.json": app }, layers));
+  // No root tsconfig at all: the nested one still resolves the alias.
+  denied(repo(t, { ...files, "apps/web/tsconfig.json": app, "apps/admin/tsconfig.json": app }, layers));
+  // A solution config at the root: each referenced project's `paths` apply to the files under its directory only.
+  const solution = '{"files":[],"references":[{"path":"./apps/admin/tsconfig.app.json"},{"path":"./apps/web/tsconfig.app.json"}]}';
+  denied(repo(t, { ...files, "tsconfig.json": solution, "apps/web/tsconfig.app.json": app, "apps/admin/tsconfig.app.json": app }, layers));
+});
+
+test("imports: a tsconfig `extends` without `.json` beside a directory of the same name reads `<path>.json`, as tsc does, instead of failing with EISDIR", (t) => {
+  const dir = repo(t, {
+    "package.json": '{"name":"fx"}',
+    "tsconfig.json": '{"extends":"./configs/base"}',
+    "configs/base.json": '{"compilerOptions":{"verbatimModuleSyntax":true}}',
+    "configs/base/README.md": "# base\n",
+    "src/a/a.ts": 'import { type B } from "../b/b";\nexport const a: B = 1;\n',
+    "src/b/b.ts": "export type B = number;\n",
+  });
+  const o = keylang(dir, ["map"]);
+  assert.equal(o.status, 0, o.stdout + o.stderr);
+  assert.doesNotMatch(o.stderr, /EISDIR/);
+  // `configs/base.json` sets verbatimModuleSyntax, so the inline-`type` import stays one that loads the module.
+  const edges = snapshot(dir).edges.filter((e) => e.kind === "import" && e.source === "a.a").map((e) => `${e.target} ${e.resolution}${e.typeOnly ? " typeOnly" : ""}`);
+  assert.deepEqual(edges, ["b.b resolved"]);
+  const check = keylang(dir, ["check"]);
+  assert.equal(check.status, 0, check.stdout + check.stderr);
 });
 
 test("calls: `new ns.X()`, `new C().m()`, a class merged with its interface, a default import beside a same-named export, `super()`; an unknown callee is a hole", (t) => {

@@ -1,6 +1,6 @@
 # 05: pnpm-монорепо: внутрішній workspace-пакет стає external, тому deny дає хибний ok
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -62,11 +62,13 @@ fixture scratchpad/review/ts/fx/t6 (node fx.mjs t6 t6.json): `EDGE import web.pa
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/imports.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/imports.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔ — файл не в worktree агента (untracked у головному checkout), позначку має поставити той, хто мерджить
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+- 2026-10-07 — виправлено (гілка `worktree-agent-abfc4b05784ac7a0a`). Регресійний тест `tests/analyzer.test.ts` «imports: a pnpm workspace package is internal through `pnpm-workspace.yaml`, a nested `node_modules` link into the repository, or a `workspace:` range; never external» падав на HEAD з `0 fail, 0 unverified, 1 ok`. Зміни в `src/imports.ts`: `workspaces` доповнюються `packages` з `pnpm-workspace.yaml` (власний парсер блочного/inline-списку, `!`-записи пропускаються; файл — вхід `snapshotId`); `knownNear` замінено на `near()`, який для `node_modules/<pkg>` у теці між файлом і коренем проганяє `inside()` після realpath і, коли посилання веде в репозиторій, резолвить через `packageEntry` (вхід `<dir>/node_modules/<pkg>` = `workspace <dir>`), інакше external; кореневі та вкладені залежності зберігаються з діапазонами (`declaredDependency`): `workspace:`/`file:`/`link:`/`portal:` не дають external — `file:`/`link:`/`portal:` резолвляться в теку під коренем, `workspace:` без переліку й посилання — `unresolved` (`unverified`, не `ok`); `file:*.tgz` лишається external. `src/declared-packages.ts` `workspaceNames` читає той самий список pnpm. Контракт: `docs/snapshot.md` (абзац про пакети робочого простору і `snapshotId`), `docs/semantics.md` §6. Перевірено: `npm run typecheck`, `node --test tests/analyzer.test.ts tests/external-ids.test.ts tests/core.test.ts tests/rules-area.test.ts` (83/83), `node bin/keylang.js check` (0 fail), `node bin/keylang.js map --check` (карту перегенеровано). Повний `npm test` не запускався за інструкцією.

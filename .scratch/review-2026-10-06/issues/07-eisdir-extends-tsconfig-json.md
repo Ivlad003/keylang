@@ -1,6 +1,6 @@
 # 07: Падіння EISDIR, коли `extends` tsconfig без `.json` збігається з назвою теки
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -63,11 +63,13 @@ fx/t11: `map status 2  keylang: EISDIR: illegal operation on a directory, read`
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/imports.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/imports.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔ — файл не в worktree агента (untracked у головному checkout), позначку має поставити той, хто мерджить
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+- 2026-10-07 — виправлено (гілка `worktree-agent-abfc4b05784ac7a0a`). Регресійний тест `tests/analyzer.test.ts` «imports: a tsconfig `extends` without `.json` beside a directory of the same name reads `<path>.json`, as tsc does, instead of failing with EISDIR» на HEAD падав з `keylang: EISDIR: illegal operation on a directory, read` (map, код 2). Виправлення в `src/imports.ts`: `readText` повертає null, якщо `statSync(path).isFile()` хибне або читання кидає помилку, — tsc-ів `fileExists`; тому `extendedConfig` для `./configs/base` бере `configs/base.json`, і `verbatimModuleSyntax: true` з нього робить `import { type B }` звичайним ребром (не `typeOnly`), `map`/`check` виходять з 0. Контракт: `docs/snapshot.md` (речення про ланцюжок `extends`). Перевірено: `npm run typecheck`, `node --test tests/analyzer.test.ts tests/core.test.ts tests/review-graph.test.ts tests/cli-map.test.ts` (105/105), `node bin/keylang.js check` (0 fail), `node bin/keylang.js map --check` (карту перегенеровано). Повний `npm test` не запускався за інструкцією.

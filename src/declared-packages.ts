@@ -8,7 +8,8 @@
 // A manifest counts at the root or in a directory between an analysed file and
 // the root, unless `exclude` matches it; no directory is walked. Workspace
 // ranges (`workspace:`, `file:`, `link:`, `portal:`) and the packages of the
-// root `workspaces` are this repository's code, not externals. `@types/x`
+// root `workspaces` or of `pnpm-workspace.yaml` are this repository's code,
+// not externals. `@types/x`
 // counts as `x`. A missing manifest is skipped. One that cannot be read, or
 // whose JSON or TOML is invalid, is an error that names the file and the field.
 
@@ -17,7 +18,7 @@ import { join, posix } from "node:path";
 import { parse as parseToml } from "smol-toml";
 import { isAnalysed, toPosix, type Config } from "./config.ts";
 import { assignExternalIds } from "./external-ids.ts";
-import { parseJsonc, parseJsoncStrict } from "./imports.ts";
+import { parseJsonc, parseJsoncStrict, pnpmWorkspacePackages } from "./imports.ts";
 import { compareText } from "./span.ts";
 
 const PACKAGE_FIELDS = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"] as const;
@@ -139,15 +140,17 @@ function typesTarget(name: string): string {
 }
 
 /**
- * Names of the packages in the directories the root `workspaces` names
- * (`packages/*`, `apps/web`), read as the import resolver reads them: the same
- * input keys and texts, and a member manifest that does not parse names none.
+ * Names of the packages in the directories the root `workspaces` or the
+ * `packages` of `pnpm-workspace.yaml` name (`packages/*`, `apps/web`), read as
+ * the import resolver reads them: the same input keys and texts, and a member
+ * manifest that does not parse names none.
  */
 function workspaceNames(read: (rel: string) => string | null, list: (rel: string) => string | null): Set<string> {
   const rootText = read("package.json");
   const manifest = rootText === null ? null : parseJsonc(rootText);
-  if (!isRecord(manifest)) return new Set();
-  const patterns = Array.isArray(manifest.workspaces) ? manifest.workspaces : isRecord(manifest.workspaces) && Array.isArray(manifest.workspaces.packages) ? manifest.workspaces.packages : [];
+  const declared = isRecord(manifest) ? manifest.workspaces : undefined;
+  const pnpm = read("pnpm-workspace.yaml");
+  const patterns: unknown[] = [...(Array.isArray(declared) ? declared : isRecord(declared) && Array.isArray(declared.packages) ? declared.packages : []), ...(pnpm === null ? [] : pnpmWorkspacePackages(pnpm))];
   const names = new Set<string>();
   for (const pattern of patterns) {
     if (typeof pattern !== "string") continue;

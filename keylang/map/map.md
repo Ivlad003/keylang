@@ -52,37 +52,37 @@
     - external-ids base.external-ids
     - imports map.imports
     - span base.span
-    - type [DependencyField](../../src/declared-packages.ts#L28)
-    - type [Declaration](../../src/declared-packages.ts#L37)
-    - type [DeclaredPackage](../../src/declared-packages.ts#L45)
-    - type [Add](../../src/declared-packages.ts#L57) <!-- internal -->
-    - fn [readManifests](../../src/declared-packages.ts#L66) (config: Config, files: readonly string[], known: ReadonlyMap<string, string | null> = new Map()) → { packages: DeclaredPackage[]; inputs: Map<string, string | null> }
+    - type [DependencyField](../../src/declared-packages.ts#L29)
+    - type [Declaration](../../src/declared-packages.ts#L38)
+    - type [DeclaredPackage](../../src/declared-packages.ts#L46)
+    - type [Add](../../src/declared-packages.ts#L58) <!-- internal -->
+    - fn [readManifests](../../src/declared-packages.ts#L67) (config: Config, files: readonly string[], known: ReadonlyMap<string, string | null> = new Map()) → { packages: DeclaredPackage[]; inputs: Map<string, string | null> }
       - calls map.declared-packages.readInput, map.declared-packages.typesTarget, map.declared-packages.manifestDirs, base.config.isAnalysed, map.declared-packages.addPackages, map.declared-packages.addCrates, map.declared-packages.addComposer, map.declared-packages.workspaceNames, map.declared-packages.composerPathNames, base.external-ids.assignExternalIds, map.declared-packages.ecosystemOf, base.span.compareText
-    - fn [ecosystemOf](../../src/declared-packages.ts#L116) (declarations: readonly Declaration[]) → DeclaredPackage["ecosystem"] <!-- internal -->
-    - fn [manifestDirs](../../src/declared-packages.ts#L122) (files: readonly string[]) → Set<string> <!-- internal -->
+    - fn [ecosystemOf](../../src/declared-packages.ts#L117) (declarations: readonly Declaration[]) → DeclaredPackage["ecosystem"] <!-- internal -->
+    - fn [manifestDirs](../../src/declared-packages.ts#L123) (files: readonly string[]) → Set<string> <!-- internal -->
       - calls base.config.toPosix
-    - fn [typesTarget](../../src/declared-packages.ts#L134) (name: string) → string <!-- internal -->
-    - fn [workspaceNames](../../src/declared-packages.ts#L146) (read: (rel: string) => string | null, list: (rel: string) => string | null) → Set<string> <!-- internal -->
-      - calls map.imports.parseJsonc, map.declared-packages.isRecord, map.declared-packages.workspaceDirs
-    - fn [composerPathNames](../../src/declared-packages.ts#L167) (read: (rel: string) => string | null, list: (rel: string) => string | null) → Set<string> <!-- internal -->
+    - fn [typesTarget](../../src/declared-packages.ts#L135) (name: string) → string <!-- internal -->
+    - fn [workspaceNames](../../src/declared-packages.ts#L148) (read: (rel: string) => string | null, list: (rel: string) => string | null) → Set<string> <!-- internal -->
+      - calls map.imports.parseJsonc, map.declared-packages.isRecord, map.imports.pnpmWorkspacePackages, map.declared-packages.workspaceDirs
+    - fn [composerPathNames](../../src/declared-packages.ts#L170) (read: (rel: string) => string | null, list: (rel: string) => string | null) → Set<string> <!-- internal -->
       - calls map.declared-packages.isRecord, map.declared-packages.workspaceDirs
-    - fn [workspaceDirs](../../src/declared-packages.ts#L193) (pattern: string, list: (rel: string) => string | null) → string[] <!-- internal -->
+    - fn [workspaceDirs](../../src/declared-packages.ts#L196) (pattern: string, list: (rel: string) => string | null) → string[] <!-- internal -->
       - calls base.config.toPosix
-    - fn [readInput](../../src/declared-packages.ts#L204) (abs: string, rel: string) → string | null <!-- internal -->
+    - fn [readInput](../../src/declared-packages.ts#L207) (abs: string, rel: string) → string | null <!-- internal -->
       - calls map.declared-packages.isDirectory, map.declared-packages.isFile, map.declared-packages.readText
-    - fn [isFile](../../src/declared-packages.ts#L218) (abs: string) → boolean <!-- internal -->
-    - fn [isDirectory](../../src/declared-packages.ts#L226) (abs: string) → boolean <!-- internal -->
-    - fn [readText](../../src/declared-packages.ts#L235) (path: string, rel: string) → string <!-- internal -->
-    - fn [isRecord](../../src/declared-packages.ts#L244) (value: unknown) → value is Record<string, unknown> <!-- internal -->
-    - fn [table](../../src/declared-packages.ts#L248) (rel: string, field: string, value: unknown, kind: "object" | "table") → Record<string, unknown> | undefined <!-- internal -->
+    - fn [isFile](../../src/declared-packages.ts#L221) (abs: string) → boolean <!-- internal -->
+    - fn [isDirectory](../../src/declared-packages.ts#L229) (abs: string) → boolean <!-- internal -->
+    - fn [readText](../../src/declared-packages.ts#L238) (path: string, rel: string) → string <!-- internal -->
+    - fn [isRecord](../../src/declared-packages.ts#L247) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [table](../../src/declared-packages.ts#L251) (rel: string, field: string, value: unknown, kind: "object" | "table") → Record<string, unknown> | undefined <!-- internal -->
       - calls map.declared-packages.isRecord
-    - fn [addPackages](../../src/declared-packages.ts#L255) (rel: string, text: string, add: Add) → void <!-- internal -->
+    - fn [addPackages](../../src/declared-packages.ts#L258) (rel: string, text: string, add: Add) → void <!-- internal -->
       - calls map.imports.parseJsoncStrict, map.declared-packages.isRecord, map.declared-packages.table
-    - fn [addCrates](../../src/declared-packages.ts#L271) (rel: string, text: string, add: Add) → void <!-- internal -->
+    - fn [addCrates](../../src/declared-packages.ts#L274) (rel: string, text: string, add: Add) → void <!-- internal -->
       - calls map.declared-packages.isRecord, map.declared-packages.table, map.declared-packages.crateTables
-    - fn [addComposer](../../src/declared-packages.ts#L296) (rel: string, text: string, add: Add) → void <!-- internal -->
+    - fn [addComposer](../../src/declared-packages.ts#L299) (rel: string, text: string, add: Add) → void <!-- internal -->
       - calls map.declared-packages.isRecord, map.declared-packages.table
-    - fn [crateTables](../../src/declared-packages.ts#L311) (rel: string, source: Record<string, unknown>, prefix: string) → [DependencyField, Record<string, unknown>][] <!-- internal -->
+    - fn [crateTables](../../src/declared-packages.ts#L314) (rel: string, source: Record<string, unknown>, prefix: string) → [DependencyField, Record<string, unknown>][] <!-- internal -->
       - calls map.declared-packages.table
   - module [emit](../../src/emit.ts#L1)
     - node external.node
@@ -313,70 +313,78 @@
     - config base.config
     - ts extract.ts
     - languages base.languages
-    - type [Resolution](../../src/imports.ts#L24)
-    - type [SourceResolver](../../src/imports.ts#L38)
-    - fn [assumedTarget](../../src/imports.ts#L64) (r: Resolution, wouldName: () => readonly string[], assumed: (path: string) => boolean) → string | null
+    - type [Resolution](../../src/imports.ts#L30)
+    - type [SourceResolver](../../src/imports.ts#L44)
+    - fn [assumedTarget](../../src/imports.ts#L70) (r: Resolution, wouldName: () => readonly string[], assumed: (path: string) => boolean) → string | null
       - calls base.languages.languageOf
-    - type [PathRule](../../src/imports.ts#L74) <!-- internal -->
-    - module [ImportResolver](../../src/imports.ts#L80)
-      - fn [constructor](../../src/imports.ts#L104) (root: string, sources: ReadonlySet<string> = new Set())
-        - calls map.imports.readText, map.imports.parseJsonc, map.imports.loadTsconfig, map.imports.isObject
-      - fn [verbatimModuleSyntax](../../src/imports.ts#L140) (file: string) → boolean
+    - type [PathRule](../../src/imports.ts#L80) <!-- internal -->
+    - module [ImportResolver](../../src/imports.ts#L86)
+      - fn [constructor](../../src/imports.ts#L114) (root: string, sources: ReadonlySet<string> = new Set())
+        - calls map.imports.readText, map.imports.parseJsonc, map.imports.ImportResolver.governingConfig, map.imports.dependencies, map.imports.isObject, map.imports.pnpmWorkspacePackages
+      - fn [verbatimModuleSyntax](../../src/imports.ts#L150) (file: string) → boolean
         - calls map.imports.ImportResolver.governingConfig, map.imports.ImportResolver.verbatimSetting, map.imports.isObject, base.config.toPosix
-      - fn [governingConfig](../../src/imports.ts#L160) (dir: string) → string | null <!-- internal -->
-      - fn [verbatimSetting](../../src/imports.ts#L178) (file: string, depth: number) → boolean | "unset" | "unknown" <!-- internal -->
+      - fn [optionsFor](../../src/imports.ts#L179) (fromFile: string) → Tsconfig <!-- internal -->
+        - calls map.imports.ImportResolver.governingConfig, map.imports.loadTsconfig
+      - fn [governingConfig](../../src/imports.ts#L206) (dir: string) → string | null <!-- internal -->
+      - fn [verbatimSetting](../../src/imports.ts#L224) (file: string, depth: number) → boolean | "unset" | "unknown" <!-- internal -->
         - calls map.imports.isObject, map.imports.ImportResolver.extendedConfig
-      - fn [extendedConfig](../../src/imports.ts#L203) (dir: string, spec: string) → string | null <!-- internal -->
+      - fn [extendedConfig](../../src/imports.ts#L249) (dir: string, spec: string) → string | null <!-- internal -->
         - calls base.config.toPosix
-      - fn [known](../../src/imports.ts#L222) (pkg: string) → boolean <!-- internal -->
-        - calls map.imports.ImportResolver.locate
-      - fn [locate](../../src/imports.ts#L233) (pkg: string) → Located <!-- internal -->
+      - fn [locate](../../src/imports.ts#L274) (pkg: string) → Located <!-- internal -->
         - calls map.imports.inside, map.imports.ImportResolver.workspaceDirs
-      - fn [workspaceDirs](../../src/imports.ts#L262) () → string[] <!-- internal -->
+      - fn [workspaceDirs](../../src/imports.ts#L303) () → string[] <!-- internal -->
         - calls base.config.toPosix
-      - fn [packageEntry](../../src/imports.ts#L286) (dir: string, subpath: string) → string | null <!-- internal -->
+      - fn [packageEntry](../../src/imports.ts#L327) (dir: string, subpath: string) → string | null <!-- internal -->
         - calls map.imports.flattenTarget, map.imports.isObject, map.imports.matchPattern, map.imports.ImportResolver.probe, base.config.toPosix
-      - fn [resolve](../../src/imports.ts#L316) (fromFile: string, spec: string) → Resolution
+      - fn [resolve](../../src/imports.ts#L357) (fromFile: string, spec: string) → Resolution
         - calls map.imports.ImportResolver.resolveUncached
-      - fn [resolveUncached](../../src/imports.ts#L326) (fromFile: string, spec: string) → Resolution <!-- internal -->
-        - calls map.imports.ImportResolver.probe, map.imports.ImportResolver.resolveSubpathImport, map.imports.bestMatch, extract.ts.isNodeBuiltin, map.imports.ImportResolver.resolvePackage
-      - fn [resolveSubpathImport](../../src/imports.ts#L355) (fromFile: string, spec: string) → Resolution <!-- internal -->
+      - fn [resolveUncached](../../src/imports.ts#L367) (fromFile: string, spec: string) → Resolution <!-- internal -->
+        - calls map.imports.ImportResolver.probe, map.imports.ImportResolver.resolveSubpathImport, map.imports.ImportResolver.optionsFor, map.imports.bestMatch, extract.ts.isNodeBuiltin, map.imports.ImportResolver.resolvePackage
+      - fn [resolveSubpathImport](../../src/imports.ts#L397) (fromFile: string, spec: string) → Resolution <!-- internal -->
         - calls map.imports.ImportResolver.scopeImports, map.imports.bestMatch, base.config.toPosix, map.imports.ImportResolver.resolve, map.imports.ImportResolver.probe
-      - fn [scopeImports](../../src/imports.ts#L378) (dir: string) → PathRule[] | null <!-- internal -->
+      - fn [scopeImports](../../src/imports.ts#L420) (dir: string) → PathRule[] | null <!-- internal -->
         - calls map.imports.isObject, map.imports.flattenTarget
-      - fn [resolvePackage](../../src/imports.ts#L388) (fromFile: string, spec: string) → Resolution <!-- internal -->
-        - calls map.imports.packageName, map.imports.ImportResolver.locate, map.imports.ImportResolver.packageEntry, map.imports.ImportResolver.known, map.imports.ImportResolver.knownNear
-      - fn [knownNear](../../src/imports.ts#L399) (fromFile: string, pkg: string) → boolean <!-- internal -->
-        - calls map.imports.isObject
-      - fn [probe](../../src/imports.ts#L418) (candidate: string) → string | null <!-- internal -->
+      - fn [resolvePackage](../../src/imports.ts#L437) (fromFile: string, spec: string) → Resolution <!-- internal -->
+        - calls map.imports.packageName, map.imports.ImportResolver.locate, map.imports.ImportResolver.workspaceFile, map.imports.ImportResolver.near, map.imports.ImportResolver.declaredDependency
+      - fn [workspaceFile](../../src/imports.ts#L447) (dir: string, pkg: string, subpath: string) → Resolution <!-- internal -->
+        - calls map.imports.ImportResolver.packageEntry
+      - fn [near](../../src/imports.ts#L461) (fromFile: string, pkg: string, subpath: string) → Resolution | null <!-- internal -->
+        - calls map.imports.inside, map.imports.ImportResolver.workspaceFile, map.imports.dependencies, map.imports.ImportResolver.declaredDependency
+      - fn [declaredDependency](../../src/imports.ts#L489) (dir: string, declared: ReadonlyMap<string, string | null>, pkg: string, subpath: string) → Resolution | null <!-- internal -->
+        - calls base.config.toPosix, map.imports.ImportResolver.workspaceFile
+      - fn [probe](../../src/imports.ts#L503) (candidate: string) → string | null <!-- internal -->
         - calls map.imports.probeCandidates
-      - fn [wouldName](../../src/imports.ts#L432) (fromFile: string, spec: string) → string[]
-        - calls map.imports.probeCandidates, map.imports.ImportResolver.scopeImports, map.imports.bestMatch, base.config.toPosix
-    - fn [probeCandidates](../../src/imports.ts#L466) (candidate: string) → string[] <!-- internal -->
-    - type [Located](../../src/imports.ts#L473) <!-- internal -->
-    - fn [inside](../../src/imports.ts#L476) (root: string, abs: string) → string | null <!-- internal -->
+      - fn [wouldName](../../src/imports.ts#L517) (fromFile: string, spec: string) → string[]
+        - calls map.imports.probeCandidates, map.imports.ImportResolver.scopeImports, map.imports.bestMatch, base.config.toPosix, map.imports.ImportResolver.optionsFor
+    - fn [probeCandidates](../../src/imports.ts#L552) (candidate: string) → string[] <!-- internal -->
+    - type [Located](../../src/imports.ts#L559) <!-- internal -->
+    - fn [inside](../../src/imports.ts#L562) (root: string, abs: string) → string | null <!-- internal -->
       - calls base.config.toPosix
-    - fn [isObject](../../src/imports.ts#L491) (value: unknown) → value is Record<string, unknown> <!-- internal -->
-    - fn [bestMatch](../../src/imports.ts#L501) (rules: readonly PathRule[], spec: string) → { rule: PathRule; star: string } | null <!-- internal -->
+    - fn [isObject](../../src/imports.ts#L577) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [dependencies](../../src/imports.ts#L585) (manifest: unknown) → Map<string, string | null> <!-- internal -->
+      - calls map.imports.isObject
+    - fn [pnpmWorkspacePackages](../../src/imports.ts#L601) (text: string) → string[]
+    - fn [bestMatch](../../src/imports.ts#L629) (rules: readonly PathRule[], spec: string) → { rule: PathRule; star: string } | null <!-- internal -->
       - calls map.imports.matchPattern
-    - fn [matchPattern](../../src/imports.ts#L513) (pattern: string, spec: string) → string | null <!-- internal -->
-    - fn [flattenTarget](../../src/imports.ts#L524) (t: unknown) → string[] <!-- internal -->
-    - fn [packageName](../../src/imports.ts#L531) (spec: string) → string
-    - fn [readJsonc](../../src/imports.ts#L537) (path: string) → unknown
+    - fn [matchPattern](../../src/imports.ts#L641) (pattern: string, spec: string) → string | null <!-- internal -->
+    - fn [flattenTarget](../../src/imports.ts#L652) (t: unknown) → string[] <!-- internal -->
+    - fn [packageName](../../src/imports.ts#L659) (spec: string) → string
+    - fn [readJsonc](../../src/imports.ts#L665) (path: string) → unknown
       - calls map.imports.readText, map.imports.parseJsonc
-    - fn [parseJsonc](../../src/imports.ts#L543) (text: string) → unknown
+    - fn [parseJsonc](../../src/imports.ts#L671) (text: string) → unknown
       - calls map.imports.stripJsonc
-    - fn [parseJsoncStrict](../../src/imports.ts#L552) (text: string) → unknown
+    - fn [parseJsoncStrict](../../src/imports.ts#L680) (text: string) → unknown
       - calls map.imports.stripJsonc
-    - fn [readText](../../src/imports.ts#L557) (path: string) → string | null <!-- internal -->
-    - fn [stripJsonc](../../src/imports.ts#L562) (text: string) → string <!-- internal -->
-    - type [Tsconfig](../../src/imports.ts#L583) <!-- internal -->
-    - type [MergedOptions](../../src/imports.ts#L589) <!-- internal -->
-    - fn [loadTsconfig](../../src/imports.ts#L602) (read: (file: string) => unknown, file: string) → Tsconfig <!-- internal -->
+    - fn [readText](../../src/imports.ts#L690) (path: string) → string | null <!-- internal -->
+    - fn [stripJsonc](../../src/imports.ts#L699) (text: string) → string <!-- internal -->
+    - type [Tsconfig](../../src/imports.ts#L720) <!-- internal -->
+    - type [LoadedTsconfig](../../src/imports.ts#L726) <!-- internal -->
+    - type [MergedOptions](../../src/imports.ts#L732) <!-- internal -->
+    - fn [loadTsconfig](../../src/imports.ts#L748) (read: (file: string) => unknown, file: string) → LoadedTsconfig <!-- internal -->
       - calls map.imports.mergedOptions, map.imports.placePaths, map.imports.isObject, base.config.toPosix
-    - fn [mergedOptions](../../src/imports.ts#L621) (read: (file: string) => unknown, file: string, depth: number) → MergedOptions <!-- internal -->
+    - fn [mergedOptions](../../src/imports.ts#L767) (read: (file: string) => unknown, file: string, depth: number) → MergedOptions <!-- internal -->
       - calls map.imports.isObject, base.config.toPosix
-    - fn [placePaths](../../src/imports.ts#L640) (options: MergedOptions) → PathRule[] <!-- internal -->
+    - fn [placePaths](../../src/imports.ts#L786) (options: MergedOptions) → PathRule[] <!-- internal -->
       - calls base.config.toPosix
   - module [map](../../src/map.ts#L1)
     - node external.node
