@@ -38,8 +38,8 @@ function repo(t: TestContext, files: Record<string, string>): string {
 interface Snapshot {
   nodes: Record<string, { kind: string; escapes?: { reason: string } }>;
   edges: { kind: string; source: string; target: string | null; resolution: string; text: string }[];
-  coverage: { kind: string; file: string; line: number; reason: string; source: string | null }[];
-  exports: { module: string; name: string; symbol: string | null; kind: string; form?: string; from?: string }[];
+  coverage: { kind: string; file: string; line: number; text: string; reason: string; source: string | null }[];
+  exports: { module: string; name: string; symbol: string | null; kind: string; form?: string; from?: string; reason?: string }[];
 }
 
 function snapshot(dir: string): Snapshot {
@@ -707,4 +707,51 @@ test("rust and python: `use crate::models::User` / `from app.models import User`
   assert.doesNotMatch(p.stdout, /is not indexed/);
   const pyIndex = snapshot(py);
   assert.ok(pyIndex.edges.some((e) => e.kind === "call" && e.source === "api.views.handle" && e.target === "domain.user.User"), "`User()` through the re-export");
+});
+
+test("python: `from m import *` of a module without `__all__` brings the names m imports: a call through one is an edge, not a hole or a package's call; a module that binds names keylang does not list makes such a call a hole even beside a stdlib glob", (t) => {
+  const dir = repo(t, {
+    "keylang.json": JSON.stringify({ languages: ["python"], layers: { app: ["app/**"] } }),
+    "keylang/flows.md": "# flow run\n\n- trigger app.main.run\n  - step app.util.helper\n",
+    "app/__init__.py": "",
+    "app/util.py": "def helper():\n    return 1\n",
+    "app/base.py": "from .util import helper\n\n\ndef own():\n    return 2\n",
+    "app/main.py": "from math import *\nfrom .base import *\n\n\ndef run():\n    return helper() + own() + sqrt(4)\n",
+  });
+  const map = keylang(dir, ["map"]);
+  assert.equal(map.status, 0, map.stderr);
+  assert.match(map.stderr, /calls 2 resolved, 1 external, 0 dynamic/, "`sqrt` is math's; `helper` and `own` are the repository's");
+  const index = snapshot(dir);
+  assert.ok(index.edges.some((e) => e.kind === "call" && e.source === "app.main.run" && e.target === "app.util.helper"), "`helper()` through the glob of a module that imports it");
+  assert.ok(!index.edges.some((e) => e.kind === "reexport"), "a plain module re-exports nothing: the dependency is an import");
+  assert.deepEqual(index.exports.filter((e) => e.module === "app.base"), [
+    { module: "app.base", name: "helper", symbol: "app.util.helper", kind: "fn", from: "app.util" },
+    { module: "app.base", name: "own", symbol: "app.base.own", kind: "fn" },
+  ]);
+  const flow = keylang(dir, ["check"]);
+  assert.equal(flow.status, 0, flow.stdout + flow.stderr);
+  assert.match(flow.stdout, /static ok app\.util\.helper: called from app\.main\.run/);
+  // Without the stdlib glob the verdict is the same (before: a hole «call through a local value helper»).
+  writeFileSync(join(dir, "app/main.py"), "from .base import *\n\n\ndef run():\n    return helper() + own()\n");
+  assert.match(keylang(dir, ["map"]).stderr, /calls 2 resolved, 0 external, 0 dynamic/);
+  assert.match(keylang(dir, ["check"]).stdout, /static ok app\.util\.helper/);
+  // `exports` sees the imported name as a public one, and says where it is from.
+  writeFileSync(join(dir, "keylang/rules.md"), "# rules\n\n- module app.base\n  - exports own\n");
+  const rule = keylang(dir, ["check"]);
+  assert.equal(rule.status, 1, rule.stdout);
+  assert.match(rule.stdout, /K104 divergence: `app\.base` exports `helper` \(fn, imported from `app\.util`\), which is not listed in `exports`/);
+  writeFileSync(join(dir, "keylang/rules.md"), "# rules\n\n- module app.base\n  - exports own, helper\n");
+  assert.doesNotMatch(keylang(dir, ["check"]).stdout, /K104/);
+  // A module-level `for` binds names the table does not list: a name no table has is a hole, not math's —
+  // `sqrt` included, as beside an unresolved glob: either source may bind it.
+  writeFileSync(join(dir, "app/base.py"), "from .util import helper\n\nfor flag in (1,):\n    pass\n\n\ndef own():\n    return 2\n");
+  writeFileSync(join(dir, "app/main.py"), "from math import *\nfrom .base import *\n\n\ndef run():\n    return helper() + mystery() + sqrt(4)\n");
+  assert.match(keylang(dir, ["map"]).stderr, /calls 1 resolved, 0 external, 2 dynamic/);
+  const open = snapshot(dir);
+  assert.ok(open.coverage.some((c) => c.kind === "dynamic-call" && c.text === "mystery" && c.reason === "call through `mystery`, a name from a glob import keylang does not follow"), JSON.stringify(open.coverage));
+  assert.equal(open.exports.find((e) => e.module === "app.base" && e.name === "*")?.reason, "a module-level `for` binds names keylang does not list");
+  const unverified = keylang(dir, ["check"]);
+  assert.equal(unverified.status, 0, unverified.stdout);
+  assert.match(unverified.stdout, /unverified a module-level `for` binds names keylang does not list/);
+  assert.doesNotMatch(unverified.stdout, /K104/);
 });

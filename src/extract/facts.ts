@@ -15,6 +15,13 @@ export interface FileFacts {
   reexportsAll: string[];
   /** Public names with their kinds. Empty only when the file exports nothing. */
   exportRows: ExportRow[];
+  /**
+   * Why `exportRows` may miss a public name, when it may: a Python module
+   * without `__all__` whose module level binds names keylang does not list
+   * (`for x in`, `with … as x`, `a, b = …`). A glob import of the file may
+   * then bring any name. Absent when the list is exhaustive.
+   */
+  exportsIncomplete?: string;
   /** Constructs the extractor does not turn into edges, each with the source fragment. */
   unsupported: UnsupportedFact[];
   /**
