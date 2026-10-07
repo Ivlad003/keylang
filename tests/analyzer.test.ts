@@ -380,6 +380,36 @@ test("imports: `paths` and `baseUrl` win over built-in names; the most specific 
   assert.doesNotMatch(o.stdout, /unverified/);
 });
 
+test("imports: `paths`/`baseUrl` come from the tsconfig that governs the importing file, not the root's; a solution config lends each referenced project's `paths` to the files under it", (t) => {
+  const files = {
+    "src/data/db.ts": "export function db(): void {}\n",
+    "apps/web/src/data/db.ts": "export function db(): void {}\n",
+    "apps/web/src/ui/page.ts": 'import { db } from "@/data/db";\nexport function page(): void { db(); }\n',
+    "apps/admin/src/data/db.ts": "export function db(): void {}\n",
+    "apps/admin/src/ui/page.ts": 'import { db } from "@/data/db";\nexport function page(): void { db(); }\n',
+    "keylang/rules.md": "# rules\n\n- deny ui data\n",
+  };
+  const layers = { layers: { ui: ["apps/*/src/ui/**"], data: ["apps/*/src/data/**"], lib: ["src/**"] } };
+  const app = '{"compilerOptions":{"baseUrl":".","paths":{"@/*":["./src/*"]}}}';
+  const denied = (dir: string): void => {
+    const o = keylang(dir, ["check"]);
+    assert.equal(o.status, 1, o.stdout + o.stderr);
+    assert.match(o.stdout, /apps\/web\/src\/ui\/page\.ts:1:1: K102 .*`ui\.web\.src\.ui\.page` depends on `data\.web\.src\.data\.db`/);
+    assert.match(o.stdout, /apps\/admin\/src\/ui\/page\.ts:1:1: K102 .*`ui\.admin\.src\.ui\.page` depends on `data\.admin\.src\.data\.db`/);
+    assert.doesNotMatch(o.stdout, /lib\.data|unverified/);
+    const edges = snapshot(dir).edges.filter((e) => e.kind === "import" && e.source.startsWith("ui.")).map((e) => `${e.source} -> ${e.target} ${e.resolution}`);
+    assert.deepEqual(edges.sort(), ["ui.admin.src.ui.page -> data.admin.src.data.db resolved", "ui.web.src.ui.page -> data.web.src.data.db resolved"]);
+  };
+  // The root alias names another file: the nested tsconfig's alias governs apps/web/.
+  const root = '{"compilerOptions":{"baseUrl":".","paths":{"@/*":["src/*"]}}}';
+  denied(repo(t, { ...files, "tsconfig.json": root, "apps/web/tsconfig.json": app, "apps/admin/tsconfig.json": app }, layers));
+  // No root tsconfig at all: the nested one still resolves the alias.
+  denied(repo(t, { ...files, "apps/web/tsconfig.json": app, "apps/admin/tsconfig.json": app }, layers));
+  // A solution config at the root: each referenced project's `paths` apply to the files under its directory only.
+  const solution = '{"files":[],"references":[{"path":"./apps/admin/tsconfig.app.json"},{"path":"./apps/web/tsconfig.app.json"}]}';
+  denied(repo(t, { ...files, "tsconfig.json": solution, "apps/web/tsconfig.app.json": app, "apps/admin/tsconfig.app.json": app }, layers));
+});
+
 test("calls: `new ns.X()`, `new C().m()`, a class merged with its interface, a default import beside a same-named export, `super()`; an unknown callee is a hole", (t) => {
   const dir = repo(t, {
     "src/lib/svc.ts": [

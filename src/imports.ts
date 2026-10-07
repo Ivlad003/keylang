@@ -1,5 +1,7 @@
-// Import specifier → file. Relative paths with extension probing, `tsconfig`
-// (or `jsconfig`, and the configs it `references`) `paths`/`baseUrl`,
+// Import specifier → file. Relative paths with extension probing, the
+// `paths`/`baseUrl` of the `tsconfig` (or `jsconfig`) that governs the
+// importing file — the nearest one above it, with the configs a solution
+// config `references` lending theirs to the files under them —,
 // `package.json` `imports` (`#alias`), Node built-ins. A bare specifier goes
 // through `paths` (the most specific pattern, as `tsc` picks it) and
 // `baseUrl` before it is a built-in or a package, so an alias named like a
@@ -83,8 +85,10 @@ interface PathRule {
 
 export class ImportResolver {
   private readonly root: string;
-  private readonly baseUrl: string | null;
-  private readonly paths: PathRule[];
+  /** Per config file: its `baseUrl`/`paths` after `extends`, and those of the projects it `references`. */
+  private readonly tsconfigs = new Map<string, LoadedTsconfig>();
+  /** Per directory under the root: the `baseUrl`/`paths` that apply to its files. */
+  private readonly options = new Map<string, Tsconfig>();
   /** The packages the root `package.json` declares, with their ranges (null: not a string). */
   private readonly declared: Map<string, string | null>;
   /** Workspace globs: root `workspaces`, then `packages` of `pnpm-workspace.yaml`. */
@@ -123,10 +127,8 @@ export class ImportResolver {
     };
     this.text = text;
     this.read = read;
-    const configFile = existsSync(join(root, "tsconfig.json")) || !existsSync(join(root, "jsconfig.json")) ? "tsconfig.json" : "jsconfig.json";
-    const ts = loadTsconfig(read, configFile);
-    this.baseUrl = ts.baseUrl;
-    this.paths = ts.paths;
+    // The root config is an input of the snapshot id whether or not a bare import asks for it.
+    this.governingConfig(".");
     const pkg = read("package.json") as { workspaces?: unknown } | null;
     this.declared = dependencies(pkg);
     const workspaces = Array.isArray(pkg?.workspaces) ? pkg.workspaces : isObject(pkg?.workspaces) && Array.isArray(pkg.workspaces.packages) ? pkg.workspaces.packages : [];
@@ -162,6 +164,42 @@ export class ImportResolver {
     const holds = held === true || held === "unknown";
     this.verbatim.set(config, holds);
     return holds;
+  }
+
+  /**
+   * The `baseUrl`/`paths` that apply to `fromFile`: those of the tsconfig that
+   * governs it (`governingConfig`, the same one `verbatimModuleSyntax` reads)
+   * after its `extends` chain. A config without `paths` of its own that
+   * `references` projects (a solution config, Vite's `"files": []`) lends its
+   * files the `paths` of the referenced projects whose directory holds the
+   * file (a project config at the root holds every file), as `tsc -b`
+   * compiles each file under its own project. Cached per config and per
+   * directory; none without a config.
+   */
+  private optionsFor(fromFile: string): Tsconfig {
+    const dir = posix.dirname(fromFile);
+    const known = this.options.get(dir);
+    if (known !== undefined) return known;
+    const config = this.governingConfig(dir);
+    let result: Tsconfig = { baseUrl: null, paths: [] };
+    if (config !== null) {
+      let loaded = this.tsconfigs.get(config);
+      if (loaded === undefined) {
+        loaded = loadTsconfig(this.read, config);
+        this.tsconfigs.set(config, loaded);
+      }
+      if (loaded.own.paths.length > 0) result = loaded.own;
+      else {
+        result = { baseUrl: loaded.own.baseUrl, paths: [] };
+        for (const ref of loaded.references) {
+          if (ref.dir !== "." && dir !== ref.dir && !dir.startsWith(`${ref.dir}/`)) continue;
+          result.paths.push(...ref.options.paths);
+          result.baseUrl ??= ref.options.baseUrl;
+        }
+      }
+    }
+    this.options.set(dir, result);
+    return result;
   }
 
   /** The tsconfig (else jsconfig) of `dir` or the nearest directory above it, up to the root; null without one. */
@@ -335,15 +373,16 @@ export class ImportResolver {
     }
     if (spec.startsWith("#")) return this.resolveSubpathImport(fromFile, spec);
     // `tsc` tries only the most specific `paths` pattern, then `baseUrl`, then built-ins and packages.
-    const matched = bestMatch(this.paths, spec);
+    const ts = this.optionsFor(fromFile);
+    const matched = bestMatch(ts.paths, spec);
     if (matched) {
       for (const t of matched.rule.targets) {
         const f = this.probe(t.replace("*", matched.star));
         if (f) return { kind: "internal", file: f };
       }
     }
-    if (this.baseUrl) {
-      const f = this.probe(posix.join(this.baseUrl, spec));
+    if (ts.baseUrl) {
+      const f = this.probe(posix.join(ts.baseUrl, spec));
       if (f) return { kind: "internal", file: f };
     }
     if (isNodeBuiltin(spec)) return { kind: "builtin" };
@@ -496,9 +535,10 @@ export class ImportResolver {
         if (scope === "") return out;
       }
     }
-    const matched = bestMatch(this.paths, spec);
+    const ts = this.optionsFor(fromFile);
+    const matched = bestMatch(ts.paths, spec);
     if (matched) for (const t of matched.rule.targets) out.push(...probeCandidates(t.replace("*", matched.star)));
-    if (this.baseUrl) out.push(...probeCandidates(posix.join(this.baseUrl, spec)));
+    if (ts.baseUrl) out.push(...probeCandidates(posix.join(ts.baseUrl, spec)));
     return out;
   }
 }
@@ -673,6 +713,12 @@ interface Tsconfig {
   paths: PathRule[];
 }
 
+/** One config file as `optionsFor` combines it: its own options, and those of each project it `references` with that project's directory. */
+interface LoadedTsconfig {
+  own: Tsconfig;
+  references: { dir: string; options: Tsconfig }[];
+}
+
 /** Options of one config after its `extends` chain, before `paths` targets are placed. */
 interface MergedOptions {
   baseUrl: string | null;
@@ -681,16 +727,20 @@ interface MergedOptions {
 }
 
 /**
- * `compilerOptions.baseUrl`/`paths` following relative `extends` chains.
- * As in `tsc`, `paths` targets resolve against the `baseUrl` of the final
- * options (a child config's `baseUrl` moves inherited `paths` too), or the
- * directory of the config that declares them. A solution config (`"files": []`
- * with `references`, the Vite template) takes the `paths` of the configs it references.
+ * `compilerOptions.baseUrl`/`paths` of one config following relative
+ * `extends` chains. As in `tsc`, `paths` targets resolve against the
+ * `baseUrl` of the final options (a child config's `baseUrl` moves inherited
+ * `paths` too), or the directory of the config that declares them. The
+ * projects the config `references` (a solution config, `"files": []` with
+ * `references`, the Vite template) come with their options and their
+ * directory, for `optionsFor` to hand to the files under each; a project
+ * outside the root is skipped.
  */
-function loadTsconfig(read: (file: string) => unknown, file: string): Tsconfig {
+function loadTsconfig(read: (file: string) => unknown, file: string): LoadedTsconfig {
   const own = mergedOptions(read, file, 0);
-  const result: Tsconfig = { baseUrl: own.baseUrl, paths: placePaths(own) };
-  if (result.paths.length > 0) return result;
+  const result: LoadedTsconfig = { own: { baseUrl: own.baseUrl, paths: placePaths(own) }, references: [] };
+  // Own `paths` win outright, so the referenced configs are read (and become inputs) only when they can matter.
+  if (result.own.paths.length > 0) return result;
   const raw = read(file);
   const references = isObject(raw) && Array.isArray(raw.references) ? raw.references : [];
   const dir = posix.dirname(toPosix(file));
@@ -700,8 +750,7 @@ function loadTsconfig(read: (file: string) => unknown, file: string): Tsconfig {
     const refFile = target.endsWith(".json") ? target : posix.join(target, "tsconfig.json");
     if (refFile.startsWith("../")) continue;
     const referenced = mergedOptions(read, refFile, 1);
-    result.paths.push(...placePaths(referenced));
-    result.baseUrl ??= referenced.baseUrl;
+    result.references.push({ dir: posix.dirname(refFile), options: { baseUrl: referenced.baseUrl, paths: placePaths(referenced) } });
   }
   return result;
 }
