@@ -10,6 +10,7 @@
 // cached by content in the fact cache, so a changed `di.xml` is a new snapshot.
 
 import { magento } from "./magento.ts";
+import { sfcc } from "./sfcc.ts";
 
 /**
  * A type the configuration names: a qualified name of a language whose
@@ -56,6 +57,20 @@ export interface InterceptFact extends ConfigAt {
   disabled: boolean;
 }
 
+/**
+ * An entry point a config file names (SFCC `hooks.json` → `observer`,
+ * `steptypes.json` → `cron`): the script it runs, as the paths the framework
+ * would try in order (each probed with the usual extensions and `index`), and
+ * the fn in it, if the config names one. The snapshot places it on the graph
+ * (`src/framework-entries.ts`); a script no candidate names is a hole.
+ */
+export interface EntryConfigFact extends ConfigAt {
+  kind: "observer" | "cron";
+  label: string;
+  files: string[];
+  fn: string | null;
+}
+
 /** The facts of one config file. Depends only on its path and text, so the fact cache keeps it. */
 export interface ConfigFacts {
   path: string;
@@ -65,6 +80,8 @@ export interface ConfigFacts {
   arguments: ArgumentFact[];
   aliases: AliasFact[];
   intercepts: InterceptFact[];
+  /** Entry points the file names; absent for a framework whose configs name none. */
+  entries?: EntryConfigFact[];
   /** Why the file gave no facts: it does not parse. */
   error: { line: number; reason: string } | null;
 }
@@ -111,7 +128,7 @@ export interface FrameworkAdapter {
 export const FRAMEWORK_CONFIG = "framework:";
 
 /** Adapters keylang has, by name. */
-export const FRAMEWORK_ADAPTERS: readonly FrameworkAdapter[] = [magento];
+export const FRAMEWORK_ADAPTERS: readonly FrameworkAdapter[] = [magento, sfcc];
 
 export const FRAMEWORK_NAMES: readonly string[] = FRAMEWORK_ADAPTERS.map((a) => a.name).sort();
 
@@ -139,6 +156,7 @@ export function isConfigFacts(value: unknown): value is ConfigFacts {
     every(value.arguments, (a) => isAt(a) && isTypeName(a.type) && typeof a.param === "string" && isTypeName(a.value)) &&
     every(value.aliases, (a) => isAt(a) && typeof a.name === "string" && isTypeName(a.type)) &&
     every(value.intercepts, (i) => isAt(i) && isTypeName(i.target) && typeof i.name === "string" && (i.plugin === null || isTypeName(i.plugin)) && (i.sortOrder === null || typeof i.sortOrder === "number") && typeof i.disabled === "boolean") &&
+    (value.entries === undefined || every(value.entries, (e) => isAt(e) && (e.kind === "observer" || e.kind === "cron") && typeof e.label === "string" && Array.isArray(e.files) && e.files.every((f) => typeof f === "string") && (e.fn === null || typeof e.fn === "string"))) &&
     (value.error === null || (isRecord(value.error) && typeof value.error.line === "number" && typeof value.error.reason === "string"))
   );
 }

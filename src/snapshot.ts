@@ -255,6 +255,10 @@ export interface EntryPoint {
   line: number;
   /** The file the fact is written in: a manifest (`package.json`, `pyproject.toml`), a framework config, or the code file itself. */
   source: string;
+  /** The HTTP method a framework route answers (`GET`, `POST`); absent when the registration names none. */
+  method?: string;
+  /** What keylang could not name about it: a handler written in place, so `id` is the module that registers it. */
+  note?: string;
 }
 
 export interface AnalysisSnapshot {

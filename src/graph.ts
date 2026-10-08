@@ -257,7 +257,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
   const resolvers = new Map<Frontend, SourceResolver>();
   for (const language of config.languages) {
     const frontend = frontendOf(language);
-    if (!resolvers.has(frontend)) resolvers.set(frontend, frontend.resolver(config.root, sources, files));
+    if (!resolvers.has(frontend)) resolvers.set(frontend, frontend.resolver(config.root, sources, files, config));
   }
   const resolverFor = (file: string): SourceResolver | null => {
     const frontend = frontendFor(file);
