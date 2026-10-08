@@ -217,6 +217,23 @@ Commands:
                             Propose one discovered flow as a spec, with a provenance
                             comment, as .keylang/proposals/<dir>/flows/<name>.md (or the
                             --into target); merge it with m in the TUI
+  flow export <name>… [--with-callees N] [--out <file.md>]
+                            A portable bundle of business flows (hand-written, else
+                            discovered) as one Markdown file: provenance (repo,
+                            commit, snapshotId, keylang version), each node with its
+                            kind, signature, doc and file:line, tests, events and
+                            integrations, and an empty keylang-layout block; parse
+                            reads it without a diagnostic. --with-callees: their
+                            callees to depth N. Stdout, or --out (a new file or a
+                            bundle, never under <dir>/)
+  flow import <bundle.md> [--into <spec.md>] [--layer-map old=new,…] [--mode algo|llm|hybrid] [--print]
+                            Propose a feature (<dir>/features/<first flow>.md) whose
+                            flows step on planned nodes re-homed into this
+                            repository's layers, with the original signatures, tests
+                            and provenance, and the rows of <dir>/migration.md
+                            (# migration <slug>). Layers: --layer-map, else algo (same
+                            name, else the first layer), llm|hybrid: the model's map,
+                            checked. --print: stdout only
   export c4 [--format plantuml|mermaid] [--level component|container] [--layer <name>] [--out f]
                             Print a C4 diagram of the map, no model: layers as boundaries,
                             their modules as components, packages as external systems
@@ -317,6 +334,8 @@ const OPTIONS = {
   level: { type: "string" },
   kind: { type: "string" },
   depth: { type: "string" },
+  "with-callees": { type: "string" },
+  "layer-map": { type: "string" },
 } as const satisfies ParseArgsOptionsConfig;
 
 /** Runs the CLI and returns the exit code: 0 ok, 1 findings, 2 usage or I/O error. */
@@ -426,6 +445,8 @@ async function run(argv: readonly string[]): Promise<number> {
       return cmdIntegrations(values.json === true);
     case "flows":
       return cmdFlows(paths, { kind: values.kind, layer: values.layer, limit: values.limit, depth: values.depth, into: values.into, print: values.print === true, check: values.check === true, names: values.names === true, mode: values.mode, dryRun: values["dry-run"] === true, jobs: values.jobs, stale: values.stale === true });
+    case "flow":
+      return cmdFlow(paths, { withCallees: values["with-callees"], out: values.out, into: values.into, layerMap: values["layer-map"], mode: values.mode, print: values.print === true });
     case "export":
       return cmdExport(paths, { format: values.format, level: values.level, layer: values.layer, out: values.out });
     case "clone":
@@ -1049,6 +1070,50 @@ async function cmdFlowsNames(root: string, opts: { kind: string | undefined; lay
   );
   if (opts.dryRun && result.payload?.names) process.stdout.write(result.payload.names.text);
   for (const m of result.messages) process.stderr.write(`keylang: ${m.text}\n`);
+  return result.exitCode ?? 2;
+}
+
+/**
+ * `flow export <name>… [--with-callees N] [--out f]` and `flow import
+ * <bundle.md> [--into] [--layer-map] [--mode] [--print]`: the shared
+ * operations. Export prints the bundle (or names the file written on
+ * stderr); import prints the proposed texts with `--print`, else names the
+ * proposals; notes on stderr.
+ */
+async function cmdFlow(args: readonly string[], opts: { withCallees: string | undefined; out: string | undefined; into: string | undefined; layerMap: string | undefined; mode: string | undefined; print: boolean }): Promise<number> {
+  const [action, ...rest] = args;
+  if (action !== "export" && action !== "import") throw new Error(`flow: expected export or import${action === undefined ? "" : `, got \`${action}\``}`);
+  const root = findRoot(process.cwd());
+  const report = (messages: readonly { level: string; text: string }[]): void => {
+    for (const m of messages) process.stderr.write(`keylang: ${m.text}\n`);
+  };
+  if (action === "export") {
+    if (rest.length === 0) throw new Error("flow export: at least one flow name is required");
+    if (opts.into !== undefined || opts.layerMap !== undefined || opts.mode !== undefined || opts.print) throw new Error("flow export: --into, --layer-map, --mode and --print belong to flow import");
+    const withCallees = opts.withCallees === undefined ? undefined : wholeNumber("--with-callees", opts.withCallees, 0);
+    const pkg = createRequire(import.meta.url)("../package.json") as { version: string };
+    const result = await runOperation({ kind: "flow-export", root, names: rest, version: pkg.version, ...(withCallees !== undefined ? { withCallees } : {}), ...(opts.out !== undefined ? { out: resolve(process.cwd(), opts.out) } : {}) });
+    if (result.payload !== null && opts.out === undefined) process.stdout.write(result.payload.text);
+    report(result.messages);
+    return result.exitCode ?? 2;
+  }
+  const [bundle, extra] = rest;
+  if (bundle === undefined) throw new Error("flow import: a bundle file is required");
+  if (extra !== undefined) throw new Error(`flow import: unexpected \`${extra}\`; one bundle at a time`);
+  if (opts.withCallees !== undefined || opts.out !== undefined) throw new Error("flow import: --with-callees and --out belong to flow export");
+  const mode = opts.mode ?? "algo";
+  if (mode !== "algo" && mode !== "llm" && mode !== "hybrid") throw new Error(`flow import: --mode must be algo, llm or hybrid, got \`${mode}\``);
+  const result = await runOperation({
+    kind: "flow-import",
+    root,
+    bundle: resolve(process.cwd(), bundle),
+    mode,
+    output: opts.print ? "preview" : "proposal",
+    ...(opts.into !== undefined ? { into: toPosix(opts.into) } : {}),
+    ...(opts.layerMap !== undefined ? { layerMap: opts.layerMap } : {}),
+  });
+  if (opts.print && result.payload !== null) process.stdout.write(`${result.payload.feature}\n<!-- ${result.payload.migrationTarget} -->\n\n${result.payload.migration}`);
+  report(result.messages);
   return result.exitCode ?? 2;
 }
 

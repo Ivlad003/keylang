@@ -32,6 +32,7 @@ import type { DiscoveredFlow } from "../discover.ts";
 import type { BusinessProcess, NameMode } from "../discover-names.ts";
 import type { CoverageReport } from "../coverage-report.ts";
 import type { IntegrationsReport } from "../integrations.ts";
+import type { BundleHeader, LayerChoice } from "../flow-bundle.ts";
 
 /** The known operations. `doctor` is the first; new kinds arrive with their feature. */
 export interface DoctorRequest {
@@ -417,6 +418,76 @@ export interface FlowsAdoptRequest {
 }
 
 /**
+ * The portable bundle of business flows (`keylang flow export <name>…
+ * [--with-callees N] [--out <file.md>]`, business-flows/26): hand-written
+ * flows of the spec directory or flows of the discovered view, their nodes,
+ * tests, events and integrations, with the repository's provenance, as one
+ * Markdown file that `keylang parse` reads without a diagnostic.
+ */
+export interface FlowExportRequest {
+  kind: "flow-export";
+  /** Repository root (absolute). */
+  root: string;
+  /** Flow names: a hand-written `# flow`, else a flow of `flows discover`. */
+  names: string[];
+  /** Callees of the flows' nodes to this depth in the nodes table; default 0. */
+  withCallees?: number;
+  /** Write the bundle here (absolute): only a new file or a bundle; otherwise only the payload's text. */
+  out?: string;
+  /** The keylang version in the header; default `n/a`. */
+  version?: string;
+}
+
+export interface FlowExportPayload {
+  header: BundleHeader;
+  text: string;
+  /** The file written, or null. */
+  out: string | null;
+}
+
+/**
+ * A bundle imported (`keylang flow import <bundle.md> [--into
+ * <dir>/features/<slug>.md] [--layer-map old=new,…] [--mode
+ * algo|llm|hybrid] [--print]`): one proposal of a feature spec whose flows
+ * step on `planned` nodes re-homed into this repository's layers, and one of
+ * the migration table `<dir>/migration.md` with a `# migration <slug>`
+ * section mapping every source ID.
+ */
+export interface FlowImportRequest {
+  kind: "flow-import";
+  /** Repository root (absolute). */
+  root: string;
+  /** The bundle file (absolute). */
+  bundle: string;
+  /** The feature spec, relative to the root, POSIX; default `<dir>/features/<first flow>.md`. */
+  into?: string;
+  /** `old=new,…`: source layer → layer of this repository; the rest by `mode`. */
+  layerMap?: string;
+  /** `algo` (default): same name, else the first layer; `llm`: the model must answer; `hybrid`: the model when there is one. */
+  mode?: "algo" | "llm" | "hybrid";
+  /** `preview`: compute only; `proposal` (default): write the two proposals. */
+  output?: "preview" | "proposal";
+  /** A proposal already waiting for a target: `refuse` (default) writes nothing, `replace` overwrites it. */
+  pending?: "refuse" | "replace";
+}
+
+export interface FlowImportPayload {
+  header: BundleHeader;
+  /** The feature spec and the migration table, relative to the root. */
+  target: string;
+  migrationTarget: string;
+  /** The full proposed texts. */
+  feature: string;
+  migration: string;
+  layers: LayerChoice[];
+  ids: { from: string; to: string; planned: boolean }[];
+  /** The agent asked for the layer map, or null. */
+  agent: string | null;
+  /** `.keylang/proposals/<target>` written, in order; empty for a preview. */
+  proposals: string[];
+}
+
+/**
  * A flow drafted for a trigger (`keylang draft flow <trigger> --mode
  * algo|llm|hybrid`): `algo` is only what the snapshot's call edges show;
  * `llm` and `hybrid` ask the configured model and judge its answer against
@@ -690,10 +761,10 @@ export interface AssistantReplyRequest {
 }
 
 /** Every request `runOperation` takes: its `kind` names the operation and the payload of its result. */
-export type OperationRequest = DoctorRequest | FeatureRequest | FeatureQuestionsRequest | ExportC4Request | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | ExplainRequest | ExplainLlmRequest | ExplainPlanRequest | ExplainBatchRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | EntriesRequest | CoverageRequest | IntegrationsRequest | FlowsDiscoverRequest | FlowsAdoptRequest | DraftFlowRequest | DraftRulesRequest | DraftLayoutRequest | CodeToSpecRequest | SpecToCodeRequest | ApplyCodeRequest | AssistantReplyRequest;
+export type OperationRequest = DoctorRequest | FeatureRequest | FeatureQuestionsRequest | ExportC4Request | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | ExplainRequest | ExplainLlmRequest | ExplainPlanRequest | ExplainBatchRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | EntriesRequest | CoverageRequest | IntegrationsRequest | FlowsDiscoverRequest | FlowsAdoptRequest | FlowExportRequest | FlowImportRequest | DraftFlowRequest | DraftRulesRequest | DraftLayoutRequest | CodeToSpecRequest | SpecToCodeRequest | ApplyCodeRequest | AssistantReplyRequest;
 
 /** The operation kinds that write files: they compute first and commit after `beforeCommit` (a check mode never calls it). */
-export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["feature-questions", "export-c4", "map", "baseline", "agents", "fmt", "wire", "init", "export", "flows-discover", "flows-adopt", "draft-flow", "draft-rules", "code-to-spec", "spec-to-code", "apply-code", "explain-llm", "explain-batch"]);
+export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["feature-questions", "export-c4", "map", "baseline", "agents", "fmt", "wire", "init", "export", "flows-discover", "flows-adopt", "flow-export", "flow-import", "draft-flow", "draft-rules", "code-to-spec", "spec-to-code", "apply-code", "explain-llm", "explain-batch"]);
 
 /** What an operation may use besides its request. No UI state, no shell. */
 export interface OperationContext {
@@ -1575,6 +1646,8 @@ export interface OperationPayloads {
   integrations: IntegrationsPayload;
   "flows-discover": FlowsDiscoverPayload;
   "flows-adopt": FlowsAdoptPayload;
+  "flow-export": FlowExportPayload;
+  "flow-import": FlowImportPayload;
   "draft-flow": DraftFlowPayload;
   "draft-rules": DraftRulesPayload;
   "draft-layout": DraftLayoutPayload;

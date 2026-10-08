@@ -42,4 +42,6 @@ npx keylang spec-to-code application.purchase.refund --apply
 
 Саме файл специфікації ви віддаєте агентові. Функції генерує агент, а keylang його не запускає. Поки агент працює, `check --changed` блокує хід лише на новому fail. Рядок `unverified` не блокує, тож такі рядки читайте самі. Якщо потрібна зміна `rules.md`, вона має надійти як пропозиція в `.keylang/proposals/`, а ви вирішуєте, зливати її чи ні.
 
+Коли фіча вже є в старому стеку (в іншому репозиторії, можливо, іншою мовою), перенесіть її потоки, а не переписуйте їх. У старому репозиторії `npx keylang flow export checkout --out checkout.bundle.md` пише один Markdown-файл: потоки, кожне id з видом, сигнатурою, документацією й `файл:рядок`, тести, події й інтеграції та походження (репозиторій, коміт, знімок). У цьому репозиторії `npx keylang flow import checkout.bundle.md --layer-map app=application` пропонує `keylang/features/checkout.md` — ті самі кроки на `planned`-id у ваших шарах, з оригінальними сигнатурами й тестами, — і рядки `keylang/migration.md`, що зіставляють кожне старе id з новим. Прийміть обидві пропозиції `keylang proposals accept`, і `feature checkout` та `spec-to-code` працюють з файлом так само, як із написаним вручну.
+
 Далі: [інтеграція](03-an-integration.md).
