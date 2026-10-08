@@ -201,7 +201,8 @@ function holesOf(index: Index, id: string): CallHole[] {
     out.push({ kind: edge.resolution, reason, text: edge.text, at: { file: edge.file, line: edge.line, col: edge.col }, ...(edge.candidates ? { candidates: edge.candidates } : {}) });
   }
   for (const item of index.coverage.get(id) ?? []) {
-    const key = `${item.file}:${item.line}:${item.col}`;
+    // A dispatch of a computed name is a hole of its own beside the call itself, which may be one too.
+    const key = `${item.kind === "dynamic-event" ? "event " : ""}${item.file}:${item.line}:${item.col}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push({ kind: item.kind, reason: item.reason, text: item.text, at: { file: item.file, line: item.line, col: item.col } });

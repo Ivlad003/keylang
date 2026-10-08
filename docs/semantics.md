@@ -5,6 +5,7 @@
 ## 6. ID та резолвінг
 
 - ID оголошення — крапковий шлях від кореня: шар → модуль(і) → `fn`/`type`/`event`/аліас залежності. Приклад: `application.purchase.buy`, `presentation.terminal.checkout` (аліас).
+- **Події мають ID у згенерованій групі `events`** ([ADR 0022](adr/0022-framework-facts.md) п. 6): `events.<назва>`, хоч би який модуль диспатчив подію (`events.checkout_submit_all_after`). Карта друкує їх у `keylang/map/events.md` як `- event <назва>` прямо під шаром `events`, тож вони — звичайні ID для `step`, K001 і `did you mean`. Назву з символом, якого сегмент ID не дозволяє (`.`, `/`, цифра на початку), записано сегментом: такий символ стає `-`, а сегмент, що не починається з літери, `_` чи `$`, дістає `_` попереду (`sales.order.place_after` → `events.sales-order-place_after`); вузол знімка зберігає літерал у `name`. Дві назви з одним сегментом лишають його першій у порядку кодових одиниць, наступні дістають `-2`, `-3`… `events`, як `external`, — зарезервована назва шару.
 - **Р12. Аліаси залежностей теж мають ID.** Так `trigger presentation.terminal.checkout` з design.md §3.4 резолвиться в залежність `checkout` модуля `terminal`, а `wire` може на них посилатися.
 
 ```keylang Р12 path=keylang/flows/pay.md

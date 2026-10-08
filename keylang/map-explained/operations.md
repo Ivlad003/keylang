@@ -255,7 +255,7 @@
       <a id="operations.entries.runEntries"></a><br>The entry points of a fresh snapshot of the saved code, optionally one kind. Code 0 with the list (empty included: nothing to find is no failure); 2 with no payload for a broken keylang.json or a repository without code to read.
       - calls [operations.shared.empty](operations.md#operations.shared.empty), [base.diag.errorText](base.md#base.diag.errorText), [operations.entries.entriesText](operations.md#operations.entries.entriesText)
     - fn [entriesText](../../src/operations/entries.ts#L42) (entries: readonly EntryPoint[], kind: EntryPoint["kind"] | null = null) → string
-      <a id="operations.entries.entriesText"></a><br>The table `keylang entries` prints: `kind · label · id · file:line`, aligned; or the note and the hint when there is nothing.
+      <a id="operations.entries.entriesText"></a><br>The table `keylang entries` prints: `kind · label · id · file:line`, aligned, and why when the config's class is not a fn keylang read; or the note and the hint when there is nothing.
   - module [explain](../../src/operations/explain.ts#L1)
     <a id="operations.explain"></a><br>The explanations of a node: the offline help and summary (`explain`), one answer of the model (`explain --llm`), what needs explaining (`explain --stale`, the plan of a brief batch) and the batch itself.
     - node [external.node](external.md#external.node)

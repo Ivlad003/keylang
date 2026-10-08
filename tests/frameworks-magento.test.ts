@@ -1,9 +1,13 @@
-// The Magento adapter (ADR 0022, business-flows 04, 06, 07) through the real
-// CLI on a small Magento-shaped repository (`tests/fixtures/magento-shop`):
+// The Magento adapter (ADR 0022, business-flows 04, 06, 07, 08, 10) through
+// the real CLI on a small Magento-shaped repository (`tests/fixtures/magento-shop`):
 // three modules with `registration.php`, `etc/di.xml` in the global area and
 // in `frontend`/`adminhtml`, preferences (one conflicting, one to a class that
-// does not exist), a virtualType as a constructor argument, and plugins
-// before/around/after with `sortOrder` and one `disabled`.
+// does not exist), a virtualType as a constructor argument, plugins
+// before/around/after with `sortOrder` and one `disabled`; events dispatched
+// by literal and by a computed name, observed in three areas (one disabled in
+// `frontend`, one of a class that does not exist); and an entry point of every
+// kind: routes and controllers, webapi.xml, schema.graphqls, crontab.xml,
+// queue_consumer.xml and a console command in di.xml.
 
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -28,13 +32,25 @@ interface Edge {
   reason?: string;
 }
 
+interface Entry {
+  kind: string;
+  id: string;
+  label: string;
+  framework: string | null;
+  file: string;
+  line: number;
+  source: string;
+  unresolved?: string;
+}
+
 interface Snapshot {
   snapshotId: string;
   manifest: { config: { frameworks?: string[] }; files: { path: string }[]; frameworks?: { name: string; version: string; files: { path: string; sha256: string }[] }[] };
-  nodes: Record<string, { kind: string; calls?: string[]; interceptedBy?: { plugin: string; via: string; name: string; site: string; scope: string }[] }>;
+  nodes: Record<string, { kind: string; layer: string; file: string | null; line: number | null; name?: string; calls?: string[]; callers?: string[]; interceptedBy?: { plugin: string; via: string; name: string; site: string; scope: string }[] }>;
   edges: Edge[];
   coverage: { kind: string; file: string; line: number; reason: string; source: string | null; text: string }[];
   stats: { callsResolved: number; callsDynamic: number; callsUnresolved: number };
+  entries: Entry[];
 }
 
 const SUBMIT = "checkout.Model.QuoteManagement.QuoteManagement.submit";
@@ -70,7 +86,26 @@ test("magento: a call through an interface follows the preference of each area; 
   const index = map(dir);
   assert.deepEqual(
     index.manifest.frameworks?.map((f) => [f.name, f.files.map((file) => file.path)]),
-    [["magento", ["app/code/Shop/Checkout/etc/adminhtml/di.xml", CHECKOUT_DI, "app/code/Shop/Promo/etc/di.xml", "app/code/Shop/Promo/etc/frontend/di.xml"]]],
+    [
+      [
+        "magento",
+        [
+          "app/code/Shop/Checkout/etc/adminhtml/di.xml",
+          "app/code/Shop/Checkout/etc/adminhtml/routes.xml",
+          CHECKOUT_DI,
+          "app/code/Shop/Checkout/etc/events.xml",
+          "app/code/Shop/Checkout/etc/frontend/events.xml",
+          "app/code/Shop/Checkout/etc/frontend/routes.xml",
+          "app/code/Shop/Checkout/etc/schema.graphqls",
+          "app/code/Shop/Promo/etc/adminhtml/events.xml",
+          "app/code/Shop/Promo/etc/di.xml",
+          "app/code/Shop/Promo/etc/frontend/di.xml",
+          "app/code/Shop/Sales/etc/crontab.xml",
+          "app/code/Shop/Sales/etc/queue_consumer.xml",
+          "app/code/Shop/Sales/etc/webapi.xml",
+        ],
+      ],
+    ],
   );
   const place = calls(index, SUBMIT).filter((e) => e.text === "this.orderManagement.place" && e.via === "preference");
   assert.deepEqual(
@@ -186,7 +221,7 @@ test("magento: `frameworks: []` turns the adapter off; `[\"magento\"]` turns it 
     raw.frameworks = ["magento"];
   });
   const on = map(explicit);
-  assert.equal(on.manifest.frameworks?.[0]?.files.length, 4);
+  assert.equal(on.manifest.frameworks?.[0]?.files.length, 13);
   assert.ok(on.edges.some((e) => e.via === "preference" && e.target === "sales.Model.OrderService.OrderService.place"));
   setConfig(explicit, (raw) => {
     raw.frameworks = ["symfony"];
@@ -203,7 +238,7 @@ test("magento: a changed di.xml is a new snapshot and a new fact-cache entry; on
   const sha = (text: string): string => createHash("sha256").update(text).digest("hex");
   const di = join(dir, CHECKOUT_DI);
   const text = readFileSync(di, "utf8");
-  assert.equal(cache().configs?.[CHECKOUT_DI]?.sha256, `magento@1\0${sha(text)}`);
+  assert.equal(cache().configs?.[CHECKOUT_DI]?.sha256, `magento@2\0${sha(text)}`);
   assert.equal(cache().configs?.[CHECKOUT_DI]?.facts.bindings.length, 4);
   // The map on disk goes stale with the config, as with the code.
   writeFileSync(di, text.replace('    <preference for="Shop\\Checkout\\Api\\TotalsInterface" type="\\Shop\\Sales\\Model\\Totals"/>\n', ""));
@@ -251,4 +286,124 @@ test("magento: a cycle of preferences ends; a dependency only the config makes i
   // The baseline with its provenance line is a rules file `check` reads: no finding.
   const check = keylang(dir, ["check"]);
   assert.equal(check.status, 0, check.stdout);
+});
+
+const SUBMIT_BEFORE = "events.checkout_submit_before";
+const SUBMIT_AFTER = "events.checkout_submit_all_after";
+
+test("magento: a literal dispatch is an edge to an event node; events.xml of every area gives observer edges; a disabled observer and a computed name are no edges", (t) => {
+  const dir = shop(t);
+  const index = map(dir);
+  // Events form a generated group of their own, named by the literal, whoever dispatches them.
+  assert.equal(index.nodes.events?.kind, "layer");
+  assert.deepEqual(
+    Object.keys(index.nodes).filter((id) => index.nodes[id]?.kind === "event"),
+    [SUBMIT_AFTER, SUBMIT_BEFORE, "events.sales-order-place_after"],
+  );
+  // A name an ID segment cannot hold keeps its literal; the event no code dispatches stands at its observer's line.
+  assert.deepEqual([index.nodes["events.sales-order-place_after"]?.name, index.nodes["events.sales-order-place_after"]?.file, index.nodes["events.sales-order-place_after"]?.line], ["sales.order.place_after", "app/code/Shop/Promo/etc/adminhtml/events.xml", 7]);
+  assert.deepEqual([index.nodes[SUBMIT_BEFORE]?.file, index.nodes[SUBMIT_BEFORE]?.line], ["app/code/Shop/Checkout/Model/QuoteManagement.php", 36]);
+  const dispatched = calls(index, SUBMIT).filter((e) => e.via === "dispatch");
+  assert.deepEqual(dispatched.map((e) => [e.target, e.text]), [
+    [SUBMIT_BEFORE, "this.eventManager.dispatch"],
+    [SUBMIT_AFTER, "this.eventManager.dispatch"],
+  ]);
+  assert.deepEqual(index.nodes[SUBMIT_AFTER]?.callers, [SUBMIT]);
+  // Observers: the global one, an area's own, another module's in adminhtml; `method` names the fn.
+  const observers = index.edges.filter((e) => e.via === "observer").map((e) => [e.source, e.target, e.scope, e.site, e.owner]);
+  assert.deepEqual(observers, [
+    [SUBMIT_AFTER, "checkout.Observer.NotifyCustomer.NotifyCustomer.execute", "global", "app/code/Shop/Checkout/etc/events.xml:4:9", "checkout"],
+    [SUBMIT_BEFORE, "checkout.Observer.FrontendGuard.FrontendGuard.guard", "frontend", "app/code/Shop/Checkout/etc/frontend/events.xml:7:9", "checkout"],
+    [SUBMIT_BEFORE, "promo.Observer.AuditSubmit.AuditSubmit.execute", "adminhtml", "app/code/Shop/Promo/etc/adminhtml/events.xml:4:9", "promo"],
+  ]);
+  // `disabled="true"` in frontend takes the global observer out of that area, and says so.
+  assert.equal(index.edges.find((e) => e.via === "observer" && e.source === SUBMIT_AFTER)?.binding, "observer `notify_customer` (`Shop\\Checkout\\Observer\\NotifyCustomer::execute`) of the event `checkout_submit_all_after` (disabled in frontend)");
+  // A name computed at run time is a hole, never an edge; an observer of a class nobody declares is one too.
+  const dynamic = index.coverage.filter((c) => c.kind === "dynamic-event");
+  assert.deepEqual(dynamic.map((c) => [c.file, c.line, c.source, c.reason]), [["app/code/Shop/Checkout/Model/QuoteManagement.php", 43, SUBMIT, "dispatch of an event whose name is computed at run time: `'checkout_' . $order['type'] . '_placed'`"]]);
+  assert.ok(index.coverage.some((c) => c.kind === "unresolved-binding" && c.file === "app/code/Shop/Promo/etc/adminhtml/events.xml" && c.line === 7 && c.source === "promo"));
+
+  // The map: an `events` file with each event, who dispatches it and its observers.
+  const events = readFileSync(join(dir, "keylang/map/events.md"), "utf8");
+  assert.match(events, /\n- events\n {2}- event \[checkout_submit_before\]\(\.\.\/\.\.\/app\/code\/Shop\/Checkout\/Model\/QuoteManagement\.php#L36\) <!-- dispatched by: checkout\.Model\.QuoteManagement\.QuoteManagement\.submit -->\n {4}- calls promo\.Observer\.AuditSubmit\.AuditSubmit\.execute, checkout\.Observer\.FrontendGuard\.FrontendGuard\.guard <!-- via: /);
+  assert.match(events, /\n {2}- event \[sales-order-place_after\]\([^)]*\) <!-- name: sales\.order\.place_after; dispatched by no code keylang read -->\n/);
+  assert.match(readFileSync(join(dir, "keylang/map/checkout.md"), "utf8"), /- fn \[submit\][^\n]*\n\s+- calls [^\n]*events\.checkout_submit_before[^\n]*events\.checkout_submit_all_after/);
+  // The map with events in it checks clean: every event ID resolves.
+  const check = keylang(dir, ["check"]);
+  assert.equal(check.status, 0, check.stdout);
+});
+
+test("magento: `explain` of an event names who dispatches it and its observers; a flow steps through an event to an observer", (t) => {
+  const dir = shop(t, {
+    "keylang/flows/events.md": `# flow submitEvents
+
+- trigger checkout.Model.QuoteManagement.QuoteManagement.submit
+  - step ${SUBMIT_BEFORE}
+    - step promo.Observer.AuditSubmit.AuditSubmit.execute
+  - step ${SUBMIT_AFTER}
+    - step checkout.Observer.NotifyCustomer.NotifyCustomer.execute
+  - step events.sales-order-place_after
+  - step events.checkout_submit_al
+`,
+  });
+  map(dir);
+  const explain = keylang(dir, ["explain", SUBMIT_AFTER]);
+  assert.equal(explain.status, 0, explain.stderr);
+  assert.equal(
+    explain.stdout,
+    `event ${SUBMIT_AFTER}\napp/code/Shop/Checkout/Model/QuoteManagement.php:42\ndispatched by: ${SUBMIT}\nobservers: checkout.Observer.NotifyCustomer.NotifyCustomer.execute (observer \`notify_customer\`, app/code/Shop/Checkout/etc/events.xml:4:9)\nflows: submitEvents\n`,
+  );
+  const odd = keylang(dir, ["explain", "events.sales-order-place_after"]);
+  assert.match(odd.stdout, /\nname: sales\.order\.place_after\n[^]*dispatched by no code keylang read\nno observer in the config keylang read/);
+
+  const r = keylang(dir, ["check"]);
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stdout, /flows\/events\.md:4:3: static ok events\.checkout_submit_before: called from checkout\.Model\.QuoteManagement\.QuoteManagement\.submit through the dispatch `this\.eventManager\.dispatch` at app\/code\/Shop\/Checkout\/Model\/QuoteManagement\.php:36:9\n/);
+  assert.match(r.stdout, /flows\/events\.md:7:5: static ok checkout\.Observer\.NotifyCustomer\.NotifyCustomer\.execute: called from events\.checkout_submit_all_after through the observer `notify_customer` [^\n]* \(disabled in frontend\) in `app\/code\/Shop\/Checkout\/etc\/events\.xml:4`\n/);
+  assert.match(r.stdout, /flows\/events\.md:5:5: static ok promo\.Observer\.AuditSubmit\.AuditSubmit\.execute: called from events\.checkout_submit_before through the observer `promo_audit` [^\n]* in `app\/code\/Shop\/Promo\/etc\/adminhtml\/events\.xml:4` \(scope adminhtml\)\n/);
+  // An event the trigger does not publish, with a dispatch of a computed name on the way: maybe it does.
+  assert.match(r.stdout, /flows\/events\.md:8:3: static unverified events\.sales-order-place_after: no dispatch of `events\.sales-order-place_after` from checkout\.Model\.QuoteManagement\.QuoteManagement\.submit in the static graph; dispatch of an event whose name is computed at run time: [^\n]* at app\/code\/Shop\/Checkout\/Model\/QuoteManagement\.php:43 may publish it\n/);
+  // An event ID is an ID: a typo is K001 with the event as the suggestion.
+  assert.match(r.stdout, /flows\/events\.md:9:10: K001 dangling reference `events\.checkout_submit_al` \(did you mean `events\.checkout_submit_all_after`\?\)/);
+  // `shape` does not follow what the framework does: a dispatch is not a call written in the code.
+  const shape = keylang(dir, ["check", "--static", "shape"]);
+  assert.match(shape.stdout, /flows\/events\.md:4:3: static unverified events\.checkout_submit_before: no resolved path from [^\n]*the dispatch `this\.eventManager\.dispatch` \(not followed in static mode shape, set by --static\)/);
+});
+
+test("magento: entry points of every kind come from the config, labelled as the outside names them; a class nobody declares is an entry with `unresolved` and a hole", (t) => {
+  const dir = shop(t);
+  const index = map(dir);
+  const magento = index.entries.filter((e) => e.framework === "magento").map((e) => [e.kind, e.label, e.id, e.source, ...(e.unresolved ? [e.unresolved] : [])]);
+  assert.deepEqual(magento, [
+    ["cli", "shop_promo_reindex", "promo.Console.ReindexCommand.ReindexCommand.execute", "app/code/Shop/Promo/etc/di.xml:12"],
+    ["consumer", "shop.order.export", "sales.Model.OrderService.OrderService.save", "app/code/Shop/Sales/etc/queue_consumer.xml:3"],
+    ["cron", "shop_clean_orders 0 3 * * *", "sales.Cron.CleanOrders.CleanOrders.execute", "app/code/Shop/Sales/etc/crontab.xml:4"],
+    ["cron", "shop_sync_orders (config_path crontab/default/jobs/shop_sync_orders/schedule/cron_expr)", "sales.Cron.CleanOrders.CleanOrders.sync", "app/code/Shop/Sales/etc/crontab.xml:7"],
+    ["graphql", "Mutation.placeOrder", "checkout.Model.Resolver.PlaceOrder.PlaceOrder.resolve", "app/code/Shop/Checkout/etc/schema.graphqls:5"],
+    ["observer", "checkout_submit_all_after (notify_customer)", "checkout.Observer.NotifyCustomer.NotifyCustomer.execute", "app/code/Shop/Checkout/etc/events.xml:4"],
+    ["observer", "checkout_submit_before (frontend_guard, frontend)", "checkout.Observer.FrontendGuard.FrontendGuard.guard", "app/code/Shop/Checkout/etc/frontend/events.xml:7"],
+    ["observer", "checkout_submit_before (promo_audit, adminhtml)", "promo.Observer.AuditSubmit.AuditSubmit.execute", "app/code/Shop/Promo/etc/adminhtml/events.xml:4"],
+    ["observer", "sales.order.place_after (ghost, adminhtml)", "Shop\\Promo\\Observer\\Missing::execute", "app/code/Shop/Promo/etc/adminhtml/events.xml:7", "`Shop\\Promo\\Observer\\Missing` is named by the config, but no analysed file declares it"],
+    // The service is an interface: the entry is the implementation's method, through the preference.
+    ["rest", "POST /V1/orders/:id/place [Shop_Sales::place, self]", "sales.Model.OrderService.OrderService.place", "app/code/Shop/Sales/etc/webapi.xml:3"],
+    ["rest", "POST /V1/orders/:id/refund [anonymous]", "Shop\\Sales\\Api\\RefundInterface::refund", "app/code/Shop/Sales/etc/webapi.xml:10", "`Shop\\Sales\\Api\\RefundInterface` is named by the config, but no analysed file declares it"],
+    // Controllers: `Controller/<Path>/<Action>.php` of a module a route names; the admin's under `/admin`.
+    ["route", "GET /admin/shopcheckout/order/view", "checkout.Controller.Adminhtml.Order.View.View.execute", "app/code/Shop/Checkout/etc/adminhtml/routes.xml:4"],
+    ["route", "GET|POST /checkout/cart/index", "checkout.Controller.Cart.Index.Index.execute", "app/code/Shop/Checkout/etc/frontend/routes.xml:4"],
+    ["route", "POST /checkout/cart/add", "checkout.Controller.Cart.Add.Add.execute", "app/code/Shop/Checkout/etc/frontend/routes.xml:4"],
+  ]);
+  // The fn's own place, not the config line.
+  assert.deepEqual(index.entries.find((e) => e.kind === "cron")?.file, "app/code/Shop/Sales/Cron/CleanOrders.php");
+  assert.ok(index.coverage.some((c) => c.kind === "unresolved-binding" && c.file === "app/code/Shop/Sales/etc/webapi.xml" && c.line === 10 && c.source === "sales"));
+  // Deterministic: a second map gives the same list.
+  assert.deepEqual(map(dir).entries, index.entries);
+
+  // `keylang entries` prints them; `trigger cron` and `every` read the kind and the schedule.
+  const listed = keylang(dir, ["entries"]);
+  assert.equal(listed.status, 0, listed.stderr);
+  assert.match(listed.stdout, /rest +POST \/V1\/orders\/:id\/place \[Shop_Sales::place, self\]/);
+  writeTree(dir, { "keylang/flows/cron.md": "# flow clean\n\n- trigger cron sales.Cron.CleanOrders.CleanOrders.execute\n- every 0 3 * * *\n" });
+  const check = keylang(dir, ["check"]);
+  assert.match(check.stdout, /flows\/cron\.md:3:1: [^\n]*ok[^\n]*entry point `shop_clean_orders 0 3 \* \* \*` \(magento\)/);
+  assert.match(check.stdout, /flows\/cron\.md:4:1: static ok [^\n]*runs on `0 3 \* \* \*`/);
 });

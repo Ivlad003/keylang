@@ -227,6 +227,14 @@ export interface CallFact {
    * `$this->m(...)`; TS `this.m.bind(this)`; Python `functools.partial(self.m)`; Rust `Self::m`.
    */
   passes?: PassFact[];
+  /**
+   * The first argument of a call a framework reads as a name (Magento
+   * `$eventManager->dispatch('checkout_submit_all_after', …)`): `literal` is its
+   * value when it is a string literal without interpolation, else null, and
+   * `text` is its source (at most 80 characters). Recorded only for the members
+   * `NAME_ARG_MEMBERS` lists.
+   */
+  nameArg?: { literal: string | null; text: string };
   /** The call sits in a function nested in the declaration: it runs when that value is called. */
   closure?: true;
   /**

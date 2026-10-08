@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <group id="default">
+        <job name="shop_clean_orders" instance="Shop\Sales\Cron\CleanOrders" method="execute">
+            <schedule>0 3 * * *</schedule>
+        </job>
+        <job name="shop_sync_orders" instance="Shop\Sales\Cron\CleanOrders" method="sync">
+            <config_path>crontab/default/jobs/shop_sync_orders/schedule/cron_expr</config_path>
+        </job>
+    </group>
+</config>

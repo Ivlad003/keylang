@@ -17,7 +17,7 @@ import { buildGraph, directoryModule, placeFile, type Graph } from "./graph.ts";
 import { activeAdapters, FRAMEWORK_ADAPTERS, FRAMEWORK_CONFIG, type FrameworkAdapter, type FrameworkContext, type FrameworkInput } from "./frameworks/adapter.ts";
 import { FACT_CACHE_FILE, FactCache } from "./fact-cache.ts";
 import { landing, writeAtomic, writeProblem } from "./safe-write.ts";
-import { collectEntries, ENTRY_MANIFESTS, type EntryManifests } from "./entries.ts";
+import { collectEntries, compareEntries, ENTRY_MANIFESTS, type EntryManifests } from "./entries.ts";
 import { buildSnapshot, EXTRACTOR_VERSION, grammarVersions, sha256, type AnalysisSnapshot, type FrameworkManifest, type RepositoryDocs, type SystemDoc } from "./snapshot.ts";
 
 export interface MapResult {
@@ -118,7 +118,8 @@ export async function generateMap(config: Config, options: { persist?: boolean |
   // Entry points: what the code and the root manifests write (ADR 0022 п. 5); the manifests join `snapshotId`.
   const manifests: EntryManifests = { "package.json": null, "pyproject.toml": null, "Cargo.toml": null };
   for (const name of ENTRY_MANIFESTS) manifests[name] = readSource(join(config.root, name));
-  const entries = collectEntries({ graph, facts, manifests, exists: (path) => existsSync(join(config.root, path)) });
+  // A framework's entry points come from its config (ADR 0022 п. 5), the language's from the code and manifests.
+  const entries = [...collectEntries({ graph, facts, manifests, exists: (path) => existsSync(join(config.root, path)) }), ...graph.frameworkEntries].sort(compareEntries);
   const index = buildSnapshot(graph, config, indexed, [
     ...skipped.map((file) => ({ file, reason: "outside guessed layers" })),
     ...excluded.map((file) => ({ file, reason: "excluded by keylang.json" })),
@@ -181,7 +182,13 @@ function readFrameworks(
       files.push({ path, sha256: hash });
       configs.push({ facts: cache.config(path, hash, `${adapter.name}@${adapter.version}`, () => adapter.parse(path, body)), owner });
     }
-    inputs.push({ name: adapter.name, configs });
+    inputs.push({
+      name: adapter.name,
+      configs,
+      ...(adapter.modules ? { modules: adapter.modules(context) } : {}),
+      ...(adapter.dispatchers ? { dispatchers: [...adapter.dispatchers] } : {}),
+      ...(adapter.controllers ? { controllers: adapter.controllers } : {}),
+    });
     manifest.push({ name: adapter.name, version: adapter.version, files });
   }
   return { inputs, manifest, unread };

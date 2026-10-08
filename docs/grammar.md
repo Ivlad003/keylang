@@ -301,9 +301,9 @@ Alias залежності не збігається з контекстним �
 | верх секції rules | `layers`, `allow`, `deny`, `entry`, `module`, `no-cycles` | K004 |
 | верх секції flow | `kind`, `trigger`, `continues`, `step`, `parallel`, `reads`, `emits`, `calls`, `invariant`, `when`, `after`, `every`, `test`, `planned`, `?` | K004 |
 | верх секції wiring | `wire` | K004 |
-| під `layer` | `module` | `<name>` — модуль |
+| під `layer` | `module`, `event` (згенерована група `events`, [semantics.md](semantics.md) §6) | `<name>` — модуль |
 | під `module` (map) | `module`, `fn`, `type`, `event` | `<alias> <id>` — залежність |
-| під `fn` | `calls` | K004 |
+| під `fn`, під `event` | `calls` (під `event` — observers, які викликає фреймворк) | K004 |
 | під `layers`, `entry` | — | `<id>` — посилання |
 | під `module` (rules) | `exports`, `no-cycles` | K004 |
 | під `step` / `trigger` | `step`, `parallel`, `reads`, `emits`, `calls`, `when`, `after`, `every`, `test`, `invariant`, `?` | K004 |
@@ -630,9 +630,9 @@ map-top = "layer" | "layers" | "allow" | "deny" | "entry" | "module" -> rule-mod
 rules-top = "layers" | "allow" | "deny" | "entry" | "module" -> rule-module | "no-cycles" ;
 flow-top = "kind" | "trigger" | "continues" | "step" | "parallel" | "reads" | "emits" | "calls" | "invariant" | "when" | "after" | "every" | "test" | "planned" | "?" -> question ;
 wiring-top = "wire" ;
-under-layer = "module" ;
+under-layer = "module" | "event" ;
 under-module = "module" | "fn" | "type" | "event" ;
-under-fn = "calls" ;
+under-fn = "calls" ; (* також під event у map *)
 under-ref = (* під layers і під entry: голе id, без ключових слів *) ;
 under-rule-module = "exports" | "no-cycles" ;
 under-step = "step" | "parallel" | "reads" | "emits" | "calls" | "when" | "after" | "every" | "test" | "invariant" | "?" -> question ;

@@ -58,6 +58,8 @@ export interface NodeSummary {
   callers: string[];
   /** Plugin methods a framework's config wraps the fn in (ADR 0022), in the order they run: `P.aroundM (plugin:around `p`, etc/di.xml:12:5)`. */
   interceptedBy: string[];
+  /** An event (ADR 0022 п. 6): the literal it is dispatched with, and the fns its observers run, each with its config line: `O.execute (observer `o`, etc/events.xml:3:5, scope frontend)`. */
+  event?: { name: string; observers: string[] };
   deps: string[];
   dependents: string[];
   flows: string[];
@@ -93,6 +95,7 @@ export function summarizeNode(analysis: Analysis, id: string): ExplainResult {
         calls: node.calls ?? [],
         callers: node.callers ?? [],
         interceptedBy: (node.interceptedBy ?? []).map((i) => `${i.plugin} (${i.via} \`${i.name}\`, ${i.site}${i.scope !== "global" ? `, scope ${i.scope}` : ""})`),
+        ...(node.kind === "event" ? { event: { name: node.name ?? id.slice(id.indexOf(".") + 1), observers: observersOf(analysis, id) } } : {}),
         deps: node.deps ?? [],
         dependents: node.dependents ?? [],
         flows,
@@ -106,6 +109,13 @@ export function summarizeNode(analysis: Analysis, id: string): ExplainResult {
   return {
     summary: { id, kind: facts.kind, signature: facts.signature, doc: null, at, exported: null, calls: [], callers: [], interceptedBy: [], deps: [], dependents: [], flows, rules, holes: {}, fingerprint: null, planned: true },
   };
+}
+
+/** The observers of an event, in config order: the fn, the observer's name, its config line and area. */
+function observersOf(analysis: Analysis, id: string): string[] {
+  return (analysis.snapshot?.edges ?? [])
+    .filter((e) => e.kind === "call" && e.source === id && e.via === "observer" && e.target !== null)
+    .map((e) => `${e.target} (observer \`${/observer `([^`]*)`/.exec(e.binding ?? "")?.[1] ?? "?"}\`, ${e.site ?? `${e.file}:${e.line}:${e.col}`}${e.scope && e.scope !== "global" ? `, scope ${e.scope}` : ""})`);
 }
 
 /** `file:line: rule text` of the rule and module lines that name `id` or a scope around it, sorted; the generated map's are left out. */
@@ -157,8 +167,16 @@ export function formatSummary(s: NodeSummary): string {
   const list = (label: string, items: readonly string[]): void => {
     if (items.length > 0) lines.push(`${label}: ${items.join(", ")}`);
   };
-  list("calls", s.calls);
-  list("called by", s.callers);
+  if (s.event) {
+    if (s.event.name !== s.id.slice(s.id.indexOf(".") + 1)) lines.push(`name: ${s.event.name}`);
+    list("dispatched by", s.callers);
+    list("observers", s.event.observers);
+    if (s.callers.length === 0) lines.push("dispatched by no code keylang read");
+    if (s.event.observers.length === 0) lines.push("no observer in the config keylang read");
+  } else {
+    list("calls", s.calls);
+    list("called by", s.callers);
+  }
   list("intercepted by", s.interceptedBy);
   list("depends on", s.deps);
   list("used by", s.dependents);

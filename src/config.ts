@@ -122,9 +122,10 @@ export const CONFIG_FILE = "keylang.json";
 
 /**
  * Layers keylang makes itself: packages outside the repository, files outside
- * every layer, and files `outside` in `keylang.json` puts outside the architecture.
+ * every layer, files `outside` in `keylang.json` puts outside the architecture,
+ * and the events a framework dispatches (`events`, ADR 0022 п. 6; `EVENTS_LAYER`).
  */
-export const SYNTHETIC_LAYERS = ["external", "unassigned", "outside"] as const;
+export const SYNTHETIC_LAYERS = ["external", "unassigned", "outside", "events"] as const;
 
 /** The synthetic layer of the files `outside` names. */
 export const OUTSIDE_LAYER = "outside";
@@ -795,6 +796,7 @@ function reservedReason(name: string): string {
   if (name === "external") return "`external` is reserved for packages outside the repository";
   if (name === "unassigned") return "`unassigned` is reserved for files outside every layer";
   if (name === OUTSIDE_LAYER) return "`outside` is reserved for files `outside` puts outside the architecture";
+  if (name === "events") return "`events` is reserved for the events a framework dispatches";
   if (name.toLowerCase() === "readme") return `\`${name}\` is reserved: \`README.md\` is the start page of the explained map`;
   return `\`${name}\` is a keyword at the top of a map`;
 }

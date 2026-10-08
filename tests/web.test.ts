@@ -9,7 +9,7 @@ import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:chil
 import { createServer, request } from "node:http";
 import { connect } from "node:net";
 import xterm from "@xterm/headless";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -1250,6 +1250,42 @@ test("web: /api/calls opens one level of the call tree — callees with via and 
     assert.equal(refused.status, 403, JSON.stringify(headers));
     assert.doesNotMatch(refused.body, /charge/);
   }
+});
+
+test("web: on a Magento repository /api/views lists the events and the framework's entry points; /api/diagram draws an event; /api/calls opens one (business-flows/08, 10)", async (t) => {
+  const repo = mkdtempSync(join(tmpdir(), "keylang-web-magento-"));
+  t.after(() => rmSync(repo, { recursive: true, force: true }));
+  cpSync(join(root, "tests/fixtures/magento-shop"), repo, { recursive: true });
+  const server = await serveWeb({ root: repo, port: 0 });
+  t.after(() => server.close());
+  const url = new URL(server.url);
+  const bearer = { Authorization: `Bearer ${tokenOf(url)}` };
+  const views = JSON.parse((await status(url, "/api/views", bearer)).body) as { events: { id: string; publishers: number; subscribers: number }[]; eventsReason?: string; entries: { kind: string; label: string }[]; layers: string[] };
+  assert.equal(views.eventsReason, undefined);
+  assert.deepEqual(views.events.map((e) => [e.id, e.publishers, e.subscribers]), [
+    ["events.checkout_submit_all_after", 1, 1],
+    ["events.checkout_submit_before", 1, 2],
+    ["events.sales-order-place_after", 0, 0],
+  ]);
+  assert.deepEqual([...new Set(views.entries.map((e) => e.kind))], ["cli", "consumer", "cron", "graphql", "observer", "rest", "route"]);
+  assert.ok(views.entries.some((e) => e.kind === "rest" && e.label === "POST /V1/orders/:id/place [Shop_Sales::place, self]"));
+  assert.ok(views.layers.includes("events"));
+  const diagram = JSON.parse((await status(url, "/api/diagram?view=event&name=checkout_submit_before", bearer)).body) as { nodes: { id: string; kind: string; group?: string }[]; edges: { from: string; to: string; kind: string; label?: string }[] };
+  assert.deepEqual(diagram.edges.map((e) => [e.from, e.to, e.kind, e.label]), [
+    ["fn:checkout.Model.QuoteManagement.QuoteManagement.submit", "event:events.checkout_submit_before", "emits", "dispatch"],
+    ["event:events.checkout_submit_before", "fn:checkout.Observer.FrontendGuard.FrontendGuard.guard", "call", "observer frontend_guard (frontend)"],
+    ["event:events.checkout_submit_before", "fn:promo.Observer.AuditSubmit.AuditSubmit.execute", "call", "observer promo_audit (adminhtml)"],
+  ]);
+  const event = JSON.parse((await status(url, "/api/calls?id=events.checkout_submit_before", bearer)).body) as CallsJson;
+  assert.equal(event.node?.kind, "event");
+  assert.deepEqual(event.callees.map((c) => [c.id, c.via]), [
+    ["checkout.Observer.FrontendGuard.FrontendGuard.guard", "observer"],
+    ["promo.Observer.AuditSubmit.AuditSubmit.execute", "observer"],
+  ]);
+  assert.deepEqual(event.callers.map((c) => [c.id, c.via]), [["checkout.Model.QuoteManagement.QuoteManagement.submit", "dispatch"]]);
+  // Up from an observer: through the event to the GraphQL-less submit, no entry above it but the observer itself.
+  const observer = JSON.parse((await status(url, "/api/calls?id=promo.Observer.AuditSubmit.AuditSubmit.execute", bearer)).body) as CallsJson;
+  assert.deepEqual(observer.entries, [{ kind: "observer", label: "checkout_submit_before (promo_audit, adminhtml)" }]);
 });
 
 test("web: /api/coverage answers the payload of `keylang coverage --json` behind the token (business-flows/13, 22)", async (t) => {

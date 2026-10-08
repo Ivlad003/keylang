@@ -674,9 +674,10 @@ export function completions(ws: Workspace, path: string, position: LspPosition):
   const kindOf = dependencyKindOf(ws.analysis.spec, ws.analysis.index, ws.analysis.snapshot?.nodes);
   const labels = new Map<string, CompletionItem>();
   for (const [id, node] of Object.entries(ws.analysis.snapshot?.nodes ?? {})) {
-    if (callableOnly ? node.kind !== "fn" : node.kind !== "module" && node.kind !== "fn" && node.kind !== "type") continue;
+    // An event (ADR 0022 п. 6) is a step too: reached through a dispatch, it reaches its observers.
+    if (callableOnly ? node.kind !== "fn" && node.kind !== "event" : node.kind !== "module" && node.kind !== "fn" && node.kind !== "type" && node.kind !== "event") continue;
     if (from && blocksDependency(ws.analysis.spec, from, id, kindOf, ws.analysis.config.format)) continue;
-    const kind = node.kind === "fn" ? COMPLETION.function : node.kind === "type" ? COMPLETION.struct : COMPLETION.module;
+    const kind = node.kind === "fn" ? COMPLETION.function : node.kind === "type" ? COMPLETION.struct : node.kind === "event" ? COMPLETION.event : COMPLETION.module;
     labels.set(id, { label: id, kind, ...(node.signature ? { detail: node.signature } : {}), sortText: `1${id}`, ...replacing(id) });
   }
   for (const item of ws.analysis.spec.planned) {
