@@ -15,7 +15,7 @@ import type { Document } from "./ir.ts";
 import { keepsFactCache, saveFactCache } from "./fact-cache.ts";
 import { DISCOVERED_FLOWS_DIR, EXPLAINED_MAP_DIR, generateMap, TOUR_FILE, type MapResult } from "./map.ts";
 import { parse } from "./parser.ts";
-import type { OldSnapshot } from "./migration.ts";
+import { readOldIndex, type NodeView, type OldSnapshot } from "./migration.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
 import { loadReports } from "./test-report.ts";
 import { loadTraces } from "./trace-evidence.ts";
@@ -115,7 +115,7 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
   const migration: OldSnapshot =
     request.withoutMigration === true || request.withoutCode === true || config.migration.from === null
       ? { state: "absent" }
-      : await (await import("./migration-stack.ts")).oldSnapshotFor(root, config.migration.from);
+      : await oldSnapshotFor(root, config.migration.from);
   const assessment = assess(
     docs,
     snapshot,
@@ -130,6 +130,41 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
     config.format,
   );
   return { ...assessment, config, map, snapshot, docs, notSpecs, packages };
+}
+
+/** Old snapshots `check` has read in this process, by path: a directory once, a file while it is the same. */
+const oldIds = new Map<string, { stamp: string; ids: Promise<{ snapshotId: string; nodes: Record<string, NodeView> }> }>();
+
+/**
+ * The nodes of the old stack of a migration (`migration.from` of
+ * keylang.json, relative to the root; business-flows/27): an index file, or
+ * the old checkout analysed read-only — no fact cache, its own
+ * `migration.from` unread. An unreadable one is a state, never a thrown
+ * error: the rows stay unverified and say why.
+ */
+export async function oldSnapshotFor(root: string, from: string): Promise<OldSnapshot> {
+  const abs = isAbsolute(from) ? from : resolve(root, from);
+  try {
+    const stat = statSync(abs);
+    const stamp = stat.isDirectory() ? "dir" : `${stat.mtimeMs}:${stat.size}`;
+    let known = oldIds.get(abs);
+    if (known === undefined || known.stamp !== stamp) {
+      const ids = stat.isDirectory()
+        ? analyze({ root: abs, withoutEvidence: true, withoutMigration: true }).then((old) => {
+            if (old.snapshot === null) throw new Error("no code to read (`languages` in its keylang.json is empty)");
+            return { snapshotId: old.snapshot.snapshotId, nodes: old.snapshot.nodes };
+          })
+        : Promise.resolve().then(() => readOldIndex(abs));
+      known = { stamp, ids };
+      oldIds.set(abs, known);
+      // A failure is not remembered: the next check reads again.
+      ids.catch(() => oldIds.delete(abs));
+    }
+    const { snapshotId, nodes } = await known.ids;
+    return { state: "loaded", from, snapshotId, nodes };
+  } catch (error) {
+    return { state: "error", from, reason: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 /**

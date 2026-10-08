@@ -14,9 +14,9 @@
 // test of the old flow passing under the same name in both reports.
 
 import { createHash } from "node:crypto";
-import { diagnostic, type Diagnostic } from "./diag.ts";
+import { readFileSync } from "node:fs";
+import { diagnostic, errorText, type Diagnostic } from "./diag.ts";
 import { sectionNodes, type Document } from "./ir.ts";
-import type { EntryKind } from "./snapshot.ts";
 import { compareText, type Span } from "./span.ts";
 import { matchTest, type TestCase, type TestEvidence } from "./test-report.ts";
 import type { Verdict, VerdictKind } from "./verdict.ts";
@@ -84,6 +84,40 @@ export type OldSnapshot =
   | { state: "absent" }
   | { state: "error"; from: string; reason: string }
   | { state: "loaded"; from: string; snapshotId: string; nodes: Readonly<Record<string, NodeView>> };
+
+/** An index file of the old stack as `check` and `migration status` read it: `.keylang/index.json` or the export of `map --export-index`. */
+export interface OldIndex {
+  schema: unknown;
+  snapshotId: string;
+  nodes: Record<string, NodeView>;
+  entries: { kind: string; label: string; id: string }[];
+  /** The export's `migration` block; absent in a plain index. */
+  migration?: unknown;
+  /** The whole parsed file (a snapshot, to draft flows from). */
+  raw: Record<string, unknown>;
+}
+
+/** Reads an index file; a file that is not one is an error naming it. */
+export function readOldIndex(abs: string): OldIndex {
+  let body: unknown;
+  try {
+    body = JSON.parse(readFileSync(abs, "utf8").replace(/^\uFEFF/, ""));
+  } catch (error) {
+    throw new Error(`${abs}: not a keylang index: ${errorText(error)}`);
+  }
+  const value = body as Record<string, unknown> | null;
+  if (typeof value !== "object" || value === null || typeof value.snapshotId !== "string" || typeof value.nodes !== "object" || value.nodes === null || !Array.isArray(value.entries ?? [])) {
+    throw new Error(`${abs}: not a keylang index (expected \`snapshotId\`, \`nodes\` and \`entries\` of .keylang/index.json)`);
+  }
+  return {
+    schema: value.schema,
+    snapshotId: value.snapshotId,
+    nodes: value.nodes as Record<string, NodeView>,
+    entries: (value.entries as OldIndex["entries"] | undefined) ?? [],
+    ...(value.migration !== undefined ? { migration: value.migration } : {}),
+    raw: value,
+  };
+}
 
 /**
  * Where `id` is in a snapshot's nodes: `present`; `opaque` when the nearest
@@ -180,7 +214,7 @@ export interface StackWebhook {
 export interface Stack {
   snapshotId: string;
   nodes: Readonly<Record<string, NodeView>>;
-  entries: readonly { kind: EntryKind; label: string; id: string }[];
+  entries: readonly { kind: string; label: string; id: string }[];
   flows: readonly StackFlow[];
   /** The test results of `check.tests`; null without a report. */
   tests: readonly TestCase[] | null;
@@ -228,7 +262,7 @@ export interface MigrationStatus {
   /** What the table does not carry over yet. */
   notMigrated: {
     flows: { name: string; source: "spec" | "discovered" }[];
-    entries: { kind: EntryKind; label: string; id: string }[];
+    entries: { kind: string; label: string; id: string }[];
     integrations: { id: string; label: string; kind: string }[];
   };
   /** Flows with a counterpart but no test of the same name on both sides. */
@@ -238,7 +272,7 @@ export interface MigrationStatus {
 }
 
 /** Entry kinds the report lists when the table has no row for them: work that runs without a user's request. */
-const BACKGROUND_KINDS: ReadonlySet<EntryKind> = new Set(["cron", "consumer", "observer", "webhook"]);
+const BACKGROUND_KINDS: ReadonlySet<string> = new Set(["cron", "consumer", "observer", "webhook"]);
 
 const RANK: Record<VerdictKind, number> = { ok: 0, unverified: 1, fail: 2 };
 

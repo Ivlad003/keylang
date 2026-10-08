@@ -6,15 +6,14 @@
 // superset `keylang map --export-index <file>` writes (also the hand-written
 // flows, the test results of `check.tests` and the integrations).
 
-import { readFileSync, statSync, writeFileSync } from "node:fs";
+import { statSync, writeFileSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 import { analyze, type Analysis } from "./analyze.ts";
 import { evidenceFiles, toPosix } from "./config.ts";
-import { errorText } from "./diag.ts";
 import { discoverFlows, specifiedTriggers, DISCOVERED_DIR } from "./discover.ts";
 import { findIntegrations, loadIntegrations } from "./integrations.ts";
 import type { Document } from "./ir.ts";
-import type { NodeView, OldSnapshot, Stack, StackFlow } from "./migration.ts";
+import { readOldIndex, type Stack, type StackFlow } from "./migration.ts";
 import { SNAPSHOT_SCHEMA, type AnalysisSnapshot } from "./snapshot.ts";
 import { walkFlow, type Flow } from "./spec-ir.ts";
 import { compareText } from "./span.ts";
@@ -115,7 +114,7 @@ export async function loadOldStack(abs: string): Promise<LoadedStack> {
     const analysis = await analyzeOld(abs, false);
     return { stack: await stackOf(analysis), notes: [] };
   }
-  const body = readIndex(abs);
+  const body = readOldIndex(abs);
   const migration = body.migration as MigrationExport | undefined;
   if (migration !== undefined) {
     if (migration.schema !== MIGRATION_EXPORT_SCHEMA || !Array.isArray(migration.flows)) throw new Error(`${abs}: unsupported \`migration\` block (expected schema ${MIGRATION_EXPORT_SCHEMA})`);
@@ -127,60 +126,9 @@ export async function loadOldStack(abs: string): Promise<LoadedStack> {
   const notes = ["the old snapshot is a plain index.json: its hand-written flows, test results and integrations are not in it (`keylang map --export-index <file>` in the old repository writes them); its flows are the drafts `flows discover` makes from its entry points"];
   let flows: StackFlow[] = [];
   if (body.schema === SNAPSHOT_SCHEMA) {
-    flows = discoverFlows(body, new Map()).flows.map((flow) => ({ name: flow.name, source: "discovered" as const, file: null, trigger: flow.trigger, steps: [...new Set(flow.steps)], tests: [] }));
+    flows = discoverFlows({ ...(body.raw as unknown as AnalysisSnapshot), entries: body.entries as AnalysisSnapshot["entries"] }, new Map()).flows.map((flow) => ({ name: flow.name, source: "discovered" as const, file: null, trigger: flow.trigger, steps: [...new Set(flow.steps)], tests: [] }));
   } else notes.push(`the old snapshot has schema ${String(body.schema)}, this keylang reads ${SNAPSHOT_SCHEMA}: no flows drafted from it`);
   return { stack: { snapshotId: body.snapshotId, nodes: body.nodes, entries: body.entries, flows, tests: null, integrations: null }, notes };
-}
-
-function readIndex(abs: string): AnalysisSnapshot & { migration?: unknown } {
-  let body: unknown;
-  try {
-    body = JSON.parse(readFileSync(abs, "utf8").replace(/^﻿/, ""));
-  } catch (error) {
-    throw new Error(`${abs}: not a keylang index: ${errorText(error)}`);
-  }
-  const value = body as Record<string, unknown> | null;
-  if (typeof value !== "object" || value === null || typeof value.snapshotId !== "string" || typeof value.nodes !== "object" || value.nodes === null || !Array.isArray(value.entries ?? [])) {
-    throw new Error(`${abs}: not a keylang index (expected \`snapshotId\`, \`nodes\` and \`entries\` of .keylang/index.json)`);
-  }
-  return { ...(value as unknown as AnalysisSnapshot), entries: (value.entries as AnalysisSnapshot["entries"] | undefined) ?? [] };
-}
-
-/** Old snapshots `check` has read in this process, by path: a directory once, a file while it is the same. */
-const oldIds = new Map<string, { stamp: string; ids: Promise<{ snapshotId: string; nodes: Record<string, NodeView> }> }>();
-
-/**
- * The nodes of the old stack for `check` (`migration.from` of keylang.json,
- * relative to the root). An unreadable one is a state, never a thrown error:
- * the rows stay unverified and say why.
- */
-export async function oldSnapshotFor(root: string, from: string | null): Promise<OldSnapshot> {
-  if (from === null) return { state: "absent" };
-  const abs = resolveFrom(root, from);
-  try {
-    const stat = statSync(abs);
-    const stamp = stat.isDirectory() ? "dir" : `${stat.mtimeMs}:${stat.size}`;
-    let known = oldIds.get(abs);
-    if (known === undefined || known.stamp !== stamp) {
-      const ids = stat.isDirectory()
-        ? analyzeOld(abs, true).then((analysis) => {
-            if (analysis.snapshot === null) throw new Error("no code to read (`languages` in its keylang.json is empty)");
-            return { snapshotId: analysis.snapshot.snapshotId, nodes: analysis.snapshot.nodes };
-          })
-        : Promise.resolve().then(() => {
-            const body = readIndex(abs);
-            return { snapshotId: body.snapshotId, nodes: body.nodes };
-          });
-      known = { stamp, ids };
-      oldIds.set(abs, known);
-      // A failure is not remembered: the next check reads again.
-      ids.catch(() => oldIds.delete(abs));
-    }
-    const { snapshotId, nodes } = await known.ids;
-    return { state: "loaded", from, snapshotId, nodes };
-  } catch (error) {
-    return { state: "error", from, reason: errorText(error) };
-  }
 }
 
 /** `keylang map --export-index <file>`: the snapshot of this repository with the `migration` block, as JSON text. */
