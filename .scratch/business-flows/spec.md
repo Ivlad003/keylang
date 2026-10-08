@@ -106,7 +106,7 @@ keylang має допомагати швидко зануритись у чуж�
 | [34](issues/34-nestjs-adapter.md) | NestJS: providers, контролери, події, cron, мікросервіси | resolved | — |
 | [35](issues/35-laravel-adapter.md) | Laravel: container, фасади, маршрути, події, черги, scheduler | resolved | — |
 | [36](issues/36-symfony-adapter.md) | Symfony: services.yaml, маршрути, підписники, Messenger, команди | resolved | — |
-| [37](issues/37-express-next-adapter.md) | Express/Fastify/Next.js: маршрути, middleware, server actions | ready-for-agent | — |
+| [37](issues/37-express-next-adapter.md) | Express/Fastify/Next.js: маршрути, middleware, server actions | resolved | — |
 | [38](issues/38-python-web-adapter.md) | Django/FastAPI/Flask/Celery: маршрути, сигнали, задачі | resolved | — |
 | [39](issues/39-pwa-kit-overrides.md) | PWA Kit / Composable Storefront: ccExtensibility overrides і маршрути | ready-for-agent | — |
 
