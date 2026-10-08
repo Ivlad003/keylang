@@ -14,7 +14,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { z } from "zod";
 import { contextForIds } from "./agent-context.ts";
-import { analyze, within, type Analysis } from "./analyze.ts";
+import { analyze, specPathProblem, within, type Analysis } from "./analyze.ts";
 import { checkResults } from "./check-results.ts";
 import { keepsFactCache, saveFactCache } from "./fact-cache.ts";
 import { idsIn } from "./feature-status.ts";
@@ -243,6 +243,9 @@ export function mcpServer(root: string, version: string): McpServer {
       const rel = toPosix(relative(root, abs));
       // Inside the root by path segments: `..specs/x.md` is a directory named `..specs`, not a way out.
       if (!within(abs, root) || rel === "") return failure(`${path}: outside the repository`);
+      // A file check never reads would come back clean: say so instead.
+      const notRead = specPathProblem(loadConfig(root), abs);
+      if (notRead !== null) return failure(`${rel}: ${notRead}`);
       const analysis = await analyze({ root, overlay: new Map([[abs, text]]) });
       const diagnostics = analysis.diagnostics
         .filter((diag) => diag.file === rel)

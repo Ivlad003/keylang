@@ -1,7 +1,7 @@
 // File discovery and loading.
 
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync, type Dirent } from "node:fs";
-import { extname, join, resolve } from "node:path";
+import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Document } from "./ir.ts";
 import { parse } from "./parser.ts";
 
@@ -39,6 +39,19 @@ export function collectMdFiles(paths: readonly string[], base?: string): string[
   return out.filter((file) => keep.delete(file));
 }
 
+/** A directory the walk over a spec directory does not enter: hidden, `node_modules`, `target`. */
+export function skippedDirectory(name: string): boolean {
+  return name.startsWith(".") || name === "target" || name === "node_modules";
+}
+
+/** Whether the walk from `dir` (or `dir` itself, a file) reaches `abs`: inside it, and through no skipped directory below it. */
+export function walkReaches(dir: string, abs: string): boolean {
+  const rel = relative(dir, abs);
+  if (rel === "") return true;
+  if (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return false;
+  return !rel.split(sep).slice(0, -1).some(skippedDirectory);
+}
+
 function walkDir(dir: string, out: string[], walked: Set<string>, at: (p: string) => string): void {
   // A link back to an ancestor would walk forever.
   const real = realPath(at(dir));
@@ -49,7 +62,7 @@ function walkDir(dir: string, out: string[], walked: Set<string>, at: (p: string
     const p = join(dir, e.name);
     const type = entryType(e, at(p));
     if (type === "dir") {
-      if (!e.name.startsWith(".") && e.name !== "target" && e.name !== "node_modules") walkDir(p, out, walked, at);
+      if (!skippedDirectory(e.name)) walkDir(p, out, walked, at);
     } else if (type === "file" && extname(e.name) === ".md") {
       out.push(p);
     }

@@ -785,3 +785,21 @@ test("lsp: workspace symbols find nodes by name and by what their explanation sa
   assert.equal(layer?.location.uri, uri(dir, "keylang.json"));
   assert.equal(layer?.location.range.start.line, lineOf(readFileSync(join(dir, "keylang.json"), "utf8"), '"domain"'));
 });
+
+// An open `.md` that check does not read (a hidden directory, node_modules, target under the spec directory) is no spec of the analysis: it cannot declare what check calls dangling.
+test("lsp: an open spec in a directory check skips does not change the diagnostics of another file", async (t) => {
+  const FEATURE = "# flow refund\n\n- trigger domain.order.total\n  - step domain.order.refund\n";
+  const PLAN = "# flow plan\n\n- planned fn domain.order.refund (order: Order) → number\n";
+  const dir = fixture(t, { "keylang/features/r.md": FEATURE });
+  const rows = checkRows(dir, "keylang/features/r.md");
+  assert.ok(rows.some((row) => row.code === "K001"), JSON.stringify(rows));
+  const s = await open(t, dir);
+  const featureUri = uri(dir, "keylang/features/r.md");
+  s.notify("textDocument/didOpen", { textDocument: { uri: featureUri, languageId: "markdown", version: 1, text: FEATURE } });
+  for (const [i, skipped] of ["keylang/.drafts/plan.md", "keylang/node_modules/plan.md", "keylang/target/plan.md"].entries()) {
+    s.notify("textDocument/didOpen", { textDocument: { uri: uri(dir, skipped), languageId: "markdown", version: 1, text: PLAN.replace("plan", `plan${i}`) } });
+    const pulled = (await s.request<{ items: Item[] }>("textDocument/diagnostic", { textDocument: { uri: featureUri } })).items;
+    assert.ok(pulled.some((item) => item.code === "K001"), `${skipped}: ${JSON.stringify(pulled)}`);
+    for (const row of rows) assert.ok(pulled.some((item) => sameAs(row, item)), JSON.stringify({ skipped, row, pulled }));
+  }
+});

@@ -10,7 +10,7 @@ import { assess, type Assessment } from "./assess.ts";
 import { CONFIG_FILE, evidenceFiles, loadConfig, resolveStatic, toPosix, type Config, type StaticMode } from "./config.ts";
 import { readManifests, type DeclaredPackage } from "./declared-packages.ts";
 import { compareText } from "./span.ts";
-import { collectMdFiles } from "./files.ts";
+import { collectMdFiles, walkReaches } from "./files.ts";
 import type { Document } from "./ir.ts";
 import { keepsFactCache, saveFactCache } from "./fact-cache.ts";
 import { DISCOVERED_FLOWS_DIR, EXPLAINED_MAP_DIR, generateMap, type MapResult } from "./map.ts";
@@ -76,11 +76,11 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
   const specs = request.specs ?? (existsSync(specDir) ? [specDir] : []);
   // Generated reading aids beside the specs: never assessed, so the explained map repeats no ID (K002)
   // and a discovered flow is no claim (ADR 0014).
-  const reading = [join(specDir, EXPLAINED_MAP_DIR), join(specDir, "explain"), join(specDir, DISCOVERED_FLOWS_DIR)];
-  const notSpec = (abs: string): boolean => reading.some((dir) => within(abs, dir));
+  const notSpec = (abs: string): boolean => readingAid(specDir, abs);
   const notSpecs = specs.filter(notSpec).map(display);
   const files = collectMdFiles(specs.filter((spec) => !notSpec(spec))).filter((abs) => !notSpec(abs));
-  for (const abs of overlay.keys()) if (abs.endsWith(".md") && !files.includes(abs) && !notSpec(abs) && specs.some((spec) => within(abs, spec))) files.push(abs);
+  // An unsaved buffer joins the specs only where the walk of `check` would find it on disk.
+  for (const abs of overlay.keys()) if (abs.endsWith(".md") && !files.includes(abs) && !notSpec(abs) && specs.some((spec) => walkReaches(spec, abs))) files.push(abs);
   const mapDir = join(specDir, "map");
   const docs: Document[] = [];
   for (const abs of files) {
@@ -159,6 +159,27 @@ function repositoryFile(root: string, path: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** A generated reading aid beside the specs (the explained map, explanations, discovered flows): never a spec. */
+function readingAid(specDir: string, abs: string): boolean {
+  return [EXPLAINED_MAP_DIR, "explain", DISCOVERED_FLOWS_DIR].some((dir) => within(abs, join(specDir, dir)));
+}
+
+/**
+ * Why `check` does not read `abs` as a spec, or null when it does: a `.md`
+ * file the walk of the spec directory reaches (no hidden directory,
+ * `node_modules` or `target` on the way) outside the reading aids.
+ */
+export function specPathProblem(config: Config, abs: string): string | null {
+  const specDir = join(config.root, config.dir);
+  const reason =
+    !abs.endsWith(".md") ? "not a `.md` file"
+    : !within(abs, specDir) ? `outside the spec directory \`${config.dir}/\``
+    : !walkReaches(specDir, abs) ? "under a hidden directory, `node_modules` or `target`, which check skips"
+    : readingAid(specDir, abs) ? "a generated reading aid, not a spec"
+    : null;
+  return reason === null ? null : `\`keylang check\` does not read this file as a spec: ${reason}`;
 }
 
 export function within(abs: string, dir: string): boolean {
