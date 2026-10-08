@@ -112,3 +112,17 @@ body[data-mode="explore"] #toolbar button, body[data-mode="blind"] #toolbar butt
 #blind td { border-bottom: 1px solid #eceff1; padding: 2px 6px; vertical-align: top; word-break: break-word; }
 #blind .reasons { margin: 0 0 6px; padding-left: 18px; }
 #blind .blind-section { margin-bottom: 12px; }
+
+/* The editor (business-flows/23): a bar, the palette, the canvas, the properties panel. */
+#editor { display: none; flex: 1; flex-direction: column; min-height: 0; }
+body[data-mode="editor"] #editor { display: flex; }
+body[data-mode="editor"] #stage, body[data-mode="editor"] #details, body[data-mode="editor"] #toolbar button { display: none; }
+#editor .editor-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 4px 8px; border-bottom: 1px solid #eceff1; background: #f7f9fa; }
+#editor .editor-bar button, #editor .editor-bar select { border: 1px solid #b0bec5; border-radius: 4px; background: #ffffff; cursor: pointer; min-width: 26px; height: 26px; font: inherit; }
+#editor .editor-bar button[aria-pressed="true"] { background: #1565c0; border-color: #1565c0; color: #ffffff; }
+#editor .editor-bar button:disabled { opacity: 0.45; cursor: default; }
+#editor .editor-bar .sep { width: 1px; height: 20px; background: #cfd8dc; margin: 0 4px; }
+#editor .editor-label { color: #607d8b; font-size: 12px; }
+#editor .snap { display: inline-flex; align-items: center; gap: 2px; color: #455a64; }
+#editor .editor-body { flex: 1; display: flex; min-height: 0; }
+#editor .editor-canvas { flex: 1; position: relative; overflow: hidden; background-color: #fbfcfc; background-image: radial-gradient(#cfd8dc 1px, transparent 1px); background-size: 10px 10px; outline: none; }

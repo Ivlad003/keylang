@@ -193,8 +193,8 @@ export interface Usages {
 /** A view as the query of `GET /api/diagram` names it. */
 export type ViewQuery = { view: "flow"; name: string } | { view: "discovered"; name: string } | { view: "entry"; id: string } | { view: "layers" } | { view: "process"; domain: string };
 
-/** What the page shows: a diagram, the explorer at an ID (`""`: none picked yet), or the blind spots. */
-export type PageQuery = ViewQuery | { view: "explore"; id: string } | { view: "blind" };
+/** What the page shows: a diagram, the explorer at an ID (`""`: none picked yet), the blind spots, or the editor on a view (`null`: an empty canvas). */
+export type PageQuery = ViewQuery | { view: "explore"; id: string } | { view: "blind" } | { view: "editor"; of: ViewQuery | null };
 
 /** A refused or failed request, with the status the page explains. */
 export class ApiError extends Error {
