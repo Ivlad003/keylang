@@ -162,13 +162,13 @@
       - calls operations.operations.runOperation, operations.generate.mapCheckLines, base.config.toPosix, cli.cli.printMap
     - fn [printMap](../../src/cli.ts#L1358) (result: OperationEnvelope<"map">, root: string) → number <!-- internal -->
       - calls base.config.toPosix, operations.generate.mapConflictLines, operations.generate.mapStepLines, operations.generate.mapSummary
-    - fn [cmdParse](../../src/cli.ts#L1389) (paths: string[], json: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdParse](../../src/cli.ts#L1393) (paths: string[], json: boolean) → Promise<number> <!-- internal -->
       - calls operations.operations.runOperation, map.analyze.findRoot, base.diag.formatDiagnostic
-    - fn [cmdCheck](../../src/cli.ts#L1404) (paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined; stale: boolean; accept: boolean }) → Promise<number> <!-- internal -->
+    - fn [cmdCheck](../../src/cli.ts#L1408) (paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined; stale: boolean; accept: boolean }) → Promise<number> <!-- internal -->
       - calls cli.cli.cmdCheckStale, features.check-format.isCheckFormat, map.analyze.findRoot, base.config.loadConfig, operations.operations.runOperation, operations.spec.checkSkipNote, features.check-format.checkReportText, operations.spec.checkSummary
-    - fn [cmdCheckStale](../../src/cli.ts#L1461) (paths: string[], accept: boolean, strict: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdCheckStale](../../src/cli.ts#L1465) (paths: string[], accept: boolean, strict: boolean) → Promise<number> <!-- internal -->
       - calls map.analyze.findRoot
-    - fn [cmdFmt](../../src/cli.ts#L1482) (paths: string[], checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdFmt](../../src/cli.ts#L1486) (paths: string[], checkOnly: boolean) → Promise<number> <!-- internal -->
       - calls operations.operations.runOperation, map.analyze.findRoot, operations.spec.fmtGeneratedNote
   - module [completions](../../src/completions.ts#L1)
     - type [Shell](../../src/completions.ts#L7) = (typeof SHELLS)[number]
@@ -267,6 +267,6 @@
       - calls lang.files.existingText, base.config.loadConfig, map.map.generateMap, map.fact-cache.keepsFactCache, map.fact-cache.saveFactCache, lang.files.collectMdFiles, base.config.evidenceFiles, map.analyze.analyze
     - fn [explanationJson](../../src/mcp.ts#L72) (e: NodeExplanation | null) → { text: string; origin: "doc" | "llm"; stale: boolean; agent?: string; date?: string } | null <!-- internal -->
     - fn [mcpServer](../../src/mcp.ts#L77) (root: string, version: string) → McpServer
-      - calls cli.mcp.currentAnalysis, features.node-search.searchNodes, map.explanations.loadBriefs, cli.mcp.json, cli.mcp.explanationJson, features.explain-node.summarizeNode, cli.mcp.failure, map.explanations.explanationOf, lang.ir.sectionNodes, lang.ir.walk, features.check-results.checkResults, features.explain-llm.readExplanation, features.explain-llm.isStale, base.config.toPosix, features.proposals.proposalProblem, lang.files.existingText, features.proposals.writeProposal, features.proposals.lineDiff, base.config.specPath, features.agent-context.contextForIds, features.feature-status.idsIn, map.analyze.within, map.analyze.analyze, features.spec-to-code.specToCode, base.diag.errorText, operations.operations.runOperation
-    - fn [serveMcp](../../src/mcp.ts#L370) (root: string, version: string) → Promise<number>
+      - calls cli.mcp.currentAnalysis, features.node-search.searchNodes, map.explanations.loadBriefs, cli.mcp.json, cli.mcp.explanationJson, features.explain-node.summarizeNode, cli.mcp.failure, map.explanations.explanationOf, lang.ir.sectionNodes, lang.ir.walk, features.check-results.checkResults, features.explain-llm.readExplanation, features.explain-llm.isStale, base.config.toPosix, features.proposals.proposalProblem, lang.files.existingText, features.proposals.writeProposal, features.proposals.lineDiff, base.config.specPath, features.agent-context.contextForIds, features.feature-status.idsIn, map.analyze.within, map.analyze.specPathProblem, base.config.loadConfig, map.analyze.analyze, features.spec-to-code.specToCode, base.diag.errorText, operations.operations.runOperation
+    - fn [serveMcp](../../src/mcp.ts#L373) (root: string, version: string) → Promise<number>
       - calls cli.mcp.mcpServer
