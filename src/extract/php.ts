@@ -808,7 +808,9 @@ function resultCall(n: Node, scope: Scope, collector: Collector): ResultCallFact
   const nameNode = n.type === "function_call_expression" ? n.childForFieldName("function") : n.childForFieldName("name");
   if (nameNode?.type !== "name" && nameNode?.type !== "qualified_name") return null;
   const member = n.type === "function_call_expression" ? fact.callee : nameNode.text;
+  const args = argsOf(n, scope.names, scope.ctx ? qualify(scope.names.ns, scope.ctx.name) : null);
   return {
+    ...(args.some((a) => informative(a.value)) ? { args } : {}),
     callee: fact.callee,
     member,
     ...(fact.bound ? { bound: fact.bound } : {}),

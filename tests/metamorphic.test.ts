@@ -277,6 +277,31 @@ test("magento: turning the adapter off, and with it the factories Magento genera
   monotonic("magento-shop", "frameworks: []", before, aggregate(results(dir), []));
 });
 
+test("magento: turning the adapter off, and with it the ObjectManager and the preferences of a module `outside`, moves a verdict only to unverified", (t) => {
+  const dir = copyFixture(t, "magento-shop");
+  write(dir, "lib/Fw/ObjectManagerInterface.php", "<?php\nnamespace Magento\\Framework;\n\ninterface ObjectManagerInterface\n{\n    public function get($type);\n}\n");
+  write(dir, "app/code/Vendor/Store/registration.php", "<?php\n\\Magento\\Framework\\Component\\ComponentRegistrar::register(\\Magento\\Framework\\Component\\ComponentRegistrar::MODULE, 'Vendor_Store', __DIR__);\n");
+  write(dir, "app/code/Vendor/Store/Api/StoreManagerInterface.php", "<?php\nnamespace Vendor\\Store\\Api;\n\ninterface StoreManagerInterface\n{\n    public function getStore();\n}\n");
+  write(dir, "app/code/Vendor/Store/Model/StoreManager.php", "<?php\nnamespace Vendor\\Store\\Model;\n\nclass StoreManager implements \\Vendor\\Store\\Api\\StoreManagerInterface\n{\n    public function getStore() {}\n}\n");
+  write(dir, "app/code/Vendor/Store/etc/di.xml", '<?xml version="1.0"?>\n<config>\n    <preference for="Vendor\\Store\\Api\\StoreManagerInterface" type="Vendor\\Store\\Model\\StoreManager"/>\n</config>\n');
+  write(dir, "app/code/Shop/Sales/Model/Invoice.php", "<?php\nnamespace Shop\\Sales\\Model;\n\nclass Invoice\n{\n    public function register(): void {}\n}\n");
+  write(
+    dir,
+    "app/code/Shop/Sales/Model/Locator.php",
+    "<?php\nnamespace Shop\\Sales\\Model;\n\nuse Magento\\Framework\\ObjectManagerInterface;\nuse Vendor\\Store\\Api\\StoreManagerInterface;\n\nclass Locator\n{\n    public function __construct(private ObjectManagerInterface $objectManager, private StoreManagerInterface $storeManager) {}\n\n    public function run(): void\n    {\n        $this->objectManager->get(Invoice::class)->register();\n        $this->storeManager->getStore();\n    }\n}\n",
+  );
+  write(dir, "keylang/flows/locate.md", "# flow locate\n\n- trigger sales.Model.Locator.Locator.run\n  - step sales.Model.Invoice.Invoice\n  - step sales.Model.Invoice.Invoice.register\n");
+  write(dir, "keylang/rules.md", "# rules\n\n- deny sales checkout\n");
+  const raw = JSON.parse(readFileSync(join(dir, "keylang.json"), "utf8")) as Record<string, unknown>;
+  write(dir, "keylang.json", `${JSON.stringify({ ...raw, outside: ["lib/**", "app/code/Vendor/**"] }, null, 2)}\n`);
+  const before = aggregate(results(dir), []);
+  assert.equal(before.get("flow:static:sales.Model.Invoice.Invoice.register:keylang/flows/locate.md:5")?.verdict, "ok");
+  write(dir, "keylang.json", `${JSON.stringify({ ...raw, outside: ["lib/**", "app/code/Vendor/**"], frameworks: [] }, null, 2)}\n`);
+  const after = aggregate(results(dir), []);
+  monotonic("magento-shop", "frameworks: [] with the ObjectManager", before, after);
+  assert.equal(after.get("flow:static:sales.Model.Invoice.Invoice.register:keylang/flows/locate.md:5")?.verdict, "unverified");
+});
+
 test("exclude and --static shape never switch ok and fail", (t) => {
   const repo = copyFixture(t, "repo");
   const original = readFileSync(join(repo, "keylang/rules.md"), "utf8");

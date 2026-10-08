@@ -5,7 +5,7 @@ import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseToml } from "smol-toml";
 import { briefOf, readmeBrief } from "./brief.ts";
-import { classifySources, CONFIG_FILE, isAnalysed, layerGlobWarnings, sourceTree, toPosix, type Config } from "./config.ts";
+import { classifySources, CONFIG_FILE, isAnalysed, isOutside, layerGlobWarnings, sourceTree, toPosix, type Config } from "./config.ts";
 import { globDirectory } from "./glob.ts";
 import { languageOf } from "./languages.ts";
 import { compareText } from "./span.ts";
@@ -16,7 +16,7 @@ import { isGeneratedMap, renderExplainedMap, renderMap } from "./emit.ts";
 import { explanationOf, loadBriefs } from "./explanations.ts";
 import { buildGraph, directoryModule, placeFile, type Graph } from "./graph.ts";
 import { FRAMEWORK_CODE } from "./framework-code/index.ts";
-import { activeAdapters, FRAMEWORK_ADAPTERS, FRAMEWORK_CONFIG, type FrameworkAdapter, type FrameworkContext, type FrameworkInput } from "./frameworks/adapter.ts";
+import { activeAdapters, FRAMEWORK_ADAPTERS, FRAMEWORK_CONFIG, type ConfigFacts, type FrameworkAdapter, type FrameworkContext, type FrameworkInput } from "./frameworks/adapter.ts";
 import { FACT_CACHE_FILE, FactCache } from "./fact-cache.ts";
 import { landing, writeAtomic, writeProblem } from "./safe-write.ts";
 import { collectEntries, compareEntries, ENTRY_MANIFESTS, type EntryManifests } from "./entries.ts";
@@ -112,7 +112,7 @@ export async function generateMap(config: Config, options: { persist?: boolean |
     declarationInputs.push([`outside-declarations:${p}`, hash]);
   }
   // Framework config files (ADR 0022): read by the adapters the repository uses, cached by content like the sources.
-  const frameworks = readFrameworks(config, all, sources, options.overlay, cache, options.adapters, facts);
+  const frameworks = readFrameworks(config, all, sources, options.overlay, cache, options.adapters, facts, tree.outside);
   const factCache = options.persist === true || (options.persist === "changed" && cache.changed()) ? cache.serialize() : null;
   // An explicitly excluded file is a module with unknown contents: in its layer, or in `unassigned`
   // under an explicit config. A guessed layout keeps a file outside its guessed layers out of the graph.
@@ -184,6 +184,7 @@ function readFrameworks(
   cache: FactCache,
   available: readonly FrameworkAdapter[] | undefined,
   facts: readonly FileFacts[],
+  outside: readonly string[],
 ): { inputs: FrameworkInput[]; manifest: FrameworkManifest[]; unread: { path: string; owner: string | null; reason: string; framework: string }[] } {
   const text = (path: string): string | null => read.get(path)?.text ?? overlay?.get(join(config.root, path)) ?? readSource(join(config.root, path));
   const context: FrameworkContext = {
@@ -197,6 +198,8 @@ function readFrameworks(
       }
     },
     analysed: (path) => isAnalysed(path, config),
+    outside,
+    isOutside: (path) => isOutside(path, config.outside),
   };
   const byPath = new Map(facts.map((f) => [f.path, f]));
   const inputs: FrameworkInput[] = [];
@@ -206,18 +209,19 @@ function readFrameworks(
   // binds is unknown to the snapshot — a hole of each config file, never an absence.
   const unread = (available ?? FRAMEWORK_ADAPTERS)
     .filter((adapter) => !active.includes(adapter) && adapter.detect(context))
-    .flatMap((adapter) => adapter.files(context).map(({ path, owner }) => ({ path, owner, framework: adapter.name, reason: `\`${path}\` is \`${adapter.name}\` config keylang does not read: \`frameworks\` in keylang.json leaves the adapter out` })));
+    .flatMap((adapter) => adapter.files(context).filter((f) => !f.declarations).map(({ path, owner }) => ({ path, owner, framework: adapter.name, reason: `\`${path}\` is \`${adapter.name}\` config keylang does not read: \`frameworks\` in keylang.json leaves the adapter out` })));
   for (const adapter of active) {
     const configs: FrameworkInput["configs"] = [];
     const files: { path: string; sha256: string }[] = [];
-    for (const { path, owner } of adapter.files(context)) {
+    for (const { path, owner, declarations } of adapter.files(context)) {
       const body = text(path);
       if (body === null) continue;
       const hash = sha256(body);
       files.push({ path, sha256: hash });
       // A config written in the code (decorators) is read from the source's facts, cached with them.
       const code = adapter.code === undefined ? undefined : byPath.get(path);
-      configs.push({ facts: code !== undefined ? adapter.code!(path, code) : cache.config(path, hash, `${adapter.name}@${adapter.version}`, () => adapter.parse(path, body)), owner });
+      const parsed = code !== undefined ? adapter.code!(path, code) : cache.config(path, hash, `${adapter.name}@${adapter.version}`, () => adapter.parse(path, body));
+      configs.push({ facts: declarations ? preferencesOnly(parsed) : parsed, owner });
     }
     // Wiring the framework reads from code (attributes, service providers): from the sources' facts, which the snapshot covers already.
     const reader = FRAMEWORK_CODE.get(adapter.name);
@@ -229,10 +233,20 @@ function readFrameworks(
       ...(adapter.dispatchers ? { dispatchers: [...adapter.dispatchers] } : {}),
       ...(adapter.controllers ? { controllers: adapter.controllers } : {}),
       ...(adapter.generated ? { generated: [...adapter.generated] } : {}),
+      ...(adapter.locators ? { locators: adapter.locators.map((l) => ({ types: [...l.types], methods: [...l.methods] })) } : {}),
     });
     manifest.push({ name: adapter.name, version: adapter.version, files });
   }
   return { inputs, manifest, unread };
+}
+
+/**
+ * What the graph takes of a config of code `outside` the architecture (business-flows 40): its
+ * preferences, which say what class a value of an interface is. Its plugins, observers, arguments
+ * and entry points belong to code keylang does not analyse; a file that does not parse gives none.
+ */
+function preferencesOnly(facts: ConfigFacts): ConfigFacts {
+  return { path: facts.path, scope: facts.scope, bindings: facts.error === null ? facts.bindings : [], arguments: [], aliases: [], intercepts: [], error: null };
 }
 
 /**

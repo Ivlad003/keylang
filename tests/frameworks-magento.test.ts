@@ -467,3 +467,94 @@ test("magento: a factory Magento generates (`XFactory` no file declares) makes a
   // Without the adapter the step is not proven, and not disproven either: Magento's config is unread.
   assert.match(keylang(dir, ["check"]).stdout, /flows\/invoice\.md:4:3: static unverified sales\.Model\.Invoice\.Invoice\.register/);
 });
+
+/**
+ * The ObjectManager (business-flows 40): the Framework and a module `Vendor_Store` are `outside`
+ * the architecture — read as declarations, the module's `di.xml` for its preferences only.
+ */
+const LOCATOR: Record<string, string> = {
+  "lib/Fw/ObjectManagerInterface.php": "<?php\nnamespace Magento\\Framework;\n\ninterface ObjectManagerInterface\n{\n    public function get($type);\n    public function create($type, array $arguments = []);\n}\n",
+  "lib/Fw/ObjectManager/ObjectManager.php": "<?php\nnamespace Magento\\Framework\\ObjectManager;\n\nclass ObjectManager implements \\Magento\\Framework\\ObjectManagerInterface\n{\n    public function get($type) {}\n    public function create($type, array $arguments = []) {}\n}\n",
+  "lib/Fw/App/ObjectManager.php": "<?php\nnamespace Magento\\Framework\\App;\n\nclass ObjectManager extends \\Magento\\Framework\\ObjectManager\\ObjectManager\n{\n    /** @return ObjectManager */\n    public static function getInstance() {}\n}\n",
+  "app/code/Vendor/Store/registration.php": "<?php\n\\Magento\\Framework\\Component\\ComponentRegistrar::register(\\Magento\\Framework\\Component\\ComponentRegistrar::MODULE, 'Vendor_Store', __DIR__);\n",
+  "app/code/Vendor/Store/Api/StoreManagerInterface.php": "<?php\nnamespace Vendor\\Store\\Api;\n\ninterface StoreManagerInterface\n{\n    public function getStore();\n}\n",
+  "app/code/Vendor/Store/Model/StoreManager.php": "<?php\nnamespace Vendor\\Store\\Model;\n\nclass StoreManager implements \\Vendor\\Store\\Api\\StoreManagerInterface\n{\n    public function getStore() {}\n}\n",
+  // Only the preference is taken: a plugin of code outside the architecture wraps nothing keylang analyses.
+  "app/code/Vendor/Store/etc/di.xml": '<?xml version="1.0"?>\n<config>\n    <preference for="Vendor\\Store\\Api\\StoreManagerInterface" type="Vendor\\Store\\Model\\StoreManager"/>\n    <type name="Shop\\Sales\\Model\\Invoice">\n        <plugin name="store_audit" type="Vendor\\Store\\Plugin\\Audit"/>\n    </type>\n</config>\n',
+  "app/code/Shop/Sales/Model/Invoice.php": "<?php\nnamespace Shop\\Sales\\Model;\n\nclass Invoice\n{\n    public function register(): void {}\n    public function pay(): void {}\n}\n",
+  "app/code/Shop/Sales/Model/Locator.php": [
+    "<?php",
+    "namespace Shop\\Sales\\Model;",
+    "",
+    "use Magento\\Framework\\App\\ObjectManager;",
+    "use Magento\\Framework\\ObjectManagerInterface;",
+    "use Shop\\Sales\\Api\\OrderManagementInterface;",
+    "use Vendor\\Store\\Api\\StoreManagerInterface;",
+    "",
+    "class Locator",
+    "{",
+    "    public function __construct(private ObjectManagerInterface $objectManager, private StoreManagerInterface $storeManager) {}",
+    "",
+    "    public function run(string $name): void",
+    "    {",
+    "        $invoice = $this->objectManager->get(Invoice::class);",
+    "        $invoice->register();",
+    "        $this->objectManager->create('\\Shop\\Sales\\Model\\Totals')->collect([]);",
+    "        $this->objectManager->get(OrderManagementInterface::class)->place([]);",
+    "        ObjectManager::getInstance()->get(StoreManagerInterface::class)->getStore();",
+    "        $this->storeManager->getStore();",
+    "        $this->objectManager->get($name)->register();",
+    "    }",
+    "}",
+    "",
+  ].join("\n"),
+  "keylang/flows/locate.md": "# flow locate\n\n- trigger sales.Model.Locator.Locator.run\n  - step sales.Model.Invoice.Invoice.register\n",
+};
+
+test("magento: `$objectManager->get(X::class)` and `->create('X')` give an `X` — an edge `via: object-manager`, through the preferences for an interface (an `outside` module's `di.xml` too); a class computed at run time stays a hole; off with the adapter", (t) => {
+  const dir = shop(t, LOCATOR);
+  setConfig(dir, (raw) => {
+    raw.outside = ["lib/**", "app/code/Vendor/**"];
+  });
+  const index = map(dir);
+  const source = "sales.Model.Locator.Locator.run";
+  const edges = calls(index, source).map((e) => `${e.line} ${e.target}${e.via ? ` ${e.via}` : ""}${e.binding ? ` (${e.binding})` : ""}`).sort();
+  assert.deepEqual(edges, [
+    "15 sales.Model.Invoice.Invoice object-manager (`get(Shop\\Sales\\Model\\Invoice)` gives a `Invoice`)",
+    // The class of the result: `$invoice` is an `Invoice`.
+    "16 sales.Model.Invoice.Invoice.register",
+    "17 sales.Model.Totals.Totals object-manager (`create(Shop\\Sales\\Model\\Totals)` gives a `Totals`)",
+    "17 sales.Model.Totals.Totals.collect",
+    // An interface: the class of each area's preference, and the plugin on the interface wraps the call as usual.
+    "18 promo.Plugin.GuardPlugin.GuardPlugin.beforePlace plugin:before (plugin `guard` (`Shop\\Promo\\Plugin\\GuardPlugin`) on `Shop\\Sales\\Api\\OrderManagementInterface`)",
+    "18 sales.Model.AdminOrderService.AdminOrderService object-manager (`get(Shop\\Sales\\Api\\OrderManagementInterface)` gives a `AdminOrderService` by the preference `Shop\\Sales\\Api\\OrderManagementInterface → Shop\\Sales\\Model\\AdminOrderService`)",
+    "18 sales.Model.AdminOrderService.AdminOrderService.place preference (`Shop\\Sales\\Api\\OrderManagementInterface → Shop\\Sales\\Model\\AdminOrderService`)",
+    "18 sales.Model.OrderService.OrderService object-manager (`get(Shop\\Sales\\Api\\OrderManagementInterface)` gives a `OrderService` by the preference `Shop\\Sales\\Api\\OrderManagementInterface → Shop\\Sales\\Model\\OrderService`)",
+    "18 sales.Model.OrderService.OrderService.place preference (`Shop\\Sales\\Api\\OrderManagementInterface → Shop\\Sales\\Model\\OrderService`)",
+    // An interface `outside` the architecture, bound by the `di.xml` of a module outside it: its class's member (line 20 is the same edge).
+    "19 outside.app.code.Vendor.Store.Model.StoreManager object-manager (`get(Vendor\\Store\\Api\\StoreManagerInterface)` gives a `StoreManager` by the preference `Vendor\\Store\\Api\\StoreManagerInterface → Vendor\\Store\\Model\\StoreManager`)",
+    "19 outside.app.code.Vendor.Store.Model.StoreManager preference (`Vendor\\Store\\Api\\StoreManagerInterface → Vendor\\Store\\Model\\StoreManager`)",
+    "19 outside.lib.Fw.App.ObjectManager",
+  ]);
+  const scopes = calls(index, source).filter((e) => e.line === 18 && e.via === "object-manager").map((e) => `${e.target} ${e.scope} ${e.site}`);
+  assert.deepEqual(scopes.sort(), ["sales.Model.AdminOrderService.AdminOrderService adminhtml app/code/Shop/Checkout/etc/adminhtml/di.xml:3:5", "sales.Model.OrderService.OrderService global app/code/Shop/Checkout/etc/di.xml:3:5"]);
+  const outsideCall = calls(index, source).find((e) => e.line === 19 && e.via === "preference");
+  assert.equal((outsideCall as Edge & { member?: string; indirect?: true })?.member, "Vendor\\Store\\Model\\StoreManager::getStore");
+  // Not a dependency for rules: the class is written in the config.
+  assert.ok(calls(index, source).filter((e) => e.via === "object-manager" || (e.line === 19 && e.via === "preference")).every((e) => (e as Edge & { indirect?: true }).indirect === true));
+  // A class computed at run time: the ObjectManager's `get` (no preference binds the interface) and what it gives stay holes.
+  assert.deepEqual(index.coverage.filter((c) => c.source === source && c.line === 21).map((c) => c.reason).sort(), ["call through an expression `$this->objectManager->get($name)->register()`", "call through an interface `ObjectManagerInterface`"]);
+  // The module outside gives its preferences, not its plugins.
+  assert.ok(index.manifest.frameworks?.[0]?.files.some((f) => f.path === "app/code/Vendor/Store/etc/di.xml"));
+  assert.ok(!index.edges.some((e) => e.via?.startsWith("plugin:") && e.binding?.includes("store_audit")));
+  assert.match(keylang(dir, ["check"]).stdout, /flows\/locate\.md:4:3: static ok sales\.Model\.Invoice\.Invoice\.register: called from sales\.Model\.Locator\.Locator\.run\n/);
+
+  setConfig(dir, (raw) => {
+    raw.frameworks = [];
+  });
+  const off = map(dir);
+  assert.ok(!off.edges.some((e) => e.via === "object-manager" || e.via === "preference"));
+  // `getInstance()` and the `get` of the class it returns, read as declarations: what the language says, nothing of the framework.
+  assert.deepEqual(calls(off, source).map((e) => e.target).sort(), ["outside.lib.Fw.App.ObjectManager", "outside.lib.Fw.ObjectManager.ObjectManager"]);
+  assert.match(keylang(dir, ["check"]).stdout, /flows\/locate\.md:4:3: static unverified sales\.Model\.Invoice\.Invoice\.register/);
+});

@@ -430,6 +430,8 @@ export interface ResultCallFact {
   /** The receiver is itself the result of a call. */
   on?: ValueOfFact;
   opaque?: true;
+  /** The arguments as literals, as `CallFact.args`: a framework's service locator reads the class the first one names (`get(X::class)`). */
+  args?: ArgFact[];
 }
 
 /**

@@ -16,7 +16,7 @@ import { traceFlow, type ShapeNode, type TraceEvidence, type TraceRun } from "./
 import type { Verdict } from "./verdict.ts";
 
 /** How a call edge came about when it is not a plain call of the code (`Via` of the graph): a hook, an argument, a framework's config. */
-type Via = "default" | "injected" | "callable-arg" | "closure-arg" | "preference" | "argument" | "plugin:before" | "plugin:around" | "plugin:after" | "dispatch" | "observer" | "generated-factory";
+type Via = "default" | "injected" | "callable-arg" | "closure-arg" | "preference" | "argument" | "plugin:before" | "plugin:around" | "plugin:after" | "dispatch" | "observer" | "generated-factory" | "object-manager";
 
 interface SnapshotEdge {
   kind: string;
@@ -601,6 +601,7 @@ function describeVia(edge: SnapshotEdge, where = true): string {
   if (edge.via === "callable-arg") return `the callable \`${edge.text ?? ""}\` passed${where ? ` at ${at(edge)}` : " as an argument"}`;
   if (edge.via === "closure-arg") return `the closure passed at ${edge.site ?? at(edge)}`;
   if (edge.via === "generated-factory") return `the generated factory (${edge.binding ?? edge.text ?? ""})${where ? ` at ${at(edge)}` : ""}`;
+  if (edge.via === "object-manager") return `the ObjectManager (${edge.binding ?? edge.text ?? ""})${where ? ` at ${at(edge)}` : ""}`;
   return `the default of the hook \`${edge.hook ?? edge.text ?? ""}\``;
 }
 

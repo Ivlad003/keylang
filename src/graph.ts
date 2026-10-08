@@ -6,7 +6,7 @@ import { posix } from "node:path";
 import { isAssumed, isExcluded, isOutside, layerName, OUTSIDE_LAYER, type Config } from "./config.ts";
 import { readManifests, type DeclaredPackage } from "./declared-packages.ts";
 import { resolveExports, UNKNOWN_EXPORT, type ExportEntry, type ExportForm, type ExportKind, type ExportRowInput, type ExportTarget, type ModuleExportsInput } from "./exports.ts";
-import type { CallFact, DeclFact, ExportRow, FileFacts, HookFact, ImportBinding, MethodSigFact, OutsideDeclFact, ResultCallFact, ResultTypeFact, TypeRefFact, ValueOfFact } from "./extract/facts.ts";
+import type { ArgFact, CallFact, DeclFact, ExportRow, FileFacts, HookFact, ImportBinding, MethodSigFact, OutsideDeclFact, ResultCallFact, ResultTypeFact, TypeRefFact, ValueOfFact } from "./extract/facts.ts";
 import { assignExternalIds, EXTERNAL, externalSegment } from "./external-ids.ts";
 import { globPrefix, matchesGlob } from "./glob.ts";
 import { frontendFor, frontendOf, type Frontend, type SourceResolver } from "./frontends.ts";
@@ -194,7 +194,7 @@ export interface Escape {
 }
 
 /** How a call edge that is not a plain call of the code came about; see `Call.via`. */
-export type Via = "default" | "injected" | "callable-arg" | "closure-arg" | "preference" | "argument" | "plugin:before" | "plugin:around" | "plugin:after" | "dispatch" | "observer" | "generated-factory";
+export type Via = "default" | "injected" | "callable-arg" | "closure-arg" | "preference" | "argument" | "plugin:before" | "plugin:around" | "plugin:after" | "dispatch" | "observer" | "generated-factory" | "object-manager";
 
 export interface Call {
   target: string;
@@ -1258,6 +1258,9 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
       hit = own?.decl.result ? { target: targets[0]!, result: own.decl.result, file: own.file } : null;
     } else {
       recv = receiverTy(call, ctx, depth);
+      // `$objectManager->get(X::class)`: the framework's locator gives an `X`.
+      const located = recv && !v.element ? locatedTy(recv.ty, call.member, call.args) : null;
+      if (located) return { ty: located.ty, indirect: true, ...(recv!.doc ? { doc: recv!.doc } : {}) };
       hit = recv ? memberHit(recv.ty, call.member) : null;
     }
     const out = hit ? resultTy(hit, recv?.ty ?? null, v.element === true) : null;
@@ -1267,6 +1270,56 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
   };
   /** The name of a class for a hole's reason. */
   const tyName = (ty: Ty): string => (ty.kind === "outside" ? lastSegmentOf(ty.entry.decl.name) : ty.kind === "factory" ? lastSegmentOf(ty.name) : ty.id.slice(ty.id.lastIndexOf(".") + 1));
+  /** Qualified names (lower case) of a class from declarations and of its bases and interfaces. */
+  const tyNames = (ty: Ty): Set<string> => {
+    if (ty.kind === "class" || ty.kind === "type") return supertypeNames(ty.id);
+    const seen = new Set<string>();
+    if (ty.kind !== "outside") return seen;
+    const queue = [ty.entry.decl.name];
+    while (queue.length > 0) {
+      const name = asciiLowerCase(queue.shift()!.replace(/^\\+/, ""));
+      if (seen.has(name)) continue;
+      seen.add(name);
+      const entry = outsideByName.get(name);
+      if (entry) queue.push(...(entry.decl.base ? [entry.decl.base] : []), ...(entry.decl.implements ?? []));
+    }
+    return seen;
+  };
+  const locators = frameworks.flatMap((f) => f.locators ?? []);
+  /**
+   * A call of a framework's service locator (Magento `$objectManager->get(X::class)`, ADR 0022,
+   * business-flows 40): the receiver is one of its types, or of a class implementing one, the
+   * member is one of its methods and the first argument names a class keylang read as a literal —
+   * `X::class` or a string. Null for anything else: a class computed at run time stays unknown.
+   */
+  const locatedTy = (recv: Ty, member: string, args: readonly ArgFact[] | undefined): { ty: Ty; written: string } | null => {
+    if (locators.length === 0 || !args) return null;
+    const lower = asciiLowerCase(member);
+    const matching = locators.filter((l) => l.methods.some((m) => asciiLowerCase(m) === lower));
+    if (matching.length === 0) return null;
+    const value = args.find((a) => a.name === undefined)?.value;
+    const written = value?.kind === "class" ? value.name : value?.kind === "string" && QUALIFIED_CLASS.test(value.value) ? value.value.replace(/^\\+/, "") : null;
+    if (written === null) return null;
+    const names = tyNames(recv);
+    if (!matching.some((l) => l.types.some((t) => names.has(asciiLowerCase(t))))) return null;
+    const ty = tyOfQualified(written);
+    return ty ? { ty, written } : null;
+  };
+  /**
+   * The classes a value of an interface is, per area, by the framework's preferences: of an interface
+   * of the graph, or — by its qualified name — of one `outside` the architecture (business-flows 40).
+   * None when the config binds none, or two classes in one area.
+   */
+  const preferred = (ty: Ty): { ty: Ty; scope: string; site: string; owner: string | null; binding: string }[] => {
+    if (!bindings) return [];
+    const bound = ty.kind === "type" ? bindings.boundClasses(ty.id) : ty.kind === "outside" && ty.entry.decl.kind === "interface" ? bindings.boundByName(ty.entry.decl.name) : null;
+    if (!bound || bound.ambiguous !== null) return [];
+    return bound.targets.flatMap((t) => {
+      const target: Ty | null = t.node !== null ? (decls.classes.has(t.node) ? { kind: "class", id: t.node } : null) : tyOfQualified(t.name, false);
+      if (!target || target.kind === "type" || target.kind === "factory" || (target.kind === "outside" && target.entry.decl.kind === "interface")) return [];
+      return [{ ty: target, scope: t.scope, site: t.site, owner: t.owner, binding: t.binding }];
+    });
+  };
   /** The ID of a declaration of a file by its dotted path there (`Class.method`, a function's name). */
   const declIdIn = (path: string, symbol: string): string | null => {
     const [head, member] = symbol.split(".");
@@ -1652,6 +1705,24 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
             if (owner && c.hook.param !== null) hookCalls.push({ fn, hook: c.hook, owner, call: c });
           }
           const member = c.member ?? c.callee.slice(c.callee.lastIndexOf(".") + 1);
+          // `$objectManager->get(X::class)`: the framework's locator gives an `X` — through the preferences, for an interface (ADR 0022).
+          const located = recv ? locatedTy(recv.ty, member, c.args) : null;
+          if (located) {
+            const runs = located.ty.kind === "class" || (located.ty.kind === "outside" && located.ty.entry.decl.kind !== "interface") ? [{ ty: located.ty, scope: null, site: null, binding: null }] : preferred(located.ty);
+            let placed = false;
+            for (const k of runs) {
+              // Not a dependency for rules: the literal `X::class` is one already, as a value the code reads.
+              const extra: Partial<Call> = { ...recvExtra, indirect: true, via: "object-manager", binding: `\`${member}(${located.written})\` gives a \`${tyName(k.ty)}\`${k.binding ? ` by the preference ${k.binding}` : ""}`, ...(k.site ? { site: k.site } : {}), ...(k.scope ? { scope: k.scope } : {}) };
+              if (k.ty.kind === "class") push(k.ty.id, c, extra);
+              else if (k.ty.kind === "outside") pushOutside({ entry: k.ty.entry, name: "__construct" }, c, extra);
+              else continue;
+              placed = true;
+            }
+            if (placed) {
+              stats.callsResolved++;
+              continue;
+            }
+          }
           const recvClass = recv?.ty.kind === "class" ? recv.ty.id : null;
           const typed = recv ? (recvClass ? findMember(recvClass, member, false, staticThroughInstance(facts.path)).target : null) : receiverTarget(c.callee, c.receiver);
           const typedClass = recv ? (typed ? recvClass : null) : typed && c.receiver ? classNamed(c.receiver) : null;
@@ -1690,6 +1761,23 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
               }
               if (made.kind === "outside" && made.entry.decl.kind !== "interface") {
                 pushOutside({ entry: made.entry, name: "__construct" }, c, extra);
+                stats.callsResolved++;
+                continue;
+              }
+            }
+            // An interface `outside` the architecture the config binds by name (`app/etc/di.xml`, a module's `di.xml` there): the class's member.
+            if (recv.ty.kind === "outside" && recv.ty.entry.decl.kind === "interface") {
+              let placed = false;
+              for (const k of preferred(recv.ty)) {
+                const hit = memberHit(k.ty, member);
+                // The class is written in the config, not in the call's file: flows follow the edge, rules do not.
+                const extra: Partial<Call> = { ...recvExtra, indirect: true, via: "preference", site: k.site, scope: k.scope, binding: k.binding, ...(k.owner !== null ? { owner: k.owner } : {}) };
+                if (hit?.target) push(hit.target, c, extra);
+                else if (hit?.outside) pushOutside(hit.outside, c, extra);
+                else continue;
+                placed = true;
+              }
+              if (placed) {
                 stats.callsResolved++;
                 continue;
               }
@@ -2451,6 +2539,9 @@ export function placeFile(config: Config, file: string): { layer: string; segmen
   }
   return null;
 }
+
+/** A string a service locator reads as a class name: a qualified PHP name (`Vendor\Module\X`, a leading `\` too). */
+const QUALIFIED_CLASS = /^\\?[A-Za-z_][A-Za-z0-9_]*(?:\\[A-Za-z_][A-Za-z0-9_]*)+$/;
 
 /** The last segment of a qualified PHP name. */
 function lastSegmentOf(name: string): string {

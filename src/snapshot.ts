@@ -69,7 +69,10 @@ export interface SnapshotEdge {
    * `$listen`, Symfony listeners, queued jobs and Messenger handlers);
    * `generated-factory` — a call of the member a framework's generated class
    * makes its stem's object with (Magento `XFactory::create()` → `X`, ADR 0022,
-   * business-flows 40), to that class (`binding` says so). `keylang check
+   * business-flows 40), to that class (`binding` says so); `object-manager` — a
+   * call of a framework's service locator with a class literal (Magento
+   * `$objectManager->get(X::class)`), to `X` or the class a preference binds
+   * the interface `X` to (then with `site` and `scope`). `keylang check
    * --static=shape` follows none of them; rules do not see `injected`, and see
    * a config edge as a dependency of `owner`.
    */

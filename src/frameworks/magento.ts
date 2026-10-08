@@ -32,6 +32,14 @@
 // declares, beside a class (or interface) `X` it reads: `create()` is then an
 // edge `via: generated-factory` to `X` and gives an `X`. A factory of a class
 // keylang has not read stays a hole: nothing says what it makes.
+//
+// The ObjectManager (business-flows 40): `$objectManager->get(X::class)`,
+// `->create(X::class)` and `ObjectManager::getInstance()->get('Vendor\X')`
+// give an `X` — of the class a preference binds it to, for an interface. The
+// call is an edge `via: object-manager` to that class; a class named any other
+// way (a variable, a concatenation) stays unknown. Components `outside` the
+// architecture give their `di.xml` preferences only (not plugins, observers,
+// arguments or entry points): what class a value of their interface is.
 
 import { posix } from "node:path";
 import { SaxesParser } from "saxes";
@@ -60,7 +68,7 @@ export const magento: FrameworkAdapter = {
     return context.read(APP_DI) !== null || componentRoots(context, MODULE_REGISTRATION).length > 0;
   },
   files(context) {
-    const out: { path: string; owner: string | null }[] = [];
+    const out: { path: string; owner: string | null; declarations?: true }[] = [];
     const add = (path: string, owner: string | null): void => {
       if (context.analysed(path) && context.read(path) !== null) out.push({ path, owner });
     };
@@ -70,6 +78,15 @@ export const magento: FrameworkAdapter = {
       const etc = root === "" ? "etc" : `${root}/etc`;
       for (const file of [...AREA_FILES, ...GLOBAL_FILES]) add(`${etc}/${file}`, root);
       for (const area of context.dirs(etc)) for (const file of AREA_FILES) add(`${etc}/${area}/${file}`, root);
+    }
+    // A component `outside` the architecture (business-flows 40): only its `di.xml`, of which the graph takes the preferences.
+    for (const root of componentRoots(context, REGISTRATION, context.outside)) {
+      const etc = root === "" ? "etc" : `${root}/etc`;
+      const declare = (path: string): void => {
+        if (context.isOutside(path) && context.read(path) !== null) out.push({ path, owner: root, declarations: true });
+      };
+      declare(`${etc}/di.xml`);
+      for (const area of context.dirs(etc)) declare(`${etc}/${area}/di.xml`);
     }
     return out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   },
@@ -102,6 +119,7 @@ export const magento: FrameworkAdapter = {
   },
   dispatchers: ["Magento\\Framework\\Event\\ManagerInterface", "Magento\\Framework\\Event\\Manager"],
   generated: [{ suffix: "Factory", method: "create" }],
+  locators: [{ types: ["Magento\\Framework\\ObjectManagerInterface", "Magento\\Framework\\ObjectManager\\ObjectManager", "Magento\\Framework\\App\\ObjectManager"], methods: ["get", "create"] }],
   controllers: {
     dir: (area) => (area === "adminhtml" ? "Controller/Adminhtml" : "Controller"),
     prefix: (area) => (area === "adminhtml" ? "/admin" : ""),
@@ -118,10 +136,10 @@ export const magento: FrameworkAdapter = {
   },
 };
 
-/** Directories of the analysed `registration.php` files whose text registers a component as `pattern` says. */
-function componentRoots(context: FrameworkContext, pattern: RegExp): string[] {
+/** Directories of the `registration.php` files of `files` (the analysed sources) whose text registers a component as `pattern` says. */
+function componentRoots(context: FrameworkContext, pattern: RegExp, files: readonly string[] = context.sources): string[] {
   const roots: string[] = [];
-  for (const path of context.sources) {
+  for (const path of files) {
     if (posix.basename(path) !== "registration.php") continue;
     const text = context.read(path);
     if (text !== null && pattern.test(text)) roots.push(posix.dirname(path) === "." ? "" : posix.dirname(path));

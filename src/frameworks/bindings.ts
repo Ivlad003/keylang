@@ -64,6 +64,13 @@ export interface BoundCall {
   external: boolean;
 }
 
+/** Per area, the class a value of a bound type is: its name, its node when the graph has one, and the preferences it rests on. */
+export interface BoundClasses {
+  targets: { scope: string; name: string; node: string | null; site: string; owner: string | null; binding: string }[];
+  /** Two classes for the type in one area. */
+  ambiguous: string | null;
+}
+
 /** A config fact that names a class keylang does not have: a hole of the module whose config it is. */
 export interface BindingHole {
   file: string;
@@ -128,6 +135,8 @@ export class FrameworkBindings {
   private readonly deps: BindingDeps;
   /** Type id → its preferences, in config order. */
   private readonly preferences = new Map<string, Declared[]>();
+  /** Qualified name in ASCII lower case → preferences of a type the graph has no node for (one `outside` the architecture). */
+  private readonly preferencesByName = new Map<string, Declared[]>();
   /** Class id → constructor parameter in ASCII lower case → the values the config sets. */
   private readonly argumentsOf = new Map<string, Map<string, (Declared & { param: string })[]>>();
   /** Type id → plugin declarations on it. */
@@ -171,7 +180,14 @@ export class FrameworkBindings {
       for (const b of facts.bindings) {
         const from = deps.resolve(unalias(b.from, facts.scope).type);
         const to = declared(b.to, facts.scope, facts.path, b, owner, b.from.name);
-        if (from.kind !== "node") continue;
+        if (from.kind !== "node") {
+          // A type of code `outside` the architecture: the graph finds its preference by name (business-flows 40).
+          if (b.from.file === undefined) {
+            const name = key(unalias(b.from, facts.scope).type.name);
+            this.preferencesByName.set(name, [...(this.preferencesByName.get(name) ?? []), to]);
+          }
+          continue;
+        }
         this.preferences.set(from.id, [...(this.preferences.get(from.id) ?? []), to]);
         if (to.resolved.kind === "missing") this.hole(facts.path, b, `<preference for="${typeLabel(b.from)}" type="${typeLabel(b.to)}">`, `the preference \`${typeLabel(b.from)} → ${typeLabel(b.to)}\` names \`${typeLabel(to.written)}\`, which no analysed file declares`, owner);
       }
@@ -339,6 +355,55 @@ export class FrameworkBindings {
       if (chain.length > 0) result.set(scope, chain);
     }
     return result;
+  }
+
+  /**
+   * A type the graph has no node for (an interface `outside` the architecture, business-flows 40),
+   * by its qualified name: per area, the class a value of it is through the preferences — the last
+   * name of the chain as `effective` follows it, by name until a preference names a graph node.
+   * The graph looks the class up among its declarations; `binding` says which preferences it took.
+   */
+  boundByName(name: string): BoundClasses {
+    return this.bound({ name }, this.preferencesByName.get(key(name)) ?? []);
+  }
+
+  /** The same for a type of the graph (`effective`, ending at the class rather than at a member). */
+  boundClasses(type: string): BoundClasses {
+    return this.bound({ name: type }, this.preferences.get(type) ?? []);
+  }
+
+  private bound({ name }: { name: string }, own: readonly Declared[]): BoundClasses {
+    const out = emptyCall();
+    const targets: BoundClasses["targets"] = [];
+    const scopes = [...new Set(own.map((d) => d.scope))].sort((a, b) => (a === GLOBAL ? -1 : b === GLOBAL ? 1 : a < b ? -1 : a > b ? 1 : 0));
+    for (const scope of scopes) {
+      const chain: Declared[] = [];
+      const seen = new Set<string>([name, `?${key(name)}`]);
+      let list = own;
+      for (;;) {
+        const here = list.filter((d) => d.scope === scope);
+        const candidates = distinctTargets(here.length > 0 ? here : list.filter((d) => d.scope === GLOBAL));
+        if (candidates.length === 0) break;
+        if (candidates.length > 1) {
+          out.ambiguous ??= `ambiguous binding of \`${candidates[0]!.from ?? chain.at(-1)?.name ?? name}\`: ${candidates.map(describe).join(" and ")} in scope ${scope}`;
+          chain.length = 0;
+          break;
+        }
+        const next = candidates[0]!;
+        chain.push(next);
+        const id = next.resolved.kind === "node" ? next.resolved.id : `?${key(next.name)}`;
+        if (seen.has(id)) break;
+        seen.add(id);
+        list = next.resolved.kind === "node" ? (this.preferences.get(next.resolved.id) ?? []) : (this.preferencesByName.get(key(next.name)) ?? []);
+      }
+      const last = chain.at(-1);
+      if (!last) continue;
+      const aliases = chain.flatMap((d) => d.aliases);
+      const through = aliases.length > 0 ? ` (virtualType ${aliases.map((v) => `\`${v}\``).join(", ")})` : "";
+      const binding = `\`${chain[0]!.from !== null ? `${chain[0]!.from} → ` : ""}${chain.map((d) => d.name).join(" → ")}\`${through}`;
+      targets.push({ scope, name: last.name, node: last.resolved.kind === "node" ? last.resolved.id : null, site: chain[0]!.site, owner: chain[0]!.owner, binding });
+    }
+    return { targets, ambiguous: out.ambiguous };
   }
 
   /** The edge (or the reason there is none) of one area's chain. */

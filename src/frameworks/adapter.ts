@@ -289,6 +289,21 @@ export interface FrameworkInput {
   controllers?: ControllerConvention;
   /** Classes the framework generates by a naming convention; see `GeneratedClass`. */
   generated?: GeneratedClass[];
+  /** The framework's service locators; see `ServiceLocator`. */
+  locators?: ServiceLocator[];
+}
+
+/**
+ * A service locator of the framework (Magento's ObjectManager, business-flows 40): a call of one
+ * of `methods` on a value of one of `types` (or of a class implementing one) whose first argument
+ * names a class as a literal (`X::class`, `'Vendor\X'`) gives an instance of that class — of the
+ * class a preference binds it to, for an interface. A class named any other way stays unknown.
+ */
+export interface ServiceLocator {
+  /** Qualified names of the locator's types, without the leading `\`. */
+  types: string[];
+  /** Members that give an instance of the class their first argument names. */
+  methods: string[];
 }
 
 /**
@@ -314,6 +329,13 @@ export interface FrameworkContext {
   dirs(path: string): string[];
   /** A path keylang reads at all: not excluded, outside the architecture or assumed. */
   analysed(path: string): boolean;
+  /**
+   * Source files `outside` the architecture, POSIX, relative, sorted: read as declarations only
+   * (business-flows 40). An adapter may list config of theirs that only declares (a preference).
+   */
+  outside: readonly string[];
+  /** A path `outside` the architecture. */
+  isOutside(path: string): boolean;
 }
 
 export interface FrameworkAdapter {
@@ -323,8 +345,11 @@ export interface FrameworkAdapter {
   version: string;
   /** The repository uses the framework. */
   detect(context: FrameworkContext): boolean;
-  /** Config files the framework executes, sorted, each with the module that owns it. */
-  files(context: FrameworkContext): { path: string; owner: string | null }[];
+  /**
+   * Config files the framework executes, sorted, each with the module that owns it. `declarations`:
+   * a config of code `outside` the architecture, of which the graph takes only the preferences.
+   */
+  files(context: FrameworkContext): { path: string; owner: string | null; declarations?: true }[];
   /** The facts of one config file. */
   parse(path: string, text: string): ConfigFacts;
   /**
@@ -342,6 +367,8 @@ export interface FrameworkAdapter {
   controllers?: ControllerConvention;
   /** Classes the framework generates by a naming convention; see `FrameworkInput.generated`. */
   generated?: readonly GeneratedClass[];
+  /** The framework's service locators; see `FrameworkInput.locators`. */
+  locators?: readonly ServiceLocator[];
 }
 
 /**
