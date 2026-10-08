@@ -526,7 +526,7 @@ async function prepareClone(sourceText: string | undefined, opts: { dir: string 
   if ("error" in source) throw new Error(source.error);
   const dir = opts.dir !== undefined ? resolve(process.cwd(), opts.dir) : join(cloneCacheRoot(process.env, homedir()), ...source.key);
   const synced = syncClone(source, dir);
-  process.stdout.write(`${synced.dir}: ${synced.action} from ${source.url}\n`);
+  process.stdout.write(`${synced.dir}: ${synced.action} from ${source.displayUrl}\n`);
   const initialized = await cmdInit(dir, { agents: "none", check: false });
   if (initialized !== 0) return { code: initialized, root: null };
   if (mode === "map-only") return { code: 0, root: dir };
@@ -547,7 +547,7 @@ async function prepareClone(sourceText: string | undefined, opts: { dir: string 
     // A clone whose keylang.json keylang may not write is no place for --explain; it is keylang's own
     // (fresh or marked), so it goes the way a clone with an unwritable marker does.
     rmSync(dir, { recursive: true, force: true });
-    process.stderr.write(`keylang: clone: ${problem}; the clone of ${source.url} was removed\n`);
+    process.stderr.write(`keylang: clone: ${problem}; the clone of ${source.displayUrl} was removed\n`);
     return { code: 2, root: null };
   }
   let code = await cmdExplainBatch(dir, "missing", { llm: true, dryRun: false, limit: undefined, jobs: undefined });

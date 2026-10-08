@@ -217,3 +217,33 @@ test("clone --explain map-and-ai --dry-run estimates and asks nothing; map-and-a
   // The briefs were fresh: only the two layers were asked.
   assert.equal(fake.calls().length, asked + 2);
 });
+
+test("clone: credentials in a URL reach git only; stdout, the marker and a mismatch message show the URL without them", async (t) => {
+  const { dir, origin } = sandbox(t);
+  const secret = "https://alice:s3cretTOKEN@git.example.invalid/org/repo.git";
+  // git maps the credentialed URL to the local origin; keylang runs unchanged and offline.
+  const insteadOf = { GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: `url.file://${origin}.insteadOf`, GIT_CONFIG_VALUE_0: secret };
+  const first = await keylang(dir, ["clone", secret], null, insteadOf);
+  assert.equal(first.status, 0, first.stderr);
+  const clone = join(dir, "cache/keylang/repos/git.example.invalid/org/repo");
+  assert.match(first.stdout, new RegExp(`^${clone}: cloned from https://git\\.example\\.invalid/org/repo\\.git\n`));
+  assert.doesNotMatch(first.stdout + first.stderr, /s3cretTOKEN|alice/);
+  const marker = readFileSync(join(clone, ".keylang/clone.json"), "utf8");
+  assert.doesNotMatch(marker, /s3cretTOKEN|alice/);
+  assert.equal(JSON.parse(marker).url, "https://git.example.invalid/org/repo.git");
+
+  const again = await keylang(dir, ["clone", secret], null, insteadOf);
+  assert.equal(again.status, 0, again.stderr);
+  assert.match(again.stdout, new RegExp(`^${clone}: updated from https://git\\.example\\.invalid/org/repo\\.git\n`));
+
+  // A marker an older keylang wrote with credentials is shown without them too.
+  writeFileSync(join(clone, ".keylang/clone.json"), `${JSON.stringify({ url: secret, key: ["git.example.invalid", "org", "repo"] })}\n`);
+  const other = await keylang(dir, ["clone", "https://bob:OTHERtoken@127.0.0.1:1/org/other.git", "--dir", clone]);
+  assert.equal(other.status, 2);
+  assert.match(other.stderr, /is a clone of https:\/\/git\.example\.invalid\/org\/repo\.git, not https:\/\/127\.0\.0\.1:1\/org\/other\.git; pass another --dir/);
+  assert.doesNotMatch(other.stderr, /s3cretTOKEN|OTHERtoken|alice|bob/);
+
+  const bad = await keylang(dir, ["clone", "https://carol:T0KEN@git.example.invalid/"]);
+  assert.equal(bad.status, 2);
+  assert.doesNotMatch(bad.stderr, /T0KEN|carol/);
+});
