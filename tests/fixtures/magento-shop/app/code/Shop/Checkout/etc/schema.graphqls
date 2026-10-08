@@ -1,0 +1,10 @@
+# The storefront's GraphQL schema.
+type Mutation {
+    placeOrder(
+        input: PlaceOrderInput @doc(description: "The cart to place")
+    ): PlaceOrderOutput @resolver(class: "\\Shop\\Checkout\\Model\\Resolver\\PlaceOrder") @doc(description: "Places an order")
+}
+
+type PlaceOrderOutput {
+    number: String
+}

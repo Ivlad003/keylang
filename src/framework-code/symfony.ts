@@ -86,8 +86,7 @@ function joinPath(parts: readonly string[]): string {
 /** `#[AsEventListener]` on the class or a method, and `getSubscribedEvents()` of an `EventSubscriberInterface`: observers. */
 function listeners(code: PhpCode, c: PhpClass, facts: ConfigFacts): void {
   const add = (event: string, method: string, at: { line: number; col: number }): void => {
-    facts.listens!.push({ event, listener: type(c.qualified), method, ...at });
-    facts.entries!.push({ kind: "observer", label: event, files: [], fn: method, type: type(c.qualified), ...at });
+    facts.observers!.push({ event, name: c.name, instance: type(c.qualified), method, disabled: false, line: at.line, col: at.col });
   };
   const firstParam = (method: string): string | null => c.decl.members.find((m) => m.name === method)?.params?.[0]?.type ?? null;
   for (const attribute of attributes(c.decl, [AS_EVENT_LISTENER])) {
@@ -125,8 +124,9 @@ function listeners(code: PhpCode, c: PhpClass, facts: ConfigFacts): void {
 function handlers(c: PhpClass, facts: ConfigFacts): void {
   const add = (method: string, handles: LiteralFact | null, at: { line: number; col: number }): void => {
     const message = cls(handles) ?? c.decl.members.find((m) => m.name === method)?.params?.[0]?.type ?? null;
-    facts.entries!.push({ kind: "consumer", label: message ?? c.qualified, files: [], fn: method, type: type(c.qualified), ...at });
-    if (message !== null) facts.handlers!.push({ kind: "message", message, handler: type(c.qualified), method, ...at });
+    facts.entries!.push({ kind: "consumer", label: message ?? c.qualified, files: [], fn: method, type: type(c.qualified), line: at.line, col: at.col });
+    // `$bus->dispatch(new M)` publishes `M`: the handler is its observer; the `consumer` entry stands for it.
+    if (message !== null) facts.observers!.push({ event: message, name: `handler ${c.name}`, instance: type(c.qualified), method, disabled: false, entry: false, line: at.line, col: at.col });
   };
   for (const attribute of attributes(c.decl, [AS_MESSAGE_HANDLER])) add(str(arg(attribute.args, "method", null)) ?? "__invoke", arg(attribute.args, "handles", null), attribute);
   for (const member of c.decl.members) for (const attribute of attributes(member, [AS_MESSAGE_HANDLER])) add(member.name, arg(attribute.args, "handles", null), attribute);

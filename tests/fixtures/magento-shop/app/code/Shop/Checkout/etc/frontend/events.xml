@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <event name="checkout_submit_all_after">
+        <observer name="notify_customer" disabled="true"/>
+    </event>
+    <event name="checkout_submit_before">
+        <observer name="frontend_guard" instance="Shop\Checkout\Observer\FrontendGuard" method="guard"/>
+    </event>
+</config>

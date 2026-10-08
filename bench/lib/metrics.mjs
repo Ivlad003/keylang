@@ -57,7 +57,7 @@ export function collectMetrics(snapshot, options = {}) {
 
   const nodes = snapshot.nodes ?? {};
   const entries = snapshot.entries === undefined ? null : countEntries(snapshot.entries);
-  const eventIds = Object.keys(nodes).filter((id) => id.startsWith("event.") || nodes[id].kind === "event").sort();
+  const eventIds = Object.keys(nodes).filter((id) => nodes[id].kind === "event").sort();
 
   const drafts = (options.drafts ?? []).map((d) => ({ trigger: d.trigger, steps: draftSteps(d.text) }));
   const expect = options.expect ?? null;
@@ -70,8 +70,9 @@ export function collectMetrics(snapshot, options = {}) {
       inFlow: flow !== null && flow.steps.includes(id),
       inDrafts: drafts.filter((d) => d.steps.includes(id)).map((d) => d.trigger),
     }));
+    // A golden event is its ID (`events.checkout_submit_before`) or the literal it is dispatched with.
     const events = (expect.events ?? []).map((name) => {
-      const id = eventIds.find((e) => e === `event.${name}` || e.endsWith(`.${name}`)) ?? null;
+      const id = eventIds.find((e) => e === name || e === `events.${name}` || nodes[e]?.name === name) ?? null;
       return { name, id, inFlow: id !== null && flow !== null && flow.steps.includes(id) };
     });
     golden = { flow: expect.flow, ids, events, found: ids.filter((g) => g.inFlow).length, total: ids.length };
@@ -140,7 +141,7 @@ export function formatReport(metrics, options = {}) {
   }
 
   out.push("## Події", "");
-  out.push(metrics.events.length === 0 ? "n/a — у знімку немає вузлів `event.*` (тікет 08)." : `${metrics.events.length} вузлів: ${metrics.events.map(code).join(", ")}.`, "");
+  out.push(metrics.events.length === 0 ? "n/a — у знімку немає вузлів виду `event` (`events.*`, тікет 08)." : `${metrics.events.length} вузлів: ${metrics.events.map(code).join(", ")}.`, "");
 
   out.push("## Чернетки `draft flow --mode algo`", "");
   if (metrics.drafts.length === 0) out.push("немає.", "");

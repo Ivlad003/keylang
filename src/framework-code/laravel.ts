@@ -5,8 +5,9 @@
 // `EventServiceProvider::$listen` subscribes listeners, `routes/*.php`
 // registers routes, `routes/console.php` and `Kernel::schedule` the commands
 // and the schedule. The PHP extractor records the literals of those calls,
-// properties and attributes (`LiteralFact`); this module reads them
-// and gives the graph bindings, entry points, listeners, job handlers and the
+// properties and attributes (`LiteralFact`); this module reads them and
+// gives the graph bindings, entry points, the observers of events (listeners,
+// and the `handle` of a queued job for the event its class names) and the
 // calls that dispatch them. Its config files — the route files, the service
 // providers, `bootstrap/app.php` and the console kernel — are listed so that
 // `frameworks` without `laravel` makes them holes; their facts come from code.
@@ -18,7 +19,7 @@
 
 import { posix } from "node:path";
 import type { CallFact, FileFacts, LiteralFact } from "../extract/facts.ts";
-import type { ConfigFacts, EntryConfigFact, FrameworkConfig, ListenFact } from "../frameworks/adapter.ts";
+import type { ConfigFacts, EntryConfigFact, FrameworkConfig, ObserverFact } from "../frameworks/adapter.ts";
 import { arg, callsOf, cls, codeFacts, dispatchesIn, eventName, hasFacts, key, PhpCode, str, strings, type, type PhpClass } from "./php.ts";
 
 const SERVICE_PROVIDER = "Illuminate\\Support\\ServiceProvider";
@@ -66,17 +67,16 @@ export function laravelFacts(files: readonly FileFacts[]): FrameworkConfig[] {
   const providers = classes.filter((c) => c.file.startsWith("app/Providers/") || code.extends(c, SERVICE_PROVIDER));
   for (const provider of providers) readProvider(code, provider, at(provider.file), keyed);
   for (const facade of classes.filter((c) => code.extends(c, FACADE))) readFacade(code, facade, at(facade.file), keyed);
-  // Listeners: observer entries; every listener is known before a job decides it is no consumer.
-  const listens = [...out.values()].flatMap((f) => (f.listens ?? []).map((l) => ({ ...l, file: f.path })));
-  const listenerClasses = new Set(listens.map((l) => key(l.listener.name)));
-  for (const l of listens) at(l.file).entries!.push({ kind: "observer", label: l.event, files: [], fn: l.method, type: l.listener, line: l.line, col: l.col });
+  // Every listener is known before a job decides it is no consumer: a queued listener is its event's observer.
+  const listenerClasses = new Set([...out.values()].flatMap((f) => (f.observers ?? []).map((o) => key(o.instance?.name ?? ""))));
   for (const command of classes.filter((c) => code.extends(c, COMMAND))) readCommand(command, at(command.file));
   for (const job of classes.filter((c) => code.implements(c, SHOULD_QUEUE) && !listenerClasses.has(key(c.qualified)))) {
     const handle = code.method(job.qualified, "handle");
     if (!handle) continue;
     const facts = at(job.file);
     facts.entries!.push({ kind: "consumer", label: job.qualified, files: [], fn: handle.decl.name, type: type(job.qualified), line: job.decl.line, col: job.decl.col });
-    facts.handlers!.push({ kind: "job", message: job.qualified, handler: type(job.qualified), method: handle.decl.name, line: job.decl.line, col: job.decl.col });
+    // `J::dispatch()` queues the job: an event named by its class, whose observer is `handle` on a worker.
+    facts.observers!.push({ event: job.qualified, name: `queued job ${job.name}`, instance: type(job.qualified), method: handle.decl.name, disabled: false, entry: false, line: job.decl.line, col: job.decl.col });
   }
   const commands = commandNames(code, classes);
   for (const file of code.files) {
@@ -142,14 +142,14 @@ function bind(facts: ConfigFacts, keyed: Map<string, string>, abstract: LiteralF
 /** A listener of `$listen` or `Event::listen`: `L::class` (its `handle`), `[L::class, 'm']`, `'L@m'`. */
 function listen(code: PhpCode, file: string, facts: ConfigFacts, event: string, listener: LiteralFact, at: { line: number; col: number }): void {
   const add = (cls: string, method: string): void => {
-    const fact: ListenFact = { event, listener: type(cls), method, line: at.line, col: at.col };
-    if (!(facts.listens ?? []).some((l) => l.event === fact.event && key(l.listener.name) === key(cls) && l.method === method)) facts.listens!.push(fact);
+    const fact: ObserverFact = { event, name: shortName(cls), instance: type(cls), method, disabled: false, line: at.line, col: at.col };
+    if (!(facts.observers ?? []).some((o) => o.event === fact.event && key(o.instance?.name ?? "") === key(cls) && o.method === method)) facts.observers!.push(fact);
   };
   if (listener.kind === "class") return add(listener.name, code.method(listener.name, "handle") || !code.method(listener.name, "__invoke") ? "handle" : "__invoke");
   if (listener.kind === "array" && listener.items.length === 2 && listener.items[0]!.value.kind === "class" && listener.items[1]!.value.kind === "string") return add(listener.items[0]!.value.name, listener.items[1]!.value.value);
   if (listener.kind === "string") {
     const [name, method] = listener.value.split("@");
-    if (name && /^\\?[A-Za-z_][A-Za-z0-9_\\]*$/.test(name)) return add(name.replace(/^\\+/, ""), method || "handle");
+    if (name && /^\\?[A-Za-z_][A-Za-z0-9_\\]*$/.test(name)) return add(name.replace(/\\+/g, "\\").replace(/^\\/, ""), method || "handle");
   }
   facts.holes!.push({ line: at.line, col: at.col, text: event, reason: `a listener of \`${event}\` is an expression keylang does not read (in \`${file}\`)` });
 }
@@ -165,7 +165,7 @@ function subscribe(code: PhpCode, subscriber: string, facts: ConfigFacts, at: { 
   for (const item of returned.items) {
     const event = eventName(item.key);
     const handler = str(item.value);
-    if (event !== null && handler !== null) facts.listens!.push({ event, listener: type(subscriber), method: handler, line: at.line, col: at.col });
+    if (event !== null && handler !== null) facts.observers!.push({ event, name: shortName(subscriber), instance: type(subscriber), method: handler, disabled: false, line: at.line, col: at.col });
   }
 }
 
@@ -368,4 +368,9 @@ function schedule(facts: ConfigFacts, file: string, call: CallFact, method: stri
     else if (first?.kind === "array" && first.items.length === 2 && first.items[0]!.value.kind === "class" && first.items[1]!.value.kind === "string") facts.entries!.push({ kind: "cron", label: `${first.items[0]!.value.name}::${first.items[1]!.value.value}`, files: [], fn: first.items[1]!.value.value, type: type(first.items[0]!.value.name), line: call.line, col: call.col });
     else facts.holes!.push({ line: call.line, col: call.col, text: call.callee, reason: "the schedule calls an expression keylang does not read" });
   }
+}
+
+/** The class name without its namespace: an observer's name in the binding. */
+function shortName(qualified: string): string {
+  return qualified.slice(qualified.lastIndexOf("\\") + 1);
 }

@@ -27,7 +27,7 @@ export function draftFlow(snapshot: AnalysisSnapshot, trigger: string, options: 
   const depth = options.depth ?? 4;
   const holes = new Map<string, string[]>();
   for (const c of snapshot.coverage) {
-    if ((c.kind !== "dynamic-call" && c.kind !== "unresolved-call" && c.kind !== "ambiguous-binding") || c.source === null) continue;
+    if ((c.kind !== "dynamic-call" && c.kind !== "unresolved-call" && c.kind !== "ambiguous-binding" && c.kind !== "dynamic-event") || c.source === null) continue;
     const list = holes.get(c.source) ?? [];
     list.push(`${c.text || c.reason} (${c.file}:${c.line})`);
     holes.set(c.source, list);
@@ -38,9 +38,9 @@ export function draftFlow(snapshot: AnalysisSnapshot, trigger: string, options: 
     if (e.kind !== "call" || e.resolution !== "resolved" || e.target === null) continue;
     const key = `${e.source}\u0000${e.target}`;
     if (via.has(key)) continue;
-    // A call the framework makes by its config (ADR 0022): a preference, a constructor argument, a plugin around the call.
-    const config = e.via === "preference" || e.via === "argument" || e.via === "dispatch" || e.via === "observer" || e.via?.startsWith("plugin:") ? ` <!-- keylang:algo via ${e.via} ${e.site ?? "?"}${e.scope && e.scope !== "global" ? ` scope ${e.scope}` : ""} -->` : null;
-    via.set(key, config ?? (e.via === "callable-arg" ? " <!-- keylang:algo via callable -->" : e.via === "closure-arg" ? " <!-- keylang:algo via closure -->" : ""));
+    // A call the framework makes by its config (ADR 0022): a preference, a constructor argument, a plugin around the call, an observer of an event, a job registered for a queue.
+    const config = e.via === "preference" || e.via === "argument" || e.via === "observer" || (e.via === "dispatch" && e.site !== undefined) || e.via?.startsWith("plugin:") ? ` <!-- keylang:algo via ${e.via} ${e.site ?? "?"}${e.scope && e.scope !== "global" ? ` scope ${e.scope}` : ""} -->` : null;
+    via.set(key, config ?? (e.via === "callable-arg" ? " <!-- keylang:algo via callable -->" : e.via === "closure-arg" ? " <!-- keylang:algo via closure -->" : e.via === "dispatch" ? " <!-- keylang:algo via dispatch -->" : ""));
   }
   const listed = new Set<string>();
   const lines = [`# flow ${name}`, ""];
@@ -56,7 +56,9 @@ export function draftFlow(snapshot: AnalysisSnapshot, trigger: string, options: 
     lines.push(`${"  ".repeat(level)}- ${keyword} ${id}${how}${comment}`);
     if (level >= depth) return;
     for (const callee of snapshot.nodes[id]?.calls ?? []) {
-      if (listed.has(callee) || snapshot.nodes[callee]?.kind !== "fn" || snapshot.nodes[callee]?.layer === "external") continue;
+      // An event the fn dispatches is a step too, with its observers under it (ADR 0022 п. 6).
+      const kind = snapshot.nodes[callee]?.kind;
+      if (listed.has(callee) || (kind !== "fn" && kind !== "event") || snapshot.nodes[callee]?.layer === "external") continue;
       visit(callee, level + 1, via.get(`${id}\u0000${callee}`) ?? "");
     }
   };

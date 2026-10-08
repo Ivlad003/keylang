@@ -65,13 +65,13 @@ function docblockNote(edge: Pick<UseEdge, "docblock" | "config">): string {
 }
 
 /** Via values of the calls a framework makes by its config: the module whose config declares one depends on its target. */
-const CONFIG_VIA = new Set(["preference", "argument", "plugin:before", "plugin:around", "plugin:after", "observer", "dispatch"]);
+const CONFIG_VIA = new Set(["preference", "argument", "plugin:before", "plugin:around", "plugin:after", "observer"]);
 
 /** A config edge in words for a K102: `the preference `I → C` (app/etc/di.xml:12)`. */
 function configNote(edge: { via?: string; binding?: string; site?: string; scope?: string }): string {
   const at = edge.site ? edge.site.replace(/:\d+$/, "") : "?";
   const scope = edge.scope && edge.scope !== "global" ? `, scope ${edge.scope}` : "";
-  const what = edge.via === "preference" ? `the preference ${edge.binding ?? ""}` : edge.via === "argument" ? (edge.binding ?? "a constructor argument") : `the ${edge.binding ?? "plugin"} (${edge.via})`;
+  const what = edge.via === "preference" ? `the preference ${edge.binding ?? ""}` : edge.via === "argument" ? (edge.binding ?? "a constructor argument") : edge.via === "observer" ? `the ${edge.binding ?? "observer"}` : `the ${edge.binding ?? "plugin"} (${edge.via})`;
   return `${what} (${at}${scope})`;
 }
 

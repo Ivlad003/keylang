@@ -4,18 +4,18 @@
 // controllers the TypeScript extractor records (`server.get('Show', …)` →
 // `route` `Cart-Show`) and a coverage note for a `*/cartridge` require that
 // only a guessed cartridge path decided. A PHP framework (Laravel, Symfony)
-// names a class and its method instead of a script; its listeners and job or
-// message handlers become `call` edges from every fn that dispatches their
-// event (`via: "observer"`, `via: "dispatch"`). The adapters themselves only
-// parse (`src/frameworks/`); everything that needs the graph is here.
+// names a class and its method instead of a script. Listeners, job and
+// message handlers are observers of events the graph places itself
+// (`src/frameworks/entries.ts`). The adapters themselves only parse
+// (`src/frameworks/`); everything that needs the graph is here.
 
 import type { Config } from "./config.ts";
 import { compareEntries, entryScope, fnIn, frameworkEntry, type EntryScope } from "./entries.ts";
 import type { FileFacts } from "./extract/facts.ts";
-import type { ConfigFacts, EntryConfigFact, FrameworkInput, TypeName } from "./frameworks/adapter.ts";
+import type { EntryConfigFact, FrameworkInput, TypeName } from "./frameworks/adapter.ts";
 import { cartridgeAnswers, cartridgeLayout, SUPER_MODULE, type CartridgeLayout } from "./frameworks/cartridges.ts";
 import { PYTHON_WEB_FRAMEWORKS } from "./frameworks/python-web.ts";
-import type { Call, Fn, Gap, Graph, Module } from "./graph.ts";
+import type { Gap, Graph } from "./graph.ts";
 import { probeCandidates } from "./imports.ts";
 import { pythonWebEntries } from "./python-web-entries.ts";
 import type { EntryPoint } from "./snapshot.ts";
@@ -63,7 +63,6 @@ export function frameworkEntries({ config, graph, facts, frameworks }: Framework
         entries.push(withExtras(fn === null && fact.note !== undefined ? { ...found, ...at } : found, fact));
       }
     }
-    holes.push(...dispatchEdges(graph, scope, classes, framework.configs));
   }
   if (frameworks.some((f) => f.name === "sfcc")) {
     const layout = cartridgeLayout(config.root, sources, config.sfcc.cartridgePath);
@@ -129,76 +128,6 @@ function placeMethod(scope: EntryScope, classes: ReadonlyMap<string, { file: str
     at = classes.get(lower(qualified));
   }
   return { reason: `\`${type.name}\` declares no method \`${method}\` keylang has read` };
-}
-
-/**
- * Edges from every fn that dispatches an event or a message to the listeners
- * and handlers the framework runs for it (ADR 0022 п. 6): `via: "observer"`
- * for a listener of the event, `via: "dispatch"` for the handler of a job or
- * a message, at the dispatching call, with the line of the config that
- * subscribes the listener as `site` and its file's module as `owner`. Until
- * events are nodes of their own (`events.*`), the edge goes straight from the
- * dispatching fn to the listener; the event names it in `binding`.
- */
-function dispatchEdges(graph: Graph, scope: EntryScope, classes: ReadonlyMap<string, { file: string; name: string; facts: FileFacts }>, configs: readonly { facts: ConfigFacts }[]): Gap[] {
-  const holes: Gap[] = [];
-  type Target = { id: string; via: "observer" | "dispatch"; site: string; owner: string | null; binding: string };
-  const byEvent = new Map<string, Target[]>();
-  const add = (event: string, target: Target): void => {
-    const list = byEvent.get(lower(event)) ?? [];
-    if (!list.some((t) => t.id === target.id && t.via === target.via)) list.push(target);
-    byEvent.set(lower(event), list);
-  };
-  for (const { facts: file } of configs) {
-    const owner = graph.byPath.get(file.path)?.id ?? null;
-    for (const l of file.listens ?? []) {
-      const placed = placeMethod(scope, classes, l.listener, l.method);
-      if ("reason" in placed) {
-        holes.push({ kind: "unsupported", file: file.path, line: l.line, col: l.col, endLine: l.line, endCol: l.col, text: l.listener.name, reason: `listener of \`${l.event}\`: ${placed.reason}`, source: owner });
-        continue;
-      }
-      // A listener its own class declares (an attribute) belongs to no other module: the dispatching fn owns the edge.
-      add(l.event, { id: placed.id, via: "observer", site: `${file.path}:${l.line}:${l.col}`, owner: placed.at.file === file.path ? null : owner, binding: `listener \`${l.listener.name}::${l.method}\` of the event \`${l.event}\`` });
-    }
-    for (const h of file.handlers ?? []) {
-      const placed = placeMethod(scope, classes, h.handler, h.method);
-      if ("reason" in placed) continue;
-      const binding = h.kind === "job" ? `queued job \`${h.handler.name}::${h.method}\`` : `handler \`${h.handler.name}::${h.method}\` of the message \`${h.message}\``;
-      // The handler declares itself: the dispatching fn owns the edge, a dependency the code does not write when it names only the message.
-      add(h.message, { id: placed.id, via: "dispatch", site: `${file.path}:${h.line}:${h.col}`, owner: null, binding });
-    }
-  }
-  if (byEvent.size === 0) return holes;
-  for (const { facts: file } of configs) {
-    for (const d of file.dispatches ?? []) {
-      const targets = byEvent.get(lower(d.event));
-      if (!targets) continue;
-      const source = fnIn(scope, file.path, d.symbol);
-      const fn = source === null ? null : fnOf(graph, source);
-      if (fn === null) continue;
-      for (const t of targets) {
-        if (fn.calls.some((c) => c.target === t.id && c.via === t.via && c.line === d.line && c.col === d.col)) continue;
-        const call: Call = { target: t.id, line: d.line, col: d.col, endLine: d.endLine, endCol: d.endCol, text: d.text, via: t.via, site: t.site, binding: t.binding, ...(t.owner !== null ? { owner: t.owner } : {}) };
-        fn.calls.push(call);
-      }
-    }
-  }
-  return holes;
-}
-
-/** The fn node of an id: a member of its module or of a class in it. */
-function fnOf(graph: Graph, id: string): Fn | null {
-  const visit = (module: Module): Fn | null => {
-    const own = module.fns.find((fn) => fn.id === id);
-    if (own) return own;
-    for (const child of module.children) if (id.startsWith(`${child.id}.`)) return visit(child);
-    return null;
-  };
-  for (const layer of graph.layers) for (const module of layer.modules) if (id.startsWith(`${module.id}.`)) {
-    const found = visit(module);
-    if (found) return found;
-  }
-  return null;
 }
 
 /**

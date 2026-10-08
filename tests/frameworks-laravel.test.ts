@@ -45,6 +45,7 @@ const APP: Record<string, string> = {
   "app/Domain/Contracts/Clock.php": php(["namespace App\\Domain\\Contracts;", "", "interface Clock", "{", "    public function now(): int;", "}"]),
   "app/Infra/StripeGateway.php": php(["namespace App\\Infra;", "", "use App\\Domain\\Contracts\\PaymentGateway;", "", "class StripeGateway implements PaymentGateway", "{", "    public function charge(int $amount): bool", "    {", "        return $amount > 0;", "    }", "}"]),
   "app/Domain/Events/OrderPlaced.php": php(["namespace App\\Domain\\Events;", "", "class OrderPlaced", "{", "    public function __construct(public int $amount) {}", "}"]),
+  "app/Domain/Listeners/AuditOrder.php": php(["namespace App\\Domain\\Listeners;", "", "class AuditOrder", "{", "    public function record(): void", "    {", "    }", "}"]),
   "app/Domain/Listeners/SendReceipt.php": php(["namespace App\\Domain\\Listeners;", "", "use App\\Domain\\Events\\OrderPlaced;", "", "class SendReceipt", "{", "    public function handle(OrderPlaced $event): void", "    {", "    }", "}"]),
   "app/Domain/Jobs/ProcessInvoice.php": php([
     "namespace App\\Domain\\Jobs;",
@@ -172,6 +173,7 @@ const APP: Record<string, string> = {
     "    protected $listen = [",
     "        OrderPlaced::class => [",
     "            SendReceipt::class,",
+    "            'App\\Domain\\Listeners\\AuditOrder@record',",
     "        ],",
     "    ];",
     "}",
@@ -241,7 +243,8 @@ test("laravel: routes, commands, the schedule, listeners and queued jobs are ent
     "consumer | App\\Domain\\Jobs\\ProcessInvoice | domain.Jobs.ProcessInvoice.ProcessInvoice.handle | app/Domain/Jobs/ProcessInvoice.php:13 |  | ",
     "cron | App\\Domain\\Jobs\\ProcessInvoice | domain.Jobs.ProcessInvoice.ProcessInvoice.handle | app/Domain/Jobs/ProcessInvoice.php:13 |  | ",
     "cron | report:send | console.Commands.SendReport.SendReport.handle | app/Console/Commands/SendReport.php:10 |  | ",
-    "observer | App\\Domain\\Events\\OrderPlaced | domain.Listeners.SendReceipt.SendReceipt.handle | app/Domain/Listeners/SendReceipt.php:8 |  | ",
+    "observer | App\\Domain\\Events\\OrderPlaced (AuditOrder) | domain.Listeners.AuditOrder.AuditOrder.record | app/Domain/Listeners/AuditOrder.php:6 |  | ",
+    "observer | App\\Domain\\Events\\OrderPlaced (SendReceipt) | domain.Listeners.SendReceipt.SendReceipt.handle | app/Domain/Listeners/SendReceipt.php:8 |  | ",
     "route | GET / | routes.web | routes/web.php:12 | GET | handler written in place: the route file stands for it",
     "route | GET /admin/reports | http.Controllers.Admin.ReportController.ReportController.__invoke | app/Http/Controllers/Admin/ReportController.php:6 | GET | ",
     "route | GET /photos | http.Controllers.PhotoController.PhotoController.index | app/Http/Controllers/PhotoController.php:6 | GET | ",
@@ -259,7 +262,7 @@ test("laravel: routes, commands, the schedule, listeners and queued jobs are ent
   assert.match(listed.stdout, /route\s+POST \/api\/v1\/refunds\s+http\.Controllers\.OrderController\.OrderController\.refund/);
 });
 
-test("laravel: a call through a bound interface, a facade, an event and a queued job are call edges with via, site and owner", (t) => {
+test("laravel: a call through a bound interface and a facade are call edges with via, site and owner; an event and a queued job are event nodes with their observers", (t) => {
   const dir = app(t);
   const snapshot = snapshotOf(dir);
   const calls = (source: string) => snapshot.edges.filter((e) => e.kind === "call" && e.source === source && e.resolution === "resolved" && e.via !== undefined);
@@ -267,10 +270,21 @@ test("laravel: a call through a bound interface, a facade, an event and a queued
     calls(PLACE).map((e) => [e.via, e.target, e.site, e.owner, e.binding]),
     [
       ["preference", "infra.StripeGateway.StripeGateway.charge", "app/Providers/AppServiceProvider.php:13:9", "providers.AppServiceProvider", "`App\\Domain\\Contracts\\PaymentGateway → App\\Infra\\StripeGateway`"],
-      ["observer", "domain.Listeners.SendReceipt.SendReceipt.handle", "app/Providers/EventServiceProvider.php:10:15", "providers.EventServiceProvider", "listener `App\\Domain\\Listeners\\SendReceipt::handle` of the event `App\\Domain\\Events\\OrderPlaced`"],
-      ["dispatch", "domain.Jobs.ProcessInvoice.ProcessInvoice.handle", "app/Domain/Jobs/ProcessInvoice.php:7:1", undefined, "queued job `App\\Domain\\Jobs\\ProcessInvoice::handle`"],
+      // `event(new OrderPlaced)` and `ProcessInvoice::dispatch()`: edges to the events their classes name.
+      ["dispatch", "events.App-Domain-Events-OrderPlaced", undefined, undefined, undefined],
+      ["dispatch", "events.App-Domain-Jobs-ProcessInvoice", undefined, undefined, undefined],
     ],
   );
+  // The listeners of `$listen` (a class, and a string `Class@method`) and the job's `handle` observe the events.
+  assert.deepEqual(
+    snapshot.edges.filter((e) => e.via === "observer").map((e) => [e.source, e.target, e.site, e.owner]),
+    [
+      ["events.App-Domain-Events-OrderPlaced", "domain.Listeners.SendReceipt.SendReceipt.handle", "app/Providers/EventServiceProvider.php:10:15", "providers.EventServiceProvider"],
+      ["events.App-Domain-Events-OrderPlaced", "domain.Listeners.AuditOrder.AuditOrder.record", "app/Providers/EventServiceProvider.php:10:15", "providers.EventServiceProvider"],
+      ["events.App-Domain-Jobs-ProcessInvoice", "domain.Jobs.ProcessInvoice.ProcessInvoice.handle", "app/Domain/Jobs/ProcessInvoice.php:7:1", "domain.Jobs.ProcessInvoice"],
+    ],
+  );
+  assert.equal(snapshot.nodes["events.App-Domain-Events-OrderPlaced"]?.kind, "event");
   assert.deepEqual(
     calls(REFUND).map((e) => [e.text, e.via, e.target]),
     [["this.gateway.charge", "preference", "infra.StripeGateway.StripeGateway.charge"]],
@@ -290,8 +304,8 @@ test("laravel: a flow through the binding, the listener and the job is static ok
   const behavior = keylang(dir, ["check"]);
   assert.equal(behavior.status, 0, behavior.stdout + behavior.stderr);
   assert.match(behavior.stdout, /flows\.md:5:5: static ok infra\.StripeGateway\.StripeGateway\.charge: called from domain\.Services\.OrderService\.OrderService\.place through the preference `App\\Domain\\Contracts\\PaymentGateway → App\\Infra\\StripeGateway` in `app\/Providers\/AppServiceProvider\.php:13`\n/);
-  assert.match(behavior.stdout, /flows\.md:6:5: static ok domain\.Listeners\.SendReceipt\.SendReceipt\.handle: called from domain\.Services\.OrderService\.OrderService\.place through the listener `App\\Domain\\Listeners\\SendReceipt::handle` of the event `App\\Domain\\Events\\OrderPlaced` \(observer\) in `app\/Providers\/EventServiceProvider\.php:10`\n/);
-  assert.match(behavior.stdout, /flows\.md:7:5: static ok domain\.Jobs\.ProcessInvoice\.ProcessInvoice\.handle: called from [^\n]* \(dispatch\)/);
+  assert.match(behavior.stdout, /flows\.md:6:5: static ok domain\.Listeners\.SendReceipt\.SendReceipt\.handle: reachable from domain\.Services\.OrderService\.OrderService\.place via events\.App-Domain-Events-OrderPlaced \([^\n]*the observer `SendReceipt` \(`App\\Domain\\Listeners\\SendReceipt::handle`\) of the event `App\\Domain\\Events\\OrderPlaced` in `app\/Providers\/EventServiceProvider\.php:10`\)\n/);
+  assert.match(behavior.stdout, /flows\.md:7:5: static ok domain\.Jobs\.ProcessInvoice\.ProcessInvoice\.handle: reachable from [^\n]* via events\.App-Domain-Jobs-ProcessInvoice \([^\n]*the observer `queued job ProcessInvoice`/);
   const shape = keylang(dir, ["check", "--static", "shape"]);
   assert.match(shape.stdout, /flows\.md:5:5: static unverified infra\.StripeGateway\.StripeGateway\.charge/);
   assert.match(shape.stdout, /flows\.md:6:5: static unverified domain\.Listeners\.SendReceipt\.SendReceipt\.handle/);
@@ -300,14 +314,15 @@ test("laravel: a flow through the binding, the listener and the job is static ok
 });
 
 test("laravel: `deny` sees a binding, a facade and a listener as dependencies of the code that declares them, at its line", (t) => {
-  const dir = app(t, { "keylang/rules.md": "# rules\n\n- deny providers domain.Listeners\n- deny domain infra\n" });
+  const dir = app(t, { "keylang/rules.md": "# rules\n\n- deny providers domain.Listeners.AuditOrder\n- deny domain infra\n" });
   const r = keylang(dir, ["check"]);
   assert.equal(r.status, 1, r.stdout);
   const k102 = r.stdout.split("\n").filter((line) => line.includes("K102") && line.includes("through"));
   assert.deepEqual(k102, [
     // The facade's accessor is the facade's own config: through it the facade depends on the bound class.
     "app/Domain/Facades/Payment.php:9:5: K102 divergence: `domain.Facades.Payment` depends on `infra.StripeGateway.StripeGateway` through the preference `App\\Domain\\Facades\\Payment → App\\Domain\\Contracts\\PaymentGateway → App\\Infra\\StripeGateway` (app/Domain/Facades/Payment.php:9), which is denied by `deny domain infra` (keylang/rules.md:4)",
-    "app/Providers/EventServiceProvider.php:10:15: K102 divergence: `providers.EventServiceProvider` depends on `domain.Listeners.SendReceipt.SendReceipt` through the listener `App\\Domain\\Listeners\\SendReceipt::handle` of the event `App\\Domain\\Events\\OrderPlaced` (observer) (app/Providers/EventServiceProvider.php:10), which is denied by `deny providers domain.Listeners` (keylang/rules.md:3)",
+    // `'Class@method'` names the listener in a string: no `use`, so only the observer edge makes the dependency.
+    "app/Providers/EventServiceProvider.php:10:15: K102 divergence: `providers.EventServiceProvider` depends on `domain.Listeners.AuditOrder.AuditOrder` through the observer `AuditOrder` (`App\\Domain\\Listeners\\AuditOrder::record`) of the event `App\\Domain\\Events\\OrderPlaced` (app/Providers/EventServiceProvider.php:10), which is denied by `deny providers domain.Listeners.AuditOrder` (keylang/rules.md:3)",
   ]);
   // The binding is the provider's dependency, not the caller's: `deny domain infra` holds for it.
   assert.ok(!r.stdout.includes("`domain.Services.OrderService` depends on `infra"), r.stdout);
@@ -329,13 +344,14 @@ test("laravel: flows discover drafts a flow for the entry points; coverage names
 });
 
 test("laravel: `frameworks: []` turns the adapter off — ok and fail become unverified, never the other way", (t) => {
-  const dir = app(t, { "keylang/rules.md": "# rules\n\n- deny providers domain.Listeners\n" });
+  const dir = app(t, { "keylang/rules.md": "# rules\n\n- deny providers domain.Listeners.AuditOrder\n" });
   const on = keylang(dir, ["check"]);
   setFrameworks(dir, []);
   const off = snapshotOf(dir);
   assert.equal(off.manifest.frameworks, undefined);
   assert.deepEqual(off.entries.filter((e) => e.framework === "laravel"), []);
   assert.ok(!off.edges.some((e) => e.via === "preference" || e.via === "observer" || e.via === "dispatch"));
+  assert.ok(!Object.values(off.nodes).some((node) => node.kind === "event"));
   // Each config file the adapter would read is a hole of the snapshot.
   assert.ok(off.coverage.some((c) => c.kind === "skipped-file" && c.file === "routes/web.php" && c.text === "framework:laravel"));
   const r = keylang(dir, ["check"]);
@@ -348,8 +364,8 @@ test("laravel: `frameworks: []` turns the adapter off — ok and fail become unv
     assert.ok(now === verdict || now === "unverified", `${at}: ${verdict} → ${now}`);
   }
   assert.equal(after.get("keylang/flows.md:6:5"), "unverified");
-  // The listener's config edge is gone; the provider's `use` of the listener still fails the rule.
-  assert.match(on.stdout, /K102[^\n]*\(observer\)/);
-  assert.ok(!/K102[^\n]*\(observer\)/.test(r.stdout));
-  assert.match(r.stdout, /EventServiceProvider\.php:5:1: K102 divergence: `providers\.EventServiceProvider` depends on `domain\.Listeners\.SendReceipt`/);
+  // The listener's K102 was the observer edge alone: with the adapter off the rule is unverified, not ok.
+  assert.match(on.stdout, /K102[^\n]*through the observer `AuditOrder`/);
+  assert.ok(!/K102/.test(r.stdout), r.stdout);
+  assert.match(r.stdout, /keylang\/rules\.md:3:1: unverified [^\n]*`laravel` config keylang does not read/);
 });

@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [brief](#base.brief) · [config](#base.config) · [diag](#base.diag) · [external-ids](#base.external-ids) · [adapter](#base.adapter) · [bindings](#base.bindings) · [cartridges](#base.cartridges) · [laravel](#base.laravel) · [magento](#base.magento) · [python-web](#base.python-web) · [sfcc](#base.sfcc) · [symfony](#base.symfony) · [glob](#base.glob) · [languages](#base.languages) · [safe-write](#base.safe-write) · [span](#base.span)
+[README](README.md) · modules: [brief](#base.brief) · [config](#base.config) · [diag](#base.diag) · [external-ids](#base.external-ids) · [adapter](#base.adapter) · [bindings](#base.bindings) · [cartridges](#base.cartridges) · [entries](#base.entries) · [events](#base.events) · [laravel](#base.laravel) · [magento](#base.magento) · [python-web](#base.python-web) · [sfcc](#base.sfcc) · [symfony](#base.symfony) · [glob](#base.glob) · [languages](#base.languages) · [safe-write](#base.safe-write) · [span](#base.span)
 
 # map
 
@@ -47,112 +47,112 @@
       <a id="base.config.isAgent"></a><br>`agent` as `keylang.json`, `KEYLANG_AGENT` and `agents.json` "use" accept it.
     - fn [isCliAgent](../../src/config.ts#L133) (agent: string | null) → boolean
       <a id="base.config.isCliAgent"></a><br>The agent runs through an agent CLI (`cli:claude`), not an API.
-    - fn [isReservedLayerName](../../src/config.ts#L160) (name: string) → boolean
+    - fn [isReservedLayerName](../../src/config.ts#L161) (name: string) → boolean
       <a id="base.config.isReservedLayerName"></a><br>A reserved name, or `README` in any case: the explained map writes a layer as `<layer>.md` beside its start page `README.md`, and on a case-insensitive file system `readme.md` is that file too.
-    - fn [skipDir](../../src/config.ts#L194) (abs: string, name: string) → boolean <!-- internal -->
+    - fn [skipDir](../../src/config.ts#L195) (abs: string, name: string) → boolean <!-- internal -->
       <a id="base.config.skipDir"></a><br>A directory we never descend into: hidden, build output, or a nested repository.
-    - type [RawConfig](../../src/config.ts#L198)
+    - type [RawConfig](../../src/config.ts#L199)
       <a id="base.config.RawConfig"></a><br>Describes the unvalidated shape of the project configuration file, with every field optional: rule format, languages, module granularity, layer globs, excludes, check modes, and settings for agent, ghost, assistant, voice and explain. _(llm · claude:claude-opus-5-5 · 2026-10-06 · stale)_
-    - fn [loadConfig](../../src/config.ts#L220) (root: string) → Config
+    - fn [loadConfig](../../src/config.ts#L221) (root: string) → Config
       <a id="base.config.loadConfig"></a><br>Load `<root>/keylang.json`, or guess a config for `root`.
       - calls [base.config.parseConfig](base.md#base.config.parseConfig), [base.config.detectLanguages](base.md#base.config.detectLanguages), [base.config.guessLayers](base.md#base.config.guessLayers), [base.config.defaultModule](base.md#base.config.defaultModule)
-    - fn [defaultModule](../../src/config.ts#L263) (languages: readonly Language[]) → Config["module"] <!-- internal -->
+    - fn [defaultModule](../../src/config.ts#L264) (languages: readonly Language[]) → Config["module"] <!-- internal -->
       <a id="base.config.defaultModule"></a><br>The languages' own module granularity when they agree; a file otherwise.
-    - fn [withoutBom](../../src/config.ts#L274) (text: string) → string
+    - fn [withoutBom](../../src/config.ts#L275) (text: string) → string
       <a id="base.config.withoutBom"></a><br>`text` without a leading U+FEFF: a JSON file saved with a UTF-8 BOM (PowerShell 5.1 `-Encoding UTF8`, old Notepad, Visual Studio) is the same JSON, as Node and npm read a `package.json`, and as the `.md` parser, test reports and trace already read theirs.
-    - fn [parseConfig](../../src/config.ts#L279) (file: string, text: string) → RawConfig
+    - fn [parseConfig](../../src/config.ts#L280) (file: string, text: string) → RawConfig
       <a id="base.config.parseConfig"></a><br>Parse and validate `keylang.json`. Errors name the file and the field.
       - calls [base.config.withoutBom](base.md#base.config.withoutBom), [base.glob.globToRegExp](base.md#base.glob.globToRegExp), [base.config.isObject](base.md#base.config.isObject), [base.config.acceptFormat](base.md#base.config.acceptFormat), [base.languages.isLanguage](base.md#base.languages.isLanguage), [base.config.layerName](base.md#base.config.layerName), [base.config.isReservedLayerName](base.md#base.config.isReservedLayerName), [base.config.reservedReason](base.md#base.config.reservedReason), [base.config.isAgent](base.md#base.config.isAgent)
-    - fn [isObject](../../src/config.ts#L448) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isObject](../../src/config.ts#L449) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       <a id="base.config.isObject"></a><br>Type guard that returns true only when the value is a non-null object and not an array, so callers can safely index it as a string-keyed record; [`base.config.assertFormatOnly`](base.md#base.config.assertFormatOnly), [`base.config.parseConfig`](base.md#base.config.parseConfig), and [`base.config.withLayers`](base.md#base.config.withLayers) use it to validate parsed config shapes… _(llm · claude · 2026-10-04)_
-    - fn [acceptFormat](../../src/config.ts#L453) (file: string, got: unknown) → RuleFormat
+    - fn [acceptFormat](../../src/config.ts#L454) (file: string, got: unknown) → RuleFormat
       <a id="base.config.acceptFormat"></a><br>`format` when it is present: a positive integer this keylang can read.
-    - fn [assertFormatOnly](../../src/config.ts#L467) (file: string, text: string) → void
+    - fn [assertFormatOnly](../../src/config.ts#L468) (file: string, text: string) → void
       <a id="base.config.assertFormatOnly"></a><br>`fmt` and `parse` read nothing of the config except `format`. Invalid JSON or a non-object root cannot tell them the edition, so they stop.
       - calls [base.config.withoutBom](base.md#base.config.withoutBom), [base.config.isObject](base.md#base.config.isObject), [base.config.acceptFormat](base.md#base.config.acceptFormat)
-    - fn [configToJson](../../src/config.ts#L479) (c: Config) → string
+    - fn [configToJson](../../src/config.ts#L480) (c: Config) → string
       <a id="base.config.configToJson"></a><br>The config as it would be written by `keylang init`.
-    - fn [withLayers](../../src/config.ts#L500) (file: string, text: string, layers: Readonly<Record<string, readonly string[]>>) → { text: string } | { error: string }
+    - fn [withLayers](../../src/config.ts#L501) (file: string, text: string, layers: Readonly<Record<string, readonly string[]>>) → { text: string } | { error: string }
       <a id="base.config.withLayers"></a><br>`text` (a `keylang.json` as written or being edited) with only its `layers` replaced: every other field stays, unknown ones included, in its order; a missing `layers` is appended. Whitespace is not kept (the result is 2-space JSON).
       - calls [base.config.withoutBom](base.md#base.config.withoutBom), [base.config.isObject](base.md#base.config.isObject)
-    - fn [sourceFiles](../../src/config.ts#L514) (c: Config) → string[]
+    - fn [sourceFiles](../../src/config.ts#L515) (c: Config) → string[]
       <a id="base.config.sourceFiles"></a><br>All indexable source files under root, POSIX paths relative to root, sorted.
       - calls [base.config.classifySources](base.md#base.config.classifySources)
-    - fn [sourceTree](../../src/config.ts#L522) (c: Config) → { files: string[]; unreadable: { dir: string; reason: string }[] }
+    - fn [sourceTree](../../src/config.ts#L523) (c: Config) → { files: string[]; unreadable: { dir: string; reason: string }[] }
       <a id="base.config.sourceTree"></a><br>The indexable source files and the directories that could not be listed (no permission): their files are unknown, which is a hole, not an absence.
       - calls [base.config.classifySources](base.md#base.config.classifySources)
-    - type [SourceClasses](../../src/config.ts#L528)
+    - type [SourceClasses](../../src/config.ts#L529)
       <a id="base.config.SourceClasses"></a><br>Every source file of the configured languages by what keylang does with it; paths in walk order.
-    - fn [classifySources](../../src/config.ts#L542) (c: Config) → SourceClasses
+    - fn [classifySources](../../src/config.ts#L543) (c: Config) → SourceClasses
       <a id="base.config.classifySources"></a><br>The source files by class, from one walk of the tree.
       - calls [base.config.walkSources](base.md#base.config.walkSources), [base.config.sourceClass](base.md#base.config.sourceClass)
-    - fn [sourceClass](../../src/config.ts#L556) (rel: string, c: Pick<Config, "exclude" | "outside" | "assume">) → "analysed" | "excluded" | "outside" | "assumed" | null
+    - fn [sourceClass](../../src/config.ts#L557) (rel: string, c: Pick<Config, "exclude" | "outside" | "assume">) → "analysed" | "excluded" | "outside" | "assumed" | null
       <a id="base.config.sourceClass"></a><br>What keylang does with a source file; null when the built-in list leaves it out (tests, declaration files). The built-in list wins over `assume`, `assume` over `outside`, and `outside` over `exclude`.
       - calls [base.config.matchesAny](base.md#base.config.matchesAny)
-    - fn [isAnalysed](../../src/config.ts#L564) (rel: string, c: Pick<Config, "exclude" | "outside" | "assume">) → boolean
+    - fn [isAnalysed](../../src/config.ts#L565) (rel: string, c: Pick<Config, "exclude" | "outside" | "assume">) → boolean
       <a id="base.config.isAnalysed"></a><br>A source file keylang reads: not left out by the built-in list, `assume`, `exclude` or `outside`.
       - calls [base.config.sourceClass](base.md#base.config.sourceClass)
-    - fn [isAssumed](../../src/config.ts#L569) (rel: string, c: Pick<Config, "assume">) → boolean
+    - fn [isAssumed](../../src/config.ts#L570) (rel: string, c: Pick<Config, "assume">) → boolean
       <a id="base.config.isAssumed"></a><br>A path `assume` names: keylang neither reads nor requires it.
       - calls [base.config.matchesAny](base.md#base.config.matchesAny)
-    - fn [isOutside](../../src/config.ts#L573) (rel: string, outside: readonly string[]) → boolean
+    - fn [isOutside](../../src/config.ts#L574) (rel: string, outside: readonly string[]) → boolean
       <a id="base.config.isOutside"></a><br>Reports whether a repo-relative path matches any of the configured "outside" glob patterns by delegating to [`base.config.matchesAny`](base.md#base.config.matchesAny); used by [`map.graph.placeFile`](map.md#map.graph.placeFile) and [`map.graph.notIndexed`](map.md#map.graph.notIndexed) to exclude files. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [base.config.matchesAny](base.md#base.config.matchesAny)
-    - fn [matchesAny](../../src/config.ts#L577) (rel: string, globs: readonly string[]) → boolean <!-- internal -->
+    - fn [matchesAny](../../src/config.ts#L578) (rel: string, globs: readonly string[]) → boolean <!-- internal -->
       <a id="base.config.matchesAny"></a>
       - calls [base.glob.firstMatchingGlob](base.md#base.glob.firstMatchingGlob)
-    - fn [layerGlobWarnings](../../src/config.ts#L589) (c: Pick<Config, "layers">, files: readonly string[]) → string[]
+    - fn [layerGlobWarnings](../../src/config.ts#L590) (c: Pick<Config, "layers">, files: readonly string[]) → string[]
       <a id="base.config.layerGlobWarnings"></a><br>Layer globs of keylang.json that likely do not say what was meant: files the globs of two layers both match — the layer listed first takes them — and a glob that matches no source file. `files` are the files layers place: read or excluded. Warnings, not errors: the layout works…
       - calls [base.glob.matchesGlob](base.md#base.glob.matchesGlob)
-    - fn [walkSources](../../src/config.ts#L634) (c: Config, unreadable: { dir: string; reason: string }[]) → string[] <!-- internal -->
+    - fn [walkSources](../../src/config.ts#L635) (c: Config, unreadable: { dir: string; reason: string }[]) → string[] <!-- internal -->
       <a id="base.config.walkSources"></a><br>Source files of the configured languages under the root, depth first with names in code-unit order; the spec directory, hidden and build directories and nested repositories are skipped. A subdirectory that cannot be listed goes to `unreadable`; the root itself is an I/O error.
       - calls [base.config.skipDir](base.md#base.config.skipDir), [base.languages.languageOf](base.md#base.languages.languageOf)
-    - fn [evidenceFiles](../../src/config.ts#L668) (c: Config, field: "tests" | "trace") → string[] | null
+    - fn [evidenceFiles](../../src/config.ts#L669) (c: Config, field: "tests" | "trace") → string[] | null
       <a id="base.config.evidenceFiles"></a><br>Files named by `check.tests` / `check.trace`: a plain path (which must exist) or a glob (which may match nothing yet, before the first test run).
       - calls [base.glob.globPrefix](base.md#base.glob.globPrefix), [base.config.toPosix](base.md#base.config.toPosix), [base.glob.matchesGlob](base.md#base.glob.matchesGlob)
-    - fn [isExcluded](../../src/config.ts#L690) (rel: string, extra: readonly string[]) → boolean
+    - fn [isExcluded](../../src/config.ts#L691) (rel: string, extra: readonly string[]) → boolean
       <a id="base.config.isExcluded"></a><br>Reports whether a relative path matches the built-in default exclude globs or any caller-supplied extra globs, via [`base.config.matchesAny`](base.md#base.config.matchesAny). Used by [`base.config.hasSource`](base.md#base.config.hasSource), [`base.config.hasRootFiles`](base.md#base.config.hasRootFiles) and [`map.graph.notIndexed`](map.md#map.graph.notIndexed). _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [base.config.matchesAny](base.md#base.config.matchesAny)
-    - fn [toPosix](../../src/config.ts#L694) (p: string) → string
+    - fn [toPosix](../../src/config.ts#L695) (p: string) → string
       <a id="base.config.toPosix"></a><br>Replaces every backslash in a path string with a forward slash, normalizing Windows-style separators into the POSIX form used for relative paths across the codebase; it is a pure one-liner with no filesystem access, so the "2 dynamic-call" entries keylang could not resolve are… _(llm · claude · 2026-10-04)_
-    - fn [specPath](../../src/config.ts#L705) (dir: string, rest: string) → string
+    - fn [specPath](../../src/config.ts#L706) (dir: string, rest: string) → string
       <a id="base.config.specPath"></a><br>`rest` under the spec directory `dir`, relative to the root and POSIX, as the analysis names its documents: `keylang/features/f1.md`, or plain `features/f1.md` when `dir` is `.` (the root). Every path keylang builds under `dir` goes through here: `./features/f1.md` would match…
-    - fn [detectLanguages](../../src/config.ts#L709) (root: string) → Language[] <!-- internal -->
+    - fn [detectLanguages](../../src/config.ts#L710) (root: string) → Language[] <!-- internal -->
       <a id="base.config.detectLanguages"></a><br>Walks the directory tree under the given root up to four levels deep, skipping directories that [`base.config.skipDir`](base.md#base.config.skipDir) rejects, and collects every distinct language that [`base.languages.languageOf`](base.md#base.languages.languageOf) maps a file name to (ignoring `.d.ts` files), returning them as a sorted array so… _(llm · claude · 2026-10-04 · stale)_
       - calls [base.config.skipDir](base.md#base.config.skipDir), [base.languages.languageOf](base.md#base.languages.languageOf)
-    - fn [guessLayers](../../src/config.ts#L736) (root: string, exclude: readonly string[]) → Map<string, string[]>
+    - fn [guessLayers](../../src/config.ts#L737) (root: string, exclude: readonly string[]) → Map<string, string[]>
       <a id="base.config.guessLayers"></a><br>Zero-config layering: the source root is `src/` (or `lib/`) when present, else the one Python package in the repository root when it is the only layer candidate there and has subdirectories with code (`app/` with `app/__init__.py`), else the repository root. Each directory…
       - calls [base.config.guessLayout](base.md#base.config.guessLayout)
-    - fn [guessLayout](../../src/config.ts#L745) (root: string, exclude: readonly string[]) → { layers: Map<string, string[]>; notes: string[] }
+    - fn [guessLayout](../../src/config.ts#L746) (root: string, exclude: readonly string[]) → { layers: Map<string, string[]>; notes: string[] }
       <a id="base.config.guessLayout"></a><br>The guessed layers, and a note for every directory whose layer name had to change: a reserved name (`src/external/` → `external_`) or one that another directory already sanitizes to (`2fa` and `_2fa` → `_2fa`, `_2fa_2`).
       - calls [base.config.sourceRoot](base.md#base.config.sourceRoot), [base.config.freeLayerName](base.md#base.config.freeLayerName), [base.config.isReservedLayerName](base.md#base.config.isReservedLayerName), [base.config.reservedReason](base.md#base.config.reservedReason), [base.config.hasRootFiles](base.md#base.config.hasRootFiles), [base.config.hasSource](base.md#base.config.hasSource), [base.config.layerDirs](base.md#base.config.layerDirs), [base.config.layerName](base.md#base.config.layerName)
-    - fn [sourceRoot](../../src/config.ts#L776) (root: string, exclude: readonly string[]) → string <!-- internal -->
+    - fn [sourceRoot](../../src/config.ts#L777) (root: string, exclude: readonly string[]) → string <!-- internal -->
       <a id="base.config.sourceRoot"></a><br>`src` or `lib`; else the one directory the root `composer.json` maps its PSR-4 namespaces to (Laravel's `app/`); else the single layer candidate of the repository root when it is a Python package (`__init__.py`) whose subdirectories hold code — one layer for the whole…
       - calls [base.config.composerSourceRoot](base.md#base.config.composerSourceRoot), [base.config.layerDirs](base.md#base.config.layerDirs)
-    - fn [composerSourceRoot](../../src/config.ts#L788) (root: string) → string | null <!-- internal -->
+    - fn [composerSourceRoot](../../src/config.ts#L789) (root: string) → string | null <!-- internal -->
       <a id="base.config.composerSourceRoot"></a><br>The single directory of the root `composer.json`'s `autoload.psr-4`, when it maps every namespace there; null otherwise.
       - calls [base.config.withoutBom](base.md#base.config.withoutBom), [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [layerDirs](../../src/config.ts#L811) (root: string, dir: string, exclude: readonly string[]) → { name: string; rel: string }[] <!-- internal -->
+    - fn [layerDirs](../../src/config.ts#L812) (root: string, dir: string, exclude: readonly string[]) → { name: string; rel: string }[] <!-- internal -->
       <a id="base.config.layerDirs"></a><br>The directories directly under `dir` (repository-relative, `""` for the root) that become layers.
       - calls [base.config.skipDir](base.md#base.config.skipDir), [base.glob.matchesGlob](base.md#base.glob.matchesGlob), [base.config.hasSource](base.md#base.config.hasSource)
-    - fn [freeLayerName](../../src/config.ts#L826) (wanted: string, taken: ReadonlyMap<string, unknown>) → string <!-- internal -->
+    - fn [freeLayerName](../../src/config.ts#L827) (wanted: string, taken: ReadonlyMap<string, unknown>) → string <!-- internal -->
       <a id="base.config.freeLayerName"></a><br>`wanted`, or the first free variant: a reserved name gets `_`, a taken one a number (`_2fa_2`).
       - calls [base.config.isReservedLayerName](base.md#base.config.isReservedLayerName)
-    - fn [reservedReason](../../src/config.ts#L835) (name: string) → string <!-- internal -->
+    - fn [reservedReason](../../src/config.ts#L836) (name: string) → string <!-- internal -->
       <a id="base.config.reservedReason"></a><br>Produces the human-readable explanation of why a given layer name cannot be used: it returns a specific message for `external`, `unassigned`, and the `OUTSIDE_LAYER` constant, and otherwise a generic message saying the name is a top-of-map keyword. [`base.config.guessLayout`](base.md#base.config.guessLayout) and… _(llm · claude · 2026-10-04 · stale)_
-    - fn [hasRootFiles](../../src/config.ts#L843) (root: string, dir: string, exclude: readonly string[]) → boolean <!-- internal -->
+    - fn [hasRootFiles](../../src/config.ts#L845) (root: string, dir: string, exclude: readonly string[]) → boolean <!-- internal -->
       <a id="base.config.hasRootFiles"></a><br>Reports whether a directory directly holds at least one source file whose language [`base.languages.languageOf`](base.md#base.languages.languageOf) recognizes and that [`base.config.isExcluded`](base.md#base.config.isExcluded) does not filter out; [`base.config.guessLayout`](base.md#base.config.guessLayout) uses it. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [base.languages.languageOf](base.md#base.languages.languageOf), [base.config.isExcluded](base.md#base.config.isExcluded)
-    - fn [hasSource](../../src/config.ts#L847) (absDir: string, rel: string, exclude: readonly string[]) → boolean <!-- internal -->
+    - fn [hasSource](../../src/config.ts#L849) (absDir: string, rel: string, exclude: readonly string[]) → boolean <!-- internal -->
       <a id="base.config.hasSource"></a><br>Recursively walks a directory and returns true as soon as it finds a file with a recognized language ([`base.languages.languageOf`](base.md#base.languages.languageOf)) that is not excluded ([`base.config.isExcluded`](base.md#base.config.isExcluded)). Subdirectories rejected by [`base.config.skipDir`](base.md#base.config.skipDir) are not searched. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [base.config.skipDir](base.md#base.config.skipDir), [base.languages.languageOf](base.md#base.languages.languageOf), [base.config.isExcluded](base.md#base.config.isExcluded)
-    - fn [isIdSegment](../../src/config.ts#L860) (s: string) → boolean <!-- internal -->
+    - fn [isIdSegment](../../src/config.ts#L862) (s: string) → boolean <!-- internal -->
       <a id="base.config.isIdSegment"></a><br>Same predicate as `isSegment`. Duplicated so `base` does not import `lang`.
-    - fn [encodeBracketSegment](../../src/config.ts#L888) (name: string) → string <!-- internal -->
+    - fn [encodeBracketSegment](../../src/config.ts#L890) (name: string) → string <!-- internal -->
       <a id="base.config.encodeBracketSegment"></a><br>A path segment that is not an ID and contains `()[]`, written so `decodeLayerName` restores it. A Next route form (`(shop)`, `[id]`, `[...slug]`, `[[...slug]]`) gets a readable prefix (`$g-shop`, `$p-id`, `$all-slug`, `$opt-slug`); any other name keeps its letters and writes…
-    - fn [decodeLayerName](../../src/config.ts#L909) (segment: string) → string
+    - fn [decodeLayerName](../../src/config.ts#L911) (segment: string) → string
       <a id="base.config.decodeLayerName"></a><br>Inverse of the bracket encoding in `layerName`. A segment without a route prefix or `$HH` is unchanged.
-    - fn [layerName](../../src/config.ts#L933) (written: string) → string
+    - fn [layerName](../../src/config.ts#L935) (written: string) → string
       <a id="base.config.layerName"></a><br>Make a directory or file name a valid ID segment, in Unicode NFC. An existing segment is kept.
       - calls [base.config.isIdSegment](base.md#base.config.isIdSegment), [base.config.encodeBracketSegment](base.md#base.config.encodeBracketSegment)
   - module [diag](../../src/diag.ts#L1)
@@ -209,45 +209,53 @@
       <a id="base.adapter.AliasFact"></a><br>`name` stands for the class `type` with arguments of its own (Magento `<virtualType>`).
     - type [InterceptFact](../../src/frameworks/adapter.ts#L60) extends ConfigAt
       <a id="base.adapter.InterceptFact"></a><br>A plugin `name` of the class `plugin` wraps the public methods of `target` (Magento `<plugin>`).
-    - type [EntryConfigFact](../../src/frameworks/adapter.ts#L81) extends ConfigAt
+    - type [ObserverFact](../../src/frameworks/adapter.ts#L77) extends ConfigAt
+      <a id="base.adapter.ObserverFact"></a><br>An observer `name` of the event `event`: the framework calls `method` of `instance` when code dispatches the event (Magento `etc/events.xml` `<event name><observer name instance method? disabled?>`).
+    - type [ConfigEntryKind](../../src/frameworks/adapter.ts#L90) = "rest" | "graphql" | "cron" | "consumer" | "cli"
+      <a id="base.adapter.ConfigEntryKind"></a><br>Entry kinds an adapter writes straight from a config line (`route` needs the controllers, `observer` the events).
+    - type [EntryFact](../../src/frameworks/adapter.ts#L97) extends ConfigAt
+      <a id="base.adapter.EntryFact"></a><br>An entry point the config names: the framework calls `method` of `target` from outside (a REST route, a GraphQL resolver, a cron job, a queue consumer, a console command). `label` is how the outside names it.
+    - type [RouteFact](../../src/frameworks/adapter.ts#L109) extends ConfigAt
+      <a id="base.adapter.RouteFact"></a><br>A router of the framework: URLs under `/<frontName>/` run the controllers of `modules` (Magento `etc/<area>/routes.xml` `<router id><route id frontName><module name/>`).
+    - type [EntryConfigFact](../../src/frameworks/adapter.ts#L126) extends ConfigAt
       <a id="base.adapter.EntryConfigFact"></a><br>An entry point a config file names (SFCC `hooks.json` → `observer`, `steptypes.json` → `cron`): the script it runs, as the paths the framework would try in order (each probed with the usual extensions and `index`), and the fn in it, if the config names one. A PHP framework…
-    - type [ListenFact](../../src/frameworks/adapter.ts#L99) extends ConfigAt
-      <a id="base.adapter.ListenFact"></a><br>`listener::method` runs when code dispatches `event` (Laravel `$listen`, Symfony `getSubscribedEvents()`, `#[AsEventListener]`). An event is named by its class (qualified) or by the string the code writes.
-    - type [HandlerFact](../../src/frameworks/adapter.ts#L110) extends ConfigAt
-      <a id="base.adapter.HandlerFact"></a><br>`handler::method` handles an object of the class `message` that code dispatches: a Laravel queued job (`J::dispatch()` runs `J::handle` on a worker), a Symfony Messenger handler (`#[AsMessageHandler]`).
-    - type [DispatchFact](../../src/frameworks/adapter.ts#L118) extends ConfigAt
-      <a id="base.adapter.DispatchFact"></a><br>A call in the code that dispatches an event or a message (`event(new X)`, `$bus->dispatch(new X)`), in the declaration `symbol` of the file.
-    - type [ConfigHole](../../src/frameworks/adapter.ts#L127) extends ConfigAt
+    - type [DispatchFact](../../src/frameworks/adapter.ts#L145) extends ConfigAt
+      <a id="base.adapter.DispatchFact"></a><br>A call in the code that dispatches an event or a message object (`event(new X)`, `$bus->dispatch(new X)`), in the declaration `symbol` of the file: an edge `via: "dispatch"` from that fn to the event `event`, named by the class (or the string a Symfony dispatch passes as its…
+    - type [ConfigHole](../../src/frameworks/adapter.ts#L154) extends ConfigAt
       <a id="base.adapter.ConfigHole"></a><br>Something the config writes that keylang does not read (a binding to a closure, an expression): a hole of the file with the reason.
-    - type [RoutePrefixFact](../../src/frameworks/adapter.ts#L133) extends ConfigAt
+    - type [RoutePrefixFact](../../src/frameworks/adapter.ts#L160) extends ConfigAt
       <a id="base.adapter.RoutePrefixFact"></a><br>Symfony `config/routes.yaml`: the routes of the attributes of classes under `dir` have `prefix` before their path.
-    - type [ConfigFacts](../../src/frameworks/adapter.ts#L139)
+    - type [ConfigFacts](../../src/frameworks/adapter.ts#L166)
       <a id="base.adapter.ConfigFacts"></a><br>The facts of one config file. Depends only on its path and text, so the fact cache keeps it.
-    - type [FrameworkConfig](../../src/frameworks/adapter.ts#L164)
+    - type [FrameworkConfig](../../src/frameworks/adapter.ts#L193)
       <a id="base.adapter.FrameworkConfig"></a><br>One config file of an active adapter, with the directory of the module that declares it.
-    - type [FrameworkInput](../../src/frameworks/adapter.ts#L171)
+    - type [FrameworkModule](../../src/frameworks/adapter.ts#L200)
+      <a id="base.adapter.FrameworkModule"></a><br>A module of the framework, by the name its config uses (`Magento_Checkout`), and its directory.
+    - type [FrameworkInput](../../src/frameworks/adapter.ts#L206)
       <a id="base.adapter.FrameworkInput"></a><br>What the graph receives from one active adapter.
-    - type [FrameworkContext](../../src/frameworks/adapter.ts#L177)
+    - type [FrameworkContext](../../src/frameworks/adapter.ts#L222)
       <a id="base.adapter.FrameworkContext"></a><br>What an adapter sees of the repository: the analysed source files and a reader.
-    - type [FrameworkAdapter](../../src/frameworks/adapter.ts#L188)
+    - type [FrameworkAdapter](../../src/frameworks/adapter.ts#L233)
       <a id="base.adapter.FrameworkAdapter"></a>
-    - fn [activeAdapters](../../src/frameworks/adapter.ts#L216) (frameworks: readonly string[] | null, context: FrameworkContext, available: readonly FrameworkAdapter[] = FRAMEWORK_ADAPTERS) → FrameworkAdapter[]
+    - type [ControllerConvention](../../src/frameworks/adapter.ts#L257)
+      <a id="base.adapter.ControllerConvention"></a><br>Where a framework keeps the controllers of a route and how it names their URLs: a controller is a class in a file under `<module dir>/<dir>/`, whose `member` runs; the HTTP method comes from the interfaces it implements.
+    - fn [activeAdapters](../../src/frameworks/adapter.ts#L282) (frameworks: readonly string[] | null, context: FrameworkContext, available: readonly FrameworkAdapter[] = FRAMEWORK_ADAPTERS) → FrameworkAdapter[]
       <a id="base.adapter.activeAdapters"></a><br>The adapters of a repository: those `frameworks` names, or with the field absent those detected. `available` lets a test add an adapter of its own.
-    - fn [typeLabel](../../src/frameworks/adapter.ts#L222) (t: TypeName) → string
+    - fn [typeLabel](../../src/frameworks/adapter.ts#L288) (t: TypeName) → string
       <a id="base.adapter.typeLabel"></a><br>A label for a type the configuration names: its qualified name, or `file#name`.
-    - fn [isConfigFacts](../../src/frameworks/adapter.ts#L227) (value: unknown) → value is ConfigFacts
+    - fn [isConfigFacts](../../src/frameworks/adapter.ts#L293) (value: unknown) → value is ConfigFacts
       <a id="base.adapter.isConfigFacts"></a><br>Whether a cached value has the shape of `ConfigFacts`; a cache entry of another shape is parsed again.
       - calls [base.adapter.isRecord](base.md#base.adapter.isRecord), [base.adapter.every](base.md#base.adapter.every), [base.adapter.isAt](base.md#base.adapter.isAt), [base.adapter.isTypeName](base.md#base.adapter.isTypeName)
-    - fn [isAt](../../src/frameworks/adapter.ts#L246) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isAt](../../src/frameworks/adapter.ts#L313) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       <a id="base.adapter.isAt"></a>
       - calls [base.adapter.isRecord](base.md#base.adapter.isRecord)
-    - fn [isTypeName](../../src/frameworks/adapter.ts#L250) (value: unknown) → boolean <!-- internal -->
+    - fn [isTypeName](../../src/frameworks/adapter.ts#L317) (value: unknown) → boolean <!-- internal -->
       <a id="base.adapter.isTypeName"></a>
       - calls [base.adapter.isRecord](base.md#base.adapter.isRecord)
-    - fn [every](../../src/frameworks/adapter.ts#L254) (value: unknown, check: (item: Record<string, unknown>) => boolean) → boolean <!-- internal -->
+    - fn [every](../../src/frameworks/adapter.ts#L321) (value: unknown, check: (item: Record<string, unknown>) => boolean) → boolean <!-- internal -->
       <a id="base.adapter.every"></a>
       - calls [base.adapter.isRecord](base.md#base.adapter.isRecord)
-    - fn [isRecord](../../src/frameworks/adapter.ts#L258) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isRecord](../../src/frameworks/adapter.ts#L325) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       <a id="base.adapter.isRecord"></a>
   - module [bindings](../../src/frameworks/bindings.ts#L1)
     <a id="base.bindings"></a><br>What the graph does with framework facts (ADR 0022), the same for every language: a call through a type the config binds (an interface, or a class with a preference of its own) becomes a `call` edge to the bound class's member, `via: "preference"`; a call through a property the…
@@ -272,57 +280,57 @@
       <a id="base.bindings.Plugin"></a>
     - module [FrameworkBindings](../../src/frameworks/bindings.ts#L120)
       <a id="base.bindings.FrameworkBindings"></a>
-      - fn [constructor](../../src/frameworks/bindings.ts#L136) (inputs: readonly FrameworkInput[], deps: BindingDeps)
+      - fn [constructor](../../src/frameworks/bindings.ts#L138) (inputs: readonly FrameworkInput[], deps: BindingDeps)
         <a id="base.bindings.FrameworkBindings.constructor"></a>
         - calls [base.bindings.key](base.md#base.bindings.key), [base.bindings.FrameworkBindings.hole](base.md#base.bindings.FrameworkBindings.hole), [base.adapter.typeLabel](base.md#base.adapter.typeLabel), [base.bindings.asciiLower](base.md#base.bindings.asciiLower), [base.bindings.FrameworkBindings.activePlugins](base.md#base.bindings.FrameworkBindings.activePlugins)
-      - fn [hole](../../src/frameworks/bindings.ts#L198) (file: string, at: { line: number; col: number }, text: string, reason: string, source: string | null) → void <!-- internal -->
+      - fn [hole](../../src/frameworks/bindings.ts#L201) (file: string, at: { line: number; col: number }, text: string, reason: string, source: string | null) → void <!-- internal -->
         <a id="base.bindings.FrameworkBindings.hole"></a>
-      - fn [binds](../../src/frameworks/bindings.ts#L203) (type: string) → boolean
+      - fn [binds](../../src/frameworks/bindings.ts#L206) (type: string) → boolean
         <a id="base.bindings.FrameworkBindings.binds"></a><br>A type the config binds: a call through it goes where the binding says.
-      - fn [argumentFor](../../src/frameworks/bindings.ts#L208) (classId: string, param: string) → boolean
+      - fn [argumentFor](../../src/frameworks/bindings.ts#L211) (classId: string, param: string) → boolean
         <a id="base.bindings.FrameworkBindings.argumentFor"></a><br>The values the config sets for the constructor parameter `param` of the class; none when it sets none.
         - calls [base.bindings.FrameworkBindings.valuesOf](base.md#base.bindings.FrameworkBindings.valuesOf)
-      - fn [callThroughType](../../src/frameworks/bindings.ts#L213) (type: string, member: string) → BoundCall
+      - fn [callThroughType](../../src/frameworks/bindings.ts#L216) (type: string, member: string) → BoundCall
         <a id="base.bindings.FrameworkBindings.callThroughType"></a><br>A call of `member` through a value typed `type` (a type or a class the config binds).
         - calls [base.bindings.emptyCall](base.md#base.bindings.emptyCall), [base.bindings.FrameworkBindings.effective](base.md#base.bindings.FrameworkBindings.effective), [base.bindings.FrameworkBindings.place](base.md#base.bindings.FrameworkBindings.place), [base.bindings.finish](base.md#base.bindings.finish)
-      - fn [callThroughArgument](../../src/frameworks/bindings.ts#L220) (classId: string, param: string, member: string) → BoundCall
+      - fn [callThroughArgument](../../src/frameworks/bindings.ts#L223) (classId: string, param: string, member: string) → BoundCall
         <a id="base.bindings.FrameworkBindings.callThroughArgument"></a><br>A call of `member` through the property the constructor parameter `param` of `classId` fills.
         - calls [base.bindings.emptyCall](base.md#base.bindings.emptyCall), [base.bindings.FrameworkBindings.valuesOf](base.md#base.bindings.FrameworkBindings.valuesOf), [base.bindings.groupBy](base.md#base.bindings.groupBy), [base.bindings.distinctTargets](base.md#base.bindings.distinctTargets), [base.bindings.describe](base.md#base.bindings.describe), [base.bindings.FrameworkBindings.effective](base.md#base.bindings.FrameworkBindings.effective), [base.bindings.FrameworkBindings.place](base.md#base.bindings.FrameworkBindings.place), [base.bindings.finish](base.md#base.bindings.finish)
-      - fn [valuesOf](../../src/frameworks/bindings.ts#L242) (classId: string, param: string) → (Declared & { param: string })[] <!-- internal -->
+      - fn [valuesOf](../../src/frameworks/bindings.ts#L245) (classId: string, param: string) → (Declared & { param: string })[] <!-- internal -->
         <a id="base.bindings.FrameworkBindings.valuesOf"></a><br>What the config sets for the parameter of the class: its own arguments, else those for every class.
         - calls [base.bindings.asciiLower](base.md#base.bindings.asciiLower)
-      - fn [effective](../../src/frameworks/bindings.ts#L253) (type: string, out: BoundCall) → Map<string, Declared[]> <!-- internal -->
+      - fn [effective](../../src/frameworks/bindings.ts#L256) (type: string, out: BoundCall) → Map<string, Declared[]> <!-- internal -->
         <a id="base.bindings.FrameworkBindings.effective"></a><br>Per area, the chain of preferences from `type` to the class a value of it is: `I → C`, then `C → D` when C has a preference of its own, until a class without one (or a cycle). An area without its own preference uses the global one; two in one area make it ambiguous.
         - calls [base.bindings.distinctTargets](base.md#base.bindings.distinctTargets), [base.bindings.describe](base.md#base.bindings.describe)
-      - fn [place](../../src/frameworks/bindings.ts#L283) (out: BoundCall, chain: readonly Declared[], member: string, via: "preference" | "argument", scope: string, lead = "") → void <!-- internal -->
+      - fn [place](../../src/frameworks/bindings.ts#L286) (out: BoundCall, chain: readonly Declared[], member: string, via: "preference" | "argument", scope: string, lead = "") → void <!-- internal -->
         <a id="base.bindings.FrameworkBindings.place"></a><br>The edge (or the reason there is none) of one area's chain.
         - calls [base.bindings.scopeOrder](base.md#base.bindings.scopeOrder)
-      - fn [activePlugins](../../src/frameworks/bindings.ts#L319) () → Plugin[] <!-- internal -->
+      - fn [activePlugins](../../src/frameworks/bindings.ts#L322) () → Plugin[] <!-- internal -->
         <a id="base.bindings.FrameworkBindings.activePlugins"></a><br>Plugin declarations in effect: per type, name and area, the last one wins; a disabled one or one of no class is not.
         - calls [base.bindings.groupBy](base.md#base.bindings.groupBy), [base.bindings.merge](base.md#base.bindings.merge)
-      - fn [interceptors](../../src/frameworks/bindings.ts#L345) (types: readonly string[], member: string) → PluginEdge[]
+      - fn [interceptors](../../src/frameworks/bindings.ts#L348) (types: readonly string[], member: string) → PluginEdge[]
         <a id="base.bindings.FrameworkBindings.interceptors"></a><br>The plugin methods that wrap `member` of a value of `types` (the receiver's class, and the interface a binding went through), in the order they run: by `sortOrder`, then name; each plugin's `before`, `around`, `after`.
         - calls [base.bindings.asciiLower](base.md#base.bindings.asciiLower), [base.bindings.FrameworkBindings.activePlugins](base.md#base.bindings.FrameworkBindings.activePlugins)
-    - fn [emptyCall](../../src/frameworks/bindings.ts#L366) () → BoundCall <!-- internal -->
+    - fn [emptyCall](../../src/frameworks/bindings.ts#L369) () → BoundCall <!-- internal -->
       <a id="base.bindings.emptyCall"></a>
-    - fn [finish](../../src/frameworks/bindings.ts#L370) (out: BoundCall) → BoundCall <!-- internal -->
+    - fn [finish](../../src/frameworks/bindings.ts#L373) (out: BoundCall) → BoundCall <!-- internal -->
       <a id="base.bindings.finish"></a>
       - calls [base.bindings.scopeOrder](base.md#base.bindings.scopeOrder)
-    - fn [distinctTargets](../../src/frameworks/bindings.ts#L376) (list: readonly T[]) → T[] <!-- internal -->
+    - fn [distinctTargets](../../src/frameworks/bindings.ts#L379) (list: readonly T[]) → T[] <!-- internal -->
       <a id="base.bindings.distinctTargets"></a><br>Declarations that name different classes: one per class.
       - calls [base.bindings.key](base.md#base.bindings.key)
-    - fn [describe](../../src/frameworks/bindings.ts#L385) (d: Declared) → string <!-- internal -->
+    - fn [describe](../../src/frameworks/bindings.ts#L388) (d: Declared) → string <!-- internal -->
       <a id="base.bindings.describe"></a>
-    - fn [merge](../../src/frameworks/bindings.ts#L390) (decls: readonly Plugin[]) → Plugin | null <!-- internal -->
+    - fn [merge](../../src/frameworks/bindings.ts#L393) (decls: readonly Plugin[]) → Plugin | null <!-- internal -->
       <a id="base.bindings.merge"></a><br>Declarations of one plugin in config order, merged: a later one changes what it writes.
-    - fn [groupBy](../../src/frameworks/bindings.ts#L404) (list: readonly T[], keyOf: (item: T) => string) → Map<string, T[]> <!-- internal -->
+    - fn [groupBy](../../src/frameworks/bindings.ts#L407) (list: readonly T[], keyOf: (item: T) => string) → Map<string, T[]> <!-- internal -->
       <a id="base.bindings.groupBy"></a>
-    - fn [scopeOrder](../../src/frameworks/bindings.ts#L410) (a: string, b: string) → number <!-- internal -->
+    - fn [scopeOrder](../../src/frameworks/bindings.ts#L413) (a: string, b: string) → number <!-- internal -->
       <a id="base.bindings.scopeOrder"></a>
-    - fn [key](../../src/frameworks/bindings.ts#L414) (name: string) → string <!-- internal -->
+    - fn [key](../../src/frameworks/bindings.ts#L417) (name: string) → string <!-- internal -->
       <a id="base.bindings.key"></a>
       - calls [base.bindings.asciiLower](base.md#base.bindings.asciiLower)
-    - fn [asciiLower](../../src/frameworks/bindings.ts#L418) (name: string) → string <!-- internal -->
+    - fn [asciiLower](../../src/frameworks/bindings.ts#L421) (name: string) → string <!-- internal -->
       <a id="base.bindings.asciiLower"></a>
   - module [cartridges](../../src/frameworks/cartridges.ts#L1)
     <a id="base.cartridges"></a><br>Salesforce Commerce Cloud cartridges (SFRA): where they are, the cartridge path they are searched in, and what an SFCC `require` names. A cartridge is a directory `…/cartridges/<name>/` with a `cartridge/` inside it; the cartridge path orders them, first cartridge first, and…
@@ -350,27 +358,98 @@
     - fn [cartridgeAnswers](../../src/frameworks/cartridges.ts#L138) (layout: CartridgeLayout, fromFile: string, spec: string, probe: (candidate: string) => string | null) → string[] | "external" | null
       <a id="base.cartridges.cartridgeAnswers"></a><br>What an SFCC specifier names from `fromFile`: `external` for the platform API (`dw/…`); otherwise every file that answers, in the order the platform tries them — the first one wins, a second one says the order decided — where an empty list is a specifier keylang knows and no…
       - calls [base.cartridges.cartridgeOf](base.md#base.cartridges.cartridgeOf)
+  - module [entries](../../src/frameworks/entries.ts#L1)
+    <a id="base.entries"></a><br>What a framework calls from outside, by its config (ADR 0022 п. 5–6, business-flows 08, 10): observers of events (an edge from the event to the observer's fn, and an `observer` entry point), and the entry points a config line names — REST routes, GraphQL resolvers, cron jobs…
+    - adapter [base.adapter](base.md#base.adapter)
+    - bindings [base.bindings](base.md#base.bindings)
+    - type [EntryDeps](../../src/frameworks/entries.ts#L14)
+      <a id="base.entries.EntryDeps"></a><br>What the graph lends: its declarations by the names a config writes, and how a call through a type goes.
+    - type [ConfigEntry](../../src/frameworks/entries.ts#L36)
+      <a id="base.entries.ConfigEntry"></a><br>An entry point a framework's config names: the shape of the snapshot's `EntryPoint` (ADR 0022 п. 5), for the kinds a config writes.
+    - type [ObserverEdge](../../src/frameworks/entries.ts#L48)
+      <a id="base.entries.ObserverEdge"></a><br>An edge from an event to the fn an observer runs.
+    - type [FrameworkEntries](../../src/frameworks/entries.ts#L63)
+      <a id="base.entries.FrameworkEntries"></a>
+    - type [Declared](../../src/frameworks/entries.ts#L76) <!-- internal -->
+      <a id="base.entries.Declared"></a>
+    - fn [frameworkEntries](../../src/frameworks/entries.ts#L85) (inputs: readonly FrameworkInput[], deps: EntryDeps) → FrameworkEntries
+      <a id="base.entries.frameworkEntries"></a>
+      - calls [base.entries.target](base.md#base.entries.target), [base.entries.entryOf](base.md#base.entries.entryOf), [base.entries.effectiveObservers](base.md#base.entries.effectiveObservers), [base.adapter.typeLabel](base.md#base.adapter.typeLabel), [base.entries.controllerEntries](base.md#base.entries.controllerEntries)
+    - fn [target](../../src/frameworks/entries.ts#L126) (deps: EntryDeps, type: TypeName, method: string, area: string) → { id: string; unresolved: string | null } <!-- internal -->
+      <a id="base.entries.target"></a><br>The fn a config's class and method stand for: through a preference of the area when the class is an interface the config binds.
+      - calls [base.adapter.typeLabel](base.md#base.adapter.typeLabel)
+    - fn [entryOf](../../src/frameworks/entries.ts#L145) (deps: EntryDeps, framework: string, kind: ConfigEntry["kind"], found: { id: string; unresolved: string | null }, label: string, at: { file: string; line: number }) → ConfigEntry <!-- internal -->
+      <a id="base.entries.entryOf"></a>
+    - fn [effectiveObservers](../../src/frameworks/entries.ts#L156) (declared: readonly Declared[]) → Declared[] <!-- internal -->
+      <a id="base.entries.effectiveObservers"></a><br>Observers in effect, per event, observer name and area: an area's declaration changes the global one there (Magento merges `etc/<area>/` over `etc/`); one disabled, or one of no class, runs nowhere. An area that only repeats the global observer adds nothing.
+      - calls [base.adapter.typeLabel](base.md#base.adapter.typeLabel)
+    - fn [controllerEntries](../../src/frameworks/entries.ts#L199) (input: FrameworkInput, deps: EntryDeps) → ConfigEntry[] <!-- internal -->
+      <a id="base.entries.controllerEntries"></a><br>The controllers of the routes of one framework: every class in a file under `<module dir>/<controller dir>/<Path>/<Action>.php` of a module a route names, labelled `GET|POST /<frontName>/<path>/<action>` by the HTTP interfaces it (or a base) implements, `*` with none.
+      - calls [base.entries.asciiLower](base.md#base.entries.asciiLower)
+    - fn [asciiLower](../../src/frameworks/entries.ts#L236) (name: string) → string <!-- internal -->
+      <a id="base.entries.asciiLower"></a>
+  - module [events](../../src/frameworks/events.ts#L1)
+    <a id="base.events"></a><br>Event IDs (ADR 0022 п. 6, business-flows/08). An event is a node of the snapshot named by its literal, whoever dispatches it: a member of the generated top-level group `events` (`events.checkout_submit_all_after`).
+    - fn [eventSegment](../../src/frameworks/events.ts#L21) (name: string) → string
+      <a id="base.events.eventSegment"></a><br>The ID segment of an event name: every character a segment does not allow becomes `-`, and a name that does not start like a segment gets `_` in front (`sales.order.place` → `sales-order-place`, `2fa_passed` → `_2fa_passed`).
+    - fn [eventIds](../../src/frameworks/events.ts#L31) (names: Iterable<string>) → Map<string, string>
+      <a id="base.events.eventIds"></a><br>The ID of every event name, by name: `events.<segment>`. Two names with one segment (`a.b` and `a-b`) keep it in code-unit order of the names; the later ones get `-2`, `-3`…, so the IDs are stable for the same names.
+      - calls [base.events.eventSegment](base.md#base.events.eventSegment)
   - module [laravel](../../src/frameworks/laravel.ts#L1)
     <a id="base.laravel"></a><br>The Laravel adapter (ADR 0022; business-flows 35). Laravel writes its wiring in PHP, not in config files: service providers, `routes/*.php`, `routes/console.php` and the console kernel.
     - adapter [base.adapter](base.md#base.adapter)
     - fn [parseJson](../../src/frameworks/laravel.ts#L36) (text: string | null) → unknown <!-- internal -->
       <a id="base.laravel.parseJson"></a>
   - module [magento](../../src/frameworks/magento.ts#L1)
-    <a id="base.magento"></a><br>The Magento adapter: `etc/di.xml` of every module, in every area. A module is a directory whose `registration.php` registers a `ComponentRegistrar::MODULE`; its `etc/di.xml` applies everywhere (`global`), `etc/<area>/di.xml` in one area (`frontend`, `adminhtml`, `webapi_rest`…).
+    <a id="base.magento"></a><br>The Magento adapter: the config Magento executes, in every module and area. A module is a directory whose `registration.php` registers a `ComponentRegistrar::MODULE`; its `etc/<file>` applies everywhere (`global`), `etc/<area>/<file>` in one area (`frontend`, `adminhtml`…
     - node [external.node](external.md#external.node)
     - saxes [external.saxes](external.md#external.saxes)
     - adapter [base.adapter](base.md#base.adapter)
-    - fn [componentRoots](../../src/frameworks/magento.ts#L52) (context: FrameworkContext, pattern: RegExp) → string[] <!-- internal -->
+    - fn [componentRoots](../../src/frameworks/magento.ts#L113) (context: FrameworkContext, pattern: RegExp) → string[] <!-- internal -->
       <a id="base.magento.componentRoots"></a><br>Directories of the analysed `registration.php` files whose text registers a component as `pattern` says.
-    - fn [scopeOf](../../src/frameworks/magento.ts#L63) (path: string) → string <!-- internal -->
+    - fn [scopeOf](../../src/frameworks/magento.ts#L124) (path: string) → string <!-- internal -->
       <a id="base.magento.scopeOf"></a><br>`etc/di.xml` → `global`; `etc/frontend/di.xml` → `frontend`.
-    - fn [className](../../src/frameworks/magento.ts#L70) (written: string) → string
+    - fn [className](../../src/frameworks/magento.ts#L131) (written: string) → string
       <a id="base.magento.className"></a><br>A class name as Magento resolves it: no leading `\`, no spaces; a generated proxy stands for its class.
-    - type [Open](../../src/frameworks/magento.ts#L74) <!-- internal -->
-      <a id="base.magento.Open"></a>
-    - fn [parseDi](../../src/frameworks/magento.ts#L83) (path: string, text: string) → ConfigFacts
-      <a id="base.magento.parseDi"></a><br>The facts of one `di.xml`. A file that does not parse gives none, only the reason.
-      - calls [base.magento.scopeOf](base.md#base.magento.scopeOf), [base.magento.className](base.md#base.magento.className)
+    - type [MagentoFacts](../../src/frameworks/magento.ts#L136) <!-- internal -->
+      <a id="base.magento.MagentoFacts"></a><br>The facts of a Magento config file: every kind it may hold is present.
+    - fn [noFacts](../../src/frameworks/magento.ts#L139) (path: string, scope: string, error: ConfigFacts["error"] = null) → MagentoFacts <!-- internal -->
+      <a id="base.magento.noFacts"></a><br>The `ConfigFacts` of a file with no facts, and the reason when it gave none.
+    - fn [type](../../src/frameworks/magento.ts#L143) (name: string) → TypeName <!-- internal -->
+      <a id="base.magento.type"></a>
+      - calls [base.magento.className](base.md#base.magento.className)
+    - type [XmlElement](../../src/frameworks/magento.ts#L148)
+      <a id="base.magento.XmlElement"></a><br>An element of a config file, with where its start tag is and the text directly in it.
+    - fn [parseXml](../../src/frameworks/magento.ts#L158) (path: string, text: string) → { root: XmlElement | null; error: { line: number; reason: string } | null }
+      <a id="base.magento.parseXml"></a><br>The root element of an XML file, or why it does not parse.
+    - fn [fromXml](../../src/frameworks/magento.ts#L193) (path: string, text: string, read: (root: XmlElement, facts: MagentoFacts) => void) → ConfigFacts <!-- internal -->
+      <a id="base.magento.fromXml"></a><br>The facts of an XML config file: `read` takes them from the root element. A file that does not parse gives none, only the reason.
+      - calls [base.magento.noFacts](base.md#base.magento.noFacts), [base.magento.scopeOf](base.md#base.magento.scopeOf), [base.magento.parseXml](base.md#base.magento.parseXml)
+    - fn [childrenNamed](../../src/frameworks/magento.ts#L201) (element: XmlElement, name: string) → XmlElement[] <!-- internal -->
+      <a id="base.magento.childrenNamed"></a>
+    - fn [flag](../../src/frameworks/magento.ts#L206) (value: string | undefined) → boolean <!-- internal -->
+      <a id="base.magento.flag"></a><br>`true` or `1` in an attribute Magento reads as a boolean.
+    - fn [parseDi](../../src/frameworks/magento.ts#L211) (path: string, text: string) → ConfigFacts
+      <a id="base.magento.parseDi"></a><br>The facts of one `di.xml`.
+      - calls [base.magento.fromXml](base.md#base.magento.fromXml), [base.magento.type](base.md#base.magento.type), [base.magento.className](base.md#base.magento.className), [base.magento.childrenNamed](base.md#base.magento.childrenNamed), [base.magento.flag](base.md#base.magento.flag)
+    - fn [parseEvents](../../src/frameworks/magento.ts#L252) (path: string, text: string) → ConfigFacts
+      <a id="base.magento.parseEvents"></a><br>`etc/events.xml`: `<event name="e"><observer name="o" instance="C" method="m" disabled="true"/>`.
+      - calls [base.magento.fromXml](base.md#base.magento.fromXml), [base.magento.childrenNamed](base.md#base.magento.childrenNamed), [base.magento.type](base.md#base.magento.type), [base.magento.flag](base.md#base.magento.flag)
+    - fn [parseRoutes](../../src/frameworks/magento.ts#L269) (path: string, text: string) → ConfigFacts
+      <a id="base.magento.parseRoutes"></a><br>`etc/<area>/routes.xml`: `<router id="standard"><route id="checkout" frontName="checkout"><module name="Magento_Checkout"/>`.
+      - calls [base.magento.fromXml](base.md#base.magento.fromXml), [base.magento.childrenNamed](base.md#base.magento.childrenNamed)
+    - fn [parseWebapi](../../src/frameworks/magento.ts#L284) (path: string, text: string) → ConfigFacts
+      <a id="base.magento.parseWebapi"></a><br>`etc/webapi.xml`: `<route url="/V1/x" method="POST"><service class="I" method="m"/><resources><resource ref="self"/>` → `rest`, labelled `POST /V1/x [self]`.
+      - calls [base.magento.fromXml](base.md#base.magento.fromXml), [base.magento.childrenNamed](base.md#base.magento.childrenNamed), [base.magento.type](base.md#base.magento.type)
+    - fn [parseCrontab](../../src/frameworks/magento.ts#L306) (path: string, text: string) → ConfigFacts
+      <a id="base.magento.parseCrontab"></a><br>`etc/crontab.xml`: `<group id="default"><job name="n" instance="C" method="m"><schedule>0 0 * * *</schedule>` → `cron`, labelled `n 0 0 * * *` (the schedule last, as `every` reads it); a job the admin's config schedules says `(config_path …)` instead.
+      - calls [base.magento.fromXml](base.md#base.magento.fromXml), [base.magento.childrenNamed](base.md#base.magento.childrenNamed), [base.magento.type](base.md#base.magento.type)
+    - fn [parseConsumers](../../src/frameworks/magento.ts#L326) (path: string, text: string) → ConfigFacts
+      <a id="base.magento.parseConsumers"></a><br>`etc/queue_consumer.xml`: `<consumer name="n" queue="q" handler="C::m"/>` → `consumer` on `C::m`; without a handler, the `consumerInstance`'s `process`.
+      - calls [base.magento.fromXml](base.md#base.magento.fromXml), [base.magento.childrenNamed](base.md#base.magento.childrenNamed), [base.magento.type](base.md#base.magento.type)
+    - fn [parseGraphql](../../src/frameworks/magento.ts#L350) (path: string, text: string) → ConfigFacts
+      <a id="base.magento.parseGraphql"></a><br>`etc/schema.graphqls`: a field with `@resolver(class: "C")` → `graphql` on `C::resolve`, labelled `Type.field`. A small scanner over the SDL (no XML, no parser package for it): comments, strings, braces and parentheses; a field is a name followed by `(` or `:` right inside a…
+      - calls [base.magento.noFacts](base.md#base.magento.noFacts), [base.magento.scopeOf](base.md#base.magento.scopeOf), [base.magento.type](base.md#base.magento.type)
   - module [python-web](../../src/frameworks/python-web.ts#L1)
     <a id="base.python-web"></a><br>The Python web adapters (ADR 0022 п. 2, 5; business-flows/38): Django, FastAPI, Flask and Celery. Each is detected from a dependency in a root manifest (`pyproject.toml`, `requirements*.txt`, `setup.py`, `setup.cfg`, `Pipfile`) or an analysed Python file that imports the package.
     - node [external.node](external.md#external.node)

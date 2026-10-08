@@ -733,11 +733,13 @@ function callsIn(node: Node, scope: Scope, collector: Collector, closure: boolea
       if (fact) {
         const at = located(n);
         const passes = passesOf(n, scope, collector);
+        const nameArg = nameArgOf(n, fact.callee);
         const args = argsOf(n, scope.names, self);
         const chain = chainOf(n, scope.names, self);
         out.push({
           ...fact,
           ...(passes.length > 0 ? { passes } : {}),
+          ...(nameArg ? { nameArg } : {}),
           line: at.line,
           col: at.col,
           endLine: at.endLine,
@@ -1025,6 +1027,21 @@ function arrayCallable(n: Node, scope: Scope, collector: Collector): void {
     target?.type === "string" ||
     target?.type === "encapsed_string";
   if (holder) collector.value(name, n, true);
+}
+
+/** Members whose first argument a framework reads as a name: Magento's event manager `dispatch('event_name', …)`. */
+export const NAME_ARG_MEMBERS: ReadonlySet<string> = new Set(["dispatch"]);
+
+/** The first argument of a method call `NAME_ARG_MEMBERS` lists: its literal value, or null with its text. */
+function nameArgOf(n: Node, callee: string): CallFact["nameArg"] | undefined {
+  if (n.type !== "member_call_expression" && n.type !== "nullsafe_member_call_expression" && n.type !== "scoped_call_expression") return undefined;
+  if (!NAME_ARG_MEMBERS.has(asciiLowerCase(callee.slice(callee.lastIndexOf(".") + 1)))) return undefined;
+  const args = n.childForFieldName("arguments") ?? n.namedChildren.find((c) => c.type === "arguments");
+  const first = args?.namedChildren.find((a) => a.type === "argument");
+  const value = first?.namedChildren.at(-1);
+  if (!value) return undefined;
+  const inner = unparenthesized(value);
+  return { literal: stringValue(inner), text: value.text.replace(/\s+/g, " ").slice(0, MAX_CALLEE) };
 }
 
 /** The text of a string literal without interpolation; null for anything else. */

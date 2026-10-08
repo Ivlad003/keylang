@@ -4,10 +4,10 @@
 
 Як відтворити: `node bench/magento/run.mjs [--repo <клон>]` — див. [README](README.md). Цей файл пише бенч; змінюється тільки блок «Цього запуску».
 
-`check --format json`: 0 fail, 0 unverified, 0 ok, 0 warning; записів coverage 21949. `map`: 2327 попереджень.
+`check --format json`: 0 fail, 0 unverified, 0 ok, 0 warning; записів coverage 21958. `map`: 2327 попереджень.
 
-`draft flow quote.Model.QuoteManagement.QuoteManagement.placeOrder --mode algo --print`: кроків 45 (разом із тригером).
-`draft flow quote.Model.QuoteManagement.QuoteManagement.submitQuote --mode algo --print`: кроків 119 (разом із тригером).
+`draft flow quote.Model.QuoteManagement.QuoteManagement.placeOrder --mode algo --print`: кроків 49 (разом із тригером).
+`draft flow quote.Model.QuoteManagement.QuoteManagement.submitQuote --mode algo --print`: кроків 148 (разом із тригером).
 
 ## Розмір
 
@@ -32,9 +32,10 @@
 | `unresolved-import` | 2327 |
 | `outside-file` | 508 |
 | `skipped-file` | 42 |
-| `unresolved-binding` | 22 |
+| `unresolved-binding` | 28 |
 | `unsupported` | 12 |
 | `ambiguous-binding` | 4 |
+| `dynamic-event` | 3 |
 | `unassigned-file` | 3 |
 
 ## Дірки за причинами (top-10 з 21370)
@@ -56,18 +57,24 @@
 
 ## Точки входу за видами
 
-`entries` порожній.
+| Вид | Кількість |
+|---|---:|
+| `consumer` | 3 |
+| `cron` | 15 |
+| `observer` | 58 |
+| `rest` | 133 |
+| `route` | 186 |
 
 ## Події
 
-n/a — у знімку немає вузлів `event.*` (тікет 08).
+83 вузлів: `events.admin_sales_order_address_update`, `events.adminhtml_sales_order_create_process_data`, `events.adminhtml_sales_order_creditmemo_register_before`, `events.catalog_entity_attribute_delete_after`, `events.catalog_entity_attribute_save_after`, `events.catalog_product_delete_before`, `events.catalog_product_save_after`, `events.catalogrule_after_apply`, `events.catalogrule_before_apply`, `events.checkout_cart_product_add_after`, `events.checkout_cart_product_add_before`, `events.checkout_cart_product_update_after`, `events.checkout_cart_save_after`, `events.checkout_cart_save_before`, `events.checkout_cart_update_items_after`, `events.checkout_cart_update_items_before`, `events.checkout_quote_destroy`, `events.checkout_quote_init`, `events.checkout_submit_all_after`, `events.checkout_submit_before`, `events.checkout_type_onepage_save_order_after`, `events.config_data_dev_grid_async_indexing_disabled`, `events.config_data_sales_email_general_async_sending_disabled`, `events.controller_action_predispatch_checkout_index_index`, `events.custom_quote_process`, `events.customer_address_format`, `events.customer_login`, `events.customer_logout`, `events.customer_save_after_data_object`, `events.email_creditmemo_comment_set_template_vars_before`, `events.email_creditmemo_set_template_vars_before`, `events.email_invoice_comment_set_template_vars_before`, `events.email_invoice_set_template_vars_before`, `events.email_order_comment_set_template_vars_before`, `events.email_order_set_template_vars_before`, `events.email_shipment_comment_set_template_vars_before`, `events.email_shipment_set_template_vars_before`, `events.items_additional_data`, `events.load_customer_quote_before`, `events.magento_catalogrule_api_data_ruleinterface_save_after`, `events.magento_salesrule_api_data_ruleinterface_delete_after`, `events.magento_salesrule_api_data_ruleinterface_delete_before`, `events.magento_salesrule_api_data_ruleinterface_load_after`, `events.magento_salesrule_api_data_ruleinterface_save_after`, `events.magento_salesrule_api_data_ruleinterface_save_before`, `events.payment_cart_collect_items_and_amounts`, `events.payment_method_assign_data`, `events.payment_method_is_active`, `events.restore_quote`, `events.rss_order_new_collection_select`, `events.sales_convert_order_item_to_quote_item`, `events.sales_convert_order_to_quote`, `events.sales_convert_quote_to_order`, `events.sales_model_service_quote_submit_before`, `events.sales_model_service_quote_submit_failure`, `events.sales_model_service_quote_submit_success`, `events.sales_order_creditmemo_delete_after`, `events.sales_order_creditmemo_process_relation`, `events.sales_order_creditmemo_refund`, `events.sales_order_customer_assign_after`, `events.sales_order_delete_after`, `events.sales_order_invoice_delete_after`, `events.sales_order_invoice_process_relation`, `events.sales_order_invoice_register`, `events.sales_order_place_after`, `events.sales_order_process_relation`, `events.sales_order_save_after`, `events.sales_order_save_before`, `events.sales_order_shipment_delete_after`, `events.sales_order_shipment_process_relation`, `events.sales_order_state_change_before`, `events.sales_order_status_unassign`, `events.sales_quote_address_collect_totals_after`, `events.sales_quote_address_collect_totals_before`, `events.sales_quote_address_discount_item`, `events.sales_quote_collect_totals_after`, `events.sales_quote_collect_totals_before`, `events.sales_quote_save_after`, `events.salesrule_rule_condition_combine`, `events.salesrule_rule_delete_commit_after`, `events.salesrule_rule_save_commit_after`, `events.salesrule_validator_process`, `events.store_add`.
 
 ## Чернетки `draft flow --mode algo`
 
 | Тригер | Кроків (разом із тригером) |
 |---|---:|
-| `quote.Model.QuoteManagement.QuoteManagement.placeOrder` | 45 |
-| `quote.Model.QuoteManagement.QuoteManagement.submitQuote` | 119 |
+| `quote.Model.QuoteManagement.QuoteManagement.placeOrder` | 49 |
+| `quote.Model.QuoteManagement.QuoteManagement.submitQuote` | 148 |
 
 ## Золотий список для `quote.Model.QuoteManagement.QuoteManagement.placeOrder`
 
@@ -84,8 +91,8 @@ found **6/6** у чернетці; бракує: нічого.
 
 | Подія | ID у знімку | У чернетці |
 |---|---|---|
-| `checkout_submit_before` | n/a (тікет 08) | — |
-| `checkout_submit_all_after` | n/a (тікет 08) | — |
+| `events.checkout_submit_before` | `events.checkout_submit_before` | так |
+| `events.checkout_submit_all_after` | `events.checkout_submit_all_after` | так |
 
 ## Цього запуску
 
@@ -94,10 +101,10 @@ found **6/6** у чернетці; бракує: нічого.
 | Що | Значення |
 |---|---|
 | Дата | 2026-10-08 |
-| keylang | `c4e2a8f` |
+| keylang | `0b69554` |
 | Node | v24.20.0 |
 | Клон | `/home/kosmodev/.cache/keylang/bench/magento2` (`git describe`: `2.4.9`) |
-| `map` без кешу фактів (`node --max-old-space-size=4096`) | 15.3 с, maxRSS 695 МБ |
-| `check --format json` | 4.5 с, maxRSS 461 МБ |
+| `map` без кешу фактів (`node --max-old-space-size=4096`) | 25.3 с, maxRSS 700 МБ |
+| `check --format json` | 9.3 с, maxRSS 462 МБ |
 | Підсумок `map` | 2141 file(s), 2656 module(s), 7099 fn, 276 type(s), 3241 dep(s); calls 5962 resolved, 2706 external, 13352 dynamic, 5683 unresolved; 2327 unresolved import(s); 3 file(s) outside any layer |
-| snapshotId | `c0943fb4508dc85f9544148043ab7f77f7baef2f2c5bfe3acb94037542679084` |
+| snapshotId | `3fbdb19d7d4bd2af1212fb741b1c28d1b5d3e64a230c550a73c57ba44d6c70e9` |

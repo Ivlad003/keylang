@@ -170,12 +170,12 @@ export function* callsOf(file: FileFacts): Generator<{ call: CallFact; symbol: s
 
 /** Facts of one source file a framework reads, empty to start with. */
 export function codeFacts(path: string): ConfigFacts {
-  return { path, scope: "global", bindings: [], arguments: [], aliases: [], intercepts: [], entries: [], listens: [], handlers: [], dispatches: [], holes: [], error: null };
+  return { path, scope: "global", bindings: [], arguments: [], aliases: [], intercepts: [], entries: [], observers: [], dispatches: [], holes: [], error: null };
 }
 
 /** Whether a code configuration says anything. */
 export function hasFacts(facts: ConfigFacts): boolean {
-  return facts.bindings.length + facts.arguments.length + (facts.entries?.length ?? 0) + (facts.listens?.length ?? 0) + (facts.handlers?.length ?? 0) + (facts.dispatches?.length ?? 0) + (facts.holes?.length ?? 0) > 0;
+  return facts.bindings.length + facts.arguments.length + (facts.entries?.length ?? 0) + (facts.observers?.length ?? 0) + (facts.dispatches?.length ?? 0) + (facts.holes?.length ?? 0) > 0;
 }
 
 /** Global helpers that dispatch the object they get: Laravel's `event()`, `dispatch()`, `dispatch_sync()`. */
@@ -188,10 +188,10 @@ const DISPATCH_STATICS = new Set(["dispatch", "dispatchsync", "dispatchnow", "pu
  * file: `event(new X)`, `dispatch(new J)`, `Event::dispatch(new X)`,
  * `Bus::dispatch(new J)`, `$dispatcher->dispatch(new X)` (a string second
  * argument names the event: Symfony `dispatch($e, 'order.placed')`), and
- * `X::dispatch(…)` on the event or job class itself. The event is the class
- * the call names; the adapter's listeners and handlers decide whether it is
- * one. A `dispatch` of an object whose class the repository declares is that
- * class's own method, not the framework's.
+ * `X::dispatch(…)` on the event or job class itself (from a trait of the
+ * framework). The event is the class the call names: a node `events.<class>`
+ * of the graph, whose observers are the listeners and handlers subscribed to
+ * it. A `dispatch` method the repository declares is code, not the framework.
  */
 export function dispatchesIn(code: PhpCode, file: FileFacts): { symbol: string; call: CallFact; event: string }[] {
   const out: { symbol: string; call: CallFact; event: string }[] = [];
@@ -207,7 +207,8 @@ export function dispatchesIn(code: PhpCode, file: FileFacts): { symbol: string; 
     }
     if (parts.length === 2 && parts[0] !== "this" && parts[0] !== "super" && !call.bound) {
       const target = code.get(code.qualified(file.path, parts[0]!));
-      if (target && /^dispatch/i.test(method)) out.push({ symbol, call, event: target.qualified });
+      // `J::dispatch()` from a trait the framework gives (`Dispatchable`); a class declaring the method itself is called as code.
+      if (target && /^dispatch/i.test(method) && !code.method(target.qualified, method)) out.push({ symbol, call, event: target.qualified });
       else if (!target && DISPATCH_STATICS.has(method.toLowerCase()) && first?.kind === "new") out.push({ symbol, call, event: first.name });
       continue;
     }

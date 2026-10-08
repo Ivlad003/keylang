@@ -243,8 +243,8 @@ export function usagesOf(snapshot: AnalysisSnapshot | null, spec: SpecIR, discov
 export function diagramOf(input: DiagramInput): Diagram {
   const { view } = input;
   if (view.kind === "flow") return layout(flowDiagram(input, view.name));
-  if (view.kind === "event") return empty(`no event nodes in the snapshot yet: events come with business-flows/08 and 16`);
   if (!input.snapshot) return empty("no snapshot: the specs were checked without code");
+  if (view.kind === "event") return layout(eventDiagram(input.snapshot, input.results, view.name));
   if (view.kind === "process") return layout(processDiagram(input.snapshot, input.processes ?? [], input.results, view.domain));
   if (view.kind === "entry") return layout(entryDiagram(input.snapshot, input.results, view.id, view.depth ?? DEFAULT_DEPTH));
   return layout(layersDiagram(input.snapshot, input.spec, input.results));
@@ -468,6 +468,43 @@ function stripLead(message: string, id: string): string {
 
 // ── entry ───────────────────────────────────────────────────────────────────
 
+/** The event node a view names: its ID, `events.<literal>`, or the literal it is dispatched with. */
+export function eventNamed(snapshot: AnalysisSnapshot, name: string): string | null {
+  if (snapshot.nodes[name]?.kind === "event") return name;
+  if (snapshot.nodes[`events.${name}`]?.kind === "event") return `events.${name}`;
+  return Object.keys(snapshot.nodes).find((id) => snapshot.nodes[id]?.kind === "event" && snapshot.nodes[id]?.name === name) ?? null;
+}
+
+/**
+ * An event (ADR 0022 п. 6, business-flows/08): the fns that dispatch it, the
+ * event, and the fns its observers run, each in the lane of its layer. A
+ * dispatch is an `emits` edge, an observer a `call` named after it.
+ */
+function eventDiagram(snapshot: AnalysisSnapshot, results: readonly DiagramResult[], name: string): Diagram {
+  const id = eventNamed(snapshot, name);
+  if (id === null) return empty(`no event \`${name}\` in the snapshot: events come from a framework adapter's dispatches and observers`);
+  const event = snapshot.nodes[id]!;
+  const areas = byArea(results);
+  const nodes: DiagramNode[] = [];
+  const edges: DiagramEdge[] = [];
+  const fn = (target: string): string => {
+    const nodeId = `fn:${target}`;
+    if (nodes.some((n) => n.id === nodeId)) return nodeId;
+    const code = snapshot.nodes[target];
+    nodes.push({ id: nodeId, kind: code?.layer === EXTERNAL ? "external" : "fn", label: target, ref: { id: target, ...(code?.file ? { file: code.file } : {}), ...(code?.line ? { line: code.line } : {}) }, verdict: areas.get(target) ?? null, ...(code?.layer ? { group: code.layer } : {}), x: 0, y: 0, w: 0, h: 0 });
+    return nodeId;
+  };
+  const center: DiagramNode = { id: `event:${id}`, kind: "event", label: event.name ?? id.slice(id.indexOf(".") + 1), ref: { id, ...(event.file ? { file: event.file } : {}), ...(event.line ? { line: event.line } : {}) }, verdict: areas.get(id) ?? null, group: event.layer, x: 0, y: 0, w: 0, h: 0 };
+  for (const publisher of event.callers ?? []) edges.push({ from: fn(publisher), to: center.id, kind: "emits", label: "dispatch" });
+  nodes.push(center);
+  for (const edge of snapshot.edges) {
+    if (edge.kind !== "call" || edge.source !== id || edge.resolution !== "resolved" || edge.target === null) continue;
+    const observer = /observer `([^`]*)`/.exec(edge.binding ?? "")?.[1];
+    edges.push({ from: center.id, to: fn(edge.target), kind: "call", label: `${observer ? `observer ${observer}` : (edge.via ?? "call")}${edge.scope && edge.scope !== "global" ? ` (${edge.scope})` : ""}` });
+  }
+  return { nodes, edges, groups: lanes(snapshot, nodes), ...(edges.length === 0 ? { reason: `\`${id}\` has neither a dispatch nor an observer keylang read` } : {}) };
+}
+
 function entryDiagram(snapshot: AnalysisSnapshot, results: readonly DiagramResult[], id: string, depth: number): Diagram {
   const entry = snapshot.entries.find((e) => e.id === id);
   const root = snapshot.nodes[id];
@@ -492,7 +529,7 @@ function entryDiagram(snapshot: AnalysisSnapshot, results: readonly DiagramResul
     const nodeId = `fn:${target}`;
     nodes.push({
       id: nodeId,
-      kind: layer === EXTERNAL ? "external" : code?.kind === "module" ? "module" : "fn",
+      kind: layer === EXTERNAL ? "external" : code?.kind === "module" ? "module" : code?.kind === "event" ? "event" : "fn",
       label: target,
       ref: { id: target, ...(code?.file ? { file: code.file } : {}), ...(code?.line ? { line: code.line } : {}) },
       verdict: areas.get(target) ?? null,

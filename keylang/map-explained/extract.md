@@ -75,17 +75,17 @@
       <a id="extract.facts.ChainLinkFact"></a><br>One call of a chain `Route::prefix('admin')->name('a.')->group(…)`, root first; the root names its class when it is a static call.
     - type [CallFact](../../src/extract/facts.ts#L347)
       <a id="extract.facts.CallFact"></a><br>Record of one call site: the callee's dotted name (or raw text when `opaque`), how its head is bound, the receiver's class, a `HookFact` default, `PassFact` function arguments, and position. Each call becomes an edge or a `dynamic-call` hole. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-    - type [HookFact](../../src/extract/facts.ts#L413)
+    - type [HookFact](../../src/extract/facts.ts#L421)
       <a id="extract.facts.HookFact"></a><br>A callable chosen at run time with a default written next to it. `param` and `path` say where a caller injects the value: `analyze({ generate })` is parameter 0, path `generate`; `function f(run = defaultRun)` is parameter 0, path "".
-    - type [PassFact](../../src/extract/facts.ts#L432)
+    - type [PassFact](../../src/extract/facts.ts#L440)
       <a id="extract.facts.PassFact"></a><br>A function value in the arguments of a call: argument index, property path ("" for the argument itself). `callee` names it as a call would (`this.m`, `Cls.m`, `save`); `text` is the argument as written (`[$this, 'm']`), at the position. One passed as the argument itself is a…
-    - type [ValueRefFact](../../src/extract/facts.ts#L447)
+    - type [ValueRefFact](../../src/extract/facts.ts#L455)
       <a id="extract.facts.ValueRefFact"></a><br>Describes a single occurrence of a value being referenced in source, recording its name (plain or module-qualified), whether it was read as a property off an object, and its line and column. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [TypeRefFact](../../src/extract/facts.ts#L457)
+    - type [TypeRefFact](../../src/extract/facts.ts#L465)
       <a id="extract.facts.TypeRefFact"></a><br>A type name in type position. `text` is the source fragment.
-    - type [ExportRow](../../src/extract/facts.ts#L471)
+    - type [ExportRow](../../src/extract/facts.ts#L479)
       <a id="extract.facts.ExportRow"></a><br>One public name of a file, compared with the `exports` rule and followed by the graph to the symbol it stands for.
-    - type [UnsupportedFact](../../src/extract/facts.ts#L501)
+    - type [UnsupportedFact](../../src/extract/facts.ts#L509)
       <a id="extract.facts.UnsupportedFact"></a><br>Records a source construct the extractor could not analyze: its line/column span, raw text, and a reason string. The optional `symbol` names the dotted-path declaration whose call behavior the construct may alter, without adding a dependency. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [grammars](../../src/extract/grammars.ts#L1)
     <a id="extract.grammars"></a><br>The tree-sitter grammars keylang parses with. One list for the runtime (`treesitter.ts` loads them) and for packaging (`scripts/copy-wasm.mjs` copies each into dist/wasm), so a new language cannot be left out of the published package.
@@ -198,86 +198,89 @@
       <a id="extract.php.walkScope"></a><br>Every node of a function body that runs in its own scope: not into a nested named function or class.
     - fn [callsIn](../../src/extract/php.ts#L725) (node: Node, scope: Scope, collector: Collector, closure: boolean) → CallFact[] <!-- internal -->
       <a id="extract.php.callsIn"></a><br>The calls under `node`: in a function body, or in code outside declarations. A call inside a closure, an arrow function or an anonymous class has `closure`: it runs when that value is called.
-      - calls [extract.php.qualify](extract.md#extract.php.qualify), [extract.php.callOf](extract.md#extract.php.callOf), [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.php.passesOf](extract.md#extract.php.passesOf), [extract.php.argsOf](extract.md#extract.php.argsOf), [extract.php.chainOf](extract.md#extract.php.chainOf), [extract.php.informative](extract.md#extract.php.informative), [extract.php.classNameOf](extract.md#extract.php.classNameOf), [base.languages.asciiLowerCase](base.md#base.languages.asciiLowerCase), [extract.php.Collector.value](extract.md#extract.php.Collector.value), [extract.php.Collector.klass](extract.md#extract.php.Collector.klass), [extract.php.arrayCallable](extract.md#extract.php.arrayCallable), [extract.php.closureState](extract.md#extract.php.closureState), [extract.treesitter.startCol](extract.md#extract.treesitter.startCol)
-    - fn [informative](../../src/extract/php.ts#L779) (value: LiteralFact) → boolean <!-- internal -->
+      - calls [extract.php.qualify](extract.md#extract.php.qualify), [extract.php.callOf](extract.md#extract.php.callOf), [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.php.passesOf](extract.md#extract.php.passesOf), [extract.php.nameArgOf](extract.md#extract.php.nameArgOf), [extract.php.argsOf](extract.md#extract.php.argsOf), [extract.php.chainOf](extract.md#extract.php.chainOf), [extract.php.informative](extract.md#extract.php.informative), [extract.php.classNameOf](extract.md#extract.php.classNameOf), [base.languages.asciiLowerCase](base.md#base.languages.asciiLowerCase), [extract.php.Collector.value](extract.md#extract.php.Collector.value), [extract.php.Collector.klass](extract.md#extract.php.Collector.klass), [extract.php.arrayCallable](extract.md#extract.php.arrayCallable), [extract.php.closureState](extract.md#extract.php.closureState), [extract.treesitter.startCol](extract.md#extract.treesitter.startCol)
+    - fn [informative](../../src/extract/php.ts#L781) (value: LiteralFact) → boolean <!-- internal -->
       <a id="extract.php.informative"></a><br>A literal that says something: anything but `other`, and an array only when some key or value does.
-    - fn [literalClass](../../src/extract/php.ts#L785) (scopeNode: Node | null, names: Names, self: string | null) → string | null <!-- internal -->
+    - fn [literalClass](../../src/extract/php.ts#L787) (scopeNode: Node | null, names: Names, self: string | null) → string | null <!-- internal -->
       <a id="extract.php.literalClass"></a><br>The qualified class a literal names: `self`/`static` the enclosing class; null for `parent` or anything but a name.
       - calls [base.languages.asciiLowerCase](base.md#base.languages.asciiLowerCase), [extract.php.classNameOf](extract.md#extract.php.classNameOf), [extract.php.canonicalClass](extract.md#extract.php.canonicalClass)
-    - fn [literalOf](../../src/extract/php.ts#L793) (node: Node, names: Names, self: string | null, depth = 0) → LiteralFact <!-- internal -->
+    - fn [literalOf](../../src/extract/php.ts#L795) (node: Node, names: Names, self: string | null, depth = 0) → LiteralFact <!-- internal -->
       <a id="extract.php.literalOf"></a><br>An expression as a literal a framework adapter reads (`LiteralFact`).
       - calls [extract.php.unparenthesized](extract.md#extract.php.unparenthesized), [extract.php.stringValue](extract.md#extract.php.stringValue), [extract.php.literalClass](extract.md#extract.php.literalClass), [base.languages.asciiLowerCase](base.md#base.languages.asciiLowerCase), [extract.treesitter.startCol](extract.md#extract.treesitter.startCol)
-    - fn [argList](../../src/extract/php.ts#L823) (args: Node | null | undefined, names: Names, self: string | null) → ArgFact[] <!-- internal -->
+    - fn [argList](../../src/extract/php.ts#L825) (args: Node | null | undefined, names: Names, self: string | null) → ArgFact[] <!-- internal -->
       <a id="extract.php.argList"></a><br>The arguments of an `arguments` node as literals, named or positional.
       - calls [extract.php.literalOf](extract.md#extract.php.literalOf)
-    - fn [argsOf](../../src/extract/php.ts#L834) (call: Node, names: Names, self: string | null) → ArgFact[] <!-- internal -->
+    - fn [argsOf](../../src/extract/php.ts#L836) (call: Node, names: Names, self: string | null) → ArgFact[] <!-- internal -->
       <a id="extract.php.argsOf"></a>
       - calls [extract.php.argList](extract.md#extract.php.argList)
-    - fn [chainOf](../../src/extract/php.ts#L839) (n: Node, names: Names, self: string | null) → ChainLinkFact[] | null <!-- internal -->
+    - fn [chainOf](../../src/extract/php.ts#L841) (n: Node, names: Names, self: string | null) → ChainLinkFact[] | null <!-- internal -->
       <a id="extract.php.chainOf"></a><br>`X::a(…)->b(…)->c(…)`: the calls of the chain, root first; null for a call on no other call.
       - calls [extract.php.argsOf](extract.md#extract.php.argsOf), [extract.php.unparenthesized](extract.md#extract.php.unparenthesized), [extract.php.literalClass](extract.md#extract.php.literalClass)
-    - fn [attributesOf](../../src/extract/php.ts#L863) (decl: Node, names: Names, self: string | null) → AttributeFact[] <!-- internal -->
+    - fn [attributesOf](../../src/extract/php.ts#L865) (decl: Node, names: Names, self: string | null) → AttributeFact[] <!-- internal -->
       <a id="extract.php.attributesOf"></a><br>`#[A(…), B] #[C]` on a declaration, names qualified as PHP resolves them.
       - calls [extract.php.classNameOf](extract.md#extract.php.classNameOf), [extract.php.canonicalClass](extract.md#extract.php.canonicalClass), [extract.php.argList](extract.md#extract.php.argList), [extract.treesitter.startCol](extract.md#extract.treesitter.startCol)
-    - type [ClosureState](../../src/extract/php.ts#L887) = null | "stored" | { line: number; col: number } <!-- internal -->
+    - type [ClosureState](../../src/extract/php.ts#L889) = null | "stored" | { line: number; col: number } <!-- internal -->
       <a id="extract.php.ClosureState"></a><br>Where a call sits with respect to closures: null outside them; `stored` under a closure some value holds (`$f = fn() => …`, a returned closure, an anonymous class); otherwise the position of the outermost closure, every closure between being an argument of a call…
-    - fn [closureState](../../src/extract/php.ts#L889) (closure: Node, inner: ClosureState) → ClosureState <!-- internal -->
+    - fn [closureState](../../src/extract/php.ts#L891) (closure: Node, inner: ClosureState) → ClosureState <!-- internal -->
       <a id="extract.php.closureState"></a>
       - calls [extract.treesitter.located](extract.md#extract.treesitter.located)
-    - fn [passesOf](../../src/extract/php.ts#L908) (call: Node, scope: Scope, collector: Collector) → PassFact[] <!-- internal -->
+    - fn [passesOf](../../src/extract/php.ts#L910) (call: Node, scope: Scope, collector: Collector) → PassFact[] <!-- internal -->
       <a id="extract.php.passesOf"></a><br>Callable references among the arguments of a call: `[$this, 'm']`, `[self::class, 'm']`, `[$obj, 'm']` with the class of `$obj` known, `[Order::class, 'm']`, `'Order::m'`, `\Closure::fromCallable(<any of these>)`, the first-class callable `$this->m(...)` / `Order::m(...)` /…
       - calls [base.languages.asciiLowerCase](base.md#base.languages.asciiLowerCase), [extract.php.lastSegment](extract.md#extract.php.lastSegment), [extract.php.callableOf](extract.md#extract.php.callableOf), [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.php.firstLine](extract.md#extract.php.firstLine)
-    - fn [callableOf](../../src/extract/php.ts#L940) (value: Node, scope: Scope, collector: Collector, plainStrings: boolean) → { callee: string; bound?: "parameter" | "local"; receiver?: string; docblock?: { line: number; col: number }; node: Node } | null <!-- internal -->
+    - fn [callableOf](../../src/extract/php.ts#L942) (value: Node, scope: Scope, collector: Collector, plainStrings: boolean) → { callee: string; bound?: "parameter" | "local"; receiver?: string; docblock?: { line: number; col: number }; node: Node } | null <!-- internal -->
       <a id="extract.php.callableOf"></a><br>The callable an expression names, with the node that spells it; null when it names none keylang can follow.
       - calls [extract.php.unparenthesized](extract.md#extract.php.unparenthesized), [extract.php.stringValue](extract.md#extract.php.stringValue), [base.languages.asciiLowerCase](base.md#base.languages.asciiLowerCase), [extract.php.classHolder](extract.md#extract.php.classHolder), [extract.php.Collector.klass](extract.md#extract.php.Collector.klass), [extract.php.qualifiedString](extract.md#extract.php.qualifiedString), [extract.php.Collector.fn](extract.md#extract.php.Collector.fn), [extract.php.firstClassCallable](extract.md#extract.php.firstClassCallable), [extract.php.calleeOf](extract.md#extract.php.calleeOf)
-    - fn [qualifiedString](../../src/extract/php.ts#L998) (name: string) → string <!-- internal -->
+    - fn [qualifiedString](../../src/extract/php.ts#L1000) (name: string) → string <!-- internal -->
       <a id="extract.php.qualifiedString"></a><br>A name in a string (`'Shop\Infra\Logger'`, `'helper'`) is fully qualified: PHP reads no `use` or namespace into it.
-    - fn [classHolder](../../src/extract/php.ts#L1003) (scopeNode: Node, member: string, scope: Scope, collector: Collector) → string | null <!-- internal -->
+    - fn [classHolder](../../src/extract/php.ts#L1005) (scopeNode: Node, member: string, scope: Scope, collector: Collector) → string | null <!-- internal -->
       <a id="extract.php.classHolder"></a><br>What `X::class` in `[X::class, 'm']` holds: `this` for `self`/`static` (the class for a static `m`), the class for a name; null for `parent`.
       - calls [extract.php.classNameOf](extract.md#extract.php.classNameOf), [base.languages.asciiLowerCase](base.md#base.languages.asciiLowerCase), [extract.php.Collector.klass](extract.md#extract.php.Collector.klass)
-    - fn [arrayCallable](../../src/extract/php.ts#L1014) (n: Node, scope: Scope, collector: Collector) → void <!-- internal -->
+    - fn [arrayCallable](../../src/extract/php.ts#L1016) (n: Node, scope: Scope, collector: Collector) → void <!-- internal -->
       <a id="extract.php.arrayCallable"></a><br>`[$this, 'save']`, `[$this->repo, 'save']`, `[Order::class, 'place']`, `['Order', 'place']`: a method read as a callable value.
       - calls [extract.php.stringValue](extract.md#extract.php.stringValue), [extract.php.Collector.value](extract.md#extract.php.Collector.value)
-    - fn [stringValue](../../src/extract/php.ts#L1031) (node: Node) → string | null <!-- internal -->
+    - fn [nameArgOf](../../src/extract/php.ts#L1036) (n: Node, callee: string) → CallFact["nameArg"] | undefined <!-- internal -->
+      <a id="extract.php.nameArgOf"></a><br>The first argument of a method call `NAME_ARG_MEMBERS` lists: its literal value, or null with its text.
+      - calls [base.languages.asciiLowerCase](base.md#base.languages.asciiLowerCase), [extract.php.unparenthesized](extract.md#extract.php.unparenthesized), [extract.php.stringValue](extract.md#extract.php.stringValue)
+    - fn [stringValue](../../src/extract/php.ts#L1048) (node: Node) → string | null <!-- internal -->
       <a id="extract.php.stringValue"></a><br>The text of a string literal without interpolation; null for anything else.
-    - fn [firstClassCallable](../../src/extract/php.ts#L1038) (n: Node) → boolean <!-- internal -->
+    - fn [firstClassCallable](../../src/extract/php.ts#L1055) (n: Node) → boolean <!-- internal -->
       <a id="extract.php.firstClassCallable"></a><br>The callable `f(...)`, `$x->m(...)`, `X::m(...)` makes from its callee: a value, not a call.
-    - fn [callOf](../../src/extract/php.ts#L1054) (n: Node, scope: Scope, collector: Collector) → Pick<CallFact, "callee" | "bound" | "receiver" | "opaque" | "docblock" | "param"> | null <!-- internal -->
+    - fn [callOf](../../src/extract/php.ts#L1071) (n: Node, scope: Scope, collector: Collector) → Pick<CallFact, "callee" | "bound" | "receiver" | "opaque" | "docblock" | "param"> | null <!-- internal -->
       <a id="extract.php.callOf"></a><br>One call: `f()` → `f`, `A\f()` → `A\f`; `$this->m()` → `this.m`; `$this->store->m()` → `this.store.m` with the property's class; `$x->m()` → `x.m`, bound, with the variable's class when the syntax names it; `X::m()` → `X.m`; `self::m()` / `static::m()` → `this.m`, or `X.m` for…
       - calls [extract.php.firstClassCallable](extract.md#extract.php.firstClassCallable), [extract.php.callableValue](extract.md#extract.php.callableValue), [extract.php.calleeOf](extract.md#extract.php.calleeOf)
-    - fn [calleeOf](../../src/extract/php.ts#L1063) (n: Node, scope: Scope, collector: Collector) → Pick<CallFact, "callee" | "bound" | "receiver" | "opaque" | "docblock" | "param"> | null <!-- internal -->
+    - fn [calleeOf](../../src/extract/php.ts#L1080) (n: Node, scope: Scope, collector: Collector) → Pick<CallFact, "callee" | "bound" | "receiver" | "opaque" | "docblock" | "param"> | null <!-- internal -->
       <a id="extract.php.calleeOf"></a><br>The callee of a call node as `callOf` reads it, whether or not the arguments are `(...)`.
       - calls [extract.php.classNameOf](extract.md#extract.php.classNameOf), [base.languages.asciiLowerCase](base.md#base.languages.asciiLowerCase), [extract.php.Collector.klass](extract.md#extract.php.Collector.klass), [extract.php.variableCall](extract.md#extract.php.variableCall), [extract.php.lastSegment](extract.md#extract.php.lastSegment), [extract.php.Collector.hole](extract.md#extract.php.Collector.hole), [extract.php.Collector.fn](extract.md#extract.php.Collector.fn), [extract.php.unparenthesized](extract.md#extract.php.unparenthesized)
-    - fn [unparenthesized](../../src/extract/php.ts#L1140) (node: Node) → Node <!-- internal -->
+    - fn [unparenthesized](../../src/extract/php.ts#L1157) (node: Node) → Node <!-- internal -->
       <a id="extract.php.unparenthesized"></a><br>The expression inside any parentheses around it: `((new X()))` → `new X()`.
-    - fn [variableCall](../../src/extract/php.ts#L1147) (callee: string, scope: Scope) → Pick<CallFact, "callee" | "bound"> <!-- internal -->
+    - fn [variableCall](../../src/extract/php.ts#L1164) (callee: string, scope: Scope) → Pick<CallFact, "callee" | "bound"> <!-- internal -->
       <a id="extract.php.variableCall"></a><br>A call through a variable: `$f()`, `$x->m()`, `$class::m()`.
-    - fn [callableValue](../../src/extract/php.ts#L1153) (n: Node, scope: Scope, collector: Collector) → void <!-- internal -->
+    - fn [callableValue](../../src/extract/php.ts#L1170) (n: Node, scope: Scope, collector: Collector) → void <!-- internal -->
       <a id="extract.php.callableValue"></a><br>`f(...)`, `$this->m(...)`, `X::m(...)`: the function or method read as a value.
       - calls [extract.php.Collector.value](extract.md#extract.php.Collector.value), [extract.php.Collector.fn](extract.md#extract.php.Collector.fn)
-    - fn [includesIn](../../src/extract/php.ts#L1169) (root: Node, path: string, collector: Collector) → ImportFact[] <!-- internal -->
+    - fn [includesIn](../../src/extract/php.ts#L1186) (root: Node, path: string, collector: Collector) → ImportFact[] <!-- internal -->
       <a id="extract.php.includesIn"></a><br>`require`/`include` of a path the code spells out: a string, or `__DIR__` (`dirname(__DIR__)`, `dirname(__FILE__)`) joined with one. The specifier is `include <path>`, relative to the repository root; a path computed at run time is a hole.
       - calls [extract.php.includedPath](extract.md#extract.php.includedPath), [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.php.Collector.hole](extract.md#extract.php.Collector.hole), [extract.php.firstLine](extract.md#extract.php.firstLine)
-    - fn [includedPath](../../src/extract/php.ts#L1190) (expr: Node | null, file: string) → string | null <!-- internal -->
+    - fn [includedPath](../../src/extract/php.ts#L1207) (expr: Node | null, file: string) → string | null <!-- internal -->
       <a id="extract.php.includedPath"></a><br>The repository-relative path an include expression names: string literals, `__DIR__`, `dirname(__DIR__[, n])` and `dirname(__FILE__[, n])` joined with `.`; a relative literal is taken from the file's directory. Null when part of it is computed at run time.
       - calls [extract.php.stringValue](extract.md#extract.php.stringValue), [base.languages.asciiLowerCase](base.md#base.languages.asciiLowerCase), [extract.php.normalize](extract.md#extract.php.normalize)
-    - fn [normalize](../../src/extract/php.ts#L1223) (path: string) → string <!-- internal -->
+    - fn [normalize](../../src/extract/php.ts#L1240) (path: string) → string <!-- internal -->
       <a id="extract.php.normalize"></a><br>`a/./b/../c` → `a/c`; a path above the root keeps its leading `..`.
-    - fn [docOf](../../src/extract/php.ts#L1238) (node: Node, header: number | null) → string | undefined <!-- internal -->
+    - fn [docOf](../../src/extract/php.ts#L1255) (node: Node, header: number | null) → string | undefined <!-- internal -->
       <a id="extract.php.docOf"></a><br>The PHPDoc of a declaration: the `/** … *\/` right above it. Line comments may stand between them, other code may not.
       - calls [extract.php.docComment](extract.md#extract.php.docComment), [extract.doc-comments.jsdocDescription](extract.md#extract.doc-comments.jsdocDescription), [extract.doc-comments.blockCommentBody](extract.md#extract.doc-comments.blockCommentBody), [extract.doc-comments.isLicense](extract.md#extract.doc-comments.isLicense), [extract.doc-comments.nonEmpty](extract.md#extract.doc-comments.nonEmpty)
-    - fn [docComment](../../src/extract/php.ts#L1246) (node: Node, header: number | null) → Node | null <!-- internal -->
+    - fn [docComment](../../src/extract/php.ts#L1263) (node: Node, header: number | null) → Node | null <!-- internal -->
       <a id="extract.php.docComment"></a><br>The PHPDoc comment node right above a declaration, as `docOf` finds it; null without one.
-    - fn [docTags](../../src/extract/php.ts#L1257) (node: Node, header: number | null, tag: RegExp) → (DocType & { name?: string })[] <!-- internal -->
+    - fn [docTags](../../src/extract/php.ts#L1274) (node: Node, header: number | null, tag: RegExp) → (DocType & { name?: string })[] <!-- internal -->
       <a id="extract.php.docTags"></a><br>The tags of a declaration's PHPDoc that `tag` matches, one per line, with the type (first group) and the variable name (second group, if any) and the position of the `@`. The fragment is the tag's line.
       - calls [extract.php.docComment](extract.md#extract.php.docComment)
-    - fn [docTag](../../src/extract/php.ts#L1272) (node: Node, header: number | null, tag: RegExp) → DocType | null <!-- internal -->
+    - fn [docTag](../../src/extract/php.ts#L1289) (node: Node, header: number | null, tag: RegExp) → DocType | null <!-- internal -->
       <a id="extract.php.docTag"></a><br>The first tag of a declaration's PHPDoc that `tag` matches; null without one.
       - calls [extract.php.docTags](extract.md#extract.php.docTags)
-    - fn [fileDoc](../../src/extract/php.ts#L1281) (root: Node) → { doc: string; id: number } | null <!-- internal -->
+    - fn [fileDoc](../../src/extract/php.ts#L1298) (root: Node) → { doc: string; id: number } | null <!-- internal -->
       <a id="extract.php.fileDoc"></a><br>The file's PHPDoc and its comment: the first `/** … *\/` after `<?php` (and `declare`), unless it stands right above a declaration, which it documents instead. A license documents nothing.
       - calls [extract.doc-comments.jsdocDescription](extract.md#extract.doc-comments.jsdocDescription), [extract.doc-comments.blockCommentBody](extract.md#extract.doc-comments.blockCommentBody), [extract.doc-comments.isLicense](extract.md#extract.doc-comments.isLicense), [extract.doc-comments.nonEmpty](extract.md#extract.doc-comments.nonEmpty)
-    - fn [unsupported](../../src/extract/php.ts#L1291) (node: Node, reason: string) → UnsupportedFact <!-- internal -->
+    - fn [unsupported](../../src/extract/php.ts#L1308) (node: Node, reason: string) → UnsupportedFact <!-- internal -->
       <a id="extract.php.unsupported"></a>
       - calls [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.php.firstLine](extract.md#extract.php.firstLine)
   - module [python](../../src/extract/python.ts#L1)

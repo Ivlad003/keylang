@@ -69,7 +69,11 @@ function renderLayers(r: Render): Map<string, string> {
   const out = new Map<string, string>();
   for (const layerId of layerIds(r.snapshot)) {
     let s = `${GENERATED_MARK}\n\n${r.explain ? `${contents(r, layerId)}\n\n` : ""}# map\n\n- ${layerId}\n${describe(r, layerId, 1)}`;
-    for (const id of sortIds(r.snapshot, r.children.get(layerId) ?? [])) s += renderModule(r, id, 1);
+    for (const id of sortIds(r.snapshot, r.children.get(layerId) ?? [])) {
+      const node = r.snapshot.nodes[id];
+      // The generated group `events` holds events, not modules (ADR 0022 п. 6).
+      s += node?.kind === "event" ? renderDecl(r, id, node, 1) : renderModule(r, id, 1);
+    }
     out.set(`${layerId}.md`, s);
   }
   return out;
@@ -320,18 +324,23 @@ function depsOf(snapshot: AnalysisSnapshot, id: string): SnapshotEdge[] {
 function renderDecl(r: Render, id: string, node: SnapshotNode, depth: number): string {
   const { snapshot, mapDir } = r;
   const pad = "  ".repeat(depth);
-  const keyword = node.kind === "type" ? "type" : "fn";
+  const keyword = node.kind === "type" ? "type" : node.kind === "event" ? "event" : "fn";
   let head = linkedName(mapDir, node, nameOf(id));
   if (node.signature) head += ` ${node.signature}`;
   if (node.exported === false) head += " <!-- internal -->";
+  if (node.kind === "event") {
+    // Who publishes it: the fns that dispatch it, each a `calls` of its own map line too.
+    const about = [...(node.name !== undefined ? [`name: ${node.name}`] : []), ...((node.callers ?? []).length > 0 ? [`dispatched by: ${(node.callers ?? []).join(", ")}`] : ["dispatched by no code keylang read"])];
+    head += ` <!-- ${about.join("; ").replace(/-->/g, "-- >")} -->`;
+  }
   let s = `${pad}- ${keyword} ${head}\n${describe(r, id, depth + 1)}`;
   const calls = edgesFrom(snapshot, id)
     // An injected value is the caller's choice, not this function's code; a self-call is not a dependency.
     .filter((e) => e.source === id && e.kind === "call" && e.resolution === "resolved" && e.target && e.target !== id && e.via !== "injected")
     .sort((a, b) => a.line - b.line);
   // A call the framework makes by its config (ADR 0022) is a call like any other, marked with its `via` and config line.
-  const configured = calls.filter((c) => c.via === "preference" || c.via === "argument" || c.via === "observer" || c.via === "dispatch" || c.via?.startsWith("plugin:"));
-  const marks = [...new Map(configured.map((c) => [c.target!, `${nameOf(c.target!)} ${c.via} ${c.site ?? "?"}`])).values()];
+  const configured = calls.filter((c) => c.via === "preference" || c.via === "argument" || c.via === "observer" || c.via?.startsWith("plugin:"));
+  const marks = [...new Map(configured.map((c) => [c.target!, `${nameOf(c.target!)} ${c.via} ${c.site ?? "?"}${c.via === "observer" && c.scope && c.scope !== "global" ? ` ${c.scope}` : ""}`])).values()];
   const note = marks.length > 0 ? ` <!-- via: ${marks.join("; ").replace(/-->/g, "-- >")} -->` : "";
   if (calls.length > 0) s += `${pad}  - calls ${[...new Set(calls.map((c) => c.target!))].map((target) => ref(r, target)).join(", ")}${note}\n`;
   return s;

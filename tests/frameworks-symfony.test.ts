@@ -20,7 +20,7 @@ const LAYERS = {
   service: ["src/Service/**"],
   contract: ["src/Contract/**"],
   infra: ["src/Infra/**"],
-  events: ["src/Event/**"],
+  eventdata: ["src/Event/**"],
   subscribers: ["src/EventSubscriber/**"],
   listeners: ["src/EventListener/**"],
   messages: ["src/Message/**"],
@@ -267,8 +267,8 @@ test("symfony: attribute routes under the routes.yaml prefix, a yaml route, subs
     "cli | app:sync | commands.SyncCommand.SyncCommand.execute | src/Command/SyncCommand.php:9 | ",
     "consumer | App\\Message\\GenerateInvoice | handlers.GenerateInvoiceHandler.GenerateInvoiceHandler.__invoke | src/MessageHandler/GenerateInvoiceHandler.php:7 | ",
     "cron | App\\Scheduler\\CleanupTask::__invoke (0 3 * * *) | scheduler.CleanupTask.CleanupTask.__invoke | src/Scheduler/CleanupTask.php:6 | ",
-    "observer | App\\Event\\OrderPlaced | listeners.AuditListener.AuditListener.audit | src/EventListener/AuditListener.php:7 | ",
-    "observer | App\\Event\\OrderPlaced | subscribers.OrderSubscriber.OrderSubscriber.onOrderPlaced | src/EventSubscriber/OrderSubscriber.php:9 | ",
+    "observer | App\\Event\\OrderPlaced (AuditListener) | listeners.AuditListener.AuditListener.audit | src/EventListener/AuditListener.php:7 | ",
+    "observer | App\\Event\\OrderPlaced (OrderSubscriber) | subscribers.OrderSubscriber.OrderSubscriber.onOrderPlaced | src/EventSubscriber/OrderSubscriber.php:9 | ",
     "route | GET /api/orders/{id} | controller.OrderController.OrderController.show | src/Controller/OrderController.php:12 | GET",
     "route | GET /health | controller.HealthController.HealthController.check | config/routes.yaml:8 | GET",
     "route | POST /api/orders | controller.OrderController.OrderController.create | src/Controller/OrderController.php:17 | POST",
@@ -276,7 +276,7 @@ test("symfony: attribute routes under the routes.yaml prefix, a yaml route, subs
   assert.deepEqual(snapshot.manifest.frameworks?.map((f) => [f.name, f.files.map((file) => file.path)]), [["symfony", ["config/routes.yaml", "config/services.yaml"]]]);
 });
 
-test("symfony: services.yaml aliases, arguments and _defaults bind, subscribers and Messenger handlers are call edges with via and site", (t) => {
+test("symfony: services.yaml aliases, arguments and _defaults bind are call edges with via and site; an event and a message are event nodes with their subscribers, listeners and handlers", (t) => {
   const dir = app(t);
   const snapshot = snapshotOf(dir);
   const calls = (source: string) => snapshot.edges.filter((e) => e.kind === "call" && e.source === source && e.resolution === "resolved" && e.via !== undefined).map((e) => [e.via, e.target, e.site, e.owner ?? null]);
@@ -284,10 +284,18 @@ test("symfony: services.yaml aliases, arguments and _defaults bind, subscribers 
     ["preference", "infra.StripeGateway.StripeGateway.charge", "config/services.yaml:11:5", null],
     ["preference", "infra.SystemClock.SystemClock.now", "config/services.yaml:13:5", null],
     ["argument", "infra.EmailNotifier.EmailNotifier.send", "config/services.yaml:6:13", null],
-    ["observer", "listeners.AuditListener.AuditListener.audit", "src/EventListener/AuditListener.php:7:3", null],
-    ["observer", "subscribers.OrderSubscriber.OrderSubscriber.onOrderPlaced", "src/EventSubscriber/OrderSubscriber.php:9:5", null],
-    ["dispatch", "handlers.GenerateInvoiceHandler.GenerateInvoiceHandler.__invoke", "src/MessageHandler/GenerateInvoiceHandler.php:7:3", null],
+    // `$dispatcher->dispatch(new OrderPlaced)`, `$bus->dispatch(new GenerateInvoice)`: edges to the events their classes name.
+    ["dispatch", "events.App-Event-OrderPlaced", undefined, null],
+    ["dispatch", "events.App-Message-GenerateInvoice", undefined, null],
   ]);
+  assert.deepEqual(
+    snapshot.edges.filter((e) => e.via === "observer").map((e) => [e.source, e.target, e.site, e.binding]),
+    [
+      ["events.App-Event-OrderPlaced", "listeners.AuditListener.AuditListener.audit", "src/EventListener/AuditListener.php:7:3", "observer `AuditListener` (`App\\EventListener\\AuditListener::audit`) of the event `App\\Event\\OrderPlaced`"],
+      ["events.App-Event-OrderPlaced", "subscribers.OrderSubscriber.OrderSubscriber.onOrderPlaced", "src/EventSubscriber/OrderSubscriber.php:9:5", "observer `OrderSubscriber` (`App\\EventSubscriber\\OrderSubscriber::onOrderPlaced`) of the event `App\\Event\\OrderPlaced`"],
+      ["events.App-Message-GenerateInvoice", "handlers.GenerateInvoiceHandler.GenerateInvoiceHandler.__invoke", "src/MessageHandler/GenerateInvoiceHandler.php:7:3", "observer `handler GenerateInvoiceHandler` (`App\\MessageHandler\\GenerateInvoiceHandler::__invoke`) of the event `App\\Message\\GenerateInvoice`"],
+    ],
+  );
   // `arguments: $gateway` of one service wins over the alias of the interface.
   assert.deepEqual(calls("service.Billing.Billing.bill"), [["argument", "infra.PaypalGateway.PaypalGateway.charge", "config/services.yaml:18:13", null]]);
 });
@@ -298,13 +306,13 @@ test("symfony: a flow through the container and the dispatcher is static ok in b
   assert.equal(behavior.status, 0, behavior.stdout + behavior.stderr);
   assert.match(behavior.stdout, /flows\.md:5:5: static ok infra\.StripeGateway\.StripeGateway\.charge: called from service\.OrderService\.OrderService\.place through the preference `App\\Contract\\PaymentGateway → App\\Infra\\StripeGateway` in `config\/services\.yaml:11`\n/);
   assert.match(behavior.stdout, /flows\.md:6:5: static ok infra\.EmailNotifier\.EmailNotifier\.send: called from [^\n]* through the argument `notifier`/);
-  assert.match(behavior.stdout, /flows\.md:7:5: static ok subscribers\.OrderSubscriber\.OrderSubscriber\.onOrderPlaced: called from [^\n]* \(observer\)/);
-  assert.match(behavior.stdout, /flows\.md:8:5: static ok handlers\.GenerateInvoiceHandler\.GenerateInvoiceHandler\.__invoke: called from [^\n]* through the handler `App\\MessageHandler\\GenerateInvoiceHandler::__invoke` of the message `App\\Message\\GenerateInvoice` \(dispatch\)/);
+  assert.match(behavior.stdout, /flows\.md:7:5: static ok subscribers\.OrderSubscriber\.OrderSubscriber\.onOrderPlaced: reachable from service\.OrderService\.OrderService\.place via events\.App-Event-OrderPlaced /);
+  assert.match(behavior.stdout, /flows\.md:8:5: static ok handlers\.GenerateInvoiceHandler\.GenerateInvoiceHandler\.__invoke: reachable from [^\n]* via events\.App-Message-GenerateInvoice \([^\n]*the observer `handler GenerateInvoiceHandler`/);
   const shape = keylang(dir, ["check", "--static", "shape"]);
   for (const line of [5, 6, 7, 8]) assert.match(shape.stdout, new RegExp(`flows\\.md:${line}:5: static unverified `));
   assert.match(shape.stdout, /flows\.md:4:3: static ok service\.OrderService\.OrderService\.place/);
 
-  writeTree(dir, { "keylang/rules.md": "# rules\n\n- deny service infra\n- deny service handlers\n" });
+  writeTree(dir, { "keylang/rules.md": "# rules\n\n- deny service infra\n" });
   const denied = keylang(dir, ["check"]);
   assert.equal(denied.status, 1, denied.stdout);
   const k102 = denied.stdout.split("\n").filter((line) => line.includes("K102"));
@@ -313,8 +321,6 @@ test("symfony: a flow through the container and the dispatcher is static ok in b
     "config/services.yaml:11:5: K102 divergence: `service.OrderService.OrderService` depends on `infra.StripeGateway.StripeGateway` through the preference `App\\Contract\\PaymentGateway → App\\Infra\\StripeGateway` (config/services.yaml:11), which is denied by `deny service infra` (keylang/rules.md:3)",
     "config/services.yaml:13:5: K102 divergence: `service.OrderService.OrderService` depends on `infra.SystemClock.SystemClock` through the preference `App\\Contract\\Clock → App\\Infra\\SystemClock` (config/services.yaml:13), which is denied by `deny service infra` (keylang/rules.md:3)",
     "config/services.yaml:18:13: K102 divergence: `service.Billing.Billing` depends on `infra.PaypalGateway.PaypalGateway` through the argument `gateway` → `App\\Infra\\PaypalGateway` (config/services.yaml:18), which is denied by `deny service infra` (keylang/rules.md:3)",
-    // The service names only the message: the dependency on its handler is the framework's.
-    "src/MessageHandler/GenerateInvoiceHandler.php:7:3: K102 divergence: `service.OrderService.OrderService` depends on `handlers.GenerateInvoiceHandler.GenerateInvoiceHandler` through the handler `App\\MessageHandler\\GenerateInvoiceHandler::__invoke` of the message `App\\Message\\GenerateInvoice` (dispatch) (src/MessageHandler/GenerateInvoiceHandler.php:7), which is denied by `deny service handlers` (keylang/rules.md:4)",
   ]);
 });
 
@@ -346,6 +352,7 @@ test("symfony: `frameworks: []` turns the adapter off — ok becomes unverified,
   assert.equal(off.manifest.frameworks, undefined);
   assert.deepEqual(off.entries.filter((e) => e.framework === "symfony"), []);
   assert.ok(!off.edges.some((e) => e.via === "preference" || e.via === "argument" || e.via === "observer" || e.via === "dispatch"));
+  assert.ok(!Object.values(off.nodes).some((node) => node.kind === "event"));
   assert.ok(off.coverage.some((c) => c.kind === "skipped-file" && c.file === "config/services.yaml" && c.text === "framework:symfony"));
   const r = keylang(dir, ["check"]);
   const verdicts = (out: string): Map<string, string> => new Map([...out.matchAll(/^(\S+:\d+:\d+): static (ok|fail|unverified) /gm)].map((m) => [m[1]!, m[2]!]));
