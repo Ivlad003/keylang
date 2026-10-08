@@ -321,9 +321,13 @@ interface MapInputs extends SourceInputs {
   briefs: string | null;
 }
 
-/** The inputs of a snapshot as they are on disk now: the saved `keylang.json` and the snapshot's manifest. */
+/**
+ * The inputs of a snapshot: the `keylang.json` text the analysis parsed
+ * (not the disk now — a save made during the analysis must be caught at the
+ * commit, not become the base) and the snapshot's manifest.
+ */
 export function sourceInputs(config: Config, sources: readonly { path: string; sha256: string }[]): SourceInputs {
-  return { config: readOrNull(join(config.root, CONFIG_FILE)), sources };
+  return { config: config.text, sources };
 }
 
 /**

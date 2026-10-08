@@ -428,24 +428,23 @@
     - type [MapPlan](../../src/map.ts#L299)
     - type [SourceInputs](../../src/map.ts#L311)
     - type [MapInputs](../../src/map.ts#L319) extends SourceInputs <!-- internal -->
-    - fn [sourceInputs](../../src/map.ts#L325) (config: Config, sources: readonly { path: string; sha256: string }[]) → SourceInputs
-      - calls map.map.readOrNull
-    - fn [sourceInputProblems](../../src/map.ts#L334) (config: Config, inputs: SourceInputs, subject: string) → string[]
+    - fn [sourceInputs](../../src/map.ts#L329) (config: Config, sources: readonly { path: string; sha256: string }[]) → SourceInputs
+    - fn [sourceInputProblems](../../src/map.ts#L338) (config: Config, inputs: SourceInputs, subject: string) → string[]
       - calls map.map.readOrNull, base.config.sourceTree, map.snapshot.sha256
-    - type [CommittedStep](../../src/map.ts#L353) extends MapStep
-    - type [MapCommit](../../src/map.ts#L358)
-    - fn [planMap](../../src/map.ts#L369) (config: Config, r: MapResult) → MapPlan
+    - type [CommittedStep](../../src/map.ts#L357) extends MapStep
+    - type [MapCommit](../../src/map.ts#L362)
+    - fn [planMap](../../src/map.ts#L373) (config: Config, r: MapResult) → MapPlan
       - calls base.config.toPosix, map.map.targets, map.map.readOrNull, map.map.extraGenerated, map.map.mapConflicts, map.map.sourceInputs, map.map.briefsKey
-    - fn [mapPlanProblems](../../src/map.ts#L403) (plan: MapPlan) → string[]
+    - fn [mapPlanProblems](../../src/map.ts#L407) (plan: MapPlan) → string[]
       - calls base.safe-write.writeProblem, map.map.sourceInputProblems, map.map.briefsKey
-    - fn [commitMap](../../src/map.ts#L422) (plan: MapPlan, options: { signal?: AbortSignal; onStep?: (step: MapStep) => void } = {}) → Promise<MapCommit>
+    - fn [commitMap](../../src/map.ts#L426) (plan: MapPlan, options: { signal?: AbortSignal; onStep?: (step: MapStep) => void } = {}) → Promise<MapCommit>
       - calls base.safe-write.writeAtomic, base.safe-write.landing
-    - fn [briefsKey](../../src/map.ts#L451) (config: Config) → string <!-- internal -->
+    - fn [briefsKey](../../src/map.ts#L455) (config: Config) → string <!-- internal -->
       - calls map.snapshot.sha256, map.explanations.loadBriefs
-    - fn [readOrNull](../../src/map.ts#L456) (abs: string) → string | null <!-- internal -->
-    - fn [diffMap](../../src/map.ts#L465) (config: Config, r: MapResult) → MapDiff
+    - fn [readOrNull](../../src/map.ts#L460) (abs: string) → string | null <!-- internal -->
+    - fn [diffMap](../../src/map.ts#L469) (config: Config, r: MapResult) → MapDiff
       - calls map.map.mapConflicts, map.map.targets, map.map.extraGenerated
-    - fn [extractorCode](../../src/map.ts#L487) () → string <!-- internal -->
+    - fn [extractorCode](../../src/map.ts#L491) () → string <!-- internal -->
       - calls map.snapshot.sha256
   - module [php-imports](../../src/php-imports.ts#L1)
     - node external.node
