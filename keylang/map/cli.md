@@ -136,7 +136,7 @@
       - calls cli.cli.printBaseline, operations.operations.runOperation
     - fn [printBaseline](../../src/cli.ts#L1070) (result: OperationEnvelope<"baseline">) → number <!-- internal -->
     - fn [cmdFeature](../../src/cli.ts#L1085) (slug: string | undefined, format: string, since: string | undefined) → Promise<number> <!-- internal -->
-      - calls operations.operations.runOperation, map.analyze.findRoot, operations.feature.featureSummary
+      - calls operations.operations.runOperation, map.analyze.findRoot, operations.feature.gapLine, operations.feature.hintLine, operations.feature.featureSummary
     - fn [cmdHook](../../src/cli.ts#L1101) (args: readonly string[], checkOnly: boolean) → Promise<number> <!-- internal -->
       - calls cli.cli.cmdHookInstall, cli.cli.cmdHookStop
     - fn [cmdHookStop](../../src/cli.ts#L1116) () → Promise<number> <!-- internal -->

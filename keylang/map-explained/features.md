@@ -115,7 +115,7 @@
       - calls [features.agent-cli.killGroup](features.md#features.agent-cli.killGroup)
     - fn [runInvocation](../../src/agent-cli.ts#L574) (agent: string, inv: Invocation, root: string, call: CliCallOptions) → Promise<RunResult> <!-- internal -->
       <a id="features.agent-cli.runInvocation"></a><br>Spawns the CLI in its own process group, feeds it stdin, and resolves with the collected output or the first [`features.agent-cli.parseResultLine`](features.md#features.agent-cli.parseResultLine) hit, killing the group via [`features.agent-cli.killGroup`](features.md#features.agent-cli.killGroup). Rejects on timeout, abort ([`features.agent-cli.CliCancelled`](features.md#features.agent-cli.CliCancelled)), oversized… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-      - calls [features.agent-cli.hookExit](features.md#features.agent-cli.hookExit), [features.agent-cli.killGroup](features.md#features.agent-cli.killGroup), [features.agent-cli.CliCancelled](features.md#features.agent-cli.CliCancelled), [features.agent-cli.parseResultLine](features.md#features.agent-cli.parseResultLine), [features.agent-cli.stripAnsi](features.md#features.agent-cli.stripAnsi)
+      - calls [features.agent-cli.hookExit](features.md#features.agent-cli.hookExit), [features.agent-cli.CliCancelled](features.md#features.agent-cli.CliCancelled), [features.agent-cli.parseResultLine](features.md#features.agent-cli.parseResultLine), [features.agent-cli.killGroup](features.md#features.agent-cli.killGroup), [features.agent-cli.stripAnsi](features.md#features.agent-cli.stripAnsi)
     - fn [stripAnsi](../../src/agent-cli.ts#L677) (text: string) → string <!-- internal -->
       <a id="features.agent-cli.stripAnsi"></a><br>Removes ANSI escape sequences (ESC-bracket codes ending in a letter) from a string via a global regex replace, returning plain text. [`features.agent-cli.runInvocation`](features.md#features.agent-cli.runInvocation) uses it to clean captured CLI output. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [parseJson](../../src/agent-cli.ts#L682) (text: string) → unknown <!-- internal -->
@@ -144,7 +144,7 @@
       <a id="features.agent-context.contextForIds"></a><br>The bundle for a list of ids: each node and its neighbors, the flows and rules that name it, its code, and the e2e tests of those flows. A planned id that is not implemented is marked planned and incomplete.
       - calls [features.agent-context.addIdItems](features.md#features.agent-context.addIdItems), [features.agent-context.packOf](features.md#features.agent-context.packOf)
     - fn [contextPack](../../src/agent-context.ts#L73) (analysis: Analysis, input: ContextInput) → ContextPack
-      <a id="features.agent-context.contextPack"></a><br>Builds an agent context pack from the buffer plus IDs referenced on the cursor line (via [`lang.parser.parse`](lang.md#lang.parser.parse), `addIdItems`), with token estimates, cached per analysis in a bounded LRU keyed by a content hash. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
+      <a id="features.agent-context.contextPack"></a><br>Builds an agent context pack from the buffer plus IDs referenced on the cursor line (via [`lang.parser.parse`](lang.md#lang.parser.parse), `addIdItems`), with token estimates, cached per analysis in a bounded LRU keyed by a content hash. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [lang.parser.parse](lang.md#lang.parser.parse), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk), [features.agent-context.specDigest](features.md#features.agent-context.specDigest), [features.agent-context.estimateTokens](features.md#features.agent-context.estimateTokens), [features.agent-context.addIdItems](features.md#features.agent-context.addIdItems)
     - fn [packOf](../../src/agent-context.ts#L112) (items: ContextItem[], keySource: string) → ContextPack <!-- internal -->
       <a id="features.agent-context.packOf"></a><br>Bundles a list of context items into a pack, summing their token counts and tagging it with a SHA-256 hex digest of the given key source. Used by [`features.agent-context.contextForIds`](features.md#features.agent-context.contextForIds) to assemble its result. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
@@ -172,7 +172,7 @@
     - span [base.span](base.md#base.span)
     - fn [baselineText](../../src/baseline.ts#L25) (snapshot: AnalysisSnapshot) → string
       <a id="features.baseline.baselineText"></a><br>Baseline rules for one snapshot. Layers come from `keylang.json`, in code-unit order; `unassigned` is a source only when a module is in it.
-      - calls [features.baseline.externalModule](features.md#features.baseline.externalModule)
+      - calls [base.span.compareText](base.md#base.span.compareText), [features.baseline.externalModule](features.md#features.baseline.externalModule)
     - fn [externalModule](../../src/baseline.ts#L62) (snapshot: AnalysisSnapshot, id: string) → string | null <!-- internal -->
       <a id="features.baseline.externalModule"></a><br>The external module an id belongs to (`external.stripe` for a symbol under it).
     - fn [baselinePath](../../src/baseline.ts#L74) (config: Pick<Config, "dir">) → string
@@ -211,7 +211,7 @@
       - calls [features.changed.ruleHits](features.md#features.changed.ruleHits), [features.changed.covers](features.md#features.changed.covers), [features.changed.flowLinesTouching](features.md#features.changed.flowLinesTouching), [check.assess.sameFinding](check.md#check.assess.sameFinding)
     - fn [hookFails](../../src/changed.ts#L71) (report: { diagnostics: readonly Diagnostic[]; verdicts: readonly Verdict[] }) → HookFail[]
       <a id="features.changed.hookFails"></a><br>Error diagnostics, then fail verdicts that are not the same finding.
-      - calls [check.assess.sameFinding](check.md#check.assess.sameFinding)
+      - calls [base.diag.isError](base.md#base.diag.isError), [check.assess.sameFinding](check.md#check.assess.sameFinding)
     - fn [hookDecision](../../src/changed.ts#L82) (event: { stop_hook_active?: boolean }, fails: readonly HookFail[]) → string
       <a id="features.changed.hookDecision"></a><br>Stdin event plus the fails of one changed check. `stop_hook_active` never blocks. The same inputs return the same JSON.
     - fn [uncheckedTurn](../../src/changed.ts#L96) (error: string) → { line: string; decision: string }
@@ -247,7 +247,7 @@
       - calls [features.check-format.githubProperty](features.md#features.check-format.githubProperty), [features.check-format.ruleOf](features.md#features.check-format.ruleOf), [features.check-format.githubData](features.md#features.check-format.githubData)
     - fn [sarifLog](../../src/check-format.ts#L43) (report: CheckReportData) → unknown <!-- internal -->
       <a id="features.check-format.sarifLog"></a><br>Builds a SARIF 2.1 log object from a check report, keeping only non-"ok" results and mapping each to a result with rule id, level, message, file/line/column location and verdict metadata. Rule ids come from [`features.check-format.ruleOf`](features.md#features.check-format.ruleOf), their descriptions from… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - calls [features.check-format.ruleText](features.md#features.check-format.ruleText), [features.check-format.ruleOf](features.md#features.check-format.ruleOf)
+      - calls [features.check-format.ruleOf](features.md#features.check-format.ruleOf), [features.check-format.ruleText](features.md#features.check-format.ruleText)
     - fn [ruleOf](../../src/check-format.ts#L78) (result: CheckResult) → string <!-- internal -->
       <a id="features.check-format.ruleOf"></a><br>The SARIF rule and GitHub title: every unverified result is `unverified`, a finding its K-code or evidence kind.
     - fn [ruleText](../../src/check-format.ts#L90) (id: string) → string <!-- internal -->
@@ -276,8 +276,8 @@
     - type [CheckCounts](../../src/check-results.ts#L84)
       <a id="features.check-results.CheckCounts"></a><br>The summary on stderr: errors and failed verdicts, unverified and ok verdicts.
     - fn [checkReport](../../src/check-results.ts#L98) (verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]) → CheckReport
-      <a id="features.check-results.checkReport"></a><br>Builds the check report: structured results via [`features.check-results.checkResults`](features.md#features.check-results.checkResults), printable lines for diagnostics and non-duplicate verdicts (deduped with [`check.assess.sameFinding`](check.md#check.assess.sameFinding)), plus fail/unverified/ok counts and distinct holes. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
-      - calls [check.assess.sameFinding](check.md#check.assess.sameFinding), [features.check-results.checkResults](features.md#features.check-results.checkResults)
+      <a id="features.check-results.checkReport"></a><br>Builds the check report: structured results via [`features.check-results.checkResults`](features.md#features.check-results.checkResults), printable lines for diagnostics and non-duplicate verdicts (deduped with [`check.assess.sameFinding`](check.md#check.assess.sameFinding)), plus fail/unverified/ok counts and distinct holes. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
+      - calls [check.assess.sameFinding](check.md#check.assess.sameFinding), [features.check-results.checkResults](features.md#features.check-results.checkResults), [base.diag.formatDiagnostic](base.md#base.diag.formatDiagnostic), [check.verdict.formatVerdict](check.md#check.verdict.formatVerdict), [base.diag.isError](base.md#base.diag.isError)
     - fn [checkExitCode](../../src/check-results.ts#L116) (counts: CheckCounts, strict: boolean) → 0 | 1
       <a id="features.check-results.checkExitCode"></a><br>The exit code of `keylang check`: 1 for a failure, or with `strict` for an unverified verdict; else 0 — an unverified one stays visible.
   - module [clone](../../src/clone.ts#L1)
@@ -419,38 +419,38 @@
     - type [FlowDraft](../../src/draft.ts#L14)
       <a id="features.draft.FlowDraft"></a><br>Plain data shape for a flow being built: its name, the raw `# flow` section text (newline-terminated), and the ordered list of step IDs with the trigger first. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [draftFlow](../../src/draft.ts#L22) (snapshot: AnalysisSnapshot, trigger: string, options: { name?: string; depth?: number } = {}) → FlowDraft
-      <a id="features.draft.draftFlow"></a><br>Walks the call graph from a fn in an `AnalysisSnapshot` to a bounded depth, skipping non-fn and external callees, and emits a Markdown flow with `trigger`/`step` lines. Unresolved or dynamic calls per step are appended as HTML comments, and the ordered step IDs are returned… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [withFlow](../../src/draft.ts#L60) (existing: string | null, draft: Pick<FlowDraft, "name" | "text">) → string
+      <a id="features.draft.draftFlow"></a><br>Walks the call graph from a fn in an `AnalysisSnapshot` to a bounded depth, skipping non-fn and external callees, and emits a Markdown flow with `trigger`/`step` lines. Unresolved or dynamic calls per step are appended as HTML comments, and the ordered step IDs are returned… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+    - fn [withFlow](../../src/draft.ts#L67) (existing: string | null, draft: Pick<FlowDraft, "name" | "text">) → string
       <a id="features.draft.withFlow"></a><br>A spec with the draft added: the section of the same flow is replaced, whatever follows the name on its heading line, otherwise the draft is appended. Sections come from the parser, so a `# ` line in a code block is not a heading.
       - calls [lang.parser.parse](lang.md#lang.parser.parse), [features.draft.nextHeading](features.md#features.draft.nextHeading), [base.safe-write.allCrlf](base.md#base.safe-write.allCrlf)
-    - fn [withRules](../../src/draft.ts#L84) (existing: string | null, draftText: string) → string
+    - fn [withRules](../../src/draft.ts#L91) (existing: string | null, draftText: string) → string
       <a id="features.draft.withRules"></a><br>`draft rules` into an existing spec: the drafted rules go at the end of its last `# rules` section, or into a new `# rules` section at the end, never under a trailing `# flow`. A rule the file already has (comments aside) is not repeated.
       - calls [lang.parser.parse](lang.md#lang.parser.parse), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.parser.renderMeaning](lang.md#lang.parser.renderMeaning), [features.draft.nextHeading](features.md#features.draft.nextHeading), [base.safe-write.allCrlf](base.md#base.safe-write.allCrlf)
-    - fn [nextHeading](../../src/draft.ts#L114) (sections: readonly { heading: { span: { start: { line: number } } } | null }[], index: number) → number | null <!-- internal -->
+    - fn [nextHeading](../../src/draft.ts#L121) (sections: readonly { heading: { span: { start: { line: number } } } | null }[], index: number) → number | null <!-- internal -->
       <a id="features.draft.nextHeading"></a><br>0-based line index of the heading after `sections[index]`, or null at the end of the file.
-    - fn [distinctNames](../../src/draft.ts#L124) (drafts: readonly FlowDraft[]) → FlowDraft[]
+    - fn [distinctNames](../../src/draft.ts#L131) (drafts: readonly FlowDraft[]) → FlowDraft[]
       <a id="features.draft.distinctNames"></a><br>Flow names that keep drafts apart in one spec: two `save` triggers (`A.save`, `B.save`) become `A-save` and `B-save`, taking as many trailing ID segments as it needs.
-    - fn [draftRules](../../src/draft.ts#L154) (snapshot: AnalysisSnapshot, cyclic: boolean) → string
+    - fn [draftRules](../../src/draft.ts#L161) (snapshot: AnalysisSnapshot, cyclic: boolean) → string
       <a id="features.draft.draftRules"></a><br>`draft rules --mode algo`: rules the current code already keeps, so each passes `check` as written. Layers in an order where every observed dependency points down (`a < b`: `b` may use `a`), when the layers form no cycle; otherwise a `deny` for each pair used in one direction…
       - calls [features.draft.layerOrder](features.md#features.draft.layerOrder)
-    - fn [layerOrder](../../src/draft.ts#L179) (layers: readonly string[], uses: ReadonlyMap<string, ReadonlySet<string>>) → string[] | null <!-- internal -->
+    - fn [layerOrder](../../src/draft.ts#L186) (layers: readonly string[], uses: ReadonlyMap<string, ReadonlySet<string>>) → string[] | null <!-- internal -->
       <a id="features.draft.layerOrder"></a><br>Layers with those used first (Kahn, ties by name); null for a cycle.
-    - fn [codeToSpecTriggers](../../src/draft.ts#L198) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; triggers: string[] }
+    - fn [codeToSpecTriggers](../../src/draft.ts#L205) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; triggers: string[] }
       <a id="features.draft.codeToSpecTriggers"></a><br>`code-to-spec <path[:line]>`: the functions the code position names — the innermost fn whose range holds the line, or every exported fn of the file in declaration order without a line — and the spec's name: the fn's, or the file's module's. Reads the snapshot only; a position…
-    - fn [codeToSpec](../../src/draft.ts#L221) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; drafts: FlowDraft[] }
+    - fn [codeToSpec](../../src/draft.ts#L228) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; drafts: FlowDraft[] }
       <a id="features.draft.codeToSpec"></a><br>`code-to-spec <path[:line]>`: each fn `codeToSpecTriggers` names as a flow draft; same-named fns get distinct flow names.
       - calls [features.draft.codeToSpecTriggers](features.md#features.draft.codeToSpecTriggers), [features.draft.draftFlow](features.md#features.draft.draftFlow), [features.draft.distinctNames](features.md#features.draft.distinctNames)
-    - type [ChangedLines](../../src/draft.ts#L228)
+    - type [ChangedLines](../../src/draft.ts#L235)
       <a id="features.draft.ChangedLines"></a><br>Changed lines per file, 1-based and inclusive; `all` for a file git does not track yet.
-    - fn [diffHunks](../../src/draft.ts#L234) (diff: string) → Map<string, [number, number][]>
+    - fn [diffHunks](../../src/draft.ts#L241) (diff: string) → Map<string, [number, number][]>
       <a id="features.draft.diffHunks"></a><br>The new-side line ranges of `git diff --unified=0`. A deletion is the line it happened after, so the fn around it counts as changed.
       - calls [features.draft.gitPath](features.md#features.draft.gitPath)
-    - fn [deletedDiffPaths](../../src/draft.ts#L257) (diff: string) → string[]
+    - fn [deletedDiffPaths](../../src/draft.ts#L264) (diff: string) → string[]
       <a id="features.draft.deletedDiffPaths"></a><br>Paths removed in `git diff` (`--- a/file` then `+++ /dev/null`). `diffHunks` follows the new side, so a deletion has no hunk to land on.
       - calls [features.draft.gitPath](features.md#features.draft.gitPath)
-    - fn [gitPath](../../src/draft.ts#L271) (text: string) → string <!-- internal -->
+    - fn [gitPath](../../src/draft.ts#L278) (text: string) → string <!-- internal -->
       <a id="features.draft.gitPath"></a><br>A path as `git diff` prints it: C-quoted (`"b/\303\251.ts"`, `"b/a\"b.ts"`) when it holds a quote, a backslash or a control byte.
-    - fn [changedFlows](../../src/draft.ts#L299) (snapshot: AnalysisSnapshot, changed: ChangedLines, named: ReadonlySet<string>) → { drafts: FlowDraft[]; named: string[] }
+    - fn [changedFlows](../../src/draft.ts#L306) (snapshot: AnalysisSnapshot, changed: ChangedLines, named: ReadonlySet<string>) → { drafts: FlowDraft[]; named: string[] }
       <a id="features.draft.changedFlows"></a><br>`code-to-spec --since <ref>`: a flow draft for each fn the change touches. A fn some hand-written spec already names is reported, not drafted again — its flow is the place to look.
       - calls [features.draft.draftFlow](features.md#features.draft.draftFlow), [features.draft.distinctNames](features.md#features.draft.distinctNames)
   - module [explain-edge](../../src/explain-edge.ts#L1)
@@ -469,14 +469,14 @@
       <a id="features.explain-edge.under"></a><br>Checks whether a dotted node ID is the given scope itself or nested beneath it by testing for an exact match or a `scope.` prefix. Used by [`features.explain-edge.explainEdge`](features.md#features.explain-edge.explainEdge) to decide which side of an edge a node belongs to. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [explainEdge](../../src/explain-edge.ts#L40) (snapshot: AnalysisSnapshot, from: string, to: string) → EdgeExplanation
       <a id="features.explain-edge.explainEdge"></a><br>The edges and the coverage between two known ids (see `edgeIdKnown`).
-      - calls [features.explain-edge.under](features.md#features.explain-edge.under), [base.span.compareText](base.md#base.span.compareText), [map.snapshot.leavesUnresolved](map.md#map.snapshot.leavesUnresolved)
+      - calls [base.span.compareText](base.md#base.span.compareText), [features.explain-edge.under](features.md#features.explain-edge.under), [map.snapshot.leavesUnresolved](map.md#map.snapshot.leavesUnresolved)
     - fn [edgeLine](../../src/explain-edge.ts#L59) (edge: SnapshotEdge) → string
       <a id="features.explain-edge.edgeLine"></a><br>One edge as the CLI prints it: kind, resolution, provenance, range, fragment, `source → target`, candidates, hook, reason.
-    - fn [holeLine](../../src/explain-edge.ts#L68) (hole: CoverageItem) → string
+    - fn [holeLine](../../src/explain-edge.ts#L73) (hole: CoverageItem) → string
       <a id="features.explain-edge.holeLine"></a><br>One unresolved construct as the CLI prints it.
-    - fn [edgeExplanationLines](../../src/explain-edge.ts#L73) (explanation: EdgeExplanation) → string[]
+    - fn [edgeExplanationLines](../../src/explain-edge.ts#L78) (explanation: EdgeExplanation) → string[]
       <a id="features.explain-edge.edgeExplanationLines"></a><br>The CLI's stdout of `check --explain-edge`, line by line.
-      - calls [features.explain-edge.edgeLine](features.md#features.explain-edge.edgeLine)
+      - calls [features.explain-edge.edgeLine](features.md#features.explain-edge.edgeLine), [features.explain-edge.holeLine](features.md#features.explain-edge.holeLine)
   - module [explain-inventory](../../src/explain-inventory.ts#L1)
     <a id="features.explain-inventory"></a><br>Which explanations need work, without asking a model or writing a file: the stale and gone saved explanations (`explain --stale`), and the plan of a brief batch (`explain --missing|--stale` without `--llm`) with its dry-run size. One result for the CLI and the TUI; the batch…
     - analyze [map.analyze](map.md#map.analyze)
@@ -791,7 +791,7 @@
       - calls [features.git-changes.assertRef](features.md#features.git-changes.assertRef), [features.git-changes.gitIn](features.md#features.git-changes.gitIn)
     - fn [readFeatureBase](../../src/git-changes.ts#L179) (root: string, path: string, since: string | undefined, label: string) → FeatureBase
       <a id="features.git-changes.readFeatureBase"></a><br>The feature file at its base commit, and the files changed since that commit as `check --changed --since <base>` reads them: a rule fail of this change is one that touches them. The base is `since`, else `featureBaseOrigin`.
-      - calls [features.git-changes.featureBaseOrigin](features.md#features.git-changes.featureBaseOrigin), [features.git-changes.gitFileAt](features.md#features.git-changes.gitFileAt), [features.git-changes.gitChangedFiles](features.md#features.git-changes.gitChangedFiles), [lang.parser.parse](lang.md#lang.parser.parse)
+      - calls [features.git-changes.featureBaseOrigin](features.md#features.git-changes.featureBaseOrigin), [features.git-changes.gitFileAt](features.md#features.git-changes.gitFileAt), [features.git-changes.gitChangedFiles](features.md#features.git-changes.gitChangedFiles), [base.span.compareText](base.md#base.span.compareText), [lang.parser.parse](lang.md#lang.parser.parse)
     - fn [featureBaseOrigin](../../src/git-changes.ts#L218) (root: string, label: string) → BaseOrigin
       <a id="features.git-changes.featureBaseOrigin"></a><br>The base `feature` judges a change against when no `since` is given: the merge-base of HEAD with the main branch, so a fail committed on a feature branch is still the change's own. The main branch is the one `refs/remotes/origin/HEAD` points at, else a local `main`, `master`…
       - calls [features.git-changes.gitIn](features.md#features.git-changes.gitIn)
@@ -1213,6 +1213,7 @@
       <a id="features.proposals.notPlain"></a><br>The write protocol's first test (`writeProblem`): a plain relative POSIX path, before anything on disk is looked at.
     - fn [unreadDirectory](../../src/proposals.ts#L33) (dirs: readonly string[]) → boolean <!-- internal -->
       <a id="features.proposals.unreadDirectory"></a><br>A directory below the spec directory, or the root for code, that `check` and the map do not read: hidden, `node_modules`, `target`.
+      - calls [features.proposals.unreadName](features.md#features.proposals.unreadName)
     - fn [unreadName](../../src/proposals.ts#L38) (name: string) → boolean <!-- internal -->
       <a id="features.proposals.unreadName"></a><br>Case does not tell the directories apart: on a case-insensitive file system `Node_Modules` is `node_modules`.
     - fn [statOrNull](../../src/proposals.ts#L43) (abs: string) → Stats | null <!-- internal -->
@@ -1259,7 +1260,7 @@
       - calls [base.config.toPosix](base.md#base.config.toPosix), [features.proposals.notPlain](features.md#features.proposals.notPlain)
     - fn [pendingTargets](../../src/proposals.ts#L272) (root: string) → string[]
       <a id="features.proposals.pendingTargets"></a><br>Every target with a file or a link under `.keylang/proposals/`, sorted. The store is listed only while it stays inside the repository; a link in it is listed, never followed.
-      - calls [base.safe-write.landing](base.md#base.safe-write.landing), [map.analyze.within](map.md#map.analyze.within), [base.config.toPosix](base.md#base.config.toPosix)
+      - calls [base.safe-write.landing](base.md#base.safe-write.landing), [map.analyze.within](map.md#map.analyze.within), [base.config.toPosix](base.md#base.config.toPosix), [base.span.compareText](base.md#base.span.compareText)
     - fn [storeEntry](../../src/proposals.ts#L287) (root: string, target: string) → { abs: string; link: boolean } | { problem: string } | null <!-- internal -->
       <a id="features.proposals.storeEntry"></a><br>The store entry of `target` where its directory lands: null when there is none, else the entry and whether it is a link. A store whose directory leads out of the repository is a problem, and nothing there is looked at.
       - calls [base.safe-write.landing](base.md#base.safe-write.landing), [map.analyze.within](map.md#map.analyze.within)
@@ -1444,12 +1445,12 @@
       - calls [base.config.specPath](base.md#base.config.specPath)
     - fn [specStatements](../../src/stale.ts#L72) (docs: readonly Document[]) → Statement[]
       <a id="features.stale.specStatements"></a><br>The statements of hand-written specs: descriptions of nodes in map and flow sections, and every flow `when`, `then` and `invariant`. Generated map files are skipped: their text is the code's own.
-      - calls [features.stale.sectionRefs](features.md#features.stale.sectionRefs), [features.stale.subtreeRefs](features.md#features.stale.subtreeRefs), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes)
+      - calls [base.span.compareText](base.md#base.span.compareText), [features.stale.sectionRefs](features.md#features.stale.sectionRefs), [features.stale.subtreeRefs](features.md#features.stale.subtreeRefs), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes)
     - fn [subtreeRefs](../../src/stale.ts#L107) (node: Node) → string[] <!-- internal -->
       <a id="features.stale.subtreeRefs"></a><br>Collects the target strings of every ref on a node and, recursively, on all of its descendants, returning them as one flat list; [`features.stale.specStatements`](features.md#features.stale.specStatements) uses it to gather the references a document subtree points at. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [sectionRefs](../../src/stale.ts#L111) (section: Section) → string[] <!-- internal -->
-      <a id="features.stale.sectionRefs"></a><br>Collects every reference ID found anywhere in a document section by expanding its nodes via [`lang.ir.sectionNodes`](lang.md#lang.ir.sectionNodes) and flattening each node's subtree references into one list. Used by [`features.stale.specStatements`](features.md#features.stale.specStatements) to tie spec statements to the code they mention. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes)
+      <a id="features.stale.sectionRefs"></a><br>Collects every reference ID found anywhere in a document section by expanding its nodes via [`lang.ir.sectionNodes`](lang.md#lang.ir.sectionNodes) and flattening each node's subtree references into one list. Used by [`features.stale.specStatements`](features.md#features.stale.specStatements) to tie spec statements to the code they mention. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+      - calls [features.stale.subtreeRefs](features.md#features.stale.subtreeRefs), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes)
     - fn [statementPrint](../../src/stale.ts#L120) (snapshot: AnalysisSnapshot, subjects: readonly string[]) → { fingerprint: string; incomplete: string[] }
       <a id="features.stale.statementPrint"></a><br>The fingerprint of a statement's subjects in the snapshot, and what makes it incomplete. A subject the snapshot lacks hashes as `?`, so it turning up later is a change too.
       - calls [map.explanations.snapshotBaseline](map.md#map.explanations.snapshotBaseline), [features.stale.closureComplete](features.md#features.stale.closureComplete)
@@ -1462,6 +1463,7 @@
       <a id="features.stale.acceptBaseline"></a><br>The baseline after accepting `report`: the checked files' entries are replaced by the current fingerprints (a file with no statement left is dropped); other files keep theirs.
     - fn [baselineJson](../../src/stale.ts#L185) (baseline: StaleBaseline) → string
       <a id="features.stale.baselineJson"></a><br>The baseline as committed: files, then keys in code-unit order; two-space JSON with a final newline.
+      - calls [base.span.compareText](base.md#base.span.compareText)
     - fn [parseBaseline](../../src/stale.ts#L200) (text: string, path: string) → StaleBaseline
       <a id="features.stale.parseBaseline"></a><br>Reads a committed baseline; throws `path: problem` naming the field when it is not one.
       - calls [base.diag.errorText](base.md#base.diag.errorText), [features.stale.isRecord](features.md#features.stale.isRecord)
@@ -1569,6 +1571,7 @@
       <a id="features.voice.seamWord"></a><br>A word as the overlap repeats it: case and punctuation differ between windows (`card,` / `Card`).
     - fn [joinWindows](../../src/voice.ts#L108) (texts: readonly string[]) → string
       <a id="features.voice.joinWindows"></a><br>Joins window texts, dropping the words the overlap repeated at a seam: the longest run that ends one window and starts the next.
+      - calls [features.voice.seamWord](features.md#features.voice.seamWord)
     - fn [glossary](../../src/voice.ts#L135) (analysis: Analysis, path: string, text: string, line: number) → string[]
       <a id="features.voice.glossary"></a><br>At most 30 IDs near the cursor: those of the current flow, the neighbours of the IDs on the cursor line, and those IDs last — the end of a prompt weighs most.
       - calls [lang.parser.parse](lang.md#lang.parser.parse), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)
