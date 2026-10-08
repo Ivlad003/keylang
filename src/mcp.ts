@@ -368,6 +368,21 @@ export function mcpServer(root: string, version: string): McpServer {
   );
 
   server.registerTool(
+    "project_tour",
+    {
+      description:
+        "One page for a newcomer, as `keylang tour --json` computes it, without a model: what the system is (the README or manifest brief, languages, sizes, layer READMEs); layers with files, fns and import coupling, and their largest modules; business processes domain → process → flows (from the names README of `flows discover --names` with its provenance, else the discovered flows by layer with their doc-comment descriptions), each flow with its `/diagrams#view=…` link and view file, and the hand-written flows; entry points by kind with their first labels; events (or why there are none); integrations (outgoing by client with hosts, incoming webhooks, queues); blind spots and logic in data (top modules by holes, top configuration readers, each with what to read by hand); and the 5–10 fns to read first (by flows through them, then callers, then ID) with file:line and brief. `format: markdown` gives the page instead. A view; read-only.",
+      inputSchema: { format: z.enum(["json", "markdown"]).optional() },
+    },
+    async ({ format }) => {
+      const result = await runOperation({ kind: "tour", root }, { analyze: () => fresh() });
+      if (result.payload === null) return failure(result.messages[0]?.text ?? "tour failed");
+      const { text, out: _out, ...tour } = result.payload;
+      return format === "markdown" ? { content: [{ type: "text" as const, text }] } : json(tour);
+    },
+  );
+
+  server.registerTool(
     "migration_status",
     {
       description:

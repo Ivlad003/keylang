@@ -34,6 +34,8 @@ export type Code =
   | "K106"
   /** Architecture code depends on a file `outside` in keylang.json puts outside the architecture. */
   | "K107"
+  /** The spec was weakened since the base commit (`hook stop`, `check --changed`, `feature`): a rule's scope, a rule line or a flow step taken away. */
+  | "K108"
   // flows (M2)
   /** A `planned` declaration disagrees with the implemented symbol (kind or signature). */
   | "K201"

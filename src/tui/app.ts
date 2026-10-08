@@ -2180,6 +2180,7 @@ export class App {
       // The blind spots read the code, keylang.json and the hand-written flows (a trigger they name has a flow).
       case "coverage":
       case "integrations":
+      case "tour":
       // The parity reads the code, keylang.json, the specs (flows and `# migration` rows) and the old stack, read-only.
       case "migration-status":
         return { inputs: specs };
@@ -3296,6 +3297,8 @@ export class App {
         return this.requestOperation("coverage", { kind: "coverage", root: this.state.root });
       case "integrations":
         return this.requestOperation("integrations", { kind: "integrations", root: this.state.root });
+      case "tour":
+        return this.requestOperation("tour", { kind: "tour", root: this.state.root });
       case "migration-status":
         return this.requestOperation("migration-status", { kind: "migration-status", root: this.state.root });
       case "feature":
