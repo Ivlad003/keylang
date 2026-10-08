@@ -694,11 +694,15 @@
     - spec-ir lang.spec-ir
     - snapshot map.snapshot
     - explanations map.explanations
-    - type [TracePlan](../../src/trace-plan.ts#L16)
-    - fn [tracePlan](../../src/trace-plan.ts#L29) (config: Config, flow: string) → Promise<{ plan: TracePlan; index: AnalysisSnapshot; omitted: string[] }>
-      - calls map.trace-plan.flowSymbols, map.map.generateMap
-    - fn [tracePlanText](../../src/trace-plan.ts#L49) (plan: TracePlan) → string
-    - fn [flowSymbols](../../src/trace-plan.ts#L54) (root: string, dir: string, flow: string) → Set<string> | null
+    - type [TracePlan](../../src/trace-plan.ts#L19)
+    - fn [tracePlan](../../src/trace-plan.ts#L32) (config: Config, flow: string) → Promise<{ plan: TracePlan; index: AnalysisSnapshot; omitted: string[] }>
+      - calls map.trace-plan.flowSymbols, map.map.generateMap, map.trace-plan.planOf
+    - fn [entryTracePlan](../../src/trace-plan.ts#L45) (config: Config, entry: string, flow?: string) → Promise<{ plan: TracePlan; index: AnalysisSnapshot; omitted: string[] }>
+      - calls map.map.generateMap, map.trace-plan.planOf, map.trace-plan.reachableFrom
+    - fn [reachableFrom](../../src/trace-plan.ts#L59) (index: AnalysisSnapshot, entry: string) → Set<string>
+    - fn [planOf](../../src/trace-plan.ts#L116) (index: AnalysisSnapshot, flow: string, wanted: ReadonlySet<string>) → { plan: TracePlan; index: AnalysisSnapshot; omitted: string[] } <!-- internal -->
+    - fn [tracePlanText](../../src/trace-plan.ts#L133) (plan: TracePlan) → string
+    - fn [flowSymbols](../../src/trace-plan.ts#L138) (root: string, dir: string, flow: string) → Set<string> | null
       - calls lang.files.collectMdFiles, map.explanations.isStoredExplanation, lang.spec-ir.compileSpec, lang.parser.parse, lang.spec-ir.walkFlow
   - module [wire-gen](../../src/wire-gen.ts#L1)
     - node external.node

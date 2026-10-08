@@ -18,7 +18,7 @@ import { parseReportText } from "../parse-format.ts";
 import { allCrlf, isGeneratedText, landing, writeAtomic } from "../safe-write.ts";
 import { compareText } from "../span.ts";
 import { changedPathSet, deletedModuleIds, gitChangedFiles, type ChangedFiles } from "../git-changes.ts";
-import { tracePlan, tracePlanText } from "../trace-plan.ts";
+import { entryTracePlan, tracePlan, tracePlanText } from "../trace-plan.ts";
 import type { ChangedSlice, CheckPayload, CheckRequest, ExplainEdgePayload, ExplainEdgeRequest, FmtFile, FmtPayload, FmtRequest, OperationContext, OperationEnvelope, OperationMessage, OperationStatus, ParsePayload, ParseRequest, TracePlanPayload, TracePlanRequest } from "./types.ts";
 import { empty } from "./shared.ts";
 
@@ -377,18 +377,21 @@ export async function runParse(request: ParseRequest, context: OperationContext)
 /**
  * `keylang trace-plan <flow>`: the flow's `trigger` and `step` IDs from the
  * saved specs, then a fresh snapshot of the saved code — never the session's
- * or a cached index. Nothing is written and nothing is run. Code 0 with the
- * plan; 2 with no payload for a missing name, an unknown flow or a broken
+ * or a cached index. With `entry` (`trace-plan --entry <id>`): the fns
+ * reachable from that fn (`reachableFrom`), named `flow` or the entry's last
+ * segment. Nothing is written and nothing is run. Code 0 with the plan; 2
+ * with no payload for a missing name, an unknown flow or entry or a broken
  * keylang.json, with the CLI's message.
  */
 export async function runTracePlan(request: TracePlanRequest, context: OperationContext): Promise<OperationEnvelope<"trace-plan">> {
   if (!isAbsolute(request.root)) return empty("trace-plan", "failed", 2, "trace-plan: root must be an absolute path");
-  if (request.flow === "") return empty("trace-plan", "failed", 2, "trace-plan: a flow name is required");
+  if (request.flow === "" && request.entry === undefined) return empty("trace-plan", "failed", 2, "trace-plan: a flow name is required");
+  if (request.entry === "") return empty("trace-plan", "failed", 2, "trace-plan: --entry needs a fn id");
   if (context.signal?.aborted) return empty("trace-plan", "cancelled", null);
-  context.onProgress?.({ text: "reading the flow and a fresh snapshot of the saved code" });
+  context.onProgress?.({ text: request.entry === undefined ? "reading the flow and a fresh snapshot of the saved code" : "a fresh snapshot of the saved code and what the entry reaches" });
   let found: Awaited<ReturnType<typeof tracePlan>>;
   try {
-    found = await tracePlan(loadConfig(request.root), request.flow);
+    found = request.entry === undefined ? await tracePlan(loadConfig(request.root), request.flow) : await entryTracePlan(loadConfig(request.root), request.entry, request.flow);
   } catch (error) {
     return empty("trace-plan", "failed", 2, errorText(error));
   }

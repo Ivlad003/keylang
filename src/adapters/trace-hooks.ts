@@ -1,7 +1,8 @@
 // Module hooks for the trace adapter (they run on Node's hooks thread, with a
-// module graph of their own). `initialize` builds the snapshot, finds the
-// symbols of one flow, and plans a wrapper for each function body; `load`
-// applies the plan to the source of those files only.
+// module graph of their own). `initialize` builds the snapshot and finds the
+// symbols of one flow, or reads them from a `keylang trace-plan` file, and
+// plans a wrapper for each function body; `load` applies the plan to the
+// source of those files only.
 
 import { readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
@@ -15,7 +16,10 @@ import { flowSymbols } from "../trace-plan.ts";
 
 export interface TraceHooksData {
   root: string;
-  flow: string;
+  /** The flow whose trigger and steps are instrumented, read from the specs; null with `plan`. */
+  flow: string | null;
+  /** A plan from `keylang trace-plan` (absolute path): its symbols instead of a flow's, and its snapshot. */
+  plan: string | null;
   port: MessagePort;
 }
 
@@ -47,22 +51,30 @@ let port: MessagePort | null = null;
 export async function initialize(data: TraceHooksData): Promise<void> {
   port = data.port;
   try {
-    const config = loadConfig(data.root);
-    const { index } = await generateMap(config);
-    const wanted = flowSymbols(data.root, config.dir, data.flow) ?? new Set<string>();
-    const byFile = new Map<string, { id: string; line: number; col: number }[]>();
-    for (const id of wanted) {
-      const node = index.nodes[id];
-      if (node?.kind !== "fn" || !node.file || node.line === null || node.col === null) continue;
-      const list = byFile.get(node.file) ?? [];
-      list.push({ id, line: node.line, col: node.col });
-      byFile.set(node.file, list);
+    const { snapshotId, symbols } = data.plan !== null ? readPlan(data.plan) : await flowPlan(data.root, data.flow ?? "");
+    const byFile = new Map<string, PlannedSymbol[]>();
+    for (const symbol of symbols) {
+      const list = byFile.get(symbol.file) ?? [];
+      list.push(symbol);
+      byFile.set(symbol.file, list);
     }
     const instrumented: string[] = [];
     const unplanned: Record<string, string> = {};
     const files: { path: string; ids: string[] }[] = [];
     for (const [file, fns] of byFile) {
-      const src = readFileSync(join(data.root, file), "utf8");
+      let src: string;
+      try {
+        src = readFileSync(join(data.root, file), "utf8");
+      } catch {
+        for (const fn of fns) unplanned[fn.id] = `${file} cannot be read`;
+        continue;
+      }
+      // A plan names the file its snapshot saw: a file changed since is left alone.
+      const expected = fns[0]!.sha256;
+      if (expected !== null && expected !== sha256(src)) {
+        for (const fn of fns) unplanned[fn.id] = "its file changed since the plan";
+        continue;
+      }
       const bodies = await functionBodies(file, src);
       const edits: Edit[] = [];
       const ids: string[] = [];
@@ -87,10 +99,54 @@ export async function initialize(data: TraceHooksData): Promise<void> {
       plans.set(pathToFileURL(path).href, { sha256: sha256(src), source, ids });
       files.push({ path, ids });
     }
-    data.port.postMessage({ kind: "plan", snapshotId: index.snapshotId, planned: instrumented.sort(), files, unplanned } satisfies TracePlanMessage);
+    data.port.postMessage({ kind: "plan", snapshotId, planned: instrumented.sort(), files, unplanned } satisfies TracePlanMessage);
   } catch (e) {
     data.port.postMessage({ kind: "plan", snapshotId: "", planned: [], files: [], unplanned: {}, error: e instanceof Error ? e.message : String(e) } satisfies TracePlanMessage);
   }
+}
+
+interface PlannedSymbol {
+  id: string;
+  file: string;
+  line: number;
+  col: number;
+  /** The file's hash the plan expects; null when the snapshot was built here, from the file as it is. */
+  sha256: string | null;
+}
+
+/** The trigger and steps of `flow`, from the specs and a fresh snapshot. */
+async function flowPlan(root: string, flow: string): Promise<{ snapshotId: string; symbols: PlannedSymbol[] }> {
+  const config = loadConfig(root);
+  const { index } = await generateMap(config);
+  const wanted = flowSymbols(root, config.dir, flow) ?? new Set<string>();
+  const symbols: PlannedSymbol[] = [];
+  for (const id of wanted) {
+    const node = index.nodes[id];
+    if (node?.kind !== "fn" || !node.file || node.line === null || node.col === null) continue;
+    symbols.push({ id, file: node.file, line: node.line, col: node.col, sha256: null });
+  }
+  return { snapshotId: index.snapshotId, symbols };
+}
+
+/** A `keylang trace-plan` file (schema 1): its snapshot, flow and symbols; anything else is an error naming the file. */
+export function readPlan(path: string): { snapshotId: string; flow: string; symbols: PlannedSymbol[] } {
+  let plan: unknown;
+  try {
+    plan = JSON.parse(readFileSync(path, "utf8"));
+  } catch (e) {
+    throw new Error(`${path}: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  const value = (typeof plan === "object" && plan !== null ? plan : {}) as { schemaVersion?: unknown; snapshotId?: unknown; flow?: unknown; symbols?: unknown };
+  if (value.schemaVersion !== 1 || typeof value.snapshotId !== "string" || typeof value.flow !== "string" || !Array.isArray(value.symbols)) {
+    throw new Error(`${path}: not a plan of schema 1 from \`keylang trace-plan\``);
+  }
+  const symbols: PlannedSymbol[] = [];
+  for (const item of value.symbols as unknown[]) {
+    const s = (typeof item === "object" && item !== null ? item : {}) as Record<string, unknown>;
+    if (typeof s.id !== "string" || typeof s.file !== "string" || typeof s.line !== "number" || typeof s.col !== "number" || typeof s.sha256 !== "string") continue;
+    symbols.push({ id: s.id, file: s.file, line: s.line, col: s.col, sha256: s.sha256 });
+  }
+  return { snapshotId: value.snapshotId, flow: value.flow, symbols };
 }
 
 /** Text inserted at an offset of the original source. */

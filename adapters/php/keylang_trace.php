@@ -11,12 +11,20 @@
  *
  *     php -d auto_prepend_file=keylang_trace.php vendor/bin/phpunit
  *
+ * or, on a local web server (php-fpm, `php -S`), as its `auto_prepend_file`:
+ * a request that names a flow — header or cookie `X-Keylang-Flow: <flow>` —
+ * is a run of that flow of its own (test id `<METHOD> <path>`); a request
+ * that names none records nothing.
+ *
  * Environment:
  *     KEYLANG_TRACE        JSONL file to append to; without it nothing is recorded
- *     KEYLANG_TRACE_PLAN   plan from `keylang trace-plan <flow>` (required)
- *     KEYLANG_TRACE_TEST   test id (required unless keylang's PHPUnit extension names each test)
+ *     KEYLANG_TRACE_PLAN   plan from `keylang trace-plan <flow>` or `--entry <id>` (required)
+ *     KEYLANG_TRACE_TEST   test id (required unless keylang's PHPUnit extension names each test,
+ *                          KEYLANG_FLOW is set, or a web request names its flow)
  *     KEYLANG_TRACE_RUN    run id shared by the tests of one run (default: time and pid)
  *     KEYLANG_TRACE_ROOT   repository root the plan's paths are relative to (default: cwd)
+ *     KEYLANG_FLOW         the flow of the run (default: the plan's); on a web server, of every
+ *                          request that names none
  *   Relative paths are resolved once, against the directory the process started in, and written
  *   back to the environment as absolute paths (a later chdir() does not move the trace).
  *
@@ -173,15 +181,54 @@ if (!class_exists('KeylangTrace', false)) {
             }
             putenv("KEYLANG_TRACE_ROOT={$root}");
             $test = getenv('KEYLANG_TRACE_TEST');
+            $test = $test !== false && $test !== '' ? $test : null;
             $run = getenv('KEYLANG_TRACE_RUN');
             $run = $run !== false && $run !== '' ? $run : dechex((int) (microtime(true) * 1000)) . '-' . getmypid();
-            // Child processes inherit the id, so the processes of one test are one run.
-            putenv("KEYLANG_TRACE_RUN={$run}");
-            $trace = new self($output, $plan['flow'], $plan['snapshotId'], $run, $test !== false && $test !== '' ? $test : null);
+            $named = getenv('KEYLANG_FLOW');
+            $named = is_string($named) && $named !== '' ? $named : null;
+            $flow = $named ?? $plan['flow'];
+            if (self::webRequest()) {
+                // A web request is a run of its own, of the flow it names (`X-Keylang-Flow` header or cookie,
+                // else KEYLANG_FLOW); a request that names none records nothing. Its test id is method and path.
+                $flow = self::requestFlow() ?? $named;
+                $path = parse_url((string) ($_SERVER['REQUEST_URI'] ?? '/'), PHP_URL_PATH);
+                $test = $flow === null ? null : ($_SERVER['REQUEST_METHOD'] ?? 'GET') . ' ' . (is_string($path) ? $path : '/');
+                $run .= '.r' . bin2hex(random_bytes(4));
+            } else {
+                // Child processes inherit the id, so the processes of one test are one run.
+                putenv("KEYLANG_TRACE_RUN={$run}");
+                // A command that names its flow (`KEYLANG_FLOW=checkout bin/magento …`) is a run without a test id too.
+                if ($test === null && $named !== null) {
+                    $test = implode(' ', array_map('strval', $_SERVER['argv'] ?? ['php']));
+                }
+            }
+            $trace = new self($output, $flow ?? $plan['flow'], $plan['snapshotId'], $run, $test);
             $trace->prepare($plan['symbols'], $root);
             self::$active = $trace;
             register_shutdown_function([$trace, 'finish']);
             KeylangTraceStream::register();
+        }
+
+        /** A request of a web server SAPI (php-fpm, apache, `php -S`), not a command. */
+        private static function webRequest(): bool
+        {
+            return PHP_SAPI !== 'cli' && PHP_SAPI !== 'phpdbg' && isset($_SERVER['REQUEST_METHOD']);
+        }
+
+        /** The flow the request names: the `X-Keylang-Flow` header, else the cookie of that name; null without one. */
+        private static function requestFlow(): ?string
+        {
+            foreach ([$_SERVER['HTTP_X_KEYLANG_FLOW'] ?? null, $_COOKIE['X-Keylang-Flow'] ?? null] as $value) {
+                if (!is_string($value)) {
+                    continue;
+                }
+                $value = trim($value);
+                // A flow name is one word of a `# flow <name>` heading: no spaces, no control characters.
+                if ($value !== '' && strlen($value) <= 200 && preg_match('/^[^\s\x00-\x1f\x7f]+$/u', $value) === 1) {
+                    return $value;
+                }
+            }
+            return null;
         }
 
         /** The run id of the recording, null when nothing is recorded. */
@@ -735,8 +782,9 @@ KeylangTrace::install();
 
 // Run as a script: `php keylang_trace.php <script> [args...]` runs the script under the adapter.
 if (PHP_SAPI === 'cli' && isset($argv[0]) && realpath($argv[0]) === __FILE__) {
-    if (getenv('KEYLANG_TRACE') === false || getenv('KEYLANG_TRACE_PLAN') === false || getenv('KEYLANG_TRACE_TEST') === false) {
-        fwrite(STDERR, "keylang trace: KEYLANG_TRACE, KEYLANG_TRACE_PLAN and KEYLANG_TRACE_TEST are required\n");
+    // A script that names its flow (KEYLANG_FLOW) is a run without a test id: its command line names it.
+    if (getenv('KEYLANG_TRACE') === false || getenv('KEYLANG_TRACE_PLAN') === false || (getenv('KEYLANG_TRACE_TEST') === false && getenv('KEYLANG_FLOW') === false)) {
+        fwrite(STDERR, "keylang trace: KEYLANG_TRACE, KEYLANG_TRACE_PLAN and KEYLANG_TRACE_TEST (or KEYLANG_FLOW) are required\n");
         exit(2);
     }
     if (count($argv) < 2) {
