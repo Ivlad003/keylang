@@ -2,7 +2,7 @@
 // A tree walk over the top level plus tree-sitter queries inside bodies.
 
 import { builtinModules } from "node:module";
-import type { CallFact, DeclFact, DecoratorArg, DecoratorFact, FileFacts, HookFact, ImportBinding, ImportFact, PassFact, TypeRefFact, UnsupportedFact, ValueRefFact } from "./facts.ts";
+import type { CallFact, DeclFact, DecoratorArg, DecoratorFact, EntryFact, FileFacts, HookFact, ImportBinding, ImportFact, PassFact, TypeRefFact, UnsupportedFact, ValueRefFact } from "./facts.ts";
 import { blockCommentBody, isLicense, jsdocDescription, lineCommentsBody, nonEmpty } from "./doc-comments.ts";
 import { errorLine, fingerprint, grammarFor, located, query, startCol, withTree, type Grammar, type Language, type Node, type Tree } from "./treesitter.ts";
 
@@ -1872,7 +1872,7 @@ function collectRouteEntries(root: Node, facts: FileFacts): void {
       const args = node.childForFieldName("arguments")?.namedChildren.filter((arg) => arg.type !== "comment") ?? [];
       const path = args[0] === undefined ? null : stringValue(args[0]);
       const handler = args.length >= 2 ? args[args.length - 1] : undefined;
-      if (method !== null && ROUTE_METHODS.has(method) && path !== null && path.startsWith("/") && handler !== undefined && (handler.type === "identifier" || handler.type === "member_expression")) {
+      if (method !== null && ROUTE_METHODS.has(method) && path !== null && (path.startsWith("/") || path === "*") && handler !== undefined && (handler.type === "identifier" || handler.type === "member_expression")) {
         const at = located(node);
         entries.push({ kind: "route", label: `${method.toUpperCase()} ${path}`, callee: collapse(handler.text), line: at.line, col: at.col });
       }
@@ -1884,10 +1884,59 @@ function collectRouteEntries(root: Node, facts: FileFacts): void {
         entries.push({ kind: "sfra", label: path, method, callee: named ? collapse(handler.text) : null, line: at.line, col: at.col });
       }
     }
+    // `{ path: '/cart', component: Cart }` in an array of a `routes` file: a page of the router.
+    if (pages !== null && node.type === "object" && parentOf(node)?.type === "array") {
+      const page = pageOf(node, pages);
+      if (page !== null) entries.push(page);
+    }
     for (const child of node.namedChildren) walk(child);
   };
+  const pages = ROUTES_FILE.test(facts.path) ? lazyImports(root) : null;
   walk(root);
   if (entries.length > 0) facts.entries = entries;
+}
+
+const ROUTES_FILE = /(?:^|\/)routes\.(?:js|jsx|ts|tsx|mjs)$/;
+
+/** `const Cart = loadable(() => import('./pages/cart'))` (or `lazy`, `React.lazy`) at the top level: name → specifier. */
+function lazyImports(root: Node): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const stmt of root.namedChildren) {
+    const decl = stmt.type === "export_statement" ? stmt.childForFieldName("declaration") : stmt;
+    if (decl?.type !== "lexical_declaration" && decl?.type !== "variable_declaration") continue;
+    for (const d of decl.namedChildren) {
+      const name = d.type === "variable_declarator" ? d.childForFieldName("name") : null;
+      const value = d.childForFieldName("value");
+      if (name?.type !== "identifier" || !value) continue;
+      const call = unwrapValue(value);
+      const loader = call.type === "call_expression" ? call.childForFieldName("arguments")?.namedChildren.find((a) => a.type !== "comment") : undefined;
+      const body = loader && FUNCTION_VALUES.has(loader.type) ? loader.childForFieldName("body") : null;
+      const imported = body ? unwrapValue(body) : null;
+      if (imported?.type !== "call_expression" || imported.childForFieldName("function")?.type !== "import") continue;
+      const spec = imported.childForFieldName("arguments")?.namedChildren.find((a) => a.type !== "comment");
+      const source = spec ? stringValue(spec) : null;
+      if (source !== null) out.set(name.text, source);
+    }
+  }
+  return out;
+}
+
+/** A route object with a literal `path` and a named `component`; null for any other object. */
+function pageOf(node: Node, lazy: ReadonlyMap<string, string>): EntryFact | null {
+  let path: string | null = null;
+  let component: string | null = null;
+  for (const p of node.namedChildren) {
+    if (p.type !== "pair") continue;
+    const key = p.childForFieldName("key")?.text;
+    const value = p.childForFieldName("value");
+    if (!value) continue;
+    if (key === "path") path = stringValue(unwrapValue(value)) ?? templateValue(unwrapValue(value));
+    else if (key === "component" && (value.type === "identifier" || value.type === "member_expression")) component = collapse(value.text);
+  }
+  if (path === null || component === null) return null;
+  const at = located(node);
+  const source = lazy.get(component);
+  return { kind: "page", label: path, callee: component, ...(source !== undefined ? { source } : {}), line: at.line, col: at.col };
 }
 
 function signature(fn: Node): string {

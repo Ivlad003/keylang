@@ -4,9 +4,10 @@
 // controllers the TypeScript extractor records (`server.get('Show', …)` →
 // `route` `Cart-Show`) and a coverage note for a `*/cartridge` require that
 // only a guessed cartridge path decided; NestJS adds the methods its
-// decorators name (`@Get`, `@Cron`, `@OnEvent`, `@MessagePattern`, `@Query`).
-// The adapters themselves only parse (`src/frameworks/`); everything that
-// needs the graph is here.
+// decorators name (`@Get`, `@Cron`, `@OnEvent`, `@MessagePattern`, `@Query`),
+// PWA Kit the routes of `routes.jsx` and the server of `ssr.js`. The adapters
+// themselves only parse (`src/frameworks/`); everything that needs the graph
+// is here.
 
 import type { Config } from "./config.ts";
 import { compareEntries, entryScope, fnIn, frameworkEntry, type EntryScope } from "./entries.ts";
@@ -62,6 +63,8 @@ export function frameworkEntries({ config, graph, facts, frameworks }: Framework
   }
   const nest = frameworks.find((f) => f.name === "nestjs");
   if (nest !== undefined) entries.push(...nestEntries(facts, scope, new Set(nest.configs.map((c) => c.facts.path))));
+  const pwa = frameworks.find((f) => f.name === "pwa-kit");
+  if (pwa !== undefined) entries.push(...pwaEntries(facts, scope, new Set(pwa.configs.map((c) => c.facts.path))));
   return { entries: entries.sort(compareEntries), holes, warnings };
 }
 
@@ -243,4 +246,56 @@ function argText(arg: DecoratorArg | undefined): string {
     case "other":
       return arg.text;
   }
+}
+
+/**
+ * PWA Kit entry points: each `{ path, component }` of a `routes.*` file is a
+ * `route` labelled with the path on the component — a fn the file declares
+ * or imports, else the default export of the module a lazy `import()` loads,
+ * else the routes module with a note; `app.get('*', runtime.render)` in
+ * `ssr.*` and its exported `get` (the Managed Runtime's handler) are
+ * `route` entries of the server module with a note.
+ */
+function pwaEntries(facts: readonly FileFacts[], scope: EntryScope, files: ReadonlySet<string>): EntryPoint[] {
+  const out: EntryPoint[] = [];
+  for (const file of facts) {
+    if (!files.has(file.path)) continue;
+    const module = scope.graph.byPath.get(file.path);
+    if (module === undefined) continue;
+    const ssr = /(?:^|\/)ssr\.[^/]+$/.test(file.path);
+    for (const fact of file.entries ?? []) {
+      const at = { file: file.path, line: fact.line };
+      if (fact.kind === "page") {
+        let id = fact.callee === null ? null : fnIn(scope, file.path, fact.callee);
+        if (id === null && fact.source !== undefined) id = lazyDefault(scope, module, file.path, fact.source);
+        const head = fact.callee?.split(".")[0];
+        const from = file.imports.find((imp) => imp.bindings.some((b) => b.local === head))?.source;
+        const why = from !== undefined && !from.startsWith(".") ? `is imported from \`${from}\`, outside the analysis` : "does not resolve to a fn";
+        const note = id === null ? `component \`${fact.callee ?? "?"}\` ${why}: the routes module stands for it` : null;
+        const found = frameworkEntry(scope, "pwa-kit", "route", id ?? module.id, fact.label, `${file.path}:${fact.line}`, at);
+        out.push({ ...found, ...(id === null ? at : {}), ...(note !== null ? { note } : {}) });
+      } else if (ssr && fact.kind === "route" && fact.label.endsWith(" *")) {
+        const id = fact.callee === null ? null : fnIn(scope, file.path, fact.callee);
+        const found = frameworkEntry(scope, "pwa-kit", "route", id ?? module.id, fact.label, `${file.path}:${fact.line}`, at);
+        const note = id === null ? `\`${fact.callee ?? "?"}\`: the PWA Kit runtime renders the app's routes (\`routes.jsx\`) on the server` : null;
+        out.push({ ...found, ...(id === null ? at : {}), method: fact.label.slice(0, fact.label.indexOf(" ")), ...(note !== null ? { note } : {}) });
+      }
+    }
+    // `exports.get = runtime.createHandler(…).handler`: the function the Managed Runtime calls.
+    if (ssr && file.exportRows.some((row) => row.name === "get")) {
+      const row = scope.graph.exports.find((e) => e.module === module.id && e.name === "get");
+      const id = row?.symbol != null && scope.fns.has(row.symbol) ? row.symbol : null;
+      const line = module.line ?? 1;
+      out.push({ ...frameworkEntry(scope, "pwa-kit", "route", id ?? module.id, "ssr handler", `${file.path}:${line}`, { file: file.path, line }), note: "the exported `get`: the Managed Runtime calls it for every request" });
+    }
+  }
+  return out;
+}
+
+/** The default export of the module a routes file loads with `import('<source>')` when it is a fn, else that module; null when the import does not resolve. */
+function lazyDefault(scope: EntryScope, module: { deps: readonly { file: string; text: string; target: string }[] }, file: string, source: string): string | null {
+  const dep = module.deps.find((d) => d.file === file && (d.text.includes(`"${source}"`) || d.text.includes(`'${source}'`) || d.text.includes(`\`${source}\``)));
+  if (dep === undefined) return null;
+  const row = scope.graph.exports.find((e) => e.module === dep.target && e.name === "default");
+  return row?.symbol != null && scope.fns.has(row.symbol) ? row.symbol : dep.target;
 }

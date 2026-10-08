@@ -14,6 +14,7 @@
 import type { FileFacts } from "../extract/facts.ts";
 import { magento } from "./magento.ts";
 import { nestjs } from "./nestjs.ts";
+import { pwaKit } from "./pwa-kit.ts";
 import { sfcc } from "./sfcc.ts";
 
 /**
@@ -172,7 +173,7 @@ export interface FrameworkAdapter {
 export const FRAMEWORK_CONFIG = "framework:";
 
 /** Adapters keylang has, by name. */
-export const FRAMEWORK_ADAPTERS: readonly FrameworkAdapter[] = [magento, nestjs, sfcc];
+export const FRAMEWORK_ADAPTERS: readonly FrameworkAdapter[] = [magento, nestjs, pwaKit, sfcc];
 
 export const FRAMEWORK_NAMES: readonly string[] = FRAMEWORK_ADAPTERS.map((a) => a.name).sort();
 

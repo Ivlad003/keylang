@@ -247,6 +247,8 @@ In TypeScript, `import type …`, `export type … from`, and an import whose ev
 
 NestJS (`@nestjs/core` in package.json) is read from its decorators: `@Inject(TOKEN)` on a constructor parameter follows the module's `{ provide: TOKEN, useClass: C }` (`via: "argument"`, `useFactory` is a hole), `emit('event')` reaches each `@OnEvent('event')` method (`via: "observer"`), and `@Controller`/`@Get` (with the literal `setGlobalPrefix`), `@Cron`/`@Interval`, `@OnEvent`, `@MessagePattern`/`@EventPattern`, `@Resolver`+`@Query`/`@Mutation` are entry points (snapshot.md "Фреймворки: NestJS").
 
+PWA Kit (`ccExtensibility` in package.json): `@salesforce/retail-react-app/app/x` resolves to `overrides/app/x` when that file exists, else the base package; `^@salesforce/retail-react-app/…` is the base package; the `{ path, component }` routes of `routes.jsx` and `ssr.js` are entry points (snapshot.md "Фреймворки: PWA Kit").
+
 `keylang.json` `layers` maps a name to a glob or a list of globs. The first matching glob wins. `**`, `*`, `?`, and `{a,b}` work. A folder named `external` is renamed `external_` because that word is reserved. The new name is printed at `init`. `README` in any case is reserved too: it is the start page of the explained map.
 
 A missing `format` field means edition 1. No `keylang.json` means edition 2. `"format": 3` or higher exits 2 and names the field. Do not bump `format`.

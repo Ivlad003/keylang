@@ -67,14 +67,20 @@ export interface FileFacts {
  * when it names none directly (the module's top level is the entry then).
  * `sfra`: `server.get('Show', …, h)` in an SFRA controller — `callee` is the
  * last argument when it is a name, null for a handler written in place.
+ * `page`: an element `{ path: '/cart', component: Cart }` of an array in a
+ * `routes.{js,jsx,ts,tsx}` file (React Router, PWA Kit) — `label` is the
+ * path, `callee` the component's name, `source` the module a lazy component
+ * loads (`const Cart = loadable(() => import('./pages/cart'))`).
  */
 export interface EntryFact {
-  kind: "route" | "main" | "sfra";
+  kind: "route" | "main" | "sfra" | "page";
   /** `sfra`: the action name, `Show`; the SFCC adapter adds the controller's. */
   label: string;
   /** `sfra`: the `server` method that registers it (`get`, `post`, `use`, `append`, `prepend`, `replace`). */
   method?: string;
   callee: string | null;
+  /** `page`: the specifier the component's `import()` names, when it is loaded lazily. */
+  source?: string;
   line: number;
   col: number;
 }
