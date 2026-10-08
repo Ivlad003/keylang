@@ -34,19 +34,19 @@
     - diag base.diag
     - span base.span
     - type [Document](../../src/ir.ts#L10)
-    - type [SectionKind](../../src/ir.ts#L19) = "map" | "rules" | "flow" | "wiring"
+    - type [SectionKind](../../src/ir.ts#L19) = "map" | "rules" | "flow" | "wiring" | "migration"
     - type [Section](../../src/ir.ts#L22)
     - type [Item](../../src/ir.ts#L33)
     - type [NodeKind](../../src/ir.ts#L40)
-    - fn [isDecl](../../src/ir.ts#L91) (kind: NodeKind) → boolean
-    - fn [kindLabel](../../src/ir.ts#L103) (kind: NodeKind) → string
-    - type [Node](../../src/ir.ts#L108)
-    - type [Link](../../src/ir.ts#L135)
-    - type [Ref](../../src/ir.ts#L146)
-    - type [TokenKind](../../src/ir.ts#L160) = "word" | "link" | "quoted" | "comma"
-    - type [Token](../../src/ir.ts#L162)
-    - fn [walk](../../src/ir.ts#L169) (node: Node, f: (n: Node) => void) → void
-    - fn [sectionNodes](../../src/ir.ts#L174) (section: Section) → Node[]
+    - fn [isDecl](../../src/ir.ts#L96) (kind: NodeKind) → boolean
+    - fn [kindLabel](../../src/ir.ts#L108) (kind: NodeKind) → string
+    - type [Node](../../src/ir.ts#L113)
+    - type [Link](../../src/ir.ts#L140)
+    - type [Ref](../../src/ir.ts#L151)
+    - type [TokenKind](../../src/ir.ts#L165) = "word" | "link" | "quoted" | "comma"
+    - type [Token](../../src/ir.ts#L167)
+    - fn [walk](../../src/ir.ts#L174) (node: Node, f: (n: Node) => void) → void
+    - fn [sectionNodes](../../src/ir.ts#L179) (section: Section) → Node[]
   - module [parse-format](../../src/parse-format.ts#L1)
     - ir lang.ir
     - type [ParseFormat](../../src/parse-format.ts#L8) = (typeof PARSE_FORMATS)[number]
@@ -71,90 +71,92 @@
         - calls lang.parser.Line.pos
     - fn [codePoints](../../src/parser.ts#L60) (s: string) → number <!-- internal -->
     - type [Ctx](../../src/parser.ts#L67) <!-- internal -->
-    - fn [ctxOf](../../src/parser.ts#L89) (section: SectionKind, parent: NodeKind | undefined) → Ctx <!-- internal -->
-    - type [TriggerKind](../../src/parser.ts#L135) = (typeof TRIGGER_KINDS)[number]
-    - fn [isTriggerKind](../../src/parser.ts#L137) (word: string) → word is TriggerKind
-    - fn [isDuration](../../src/parser.ts#L150) (text: string) → boolean
-    - fn [scheduleText](../../src/parser.ts#L159) (words: readonly string[]) → string | null
-    - fn [keywordsAt](../../src/parser.ts#L173) (section: SectionKind, parent: NodeKind | undefined) → readonly string[]
+    - fn [ctxOf](../../src/parser.ts#L90) (section: SectionKind, parent: NodeKind | undefined) → Ctx <!-- internal -->
+    - type [TriggerKind](../../src/parser.ts#L136) = (typeof TRIGGER_KINDS)[number]
+    - fn [isTriggerKind](../../src/parser.ts#L138) (word: string) → word is TriggerKind
+    - fn [isDuration](../../src/parser.ts#L151) (text: string) → boolean
+    - fn [scheduleText](../../src/parser.ts#L160) (words: readonly string[]) → string | null
+    - fn [keywordsAt](../../src/parser.ts#L174) (section: SectionKind, parent: NodeKind | undefined) → readonly string[]
       - calls lang.parser.keywordsOf, lang.parser.ctxOf
-    - fn [keywordsOf](../../src/parser.ts#L177) (ctx: Ctx) → readonly string[] <!-- internal -->
-    - fn [placeHint](../../src/parser.ts#L242) (word: string, ctx: Ctx, section: SectionKind) → string <!-- internal -->
+    - fn [keywordsOf](../../src/parser.ts#L178) (ctx: Ctx) → readonly string[] <!-- internal -->
+    - fn [placeHint](../../src/parser.ts#L246) (word: string, ctx: Ctx, section: SectionKind) → string <!-- internal -->
       - calls lang.parser.keywordsOf
-    - fn [roleAt](../../src/parser.ts#L343) (section: SectionKind, parent: NodeKind | undefined, kind: NodeKind) → string | null
+    - fn [roleAt](../../src/parser.ts#L351) (section: SectionKind, parent: NodeKind | undefined, kind: NodeKind) → string | null
       - calls lang.parser.ctxOf
-    - fn [keywordKind](../../src/parser.ts#L348) (ctx: Ctx, kw: string) → NodeKind <!-- internal -->
-    - type [Parent](../../src/parser.ts#L388) <!-- internal -->
-    - module [Parser](../../src/parser.ts#L394) <!-- internal -->
-      - fn [constructor](../../src/parser.ts#L409) (path: string)
-      - fn [err](../../src/parser.ts#L414) (code: Exclude<Code, "K005">, span: Span, msg: string) → void <!-- internal -->
+    - fn [keywordKind](../../src/parser.ts#L356) (ctx: Ctx, kw: string) → NodeKind <!-- internal -->
+    - type [Parent](../../src/parser.ts#L397) <!-- internal -->
+    - module [Parser](../../src/parser.ts#L403) <!-- internal -->
+      - fn [constructor](../../src/parser.ts#L418) (path: string)
+      - fn [err](../../src/parser.ts#L423) (code: Exclude<Code, "K005">, span: Span, msg: string) → void <!-- internal -->
         - calls base.diag.diagnostic
-      - fn [section](../../src/parser.ts#L421) () → Section <!-- internal -->
-      - fn [sectionKind](../../src/parser.ts#L428) () → SectionKind <!-- internal -->
-      - fn [flushProse](../../src/parser.ts#L432) () → void <!-- internal -->
+      - fn [section](../../src/parser.ts#L430) () → Section <!-- internal -->
+      - fn [sectionKind](../../src/parser.ts#L437) () → SectionKind <!-- internal -->
+      - fn [flushProse](../../src/parser.ts#L441) () → void <!-- internal -->
         - calls lang.parser.Parser.section
-      - fn [pushDescription](../../src/parser.ts#L440) (l: Line, text: string, lead: Lead, depth: number) → void <!-- internal -->
+      - fn [pushDescription](../../src/parser.ts#L449) (l: Line, text: string, lead: Lead, depth: number) → void <!-- internal -->
         - calls lang.parser.Parser.err, lang.parser.Line.span
-      - fn [closeList](../../src/parser.ts#L447) (depth: number) → void <!-- internal -->
+      - fn [closeList](../../src/parser.ts#L456) (depth: number) → void <!-- internal -->
         - calls lang.parser.Parser.section
-      - fn [finish](../../src/parser.ts#L456) () → Document
+      - fn [finish](../../src/parser.ts#L465) () → Document
         - calls lang.parser.Parser.section, lang.parser.Parser.flushProse, lang.parser.Parser.closeList
-      - fn [line](../../src/parser.ts#L466) (l: Line) → void
+      - fn [line](../../src/parser.ts#L475) (l: Line) → void
         - calls lang.parser.closesFence, lang.parser.Parser.section, lang.parser.leadingWhitespace, lang.parser.Parser.pushDescription, lang.parser.Parser.flushProse, lang.parser.Parser.err, lang.parser.htmlBlockStart, lang.parser.Parser.closeList, lang.parser.Parser.heading, lang.parser.opensFence, lang.parser.openFence, lang.parser.isBullet, lang.parser.Parser.item, lang.parser.Line.span
-      - fn [heading](../../src/parser.ts#L556) (l: Line) → void <!-- internal -->
+      - fn [heading](../../src/parser.ts#L565) (l: Line) → void <!-- internal -->
         - calls lang.parser.Parser.flushProse, lang.parser.Parser.closeList, lang.parser.lex, lang.parser.Line, lang.parser.headingEnd, lang.parser.renderTokens, lang.parser.Line.span, lang.parser.Parser.err, lang.parser.isSegment, lang.parser.nfc
-      - fn [item](../../src/parser.ts#L588) (l: Line, wsLen: number, indent: number) → void <!-- internal -->
+      - fn [item](../../src/parser.ts#L597) (l: Line, wsLen: number, indent: number) → void <!-- internal -->
         - calls lang.parser.Parser.flushProse, lang.parser.Line.span, lang.parser.Parser.err, lang.parser.Parser.closeList, lang.parser.Parser.section, lang.parser.lex, lang.parser.ctxOf, lang.parser.Parser.sectionKind, lang.parser.Parser.interpret
-      - fn [interpret](../../src/parser.ts#L641) (n: Node, l: Line, ctx: Ctx, parent: Parent | undefined) → void <!-- internal -->
-        - calls lang.parser.Parser.err, lang.parser.keywordsOf, lang.parser.Parser.bare, lang.parser.keywordKind, lang.parser.Parser.decl, lang.parser.Parser.refList, lang.parser.isSegment, lang.parser.nfc, lang.parser.Parser.layers, lang.ir.kindLabel, lang.parser.Parser.plannedModifier, lang.parser.Parser.typedTrigger, lang.parser.Parser.oneRef, lang.parser.isDuration, lang.parser.spanned, lang.parser.scheduleText, lang.parser.renderTokens, lang.parser.Parser.freeText, lang.parser.parseLink, lang.parser.isId
-      - fn [bare](../../src/parser.ts#L819) (n: Node, ctx: Ctx, parent: Parent | undefined) → void <!-- internal -->
+      - fn [interpret](../../src/parser.ts#L650) (n: Node, l: Line, ctx: Ctx, parent: Parent | undefined) → void <!-- internal -->
+        - calls lang.parser.Parser.err, lang.parser.keywordsOf, lang.parser.Parser.bare, lang.parser.keywordKind, lang.parser.Parser.decl, lang.parser.Parser.refList, lang.parser.isSegment, lang.parser.nfc, lang.parser.Parser.layers, lang.ir.kindLabel, lang.parser.Parser.plannedModifier, lang.parser.Parser.typedTrigger, lang.parser.Parser.oneRef, lang.parser.isDuration, lang.parser.spanned, lang.parser.scheduleText, lang.parser.renderTokens, lang.parser.Parser.freeText, lang.parser.parseLink, lang.parser.isId, lang.parser.Parser.migrationRow
+      - fn [bare](../../src/parser.ts#L841) (n: Node, ctx: Ctx, parent: Parent | undefined) → void <!-- internal -->
         - calls lang.parser.placeHint, lang.parser.Parser.sectionKind, lang.parser.Parser.decl, lang.parser.isSegment, lang.parser.nfc, lang.parser.Parser.oneRef, lang.parser.Parser.err, lang.ir.kindLabel, lang.parser.keywordsOf
-      - fn [decl](../../src/parser.ts#L874) (n: Node, rest: Token[], parentId: string | null, sig: boolean, hint: () => string = () => "") → void <!-- internal -->
+      - fn [decl](../../src/parser.ts#L896) (n: Node, rest: Token[], parentId: string | null, sig: boolean, hint: () => string = () => "") → void <!-- internal -->
         - calls lang.parser.Parser.err, lang.ir.kindLabel, lang.parser.parseLink, lang.parser.isSegment, lang.parser.linkTextSpan, lang.parser.nfc, lang.parser.renderTokens
-      - fn [makeRef](../../src/parser.ts#L912) (t: Token) → Ref | null <!-- internal -->
+      - fn [makeRef](../../src/parser.ts#L934) (t: Token) → Ref | null <!-- internal -->
         - calls lang.parser.isId, lang.parser.nfc, lang.parser.parseLink, lang.parser.linkTextSpan, lang.parser.Parser.err
-      - fn [plannedModifier](../../src/parser.ts#L934) (n: Node, rest: Token[]) → boolean <!-- internal -->
+      - fn [plannedModifier](../../src/parser.ts#L956) (n: Node, rest: Token[]) → boolean <!-- internal -->
         - calls lang.parser.isId, lang.ir.kindLabel, lang.parser.Parser.err
-      - fn [typedTrigger](../../src/parser.ts#L955) (n: Node, rest: Token[]) → boolean <!-- internal -->
+      - fn [typedTrigger](../../src/parser.ts#L977) (n: Node, rest: Token[]) → boolean <!-- internal -->
         - calls lang.parser.isTriggerKind, lang.parser.Parser.err, lang.parser.Parser.oneRef
-      - fn [oneRef](../../src/parser.ts#L967) (n: Node, rest: Token[]) → void <!-- internal -->
+      - fn [oneRef](../../src/parser.ts#L989) (n: Node, rest: Token[]) → void <!-- internal -->
         - calls lang.parser.Parser.makeRef, lang.parser.Parser.err
-      - fn [refList](../../src/parser.ts#L978) (n: Node, rest: Token[], min: number) → void <!-- internal -->
+      - fn [refList](../../src/parser.ts#L1000) (n: Node, rest: Token[], min: number) → void <!-- internal -->
         - calls lang.parser.Parser.makeRef, lang.parser.Parser.err, lang.ir.kindLabel
-      - fn [layers](../../src/parser.ts#L992) (n: Node, rest: Token[]) → void <!-- internal -->
+      - fn [layers](../../src/parser.ts#L1014) (n: Node, rest: Token[]) → void <!-- internal -->
         - calls lang.parser.Parser.makeRef, lang.parser.Parser.err
-      - fn [freeText](../../src/parser.ts#L1006) (n: Node, l: Line, rest: Token[]) → void <!-- internal -->
+      - fn [migrationRow](../../src/parser.ts#L1033) (n: Node, l: Line, rest: Token[]) → void <!-- internal -->
+        - calls lang.parser.isId, lang.parser.Parser.err, lang.parser.nfc, lang.parser.spanned, lang.parser.Parser.freeText
+      - fn [freeText](../../src/parser.ts#L1047) (n: Node, l: Line, rest: Token[]) → void <!-- internal -->
         - calls lang.parser.renderTokens, lang.parser.Line.span, lang.parser.Parser.err, lang.ir.kindLabel
-    - fn [spanned](../../src/parser.ts#L1020) (t: Token) → Spanned<string> <!-- internal -->
-    - type [Lead](../../src/parser.ts#L1024) <!-- internal -->
-    - fn [leadingWhitespace](../../src/parser.ts#L1033) (text: string) → Lead <!-- internal -->
-    - type [FenceOpen](../../src/parser.ts#L1049) <!-- internal -->
-    - fn [openFence](../../src/parser.ts#L1058) (text: string) → FenceOpen | null <!-- internal -->
+    - fn [spanned](../../src/parser.ts#L1061) (t: Token) → Spanned<string> <!-- internal -->
+    - type [Lead](../../src/parser.ts#L1065) <!-- internal -->
+    - fn [leadingWhitespace](../../src/parser.ts#L1074) (text: string) → Lead <!-- internal -->
+    - type [FenceOpen](../../src/parser.ts#L1090) <!-- internal -->
+    - fn [openFence](../../src/parser.ts#L1099) (text: string) → FenceOpen | null <!-- internal -->
       - calls lang.parser.leadingWhitespace
-    - fn [opensFence](../../src/parser.ts#L1075) (text: string, listOpen: boolean) → boolean <!-- internal -->
+    - fn [opensFence](../../src/parser.ts#L1116) (text: string, listOpen: boolean) → boolean <!-- internal -->
       - calls lang.parser.openFence
-    - fn [closesFence](../../src/parser.ts#L1080) (text: string, open: { char: string; len: number; columns: number }) → boolean <!-- internal -->
+    - fn [closesFence](../../src/parser.ts#L1121) (text: string, open: { char: string; len: number; columns: number }) → boolean <!-- internal -->
       - calls lang.parser.leadingWhitespace
-    - fn [dedentFenceLines](../../src/parser.ts#L1097) (lines: string[]) → string[]
+    - fn [dedentFenceLines](../../src/parser.ts#L1138) (lines: string[]) → string[]
       - calls lang.parser.openFence, lang.parser.closesFence
-    - fn [htmlBlockStart](../../src/parser.ts#L1118) (rest: string) → { end: (line: string) => boolean } | null <!-- internal -->
-    - fn [headingEnd](../../src/parser.ts#L1135) (text: string) → number <!-- internal -->
-    - fn [isBullet](../../src/parser.ts#L1141) (rest: string) → boolean <!-- internal -->
-    - fn [nfc](../../src/parser.ts#L1151) (text: string) → string <!-- internal -->
-    - fn [isSegment](../../src/parser.ts#L1156) (s: string) → boolean
-    - fn [isId](../../src/parser.ts#L1162) (s: string) → boolean
+    - fn [htmlBlockStart](../../src/parser.ts#L1159) (rest: string) → { end: (line: string) => boolean } | null <!-- internal -->
+    - fn [headingEnd](../../src/parser.ts#L1176) (text: string) → number <!-- internal -->
+    - fn [isBullet](../../src/parser.ts#L1182) (rest: string) → boolean <!-- internal -->
+    - fn [nfc](../../src/parser.ts#L1192) (text: string) → string <!-- internal -->
+    - fn [isSegment](../../src/parser.ts#L1197) (s: string) → boolean
+    - fn [isId](../../src/parser.ts#L1203) (s: string) → boolean
       - calls lang.parser.isSegment
-    - fn [linkTextSpan](../../src/parser.ts#L1168) (t: Token) → Span
+    - fn [linkTextSpan](../../src/parser.ts#L1209) (t: Token) → Span
       - calls lang.parser.parseLink, lang.parser.codePoints
-    - fn [parseLink](../../src/parser.ts#L1174) (t: Token) → Link <!-- internal -->
+    - fn [parseLink](../../src/parser.ts#L1215) (t: Token) → Link <!-- internal -->
       - calls lang.parser.decodeLinkPath
-    - fn [decodeLinkPath](../../src/parser.ts#L1193) (path: string) → string <!-- internal -->
-    - fn [lex](../../src/parser.ts#L1207) (l: Line, start: number, errs: [Span, string][]) → { tokens: Token[]; comment: Spanned<string> | null } <!-- internal -->
+    - fn [decodeLinkPath](../../src/parser.ts#L1234) (path: string) → string <!-- internal -->
+    - fn [lex](../../src/parser.ts#L1248) (l: Line, start: number, errs: [Span, string][]) → { tokens: Token[]; comment: Spanned<string> | null } <!-- internal -->
       - calls lang.parser.Line.span, lang.parser.linkEnd
-    - fn [linkEnd](../../src/parser.ts#L1271) (s: string, i: number) → number | null <!-- internal -->
-    - fn [renderMeaning](../../src/parser.ts#L1293) (node: Node) → string
+    - fn [linkEnd](../../src/parser.ts#L1312) (s: string, i: number) → number | null <!-- internal -->
+    - fn [renderMeaning](../../src/parser.ts#L1334) (node: Node) → string
       - calls lang.parser.renderTokens
-    - fn [renderTokens](../../src/parser.ts#L1299) (tokens: readonly Token[]) → string
+    - fn [renderTokens](../../src/parser.ts#L1340) (tokens: readonly Token[]) → string
   - module [spec-ir](../../src/spec-ir.ts#L1)
     - config base.config
     - diag base.diag

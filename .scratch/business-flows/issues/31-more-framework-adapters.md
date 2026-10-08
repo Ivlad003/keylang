@@ -1,6 +1,6 @@
 # 31: Наступні адаптери фреймворків: Laravel, Symfony, NestJS, Express/Next, Django/FastAPI
 
-**Status:** ready-for-human
+**Status:** resolved
 
 **Type:** code
 
@@ -29,3 +29,7 @@
 **Межі:** тріаж, не реалізація.
 
 ## Comments
+
+### Зведення
+
+- 2026-10-08: розбито на тікети 34 (NestJS), 35 (Laravel), 36 (Symfony), 37 (Express/Fastify/Next), 38 (Django/FastAPI/Flask/Celery), 39 (PWA Kit overrides — залишок тікета 30). Порядок за замовчуванням з рішення автора; інфраструктура адаптерів (`src/frameworks/adapter.ts`) уже в master після тікетів 04/06/07 і 30.

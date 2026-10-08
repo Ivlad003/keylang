@@ -121,6 +121,14 @@ export interface Coverage {
   };
 }
 
+/** The answer of `GET /api/ids`. */
+export interface IdList {
+  prefix: string;
+  ids: { id: string; kind: string }[];
+  more: boolean;
+  reason?: string;
+}
+
 /** A ticked branch of the explorer: a step and the steps under it. */
 export interface FlowStep {
   id: string;
@@ -193,8 +201,8 @@ export interface Usages {
 /** A view as the query of `GET /api/diagram` names it. */
 export type ViewQuery = { view: "flow"; name: string } | { view: "discovered"; name: string } | { view: "entry"; id: string } | { view: "layers" } | { view: "process"; domain: string };
 
-/** What the page shows: a diagram, the explorer at an ID (`""`: none picked yet), or the blind spots. */
-export type PageQuery = ViewQuery | { view: "explore"; id: string } | { view: "blind" };
+/** What the page shows: a diagram, the explorer at an ID (`""`: none picked yet), the blind spots, or the editor on a view (`null`: an empty canvas). */
+export type PageQuery = ViewQuery | { view: "explore"; id: string } | { view: "blind" } | { view: "editor"; of: ViewQuery | null };
 
 /** A refused or failed request, with the status the page explains. */
 export class ApiError extends Error {
@@ -226,6 +234,11 @@ export class Api {
 
   calls(id: string): Promise<Calls> {
     return this.get<Calls>(`/api/calls?${new URLSearchParams({ id }).toString()}`);
+  }
+
+  /** The snapshot's IDs under a prefix (the editor's ID field). */
+  ids(prefix: string): Promise<IdList> {
+    return this.get<IdList>(`/api/ids?${new URLSearchParams({ prefix }).toString()}`);
   }
 
   coverage(): Promise<Coverage> {

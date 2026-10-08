@@ -18,7 +18,7 @@
 import { asciiLowerCase } from "../languages.ts";
 import type { CallFact, DeclFact, ExportRow, FileFacts, ImportFact, PassFact, TypeRefFact, UnsupportedFact, ValueRefFact } from "./facts.ts";
 import { blockCommentBody, isLicense, jsdocDescription, nonEmpty } from "./doc-comments.ts";
-import { errorLine, fingerprint, located, withTree, type Node } from "./treesitter.ts";
+import { errorLine, fingerprintFacts, located, valuesFingerprint, withTree, type Node } from "./treesitter.ts";
 
 /** Class names PHP gives a meaning of its own: never a class of the repository. */
 const SPECIAL_CLASSES = new Set(["self", "static", "parent"]);
@@ -184,6 +184,8 @@ function extractTree(path: string, root: Node): FileFacts {
   facts.unsupported = collector.unsupported;
   facts.valueRefs = [...collector.values.values()].sort((a, b) => a.line - b.line || a.col - b.col);
   if (header) facts.doc = header.doc;
+  const values = valuesFingerprint(root.namedChildren, facts.decls);
+  if (values !== undefined) facts.values = values;
   const end = located(root);
   facts.endLine = end.endLine;
   facts.endCol = end.endCol;
@@ -353,7 +355,7 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
   const doc = docOf(node, collector.header);
   if (node.type === "interface_declaration") {
     // An interface is a type: a call through a value typed with it stays a hole, as in TypeScript.
-    return { kind: "type", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature: null, exported: true, calls: [], types, members: [], fingerprint: fingerprint(node), ...(supers.length > 0 ? { implements: supers } : {}), ...(doc !== undefined ? { doc } : {}) };
+    return { kind: "type", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature: null, exported: true, calls: [], types, members: [], ...fingerprintFacts(node), ...(supers.length > 0 ? { implements: supers } : {}), ...(doc !== undefined ? { doc } : {}) };
   }
   const body = node.childForFieldName("body");
   const items = body?.namedChildren ?? [];
@@ -444,7 +446,8 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
     if (statics.has(asciiLowerCase(member))) decl.static = true;
     members.push(decl);
   }
-  return { kind: "class", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature: null, exported: true, calls: [], types, members, fingerprint: fingerprint(node), ...(base !== undefined ? { base } : {}), ...(traits.length > 0 ? { traits } : {}), ...(traitRules.length > 0 ? { traitRules } : {}), ...(supers.length > 0 ? { implements: supers } : {}), ...(doc !== undefined ? { doc } : {}) };
+  const values = valuesFingerprint(items, members);
+  return { kind: "class", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature: null, exported: true, calls: [], types, members, ...fingerprintFacts(node), ...(values !== undefined ? { values } : {}), ...(base !== undefined ? { base } : {}), ...(traits.length > 0 ? { traits } : {}), ...(traitRules.length > 0 ? { traitRules } : {}), ...(supers.length > 0 ? { implements: supers } : {}), ...(doc !== undefined ? { doc } : {}) };
 }
 
 /**
@@ -662,7 +665,7 @@ function fnDecl(node: Node, name: string, names: Names, ctx: ClassContext | null
   const scope: Scope = { names, ctx, bound, classes, symbol };
   const calls = body ? callsIn(body, scope, collector, false) : [];
   const doc = docOf(node, collector.header);
-  return { kind: "fn", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature, exported: true, calls, types, members: [], fingerprint: fingerprint(node), ...(doc !== undefined ? { doc } : {}) };
+  return { kind: "fn", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature, exported: true, calls, types, members: [], ...fingerprintFacts(node), ...(doc !== undefined ? { doc } : {}) };
 }
 
 /** Every node of a function body that runs in its own scope: not into a nested named function or class. */

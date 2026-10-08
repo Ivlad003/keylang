@@ -228,7 +228,7 @@ test("magento: `frameworks: []` turns the adapter off; `[\"magento\"]` turns it 
   });
   const unknown = keylang(explicit, ["map"]);
   assert.equal(unknown.status, 2);
-  assert.match(unknown.stderr, /`frameworks\[0\]` must be one of "magento", got "symfony"/);
+  assert.match(unknown.stderr, /`frameworks\[0\]` must be one of "magento", "sfcc", got "symfony"/);
 });
 
 test("magento: a changed di.xml is a new snapshot and a new fact-cache entry; one that does not parse is a skipped-file hole", (t) => {

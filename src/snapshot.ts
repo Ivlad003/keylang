@@ -18,7 +18,7 @@ import { components } from "./scc.ts";
 
 export const SNAPSHOT_SCHEMA = 9;
 /** Bump when extraction or resolution changes the facts that `snapshotId` covers. */
-export const EXTRACTOR_VERSION = "m1.19";
+export const EXTRACTOR_VERSION = "m1.20";
 
 export type Resolution = "resolved" | "ambiguous" | "unresolved";
 /**
@@ -195,6 +195,13 @@ export interface SnapshotNode {
    * another file, or has no fingerprint.
    */
   closure?: { fingerprint: string; complete: boolean };
+  /**
+   * module (a file, a directory or a class): SHA-256 of its value code outside
+   * every fn and type — top-level constants, assignments, object tables and
+   * calls of its files, a class's fields and constants — without comments and
+   * layout. Absent when it has none. Part of the baseline of its explanation.
+   */
+  values?: string;
   /** fn: the plugins the framework's config wraps it in (ADR 0022), in the order they run. */
   interceptedBy?: Interception[];
 }
@@ -270,6 +277,10 @@ export interface EntryPoint {
    * node known, or the written `Class::method`, and the config line is a hole.
    */
   unresolved?: string;
+  /** The HTTP method a framework route answers (`GET`, `POST`); absent when the registration names none. */
+  method?: string;
+  /** What keylang could not name about it: a handler written in place, so `id` is the module that registers it. */
+  note?: string;
 }
 
 export interface AnalysisSnapshot {
@@ -377,6 +388,7 @@ export function buildSnapshot(
     if (m.endLine !== null) moduleNode.endLine = m.endLine;
     if (m.endCol !== null) moduleNode.endCol = m.endCol;
     if (m.comment) moduleNode.comment = m.comment;
+    if (m.values !== undefined) moduleNode.values = sha256(m.values);
     nodes[m.id] = moduleNode;
     for (const f of m.fns) {
       const fn: SnapshotNode = {

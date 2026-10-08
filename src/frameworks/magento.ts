@@ -132,9 +132,12 @@ export function className(written: string): string {
   return written.replace(/\s+/g, "").replace(/^\\+/, "").replace(/\\Proxy$/, "");
 }
 
+/** The facts of a Magento config file: every kind it may hold is present. */
+type MagentoFacts = ConfigFacts & Required<Pick<ConfigFacts, "observers" | "classEntries" | "routes">>;
+
 /** The `ConfigFacts` of a file with no facts, and the reason when it gave none. */
-function noFacts(path: string, scope: string, error: ConfigFacts["error"] = null): ConfigFacts {
-  return { path, scope, bindings: [], arguments: [], aliases: [], intercepts: [], observers: [], entries: [], routes: [], error };
+function noFacts(path: string, scope: string, error: ConfigFacts["error"] = null): MagentoFacts {
+  return { path, scope, bindings: [], arguments: [], aliases: [], intercepts: [], observers: [], classEntries: [], routes: [], error };
 }
 
 function type(name: string): TypeName {
@@ -187,7 +190,7 @@ export function parseXml(path: string, text: string): { root: XmlElement | null;
 }
 
 /** The facts of an XML config file: `read` takes them from the root element. A file that does not parse gives none, only the reason. */
-function fromXml(path: string, text: string, read: (root: XmlElement, facts: ConfigFacts) => void): ConfigFacts {
+function fromXml(path: string, text: string, read: (root: XmlElement, facts: MagentoFacts) => void): ConfigFacts {
   const facts = noFacts(path, scopeOf(path));
   const { root, error } = parseXml(path, text);
   if (error) return noFacts(path, facts.scope, error);
@@ -237,7 +240,7 @@ export function parseDi(path: string, text: string): ConfigFacts {
         } else if (top.name === "type" && className(holder) === COMMAND_LIST && argument.attributes.name === "commands") {
           for (const item of childrenNamed(argument, "item")) {
             const value = item.text.trim();
-            if (item.attributes["xsi:type"] === "object" && value) facts.entries.push({ kind: "cli", label: item.attributes.name ?? className(value), target: type(value), method: "execute", line: item.line, col: item.col });
+            if (item.attributes["xsi:type"] === "object" && value) facts.classEntries.push({ kind: "cli", label: item.attributes.name ?? className(value), target: type(value), method: "execute", line: item.line, col: item.col });
           }
         }
       }
@@ -290,7 +293,7 @@ export function parseWebapi(path: string, text: string): ConfigFacts {
         .flatMap((r) => childrenNamed(r, "resource"))
         .flatMap((r) => (r.attributes.ref ? [r.attributes.ref.trim()] : []));
       const label = `${(route.attributes.method ?? "GET").trim().toUpperCase()} ${url}${resources.length > 0 ? ` [${resources.join(", ")}]` : ""}`;
-      facts.entries.push({ kind: "rest", label, target: type(cls), method, line: route.line, col: route.col });
+      facts.classEntries.push({ kind: "rest", label, target: type(cls), method, line: route.line, col: route.col });
     }
   });
 }
@@ -310,7 +313,7 @@ export function parseCrontab(path: string, text: string): ConfigFacts {
         const schedule = childrenNamed(job, "schedule")[0]?.text.trim().replace(/\s+/g, " ");
         const configPath = childrenNamed(job, "config_path")[0]?.text.trim();
         const when = schedule ? ` ${schedule}` : configPath ? ` (config_path ${configPath})` : "";
-        facts.entries.push({ kind: "cron", label: `${name}${when}`, target: type(instance), method: job.attributes.method?.trim() || "execute", line: job.line, col: job.col });
+        facts.classEntries.push({ kind: "cron", label: `${name}${when}`, target: type(instance), method: job.attributes.method?.trim() || "execute", line: job.line, col: job.col });
       }
     }
   });
@@ -330,7 +333,7 @@ export function parseConsumers(path: string, text: string): ConfigFacts {
       const handler = consumer.attributes.handler?.trim();
       const [cls, method] = handler ? handler.split("::") : [consumer.attributes.consumerInstance?.trim(), "process"];
       if (!cls) continue;
-      facts.entries.push({ kind: "consumer", label, target: type(cls), method: method?.trim() || "process", line: consumer.line, col: consumer.col });
+      facts.classEntries.push({ kind: "consumer", label, target: type(cls), method: method?.trim() || "process", line: consumer.line, col: consumer.col });
     }
   });
 }
@@ -380,7 +383,7 @@ export function parseGraphql(path: string, text: string): ConfigFacts {
       RESOLVER.lastIndex = i;
       const found = RESOLVER.exec(text);
       if (found && braces === 1 && parens === 0 && typeName !== null && field !== null) {
-        facts.entries.push({ kind: "graphql", label: `${typeName}.${field}`, target: type(found[1]!.replace(/\\\\/g, "\\")), method: "resolve", line, col });
+        facts.classEntries.push({ kind: "graphql", label: `${typeName}.${field}`, target: type(found[1]!.replace(/\\\\/g, "\\")), method: "resolve", line, col });
       }
       // The directive's own name is no field.
       IDENT.lastIndex = i + 1;

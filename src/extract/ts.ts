@@ -4,7 +4,7 @@
 import { builtinModules } from "node:module";
 import type { CallFact, DeclFact, FileFacts, HookFact, ImportBinding, ImportFact, PassFact, TypeRefFact, UnsupportedFact, ValueRefFact } from "./facts.ts";
 import { blockCommentBody, isLicense, jsdocDescription, lineCommentsBody, nonEmpty } from "./doc-comments.ts";
-import { errorLine, fingerprint, grammarFor, located, query, startCol, withTree, type Grammar, type Language, type Node, type Tree } from "./treesitter.ts";
+import { errorLine, fingerprintFacts, grammarFor, located, query, startCol, valuesFingerprint, withTree, type Grammar, type Language, type Node, type Tree } from "./treesitter.ts";
 
 // Every call and `new`, whatever its callee: each becomes an edge or a hole, never nothing.
 const CALLS_QUERY = `
@@ -255,7 +255,7 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
           const value = d.childForFieldName("value");
           if (!nameNode || nameNode.type !== "identifier") continue;
           const name = nameNode.text;
-          const req = value ? requireSource(value, requires) : null;
+          const req = value ? (requireSource(value, requires) ?? superModuleSource(value)) : null;
           if (req) {
             facts.imports.push(importAt(d, req.source, [{ kind: "module", local: name, ...(req.namespace ? { namespace: true as const } : {}) }], false));
             continue;
@@ -460,6 +460,8 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
   collectUnsupported(root, facts);
   collectValueRefs(root, facts);
   collectRouteEntries(root, facts);
+  const values = valuesFingerprint(root.namedChildren, facts.decls);
+  if (values !== undefined) facts.values = values;
   if (root.hasError) {
     facts.completeness = "opaque";
     facts.parseError = { line: errorLine(root), reason: "syntax error" };
@@ -551,7 +553,7 @@ function typeOnlySpecifier(stmt: Node, local: string): boolean {
 function decl(kind: DeclFact["kind"], name: string, node: Node, signature: string | null, exported: boolean, calls: CallFact[], types: TypeRefFact[], members: DeclFact[]): DeclFact {
   const at = located(node);
   const doc = docOf(node);
-  return { kind, name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature, exported, calls, types, members, fingerprint: fingerprint(node), ...(doc !== undefined ? { doc } : {}) };
+  return { kind, name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature, exported, calls, types, members, ...fingerprintFacts(node), ...(doc !== undefined ? { doc } : {}) };
 }
 
 function boundCall(call: CallFact, bound: "parameter" | "local" | null): CallFact {
@@ -866,6 +868,8 @@ function classDecl(name: string, cls: Node, at: Node, exported: boolean, declCal
   const typeParamsNode = cls.childForFieldName("type_parameters");
   const types = [...(typeParamsNode ? collectTypeRefs(typeParamsNode, typeParams) : []), ...(heritageNode ? collectTypeRefs(heritageNode, typeParams) : []), ...fieldTypes];
   const out = decl("class", name, at, heritage(cls), exported, [], types, members);
+  const values = valuesFingerprint(items, members);
+  if (values !== undefined) out.values = values;
   const base = heritageNode ? baseClass(heritageNode) : null;
   if (base) out.base = base;
   return out;
@@ -913,8 +917,9 @@ function reactWrapperFn(value: Node, react: ReactBindings): Node | null {
 function initializer(name: "constructor" | "static", items: { node: Node; calls: CallFact[] }[]): DeclFact {
   const first = located(items[0]!.node);
   const last = located(items[items.length - 1]!.node);
-  const print = items.map((item) => fingerprint(item.node)).join(":");
-  return { kind: "fn", name, line: first.line, col: first.col, endLine: last.endLine, endCol: last.endCol, signature: null, exported: true, calls: items.flatMap((item) => item.calls), types: [], members: [], fingerprint: print };
+  const prints = items.map((item) => fingerprintFacts(item.node));
+  const readsImports = [...new Set(prints.flatMap((p) => p.readsImports ?? []))].sort();
+  return { kind: "fn", name, line: first.line, col: first.col, endLine: last.endLine, endCol: last.endCol, signature: null, exported: true, calls: items.flatMap((item) => item.calls), types: [], members: [], fingerprint: prints.map((p) => p.fingerprint).join(":"), ...(readsImports.length > 0 ? { readsImports } : {}) };
 }
 
 function memberName(node: Node): string {
@@ -1042,6 +1047,8 @@ function collectDynamicImports(root: Node, facts: FileFacts): void {
       if (specs === null) facts.unsupported.push(unsupported(node, "computed specifier"));
       for (const spec of specs ?? []) add(node, spec.spec, spec.optional);
     }
+    // SFCC `module.superModule`: the same file in the next cartridge of the cartridge path, an import the resolver places.
+    if (node.type === "member_expression" && isSuperModule(node)) add(node, SUPER_MODULE, false);
     if (node.type === "call_expression") {
       const fn = node.childForFieldName("function");
       const isImport = fn?.type === "import";
@@ -1678,6 +1685,18 @@ function requireSource(value: Node, requires: ReturnType<typeof query>): { sourc
   return null;
 }
 
+/** The specifier of SFCC's `module.superModule` (`src/frameworks/cartridges.ts` resolves the same literal). */
+const SUPER_MODULE = "module.superModule";
+
+function isSuperModule(node: Node): boolean {
+  return node.type === "member_expression" && node.text.replace(/\s+/g, "") === SUPER_MODULE;
+}
+
+/** `const base = module.superModule`: the whole module of the next cartridge, as `require` binds one. */
+function superModuleSource(value: Node): { source: string; namespace: boolean } | null {
+  return isSuperModule(value) ? { source: SUPER_MODULE, namespace: false } : null;
+}
+
 /**
  * `module.exports = {…}`, `module.exports = f`, `exports.x = …`. A function
  * value assigned there is a fn of the module, like `export const x = () => …`:
@@ -1741,6 +1760,10 @@ function stringValue(n: Node): string | null {
 /** HTTP verbs of a router's registration methods, as Express, Koa-router, Fastify and Hono write them. */
 const ROUTE_METHODS = new Set(["get", "post", "put", "patch", "delete", "all"]);
 
+/** SFRA's `server` registrations: a route (`get`, `post`, `use`) or a change of one another cartridge declared. */
+const SFRA_METHODS = new Set(["get", "post", "use", "append", "prepend", "replace"]);
+const SFRA_CONTROLLER = /(?:^|\/)cartridges\/[^/]+\/cartridge\/controllers\/[^/]+\.js$/;
+
 /**
  * `app.get('/x', h)`, `router.post('/x', auth, h)`: a handler registered on a
  * literal path — a `route` entry labelled `GET /x` whose callee is the last
@@ -1749,6 +1772,7 @@ const ROUTE_METHODS = new Set(["get", "post", "put", "patch", "delete", "all"]);
  */
 function collectRouteEntries(root: Node, facts: FileFacts): void {
   const entries: NonNullable<FileFacts["entries"]> = [];
+  const controller = SFRA_CONTROLLER.test(facts.path);
   const walk = (node: Node): void => {
     if (node.type === "call_expression") {
       const fn = node.childForFieldName("function");
@@ -1760,6 +1784,13 @@ function collectRouteEntries(root: Node, facts: FileFacts): void {
       if (method !== null && ROUTE_METHODS.has(method) && path !== null && path.startsWith("/") && handler !== undefined && (handler.type === "identifier" || handler.type === "member_expression")) {
         const at = located(node);
         entries.push({ kind: "route", label: `${method.toUpperCase()} ${path}`, callee: collapse(handler.text), line: at.line, col: at.col });
+      }
+      // SFRA: `server.get('Show', mw, handler)` in a cartridge's `controllers/<Name>.js`; the adapter names it `<Name>-Show`.
+      const target = fn?.type === "member_expression" ? fn.childForFieldName("object") : null;
+      if (controller && method !== null && SFRA_METHODS.has(method) && target?.type === "identifier" && target.text === "server" && path !== null && path !== "" && handler !== undefined) {
+        const at = located(node);
+        const named = handler.type === "identifier" || handler.type === "member_expression";
+        entries.push({ kind: "sfra", label: path, method, callee: named ? collapse(handler.text) : null, line: at.line, col: at.col });
       }
     }
     for (const child of node.namedChildren) walk(child);

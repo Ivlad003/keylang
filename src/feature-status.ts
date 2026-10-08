@@ -23,6 +23,7 @@ import { sectionNodes, walk, type Document } from "./ir.ts";
 import { compareText, type Span } from "./span.ts";
 import { compileSpec, walkFlow, type Flow, type FlowItem, type FlowStep, type QuestionItem, type SpecIR, type Trigger } from "./spec-ir.ts";
 import type { Verdict } from "./verdict.ts";
+import type { Weakening } from "./weakening.ts";
 
 /**
  * How far a feature file got, the first that holds: `done` (no gaps), `idea`
@@ -38,7 +39,7 @@ export const STAGES: readonly Stage[] = ["idea", "behavior", "structure", "ready
 
 /** What keeps a feature from done. Every gap blocks it; `stage` is where it is fixed. */
 export interface Gap {
-  kind: "planned" | "static" | "rule" | "spec" | "empty" | "diagnostic" | "question" | "deny";
+  kind: "planned" | "static" | "rule" | "spec" | "empty" | "diagnostic" | "question" | "deny" | "weakened";
   id: string;
   file: string;
   line: number;
@@ -161,13 +162,15 @@ export interface FeatureInput {
   format?: RuleFormat;
   /** Layers of `keylang.json`: a planned id outside them and `external` is a `layer` hint. */
   layers?: readonly string[];
+  /** The spec weakened since the base (K108), each a `weakened` gap; a removed step of this feature file is its `spec` gap instead. */
+  weakened?: readonly Weakening[];
 }
 
 const RULE_CODES = new Set(["K101", "K102", "K104", "K105", "K107"]);
 /** Errors of the spec itself: a line keylang could not read is no claim it checks. */
 const SPEC_CODES = new Set(["K001", "K002", "K003", "K004", "K005"]);
 const FLOW = new Set(["ID", "static", "tests", "trace"]);
-const KIND_ORDER: Record<Gap["kind"], number> = { empty: 0, diagnostic: 1, question: 2, deny: 3, planned: 4, static: 5, rule: 6, spec: 7 };
+const KIND_ORDER: Record<Gap["kind"], number> = { empty: 0, diagnostic: 1, question: 2, deny: 3, planned: 4, static: 5, rule: 6, spec: 7, weakened: 8 };
 const HINT_ORDER: Record<Hint["kind"], number> = { trigger: 0, steps: 1, layer: 2, signature: 3, rule: 4 };
 
 /** Ids declared or named in one spec, in first-seen order. */
@@ -263,6 +266,10 @@ export function featureStatus(input: FeatureInput, slug: string): FeatureReport 
   }
 
   if (input.base !== undefined && input.base.state !== "unavailable") gaps.push(...weakenedPlan(input, path, input.base));
+  for (const item of input.weakened ?? []) {
+    if (item.kind === "step" && item.file === path) continue;
+    gaps.push({ kind: "weakened", id: "K108", file: item.file, line: item.line, col: item.col, reason: `K108 ${item.message}`, stage: "structure" });
+  }
 
   for (const flow of flows) {
     const at = { file: path, line: flow.span.start.line, col: flow.span.start.col };
@@ -495,10 +502,10 @@ function planGaps(input: FeatureInput, path: string, at: string, baseDoc: Docume
   return gaps;
 }
 
-type PlanItem = Trigger | FlowStep | QuestionItem;
+export type PlanItem = Trigger | FlowStep | QuestionItem;
 
 /** Every `trigger`, `step` and open question of a flow with a key: the flow, its parents, and itself. */
-function planItems(flow: Flow): { key: string; item: PlanItem }[] {
+export function planItems(flow: Flow): { key: string; item: PlanItem }[] {
   const out: { key: string; item: PlanItem }[] = [];
   const visit = (item: Trigger | FlowItem, parents: string): void => {
     const self =

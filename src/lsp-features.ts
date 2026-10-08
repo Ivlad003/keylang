@@ -322,7 +322,7 @@ export function hoverContent(ws: Workspace, path: string, position: LspPosition)
   return { id: target.id, title, place, declaration, evidence, flows: flowsUsing(ws.analysis.spec, target.id), range: fromSpan(ws.text(path), target.span) };
 }
 
-const PLACE: Record<SectionKind, string> = { map: "the map", rules: "rules", flow: "a flow", wiring: "wiring" };
+const PLACE: Record<SectionKind, string> = { map: "the map", rules: "rules", flow: "a flow", wiring: "wiring", migration: "a migration" };
 
 /**
  * Hover on a keyword, or on a line without an ID: what the line does under

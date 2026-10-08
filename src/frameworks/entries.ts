@@ -90,11 +90,11 @@ export function frameworkEntries(inputs: readonly FrameworkInput[], deps: EntryD
     const observers: Declared[] = [];
     for (const { facts, owner: dir } of configs) {
       const owner = deps.owner(dir);
-      for (const fact of facts.observers) {
+      for (const fact of facts.observers ?? []) {
         events.push({ name: fact.event, file: facts.path, line: fact.line, col: fact.col });
         observers.push({ fact, scope: facts.scope, file: facts.path, owner });
       }
-      for (const fact of facts.entries) {
+      for (const fact of facts.classEntries ?? []) {
         const at = { file: facts.path, line: fact.line, col: fact.col };
         const text = `${fact.kind} ${fact.label}`;
         const found = target(deps, fact.target, fact.method, facts.scope === GLOBAL ? ENTRY_AREA[fact.kind] : facts.scope);
@@ -204,7 +204,7 @@ function controllerEntries(input: FrameworkInput, deps: EntryDeps): ConfigEntry[
   for (const m of input.modules ?? []) dirs.set(m.name, [...(dirs.get(m.name) ?? []), m.dir]);
   const methods = new Map(Object.entries(convention.methods).map(([name, method]) => [asciiLower(name), method]));
   for (const { facts } of input.configs) {
-    for (const route of facts.routes) {
+    for (const route of facts.routes ?? []) {
       for (const module of route.modules) {
         for (const dir of dirs.get(module) ?? []) {
           const base = `${dir === "" ? "" : `${dir}/`}${convention.dir(facts.scope)}/`;

@@ -11,27 +11,32 @@
 // the client places nothing itself. The editor is ticket 23. Two more modes
 // share the page (business-flows/22): the entry explorer (explorer.ts) — the
 // lazy call tree of an entry point with «Зберегти як флоу» — and «Сліпі
-// зони» (blind.ts), the report of `keylang coverage`.
+// зони» (blind.ts), the report of `keylang coverage`. The fourth, «Редактор»
+// (editor.ts, business-flows/23), opens a view on an editable canvas.
 
 import { Api, ApiError, type Diagram, type DiagramNode, type PageQuery, type Usages, type ViewQuery, type Views, takeToken } from "./api.ts";
 import { BlindSpots } from "./blind.ts";
 import { Canvas, VERDICT_COLOUR, VERDICT_GLYPH } from "./canvas.ts";
 import { codeLink, element, make } from "./dom.ts";
+import { Editor } from "./editor.ts";
 import { Explorer } from "./explorer.ts";
+import { mountExport } from "./export.ts";
 import { VirtualList, type ListItem } from "./list.ts";
+import { mountTour } from "./tour.ts";
 import "./diagrams.css";
 
 /** How often the page asks again, ms; a request that takes longer delays the next one. */
 const POLL_MS = 5000;
 
-type Mode = "diagrams" | "explore" | "blind";
+type Mode = "diagrams" | "explore" | "blind" | "editor";
 
 function modeOf(query: PageQuery): Mode {
-  return query.view === "explore" ? "explore" : query.view === "blind" ? "blind" : "diagrams";
+  return query.view === "explore" ? "explore" : query.view === "blind" ? "blind" : query.view === "editor" ? "editor" : "diagrams";
 }
 
 /** The fragment of a view (`view=flow&name=…`), with the selected node. */
 function hashOf(query: PageQuery, node: string | null): string {
+  if (query.view === "editor") return new URLSearchParams({ view: "editor", of: query.of ? keyOf(query.of) : "" }).toString();
   const params = new URLSearchParams(query);
   if (node !== null) params.set("node", node);
   return params.toString();
@@ -49,6 +54,19 @@ function readHash(): { query: PageQuery; node: string | null } | null {
   if (view === "layers") return { query: { view }, node };
   if (view === "explore") return { query: { view, id: id ?? "" }, node: null };
   if (view === "blind") return { query: { view }, node: null };
+  if (view === "editor") return { query: { view, of: viewOfKey(params.get("of") ?? "") }, node: null };
+  return null;
+}
+
+/** The view a list key names (`flow:checkout`, `entry:<id>`, `layers`), or null. */
+function viewOfKey(key: string): ViewQuery | null {
+  if (key === "layers") return { view: "layers" };
+  const at = key.indexOf(":");
+  const kind = key.slice(0, at);
+  const rest = key.slice(at + 1);
+  if (at === -1 || rest === "") return null;
+  if (kind === "flow" || kind === "discovered") return { view: kind, name: rest };
+  if (kind === "entry") return { view: "entry", id: rest };
   return null;
 }
 
@@ -63,6 +81,8 @@ function keyOf(query: PageQuery): string {
       return `explore:${query.id}`;
     case "blind":
       return "blind";
+    case "editor":
+      return `editor:${query.of ? keyOf(query.of) : ""}`;
     default:
       return "layers";
   }
@@ -142,22 +162,27 @@ class Page {
   private mode: Mode = "diagrams";
   private readonly explorer: Explorer;
   private readonly blind: BlindSpots;
+  private readonly editor: Editor;
   private node: string | null = null;
   private usages: Usages | null = null;
   private items: ListItem[] = [];
 
   constructor() {
     this.api = new Api(takeToken());
-    this.list = new VirtualList(element("views"), (item) => void this.open(item.query));
+    // In the editor a view of the list opens on the editable canvas.
+    this.list = new VirtualList(element("views"), (item) => void this.open(this.mode === "editor" && item.query.view !== "explore" && item.query.view !== "blind" && item.query.view !== "editor" ? { view: "editor", of: item.query } : item.query));
     this.canvas = new Canvas(element("graph"), element("minimap"), { select: (node) => this.pick(node) });
     const host = { root: () => this.views?.root, explore: (id: string) => void this.open({ view: "explore", id }), status: (text: string) => (this.status.textContent = text) };
     this.explorer = new Explorer(element("explorer"), this.api, host);
+    this.editor = new Editor(element("editor"), this.api, { status: (text: string) => (this.status.textContent = text), views: () => this.views });
+    (window as unknown as { keylangEditor: unknown }).keylangEditor = this.editor;
     this.blind = new BlindSpots(element("blind"), this.api, { ...host, discovered: (name: string) => void this.open({ view: "discovered", name }) });
     for (const tab of document.querySelectorAll<HTMLButtonElement>("#modes button[data-mode]")) {
       tab.addEventListener("click", () => {
         const mode = tab.dataset["mode"] as Mode;
         if (mode === "explore") void this.open({ view: "explore", id: this.explorer.current() });
         else if (mode === "blind") void this.open({ view: "blind" });
+        else if (mode === "editor") void this.open({ view: "editor", of: this.editor.view() === "" ? this.lastDiagram : viewOfKey(this.editor.view()) });
         else if (this.lastDiagram) void this.open(this.lastDiagram);
         else {
           this.setMode("diagrams");
@@ -184,6 +209,7 @@ class Page {
     element<HTMLButtonElement>("zoom-in").addEventListener("click", () => this.canvas.zoomAt(1.25));
     element<HTMLButtonElement>("zoom-out").addEventListener("click", () => this.canvas.zoomAt(1 / 1.25));
     element<HTMLButtonElement>("zoom-fit").addEventListener("click", () => this.canvas.fit());
+    mountExport(element("toolbar"), () => (this.active === null || this.active.view === "explore" || this.active.view === "blind" ? null : this.active.view === "editor" ? this.active.of : this.active), (text) => (this.status.textContent = text));
     window.addEventListener("hashchange", () => {
       const wanted = readHash();
       if (wanted && (this.active === null || keyOf(wanted.query) !== keyOf(this.active))) void this.open(wanted.query, wanted.node);
@@ -220,7 +246,7 @@ class Page {
   /** The list of the mode: every view to draw, or the entry points and events to explore. */
   private fillList(): void {
     if (!this.views) return;
-    this.items = this.mode === "diagrams" ? itemsOf(this.views) : exploreItemsOf(this.views);
+    this.items = this.mode === "diagrams" || this.mode === "editor" ? itemsOf(this.views) : exploreItemsOf(this.views);
     this.list.setItems(this.items);
     this.markList();
   }
@@ -258,11 +284,14 @@ class Page {
     this.node = node;
     this.setMode(modeOf(wanted));
     const key = keyOf(wanted);
-    this.list.setActive(key);
-    this.list.reveal(key);
+    // The editor marks the view it holds in the list.
+    const listKey = wanted.view === "editor" ? (wanted.of ? keyOf(wanted.of) : "") : key;
+    this.list.setActive(listKey);
+    this.list.reveal(listKey);
     this.writeHash();
     if (wanted.view === "explore") return this.explorer.show(wanted.id);
     if (wanted.view === "blind") return this.blind.show();
+    if (wanted.view === "editor") return this.openEditor(wanted.of);
     const query: ViewQuery = wanted;
     this.lastDiagram = query;
     this.status.textContent = `loading ${key}…`;
@@ -278,6 +307,21 @@ class Page {
       this.pick(diagram.nodes.find((n) => n.id === node) ?? null, false);
     } catch (error) {
       if (this.active === query) this.status.textContent = explain(error);
+    }
+  }
+
+  /** A view on the editor's canvas «з коду», or an empty canvas. */
+  private async openEditor(of: ViewQuery | null): Promise<void> {
+    const key = of ? keyOf(of) : "";
+    if (key !== "" && key === this.editor.view()) return;
+    if (!of) return this.editor.openEmpty();
+    this.status.textContent = `loading ${key} into the editor…`;
+    try {
+      const diagram = await this.api.diagram(of);
+      if (this.active?.view !== "editor" || !this.active.of || keyOf(this.active.of) !== key) return;
+      await this.editor.openDiagram(key, diagram);
+    } catch (error) {
+      this.status.textContent = explain(error);
     }
   }
 
@@ -452,3 +496,5 @@ class Page {
 }
 
 void new Page().start();
+// «Огляд»: the project tour over the canvas (business-flows/15).
+mountTour();

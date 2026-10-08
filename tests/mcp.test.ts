@@ -401,6 +401,27 @@ test("mcp: list_integrations gives the call sites of known clients with the entr
   assert.equal(treeBytes(mcp.dir), before, "read-only");
 });
 
+test("mcp: project_tour gives the tour of the fresh snapshot as `keylang tour --json`, or its Markdown, and writes nothing", async (t) => {
+  const mcp = await connect(t);
+  assert.ok((await mcp.list()).includes("project_tour"));
+  writeFileSync(join(mcp.dir, "src/app/orders.ts"), "/** Lists the orders. */\nexport function listOrders(): string[] {\n  return [];\n}\n");
+  writeFileSync(join(mcp.dir, "src/app/server.ts"), 'import { listOrders } from "./orders.ts";\nconst app = { get: (_p: string, _h: unknown) => 0 };\napp.get("/orders", listOrders);\n');
+  const before = treeBytes(mcp.dir);
+  const answer = await mcp.call("project_tour");
+  assert.equal(answer.isError, false, answer.text);
+  const data = JSON.parse(answer.text) as { snapshotId: string; processes: { domains: { processes: { flows: { name: string; description: string | null; link: string }[] }[] }[] }; entries: { total: number }; startHere: { id: string }[] };
+  assert.match(data.snapshotId, /^[0-9a-f]{64}$/);
+  assert.equal("text" in data, false);
+  assert.equal(data.entries.total, 1);
+  const flows = data.processes.domains.flatMap((domain) => domain.processes.flatMap((p) => p.flows));
+  assert.deepEqual(flows.map((flow) => [flow.name, flow.description, flow.link]), [["listOrders", "Lists the orders.", "/diagrams#view=discovered&name=listOrders"]]);
+  assert.ok(data.startHere.some((fn) => fn.id === "app.orders.listOrders"));
+  const page = await mcp.call("project_tour", { format: "markdown" });
+  assert.equal(page.isError, false, page.text);
+  assert.match(page.text, /^## 7\. Where to start reading$/m);
+  assert.equal(treeBytes(mcp.dir), before, "read-only");
+});
+
 test("mcp: discover_flows drafts a flow per entry point and writes nothing; apply_diff refuses the generated view", async (t) => {
   const mcp = await connect(t);
   assert.ok((await mcp.list()).includes("discover_flows"));
