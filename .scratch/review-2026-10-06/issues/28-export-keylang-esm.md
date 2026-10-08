@@ -1,6 +1,6 @@
 # 28: `export *` з двох модулів з однойменними значеннями: keylang вважає ім'я експортованим, ESM — ні
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -52,11 +52,15 @@ scratchpad/review/rule-flow-semantics/f3: `node bin/keylang.js check` дає `ke
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/exports.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/exports.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+- 2026-10-08: Регресійний тест `tests/analyzer.test.ts` «exports: two `export *` sources with different values of one name export neither, as ESM…» — справжній CLI: `a.ts` і `b.ts` з `export const V`, `index.ts` = два `export *`; `exports f, g` → `1 ok` (було K104 «exports `V` (value, re-exported from `app.a`)»), `exports f, g, V` → K104 absence (було хибне ok). Контроль: ромб `index` → `x`, `y` → `a` дає одне `V`, `1 ok`.
+- 2026-10-08: Виправлення: `pickStar` (`src/exports.ts`) порівнює походження імені, а не лише непорожні `symbol`: для запису без symbol — `from` (кінець ланцюжка реекспортів) + локальне ім'я, для власного значення модуля — модуль + ім'я; різні походження → ім'я неоднозначне, ESM його не експортує. Ім'я без модуля-джерела у знімку (stdlib, assumed) походження не має і конфлікту не дає, як і раніше.
+- 2026-10-08: Контракт: `docs/semantics.md` (рядок про `exports`, `export *`). Перевірки: `node --test tests/analyzer.test.ts tests/languages.test.ts tests/cli-rules.test.ts tests/rules-area.test.ts` — 101/101, `npm run typecheck` — ок.

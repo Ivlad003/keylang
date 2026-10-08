@@ -1216,3 +1216,26 @@ test("a relative import of a module that only has a declaration file (`.d.ts`, `
   assert.equal(check.status, 0, check.stdout + check.stderr);
   assert.match(check.stdout + check.stderr, /0 fail, 0 unverified, 1 ok/);
 });
+
+test("exports: two `export *` sources with different values of one name export neither, as ESM; one value reached twice is exported", (t) => {
+  const files = {
+    "src/app/a.ts": "export const V = 1;\nexport function f(): void {}\n",
+    "src/app/b.ts": "export const V = 2;\nexport function g(): void {}\n",
+    "src/app/index.ts": 'export * from "./a.ts";\nexport * from "./b.ts";\n',
+  };
+  const listed = repo(t, { ...files, "keylang/rules.md": "# rules\n\n- module app.index\n  - exports f, g\n" });
+  const ok = keylang(listed, ["check"]);
+  assert.equal(ok.status, 0, ok.stdout);
+  assert.match(ok.stdout + ok.stderr, /0 fail, 0 unverified, 1 ok/);
+  const withV = repo(t, { ...files, "keylang/rules.md": "# rules\n\n- module app.index\n  - exports f, g, V\n" });
+  assert.match(keylang(withV, ["check"]).stdout, /K104 absence: `app\.index` does not export `V`/);
+  // A diamond: `V` of `a` through two barrels is one declaration.
+  const diamond = repo(t, {
+    "src/app/a.ts": "export const V = 1;\n",
+    "src/app/x.ts": 'export * from "./a.ts";\n',
+    "src/app/y.ts": 'export * from "./a.ts";\n',
+    "src/app/index.ts": 'export * from "./x.ts";\nexport * from "./y.ts";\n',
+    "keylang/rules.md": "# rules\n\n- module app.index\n  - exports V\n",
+  });
+  assert.match(keylang(diamond, ["check"]).stdout + keylang(diamond, ["check"]).stderr, /0 fail, 0 unverified, 1 ok/);
+});
