@@ -10,117 +10,117 @@
     <a id="features.agent-cli"></a><br>An agent CLI as a text model (ADR 0009): `cli:claude`, `cli:codex`, `cli:opencode`, `cli:cursor` or a command defined in `~/.config/keylang/agents.json`. One request is one run of the CLI in "answer only" form: no project hooks, MCP servers or instructions where the CLI can…
     - node [external.node](external.md#external.node)
     - config [base.config](base.md#base.config)
-    - type [Env](../../src/agent-cli.ts#L19) = Readonly<Record<string, string | undefined>> <!-- internal -->
+    - type [Env](../../src/agent-cli.ts#L20) = Readonly<Record<string, string | undefined>> <!-- internal -->
       <a id="features.agent-cli.Env"></a><br>A read-only map of environment variable names to their string values, where missing variables appear as `undefined`. It is the shape the agent CLI uses when reading process environment settings. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Preset](../../src/agent-cli.ts#L20) = (typeof AGENT_CLI_PRESETS)[number] <!-- internal -->
+    - type [Preset](../../src/agent-cli.ts#L21) = (typeof AGENT_CLI_PRESETS)[number] <!-- internal -->
       <a id="features.agent-cli.Preset"></a><br>Derives a string-literal union type from the elements of the `AGENT_CLI_PRESETS` array, so a value can only be one of the preset names listed there. Used to type-check preset selection in the agent CLI module. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [CliDefinition](../../src/agent-cli.ts#L23) = { command: string[] } | { bin: string }
+    - type [CliDefinition](../../src/agent-cli.ts#L24) = { command: string[] } | { bin: string }
       <a id="features.agent-cli.CliDefinition"></a><br>A user's own CLI: `command[0]` is the binary; `{prompt_file}` and `{model}` are placeholders. A preset name takes only `bin`.
-    - type [AgentSettings](../../src/agent-cli.ts#L26)
+    - type [AgentSettings](../../src/agent-cli.ts#L27)
       <a id="features.agent-cli.AgentSettings"></a><br>`~/.config/keylang/agents.json`, validated.
-    - type [AgentSource](../../src/agent-cli.ts#L32) = "KEYLANG_AGENT" | "agents.json" | "keylang.json"
+    - type [AgentSource](../../src/agent-cli.ts#L33) = "KEYLANG_AGENT" | "agents.json" | "keylang.json"
       <a id="features.agent-cli.AgentSource"></a><br>Where the effective agent came from.
-    - type [CliRequest](../../src/agent-cli.ts#L34)
+    - type [CliRequest](../../src/agent-cli.ts#L35)
       <a id="features.agent-cli.CliRequest"></a><br>Defines the shape of a single request handed to the CLI agent layer: a `system` string carrying instructions and a `prompt` string carrying the user-facing text to be answered. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [CliCallOptions](../../src/agent-cli.ts#L40)
+    - type [CliCallOptions](../../src/agent-cli.ts#L41)
       <a id="features.agent-cli.CliCallOptions"></a><br>`ms`: the call's bound; `fromVariable`: the bound is `KEYLANG_LLM_TIMEOUT_MS`, which the timeout message then names.
-    - type [CliClient](../../src/agent-cli.ts#L48)
+    - type [CliClient](../../src/agent-cli.ts#L49)
       <a id="features.agent-cli.CliClient"></a><br>Contract for a handle onto an external agent CLI binary: it exposes the agent identifier, the chosen model (empty for the CLI default) and the executable path. Its single method sends a `CliRequest` with `CliCallOptions` and resolves to the CLI's text output. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - module [CliCancelled](../../src/agent-cli.ts#L59)
+    - module [CliCancelled](../../src/agent-cli.ts#L60)
       <a id="features.agent-cli.CliCancelled"></a><br>The caller cancelled the run; `llm.ts` turns it into `LlmCancelled`.
-      - fn [constructor](../../src/agent-cli.ts#L60) (agent: string)
+      - fn [constructor](../../src/agent-cli.ts#L61) (agent: string)
         <a id="features.agent-cli.CliCancelled.constructor"></a><br>Builds an error whose message prefixes "cancelled" with the given agent label and sets the instance name to "CliCancelled" so callers can distinguish it from other failures. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [agentsFile](../../src/agent-cli.ts#L75) (home: string) → string
+    - fn [agentsFile](../../src/agent-cli.ts#L76) (home: string) → string
       <a id="features.agent-cli.agentsFile"></a><br>Builds the path to the per-user agent settings file by joining the given home directory with `.config/keylang/agents.json`. Used by [`features.agent-cli.readAgentSettings`](features.md#features.agent-cli.readAgentSettings), [`features.agent-cli.cliClient`](features.md#features.agent-cli.cliClient), and [`features.agent-cli.presetBinary`](features.md#features.agent-cli.presetBinary) to locate that file. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [readAgentSettings](../../src/agent-cli.ts#L80) (home: string) → AgentSettings
+    - fn [readAgentSettings](../../src/agent-cli.ts#L81) (home: string) → AgentSettings
       <a id="features.agent-cli.readAgentSettings"></a><br>agents.json, validated; an absent file is empty settings. Errors name the file and the field.
       - calls [features.agent-cli.agentsFile](features.md#features.agent-cli.agentsFile), [features.agent-cli.parseAgentSettings](features.md#features.agent-cli.parseAgentSettings)
-    - fn [parseAgentSettings](../../src/agent-cli.ts#L93) (file: string, value: unknown) → AgentSettings
+    - fn [parseAgentSettings](../../src/agent-cli.ts#L94) (file: string, value: unknown) → AgentSettings
       <a id="features.agent-cli.parseAgentSettings"></a><br>The settings of an agents.json already parsed as JSON.
       - calls [features.agent-cli.isObject](features.md#features.agent-cli.isObject), [base.config.isAgent](base.md#base.config.isAgent), [features.agent-cli.cliDefinition](features.md#features.agent-cli.cliDefinition)
-    - fn [cliDefinition](../../src/agent-cli.ts#L109) (file: string, name: string, def: unknown) → CliDefinition <!-- internal -->
+    - fn [cliDefinition](../../src/agent-cli.ts#L110) (file: string, name: string, def: unknown) → CliDefinition <!-- internal -->
       <a id="features.agent-cli.cliDefinition"></a><br>Validates one `clis.<name>` entry from a settings file, checking the name format, allowed fields, and either a non-empty `bin` string or a `command` array whose placeholders are known, throwing descriptive errors on any violation. Preset names may only override `bin`; it uses… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.agent-cli.isObject](features.md#features.agent-cli.isObject)
-    - fn [resolveAgent](../../src/agent-cli.ts#L144) (configAgent: string | null, env: Env, home: string) → { agent: string | null; source: AgentSource | null }
+    - fn [resolveAgent](../../src/agent-cli.ts#L145) (configAgent: string | null, env: Env, home: string) → { agent: string | null; source: AgentSource | null }
       <a id="features.agent-cli.resolveAgent"></a><br>The agent in effect and where it came from: `KEYLANG_AGENT` (an empty variable is unset), else agents.json "use", else keylang.json `agent`. An invalid variable or agents.json throws, naming it.
       - calls [base.config.isAgent](base.md#base.config.isAgent), [features.agent-cli.readAgentSettings](features.md#features.agent-cli.readAgentSettings)
-    - fn [selectedAgent](../../src/agent-cli.ts#L159) (configAgent: string | null, env: Env = process.env, home: string = homedir()) → string | null
+    - fn [selectedAgent](../../src/agent-cli.ts#L160) (configAgent: string | null, env: Env = process.env, home: string = homedir()) → string | null
       <a id="features.agent-cli.selectedAgent"></a><br>The effective agent for deciding whether to ask at all (ghost, forms): a broken setting counts as an agent, so the request that follows reports it.
       - calls [features.agent-cli.resolveAgent](features.md#features.agent-cli.resolveAgent)
-    - fn [parseCliAgent](../../src/agent-cli.ts#L168) (agent: string) → { name: string; model: string }
+    - fn [parseCliAgent](../../src/agent-cli.ts#L169) (agent: string) → { name: string; model: string }
       <a id="features.agent-cli.parseCliAgent"></a><br>`cli:opencode:anthropic/claude-sonnet-5` → name and model (the model keeps its colons).
-    - type [Runner](../../src/agent-cli.ts#L175) = { preset: Preset; bin: string } | { command: string[] } <!-- internal -->
+    - type [Runner](../../src/agent-cli.ts#L176) = { preset: Preset; bin: string } | { command: string[] } <!-- internal -->
       <a id="features.agent-cli.Runner"></a><br>What `cliClient` runs: a preset with its binary, or a user's command.
-    - fn [cliClient](../../src/agent-cli.ts#L182) (agent: string, options: { root: string; env: Env; home: string }) → { client: CliClient } | { missing: string }
+    - fn [cliClient](../../src/agent-cli.ts#L183) (agent: string, options: { root: string; env: Env; home: string }) → { client: CliClient } | { missing: string }
       <a id="features.agent-cli.cliClient"></a><br>A client for a `cli:` agent, or why there is none (a missing binary, a Grok `agent` where Cursor's was expected): only a PATH scan and, for an `agent` binary, one memoized `--version`. Invalid agents.json throws.
       - calls [features.agent-cli.parseCliAgent](features.md#features.agent-cli.parseCliAgent), [features.agent-cli.readAgentSettings](features.md#features.agent-cli.readAgentSettings), [features.agent-cli.agentsFile](features.md#features.agent-cli.agentsFile), [features.agent-cli.findBinary](features.md#features.agent-cli.findBinary), [features.agent-cli.presetBinary](features.md#features.agent-cli.presetBinary), [features.agent-cli.completeWith](features.md#features.agent-cli.completeWith)
-    - fn [presetBinary](../../src/agent-cli.ts#L217) (preset: Preset, bin: string | null, env: Env, home: string) → { bin: string } | { missing: string } <!-- internal -->
+    - fn [presetBinary](../../src/agent-cli.ts#L218) (preset: Preset, bin: string | null, env: Env, home: string) → { bin: string } | { missing: string } <!-- internal -->
       <a id="features.agent-cli.presetBinary"></a><br>The binary of a preset: `bin` from agents.json, else its name on PATH; Cursor's is `cursor-agent`, or `agent` when its version is Cursor's.
       - calls [features.agent-cli.findBinary](features.md#features.agent-cli.findBinary), [features.agent-cli.agentsFile](features.md#features.agent-cli.agentsFile), [features.agent-cli.binaryVersion](features.md#features.agent-cli.binaryVersion)
-    - fn [binaryVersion](../../src/agent-cli.ts#L238) (bin: string, env: Env) → string | null <!-- internal -->
+    - fn [binaryVersion](../../src/agent-cli.ts#L239) (bin: string, env: Env) → string | null <!-- internal -->
       <a id="features.agent-cli.binaryVersion"></a><br>The first line of `<bin> --version`, at most 5 s, memoized per process; null when it gives none.
-    - fn [shortVersion](../../src/agent-cli.ts#L248) (line: string) → string
+    - fn [shortVersion](../../src/agent-cli.ts#L249) (line: string) → string
       <a id="features.agent-cli.shortVersion"></a><br>`2.1.289 (Claude Code)` → `2.1.289`; `codex-cli 0.155.1` → `0.155.1`; a Cursor build keeps its hash.
-    - fn [cliVersion](../../src/agent-cli.ts#L253) (bin: string, env: Env = process.env) → Promise<string | null>
+    - fn [cliVersion](../../src/agent-cli.ts#L254) (bin: string, env: Env = process.env) → Promise<string | null>
       <a id="features.agent-cli.cliVersion"></a><br>The version of a binary for doctor, asynchronously (5 s cap, never a login or status command).
       - calls [features.agent-cli.shortVersion](features.md#features.agent-cli.shortVersion)
-    - type [AgentCliProbe](../../src/agent-cli.ts#L272)
+    - type [AgentCliProbe](../../src/agent-cli.ts#L276)
       <a id="features.agent-cli.AgentCliProbe"></a><br>A preset as doctor sees it: its binary (null: none usable) and that binary's version (null: it gave none).
-    - fn [probeAgentClis](../../src/agent-cli.ts#L279) (env: Env = process.env, home: string = homedir()) → Promise<AgentCliProbe[]>
+    - fn [probeAgentClis](../../src/agent-cli.ts#L283) (env: Env = process.env, home: string = homedir()) → Promise<AgentCliProbe[]>
       <a id="features.agent-cli.probeAgentClis"></a><br>Every preset, probed in parallel with `--version` only: offline, never a login or status command.
       - calls [features.agent-cli.readAgentSettings](features.md#features.agent-cli.readAgentSettings), [features.agent-cli.presetBinary](features.md#features.agent-cli.presetBinary), [features.agent-cli.cliVersion](features.md#features.agent-cli.cliVersion)
-    - fn [findBinary](../../src/agent-cli.ts#L297) (name: string, env: Env) → string | null
+    - fn [findBinary](../../src/agent-cli.ts#L301) (name: string, env: Env) → string | null
       <a id="features.agent-cli.findBinary"></a><br>A name on PATH or a path, if it is an executable file.
       - calls [features.agent-cli.executable](features.md#features.agent-cli.executable)
-    - fn [executable](../../src/agent-cli.ts#L307) (path: string) → boolean <!-- internal -->
+    - fn [executable](../../src/agent-cli.ts#L311) (path: string) → boolean <!-- internal -->
       <a id="features.agent-cli.executable"></a><br>Checks whether a filesystem path points to a regular file that the current process may execute, returning false on any stat or access error. Used by [`features.agent-cli.findBinary`](features.md#features.agent-cli.findBinary) to validate candidate binaries. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [AnswerKind](../../src/agent-cli.ts#L320) = "result-json" | "file" | "opencode-events" | "stdout"
+    - type [AnswerKind](../../src/agent-cli.ts#L324) = "result-json" | "file" | "opencode-events" | "stdout"
       <a id="features.agent-cli.AnswerKind"></a><br>How the answer is read: a `type:"result"` JSON line, Codex's `-o` file, opencode's NDJSON events, or stdout.
-    - type [Invocation](../../src/agent-cli.ts#L322)
+    - type [Invocation](../../src/agent-cli.ts#L326)
       <a id="features.agent-cli.Invocation"></a><br>Describes a fully prepared external agent CLI run: the binary and arguments, optional stdin text, environment, how the answer is retrieved (`AnswerKind`), and any files to write (mode 0600) beforehand, including an answer file path when the answer is read from disk. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [invocation](../../src/agent-cli.ts#L337) (runner: Runner, model: string, request: CliRequest, root: string, env: Env, tmp: string) → Invocation
+    - fn [invocation](../../src/agent-cli.ts#L341) (runner: Runner, model: string, request: CliRequest, root: string, env: Env, tmp: string) → Invocation
       <a id="features.agent-cli.invocation"></a><br>The process to run for one request; `tmp` is a private directory outside the repository.
       - calls [features.agent-cli.wellFormed](features.md#features.agent-cli.wellFormed), [features.agent-cli.opencodeConfig](features.md#features.agent-cli.opencodeConfig)
-    - fn [opencodeConfig](../../src/agent-cli.ts#L418) (existing: string | undefined, system: string) → string <!-- internal -->
+    - fn [opencodeConfig](../../src/agent-cli.ts#L422) (existing: string | undefined, system: string) → string <!-- internal -->
       <a id="features.agent-cli.opencodeConfig"></a><br>The user's `OPENCODE_CONFIG_CONTENT` with keylang's agent on top: every permission denied.
       - calls [features.agent-cli.isObject](features.md#features.agent-cli.isObject)
-    - fn [wellFormed](../../src/agent-cli.ts#L432) (text: string) → string <!-- internal -->
+    - fn [wellFormed](../../src/agent-cli.ts#L436) (text: string) → string <!-- internal -->
       <a id="features.agent-cli.wellFormed"></a><br>Replaces any lone UTF-16 surrogate halves in the string with the U+FFFD replacement character so the result is valid Unicode. Used by [`features.agent-cli.invocation`](features.md#features.agent-cli.invocation) to sanitize text before passing it on. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [ResultLine](../../src/agent-cli.ts#L436) = { text: string; model: string | null } | { error: string } <!-- internal -->
+    - type [ResultLine](../../src/agent-cli.ts#L440) = { text: string; model: string | null } | { error: string } <!-- internal -->
       <a id="features.agent-cli.ResultLine"></a><br>Discriminated union for one line of CLI result output: either a successful response carrying `text` and the `model` that produced it (or null), or a failure carrying only an `error` message. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [parseResultLine](../../src/agent-cli.ts#L439) (line: string) → ResultLine | null
+    - fn [parseResultLine](../../src/agent-cli.ts#L443) (line: string) → ResultLine | null
       <a id="features.agent-cli.parseResultLine"></a><br>A `{"type":"result"}` line of Claude Code or Cursor: the answer with the model that wrote it, an error, or null for any other line.
       - calls [features.agent-cli.parseJson](features.md#features.agent-cli.parseJson), [features.agent-cli.isObject](features.md#features.agent-cli.isObject), [features.agent-cli.answeringModel](features.md#features.agent-cli.answeringModel)
-    - fn [answeringModel](../../src/agent-cli.ts#L452) (usage: unknown) → string | null <!-- internal -->
+    - fn [answeringModel](../../src/agent-cli.ts#L456) (usage: unknown) → string | null <!-- internal -->
       <a id="features.agent-cli.answeringModel"></a><br>The model of Claude Code's `modelUsage` (`{"<model>": {"outputTokens": n, …}}`) that wrote the most output: the CLI may also use a small model on the side. Null when the line has none (Cursor) or its shape is not that.
       - calls [features.agent-cli.isObject](features.md#features.agent-cli.isObject)
-    - fn [parseOpencodeEvents](../../src/agent-cli.ts#L466) (output: string) → { text: string } | { error: string }
+    - fn [parseOpencodeEvents](../../src/agent-cli.ts#L470) (output: string) → { text: string } | { error: string }
       <a id="features.agent-cli.parseOpencodeEvents"></a><br>opencode's NDJSON: the text parts after the last step start, or the first error.
       - calls [features.agent-cli.parseJson](features.md#features.agent-cli.parseJson), [features.agent-cli.isObject](features.md#features.agent-cli.isObject)
-    - fn [completeWith](../../src/agent-cli.ts#L485) (agent: string, runner: Runner, model: string, request: CliRequest, options: { root: string; env: Env }, call: CliCallOptions) → Promise<string> <!-- internal -->
-      <a id="features.agent-cli.completeWith"></a><br>Runs one agent-CLI call in a throwaway temp dir: builds the command via [`features.agent-cli.invocation`](features.md#features.agent-cli.invocation), writes its files, executes with [`features.agent-cli.runInvocation`](features.md#features.agent-cli.runInvocation), and parses output through [`features.agent-cli.readAnswer`](features.md#features.agent-cli.readAnswer). Throws [`features.agent-cli.CliCancelled`](features.md#features.agent-cli.CliCancelled) if… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+    - fn [completeWith](../../src/agent-cli.ts#L489) (agent: string, runner: Runner, model: string, request: CliRequest, options: { root: string; env: Env }, call: CliCallOptions) → Promise<string> <!-- internal -->
+      <a id="features.agent-cli.completeWith"></a><br>Runs one agent-CLI call in a throwaway temp dir: builds the command via [`features.agent-cli.invocation`](features.md#features.agent-cli.invocation), writes its files, executes with [`features.agent-cli.runInvocation`](features.md#features.agent-cli.runInvocation), and parses output through [`features.agent-cli.readAnswer`](features.md#features.agent-cli.readAnswer). Throws [`features.agent-cli.CliCancelled`](features.md#features.agent-cli.CliCancelled) if… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.agent-cli.CliCancelled](features.md#features.agent-cli.CliCancelled), [features.agent-cli.invocation](features.md#features.agent-cli.invocation), [features.agent-cli.runInvocation](features.md#features.agent-cli.runInvocation), [features.agent-cli.readAnswer](features.md#features.agent-cli.readAnswer)
-    - type [RunResult](../../src/agent-cli.ts#L505) <!-- internal -->
+    - type [RunResult](../../src/agent-cli.ts#L509) <!-- internal -->
       <a id="features.agent-cli.RunResult"></a><br>Bundles what a CLI subprocess run produced: the full captured stdout text plus an optional already-parsed `ResultLine` taken from an early `type:"result"` line, or null when none was found. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [readAnswer](../../src/agent-cli.ts#L512) (agent: string, inv: Invocation, run: RunResult) → { text: string; model: string | null } <!-- internal -->
+    - fn [readAnswer](../../src/agent-cli.ts#L516) (agent: string, inv: Invocation, run: RunResult) → { text: string; model: string | null } <!-- internal -->
       <a id="features.agent-cli.readAnswer"></a><br>The answer, with the model that wrote it when the CLI's output names it.
       - calls [features.agent-cli.lastResult](features.md#features.agent-cli.lastResult), [features.agent-cli.parseOpencodeEvents](features.md#features.agent-cli.parseOpencodeEvents)
-    - fn [lastResult](../../src/agent-cli.ts#L532) (stdout: string) → ResultLine | null <!-- internal -->
+    - fn [lastResult](../../src/agent-cli.ts#L536) (stdout: string) → ResultLine | null <!-- internal -->
       <a id="features.agent-cli.lastResult"></a><br>Scans every line of captured stdout through [`features.agent-cli.parseResultLine`](features.md#features.agent-cli.parseResultLine) and keeps the last one that parses, returning null if none did. Used by [`features.agent-cli.readAnswer`](features.md#features.agent-cli.readAnswer) to pick the final result record from an agent's streamed output. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.agent-cli.parseResultLine](features.md#features.agent-cli.parseResultLine)
-    - fn [killGroup](../../src/agent-cli.ts#L542) (pid: number, signal: NodeJS.Signals) → void <!-- internal -->
+    - fn [killGroup](../../src/agent-cli.ts#L546) (pid: number, signal: NodeJS.Signals) → void <!-- internal -->
       <a id="features.agent-cli.killGroup"></a><br>Sends a signal to a spawned child's whole process group (negating the pid on POSIX, using it directly on Windows) and silently swallows errors when the group has already exited; used by [`features.agent-cli.hookExit`](features.md#features.agent-cli.hookExit) and [`features.agent-cli.runInvocation`](features.md#features.agent-cli.runInvocation) to tear down… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [hookExit](../../src/agent-cli.ts#L551) () → void <!-- internal -->
+    - fn [hookExit](../../src/agent-cli.ts#L555) () → void <!-- internal -->
       <a id="features.agent-cli.hookExit"></a><br>Once: keylang's exit kills every live group; a fatal signal with no handler of its own kills them first and is raised again.
       - calls [features.agent-cli.killGroup](features.md#features.agent-cli.killGroup)
-    - fn [runInvocation](../../src/agent-cli.ts#L570) (agent: string, inv: Invocation, root: string, call: CliCallOptions) → Promise<RunResult> <!-- internal -->
-      <a id="features.agent-cli.runInvocation"></a><br>Spawns the CLI in its own process group, feeds it stdin, and resolves with the collected output or the first [`features.agent-cli.parseResultLine`](features.md#features.agent-cli.parseResultLine) hit, killing the group via [`features.agent-cli.killGroup`](features.md#features.agent-cli.killGroup). Rejects on timeout, abort ([`features.agent-cli.CliCancelled`](features.md#features.agent-cli.CliCancelled)), oversized… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+    - fn [runInvocation](../../src/agent-cli.ts#L574) (agent: string, inv: Invocation, root: string, call: CliCallOptions) → Promise<RunResult> <!-- internal -->
+      <a id="features.agent-cli.runInvocation"></a><br>Spawns the CLI in its own process group, feeds it stdin, and resolves with the collected output or the first [`features.agent-cli.parseResultLine`](features.md#features.agent-cli.parseResultLine) hit, killing the group via [`features.agent-cli.killGroup`](features.md#features.agent-cli.killGroup). Rejects on timeout, abort ([`features.agent-cli.CliCancelled`](features.md#features.agent-cli.CliCancelled)), oversized… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.agent-cli.hookExit](features.md#features.agent-cli.hookExit), [features.agent-cli.killGroup](features.md#features.agent-cli.killGroup), [features.agent-cli.CliCancelled](features.md#features.agent-cli.CliCancelled), [features.agent-cli.parseResultLine](features.md#features.agent-cli.parseResultLine), [features.agent-cli.stripAnsi](features.md#features.agent-cli.stripAnsi)
-    - fn [stripAnsi](../../src/agent-cli.ts#L668) (text: string) → string <!-- internal -->
+    - fn [stripAnsi](../../src/agent-cli.ts#L677) (text: string) → string <!-- internal -->
       <a id="features.agent-cli.stripAnsi"></a><br>Removes ANSI escape sequences (ESC-bracket codes ending in a letter) from a string via a global regex replace, returning plain text. [`features.agent-cli.runInvocation`](features.md#features.agent-cli.runInvocation) uses it to clean captured CLI output. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [parseJson](../../src/agent-cli.ts#L673) (text: string) → unknown <!-- internal -->
+    - fn [parseJson](../../src/agent-cli.ts#L682) (text: string) → unknown <!-- internal -->
       <a id="features.agent-cli.parseJson"></a><br>Lenient JSON parser that returns `undefined` for empty input or invalid JSON instead of throwing, so callers can skip bad lines. Used by [`features.agent-cli.parseOpencodeEvents`](features.md#features.agent-cli.parseOpencodeEvents) and [`features.agent-cli.parseResultLine`](features.md#features.agent-cli.parseResultLine) to decode CLI output lines. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [isObject](../../src/agent-cli.ts#L682) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isObject](../../src/agent-cli.ts#L691) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       <a id="features.agent-cli.isObject"></a><br>Type guard that narrows an unknown value to a plain string-keyed record, rejecting null and arrays. Used by parsers such as [`features.agent-cli.parseResultLine`](features.md#features.agent-cli.parseResultLine) and [`features.agent-cli.parseAgentSettings`](features.md#features.agent-cli.parseAgentSettings) to validate decoded JSON before reading fields. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [agent-context](../../src/agent-context.ts#L1)
     <a id="features.agent-context"></a><br>What goes to the model (design §7.3 «Контекст»): the buffer, the nodes on the cursor line and their neighbours, the flows and rules naming them, their code and the tests of those flows — each item with a token estimate, so the person sees and trims what the agent reads. `@id`…
@@ -286,35 +286,37 @@
     - safe-write [base.safe-write](base.md#base.safe-write)
     - type [RepoSource](../../src/clone.ts#L15)
       <a id="features.clone.RepoSource"></a><br>What to clone and where it sits under the cache root.
-    - type [CloneExplain](../../src/clone.ts#L23) = "map-only" | "map-and-ai" | "all"
+    - type [CloneExplain](../../src/clone.ts#L25) = "map-only" | "map-and-ai" | "all"
       <a id="features.clone.CloneExplain"></a><br>How far `clone --explain` goes past the map.
-    - fn [isCloneExplain](../../src/clone.ts#L27) (text: string) → text is CloneExplain
+    - fn [isCloneExplain](../../src/clone.ts#L29) (text: string) → text is CloneExplain
       <a id="features.clone.isCloneExplain"></a>
-    - fn [parseRepoSource](../../src/clone.ts#L42) (text: string, cwd: string) → RepoSource | { error: string }
+    - fn [redactUrl](../../src/clone.ts#L41) (text: string) → string
+      <a id="features.clone.redactUrl"></a><br>A URL with its userinfo (`user:token@`) cut, as git does in its own messages; anything else is returned as is. A token passed in the URL goes to git and nowhere else: not to stdout (a CI log), stderr or the marker.
+    - fn [parseRepoSource](../../src/clone.ts#L53) (text: string, cwd: string) → RepoSource | { error: string }
       <a id="features.clone.parseRepoSource"></a><br>Reads a clone source: an `http(s)://`, `ssh://`, `git://` or `file://` URL, the scp form `git@host:owner/repo.git`, or a path to a local repository. The key never holds credentials, `..` or characters a file name cannot carry.
-      - calls [features.clone.fromUrl](features.md#features.clone.fromUrl), [features.clone.placeable](features.md#features.clone.placeable), [features.clone.keyed](features.md#features.clone.keyed)
-    - fn [fromUrl](../../src/clone.ts#L58) (source: string) → RepoSource | { error: string } <!-- internal -->
+      - calls [features.clone.redactUrl](features.md#features.clone.redactUrl), [features.clone.fromUrl](features.md#features.clone.fromUrl), [features.clone.placeable](features.md#features.clone.placeable), [features.clone.keyed](features.md#features.clone.keyed)
+    - fn [fromUrl](../../src/clone.ts#L69) (source: string) → RepoSource | { error: string } <!-- internal -->
       <a id="features.clone.fromUrl"></a>
-      - calls [features.clone.parseRepoSource](features.md#features.clone.parseRepoSource), [features.clone.keyed](features.md#features.clone.keyed)
-    - fn [keyed](../../src/clone.ts#L72) (url: string, host: string, path: string) → RepoSource | { error: string } <!-- internal -->
+      - calls [features.clone.redactUrl](features.md#features.clone.redactUrl), [features.clone.parseRepoSource](features.md#features.clone.parseRepoSource), [features.clone.keyed](features.md#features.clone.keyed)
+    - fn [keyed](../../src/clone.ts#L83) (url: string, host: string, path: string) → RepoSource | { error: string } <!-- internal -->
       <a id="features.clone.keyed"></a>
-      - calls [features.clone.placeable](features.md#features.clone.placeable)
-    - fn [placeable](../../src/clone.ts#L82) (segment: string) → string | undefined <!-- internal -->
+      - calls [features.clone.redactUrl](features.md#features.clone.redactUrl), [features.clone.placeable](features.md#features.clone.placeable)
+    - fn [placeable](../../src/clone.ts#L94) (segment: string) → string | undefined <!-- internal -->
       <a id="features.clone.placeable"></a>
-    - fn [cloneCacheRoot](../../src/clone.ts#L87) (env: Readonly<Record<string, string | undefined>>, home: string) → string
+    - fn [cloneCacheRoot](../../src/clone.ts#L99) (env: Readonly<Record<string, string | undefined>>, home: string) → string
       <a id="features.clone.cloneCacheRoot"></a><br>`$XDG_CACHE_HOME/keylang/repos`, else `~/.cache/keylang/repos`.
-    - type [CloneSync](../../src/clone.ts#L92)
+    - type [CloneSync](../../src/clone.ts#L104)
       <a id="features.clone.CloneSync"></a>
-    - fn [syncClone](../../src/clone.ts#L105) (source: RepoSource, dir: string) → CloneSync
+    - fn [syncClone](../../src/clone.ts#L117) (source: RepoSource, dir: string) → CloneSync
       <a id="features.clone.syncClone"></a><br>Clones `source` into `dir`, or brings a clone keylang made there up to the remote's default branch. A directory keylang did not clone is never touched: the reset would drop its work.
-      - calls [features.clone.git](features.md#features.clone.git), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite), [features.clone.readMarker](features.md#features.clone.readMarker)
-    - fn [readMarker](../../src/clone.ts#L129) (dir: string) → { url: string; key: string[] } | undefined <!-- internal -->
+      - calls [features.clone.git](features.md#features.clone.git), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite), [features.clone.readMarker](features.md#features.clone.readMarker), [features.clone.redactUrl](features.md#features.clone.redactUrl)
+    - fn [readMarker](../../src/clone.ts#L142) (dir: string) → { url: string; key: string[] } | undefined <!-- internal -->
       <a id="features.clone.readMarker"></a><br>The marker of `dir`, or undefined: absent, unreadable, or behind a link out of the directory — a file elsewhere is no proof keylang cloned `dir`.
       - calls [base.safe-write.targetProblem](base.md#base.safe-write.targetProblem)
-    - fn [git](../../src/clone.ts#L144) (cwd: string, args: string[]) → void <!-- internal -->
+    - fn [git](../../src/clone.ts#L157) (cwd: string, args: string[]) → void <!-- internal -->
       <a id="features.clone.git"></a>
       - calls [features.git-changes.gitUnavailable](features.md#features.git-changes.gitUnavailable)
-    - fn [enableExplainedMap](../../src/clone.ts#L163) (root: string) → string | null
+    - fn [enableExplainedMap](../../src/clone.ts#L176) (root: string) → string | null
       <a id="features.clone.enableExplainedMap"></a><br>Turns on the explained map (`"explain": {"map": true}`) in the clone's keylang.json; the rest of the file stays. Returns an error to name, or null.
       - calls [base.safe-write.targetProblem](base.md#base.safe-write.targetProblem), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite)
   - module [draft-llm](../../src/draft-llm.ts#L1)

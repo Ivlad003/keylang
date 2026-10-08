@@ -106,29 +106,29 @@
       - calls operations.shared.empty, base.diag.errorText, map.map.sourceInputs, check.scc.stronglyConnected, features.draft.draftRules, operations.shared.modelSetup, operations.shared.rootRelative, operations.shared.generatedIn, operations.draft.rulesCandidate, base.config.toPosix, operations.shared.proposalRefusal, operations.draft.rulesCountText, features.draft.withRules, operations.draft.draftCountsText, operations.shared.commitProposal, operations.draft.countProposed
     - fn [runDraftLayout](../../src/operations/draft.ts#L279) (request: DraftLayoutRequest, context: OperationContext) → Promise<OperationEnvelope<"draft-layout">>
       - calls operations.shared.empty, base.config.loadConfig, base.diag.errorText, operations.shared.modelSetup, base.config.guessLayout, base.config.configToJson
-    - type [CodeDrafted](../../src/operations/draft.ts#L327) <!-- internal -->
-    - fn [codeToSpecCandidate](../../src/operations/draft.ts#L342) (root: string, specDir: string, generated: (path: string) => boolean, drafted: CodeDrafted, target: string) → CodeToSpecCandidate
+    - type [CodeDrafted](../../src/operations/draft.ts#L328) <!-- internal -->
+    - fn [codeToSpecCandidate](../../src/operations/draft.ts#L343) (root: string, specDir: string, generated: (path: string) => boolean, drafted: CodeDrafted, target: string) → CodeToSpecCandidate
       - calls operations.draft.codePosition, features.proposals.proposalProblem, lang.files.existingText, base.safe-write.writeProblem, operations.draft.mergedFlows
-    - fn [mergedFlows](../../src/operations/draft.ts#L353) (before: string | null, drafts: readonly FlowDraft[]) → string | null <!-- internal -->
+    - fn [mergedFlows](../../src/operations/draft.ts#L354) (before: string | null, drafts: readonly FlowDraft[]) → string | null <!-- internal -->
       - calls features.draft.withFlow
-    - fn [codePosition](../../src/operations/draft.ts#L360) (drafted: CodeDrafted, target: string) → Pick<CodeToSpecCandidate, "file" | "line" | "since" | "name" | "flows" | "print" | "target"> <!-- internal -->
-    - fn [describedIds](../../src/operations/draft.ts#L366) (docs: readonly Document[]) → Set<string> <!-- internal -->
+    - fn [codePosition](../../src/operations/draft.ts#L361) (drafted: CodeDrafted, target: string) → Pick<CodeToSpecCandidate, "file" | "line" | "since" | "name" | "flows" | "print" | "target"> <!-- internal -->
+    - fn [describedIds](../../src/operations/draft.ts#L367) (docs: readonly Document[]) → Set<string> <!-- internal -->
       - calls lang.ir.sectionNodes, lang.ir.walk
-    - fn [runCodeToSpec](../../src/operations/draft.ts#L397) (request: CodeToSpecRequest, context: OperationContext) → Promise<OperationEnvelope<"code-to-spec">>
+    - fn [runCodeToSpec](../../src/operations/draft.ts#L398) (request: CodeToSpecRequest, context: OperationContext) → Promise<OperationEnvelope<"code-to-spec">>
       - calls operations.shared.empty, base.diag.errorText, map.map.sourceInputs, features.draft.changedFlows, features.git-changes.gitChangedLines, operations.draft.describedIds, features.draft.codeToSpec, operations.shared.modelSetup, operations.shared.rootRelative, operations.shared.generatedIn, base.config.toPosix, operations.draft.codeToSpecCandidate, operations.draft.codePosition, operations.draft.codeSummary, operations.shared.proposalRefusal, operations.draft.modelFlows, operations.draft.mergedFlows, operations.shared.commitProposal, operations.draft.countProposed
-    - fn [codeSummary](../../src/operations/draft.ts#L514) (flows: readonly CodeFlow[], model: CodeModelInfo | null) → string <!-- internal -->
+    - fn [codeSummary](../../src/operations/draft.ts#L515) (flows: readonly CodeFlow[], model: CodeModelInfo | null) → string <!-- internal -->
       - calls operations.draft.draftCountsText
-    - fn [modelFlows](../../src/operations/draft.ts#L525) ( request: CodeToSpecRequest, mode: "llm" | "hybrid", analyzed: Analysis, client: LlmClient, algo: readonly FlowDraft[], notes: OperationMessage[], context: OperationContext, ) → Promise<{ drafts: FlowDraft[]; model: CodeModelInfo } | { error: string } | { cancelled: true }> <!-- internal -->
+    - fn [modelFlows](../../src/operations/draft.ts#L526) ( request: CodeToSpecRequest, mode: "llm" | "hybrid", analyzed: Analysis, client: LlmClient, algo: readonly FlowDraft[], notes: OperationMessage[], context: OperationContext, ) → Promise<{ drafts: FlowDraft[]; model: CodeModelInfo } | { error: string } | { cancelled: true }> <!-- internal -->
       - calls operations.draft.flowSteps, base.diag.errorText
-    - fn [rulesCountText](../../src/operations/draft.ts#L559) (rules: string) → string <!-- internal -->
-    - fn [countProposed](../../src/operations/draft.ts#L564) (root: string, counts: Record<DraftStatus, number>) → string | null <!-- internal -->
+    - fn [rulesCountText](../../src/operations/draft.ts#L560) (rules: string) → string <!-- internal -->
+    - fn [countProposed](../../src/operations/draft.ts#L565) (root: string, counts: Record<DraftStatus, number>) → string | null <!-- internal -->
       - calls features.stats.updateStats, features.stats.addDrafts, base.diag.errorText
-    - fn [modelDraft](../../src/operations/draft.ts#L574) (request: DraftFlowRequest, mode: "llm" | "hybrid", analyzed: Analysis, client: LlmClient, context: OperationContext) → Promise<{ draft: FlowDraft; model: DraftModelInfo } | { error: string } | { cancelled: true }> <!-- internal -->
+    - fn [modelDraft](../../src/operations/draft.ts#L575) (request: DraftFlowRequest, mode: "llm" | "hybrid", analyzed: Analysis, client: LlmClient, context: OperationContext) → Promise<{ draft: FlowDraft; model: DraftModelInfo } | { error: string } | { cancelled: true }> <!-- internal -->
       - calls operations.draft.flowSteps, base.diag.errorText
-    - fn [flowSteps](../../src/operations/draft.ts#L592) (text: string, trigger: string) → string[] <!-- internal -->
+    - fn [flowSteps](../../src/operations/draft.ts#L593) (text: string, trigger: string) → string[] <!-- internal -->
       - calls lang.parser.parse, lang.ir.sectionNodes, lang.ir.walk
-    - fn [draftCountsText](../../src/operations/draft.ts#L604) (counts: Record<string, number>) → string <!-- internal -->
-    - fn [draftNotes](../../src/operations/draft.ts#L609) (payload: DraftFlowPayload) → OperationMessage[] <!-- internal -->
+    - fn [draftCountsText](../../src/operations/draft.ts#L605) (counts: Record<string, number>) → string <!-- internal -->
+    - fn [draftNotes](../../src/operations/draft.ts#L610) (payload: DraftFlowPayload) → OperationMessage[] <!-- internal -->
   - module [entries](../../src/operations/entries.ts#L1)
     - node external.node
     - analyze map.analyze
@@ -339,9 +339,9 @@
     - fn [checkSummary](../../src/operations/spec.ts#L285) (counts: CheckCounts) → string
     - fn [runExplainEdge](../../src/operations/spec.ts#L299) (request: ExplainEdgeRequest, context: OperationContext) → Promise<OperationEnvelope<"explain-edge">>
       - calls operations.shared.empty, map.analyze.analyze, base.diag.errorText, features.explain-edge.edgeIdKnown, features.explain-edge.explainEdge, features.explain-edge.edgeExplanationLines
-    - fn [runParse](../../src/operations/spec.ts#L332) (request: ParseRequest, context: OperationContext) → Promise<OperationEnvelope<"parse">>
-      - calls operations.shared.empty, base.config.assertFormatOnly, lang.files.collectMdFiles, map.explanations.isStoredExplanation, lang.parser.parse, base.diag.errorText, base.diag.isError, base.diag.formatDiagnostic, lang.parse-format.parseReportText
-    - fn [runTracePlan](../../src/operations/spec.ts#L377) (request: TracePlanRequest, context: OperationContext) → Promise<OperationEnvelope<"trace-plan">>
+    - fn [runParse](../../src/operations/spec.ts#L334) (request: ParseRequest, context: OperationContext) → Promise<OperationEnvelope<"parse">>
+      - calls operations.shared.empty, base.config.assertFormatOnly, lang.files.collectMdFiles, base.diag.errorText, map.explanations.isStoredExplanation, lang.parser.parse, base.diag.isError, base.diag.formatDiagnostic, lang.parse-format.parseReportText
+    - fn [runTracePlan](../../src/operations/spec.ts#L384) (request: TracePlanRequest, context: OperationContext) → Promise<OperationEnvelope<"trace-plan">>
       - calls operations.shared.empty, map.trace-plan.tracePlan, base.config.loadConfig, base.diag.errorText, map.trace-plan.tracePlanText
   - module [types](../../src/operations/types.ts#L1)
     - analyze map.analyze
