@@ -8,7 +8,9 @@
 // PWA Kit the routes of `routes.jsx` and the server of `ssr.js`. A PHP
 // framework (Laravel, Symfony) names a class and its method instead of a
 // script; its listeners, job and message handlers are observers of events the
-// graph places itself (`src/frameworks/entries.ts`). The adapters themselves
+// graph places itself (`src/frameworks/entries.ts`). Express, Fastify and
+// Next.js add their routes, middleware and server actions
+// (`src/framework-code/web-entries.ts`). The adapters themselves
 // only parse (`src/frameworks/`); everything that needs the graph is here.
 
 import type { Config } from "./config.ts";
@@ -16,7 +18,9 @@ import { compareEntries, entryScope, fnIn, frameworkEntry, type EntryScope } fro
 import type { CallFact, DeclFact, DecoratorArg, FileFacts } from "./extract/facts.ts";
 import type { EntryConfigFact, FrameworkInput, TypeName } from "./frameworks/adapter.ts";
 import { cartridgeAnswers, cartridgeLayout, SUPER_MODULE, type CartridgeLayout } from "./frameworks/cartridges.ts";
+import { webEntries } from "./framework-code/web-entries.ts";
 import { PYTHON_WEB_FRAMEWORKS } from "./frameworks/python-web.ts";
+import { WEB_FRAMEWORKS } from "./frameworks/web.ts";
 import type { Gap, Graph } from "./graph.ts";
 import { probeCandidates } from "./imports.ts";
 import { pythonWebEntries } from "./python-web-entries.ts";
@@ -30,7 +34,7 @@ export interface FrameworkEntryInputs {
   frameworks: readonly FrameworkInput[];
 }
 
-export function frameworkEntries({ config, graph, facts, frameworks }: FrameworkEntryInputs): { entries: EntryPoint[]; holes: Gap[]; warnings: string[] } {
+export function frameworkEntries({ config, graph, facts, frameworks }: FrameworkEntryInputs): { entries: EntryPoint[]; holes: Gap[]; warnings: string[]; supersedes: Set<string> } {
   const scope = entryScope(graph, facts);
   const sources = new Set(facts.map((f) => f.path));
   const probe = (candidate: string): string | null => probeCandidates(candidate).find((p) => sources.has(p)) ?? null;
@@ -90,7 +94,16 @@ export function frameworkEntries({ config, graph, facts, frameworks }: Framework
     entries.push(...found.entries);
     holes.push(...found.holes);
   }
-  return { entries: entries.sort(compareEntries), holes, warnings };
+  // Express, Fastify, Next.js: registrations written in the JavaScript code (`src/framework-code/web-entries.ts`).
+  const web = frameworks.map((f) => f.name).filter((name) => WEB_FRAMEWORKS.includes(name));
+  let supersedes = new Set<string>();
+  if (web.length > 0) {
+    const found = webEntries(facts, scope, web);
+    entries.push(...found.entries);
+    holes.push(...found.holes);
+    supersedes = found.supersedes;
+  }
+  return { entries: entries.sort(compareEntries), holes, warnings, supersedes };
 }
 
 /** The HTTP method and the note an entry fact gives its entry. */

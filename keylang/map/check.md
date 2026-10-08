@@ -47,71 +47,80 @@
     - type [Channel](../../src/flows.ts#L106) = "ID" | "static" | "tests" | "trace" <!-- internal -->
     - type [FlowNode](../../src/flows.ts#L108) = Trigger | FlowItem <!-- internal -->
     - fn [evaluateFlows](../../src/flows.ts#L110) (compiled: SpecIR, index: Index, input: FlowInput) → { diagnostics: Diagnostic[]; verdicts: Verdict[] }
-      - calls check.flows.collectPlanned, check.flows.callGraph, check.flows.specHash, check.trace-evidence.traceFlow, check.flows.idVerdict, check.flows.entryVerdict, base.diag.diagnostic, check.flows.reachability, check.flows.traceProvenance, check.flows.directCall, check.flows.claimArea, check.flows.scheduleVerdict, check.flows.quantitative, check.test-report.matchTest
-    - fn [claimArea](../../src/flows.ts#L281) (node: ClaimItem | ThenItem | WhenItem | TimerItem) → string <!-- internal -->
-    - fn [entryVerdict](../../src/flows.ts#L294) (kind: string, id: string, entries: readonly EntryView[] | undefined) → { verdict: Verdict["verdict"]; message: string; mismatch: boolean } <!-- internal -->
-    - fn [scheduleForm](../../src/flows.ts#L318) (text: string) → { form: "cron" | "duration"; value: string } <!-- internal -->
-    - fn [labelSchedule](../../src/flows.ts#L329) (label: string) → string | null <!-- internal -->
+      - calls check.flows.collectPlanned, check.flows.callGraph, check.flows.specHash, check.trace-evidence.traceFlow, check.flows.idVerdict, check.resolve.Index.lookup, check.flows.subscribersVerdict, check.flows.entryVerdict, base.diag.diagnostic, check.flows.subscriberReach, check.flows.reachability, check.flows.traceProvenance, check.flows.directCall, check.flows.claimArea, check.flows.scheduleVerdict, check.flows.emitsVerdict, check.flows.quantitative, check.test-report.matchTest
+    - fn [claimArea](../../src/flows.ts#L308) (node: ClaimItem | ThenItem | WhenItem | TimerItem) → string <!-- internal -->
+    - fn [entryVerdict](../../src/flows.ts#L321) (kind: string, id: string, entries: readonly EntryView[] | undefined) → { verdict: Verdict["verdict"]; message: string; mismatch: boolean } <!-- internal -->
+    - fn [scheduleForm](../../src/flows.ts#L345) (text: string) → { form: "cron" | "duration"; value: string } <!-- internal -->
+    - fn [labelSchedule](../../src/flows.ts#L356) (label: string) → string | null <!-- internal -->
       - calls lang.parser.scheduleText
-    - fn [scheduleVerdict](../../src/flows.ts#L341) (parent: string | null, written: string, entries: readonly EntryView[] | undefined) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
+    - fn [scheduleVerdict](../../src/flows.ts#L368) (parent: string | null, written: string, entries: readonly EntryView[] | undefined) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
       - calls check.flows.scheduleForm, check.flows.labelSchedule
-    - fn [traceProvenance](../../src/flows.ts#L360) (evidence: TraceEvidence) → Verdict["evidence"] <!-- internal -->
-    - fn [quantitative](../../src/flows.ts#L365) (text: string) → boolean <!-- internal -->
-    - fn [idVerdict](../../src/flows.ts#L369) ( id: string, plan: Planned | undefined, span: Span, file: string, index: Index, input: FlowInput, verdict: (channel: Channel, area: string, value: Verdict["verdict"], file: string, span: Span, message: string) => void, ) → Verdict["verdict"] <!-- internal -->
+    - fn [traceProvenance](../../src/flows.ts#L387) (evidence: TraceEvidence) → Verdict["evidence"] <!-- internal -->
+    - fn [quantitative](../../src/flows.ts#L392) (text: string) → boolean <!-- internal -->
+    - fn [idVerdict](../../src/flows.ts#L396) ( id: string, plan: Planned | undefined, span: Span, file: string, index: Index, input: FlowInput, verdict: (channel: Channel, area: string, value: Verdict["verdict"], file: string, span: Span, message: string) => void, missing = "K001 dangling reference", ) → Verdict["verdict"] <!-- internal -->
       - calls check.resolve.Index.lookup, check.flows.moduleMembers
-    - type [Step](../../src/flows.ts#L388) <!-- internal -->
-    - type [CallGraph](../../src/flows.ts#L394) <!-- internal -->
-    - fn [callGraph](../../src/flows.ts#L422) (input: FlowInput) → CallGraph <!-- internal -->
-      - calls base.languages.constructorName, check.flows.callName, base.languages.caselessNames, base.languages.asciiLowerCase, check.flows.doubtfulBodies
-    - fn [doubtfulBodies](../../src/flows.ts#L466) (input: FlowInput) → { replaced: Map<string, string>; unreadable: Map<string, string> } <!-- internal -->
-      - calls base.span.compareText
-    - fn [lastSegment](../../src/flows.ts#L486) (text: string) → string <!-- internal -->
-    - fn [callName](../../src/flows.ts#L494) (id: string) → string <!-- internal -->
-      - calls check.flows.lastSegment
-    - fn [namedLike](../../src/flows.ts#L506) (graph: CallGraph, name: string) → string[] <!-- internal -->
-      - calls base.languages.asciiLowerCase
-    - fn [describeVia](../../src/flows.ts#L512) (edge: SnapshotEdge, where = true) → string <!-- internal -->
-      - calls check.flows.describeConfig, check.flows.at
-    - fn [describeConfig](../../src/flows.ts#L526) (edge: Pick<SnapshotEdge, "via" | "binding" | "site" | "scope">) → string
-    - fn [provesIn](../../src/flows.ts#L540) (behavior: boolean) → (step: Step) => boolean <!-- internal -->
-    - fn [closureOnly](../../src/flows.ts#L549) (edge: SnapshotEdge, behavior: boolean) → boolean <!-- internal -->
-    - fn [describeHole](../../src/flows.ts#L553) (edge: SnapshotEdge, target: string, input: FlowInput) → string <!-- internal -->
-      - calls check.flows.describeVia, check.flows.lastSegment, check.flows.callName
-    - fn [at](../../src/flows.ts#L565) (edge: SnapshotEdge) → string <!-- internal -->
-    - fn [reachability](../../src/flows.ts#L592) (graph: CallGraph, input: FlowInput, parent: string | null, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
-      - calls check.flows.externalImport, check.flows.provesIn, check.flows.search, check.flows.routeMessage, check.flows.routeSteps, check.flows.possibleRoute, check.flows.closureOnly, check.flows.at, check.flows.describeHole, check.flows.callersOf, check.flows.escapeOf, check.flows.holeNear
-    - fn [directCall](../../src/flows.ts#L660) (graph: CallGraph, input: FlowInput, parent: string | null, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
-      - calls check.flows.externalImport, check.flows.provesIn, check.flows.routeMessage, check.flows.closureOnly, check.flows.at, check.flows.describeHole, check.flows.namedLike, check.flows.lastSegment, base.languages.caselessNames, check.flows.callName, base.languages.asciiLowerCase, check.flows.escapeOf, check.flows.search, check.flows.routeSteps
-    - fn [search](../../src/flows.ts#L708) (graph: CallGraph, parent: string, target: string, follow: (step: Step) => boolean) → { route: Map<string, Step> | null; depth: Map<string, number> } <!-- internal -->
-    - fn [routeSteps](../../src/flows.ts#L731) (parent: string, target: string, previous: Map<string, Step>) → Step[] <!-- internal -->
-    - fn [fileModule](../../src/flows.ts#L744) (nodes: FlowInput["nodes"], id: string) → string | null <!-- internal -->
-    - fn [externalImport](../../src/flows.ts#L760) (input: FlowInput, parent: string, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
-      - calls check.flows.fileModule, check.flows.at
-    - fn [describeDocblock](../../src/flows.ts#L772) (edge: SnapshotEdge) → string <!-- internal -->
+    - fn [subscribersOf](../../src/flows.ts#L417) (graph: CallGraph, event: string) → Step[] <!-- internal -->
+    - fn [describeSubscriber](../../src/flows.ts#L422) (step: Step) → string <!-- internal -->
       - calls check.flows.at
-    - fn [routeMessage](../../src/flows.ts#L781) (parent: string, target: string, previous: Map<string, Step>) → string <!-- internal -->
+    - fn [subscribersVerdict](../../src/flows.ts#L432) (graph: CallGraph, event: string, input: FlowInput) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
+      - calls check.flows.subscribersOf, check.flows.describeSubscriber
+    - fn [subscriberReach](../../src/flows.ts#L445) (graph: CallGraph, input: FlowInput, event: string, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
+      - calls check.flows.subscribersOf, check.flows.describeConfig, check.flows.reachability, check.flows.describeSubscriber
+    - fn [emitsVerdict](../../src/flows.ts#L466) (graph: CallGraph, input: FlowInput, parent: string | null, event: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
+      - calls check.flows.reachability
+    - type [Step](../../src/flows.ts#L471) <!-- internal -->
+    - type [CallGraph](../../src/flows.ts#L477) <!-- internal -->
+    - fn [callGraph](../../src/flows.ts#L505) (input: FlowInput) → CallGraph <!-- internal -->
+      - calls base.languages.constructorName, check.flows.callName, base.languages.caselessNames, base.languages.asciiLowerCase, check.flows.doubtfulBodies
+    - fn [doubtfulBodies](../../src/flows.ts#L549) (input: FlowInput) → { replaced: Map<string, string>; unreadable: Map<string, string> } <!-- internal -->
+      - calls base.span.compareText
+    - fn [lastSegment](../../src/flows.ts#L569) (text: string) → string <!-- internal -->
+    - fn [callName](../../src/flows.ts#L577) (id: string) → string <!-- internal -->
+      - calls check.flows.lastSegment
+    - fn [namedLike](../../src/flows.ts#L589) (graph: CallGraph, name: string) → string[] <!-- internal -->
+      - calls base.languages.asciiLowerCase
+    - fn [describeVia](../../src/flows.ts#L595) (edge: SnapshotEdge, where = true) → string <!-- internal -->
+      - calls check.flows.describeConfig, check.flows.at
+    - fn [describeConfig](../../src/flows.ts#L609) (edge: Pick<SnapshotEdge, "via" | "binding" | "site" | "scope">) → string
+    - fn [provesIn](../../src/flows.ts#L623) (behavior: boolean) → (step: Step) => boolean <!-- internal -->
+    - fn [closureOnly](../../src/flows.ts#L632) (edge: SnapshotEdge, behavior: boolean) → boolean <!-- internal -->
+    - fn [describeHole](../../src/flows.ts#L636) (edge: SnapshotEdge, target: string, input: FlowInput) → string <!-- internal -->
+      - calls check.flows.describeVia, check.flows.lastSegment, check.flows.callName
+    - fn [at](../../src/flows.ts#L648) (edge: SnapshotEdge) → string <!-- internal -->
+    - fn [reachability](../../src/flows.ts#L675) (graph: CallGraph, input: FlowInput, parent: string | null, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
+      - calls check.flows.externalImport, check.flows.provesIn, check.flows.search, check.flows.routeMessage, check.flows.routeSteps, check.flows.possibleRoute, check.flows.closureOnly, check.flows.at, check.flows.describeHole, check.flows.callersOf, check.flows.escapeOf, check.flows.holeNear
+    - fn [directCall](../../src/flows.ts#L744) (graph: CallGraph, input: FlowInput, parent: string | null, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
+      - calls check.flows.externalImport, check.flows.provesIn, check.flows.routeMessage, check.flows.closureOnly, check.flows.at, check.flows.describeHole, check.flows.namedLike, check.flows.lastSegment, base.languages.caselessNames, check.flows.callName, base.languages.asciiLowerCase, check.flows.escapeOf, check.flows.search, check.flows.routeSteps
+    - fn [search](../../src/flows.ts#L792) (graph: CallGraph, parent: string, target: string, follow: (step: Step) => boolean) → { route: Map<string, Step> | null; depth: Map<string, number> } <!-- internal -->
+    - fn [routeSteps](../../src/flows.ts#L815) (parent: string, target: string, previous: Map<string, Step>) → Step[] <!-- internal -->
+    - fn [fileModule](../../src/flows.ts#L828) (nodes: FlowInput["nodes"], id: string) → string | null <!-- internal -->
+    - fn [externalImport](../../src/flows.ts#L844) (input: FlowInput, parent: string, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
+      - calls check.flows.fileModule, check.flows.at
+    - fn [describeDocblock](../../src/flows.ts#L856) (edge: SnapshotEdge) → string <!-- internal -->
+      - calls check.flows.at
+    - fn [routeMessage](../../src/flows.ts#L865) (parent: string, target: string, previous: Map<string, Step>) → string <!-- internal -->
       - calls check.flows.routeSteps, check.flows.describeVia, check.flows.describeDocblock
-    - fn [possibleRoute](../../src/flows.ts#L797) (graph: CallGraph, input: FlowInput, parent: string, target: string, proves: (step: Step) => boolean) → { edge: SnapshotEdge | null; seen: Set<string> } <!-- internal -->
+    - fn [possibleRoute](../../src/flows.ts#L881) (graph: CallGraph, input: FlowInput, parent: string, target: string, proves: (step: Step) => boolean) → { edge: SnapshotEdge | null; seen: Set<string> } <!-- internal -->
       - calls check.flows.namedLike, check.flows.callName, check.flows.lastSegment
-    - fn [callersOf](../../src/flows.ts#L825) (graph: CallGraph, target: string) → Set<string> <!-- internal -->
-    - fn [escapeOf](../../src/flows.ts#L843) (graph: CallGraph, input: FlowInput, routes: Set<string>, reachable: ReadonlySet<string>) → { reason: string; from: string | null } | null <!-- internal -->
+    - fn [callersOf](../../src/flows.ts#L909) (graph: CallGraph, target: string) → Set<string> <!-- internal -->
+    - fn [escapeOf](../../src/flows.ts#L927) (graph: CallGraph, input: FlowInput, routes: Set<string>, reachable: ReadonlySet<string>) → { reason: string; from: string | null } | null <!-- internal -->
       - calls check.flows.fnAt, check.flows.at, check.flows.callName, base.languages.caselessNames, check.flows.identifierPattern, base.span.compareText
-    - fn [identifierPattern](../../src/flows.ts#L883) (name: string, caseless = false) → RegExp <!-- internal -->
-    - fn [fnAt](../../src/flows.ts#L890) (input: FlowInput, file: string, line: number) → string | null <!-- internal -->
-    - fn [holeNear](../../src/flows.ts#L904) (graph: CallGraph, holes: { edge: SnapshotEdge }[], from: string) → SnapshotEdge | null <!-- internal -->
+    - fn [identifierPattern](../../src/flows.ts#L967) (name: string, caseless = false) → RegExp <!-- internal -->
+    - fn [fnAt](../../src/flows.ts#L974) (input: FlowInput, file: string, line: number) → string | null <!-- internal -->
+    - fn [holeNear](../../src/flows.ts#L988) (graph: CallGraph, holes: { edge: SnapshotEdge }[], from: string) → SnapshotEdge | null <!-- internal -->
       - calls base.span.compareText
-    - fn [moduleMembers](../../src/flows.ts#L920) (nodes: FlowInput["nodes"], id: string) → "complete" | "opaque" | null <!-- internal -->
-    - fn [collectPlanned](../../src/flows.ts#L936) (spec: SpecIR, input: FlowInput, diagnostics: Diagnostic[]) → Map<string, Planned> <!-- internal -->
+    - fn [moduleMembers](../../src/flows.ts#L1004) (nodes: FlowInput["nodes"], id: string) → "complete" | "opaque" | null <!-- internal -->
+    - fn [collectPlanned](../../src/flows.ts#L1020) (spec: SpecIR, input: FlowInput, diagnostics: Diagnostic[]) → Map<string, Planned> <!-- internal -->
       - calls check.flows.codeLocation, check.flows.plannedMismatch, base.diag.diagnostic
-    - fn [codeLocation](../../src/flows.ts#L965) (id: string, code: SnapshotNodeView, edges: readonly SnapshotEdge[]) → string <!-- internal -->
+    - fn [codeLocation](../../src/flows.ts#L1049) (id: string, code: SnapshotNodeView, edges: readonly SnapshotEdge[]) → string <!-- internal -->
       - calls base.span.compareText
-    - fn [plannedMismatch](../../src/flows.ts#L976) (item: { decl: string; signature: string | null }, code: { kind: string; signature?: string | null; file?: string | null }) → "kind" | "signature" | null
+    - fn [plannedMismatch](../../src/flows.ts#L1060) (item: { decl: string; signature: string | null }, code: { kind: string; signature?: string | null; file?: string | null }) → "kind" | "signature" | null
       - calls check.flows.sameSignature
-    - fn [sameSignature](../../src/flows.ts#L989) (planned: string, code: string, file: string | null) → boolean <!-- internal -->
+    - fn [sameSignature](../../src/flows.ts#L1073) (planned: string, code: string, file: string | null) → boolean <!-- internal -->
       - calls check.flows.normalizeSignature, check.flows.parameterList
-    - fn [parameterList](../../src/flows.ts#L1000) (signature: string) → string | null <!-- internal -->
-    - fn [normalizeSignature](../../src/flows.ts#L1010) (text: string) → string <!-- internal -->
-    - fn [specHash](../../src/flows.ts#L1014) (text: string) → string <!-- internal -->
+    - fn [parameterList](../../src/flows.ts#L1084) (signature: string) → string | null <!-- internal -->
+    - fn [normalizeSignature](../../src/flows.ts#L1094) (text: string) → string <!-- internal -->
+    - fn [specHash](../../src/flows.ts#L1098) (text: string) → string <!-- internal -->
   - module [migration](../../src/migration.ts#L1)
     - node external.node
     - diag base.diag
@@ -179,9 +188,12 @@
       - calls check.resolve.Index.suggest
     - fn [checkContinues](../../src/resolve.ts#L260) (index: Index, doc: Document, node: Node, diags: Diagnostic[]) → void <!-- internal -->
       - calls check.resolve.similarity, base.span.compareText, base.diag.diagnostic
-    - fn [checkRefs](../../src/resolve.ts#L271) (index: Index, doc: Document, node: Node, diags: Diagnostic[], unverified: Unverified[], knownExternal: ReadonlySet<string>) → void <!-- internal -->
-      - calls check.resolve.warnBareThen, check.resolve.checkContinues, check.resolve.Index.lookup, base.diag.diagnostic, check.resolve.danglingMessage, check.resolve.Index.snapshotOpaque, lang.parser.renderMeaning
-    - fn [levenshtein](../../src/resolve.ts#L301) (a: string, b: string) → number <!-- internal -->
+    - fn [eventRef](../../src/resolve.ts#L272) (node: Node) → Ref | null <!-- internal -->
+    - fn [checkEventRef](../../src/resolve.ts#L283) (index: Index, doc: Document, node: Node, ref: Ref, diags: Diagnostic[]) → void <!-- internal -->
+      - calls check.resolve.Index.lookup, base.diag.diagnostic, lang.ir.kindLabel, check.resolve.similarity, base.span.compareText
+    - fn [checkRefs](../../src/resolve.ts#L306) (index: Index, doc: Document, node: Node, diags: Diagnostic[], unverified: Unverified[], knownExternal: ReadonlySet<string>) → void <!-- internal -->
+      - calls check.resolve.warnBareThen, check.resolve.checkContinues, check.resolve.eventRef, check.resolve.checkEventRef, check.resolve.Index.lookup, base.diag.diagnostic, check.resolve.danglingMessage, check.resolve.Index.snapshotOpaque, lang.parser.renderMeaning
+    - fn [levenshtein](../../src/resolve.ts#L338) (a: string, b: string) → number <!-- internal -->
   - module [rules](../../src/rules.ts#L1)
     - node external.node
     - config base.config

@@ -1,6 +1,6 @@
 # 37: Express/Fastify/Next.js: маршрути, middleware, server actions
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -19,10 +19,21 @@
 
 ## Критерії готовності
 
-- [ ] фікстура з типовим шаблоном фреймворку; тести через справжній CLI: точки входу кожного виду, ребра через `via` (behavior ok / shape unverified), `deny` бачить ребра конфігу, `frameworks: []` вимикає (ok/fail → лише unverified, metamorphic)
-- [ ] `flows discover` дає флоу для точок входу; `coverage` показує, що лишилось сліпим
-- [ ] `docs/snapshot.md` розділ «Фреймворки: …», `llm.txt` один рядок
+- [x] фікстура з типовим шаблоном фреймворку; тести через справжній CLI: точки входу кожного виду, ребра через `via` (behavior ok / shape unverified), `deny` бачить ребра конфігу, `frameworks: []` вимикає (ok/fail → лише unverified, metamorphic)
+- [x] `flows discover` дає флоу для точок входу; `coverage` показує, що лишилось сліпим
+- [x] `docs/snapshot.md` розділ «Фреймворки: …», `llm.txt` один рядок
 
 **Межі:** лише цей фреймворк.
 
 ## Comments
+
+### 2026-10-08 — реалізація
+
+- Адаптери `express`, `fastify`, `next` — `src/frameworks/web.ts` (шар `base`, без імпорту `extract`): виявлення з `package.json` (Express/Fastify — ще імпорт пакета у файлі, Next — `next.config.*`), конфіги — джерела, що реєструють; `parse` фактів не дає. Розміщення на графі — `src/framework-code/web-entries.ts` (шар `map`), викликається з `src/framework-entries.ts`.
+- TS-екстрактор записує `FileFacts.web`: виклики `get|post|…|use|register|route` на іменованому отримувачі з аргументами (`DecoratorArg`), ланцюг `route('/x').get(h)`, `within` — функція, перший параметр якої є отримувачем (плагін Fastify), значення верхнього рівня, створені викликом, `'use server'` (файл/функція), експортований `config`.
+- Рішення щодо middleware: синтетичних вузлів немає. Точка входу — обробник; middleware ланцюга й Fastify-хуки (`onRequest`, `preParsing`, `preValidation`, `preHandler`) перелічено в `note` з ID; `app.use(fn)` — окрема точка входу `USE /prefix`. Обробник на місці — модуль, що реєструє, з `note`.
+- Взаємодія з евристикою тікета 09: з увімкненим адаптером мовна точка входу того самого виклику (`source` = `file:line`) поступається адаптерній (з префіксом), `src/map.ts`; з `frameworks: []` лишається лише евристика 09 (без префіксів), конфіги адаптерів — `skipped-file`.
+- Ребер конфігу (`preference`/`argument`) адаптери не дають; `deny` бачить лише ребра коду. Обробник, переданий посиланням з fn, — `callable-arg` (тікет 05): `behavior ok` / `shape unverified` — у тесті.
+- Тести: `tests/frameworks-express.test.ts` (8, через CLI): роутер між файлами з префіксом, вкладений `use` CommonJS-роутера, `route()`-ланцюг, middleware-нотатка, обробник на місці, незмонтований роутер з `note`, Fastify `register` з префіксом + вкладений плагін на місці + `route({…})` з двома методами + `preHandler`, Next Pages API, server actions, middleware matcher, `flows discover` + `coverage`, `frameworks: []` metamorphic.
+- Не читаються (записано в `docs/snapshot.md`): `fastify-plugin` (`fp(...)`), `@fastify/autoload`, роутер з фабрики, `this.app`, Koa/Hono окремо.
+- Попередня проблема master (не цього тікета): `tests/metamorphic.test.ts` «a framework's config left unread …» падає й без цих адаптерів (`rule:deny promo sales ok → unverified` відсутнє).

@@ -2,7 +2,7 @@
 // A tree walk over the top level plus tree-sitter queries inside bodies.
 
 import { builtinModules } from "node:module";
-import type { CallFact, DeclFact, CodeDecorator, DecoratorArg, EntryFact, FileFacts, HookFact, ImportBinding, ImportFact, PassFact, TypeRefFact, UnsupportedFact, ValueRefFact } from "./facts.ts";
+import type { CallFact, DeclFact, CodeDecorator, DecoratorArg, EntryFact, WebCallFact, WebFacts, FileFacts, HookFact, ImportBinding, ImportFact, PassFact, TypeRefFact, UnsupportedFact, ValueRefFact } from "./facts.ts";
 import { blockCommentBody, isLicense, jsdocDescription, lineCommentsBody, nonEmpty } from "./doc-comments.ts";
 import { errorLine, fingerprintFacts, grammarFor, located, query, startCol, valuesFingerprint, withTree, type Grammar, type Language, type Node, type Tree } from "./treesitter.ts";
 
@@ -472,6 +472,7 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
   collectUnsupported(root, facts);
   collectValueRefs(root, facts);
   collectRouteEntries(root, facts);
+  collectWebFacts(root, facts);
   const values = valuesFingerprint(root.namedChildren, facts.decls);
   if (values !== undefined) facts.values = values;
   if (root.hasError) {
@@ -1904,6 +1905,141 @@ function collectRouteEntries(root: Node, facts: FileFacts): void {
   const pages = ROUTES_FILE.test(facts.path) ? lazyImports(root) : null;
   walk(root);
   if (entries.length > 0) facts.entries = entries;
+}
+
+/** Registration methods the web adapters read: HTTP verbs, `use` (Express mounts and middleware), `register` and `route` (Fastify, Express `route('/x')`). */
+const WEB_METHODS = new Set(["get", "post", "put", "patch", "delete", "all", "head", "options", "use", "register", "route"]);
+/** Callees that create a router or an app: `express()`, `express.Router()`, `Router()`, `fastify()`, `Fastify()`. */
+const WEB_CREATORS = /(?:^|\.)(?:Router|express|fastify|Fastify)$/;
+const WEB_VERBS = new Set(["get", "post", "put", "patch", "delete", "all", "head", "options"]);
+
+/**
+ * What the web adapters (Express, Fastify, Next.js) read (`FileFacts.web`):
+ * registration calls on a named receiver with their arguments, the values
+ * the top level creates by a call, `'use server'` directives and an exported
+ * `config`. Nothing is resolved here: the adapter follows the names.
+ */
+function collectWebFacts(root: Node, facts: FileFacts): void {
+  const web: WebFacts = { values: [], calls: [] };
+  const argsOf = (call: Node): Node[] => call.childForFieldName("arguments")?.namedChildren.filter((a) => a.type !== "comment") ?? [];
+  const withAt = (n: Node): DecoratorArg & { line: number; col: number } => {
+    const at = located(n);
+    return { ...decoratorArg(n), line: at.line, col: at.col };
+  };
+  for (const stmt of root.namedChildren) {
+    const exported = stmt.type === "export_statement";
+    const decl = exported ? stmt.childForFieldName("declaration") : stmt;
+    if (decl?.type !== "lexical_declaration" && decl?.type !== "variable_declaration") continue;
+    for (const d of decl.namedChildren) {
+      const name = d.type === "variable_declarator" ? d.childForFieldName("name") : null;
+      const written = d.childForFieldName("value");
+      if (name?.type !== "identifier" || !written) continue;
+      const value = unwrapValue(written);
+      if (exported && name.text === "config" && value.type === "object") web.config = decoratorArg(value);
+      const callee = value.type === "call_expression" ? value.childForFieldName("function") : value.type === "new_expression" ? value.childForFieldName("constructor") : null;
+      if (callee && (callee.type === "identifier" || callee.type === "member_expression") && /^[\w$.]+$/.test(callee.text)) {
+        const at = located(d);
+        web.values.push({ name: name.text, callee: callee.text, line: at.line, col: at.col });
+      }
+    }
+  }
+  if (directives(root).includes("use server")) web.useServer = true;
+  walkNamed(root, (node) => {
+    if (FUNCTION_NODES.has(node.type)) {
+      const body = node.childForFieldName("body");
+      if (body?.type === "statement_block" && directives(body).includes("use server")) {
+        const at = located(node);
+        const named = functionName(node);
+        (web.actions ??= []).push({ name: named.name, top: named.top, line: at.line, col: at.col });
+      }
+      return;
+    }
+    if (node.type !== "call_expression") return;
+    const fn = node.childForFieldName("function");
+    if (fn?.type !== "member_expression") return;
+    const method = fn.childForFieldName("property")?.text ?? "";
+    if (!WEB_METHODS.has(method)) return;
+    const args = argsOf(node);
+    let object = fn.childForFieldName("object");
+    let route: DecoratorArg | undefined;
+    // `router.route('/x').get(h).post(h2)`: down the chain of verbs to the `route('/x')` call.
+    if (WEB_VERBS.has(method)) {
+      while (object?.type === "call_expression") {
+        const inner = object.childForFieldName("function");
+        const innerMethod = inner?.type === "member_expression" ? inner.childForFieldName("property")?.text : undefined;
+        if (inner?.type !== "member_expression" || innerMethod === undefined) break;
+        if (innerMethod === "route") {
+          const first = argsOf(object)[0];
+          route = first === undefined ? { kind: "other", text: "" } : decoratorArg(first);
+          object = inner.childForFieldName("object");
+          break;
+        }
+        if (!WEB_VERBS.has(innerMethod)) break;
+        object = inner.childForFieldName("object");
+      }
+    }
+    if (object?.type !== "identifier") return;
+    // `route('/x')` of a chain is read with its verbs; `route({ … })` is Fastify's.
+    if (method === "route" && args[0] && unwrapValue(args[0]).type !== "object") return;
+    if (WEB_VERBS.has(method) && route === undefined && args.length < 2) return;
+    if (WEB_VERBS.has(method) && route !== undefined && args.length < 1) return;
+    if (args.length === 0) return;
+    const at = located(node);
+    const fact: WebCallFact = { receiver: object.text, method, args: args.map(withAt), line: at.line, col: at.col };
+    if (route !== undefined) fact.route = route;
+    for (let up = parentOf(node); up; up = parentOf(up)) {
+      if (!FUNCTION_NODES.has(up.type) || firstParameter(up) !== object.text) continue;
+      const fnAt = located(up);
+      fact.within = { name: functionName(up).name, line: fnAt.line, col: fnAt.col };
+      break;
+    }
+    web.calls.push(fact);
+  });
+  // The values matter beside registrations, or as a router or an app another file registers on.
+  if (web.calls.length === 0) web.values = web.values.filter((v) => WEB_CREATORS.test(v.callee));
+  if (web.values.length > 0 || web.calls.length > 0 || web.useServer || web.actions || web.config) facts.web = web;
+}
+
+/** The string directives (`'use server'`, `'use strict'`) at the start of a program or a function body. */
+function directives(block: Node): string[] {
+  const out: string[] = [];
+  for (const stmt of block.namedChildren) {
+    if (stmt.type === "comment") continue;
+    const expr = stmt.type === "expression_statement" ? stmt.namedChildren[0] : null;
+    const value = expr ? stringValue(expr) : null;
+    if (value === null) break;
+    out.push(value);
+  }
+  return out;
+}
+
+/** A function's first parameter when it is a plain name. */
+function firstParameter(fn: Node): string | null {
+  const single = fn.childForFieldName("parameter");
+  if (single?.type === "identifier") return single.text;
+  const first = fn.childForFieldName("parameters")?.namedChildren.find((p) => p.type !== "comment");
+  if (!first) return null;
+  if (first.type === "identifier") return first.text;
+  const pattern = first.type === "required_parameter" || first.type === "optional_parameter" ? first.childForFieldName("pattern") : null;
+  return pattern?.type === "identifier" ? pattern.text : null;
+}
+
+/** A function's name — its own, its declarator's, `default` for an anonymous default export — and whether it is a top-level declaration. */
+function functionName(fn: Node): { name: string | null; top: boolean } {
+  const parent = parentOf(fn);
+  const topLevel = (n: Node | null): boolean => n?.type === "program" || (n?.type === "export_statement" && parentOf(n)?.type === "program");
+  if (fn.type === "function_declaration" || fn.type === "generator_function_declaration") return { name: fn.childForFieldName("name")?.text ?? null, top: topLevel(parent) };
+  let at: Node | null = parent;
+  while (at && (at.type === "parenthesized_expression" || at.type === "as_expression" || at.type === "satisfies_expression")) at = parentOf(at);
+  if (at?.type === "variable_declarator") {
+    const name = at.childForFieldName("name");
+    const list = parentOf(at);
+    return { name: name?.type === "identifier" ? name.text : null, top: topLevel(list ? parentOf(list) : null) };
+  }
+  if (at?.type === "export_statement" && parentOf(at)?.type === "program") return { name: "default", top: true };
+  // `module.exports = async function (fastify) {}`: the module's default value.
+  if (at?.type === "assignment_expression" && at.childForFieldName("left")?.text.replace(/\s+/g, "") === "module.exports") return { name: "default", top: true };
+  return { name: fn.childForFieldName("name")?.text ?? null, top: false };
 }
 
 const ROUTES_FILE = /(?:^|\/)routes\.(?:js|jsx|ts|tsx|mjs)$/;

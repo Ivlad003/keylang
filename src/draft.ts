@@ -20,7 +20,12 @@ export interface FlowDraft {
   steps: string[];
 }
 
-export function draftFlow(snapshot: AnalysisSnapshot, trigger: string, options: { name?: string; depth?: number; entry?: string } = {}): FlowDraft {
+/**
+ * `entry`: the kind of entry point the trigger is (`trigger route <id>`).
+ * `event`: the event whose subscriber the trigger is (ADR 0023 п. 1): the draft
+ * starts with `trigger event <event>` and the fn is its first step.
+ */
+export function draftFlow(snapshot: AnalysisSnapshot, trigger: string, options: { name?: string; depth?: number; entry?: string; event?: string } = {}): FlowDraft {
   const node = snapshot.nodes[trigger];
   if (node?.kind !== "fn") throw new Error(`\`${trigger}\` is not a fn of the snapshot`);
   const name = options.name ?? trigger.slice(trigger.lastIndexOf(".") + 1);
@@ -54,7 +59,7 @@ export function draftFlow(snapshot: AnalysisSnapshot, trigger: string, options: 
     // `entry`: the kind of entry point the trigger is (`trigger route <id>`, ADR 0023 п. 3).
     const keyword = level === 0 ? (options.entry === undefined ? "trigger" : `trigger ${options.entry}`) : "step";
     lines.push(`${"  ".repeat(level)}- ${keyword} ${id}${how}${comment}`);
-    if (level >= depth) return;
+    if (level >= depth + (options.event === undefined ? 0 : 1)) return;
     for (const callee of snapshot.nodes[id]?.calls ?? []) {
       // An event the fn dispatches is a step too, with its observers under it (ADR 0022 п. 6).
       const kind = snapshot.nodes[callee]?.kind;
@@ -62,7 +67,13 @@ export function draftFlow(snapshot: AnalysisSnapshot, trigger: string, options: 
       visit(callee, level + 1, via.get(`${id}\u0000${callee}`) ?? "");
     }
   };
-  visit(trigger, 0, "");
+  if (options.event === undefined) visit(trigger, 0, "");
+  else {
+    // The subscriber is the first step of its event's flow, reached through the observer edge.
+    lines.push(`- trigger event ${options.event}`);
+    listed.add(options.event);
+    visit(trigger, 1, via.get(`${options.event}\u0000${trigger}`) ?? "");
+  }
   return { name, text: `${lines.join("\n")}\n`, steps };
 }
 

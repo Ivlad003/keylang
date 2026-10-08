@@ -97,16 +97,16 @@
   - module [diag](../../src/diag.ts#L1)
     - span base.span
     - type [Code](../../src/diag.ts#L5)
-    - type [Severity](../../src/diag.ts#L56) = "error" | "warning"
-    - type [K005Reason](../../src/diag.ts#L59) = "arguments" | "id" | "link" | "quote" | "layer" | "scope"
-    - fn [severityOf](../../src/diag.ts#L61) (code: Code) → Severity
-    - type [Diagnostic](../../src/diag.ts#L65)
-    - fn [diagnostic](../../src/diag.ts#L95) (code: Exclude<Code, "K005">, file: string, span: Span, message: string, target?: string) → Diagnostic
+    - type [Severity](../../src/diag.ts#L58) = "error" | "warning"
+    - type [K005Reason](../../src/diag.ts#L61) = "arguments" | "id" | "link" | "quote" | "layer" | "scope"
+    - fn [severityOf](../../src/diag.ts#L63) (code: Code) → Severity
+    - type [Diagnostic](../../src/diag.ts#L67)
+    - fn [diagnostic](../../src/diag.ts#L97) (code: Exclude<Code, "K005">, file: string, span: Span, message: string, target?: string) → Diagnostic
       - calls base.diag.severityOf
-    - fn [isError](../../src/diag.ts#L106) (d: Diagnostic) → boolean
-    - fn [formatDiagnostic](../../src/diag.ts#L111) (d: Diagnostic) → string
-    - fn [compareDiagnostics](../../src/diag.ts#L116) (a: Diagnostic, b: Diagnostic) → number
-    - fn [errorText](../../src/diag.ts#L126) (error: unknown) → string
+    - fn [isError](../../src/diag.ts#L108) (d: Diagnostic) → boolean
+    - fn [formatDiagnostic](../../src/diag.ts#L113) (d: Diagnostic) → string
+    - fn [compareDiagnostics](../../src/diag.ts#L118) (a: Diagnostic, b: Diagnostic) → number
+    - fn [errorText](../../src/diag.ts#L128) (error: unknown) → string
   - module [external-ids](../../src/external-ids.ts#L1)
     - config base.config
     - fn [externalSegment](../../src/external-ids.ts#L10) (pkg: string) → string
@@ -122,47 +122,48 @@
     - python-web base.python-web
     - sfcc base.sfcc
     - symfony base.symfony
-    - type [TypeName](../../src/frameworks/adapter.ts#L29)
-    - type [ConfigAt](../../src/frameworks/adapter.ts#L35)
-    - type [BindingFact](../../src/frameworks/adapter.ts#L41) extends ConfigAt
-    - type [ArgumentFact](../../src/frameworks/adapter.ts#L51) extends ConfigAt
-    - type [AliasFact](../../src/frameworks/adapter.ts#L58) extends ConfigAt
-    - type [InterceptFact](../../src/frameworks/adapter.ts#L64) extends ConfigAt
-    - type [ObserverFact](../../src/frameworks/adapter.ts#L81) extends ConfigAt
-    - type [ConfigEntryKind](../../src/frameworks/adapter.ts#L94) = "rest" | "graphql" | "cron" | "consumer" | "cli"
-    - type [EntryFact](../../src/frameworks/adapter.ts#L101) extends ConfigAt
-    - type [RouteFact](../../src/frameworks/adapter.ts#L113) extends ConfigAt
-    - type [EntryConfigFact](../../src/frameworks/adapter.ts#L130) extends ConfigAt
-    - type [DispatchFact](../../src/frameworks/adapter.ts#L149) extends ConfigAt
-    - type [ConfigHole](../../src/frameworks/adapter.ts#L158) extends ConfigAt
-    - type [RoutePrefixFact](../../src/frameworks/adapter.ts#L164) extends ConfigAt
-    - type [TokenRef](../../src/frameworks/adapter.ts#L170)
-    - type [ProviderFact](../../src/frameworks/adapter.ts#L177) extends ConfigAt
-    - type [InjectionFact](../../src/frameworks/adapter.ts#L183) extends ConfigAt
-    - type [CodeDecorator](../../src/frameworks/adapter.ts#L195)
-    - type [DecoratorArg](../../src/frameworks/adapter.ts#L209)
-    - type [CodeDecl](../../src/frameworks/adapter.ts#L219)
-    - type [CodeFacts](../../src/frameworks/adapter.ts#L227)
-    - type [ConfigFacts](../../src/frameworks/adapter.ts#L232)
-    - type [FrameworkConfig](../../src/frameworks/adapter.ts#L263)
-    - type [FrameworkModule](../../src/frameworks/adapter.ts#L270)
-    - type [FrameworkInput](../../src/frameworks/adapter.ts#L276)
-    - type [FrameworkContext](../../src/frameworks/adapter.ts#L292)
-    - type [FrameworkAdapter](../../src/frameworks/adapter.ts#L303)
-    - type [ControllerConvention](../../src/frameworks/adapter.ts#L334)
-    - fn [activeAdapters](../../src/frameworks/adapter.ts#L359) (frameworks: readonly string[] | null, context: FrameworkContext, available: readonly FrameworkAdapter[] = FRAMEWORK_ADAPTERS) → FrameworkAdapter[]
-    - fn [typeLabel](../../src/frameworks/adapter.ts#L365) (t: TypeName) → string
-    - fn [isConfigFacts](../../src/frameworks/adapter.ts#L370) (value: unknown) → value is ConfigFacts
+    - web base.web
+    - type [TypeName](../../src/frameworks/adapter.ts#L30)
+    - type [ConfigAt](../../src/frameworks/adapter.ts#L36)
+    - type [BindingFact](../../src/frameworks/adapter.ts#L42) extends ConfigAt
+    - type [ArgumentFact](../../src/frameworks/adapter.ts#L52) extends ConfigAt
+    - type [AliasFact](../../src/frameworks/adapter.ts#L59) extends ConfigAt
+    - type [InterceptFact](../../src/frameworks/adapter.ts#L65) extends ConfigAt
+    - type [ObserverFact](../../src/frameworks/adapter.ts#L82) extends ConfigAt
+    - type [ConfigEntryKind](../../src/frameworks/adapter.ts#L95) = "rest" | "graphql" | "cron" | "consumer" | "cli"
+    - type [EntryFact](../../src/frameworks/adapter.ts#L102) extends ConfigAt
+    - type [RouteFact](../../src/frameworks/adapter.ts#L114) extends ConfigAt
+    - type [EntryConfigFact](../../src/frameworks/adapter.ts#L131) extends ConfigAt
+    - type [DispatchFact](../../src/frameworks/adapter.ts#L150) extends ConfigAt
+    - type [ConfigHole](../../src/frameworks/adapter.ts#L159) extends ConfigAt
+    - type [RoutePrefixFact](../../src/frameworks/adapter.ts#L165) extends ConfigAt
+    - type [TokenRef](../../src/frameworks/adapter.ts#L171)
+    - type [ProviderFact](../../src/frameworks/adapter.ts#L178) extends ConfigAt
+    - type [InjectionFact](../../src/frameworks/adapter.ts#L184) extends ConfigAt
+    - type [CodeDecorator](../../src/frameworks/adapter.ts#L196)
+    - type [DecoratorArg](../../src/frameworks/adapter.ts#L210)
+    - type [CodeDecl](../../src/frameworks/adapter.ts#L220)
+    - type [CodeFacts](../../src/frameworks/adapter.ts#L228)
+    - type [ConfigFacts](../../src/frameworks/adapter.ts#L233)
+    - type [FrameworkConfig](../../src/frameworks/adapter.ts#L264)
+    - type [FrameworkModule](../../src/frameworks/adapter.ts#L271)
+    - type [FrameworkInput](../../src/frameworks/adapter.ts#L277)
+    - type [FrameworkContext](../../src/frameworks/adapter.ts#L293)
+    - type [FrameworkAdapter](../../src/frameworks/adapter.ts#L304)
+    - type [ControllerConvention](../../src/frameworks/adapter.ts#L335)
+    - fn [activeAdapters](../../src/frameworks/adapter.ts#L360) (frameworks: readonly string[] | null, context: FrameworkContext, available: readonly FrameworkAdapter[] = FRAMEWORK_ADAPTERS) → FrameworkAdapter[]
+    - fn [typeLabel](../../src/frameworks/adapter.ts#L366) (t: TypeName) → string
+    - fn [isConfigFacts](../../src/frameworks/adapter.ts#L371) (value: unknown) → value is ConfigFacts
       - calls base.adapter.isRecord, base.adapter.every, base.adapter.isAt, base.adapter.isTypeName, base.adapter.isToken
-    - fn [isAt](../../src/frameworks/adapter.ts#L392) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isAt](../../src/frameworks/adapter.ts#L393) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       - calls base.adapter.isRecord
-    - fn [isToken](../../src/frameworks/adapter.ts#L396) (value: unknown) → boolean <!-- internal -->
+    - fn [isToken](../../src/frameworks/adapter.ts#L397) (value: unknown) → boolean <!-- internal -->
       - calls base.adapter.isRecord
-    - fn [isTypeName](../../src/frameworks/adapter.ts#L400) (value: unknown) → boolean <!-- internal -->
+    - fn [isTypeName](../../src/frameworks/adapter.ts#L401) (value: unknown) → boolean <!-- internal -->
       - calls base.adapter.isRecord
-    - fn [every](../../src/frameworks/adapter.ts#L404) (value: unknown, check: (item: Record<string, unknown>) => boolean) → boolean <!-- internal -->
+    - fn [every](../../src/frameworks/adapter.ts#L405) (value: unknown, check: (item: Record<string, unknown>) => boolean) → boolean <!-- internal -->
       - calls base.adapter.isRecord
-    - fn [isRecord](../../src/frameworks/adapter.ts#L408) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isRecord](../../src/frameworks/adapter.ts#L409) (value: unknown) → value is Record<string, unknown> <!-- internal -->
   - module [bindings](../../src/frameworks/bindings.ts#L1)
     - adapter base.adapter
     - type [ResolvedType](../../src/frameworks/bindings.ts#L16)
@@ -330,6 +331,17 @@
       - calls base.symfony.className
     - fn [argument](../../src/frameworks/symfony.ts#L173) (facts: ConfigFacts, owner: string, pair: Pair, at: (node: YamlNode | Pair | null | undefined) => { line: number; col: number }, hole: (node: YamlNode | Pair | null | undefined, text: string, reason: string) => void) → void <!-- internal -->
       - calls base.symfony.serviceRef, base.symfony.type
+  - module [web](../../src/frameworks/web.ts#L1)
+    - node external.node
+    - adapter base.adapter
+    - fn [depends](../../src/frameworks/web.ts#L27) (context: FrameworkContext, pkg: string) → boolean <!-- internal -->
+      - calls base.web.parseJson, base.web.isRecord
+    - fn [owner](../../src/frameworks/web.ts#L32) (path: string) → string | null <!-- internal -->
+    - fn [emptyFacts](../../src/frameworks/web.ts#L37) (path: string) → ConfigFacts <!-- internal -->
+    - fn [routerAdapter](../../src/frameworks/web.ts#L42) (name: string, pkg: string, marker: RegExp) → FrameworkAdapter <!-- internal -->
+      - calls base.web.depends, base.web.owner
+    - fn [parseJson](../../src/frameworks/web.ts#L89) (text: string | null) → unknown <!-- internal -->
+    - fn [isRecord](../../src/frameworks/web.ts#L98) (value: unknown) → value is Record<string, unknown> <!-- internal -->
   - module [glob](../../src/glob.ts#L1)
     - fn [globToRegExp](../../src/glob.ts#L11) (glob: string) → RegExp
       - calls base.glob.source

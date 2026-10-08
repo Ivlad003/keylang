@@ -349,12 +349,13 @@ Alias залежності не збігається з контекстним �
 | `kind business\|technical` | одне з двох слів | `text` |
 | `trigger\|step <id>` | одне ID | посилання |
 | `trigger route\|cron\|consumer\|webhook <id>` | вид точки входу, ID її fn | посилання; вид — `label`. Інше перше слово без крапки — K005 «unknown trigger kind» |
+| `trigger event <id>` | ID події (`events.<назва>`) | посилання; `label` — `event`. Невідома подія — K204, ID fn, типу чи модуля — K205 (дає `check`) |
 | `parallel` | нічого; кроки — вкладеними `step` | група; без жодного `step` — K009 |
 | `continues <flow>` | ім'я потоку | `text`; потік, якого немає, — K206 |
 | `after <тривалість>` | число й одиниця `ms`, `s`, `m`, `min`, `h`, `d`, `w` (`30m`) | `text` |
 | `every <розклад>` | тривалість, cron-макрос (`@hourly`, `@daily`, `@midnight`, `@weekly`, `@monthly`, `@yearly`, `@annually`) або п'ять-шість полів cron, голих чи в лапках | `text`; у SpecIR — без лапок |
 | `planned fn\|module\|type\|event <id> [signature]` | вид, ID, довільний підпис | намір; не оголошення в індексі і не ребро знімка |
-| `emits [event] <name>` | ім'я події | `text`; не резолвиться |
+| `emits [event] <name>` | ім'я події | `text`; ID з групи `events` (`events.<назва>`, голе чи лінком) — ще й посилання на подію (невідома — K204), будь-яке інше ім'я — проза, не резолвиться |
 | `invariant <текст>` | довільний текст | `text` |
 | `? <текст>` | довільний текст, обов'язковий | `text`; відкрите питання, не твердження (Р16) |
 | `when <текст>` (flow) | довільний текст | `text` |
@@ -419,9 +420,9 @@ ID з крапкою — посилання. Кілька слів — текс�
 keylang/flows/buy.md:5:10: K008 `then OutOfStock` is read as text, not a reference (did you mean `then application.purchase.OutOfStock`?)
 ```
 
-**Р11. `emits event order.created`** — слово `event` необов'язкове, ім'я події не перевіряється: у design.md воно не є шляхом карти. Зв'язок з `event` у карті — питання M3.
+**Р11. `emits event order.created`** — слово `event` необов'язкове. Ім'я, що не є ID події, — проза: воно не перевіряється, як у design.md, де воно не є шляхом карти. ID події з групи `events` (`emits event events.order_placed`) — посилання, яке `check` судить проти фактів знімка (Р17, [ADR 0023](adr/0023-async-flows.md) п. 1); перше слово `events` зарезервоване, тож прозове ім'я ним не починається.
 
-Події в карті немає, і K001 теж немає: `emits` не резолвиться.
+Події в карті немає, і K001 теж немає: прозовий `emits` не резолвиться.
 
 ```keylang Р11 path=keylang/flows/buy.md
 # flow buy
@@ -478,6 +479,8 @@ keylang/flows/refund.md:5:5: K004 `?` cannot have nested items
 - `- parallel` з вкладеними `step` — паралельна група: кожен крок має відбутися, порядок між ними не перевіряється, а наступний сусід іде після всієї групи. Стоїть на верху потоку, під `step`/`trigger` і під `when`.
 - `- continues <flow>` на верху потоку — цей потік продовжує інший в іншому запиті (вебхук оплати продовжує оформлення замовлення). Форми `wait` усередині одного потоку немає: кожна точка входу — свій потік.
 - `- after <тривалість>` і `- every <розклад>` — таймери під кроком чи на верху потоку; їх перевіряє вкладений `test`.
+- `- emits event <id>` під кроком (на верху потоку — під тригером) з ID події `events.<назва>` ([semantics.md](semantics.md) §6) — крок публікує подію: `check` шукає `dispatch` цієї події в коді, який крок досягає. Ім'я без `events.` лишається прозою, як раніше (Р11).
+- `- trigger event <id>` — потік підписників події: кроки під ним виконуються в її підписниках (observers з конфігу, receivers сигналу), і кожен крок має бути досяжний хоч від одного з них. Подія — з тієї самої групи `events`; ID, якого немає, — K204 з `did you mean`, а ID fn, типу чи модуля — K205.
 
 Оплата з вебхуком: замовлення оформлює маршрут, після оплати паралельно йдуть резерв, лист і вивантаження в ERP, підтвердження приходить вебхуком, а неоплачене замовлення щогодини скасовує cron.
 
@@ -534,6 +537,41 @@ keylang/flows/refund.md:5:5: K004 `?` cannot have nested items
 ```diagnostics
 ```
 
+Подія й підписник: `place` публікує `order_placed`, лист отримувача — потік події. Події стоять у згенерованій групі `events` карти (`keylang/map/events.md`), тут — записані вручну; `order.created` без `events.` — проза, яку `check` не судить. Невідома подія — K204 з найближчою подією в підказці, ID fn після `trigger event` — K205; обидва дає `check`, не `parse`.
+
+```keylang path=keylang/flows/events.md
+# flow place
+
+- trigger shop.orders.place
+  - emits event events.order_placed
+  - emits event order.created
+  - emits event events.order_placd
+
+# flow receipt
+
+- trigger event events.order_placed
+- step shop.mail.receipt
+
+# flow wrong
+
+- trigger event shop.orders.place
+```
+
+```keylang path=keylang/map.md
+- layer shop
+  - module orders
+    - fn place
+  - module mail
+    - fn receipt
+- events
+  - event order_placed
+```
+
+```diagnostics
+keylang/flows/events.md:6:17: K204 unknown event `events.order_placd` (did you mean `events.order_placed`?): no code keylang read dispatches it and no config observes it
+keylang/flows/events.md:15:17: K205 `trigger event` names `shop.orders.place`, a fn, not an event; an event ID is `events.<name>`, as `keylang/map/events.md` lists them
+```
+
 Невідомий вид тригера й аргументи таймерів — K005 парсера; `parallel` без кроків — K009, а `continues` на потік, якого немає, — K206 (обидва дає `check`, не `parse`). Вид, що не збігається з точкою входу знімка, — K205 ([semantics.md](semantics.md)).
 
 ```keylang path=keylang/flows/broken.md
@@ -560,7 +598,7 @@ keylang/flows/refund.md:5:5: K004 `?` cannot have nested items
 ```
 
 ```diagnostics
-keylang/flows/broken.md:3:11: K005 unknown trigger kind `queue`; expected one of: route, cron, consumer, webhook
+keylang/flows/broken.md:3:11: K005 unknown trigger kind `queue`; expected one of: route, cron, consumer, webhook, event
 keylang/flows/broken.md:4:13: K206 `continues` names flow `place-ordr`, which no `# flow` declares (did you mean `place-order`?)
 keylang/flows/broken.md:5:3: K009 `parallel` has no steps; nest the steps that run in any order under it
 keylang/flows/broken.md:7:11: K005 expected `after <duration>`: a number and a unit (ms, s, m, min, h, d, w), such as `after 30m`
@@ -673,7 +711,7 @@ exports-args = "exports" segment ( "," segment )* ;
 no-cycles-args = "no-cycles" ;
 kind-args = "kind" ( "business" | "technical" ) ;
 step-args = ( "trigger" | "step" ) id ;
-trigger-kind-args = "trigger" ( "route" | "cron" | "consumer" | "webhook" ) id ;
+trigger-kind-args = "trigger" ( "route" | "cron" | "consumer" | "webhook" | "event" ) id ;
 parallel-args = "parallel" ;
 continues-args = "continues" segment ;
 after-args = "after" duration ;
@@ -683,7 +721,8 @@ cron-macro = "@yearly" | "@annually" | "@monthly" | "@weekly" | "@daily" | "@mid
 cron-fields = cron-field cron-field cron-field cron-field cron-field [ cron-field ] ;
 cron-field = { letter | digit | "*" | "/" | "," | "-" | "?" | "#" } ;
 planned-args = "planned" ( "fn" | "module" | "type" | "event" ) id [ signature ] ;
-emits-args = "emits" [ "event" ] segment ;
+emits-args = "emits" [ "event" ] ( segment | event-id ) ;
+event-id = "events" "." segment | link ; (* посилання на подію; текст лінка — events.<segment> *)
 invariant-args = "invariant" text ;
 question-args = "?" text ;
 when-flow-args = "when" text ;
@@ -699,4 +738,5 @@ when-wiring-args = "when" condition "→" id ;
 - Ключові слова контекстні (Р7): те саме слово в іншій позиції — не ключове.
 - `then` вгадує форму (Р10): один токен-ID з крапкою — посилання, інакше текст.
 - `trigger` з двома аргументами, перший без крапки, — `trigger-kind-args` (Р17); тривалість починається з ненульової цифри.
+- `emits` з ID, перший сегмент якого `events`, — `event-id`, посилання на подію; будь-яке інше ім'я — проза (Р11, Р17).
 - Під будь-чим іншим — K004 «не може мати вкладених елементів» (`under-other`).

@@ -1,7 +1,7 @@
 // Language-independent facts extracted from one source file. Everything the
 // map and the index need; nothing about layers or IDs yet.
 
-import type { CodeDecorator } from "../frameworks/adapter.ts";
+import type { CodeDecorator, DecoratorArg } from "../frameworks/adapter.ts";
 
 // Decorators are what a framework adapter reads of the code: their shape is the adapters' (`base`).
 export type { CodeDecorator, DecoratorArg } from "../frameworks/adapter.ts";
@@ -90,6 +90,47 @@ export interface FileFacts {
    * annotation): `db = Depends(get_db)`, `Annotated[S, Depends(get_s)]`.
    */
   paramCalls?: ParamCallFact[];
+  /**
+   * TypeScript/JavaScript: what the web adapters (Express, Fastify, Next.js)
+   * read of the file: route registrations with their arguments, the router
+   * values the top level creates, `'use server'` directives and an exported
+   * `config`. Absent when the file has none of them.
+   */
+  web?: WebFacts;
+}
+
+/** See `FileFacts.web`. */
+export interface WebFacts {
+  /** `const r = express.Router()`, `const app = fastify()` at the top level: the name and the callee of the call (or `new`) it holds. */
+  values: { name: string; callee: string; line: number; col: number }[];
+  /** Registrations: `r.get('/x', a, h)`, `app.use('/api', r)`, `f.register(p, { prefix })`, `f.route({…})`, `r.route('/x').get(h)`. */
+  calls: WebCallFact[];
+  /** `'use server'` in the directive prologue of the file. */
+  useServer?: true;
+  /** Functions whose body starts with `'use server'`: their name (a declaration's or a declarator's), and whether that is a top-level declaration of the file. */
+  actions?: { name: string | null; top: boolean; line: number; col: number }[];
+  /** `export const config = {…}`: its value (Next.js `middleware.ts` `matcher`). */
+  config?: DecoratorArg;
+}
+
+/** A registration call on a receiver written as a name (`app`, `router`, `fastify`). */
+export interface WebCallFact {
+  receiver: string;
+  /** `get`, `post`, `use`, `register`, `route`, … as written. */
+  method: string;
+  /** `router.route('/x').get(h)`: the path `route` names. */
+  route?: DecoratorArg;
+  args: (DecoratorArg & { line: number; col: number })[];
+  /**
+   * The nearest enclosing function whose first parameter is the receiver (a
+   * Fastify plugin `async (fastify) => {…}`): its name (the declaration's,
+   * the declarator's, `default` for an anonymous default export; null for a
+   * function written in place) and position. Absent when the receiver is no
+   * such parameter: then it is a name of the file's top level or an import.
+   */
+  within?: { name: string | null; line: number; col: number };
+  line: number;
+  col: number;
 }
 
 /**
