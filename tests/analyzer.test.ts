@@ -1200,3 +1200,19 @@ test("no-cycles: `import(\"./a\").A` and `typeof import(\"./a\")` in a type are 
   const dir = repo(t, { "keylang/rules.md": "# rules\n\n- no-cycles\n", "src/app/a.ts": a, "src/app/b.ts": 'export async function fb(x: number): Promise<void> {\n  await import("./a");\n}\n' });
   assert.match(keylang(dir, ["check"]).stdout, /K105 divergence: dependency cycle app\.a → app\.b → app\.a/);
 });
+
+test("a relative import of a module that only has a declaration file (`.d.ts`, `.d.mts`, `index.d.ts`) is left out silently, not a hole", (t) => {
+  const dir = repo(t, {
+    "keylang/rules.md": "# rules\n\n- deny app external\n",
+    "src/app/types.d.ts": "export interface Order {\n  id: string;\n}\n",
+    "src/app/env.d.mts": "export declare const mode: string;\n",
+    "src/app/gql/index.d.ts": "export type Query = string;\n",
+    "src/app/a.ts": 'import type { Order } from "./types";\nimport type { Query } from "./gql";\nimport { mode } from "./env.mjs";\nexport function total(o: Order, q: Query): string {\n  return o.id + q + mode;\n}\n',
+  });
+  const map = keylang(dir, ["map"]);
+  assert.equal(map.status, 0, map.stdout + map.stderr);
+  assert.doesNotMatch(map.stdout + map.stderr, /unresolved import/);
+  const check = keylang(dir, ["check", "--strict"]);
+  assert.equal(check.status, 0, check.stdout + check.stderr);
+  assert.match(check.stdout + check.stderr, /0 fail, 0 unverified, 1 ok/);
+});
