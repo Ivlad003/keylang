@@ -23,6 +23,7 @@ import { checkoutRepo, CHECKOUT_FILES, click, drag, KEY, locate, mouseMove, temp
 import { HOOK_FLOW, HOOKS } from "./hooks-fixture.ts";
 import { CYCLE_AUTHOR_CODE, CYCLE_FILES, refundCycle, type CycleStage } from "./cycle-fixture.ts";
 import { diagramsRepo } from "./diagrams-fixture.ts";
+import { explorerRepo } from "./explorer-fixture.ts";
 import { VirtualTerminal } from "./vt.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -1172,4 +1173,176 @@ test("web: /api/views lists the discovered flows; /api/diagram draws one; /api/u
     assert.equal(refused.status, 403, JSON.stringify(headers));
     assert.doesNotMatch(refused.body, /checkout/);
   }
+});
+
+/** A request with a method, headers and a body: what `status` sends without one. */
+function send(url: URL, method: string, path: string, headers: Record<string, string>, body: string): Promise<{ status: number; body: string; type: string }> {
+  return new Promise((resolve, reject) => {
+    const req = request({ host: url.hostname, port: url.port, path, method, headers: { ...headers, "Content-Length": String(Buffer.byteLength(body)) } }, (res) => {
+      let text = "";
+      res.on("data", (chunk: Buffer) => (text += chunk.toString()));
+      res.on("end", () => resolve({ status: res.statusCode ?? 0, body: text, type: String(res.headers["content-type"] ?? "") }));
+    });
+    req.on("error", reject);
+    req.end(body);
+  });
+}
+
+type CallsJson = {
+  id: string;
+  node: { kind: string } | null;
+  entries: { kind: string; label: string }[];
+  callees: { id: string; via?: string; site?: string; closure?: true; at: { file: string; line: number }; calls: number; holes: number; callers: number }[];
+  holes: { kind: string; reason: string; text: string; at: { file: string; line: number; col: number } }[];
+  callers: { id: string; via?: string; entries: { kind: string; label: string }[] }[];
+  reachedFrom: { id: string; kind: string; label: string; steps: number }[];
+  reason?: string;
+};
+
+test("web: /api/calls opens one level of the call tree — callees with via and site, holes with reasons, callers and the entry points above — in TypeScript and Python, behind the token (business-flows/22)", async (t) => {
+  const repo = explorerRepo(t);
+  const server = await serveWeb({ root: repo, port: 0 });
+  t.after(() => server.close());
+  const url = new URL(server.url);
+  const bearer = { Authorization: `Bearer ${tokenOf(url)}` };
+  const calls = async (id: string): Promise<CallsJson> => {
+    const res = await status(url, `/api/calls?id=${encodeURIComponent(id)}`, bearer);
+    assert.equal(res.status, 200, res.body);
+    assert.match(res.type, /^application\/json/);
+    return JSON.parse(res.body) as CallsJson;
+  };
+  const pay = await calls("app.handlers.pay");
+  assert.deepEqual(pay.entries, [{ kind: "route", label: "POST /pay" }]);
+  // In the order the code writes them; the call inside the closure passed to `withLock` says so.
+  assert.deepEqual(
+    pay.callees.map((c) => [c.id, c.via ?? null, c.site ?? null, c.closure ?? null, c.at.line, c.calls, c.holes, c.callers]),
+    [
+      ["billing.lock.withLock", null, null, null, 4, 0, 1, 1],
+      ["billing.charge.charge", "closure-arg", "src/app/handlers.ts:4:12", true, 4, 1, 0, 1],
+    ],
+  );
+  assert.deepEqual(pay.holes, [{ kind: "unresolved", reason: "call through a local value `gateway.refund`", text: "gateway.refund", at: { file: "src/app/handlers.ts", line: 6, col: 3 } }]);
+  assert.deepEqual(pay.callers, []);
+  assert.deepEqual(pay.reachedFrom, [{ id: "app.handlers.pay", kind: "route", label: "POST /pay", steps: 0 }]);
+  // Upwards: who calls `write`, and the entry point three calls above it.
+  const write = await calls("billing.audit.write");
+  assert.deepEqual(write.callees, []);
+  assert.deepEqual(write.callers.map((c) => c.id), ["billing.audit.audit"]);
+  assert.deepEqual(write.reachedFrom, [{ id: "app.handlers.pay", kind: "route", label: "POST /pay", steps: 3 }]);
+  const charge = await calls("billing.charge.charge");
+  assert.deepEqual(charge.callers.map((c) => [c.id, c.via, c.entries]), [["app.handlers.pay", "closure-arg", [{ kind: "route", label: "POST /pay" }]]]);
+  // Python: `main` passes `helper` to `apply` (a callable reference), and `apply` calls through its parameter.
+  const main = await calls("shop.cli.main");
+  assert.deepEqual(main.entries, [{ kind: "cli", label: "shop-py" }]);
+  assert.deepEqual(main.callees.map((c) => [c.id, c.via ?? null]), [["shop.cli.apply", null], ["shop.cli.helper", "callable-arg"]]);
+  assert.deepEqual((await calls("shop.cli.apply")).holes.map((h) => h.reason), ["call through a local value `f`"]);
+  assert.deepEqual((await calls("shop.cli.store")).reachedFrom, [{ id: "shop.cli.main", kind: "cli", label: "shop-py", steps: 2 }]);
+  const unknown = await calls("no.such.fn");
+  assert.equal(unknown.node, null);
+  assert.match(unknown.reason ?? "", /no fn `no\.such\.fn`/);
+  assert.equal((await status(url, "/api/calls", bearer)).status, 400);
+  // Without events in the snapshot, the views say why (business-flows/08 brings them).
+  const views = JSON.parse((await status(url, "/api/views", bearer)).body) as { events: unknown[]; eventsReason?: string };
+  assert.deepEqual(views.events, []);
+  assert.match(views.eventsReason ?? "", /no event nodes/);
+  for (const headers of [{}, { Authorization: "Bearer wrong" }, { ...bearer, Origin: "http://evil.example" }]) {
+    const refused = await status(url, "/api/calls?id=app.handlers.pay", headers);
+    assert.equal(refused.status, 403, JSON.stringify(headers));
+    assert.doesNotMatch(refused.body, /charge/);
+  }
+});
+
+test("web: /api/coverage answers the payload of `keylang coverage --json` behind the token (business-flows/13, 22)", async (t) => {
+  const repo = explorerRepo(t);
+  const server = await serveWeb({ root: repo, port: 0 });
+  t.after(() => server.close());
+  const url = new URL(server.url);
+  const bearer = { Authorization: `Bearer ${tokenOf(url)}` };
+  const res = await status(url, "/api/coverage", bearer);
+  assert.equal(res.status, 200, res.body);
+  const report = JSON.parse(res.body) as { snapshotId: string; reach: { fns: number; reachable: number; entries: number }; orphans: { id: string }[]; holes: { total: number; modules: { module: string }[] }; unflowed: { id: string }[]; dataLogic: { signals: unknown[]; sites: unknown[] }; text?: string };
+  assert.deepEqual(Object.keys(report), ["snapshotId", "reach", "orphans", "holes", "unflowed", "dataLogic"]);
+  // The same JSON the CLI prints.
+  const cli = spawnSync(process.execPath, [bin, "coverage", "--json"], { cwd: repo, encoding: "utf8" });
+  assert.equal(cli.status, 0, cli.stderr);
+  assert.deepEqual(report, JSON.parse(cli.stdout));
+  assert.equal(report.reach.entries, 3);
+  assert.equal(report.holes.total, 3);
+  assert.deepEqual(report.unflowed.map((u) => u.id), ["shop.cli.main", "app.handlers.listOrders", "app.handlers.pay"]);
+  assert.equal((await status(url, "/api/coverage")).status, 403);
+  assert.equal((await status(url, "/api/coverage", { ...bearer, Origin: "http://evil.example" })).status, 403);
+});
+
+test("web: POST /api/flow-proposal writes one proposal of the ticked branches that `keylang proposals` lists; it needs the token, JSON and the same origin, and refuses a generated target like `flows adopt` (business-flows/22)", async (t) => {
+  const generated = "<!-- keylang:generated — не редагувати, `keylang map` -->\n\n# flow gen\n\n- trigger app.handlers.pay\n";
+  const repo = explorerRepo(t, { "keylang/flows/gen.md": generated });
+  const server = await serveWeb({ root: repo, port: 0 });
+  t.after(() => server.close());
+  const url = new URL(server.url);
+  const bearer = { Authorization: `Bearer ${tokenOf(url)}` };
+  const json = { "Content-Type": "application/json" };
+  const body = JSON.stringify({ name: "pay", trigger: "app.handlers.pay", steps: [{ id: "billing.charge.charge", steps: [{ id: "billing.audit.audit", steps: ["billing.audit.write"] }] }] });
+  const post = (headers: Record<string, string>, text = body): Promise<{ status: number; body: string }> => send(url, "POST", "/api/flow-proposal", headers, text);
+  const store = join(repo, ".keylang/proposals");
+  // CSRF: no token, another token, another origin, another site — 403; a form's content type — 415; GET — 405. Nothing written.
+  for (const headers of [json, { ...json, Authorization: "Bearer wrong" }, { ...json, ...bearer, Origin: "http://evil.example" }, { ...json, ...bearer, "Sec-Fetch-Site": "cross-site" }]) assert.equal((await post(headers)).status, 403, JSON.stringify(headers));
+  for (const type of ["text/plain", "application/x-www-form-urlencoded", "multipart/form-data; boundary=x"]) assert.equal((await post({ ...bearer, "Content-Type": type })).status, 415, type);
+  assert.equal((await post(bearer)).status, 415, "no content type");
+  assert.equal((await send(url, "GET", "/api/flow-proposal", bearer, "")).status, 405);
+  assert.equal(existsSync(store), false);
+  // A body that names no flow, a step the tree does not have: 400.
+  assert.equal((await post({ ...json, ...bearer }, "{")).status, 400);
+  assert.match((await post({ ...json, ...bearer }, JSON.stringify({ name: "../x", trigger: "app.handlers.pay", steps: [] }))).body, /name: a flow name/);
+  const skipped = await post({ ...json, ...bearer }, JSON.stringify({ name: "pay", trigger: "app.handlers.pay", steps: ["billing.audit.audit"] }));
+  assert.equal(skipped.status, 400);
+  assert.match(skipped.body, /`app\.handlers\.pay` does not call it/);
+  // A generated target is refused as `flows adopt` refuses it.
+  const refused = await post({ ...json, ...bearer }, JSON.stringify({ name: "gen", trigger: "app.handlers.pay", steps: [] }));
+  assert.equal(refused.status, 409, refused.body);
+  assert.match(refused.body, /keylang\/flows\/gen\.md: a generated file/);
+  assert.equal(existsSync(store), false);
+  // The tree as one proposal, with its provenance; the response says how to merge it.
+  const made = await post({ ...json, ...bearer, Origin: `http://${url.host}`, "Sec-Fetch-Site": "same-origin" });
+  assert.equal(made.status, 200, made.body);
+  const answer = JSON.parse(made.body) as { proposal: string; target: string; steps: string[]; merge: string };
+  assert.equal(answer.proposal, ".keylang/proposals/keylang/flows/pay.md");
+  assert.equal(answer.target, "keylang/flows/pay.md");
+  assert.deepEqual(answer.steps, ["app.handlers.pay", "billing.charge.charge", "billing.audit.audit", "billing.audit.write"]);
+  assert.match(answer.merge, /MERGE in the TUI/);
+  assert.match(answer.merge, /keylang proposals accept keylang\/flows\/pay\.md/);
+  assert.equal(
+    readFileSync(join(repo, answer.proposal), "utf8"),
+    [
+      "# flow pay",
+      "",
+      "<!-- keylang:web explorer -->",
+      "",
+      "- trigger app.handlers.pay <!-- keylang:algo unresolved: gateway.refund (src/app/handlers.ts:6) -->",
+      "  - step billing.charge.charge <!-- keylang:algo via closure -->",
+      "    - step billing.audit.audit",
+      "      - step billing.audit.write",
+      "",
+    ].join("\n"),
+  );
+  assert.equal(existsSync(join(repo, "keylang/flows/pay.md")), false, "a proposal, not the spec");
+  assert.deepEqual(
+    readdirSync(store, { recursive: true }).filter((p) => String(p).endsWith(".md")),
+    [join("keylang", "flows", "pay.md")],
+  );
+  const listed = spawnSync(process.execPath, [bin, "proposals"], { cwd: repo, encoding: "utf8" });
+  assert.equal(listed.status, 0, listed.stderr);
+  assert.equal(listed.stdout, "keylang/flows/pay.md: +8 -0 (new file)\n");
+  // A second save while it waits is refused, as `flows adopt` refuses it.
+  const again = await post({ ...json, ...bearer });
+  assert.equal(again.status, 409);
+  assert.match(again.body, /a proposal for keylang\/flows\/pay\.md is waiting/);
+  // Python: a callable passed as an argument keeps its `via`.
+  const py = await post({ ...json, ...bearer }, JSON.stringify({ name: "shop", trigger: "shop.cli.main", steps: [{ id: "shop.cli.helper", steps: [{ id: "shop.cli.store" }] }] }));
+  assert.equal(py.status, 200, py.body);
+  assert.match(readFileSync(join(repo, ".keylang/proposals/keylang/flows/shop.md"), "utf8"), /^ {2}- step shop\.cli\.helper <!-- keylang:algo via callable -->\n {4}- step shop\.cli\.store\n$/m);
+  // Accepted, the flow is a spec `check` reads.
+  assert.equal(spawnSync(process.execPath, [bin, "proposals", "accept", "keylang/flows/pay.md"], { cwd: repo, encoding: "utf8" }).status, 0);
+  const check = spawnSync(process.execPath, [bin, "check"], { cwd: repo, encoding: "utf8" });
+  assert.match(check.stdout, /pay/, check.stdout + check.stderr);
+  assert.doesNotMatch(check.stdout, /K0\d\d .*pay\.md/);
 });
