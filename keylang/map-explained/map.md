@@ -204,7 +204,7 @@
     - fn [diagramKeys](../../src/diagram-layout.ts#L143) (diagram: KeyDiagram) → Map<string, string>
       <a id="map.diagram-layout.diagramKeys"></a><br>The stable key of each node of a diagram, by node id. A node of a flow (an id with a spec line) is keyed by what it says; any other node already has a stable id (`fn:<id>`, `entry:<id>`, `layer:<id>`).
       - calls [map.diagram-layout.shapeBase](map.md#map.diagram-layout.shapeBase), [map.diagram-layout.twinsApart](map.md#map.diagram-layout.twinsApart), [base.span.compareText](base.md#base.span.compareText)
-    - fn [twinsApart](../../src/diagram-layout.ts#L180) (pairs: readonly (readonly [string, string])[], taken: Iterable<string> = []) → Map<string, string> <!-- internal -->
+    - fn [twinsApart](../../src/diagram-layout.ts#L180) (pairs: readonly (readonly [string, string])[], taken: Iterable<string> = []) → Map<string, string>
       <a id="map.diagram-layout.twinsApart"></a><br>`#2`, `#3` for a key already taken, in order.
     - fn [round](../../src/diagram-layout.ts#L192) (value: number) → number <!-- internal -->
       <a id="map.diagram-layout.round"></a>

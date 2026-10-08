@@ -488,20 +488,26 @@
     - types [operations.types](operations.md#operations.types)
     - fn [runFlowExport](../../src/operations/flow-bundle.ts#L36) (request: FlowExportRequest, context: OperationContext) → Promise<OperationEnvelope<"flow-export">>
       <a id="operations.flow-bundle.runFlowExport"></a><br>`flow export <name>…`. 0: the bundle (and `out` written); 2: a broken keylang.json, no code, an unknown flow name, an `out` that is neither new nor a bundle, or lies under the spec directory (it would be read as a spec), an I/O error.
-      - calls [operations.shared.empty](operations.md#operations.shared.empty), [base.diag.errorText](base.md#base.diag.errorText), [operations.shared.rootRelative](operations.md#operations.shared.rootRelative), [operations.flow-bundle.outProblem](operations.md#operations.flow-bundle.outProblem), [features.discover.discoverFlows](features.md#features.discover.discoverFlows), [features.discover.specifiedTriggers](features.md#features.discover.specifiedTriggers), [features.discover-names.readProcesses](features.md#features.discover-names.readProcesses), [operations.flow-bundle.sectionText](operations.md#operations.flow-bundle.sectionText), [features.flow-bundle.bundleNodes](features.md#features.flow-bundle.bundleNodes), [features.flow-bundle.flowTests](features.md#features.flow-bundle.flowTests), [features.flow-bundle.flowEvents](features.md#features.flow-bundle.flowEvents), [features.integrations.findIntegrations](features.md#features.integrations.findIntegrations), [features.integrations.loadIntegrations](features.md#features.integrations.loadIntegrations), [base.brief.firstSentence](base.md#base.brief.firstSentence), [operations.flow-bundle.gitOf](operations.md#operations.flow-bundle.gitOf), [features.flow-bundle.bundleText](features.md#features.flow-bundle.bundleText), [operations.flow-bundle.displayPath](operations.md#operations.flow-bundle.displayPath), [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic)
-    - fn [outProblem](../../src/operations/flow-bundle.ts#L126) (root: string, specDir: string, out: string) → string | null <!-- internal -->
+      - calls [operations.shared.empty](operations.md#operations.shared.empty), [base.diag.errorText](base.md#base.diag.errorText), [operations.shared.rootRelative](operations.md#operations.shared.rootRelative), [operations.flow-bundle.outProblem](operations.md#operations.flow-bundle.outProblem), [operations.flow-bundle.exportFlows](operations.md#operations.flow-bundle.exportFlows), [operations.flow-bundle.exportBundle](operations.md#operations.flow-bundle.exportBundle), [operations.flow-bundle.displayPath](operations.md#operations.flow-bundle.displayPath), [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic)
+    - fn [exportFlows](../../src/operations/flow-bundle.ts#L80) (root: string, analyzed: Analysis, names: readonly string[]) → { flows: ExportFlow[] } | { error: string }
+      <a id="operations.flow-bundle.exportFlows"></a><br>The flows of an export by name: a hand-written `# flow` section as written, else the discovered view's flow, each with the business process it belongs to; or which names are neither.
+      - calls [operations.shared.rootRelative](operations.md#operations.shared.rootRelative), [features.discover.discoverFlows](features.md#features.discover.discoverFlows), [features.discover.specifiedTriggers](features.md#features.discover.specifiedTriggers), [features.discover-names.readProcesses](features.md#features.discover-names.readProcesses), [operations.flow-bundle.sectionText](operations.md#operations.flow-bundle.sectionText)
+    - fn [exportBundle](../../src/operations/flow-bundle.ts#L121) (root: string, analyzed: Analysis, flows: readonly ExportFlow[], withCallees: number, version: string, layout = "") → Promise<{ header: BundleHeader; text: string; messages: OperationMessage[]; summary: string }>
+      <a id="operations.flow-bundle.exportBundle"></a><br>The bundle of resolved flows: their nodes (and callees to `withCallees`), tests, events and the integrations their nodes call, the layers, the provenance; `layout` fills the ```keylang-layout``` block (business-flows/25).
+      - calls [features.flow-bundle.bundleNodes](features.md#features.flow-bundle.bundleNodes), [features.flow-bundle.flowTests](features.md#features.flow-bundle.flowTests), [features.flow-bundle.flowEvents](features.md#features.flow-bundle.flowEvents), [features.integrations.findIntegrations](features.md#features.integrations.findIntegrations), [features.integrations.loadIntegrations](features.md#features.integrations.loadIntegrations), [features.discover.specifiedTriggers](features.md#features.discover.specifiedTriggers), [base.diag.errorText](base.md#base.diag.errorText), [base.brief.firstSentence](base.md#base.brief.firstSentence), [operations.flow-bundle.gitOf](operations.md#operations.flow-bundle.gitOf), [features.flow-bundle.bundleText](features.md#features.flow-bundle.bundleText)
+    - fn [outProblem](../../src/operations/flow-bundle.ts#L151) (root: string, specDir: string, out: string) → string | null <!-- internal -->
       <a id="operations.flow-bundle.outProblem"></a><br>Why the bundle may not be written to `out`: under the spec directory, an existing file that is no bundle, the write policy inside the repository.
       - calls [base.config.toPosix](base.md#base.config.toPosix), [lang.files.existingText](lang.md#lang.files.existingText), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem)
-    - fn [displayPath](../../src/operations/flow-bundle.ts#L136) (root: string, abs: string) → string <!-- internal -->
+    - fn [displayPath](../../src/operations/flow-bundle.ts#L161) (root: string, abs: string) → string <!-- internal -->
       <a id="operations.flow-bundle.displayPath"></a>
       - calls [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [sectionText](../../src/operations/flow-bundle.ts#L142) (root: string, analyzed: Analysis, file: string, name: string) → string | null <!-- internal -->
+    - fn [sectionText](../../src/operations/flow-bundle.ts#L167) (root: string, analyzed: Analysis, file: string, name: string) → string | null <!-- internal -->
       <a id="operations.flow-bundle.sectionText"></a><br>The `# flow <name>` section of a spec file as written, heading to the next heading; null when it is not there.
       - calls [lang.files.existingText](lang.md#lang.files.existingText)
-    - fn [gitOf](../../src/operations/flow-bundle.ts#L156) (root: string) → { repo: string; commit: string } <!-- internal -->
+    - fn [gitOf](../../src/operations/flow-bundle.ts#L181) (root: string) → { repo: string; commit: string }
       <a id="operations.flow-bundle.gitOf"></a><br>The repository as git names it (the `origin` URL without credentials, else the directory) and HEAD; `n/a` without git.
       - calls [features.clone.redactUrl](features.md#features.clone.redactUrl)
-    - fn [runFlowImport](../../src/operations/flow-bundle.ts#L175) (request: FlowImportRequest, context: OperationContext) → Promise<OperationEnvelope<"flow-import">>
+    - fn [runFlowImport](../../src/operations/flow-bundle.ts#L200) (request: FlowImportRequest, context: OperationContext) → Promise<OperationEnvelope<"flow-import">>
       <a id="operations.flow-bundle.runFlowImport"></a><br>`flow import <bundle.md>`. 0: the proposals are written, or the preview; 1: a proposal for a target is waiting (`pending: refuse`) or an input changed meanwhile; 2: no bundle, a bad --layer-map, `--mode llm` without a model, a target a proposal may not change, an I/O error.
       - calls [operations.shared.empty](operations.md#operations.shared.empty), [base.diag.errorText](base.md#base.diag.errorText), [features.flow-bundle.parseBundle](features.md#features.flow-bundle.parseBundle), [base.brief.firstSentence](base.md#base.brief.firstSentence), [features.flow-bundle.usedLayers](features.md#features.flow-bundle.usedLayers), [features.flow-bundle.parseLayerMap](features.md#features.flow-bundle.parseLayerMap), [operations.shared.modelSetup](operations.md#operations.shared.modelSetup), [features.flow-bundle.layerMapRequest](features.md#features.flow-bundle.layerMapRequest), [features.flow-bundle.parseLayerMapAnswer](features.md#features.flow-bundle.parseLayerMapAnswer), [features.flow-bundle.algoLayers](features.md#features.flow-bundle.algoLayers), [operations.shared.rootRelative](operations.md#operations.shared.rootRelative), [base.config.toPosix](base.md#base.config.toPosix), [features.flow-bundle.importPlan](features.md#features.flow-bundle.importPlan), [lang.files.existingText](lang.md#lang.files.existingText), [features.draft.withFlow](features.md#features.draft.withFlow), [features.flow-bundle.withMigration](features.md#features.flow-bundle.withMigration), [operations.shared.generatedIn](operations.md#operations.shared.generatedIn), [features.proposals.proposalProblem](features.md#features.proposals.proposalProblem), [operations.shared.proposalRefusal](operations.md#operations.shared.proposalRefusal), [map.map.sourceInputs](map.md#map.map.sourceInputs), [operations.shared.commitProposal](operations.md#operations.shared.commitProposal)
   - module [generate](../../src/operations/generate.ts#L1)
@@ -831,149 +837,149 @@
       <a id="operations.types.FlowExportPayload"></a>
     - type [FlowImportRequest](../../src/operations/types.ts#L499)
       <a id="operations.types.FlowImportRequest"></a><br>A bundle imported (`keylang flow import <bundle.md> [--into <dir>/features/<slug>.md] [--layer-map old=new,…] [--mode algo|llm|hybrid] [--print]`): one proposal of a feature spec whose flows step on `planned` nodes re-homed into this repository's layers, and one of the…
-    - type [FlowImportPayload](../../src/operations/types.ts#L517)
+    - type [FlowImportPayload](../../src/operations/types.ts#L519)
       <a id="operations.types.FlowImportPayload"></a>
-    - type [DraftFlowRequest](../../src/operations/types.ts#L545)
+    - type [DraftFlowRequest](../../src/operations/types.ts#L549)
       <a id="operations.types.DraftFlowRequest"></a><br>A flow drafted for a trigger (`keylang draft flow <trigger> --mode algo|llm|hybrid`): `algo` is only what the snapshot's call edges show; `llm` and `hybrid` ask the configured model and judge its answer against those edges (`draftFlowWithModel`: agree, llm-only, conflict…
-    - type [DraftRulesRequest](../../src/operations/types.ts#L590)
+    - type [DraftRulesRequest](../../src/operations/types.ts#L594)
       <a id="operations.types.DraftRulesRequest"></a><br>Rules drafted for the repository (`keylang draft rules --mode algo|llm|hybrid`): `algo` is what the code keeps now (`draftRules`: a `layers` order or `deny` pairs, `no-cycles` without a module cycle); `llm` and `hybrid` ask the configured model and check each of its rules alone…
-    - type [CodeToSpecRequest](../../src/operations/types.ts#L621)
+    - type [CodeToSpecRequest](../../src/operations/types.ts#L625)
       <a id="operations.types.CodeToSpecRequest"></a><br>Flows drafted from code (`keylang code-to-spec <path[:line]> | --since <ref> [--mode algo|llm|hybrid]`). The source is a code position or a git change, never both.
-    - type [CodeToSpecSource](../../src/operations/types.ts#L637)
+    - type [CodeToSpecSource](../../src/operations/types.ts#L641)
       <a id="operations.types.CodeToSpecSource"></a><br>Where code-to-spec drafts from: a code position or a git change, never both.
-    - type [SpecToCodeRequest](../../src/operations/types.ts#L662)
+    - type [SpecToCodeRequest](../../src/operations/types.ts#L666)
       <a id="operations.types.SpecToCodeRequest"></a><br>`keylang spec-to-code <id> [--into] [--mode algo|llm] [--print]`: for the planned fn `id`, in the file of its module, a stub with its declared signature (`algo`) or the model's function (`llm`), and for each `test` its flows name in a file that does not exist yet a failing…
-    - type [ApplyCodeRequest](../../src/operations/types.ts#L688)
+    - type [ApplyCodeRequest](../../src/operations/types.ts#L692)
       <a id="operations.types.ApplyCodeRequest"></a><br>Applies a whole spec-to-code candidate (`keylang spec-to-code <id> --apply`): every file of it is written with its proposed text, directly — no proposal. The candidate is the one a spec-to-code run reported (preview or proposal, template or model): nothing is computed again.
-    - type [DraftLayoutRequest](../../src/operations/types.ts#L714)
+    - type [DraftLayoutRequest](../../src/operations/types.ts#L718)
       <a id="operations.types.DraftLayoutRequest"></a><br>The layer layout drafted for `keylang.json` (`keylang draft map --mode algo|llm|hybrid`): `algo` is the layout keylang would guess from the directories (`guessLayout`), `llm` and `hybrid` ask the configured model, whose layers pass the validation of a written `keylang.json`.…
-    - type [ExportRequest](../../src/operations/types.ts#L729)
+    - type [ExportRequest](../../src/operations/types.ts#L733)
       <a id="operations.types.ExportRequest"></a><br>Saves a report that was already computed to one file: exactly the stdout the CLI prints for it, without ANSI or status lines. It never runs the check again.
-    - type [ExportC4Request](../../src/operations/types.ts#L744)
+    - type [ExportC4Request](../../src/operations/types.ts#L748)
       <a id="operations.types.ExportC4Request"></a><br>`keylang export c4` (c4-zoom/12): a C4 diagram of the saved code, as text or written to `out`. `format` and `level` come as typed and are checked here, so the CLI and the TUI refuse the same values with the same message.
-    - type [InitRequest](../../src/operations/types.ts#L764)
+    - type [InitRequest](../../src/operations/types.ts#L768)
       <a id="operations.types.InitRequest"></a><br>Sets a repository up (`keylang init [dir] [--agents=LIST]`): keylang.json (an existing one is kept), the map, the baseline and the harness files, in that order. With `check` it runs exactly `init --check`: the harness files and the baseline are compared; the map is not (that is…
-    - type [ChatTurn](../../src/operations/types.ts#L777)
+    - type [ChatTurn](../../src/operations/types.ts#L781)
       <a id="operations.types.ChatTurn"></a><br>One message of the clip's conversation: the person's or the clip's.
-    - type [AssistantReplyRequest](../../src/operations/types.ts#L789)
+    - type [AssistantReplyRequest](../../src/operations/types.ts#L793)
       <a id="operations.types.AssistantReplyRequest"></a><br>The clip's reply (ADR 0021): one answer of the configured model to the conversation, with what the session shows around it. The TUI is its only caller (spec П3: the chat is interactive, no CLI command asks it).
-    - type [OperationRequest](../../src/operations/types.ts#L813)
+    - type [OperationRequest](../../src/operations/types.ts#L817)
       <a id="operations.types.OperationRequest"></a><br>Every request `runOperation` takes: its `kind` names the operation and the payload of its result.
-    - type [OperationContext](../../src/operations/types.ts#L819)
+    - type [OperationContext](../../src/operations/types.ts#L823)
       <a id="operations.types.OperationContext"></a><br>What an operation may use besides its request. No UI state, no shell.
-    - type [OperationProgress](../../src/operations/types.ts#L841)
+    - type [OperationProgress](../../src/operations/types.ts#L845)
       <a id="operations.types.OperationProgress"></a><br>A progress note; a batch adds the step it just finished (`[done/total] id` on the CLI's stderr).
-    - type [BatchStep](../../src/operations/types.ts#L847)
+    - type [BatchStep](../../src/operations/types.ts#L851)
       <a id="operations.types.BatchStep"></a><br>One node of a batch finished: written, or failed with the reason.
-    - type [CommitPlan](../../src/operations/types.ts#L858)
+    - type [CommitPlan](../../src/operations/types.ts#L862)
       <a id="operations.types.CommitPlan"></a><br>What a commit is about to write, when the operation names it before it asks (a draft: its target, whose proposal it writes).
-    - type [CommitGate](../../src/operations/types.ts#L864) = void | { refused: string[] }
+    - type [CommitGate](../../src/operations/types.ts#L868) = void | { refused: string[] }
       <a id="operations.types.CommitGate"></a><br>The caller's answer before a commit: nothing (go ahead) or the reasons the files must stay as they are.
-    - type [OperationStatus](../../src/operations/types.ts#L867) = "completed" | "failed" | "cancelled"
+    - type [OperationStatus](../../src/operations/types.ts#L871) = "completed" | "failed" | "cancelled"
       <a id="operations.types.OperationStatus"></a><br>How an operation ended: `completed` (with or without findings), `failed`, or `cancelled` by the caller.
-    - type [OperationMessage](../../src/operations/types.ts#L870)
+    - type [OperationMessage](../../src/operations/types.ts#L874)
       <a id="operations.types.OperationMessage"></a><br>One line of an operation's human-readable report, with its level.
-    - type [DoctorPayload](../../src/operations/types.ts#L877)
+    - type [DoctorPayload](../../src/operations/types.ts#L881)
       <a id="operations.types.DoctorPayload"></a><br>The structured doctor report. Key values never reach it.
-    - type [FeatureQuestionsPayload](../../src/operations/types.ts#L926)
+    - type [FeatureQuestionsPayload](../../src/operations/types.ts#L930)
       <a id="operations.types.FeatureQuestionsPayload"></a><br>The questions a model proposed for a feature file (c4-zoom/11).
-    - type [AssistantReplyPayload](../../src/operations/types.ts#L940)
+    - type [AssistantReplyPayload](../../src/operations/types.ts#L944)
       <a id="operations.types.AssistantReplyPayload"></a><br>What the model answered in the clip's chat. Nothing was written.
-    - type [ExportC4Payload](../../src/operations/types.ts#L952)
+    - type [ExportC4Payload](../../src/operations/types.ts#L956)
       <a id="operations.types.ExportC4Payload"></a><br>A C4 diagram (c4-zoom/12): its text and, with `--out`, the file it went to.
-    - type [FeaturePayload](../../src/operations/types.ts#L962)
+    - type [FeaturePayload](../../src/operations/types.ts#L966)
       <a id="operations.types.FeaturePayload"></a><br>The feature status the CLI prints (`report`), with the file and the snapshot it was computed on.
-    - type [MapCheckPayload](../../src/operations/types.ts#L973)
+    - type [MapCheckPayload](../../src/operations/types.ts#L977)
       <a id="operations.types.MapCheckPayload"></a><br>How the generated map on disk differs from a fresh render. Paths are POSIX, relative to the root.
-    - type [MapPayload](../../src/operations/types.ts#L992)
+    - type [MapPayload](../../src/operations/types.ts#L996)
       <a id="operations.types.MapPayload"></a><br>What `keylang map` did. With conflicts or refusals nothing is written and `steps` is empty; otherwise every planned file step is listed with its state, so a partial commit names what landed, what failed and what was never tried.
-    - type [BaselinePayload](../../src/operations/types.ts#L1008)
+    - type [BaselinePayload](../../src/operations/types.ts#L1012)
       <a id="operations.types.BaselinePayload"></a><br>What `keylang baseline [--check]` found and did. The path is POSIX, relative to the root.
-    - type [AgentsPayload](../../src/operations/types.ts#L1036)
+    - type [AgentsPayload](../../src/operations/types.ts#L1040)
       <a id="operations.types.AgentsPayload"></a><br>What `keylang agents [--check]` planned and did. With `error` or `refused` nothing was written and `steps` is empty; otherwise every changed file is a step with its state.
-    - type [FmtFile](../../src/operations/types.ts#L1063)
+    - type [FmtFile](../../src/operations/types.ts#L1067)
       <a id="operations.types.FmtFile"></a><br>One Markdown file of `keylang fmt`, in the order the paths name them. `current`: already canonical; `stale`: not canonical, and not written (a check, or a write stopped before it); `formatted`: written by this run; `invalid`: the tree shape is ambiguous (K003), never rewritten…
-    - type [FmtPayload](../../src/operations/types.ts#L1078)
+    - type [FmtPayload](../../src/operations/types.ts#L1082)
       <a id="operations.types.FmtPayload"></a><br>What `keylang fmt [--check]` found and did, file by file.
-    - type [ParsePayload](../../src/operations/types.ts#L1084)
+    - type [ParsePayload](../../src/operations/types.ts#L1088)
       <a id="operations.types.ParsePayload"></a><br>What `keylang parse` read: the documents in path order, the skipped and unreadable files.
-    - type [FlowsDiscoverPayload](../../src/operations/types.ts#L1099)
+    - type [FlowsDiscoverPayload](../../src/operations/types.ts#L1103)
       <a id="operations.types.FlowsDiscoverPayload"></a><br>The discovered flows and what became of the view.
-    - type [FlowsAdoptPayload](../../src/operations/types.ts#L1122)
+    - type [FlowsAdoptPayload](../../src/operations/types.ts#L1126)
       <a id="operations.types.FlowsAdoptPayload"></a><br>The discovered flow adopted, and the proposal written.
-    - type [EntriesPayload](../../src/operations/types.ts#L1130)
+    - type [EntriesPayload](../../src/operations/types.ts#L1134)
       <a id="operations.types.EntriesPayload"></a><br>The entry points of the snapshot, as `keylang entries` lists them.
-    - type [CoveragePayload](../../src/operations/types.ts#L1141) extends CoverageReport
+    - type [CoveragePayload](../../src/operations/types.ts#L1145) extends CoverageReport
       <a id="operations.types.CoveragePayload"></a><br>The coverage report (`keylang coverage --json` is it without `text`).
-    - type [IntegrationsPayload](../../src/operations/types.ts#L1147) extends IntegrationsReport
+    - type [IntegrationsPayload](../../src/operations/types.ts#L1151) extends IntegrationsReport
       <a id="operations.types.IntegrationsPayload"></a><br>The integrations inventory (`keylang integrations --json` is it without `text`).
-    - type [TourPayload](../../src/operations/types.ts#L1153) extends Tour
+    - type [TourPayload](../../src/operations/types.ts#L1157) extends Tour
       <a id="operations.types.TourPayload"></a><br>The project tour (`keylang tour --json` is it without `text` and `out`).
-    - type [MigrationStatusPayload](../../src/operations/types.ts#L1161) extends MigrationStatus
+    - type [MigrationStatusPayload](../../src/operations/types.ts#L1165) extends MigrationStatus
       <a id="operations.types.MigrationStatusPayload"></a><br>The migration parity (`keylang migration status --json` is it without `text`).
-    - type [TracePlanPayload](../../src/operations/types.ts#L1167)
+    - type [TracePlanPayload](../../src/operations/types.ts#L1171)
       <a id="operations.types.TracePlanPayload"></a><br>The plan `keylang trace-plan` prints, and what it leaves out.
-    - type [FlowCandidate](../../src/operations/types.ts#L1181)
+    - type [FlowCandidate](../../src/operations/types.ts#L1185)
       <a id="operations.types.FlowCandidate"></a><br>One drafted flow and what it makes of its target: the typed candidate a preview shows and a proposal writes. `before` and `pending` are the files it was built from — the expected state of a later write.
-    - type [DraftFlowPayload](../../src/operations/types.ts#L1201)
+    - type [DraftFlowPayload](../../src/operations/types.ts#L1205)
       <a id="operations.types.DraftFlowPayload"></a><br>What `keylang draft flow` drafted, and the proposal it wrote.
-    - type [RulesCandidate](../../src/operations/types.ts#L1226)
+    - type [RulesCandidate](../../src/operations/types.ts#L1230)
       <a id="operations.types.RulesCandidate"></a><br>The drafted rules and what they make of their target, as `FlowCandidate`: `before` and `pending` are the expected state of a later write.
-    - type [DraftRulesPayload](../../src/operations/types.ts#L1242)
+    - type [DraftRulesPayload](../../src/operations/types.ts#L1246)
       <a id="operations.types.DraftRulesPayload"></a><br>What `keylang draft rules` drafted, and the proposal it wrote.
-    - type [CodeFlow](../../src/operations/types.ts#L1266)
+    - type [CodeFlow](../../src/operations/types.ts#L1270)
       <a id="operations.types.CodeFlow"></a><br>One flow of a code-to-spec draft: its trigger, name, steps and section.
-    - type [CodeToSpecCandidate](../../src/operations/types.ts#L1280)
+    - type [CodeToSpecCandidate](../../src/operations/types.ts#L1284)
       <a id="operations.types.CodeToSpecCandidate"></a><br>The flows drafted from a code position and what they make of their target, as `FlowCandidate`: `before` and `pending` are the expected state of a later write.
-    - type [CodeToSpecPayload](../../src/operations/types.ts#L1305)
+    - type [CodeToSpecPayload](../../src/operations/types.ts#L1309)
       <a id="operations.types.CodeToSpecPayload"></a><br>What `keylang code-to-spec` drafted, and the proposal it wrote.
-    - type [CodeModelInfo](../../src/operations/types.ts#L1332)
+    - type [CodeModelInfo](../../src/operations/types.ts#L1336)
       <a id="operations.types.CodeModelInfo"></a><br>Who drafted the flows of a code-to-spec, and what each of its answers adds to its text.
-    - type [CodeProposalTarget](../../src/operations/types.ts#L1341)
+    - type [CodeProposalTarget](../../src/operations/types.ts#L1345)
       <a id="operations.types.CodeProposalTarget"></a><br>One file of a spec-to-code candidate, as its proposal would replace it.
-    - type [SpecToCodeCandidate](../../src/operations/types.ts#L1357)
+    - type [SpecToCodeCandidate](../../src/operations/types.ts#L1361)
       <a id="operations.types.SpecToCodeCandidate"></a><br>What spec-to-code builds for a planned fn: every file it proposes, and what `check` would say with them in place.
-    - type [CandidateBasis](../../src/operations/types.ts#L1373) extends SourceInputs
+    - type [CandidateBasis](../../src/operations/types.ts#L1377) extends SourceInputs
       <a id="operations.types.CandidateBasis"></a><br>What a spec-to-code candidate was read from: `keylang.json`, the snapshot's sources, the hand-written specs.
-    - type [AppliedFile](../../src/operations/types.ts#L1379)
+    - type [AppliedFile](../../src/operations/types.ts#L1383)
       <a id="operations.types.AppliedFile"></a><br>One file of an applied candidate and what happened to it.
-    - type [ApplyCodePayload](../../src/operations/types.ts#L1388)
+    - type [ApplyCodePayload](../../src/operations/types.ts#L1392)
       <a id="operations.types.ApplyCodePayload"></a><br>What `spec-to-code --apply` wrote of a candidate.
-    - type [SpecCodeModelInfo](../../src/operations/types.ts#L1399)
+    - type [SpecCodeModelInfo](../../src/operations/types.ts#L1403)
       <a id="operations.types.SpecCodeModelInfo"></a><br>The model behind an `llm` spec-to-code candidate.
-    - type [SpecToCodePayload](../../src/operations/types.ts#L1406)
+    - type [SpecToCodePayload](../../src/operations/types.ts#L1410)
       <a id="operations.types.SpecToCodePayload"></a><br>What `keylang spec-to-code` built, and the proposals it wrote.
-    - type [DraftLayoutPayload](../../src/operations/types.ts#L1423)
+    - type [DraftLayoutPayload](../../src/operations/types.ts#L1427)
       <a id="operations.types.DraftLayoutPayload"></a><br>What `keylang draft map` drafted: the layers, and the config the CLI prints with them.
-    - type [RulesModelInfo](../../src/operations/types.ts#L1439)
+    - type [RulesModelInfo](../../src/operations/types.ts#L1443)
       <a id="operations.types.RulesModelInfo"></a><br>Who proposed the rules and how each compares with the code now.
-    - type [DraftModelInfo](../../src/operations/types.ts#L1447)
+    - type [DraftModelInfo](../../src/operations/types.ts#L1451)
       <a id="operations.types.DraftModelInfo"></a><br>What the model's draft adds to its text: who drafted it, how its steps compare with the snapshot, what it left out.
-    - type [WirePayload](../../src/operations/types.ts#L1458)
+    - type [WirePayload](../../src/operations/types.ts#L1462)
       <a id="operations.types.WirePayload"></a><br>What `keylang wire [--check]` found and did. The path is POSIX, relative to the root.
-    - type [CheckPayload](../../src/operations/types.ts#L1486)
+    - type [CheckPayload](../../src/operations/types.ts#L1490)
       <a id="operations.types.CheckPayload"></a><br>What `keylang check` found on the saved files. `results`, `snapshotId` and `coverage` are exactly `--format json`; `lines` and `counts` are the human output and its summary. Paths are relative to the request's `base`.
-    - type [ChangedSlice](../../src/operations/types.ts#L1511)
+    - type [ChangedSlice](../../src/operations/types.ts#L1515)
       <a id="operations.types.ChangedSlice"></a><br>What `--changed` kept: the ref, what git reported, and how much of the full report the slice left out.
-    - type [ExplainEdgePayload](../../src/operations/types.ts#L1533) extends EdgeExplanation
+    - type [ExplainEdgePayload](../../src/operations/types.ts#L1537) extends EdgeExplanation
       <a id="operations.types.ExplainEdgePayload"></a><br>The evidence between two ids: the domain result of `--explain-edge`, and the CLI's lines of it.
-    - type [ExplainPayload](../../src/operations/types.ts#L1541)
+    - type [ExplainPayload](../../src/operations/types.ts#L1545)
       <a id="operations.types.ExplainPayload"></a><br>An offline explanation (`explain-offline.ts`) with the snapshot it was read on and the CLI's stdout of it.
-    - type [ExplainLlmPayload](../../src/operations/types.ts#L1554)
+    - type [ExplainLlmPayload](../../src/operations/types.ts#L1558)
       <a id="operations.types.ExplainLlmPayload"></a><br>What `explain <id> --llm` showed and saved. `source`: `cache` — a fresh saved answer of the same detail and language, read; `model` — a new answer, saved (or refused, failed, with `previous` kept); `offline` — no model could be asked (`unavailable`), the summary and the saved…
-    - type [ExplainPlanPayload](../../src/operations/types.ts#L1584)
+    - type [ExplainPlanPayload](../../src/operations/types.ts#L1588)
       <a id="operations.types.ExplainPlanPayload"></a><br>What explanations need work (`explain-inventory.ts`), on the snapshot it was read on, with the CLI's stdout of it.
-    - type [ExplainBatchPayload](../../src/operations/types.ts#L1600)
+    - type [ExplainBatchPayload](../../src/operations/types.ts#L1604)
       <a id="operations.types.ExplainBatchPayload"></a><br>What a brief batch planned, wrote and left. `stopped`: null — the batch ran to the end of its plan (failed nodes are named, code 1); `cancelled` — Cancel, no new request was started and the ones in flight were closed; `outdated` — keylang.json, a source or a spec changed while…
-    - type [ExportPayload](../../src/operations/types.ts#L1625)
+    - type [ExportPayload](../../src/operations/types.ts#L1629)
       <a id="operations.types.ExportPayload"></a><br>What an export did with its one file.
-    - type [InitPayload](../../src/operations/types.ts#L1647)
+    - type [InitPayload](../../src/operations/types.ts#L1651)
       <a id="operations.types.InitPayload"></a><br>What `keylang init [--check]` did, stage by stage. Each stage is the result of its own shared operation, null when it was not run (a check has no map stage; a failure or a cancellation stops the stages after it).
-    - type [GitignoreStage](../../src/operations/types.ts#L1679)
+    - type [GitignoreStage](../../src/operations/types.ts#L1683)
       <a id="operations.types.GitignoreStage"></a><br>Whether the root `.gitignore` lists `.keylang/`: the index, the fact cache, proposals, test reports and traces are a local cache, never the spec. Repository hygiene, not a harness file: `--agents=none` has it too.
-    - type [OperationPayloads](../../src/operations/types.ts#L1693)
+    - type [OperationPayloads](../../src/operations/types.ts#L1697)
       <a id="operations.types.OperationPayloads"></a><br>The payload type of each operation kind.
-    - type [OperationResult](../../src/operations/types.ts#L1733)
+    - type [OperationResult](../../src/operations/types.ts#L1737)
       <a id="operations.types.OperationResult"></a><br>The result of one operation. File paths are POSIX, relative to the request's root.
-    - type [OperationEnvelope](../../src/operations/types.ts#L1736)
+    - type [OperationEnvelope](../../src/operations/types.ts#L1740)
       <a id="operations.types.OperationEnvelope"></a><br>The result of one operation of kind `K`: how it ended, its exit code and payload, its report, and the files it wrote, removed or proposed.

@@ -133,7 +133,7 @@
     - fn [shapeBase](../../src/diagram-layout.ts#L110) (kind: string, id: string, label: string) → string
     - fn [diagramKeys](../../src/diagram-layout.ts#L143) (diagram: KeyDiagram) → Map<string, string>
       - calls map.diagram-layout.shapeBase, map.diagram-layout.twinsApart, base.span.compareText
-    - fn [twinsApart](../../src/diagram-layout.ts#L180) (pairs: readonly (readonly [string, string])[], taken: Iterable<string> = []) → Map<string, string> <!-- internal -->
+    - fn [twinsApart](../../src/diagram-layout.ts#L180) (pairs: readonly (readonly [string, string])[], taken: Iterable<string> = []) → Map<string, string>
     - fn [round](../../src/diagram-layout.ts#L192) (value: number) → number <!-- internal -->
     - fn [cleanShape](../../src/diagram-layout.ts#L194) (entry: ClientEntry) → LayoutShape <!-- internal -->
       - calls map.diagram-layout.round

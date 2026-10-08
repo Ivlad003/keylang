@@ -177,7 +177,7 @@ export function diagramKeys(diagram: KeyDiagram): Map<string, string> {
 }
 
 /** `#2`, `#3` for a key already taken, in order. */
-function twinsApart(pairs: readonly (readonly [string, string])[], taken: Iterable<string> = []): Map<string, string> {
+export function twinsApart(pairs: readonly (readonly [string, string])[], taken: Iterable<string> = []): Map<string, string> {
   const used = new Map<string, number>();
   for (const key of taken) used.set(key, 1);
   const out = new Map<string, string>();

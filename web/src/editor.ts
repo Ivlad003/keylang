@@ -25,8 +25,14 @@
 // those of diagrams.net: Ctrl+Z, Ctrl+Y / Ctrl+Shift+Z, Ctrl+C / X / V / D,
 // Delete / Backspace, arrows (1 px) and Shift+arrows (a grid step), Ctrl+A,
 // Ctrl+G / Ctrl+Shift+U, + / − zoom, Ctrl+Shift+H fit (Cmd for Ctrl on a
-// Mac). Copy and paste stay within the page. The canvas exports as SVG and
-// PNG in the browser (`ImageExport` over an `SvgCanvas2D`, then a canvas).
+// Mac). Copy and paste within the page keep the cells as they are; Ctrl+C
+// also puts the selection in the system clipboard as a bundle (business-flows/25,
+// bundle-clip.ts), and a bundle pasted from another tab or another repository
+// comes back through `/api/bundle-import`: from another repository after the
+// layer dialog, as proposals of a feature on `planned` nodes plus the shapes
+// at the cursor; from this one as copies with new draft IDs
+// (`planned:<layer>.<name>-copy`). The canvas exports as SVG and PNG in the
+// browser (`ImageExport` over an `SvgCanvas2D`, then a canvas).
 //
 // The editor writes nothing to the specs itself: its state lives in memory and
 // in a draft of the tab (`sessionStorage`, so a reload comes back to it), the
@@ -56,7 +62,8 @@ import {
   type EventObject,
   type CellStyle,
 } from "@maxgraph/core";
-import type { Api, Diagram, DiagramNode, DiagramProposal, Verdict, Views } from "./api.ts";
+import type { Api, BundleImport, ClipEdge, ClipShape, Diagram, DiagramNode, DiagramProposal, Verdict, Views } from "./api.ts";
+import { askPasteText, isBundle, mapLayers, writeClipboard } from "./bundle-clip.ts";
 import { register, VERDICT_COLOUR, VERDICT_GLYPH, nodeStyle, wrapLabel } from "./canvas.ts";
 import { button, make } from "./dom.ts";
 import { layoutStore, type Layout, type Position } from "./layout-store.ts";
@@ -451,6 +458,10 @@ export class Editor {
   readonly undoManager = new UndoManager(200);
   /** Copied cells (clones, kept out of the model) and where they came from; pasted again and again, a step further each time. */
   private clipboard: { cells: Cell[]; parent: Cell | null; times: number } | null = null;
+  /** The bundle this page put in the system clipboard last: pasted back here, it is the in-page copy. */
+  private lastBundle = "";
+  /** A Ctrl+V the page left to the browser: its `paste` event is due. */
+  private pasteDue = 0;
 
   constructor(root: HTMLElement, api: Api, host: EditorHost) {
     register();
@@ -483,6 +494,7 @@ export class Editor {
     this.fillPalette();
     this.applyMode();
     this.keys();
+    this.pasteEvents();
   }
 
   private configure(): void {
@@ -639,6 +651,10 @@ export class Editor {
     remove.id = "editor-delete";
     const reset = button("скинути чернетку", () => void this.resetDraft(), { title: "Забути чернетку вкладки й відкрити вид з коду заново" });
     reset.id = "editor-reset";
+    const copyBundle = button("Копіювати як пакет", () => void this.copyBundle(true), { title: "Вибране (без вибору — увесь вид) як пакет keylang у буфер обміну: вставте його в іншій вкладці чи іншому keylang web (Ctrl+V)" });
+    copyBundle.id = "editor-copy-bundle";
+    const pasteBundle = button("Вставити пакет…", () => void this.pasteByHand(), { title: "Вставити пакет keylang, скопійований в іншій вкладці (коли Ctrl+V не читає буфер)" });
+    pasteBundle.id = "editor-paste-bundle";
     const propose = button("Запропонувати зміни", () => void this.propose(), { title: "Зміни полотна проти моделі — як пропозиції для специфікацій (злиття: MERGE чи keylang proposals accept)" });
     propose.id = "editor-propose";
     this.bar.append(
@@ -666,6 +682,9 @@ export class Editor {
       make("span", { className: "editor-label", text: "експорт:" }),
       svg,
       png,
+      make("span", { className: "sep" }),
+      copyBundle,
+      pasteBundle,
       make("span", { className: "sep" }),
       reset,
       propose,
@@ -822,9 +841,17 @@ export class Editor {
       const done = (): void => event.preventDefault();
       if (mod && key === "z") return done(), event.shiftKey ? this.redo() : this.undo();
       if (mod && key === "y") return done(), this.redo();
-      if (mod && key === "c") return done(), this.copy();
+      if (mod && key === "c") return done(), this.copy(), void this.copyBundle(false);
       if (mod && key === "x") return done(), this.cut();
-      if (mod && key === "v") return done(), this.paste();
+      if (mod && key === "v") {
+        // A copy of this tab pastes at once; otherwise the browser's `paste` event brings the system clipboard (a bundle of another tab).
+        if (this.clipboard) return done(), this.paste();
+        const due = ++this.pasteDue;
+        window.setTimeout(() => {
+          if (this.pasteDue === due) void this.pasteFromClipboard();
+        }, 300);
+        return;
+      }
       if (mod && key === "d") return done(), this.duplicate();
       if (mod && key === "a") return done(), this.selectAll();
       if (mod && event.shiftKey && key === "u") return done(), this.ungroup();
@@ -842,6 +869,20 @@ export class Editor {
         this.nudge(arrow[0] * step, arrow[1] * step);
       }
     });
+  }
+
+  /** The system clipboard's text, from the `paste` event of a Ctrl+V the page let through. */
+  private pasteEvents(): void {
+    document.addEventListener("paste", (event) => {
+      if (document.body.dataset["mode"] !== "editor") return;
+      const target = event.target as HTMLElement | null;
+      if (target && (target.closest("input, textarea, select") || target.isContentEditable)) return;
+      this.pasteDue++;
+      event.preventDefault();
+      void this.pasteText(event.clipboardData?.getData("text/plain") ?? "");
+    });
+    // Another tab may fill the clipboard: once this one is left, Ctrl+V reads the clipboard, not the copy of this tab.
+    window.addEventListener("blur", () => (this.clipboard = null));
   }
 
   /** Moves the selected shapes by a few pixels: layout, so «з коду» too. */
@@ -932,6 +973,248 @@ export class Editor {
       graph.setSelectionCells(added);
     });
     this.host.status(`pasted ${cells.length} cell(s)`);
+  }
+
+  /** The selection (or, with `all`, the whole canvas) as the shapes and edges of a fragment, in model coordinates. */
+  selectionClip(all: boolean): { shapes: ClipShape[]; edges: ClipEdge[] } {
+    const model = this.currentModel();
+    const chosen = new Set<string>();
+    if (!all) {
+      const mark = (cell: Cell): void => {
+        const key = shapeOf(cell)?.key;
+        if (key !== undefined) chosen.add(key);
+        for (const child of cell.getChildren()) mark(child);
+      };
+      for (const cell of this.copySet()) if (cell.isVertex()) mark(cell);
+    }
+    const nodes = all ? model.nodes : model.nodes.filter((n) => chosen.has(n.key));
+    const keys = new Set(nodes.map((n) => n.key));
+    const shapes: ClipShape[] = nodes.map((n) => {
+      const shape: ClipShape = { key: n.key, id: n.id, kind: n.kind, label: n.label, layer: n.layer, x: n.x, y: n.y, w: n.w, h: n.h };
+      if (n.signature) shape.signature = n.signature;
+      if (n.trigger) shape.trigger = n.trigger;
+      if (n.role) shape.role = n.role;
+      if (n.description) shape.description = n.description;
+      if (n.tests.length > 0) shape.tests = [...n.tests];
+      return shape;
+    });
+    const edges: ClipEdge[] = model.edges.filter((e) => keys.has(e.from) && keys.has(e.to)).map((e) => ({ from: e.from, to: e.to, kind: e.kind, ...(e.label ? { label: e.label } : {}), ...(e.points.length > 0 ? { points: e.points } : {}) }));
+    return { shapes, edges };
+  }
+
+  /**
+   * «Копіювати як пакет» and Ctrl+C: the flow of the open view (or the
+   * selection's IDs as a flow) as a bundle with the selection in its layout
+   * block, in the system clipboard. From the button a refused clipboard shows
+   * the text to copy by hand; Ctrl+C only says so.
+   */
+  async copyBundle(fromButton: boolean): Promise<string | null> {
+    const clip = this.selectionClip(fromButton && this.graph.getSelectionCount() === 0);
+    const flowView = /^(flow|discovered):/.test(this.viewKey);
+    // Nothing a bundle could carry: no flow open and no shape with an ID.
+    if (!flowView && !clip.shapes.some((s) => s.id !== "" && s.kind !== "note")) {
+      if (fromButton) this.host.status("копіювати як пакет: виберіть фігури з ID чи відкрийте флоу");
+      return null;
+    }
+    let text: string;
+    let summary: string;
+    try {
+      const answer = await this.api.bundle({ view: this.viewKey, shapes: clip.shapes, edges: clip.edges });
+      text = answer.text;
+      summary = `${answer.flows.join(", ")} · ${answer.shapes} shape(s)`;
+    } catch (error) {
+      this.host.status(`copy as bundle failed: ${error instanceof Error ? error.message : String(error)}`);
+      return null;
+    }
+    this.lastBundle = text;
+    const way = fromButton ? await writeClipboard(text) : await this.quietWrite(text);
+    this.host.status(way === "clipboard" ? `copied as a bundle: ${summary} — paste it with Ctrl+V in another keylang web tab` : way === "dialog" ? `the bundle of ${summary} is selected in the dialog: Ctrl+C copies it` : `copied ${summary} within the page; the browser refused the clipboard — «Копіювати як пакет» shows the bundle to copy`);
+    return text;
+  }
+
+  private async quietWrite(text: string): Promise<"clipboard" | "refused"> {
+    try {
+      await navigator.clipboard.writeText(text);
+      return "clipboard";
+    } catch {
+      return "refused";
+    }
+  }
+
+  /** A Ctrl+V whose `paste` event did not come: the clipboard through `readText`, when the browser lets it. */
+  private async pasteFromClipboard(): Promise<void> {
+    let text = "";
+    try {
+      text = await navigator.clipboard.readText();
+    } catch {
+      this.host.status("the browser did not let the page read the clipboard: «Вставити пакет…» takes the text by hand");
+      return;
+    }
+    await this.pasteText(text);
+  }
+
+  /** «Вставити пакет…»: a field to paste the bundle into. */
+  async pasteByHand(): Promise<void> {
+    const text = await askPasteText();
+    if (text !== null && text.trim() !== "") await this.pasteText(text);
+  }
+
+  /** A text from the clipboard: a bundle is imported (or, the one this tab copied, pasted as the copy it is); anything else is not ours. */
+  async pasteText(text: string): Promise<void> {
+    if (!isBundle(text)) {
+      this.host.status("the clipboard holds no keylang bundle: copy shapes with Ctrl+C or «Копіювати як пакет» in a keylang web tab");
+      return;
+    }
+    // The bundle this tab copied, while its copy is still here: the copy, exactly.
+    if (text === this.lastBundle && this.clipboard) return this.paste();
+    await this.importBundle(text, this.pointerModel());
+  }
+
+  /** Where the pointer was last over the canvas, in model coordinates; the canvas's middle when it never was. */
+  private pointerModel(): { x: number; y: number } {
+    const box = this.canvas.getBoundingClientRect();
+    const inside = this.pointer.x >= box.left && this.pointer.x <= box.right && this.pointer.y >= box.top && this.pointer.y <= box.bottom;
+    return inside ? this.modelPoint(this.pointer.x, this.pointer.y) : this.modelPoint(box.left + box.width / 3, box.top + box.height / 3);
+  }
+
+  /**
+   * A pasted bundle (business-flows/25). From this repository: copies of its
+   * shapes with new draft IDs. From another: the layer dialog, then the import
+   * as proposals (the answer above the canvas) and the shapes, re-homed, at
+   * the cursor. The text is data: the server parses it, nothing in it runs.
+   */
+  async importBundle(text: string, at: { x: number; y: number }): Promise<BundleImport | null> {
+    let preview: BundleImport;
+    try {
+      preview = await this.api.bundleImport({ text, output: "preview" });
+    } catch (error) {
+      this.host.status(`paste failed: ${error instanceof Error ? error.message : String(error)}`);
+      return null;
+    }
+    if (preview.sameRepo) {
+      this.insertBundle(preview, at, true);
+      return preview;
+    }
+    const map = await mapLayers(preview, () => this.api.bundleImport({ text, output: "preview", mode: "hybrid" }));
+    if (map === null) {
+      this.host.status("paste cancelled: nothing written");
+      return null;
+    }
+    let done: BundleImport;
+    try {
+      done = await this.api.bundleImport({ text, layerMap: map, output: "proposal" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.showBundleResult(null, message);
+      this.host.status(`import failed: ${message}`);
+      return null;
+    }
+    this.showBundleResult(done, null);
+    this.insertBundle(done, at, false);
+    return done;
+  }
+
+  /** The import above the canvas: the proposals written, the notes, how to merge; or why it failed. */
+  private showBundleResult(answer: BundleImport | null, error: string | null): void {
+    const close = button("×", () => (this.result.hidden = true), { title: "Сховати" });
+    close.className = "editor-result-close";
+    const items: Node[] = [close];
+    if (answer === null) {
+      items.push(make("strong", { text: "Пакет не імпортовано" }), make("p", { text: error ?? "" }));
+      this.result.dataset["status"] = "failed";
+    } else {
+      items.push(make("strong", { text: `Пакет з ${answer.header.repo}@${answer.header.commit.slice(0, 12)}: ${answer.flows.join(", ")}` }));
+      const list = make("ul");
+      for (const proposal of answer.proposals ?? []) {
+        const row = make("li");
+        row.dataset["proposal"] = proposal;
+        row.append(make("code", { text: proposal }));
+        list.append(row);
+      }
+      items.push(list);
+      const planned = (answer.ids ?? []).filter((x) => x.planned).length;
+      items.push(make("p", { text: `${(answer.ids ?? []).length} ID, з них planned: ${planned}; шари: ${(answer.layers ?? []).map((l) => `${l.from} → ${l.to}`).join(", ")}` }));
+      for (const note of answer.notes ?? []) items.push(make("p", { className: "editor-result-note", text: note }));
+      if (answer.merge) items.push(make("p", { text: answer.merge }));
+      this.result.dataset["status"] = "imported";
+    }
+    this.result.replaceChildren(...items);
+    this.result.hidden = false;
+  }
+
+  /**
+   * Draws a pasted fragment at a model point, in «чернетка»: each shape in the
+   * lane of its layer (a lane is drawn for a layer the canvas lacks), the
+   * fragment's places kept relative to each other, the lines between them.
+   * From this repository a shape with an ID gets a new draft one,
+   * `planned:<layer>.<name>-copy`.
+   */
+  insertBundle(answer: BundleImport, at: { x: number; y: number }, sameRepo: boolean): Cell[] {
+    if (this.editMode !== "draft") this.setMode("draft");
+    const graph = this.graph;
+    const shapes = answer.shapes.filter((s) => NODE_KINDS.has(s.kind) || s.kind === "note" || s.kind === "type");
+    const added: Cell[] = [];
+    const byKey = new Map<string, Cell>();
+    graph.batchUpdate(() => {
+      // The lanes: one per layer of the fragment, an existing one or a new one under the canvas.
+      const layers = [...new Set(shapes.map((s) => s.layer).filter((l): l is string => l !== null))];
+      const lanes = new Map<string, { cell: Cell; x: number; y: number; top: number }>();
+      let below = Math.max(at.y, ...this.lanes().map((l) => l.y + l.h + 20));
+      for (const layer of layers) {
+        const own = shapes.filter((s) => s.layer === layer);
+        const top = Math.min(...own.map((s) => s.y));
+        const existing = this.lanes().find((l) => layerOf(l.shape) === layer);
+        if (existing) {
+          lanes.set(layer, { cell: existing.cell, x: existing.x, y: existing.y, top });
+          continue;
+        }
+        const width = Math.max(...own.map((s) => s.x + s.w)) + 120;
+        const height = Math.max(...own.map((s) => s.y + s.h)) - top + 70;
+        const lane = new Shape(this.newKey(), "lane", layer, layer);
+        const x = Math.round((at.x - 40) / GRID) * GRID;
+        const y = Math.round(below / GRID) * GRID;
+        const cell = graph.insertVertex({ parent: graph.getDefaultParent(), value: lane, position: [x, y], size: [Math.max(width, 300), Math.max(height, 120)], style: shapeStyle(lane) });
+        added.push(cell);
+        lanes.set(layer, { cell, x, y, top });
+        below = y + Math.max(height, 120) + 20;
+      }
+      for (const item of shapes) {
+        const lane = item.layer === null ? undefined : lanes.get(item.layer);
+        let id = item.id;
+        let label = item.label;
+        if (sameRepo && id !== "") {
+          const layer = lane ? layerOf(shapeOf(lane.cell)!) : item.layer;
+          const name = this.newName(layer, `${id.replace(/^planned:/, "").split(".").at(-1)}-copy`);
+          id = `planned:${layer === null ? "" : `${layer}.`}${name}`;
+          label = name;
+        }
+        const shape = new Shape(this.newKey(), item.kind as ShapeKind, id, label);
+        if (item.trigger) shape.trigger = item.trigger;
+        else if (item.kind === "start") shape.trigger = "fn";
+        if (item.role) shape.role = item.role;
+        else if (item.kind === "parallel") shape.role = "split";
+        if (item.signature && id.startsWith("planned:")) shape.signature = item.signature;
+        if (item.description) shape.description = item.description;
+        if (item.tests) shape.tests = [...item.tests];
+        if (item.colour) shape.colour = item.colour;
+        const x = lane ? Math.max(10, at.x - lane.x + item.x) : at.x + item.x;
+        const y = lane ? 36 + item.y - lane.top : at.y + item.y;
+        const cell = graph.insertVertex({ parent: lane?.cell ?? graph.getDefaultParent(), value: shape, position: [Math.round(x), Math.round(y)], size: [item.w, item.h], style: shapeStyle(shape) });
+        byKey.set(item.key, cell);
+        added.push(cell);
+      }
+      for (const edge of answer.edges) {
+        const source = byKey.get(edge.from);
+        const target = byKey.get(edge.to);
+        if (!source || !target) continue;
+        const link = new Link(this.newKey(), LINK_KINDS.has(edge.kind) ? (edge.kind as LinkKind) : "sequence", edge.label ?? "");
+        added.push(graph.insertEdge({ parent: graph.getDefaultParent(), value: link, source, target, style: linkStyle(link) }));
+      }
+      graph.setSelectionCells(added.filter((cell) => cell.isVertex() && shapeOf(cell)?.kind !== "lane"));
+    });
+    const from = `${answer.header.repo}@${answer.header.commit.slice(0, 12)}`;
+    this.host.status(sameRepo ? `pasted ${byKey.size} shape(s) of ${from} as copies with new draft IDs` : `pasted ${byKey.size} shape(s) from ${from}; proposed ${(answer.proposals ?? []).join(", ") || "nothing"}`);
+    return added;
   }
 
   /** The canvas as an SVG document: the shapes and connections only, no selection handles, on white. */

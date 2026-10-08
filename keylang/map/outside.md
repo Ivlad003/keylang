@@ -45,6 +45,7 @@
     - module src
       - module [api](../../web/src/api.ts#L1) <!-- outside -->
       - module [blind](../../web/src/blind.ts#L1) <!-- outside -->
+      - module [bundle-clip](../../web/src/bundle-clip.ts#L1) <!-- outside -->
       - module [canvas](../../web/src/canvas.ts#L1) <!-- outside -->
       - module [diagrams](../../web/src/diagrams.ts#L1) <!-- outside -->
       - module [dom](../../web/src/dom.ts#L1) <!-- outside -->
