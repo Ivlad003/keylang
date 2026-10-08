@@ -14,8 +14,10 @@ import { compareEntries, entryScope, fnIn, frameworkEntry, type EntryScope } fro
 import type { CallFact, DeclFact, DecoratorArg, FileFacts } from "./extract/facts.ts";
 import type { FrameworkInput } from "./frameworks/adapter.ts";
 import { cartridgeAnswers, cartridgeLayout, SUPER_MODULE, type CartridgeLayout } from "./frameworks/cartridges.ts";
+import { PYTHON_WEB_FRAMEWORKS } from "./frameworks/python-web.ts";
 import type { Gap, Graph } from "./graph.ts";
 import { probeCandidates } from "./imports.ts";
+import { pythonWebEntries } from "./python-web-entries.ts";
 import type { EntryPoint } from "./snapshot.ts";
 
 export interface FrameworkEntryInputs {
@@ -65,6 +67,13 @@ export function frameworkEntries({ config, graph, facts, frameworks }: Framework
   if (nest !== undefined) entries.push(...nestEntries(facts, scope, new Set(nest.configs.map((c) => c.facts.path))));
   const pwa = frameworks.find((f) => f.name === "pwa-kit");
   if (pwa !== undefined) entries.push(...pwaEntries(facts, scope, new Set(pwa.configs.map((c) => c.facts.path))));
+  // Django, FastAPI, Flask, Celery: registrations written in the Python code (`src/python-web-entries.ts`).
+  const python = frameworks.map((f) => f.name).filter((name) => PYTHON_WEB_FRAMEWORKS.includes(name));
+  if (python.length > 0) {
+    const found = pythonWebEntries(config, graph, facts, scope, python);
+    entries.push(...found.entries);
+    holes.push(...found.holes);
+  }
   return { entries: entries.sort(compareEntries), holes, warnings };
 }
 

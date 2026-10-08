@@ -206,7 +206,7 @@ export class FrameworkBindings {
         const target = cls.kind === "node" && deps.isClass(cls.id) ? deps.member(cls.id, l.method) : null;
         if (target === null) continue;
         const list = this.listenersOf.get(l.event) ?? [];
-        if (!list.some((e) => e.target === target)) list.push({ target, site: `${facts.path}:${l.line}:${l.col}`, owner, binding: `the listener \`${l.type.name}.${l.method}\` of the event \`${l.event}\`` });
+        if (!list.some((e) => e.target === target)) list.push({ target, site: `${facts.path}:${l.line}:${l.col}`, owner, binding: `listener \`${l.type.name}.${l.method}\` of the event \`${l.event}\`` });
         this.listenersOf.set(l.event, list);
       }
     }

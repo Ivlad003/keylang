@@ -169,7 +169,7 @@ export interface Escape {
 }
 
 /** How a call edge that is not a plain call of the code came about; see `Call.via`. */
-export type Via = "default" | "injected" | "callable-arg" | "closure-arg" | "preference" | "argument" | "plugin:before" | "plugin:around" | "plugin:after" | "observer" | "dispatch";
+export type Via = "default" | "injected" | "callable-arg" | "closure-arg" | "preference" | "argument" | "plugin:before" | "plugin:around" | "plugin:after" | "dispatch" | "observer";
 
 export interface Call {
   target: string;
@@ -189,9 +189,11 @@ export interface Call {
    * m())`), at `site`, so the enclosing call's callee may run it. `--static
    * behavior` follows all four; `shape` none. A call the framework makes by
    * its config (ADR 0022): `preference`, `argument`, `plugin:before|around|after`,
-   * `observer` (a method subscribed to the event the call emits, NestJS
-   * `@OnEvent`), at `site` in the config; `behavior` follows them, `shape`
-   * does not. `dispatch` is reserved for an edge to an event node.
+   * at `site` in the config; `behavior` follows them, `shape` does not.
+   * `dispatch`: a job the fn hands to a queue (Celery `task.delay()`), at
+   * `site` of the task's registration; `observer`: a receiver of a signal
+   * the fn sends (Django `signal.send()`) or a method subscribed to the event
+   * the fn emits (NestJS `@OnEvent`), at `site` of its registration.
    */
   via?: Via;
   /** Config edges: the area the fact applies in. */

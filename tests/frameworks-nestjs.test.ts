@@ -259,7 +259,7 @@ test("nestjs: a token provider gives `@Inject` an argument edge, useExisting fol
   assert.deepEqual(via.sort(), [
     `orders.orders_service.OrdersService.archive | ${SAVE} | argument | ${MODULE}:15:5 | orders | the argument \`legacy\` → \`'LEGACY_REPO' → ORDER_REPO → SqlOrderRepo\``,
     `${PLACE} | ${SAVE} | argument | ${MODULE}:13:5 | orders | the argument \`repo\` → \`ORDER_REPO → SqlOrderRepo\``,
-    `${PLACE} | ${ON_CREATED} | observer | src/notify/notify.listener.ts:7:3 | notify | the listener \`NotifyListener.onCreated\` of the event \`order.created\``,
+    `${PLACE} | ${ON_CREATED} | observer | src/notify/notify.listener.ts:7:3 | notify | listener \`NotifyListener.onCreated\` of the event \`order.created\``,
   ]);
   // The interface-typed parameter's call is resolved by the provider, not left a hole.
   assert.ok(!snapshot.coverage.some((c) => c.text === "this.repo.save" || c.text === "this.legacy.save"));
@@ -309,10 +309,10 @@ test("nestjs: a flow step reached through @OnEvent is `static ok` in behavior (r
   assert.equal(keylang(dir, ["map"]).status, 0);
   const behavior = keylang(dir, ["check"]);
   assert.equal(behavior.status, 0, behavior.stdout);
-  assert.match(behavior.stdout, new RegExp(`flows\\.md:6:5: static ok ${ON_CREATED.replaceAll(".", "\\.")}: called from ${PLACE.replaceAll(".", "\\.")} through the listener \`NotifyListener\\.onCreated\` of the event \`order\\.created\` in \`src/notify/notify\\.listener\\.ts:7\`\\n`));
+  assert.match(behavior.stdout, new RegExp(`flows\\.md:6:5: static ok ${ON_CREATED.replaceAll(".", "\\.")}: called from ${PLACE.replaceAll(".", "\\.")} through the listener \`NotifyListener\\.onCreated\` of the event \`order\\.created\` \\(observer\\) in \`src/notify/notify\\.listener\\.ts:7\`\\n`));
   assert.match(behavior.stdout, /flows\.md:5:5: static ok infra\.sql-order_repo\.SqlOrderRepo\.save: called from [^\n]* through the argument `repo` → `ORDER_REPO → SqlOrderRepo` in `src\/orders\/orders\.module\.ts:13`\n/);
   const shape = keylang(dir, ["check", "--static", "shape"]);
-  assert.match(shape.stdout, /flows\.md:6:5: static unverified notify\.notify_listener\.NotifyListener\.onCreated: no resolved path from [^\n]*the listener `NotifyListener\.onCreated` of the event `order\.created` [^\n]*\(not followed in static mode shape, set by --static\)/);
+  assert.match(shape.stdout, /flows\.md:6:5: static unverified notify\.notify_listener\.NotifyListener\.onCreated: no resolved path from [^\n]*the listener `NotifyListener\.onCreated` of the event `order\.created` \(observer\) [^\n]*\(not followed in static mode shape, set by --static\)/);
   assert.match(shape.stdout, /flows\.md:7:7: static ok notify\.notify_listener\.NotifyListener\.send: called from/);
 });
 

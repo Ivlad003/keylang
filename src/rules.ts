@@ -65,13 +65,23 @@ function docblockNote(edge: Pick<UseEdge, "docblock" | "config">): string {
 }
 
 /** Via values of the calls a framework makes by its config: the module whose config declares one depends on its target. */
-const CONFIG_VIA = new Set(["preference", "argument", "plugin:before", "plugin:around", "plugin:after", "observer", "dispatch"]);
+const CONFIG_VIA = new Set(["preference", "argument", "plugin:before", "plugin:around", "plugin:after"]);
+
+/**
+ * A dependency the framework's config declares, of `owner`: a binding or a plugin; an event
+ * subscription (`observer`, `dispatch`) only when its config names an owner (NestJS `@OnEvent`) —
+ * a signal or a task the code dispatches (Django, Celery) stays the caller's dependency.
+ */
+function configEdge(edge: { via?: string; owner?: string }): boolean {
+  if (edge.via === undefined) return false;
+  return CONFIG_VIA.has(edge.via) || ((edge.via === "observer" || edge.via === "dispatch") && edge.owner !== undefined);
+}
 
 /** A config edge in words for a K102: `the preference `I → C` (app/etc/di.xml:12)`. */
 function configNote(edge: { via?: string; binding?: string; site?: string; scope?: string }): string {
   const at = edge.site ? edge.site.replace(/:\d+$/, "") : "?";
   const scope = edge.scope && edge.scope !== "global" ? `, scope ${edge.scope}` : "";
-  const what = edge.via === "preference" ? `the preference ${edge.binding ?? ""}` : edge.via === "argument" || edge.via === "observer" || edge.via === "dispatch" ? (edge.binding ?? `a ${edge.via}`) : `the ${edge.binding ?? "plugin"} (${edge.via})`;
+  const what = edge.via === "preference" ? `the preference ${edge.binding ?? ""}` : edge.via === "argument" ? (edge.binding ?? "a constructor argument") : `the ${edge.binding ?? "plugin"} (${edge.via})`;
   return `${what} (${at}${scope})`;
 }
 
@@ -205,7 +215,7 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
     // An injected hook value is the injector's dependency, which has its own edge to it.
     if (edge.via === "injected") continue;
     // A call the framework makes by its config belongs to the module whose config declares it (ADR 0022), at that config line.
-    const configured = edge.via !== undefined && CONFIG_VIA.has(edge.via) ? siteAt(edge.site) : null;
+    const configured = configEdge(edge) ? siteAt(edge.site) : null;
     const from = configured && edge.owner !== undefined ? edge.owner : scopeOf(edge.source);
     const to = scopeOf(edge.target);
     if (!from || !to) continue;

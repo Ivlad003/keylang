@@ -641,7 +641,8 @@ async function firstProject(screen: Screen): Promise<string[]> {
   screen.input(KEY.ctrlS);
   await waitFor(() => screen.text().includes("keylang/features/refunds.md: saved") && analysed(screen), "the save");
   screen.input("\x1b");
-  await new Promise((done) => setTimeout(done, 60));
+  // The mode, not a pause: in the terminal a lone ESC is Escape after 25 ms; over the socket at once (ticket 71).
+  await waitFor(() => /VIEW $/.test(screen.lines()[0]!), "the view after Esc");
   screen.input("v");
   await waitFor(() => /READ $/.test(screen.lines()[0]!), "reading");
   palette(screen, "map write");

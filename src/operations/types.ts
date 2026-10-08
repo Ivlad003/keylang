@@ -32,6 +32,7 @@ import type { DiscoveredFlow } from "../discover.ts";
 import type { BusinessProcess, NameMode } from "../discover-names.ts";
 import type { CoverageReport } from "../coverage-report.ts";
 import type { IntegrationsReport } from "../integrations.ts";
+import type { MigrationStatus } from "../migration.ts";
 import type { BundleHeader, LayerChoice } from "../flow-bundle.ts";
 import type { Tour } from "../tour.ts";
 
@@ -376,6 +377,21 @@ export interface TourRequest {
   root: string;
   /** Write the Markdown here (relative to the root, POSIX) instead of returning it only. */
   out?: string;
+}
+
+/**
+ * The parity of a migration (`keylang migration status`, MCP
+ * `migration_status`, «Migration status» in the TUI; business-flows/27):
+ * every flow of the old stack against this repository through the rows of
+ * `# migration`, and what is not carried over yet. Read-only: the old
+ * repository is analysed without writing; here only the fact cache.
+ */
+export interface MigrationStatusRequest {
+  kind: "migration-status";
+  /** Repository root (absolute): the new stack. */
+  root: string;
+  /** The old stack: its checkout or an index file, absolute or relative to the root; default `migration.from` of keylang.json. */
+  from?: string;
 }
 
 /**
@@ -794,7 +810,7 @@ export interface AssistantReplyRequest {
 }
 
 /** Every request `runOperation` takes: its `kind` names the operation and the payload of its result. */
-export type OperationRequest = DoctorRequest | FeatureRequest | FeatureQuestionsRequest | ExportC4Request | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | ExplainRequest | ExplainLlmRequest | ExplainPlanRequest | ExplainBatchRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | EntriesRequest | CoverageRequest | IntegrationsRequest | TourRequest | FlowsDiscoverRequest | FlowsAdoptRequest | FlowExportRequest | FlowImportRequest | DraftFlowRequest | DraftRulesRequest | DraftLayoutRequest | CodeToSpecRequest | SpecToCodeRequest | ApplyCodeRequest | AssistantReplyRequest;
+export type OperationRequest = DoctorRequest | FeatureRequest | FeatureQuestionsRequest | ExportC4Request | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | ExplainRequest | ExplainLlmRequest | ExplainPlanRequest | ExplainBatchRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | EntriesRequest | CoverageRequest | IntegrationsRequest | MigrationStatusRequest | TourRequest | FlowsDiscoverRequest | FlowsAdoptRequest | FlowExportRequest | FlowImportRequest | DraftFlowRequest | DraftRulesRequest | DraftLayoutRequest | CodeToSpecRequest | SpecToCodeRequest | ApplyCodeRequest | AssistantReplyRequest;
 
 /** The operation kinds that write files: they compute first and commit after `beforeCommit` (a check mode never calls it). */
 export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["feature-questions", "export-c4", "map", "baseline", "agents", "fmt", "wire", "init", "export", "flows-discover", "flows-adopt", "flow-export", "flow-import", "draft-flow", "draft-rules", "code-to-spec", "spec-to-code", "apply-code", "explain-llm", "explain-batch"]);
@@ -1139,6 +1155,12 @@ export interface TourPayload extends Tour {
   text: string;
   /** The file `out` names, written; null when nothing was written. */
   out: string | null;
+}
+
+/** The migration parity (`keylang migration status --json` is it without `text`). */
+export interface MigrationStatusPayload extends MigrationStatus {
+  /** The CLI's stdout. */
+  text: string;
 }
 
 /** The plan `keylang trace-plan` prints, and what it leaves out. */
@@ -1693,6 +1715,7 @@ export interface OperationPayloads {
   coverage: CoveragePayload;
   integrations: IntegrationsPayload;
   tour: TourPayload;
+  "migration-status": MigrationStatusPayload;
   "flows-discover": FlowsDiscoverPayload;
   "flows-adopt": FlowsAdoptPayload;
   "flow-export": FlowExportPayload;

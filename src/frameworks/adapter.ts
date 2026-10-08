@@ -14,6 +14,7 @@
 import { magento } from "./magento.ts";
 import { nestjs } from "./nestjs.ts";
 import { pwaKit } from "./pwa-kit.ts";
+import { celery, django, fastapi, flask } from "./python-web.ts";
 import { sfcc } from "./sfcc.ts";
 
 /**
@@ -108,7 +109,7 @@ export interface ListenerFact extends ConfigAt {
  * constructor parameter — the parameter's position, its name (the field a
  * parameter property declares) and its type as written.
  */
-export interface DecoratorFact {
+export interface CodeDecorator {
   name: string;
   args: DecoratorArg[];
   param?: { index: number; name: string | null; type: string | null };
@@ -136,7 +137,7 @@ export interface CodeDecl {
   kind: string;
   name: string;
   members: readonly CodeDecl[];
-  decorators?: readonly DecoratorFact[];
+  decorators?: readonly CodeDecorator[];
 }
 
 /** What `code` reads of a source file: the extractor's `FileFacts`, structurally. */
@@ -214,7 +215,7 @@ export interface FrameworkAdapter {
 export const FRAMEWORK_CONFIG = "framework:";
 
 /** Adapters keylang has, by name. */
-export const FRAMEWORK_ADAPTERS: readonly FrameworkAdapter[] = [magento, nestjs, pwaKit, sfcc];
+export const FRAMEWORK_ADAPTERS: readonly FrameworkAdapter[] = [magento, nestjs, pwaKit, sfcc, django, fastapi, flask, celery];
 
 export const FRAMEWORK_NAMES: readonly string[] = FRAMEWORK_ADAPTERS.map((a) => a.name).sort();
 

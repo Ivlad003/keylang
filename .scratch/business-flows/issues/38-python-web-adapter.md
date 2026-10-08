@@ -1,6 +1,6 @@
 # 38: Django/FastAPI/Flask/Celery: маршрути, сигнали, задачі
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -21,10 +21,21 @@
 
 ## Критерії готовності
 
-- [ ] фікстура з типовим шаблоном фреймворку; тести через справжній CLI: точки входу кожного виду, ребра через `via` (behavior ok / shape unverified), `deny` бачить ребра конфігу, `frameworks: []` вимикає (ok/fail → лише unverified, metamorphic)
-- [ ] `flows discover` дає флоу для точок входу; `coverage` показує, що лишилось сліпим
-- [ ] `docs/snapshot.md` розділ «Фреймворки: …», `llm.txt` один рядок
+- [x] фікстура з типовим шаблоном фреймворку; тести через справжній CLI: точки входу кожного виду, ребра через `via` (behavior ok / shape unverified), `deny` бачить ребра конфігу, `frameworks: []` вимикає (ok/fail → лише unverified, metamorphic)
+- [x] `flows discover` дає флоу для точок входу; `coverage` показує, що лишилось сліпим
+- [x] `docs/snapshot.md` розділ «Фреймворки: …», `llm.txt` один рядок
 
 **Межі:** лише цей фреймворк.
 
 ## Comments
+
+### 2026-10-08 — реалізація
+
+- Чотири адаптери (`django`, `fastapi`, `flask`, `celery`) у `src/frameworks/python-web.ts`: виявлення — пакет у кореневому маніфесті (`pyproject.toml`, `requirements*.txt`, `setup.py`, `setup.cfg`, `Pipfile`) або імпорт у проаналізованому `.py`; конфіги — `.py`-файли, що імпортують пакет (+ `urls.py`, `management/commands/*.py` для Django, `beat_schedule` для Celery). `parse` фактів не дає: їх записує екстрактор Python (`decorators`, `statements`, `paramCalls` у `FileFacts`, `EXTRACTOR_VERSION` m1.20); розміщення на графі — `src/python-web-entries.ts` (виклик з `src/framework-entries.ts`).
+- Реєстрація впізнається лише за резолвом імен (`router` = `fastapi.APIRouter(…)`, `receiver` з `django.dispatch`), не за назвою; впізнаний декоратор знімає свою дірку `decorator … may replace …`, невідомий лишається діркою.
+- Ребра: `Depends(f)` → `via: "injected"` (`hook` — параметр або `dependencies`); `task.delay()`/`apply_async()` → `via: "dispatch"`; `signal.send()` → `via: "observer"` до приймачів. До `Via` (graph.ts, flows.ts) додано `dispatch` і `observer`; `describeVia` і draft називають їх як ребра конфігу.
+- Припущення: вузлів подій ще немає (тікет 08 не зроблено), тому `send()` веде одразу до приймачів, а сигнал — точка входу `observer` з міткою `post_save (sender=Order)`. Мітка cron — `<назва> (<cron>)`. `ROOT_URLCONF` не читається: корені URL — `urls.py`, яких ніхто не `include`-ить.
+- Не читаються (задокументовано в snapshot.md): реєстрації у фабриці `create_app()`, `add_url_rule`, DRF-роутери, `send_task`, `MethodView`, `Depends` у псевдонімі типу.
+- Тести: `tests/frameworks-python-web.test.ts` (6, фікстури `tests/fixtures-python-web.ts`); `tests/languages.test.ts` — приклад невідомого декоратора тепер `@retry` (FastAPI-маршрут більше не дірка); у `tests/frameworks-magento.test.ts` повідомлення про невідомий фреймворк перевіряється без повного переліку.
+- Бенч health-tracker (FastAPI, локальна копія `bench/repos`): дірок декораторів Python 76 → 10, точок входу 2 → 68 (66 `route`), 7 ребер `Depends`.
+

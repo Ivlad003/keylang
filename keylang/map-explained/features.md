@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [agent-cli](#features.agent-cli) · [agent-context](#features.agent-context) · [baseline](#features.baseline) · [call-sites](#features.call-sites) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [clone](#features.clone) · [coverage-report](#features.coverage-report) · [discover-names](#features.discover-names) · [discover](#features.discover) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [explorer](#features.explorer) · [feature-status](#features.feature-status) · [flow-bundle](#features.flow-bundle) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [harness](#features.harness) · [integrations](#features.integrations) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stale](#features.stale) · [stats](#features.stats) · [tour](#features.tour) · [voice-local](#features.voice-local) · [voice](#features.voice) · [weakening](#features.weakening)
+[README](README.md) · modules: [agent-cli](#features.agent-cli) · [agent-context](#features.agent-context) · [baseline](#features.baseline) · [call-sites](#features.call-sites) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [clone](#features.clone) · [coverage-report](#features.coverage-report) · [discover-names](#features.discover-names) · [discover](#features.discover) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [explorer](#features.explorer) · [feature-status](#features.feature-status) · [flow-bundle](#features.flow-bundle) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [harness](#features.harness) · [integrations](#features.integrations) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [migration-stack](#features.migration-stack) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stale](#features.stale) · [stats](#features.stats) · [tour](#features.tour) · [voice-local](#features.voice-local) · [voice](#features.voice) · [weakening](#features.weakening)
 
 # map
 
@@ -170,26 +170,28 @@
     - safe-write [base.safe-write](base.md#base.safe-write)
     - snapshot [map.snapshot](map.md#map.snapshot)
     - span [base.span](base.md#base.span)
-    - fn [baselineText](../../src/baseline.ts#L27) (snapshot: AnalysisSnapshot) → string
+    - fn [configEdge](../../src/baseline.ts#L26) (edge: { via?: string; owner?: string }) → boolean <!-- internal -->
+      <a id="features.baseline.configEdge"></a><br>A dependency the framework's config declares, of `owner`: a binding or a plugin; an event subscription (`observer`, `dispatch`) only when its config names an owner (NestJS `@OnEvent`) — a signal or a task the code dispatches (Django, Celery) stays the caller's dependency.
+    - fn [baselineText](../../src/baseline.ts#L37) (snapshot: AnalysisSnapshot) → string
       <a id="features.baseline.baselineText"></a><br>Baseline rules for one snapshot. Layers come from `keylang.json`, in code-unit order; `unassigned` is a source only when a module is in it.
-      - calls [base.span.compareText](base.md#base.span.compareText), [features.baseline.externalModule](features.md#features.baseline.externalModule)
-    - fn [externalModule](../../src/baseline.ts#L74) (snapshot: AnalysisSnapshot, id: string) → string | null <!-- internal -->
+      - calls [base.span.compareText](base.md#base.span.compareText), [features.baseline.configEdge](features.md#features.baseline.configEdge), [features.baseline.externalModule](features.md#features.baseline.externalModule)
+    - fn [externalModule](../../src/baseline.ts#L84) (snapshot: AnalysisSnapshot, id: string) → string | null <!-- internal -->
       <a id="features.baseline.externalModule"></a><br>The external module an id belongs to (`external.stripe` for a symbol under it).
-    - fn [baselinePath](../../src/baseline.ts#L86) (config: Pick<Config, "dir">) → string
+    - fn [baselinePath](../../src/baseline.ts#L96) (config: Pick<Config, "dir">) → string
       <a id="features.baseline.baselinePath"></a><br>Where the baseline lives: `<dir>/rules.baseline.md`, relative to the root, POSIX.
       - calls [base.config.specPath](base.md#base.config.specPath)
-    - type [BaselinePlan](../../src/baseline.ts#L94)
+    - type [BaselinePlan](../../src/baseline.ts#L104)
       <a id="features.baseline.BaselinePlan"></a><br>What `keylang baseline` would do, computed before anything is written. Internal to one operation — not a stored format.
-    - fn [planBaseline](../../src/baseline.ts#L115) (config: Config, snapshot: AnalysisSnapshot) → BaselinePlan
+    - fn [planBaseline](../../src/baseline.ts#L125) (config: Config, snapshot: AnalysisSnapshot) → BaselinePlan
       <a id="features.baseline.planBaseline"></a><br>Plans the baseline of `snapshot` against the file on disk. Reads, writes nothing.
       - calls [features.baseline.baselinePath](features.md#features.baseline.baselinePath), [features.baseline.baselineText](features.md#features.baseline.baselineText), [lang.files.readTextOrNull](lang.md#lang.files.readTextOrNull), [base.safe-write.isGeneratedText](base.md#base.safe-write.isGeneratedText), [features.baseline.ruleLines](features.md#features.baseline.ruleLines), [map.map.sourceInputs](map.md#map.map.sourceInputs)
-    - fn [baselinePlanProblems](../../src/baseline.ts#L140) (plan: BaselinePlan) → string[]
+    - fn [baselinePlanProblems](../../src/baseline.ts#L150) (plan: BaselinePlan) → string[]
       <a id="features.baseline.baselinePlanProblems"></a><br>Why the plan may not be committed now (`path: reason` lines; empty when it may): the target must pass the repository's write rules and still hold the bytes the plan saw, and `keylang.json` and the sources must be the ones the baseline was computed from.
       - calls [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [map.map.sourceInputProblems](map.md#map.map.sourceInputProblems)
-    - fn [commitBaseline](../../src/baseline.ts#L149) (plan: BaselinePlan) → void
+    - fn [commitBaseline](../../src/baseline.ts#L159) (plan: BaselinePlan) → void
       <a id="features.baseline.commitBaseline"></a><br>Writes the planned text atomically at the target (a link inside the repository is followed; CRLF of the old file kept). Throws on an I/O error.
       - calls [base.safe-write.landing](base.md#base.safe-write.landing), [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic)
-    - fn [ruleLines](../../src/baseline.ts#L156) (text: string) → string[] <!-- internal -->
+    - fn [ruleLines](../../src/baseline.ts#L166) (text: string) → string[] <!-- internal -->
       <a id="features.baseline.ruleLines"></a><br>The `- deny` / `- allow` lines of a rules text, in order.
   - module [call-sites](../../src/call-sites.ts#L1)
     <a id="features.call-sites"></a><br>What the coverage report and the integrations inventory read beside the snapshot (business-flows/13, 14): every call written in the analysed files with the node that encloses it, matched against lists kept as data (`resources/*.json`), and reachability from entry points over…
@@ -1610,6 +1612,55 @@
     - fn [codeLenses](../../src/lsp-features.ts#L748) (ws: Workspace, path: string) → CodeLens[]
       <a id="features.lsp-features.codeLenses"></a><br>`flows: checkout, pay` above each function of a source file that a flow names. The command `keylang.flows` (registered by the editor client) gets the flow names.
       - calls [lang.spec-ir.flowsUsing](lang.md#lang.spec-ir.flowsUsing), [features.lsp-features.lspPoint](features.md#features.lsp-features.lspPoint)
+  - module [migration-stack](../../src/migration-stack.ts#L1)
+    <a id="features.migration-stack"></a><br>The two stacks of a migration (business-flows/27), as `migration.ts` reads them: this repository's analysis, the old repository's checkout (analysed read-only: nothing is written there, not even the fact cache), or an index file — a plain `.keylang/index.json` of the old…
+    - node [external.node](external.md#external.node)
+    - analyze [map.analyze](map.md#map.analyze)
+    - config [base.config](base.md#base.config)
+    - discover [features.discover](features.md#features.discover)
+    - integrations [features.integrations](features.md#features.integrations)
+    - ir [lang.ir](lang.md#lang.ir)
+    - migration [check.migration](check.md#check.migration)
+    - snapshot [map.snapshot](map.md#map.snapshot)
+    - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
+    - span [base.span](base.md#base.span)
+    - test-report [check.test-report](check.md#check.test-report)
+    - type [MigrationExport](../../src/migration-stack.ts#L25)
+      <a id="features.migration-stack.MigrationExport"></a>
+    - type [LoadedStack](../../src/migration-stack.ts#L33)
+      <a id="features.migration-stack.LoadedStack"></a><br>A stack and what the report should say about how it was read.
+    - fn [stackFlows](../../src/migration-stack.ts#L39) (analysis: Pick<Analysis, "spec" | "docs" | "config">, snapshot: AnalysisSnapshot) → StackFlow[]
+      <a id="features.migration-stack.stackFlows"></a><br>The flows of an analysis: the hand-written ones (with `flow import` provenance marked), then the discovered drafts of entry points no hand-written flow starts from.
+      - calls [features.discover.specifiedTriggers](features.md#features.discover.specifiedTriggers), [features.migration-stack.specFlow](features.md#features.migration-stack.specFlow), [features.discover.discoverFlows](features.md#features.discover.discoverFlows), [base.span.compareText](base.md#base.span.compareText)
+    - fn [specFlow](../../src/migration-stack.ts#L54) (flow: Flow, docs: readonly Document[]) → StackFlow <!-- internal -->
+      <a id="features.migration-stack.specFlow"></a>
+      - calls [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow)
+    - fn [stackTests](../../src/migration-stack.ts#L67) (analysis: Pick<Analysis, "config">) → TestCase[] | null
+      <a id="features.migration-stack.stackTests"></a><br>The test results `check.tests` names; null when it names none.
+      - calls [base.config.evidenceFiles](base.md#base.config.evidenceFiles), [check.test-report.loadReports](check.md#check.test-report.loadReports)
+    - fn [stackIntegrations](../../src/migration-stack.ts#L73) (analysis: Pick<Analysis, "spec" | "config">, snapshot: AnalysisSnapshot) → Promise<NonNullable<Stack["integrations"]>>
+      <a id="features.migration-stack.stackIntegrations"></a><br>Outgoing integrations (with the fns of their call sites) and incoming webhooks of the snapshot.
+      - calls [features.integrations.findIntegrations](features.md#features.integrations.findIntegrations), [features.integrations.loadIntegrations](features.md#features.integrations.loadIntegrations), [features.discover.specifiedTriggers](features.md#features.discover.specifiedTriggers), [base.span.compareText](base.md#base.span.compareText)
+    - fn [stackOf](../../src/migration-stack.ts#L82) (analysis: Analysis) → Promise<Stack>
+      <a id="features.migration-stack.stackOf"></a><br>The stack of an analysis with a snapshot: everything parity reads.
+      - calls [features.migration-stack.stackFlows](features.md#features.migration-stack.stackFlows), [features.migration-stack.stackTests](features.md#features.migration-stack.stackTests), [features.migration-stack.stackIntegrations](features.md#features.migration-stack.stackIntegrations)
+    - fn [analyzeOld](../../src/migration-stack.ts#L96) (dir: string, withoutEvidence: boolean) → Promise<Analysis> <!-- internal -->
+      <a id="features.migration-stack.analyzeOld"></a><br>The old repository's checkout, analysed read-only: no fact cache, no `migration.from` of its own.
+      - calls [map.analyze.analyze](map.md#map.analyze.analyze)
+    - fn [resolveFrom](../../src/migration-stack.ts#L101) (base: string, from: string) → string
+      <a id="features.migration-stack.resolveFrom"></a><br>`from` as written, resolved against `base` (the root for keylang.json, the working directory for `--from`).
+    - fn [fromLabel](../../src/migration-stack.ts#L106) (root: string, abs: string) → string
+      <a id="features.migration-stack.fromLabel"></a><br>How a path is shown in a report: relative to the root, POSIX.
+      - calls [base.config.toPosix](base.md#base.config.toPosix)
+    - fn [loadOldStack](../../src/migration-stack.ts#L112) (abs: string) → Promise<LoadedStack>
+      <a id="features.migration-stack.loadOldStack"></a><br>The old stack from a directory (its checkout) or a file (an index or an export).
+      - calls [features.migration-stack.analyzeOld](features.md#features.migration-stack.analyzeOld), [features.migration-stack.stackOf](features.md#features.migration-stack.stackOf), [check.migration.readOldIndex](check.md#check.migration.readOldIndex), [features.discover.discoverFlows](features.md#features.discover.discoverFlows)
+    - fn [migrationExport](../../src/migration-stack.ts#L135) (root: string) → Promise<string>
+      <a id="features.migration-stack.migrationExport"></a><br>`keylang map --export-index <file>`: the snapshot of this repository with the `migration` block, as JSON text.
+      - calls [map.analyze.analyze](map.md#map.analyze.analyze), [features.migration-stack.stackOf](features.md#features.migration-stack.stackOf)
+    - fn [writeMigrationExport](../../src/migration-stack.ts#L145) (root: string, out: string) → Promise<string>
+      <a id="features.migration-stack.writeMigrationExport"></a><br>Writes the export to `out` (relative to the working directory).
+      - calls [features.migration-stack.migrationExport](features.md#features.migration-stack.migrationExport)
   - module [node-search](../../src/node-search.ts#L1)
     <a id="features.node-search"></a><br>Finding nodes by name, ID or what their explanation says (ADR 0004): the TUI's node search, MCP `search` and LSP workspace symbols share one ranking.
     - analyze [map.analyze](map.md#map.analyze)

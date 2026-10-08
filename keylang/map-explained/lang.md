@@ -201,62 +201,62 @@
       - fn [layers](../../src/parser.ts#L1009) (n: Node, rest: Token[]) → void <!-- internal -->
         <a id="lang.parser.Parser.layers"></a><br>`layers a < b < c`
         - calls [lang.parser.Parser.makeRef](lang.md#lang.parser.Parser.makeRef), [lang.parser.Parser.err](lang.md#lang.parser.Parser.err)
-      - fn [migrationRow](../../src/parser.ts#L1028) (n: Node, l: Line, rest: Token[]) → void <!-- internal -->
-        <a id="lang.parser.Parser.migrationRow"></a><br>`map <old> → [planned] <new>`: `id` is the old stack's ID, `text` the row as written, `label` `planned` when the new ID is an intention. No reference: the old ID lives in another repository (ticket 27 checks both).
+      - fn [migrationRow](../../src/parser.ts#L1030) (n: Node, l: Line, rest: Token[]) → void <!-- internal -->
+        <a id="lang.parser.Parser.migrationRow"></a><br>`map <old> → [planned] <new>`: `id` is the old stack's ID, `text` the row as written, `label` `planned` when the new ID is an intention. The new ID is a reference of this repository (K001 unless the code has it or a `planned` declares it); the old ID lives in another repository…
         - calls [lang.parser.isId](lang.md#lang.parser.isId), [lang.parser.Parser.err](lang.md#lang.parser.Parser.err), [lang.parser.nfc](lang.md#lang.parser.nfc), [lang.parser.spanned](lang.md#lang.parser.spanned), [lang.parser.Parser.freeText](lang.md#lang.parser.Parser.freeText)
-      - fn [freeText](../../src/parser.ts#L1042) (n: Node, l: Line, rest: Token[]) → void <!-- internal -->
+      - fn [freeText](../../src/parser.ts#L1045) (n: Node, l: Line, rest: Token[]) → void <!-- internal -->
         <a id="lang.parser.Parser.freeText"></a><br>Stores a node's trailing tokens as canonical description text via [`lang.parser.renderTokens`](lang.md#lang.parser.renderTokens), spanning first to last token so reformatting won't change it. If none remain, reports K005 that the node kind needs a description. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
         - calls [lang.parser.renderTokens](lang.md#lang.parser.renderTokens), [lang.parser.Line.span](lang.md#lang.parser.Line.span), [lang.parser.Parser.err](lang.md#lang.parser.Parser.err), [lang.ir.kindLabel](lang.md#lang.ir.kindLabel)
-    - fn [spanned](../../src/parser.ts#L1056) (t: Token) → Spanned<string> <!-- internal -->
+    - fn [spanned](../../src/parser.ts#L1059) (t: Token) → Spanned<string> <!-- internal -->
       <a id="lang.parser.spanned"></a><br>Wraps a token's text together with its source span into a `Spanned<string>` value, so callers like [`lang.parser.Parser.bare`](lang.md#lang.parser.Parser.bare) and [`lang.parser.Parser.interpret`](lang.md#lang.parser.Parser.interpret) can keep location info attached to the extracted string. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Lead](../../src/parser.ts#L1060) <!-- internal -->
+    - type [Lead](../../src/parser.ts#L1063) <!-- internal -->
       <a id="lang.parser.Lead"></a><br>Holds the measured leading whitespace of a source line: the raw prefix string, its indent width where a tab counts as two spaces, its CommonMark column count where a tab advances to the next multiple of 4, and a flag noting whether any tab was present. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [leadingWhitespace](../../src/parser.ts#L1069) (text: string) → Lead <!-- internal -->
+    - fn [leadingWhitespace](../../src/parser.ts#L1072) (text: string) → Lead <!-- internal -->
       <a id="lang.parser.leadingWhitespace"></a><br>Measures the run of spaces and tabs at the start of a line, counting each tab as two indent units and advancing columns to the next multiple of four, and reports whether any tab was present. Used by [`lang.parser.Parser.line`](lang.md#lang.parser.Parser.line), [`lang.parser.openFence`](lang.md#lang.parser.openFence), and… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [FenceOpen](../../src/parser.ts#L1085) <!-- internal -->
+    - type [FenceOpen](../../src/parser.ts#L1088) <!-- internal -->
       <a id="lang.parser.FenceOpen"></a><br>Records the shape of a Markdown fence opener: which fence character was used, how many of them, the fence's column width, and the leading-space count (null when a tab sits in the indent). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [openFence](../../src/parser.ts#L1094) (text: string) → FenceOpen | null <!-- internal -->
+    - fn [openFence](../../src/parser.ts#L1097) (text: string) → FenceOpen | null <!-- internal -->
       <a id="lang.parser.openFence"></a><br>A fence opener, ignoring the indent-of-4 rule. An info string with a backtick is not an opener.
       - calls [lang.parser.leadingWhitespace](lang.md#lang.parser.leadingWhitespace)
-    - fn [opensFence](../../src/parser.ts#L1111) (text: string, listOpen: boolean) → boolean <!-- internal -->
+    - fn [opensFence](../../src/parser.ts#L1114) (text: string, listOpen: boolean) → boolean <!-- internal -->
       <a id="lang.parser.opensFence"></a><br>CommonMark fence: indent under 4 spaces, or any indent while a list is open (Р9). A backtick info string that itself contains a backtick is prose.
       - calls [lang.parser.openFence](lang.md#lang.parser.openFence)
-    - fn [closesFence](../../src/parser.ts#L1116) (text: string, open: { char: string; len: number; columns: number }) → boolean <!-- internal -->
+    - fn [closesFence](../../src/parser.ts#L1119) (text: string, open: { char: string; len: number; columns: number }) → boolean <!-- internal -->
       <a id="lang.parser.closesFence"></a><br>Decides whether a line terminates a code fence opened with the given character, length, and indent by measuring its leading whitespace via [`lang.parser.leadingWhitespace`](lang.md#lang.parser.leadingWhitespace). The line must be indented at most max(3, opener indent), start with at least as many fence characters as… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [lang.parser.leadingWhitespace](lang.md#lang.parser.leadingWhitespace)
-    - fn [dedentFenceLines](../../src/parser.ts#L1133) (lines: string[]) → string[]
+    - fn [dedentFenceLines](../../src/parser.ts#L1136) (lines: string[]) → string[]
       <a id="lang.parser.dedentFenceLines"></a><br>Drop the indent `fmt` owes a fence that was written under a list item. The opener and the closer lose all of their indent; each body line loses as many spaces as the opener had, and never more than it has.
       - calls [lang.parser.openFence](lang.md#lang.parser.openFence), [lang.parser.closesFence](lang.md#lang.parser.closesFence)
-    - fn [htmlBlockStart](../../src/parser.ts#L1154) (rest: string) → { end: (line: string) => boolean } | null <!-- internal -->
+    - fn [htmlBlockStart](../../src/parser.ts#L1157) (rest: string) → { end: (line: string) => boolean } | null <!-- internal -->
       <a id="lang.parser.htmlBlockStart"></a><br>Start of a CommonMark HTML block of types 1–5, or null. The end test reads the whole line.
-    - fn [headingEnd](../../src/parser.ts#L1171) (text: string) → number <!-- internal -->
+    - fn [headingEnd](../../src/parser.ts#L1174) (text: string) → number <!-- internal -->
       <a id="lang.parser.headingEnd"></a><br>Where the words of a `#` heading line end: before an optional closing sequence of `#` that follows a space or a tab and has only spaces or tabs after it (CommonMark). `# flow a #` has the words `flow a`; in `# flow a#` the `#` is part of a word.
-    - fn [isBullet](../../src/parser.ts#L1177) (rest: string) → boolean <!-- internal -->
+    - fn [isBullet](../../src/parser.ts#L1180) (rest: string) → boolean <!-- internal -->
       <a id="lang.parser.isBullet"></a><br>Checks whether a line remainder starts with `-`, `*`, or `+` followed by either end-of-string or a single space, marking it as a list bullet. Used by [`lang.parser.Parser.line`](lang.md#lang.parser.Parser.line) to classify lines during parsing. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [nfc](../../src/parser.ts#L1187) (text: string) → string <!-- internal -->
+    - fn [nfc](../../src/parser.ts#L1190) (text: string) → string <!-- internal -->
       <a id="lang.parser.nfc"></a><br>An ID in Unicode normal form C: a composed `café` and a decomposed one are one ID. Tokens and spans keep the text as written, so `fmt` changes nothing.
-    - fn [isSegment](../../src/parser.ts#L1192) (s: string) → boolean
+    - fn [isSegment](../../src/parser.ts#L1195) (s: string) → boolean
       <a id="lang.parser.isSegment"></a><br>A single ID segment: letter or `_`, then letters (with their combining marks), digits, `_`, `-`.
-    - fn [isId](../../src/parser.ts#L1198) (s: string) → boolean
+    - fn [isId](../../src/parser.ts#L1201) (s: string) → boolean
       <a id="lang.parser.isId"></a><br>A dotted ID: `segment(.segment)*`.
       - calls [lang.parser.isSegment](lang.md#lang.parser.isSegment)
-    - fn [linkTextSpan](../../src/parser.ts#L1204) (t: Token) → Span
+    - fn [linkTextSpan](../../src/parser.ts#L1207) (t: Token) → Span
       <a id="lang.parser.linkTextSpan"></a><br>The span of the text inside `[…]`, the same span a link reference uses.
       - calls [lang.parser.parseLink](lang.md#lang.parser.parseLink), [lang.parser.codePoints](lang.md#lang.parser.codePoints)
-    - fn [parseLink](../../src/parser.ts#L1210) (t: Token) → Link <!-- internal -->
+    - fn [parseLink](../../src/parser.ts#L1213) (t: Token) → Link <!-- internal -->
       <a id="lang.parser.parseLink"></a><br>Splits a markdown-style `[text](target)` token into display text and target, decoding the path via [`lang.parser.decodeLinkPath`](lang.md#lang.parser.decodeLinkPath) and extracting an optional `#L<n>` fragment as a line number. Returns these fields together with the token's span. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [lang.parser.decodeLinkPath](lang.md#lang.parser.decodeLinkPath)
-    - fn [decodeLinkPath](../../src/parser.ts#L1229) (path: string) → string <!-- internal -->
+    - fn [decodeLinkPath](../../src/parser.ts#L1232) (path: string) → string <!-- internal -->
       <a id="lang.parser.decodeLinkPath"></a><br>Percent-decoding for map links. A broken escape is kept as written so the diagnostic still points at the source.
-    - fn [lex](../../src/parser.ts#L1243) (l: Line, start: number, errs: [Span, string][]) → { tokens: Token[]; comment: Spanned<string> | null } <!-- internal -->
+    - fn [lex](../../src/parser.ts#L1246) (l: Line, start: number, errs: [Span, string][]) → { tokens: Token[]; comment: Spanned<string> | null } <!-- internal -->
       <a id="lang.parser.lex"></a><br>Split an item head into tokens. Words end at whitespace or `,`; `[text](target)` and `"quoted"` are single tokens (a `[` that opens no link is an ordinary word); `<!-- … -->` ends the head and is returned separately.
       - calls [lang.parser.Line.span](lang.md#lang.parser.Line.span), [lang.parser.linkEnd](lang.md#lang.parser.linkEnd)
-    - fn [linkEnd](../../src/parser.ts#L1307) (s: string, i: number) → number | null <!-- internal -->
+    - fn [linkEnd](../../src/parser.ts#L1310) (s: string, i: number) → number | null <!-- internal -->
       <a id="lang.parser.linkEnd"></a><br>The end of `[text](destination)` opened at `i`, or null. As in CommonMark, the destination has no whitespace and holds parentheses only in balanced pairs or escaped (`\(`), so `(https://e.com/Foo_(bar))` ends at the last `)`.
-    - fn [renderMeaning](../../src/parser.ts#L1329) (node: Node) → string
+    - fn [renderMeaning](../../src/parser.ts#L1332) (node: Node) → string
       <a id="lang.parser.renderMeaning"></a><br>What an item's head says, for comparing meaning (a verdict's `specHash`, a rule already written): canonical tokens, with a reference written as a link `[id](href)` counted as its ID, so linking a reference changes nothing.
       - calls [lang.parser.renderTokens](lang.md#lang.parser.renderTokens)
-    - fn [renderTokens](../../src/parser.ts#L1335) (tokens: readonly Token[]) → string
+    - fn [renderTokens](../../src/parser.ts#L1338) (tokens: readonly Token[]) → string
       <a id="lang.parser.renderTokens"></a><br>Canonical rendering of head tokens: single spaces, `a, b` for commas.
   - module [spec-ir](../../src/spec-ir.ts#L1)
     <a id="lang.spec-ir"></a><br>SpecIR: typed assertions compiled from the text IR. `compileSpec` checks assertion form (a layer order, a wiring condition). Checks that need the snapshot still run later.

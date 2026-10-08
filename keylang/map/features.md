@@ -105,19 +105,20 @@
     - safe-write base.safe-write
     - snapshot map.snapshot
     - span base.span
-    - fn [baselineText](../../src/baseline.ts#L27) (snapshot: AnalysisSnapshot) → string
-      - calls base.span.compareText, features.baseline.externalModule
-    - fn [externalModule](../../src/baseline.ts#L74) (snapshot: AnalysisSnapshot, id: string) → string | null <!-- internal -->
-    - fn [baselinePath](../../src/baseline.ts#L86) (config: Pick<Config, "dir">) → string
+    - fn [configEdge](../../src/baseline.ts#L26) (edge: { via?: string; owner?: string }) → boolean <!-- internal -->
+    - fn [baselineText](../../src/baseline.ts#L37) (snapshot: AnalysisSnapshot) → string
+      - calls base.span.compareText, features.baseline.configEdge, features.baseline.externalModule
+    - fn [externalModule](../../src/baseline.ts#L84) (snapshot: AnalysisSnapshot, id: string) → string | null <!-- internal -->
+    - fn [baselinePath](../../src/baseline.ts#L96) (config: Pick<Config, "dir">) → string
       - calls base.config.specPath
-    - type [BaselinePlan](../../src/baseline.ts#L94)
-    - fn [planBaseline](../../src/baseline.ts#L115) (config: Config, snapshot: AnalysisSnapshot) → BaselinePlan
+    - type [BaselinePlan](../../src/baseline.ts#L104)
+    - fn [planBaseline](../../src/baseline.ts#L125) (config: Config, snapshot: AnalysisSnapshot) → BaselinePlan
       - calls features.baseline.baselinePath, features.baseline.baselineText, lang.files.readTextOrNull, base.safe-write.isGeneratedText, features.baseline.ruleLines, map.map.sourceInputs
-    - fn [baselinePlanProblems](../../src/baseline.ts#L140) (plan: BaselinePlan) → string[]
+    - fn [baselinePlanProblems](../../src/baseline.ts#L150) (plan: BaselinePlan) → string[]
       - calls base.safe-write.writeProblem, map.map.sourceInputProblems
-    - fn [commitBaseline](../../src/baseline.ts#L149) (plan: BaselinePlan) → void
+    - fn [commitBaseline](../../src/baseline.ts#L159) (plan: BaselinePlan) → void
       - calls base.safe-write.landing, base.safe-write.writeAtomic
-    - fn [ruleLines](../../src/baseline.ts#L156) (text: string) → string[] <!-- internal -->
+    - fn [ruleLines](../../src/baseline.ts#L166) (text: string) → string[] <!-- internal -->
   - module [call-sites](../../src/call-sites.ts#L1)
     - node external.node
     - config base.config
@@ -1020,6 +1021,41 @@
     - type [CodeLens](../../src/lsp-features.ts#L742) <!-- internal -->
     - fn [codeLenses](../../src/lsp-features.ts#L748) (ws: Workspace, path: string) → CodeLens[]
       - calls lang.spec-ir.flowsUsing, features.lsp-features.lspPoint
+  - module [migration-stack](../../src/migration-stack.ts#L1)
+    - node external.node
+    - analyze map.analyze
+    - config base.config
+    - discover features.discover
+    - integrations features.integrations
+    - ir lang.ir
+    - migration check.migration
+    - snapshot map.snapshot
+    - spec-ir lang.spec-ir
+    - span base.span
+    - test-report check.test-report
+    - type [MigrationExport](../../src/migration-stack.ts#L25)
+    - type [LoadedStack](../../src/migration-stack.ts#L33)
+    - fn [stackFlows](../../src/migration-stack.ts#L39) (analysis: Pick<Analysis, "spec" | "docs" | "config">, snapshot: AnalysisSnapshot) → StackFlow[]
+      - calls features.discover.specifiedTriggers, features.migration-stack.specFlow, features.discover.discoverFlows, base.span.compareText
+    - fn [specFlow](../../src/migration-stack.ts#L54) (flow: Flow, docs: readonly Document[]) → StackFlow <!-- internal -->
+      - calls lang.spec-ir.walkFlow
+    - fn [stackTests](../../src/migration-stack.ts#L67) (analysis: Pick<Analysis, "config">) → TestCase[] | null
+      - calls base.config.evidenceFiles, check.test-report.loadReports
+    - fn [stackIntegrations](../../src/migration-stack.ts#L73) (analysis: Pick<Analysis, "spec" | "config">, snapshot: AnalysisSnapshot) → Promise<NonNullable<Stack["integrations"]>>
+      - calls features.integrations.findIntegrations, features.integrations.loadIntegrations, features.discover.specifiedTriggers, base.span.compareText
+    - fn [stackOf](../../src/migration-stack.ts#L82) (analysis: Analysis) → Promise<Stack>
+      - calls features.migration-stack.stackFlows, features.migration-stack.stackTests, features.migration-stack.stackIntegrations
+    - fn [analyzeOld](../../src/migration-stack.ts#L96) (dir: string, withoutEvidence: boolean) → Promise<Analysis> <!-- internal -->
+      - calls map.analyze.analyze
+    - fn [resolveFrom](../../src/migration-stack.ts#L101) (base: string, from: string) → string
+    - fn [fromLabel](../../src/migration-stack.ts#L106) (root: string, abs: string) → string
+      - calls base.config.toPosix
+    - fn [loadOldStack](../../src/migration-stack.ts#L112) (abs: string) → Promise<LoadedStack>
+      - calls features.migration-stack.analyzeOld, features.migration-stack.stackOf, check.migration.readOldIndex, features.discover.discoverFlows
+    - fn [migrationExport](../../src/migration-stack.ts#L135) (root: string) → Promise<string>
+      - calls map.analyze.analyze, features.migration-stack.stackOf
+    - fn [writeMigrationExport](../../src/migration-stack.ts#L145) (root: string, out: string) → Promise<string>
+      - calls features.migration-stack.migrationExport
   - module [node-search](../../src/node-search.ts#L1)
     - analyze map.analyze
     - explanations map.explanations

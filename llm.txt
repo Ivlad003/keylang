@@ -214,6 +214,7 @@ Server name: `keylang`. Only `apply_diff` writes to the repository, and only a p
 | `coverage_report` | Blind spots, as `keylang coverage --json`: reach from entry points, orphan fns, holes by module and reason, entries without a flow, logic in data to check by hand. A view; nothing is written |
 | `list_integrations` | What the code talks to, as `keylang integrations --json`: HTTP/SOAP/SDK/queue call sites with host and the entry points that reach them, incoming webhooks, queues. Nothing is written or contacted |
 | `project_tour` | One onboarding page, as `keylang tour --json`: the system, layers and modules, business processes → flows with diagram links, entry points, integrations, blind spots, the fns to read first. `format: markdown` gives the page. Nothing is written |
+| `migration_status` | Parity of a migration, as `keylang migration status --json`: every old flow's counterpart, steps and shared tests → ok/fail/unverified, what is not migrated yet. `from` optional (old index or old repo dir). Read-only. |
 | `apply_diff` | Propose the full new text of one hand-written spec |
 
 CLI when MCP is off:
@@ -253,6 +254,8 @@ NestJS (`@nestjs/core` in package.json) is read from its decorators: `@Inject(TO
 
 PWA Kit (`ccExtensibility` in package.json): `@salesforce/retail-react-app/app/x` resolves to `overrides/app/x` when that file exists, else the base package; `^@salesforce/retail-react-app/…` is the base package; the `{ path, component }` routes of `routes.jsx` and `ssr.js` are entry points (snapshot.md "Фреймворки: PWA Kit").
 
+Django, FastAPI, Flask and Celery are read automatically when a root manifest names the package or a Python file imports it (`"frameworks"` in keylang.json overrides; names `django`, `fastapi`, `flask`, `celery`): `urls.py` patterns, class-based views, route decorators with router/blueprint prefixes, signal receivers, management commands, tasks and `beat_schedule` become entries; `Depends(f)` is a `via: "injected"` call, `task.delay()` a `via: "dispatch"` call and `signal.send()` a `via: "observer"` call to each receiver; a recognised framework decorator is no hole, an unknown one still is (snapshot.md §11 "Фреймворки: Python web").
+
 `keylang.json` `layers` maps a name to a glob or a list of globs. The first matching glob wins. `**`, `*`, `?`, and `{a,b}` work. A folder named `external` is renamed `external_` because that word is reserved. The new name is printed at `init`. `README` in any case is reserved too: it is the start page of the explained map.
 
 A missing `format` field means edition 1. No `keylang.json` means edition 2. `"format": 3` or higher exits 2 and names the field. Do not bump `format`.
@@ -270,6 +273,8 @@ or `"openrouter:<model>"`. The key is `ANTHROPIC_API_KEY` or `OPENROUTER_API_KEY
 `keylang flows discover --names` groups the discovered flows into business processes (one model request per layer, `--dry-run` for the token estimate) in the generated `keylang/flows-discovered/README.md`; it is a view for people, never a verdict.
 
 `keylang flow export <flow>… --out f.md` writes a portable Markdown bundle of flows (ids, signatures, tests, provenance); `keylang flow import f.md [--layer-map old=new]` in another repository proposes a feature on `planned` ids in its layers plus `keylang/migration.md` rows.
+
+Migration between stacks (Magento → SFCC and the like): `keylang/migration.md` holds `# migration <name>` with rows `- map <old id> → [planned] <new id>` and `- dropped <old id> <reason>`. `check` resolves the new id here (K001 unless code or a `planned` has it) and the old id against `migration.from` in keylang.json — an exported index (`keylang map --export-index <file>` in the old repo: snapshot + hand-written/discovered flows + test results + integrations; a plain `.keylang/index.json` also works) or the old checkout, analysed read-only; without it old ids are `migration unverified … no old snapshot`; `dropped` without a reason is K005. `keylang migration status [--from <old index.json|old repo dir>] [--json]` judges every old flow: counterpart (same name with `keylang:import` provenance, mapped trigger, or most mapped steps), steps present here, the same test names passing in both `check.tests` reports → `ok`/`fail` (no counterpart, a mapped step missing in fully indexed code, a shared test failing here)/`unverified` (no tests, no report, unmapped step, opaque); then not migrated yet (flows, cron/consumer/observer/webhook entries, integrations) and flows moved without shared tests. Exit 1 when a flow fails.
 
 ## Where to read the rest
 

@@ -96,7 +96,7 @@ keylang має допомагати швидко зануритись у чуж�
 | [24](issues/24-diagram-to-proposals.md) | Редактор → специфікація: зміни діаграми як пропозиції, файл розкладки | ready-for-agent | 23 |
 | [25](issues/25-diagram-copy-paste.md) | Копіювання фрагмента діаграми між вкладками й проєктами | ready-for-agent | 23, 26 |
 | [26](issues/26-flow-bundle-export-import.md) | `keylang flow export\|import`: переносний пакет бізнес-флоу | resolved | 12 |
-| [27](issues/27-migration-parity.md) | Міграція: таблиця відповідності ID і перевірка паритету старого й нового стеку | ready-for-agent | 26 |
+| [27](issues/27-migration-parity.md) | Міграція: таблиця відповідності ID і перевірка паритету старого й нового стеку | resolved | 26 |
 | [28](issues/28-export-bpmn-drawio.md) | Експорт у BPMN 2.0 і draw.io (.drawio), імпорт .drawio як чернетки | resolved | 20 |
 | [29](issues/29-greenfield-from-diagram.md) | Проєкт з нуля з діаграми: від ідеї до фічі для агентів | ready-for-agent | 24, 25 |
 | [30](issues/30-sfcc-sfra-frontend.md) | Цільовий стек: Salesforce Commerce Cloud (SFRA-картриджі, PWA Kit) | resolved | 01, 09 |
@@ -107,8 +107,8 @@ keylang має допомагати швидко зануритись у чуж�
 | [35](issues/35-laravel-adapter.md) | Laravel: container, фасади, маршрути, події, черги, scheduler | ready-for-agent | — |
 | [36](issues/36-symfony-adapter.md) | Symfony: services.yaml, маршрути, підписники, Messenger, команди | ready-for-agent | — |
 | [37](issues/37-express-next-adapter.md) | Express/Fastify/Next.js: маршрути, middleware, server actions | ready-for-agent | — |
-| [38](issues/38-python-web-adapter.md) | Django/FastAPI/Flask/Celery: маршрути, сигнали, задачі | ready-for-agent | — |
-| [39](issues/39-pwa-kit-overrides.md) | PWA Kit / Composable Storefront: ccExtensibility overrides і маршрути | resolved | — |
+| [38](issues/38-python-web-adapter.md) | Django/FastAPI/Flask/Celery: маршрути, сигнали, задачі | resolved | — |
+| [39](issues/39-pwa-kit-overrides.md) | PWA Kit / Composable Storefront: ccExtensibility overrides і маршрути | ready-for-agent | — |
 
 ## 9. Рев'ю плану на реалістичність (2026-10-07)
 

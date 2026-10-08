@@ -2,7 +2,7 @@
 // A tree walk over the top level plus tree-sitter queries inside bodies.
 
 import { builtinModules } from "node:module";
-import type { CallFact, DeclFact, DecoratorArg, DecoratorFact, EntryFact, FileFacts, HookFact, ImportBinding, ImportFact, PassFact, TypeRefFact, UnsupportedFact, ValueRefFact } from "./facts.ts";
+import type { CallFact, DeclFact, CodeDecorator, DecoratorArg, EntryFact, FileFacts, HookFact, ImportBinding, ImportFact, PassFact, TypeRefFact, UnsupportedFact, ValueRefFact } from "./facts.ts";
 import { blockCommentBody, isLicense, jsdocDescription, lineCommentsBody, nonEmpty } from "./doc-comments.ts";
 import { errorLine, fingerprintFacts, grammarFor, located, query, startCol, valuesFingerprint, withTree, type Grammar, type Language, type Node, type Tree } from "./treesitter.ts";
 
@@ -818,7 +818,7 @@ function classDecl(name: string, cls: Node, at: Node, exported: boolean, declCal
   const instance: { node: Node; calls: CallFact[] }[] = [];
   const statics: { node: Node; calls: CallFact[] }[] = [];
   // Decorators of the next member: tree-sitter writes them as siblings before it in the class body.
-  let pending: DecoratorFact[] = [];
+  let pending: CodeDecorator[] = [];
   for (const m of items) {
     if (m.type === "decorator") {
       const fact = decoratorFact(m);
@@ -898,12 +898,12 @@ function classDecl(name: string, cls: Node, at: Node, exported: boolean, declCal
 }
 
 /** The decorators that are children of a node: a class, an `export` statement, a member, a parameter. */
-function decoratorsOf(node: Node): DecoratorFact[] {
+function decoratorsOf(node: Node): CodeDecorator[] {
   return node.children.flatMap((c) => (c.type === "decorator" ? (decoratorFact(c) ?? []) : []));
 }
 
 /** `constructor(@Inject(T) private readonly x: I)`: each parameter's decorators, with its position, name and type. */
-function parameterDecorators(ctor: Node): DecoratorFact[] {
+function parameterDecorators(ctor: Node): CodeDecorator[] {
   const params = ctor.childForFieldName("parameters")?.namedChildren.filter((p) => p.type === "required_parameter" || p.type === "optional_parameter") ?? [];
   return params.flatMap((param, index) => {
     const pattern = param.childForFieldName("pattern");
@@ -914,7 +914,7 @@ function parameterDecorators(ctor: Node): DecoratorFact[] {
 }
 
 /** `@Get(':id')` → `Get` with its arguments; `@Injectable` → no arguments. Null for a decorator that names nothing (`@(x)`). */
-function decoratorFact(node: Node): DecoratorFact | null {
+function decoratorFact(node: Node): CodeDecorator | null {
   const expr = node.namedChildren.find((c) => c.type !== "comment");
   if (!expr) return null;
   const at = located(node);
