@@ -1090,14 +1090,21 @@
     - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
     - snapshot [map.snapshot](map.md#map.snapshot)
     - explanations [map.explanations](map.md#map.explanations)
-    - type [TracePlan](../../src/trace-plan.ts#L16)
+    - type [TracePlan](../../src/trace-plan.ts#L19)
       <a id="map.trace-plan.TracePlan"></a><br>Describes the data handed to an editor adapter for one flow: the snapshot it came from and an ID-sorted list of symbols with file, line, column, and the SHA-256 of the file as indexed. The hash lets an adapter skip files that changed since the snapshot. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [tracePlan](../../src/trace-plan.ts#L29) (config: Config, flow: string) → Promise<{ plan: TracePlan; index: AnalysisSnapshot; omitted: string[] }>
+    - fn [tracePlan](../../src/trace-plan.ts#L32) (config: Config, flow: string) → Promise<{ plan: TracePlan; index: AnalysisSnapshot; omitted: string[] }>
       <a id="map.trace-plan.tracePlan"></a><br>The plan of `flow` on a fresh snapshot of the saved code. `omitted` are the flow's `trigger`/`step` IDs that are no function of that snapshot (a module, a type, an unknown ID, a file outside it): no adapter instruments them.
-      - calls [map.trace-plan.flowSymbols](map.md#map.trace-plan.flowSymbols), [map.map.generateMap](map.md#map.map.generateMap)
-    - fn [tracePlanText](../../src/trace-plan.ts#L49) (plan: TracePlan) → string
+      - calls [map.trace-plan.flowSymbols](map.md#map.trace-plan.flowSymbols), [map.map.generateMap](map.md#map.map.generateMap), [map.trace-plan.planOf](map.md#map.trace-plan.planOf)
+    - fn [entryTracePlan](../../src/trace-plan.ts#L45) (config: Config, entry: string, flow?: string) → Promise<{ plan: TracePlan; index: AnalysisSnapshot; omitted: string[] }>
+      <a id="map.trace-plan.entryTracePlan"></a><br>The plan of the entry point `entry` (a fn of a fresh snapshot): every fn reachable from it (`reachableFrom`). `flow` names the runs it records; by default the entry's last segment. A request or a process names its own flow at run time (`X-Keylang-Flow`, `KEYLANG_FLOW`).
+      - calls [map.map.generateMap](map.md#map.map.generateMap), [map.trace-plan.planOf](map.md#map.trace-plan.planOf), [map.trace-plan.reachableFrom](map.md#map.trace-plan.reachableFrom)
+    - fn [reachableFrom](../../src/trace-plan.ts#L59) (index: AnalysisSnapshot, entry: string) → Set<string>
+      <a id="map.trace-plan.reachableFrom"></a><br>The fns `entry` may run: the closure over resolved calls. A reached fn with a call keylang did not resolve (a call through a value, a dynamic member) widens it, since a trace is there to see where such a call goes: every fn whose name is the called name, and every fn read as a…
+    - fn [planOf](../../src/trace-plan.ts#L116) (index: AnalysisSnapshot, flow: string, wanted: ReadonlySet<string>) → { plan: TracePlan; index: AnalysisSnapshot; omitted: string[] } <!-- internal -->
+      <a id="map.trace-plan.planOf"></a>
+    - fn [tracePlanText](../../src/trace-plan.ts#L133) (plan: TracePlan) → string
       <a id="map.trace-plan.tracePlanText"></a><br>What `keylang trace-plan` prints and an adapter reads: the plan as indented JSON and a newline.
-    - fn [flowSymbols](../../src/trace-plan.ts#L54) (root: string, dir: string, flow: string) → Set<string> | null
+    - fn [flowSymbols](../../src/trace-plan.ts#L138) (root: string, dir: string, flow: string) → Set<string> | null
       <a id="map.trace-plan.flowSymbols"></a><br>`trigger` and `step` IDs of the flow; null when no spec declares it.
       - calls [lang.files.collectMdFiles](lang.md#lang.files.collectMdFiles), [map.explanations.isStoredExplanation](map.md#map.explanations.isStoredExplanation), [lang.spec-ir.compileSpec](lang.md#lang.spec-ir.compileSpec), [lang.parser.parse](lang.md#lang.parser.parse), [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow)
   - module [wire-gen](../../src/wire-gen.ts#L1)

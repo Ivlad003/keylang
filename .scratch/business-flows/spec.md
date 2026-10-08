@@ -88,7 +88,7 @@ keylang має допомагати швидко зануритись у чуж�
 | [16](issues/16-grammar-events.md) | Мова: `trigger event`, перевірка `emits event` проти фактів | ready-for-agent | 02, 08 |
 | [17](issues/17-grammar-parallel.md) | Мова: паралельні групи кроків `parallel` | resolved | 02 |
 | [18](issues/18-grammar-async-triggers.md) | Мова: асинхронні тригери (route/cron/consumer/webhook), `continues`, таймери | resolved | 02, 09 |
-| [19](issues/19-php-trace-real-requests.md) | Trace на реальних запитах і інтеграційних тестах (PHP/Magento, TS, Python, Rust) | ready-for-agent | 09 |
+| [19](issues/19-php-trace-real-requests.md) | Trace на реальних запитах і інтеграційних тестах (PHP/Magento, TS, Python, Rust) | resolved | 09 |
 | [20](issues/20-web-diagram-model.md) | Web: API моделі діаграм (флоу, точки входу, події, шари) з розкладкою | resolved | — |
 | [21](issues/21-web-flow-viewer.md) | Web: перегляд флоу як діаграми (пошук, вердикти, перехід у код) | resolved | 20, 33 |
 | [22](issues/22-web-entry-explorer.md) | Web: дослідник точок входу й подій — інтерактивне дерево викликів | resolved | 09, 20 |

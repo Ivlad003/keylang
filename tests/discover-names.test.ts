@@ -72,9 +72,9 @@ test("flows discover: an offline description from the trigger's JSDoc and Python
   const app = read(dir, `${VIEW}/app.md`);
   assert.match(
     app,
-    /^# flow listOrders\n\n<!-- keylang:discover entry=route label="GET \/orders" steps=2 holes=0 -->\n\n<!-- keylang:discover doc=app\.handlers\.listOrders,app\.store\.load -->\n\nLists the orders of the shopper\. Used by the account page\. Loads the orders from the store\.\n\n- trigger app\.handlers\.listOrders\n/m,
+    /^# flow listOrders\n\n<!-- keylang:discover entry=route label="GET \/orders" steps=2 holes=0 -->\n\n<!-- keylang:discover doc=app\.handlers\.listOrders,app\.store\.load -->\n\nLists the orders of the shopper\. Used by the account page\. Loads the orders from the store\.\n\n- trigger route app\.handlers\.listOrders\n/m,
   );
-  assert.match(app, /^# flow pay\n\n<!-- keylang:discover entry=route label="POST \/pay" steps=1 holes=0 -->\n\n<!-- keylang:discover doc=app\.handlers\.pay -->\n\nPays for the cart\.\n\n- trigger app\.handlers\.pay\n/m);
+  assert.match(app, /^# flow pay\n\n<!-- keylang:discover entry=route label="POST \/pay" steps=1 holes=0 -->\n\n<!-- keylang:discover doc=app\.handlers\.pay -->\n\nPays for the cart\.\n\n- trigger route app\.handlers\.pay\n/m);
   const shop = read(dir, `${VIEW}/shop.md`);
   assert.match(shop, /<!-- keylang:discover doc=shop\.cli\.main,shop\.cli\.helper -->\n\nRuns the shop command line\. Computes the exit code\.\n\n- trigger shop\.cli\.main\n/);
   // Deterministic, no model: a second run gives the same bytes, and the view is current.

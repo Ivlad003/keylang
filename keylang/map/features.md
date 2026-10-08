@@ -405,27 +405,31 @@
     - parser lang.parser
     - safe-write base.safe-write
     - snapshot map.snapshot
-    - type [FlowDraft](../../src/draft.ts#L14)
-    - fn [draftFlow](../../src/draft.ts#L22) (snapshot: AnalysisSnapshot, trigger: string, options: { name?: string; depth?: number; entry?: string } = {}) → FlowDraft
-    - fn [withFlow](../../src/draft.ts#L69) (existing: string | null, draft: Pick<FlowDraft, "name" | "text">) → string
+    - trace-evidence check.trace-evidence
+    - type [FlowDraft](../../src/draft.ts#L15)
+    - fn [draftFlow](../../src/draft.ts#L23) (snapshot: AnalysisSnapshot, trigger: string, options: { name?: string; depth?: number; entry?: string } = {}) → FlowDraft
+    - fn [draftFlowFromTrace](../../src/draft.ts#L74) (snapshot: AnalysisSnapshot, run: TraceRun, options: { name?: string } = {}) → FlowDraft & { rest: string[] }
+      - calls features.draft.reachesByCalls
+    - fn [reachesByCalls](../../src/draft.ts#L103) (snapshot: AnalysisSnapshot, from: string, to: string) → boolean <!-- internal -->
+    - fn [withFlow](../../src/draft.ts#L124) (existing: string | null, draft: Pick<FlowDraft, "name" | "text">) → string
       - calls lang.parser.parse, features.draft.nextHeading, base.safe-write.keepLineEndings
-    - fn [withRules](../../src/draft.ts#L93) (existing: string | null, draftText: string) → string
+    - fn [withRules](../../src/draft.ts#L148) (existing: string | null, draftText: string) → string
       - calls lang.parser.parse, lang.ir.sectionNodes, lang.parser.renderMeaning, features.draft.nextHeading, base.safe-write.keepLineEndings
-    - fn [nextHeading](../../src/draft.ts#L123) (sections: readonly { heading: { span: { start: { line: number } } } | null }[], index: number) → number | null <!-- internal -->
-    - fn [distinctNames](../../src/draft.ts#L133) (drafts: readonly FlowDraft[]) → FlowDraft[]
-    - fn [draftRules](../../src/draft.ts#L163) (snapshot: AnalysisSnapshot, cyclic: boolean) → string
+    - fn [nextHeading](../../src/draft.ts#L178) (sections: readonly { heading: { span: { start: { line: number } } } | null }[], index: number) → number | null <!-- internal -->
+    - fn [distinctNames](../../src/draft.ts#L188) (drafts: readonly FlowDraft[]) → FlowDraft[]
+    - fn [draftRules](../../src/draft.ts#L218) (snapshot: AnalysisSnapshot, cyclic: boolean) → string
       - calls features.draft.layerOrder
-    - fn [layerOrder](../../src/draft.ts#L188) (layers: readonly string[], uses: ReadonlyMap<string, ReadonlySet<string>>) → string[] | null <!-- internal -->
-    - fn [codeToSpecTriggers](../../src/draft.ts#L207) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; triggers: string[] }
-    - fn [codeToSpec](../../src/draft.ts#L230) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; drafts: FlowDraft[] }
+    - fn [layerOrder](../../src/draft.ts#L243) (layers: readonly string[], uses: ReadonlyMap<string, ReadonlySet<string>>) → string[] | null <!-- internal -->
+    - fn [codeToSpecTriggers](../../src/draft.ts#L262) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; triggers: string[] }
+    - fn [codeToSpec](../../src/draft.ts#L285) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; drafts: FlowDraft[] }
       - calls features.draft.codeToSpecTriggers, features.draft.draftFlow, features.draft.distinctNames
-    - type [ChangedLines](../../src/draft.ts#L237)
-    - fn [diffHunks](../../src/draft.ts#L243) (diff: string) → Map<string, [number, number][]>
+    - type [ChangedLines](../../src/draft.ts#L292)
+    - fn [diffHunks](../../src/draft.ts#L298) (diff: string) → Map<string, [number, number][]>
       - calls features.draft.gitPath
-    - fn [deletedDiffPaths](../../src/draft.ts#L266) (diff: string) → string[]
+    - fn [deletedDiffPaths](../../src/draft.ts#L321) (diff: string) → string[]
       - calls features.draft.gitPath
-    - fn [gitPath](../../src/draft.ts#L280) (text: string) → string <!-- internal -->
-    - fn [changedFlows](../../src/draft.ts#L308) (snapshot: AnalysisSnapshot, changed: ChangedLines, named: ReadonlySet<string>) → { drafts: FlowDraft[]; named: string[] }
+    - fn [gitPath](../../src/draft.ts#L335) (text: string) → string <!-- internal -->
+    - fn [changedFlows](../../src/draft.ts#L363) (snapshot: AnalysisSnapshot, changed: ChangedLines, named: ReadonlySet<string>) → { drafts: FlowDraft[]; named: string[] }
       - calls features.draft.draftFlow, features.draft.distinctNames
   - module [explain-edge](../../src/explain-edge.ts#L1)
     - snapshot map.snapshot

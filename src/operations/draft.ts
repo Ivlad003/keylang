@@ -11,7 +11,9 @@ import { existingText } from "../files.ts";
 import { sectionNodes, walk, type Document } from "../ir.ts";
 import { parse } from "../parser.ts";
 import { PROPOSALS_DIR, proposalProblem } from "../proposals.ts";
-import { changedFlows, codeToSpec, draftFlow, draftRules, withFlow, withRules, type FlowDraft } from "../draft.ts";
+import { changedFlows, codeToSpec, draftFlow, draftFlowFromTrace, draftRules, withFlow, withRules, type FlowDraft } from "../draft.ts";
+import type { AnalysisSnapshot } from "../snapshot.ts";
+import { loadTraces, type TraceRun } from "../trace-evidence.ts";
 import type { LlmClient } from "../llm.ts";
 import type { DraftStatus } from "../draft-llm.ts";
 import { addDrafts, STATS_FILE, updateStats } from "../stats.ts";
@@ -55,10 +57,11 @@ export function flowCandidate(root: string, specDir: string, generated: (path: s
  * written, not even the stats.
  */
 export async function runDraftFlow(request: DraftFlowRequest, context: OperationContext): Promise<OperationEnvelope<"draft-flow">> {
-  const { root, trigger } = request;
-  const mode = request.mode ?? "algo";
+  const { root, trigger, fromTrace } = request;
+  // A draft from a trace is what the run observed: no model reconciles it.
+  const mode = fromTrace ? "algo" : (request.mode ?? "algo");
   if (!isAbsolute(root)) return empty("draft-flow", "failed", 2, "draft flow: root must be an absolute path");
-  if (trigger === "") return empty("draft-flow", "failed", 2, "draft flow: a trigger id is required");
+  if (trigger === "" && !fromTrace) return empty("draft-flow", "failed", 2, "draft flow: a trigger id is required");
   if (context.signal?.aborted) return empty("draft-flow", "cancelled", null);
   context.onProgress?.({ text: "reading the sources" });
   let analyzed: Analysis;
@@ -70,13 +73,20 @@ export async function runDraftFlow(request: DraftFlowRequest, context: Operation
   if (context.signal?.aborted) return empty("draft-flow", "cancelled", null);
   const snapshot = analyzed.snapshot;
   if (!snapshot) return empty("draft-flow", "failed", 2, "draft: no supported source files; run `keylang init`");
-  if (snapshot.nodes[trigger]?.kind !== "fn") {
+  if (!fromTrace && snapshot.nodes[trigger]?.kind !== "fn") {
     const hint = analyzed.index.suggest(trigger);
     return empty("draft-flow", "failed", 2, `draft flow: \`${trigger}\` is not a fn of the snapshot${hint ? ` (did you mean \`${hint}\`?)` : ""}`);
   }
   // What the draft was computed from: a commit checks that keylang.json and the sources are still these.
   const inputs = sourceInputs(analyzed.config, snapshot.manifest.files);
-  const algo = draftFlow(snapshot, trigger, request.name !== undefined ? { name: request.name } : {});
+  const traceNotes: OperationMessage[] = [];
+  let algo: FlowDraft;
+  if (fromTrace) {
+    const observed = traceDraft(root, snapshot, fromTrace, request.name);
+    if ("error" in observed) return empty("draft-flow", "failed", 2, observed.error);
+    algo = observed.draft;
+    traceNotes.push(...observed.notes);
+  } else algo = draftFlow(snapshot, trigger, request.name !== undefined ? { name: request.name } : {});
   const setup = await modelSetup(mode, analyzed.config);
   if ("error" in setup) return empty("draft-flow", "failed", 2, setup.error);
   const specDir = rootRelative(root, analyzed.config.dir);
@@ -114,7 +124,7 @@ export async function runDraftFlow(request: DraftFlowRequest, context: Operation
   const candidate: FlowCandidate = model === null ? basis : { ...basis, flow: draft.text, steps: draft.steps, text: basis.problem === null ? withFlow(basis.before, draft) : null };
   const summary = model === null ? `${draft.steps.length} step(s)` : draftCountsText(model.counts);
   const payload: DraftFlowPayload = { output: request.output, mode: model === null ? "algo" : mode, candidate, summary, model, fallback: setup.fallback, statsError: null, proposal: null, refused: [], error: null };
-  const notes = draftNotes(payload);
+  const notes = [...traceNotes, ...draftNotes(payload)];
   if (request.output === "preview") {
     return { ...empty("draft-flow", "completed", 0), payload, messages: [...notes, { level: "info", text: `flow \`${draft.name}\` for ${candidate.target} (${payload.summary}); a preview, nothing written` }] };
   }
@@ -614,4 +624,31 @@ function draftNotes(payload: DraftFlowPayload): OperationMessage[] {
   if (model !== null && model.unknown.length > 0) notes.push({ level: "warning", text: `still unknown after ${model.rounds} round(s): ${model.unknown.join(", ")} (K001 after the merge unless declared planned)` });
   for (const line of model?.dropped ?? []) notes.push({ level: "warning", text: `dropped from the model's draft: ${line}` });
   return notes;
+}
+
+/**
+ * The draft of one run of `fromTrace.file` (`draftFlowFromTrace`): the run
+ * `fromTrace.run` names (its `runId`), else the file's one run with spans.
+ * A file with several, a run id that matches none or several runs, or an
+ * unreadable trace is an error naming what there is to choose from.
+ */
+function traceDraft(root: string, snapshot: AnalysisSnapshot, fromTrace: { file: string; run?: string }, name: string | undefined): { draft: FlowDraft; notes: OperationMessage[] } | { error: string } {
+  let runs: TraceRun[];
+  try {
+    runs = loadTraces(root, [fromTrace.file]).filter((run) => run.spans.length > 0);
+  } catch (error) {
+    return { error: `draft flow --from-trace: ${errorText(error)}` };
+  }
+  const listing = (list: readonly TraceRun[]): string => list.map((run) => `${run.runId} (flow ${run.flow}, ${run.testId}, ${run.spans.length} span(s))`).join("; ");
+  const chosen = fromTrace.run === undefined ? runs : runs.filter((run) => run.runId === fromTrace.run);
+  if (chosen.length === 0) return { error: fromTrace.run === undefined ? `draft flow --from-trace: ${fromTrace.file} has no run with spans` : `draft flow --from-trace: no run \`${fromTrace.run}\` with spans in ${fromTrace.file}${runs.length > 0 ? `; runs: ${listing(runs)}` : ""}` };
+  if (chosen.length > 1) return { error: `draft flow --from-trace: ${fromTrace.file} has ${chosen.length} runs${fromTrace.run === undefined ? "" : ` with id \`${fromTrace.run}\``}; name one with --run: ${listing(chosen)}` };
+  const run = chosen[0]!;
+  const draft = draftFlowFromTrace(snapshot, run, name !== undefined ? { name } : {});
+  const notes: OperationMessage[] = [];
+  if (!run.complete) notes.push({ level: "warning", text: `run ${run.runId} is incomplete: a process ended without its run record, or a span stayed open; the draft shows what was observed` });
+  if (draft.rest.length > 0) notes.push({ level: "warning", text: `run ${run.runId}: left out, outside the call tree of the trigger ${draft.steps[0]}: ${draft.rest.join(", ")}` });
+  const unknown = draft.steps.filter((id) => snapshot.nodes[id] === undefined);
+  if (unknown.length > 0) notes.push({ level: "warning", text: `not in the current snapshot (the code changed since the run): ${unknown.join(", ")}` });
+  return { draft, notes };
 }
