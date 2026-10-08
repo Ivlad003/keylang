@@ -671,3 +671,29 @@ test("rust: serde declared in Cargo.toml is not K001 when its importer is exclud
   assert.doesNotMatch(run.stdout, /K001/);
   assert.doesNotMatch(run.stdout, /external\.serde/);
 });
+
+test("no-cycles and entry under a planned submodule of a file module do not stand for the parent module", (t) => {
+  const cyclic = repo(t, {
+    "keylang.json": config({ app: "src/app/**" }),
+    "src/app/x.ts": 'import { z } from "./z";\nexport function x(): void {\n  z();\n}\n',
+    "src/app/z.ts": 'import { x } from "./x";\nexport function z(): void {\n  x();\n}\n',
+    "keylang/flows/feat.md": "# flow feat\n\n- planned module app.x.fresh\n",
+    "keylang/rules.md": "# rules\n\n- module app.x.fresh\n  - no-cycles\n",
+  });
+  const cycles = keylang(cyclic, ["check"]);
+  assert.equal(cycles.status, 0, cycles.stdout);
+  assert.doesNotMatch(cycles.stdout, /K105/);
+  assert.match(cycles.stdout, /unverified .*`app\.x\.fresh` is planned: no code yet/);
+
+  const entry = repo(t, {
+    "keylang.json": config({ app: "src/app/**" }),
+    "src/app/x.ts": 'import { z } from "./z";\nexport function x(): void {\n  z();\n}\n',
+    "src/app/z.ts": "export function z(): void {}\n",
+    "src/app/main.ts": "export function main(): void {}\n",
+    "keylang/flows/feat.md": "# flow feat\n\n- planned module app.x.fresh\n",
+    "keylang/rules.md": "# rules\n\n- entry\n  - app.main\n  - app.x.fresh\n",
+  });
+  const reached = keylang(entry, ["check"]).stdout;
+  assert.match(reached, /K103 absence: module `app\.x` is not reachable from any `entry`/, reached);
+  assert.match(reached, /K103 absence: module `app\.z` is not reachable from any `entry`/, reached);
+});

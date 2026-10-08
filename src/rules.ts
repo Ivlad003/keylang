@@ -405,7 +405,8 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
     const reachable = new Set<string>();
     // An entry naming a layer or a directory seeds every module under it; it is not itself a module.
     const stack = rules.entries.flatMap((id) => {
-      const module = scopeOf(id);
+      // A planned ID seeds only the units under it, not the module of its parent.
+      const module = planned.includes(id) && !isModule(id) ? null : scopeOf(id);
       if (module) return [unitOf(module)];
       const under = [...units].filter((candidate) => within(candidate, id));
       return under.length > 0 ? under : [id];
@@ -512,6 +513,11 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
     for (const module of selfLoops) adj.set(module, new Set([...(adj.get(module) ?? []), module]));
     const components = stronglyConnected(adj);
     for (const rule of rules.noCycles) {
+      // A planned module under a file module is not that module: no code, so nothing to check yet.
+      if (rule.under !== null && planned.includes(rule.under) && !isModule(rule.under)) {
+        pushUnverified(rule.file, rule.span.start.line, rule.span.start.col, "no-cycles", rule.under, `\`${rule.under}\` is planned: no code yet`, `no-cycles ${rule.under}`);
+        continue;
+      }
       // A class is in a cycle when its file is.
       const scopeModule = rule.under === null ? null : scopeOf(rule.under);
       const under = rule.under === null ? null : scopeModule === null ? rule.under : unitOf(scopeModule);
