@@ -81,7 +81,7 @@ test("deferred flow properties and a query rule stay K004, and help has no migra
     "keylang/flows/pay.md": "# flow pay\n\n- never app.pay.charge\n- at-most 1 app.pay.charge\n- never app.pay.save before app.pay.charge\n",
     "keylang/rules.md": "# rules\n\n- query depends(X, Y)\n",
   });
-  const flowWords = "kind, trigger, step, reads, emits, calls, invariant, when, test, planned";
+  const flowWords = "kind, trigger, continues, step, parallel, reads, emits, calls, invariant, when, after, every, test, planned";
   const flow = keylang(dir, ["check", "keylang/flows/pay.md"]);
   assert.equal(flow.status, 1, flow.stdout);
   assert.match(flow.stdout, new RegExp(`pay\\.md:3:3: K004 unknown keyword \`never\` here; expected one of: ${flowWords}`));

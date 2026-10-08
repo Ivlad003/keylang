@@ -4,13 +4,14 @@
 // fact cache, a manual map file, and module ID collisions.
 
 import assert from "node:assert/strict";
-import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { analyze } from "../src/analyze.ts";
 import { runOperation } from "../src/operations.ts";
-import { keylang, mainRepo, repoCopy, root, tempDir, writeTree } from "./cli-helpers.ts";
+import { bin, keylang, mainRepo, repoCopy, root, tempDir, writeTree } from "./cli-helpers.ts";
 
 // M1: map of a small TS repository — one file per layer, deps, calls,
 // class methods, `internal`, signatures — plus the index.
@@ -614,4 +615,104 @@ test("map and wire: keylang.json changed during the analysis refuses the commit 
   assert.equal(wire.exitCode, 1);
   assert.ok(wire.messages.some((m) => m.text === "keylang.json: changed on disk while the wiring was computed"), JSON.stringify(wire.messages));
   assert.equal(existsSync(join(shop, "keylang.gen.ts")), false, "nothing written");
+});
+
+// A layer renamed by case only (`Domain` → `domain`) on a case-insensitive file system: `domain.md` and `Domain.md` are one file, so removing the old name after writing the new one deleted the map.
+test("map after a case-only layer rename on a case-insensitive file system keeps the layer file (casefold tmpfs in a user namespace)", { skip: process.platform !== "linux" }, (t) => {
+  const probe = spawnSync("unshare", ["-rm", "true"], { encoding: "utf8" });
+  if (probe.status !== 0) return t.skip("unshare -rm is not available here");
+  const mount = tempDir(t, "keylang-casefold-map-");
+  const config = (layer: string): string => `${JSON.stringify({ languages: ["typescript"], layers: { [layer]: ["src/domain/**"] } })}\n`;
+  const script = [
+    'mount -t tmpfs -o casefold tmpfs "$1" 2>/dev/null || { echo SKIP:mount; exit 0; }',
+    'mkdir "$1/repo" && chattr +F "$1/repo" 2>/dev/null || { echo SKIP:chattr; exit 0; }',
+    'cd "$1/repo" && mkdir -p src/domain || exit 1',
+    'printf "export function a(): number {\\n  return 1;\\n}\\n" > src/domain/a.ts',
+    'printf %s "$4" > keylang.json',
+    '"$2" "$3" map >/dev/null 2>&1; echo "MAP1:$?"',
+    'echo "LS1:$(ls keylang/map)"',
+    'printf %s "$5" > keylang.json',
+    '"$2" "$3" map; echo "MAP2:$?"',
+    'echo "LS2:$(ls keylang/map)"',
+    '"$2" "$3" map --check; echo "CHECK:$?"',
+  ].join("\n");
+  const run = spawnSync("unshare", ["-rm", "sh", "-c", script, "sh", mount, process.execPath, bin, config("Domain"), config("domain")], { encoding: "utf8" });
+  assert.equal(run.status, 0, run.stderr);
+  if (/^SKIP:/m.test(run.stdout)) return t.skip(`casefold tmpfs is not available here (${run.stdout.match(/^SKIP:(\w+)/m)?.[1]})`);
+  const out = run.stdout + run.stderr;
+  assert.match(run.stdout, /^LS1:Domain\.md$/m, out);
+  assert.match(run.stdout, /^MAP2:0$/m, out);
+  assert.match(run.stdout, /^LS2:domain\.md$/m, out);
+  assert.match(run.stdout, /^CHECK:0$/m, out);
+});
+
+// A directory or a dangling symlink named `*.md` in the map directory is no generated file: map and map --check pass it by instead of failing with EISDIR/ENOENT.
+test("a directory or a dangling symlink named *.md in keylang/map is neither read nor removed", (t) => {
+  const dir = tempDir(t, "keylang-map-odd-");
+  writeTree(dir, {
+    "keylang.json": `${JSON.stringify({ languages: ["typescript"], layers: { app: ["src/app/**"] } })}\n`,
+    "src/app/a.ts": "export function a(): number {\n  return 1;\n}\n",
+  });
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  mkdirSync(join(dir, "keylang/map/notes.md"));
+  for (const [args, code] of [[["map", "--check"], 0], [["map"], 0]] as const) {
+    const run = keylang(dir, [...args]);
+    assert.equal(run.status, code, `${args.join(" ")}: ${run.stdout}${run.stderr}`);
+  }
+  assert.ok(statSync(join(dir, "keylang/map/notes.md")).isDirectory());
+  rmSync(join(dir, "keylang/map/notes.md"), { recursive: true });
+  symlinkSync("../../docs/old-notes.md", join(dir, "keylang/map/notes.md"));
+  for (const args of [["map", "--check"], ["map"]]) {
+    const run = keylang(dir, args);
+    assert.equal(run.status, 0, `${args.join(" ")}: ${run.stdout}${run.stderr}`);
+  }
+  assert.ok(lstatSync(join(dir, "keylang/map/notes.md")).isSymbolicLink());
+});
+
+// A Windows checkout with core.autocrlf=true turns the map into CRLF: map --check reads it as current, as baseline --check and wire --check do; map itself writes LF.
+test("map --check accepts a map that differs only by CRLF; map rewrites it as LF", (t) => {
+  const dir = tempDir(t, "keylang-map-crlf-");
+  writeTree(dir, {
+    "keylang.json": `${JSON.stringify({ languages: ["typescript"], layers: { app: ["src/app/**"] } })}\n`,
+    "src/app/a.ts": "export function a(): number {\n  return 1;\n}\n",
+  });
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const file = join(dir, "keylang/map/app.md");
+  const lf = readFileSync(file, "utf8");
+  writeFileSync(file, lf.replace(/\n/g, "\r\n"));
+  const check = keylang(dir, ["map", "--check"]);
+  assert.equal(check.status, 0, check.stdout + check.stderr);
+  // A real change under the CRLF is still stale.
+  writeFileSync(file, lf.replace(/\n/g, "\r\n").replace("app", "ap"));
+  assert.equal(keylang(dir, ["map", "--check"]).status, 1);
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  assert.equal(readFileSync(file, "utf8"), lf);
+});
+
+// A failure while planning the map (an unlistable map directory) is printed, not a silent exit 2.
+test("map names the error when the map directory cannot be listed", { skip: process.platform === "win32" || process.getuid?.() === 0 }, (t) => {
+  const dir = tempDir(t, "keylang-map-unlistable-");
+  writeTree(dir, {
+    "keylang.json": `${JSON.stringify({ languages: ["typescript"], layers: { app: ["src/app/**"] } })}\n`,
+    "src/app/a.ts": "export function a(): number {\n  return 1;\n}\n",
+  });
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  chmodSync(join(dir, "keylang/map"), 0o300);
+  const run = keylang(dir, ["map"]);
+  chmodSync(join(dir, "keylang/map"), 0o755);
+  assert.equal(run.status, 2, run.stdout + run.stderr);
+  assert.match(run.stderr, /^keylang: .*EACCES/m, run.stderr);
+});
+
+// The same rename on a case-sensitive file system: the old file goes, the new one stays.
+test("map after a case-only layer rename removes the old file and keeps the new one", (t) => {
+  const dir = tempDir(t, "keylang-case-rename-");
+  const config = (layer: string): string => `${JSON.stringify({ languages: ["typescript"], layers: { [layer]: ["src/domain/**"] } })}\n`;
+  writeTree(dir, { "keylang.json": config("Domain"), "src/domain/a.ts": "export function a(): number {\n  return 1;\n}\n" });
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  writeFileSync(join(dir, "keylang.json"), config("domain"));
+  const map = keylang(dir, ["map"]);
+  assert.equal(map.status, 0, map.stderr);
+  assert.deepEqual(readdirSync(join(dir, "keylang/map")), ["domain.md"]);
+  assert.equal(keylang(dir, ["map", "--check"]).status, 0);
 });

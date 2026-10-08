@@ -10,7 +10,9 @@ import { isAbsolute, join } from "node:path";
 import { analyze, type Analysis } from "../analyze.ts";
 import { errorText } from "../diag.ts";
 import { adoptedFlow, discoverFlows, discoverySummary, DISCOVERED_DIR, specifiedTriggers, type Discovery, type DiscoverOptions } from "../discover.ts";
+import { PROCESSES_FILE } from "../discover-names.ts";
 import { sourceInputs } from "../map.ts";
+import { nameProcesses } from "./discover-names.ts";
 import { isGeneratedText, landing, writeAtomic, writeProblem } from "../safe-write.ts";
 import { flowCandidate } from "./draft.ts";
 import { commitProposal, empty, generatedIn, proposalRefusal, rootRelative } from "./shared.ts";
@@ -39,11 +41,14 @@ export async function runFlowsDiscover(request: FlowsDiscoverRequest, context: O
   const { root } = request;
   if (!isAbsolute(root)) return empty("flows-discover", "failed", 2, "flows discover: root must be an absolute path");
   if (context.signal?.aborted) return empty("flows-discover", "cancelled", null);
+  if (request.names !== undefined && request.output !== "write") return empty("flows-discover", "failed", 2, "flows discover: --names writes the view; it takes no --print or --check (--dry-run writes nothing)");
+  if (request.names !== undefined && request.only !== undefined) return empty("flows-discover", "failed", 2, "flows discover: --names groups the flows of whole layers; it takes no --kind");
   context.onProgress?.({ text: "reading a fresh snapshot of the saved code" });
+  // With --names the view is whole: `layer` and `limit` narrow the requests, not the flows.
   const options: DiscoverOptions = {
     ...(request.only !== undefined ? { kind: request.only } : {}),
-    ...(request.layer !== undefined ? { layer: request.layer } : {}),
-    ...(request.limit !== undefined ? { limit: request.limit } : {}),
+    ...(request.layer !== undefined && request.names === undefined ? { layer: request.layer } : {}),
+    ...(request.limit !== undefined && request.names === undefined ? { limit: request.limit } : {}),
     ...(request.depth !== undefined ? { depth: request.depth } : {}),
   };
   const found = await discoveryOf(root, options, context);
@@ -52,6 +57,10 @@ export async function runFlowsDiscover(request: FlowsDiscoverRequest, context: O
   const { analyzed, discovery, specDir } = found;
   const dir = `${specDir === "" ? "" : `${specDir}/`}${DISCOVERED_DIR}`;
   const files = [...discovery.files].map(([name, text]) => ({ path: `${dir}/${name}`, text }));
+  const named = request.names === undefined ? null : await nameProcesses(analyzed, discovery, specDir, request.names, request.layer, context);
+  if (named !== null && "fail" in named) return empty("flows-discover", "failed", 2, `flows discover --names: ${named.fail}`);
+  if (named !== null && "cancelled" in named) return empty("flows-discover", "cancelled", null);
+  if (named?.file) files.push(named.file);
   // A filtered run is a partial view: it removes nothing.
   const filtered = Object.keys(options).some((key) => key !== "depth");
   const extra = filtered ? [] : extraGenerated(join(root, dir), discovery.files).map((name) => `${dir}/${name}`);
@@ -59,10 +68,11 @@ export async function runFlowsDiscover(request: FlowsDiscoverRequest, context: O
   const conflicts = changed.filter((file) => existsSync(join(root, file.path)) && !isGeneratedText(readFileSync(join(root, file.path), "utf8"))).map((file) => file.path);
   const stale = [...changed.map((file) => file.path), ...extra];
   const summary = discoverySummary(discovery);
-  const payload: FlowsDiscoverPayload = { snapshotId: analyzed.snapshot!.snapshotId, output: request.output, dir, flows: discovery.flows, specified: discovery.specified, notFns: discovery.notFns, files, stale, conflicts, summary };
+  const payload: FlowsDiscoverPayload = { snapshotId: analyzed.snapshot!.snapshotId, output: request.output, dir, flows: discovery.flows, specified: discovery.specified, notFns: discovery.notFns, files, stale, conflicts, summary, ...(named !== null ? { names: named.payload } : {}) };
   const notes: OperationMessage[] = [
     ...discovery.specified.map((s) => ({ level: "info" as const, text: `already specified: ${s.trigger} (${s.file}, flow ${s.flow})` })),
     ...discovery.notFns.map((entry) => ({ level: "info" as const, text: `no fn to draft from: ${entry.kind} ${entry.label} (${entry.id})` })),
+    ...(named?.messages ?? []),
   ];
   const done = (exitCode: 0 | 1, messages: OperationMessage[], written: string[] = [], removed: string[] = []): OperationEnvelope<"flows-discover"> => ({
     ...empty("flows-discover", "completed", exitCode),
@@ -71,7 +81,7 @@ export async function runFlowsDiscover(request: FlowsDiscoverRequest, context: O
     written,
     removed,
   });
-  if (request.output === "print") return done(0, []);
+  if (request.output === "print" || request.names?.dryRun === true) return done(0, []);
   if (request.output === "check") {
     if (stale.length === 0) return done(0, [{ level: "info", text: `${dir}/ is current` }]);
     return done(1, [...stale.map((path) => ({ level: "error" as const, text: `${path}: stale; run \`keylang flows discover\`` }))]);
@@ -109,7 +119,8 @@ export async function runFlowsDiscover(request: FlowsDiscoverRequest, context: O
     return { ...empty("flows-discover", "failed", 2, errorText(error)), payload, written, removed };
   }
   const lines: OperationMessage[] = [...written.map((path) => ({ level: "info" as const, text: `wrote ${path}` })), ...removed.map((path) => ({ level: "info" as const, text: `removed ${path}` }))];
-  return done(0, lines, written, removed);
+  // A layer group whose request failed keeps its saved processes; the run says so with 1.
+  return done(named?.failed === true ? 1 : 0, lines, written, removed);
 }
 
 /**
@@ -160,11 +171,11 @@ export async function runFlowsAdopt(request: FlowsAdoptRequest, context: Operati
   };
 }
 
-/** Generated `.md` files in `dir` the view no longer has. Sorted. */
+/** Generated `.md` files in `dir` the view no longer has: never the README of the processes, which only `--names` writes. Sorted. */
 function extraGenerated(dir: string, files: ReadonlyMap<string, string>): string[] {
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
-    .filter((name) => name.endsWith(".md") && !files.has(name) && isGeneratedText(readOrNull(join(dir, name)) ?? ""))
+    .filter((name) => name.endsWith(".md") && name !== PROCESSES_FILE && !files.has(name) && isGeneratedText(readOrNull(join(dir, name)) ?? ""))
     .sort();
 }
 

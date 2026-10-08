@@ -6,13 +6,15 @@
   - module [brief](../../src/brief.ts#L1)
     - fn [briefOf](../../src/brief.ts#L16) (text: string) → string | null
       - calls base.brief.capText, base.brief.firstSentences
-    - fn [firstSentences](../../src/brief.ts#L27) (text: string, count: number) → string <!-- internal -->
-    - fn [readmeBrief](../../src/brief.ts#L45) (markdown: string) → string | null
+    - fn [firstSentence](../../src/brief.ts#L26) (text: string) → string | null
+      - calls base.brief.briefOf, base.brief.firstSentences
+    - fn [firstSentences](../../src/brief.ts#L33) (text: string, count: number) → string <!-- internal -->
+    - fn [readmeBrief](../../src/brief.ts#L51) (markdown: string) → string | null
       - calls base.brief.proseParagraphs, base.brief.plainInline, base.brief.words, base.brief.briefOf
-    - fn [proseParagraphs](../../src/brief.ts#L54) (markdown: string) → string[] <!-- internal -->
-    - fn [plainInline](../../src/brief.ts#L106) (text: string) → string <!-- internal -->
-    - fn [words](../../src/brief.ts#L118) (text: string) → number <!-- internal -->
-    - fn [capText](../../src/brief.ts#L123) (text: string, max: number) → string
+    - fn [proseParagraphs](../../src/brief.ts#L60) (markdown: string) → string[] <!-- internal -->
+    - fn [plainInline](../../src/brief.ts#L112) (text: string) → string <!-- internal -->
+    - fn [words](../../src/brief.ts#L124) (text: string) → number <!-- internal -->
+    - fn [capText](../../src/brief.ts#L129) (text: string, max: number) → string
   - module [config](../../src/config.ts#L1)
     - node external.node
     - glob base.glob
@@ -22,86 +24,88 @@
     - type [StaticSource](../../src/config.ts#L27) = "flag" | "config"
     - fn [resolveStatic](../../src/config.ts#L30) (flag: StaticMode | undefined, configured: StaticMode | undefined) → { mode: StaticMode; setBy?: StaticSource }
     - type [Config](../../src/config.ts#L36)
-    - fn [isAgent](../../src/config.ts#L103) (value: string) → boolean
-    - fn [isCliAgent](../../src/config.ts#L108) (agent: string | null) → boolean
-    - fn [skipDir](../../src/config.ts#L158) (abs: string, name: string) → boolean <!-- internal -->
-    - type [RawConfig](../../src/config.ts#L162)
-    - fn [loadConfig](../../src/config.ts#L180) (root: string) → Config
+    - fn [isAgent](../../src/config.ts#L105) (value: string) → boolean
+    - fn [isCliAgent](../../src/config.ts#L110) (agent: string | null) → boolean
+    - fn [isReservedLayerName](../../src/config.ts#L137) (name: string) → boolean
+    - fn [skipDir](../../src/config.ts#L169) (abs: string, name: string) → boolean <!-- internal -->
+    - type [RawConfig](../../src/config.ts#L173)
+    - fn [loadConfig](../../src/config.ts#L192) (root: string) → Config
       - calls base.config.parseConfig, base.config.detectLanguages, base.config.guessLayers, base.config.defaultModule
-    - fn [defaultModule](../../src/config.ts#L219) (languages: readonly Language[]) → Config["module"] <!-- internal -->
-    - fn [withoutBom](../../src/config.ts#L229) (text: string) → string <!-- internal -->
-    - fn [parseConfig](../../src/config.ts#L234) (file: string, text: string) → RawConfig
-      - calls base.config.withoutBom, base.glob.globToRegExp, base.config.isObject, base.config.acceptFormat, base.languages.isLanguage, base.config.layerName, base.config.reservedReason, base.config.isAgent
-    - fn [isObject](../../src/config.ts#L364) (value: unknown) → value is Record<string, unknown> <!-- internal -->
-    - fn [acceptFormat](../../src/config.ts#L369) (file: string, got: unknown) → RuleFormat
-    - fn [assertFormatOnly](../../src/config.ts#L383) (file: string, text: string) → void
+    - fn [defaultModule](../../src/config.ts#L232) (languages: readonly Language[]) → Config["module"] <!-- internal -->
+    - fn [withoutBom](../../src/config.ts#L243) (text: string) → string
+    - fn [parseConfig](../../src/config.ts#L248) (file: string, text: string) → RawConfig
+      - calls base.config.withoutBom, base.glob.globToRegExp, base.config.isObject, base.config.acceptFormat, base.languages.isLanguage, base.config.layerName, base.config.isReservedLayerName, base.config.reservedReason, base.config.isAgent
+    - fn [isObject](../../src/config.ts#L388) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [acceptFormat](../../src/config.ts#L393) (file: string, got: unknown) → RuleFormat
+    - fn [assertFormatOnly](../../src/config.ts#L407) (file: string, text: string) → void
       - calls base.config.withoutBom, base.config.isObject, base.config.acceptFormat
-    - fn [configToJson](../../src/config.ts#L395) (c: Config) → string
-    - fn [withLayers](../../src/config.ts#L416) (file: string, text: string, layers: Readonly<Record<string, readonly string[]>>) → { text: string } | { error: string }
+    - fn [configToJson](../../src/config.ts#L419) (c: Config) → string
+    - fn [withLayers](../../src/config.ts#L440) (file: string, text: string, layers: Readonly<Record<string, readonly string[]>>) → { text: string } | { error: string }
       - calls base.config.withoutBom, base.config.isObject
-    - fn [sourceFiles](../../src/config.ts#L430) (c: Config) → string[]
+    - fn [sourceFiles](../../src/config.ts#L454) (c: Config) → string[]
       - calls base.config.classifySources
-    - fn [sourceTree](../../src/config.ts#L438) (c: Config) → { files: string[]; unreadable: { dir: string; reason: string }[] }
+    - fn [sourceTree](../../src/config.ts#L462) (c: Config) → { files: string[]; unreadable: { dir: string; reason: string }[] }
       - calls base.config.classifySources
-    - type [SourceClasses](../../src/config.ts#L444)
-    - fn [classifySources](../../src/config.ts#L458) (c: Config) → SourceClasses
+    - type [SourceClasses](../../src/config.ts#L468)
+    - fn [classifySources](../../src/config.ts#L482) (c: Config) → SourceClasses
       - calls base.config.walkSources, base.config.sourceClass
-    - fn [sourceClass](../../src/config.ts#L472) (rel: string, c: Pick<Config, "exclude" | "outside" | "assume">) → "analysed" | "excluded" | "outside" | "assumed" | null
+    - fn [sourceClass](../../src/config.ts#L496) (rel: string, c: Pick<Config, "exclude" | "outside" | "assume">) → "analysed" | "excluded" | "outside" | "assumed" | null
       - calls base.config.matchesAny
-    - fn [isAnalysed](../../src/config.ts#L480) (rel: string, c: Pick<Config, "exclude" | "outside" | "assume">) → boolean
+    - fn [isAnalysed](../../src/config.ts#L504) (rel: string, c: Pick<Config, "exclude" | "outside" | "assume">) → boolean
       - calls base.config.sourceClass
-    - fn [isAssumed](../../src/config.ts#L485) (rel: string, c: Pick<Config, "assume">) → boolean
+    - fn [isAssumed](../../src/config.ts#L509) (rel: string, c: Pick<Config, "assume">) → boolean
       - calls base.config.matchesAny
-    - fn [isOutside](../../src/config.ts#L489) (rel: string, outside: readonly string[]) → boolean
+    - fn [isOutside](../../src/config.ts#L513) (rel: string, outside: readonly string[]) → boolean
       - calls base.config.matchesAny
-    - fn [matchesAny](../../src/config.ts#L493) (rel: string, globs: readonly string[]) → boolean <!-- internal -->
+    - fn [matchesAny](../../src/config.ts#L517) (rel: string, globs: readonly string[]) → boolean <!-- internal -->
       - calls base.glob.firstMatchingGlob
-    - fn [layerGlobWarnings](../../src/config.ts#L505) (c: Pick<Config, "layers">, files: readonly string[]) → string[]
+    - fn [layerGlobWarnings](../../src/config.ts#L529) (c: Pick<Config, "layers">, files: readonly string[]) → string[]
       - calls base.glob.matchesGlob
-    - fn [walkSources](../../src/config.ts#L550) (c: Config, unreadable: { dir: string; reason: string }[]) → string[] <!-- internal -->
+    - fn [walkSources](../../src/config.ts#L574) (c: Config, unreadable: { dir: string; reason: string }[]) → string[] <!-- internal -->
       - calls base.config.skipDir, base.languages.languageOf
-    - fn [evidenceFiles](../../src/config.ts#L584) (c: Config, field: "tests" | "trace") → string[] | null
+    - fn [evidenceFiles](../../src/config.ts#L608) (c: Config, field: "tests" | "trace") → string[] | null
       - calls base.glob.globPrefix, base.config.toPosix, base.glob.matchesGlob
-    - fn [isExcluded](../../src/config.ts#L606) (rel: string, extra: readonly string[]) → boolean
+    - fn [isExcluded](../../src/config.ts#L630) (rel: string, extra: readonly string[]) → boolean
       - calls base.config.matchesAny
-    - fn [toPosix](../../src/config.ts#L610) (p: string) → string
-    - fn [specPath](../../src/config.ts#L621) (dir: string, rest: string) → string
-    - fn [detectLanguages](../../src/config.ts#L625) (root: string) → Language[] <!-- internal -->
+    - fn [toPosix](../../src/config.ts#L634) (p: string) → string
+    - fn [specPath](../../src/config.ts#L645) (dir: string, rest: string) → string
+    - fn [detectLanguages](../../src/config.ts#L649) (root: string) → Language[] <!-- internal -->
       - calls base.config.skipDir, base.languages.languageOf
-    - fn [guessLayers](../../src/config.ts#L652) (root: string, exclude: readonly string[]) → Map<string, string[]>
+    - fn [guessLayers](../../src/config.ts#L676) (root: string, exclude: readonly string[]) → Map<string, string[]>
       - calls base.config.guessLayout
-    - fn [guessLayout](../../src/config.ts#L661) (root: string, exclude: readonly string[]) → { layers: Map<string, string[]>; notes: string[] }
-      - calls base.config.sourceRoot, base.config.freeLayerName, base.config.reservedReason, base.config.hasRootFiles, base.config.hasSource, base.config.layerDirs, base.config.layerName
-    - fn [sourceRoot](../../src/config.ts#L692) (root: string, exclude: readonly string[]) → string <!-- internal -->
+    - fn [guessLayout](../../src/config.ts#L685) (root: string, exclude: readonly string[]) → { layers: Map<string, string[]>; notes: string[] }
+      - calls base.config.sourceRoot, base.config.freeLayerName, base.config.isReservedLayerName, base.config.reservedReason, base.config.hasRootFiles, base.config.hasSource, base.config.layerDirs, base.config.layerName
+    - fn [sourceRoot](../../src/config.ts#L716) (root: string, exclude: readonly string[]) → string <!-- internal -->
       - calls base.config.composerSourceRoot, base.config.layerDirs
-    - fn [composerSourceRoot](../../src/config.ts#L704) (root: string) → string | null <!-- internal -->
-      - calls base.config.toPosix
-    - fn [layerDirs](../../src/config.ts#L727) (root: string, dir: string, exclude: readonly string[]) → { name: string; rel: string }[] <!-- internal -->
+    - fn [composerSourceRoot](../../src/config.ts#L728) (root: string) → string | null <!-- internal -->
+      - calls base.config.withoutBom, base.config.toPosix
+    - fn [layerDirs](../../src/config.ts#L751) (root: string, dir: string, exclude: readonly string[]) → { name: string; rel: string }[] <!-- internal -->
       - calls base.config.skipDir, base.glob.matchesGlob, base.config.hasSource
-    - fn [freeLayerName](../../src/config.ts#L742) (wanted: string, taken: ReadonlyMap<string, unknown>) → string <!-- internal -->
-    - fn [reservedReason](../../src/config.ts#L751) (name: string) → string <!-- internal -->
-    - fn [hasRootFiles](../../src/config.ts#L758) (root: string, dir: string, exclude: readonly string[]) → boolean <!-- internal -->
+    - fn [freeLayerName](../../src/config.ts#L766) (wanted: string, taken: ReadonlyMap<string, unknown>) → string <!-- internal -->
+      - calls base.config.isReservedLayerName
+    - fn [reservedReason](../../src/config.ts#L775) (name: string) → string <!-- internal -->
+    - fn [hasRootFiles](../../src/config.ts#L783) (root: string, dir: string, exclude: readonly string[]) → boolean <!-- internal -->
       - calls base.languages.languageOf, base.config.isExcluded
-    - fn [hasSource](../../src/config.ts#L762) (absDir: string, rel: string, exclude: readonly string[]) → boolean <!-- internal -->
+    - fn [hasSource](../../src/config.ts#L787) (absDir: string, rel: string, exclude: readonly string[]) → boolean <!-- internal -->
       - calls base.config.skipDir, base.languages.languageOf, base.config.isExcluded
-    - fn [isIdSegment](../../src/config.ts#L775) (s: string) → boolean <!-- internal -->
-    - fn [encodeBracketSegment](../../src/config.ts#L803) (name: string) → string <!-- internal -->
-    - fn [decodeLayerName](../../src/config.ts#L824) (segment: string) → string
-    - fn [layerName](../../src/config.ts#L848) (written: string) → string
+    - fn [isIdSegment](../../src/config.ts#L800) (s: string) → boolean <!-- internal -->
+    - fn [encodeBracketSegment](../../src/config.ts#L828) (name: string) → string <!-- internal -->
+    - fn [decodeLayerName](../../src/config.ts#L849) (segment: string) → string
+    - fn [layerName](../../src/config.ts#L873) (written: string) → string
       - calls base.config.isIdSegment, base.config.encodeBracketSegment
   - module [diag](../../src/diag.ts#L1)
     - span base.span
     - type [Code](../../src/diag.ts#L5)
-    - type [Severity](../../src/diag.ts#L48) = "error" | "warning"
-    - type [K005Reason](../../src/diag.ts#L51) = "arguments" | "id" | "link" | "quote" | "layer" | "scope"
-    - fn [severityOf](../../src/diag.ts#L53) (code: Code) → Severity
-    - type [Diagnostic](../../src/diag.ts#L57)
-    - fn [diagnostic](../../src/diag.ts#L87) (code: Exclude<Code, "K005">, file: string, span: Span, message: string, target?: string) → Diagnostic
+    - type [Severity](../../src/diag.ts#L54) = "error" | "warning"
+    - type [K005Reason](../../src/diag.ts#L57) = "arguments" | "id" | "link" | "quote" | "layer" | "scope"
+    - fn [severityOf](../../src/diag.ts#L59) (code: Code) → Severity
+    - type [Diagnostic](../../src/diag.ts#L63)
+    - fn [diagnostic](../../src/diag.ts#L93) (code: Exclude<Code, "K005">, file: string, span: Span, message: string, target?: string) → Diagnostic
       - calls base.diag.severityOf
-    - fn [isError](../../src/diag.ts#L98) (d: Diagnostic) → boolean
-    - fn [formatDiagnostic](../../src/diag.ts#L103) (d: Diagnostic) → string
-    - fn [compareDiagnostics](../../src/diag.ts#L108) (a: Diagnostic, b: Diagnostic) → number
-    - fn [errorText](../../src/diag.ts#L118) (error: unknown) → string
+    - fn [isError](../../src/diag.ts#L104) (d: Diagnostic) → boolean
+    - fn [formatDiagnostic](../../src/diag.ts#L109) (d: Diagnostic) → string
+    - fn [compareDiagnostics](../../src/diag.ts#L114) (a: Diagnostic, b: Diagnostic) → number
+    - fn [errorText](../../src/diag.ts#L124) (error: unknown) → string
   - module [external-ids](../../src/external-ids.ts#L1)
     - config base.config
     - fn [externalSegment](../../src/external-ids.ts#L10) (pkg: string) → string
@@ -153,11 +157,13 @@
       - calls base.safe-write.statOrNull, base.safe-write.allCrlf
     - fn [isGeneratedText](../../src/safe-write.ts#L125) (text: string) → boolean
     - fn [allCrlf](../../src/safe-write.ts#L131) (text: string) → boolean
-    - fn [landing](../../src/safe-write.ts#L141) (abs: string, hops = 0) → string | null
+    - fn [keepLineEndings](../../src/safe-write.ts#L144) (before: string, next: string) → string
+      - calls base.safe-write.allCrlf
+    - fn [landing](../../src/safe-write.ts#L183) (abs: string, hops = 0) → string | null
       - calls base.safe-write.lstatOrNull
-    - fn [inside](../../src/safe-write.ts#L155) (abs: string, dir: string) → boolean <!-- internal -->
-    - fn [lstatOrNull](../../src/safe-write.ts#L160) (abs: string) → Stats | null <!-- internal -->
-    - fn [statOrNull](../../src/safe-write.ts#L168) (abs: string) → Stats | null <!-- internal -->
+    - fn [inside](../../src/safe-write.ts#L197) (abs: string, dir: string) → boolean <!-- internal -->
+    - fn [lstatOrNull](../../src/safe-write.ts#L202) (abs: string) → Stats | null <!-- internal -->
+    - fn [statOrNull](../../src/safe-write.ts#L210) (abs: string) → Stats | null <!-- internal -->
   - module [span](../../src/span.ts#L1)
     - type [Pos](../../src/span.ts#L9)
     - type [Span](../../src/span.ts#L16)

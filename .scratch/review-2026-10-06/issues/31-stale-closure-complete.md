@@ -1,6 +1,6 @@
 # 31: Зміна константи модуля, поля класу чи об'єктної таблиці не робить прозу stale, а closure лишається `complete`
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -51,11 +51,17 @@ scratchpad/…/const1: TS `export const LIMIT=100` + `cap()` і Python `MAX = 10
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/snapshot.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/snapshot.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+**2026-10-08.** `fingerprint()` у `src/extract/treesitter.ts` тепер додає до хешу оголошення значень, які вузол читає за іменем у своєму файлі (транзитивно): константи й змінні модуля (TS/JS `const`/`let`/`var`, Python `MAX = 100`, PHP `const`, Rust `const`/`static`), поля й властивості класу (TS/JS field, Python атрибут класу, PHP property і `const`), об'єктні таблиці. Імена беруться з листів дерева, тож збіг імен лише додає зайве до хешу (консервативно). Коли fn нічого такого не читає, її fingerprint не змінився — прийняті baseline-и решти тверджень лишаються fresh. Читання значення, яке імпорт синтаксично прив'язує до іншого файла репозиторію (відносний TS/JS-специфікатор, Python `from . import`, Rust `use crate::`/`super::`/`self::`), позначає fingerprint суфіксом `+`; `src/snapshot.ts` (`closures`) тоді ставить `closure.complete: false`, і твердження стає `incomplete` з причиною «reaches calls or values keylang does not resolve» (`src/stale.ts`). Виклик імпортованого імені неповноти не дає — його веде граф викликів.
+
+Регресії: `tests/stale.test.ts` («a changed module constant, class field or object table…», TS + Python через `check --stale --strict`; до виправлення `0 stale`, exit 0) і «…reads a value imported from another file… is incomplete»; `tests/fingerprint.test.ts` (PHP `const`/property/`self::K`, Rust `const`/`static`, Python відносний імпорт значення → incomplete, виклик імпорту → complete; непрочитана властивість fingerprint не змінює).
+
+Припущення й межі: (1) значення, яке не читає жодна fn, у хеш модуля не потрапляє — для «коду модуля поза fn/type» у `snapshotBaseline` потрібен окремий факт модуля в `FileFacts`/екстракторах (`src/extract/{facts,ts,python,php,rust}.ts`, `src/graph.ts`), які в цій зміні редагує інший агент; лишаю як follow-up, у `snapshotBaseline` (`src/explanations.ts`) задокументовано. (2) Поля, що задаються в конструкторі (`self.limit = …` в `__init__`, TS parameter properties), не є оголошеннями значень області й не охоплені. (3) Абсолютні імпорти Python і PHP `use` за синтаксисом від пакетів не відрізнити — читання значень через них неповноти не дає. `EXTRACTOR_VERSION` не піднято: ключ кешу фактів містить хеш коду `src/extract/*` (`extractorCode()`), а `snapshotId` від fingerprint-ів не залежить. На самому keylang частка incomplete closure зросла з 1820/2808 до 1845/2820, час `map` той самий (~13–14 с). Документація: `docs/snapshot.md` §Fingerprint, `docs/semantics.md` «Стейлнес прози»; `docs/review-2026-10-06.md` §2.2 №26 ✔.

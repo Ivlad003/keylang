@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
@@ -339,6 +339,24 @@ test("config: `./keylang/` is the spec directory; reserved layer names are rejec
   assert.equal(checked.status, 0, checked.stdout);
 });
 
+// `README.md` is the start page of the explained map: a layer of that name (in any case: one file on macOS and Windows) would lose its layer file to it.
+test("config: `README` in any case is a reserved layer name; init renames a guessed one", (t) => {
+  const dir = repo(t, { "src/app/a.ts": "export const a = 1;\n", "src/docs/r.ts": "export function r(): void {}\n" });
+  for (const name of ["README", "readme", "ReadMe"]) {
+    writeFileSync(join(dir, "keylang.json"), `${JSON.stringify({ languages: ["typescript"], layers: { app: ["src/app/**"], [name]: ["src/docs/**"] }, explain: { map: true } })}\n`);
+    const r = keylang(dir, ["map"]);
+    assert.equal(r.status, 2, `${name}: ${r.stdout}${r.stderr}`);
+    assert.match(r.stderr, new RegExp(`keylang\\.json: \`layers\\.${name}\`: \`${name}\` is reserved: \`README\\.md\` is the start page of the explained map`), r.stderr);
+    assert.equal(existsSync(join(dir, "keylang/map-explained")), false);
+  }
+  const guessed = repo(t, { "src/README/a.ts": "export const a = 1;\n", "src/app/b.ts": "export const b = 1;\n" });
+  const init = keylang(guessed, ["init", "--agents=none"]);
+  assert.equal(init.status, 0, init.stderr);
+  assert.match(init.stderr, /note: `src\/README\/` is layer `README_`: `README` is reserved/);
+  const layers = (JSON.parse(readFileSync(join(guessed, "keylang.json"), "utf8")) as { layers: Record<string, string[]> }).layers;
+  assert.deepEqual(Object.keys(layers).sort(), ["README_", "app"]);
+});
+
 test("every keyword at the top of a map is a reserved layer name", () => {
   // The generated map writes a layer as `- <name>`; a keyword there would be read as a rule.
   for (const keyword of keywordsAt("map", undefined)) assert.ok(RESERVED_LAYER_NAMES.has(keyword), keyword);
@@ -473,6 +491,27 @@ test("K106 warns when an allow beats an incomparable deny on depth sum", (t) => 
   const two = keylang(dir, ["check"]);
   assert.equal((two.stdout.match(/K106/g) ?? []).length, 1, two.stdout);
   assert.match(two.stdout, /rules\.md:3:1: K106/);
+});
+
+// A rule on the intersection clears K106 whether it names one target or several: `deny A B, C` covers the pair (A, B).
+test("K106 is cleared by a rule on the intersection that has more than one target", (t) => {
+  const dir = repo(t, {
+    "keylang.json": config({ app: ["src/app/**"], domain: ["src/domain/**"], infra: ["src/infra/**"] }),
+    "src/app/x/y.ts": 'import { s } from "../../domain/storefront.ts";\nexport const y = s;\n',
+    "src/domain/storefront.ts": "export const s = 1;\n",
+    "src/infra/db.ts": "export const d = 1;\n",
+    "keylang/rules.md": "# rules\n",
+  });
+  const rules = (third: string): string => `# rules\n\n- allow app.x.y domain\n- deny app domain.storefront\n- ${third}\n`;
+  writeFileSync(join(dir, "keylang/rules.md"), rules("deny app.x.y domain.storefront, infra.db"));
+  const denied = keylang(dir, ["check"]);
+  assert.equal(denied.status, 1, denied.stdout);
+  assert.match(denied.stdout, /K102/);
+  assert.doesNotMatch(denied.stdout, /K106/);
+  writeFileSync(join(dir, "keylang/rules.md"), rules("allow app.x.y infra.db, domain.storefront"));
+  const allowed = keylang(dir, ["check"]);
+  assert.equal(allowed.status, 0, allowed.stdout);
+  assert.doesNotMatch(allowed.stdout, /K102|K106/);
 });
 
 test("allow and deny over a function are K005, not a vacuous ok", (t) => {

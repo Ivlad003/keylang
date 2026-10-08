@@ -38,6 +38,11 @@ export const EXPLANATIONS: Record<Code, { cause: string; example: string; fix: s
     example: "`then save` when the map has `infra.db.save`.",
     fix: "Write the full id, bare (`then infra.db.save`) or as a link (`then [infra.db.save](map.md)`). Or rewrite the text as several words (`then save the order`).",
   },
+  K009: {
+    cause: "A `parallel` group has no nested `step`: there is nothing that runs in parallel (ADR 0023).",
+    example: "`- parallel` with no items under it, or only a `?` under it.",
+    fix: "Nest the steps that run in any order under `- parallel`, or remove the line.",
+  },
   K101: {
     cause: "A dependency points against the layer order.",
     example: "`domain` importing `app` when the rules say `domain < app`.",
@@ -87,6 +92,16 @@ export const EXPLANATIONS: Record<Code, { cause: string; example: string; fix: s
     cause: "A `test` line in a flow names a file that does not exist in the repository, so no test report can ever prove it. Checked with or without `check.tests` in keylang.json.",
     example: "`test tests/nope.test.ts \"creates order\"` while the repository has no `tests/nope.test.ts`.",
     fix: "Fix the path (relative to the directory of keylang.json), create the test, or remove the line.",
+  },
+  K205: {
+    cause: "`trigger <kind> <id>` names a fn the snapshot records as an entry point of another kind (`keylang entries`), so the flow starts from something else than it says.",
+    example: "`trigger route shop.cli.main` while `keylang entries` lists `shop.cli.main` as a `cli` entry.",
+    fix: "Write the kind `keylang entries` shows for the fn (route, cron, consumer or webhook), or a plain `trigger <id>` when it is none of these.",
+  },
+  K206: {
+    cause: "`continues <flow>` names a flow that no `# flow` section declares, so there is nothing this flow continues.",
+    example: "`- continues place-order` while the specs have only `# flow checkout`.",
+    fix: "Write the name of an existing flow, or add that flow.",
   },
   K301: {
     cause: "`wire` factories depend on each other in a cycle, so one of them would get a dependency that is not built yet (ADR 0003).",

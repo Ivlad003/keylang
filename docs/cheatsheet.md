@@ -27,16 +27,17 @@ A word is a keyword only where this table allows it; elsewhere the line falls ba
 |---|---|---|
 | top of a map section | `layer`, `layers`, `allow`, `deny`, `entry`, `module`, `no-cycles` | `<name>`: a layer |
 | top of a rules section | `layers`, `allow`, `deny`, `entry`, `module`, `no-cycles` | K004 |
-| top of a flow section | `kind`, `trigger`, `step`, `reads`, `emits`, `calls`, `invariant`, `when`, `test`, `planned`, `?` | K004 |
+| top of a flow section | `kind`, `trigger`, `continues`, `step`, `parallel`, `reads`, `emits`, `calls`, `invariant`, `when`, `after`, `every`, `test`, `planned`, `?` | K004 |
 | top of a wiring section | `wire` | K004 |
 | under `layer` | `module` | `<name>`: a module |
 | under `module` (map) | `module`, `fn`, `type`, `event` | `<alias> <id>`: a dependency |
 | under `fn` | `calls` | K004 |
 | under `layers`, `entry` | none | `<id>`: a reference |
 | under `module` (rules) | `exports`, `no-cycles` | K004 |
-| under `trigger`, `step` | `step`, `reads`, `emits`, `calls`, `when`, `test`, `invariant`, `?` | K004 |
-| under `when` (flow) | `then`, `step`, `test`, `?` | K004 |
-| under `invariant`, `then` | `test` | K004 |
+| under `trigger`, `step` | `step`, `parallel`, `reads`, `emits`, `calls`, `when`, `after`, `every`, `test`, `invariant`, `?` | K004 |
+| under `when` (flow) | `then`, `step`, `parallel`, `test`, `?` | K004 |
+| under `parallel` | `step` | K004 |
+| under `invariant`, `then`, `after`, `every` | `test` | K004 |
 | under `wire` | none | `<name> <id>`: the dependency `name`, built by the factory `<id>` |
 | under a dependency of `wire` | `when`, `compose` | K004 |
 | under anything else | none | K004: it cannot have nested items |
@@ -62,6 +63,11 @@ Keywords are contextual: under a map module, `- test foo.bar` is a dependency na
 | `no-cycles` | none | no import cycle: in the whole graph at the top; under `module`, through that module |
 | `kind business`, `kind technical` | one of the two words | a label |
 | `trigger <id>`, `step <id>` | one ID | the flow's entry function; a call from the parent step or the trigger |
+| `trigger route\|cron\|consumer\|webhook <id>` | a kind, the ID of the entry point's fn | the fn must be an entry point of that kind in `keylang entries` (K205 for another kind); the verdict shows its label |
+| `parallel` | none; nested `step` lines | the steps run in any order, each reached from the group's parent; the next step comes after the whole group; none is K009 |
+| `continues <flow>` | a flow name | this flow continues that one in a later request; a missing flow is K206; trace is `unverified (crosses requests)` |
+| `after <duration>` | `30s`, `15m`, `2h`, `1d` (ms, s, m, min, h, d, w) | a timer; only a nested `test` checks it |
+| `every <schedule>` | a duration, `@daily` and the other cron macros, or five cron fields (bare or quoted) | a schedule; a nested `test` checks it, and the schedule of a cron entry point when the snapshot has one |
 | `planned fn`, `module`, `type`, `event` `<id> [signature]` | a kind, an ID, optional free text | an intention: code that does not exist yet; top of a flow only |
 | `emits [event] <name>` | an event name | text; not resolved |
 | `invariant <text>` | free text | a claim keylang does not parse; a nested `test` proves it |
@@ -235,6 +241,7 @@ Wiring: `wire` builds `app.orders.place` with a `db` from `infra.db.open`, or fr
 | K005 | error | wrong arguments of a known keyword, or an invalid ID, link or quote |
 | K006 | warning | an unknown section heading; the section is read as a map |
 | K008 | warning | a one-word `then` equals the last segment of a declared ID and stays text |
+| K009 | error | a `parallel` with no `step` under it |
 | K101 | error | a dependency against the `layers` order: upward, or from a layer outside the order into an ordered one |
 | K102 | error | a dependency that a `deny` forbids |
 | K103 | warning | a module that no `entry` reaches |
@@ -245,6 +252,8 @@ Wiring: `wire` builds `app.orders.place` with a `db` from `infra.db.open`, or fr
 | K201 | error | a `planned` ID exists in the code with another kind or signature |
 | K202 | warning | a `planned` ID is implemented as declared: remove the `planned` line |
 | K203 | warning | a flow's `test` names a file the repository does not have |
+| K205 | error | `trigger <kind> <id>`: the snapshot records the fn as an entry point of another kind |
+| K206 | error | `continues <flow>` names a flow that does not exist |
 | K301 | error | a cycle between `wire` factories |
 | K302 | error | a `wire` target, dependency or `compose` the generated file cannot build |
 

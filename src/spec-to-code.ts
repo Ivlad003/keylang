@@ -20,7 +20,7 @@ import { codeProposalProblem, lineDiff } from "./proposals.ts";
 import { sameFinding } from "./assess.ts";
 import { blocksDependency, dependencyKindOf } from "./rules.ts";
 import { plannedDeclaration as plannedDecl, walkFlow, type Flow, type FlowItem, type SpecIR, type Trigger } from "./spec-ir.ts";
-import { allCrlf } from "./safe-write.ts";
+import { keepLineEndings } from "./safe-write.ts";
 import type { LlmCallOptions, LlmClient } from "./llm.ts";
 import { formatVerdict, type Verdict } from "./verdict.ts";
 
@@ -61,8 +61,8 @@ export async function specToCode(analysis: Analysis, id: string, into?: string, 
   const lf = before?.replace(/\r\n/g, "\n") ?? null;
   const code = model ? await modelBody(analysis, model, target, id, lf, options) : stubFor(target, id);
   const joined = placeStub(lf, target, code, target.file.endsWith(".php") ? phpFileHead(analysis, target.file) : "");
-  // A file with CRLF on every line keeps it.
-  const after = before !== null && allCrlf(before) ? joined.replace(/\n/g, "\r\n") : joined;
+  // The line endings of the file are kept, mixed ones too: a line not edited keeps its own.
+  const after = before !== null ? keepLineEndings(before, joined) : joined;
   // The candidate is checked as the code it would be, without touching the disk, against the code without it.
   const next = await analyze({ root: config.root, overlay: new Map([[abs, after]]), withoutEvidence: true });
   const { verdicts, diagnostics } = introduced(analysis, next);

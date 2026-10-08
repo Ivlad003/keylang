@@ -218,6 +218,19 @@ test("clone --explain map-and-ai --dry-run estimates and asks nothing; map-and-a
   assert.equal(fake.calls().length, asked + 2);
 });
 
+test("clone --explain: a committed keylang.json with a UTF-8 BOM gets the explained map turned on, its fields kept", async (t) => {
+  // Ticket review-2026-10-06/32.
+  const { dir, origin } = sandbox(t);
+  const config = { languages: ["typescript"], layers: { api: ["src/api/**"], domain: ["src/domain/**"] } };
+  writeFileSync(join(origin, "keylang.json"), `﻿${JSON.stringify(config, null, 2)}\n`);
+  git(origin, ["add", "-A"]);
+  git(origin, ["commit", "-qm", "config with a BOM"]);
+  const fake = fakeAgents(t, ["claude"], { reply: "Does the thing." });
+  const run = await keylang(dir, ["clone", "origin", "--explain", "map-and-ai"], fake, { KEYLANG_AGENT: "cli:claude" });
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  assert.deepEqual(JSON.parse(readFileSync(join(clonePath(dir), "keylang.json"), "utf8")), { ...config, explain: { map: true } });
+});
+
 test("clone: credentials in a URL reach git only; stdout, the marker and a mismatch message show the URL without them", async (t) => {
   const { dir, origin } = sandbox(t);
   const secret = "https://alice:s3cretTOKEN@git.example.invalid/org/repo.git";

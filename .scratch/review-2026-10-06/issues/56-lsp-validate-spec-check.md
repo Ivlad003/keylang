@@ -1,6 +1,6 @@
 # 56: LSP і validate_spec читають інший набір специфікацій, ніж check
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -59,11 +59,15 @@ repo2: `keylang check keylang/features/r.md` дає `K001 … 1 fail`. Для т
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/analyze.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/analyze.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+**2026-10-08.** Виправлено. У src/files.ts винесено правило обходу `check` (`skippedDirectory`: приховані теки, `node_modules`, `target`) і додано `walkReaches(dir, abs)`. `analyze` додає overlay-файл `.md` до специфікацій лише тоді, коли обхід спец-теки його досягає, тож відкрита в LSP `keylang/.drafts/plan.md` більше не оголошує `planned fn`, який `check` вважає висячим (K001 лишається). Нова `specPathProblem(config, abs)` (src/analyze.ts) каже, чому `check` не читає шлях; MCP `validate_spec` для такого шляху (не `.md`, поза `<dir>`, у пропущеній теці, у `map-explained/`/`explain/`/`flows-discovered/`) повертає помилку інструмента `` `keylang check` does not read this file as a spec: … `` замість порожніх `diagnostics`/`verdicts`. Контракт задокументовано в docs/mcp-lsp.md (validate_spec і синхронізація LSP).
+
+Тести: tests/lsp.test.ts — справжній `keylang lsp`, відкриті `.drafts/`, `node_modules/`, `target/` з `planned fn` не прибирають K001 у `features/r.md`, діагностика збігається з `check --format json` (до виправлення K001 зникав); tests/review-loop.test.ts — справжній `keylang mcp`, сім шляхів поза набором `check` дають помилку інструмента (до виправлення — `{diagnostics:[],verdicts:[]}`). `node --test tests/lsp.test.ts tests/review-loop.test.ts tests/mcp.test.ts` — 56/56, `npm run typecheck` — 0.

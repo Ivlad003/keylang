@@ -1360,6 +1360,32 @@ test("tui: CRLF files diff by line and keep their line endings", async (t) => {
   assert.equal(readFileSync(join(root, FLOW_PATH), "utf8"), PAID.replace(/\n/g, "\r\n"));
 });
 
+// A file with mixed line endings: MERGE compares both sides without `\r`, so only the real change is a hunk, and the write keeps every kept line's ending.
+test("tui: a proposal to a file with mixed line endings is one hunk of its real change; kept lines keep their endings", async (t) => {
+  const mixedFlow = CHECKOUT_FLOW.replace("# flow checkout\n", "# flow checkout\r\n");
+  const mixedCode = "export const a = 1;\r\nexport const b = 2;\r\nexport const c = 3;\n";
+  const cases = [
+    { path: FLOW_PATH, disk: mixedFlow, proposal: `${CHECKOUT_FLOW}<!-- added -->\n`, written: `${mixedFlow}<!-- added -->\n` },
+    { path: "src/domain/mixed.ts", disk: mixedCode, proposal: "export const a = 1;\nexport const b = 2;\nexport const c = 3;\n\nexport const d = 4;\n", written: `${mixedCode}\r\nexport const d = 4;\r\n` },
+  ];
+  for (const { path, disk, proposal, written } of cases) {
+    const root = checkoutRepo(t, { [path]: disk });
+    propose(root, path, proposal);
+    const s = session(root);
+    t.after(() => s.app.close());
+    await s.app.idle();
+    s.send("m");
+    // The open file's proposal opens at once; another file's is picked from the proposals list.
+    if (s.app.state.merge === null) s.send("\r");
+    assert.equal(s.app.state.merge?.path, path, `${s.app.state.message} ${s.text()}`);
+    assert.deepEqual(s.app.state.merge?.hunks.map((hunk) => hunk.baseCount), [0], `${path}: ${JSON.stringify(s.app.state.merge?.hunks)}`);
+    s.send("a");
+    s.send("w");
+    await s.app.idle();
+    assert.equal(readFileSync(join(root, path), "utf8"), written, path);
+  }
+});
+
 test("tui: combining marks, ZWJ emoji and emoji widths in the editor", async (t) => {
   const line = "Café ✅ 🚀 👨‍👩‍👧 done";
   const s = session(checkoutRepo(t, { [FLOW_PATH]: CHECKOUT_FLOW.replace("Checkout from the terminal.", line) }), { cols: 90, rows: 20 });

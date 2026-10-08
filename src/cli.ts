@@ -22,6 +22,7 @@ import { selectedAgent } from "./agent-cli.ts";
 import { CHECK_FORMATS, checkReportText, isCheckFormat } from "./check-format.ts";
 import type { BriefBatch } from "./explain-llm.ts";
 import { positiveIntegerProblem } from "./explain-inventory.ts";
+import { isNameMode, NAME_MODES } from "./discover-names.ts";
 import { ENTRY_KINDS, isEntryKind } from "./snapshot.ts";
 import type { ExplanationDetail } from "./explanations.ts";
 import { changedPathSet, deletedModuleIds, gitChangedFiles } from "./git-changes.ts";
@@ -168,7 +169,8 @@ Commands:
                             on PATH, voice (engine, local model, microphone); changes nothing
   mcp                       Serve MCP over stdio for agents: search, node, code, flows,
                             check, explain, context, validate_spec, scaffold,
-                            feature_status, list_entries, discover_flows, apply_diff
+                            feature_status, list_entries, discover_flows, coverage_report,
+                            list_integrations, apply_diff
                             (proposals only; no spec is written, the fact cache
                             .keylang/cache/ is kept current)
   wire [--check] [--out f]  Generate keylang.gen.ts (or f: a .ts/.mts/.cts path relative to
@@ -186,12 +188,38 @@ Commands:
                             controller need its adapter). --kind: one kind. --json: the
                             list as JSON. Exit 0, also with nothing found; writes only
                             the fact cache .keylang/cache/
+  coverage [--json]         Where keylang does not see, a view (check does not read it):
+                            fns reachable from entry points over resolved calls, orphan
+                            fns (no entry point reaches them; test files left out), the
+                            modules with most holes by reason, entry points without a
+                            hand-written flow (and their discovered flow), and «logic in
+                            data»: calls into configuration readers listed in
+                            resources/data-logic.json, to check by hand. --json: the
+                            report as JSON. Exit 0; writes only the fact cache
+  integrations [--json]     What the code talks to, a view (nothing is contacted):
+                            calls into HTTP, SOAP, SDK and queue clients listed in
+                            resources/integrations.json, by integration → call site
+                            (file:line, fn, host of a literal URL) → the entry points
+                            and flows that reach it; incoming webhooks (entries of
+                            kind webhook, routes whose path names a webhook, callback,
+                            notify or ipn, integrations.webhooks globs of keylang.json);
+                            queue publishers, consumers and pairs. --json: as JSON.
+                            Exit 0; writes only the fact cache
   flows discover [--kind k] [--layer l] [--limit n] [--depth d] [--print] [--check]
                             A flow draft for every entry point (draft flow from its fn)
                             as the generated view <dir>/flows-discovered/<layer>.md,
                             which check does not read; a trigger a hand-written flow
                             already has is skipped and listed. --print: stdout only;
-                            --check: writes nothing, 1 when the view is stale
+                            --check: writes nothing, 1 when the view is stale. Each
+                            flow gets a description from its doc comments (no model)
+  flows discover --names [--mode algo|llm|hybrid] [--stale] [--layer l] [--dry-run] [--limit n] [--jobs n]
+                            Also group the flows into business processes with the
+                            model, one request per layer group: name, description,
+                            domain, entities, flows, as <dir>/flows-discovered/README.md
+                            with provenance; a step's code change makes a process
+                            stale (--stale: ask only for those). --dry-run: requests
+                            and a token estimate, writes nothing; --limit: requests.
+                            No model: hybrid (default) offline only, llm exit 2
   flows adopt <name> [--into <spec.md>]
                             Propose one discovered flow as a spec, with a provenance
                             comment, as .keylang/proposals/<dir>/flows/<name>.md (or the
@@ -273,6 +301,7 @@ const OPTIONS = {
   full: { type: "boolean" },
   brief: { type: "boolean" },
   missing: { type: "boolean" },
+  names: { type: "boolean" },
   "dry-run": { type: "boolean" },
   limit: { type: "string" },
   jobs: { type: "string" },
@@ -401,8 +430,12 @@ async function run(argv: readonly string[]): Promise<number> {
       return cmdTracePlan(paths[0], values.entry, values.name);
     case "entries":
       return cmdEntries(values.kind, values.json === true);
+    case "coverage":
+      return cmdCoverage(values.json === true);
+    case "integrations":
+      return cmdIntegrations(values.json === true);
     case "flows":
-      return cmdFlows(paths, { kind: values.kind, layer: values.layer, limit: values.limit, depth: values.depth, into: values.into, print: values.print === true, check: values.check === true });
+      return cmdFlows(paths, { kind: values.kind, layer: values.layer, limit: values.limit, depth: values.depth, into: values.into, print: values.print === true, check: values.check === true, names: values.names === true, mode: values.mode, dryRun: values["dry-run"] === true, jobs: values.jobs, stale: values.stale === true });
     case "export":
       return cmdExport(paths, { format: values.format, level: values.level, layer: values.layer, out: values.out });
     case "clone":
@@ -953,12 +986,33 @@ async function cmdEntries(kind: string | undefined, json: boolean): Promise<numb
   return result.exitCode ?? 2;
 }
 
+/** `coverage [--json]`: the report of the shared operation, or its payload without the text as JSON; exit 0 with holes and orphans too. */
+async function cmdCoverage(json: boolean): Promise<number> {
+  const result = await runOperation({ kind: "coverage", root: findRoot(process.cwd()) });
+  if (result.payload === null) throw new Error(result.messages[0]?.text ?? "coverage failed");
+  const { text, ...report } = result.payload;
+  process.stdout.write(json ? `${JSON.stringify(report, null, 2)}\n` : text);
+  return 0;
+}
+
+/** `integrations [--json]`: the inventory of the shared operation, or its payload without the text as JSON; exit 0. */
+async function cmdIntegrations(json: boolean): Promise<number> {
+  const result = await runOperation({ kind: "integrations", root: findRoot(process.cwd()) });
+  if (result.payload === null) throw new Error(result.messages[0]?.text ?? "integrations failed");
+  const { text, ...report } = result.payload;
+  process.stdout.write(json ? `${JSON.stringify(report, null, 2)}\n` : text);
+  return 0;
+}
+
 /**
  * `flows discover|adopt`: the shared operations. Discover prints the view
  * (`--print`) or what it wrote, the skipped triggers and the summary on
  * stderr; adopt names the proposal on stderr.
  */
-async function cmdFlows(args: readonly string[], opts: { kind: string | undefined; layer: string | undefined; limit: string | undefined; depth: string | undefined; into: string | undefined; print: boolean; check: boolean }): Promise<number> {
+async function cmdFlows(
+  args: readonly string[],
+  opts: { kind: string | undefined; layer: string | undefined; limit: string | undefined; depth: string | undefined; into: string | undefined; print: boolean; check: boolean; names: boolean; mode: string | undefined; dryRun: boolean; jobs: string | undefined; stale: boolean },
+): Promise<number> {
   const [action, name, ...rest] = args;
   if (action !== "discover" && action !== "adopt") throw new Error(`flows: expected discover or adopt${action === undefined ? "" : `, got \`${action}\``}`);
   const depth = opts.depth === undefined ? undefined : wholeNumber("--depth", opts.depth, 0);
@@ -976,6 +1030,8 @@ async function cmdFlows(args: readonly string[], opts: { kind: string | undefine
   if (name !== undefined) throw new Error(`flows discover: unexpected \`${name}\``);
   if (opts.print && opts.check) throw new Error("flows discover: --print and --check do not go together");
   if (opts.kind !== undefined && !isEntryKind(opts.kind)) throw new Error(`flows discover: --kind is one of ${ENTRY_KINDS.join(", ")}, got \`${opts.kind}\``);
+  if (opts.names) return cmdFlowsNames(root, opts, depth);
+  if (opts.mode !== undefined || opts.dryRun || opts.jobs !== undefined || opts.stale) throw new Error("flows discover: --mode, --dry-run, --jobs and --stale need --names");
   const limit = opts.limit === undefined ? undefined : wholeNumber("--limit", opts.limit, 1);
   const result = await runOperation({
     kind: "flows-discover",
@@ -988,6 +1044,35 @@ async function cmdFlows(args: readonly string[], opts: { kind: string | undefine
   });
   if (opts.print && result.payload !== null) process.stdout.write(result.payload.files.map((file) => file.text).join("\n"));
   report(result.messages);
+  return result.exitCode ?? 2;
+}
+
+/**
+ * `flows discover --names [--mode algo|llm|hybrid] [--stale] [--layer l]
+ * [--dry-run] [--limit N] [--jobs N]`: the view, then business processes from
+ * the model, one request per layer group. `--dry-run` prints the plan and
+ * writes nothing; `--limit` bounds the requests.
+ */
+async function cmdFlowsNames(root: string, opts: { kind: string | undefined; layer: string | undefined; limit: string | undefined; print: boolean; check: boolean; mode: string | undefined; dryRun: boolean; jobs: string | undefined; stale: boolean }, depth: number | undefined): Promise<number> {
+  if (opts.print || opts.check) throw new Error("flows discover: --names writes the view; it takes no --print or --check (--dry-run writes nothing)");
+  if (opts.kind !== undefined) throw new Error("flows discover: --names groups the flows of whole layers; it takes no --kind");
+  const mode = opts.mode ?? "hybrid";
+  if (!isNameMode(mode)) throw new Error(`flows discover: --mode is one of ${NAME_MODES.join(", ")}, got \`${mode}\``);
+  const limit = opts.limit === undefined ? undefined : positiveInteger("--limit", opts.limit);
+  const jobs = opts.jobs === undefined ? undefined : positiveInteger("--jobs", opts.jobs);
+  const result = await runOperation(
+    {
+      kind: "flows-discover",
+      root,
+      output: "write",
+      ...(opts.layer !== undefined ? { layer: opts.layer } : {}),
+      ...(depth !== undefined ? { depth } : {}),
+      names: { mode, dryRun: opts.dryRun, stale: opts.stale, ...(limit !== undefined ? { limit } : {}), ...(jobs !== undefined ? { jobs } : {}) },
+    },
+    { onProgress: ({ text }) => process.stderr.write(`keylang: ${text}\n`) },
+  );
+  if (opts.dryRun && result.payload?.names) process.stdout.write(result.payload.names.text);
+  for (const m of result.messages) process.stderr.write(`keylang: ${m.text}\n`);
   return result.exitCode ?? 2;
 }
 
@@ -1302,6 +1387,10 @@ function printMap(result: OperationEnvelope<"map">, root: string): number {
     return result.exitCode ?? 2;
   }
   for (const w of payload.warnings) process.stderr.write(`warning: ${w}\n`);
+  // A failure before the plan was checked (the map directory could not be read): only the messages name it.
+  if (result.status === "failed" && payload.refused.length === 0 && payload.steps.length === 0) {
+    for (const message of result.messages) if (message.level === "error") process.stderr.write(`keylang: ${message.text}\n`);
+  }
   for (const line of mapConflictLines(payload.conflicts, shown)) process.stdout.write(`${line}\n`);
   for (const line of payload.refused) process.stdout.write(`${line}\n`);
   if (payload.conflicts.length > 0) return result.exitCode ?? 2;

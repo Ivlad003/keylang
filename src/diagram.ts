@@ -11,7 +11,7 @@
 
 import { EXTERNAL } from "./external-ids.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
-import type { Flow, FlowItem, SpecIR, Trigger } from "./spec-ir.ts";
+import { walkFlow, type Flow, type FlowItem, type SpecIR, type Trigger } from "./spec-ir.ts";
 import { compareText } from "./span.ts";
 
 export type DiagramView =
@@ -84,6 +84,18 @@ export interface DiagramInput {
   spec: SpecIR;
   results: readonly DiagramResult[];
   view: DiagramView;
+  /** Business processes of the discovered flows (`flows discover --names`): what `{kind: "process"}` draws. */
+  processes?: readonly DiagramProcess[];
+}
+
+/**
+ * A business process as a model grouped it (business-flows/12): its domain
+ * and its discovered flows, each with its trigger and the steps right under it.
+ */
+export interface DiagramProcess {
+  name: string;
+  domain: string;
+  flows: { name: string; trigger: string; steps: string[] }[];
 }
 
 /** Positions that win over the automatic layout, by node id. */
@@ -128,21 +140,112 @@ export function parseView(query: URLSearchParams): DiagramView | string {
   }
 }
 
-/** What there is to draw: flow names in spec order, entry points as the snapshot lists them, layers in their order. */
-export function viewsOf(snapshot: AnalysisSnapshot | null, spec: SpecIR): { flows: string[]; entries: { id: string; kind: string; label: string }[]; layers: string[] } {
+/**
+ * What there is to draw: flow names in spec order, entry points as the
+ * snapshot lists them, layers in their order, the domains of the business
+ * processes (first seen first) and the processes with their flows.
+ */
+export function viewsOf(
+  snapshot: AnalysisSnapshot | null,
+  spec: SpecIR,
+  processes: readonly DiagramProcess[] = [],
+): { flows: string[]; entries: { id: string; kind: string; label: string }[]; layers: string[]; domains: string[]; processes: { name: string; domain: string; flows: string[] }[] } {
   return {
     flows: [...new Set(spec.flows.map((flow) => flow.name))],
     entries: (snapshot?.entries ?? []).map((entry) => ({ id: entry.id, kind: entry.kind, label: entry.label })),
     layers: snapshot ? layerOrder(snapshot) : [],
+    domains: [...new Set(processes.map((p) => p.domain))],
+    processes: processes.map((p) => ({ name: p.name, domain: p.domain, flows: p.flows.map((flow) => flow.name) })),
   };
+}
+
+/** A flow as the diagram page lists it: where it is, its trigger and lane, and every ID it names (for the search). */
+export interface FlowListing {
+  name: string;
+  file: string;
+  line: number;
+  trigger: string | null;
+  layer: string | null;
+  ids: string[];
+}
+
+/** The IDs a flow names — triggers, steps, `then <id>`, `calls` — in source order, each once. */
+export function flowIds(flow: Flow): string[] {
+  const ids = new Set<string>();
+  walkFlow(flow, (item) => {
+    if (item.kind === "trigger" || item.kind === "step" || (item.kind === "then" && item.form === "ref")) ids.add(item.target.target);
+    else if (item.kind === "calls") for (const ref of item.targets) ids.add(ref.target);
+  });
+  return [...ids];
+}
+
+/** The flows of a spec for the list of the diagram page: the first flow of each name, in spec order. */
+export function flowListing(snapshot: AnalysisSnapshot | null, spec: SpecIR): FlowListing[] {
+  const seen = new Set<string>();
+  const out: FlowListing[] = [];
+  for (const flow of spec.flows) {
+    if (seen.has(flow.name)) continue;
+    seen.add(flow.name);
+    const trigger = flow.triggers[0]?.target.target ?? null;
+    out.push({ name: flow.name, file: flow.file, line: flow.span.start.line, trigger, layer: trigger === null ? null : (layerOf(snapshot, trigger) ?? null), ids: flowIds(flow) });
+  }
+  return out;
+}
+
+/** Where an ID is used: flows and discovered flows that name it (or an ID under it), and entry points whose route does. */
+export interface Usages {
+  id: string;
+  flows: { name: string; file: string; line: number }[];
+  discovered: { name: string; file: string; line: number }[];
+  entries: { id: string; kind: string; label: string }[];
+}
+
+/** An ID or one under it: `a.b` matches `a.b` and `a.b.c`, not `a.bc`. */
+function covers(id: string, target: string): boolean {
+  return target === id || target.startsWith(`${id}.`);
+}
+
+/** The first line of a flow that names the ID, or null. */
+function useIn(flow: Flow, id: string): number | null {
+  let line: number | null = null;
+  walkFlow(flow, (item) => {
+    if (line !== null) return;
+    const targets = item.kind === "trigger" || item.kind === "step" || (item.kind === "then" && item.form === "ref") ? [item.target.target] : item.kind === "calls" ? item.targets.map((ref) => ref.target) : [];
+    if (targets.some((target) => covers(id, target))) line = item.span.start.line;
+  });
+  return line;
+}
+
+/**
+ * Where `id` is used (business-flows/21): the flows of the specs and of the
+ * discovered view that name it in a trigger, step, `then` or `calls`, and the
+ * entry points that are it or whose flow (written or discovered, by trigger)
+ * names it. Pure; each list in its source's order.
+ */
+export function usagesOf(snapshot: AnalysisSnapshot | null, spec: SpecIR, discovered: SpecIR | null, id: string): Usages {
+  const routes = new Set<string>();
+  const found = (flows: readonly Flow[]): { name: string; file: string; line: number }[] => {
+    const out: { name: string; file: string; line: number }[] = [];
+    for (const flow of flows) {
+      const line = useIn(flow, id);
+      if (line === null) continue;
+      out.push({ name: flow.name, file: flow.file, line });
+      for (const trigger of flow.triggers) routes.add(trigger.target.target);
+    }
+    return out;
+  };
+  const flows = found(spec.flows);
+  const fromDiscovered = found(discovered?.flows ?? []);
+  const entries = (snapshot?.entries ?? []).filter((entry) => covers(id, entry.id) || routes.has(entry.id)).map((entry) => ({ id: entry.id, kind: entry.kind, label: entry.label }));
+  return { id, flows, discovered: fromDiscovered, entries };
 }
 
 export function diagramOf(input: DiagramInput): Diagram {
   const { view } = input;
   if (view.kind === "flow") return layout(flowDiagram(input, view.name));
   if (view.kind === "event") return empty(`no event nodes in the snapshot yet: events come with business-flows/08 and 16`);
-  if (view.kind === "process") return empty(`processes are not available yet: grouping flows into processes is business-flows/12`);
   if (!input.snapshot) return empty("no snapshot: the specs were checked without code");
+  if (view.kind === "process") return layout(processDiagram(input.snapshot, input.processes ?? [], input.results, view.domain));
   if (view.kind === "entry") return layout(entryDiagram(input.snapshot, input.results, view.id, view.depth ?? DEFAULT_DEPTH));
   return layout(layersDiagram(input.snapshot, input.spec, input.results));
 }
@@ -329,7 +432,25 @@ function flowDiagram(input: DiagramInput, name: string): Diagram {
         });
         return from;
       }
-      // Claims without a shape of their own: invariants, reads, tests and open questions.
+      case "parallel": {
+        // A parallel gateway splits into one branch per step and joins them: the next item follows the join (ADR 0023).
+        const line = at(item);
+        const ref = { specFile: flow.file, specLine: line };
+        const split = add({ id: `parallel:${line}`, kind: "parallel", label: "parallel", ref, verdict: null, ...(group ? { group } : {}) });
+        link(from, split.id, "sequence");
+        const join = add({ id: `parallel:${line}:join`, kind: "parallel", label: "parallel", ref, verdict: null, ...(group ? { group } : {}) });
+        for (const child of item.children) link(one(child, split.id, group), join.id, "sequence");
+        return join.id;
+      }
+      case "after":
+      case "every": {
+        // An intermediate timer event beside the sequence, as `calls` sits beside it.
+        const line = at(item);
+        const timer = add({ id: `${item.kind}:${line}`, kind: "timer", label: `${item.kind} ${item.value}`, ref: { specFile: flow.file, specLine: line }, verdict: worst(resultsAt(item).map((r) => r.verdict)), ...(group ? { group } : {}) });
+        link(from, timer.id, "sequence");
+        return from;
+      }
+      // Claims without a shape of their own: invariants, reads, tests, open questions and `continues`.
       default:
         return from;
     }
@@ -439,6 +560,46 @@ function entryDiagram(snapshot: AnalysisSnapshot, results: readonly DiagramResul
     frontier = next;
   }
   return { nodes, edges, groups: lanes(snapshot, nodes), ...(cut ? { reason: `cut at ${MAX_NODES} nodes` } : {}) };
+}
+
+// ── process ─────────────────────────────────────────────────────────────────
+
+/**
+ * The processes of a domain (or the one process of that name): lanes per
+ * layer, one start per flow of each process (its trigger), and the steps
+ * right under it as tasks. A step two flows share is drawn once.
+ */
+function processDiagram(snapshot: AnalysisSnapshot, processes: readonly DiagramProcess[], results: readonly DiagramResult[], domain: string): Diagram {
+  if (processes.length === 0) return empty("no business processes yet: `keylang flows discover --names` groups the discovered flows into processes");
+  const chosen = processes.filter((p) => p.domain === domain);
+  const shown = chosen.length > 0 ? chosen : processes.filter((p) => p.name === domain);
+  if (shown.length === 0) return empty(`no process in domain \`${domain}\`; domains: ${[...new Set(processes.map((p) => p.domain))].join(", ")}`);
+  const areas = byArea(results);
+  const nodes: DiagramNode[] = [];
+  const edges: DiagramEdge[] = [];
+  const placed = new Set<string>();
+  const codeRef = (id: string): NonNullable<DiagramNode["ref"]> => {
+    const code = snapshot.nodes[id];
+    return { id, ...(code?.file ? { file: code.file } : {}), ...(code?.line ? { line: code.line } : {}) };
+  };
+  const shape = (id: string, kind: DiagramNode["kind"], label: string, code: string): void => {
+    placed.add(id);
+    const layer = layerOf(snapshot, code);
+    nodes.push({ id, kind, label, ref: codeRef(code), verdict: areas.get(code) ?? null, ...(layer ? { group: layer } : {}), x: 0, y: 0, w: 0, h: 0 });
+  };
+  for (const process of shown) {
+    for (const flow of process.flows) {
+      const start = `start:${flow.name}`;
+      if (placed.has(start)) continue;
+      shape(start, "start", flow.name, flow.trigger);
+      for (const step of flow.steps) {
+        const id = `fn:${step}`;
+        if (!placed.has(id)) shape(id, snapshot.nodes[step]?.layer === EXTERNAL ? "external" : "task", step, step);
+        edges.push({ from: start, to: id, kind: "call", label: process.name });
+      }
+    }
+  }
+  return { nodes, edges, groups: lanes(snapshot, nodes) };
 }
 
 // ── layers ──────────────────────────────────────────────────────────────────
