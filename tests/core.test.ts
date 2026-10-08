@@ -493,6 +493,27 @@ test("K106 warns when an allow beats an incomparable deny on depth sum", (t) => 
   assert.match(two.stdout, /rules\.md:3:1: K106/);
 });
 
+// A rule on the intersection clears K106 whether it names one target or several: `deny A B, C` covers the pair (A, B).
+test("K106 is cleared by a rule on the intersection that has more than one target", (t) => {
+  const dir = repo(t, {
+    "keylang.json": config({ app: ["src/app/**"], domain: ["src/domain/**"], infra: ["src/infra/**"] }),
+    "src/app/x/y.ts": 'import { s } from "../../domain/storefront.ts";\nexport const y = s;\n',
+    "src/domain/storefront.ts": "export const s = 1;\n",
+    "src/infra/db.ts": "export const d = 1;\n",
+    "keylang/rules.md": "# rules\n",
+  });
+  const rules = (third: string): string => `# rules\n\n- allow app.x.y domain\n- deny app domain.storefront\n- ${third}\n`;
+  writeFileSync(join(dir, "keylang/rules.md"), rules("deny app.x.y domain.storefront, infra.db"));
+  const denied = keylang(dir, ["check"]);
+  assert.equal(denied.status, 1, denied.stdout);
+  assert.match(denied.stdout, /K102/);
+  assert.doesNotMatch(denied.stdout, /K106/);
+  writeFileSync(join(dir, "keylang/rules.md"), rules("allow app.x.y infra.db, domain.storefront"));
+  const allowed = keylang(dir, ["check"]);
+  assert.equal(allowed.status, 0, allowed.stdout);
+  assert.doesNotMatch(allowed.stdout, /K102|K106/);
+});
+
 test("allow and deny over a function are K005, not a vacuous ok", (t) => {
   const dir = repo(t, {
     "keylang.json": config({ app: ["src/app/**"], infra: ["src/infra/**"] }),
