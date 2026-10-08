@@ -1317,7 +1317,7 @@ test("web: POST /api/flow-proposal writes one proposal of the ticked branches th
       "",
       "<!-- keylang:web explorer -->",
       "",
-      "- trigger app.handlers.pay <!-- keylang:algo unresolved: gateway.refund (src/app/handlers.ts:6) -->",
+      "- trigger route app.handlers.pay <!-- keylang:algo unresolved: gateway.refund (src/app/handlers.ts:6) -->",
       "  - step billing.charge.charge <!-- keylang:algo via closure -->",
       "    - step billing.audit.audit",
       "      - step billing.audit.write",

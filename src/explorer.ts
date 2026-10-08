@@ -12,6 +12,7 @@
 
 import { EXTERNAL } from "./external-ids.ts";
 import type { FlowDraft } from "./draft.ts";
+import { isTriggerKind } from "./parser.ts";
 import type { AnalysisSnapshot, CoverageItem, SnapshotEdge } from "./snapshot.ts";
 import { compareText } from "./span.ts";
 
@@ -313,7 +314,8 @@ export function parseExplorerFlow(body: unknown): ExplorerFlowRequest | string {
  * step nested under the step that calls it, in the order given. Every step
  * must be a fn of the repository the step above it (the trigger at the top)
  * calls by a resolved edge: the draft claims only what the edges show, as
- * `draft flow` does. A step reached not by a plain call carries the same
+ * `draft flow` does; an entry point of a kind the grammar names is a typed
+ * trigger (`trigger route <id>`). A step reached not by a plain call carries the same
  * `via` comment as `draft flow`, and a fn with calls keylang did not resolve
  * the same `unresolved` comment. The provenance comment under the heading
  * says where it came from. A string: why the tree is not a flow.
@@ -349,7 +351,9 @@ export function explorerFlow(snapshot: AnalysisSnapshot, request: ExplorerFlowRe
     return null;
   };
   steps.push(request.trigger);
-  lines.push(`- trigger ${request.trigger}${comment(request.trigger, null)}`);
+  // An entry point of a kind the grammar names is a typed trigger, as `flows discover` writes it (ADR 0023 п. 3).
+  const kind = snapshot.entries.find((entry) => entry.id === request.trigger)?.kind;
+  lines.push(`- trigger ${kind !== undefined && isTriggerKind(kind) ? `${kind} ` : ""}${request.trigger}${comment(request.trigger, null)}`);
   const problem = walk(request.steps, request.trigger, 1);
   if (problem !== null) return problem;
   return { name: request.name, text: `${lines.join("\n")}\n`, steps };

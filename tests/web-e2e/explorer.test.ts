@@ -87,7 +87,7 @@ test("explorer: open an entry point, expand three levels, see a via badge and a 
   assert.match((await result.textContent()) ?? "", /\.keylang\/proposals\/keylang\/flows\/payment\.md → keylang\/flows\/payment\.md\. .*MERGE in the TUI.*keylang proposals accept keylang\/flows\/payment\.md/);
   const proposal = join(repo, ".keylang/proposals/keylang/flows/payment.md");
   assert.ok(existsSync(proposal));
-  assert.match(readFileSync(proposal, "utf8"), /^# flow payment\n\n<!-- keylang:web explorer -->\n\n- trigger app\.handlers\.pay .*\n {2}- step billing\.charge\.charge <!-- keylang:algo via closure -->\n {4}- step billing\.audit\.audit\n {6}- step billing\.audit\.write\n$/);
+  assert.match(readFileSync(proposal, "utf8"), /^# flow payment\n\n<!-- keylang:web explorer -->\n\n- trigger route app\.handlers\.pay .*\n {2}- step billing\.charge\.charge <!-- keylang:algo via closure -->\n {4}- step billing\.audit\.audit\n {6}- step billing\.audit\.write\n$/);
   const listed = spawnSync(process.execPath, [join(root, "bin/keylang.js"), "proposals"], { cwd: repo, encoding: "utf8" });
   assert.equal(listed.stdout, "keylang/flows/payment.md: +8 -0 (new file)\n");
   // A second save while it waits says so, and writes nothing more.
