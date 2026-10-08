@@ -21,6 +21,13 @@
 // shapes — a layer denying itself, a sequence into a note — is refused with a
 // tooltip that says why.
 //
+// Undo and redo (maxGraph's UndoManager) cover every change, and the keys are
+// those of diagrams.net: Ctrl+Z, Ctrl+Y / Ctrl+Shift+Z, Ctrl+C / X / V / D,
+// Delete / Backspace, arrows (1 px) and Shift+arrows (a grid step), Ctrl+A,
+// Ctrl+G / Ctrl+Shift+U, + / − zoom, Ctrl+Shift+H fit (Cmd for Ctrl on a
+// Mac). Copy and paste stay within the page. The canvas exports as SVG and
+// PNG in the browser (`ImageExport` over an `SvgCanvas2D`, then a canvas).
+//
 // The editor writes nothing to the specs: its state lives in memory and in a
 // draft of the tab (`sessionStorage`, so a reload comes back to it), the
 // positions go to the layout store, and `currentModel()` is what ticket 24
@@ -33,12 +40,16 @@ import {
   EdgeHandlerConfig,
   Geometry,
   ImageBox,
+  ImageExport,
   InternalEvent,
   PanningHandler,
   Point,
   RubberBandHandler,
   SelectionCellsHandler,
   SelectionHandler,
+  SvgCanvas2D,
+  UndoManager,
+  type EventObject,
   type CellStyle,
 } from "@maxgraph/core";
 import type { Api, Diagram, DiagramNode, Verdict, Views } from "./api.ts";
@@ -409,6 +420,9 @@ export class Editor {
   private pointer = { x: 0, y: 0 };
   /** The meaning of the next connection drawn. */
   private linkKind: LinkKind = "sequence";
+  readonly undoManager = new UndoManager(200);
+  /** Copied cells (clones, kept out of the model) and where they came from; pasted again and again, a step further each time. */
+  private clipboard: { cells: Cell[]; parent: Cell | null; times: number } | null = null;
 
   constructor(root: HTMLElement, api: Api, host: EditorHost) {
     register();
@@ -436,6 +450,7 @@ export class Editor {
     this.toolbar();
     this.fillPalette();
     this.applyMode();
+    this.keys();
   }
 
   private configure(): void {
@@ -453,8 +468,10 @@ export class Editor {
     graph.setSwimlaneNesting(false);
     graph.setAllowDanglingEdges(false);
     graph.setHtmlLabels(false);
-    graph.setExtendParents(true);
-    graph.setExtendParentsOnMove(true);
+    // A shape stays inside its lane: a lane grown over the next one would hide what is under it. Resize a lane to make room.
+    graph.setExtendParents(false);
+    graph.setExtendParentsOnAdd(false);
+    graph.setExtendParentsOnMove(false);
     graph.getStylesheet().getDefaultVertexStyle().fontFamily = "system-ui, sans-serif";
     graph.getStylesheet().getDefaultEdgeStyle().fontFamily = "system-ui, sans-serif";
     const selection = graph.getPlugin<SelectionHandler>("SelectionHandler");
@@ -529,6 +546,13 @@ export class Editor {
       { passive: false },
     );
     graph.getDataModel().addListener(InternalEvent.CHANGE, () => this.changed());
+    // Every change of the model and the view is a step of undo.
+    const undoable = (_sender: unknown, event: EventObject): void => {
+      if (!this.loading) this.undoManager.undoableEditHappened(event.getProperty("edit"));
+      this.undoButtons();
+    };
+    graph.getDataModel().addListener(InternalEvent.UNDO, undoable);
+    graph.getView().addListener(InternalEvent.UNDO, undoable);
     // The dotted grid of the background follows zoom and pan.
     const view = graph.getView();
     const grid = (): void => {
@@ -566,6 +590,14 @@ export class Editor {
       kind.append(option);
     }
     kind.addEventListener("change", () => (this.linkKind = kind.value as LinkKind));
+    const undo = button("↶", () => this.undo(), { title: "Скасувати (Ctrl+Z)" });
+    undo.id = "editor-undo";
+    const redo = button("↷", () => this.redo(), { title: "Повторити (Ctrl+Y, Ctrl+Shift+Z)" });
+    redo.id = "editor-redo";
+    const svg = button("SVG", () => this.download("svg"), { title: "Експорт полотна в SVG" });
+    svg.id = "editor-export-svg";
+    const png = button("PNG", () => void this.download("png"), { title: "Експорт полотна в PNG" });
+    png.id = "editor-export-png";
     const code = button("з коду", () => this.setMode("code"), { title: "Фігури з моделі: змінюється лише розкладка (і примітки)" });
     code.id = "editor-mode-code";
     const draft = button("чернетка", () => this.setMode("draft"), { title: "Усе редаговане: нові фігури отримують planned-ID" });
@@ -578,6 +610,8 @@ export class Editor {
       code,
       draft,
       make("span", { className: "sep" }),
+      undo,
+      redo,
       remove,
       make("span", { className: "editor-label", text: "з'єднання:" }),
       kind,
@@ -593,6 +627,10 @@ export class Editor {
       ungroup,
       snap,
       fit,
+      make("span", { className: "sep" }),
+      make("span", { className: "editor-label", text: "експорт:" }),
+      svg,
+      png,
       make("span", { className: "sep" }),
       reset,
     );
@@ -718,6 +756,208 @@ export class Editor {
     for (const id of ["editor-mode-code", "editor-mode-draft"]) document.getElementById(id)?.setAttribute("aria-pressed", String(id.endsWith(this.editMode)));
     for (const item of this.palette.querySelectorAll<HTMLButtonElement>(".palette-item")) item.disabled = !draft && item.dataset["item"] !== "note";
     this.canvas.dataset["mode"] = this.editMode;
+  }
+
+  undo(): void {
+    if (this.undoManager.canUndo()) this.undoManager.undo();
+    this.undoButtons();
+  }
+
+  redo(): void {
+    if (this.undoManager.canRedo()) this.undoManager.redo();
+    this.undoButtons();
+  }
+
+  private undoButtons(): void {
+    const undo = document.getElementById("editor-undo") as HTMLButtonElement | null;
+    const redo = document.getElementById("editor-redo") as HTMLButtonElement | null;
+    if (undo) undo.disabled = !this.undoManager.canUndo();
+    if (redo) redo.disabled = !this.undoManager.canRedo();
+  }
+
+  /** The keys of diagrams.net, while the editor is the page's mode and no field has the focus. */
+  private keys(): void {
+    document.addEventListener("keydown", (event) => {
+      if (document.body.dataset["mode"] !== "editor") return;
+      const target = event.target as HTMLElement | null;
+      if (target && (target.closest("input, textarea, select") || target.isContentEditable)) return;
+      const mod = event.ctrlKey || event.metaKey;
+      const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+      const done = (): void => event.preventDefault();
+      if (mod && key === "z") return done(), event.shiftKey ? this.redo() : this.undo();
+      if (mod && key === "y") return done(), this.redo();
+      if (mod && key === "c") return done(), this.copy();
+      if (mod && key === "x") return done(), this.cut();
+      if (mod && key === "v") return done(), this.paste();
+      if (mod && key === "d") return done(), this.duplicate();
+      if (mod && key === "a") return done(), this.selectAll();
+      if (mod && event.shiftKey && key === "u") return done(), this.ungroup();
+      if (mod && key === "g") return done(), this.group();
+      if (mod && event.shiftKey && key === "h") return done(), this.fit();
+      if (key === "+" || key === "=") return done(), this.zoomAt(1.25);
+      if (key === "-" || key === "_") return done(), this.zoomAt(1 / 1.25);
+      if (key === "Delete" || key === "Backspace") return done(), this.deleteSelection();
+      if (key === "Escape") return this.graph.clearSelection();
+      const arrows: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+      const arrow = arrows[key];
+      if (arrow && !mod) {
+        done();
+        const step = event.shiftKey ? GRID : 1;
+        this.nudge(arrow[0] * step, arrow[1] * step);
+      }
+    });
+  }
+
+  /** Moves the selected shapes by a few pixels: layout, so «з коду» too. */
+  nudge(dx: number, dy: number): void {
+    const cells = this.selectedVertices();
+    if (cells.length > 0) this.graph.moveCells(cells, dx, dy);
+  }
+
+  selectAll(): void {
+    this.graph.setSelectionCells(this.allCells());
+  }
+
+  /** The selected shapes and the connections between them. */
+  private copySet(): Cell[] {
+    const chosen = new Set(this.graph.getSelectionCells().filter((cell) => cell.isVertex()));
+    const inside = (cell: Cell | null): boolean => {
+      for (let at = cell; at; at = at.getParent()) if (chosen.has(at)) return true;
+      return false;
+    };
+    // A shape inside a chosen lane or group comes with it.
+    const top = [...chosen].filter((cell) => !inside(cell.getParent()));
+    const edges = this.allCells().filter((cell) => cell.isEdge() && inside(cell.getTerminal(true)) && inside(cell.getTerminal(false)) && !inside(cell.getParent()));
+    return [...top, ...edges];
+  }
+
+  copy(): void {
+    const cells = this.copySet();
+    if (cells.length === 0) return;
+    const parents = new Set(cells.filter((cell) => cell.isVertex()).map((cell) => cell.getParent()));
+    this.clipboard = { cells: this.graph.cloneCells(cells), parent: parents.size === 1 ? ([...parents][0] ?? null) : null, times: 0 };
+    this.host.status(`copied ${cells.length} cell(s)`);
+  }
+
+  cut(): void {
+    this.copy();
+    this.deleteSelection();
+  }
+
+  paste(): void {
+    if (!this.clipboard) return;
+    this.clipboard.times++;
+    this.insertCopies(this.clipboard.cells, this.clipboard.parent, this.clipboard.times * GRID * 2);
+  }
+
+  /** Ctrl+D: a copy of the selection next to it, the clipboard untouched. */
+  duplicate(): void {
+    const cells = this.copySet();
+    if (cells.length === 0) return;
+    const parents = new Set(cells.filter((cell) => cell.isVertex()).map((cell) => cell.getParent()));
+    this.insertCopies(this.graph.cloneCells(cells), parents.size === 1 ? ([...parents][0] ?? null) : null, GRID * 2);
+  }
+
+  /** Inserts copies of cells: new keys, and a planned shape gets a name its layer does not use yet. */
+  private insertCopies(cells: Cell[], parent: Cell | null, offset: number): void {
+    const notesOnly = cells.every((cell) => cell.isVertex() && shapeOf(cell)?.kind === "note");
+    if (this.editMode === "code" && !notesOnly) {
+      this.host.status("«з коду» вставляє лише примітки: перейдіть у «чернетку»");
+      return;
+    }
+    const target = parent && parent.getParent() ? parent : this.graph.getDefaultParent();
+    const graph = this.graph;
+    const model = graph.getDataModel();
+    graph.batchUpdate(() => {
+      const added = graph.importCells(cells, offset, offset, target);
+      const walk = (cell: Cell): void => {
+        const shape = shapeOf(cell);
+        const link = linkOf(cell);
+        if (shape) {
+          const next = shape.clone();
+          next.key = this.newKey();
+          next.origin = "draft";
+          if (shape.id.startsWith("planned:")) {
+            const lane = shape.kind === "lane" ? null : this.laneOf(cell);
+            const layer = lane ? layerOf(lane) : null;
+            // `step2` copied is `step3`, not `step22`.
+            next.label = this.newName(layer, shape.label.replace(/\d+$/, "") || shape.label);
+            next.id = `planned:${layer === null ? "" : `${layer}.`}${next.label}`;
+          }
+          model.setValue(cell, next);
+        } else if (link) {
+          const next = link.clone();
+          next.key = this.newKey();
+          model.setValue(cell, next);
+        }
+        for (const child of cell.getChildren()) walk(child);
+      };
+      for (const cell of added) walk(cell);
+      graph.setSelectionCells(added);
+    });
+    this.host.status(`pasted ${cells.length} cell(s)`);
+  }
+
+  /** The canvas as an SVG document: the shapes and connections only, no selection handles, on white. */
+  exportSvg(border = 16): string {
+    const graph = this.graph;
+    const view = graph.getView();
+    const bounds = graph.getGraphBounds();
+    const ns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(ns, "svg");
+    const width = Math.ceil(bounds.width / view.scale + 2 * border);
+    const height = Math.ceil(bounds.height / view.scale + 2 * border);
+    svg.setAttribute("xmlns", ns);
+    svg.setAttribute("width", String(width));
+    svg.setAttribute("height", String(height));
+    svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    const background = document.createElementNS(ns, "rect");
+    for (const [name, value] of [["width", "100%"], ["height", "100%"], ["fill", "#ffffff"]]) background.setAttribute(name!, value!);
+    svg.append(background);
+    const group = document.createElementNS(ns, "g");
+    svg.append(group);
+    const canvas = new SvgCanvas2D(group, false);
+    canvas.foEnabled = false;
+    canvas.translate(Math.floor(border - bounds.x / view.scale), Math.floor(border - bounds.y / view.scale));
+    canvas.scale(1 / view.scale);
+    const state = view.getState(graph.getDataModel().getRoot()!);
+    if (state) new ImageExport().drawState(state, canvas);
+    return `<?xml version="1.0" encoding="UTF-8"?>\n${new XMLSerializer().serializeToString(svg)}`;
+  }
+
+  /** The canvas as a PNG data URL, drawn from the SVG at twice its size. */
+  async exportPng(): Promise<string> {
+    const svg = this.exportSvg();
+    const image = new Image();
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error("the SVG of the canvas did not load as an image"));
+      image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+    });
+    const canvas = document.createElement("canvas");
+    canvas.width = image.width * 2;
+    canvas.height = image.height * 2;
+    const context = canvas.getContext("2d")!;
+    context.scale(2, 2);
+    context.drawImage(image, 0, 0);
+    return canvas.toDataURL("image/png");
+  }
+
+  /** Saves the canvas as a file of the browser: `<view>.svg` or `.png`. */
+  async download(format: "svg" | "png"): Promise<void> {
+    const name = `${(this.viewKey || "diagram").replace(/[^\w.-]+/g, "-")}.${format}`;
+    try {
+      const href = format === "svg" ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(this.exportSvg())}` : await this.exportPng();
+      const link = make("a");
+      link.href = href;
+      link.download = name;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      this.host.status(`exported ${name}`);
+    } catch (error) {
+      this.host.status(`export failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   /** A message next to the pointer for a few seconds: why a connection or an edit was refused. */
@@ -936,6 +1176,8 @@ export class Editor {
     }
     this.applyMode();
     this.graph.clearSelection();
+    this.undoManager.clear();
+    this.undoButtons();
     this.fit();
     if (draft) this.host.status(`editor · ${key || "empty canvas"} · the draft of this tab is back (${draft.mode === "draft" ? "чернетка" : "з коду"}); «скинути чернетку» draws the view from the code`);
     else this.host.status(diagram.reason ?? `editor · ${key} · з коду: ${diagram.nodes.length} shapes, ${diagram.edges.length} edges · only the layout changes`);

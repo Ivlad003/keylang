@@ -1,15 +1,27 @@
 // The diagram editor of `keylang web` in a real browser (business-flows/23):
 // headless Chromium driven by playwright-core over the real CLI. A flow opens
-// «з коду» with its lanes and shapes, and only its layout changes there.
+// «з коду» with its lanes and shapes, and only its layout changes there; in
+// «чернетка» the palette draws lanes, steps and a gateway with planned IDs,
+// the tab's draft survives a reload; the properties panel sets ID (suggested
+// by /api/ids), kind, signature, tests and description; steps connect with a
+// meaning and a meaningless connection is refused with a tooltip; the keys of
+// diagrams.net undo, redo, nudge, copy, paste, duplicate, group and zoom; the
+// canvas exports as SVG and PNG. `window.keylangEditor.currentModel()` is
+// read after each step. It also takes the screenshot of the docs
+// (docs/course/images/diagrams-editor.png).
 //
 // Not part of `npm test`: `npm run test:web` (tests/web-e2e/browser.ts says
 // which browser it takes; without one the test is skipped and says why).
 
 import assert from "node:assert/strict";
+import { mkdirSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { diagramsRepo } from "../diagrams-fixture.ts";
-import { browserOptions, startWeb, watch } from "./browser.ts";
+import { browserOptions, root, startWeb, watch } from "./browser.ts";
+
+const SCREENSHOT = join(root, "docs/course/images/diagrams-editor.png");
 
 const options = browserOptions();
 const skip = options === null ? "no Chromium: set KEYLANG_CHROMIUM or PLAYWRIGHT_BROWSERS_PATH" : false;
@@ -100,7 +112,6 @@ test("editor «з коду»: a flow opens with its lanes and shapes; a shape mo
   assert.equal(after.nodes.length, before.nodes.length);
   assert.equal(after.edges.length, before.edges.length);
 
-  if (process.env["EDITOR_SHOT"]) await page.screenshot({ path: process.env["EDITOR_SHOT"] });
   // «з коду» deletes nothing.
   await page.keyboard.press("Delete");
   assert.equal((await model(page)).nodes.length, before.nodes.length);
@@ -166,7 +177,10 @@ test("editor «чернетка»: the palette draws a lane and steps with plann
   const bottom = (await model(page)).lanes.reduce((max, l) => Math.max(max, l.y + l.h), 0);
   await dropFromPalette(page, "step", { x: application.x + 120, y: bottom + 60 });
   await dropFromPalette(page, "layer", { x: application.x, y: bottom + 200 });
+  await dropFromPalette(page, "when", { x: application.x + 330, y: application.y + application.h / 2 });
   let now = await model(page);
+  const gateway = now.nodes.find((n) => n.kind === "gateway")!;
+  assert.deepEqual([gateway.id, gateway.label, gateway.layer, gateway.planned], ["", "condition", "application", false], "a gateway has a condition, no ID");
   const steps = now.nodes.filter((n) => n.key.startsWith("draft:") && n.kind === "task");
   assert.deepEqual(
     steps.map((n) => [n.id, n.layer, n.planned]),
@@ -209,7 +223,6 @@ test("editor «чернетка»: the palette draws a lane and steps with plann
   assert.equal(reset.nodes.length, 4);
   assert.equal(reset.lanes.length, 4);
 
-  if (process.env["EDITOR_SHOT2"]) await page.screenshot({ path: process.env["EDITOR_SHOT2"] });
   assert.deepEqual(problems, []);
 });
 
@@ -297,6 +310,141 @@ test("editor properties and connections: a palette shape gets its ID (suggested 
   await page.press("#prop-link-label", "Enter");
   const edge = (await model(page)).edges.find((e) => e.key === added[0]!.key)!;
   assert.deepEqual([edge.kind, (edge as { label?: string }).label], ["call", "charge"]);
+
+  // The screenshot of the docs: the new step selected, its panel on the right.
+  await page.selectOption("#editor-link-kind", "sequence");
+  await page.locator("#editor-tip").waitFor({ state: "hidden", timeout: 10000 });
+  await page.mouse.click((await centre(page, pay)).x, (await centre(page, pay)).y + 18);
+  await page.locator("#prop-id").waitFor();
+  assert.equal(await page.locator("#prop-id").inputValue(), "planned:application.pay");
+  mkdirSync(dirname(SCREENSHOT), { recursive: true });
+  await page.screenshot({ path: SCREENSHOT });
+
+  assert.deepEqual(problems, []);
+});
+
+/** How many cells are selected, and the view's scale. */
+function selection(page: Page): Promise<{ count: number; scale: number }> {
+  return page.evaluate(() => {
+    const graph = (globalThis as unknown as { keylangEditor: { graph: { getSelectionCount(): number; getView(): { scale: number } } } }).keylangEditor.graph;
+    return { count: graph.getSelectionCount(), scale: graph.getView().scale };
+  });
+}
+
+test("editor keys of diagrams.net: a move undone and redone (Ctrl+Z, Ctrl+Y, Ctrl+Shift+Z), arrows nudge, Ctrl+C/V and Ctrl+D duplicate, Ctrl+G groups, Ctrl+A and the rubber band select, zoom keys; SVG and PNG export in the browser", { skip, timeout: 120000 }, async (t) => {
+  const { page, problems } = await openEditor(t);
+  const before = await model(page);
+  const buy = before.nodes.find((n) => n.id === "application.purchase.buy")!;
+  const x = (key: string, m: Model): { x: number; y: number } => {
+    const node = m.nodes.find((n) => n.key === key)!;
+    return { x: node.x, y: node.y };
+  };
+
+  // A move, undone and redone: the positions come back each way.
+  const from = await centre(page, buy);
+  await drag(page, from, { x: from.x + 80, y: from.y });
+  const moved = x(buy.key, await model(page));
+  assert.ok(moved.x > buy.x + 30, `${buy.x} → ${moved.x}`);
+  await page.keyboard.press("Control+z");
+  assert.deepEqual(x(buy.key, await model(page)), { x: buy.x, y: buy.y });
+  await page.keyboard.press("Control+y");
+  assert.deepEqual(x(buy.key, await model(page)), moved);
+  await page.keyboard.press("Control+z");
+  await page.keyboard.press("Control+Shift+z");
+  assert.deepEqual(x(buy.key, await model(page)), moved);
+  await page.click("#editor-undo");
+  assert.deepEqual(x(buy.key, await model(page)), { x: buy.x, y: buy.y });
+  await page.click("#editor-redo");
+  assert.deepEqual(x(buy.key, await model(page)), moved);
+
+  // Arrows nudge the selection by a pixel, Shift+arrows by a grid step; «з коду» lets that, and Delete removes nothing.
+  await page.mouse.click((await centre(page, { ...buy, ...moved })).x, (await centre(page, { ...buy, ...moved })).y);
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Shift+ArrowDown");
+  assert.deepEqual(x(buy.key, await model(page)), { x: moved.x + 1, y: moved.y + 10 });
+  await page.keyboard.press("Backspace");
+  assert.equal((await model(page)).nodes.length, before.nodes.length);
+  await page.keyboard.press("Control+c");
+  await page.keyboard.press("Control+v");
+  assert.equal((await model(page)).nodes.length, before.nodes.length, "«з коду» pastes no step");
+
+  // Ctrl+A selects everything; Escape lets go; the rubber band over the whole canvas selects again.
+  await page.keyboard.press("Control+a");
+  assert.equal((await selection(page)).count, before.nodes.length + before.lanes.length + before.edges.length);
+  await page.keyboard.press("Escape");
+  assert.equal((await selection(page)).count, 0);
+  const canvas = (await page.locator("#editor-graph").boundingBox())!;
+  await drag(page, { x: canvas.x + 4, y: canvas.y + 4 }, { x: canvas.x + canvas.width - 4, y: canvas.y + canvas.height - 4 });
+  assert.ok((await selection(page)).count >= before.lanes.length, "the rubber band selects the shapes inside it");
+  await page.keyboard.press("Escape");
+
+  // «чернетка»: a step from the palette, copied and pasted, then duplicated — each a new planned name in the same lane.
+  await page.click("#editor-mode-draft");
+  await page.click('#editor-palette [data-item="step"]');
+  const first = (await model(page)).nodes.find((n) => n.key.startsWith("draft:"))!;
+  await page.locator("#editor-graph").hover({ position: { x: 5, y: 5 } });
+  await page.keyboard.press("Control+c");
+  await page.keyboard.press("Control+v");
+  await page.keyboard.press("Control+d");
+  let now = await model(page);
+  const drawn = now.nodes.filter((n) => n.key.startsWith("draft:"));
+  const prefix = first.id.slice(0, first.id.lastIndexOf(".") + 1) || "planned:";
+  assert.deepEqual(
+    drawn.map((n) => [n.id, n.layer]),
+    [
+      [first.id, first.layer],
+      [`${prefix}step2`, first.layer],
+      [`${prefix}step3`, first.layer],
+    ],
+  );
+  assert.equal(new Set(drawn.map((n) => n.key)).size, 3, "copies get keys of their own");
+
+  // Ctrl+G groups the two copies (Shift-click adds one), Ctrl+Shift+U lets them go; Ctrl+Z takes back the duplicate.
+  const [second, third] = [drawn[1]!, drawn[2]!];
+  // The copies overlap: the second is clicked at its top-left corner, out from under the third.
+  const corner = await screenPoint(page, second.x + 6, second.y + 6);
+  await page.mouse.click(corner.x, corner.y);
+  await page.keyboard.down("Shift");
+  await page.mouse.click((await centre(page, third)).x, (await centre(page, third)).y);
+  await page.keyboard.up("Shift");
+  await page.keyboard.press("Control+g");
+  now = await model(page);
+  const groups = new Set(now.nodes.filter((n) => n.key === second.key || n.key === third.key).map((n) => (n as { group?: string }).group));
+  assert.equal(groups.size, 1);
+  assert.ok([...groups][0], "both in one group");
+  await page.keyboard.press("Control+Shift+u");
+  assert.ok((await model(page)).nodes.every((n) => (n as { group?: string }).group === undefined));
+  await page.keyboard.press("Control+z");
+  await page.keyboard.press("Control+z");
+  await page.keyboard.press("Control+z");
+  assert.deepEqual(
+    (await model(page)).nodes.filter((n) => n.key.startsWith("draft:")).map((n) => n.id),
+    [first.id, `${prefix}step2`],
+  );
+
+  // + and − zoom, Ctrl+Shift+H fits.
+  const scale = (await selection(page)).scale;
+  await page.keyboard.press("+");
+  assert.ok((await selection(page)).scale > scale);
+  await page.keyboard.press("-");
+  await page.keyboard.press("-");
+  assert.ok((await selection(page)).scale < scale);
+  await page.keyboard.press("Control+Shift+h");
+  assert.ok(Math.abs((await selection(page)).scale - scale) < 0.05, "fit comes back to the fitted scale");
+
+  // Export: an SVG of the canvas with its labels, and a PNG, both made in the browser and downloaded.
+  const [svgFile] = await Promise.all([page.waitForEvent("download"), page.click("#editor-export-svg")]);
+  assert.equal(svgFile.suggestedFilename(), "flow-checkout.svg");
+  const svg = readFileSync((await svgFile.path())!, "utf8");
+  assert.match(svg, /^<\?xml[^>]*>\s*<svg [^>]*xmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
+  assert.match(svg, /application\.purchase\.buy/);
+  assert.match(svg, /<text/);
+  assert.ok(svg.length > 2000, `${svg.length} bytes`);
+  const [pngFile] = await Promise.all([page.waitForEvent("download"), page.click("#editor-export-png")]);
+  assert.equal(pngFile.suggestedFilename(), "flow-checkout.png");
+  const png = readFileSync((await pngFile.path())!);
+  assert.deepEqual([...png.subarray(0, 4)], [0x89, 0x50, 0x4e, 0x47]);
+  assert.ok(png.length > 5000, `${png.length} bytes`);
 
   assert.deepEqual(problems, []);
 });
