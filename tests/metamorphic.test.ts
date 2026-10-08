@@ -238,6 +238,32 @@ test("php: removing a `@return` or an inline `@var` that types a receiver moves 
   assert.deepEqual(moves("remove inline @var", "src/App/Checkout.php", "        /** @var Order $order */\n"), ["domain.Order.Order.pay ok → unverified"]);
 });
 
+/** PHP: a base `outside` the architecture, read as declarations (business-flows 40). */
+const PHP_OUTSIDE: Record<string, string> = {
+  "keylang.json": `${JSON.stringify({ languages: ["php"], layers: { app: ["src/App/**"], domain: ["src/Domain/**"] }, outside: ["lib/**"] })}\n`,
+  "lib/Fw/AbstractModel.php": "<?php\nnamespace Fw;\n\nabstract class AbstractModel\n{\n    /** @return \\Shop\\Domain\\Repo */\n    public function getRepo() { return null; }\n\n    public function getData(string $key = '') { return null; }\n}\n",
+  "src/Domain/Repo.php": "<?php\nnamespace Shop\\Domain;\n\nclass Repo\n{\n    public function store(): void {}\n}\n",
+  "src/App/Order.php": "<?php\nnamespace Shop\\App;\n\nuse Fw\\AbstractModel;\n\nclass Order extends AbstractModel\n{\n    public function place(): void\n    {\n        $this->getData('id');\n        $this->getRepo()->store();\n    }\n}\n",
+  "keylang/flows.md": "# flow place\n\n- trigger app.Order.Order.place\n  - step domain.Repo.Repo.store\n",
+  "keylang/rules.md": "# rules\n\n- layers domain < app\n- deny domain app\n",
+};
+
+test("php: removing a file `outside` the architecture whose declarations type a receiver moves a verdict only to unverified", (t) => {
+  const php = mkdtempSync(join(tmpdir(), "keylang-meta-php-outside-"));
+  t.after(() => rmSync(php, { recursive: true, force: true }));
+  for (const [path, text] of Object.entries(PHP_OUTSIDE)) write(php, path, text);
+  const before = aggregate(results(php), layersLines(rulesText(php)));
+  rmSync(join(php, "lib/Fw/AbstractModel.php"));
+  const after = aggregate(results(php), layersLines(rulesText(php)));
+  monotonic("php-outside", "remove lib/Fw/AbstractModel.php", before, after);
+  const moved = [...before]
+    .filter(([key, left]) => left.verdict !== (after.get(key)?.verdict ?? "unverified"))
+    .map(([key, left]) => `${key.split(":").slice(0, 3).join(":")} ${left.verdict} → ${after.get(key)?.verdict ?? "unverified"}`)
+    .sort();
+  // The step through the outside base's `@return`, and the K107 of the call into it.
+  assert.deepEqual(moved, ["diag:K107:src/App/Order.php fail → unverified", "flow:static:domain.Repo.Repo.store ok → unverified"]);
+});
+
 test("exclude and --static shape never switch ok and fail", (t) => {
   const repo = copyFixture(t, "repo");
   const original = readFileSync(join(repo, "keylang/rules.md"), "utf8");

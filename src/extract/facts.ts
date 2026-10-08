@@ -398,7 +398,7 @@ export interface FieldFact {
  * Names are qualified, without the leading `\`.
  */
 export interface OutsideDeclFact {
-  kind: "class" | "interface" | "trait";
+  kind: "class" | "interface";
   /** The qualified name. */
   name: string;
   line: number;

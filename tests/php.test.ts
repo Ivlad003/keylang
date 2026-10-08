@@ -885,7 +885,110 @@ test("php: a local value has the class its declarations give — `new`, a declar
   // Outside the `instanceof` branch the parameter has no class; two assignments of different classes give none.
   assert.equal(hole(32), "call through a local value `any.refund`");
   assert.equal(hole(37), "call through a local value `mixed.find`");
+  // The interface's `@return` is read for what `get()` returns, not as a call target.
+  assert.ok(!index.edges.some((e) => e.kind === "call" && e.target?.startsWith("domain.OrderRepository")));
   // The call through the interface stays a hole; only its result is typed.
   assert.ok(index.coverage.some((c) => c.source === "app.Checkout.Checkout.buy" && c.line === 33 && c.reason === "call through an interface `OrderRepository`"), JSON.stringify(index.coverage));
   assert.equal(keylang(dir, ["map", "--check"]).status, 0);
+});
+
+/** A framework `outside` the architecture (ADR 0011) whose classes the architecture extends and calls. */
+const OUTSIDE_FILES: Record<string, string> = {
+  "keylang.json": JSON.stringify({ languages: ["php"], layers: { app: ["src/App/**"], domain: ["src/Domain/**"] }, outside: ["lib/**"] }),
+  "lib/Fw/DataObject.php": "<?php\nnamespace Fw;\n\nclass DataObject\n{\n    public function __construct(array $data = []) {}\n\n    public function getData(string $key = '') { return null; }\n}\n",
+  "lib/Fw/AbstractModel.php": [
+    "<?php",
+    "namespace Fw;",
+    "",
+    "use Fw\\Event\\ManagerInterface;",
+    "",
+    "abstract class AbstractModel extends DataObject",
+    "{",
+    "    /** @var ManagerInterface */",
+    "    protected $_eventManager;",
+    "",
+    "    /** @return \\Shop\\Domain\\Repo */",
+    "    public function getRepo() { return null; }",
+    "",
+    "    public function save(): static { return $this; }",
+    "}",
+    "",
+  ].join("\n"),
+  "lib/Fw/Event/ManagerInterface.php": "<?php\nnamespace Fw\\Event;\n\ninterface ManagerInterface\n{\n    public function dispatch(string $name, array $data = []);\n}\n",
+  "lib/Fw/Registry.php": "<?php\nnamespace Fw;\n\nclass Registry\n{\n    public function registry(string $key) { return null; }\n}\n",
+  "lib/Fw/Broken.php": "<?php\nnamespace Fw;\n\nclass Broken {\n    public function oops( {\n}\n",
+  "src/Domain/Repo.php": "<?php\nnamespace Shop\\Domain;\n\nclass Repo\n{\n    public function store(): void {}\n}\n",
+  "src/App/Order.php": [
+    "<?php",
+    "namespace Shop\\App;",
+    "",
+    "use Fw\\AbstractModel;",
+    "use Fw\\Registry;",
+    "",
+    "class Order extends AbstractModel",
+    "{",
+    "    public function __construct(private Registry $registry)",
+    "    {",
+    "        parent::__construct([]);",
+    "    }",
+    "",
+    "    public function place(): void",
+    "    {",
+    "        $this->getData('id');",
+    "        $this->save()->getRepo()->store();",
+    "        $this->registry->registry('k');",
+    "        $this->_eventManager->dispatch('order_placed');",
+    "        $this->missing();",
+    "        new Registry();",
+    "    }",
+    "}",
+    "",
+  ].join("\n"),
+};
+
+test("php: a file `outside` the architecture is read as declarations only — members of its classes are calls to its module, with the member named; no node, no K102, and its result types and `@var` properties type values", (t) => {
+  const dir = repo(t, OUTSIDE_FILES);
+  const mapped = keylang(dir, ["map"]);
+  assert.equal(mapped.status, 0, mapped.stderr);
+  const index = snapshot(dir);
+  const calls = index.edges
+    .filter((e) => e.kind === "call" && e.source.startsWith("app.Order.Order.") && e.resolution === "resolved")
+    .map((e) => `${e.source.slice("app.Order.Order.".length)} ${e.line} ${e.target}${(e as { member?: string }).member ? ` ${(e as { member?: string }).member}` : ""} ${e.provenance}${e.docblock ? ` ${e.docblock}` : ""}${(e as { indirect?: true }).indirect ? " indirect" : ""}`)
+    .sort();
+  assert.deepEqual(calls, [
+    // `parent::__construct()`: the outside base's constructor, two classes up.
+    "__construct 11 outside.lib.Fw.DataObject Fw\\DataObject::__construct syntactic",
+    // `$this->getData()`, inherited from a base outside the architecture.
+    "place 16 outside.lib.Fw.DataObject Fw\\DataObject::getData syntactic",
+    // `getRepo()` returns a class of the architecture by its `@return` there: an edge into it.
+    "place 17 domain.Repo.Repo.store docblock lib/Fw/AbstractModel.php:11:9 indirect",
+    // `save(): static` returns the `Order` it is called on: `getRepo()` is its inherited member.
+    "place 17 outside.lib.Fw.AbstractModel Fw\\AbstractModel::getRepo syntactic indirect",
+    "place 17 outside.lib.Fw.AbstractModel Fw\\AbstractModel::save syntactic",
+    // A property typed with an outside class, and `new` of one.
+    "place 18 outside.lib.Fw.Registry Fw\\Registry::registry syntactic",
+    "place 21 outside.lib.Fw.Registry Fw\\Registry::__construct syntactic",
+  ]);
+  const hole = (line: number): string | undefined => index.coverage.find((c) => c.source === "app.Order.Order.place" && c.line === line)?.reason;
+  // A property the outside base types with an interface by `@var`: a call through an interface.
+  assert.equal(hole(19), "call through an interface `ManagerInterface`");
+  // No declaration keylang read has it: still a hole.
+  assert.equal(hole(20), "unresolved call `this.missing`");
+  // The outside files stay opaque modules: no fn nodes, no edges of their own, no holes but `outside-file`.
+  assert.ok(Object.entries(index.nodes).every(([id, node]) => !id.startsWith("outside.") || node.kind === "module" || node.kind === "layer"));
+  assert.ok(!index.edges.some((e) => e.source.startsWith("outside.")));
+  assert.ok(index.coverage.filter((c) => c.file.startsWith("lib/")).every((c) => c.kind === "outside-file"), JSON.stringify(index.coverage));
+  // Depending on them is what `outside` forbids (K107, ADR 0011); the layer rules do not see them.
+  write(dir, { "keylang/rules.md": "# rules\n\n- layers domain < app\n- deny domain app\n" });
+  const o = keylang(dir, ["check"]);
+  assert.match(o.stdout, /K107 divergence: `app\.Order` depends on `outside\.lib\.Fw\.DataObject`/);
+  assert.doesNotMatch(o.stdout, /K10[12]/);
+  assert.equal(keylang(dir, ["map", "--check"]).status, 0);
+  // An outside file's declarations are an input of the snapshot: changing them changes its ID.
+  const id = (JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as { snapshotId: string }).snapshotId;
+  write(dir, { "lib/Fw/Registry.php": "<?php\nnamespace Fw;\n\nclass Registry\n{\n    public function lookup(string $key) { return null; }\n}\n" });
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const after = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as Snapshot & { snapshotId: string };
+  assert.notEqual(after.snapshotId, id);
+  assert.ok(after.coverage.some((c) => c.source === "app.Order.Order.place" && c.line === 18 && c.reason === "unresolved call `this.registry.registry`"), JSON.stringify(after.coverage));
 });

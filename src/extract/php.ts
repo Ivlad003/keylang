@@ -39,6 +39,48 @@ export function extractPhp(path: string, src: string): Promise<FileFacts> {
   return withTree("php", src, (tree) => extractTree(path, tree.rootNode));
 }
 
+/**
+ * A file `outside` the architecture as declarations only (ADR 0011, business-flows 40): an opaque
+ * module — no import, declaration, call or hole of its own — that carries its classes and
+ * interfaces with their bases, interfaces, traits, methods, result types and typed properties,
+ * names qualified. A file that does not parse carries none: a member it would declare is not known.
+ */
+export function declarationsOnly(facts: FileFacts): FileFacts {
+  const declarations: OutsideDeclFact[] = [];
+  if (facts.parseError === null) {
+    const qualified = (written: string): string => qualifiedBy(facts, written);
+    const symbols = (facts.symbols ?? []).filter((s) => s.table === "class");
+    for (const d of facts.decls) {
+      if (d.kind !== "class" && d.kind !== "type") continue;
+      const name = symbols.find((s) => s.name === d.name)?.qualified ?? d.name;
+      const methods: MethodSigFact[] = d.kind === "type" ? (d.methods ?? []) : d.members.map((m) => ({ name: m.name, ...(m.static ? { static: true as const } : {}), ...(m.result ? { result: m.result } : {}) }));
+      declarations.push({
+        kind: d.kind === "type" ? "interface" : "class",
+        name,
+        line: d.line,
+        col: d.col,
+        ...(d.base !== undefined ? { base: qualified(d.base) } : {}),
+        ...(d.implements ? { implements: d.implements.map(qualified) } : {}),
+        ...(d.traits ? { traits: d.traits.map(qualified) } : {}),
+        methods,
+        fields: d.fields ?? [],
+      });
+    }
+  }
+  return { path: facts.path, endLine: facts.endLine, endCol: facts.endCol, imports: [], decls: [], exports: new Set(), reexportsAll: [], exportRows: [], unsupported: [], valueRefs: [], moduleCalls: [], completeness: "opaque", parseError: null, ...(declarations.length > 0 ? { declarations } : {}) };
+}
+
+/** A class name as the file binds it (`Collector.klass`), qualified through the file's imports: `Foo` with `use A\Foo` → `A\Foo`. */
+function qualifiedBy(facts: FileFacts, written: string): string {
+  if (written.startsWith("\\")) return written.replace(/^\\+/, "");
+  const [head, ...rest] = written.split("\\");
+  for (const imp of facts.imports) {
+    if (/^(?:function|const|include) /.test(imp.source)) continue;
+    if (imp.bindings.some((b) => b.kind === "named" && b.local === head)) return [imp.source.replace(/^\\+/, ""), ...rest].join("\\");
+  }
+  return written;
+}
+
 /** What names mean in one namespace: its name and the aliases of its `use` statements (keys in ASCII lower case: PHP class and function names ignore ASCII case). */
 interface Names {
   ns: string;

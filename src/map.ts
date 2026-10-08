@@ -11,6 +11,7 @@ import { languageOf } from "./languages.ts";
 import { compareText } from "./span.ts";
 import type { FileFacts } from "./extract/facts.ts";
 import { frontendFor } from "./frontends.ts";
+import { declarationsOnly } from "./extract/php.ts";
 import { isGeneratedMap, renderExplainedMap, renderMap } from "./emit.ts";
 import { explanationOf, loadBriefs } from "./explanations.ts";
 import { buildGraph, directoryModule, placeFile, type Graph } from "./graph.ts";
@@ -89,6 +90,27 @@ export async function generateMap(config: Config, options: { persist?: boolean |
     if (!frontend) continue;
     facts.push(await cache.facts(p, src.sha256, () => extractGuarded(frontend.extract, p, src.text)));
   }
+  // A PHP file `outside` the architecture is read as declarations only (business-flows 40): a class of
+  // the architecture that extends one of its classes, or a value typed with one, finds its members.
+  // Cached by content under a key of its own; its hash joins `snapshotId`, as a resolver's input does.
+  const declared = new Map<string, FileFacts>();
+  const declarationInputs: [string, string][] = [];
+  for (const p of tree.outside) {
+    const frontend = frontendFor(p);
+    if (!frontend || languageOf(p) !== "php") continue;
+    const abs = join(config.root, p);
+    let src: string | null | { unreadable: string };
+    try {
+      src = options.overlay?.get(abs) ?? readAnalysedSource(abs);
+    } catch {
+      src = null;
+    }
+    if (typeof src !== "string") continue;
+    const hash = sha256(src);
+    const text = src;
+    declared.set(p, await cache.facts(p, `declarations\0${hash}`, async () => declarationsOnly(await extractGuarded(frontend.extract, p, text))));
+    declarationInputs.push([`outside-declarations:${p}`, hash]);
+  }
   // Framework config files (ADR 0022): read by the adapters the repository uses, cached by content like the sources.
   const frameworks = readFrameworks(config, all, sources, options.overlay, cache, options.adapters, facts);
   const factCache = options.persist === true || (options.persist === "changed" && cache.changed()) ? cache.serialize() : null;
@@ -98,9 +120,10 @@ export async function generateMap(config: Config, options: { persist?: boolean |
   for (const p of excluded) facts.push(opaqueFacts(p));
   // A file `outside` the architecture is not read either, but it is no hole: a module of the layer `outside`.
   const outside = tree.outside;
-  for (const p of outside) facts.push(opaqueFacts(p));
+  for (const p of outside) facts.push(declared.get(p) ?? opaqueFacts(p));
   for (const { file } of unreadableFiles) facts.push(opaqueFacts(file));
   const graph = buildGraph(config, facts, frameworks.inputs);
+  for (const [key, hash] of declarationInputs) graph.resolverInputs.set(key, hash);
   // Layers written in keylang.json that overlap or match nothing: the layout still works, so a warning, first.
   if (!config.guessed) graph.warnings.unshift(...layerGlobWarnings(config, [...all, ...excluded, ...unreadableFiles.map((u) => u.file)].sort(compareText)));
   for (const [files, comment] of [[excluded, "excluded"], [outside, "outside"]] as const) {

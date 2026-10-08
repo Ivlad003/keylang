@@ -2127,7 +2127,7 @@ function isIndexFile(file: string): boolean {
  */
 function addCall(fn: Fn, call: Call): boolean {
   const rank = (c: Call): number => (c.via === undefined ? (c.closure ? 1 : 3) : c.via === "closure-arg" || !c.closure ? 2 : 1);
-  const covers = (a: Call, b: Call): boolean => a.target === b.target && (rank(a) > rank(b) || (rank(a) === rank(b) && (rank(a) !== 1 || a.via === b.via)));
+  const covers = (a: Call, b: Call): boolean => a.target === b.target && a.member === b.member && (rank(a) > rank(b) || (rank(a) === rank(b) && (rank(a) !== 1 || a.via === b.via)));
   if (fn.calls.some((c) => covers(c, call))) return false;
   fn.calls = fn.calls.filter((c) => !covers(call, c));
   fn.calls.push(call);
