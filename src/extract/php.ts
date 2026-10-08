@@ -355,6 +355,7 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
   /** Properties the constructor settled: typed, or a hole for conflicting classes. */
   const decided = new Set<string>();
   const traits: string[] = [];
+  const traitRules: NonNullable<DeclFact["traitRules"]> = [];
   for (const item of items) {
     if (item.type === "property_declaration") {
       const type = singleClass(item.childForFieldName("type"));
@@ -373,6 +374,28 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
         const local = collector.klass(written, traitNode, names);
         types.push(typeRef(local, traitNode));
         traits.push(local);
+      }
+      // `{ Loud::hello insteadof Quiet; Quiet::hello as whisper; }`: which trait's method the class takes.
+      for (const clause of item.namedChildren.find((c) => c.type === "use_list")?.namedChildren ?? []) {
+        if (clause.type !== "use_instead_of_clause" && clause.type !== "use_as_clause") continue;
+        const [subject, ...rest] = clause.namedChildren;
+        if (!subject) continue;
+        const qualified = subject.type === "class_constant_access_expression" ? subject.namedChildren : null;
+        const traitName = qualified ? classNameOf(qualified[0] ?? null) : null;
+        const method = qualified ? qualified[1]?.text : subject.type === "name" ? subject.text : undefined;
+        if (!method) continue;
+        const trait = traitName ? collector.klass(traitName, qualified![0]!, names) : null;
+        if (clause.type === "use_instead_of_clause") {
+          const insteadof: string[] = [];
+          for (const other of rest) {
+            const written = classNameOf(other);
+            if (written) insteadof.push(collector.klass(written, other, names));
+          }
+          if (trait) traitRules.push({ trait, method, insteadof });
+        } else {
+          const alias = rest.filter((c) => c.type === "name").at(-1)?.text;
+          if (alias) traitRules.push({ trait, method, alias });
+        }
       }
     }
   }
@@ -406,7 +429,7 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
     if (statics.has(asciiLowerCase(member))) decl.static = true;
     members.push(decl);
   }
-  return { kind: "class", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature: null, exported: true, calls: [], types, members, fingerprint: fingerprint(node), ...(base !== undefined ? { base } : {}), ...(traits.length > 0 ? { traits } : {}), ...(doc !== undefined ? { doc } : {}) };
+  return { kind: "class", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature: null, exported: true, calls: [], types, members, fingerprint: fingerprint(node), ...(base !== undefined ? { base } : {}), ...(traits.length > 0 ? { traits } : {}), ...(traitRules.length > 0 ? { traitRules } : {}), ...(doc !== undefined ? { doc } : {}) };
 }
 
 /**

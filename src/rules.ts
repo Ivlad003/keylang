@@ -405,7 +405,8 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
     const reachable = new Set<string>();
     // An entry naming a layer or a directory seeds every module under it; it is not itself a module.
     const stack = rules.entries.flatMap((id) => {
-      const module = scopeOf(id);
+      // A planned ID seeds only the units under it, not the module of its parent.
+      const module = planned.includes(id) && !isModule(id) ? null : scopeOf(id);
       if (module) return [unitOf(module)];
       const under = [...units].filter((candidate) => within(candidate, id));
       return under.length > 0 ? under : [id];
@@ -497,6 +498,8 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
     }
     if (failed) continue;
     if (unknown) pushUnverified(...at, criterion, rule.module, unknown.reason ?? "re-export from an opaque module", spec);
+    // The table of an opaque module may lack an export, which would be a K104: the match is no convergence.
+    else if (opaque) pushUnverified(...at, criterion, rule.module, `opaque module \`${rule.module}\` may export more than its table shows`, spec);
     else pushOk(rule.file, rule.span, criterion, rule.module, `convergence: the export table is exactly ${[...rule.names].sort().join(", ")}`, spec);
   }
 
@@ -512,6 +515,11 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
     for (const module of selfLoops) adj.set(module, new Set([...(adj.get(module) ?? []), module]));
     const components = stronglyConnected(adj);
     for (const rule of rules.noCycles) {
+      // A planned module under a file module is not that module: no code, so nothing to check yet.
+      if (rule.under !== null && planned.includes(rule.under) && !isModule(rule.under)) {
+        pushUnverified(rule.file, rule.span.start.line, rule.span.start.col, "no-cycles", rule.under, `\`${rule.under}\` is planned: no code yet`, `no-cycles ${rule.under}`);
+        continue;
+      }
       // A class is in a cycle when its file is.
       const scopeModule = rule.under === null ? null : scopeOf(rule.under);
       const under = rule.under === null ? null : scopeModule === null ? rule.under : unitOf(scopeModule);

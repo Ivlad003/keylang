@@ -143,6 +143,8 @@ const SKIP_DIRS = new Set(["node_modules", "dist", "build", "out", "coverage", "
 /** Test and tooling files: kept out of the map (flows reference tests by path, §3.4). */
 const DEFAULT_EXCLUDE = [
   "**/*.d.ts",
+  "**/*.d.mts",
+  "**/*.d.cts",
   "**/*.test.*",
   "**/*.spec.*",
   "**/*.stories.*",

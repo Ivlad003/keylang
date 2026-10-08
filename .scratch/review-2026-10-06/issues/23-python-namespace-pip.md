@@ -1,6 +1,6 @@
 # 23: Python: тека в корені вирішує, чи ім'я внутрішнє: namespace-пакет стає нерозв'язаним, а тека з конфігами затуляє пакет pip
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -50,11 +50,15 @@
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/python-imports.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/python-imports.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+- 2026-10-08: Регресійний тест `tests/languages.test.ts` «python: a root directory without Python code does not hide a pip package or a package under src/…» — справжній CLI, три фікстури: (б) `redis/` лише з Dockerfile і redis.conf, `import redis`, `deny app external.redis` → K102 (було K001 + `unverified unresolved import redis`); (в) кореневий `config/settings.yaml` і `src/config/` → `deny app cfg` дає K102 (було `unverified`); (а) PEP 420 `nsp/inner/mod.py` без `__init__.py` → `0 fail, 0 unverified, 1 ok`, без `unresolved-import` у coverage, ребро `app.cache → nsp.inner.mod`.
+- 2026-10-08: Виправлення в `src/python-imports.ts`: корінь бере перший сегмент лише тоді, коли це модуль (`p.py`, `p/__init__.py`) або тека з `.py` у ній чи нижче (`hasPython`: теки `.py`-джерел аналізу, інакше обмежений обхід диска — для виключених пакетів); інакше пошук іде до `src/`, далі stdlib/external. Голова пакета простору імен (`import nsp` з `import nsp.inner.mod`) повертає `{kind: "generated"}` — той самий вид, яким PHP-резолвер позначає простір імен: без ребра й без дірки.
+- 2026-10-08: Припущення: результат обходу диска для теки без джерел не входить у `snapshotId` (як і `isDir` до того) — поява `.py` у виключеній теці без інших змін джерел той самий id не змінить; це вужче за тікет 20 і окремо не виправлялось. Контракт: `docs/snapshot.md`, абзац Python. Перевірки: `node --test tests/languages.test.ts tests/exact-path.test.ts tests/analyzer.test.ts` — 67/67, `npm run typecheck` — ок.
