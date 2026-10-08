@@ -54,4 +54,4 @@ The stub is a TypeScript function plus a `node:test` file. The agent also writes
 
 Here is what a green feature means: `create` calls `make` and `insert`, and no rule fails. It does not mean that the HTTP server started or that the class injectors were wired. Even so, the import rules still catch a controller that imports `src/db` directly.
 
-Back to the [course](../README.md).
+Next: [from a diagram](05-from-diagram.md). Back to the [course](../README.md).

@@ -460,7 +460,9 @@ export function flowFromDrawio(model: DrawioModel, name: string, current: { text
     const gateway = after.cell !== null && (after.cell.startsWith("when:") || byId.get(after.cell)?.attrs.keylang_kind === "gateway");
     const parallel = after.cell !== null && (/^parallel:\d+$/.test(after.cell) || (byId.get(after.cell)?.attrs.keylang_kind === "parallel" && byId.get(after.cell)?.attrs.keylang_role !== "join"));
     // Into a gateway's branch when the edge carries its condition, into a parallel group always; else as the first nested line of a parent, or the next sibling.
-    const nested = sibling ? false : parallel ? true : gateway ? branch : end > at + 1;
+    // A `test` line under a step is not a nested step: the next shape is its sibling.
+    const hasNested = entries.slice(at + 1, end).some((entry) => !/^\s*- test\s/.test(entry.text));
+    const nested = sibling ? false : parallel ? true : gateway ? branch : hasNested;
     const indent = nested ? after.indent + 2 : after.indent;
     const entry = { text: listLine(indent, body), indent, cell: cell.id };
     // A group's steps keep the order they are placed in; a nested line otherwise goes first under its parent.

@@ -1,0 +1,16 @@
+/* «Новий проєкт» (business-flows/29): the panel above the editor while a new project is drawn. */
+#list header .greenfield-new { border: 1px solid #1565c0; border-radius: 4px; background: #1565c0; color: #ffffff; font: inherit; font-size: 12px; padding: 2px 8px; cursor: pointer; }
+#list header .greenfield-new[hidden] { display: none; }
+#editor .greenfield { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 8px; border-bottom: 1px solid #c5cae9; background: #e8eaf6; position: relative; }
+#editor .greenfield[hidden] { display: none; }
+#editor .greenfield select, #editor .greenfield button { border: 1px solid #9fa8da; border-radius: 4px; background: #ffffff; font: inherit; height: 26px; cursor: pointer; }
+#editor .greenfield #greenfield-create { background: #1565c0; border-color: #1565c0; color: #ffffff; }
+#editor .greenfield #greenfield-create:disabled { opacity: 0.5; cursor: default; }
+#editor .greenfield .greenfield-label { color: #5c6bc0; font-size: 12px; }
+#editor .greenfield .greenfield-languages { display: inline-flex; gap: 8px; }
+#editor .greenfield textarea { flex: 1; min-width: 220px; font: inherit; border: 1px solid #9fa8da; border-radius: 4px; resize: vertical; }
+#editor .greenfield .greenfield-hide { position: absolute; top: 4px; right: 6px; border: none; background: none; }
+#editor .greenfield-result { flex-basis: 100%; max-height: 220px; overflow: auto; background: #ffffff; border: 1px solid #c5cae9; border-radius: 4px; padding: 4px 10px; font-size: 12px; }
+#editor .greenfield-result[hidden] { display: none; }
+#editor .greenfield-result .greenfield-error { color: #c62828; }
+#editor .greenfield-result ul, #editor .greenfield-result ol { margin: 4px 0; padding-left: 20px; }

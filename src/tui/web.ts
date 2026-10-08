@@ -36,6 +36,8 @@ import { DISCOVERED_FLOWS_DIR, sourceInputs } from "../map.ts";
 import { runCoverage } from "../operations/coverage.ts";
 import { DIAGRAM_FORMATS, diagramExportText, exportSourcesOf, exportViewOfQuery } from "../operations/diagram-export.ts";
 import { runDiagramPropose, specHash } from "../operations/diagram-propose.ts";
+import { greenfieldAvailability, runGreenfield } from "../operations/greenfield.ts";
+import { GREENFIELD_LANGUAGES } from "../greenfield.ts";
 import { flowCandidate } from "../operations/draft.ts";
 import { commitProposal, generatedIn, proposalRefusal, rootRelative } from "../operations/shared.ts";
 import { buildTour, tourMarkdown } from "../tour.ts";
@@ -404,6 +406,24 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
     return json(status, { ...done, ...(done.error !== null ? { error: done.error } : {}) });
   };
 
+  /**
+   * `GET /api/greenfield` and `POST` (business-flows/29): whether a new project may be drawn here
+   * (no keylang.json), and «Створити специфікацію» — `{model, languages, idea}` as the project's
+   * first files, by `runGreenfield`. 409 when keylang.json or a target is already there (nothing
+   * written); the same guards as every write (token, JSON, origin).
+   */
+  const greenfieldRequest = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
+    const json = (status: number, body: unknown): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
+    if (request.method === "GET") return json(200, { root: options.root, ...greenfieldAvailability(options.root), languages: Object.keys(GREENFIELD_LANGUAGES) });
+    const body = await jsonBody(request, response, "greenfield", "POST", MAX_MODEL_BODY);
+    if (body === NO_BODY) return;
+    if (body === null || typeof body !== "object" || Array.isArray(body)) return json(400, { error: "the body: {model, languages, idea}" });
+    const { model, languages, idea } = body as { model?: unknown; languages?: unknown; idea?: unknown };
+    const done = runGreenfield({ root: options.root, model, languages, idea });
+    const status = done.status === "invalid" ? 400 : done.status === "conflict" ? 409 : done.status === "failed" ? 500 : 200;
+    return json(status, done);
+  };
+
   /** `GET /api/views`, `/api/diagram?view=…`, `/api/usages?id=…`, `/api/calls?id=…`, `/api/ids?prefix=…`, `/api/coverage`, `/api/tour`; `POST /api/flow-proposal`: JSON for the diagram client (`GET /api/export?format=bpmn|drawio&view=…`: the file), with the socket's token as a Bearer. */
   const api = async (request: IncomingMessage, response: ServerResponse, path: string, query: URLSearchParams): Promise<void> => {
     // These paths are public (docs/tui.md); any other is the 404 of every unknown path, token or not.
@@ -417,6 +437,7 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
     if (path === "/api/flow-proposal") return flowProposal(request, response);
     if (path === "/api/diagram-proposal") return diagramProposal(request, response);
     if (path === "/api/layout") return layoutRequest(request, response, query);
+    if (path === "/api/greenfield") return greenfieldRequest(request, response);
     if (request.method !== "GET") return reply(response, 405, "text/plain", "method not allowed\n");
     const json = (status: number, body: unknown): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
     // The project tour (business-flows/15): the data of `keylang tour --json` and its Markdown, for the «Огляд» tab.
@@ -750,7 +771,7 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
 }
 
 /** The paths of the diagram API; any other under `/api/` is 404. */
-const API_PATHS: ReadonlySet<string> = new Set(["/api/views", "/api/diagram", "/api/usages", "/api/calls", "/api/ids", "/api/coverage", "/api/tour", "/api/flow-proposal", "/api/export", "/api/layout", "/api/diagram-proposal"]);
+const API_PATHS: ReadonlySet<string> = new Set(["/api/views", "/api/diagram", "/api/usages", "/api/calls", "/api/ids", "/api/coverage", "/api/tour", "/api/flow-proposal", "/api/export", "/api/layout", "/api/diagram-proposal", "/api/greenfield"]);
 
 /** At most this many IDs in one answer of `GET /api/ids`. */
 const MAX_IDS = 100;

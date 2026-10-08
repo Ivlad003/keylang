@@ -28,4 +28,4 @@ If you are still deciding whether keylang is worth using, start with lesson 1. I
 There are also two shorter tracks that apply the same commands to a concrete job:
 
 - [Adding to a codebase](existing/README.md) — adding a feature and a package to a repository that already exists. You write the spec, and the agent generates the code.
-- [Starting a project](from-scratch/README.md) — a Telegram bot, a Python CRUD app and a NestJS app. keylang does not create the empty project for you. An agent generates the code from the spec, so you do not write the functions yourself, and keylang checks that the result keeps the shape you described.
+- [Starting a project](from-scratch/README.md) — a Telegram bot, a Python CRUD app, a NestJS app, and a project drawn as a diagram (`keylang web --new`). keylang does not create the empty project for you. An agent generates the code from the spec, so you do not write the functions yourself, and keylang checks that the result keeps the shape you described.

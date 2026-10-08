@@ -21,6 +21,7 @@ import { codeLink, element, make } from "./dom.ts";
 import { Editor } from "./editor.ts";
 import { FileLayoutStore, useLayoutStore } from "./layout-store.ts";
 import { Explorer } from "./explorer.ts";
+import { mountGreenfield } from "./greenfield.ts";
 import { mountExport } from "./export.ts";
 import { VirtualList, type ListItem } from "./list.ts";
 import { mountTour } from "./tour.ts";
@@ -509,3 +510,5 @@ class Page {
 void new Page().start();
 // «Огляд»: the project tour over the canvas (business-flows/15).
 mountTour();
+// «Новий проєкт»: a project drawn before its code, when the root has no keylang.json (business-flows/29).
+void mountGreenfield((window as unknown as { keylangEditor: Editor }).keylangEditor, (text) => (element("status").textContent = text));

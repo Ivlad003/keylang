@@ -5,7 +5,7 @@
 // command's handler, so `--version` and `check` do not compile it. The
 // specifiers stay literal: the map keeps the import edge.
 
-import { chmodSync, existsSync, readFileSync, rmSync, statSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
@@ -40,6 +40,12 @@ Commands:
                             with a one-time token (localhost only by default).
                             With a repository URL or path: clone it first, as clone
                             does, and serve the clone
+  web --new <dir> [--port N] [--host H]
+                            A new project from a diagram: creates <dir> (refused when
+                            it has keylang.json) and opens the diagram editor on an
+                            empty canvas with a template of lanes; «Створити
+                            специфікацію» writes keylang.json, rules.md, features,
+                            the idea and the layout — only files that do not exist
   clone <url> [--dir D] [--explain MODE] [--dry-run]
                             Shallow-clone a repository (https, ssh, git, file URL,
                             git@host:owner/repo or a local path) into
@@ -388,6 +394,7 @@ const OPTIONS = {
   port: { type: "string" },
   host: { type: "string" },
   dir: { type: "string" },
+  new: { type: "string" },
   explain: { type: "string" },
   since: { type: "string" },
   agents: { type: "string" },
@@ -529,6 +536,10 @@ async function run(argv: readonly string[]): Promise<number> {
     case "clone":
       return (await prepareClone(paths[0], { dir: values.dir, explain: values.explain, dryRun: values["dry-run"] === true })).code;
     case "web": {
+      if (values.new !== undefined) {
+        if (paths[0] !== undefined) throw new Error("web: --new <dir> makes a new project; it takes no repository");
+        return cmdWebNew(values.new, values.port ?? "7070", values.host ?? "127.0.0.1");
+      }
       if (paths[0] === undefined) return cmdWeb(findRoot(process.cwd()), values.port ?? "7070", values.host ?? "127.0.0.1");
       const clone = await prepareClone(paths[0], { dir: values.dir, explain: values.explain, dryRun: false });
       if (clone.code !== 0 || clone.root === null) return clone.code;
@@ -545,12 +556,36 @@ async function run(argv: readonly string[]): Promise<number> {
   }
 }
 
-async function cmdWeb(root: string, portText: string, host: string): Promise<number> {
+/**
+ * `web --new <dir>` (business-flows/29): a new project from a diagram. The
+ * directory is made when it is not there; one with keylang.json is a project
+ * already (2). The URL opens the diagram editor on an empty canvas.
+ */
+async function cmdWebNew(dirText: string, portText: string, host: string): Promise<number> {
+  if (dirText === "") throw new Error("web --new: a directory is required");
+  const root = resolve(process.cwd(), dirText);
+  if (existsSync(root) && !statSync(root).isDirectory()) throw new Error(`web --new: ${dirText} is not a directory`);
+  if (existsSync(join(root, CONFIG_FILE)) || isLink(join(root, CONFIG_FILE))) throw new Error(`web --new: ${join(dirText, CONFIG_FILE)} exists: the project is there already; run \`keylang web\` in it and «Запропонувати зміни»`);
+  mkdirSync(root, { recursive: true });
+  return cmdWeb(root, portText, host, true);
+}
+
+function isLink(path: string): boolean {
+  try {
+    return lstatSync(path).isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+async function cmdWeb(root: string, portText: string, host: string, greenfield = false): Promise<number> {
   const port = Number(portText);
   if (!/^\d+$/.test(portText) || port > 65535) throw new Error(`web: --port must be a number from 0 to 65535, got \`${portText}\``);
   const { serveWeb } = await import("./tui/web.ts");
   const server = await serveWeb({ root, port, host });
-  process.stdout.write(`keylang web: ${server.url}\n`);
+  // A new project opens on the diagram page, in the editor with the template dialog.
+  process.stdout.write(`keylang web: ${greenfield ? `${server.url.replace("/#t=", "/diagrams#t=")}&new=1` : server.url}\n`);
+  if (greenfield) process.stderr.write(`a new project in ${root}: draw it, then «Створити специфікацію»\n`);
   process.stderr.write("open the URL in a browser; Ctrl+C stops the server\n");
   await new Promise<void>((resolve) => {
     // Ctrl+C with unsaved buffers in a session asks once more, like `q` in the TUI; SIGTERM always stops.

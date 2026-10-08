@@ -98,7 +98,7 @@ keylang має допомагати швидко зануритись у чуж�
 | [26](issues/26-flow-bundle-export-import.md) | `keylang flow export\|import`: переносний пакет бізнес-флоу | resolved | 12 |
 | [27](issues/27-migration-parity.md) | Міграція: таблиця відповідності ID і перевірка паритету старого й нового стеку | resolved | 26 |
 | [28](issues/28-export-bpmn-drawio.md) | Експорт у BPMN 2.0 і draw.io (.drawio), імпорт .drawio як чернетки | resolved | 20 |
-| [29](issues/29-greenfield-from-diagram.md) | Проєкт з нуля з діаграми: від ідеї до фічі для агентів | ready-for-agent | 24, 25 |
+| [29](issues/29-greenfield-from-diagram.md) | Проєкт з нуля з діаграми: від ідеї до фічі для агентів | resolved | 24, 25 |
 | [30](issues/30-sfcc-sfra-frontend.md) | Цільовий стек: Salesforce Commerce Cloud (SFRA-картриджі, PWA Kit) | resolved | 01, 09 |
 | [31](issues/31-more-framework-adapters.md) | Наступні адаптери фреймворків: Laravel, Symfony, NestJS, Express/Next, Django/FastAPI | resolved | 01, 04, 09 |
 | [32](issues/32-php-property-types.md) | PHP: тип властивості з присвоєння в конструкторі та з docblock `@var` | resolved | — |
