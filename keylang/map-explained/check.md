@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [assess](#check.assess) · [flows](#check.flows) · [resolve](#check.resolve) · [rules](#check.rules) · [scc](#check.scc) · [test-report](#check.test-report) · [trace-evidence](#check.trace-evidence) · [verdict](#check.verdict) · [wiring](#check.wiring)
+[README](README.md) · modules: [assess](#check.assess) · [flows](#check.flows) · [migration](#check.migration) · [resolve](#check.resolve) · [rules](#check.rules) · [scc](#check.scc) · [test-report](#check.test-report) · [trace-evidence](#check.trace-evidence) · [verdict](#check.verdict) · [wiring](#check.wiring)
 
 # map
 
@@ -13,6 +13,7 @@
     - config [base.config](base.md#base.config)
     - flows [check.flows](check.md#check.flows)
     - ir [lang.ir](lang.md#lang.ir)
+    - migration [check.migration](check.md#check.migration)
     - resolve [check.resolve](check.md#check.resolve)
     - rules [check.rules](check.md#check.rules)
     - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
@@ -20,21 +21,21 @@
     - trace-evidence [check.trace-evidence](check.md#check.trace-evidence)
     - verdict [check.verdict](check.md#check.verdict)
     - wiring [check.wiring](check.md#check.wiring)
-    - type [SnapshotInput](../../src/assess.ts#L18)
+    - type [SnapshotInput](../../src/assess.ts#L19)
       <a id="check.assess.SnapshotInput"></a><br>The slice of the analysis snapshot that checks read; `check` does not import `map`.
-    - type [Assessment](../../src/assess.ts#L28)
+    - type [Assessment](../../src/assess.ts#L29)
       <a id="check.assess.Assessment"></a><br>Bundles the result of running the checker over a repository: the `Index` it worked from, the `Diagnostic` list it produced, the per-rule `Verdict`s, and the `SpecIR` of assertions compiled once from the text IR so later consumers reuse it rather than re-parsing. The input shows… _(llm · claude · 2026-10-04)_
-    - fn [assess](../../src/assess.ts#L36) ( docs: readonly Document[], snapshot: SnapshotInput | null, evidence: { tests: TestCase[] | null; traces: TraceRun[] | null; static?: StaticMode; staticSetBy?: StaticSource; knownExternal?: ReadonlySet<string>; testFileExists?: FlowInput["testFileExists"]; } = { tests: null, traces: null }, format: RuleFormat = 1, ) → Assessment
+    - fn [assess](../../src/assess.ts#L37) ( docs: readonly Document[], snapshot: SnapshotInput | null, evidence: { tests: TestCase[] | null; traces: TraceRun[] | null; static?: StaticMode; staticSetBy?: StaticSource; knownExternal?: ReadonlySet<string>; testFileExists?: FlowInput["testFileExists"]; /** The old stack the old IDs of `# migration` rows resolve against; absent: none (they stay unverified). */ migration?: OldSnapshot; } = { tests: null, traces: null }, format: RuleFormat = 1, ) → Assessment
       <a id="check.assess.assess"></a><br>Compiles the spec and resolves IDs against the snapshot, then runs rule, flow and wiring checks via [`check.rules.evaluateRules`](check.md#check.rules.evaluateRules), [`check.flows.evaluateFlows`](check.md#check.flows.evaluateFlows) and [`check.wiring.checkWiring`](check.md#check.wiring.checkWiring). Returns sorted diagnostics and merged verdicts. _(llm · claude:claude-opus-5-5 · 2026-10-06 · stale)_
-      - calls [lang.spec-ir.compileSpec](lang.md#lang.spec-ir.compileSpec), [check.resolve.check](check.md#check.resolve.check), [check.rules.evaluateRules](check.md#check.rules.evaluateRules), [check.flows.evaluateFlows](check.md#check.flows.evaluateFlows), [check.rules.dependencyKindOf](check.md#check.rules.dependencyKindOf), [check.wiring.checkWiring](check.md#check.wiring.checkWiring), [check.assess.nodeKinds](check.md#check.assess.nodeKinds), [base.diag.compareDiagnostics](base.md#base.diag.compareDiagnostics), [check.rules.canonicalRuleSpec](check.md#check.rules.canonicalRuleSpec), [check.assess.afterRecovery](check.md#check.assess.afterRecovery), [check.assess.recoveredLines](check.md#check.assess.recoveredLines)
-    - fn [recoveredLines](../../src/assess.ts#L109) (docs: readonly Document[]) → Map<string, string> <!-- internal -->
+      - calls [lang.spec-ir.compileSpec](lang.md#lang.spec-ir.compileSpec), [check.resolve.check](check.md#check.resolve.check), [check.rules.evaluateRules](check.md#check.rules.evaluateRules), [check.flows.evaluateFlows](check.md#check.flows.evaluateFlows), [check.rules.dependencyKindOf](check.md#check.rules.dependencyKindOf), [check.wiring.checkWiring](check.md#check.wiring.checkWiring), [check.assess.nodeKinds](check.md#check.assess.nodeKinds), [check.migration.migrationCheck](check.md#check.migration.migrationCheck), [base.diag.compareDiagnostics](base.md#base.diag.compareDiagnostics), [check.rules.canonicalRuleSpec](check.md#check.rules.canonicalRuleSpec), [check.assess.afterRecovery](check.md#check.assess.afterRecovery), [check.assess.recoveredLines](check.md#check.assess.recoveredLines)
+    - fn [recoveredLines](../../src/assess.ts#L113) (docs: readonly Document[]) → Map<string, string> <!-- internal -->
       <a id="check.assess.recoveredLines"></a><br>Item lines whose place in the tree the parser recovered after a K003 (an odd indent, a jump, a tab): the line itself and its subtree, keyed `file:line`, with the position of the nearest such K003.
       - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes)
-    - fn [afterRecovery](../../src/assess.ts#L129) (verdicts: Verdict[], recovered: ReadonlyMap<string, string>) → Verdict[] <!-- internal -->
+    - fn [afterRecovery](../../src/assess.ts#L133) (verdicts: Verdict[], recovered: ReadonlyMap<string, string>) → Verdict[] <!-- internal -->
       <a id="check.assess.afterRecovery"></a><br>An `ok` on a recovered line is about a tree the file does not have: `unverified`. `fail` stays.
-    - fn [sameFinding](../../src/assess.ts#L142) (verdict: Verdict, diagnostics: readonly Diagnostic[]) → boolean
+    - fn [sameFinding](../../src/assess.ts#L146) (verdict: Verdict, diagnostics: readonly Diagnostic[]) → boolean
       <a id="check.assess.sameFinding"></a><br>Returns true when any diagnostic in the list points at the same file and starting line as the verdict and either carries the same (or a contained) message, or is a K001 diagnostic whose target matches the verdict's area while the verdict is a failed "ID" criterion — so callers… _(llm · claude · 2026-10-04)_
-    - fn [nodeKinds](../../src/assess.ts#L151) (nodes: SnapshotInput["nodes"]) → Map<string, string> <!-- internal -->
+    - fn [nodeKinds](../../src/assess.ts#L155) (nodes: SnapshotInput["nodes"]) → Map<string, string> <!-- internal -->
       <a id="check.assess.nodeKinds"></a><br>Snapshot kinds, with a class told apart by its marker.
   - module [flows](../../src/flows.ts#L1)
     <a id="check.flows"></a><br>Evidence for flows: ID, static, tests, and trace are separate verdicts. A step is checked from its parent (the trigger for a top-level step), never from its siblings.
@@ -175,6 +176,59 @@
       <a id="check.flows.normalizeSignature"></a><br>Canonicalizes a signature string by replacing every `->` with `→`, stripping all whitespace, and dropping a trailing semicolon. Used by [`check.flows.plannedMismatch`](check.md#check.flows.plannedMismatch) so planned and actual signatures can be compared without formatting noise. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [specHash](../../src/flows.ts#L1007) (text: string) → string <!-- internal -->
       <a id="check.flows.specHash"></a><br>Computes a SHA-256 digest of the given text and returns it as a hex string. [`check.flows.evaluateFlows`](check.md#check.flows.evaluateFlows) uses it to fingerprint spec content so results can be tied to a specific spec version. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+  - module [migration](../../src/migration.ts#L1)
+    <a id="check.migration"></a><br>Migration between stacks (business-flows/27): the rows of `# migration <name>` (`map <old> → [planned] <new>`, `dropped <old> <reason>`) checked against both sides, and the parity of the old stack's flows with the new one. Pure over two stacks — snapshot nodes, entries, flows…
+    - node [external.node](external.md#external.node)
+    - diag [base.diag](base.md#base.diag)
+    - ir [lang.ir](lang.md#lang.ir)
+    - span [base.span](base.md#base.span)
+    - test-report [check.test-report](check.md#check.test-report)
+    - verdict [check.verdict](check.md#check.verdict)
+    - type [MigrationRow](../../src/migration.ts#L25)
+      <a id="check.migration.MigrationRow"></a><br>One row of a `# migration` section that parsed.
+    - fn [migrationRows](../../src/migration.ts#L47) (docs: readonly Document[]) → MigrationRow[]
+      <a id="check.migration.migrationRows"></a><br>Every row of every `# migration` section, in file and line order.
+      - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [base.span.compareText](base.md#base.span.compareText)
+    - type [NodeView](../../src/migration.ts#L77)
+      <a id="check.migration.NodeView"></a><br>What a node of a snapshot says about its contents: enough to tell present, opaque and missing apart.
+    - type [OldSnapshot](../../src/migration.ts#L83)
+      <a id="check.migration.OldSnapshot"></a><br>The old snapshot `check` resolves old IDs against: none configured, unreadable, or loaded.
+    - type [OldIndex](../../src/migration.ts#L89)
+      <a id="check.migration.OldIndex"></a><br>An index file of the old stack as `check` and `migration status` read it: `.keylang/index.json` or the export of `map --export-index`.
+    - fn [readOldIndex](../../src/migration.ts#L101) (abs: string) → OldIndex
+      <a id="check.migration.readOldIndex"></a><br>Reads an index file; a file that is not one is an error naming it.
+      - calls [base.diag.errorText](base.md#base.diag.errorText)
+    - fn [lookupNode](../../src/migration.ts#L127) (nodes: Readonly<Record<string, NodeView>>, id: string) → "present" | "opaque" | "missing"
+      <a id="check.migration.lookupNode"></a><br>Where `id` is in a snapshot's nodes: `present`; `opaque` when the nearest enclosing node is a module whose contents keylang could not read; else `missing` (the area is fully indexed).
+    - fn [migrationCheck](../../src/migration.ts#L147) (docs: readonly Document[], old: OldSnapshot, snapshotId: string | null) → { diagnostics: Diagnostic[]; verdicts: Verdict[] }
+      <a id="check.migration.migrationCheck"></a><br>`check` of the migration rows' old side: each old ID is `ok` when the old snapshot has it, K001 when the snapshot reads its area and lacks it, `unverified` inside an opaque module, without an old snapshot (`migration.from`) or when it cannot be read. The new side is a reference…
+      - calls [check.migration.migrationRows](check.md#check.migration.migrationRows), [check.migration.lookupNode](check.md#check.migration.lookupNode), [base.diag.diagnostic](base.md#base.diag.diagnostic)
+    - type [StackFlow](../../src/migration.ts#L184)
+      <a id="check.migration.StackFlow"></a><br>A flow of one stack: hand-written (`spec`) or drafted from an entry point (`discovered`).
+    - type [StackIntegration](../../src/migration.ts#L199)
+      <a id="check.migration.StackIntegration"></a>
+    - type [StackWebhook](../../src/migration.ts#L207)
+      <a id="check.migration.StackWebhook"></a>
+    - type [Stack](../../src/migration.ts#L214)
+      <a id="check.migration.Stack"></a><br>What parity reads of one stack.
+    - type [StepParity](../../src/migration.ts#L225)
+      <a id="check.migration.StepParity"></a>
+    - type [TestParity](../../src/migration.ts#L233)
+      <a id="check.migration.TestParity"></a>
+    - type [FlowParity](../../src/migration.ts#L240)
+      <a id="check.migration.FlowParity"></a>
+    - type [MigrationStatus](../../src/migration.ts#L253)
+      <a id="check.migration.MigrationStatus"></a>
+    - fn [migrationStatus](../../src/migration.ts#L280) (input: { from: string; old: Stack; current: Stack; rows: readonly MigrationRow[]; notes?: readonly string[] }) → MigrationStatus
+      <a id="check.migration.migrationStatus"></a><br>The parity of every flow of the old stack, and what is not carried over yet. Deterministic: same inputs, same bytes.
+      - calls [base.span.compareText](base.md#base.span.compareText), [check.migration.lookupNode](check.md#check.migration.lookupNode), [check.migration.counterpartOf](check.md#check.migration.counterpartOf), [check.migration.evidence](check.md#check.migration.evidence)
+    - fn [evidence](../../src/migration.ts#L409) (stack: Stack, file: string, name: string, side: "old" | "new") → Pick<TestEvidence, "verdict" | "message"> <!-- internal -->
+      <a id="check.migration.evidence"></a><br>A test's evidence on one side; a stack without a report leaves it unverified.
+      - calls [check.test-report.matchTest](check.md#check.test-report.matchTest)
+    - fn [counterpartOf](../../src/migration.ts#L421) (flow: StackFlow, candidates: readonly StackFlow[], mapped: ReadonlyMap<string, readonly MigrationRow[]>) → { flow: StackFlow; by: "import" | "trigger" | "steps" } | null <!-- internal -->
+      <a id="check.migration.counterpartOf"></a><br>The new flow an old one became: a hand-written flow `flow import` brought in under the same name; else one whose trigger the table maps the old trigger to; else the one with most of the old steps mapped into it (at least one). Hand-written flows before discovered ones, then by…
+    - fn [migrationStatusText](../../src/migration.ts#L440) (status: MigrationStatus) → string
+      <a id="check.migration.migrationStatusText"></a><br>The report `keylang migration status` prints.
   - module [resolve](../../src/resolve.ts#L1)
     <a id="check.resolve"></a><br>Cross-file ID resolution: builds the declaration index and reports duplicate declarations (K002) and dangling references (K001).
     - config [base.config](base.md#base.config)

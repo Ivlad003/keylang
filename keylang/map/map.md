@@ -14,23 +14,26 @@
     - fact-cache map.fact-cache
     - map map.map
     - parser lang.parser
+    - migration check.migration
     - snapshot map.snapshot
     - test-report check.test-report
     - trace-evidence check.trace-evidence
-    - type [AnalysisRequest](../../src/analyze.ts#L22)
-    - type [Analysis](../../src/analyze.ts#L49) extends Assessment
-    - fn [analyze](../../src/analyze.ts#L63) (request: AnalysisRequest) → Promise<Analysis>
-      - calls base.config.loadConfig, base.config.toPosix, map.fact-cache.keepsFactCache, map.map.generateMap, map.fact-cache.saveFactCache, map.analyze.readingAid, lang.files.collectMdFiles, lang.files.walkReaches, lang.parser.parse, map.analyze.within, map.analyze.parseRenderedMap, base.span.compareText, base.config.evidenceFiles, base.config.resolveStatic, map.declared-packages.readManifests, check.assess.assess, check.test-report.loadReports, check.trace-evidence.loadTraces, map.analyze.repositoryFile
-    - fn [parseRenderedMap](../../src/analyze.ts#L133) (path: string, text: string) → Document <!-- internal -->
+    - type [AnalysisRequest](../../src/analyze.ts#L23)
+    - type [Analysis](../../src/analyze.ts#L56) extends Assessment
+    - fn [analyze](../../src/analyze.ts#L70) (request: AnalysisRequest) → Promise<Analysis>
+      - calls base.config.loadConfig, base.config.toPosix, map.fact-cache.keepsFactCache, map.map.generateMap, map.fact-cache.saveFactCache, map.analyze.readingAid, lang.files.collectMdFiles, lang.files.walkReaches, lang.parser.parse, map.analyze.within, map.analyze.parseRenderedMap, base.span.compareText, base.config.evidenceFiles, base.config.resolveStatic, map.declared-packages.readManifests, map.analyze.oldSnapshotFor, check.assess.assess, check.test-report.loadReports, check.trace-evidence.loadTraces, map.analyze.repositoryFile
+    - fn [oldSnapshotFor](../../src/analyze.ts#L145) (root: string, from: string) → Promise<OldSnapshot>
+      - calls map.analyze.analyze, check.migration.readOldIndex
+    - fn [parseRenderedMap](../../src/analyze.ts#L181) (path: string, text: string) → Document <!-- internal -->
       - calls lang.parser.parse
-    - fn [findRoot](../../src/analyze.ts#L143) (start: string) → string
-    - fn [repositoryFile](../../src/analyze.ts#L154) (root: string, path: string) → boolean <!-- internal -->
+    - fn [findRoot](../../src/analyze.ts#L191) (start: string) → string
+    - fn [repositoryFile](../../src/analyze.ts#L202) (root: string, path: string) → boolean <!-- internal -->
       - calls map.analyze.within
-    - fn [readingAid](../../src/analyze.ts#L165) (specDir: string, abs: string) → boolean
+    - fn [readingAid](../../src/analyze.ts#L213) (specDir: string, abs: string) → boolean
       - calls map.analyze.within
-    - fn [specPathProblem](../../src/analyze.ts#L174) (config: Config, abs: string) → string | null
+    - fn [specPathProblem](../../src/analyze.ts#L222) (config: Config, abs: string) → string | null
       - calls map.analyze.within, lang.files.walkReaches, map.analyze.readingAid
-    - fn [within](../../src/analyze.ts#L185) (abs: string, dir: string) → boolean
+    - fn [within](../../src/analyze.ts#L233) (abs: string, dir: string) → boolean
   - module [bpmn-export](../../src/bpmn-export.ts#L1)
     - diagram map.diagram
     - external-ids base.external-ids

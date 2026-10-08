@@ -93,6 +93,14 @@ export interface Config {
    * Enters `snapshotId` through import resolution.
    */
   sfcc: { cartridgePath: string[] | null };
+  /**
+   * `migration.from`: the old stack of a migration (business-flows/27), a
+   * path relative to the root — an exported `index.json` of the old
+   * repository or its checkout, analysed read-only. `check` resolves the old
+   * IDs of `# migration` rows against it; null: they stay unverified. Not
+   * part of the snapshot.
+   */
+  migration: { from: string | null };
   /** True when the layout was guessed (no `layers` in the file). */
   guessed: boolean;
   /**
@@ -205,6 +213,7 @@ export interface RawConfig {
   explain?: { lang?: string; detail?: "short" | "full"; map?: boolean };
   integrations?: { webhooks?: string[] };
   sfcc?: { cartridgePath?: string[] };
+  migration?: { from?: string };
 }
 
 /** Load `<root>/keylang.json`, or guess a config for `root`. */
@@ -244,6 +253,7 @@ export function loadConfig(root: string): Config {
     explain: { lang: raw.explain?.lang ?? "en", detail: raw.explain?.detail ?? "short", map: raw.explain?.map ?? false },
     integrations: { webhooks: raw.integrations?.webhooks ?? [] },
     sfcc: { cartridgePath: raw.sfcc?.cartridgePath ?? null },
+    migration: { from: raw.migration?.from ?? null },
     guessed,
     text,
   };
@@ -285,7 +295,7 @@ export function parseConfig(file: string, text: string): RawConfig {
     return glob;
   };
   if (!isObject(value)) return fail("(root)", "an object", value);
-  const known = new Set(["$schema", "format", "dir", "languages", "module", "layers", "exclude", "outside", "assume", "frameworks", "check", "agent", "explain", "ghost", "assistant", "voice", "integrations", "sfcc"]);
+  const known = new Set(["$schema", "format", "dir", "languages", "module", "layers", "exclude", "outside", "assume", "frameworks", "check", "agent", "explain", "ghost", "assistant", "voice", "integrations", "sfcc", "migration"]);
   for (const key of Object.keys(value)) if (!known.has(key)) throw new Error(`${file}: unknown field \`${key}\``);
   const raw: RawConfig = {};
   if (value.format !== undefined) raw.format = acceptFormat(file, value.format);
@@ -421,6 +431,16 @@ export function parseConfig(file: string, text: string): RawConfig {
       sfcc.cartridgePath = v as string[];
     }
     raw.sfcc = sfcc;
+  }
+  if (value.migration !== undefined) {
+    if (!isObject(value.migration)) return fail("migration", "an object", value.migration);
+    const migration: NonNullable<RawConfig["migration"]> = {};
+    for (const [key, v] of Object.entries(value.migration)) {
+      if (key !== "from") throw new Error(`${file}: unknown field \`migration.${key}\``);
+      if (typeof v !== "string" || v.trim() === "") return fail("migration.from", "a path to the old repository or its exported index.json", v);
+      migration.from = v;
+    }
+    raw.migration = migration;
   }
   return raw;
 }

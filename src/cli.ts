@@ -104,11 +104,16 @@ Commands:
                             \`planned module <layer>.<name>\`; the layer must be in
                             keylang.json. Never overwrites a file (exit 2)
   completions <shell>       Print a completion script for bash, zsh or fish
-  map [dir] [--check]       Generate <dir>/keylang/map/*.md and .keylang/index.json;
+  map [dir] [--check] [--export-index <file>]
+                            Generate <dir>/keylang/map/*.md and .keylang/index.json;
                             with "explain": {"map": true} in keylang.json also the
                             explained map keylang/map-explained/ (a brief under each
                             node: the doc comment, else a saved model brief)
-                            (--check: fail if a committed map is stale)
+                            (--check: fail if a committed map is stale).
+                            --export-index: also write <file>, the snapshot with a
+                            migration block (hand-written and discovered flows, test
+                            results of check.tests, integrations): the old stack of
+                            migration status in another repository
   explain <code|id>         A diagnostic code: why it happens and how to fix it.
                             An id: what the snapshot and specs say about it (offline),
                             and its saved explanation with model, date and stale?
@@ -252,6 +257,16 @@ Commands:
                             (# migration <slug>). Layers: --layer-map, else algo (same
                             name, else the first layer), llm|hybrid: the model's map,
                             checked. --print: stdout only
+  migration status [--from <old index.json|old repo dir>] [--json]
+                            Parity of a migration between stacks: every flow of the
+                            old stack (hand-written and discovered) against this
+                            repository through the rows of # migration (map, dropped):
+                            counterpart flow, steps present, the same test names
+                            passing in both reports -> ok, fail or unverified; then
+                            what is not migrated yet (flows, cron, consumers,
+                            observers, webhooks, integrations) and what moved without
+                            tests. --from: default migration.from of keylang.json; a
+                            directory is analysed read-only. Exit 1 when a flow fails
   export c4 [--format plantuml|mermaid] [--level component|container] [--layer <name>] [--out f]
                             Print a C4 diagram of the map, no model: layers as boundaries,
                             their modules as components, packages as external systems
@@ -375,6 +390,8 @@ const OPTIONS = {
   depth: { type: "string" },
   "with-callees": { type: "string" },
   "layer-map": { type: "string" },
+  from: { type: "string" },
+  "export-index": { type: "string" },
   entry: { type: "string" },
   "from-trace": { type: "string" },
   run: { type: "string" },
@@ -432,7 +449,9 @@ async function run(argv: readonly string[]): Promise<number> {
     case "completions":
       return cmdCompletions(paths[0]);
     case "map":
-      return cmdMap(paths[0] ?? ".", values.check === true);
+      return cmdMap(paths[0] ?? ".", values.check === true, values["export-index"]);
+    case "migration":
+      return cmdMigration(paths, values.from, values.json === true);
     case "check":
       return cmdCheck(paths, {
         strict: values.strict === true,
@@ -1080,6 +1099,18 @@ async function cmdCoverage(json: boolean): Promise<number> {
   return 0;
 }
 
+/** `migration status [--from <old>] [--json]`: the parity of the shared operation, or its payload without the text as JSON; exit 1 when a flow fails. */
+async function cmdMigration(args: readonly string[], from: string | undefined, json: boolean): Promise<number> {
+  const [action, extra] = args;
+  if (action !== "status") throw new Error(`migration: expected status${action === undefined ? "" : `, got \`${action}\``}`);
+  if (extra !== undefined) throw new Error(`migration status: unexpected \`${extra}\``);
+  const result = await runOperation({ kind: "migration-status", root: findRoot(process.cwd()), ...(from !== undefined ? { from: resolve(process.cwd(), from) } : {}) });
+  if (result.payload === null) throw new Error(result.messages[0]?.text ?? "migration status failed");
+  const { text, ...status } = result.payload;
+  process.stdout.write(json ? `${JSON.stringify(status, null, 2)}\n` : text);
+  return result.exitCode ?? 2;
+}
+
 /** `integrations [--json]`: the inventory of the shared operation, or its payload without the text as JSON; exit 0. */
 async function cmdIntegrations(json: boolean): Promise<number> {
   const result = await runOperation({ kind: "integrations", root: findRoot(process.cwd()) });
@@ -1503,8 +1534,17 @@ async function readStdin(): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-async function cmdMap(dir: string, checkOnly: boolean): Promise<number> {
+async function cmdMap(dir: string, checkOnly: boolean, exportIndex: string | undefined): Promise<number> {
   const root = resolve(process.cwd(), dir);
+  if (exportIndex !== undefined) {
+    if (checkOnly) throw new Error("map: --export-index writes a file; it does not go with --check");
+    const code = printMap(await runOperation({ kind: "map", root, label: dir }), root);
+    if (code !== 0) return code;
+    const { writeMigrationExport } = await import("./migration-stack.ts");
+    const written = await writeMigrationExport(root, exportIndex);
+    process.stderr.write(`keylang: wrote ${toPosix(relative(process.cwd(), written))}: the snapshot with its flows, test results and integrations, for \`keylang migration status --from\` in another repository\n`);
+    return 0;
+  }
   // `map --check` is a printer over the shared read-only operation.
   if (checkOnly) {
     const result = await runOperation({ kind: "map-check", root, label: dir });

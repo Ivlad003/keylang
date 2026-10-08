@@ -10,7 +10,7 @@
 // operations take are `shared.ts` — and every name a caller uses is
 // exported from here.
 
-import type { AgentsRequest, ApplyCodeRequest, AssistantReplyRequest, BaselineRequest, CheckRequest, CodeToSpecRequest, DoctorRequest, DraftFlowRequest, DraftLayoutRequest, DraftRulesRequest, EntriesRequest, CoverageRequest, IntegrationsRequest, TourRequest, FlowsAdoptRequest, FlowsDiscoverRequest, FlowExportRequest, FlowImportRequest, ExplainBatchRequest, ExplainEdgeRequest, ExplainLlmRequest, ExplainPlanRequest, ExplainRequest, ExportC4Request, ExportRequest, FeatureQuestionsRequest, FeatureRequest, FmtRequest, InitRequest, MapCheckRequest, MapRequest, OperationContext, OperationEnvelope, OperationRequest, OperationResult, ParseRequest, SpecToCodeRequest, TracePlanRequest, WireRequest } from "./operations/types.ts";
+import type { AgentsRequest, ApplyCodeRequest, AssistantReplyRequest, BaselineRequest, CheckRequest, CodeToSpecRequest, DoctorRequest, DraftFlowRequest, DraftLayoutRequest, DraftRulesRequest, EntriesRequest, CoverageRequest, IntegrationsRequest, MigrationStatusRequest, TourRequest, FlowsAdoptRequest, FlowsDiscoverRequest, FlowExportRequest, FlowImportRequest, ExplainBatchRequest, ExplainEdgeRequest, ExplainLlmRequest, ExplainPlanRequest, ExplainRequest, ExportC4Request, ExportRequest, FeatureQuestionsRequest, FeatureRequest, FmtRequest, InitRequest, MapCheckRequest, MapRequest, OperationContext, OperationEnvelope, OperationRequest, OperationResult, ParseRequest, SpecToCodeRequest, TracePlanRequest, WireRequest } from "./operations/types.ts";
 import { runAgents, runBaseline, runInit, runMap, runMapCheck, runWire } from "./operations/generate.ts";
 import { runCheck, runExplainEdge, runFmt, runParse, runTracePlan } from "./operations/spec.ts";
 import { runFeature, runFeatureQuestions } from "./operations/feature.ts";
@@ -23,6 +23,7 @@ import { runEntries } from "./operations/entries.ts";
 import { runCoverage } from "./operations/coverage.ts";
 import { runIntegrations } from "./operations/integrations.ts";
 import { runTour } from "./operations/tour.ts";
+import { runMigrationStatus } from "./operations/migration.ts";
 import { runFlowsAdopt, runFlowsDiscover } from "./operations/discover.ts";
 import { runFlowExport, runFlowImport } from "./operations/flow-bundle.ts";
 import { runAssistantReply } from "./operations/assistant.ts";
@@ -60,6 +61,7 @@ export function runOperation(request: EntriesRequest, context?: OperationContext
 export function runOperation(request: CoverageRequest, context?: OperationContext): Promise<OperationEnvelope<"coverage">>;
 export function runOperation(request: IntegrationsRequest, context?: OperationContext): Promise<OperationEnvelope<"integrations">>;
 export function runOperation(request: TourRequest, context?: OperationContext): Promise<OperationEnvelope<"tour">>;
+export function runOperation(request: MigrationStatusRequest, context?: OperationContext): Promise<OperationEnvelope<"migration-status">>;
 export function runOperation(request: FlowsDiscoverRequest, context?: OperationContext): Promise<OperationEnvelope<"flows-discover">>;
 export function runOperation(request: FlowsAdoptRequest, context?: OperationContext): Promise<OperationEnvelope<"flows-adopt">>;
 export function runOperation(request: FlowExportRequest, context?: OperationContext): Promise<OperationEnvelope<"flow-export">>;
@@ -124,6 +126,8 @@ export async function runOperation(request: OperationRequest, context: Operation
       return runIntegrations(request, context);
     case "tour":
       return runTour(request, context);
+    case "migration-status":
+      return runMigrationStatus(request, context);
     case "flows-discover":
       return runFlowsDiscover(request, context);
     case "flows-adopt":
