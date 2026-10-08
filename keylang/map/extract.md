@@ -292,7 +292,24 @@
     - fn [surrogatePairs](../../src/extract/treesitter.ts#L115) (src: string) → number[] <!-- internal -->
     - fn [firstAtOrAfter](../../src/extract/treesitter.ts#L122) (sorted: readonly number[], value: number) → number <!-- internal -->
     - fn [errorLine](../../src/extract/treesitter.ts#L134) (node: Node) → number
-    - fn [fingerprint](../../src/extract/treesitter.ts#L149) (node: Node) → string
+    - fn [fingerprint](../../src/extract/treesitter.ts#L159) (node: Node) → string
+      - calls extract.treesitter.hashSyntax, extract.treesitter.valuesRead, extract.treesitter.readsImportedValue
+    - fn [hashSyntax](../../src/extract/treesitter.ts#L177) (node: Node, hash: Hash) → Set<string> <!-- internal -->
+    - type [ValueDecl](../../src/extract/treesitter.ts#L204) <!-- internal -->
+    - fn [valuesRead](../../src/extract/treesitter.ts#L223) (node: Node, reads: ReadonlySet<string>) → ValueDecl[] <!-- internal -->
+      - calls extract.treesitter.valuesOf, extract.treesitter.hashSyntax
+    - fn [valuesOf](../../src/extract/treesitter.ts#L248) (scope: Node) → ValueDecl[] <!-- internal -->
+      - calls extract.treesitter.valueDeclaration, extract.treesitter.declaredNames
+    - fn [valueDeclaration](../../src/extract/treesitter.ts#L267) (statement: Node) → Node | null <!-- internal -->
+    - fn [declaredNames](../../src/extract/treesitter.ts#L292) (decl: Node) → string[] <!-- internal -->
+      - calls extract.treesitter.patternNames
+    - fn [patternNames](../../src/extract/treesitter.ts#L318) (target: Node | null) → string[] <!-- internal -->
+    - fn [readsImportedValue](../../src/extract/treesitter.ts#L331) (node: Node, reads: ReadonlySet<string>) → boolean <!-- internal -->
+      - calls extract.treesitter.importedValueNames, extract.treesitter.isCallee
+    - fn [isCallee](../../src/extract/treesitter.ts#L348) (leaf: Node) → boolean <!-- internal -->
+    - fn [importedValueNames](../../src/extract/treesitter.ts#L362) (tree: Tree) → Set<string> <!-- internal -->
+      - calls extract.treesitter.useNames
+    - fn [useNames](../../src/extract/treesitter.ts#L399) (clause: Node) → string[] <!-- internal -->
   - module [ts](../../src/extract/ts.ts#L1)
     - node external.node
     - facts extract.facts

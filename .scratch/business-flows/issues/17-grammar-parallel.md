@@ -1,6 +1,6 @@
 # 17: Мова: паралельні групи кроків `parallel`
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -22,9 +22,11 @@
 
 ## Критерії готовності
 
-- [ ] тести static і trace (послідовне й перекрите виконання)
-- [ ] grammar.md, semantics.md, fmt, LSP, gutter
+- [x] тести static і trace (послідовне й перекрите виконання)
+- [x] grammar.md, semantics.md, fmt, LSP, gutter
 
 **Межі:** —
 
 ## Comments
+
+- 2026-10-08 — зроблено за ADR 0023 п. 2. `- parallel` — контекстне слово лише в `# flow` (верх потоку, під `step`/`trigger`, під `when`); під ним дозволений лише `step`. Раніше рядок давав K004, тож формат додавальний, без нової редакції. Парсер: `NodeKind` `parallel`, позиція `parallel` (K004 «expected one of: step»), аргументи — K005 «takes no arguments». `compileSpec`: `ParallelItem`, група без жодного `step` — **K009** (error, `keylang explain K009`). Static (`src/flows.ts`): кожен крок групи перевіряється від батька групи, як звичайний крок. Trace (`src/trace-evidence.ts`): `ShapeNode` `parallel`; `Matcher` тримає «попереднього» як список spans — кроки групи зіставляються під батьком у будь-якому порядку, перекриття дозволене, кожен після сусіда перед групою; сусід після групи впорядковується відносно кожного спостереженого кроку групи («starts before … ends (parallel)»), відсутній крок — `fail` «missing step» у завершеному запуску. Gutter (`src/tui/evidence.ts`): рядок `parallel` — найгірша позначка рядків під ним, у підсумках не рахується. LSP: слова за позицією, hover-ролі. `fmt` — без змін (канонічна форма з токенів), ідемпотентність перевірено. Тести: `tests/async-flows.test.ts` (K-коди з позиціями, static на TS і Python, trace перекритий / послідовний у зворотному порядку / відсутній крок / сусід до кінця групи / крок групи раніше за попереднього сусіда, fmt, gutter), `tests/lsp.test.ts`, `tests/format-examples.test.ts` (позиція `under-parallel` в EBNF). Документація: grammar.md (§5 таблиці, Р17, Додаток А), semantics.md («Асинхронні форми», K009, дорожня карта), cheatsheet.md, llm.txt.

@@ -14,7 +14,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { z } from "zod";
 import { contextForIds } from "./agent-context.ts";
-import { analyze, within, type Analysis } from "./analyze.ts";
+import { analyze, specPathProblem, within, type Analysis } from "./analyze.ts";
 import { checkResults } from "./check-results.ts";
 import { keepsFactCache, saveFactCache } from "./fact-cache.ts";
 import { idsIn } from "./feature-status.ts";
@@ -243,6 +243,9 @@ export function mcpServer(root: string, version: string): McpServer {
       const rel = toPosix(relative(root, abs));
       // Inside the root by path segments: `..specs/x.md` is a directory named `..specs`, not a way out.
       if (!within(abs, root) || rel === "") return failure(`${path}: outside the repository`);
+      // A file check never reads would come back clean: say so instead.
+      const notRead = specPathProblem(loadConfig(root), abs);
+      if (notRead !== null) return failure(`${rel}: ${notRead}`);
       const analysis = await analyze({ root, overlay: new Map([[abs, text]]) });
       const diagnostics = analysis.diagnostics
         .filter((diag) => diag.file === rel)
@@ -331,6 +334,36 @@ export function mcpServer(root: string, version: string): McpServer {
       if (result.payload === null) return failure(result.messages[0]?.text ?? "flows discover failed");
       const { snapshotId, summary, flows, specified, files } = result.payload;
       return json({ snapshotId, summary, flows: flows.map(({ text: _text, ...flow }) => flow), specified, files });
+    },
+  );
+
+  server.registerTool(
+    "coverage_report",
+    {
+      description:
+        "Where keylang does not see, as `keylang coverage --json` computes it: reach (fns reachable from at least one entry point over resolved call edges, and the share), orphans (fns no entry point reaches: dead code or an entry point keylang does not know; entry fns and test files left out), holes by module with reasons normalised (backticked names as `X`) and counted, entry points no hand-written flow starts from (with the discovered flow `flows discover` would draft and whether the view has it), and «logic in data»: calls into configuration readers (resources/data-logic.json) to check by hand. A view, not a verdict; read-only.",
+      inputSchema: {},
+    },
+    async () => {
+      const result = await runOperation({ kind: "coverage", root }, { analyze: () => fresh() });
+      if (result.payload === null) return failure(result.messages[0]?.text ?? "coverage failed");
+      const { text: _text, ...report } = result.payload;
+      return json(report);
+    },
+  );
+
+  server.registerTool(
+    "list_integrations",
+    {
+      description:
+        "What the code talks to, as `keylang integrations --json` computes it: outgoing integrations (HTTP, SOAP, SDK and queue clients of resources/integrations.json) each with its call sites (file, line, callee, enclosing fn, the host of a literal URL or `dynamic`/`n/a`) and the entry points that reach each site with their hand-written or discovered flow; the client's imports; incoming webhooks (entries of kind webhook, routes whose path names a webhook, callback, notify or IPN, `integrations.webhooks` of keylang.json); queue publishers, consumers and pairs. A view; read-only, nothing is contacted.",
+      inputSchema: {},
+    },
+    async () => {
+      const result = await runOperation({ kind: "integrations", root }, { analyze: () => fresh() });
+      if (result.payload === null) return failure(result.messages[0]?.text ?? "integrations failed");
+      const { text: _text, ...report } = result.payload;
+      return json(report);
     },
   );
 

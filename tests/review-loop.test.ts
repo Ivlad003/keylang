@@ -502,6 +502,12 @@ test("validate_spec takes a spec directory whose name starts with two dots; a pa
     assert.equal(out.isError, true, path);
     assert.match(out.text, /outside the repository/, path);
   }
+  // A path check never reads as a spec is a tool error, not a clean result.
+  for (const path of ["notes/x.md", "flows/x.md", "..specs/.drafts/x.md", "..specs/node_modules/x.md", "..specs/target/x.md", "..specs/map-explained/x.md", "..specs/flows/x.txt"]) {
+    const out = await call("validate_spec", { path, text: "# flow y\n\n- trigger app.checkout.nope\n" });
+    assert.equal(out.isError, true, `${path}: ${out.text}`);
+    assert.match(out.text, /`keylang check` does not read this file as a spec/, path);
+  }
   // apply_diff reads the same directory as specs.
   const proposed = await call("apply_diff", { path: "..specs/flows/checkout.md", text: `${CHECKOUT}  - invariant x\n` });
   assert.equal(proposed.isError, false, proposed.text);

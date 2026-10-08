@@ -318,6 +318,18 @@ test("explain --llm saves the answer without a fence around all of it, and a bri
   assert.match(readFileSync(join(dir, "keylang/explain/brief", file!), "utf8"), /-->\nCreates an order from its items\.\n$/);
 });
 
+// Only the first paragraph can be a remark: short paragraphs after it are the explanation.
+test("explain --llm keeps short paragraphs after the leading remark", async (t) => {
+  const dir = copy(t);
+  const reply = "Sure!\n\nIt sums.\n\nIt folds.\n\nThe total is returned to the checkout flow.";
+  const run = await keylang(dir, ["explain", "domain.order.total", "--llm"], fakeAgents(t, ["claude"], { reply }), { KEYLANG_AGENT: "cli:claude" });
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(readFileSync(join(dir, "keylang/explain/domain.order.total.md"), "utf8"), /-->\nIt sums\.\n\nIt folds\.\n\nThe total is returned to the checkout flow\.\n$/);
+  assert.equal(answerText("Certainly!\n\nSums prices.\n\nIt returns zero for an empty list of items."), "Sums prices.\n\nIt returns zero for an empty list of items.");
+  assert.equal(answerText("Certainly!\n\n```markdown\nSums prices.\n\nIt returns zero.\n```"), "Sums prices.\n\nIt returns zero.", "a remark, then a fence around the answer");
+  assert.equal(answerText("```markdown\nSure!\n\nSums prices.\n\nIt returns zero.\n```"), "Sums prices.\n\nIt returns zero.", "a remark inside the fence");
+});
+
 test("answerText: a remark is a first paragraph ending with `:` or of fewer than four words before more; a fence goes only when it holds the whole answer; headings, lists and code stay", () => {
   assert.equal(answerText("Here is the explanation:\n\n## What it is for\nIt sums.\n"), "## What it is for\nIt sums.");
   assert.equal(answerText("## What it is for\nIt sums.\n\n## Steps\nIt folds."), "## What it is for\nIt sums.\n\n## Steps\nIt folds.", "a full answer as written");

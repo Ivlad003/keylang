@@ -9,7 +9,8 @@ import { diagnostic, type Diagnostic } from "./diag.ts";
 import { asciiLowerCase, caselessNames, constructorName } from "./languages.ts";
 import type { Index } from "./resolve.ts";
 import { compareText, type Span } from "./span.ts";
-import type { ClaimItem, FlowItem, SpecIR, TestItem, ThenItem, Trigger, WhenItem } from "./spec-ir.ts";
+import { scheduleText } from "./parser.ts";
+import type { ClaimItem, FlowItem, SpecIR, TestItem, ThenItem, TimerItem, Trigger, WhenItem } from "./spec-ir.ts";
 import { matchTest, type TestCase } from "./test-report.ts";
 import { traceFlow, type ShapeNode, type TraceEvidence, type TraceRun } from "./trace-evidence.ts";
 import type { Verdict } from "./verdict.ts";
@@ -74,10 +75,23 @@ export interface FlowInput {
   /** Trace runs from `check.trace`; null when it is not configured. */
   traces: TraceRun[] | null;
   /**
+   * Entry points of the snapshot (`keylang entries`): what `trigger <kind> <id>`
+   * and `every` are compared with. Omitted for a snapshot written before them.
+   */
+  entries?: readonly EntryView[];
+  /**
    * Whether a `test` path names a file of the repository. Omitted when the
    * specs are checked without the repository (no file is K203 then).
    */
   testFileExists?: (path: string) => boolean;
+}
+
+/** An entry point as flows read it. */
+export interface EntryView {
+  kind: string;
+  id: string;
+  label: string;
+  framework?: string | null;
 }
 
 interface Planned {
@@ -125,9 +139,9 @@ export function evaluateFlows(compiled: SpecIR, index: Index, input: FlowInput):
     const keys = new Map<FlowNode, number>();
     const shape = (nodes: readonly FlowItem[]): ShapeNode[] =>
       nodes.flatMap((node): ShapeNode[] => {
-        if (node.kind === "when") {
+        if (node.kind === "when" || node.kind === "parallel") {
           keys.set(node, key);
-          return [{ kind: "when", key: key++, children: shape(node.children) }];
+          return [{ kind: node.kind, key: key++, children: shape(node.children) }];
         }
         if (node.kind !== "step") return [];
         const id = node.target.target;
@@ -144,7 +158,7 @@ export function evaluateFlows(compiled: SpecIR, index: Index, input: FlowInput):
       input.traces === null ? null : traceFlow(input.traces, flow.name, trigger && triggerKey !== null ? { key: triggerKey, id: trigger } : null, tree, input.snapshotId);
 
     // `blocked` is why this node is not matched: a later trigger, or the nearest planned ancestor.
-    const visit = (node: FlowNode, parent: string | null, claim: ClaimItem | ThenItem | WhenItem | null, blocked: string | null): void => {
+    const visit = (node: FlowNode, parent: string | null, claim: ClaimItem | ThenItem | WhenItem | TimerItem | null, blocked: string | null): void => {
       spec = node.text;
       const nodeKey = keys.get(node);
       const traceOf = (): TraceEvidence | undefined => (nodeKey === undefined ? undefined : traced?.get(nodeKey));
@@ -155,6 +169,11 @@ export function evaluateFlows(compiled: SpecIR, index: Index, input: FlowInput):
         const plan = planned.get(id);
         const pending = plan !== undefined && !plan.implemented;
         const known = idVerdict(id, pending ? plan : undefined, node.span, file, index, input, verdict);
+        if (node.kind === "trigger" && node.entry !== null && known !== "fail") {
+          const entry = entryVerdict(node.entry.kind, id, input.entries);
+          if (entry.mismatch) diagnostics.push(diagnostic("K205", file, node.entry.span, entry.message));
+          else verdict("static", `${node.entry.kind} ${id}`, entry.verdict, file, node.span, entry.message, { provenance: "syntactic" });
+        }
         const parentPlanned = parent !== null && planned.get(parent)?.implemented === false;
         // A dangling id is K001 already; a static line would count it twice.
         if (node.kind === "step" && known !== "fail") {
@@ -192,6 +211,31 @@ export function evaluateFlows(compiled: SpecIR, index: Index, input: FlowInput):
             verdict("static", id, call.verdict, file, ref.span, call.message, { provenance: "syntactic" });
           } else verdict("static", id, "unverified", file, ref.span, "not in the snapshot (opaque module)");
         }
+        return;
+      }
+      // The steps of a group are checked from the group's parent, each on its own.
+      if (node.kind === "parallel") {
+        for (const child of node.children) visit(child, parent, claim, blocked);
+        return;
+      }
+      // Both flows exist (K206 otherwise); one trace run is one request, so it cannot follow the other flow.
+      if (node.kind === "continues") {
+        const other = index.flows.get(node.flow);
+        if (other === undefined) return;
+        const area = `continues ${node.flow}`;
+        verdict("ID", area, "ok", file, node.span, `flow \`${node.flow}\` at ${other.file}:${other.span.start.line}`);
+        if (traced !== null) verdict("trace", area, "unverified", file, node.span, `crosses requests: \`${flow.name}\` starts in a later request than \`${node.flow}\`, and a trace run follows one request`);
+        return;
+      }
+      if (node.kind === "after" || node.kind === "every") {
+        const area = claimArea(node);
+        if (node.kind === "every") {
+          const schedule = scheduleVerdict(parent, node.value, input.entries);
+          verdict("static", area, schedule.verdict, file, node.span, schedule.message, { provenance: "syntactic" });
+        }
+        const proofs = node.children.filter((child): child is TestItem => child.kind === "test");
+        if (input.tests !== null && proofs.length === 0) verdict("tests", area, "unverified", file, node.span, "no test evidence: only a nested `test` checks a timer");
+        for (const child of node.children) visit(child, parent, node, blocked);
         return;
       }
       // `reads` says only that the ID exists, until reads have evidence of their own.
@@ -234,10 +278,83 @@ export function evaluateFlows(compiled: SpecIR, index: Index, input: FlowInput):
   return { diagnostics, verdicts };
 }
 
-function claimArea(node: ClaimItem | ThenItem | WhenItem): string {
+function claimArea(node: ClaimItem | ThenItem | WhenItem | TimerItem): string {
   if (node.kind === "when") return `when ${node.condition}`;
   if (node.kind === "then") return node.form === "ref" ? `then ${node.target.target}` : `then ${node.prose}`;
+  if ("value" in node) return `${node.kind} ${node.value}`;
   return `${node.kind} ${node.body}`.trim();
+}
+
+/**
+ * `trigger <kind> <id>` against the entry points of the snapshot: `ok` with the
+ * entry's label when the fn is an entry of that kind; `mismatch` (K205) when it
+ * is an entry of other kinds only; `unverified` when no entry names it, since
+ * an adapter keylang lacks may know it.
+ */
+function entryVerdict(kind: string, id: string, entries: readonly EntryView[] | undefined): { verdict: Verdict["verdict"]; message: string; mismatch: boolean } {
+  if (entries === undefined) return { verdict: "unverified", message: "the snapshot records no entry points; run `keylang map` again", mismatch: false };
+  const own = entries.filter((entry) => entry.id === id);
+  const match = own.find((entry) => entry.kind === kind);
+  if (match) return { verdict: "ok", message: `entry point \`${match.label}\`${match.framework ? ` (${match.framework})` : ""}`, mismatch: false };
+  if (own.length > 0) {
+    const listed = own.map((entry) => `${entry.kind} \`${entry.label}\``).join(", ");
+    return { verdict: "fail", message: `\`trigger ${kind}\` names \`${id}\`, which the snapshot records as an entry point of another kind: ${listed}`, mismatch: true };
+  }
+  return { verdict: "unverified", message: `\`${id}\` is not an entry point the snapshot records (\`keylang entries\`); a framework's ${kind} entry points need its adapter`, mismatch: false };
+}
+
+/** The cron fields of `@hourly` and the other macros. */
+const CRON_MACROS: Record<string, string> = {
+  "@yearly": "0 0 1 1 *",
+  "@annually": "0 0 1 1 *",
+  "@monthly": "0 0 1 * *",
+  "@weekly": "0 0 * * 0",
+  "@daily": "0 0 * * *",
+  "@midnight": "0 0 * * *",
+  "@hourly": "0 * * * *",
+};
+
+/** A schedule in a comparable form: cron fields (a macro expanded) or a duration. */
+function scheduleForm(text: string): { form: "cron" | "duration"; value: string } {
+  const macro = CRON_MACROS[text];
+  if (macro !== undefined) return { form: "cron", value: macro };
+  return text.includes(" ") ? { form: "cron", value: text } : { form: "duration", value: text };
+}
+
+/**
+ * The schedule a cron entry's label carries: the whole label when it is one,
+ * else its last six or five words (`clean_quotes 0 0 * * *`); null when the
+ * adapter did not write it.
+ */
+function labelSchedule(label: string): string | null {
+  const words = label.trim().split(/\s+/).filter((word) => word !== "");
+  return scheduleText(words) ?? scheduleText(words.slice(-6)) ?? scheduleText(words.slice(-5));
+}
+
+/**
+ * Static evidence of `every <schedule>`: the cron entry point of the parent (the
+ * trigger for a top-level line) runs on the written schedule. `ok` when one
+ * does, `fail` when every cron entry of the fn says another schedule of the
+ * same form, else `unverified` (no cron entry, no schedule in its label, or a
+ * duration against cron fields).
+ */
+function scheduleVerdict(parent: string | null, written: string, entries: readonly EntryView[] | undefined): { verdict: Verdict["verdict"]; message: string } {
+  const only = "only a nested `test` checks it";
+  if (parent === null) return { verdict: "unverified", message: `no trigger or step it schedules; ${only}` };
+  if (entries === undefined) return { verdict: "unverified", message: `the snapshot records no entry points; ${only}` };
+  const crons = entries.filter((entry) => entry.id === parent && entry.kind === "cron");
+  if (crons.length === 0) return { verdict: "unverified", message: `\`${parent}\` is not a cron entry point the snapshot records; ${only}` };
+  const want = scheduleForm(written);
+  const known = crons.flatMap((entry) => {
+    const text = labelSchedule(entry.label);
+    return text === null ? [] : [{ entry, text, form: scheduleForm(text) }];
+  });
+  if (known.length === 0) return { verdict: "unverified", message: `the cron entry point \`${crons[0]!.label}\` does not say its schedule; ${only}` };
+  const same = known.find((item) => item.form.form === want.form && item.form.value === want.value);
+  if (same) return { verdict: "ok", message: `the cron entry point \`${same.entry.label}\` runs on \`${same.text}\`` };
+  const comparable = known.filter((item) => item.form.form === want.form);
+  if (comparable.length === known.length) return { verdict: "fail", message: `the cron entry point \`${known[0]!.entry.label}\` runs on \`${known[0]!.text}\`, not \`${written}\`` };
+  return { verdict: "unverified", message: `\`${written}\` does not compare with the cron schedule \`${known[0]!.text}\`; ${only}` };
 }
 
 function traceProvenance(evidence: TraceEvidence): Verdict["evidence"] {

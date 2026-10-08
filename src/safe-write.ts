@@ -134,6 +134,48 @@ export function allCrlf(text: string): boolean {
 }
 
 /**
+ * `next`, an edit of `before` computed on its LF form, in the line endings
+ * of `before`. LF stays LF and CRLF on every line stays CRLF on every line.
+ * A file with mixed endings is not normalized: a line kept from `before`
+ * keeps its own ending, a new line takes the file's most common one (LF on a
+ * tie). Kept lines are the common head and tail, and in between the lines
+ * met again in order: linear, so a large file costs no diff table.
+ */
+export function keepLineEndings(before: string, next: string): string {
+  if (!before.includes("\r\n")) return next;
+  if (allCrlf(before)) return next.replace(/\n/g, "\r\n");
+  const old = before.split("\n");
+  // A line has an ending when a `\n` follows it; its `\r` is part of that ending.
+  const oldCr = old.map((line, i) => i < old.length - 1 && line.endsWith("\r"));
+  const oldText = old.map((line, i) => (oldCr[i] ? line.slice(0, -1) : line));
+  const crlf = oldCr.filter(Boolean).length;
+  const preferCr = crlf > old.length - 1 - crlf;
+  const lines = next.split("\n");
+  const cr: boolean[] = lines.map(() => preferCr);
+  // The last piece (after the last `\n`) is no line with an ending: it pairs only with the other last piece, in the tail.
+  let head = 0;
+  while (head < lines.length - 1 && head < oldText.length - 1 && lines[head] === oldText[head]) {
+    cr[head] = oldCr[head]!;
+    head++;
+  }
+  let tailNew = lines.length;
+  let tailOld = oldText.length;
+  while (tailNew > head && tailOld > head && lines[tailNew - 1] === oldText[tailOld - 1]) {
+    tailNew--;
+    tailOld--;
+    cr[tailNew] = oldCr[tailOld]!;
+  }
+  const midNew = Math.min(tailNew, lines.length - 1);
+  const midOld = Math.min(tailOld, oldText.length - 1);
+  for (let i = head, j = head; i < midNew && j < midOld; i++) {
+    if (lines[i] !== oldText[j]) continue;
+    cr[i] = oldCr[j]!;
+    j++;
+  }
+  return lines.map((line, i) => (i < lines.length - 1 && cr[i] ? `${line}\r` : line)).join("\n");
+}
+
+/**
  * Where bytes written to `abs` land: the longest prefix that exists is
  * resolved through links, and a link on the way is followed even when its
  * target does not exist yet. Null for a loop of links.

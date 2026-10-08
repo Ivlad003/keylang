@@ -1,6 +1,6 @@
 # 33: Внутрішні пакети репозиторію оголошуються як external (Cargo `path`/`workspace = true`, npm workspaces з `**`), тому `deny … external.<внутрішній>` проходить мовчки замість K001
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -53,11 +53,21 @@ scratchpad/…/cargo1: корінь `[workspace] members=["crates/*"]`, у crate
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/declared-packages.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/declared-packages.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+**2026-10-08.** Множину internal у `src/declared-packages.ts` тепер будує те саме правило, що й резолвери:
+
+- Cargo: залежність із `path` усередині репозиторію і `{ workspace = true }` на запис `[workspace.dependencies]` із `path` у репозиторії не додаються як оголошені пакети; імена членів воркспейсу (найближчий `Cargo.toml` з `[workspace]` над крейтом, `members` з glob в останньому сегменті, плюс кореневий пакет) — internal, як `RustResolver.membersOf` у `src/rust-imports.ts` (тікет 08), що прив'язує ім'я члена до його бібліотеки навіть без `path`.
+- npm: glob-и `workspaces`/`pnpm-workspace.yaml` розкриваються спільною `listWorkspaceGlob` з `src/imports.ts` (`base/*` — як раніше, інший glob — `packages/**`, `{a,b}` — обхід тек під сталим префіксом без `node_modules` і тек із крапкою; ключ входу snapshotId — сам glob), а `!pattern` у `workspaces` забирає теки (`withoutNegated`). Резолвер (`ImportResolver.workspaceDirs`, тікет 05) користується тим самим, тож без встановлення `@acme/ui` з `packages/libs/ui` під `packages/**` резолвиться в код репозиторію, а не в `external.acme-ui`.
+- npm-пакет, чий `node_modules/<pkg>` у теці маніфеста, що його оголошує, чи вище веде (після realpath) у репозиторій поза `node_modules` — internal (той самий `inside()` з `src/imports.ts`, тепер експортований); запис фіксується входом із ключем і значенням, як у резолвера.
+
+Регресії в `tests/external-ids.test.ts` (через `keylang check` на тимчасових репозиторіях): Cargo `path` і член воркспейсу → `K001 dangling reference external.domain`, `serde` лишається оголошеним; `workspace = true` на `path`-запис і член, оголошений версією → K001; npm `packages/**`, `packages/{libs,tools}/*`, з `!packages/legacy/**` → K001 для `external.acme-ui`, `left-pad` лишається; `!packages/libs/**` повертає пакет у external; symlink `apps/web/node_modules/@acme/ui` у репозиторій без `workspaces` → K001. До виправлення всі три тести падали.
+
+Припущення: ADR 0010 «жодна тека не обходиться» стосується пошуку маніфестів; розкриття glob-а `workspaces` обходить лише теки під його сталим префіксом (як npm). Записи `!` у `pnpm-workspace.yaml` як і раніше відкидаються (`pnpmWorkspacePackages`). Документація: `docs/semantics.md` (оголошені пакети), `docs/snapshot.md` (пакет робочого простору), `docs/adr/0010-declared-packages.md` п.2 (доповнення); `docs/review-2026-10-06.md` §2.2 №28 ✔.

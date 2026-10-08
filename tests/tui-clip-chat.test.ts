@@ -230,6 +230,29 @@ test("tui-clip-chat: without an agent free text says how to set one and the comm
   assert.deepEqual(withoutChatLog(treeBytes(root)), before, "nothing written but the log of the conversation");
 });
 
+test("tui-clip-chat: an Enter that ends a chunk of typed keys sends the line, as a separate Enter does; an Enter inside a chunk stays pasted text (review 2026-10-06, ticket 68)", async (t) => {
+  const root = checkoutRepo(t);
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send(KEY.f7);
+  // The whole line and its Enter in one chunk (SSH under latency, a busy session).
+  s.send("/check\r");
+  assert.deepEqual(s.app.state.clip.chat.messages.map((m) => m.role), ["you", "clip"]);
+  assert.equal(s.app.state.clip.chat.messages[0]!.text, "/check");
+  assert.equal(s.app.state.clip.chat.input, "");
+  // Keys typed one by one, the last letter coalesced with Enter.
+  for (const ch of "/chec") s.send(ch);
+  s.send("k\r");
+  assert.equal(s.app.state.clip.chat.messages.length, 4);
+  assert.equal(s.app.state.clip.chat.messages[2]!.text, "/check");
+  assert.equal(s.app.state.clip.chat.input, "");
+  // Text pasted without bracketed paste: its inner line break is a space, and nothing is sent.
+  s.send("one\rtwo");
+  assert.equal(s.app.state.clip.chat.messages.length, 4);
+  assert.equal(s.app.state.clip.chat.input, "one two");
+});
+
 test("tui-clip-chat: /check names the first fails with their positions; /feature shows the stage and gaps keylang feature prints; /new starts over; an unknown command lists the commands", async (t) => {
   const root = checkoutRepo(t, { ...FEATURES, "keylang/rules.md": "# rules\n\n- layers domain < infrastructure < application < presentation\n- deny application infrastructure\n" });
   const model = await mockModel(t, "never");

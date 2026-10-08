@@ -229,8 +229,16 @@ function finishRun(draft: RunDraft): TraceRun {
   };
 }
 
-/** A flow as trace matching sees it. `key` identifies the spec node across runs. */
-export type ShapeNode = { kind: "step"; key: number; id: string; children: ShapeNode[] } | { kind: "when"; key: number; children: ShapeNode[] };
+/**
+ * A flow as trace matching sees it. `key` identifies the spec node across runs.
+ * A `parallel` group's steps are matched under the group's parent in any
+ * order, each after the sibling before the group; the sibling after the group
+ * starts after every step of it.
+ */
+export type ShapeNode =
+  | { kind: "step"; key: number; id: string; children: ShapeNode[] }
+  | { kind: "when"; key: number; children: ShapeNode[] }
+  | { kind: "parallel"; key: number; children: ShapeNode[] };
 
 export interface TraceEvidence {
   verdict: "ok" | "fail" | "unverified";
@@ -337,6 +345,7 @@ class Matcher {
   private readonly spans = new Map<string, TraceSpan>();
   private readonly suffixes = new Map<readonly ShapeNode[], Set<string>[]>();
   private readonly memo = new Map<readonly ShapeNode[], Map<string, Assignment>>();
+  private readonly singles = new Map<ShapeNode, readonly ShapeNode[]>();
   /** Spans the assignment being built has taken: one span satisfies one step. */
   private readonly used = new Set<string>();
   private budget = MATCH_BUDGET;
@@ -355,7 +364,7 @@ class Matcher {
   match(nodes: readonly ShapeNode[], trigger: boolean): [number, Outcome][] {
     let best: Assignment;
     try {
-      best = this.list(null, nodes, 0, null, trigger);
+      best = this.list(null, nodes, 0, [], trigger);
     } catch (e) {
       if (!(e instanceof OverBudget)) throw e;
       return keysOf(nodes).map((key) => [key, { verdict: "unverified", message: `trace of ${this.run.testId} is too large to match (${this.run.spans.length} spans)`, ...this.base() }]);
@@ -421,9 +430,13 @@ class Matcher {
     const key = `${parent?.spanId ?? ""}\0${node.key}`;
     const cached = this.bounds.get(key);
     if (cached !== undefined) return cached;
-    const probe = node.kind === "step" ? node.id : node.children.find((child) => child.kind === "step")?.id;
-    const seen = probe !== undefined && this.descendants(parent).some((span) => span.symbolId === probe);
-    const value = seen ? 1 + node.children.reduce((sum, child) => sum + this.bound(parent, child), 0) : 0;
+    let value: number;
+    if (node.kind === "parallel") value = node.children.reduce((sum, child) => sum + this.bound(parent, child), 0);
+    else {
+      const probe = node.kind === "step" ? node.id : node.children.find((child) => child.kind === "step")?.id;
+      const seen = probe !== undefined && this.descendants(parent).some((span) => span.symbolId === probe);
+      value = seen ? 1 + node.children.reduce((sum, child) => sum + this.bound(parent, child), 0) : 0;
+    }
     this.bounds.set(key, value);
     return value;
   }
@@ -449,11 +462,11 @@ class Matcher {
 
   /**
    * The best assignment for `nodes[i..]` under `parent`, the sibling before
-   * them matched to `previous`. Memoized: the answer depends on the spans taken
-   * so far only through those it could take itself, so the search stays
-   * polynomial in the spans of a symbol.
+   * them matched to `previous` (every step of it for a `parallel` group).
+   * Memoized: the answer depends on the spans taken so far only through those
+   * it could take itself, so the search stays polynomial in the spans of a symbol.
    */
-  private list(parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, previous: TraceSpan | null, trigger: boolean): Assignment {
+  private list(parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, previous: readonly TraceSpan[], trigger: boolean): Assignment {
     if (i >= nodes.length) return NOTHING;
     const symbols = this.symbolsFrom(nodes, i);
     const parentKey = parent?.spanId ?? null;
@@ -464,7 +477,7 @@ class Matcher {
     }
     const inside = under;
     const taken = [...this.used].filter((id) => inside.has(id) && symbols.has(this.spans.get(id)?.symbolId ?? "")).sort();
-    const key = JSON.stringify([parent?.spanId ?? null, i, previous?.spanId ?? null, taken]);
+    const key = JSON.stringify([parent?.spanId ?? null, i, previous.map((span) => span.spanId), taken]);
     let cache = this.memo.get(nodes);
     if (!cache) {
       cache = new Map();
@@ -477,12 +490,13 @@ class Matcher {
     return best;
   }
 
-  private solve(parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, previous: TraceSpan | null, trigger: boolean): Assignment {
+  private solve(parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, previous: readonly TraceSpan[], trigger: boolean): Assignment {
     const node = nodes[i];
     if (!node) return NOTHING;
     if (node.kind === "when") return this.branch(parent, nodes, i, node, previous, trigger);
+    if (node.kind === "parallel") return this.group(parent, nodes, i, node, previous, trigger);
     const pool = this.candidates(parent, node.id);
-    const inOrder = pool.filter((span) => !previous || !startsBefore(span, previous));
+    const inOrder = pool.filter((span) => !previous.some((before) => startsBefore(span, before)));
     if (inOrder.length > 0) {
       const ceiling = nodes.slice(i).reduce((sum, item) => sum + this.bound(parent, item), 0);
       let best: Assignment | null = null;
@@ -494,7 +508,8 @@ class Matcher {
       return best!;
     }
     const early = pool[0];
-    if (early && previous) return this.take(parent, nodes, i, node, early, { verdict: "fail", message: `out of order: starts before \`${previous.symbolId}\``, ...this.base() }, trigger);
+    const passed = early ? previous.find((before) => startsBefore(early, before)) : undefined;
+    if (early && passed) return this.take(parent, nodes, i, node, early, { verdict: "fail", message: `out of order: starts before \`${passed.symbolId}\``, ...this.base() }, trigger);
     const doubt = this.absenceDoubt(node.id);
     // A span only in another call tree does not prove the step ran under this parent, and it does not prove it never ran.
     const outside = !doubt && parent ? this.outsideRoot(parent, node.id) : null;
@@ -511,26 +526,63 @@ class Matcher {
   private take(parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, node: ShapeNode, span: TraceSpan, outcome: Outcome, trigger: boolean): Assignment {
     if (--this.budget < 0) throw new OverBudget();
     this.used.add(span.spanId);
-    const inside = this.list(span, node.children, 0, null, false);
+    const inside = this.list(span, node.children, 0, [], false);
     for (const id of inside.spans) this.used.add(id);
-    const after = this.list(parent, nodes, i + 1, span, trigger);
+    const after = this.list(parent, nodes, i + 1, [span], trigger);
     for (const id of inside.spans) this.used.delete(id);
     this.used.delete(span.spanId);
     return combine(assignment([[node.key, outcome]], [span.spanId]), inside, after);
   }
 
   /** A `when` is exercised in this test when its first step is observed; its steps are not ordered after the siblings before it. */
-  private branch(parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, node: ShapeNode, previous: TraceSpan | null, trigger: boolean): Assignment {
+  private branch(parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, node: ShapeNode, previous: readonly TraceSpan[], trigger: boolean): Assignment {
     const first = node.children.find((child) => child.kind === "step");
     if (!first || first.kind !== "step" || this.candidates(parent, first.id).length === 0) {
       const skipped: Outcome = { verdict: "unverified", message: "branch not exercised", ...this.base() };
       return combine(assignment(keysOf([node]).map((key): [number, Outcome] => [key, skipped])), this.list(parent, nodes, i + 1, previous, trigger));
     }
-    const inside = this.list(parent, node.children, 0, null, false);
+    const inside = this.list(parent, node.children, 0, [], false);
     for (const id of inside.spans) this.used.add(id);
     const after = this.list(parent, nodes, i + 1, previous, trigger);
     for (const id of inside.spans) this.used.delete(id);
     return combine(assignment([[node.key, { verdict: "ok", message: `branch exercised in ${this.run.testId}`, ...this.base() }]]), inside, after);
+  }
+
+  /**
+   * A `parallel` group: each step is matched under the group's parent after the
+   * sibling before the group, in any order with the others, overlap allowed.
+   * The sibling after the group is ordered after every step it observed. The
+   * group itself is `ok` when every step is, else it takes the worst of them.
+   */
+  private group(parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, node: ShapeNode, previous: readonly TraceSpan[], trigger: boolean): Assignment {
+    const parts: Assignment[] = [];
+    const taken: TraceSpan[] = [];
+    for (const child of node.children) {
+      const part = this.list(parent, this.alone(child), 0, previous, false);
+      parts.push(part);
+      const first = part.spans[0];
+      const span = first === undefined ? undefined : this.spans.get(first);
+      // The first span an observed step takes is its own image; its children follow it.
+      if (span && span.symbolId === (child.kind === "step" ? child.id : "")) taken.push(span);
+      for (const id of part.spans) this.used.add(id);
+    }
+    const inside = combine(...parts);
+    const after = this.list(parent, nodes, i + 1, taken.length > 0 ? taken : previous, trigger);
+    for (const id of inside.spans) this.used.delete(id);
+    const verdicts = inside.outcomes.filter(([key]) => node.children.some((child) => child.key === key)).map(([, outcome]) => outcome);
+    const worst = verdicts.find((outcome) => outcome.verdict === "fail") ?? verdicts.find((outcome) => outcome.verdict === "unverified");
+    const own: Outcome = worst ?? { verdict: "ok", message: `every step of the group observed in ${this.run.testId}`, ...this.base() };
+    return combine(assignment([[node.key, own]]), inside, after);
+  }
+
+  /** `[node]`, the same array every time: `list` memoizes by the array. */
+  private alone(node: ShapeNode): readonly ShapeNode[] {
+    let list = this.singles.get(node);
+    if (!list) {
+      list = [node];
+      this.singles.set(node, list);
+    }
+    return list;
   }
 
   /** Root of the `parentSpanId` chain. A span whose parent is missing is its own root. */
@@ -574,7 +626,14 @@ class Matcher {
     return false;
   }
 
-  private orderOutcome(parent: TraceSpan | null, span: TraceSpan, after: TraceSpan | null): Outcome {
+  /** The order of `span` after every span of `previous`: the first that is not `ok`, else `ok`. */
+  private orderOutcome(parent: TraceSpan | null, span: TraceSpan, previous: readonly TraceSpan[]): Outcome {
+    if (previous.length === 0) return this.orderAfter(parent, span, null);
+    const outcomes = previous.map((before) => this.orderAfter(parent, span, before));
+    return outcomes.find((outcome) => outcome.verdict === "fail") ?? outcomes.find((outcome) => outcome.verdict === "unverified") ?? outcomes[0]!;
+  }
+
+  private orderAfter(parent: TraceSpan | null, span: TraceSpan, after: TraceSpan | null): Outcome {
     // A later sibling inside the previous sibling's subtree is not after it. `links` do not repair that.
     if (after && this.nestedIn(span, after)) {
       return { verdict: "fail", message: `nested in \`${after.symbolId}\`, not after it`, ...this.base() };

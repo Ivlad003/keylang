@@ -186,6 +186,8 @@ test("explain --llm: an answer without text, an OpenRouter error as plain JSON, 
   // Only the stalled stream waits for the timeout; the others answer at once, so a loaded machine gets room.
   const cases: [string, (res: import("node:http").ServerResponse) => void, RegExp, string][] = [
     ["JSON error", (res) => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ error: { message: "model is overloaded" } })), /^keylang: openrouter: model is overloaded$/m, "20000"],
+    // The largest timeout a timer holds: the call waits for the answer.
+    ["JSON error, longest timeout", (res) => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ error: { message: "model is overloaded" } })), /^keylang: openrouter: model is overloaded$/m, "2147483647"],
     ["broken SSE", (res) => res.writeHead(200, { "content-type": "text/event-stream" }).end("data: {not json\n\n"), /^keylang: openrouter: invalid JSON in the stream: \{not json$/m, "20000"],
     ["stalled stream", (res) => res.writeHead(200, { "content-type": "text/event-stream" }).write(`data: ${JSON.stringify({ choices: [{ delta: { content: "Build" } }] })}\n\n`), /^keylang: openrouter: no answer within 300 ms \(KEYLANG_LLM_TIMEOUT_MS\)$/m, "300"],
   ];
@@ -198,6 +200,12 @@ test("explain --llm: an answer without text, an OpenRouter error as plain JSON, 
   assert.ok(!existsSync(join(dir, "keylang/explain")), "no empty explanation is kept as fresh");
   const bad = keylang(dir, ["explain", "app.checkout.checkout", "--llm"], { ...env, KEYLANG_LLM_TIMEOUT_MS: "soon" });
   assert.match(bad.stderr, /KEYLANG_LLM_TIMEOUT_MS must be a positive number of milliseconds/);
+  // Above 2^31-1 Node turns a timer into 1 ms: the value is refused before any call, as a malformed one, not an instant timeout.
+  const url = await mockOpenRouter(t, (res) => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ error: { message: "model is overloaded" } })));
+  const huge = await keylangAsync(dir, ["explain", "app.checkout.checkout", "--llm"], { ...env, OPENROUTER_BASE_URL: url, KEYLANG_LLM_TIMEOUT_MS: "3000000000" });
+  assert.equal(huge.status, bad.status, huge.stdout + huge.stderr);
+  assert.match(huge.stderr, /^keylang: KEYLANG_LLM_TIMEOUT_MS must be at most 2147483647 milliseconds \(about 24 days\), got `3000000000`; showing what the snapshot says$/m);
+  assert.doesNotMatch(huge.stderr, /no answer within|TimeoutOverflowWarning/);
 });
 
 test("explain --llm: an Anthropic request that never answers ends within KEYLANG_LLM_TIMEOUT_MS, retries included", async (t) => {

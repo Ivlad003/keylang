@@ -256,8 +256,21 @@ function danglingMessage(index: Index, doc: Document, target: string): string {
   return `dangling reference \`${target}\`${hint}; declare \`planned\` if this is an intention`;
 }
 
+/** K206: `continues <flow>` names a flow no `# flow` declares. */
+function checkContinues(index: Index, doc: Document, node: Node, diags: Diagnostic[]): void {
+  const flow = node.kind === "continues" ? node.text : null;
+  if (flow === null || index.flows.has(flow.value)) return;
+  const near = [...index.flows.keys()]
+    .map((name) => ({ name, distance: similarity(flow.value, name) }))
+    .filter((item): item is { name: string; distance: number } => item.distance !== null)
+    .sort((a, b) => a.distance - b.distance || compareText(a.name, b.name))[0];
+  const hint = near === undefined ? "" : ` (did you mean \`${near.name}\`?)`;
+  diags.push(diagnostic("K206", doc.path, flow.span, `\`continues\` names flow \`${flow.value}\`, which no \`# flow\` declares${hint}`));
+}
+
 function checkRefs(index: Index, doc: Document, node: Node, diags: Diagnostic[], unverified: Unverified[], knownExternal: ReadonlySet<string>): void {
   warnBareThen(index, doc, node, diags);
+  checkContinues(index, doc, node, diags);
   let ok = true;
   // `exports` lists public names (values, aliases, `default`), compared with the
   // snapshot's export table by the rule, not declarations of the map.

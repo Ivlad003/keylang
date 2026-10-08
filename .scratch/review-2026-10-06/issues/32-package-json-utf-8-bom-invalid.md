@@ -1,6 +1,6 @@
 # 32: package.json з UTF-8 BOM ламає кожну команду аналізу (код 2 «invalid JSON»)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -53,11 +53,13 @@ scratchpad/…/bom1: `printf '\xef\xbb\xbf{"name":"app","dependencies":{"left-pa
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/declared-packages.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/declared-packages.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+**2026-10-08.** BOM (U+FEFF) на початку маніфеста знімається перед розбором, як це роблять Node і npm: `readText` у `src/declared-packages.ts` (package.json, Cargo.toml, composer.json), розбір composer-членів і `Cargo.toml` там само; `stripJsonc` у `src/imports.ts` (тож резолвер так само читає package.json і tsconfig з BOM, а тексти з `known` теж проходять); `composerSourceRoot` у `src/config.ts`; `enableExplainedMap` і маркер клону в `src/clone.ts`. Спільний помічник — `withoutBom`, тепер експортований із `src/config.ts` (раніше приватний для keylang.json, тікет 62). Регресії: `tests/review-config.test.ts` («package.json and composer.json with a UTF-8 BOM…»: кореневий і вкладений package.json та composer.json з BOM — пакети стають відомими ID, член workspace лишається внутрішнім і дає K001; до виправлення — `package.json: invalid JSON`, код 2) і `tests/clone.test.ts` («clone --explain: a committed keylang.json with a UTF-8 BOM…»; до виправлення — `clone: keylang.json: Unexpected token`). Документація: `docs/cli.md` (рядок `map`); `docs/review-2026-10-06.md` §2.2 №27 ✔.

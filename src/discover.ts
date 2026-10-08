@@ -6,8 +6,10 @@
 // turns one discovered flow into the draft a proposal is made of. Pure over
 // the snapshot and the flows of the specs; the operation writes.
 
+import { firstSentence } from "./brief.ts";
 import { distinctNames, draftFlow, type FlowDraft } from "./draft.ts";
 import { DISCOVERED_FLOWS_DIR } from "./map.ts";
+import { isTriggerKind } from "./parser.ts";
 import type { Flow } from "./spec-ir.ts";
 import type { AnalysisSnapshot, EntryKind, EntryPoint } from "./snapshot.ts";
 import { compareText } from "./span.ts";
@@ -42,6 +44,8 @@ export interface DiscoveredFlow {
   steps: string[];
   /** Calls on the route keylang did not resolve: each an `unresolved` comment of the draft. */
   holes: number;
+  /** The offline description under the heading (`offlineDescription`): from doc comments, no model; absent without one. */
+  description?: string;
   /** The `# flow` section as the view writes it, with its `keylang:discover` comment; ends with a newline. */
   text: string;
 }
@@ -94,14 +98,16 @@ export function discoverFlows(snapshot: AnalysisSnapshot, specified: ReadonlyMap
     chosen.push(entry);
   }
   const depth = options.depth ?? 4;
-  const drafts = distinctNames(chosen.map((entry) => draftFlow(snapshot, entry.id, { depth })));
+  // An entry point of a kind the grammar names is written as a typed trigger, which `check` compares with the entry.
+  const drafts = distinctNames(chosen.map((entry) => draftFlow(snapshot, entry.id, { depth, ...(isTriggerKind(entry.kind) ? { entry: entry.kind } : {}) })));
   const holes = holesBySource(snapshot);
   const flows = drafts.map((draft, i): DiscoveredFlow => {
     const entry = chosen[i]!;
     const layer = snapshot.nodes[entry.id]!.layer;
     const count = draft.steps.reduce((sum, id) => sum + (holes.get(id) ?? 0), 0);
-    const flow = { name: draft.name, trigger: entry.id, entry: { kind: entry.kind, label: entry.label }, layer, file: `${layer}.md`, steps: draft.steps, holes: count };
-    return { ...flow, text: withComment(draft.text, `keylang:discover entry=${entry.kind} label="${quoted(entry.label)}" steps=${draft.steps.length} holes=${count}`) };
+    const described = offlineDescription(snapshot, entry.id, firstLevelSteps(draft.text));
+    const flow = { name: draft.name, trigger: entry.id, entry: { kind: entry.kind, label: entry.label }, layer, file: `${layer}.md`, steps: draft.steps, holes: count, ...(described ? { description: described.text } : {}) };
+    return { ...flow, text: withComment(draft.text, `keylang:discover entry=${entry.kind} label="${quoted(entry.label)}" steps=${draft.steps.length} holes=${count}`, described) };
   });
   const files = new Map<string, string>();
   const byFile = new Map<string, DiscoveredFlow[]>();
@@ -139,10 +145,73 @@ function holesBySource(snapshot: AnalysisSnapshot): Map<string, number> {
   return out;
 }
 
-/** The draft with an HTML comment as its own paragraph under the heading. */
-function withComment(text: string, comment: string): string {
+/** The draft with an HTML comment as its own paragraph under the heading, then the description with its provenance. */
+function withComment(text: string, comment: string, described: { text: string; ids: string[] } | null = null): string {
   const [heading, ...rest] = text.split("\n");
-  return [heading, "", `<!-- ${comment} -->`, ...rest].join("\n");
+  const description = described ? ["", `<!-- keylang:discover doc=${described.ids.join(",")} -->`, "", proseLine(described.text)] : [];
+  return [heading, "", `<!-- ${comment} -->`, ...description, ...rest].join("\n");
+}
+
+/** IDs of the steps right under the trigger of a draft (`  - step <id>`), in order. */
+export function firstLevelSteps(draftText: string): string[] {
+  const out: string[] = [];
+  for (const m of draftText.matchAll(/^ {2}- step (\S+)/gm)) out.push(m[1]!);
+  return out;
+}
+
+/**
+ * What a discovered flow does, in the words of the code (business-flows/12,
+ * offline first): the trigger's doc comment (a JSDoc, docblock, Python
+ * docstring or Rust doc comment, as the snapshot keeps it in `doc`), then the
+ * first sentence of the doc of each step right under it. `ids` are the nodes
+ * whose words were used, trigger first. Null when none of them has a doc.
+ * The same snapshot gives the same text: no model.
+ */
+export function offlineDescription(snapshot: AnalysisSnapshot, trigger: string, steps: readonly string[]): { text: string; ids: string[] } | null {
+  const ids: string[] = [];
+  const parts: string[] = [];
+  const own = snapshot.nodes[trigger]?.doc;
+  if (own) {
+    ids.push(trigger);
+    parts.push(own.replace(/\s+/g, " ").trim());
+  }
+  for (const id of steps) {
+    if (ids.includes(id)) continue;
+    const doc = snapshot.nodes[id]?.doc;
+    const sentence = doc ? firstSentence(doc) : null;
+    // One sentence said twice (two steps with the same doc) is said once.
+    if (sentence === null || parts.includes(sentence)) continue;
+    ids.push(id);
+    parts.push(sentence);
+  }
+  return parts.length === 0 ? null : { text: parts.join(" "), ids };
+}
+
+/**
+ * One line of prose that opens no block and hides nothing: `<` outside code
+ * is `&lt;`, `-->` is `--&gt;`, a start that would be a list item, heading,
+ * quote or fence is escaped with a backslash.
+ */
+export function proseLine(text: string): string {
+  let out = text
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(/(`[^`]*`)/)
+    .map((part, i) => (i % 2 === 1 ? part : part.replaceAll("<", "&lt;").replaceAll("-->", "--&gt;")))
+    .join("");
+  if (/^\d+[.)]/.test(out)) out = out.replace(/^(\d+)([.)])/, "$1\\$2");
+  else if (/^(?:[-*+_=#>|]|~~~|```)/.test(out)) out = `\\${out}`;
+  return out;
+}
+
+/** The text of `proseLine` back: the escape and the entities undone. */
+export function unproseLine(line: string): string {
+  return line
+    .replace(/^(\d+)\\([.)])/, "$1$2")
+    .replace(/^\\(?=[-*+_=#>|~`])/, "")
+    .split(/(`[^`]*`)/)
+    .map((part, i) => (i % 2 === 1 ? part : part.replaceAll("--&gt;", "-->").replaceAll("&lt;", "<")))
+    .join("");
 }
 
 /** A label inside `"…"` of a comment: no double quote, no `-->`. */

@@ -235,12 +235,21 @@ const POSITIONS: Position[] = [
     ],
   },
   { name: "under-when", k004: true, parents: [{ suffix: "", lines: (item) => ["# flow checkout", "- when paid", `  ${item}`] }] },
+  { name: "under-parallel", k004: true, parents: [{ suffix: "", lines: (item) => ["# flow checkout", "- parallel", `  ${item}`] }] },
   {
     name: "under-invariant",
     k004: true,
     parents: [
       { suffix: "-invariant", lines: (item) => ["# flow checkout", "- invariant holds", `  ${item}`] },
       { suffix: "-then", lines: (item) => ["# flow checkout", "- when paid", "  - then app.buy", `    ${item}`] },
+    ],
+  },
+  {
+    name: "under-timer",
+    k004: true,
+    parents: [
+      { suffix: "-after", lines: (item) => ["# flow checkout", "- after 30m", `  ${item}`] },
+      { suffix: "-every", lines: (item) => ["# flow checkout", "- every @daily", `  ${item}`] },
     ],
   },
   { name: "under-wire-dep", k004: true, parents: [{ suffix: "", lines: (item) => ["# wiring", "- wire app.buy", "  - db app.pool", `    ${item}`] }] },
@@ -258,7 +267,9 @@ const POSITION_NAMES = [
   "under-rule-module",
   "under-step",
   "under-when",
+  "under-parallel",
   "under-invariant",
+  "under-timer",
   "under-wire",
   "under-wire-dep",
   "under-other",
