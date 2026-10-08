@@ -324,30 +324,31 @@
     <a id="features.discover"></a><br>`keylang flows discover` and `keylang flows adopt` (business-flows/11): a flow draft for every entry point of the snapshot, `draftFlow` from the entry's fn, as a generated view `<dir>/flows-discovered/<layer>.md` (ADR 0014: a view, not a spec — `check` does not read it). A…
     - draft [features.draft](features.md#features.draft)
     - map [map.map](map.md#map.map)
+    - parser [lang.parser](lang.md#lang.parser)
     - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
     - snapshot [map.snapshot](map.md#map.snapshot)
     - span [base.span](base.md#base.span)
-    - type [DiscoverOptions](../../src/discover.ts#L21)
+    - type [DiscoverOptions](../../src/discover.ts#L22)
       <a id="features.discover.DiscoverOptions"></a>
-    - type [DiscoveredFlow](../../src/discover.ts#L33)
+    - type [DiscoveredFlow](../../src/discover.ts#L34)
       <a id="features.discover.DiscoveredFlow"></a><br>One discovered flow: the draft of one entry point's fn.
-    - type [Discovery](../../src/discover.ts#L49)
+    - type [Discovery](../../src/discover.ts#L50)
       <a id="features.discover.Discovery"></a>
-    - fn [specifiedTriggers](../../src/discover.ts#L60) (flows: readonly Flow[]) → Map<string, { file: string; flow: string }>
+    - fn [specifiedTriggers](../../src/discover.ts#L61) (flows: readonly Flow[]) → Map<string, { file: string; flow: string }>
       <a id="features.discover.specifiedTriggers"></a><br>Each trigger the hand-written flows name, with the first flow (by file, then name) that names it.
       - calls [base.span.compareText](base.md#base.span.compareText)
-    - fn [discoverFlows](../../src/discover.ts#L73) (snapshot: AnalysisSnapshot, specified: ReadonlyMap<string, { file: string; flow: string }>, options: DiscoverOptions = {}) → Discovery
+    - fn [discoverFlows](../../src/discover.ts#L74) (snapshot: AnalysisSnapshot, specified: ReadonlyMap<string, { file: string; flow: string }>, options: DiscoverOptions = {}) → Discovery
       <a id="features.discover.discoverFlows"></a><br>The flows of the view: one draft per fn an entry point names (the first entry of a fn, in the snapshot's order, labels it), names kept apart as `code-to-spec` keeps them, grouped by the trigger's layer, flows of a file by name. The same snapshot and specs give the same bytes.
-      - calls [features.draft.distinctNames](features.md#features.draft.distinctNames), [features.draft.draftFlow](features.md#features.draft.draftFlow), [features.discover.holesBySource](features.md#features.discover.holesBySource), [features.discover.withComment](features.md#features.discover.withComment), [features.discover.quoted](features.md#features.discover.quoted), [base.span.compareText](base.md#base.span.compareText)
-    - fn [adoptedFlow](../../src/discover.ts#L120) (flow: DiscoveredFlow, specDir: string) → FlowDraft
+      - calls [features.draft.distinctNames](features.md#features.draft.distinctNames), [features.draft.draftFlow](features.md#features.draft.draftFlow), [lang.parser.isTriggerKind](lang.md#lang.parser.isTriggerKind), [features.discover.holesBySource](features.md#features.discover.holesBySource), [features.discover.withComment](features.md#features.discover.withComment), [features.discover.quoted](features.md#features.discover.quoted), [base.span.compareText](base.md#base.span.compareText)
+    - fn [adoptedFlow](../../src/discover.ts#L122) (flow: DiscoveredFlow, specDir: string) → FlowDraft
       <a id="features.discover.adoptedFlow"></a><br>The draft `flows adopt` proposes: the discovered flow with its comment turned into provenance — `adopted`, and the view's file it came from.
-    - fn [discoverySummary](../../src/discover.ts#L127) (discovery: Pick<Discovery, "flows" | "specified">) → string
+    - fn [discoverySummary](../../src/discover.ts#L129) (discovery: Pick<Discovery, "flows" | "specified">) → string
       <a id="features.discover.discoverySummary"></a><br>`discovered N flows (M already specified), K with blind spots`.
-    - fn [holesBySource](../../src/discover.ts#L133) (snapshot: AnalysisSnapshot) → Map<string, number> <!-- internal -->
+    - fn [holesBySource](../../src/discover.ts#L135) (snapshot: AnalysisSnapshot) → Map<string, number> <!-- internal -->
       <a id="features.discover.holesBySource"></a><br>The unresolved and dynamic calls of each fn: what `draftFlow` writes as an `unresolved` comment.
-    - fn [withComment](../../src/discover.ts#L143) (text: string, comment: string) → string <!-- internal -->
+    - fn [withComment](../../src/discover.ts#L145) (text: string, comment: string) → string <!-- internal -->
       <a id="features.discover.withComment"></a><br>The draft with an HTML comment as its own paragraph under the heading.
-    - fn [quoted](../../src/discover.ts#L149) (label: string) → string <!-- internal -->
+    - fn [quoted](../../src/discover.ts#L151) (label: string) → string <!-- internal -->
       <a id="features.discover.quoted"></a><br>A label inside `"…"` of a comment: no double quote, no `-->`.
   - module [draft-llm](../../src/draft-llm.ts#L1)
     <a id="features.draft-llm"></a><br>`draft flow --mode llm|hybrid` (design §5.1): the model proposes a flow from a compact map, the flow grammar and flows of this repository; an ID that is neither in the snapshot nor declared `planned` sends the draft back once with the nearest real IDs. The answer is reconciled…
@@ -418,39 +419,39 @@
     - snapshot [map.snapshot](map.md#map.snapshot)
     - type [FlowDraft](../../src/draft.ts#L14)
       <a id="features.draft.FlowDraft"></a><br>Plain data shape for a flow being built: its name, the raw `# flow` section text (newline-terminated), and the ordered list of step IDs with the trigger first. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [draftFlow](../../src/draft.ts#L22) (snapshot: AnalysisSnapshot, trigger: string, options: { name?: string; depth?: number } = {}) → FlowDraft
+    - fn [draftFlow](../../src/draft.ts#L22) (snapshot: AnalysisSnapshot, trigger: string, options: { name?: string; depth?: number; entry?: string } = {}) → FlowDraft
       <a id="features.draft.draftFlow"></a><br>Walks the call graph from a fn in an `AnalysisSnapshot` to a bounded depth, skipping non-fn and external callees, and emits a Markdown flow with `trigger`/`step` lines. Unresolved or dynamic calls per step are appended as HTML comments, and the ordered step IDs are returned… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-    - fn [withFlow](../../src/draft.ts#L67) (existing: string | null, draft: Pick<FlowDraft, "name" | "text">) → string
+    - fn [withFlow](../../src/draft.ts#L69) (existing: string | null, draft: Pick<FlowDraft, "name" | "text">) → string
       <a id="features.draft.withFlow"></a><br>A spec with the draft added: the section of the same flow is replaced, whatever follows the name on its heading line, otherwise the draft is appended. Sections come from the parser, so a `# ` line in a code block is not a heading.
       - calls [lang.parser.parse](lang.md#lang.parser.parse), [features.draft.nextHeading](features.md#features.draft.nextHeading), [base.safe-write.allCrlf](base.md#base.safe-write.allCrlf)
-    - fn [withRules](../../src/draft.ts#L91) (existing: string | null, draftText: string) → string
+    - fn [withRules](../../src/draft.ts#L93) (existing: string | null, draftText: string) → string
       <a id="features.draft.withRules"></a><br>`draft rules` into an existing spec: the drafted rules go at the end of its last `# rules` section, or into a new `# rules` section at the end, never under a trailing `# flow`. A rule the file already has (comments aside) is not repeated.
       - calls [lang.parser.parse](lang.md#lang.parser.parse), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.parser.renderMeaning](lang.md#lang.parser.renderMeaning), [features.draft.nextHeading](features.md#features.draft.nextHeading), [base.safe-write.allCrlf](base.md#base.safe-write.allCrlf)
-    - fn [nextHeading](../../src/draft.ts#L121) (sections: readonly { heading: { span: { start: { line: number } } } | null }[], index: number) → number | null <!-- internal -->
+    - fn [nextHeading](../../src/draft.ts#L123) (sections: readonly { heading: { span: { start: { line: number } } } | null }[], index: number) → number | null <!-- internal -->
       <a id="features.draft.nextHeading"></a><br>0-based line index of the heading after `sections[index]`, or null at the end of the file.
-    - fn [distinctNames](../../src/draft.ts#L131) (drafts: readonly FlowDraft[]) → FlowDraft[]
+    - fn [distinctNames](../../src/draft.ts#L133) (drafts: readonly FlowDraft[]) → FlowDraft[]
       <a id="features.draft.distinctNames"></a><br>Flow names that keep drafts apart in one spec: two `save` triggers (`A.save`, `B.save`) become `A-save` and `B-save`, taking as many trailing ID segments as it needs.
-    - fn [draftRules](../../src/draft.ts#L161) (snapshot: AnalysisSnapshot, cyclic: boolean) → string
+    - fn [draftRules](../../src/draft.ts#L163) (snapshot: AnalysisSnapshot, cyclic: boolean) → string
       <a id="features.draft.draftRules"></a><br>`draft rules --mode algo`: rules the current code already keeps, so each passes `check` as written. Layers in an order where every observed dependency points down (`a < b`: `b` may use `a`), when the layers form no cycle; otherwise a `deny` for each pair used in one direction…
       - calls [features.draft.layerOrder](features.md#features.draft.layerOrder)
-    - fn [layerOrder](../../src/draft.ts#L186) (layers: readonly string[], uses: ReadonlyMap<string, ReadonlySet<string>>) → string[] | null <!-- internal -->
+    - fn [layerOrder](../../src/draft.ts#L188) (layers: readonly string[], uses: ReadonlyMap<string, ReadonlySet<string>>) → string[] | null <!-- internal -->
       <a id="features.draft.layerOrder"></a><br>Layers with those used first (Kahn, ties by name); null for a cycle.
-    - fn [codeToSpecTriggers](../../src/draft.ts#L205) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; triggers: string[] }
+    - fn [codeToSpecTriggers](../../src/draft.ts#L207) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; triggers: string[] }
       <a id="features.draft.codeToSpecTriggers"></a><br>`code-to-spec <path[:line]>`: the functions the code position names — the innermost fn whose range holds the line, or every exported fn of the file in declaration order without a line — and the spec's name: the fn's, or the file's module's. Reads the snapshot only; a position…
-    - fn [codeToSpec](../../src/draft.ts#L228) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; drafts: FlowDraft[] }
+    - fn [codeToSpec](../../src/draft.ts#L230) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; drafts: FlowDraft[] }
       <a id="features.draft.codeToSpec"></a><br>`code-to-spec <path[:line]>`: each fn `codeToSpecTriggers` names as a flow draft; same-named fns get distinct flow names.
       - calls [features.draft.codeToSpecTriggers](features.md#features.draft.codeToSpecTriggers), [features.draft.draftFlow](features.md#features.draft.draftFlow), [features.draft.distinctNames](features.md#features.draft.distinctNames)
-    - type [ChangedLines](../../src/draft.ts#L235)
+    - type [ChangedLines](../../src/draft.ts#L237)
       <a id="features.draft.ChangedLines"></a><br>Changed lines per file, 1-based and inclusive; `all` for a file git does not track yet.
-    - fn [diffHunks](../../src/draft.ts#L241) (diff: string) → Map<string, [number, number][]>
+    - fn [diffHunks](../../src/draft.ts#L243) (diff: string) → Map<string, [number, number][]>
       <a id="features.draft.diffHunks"></a><br>The new-side line ranges of `git diff --unified=0`. A deletion is the line it happened after, so the fn around it counts as changed.
       - calls [features.draft.gitPath](features.md#features.draft.gitPath)
-    - fn [deletedDiffPaths](../../src/draft.ts#L264) (diff: string) → string[]
+    - fn [deletedDiffPaths](../../src/draft.ts#L266) (diff: string) → string[]
       <a id="features.draft.deletedDiffPaths"></a><br>Paths removed in `git diff` (`--- a/file` then `+++ /dev/null`). `diffHunks` follows the new side, so a deletion has no hunk to land on.
       - calls [features.draft.gitPath](features.md#features.draft.gitPath)
-    - fn [gitPath](../../src/draft.ts#L278) (text: string) → string <!-- internal -->
+    - fn [gitPath](../../src/draft.ts#L280) (text: string) → string <!-- internal -->
       <a id="features.draft.gitPath"></a><br>A path as `git diff` prints it: C-quoted (`"b/\303\251.ts"`, `"b/a\"b.ts"`) when it holds a quote, a backslash or a control byte.
-    - fn [changedFlows](../../src/draft.ts#L306) (snapshot: AnalysisSnapshot, changed: ChangedLines, named: ReadonlySet<string>) → { drafts: FlowDraft[]; named: string[] }
+    - fn [changedFlows](../../src/draft.ts#L308) (snapshot: AnalysisSnapshot, changed: ChangedLines, named: ReadonlySet<string>) → { drafts: FlowDraft[]; named: string[] }
       <a id="features.draft.changedFlows"></a><br>`code-to-spec --since <ref>`: a flow draft for each fn the change touches. A fn some hand-written spec already names is reported, not drafted again — its flow is the place to look.
       - calls [features.draft.draftFlow](features.md#features.draft.draftFlow), [features.draft.distinctNames](features.md#features.draft.distinctNames)
   - module [explain-edge](../../src/explain-edge.ts#L1)
@@ -665,7 +666,7 @@
   - module [explain](../../src/explain.ts#L1)
     <a id="features.explain"></a><br>Short explanations for diagnostic codes. Every code in `diag.ts` has an entry.
     - diag [base.diag](base.md#base.diag)
-    - fn [explainCode](../../src/explain.ts#L115) (code: string) → string | null
+    - fn [explainCode](../../src/explain.ts#L130) (code: string) → string | null
       <a id="features.explain.explainCode"></a><br>Looks up a diagnostic code (case-insensitively) in the `EXPLANATIONS` table and formats its cause, example, and fix as a multi-line string, returning null for unknown codes. For `K005` it appends extra reason lines from `K005_REASON_LINES`. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [feature-status](../../src/feature-status.ts#L1)
     <a id="features.feature-status"></a><br>Whether a feature file is done: it declares something to check, keylang reads it without errors, every `planned` in it is implemented (K202, not K201), every flow step and `calls` in it is static ok, no rule fail of this change remains (ADR 0005 §2: no new violations), and the…
@@ -1157,21 +1158,21 @@
       <a id="features.lsp-features.CompletionItem"></a><br>Shape of one entry the completion provider returns: a label with an LSP kind code, optional detail, description, sort key, and a `filterText`/`textEdit` pair that lets the dotted label replace the whole typed path rather than just the last segment after a dot. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [completions](../../src/lsp-features.ts#L625) (ws: Workspace, path: string, position: LspPosition) → CompletionItem[]
       <a id="features.lsp-features.completions"></a><br>Keywords by position at the start of an item; after `step`/`trigger` only functions and planned functions; after other reference keywords, ids that the enclosing module may depend on (`deny` removes the rest).
-      - calls [features.lsp-features.docOf](features.md#features.lsp-features.docOf), [features.lsp-features.enclosing](features.md#features.lsp-features.enclosing), [features.lsp-features.sectionAt](features.md#features.lsp-features.sectionAt), [lang.parser.keywordsAt](lang.md#lang.parser.keywordsAt), [features.lsp-features.moduleAround](features.md#features.lsp-features.moduleAround), [check.rules.dependencyKindOf](check.md#check.rules.dependencyKindOf), [check.rules.blocksDependency](check.md#check.rules.blocksDependency)
-    - fn [sectionAt](../../src/lsp-features.ts#L673) (doc: Document, line: number) → Section | undefined <!-- internal -->
+      - calls [features.lsp-features.docOf](features.md#features.lsp-features.docOf), [features.lsp-features.enclosing](features.md#features.lsp-features.enclosing), [features.lsp-features.sectionAt](features.md#features.lsp-features.sectionAt), [lang.parser.keywordsAt](lang.md#lang.parser.keywordsAt), [lang.parser.isTriggerKind](lang.md#lang.parser.isTriggerKind), [features.lsp-features.moduleAround](features.md#features.lsp-features.moduleAround), [check.rules.dependencyKindOf](check.md#check.rules.dependencyKindOf), [check.rules.blocksDependency](check.md#check.rules.blocksDependency)
+    - fn [sectionAt](../../src/lsp-features.ts#L695) (doc: Document, line: number) → Section | undefined <!-- internal -->
       <a id="features.lsp-features.sectionAt"></a><br>Walks the document's sections in order and returns the last one whose heading starts on or before the given line, defaulting to the first section (headingless sections count as starting at line 1). Used by [`features.lsp-features.completions`](features.md#features.lsp-features.completions) to know which section the cursor is… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [enclosing](../../src/lsp-features.ts#L683) (doc: Document, line: number, col: number) → Node | undefined <!-- internal -->
+    - fn [enclosing](../../src/lsp-features.ts#L705) (doc: Document, line: number, col: number) → Node | undefined <!-- internal -->
       <a id="features.lsp-features.enclosing"></a><br>The nearest item above `line` that starts left of `col`: the parent of a new item there.
       - calls [features.lsp-features.nodesOf](features.md#features.lsp-features.nodesOf)
-    - fn [ancestors](../../src/lsp-features.ts#L692) (doc: Document, node: Node) → Node[] <!-- internal -->
+    - fn [ancestors](../../src/lsp-features.ts#L714) (doc: Document, node: Node) → Node[] <!-- internal -->
       <a id="features.lsp-features.ancestors"></a><br>Walks up the parent links from [`features.lsp-features.nodesOf`](features.md#features.lsp-features.nodesOf) to return the given node followed by each enclosing node out to the root. Each step is a linear scan of the flattened node list, so the chain costs O(depth × nodes). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.lsp-features.nodesOf](features.md#features.lsp-features.nodesOf)
-    - fn [moduleAround](../../src/lsp-features.ts#L705) (ws: Workspace, doc: Document, parent: Node | undefined) → string | null <!-- internal -->
+    - fn [moduleAround](../../src/lsp-features.ts#L727) (ws: Workspace, doc: Document, parent: Node | undefined) → string | null <!-- internal -->
       <a id="features.lsp-features.moduleAround"></a><br>The module a completion is written in: the nearest enclosing module or fn declaration.
       - calls [features.lsp-features.ancestors](features.md#features.lsp-features.ancestors)
-    - type [CodeLens](../../src/lsp-features.ts#L720) <!-- internal -->
+    - type [CodeLens](../../src/lsp-features.ts#L742) <!-- internal -->
       <a id="features.lsp-features.CodeLens"></a><br>Shape of a single code lens entry returned to the LSP client: a document range plus the command to run when clicked, carrying a title, command identifier, and a list of string-array arguments. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [codeLenses](../../src/lsp-features.ts#L726) (ws: Workspace, path: string) → CodeLens[]
+    - fn [codeLenses](../../src/lsp-features.ts#L748) (ws: Workspace, path: string) → CodeLens[]
       <a id="features.lsp-features.codeLenses"></a><br>`flows: checkout, pay` above each function of a source file that a flow names. The command `keylang.flows` (registered by the editor client) gets the flow names.
       - calls [lang.spec-ir.flowsUsing](lang.md#lang.spec-ir.flowsUsing), [features.lsp-features.lspPoint](features.md#features.lsp-features.lspPoint)
   - module [node-search](../../src/node-search.ts#L1)

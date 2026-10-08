@@ -329,7 +329,25 @@ function flowDiagram(input: DiagramInput, name: string): Diagram {
         });
         return from;
       }
-      // Claims without a shape of their own: invariants, reads, tests and open questions.
+      case "parallel": {
+        // A parallel gateway splits into one branch per step and joins them: the next item follows the join (ADR 0023).
+        const line = at(item);
+        const ref = { specFile: flow.file, specLine: line };
+        const split = add({ id: `parallel:${line}`, kind: "parallel", label: "parallel", ref, verdict: null, ...(group ? { group } : {}) });
+        link(from, split.id, "sequence");
+        const join = add({ id: `parallel:${line}:join`, kind: "parallel", label: "parallel", ref, verdict: null, ...(group ? { group } : {}) });
+        for (const child of item.children) link(one(child, split.id, group), join.id, "sequence");
+        return join.id;
+      }
+      case "after":
+      case "every": {
+        // An intermediate timer event beside the sequence, as `calls` sits beside it.
+        const line = at(item);
+        const timer = add({ id: `${item.kind}:${line}`, kind: "timer", label: `${item.kind} ${item.value}`, ref: { specFile: flow.file, specLine: line }, verdict: worst(resultsAt(item).map((r) => r.verdict)), ...(group ? { group } : {}) });
+        link(from, timer.id, "sequence");
+        return from;
+      }
+      // Claims without a shape of their own: invariants, reads, tests, open questions and `continues`.
       default:
         return from;
     }

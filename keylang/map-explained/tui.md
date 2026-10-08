@@ -1217,22 +1217,25 @@
     - type [Mark](../../src/tui/evidence.ts#L11)
       <a id="tui.evidence.Mark"></a><br>`question`: an open question of a flow (`- ? …`, c4-zoom/11), a mark of its own and no verdict.
     - type [LineEvidence](../../src/tui/evidence.ts#L16)
-      <a id="tui.evidence.LineEvidence"></a><br>Per-line evidence shown in the TUI: a mark, ordered criterion verdicts (ok/fail/unverified) with messages, diagnostics, and flags for planned lines and open questions awaiting a human answer. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
-    - fn [worse](../../src/tui/evidence.ts#L29) (a: Mark | null, b: Mark | null) → Mark | null
+      <a id="tui.evidence.LineEvidence"></a><br>Per-line evidence shown in the TUI: a mark, ordered criterion verdicts (ok/fail/unverified) with messages, diagnostics, and flags for planned lines and open questions awaiting a human answer. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
+    - fn [worse](../../src/tui/evidence.ts#L31) (a: Mark | null, b: Mark | null) → Mark | null
       <a id="tui.evidence.worse"></a><br>Picks the more severe of two optional marks by comparing their `RANK` values, returning whichever one is present when the other is null and favoring the first on ties. Used by [`tui.evidence.allEvidence`](tui.md#tui.evidence.allEvidence) and [`tui.nav.markOver`](tui.md#tui.nav.markOver) to fold per-line evidence into a single worst mark. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [linesOf](../../src/tui/evidence.ts#L35) (doc: Document, kind: "planned" | "question") → Set<number> <!-- internal -->
+    - fn [linesOf](../../src/tui/evidence.ts#L37) (doc: Document, kind: "planned" | "question") → Set<number> <!-- internal -->
       <a id="tui.evidence.linesOf"></a>
       - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)
-    - fn [pendingPlanned](../../src/tui/evidence.ts#L48) (analysis: Analysis) → Set<string> <!-- internal -->
+    - fn [pendingPlanned](../../src/tui/evidence.ts#L50) (analysis: Analysis) → Set<string> <!-- internal -->
       <a id="tui.evidence.pendingPlanned"></a><br>IDs declared `planned` that the snapshot does not have yet: evidence about them is missing by intention.
       - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)
-    - fn [allEvidence](../../src/tui/evidence.ts#L66) (analysis: Analysis) → Map<string, Map<number, LineEvidence>> <!-- internal -->
-      <a id="tui.evidence.allEvidence"></a><br>Builds a cached per-file, per-line map merging diagnostics, criterion verdicts and planned/question doc lines, then assigns each line its worst mark via [`tui.evidence.worse`](tui.md#tui.evidence.worse), treating unverified verdicts in [`tui.evidence.pendingPlanned`](tui.md#tui.evidence.pendingPlanned) areas as planned. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
-      - calls [tui.evidence.pendingPlanned](tui.md#tui.evidence.pendingPlanned), [tui.evidence.linesOf](tui.md#tui.evidence.linesOf), [tui.evidence.worse](tui.md#tui.evidence.worse)
-    - fn [evidenceOf](../../src/tui/evidence.ts#L118) (analysis: Analysis, path: string) → Map<number, LineEvidence>
+    - fn [allEvidence](../../src/tui/evidence.ts#L68) (analysis: Analysis) → Map<string, Map<number, LineEvidence>> <!-- internal -->
+      <a id="tui.evidence.allEvidence"></a><br>Builds a cached per-file, per-line map merging diagnostics, criterion verdicts and planned/question doc lines, then assigns each line its worst mark via [`tui.evidence.worse`](tui.md#tui.evidence.worse), treating unverified verdicts in [`tui.evidence.pendingPlanned`](tui.md#tui.evidence.pendingPlanned) areas as planned. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
+      - calls [tui.evidence.pendingPlanned](tui.md#tui.evidence.pendingPlanned), [tui.evidence.linesOf](tui.md#tui.evidence.linesOf), [tui.evidence.worse](tui.md#tui.evidence.worse), [tui.evidence.groupMarks](tui.md#tui.evidence.groupMarks)
+    - fn [groupMarks](../../src/tui/evidence.ts#L119) (analysis: Analysis, byPath: Map<string, Map<number, LineEvidence>>) → void <!-- internal -->
+      <a id="tui.evidence.groupMarks"></a><br>A `parallel` group (ADR 0023) shows the worst mark of the lines under it, so the gutter reads the group at a glance.
+      - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk), [tui.evidence.worse](tui.md#tui.evidence.worse)
+    - fn [evidenceOf](../../src/tui/evidence.ts#L144) (analysis: Analysis, path: string) → Map<number, LineEvidence>
       <a id="tui.evidence.evidenceOf"></a><br>Evidence by 1-based line of one document. Lines with nothing reported are absent.
       - calls [tui.evidence.allEvidence](tui.md#tui.evidence.allEvidence)
-    - fn [totals](../../src/tui/evidence.ts#L125) (analysis: Analysis) → { fail: number; unverified: number; ok: number }
+    - fn [totals](../../src/tui/evidence.ts#L151) (analysis: Analysis) → { fail: number; unverified: number; ok: number }
       <a id="tui.evidence.totals"></a><br>Totals for the status bar: failing, unverified and passing lines across all documents.
       - calls [tui.evidence.allEvidence](tui.md#tui.evidence.allEvidence)
   - module [findings](../../src/tui/findings.ts#L1)
@@ -2458,7 +2461,7 @@
       <a id="tui.view.runsOf"></a><br>Returns per-line highlight runs for a buffer, caching them in a module-level map keyed by the buffer's document (or the buffer itself) and the joined layer names. On a cache miss, or whenever the buffer has no document, it recomputes via [`tui.theme.highlight`](tui.md#tui.theme.highlight) and stores the… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [tui.theme.highlight](tui.md#tui.theme.highlight)
     - fn [drawEditor](../../src/tui/view.ts#L202) (grid: Grid, state: State, rect: Rect, buffer: Buffer) → void <!-- internal -->
-      <a id="tui.view.drawEditor"></a><br>Paints the editor pane: per-line evidence marks, line numbers, syntax runs from [`tui.view.runsOf`](tui.md#tui.view.runsOf), selection and cursor-line highlighting, and expanded detail rows. In edit mode it also overlays ghost-completion text and positions the cursor. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
+      <a id="tui.view.drawEditor"></a><br>Paints the editor pane: per-line evidence marks, line numbers, syntax runs from [`tui.view.runsOf`](tui.md#tui.view.runsOf), selection and cursor-line highlighting, and expanded detail rows. In edit mode it also overlays ghost-completion text and positions the cursor. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [tui.evidence.evidenceOf](tui.md#tui.evidence.evidenceOf), [tui.view.runsOf](tui.md#tui.view.runsOf), [tui.view.gutterWidth](tui.md#tui.view.gutterWidth), [tui.view.editorRows](tui.md#tui.view.editorRows), [tui.screen.Grid.fill](tui.md#tui.screen.Grid.fill), [tui.view.detailText](tui.md#tui.view.detailText), [tui.view.markCell](tui.md#tui.view.markCell), [tui.view.drawRuns](tui.md#tui.view.drawRuns), [tui.view.fromLayout](tui.md#tui.view.fromLayout), [tui.buffer.lineLayout](tui.md#tui.buffer.lineLayout), [tui.width.graphemes](tui.md#tui.width.graphemes), [tui.view.cellsBetween](tui.md#tui.view.cellsBetween), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write)
     - fn [readLayout](../../src/tui/view.ts#L248) (buffer: Buffer, width: number) → { rows: ReadRow[]; firstRow: Map<number, number> } <!-- internal -->
       <a id="tui.view.readLayout"></a>
@@ -2470,7 +2473,7 @@
       <a id="tui.view.readCursorRow"></a><br>The screen row (from the editor's top) where reading mode shows the cursor line: popups anchor there.
       - calls [tui.view.readRows](tui.md#tui.view.readRows)
     - fn [drawRead](../../src/tui/view.ts#L276) (grid: Grid, state: State, rect: Rect, buffer: Buffer) → void <!-- internal -->
-      <a id="tui.view.drawRead"></a><br>Renders the visible rows of a source buffer into the grid via [`tui.view.readRows`](tui.md#tui.view.readRows), highlighting the cursor line and placing an evidence gutter mark from [`tui.view.markCell`](tui.md#tui.view.markCell) on each line's first row. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
+      <a id="tui.view.drawRead"></a><br>Renders the visible rows of a source buffer into the grid via [`tui.view.readRows`](tui.md#tui.view.readRows), highlighting the cursor line and placing an evidence gutter mark from [`tui.view.markCell`](tui.md#tui.view.markCell) on each line's first row. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [tui.evidence.evidenceOf](tui.md#tui.evidence.evidenceOf), [tui.view.readRows](tui.md#tui.view.readRows), [tui.screen.Grid.fill](tui.md#tui.screen.Grid.fill), [tui.view.markCell](tui.md#tui.view.markCell), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write)
     - fn [drawCode](../../src/tui/view.ts#L296) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
       <a id="tui.view.drawCode"></a><br>Renders the read-only source panel: a title bar with a file:line link and an Esc hint, then line-numbered rows from the scroll offset, marking the target line and painting [`tui.code-highlight.highlightCode`](tui.md#tui.code-highlight.highlightCode) runs via [`tui.view.drawRuns`](tui.md#tui.view.drawRuns). _(llm · claude:claude-opus-5-5 · 2026-10-05)_

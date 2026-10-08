@@ -22,19 +22,19 @@
     - wiring [check.wiring](check.md#check.wiring)
     - type [SnapshotInput](../../src/assess.ts#L18)
       <a id="check.assess.SnapshotInput"></a><br>The slice of the analysis snapshot that checks read; `check` does not import `map`.
-    - type [Assessment](../../src/assess.ts#L26)
+    - type [Assessment](../../src/assess.ts#L28)
       <a id="check.assess.Assessment"></a><br>Bundles the result of running the checker over a repository: the `Index` it worked from, the `Diagnostic` list it produced, the per-rule `Verdict`s, and the `SpecIR` of assertions compiled once from the text IR so later consumers reuse it rather than re-parsing. The input shows… _(llm · claude · 2026-10-04)_
-    - fn [assess](../../src/assess.ts#L34) ( docs: readonly Document[], snapshot: SnapshotInput | null, evidence: { tests: TestCase[] | null; traces: TraceRun[] | null; static?: StaticMode; staticSetBy?: StaticSource; knownExternal?: ReadonlySet<string>; testFileExists?: FlowInput["testFileExists"]; } = { tests: null, traces: null }, format: RuleFormat = 1, ) → Assessment
+    - fn [assess](../../src/assess.ts#L36) ( docs: readonly Document[], snapshot: SnapshotInput | null, evidence: { tests: TestCase[] | null; traces: TraceRun[] | null; static?: StaticMode; staticSetBy?: StaticSource; knownExternal?: ReadonlySet<string>; testFileExists?: FlowInput["testFileExists"]; } = { tests: null, traces: null }, format: RuleFormat = 1, ) → Assessment
       <a id="check.assess.assess"></a><br>Compiles the spec and resolves IDs against the snapshot, then runs rule, flow and wiring checks via [`check.rules.evaluateRules`](check.md#check.rules.evaluateRules), [`check.flows.evaluateFlows`](check.md#check.flows.evaluateFlows) and [`check.wiring.checkWiring`](check.md#check.wiring.checkWiring). Returns sorted diagnostics and merged verdicts. _(llm · claude:claude-opus-5-5 · 2026-10-06 · stale)_
       - calls [lang.spec-ir.compileSpec](lang.md#lang.spec-ir.compileSpec), [check.resolve.check](check.md#check.resolve.check), [check.rules.evaluateRules](check.md#check.rules.evaluateRules), [check.flows.evaluateFlows](check.md#check.flows.evaluateFlows), [check.rules.dependencyKindOf](check.md#check.rules.dependencyKindOf), [check.wiring.checkWiring](check.md#check.wiring.checkWiring), [check.assess.nodeKinds](check.md#check.assess.nodeKinds), [base.diag.compareDiagnostics](base.md#base.diag.compareDiagnostics), [check.rules.canonicalRuleSpec](check.md#check.rules.canonicalRuleSpec), [check.assess.afterRecovery](check.md#check.assess.afterRecovery), [check.assess.recoveredLines](check.md#check.assess.recoveredLines)
-    - fn [recoveredLines](../../src/assess.ts#L106) (docs: readonly Document[]) → Map<string, string> <!-- internal -->
+    - fn [recoveredLines](../../src/assess.ts#L109) (docs: readonly Document[]) → Map<string, string> <!-- internal -->
       <a id="check.assess.recoveredLines"></a><br>Item lines whose place in the tree the parser recovered after a K003 (an odd indent, a jump, a tab): the line itself and its subtree, keyed `file:line`, with the position of the nearest such K003.
       - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes)
-    - fn [afterRecovery](../../src/assess.ts#L126) (verdicts: Verdict[], recovered: ReadonlyMap<string, string>) → Verdict[] <!-- internal -->
+    - fn [afterRecovery](../../src/assess.ts#L129) (verdicts: Verdict[], recovered: ReadonlyMap<string, string>) → Verdict[] <!-- internal -->
       <a id="check.assess.afterRecovery"></a><br>An `ok` on a recovered line is about a tree the file does not have: `unverified`. `fail` stays.
-    - fn [sameFinding](../../src/assess.ts#L139) (verdict: Verdict, diagnostics: readonly Diagnostic[]) → boolean
+    - fn [sameFinding](../../src/assess.ts#L142) (verdict: Verdict, diagnostics: readonly Diagnostic[]) → boolean
       <a id="check.assess.sameFinding"></a><br>Returns true when any diagnostic in the list points at the same file and starting line as the verdict and either carries the same (or a contained) message, or is a K001 diagnostic whose target matches the verdict's area while the verdict is a failed "ID" criterion — so callers… _(llm · claude · 2026-10-04)_
-    - fn [nodeKinds](../../src/assess.ts#L148) (nodes: SnapshotInput["nodes"]) → Map<string, string> <!-- internal -->
+    - fn [nodeKinds](../../src/assess.ts#L151) (nodes: SnapshotInput["nodes"]) → Map<string, string> <!-- internal -->
       <a id="check.assess.nodeKinds"></a><br>Snapshot kinds, with a class told apart by its marker.
   - module [flows](../../src/flows.ts#L1)
     <a id="check.flows"></a><br>Evidence for flows: ID, static, tests, and trace are separate verdicts. A step is checked from its parent (the trigger for a top-level step), never from its siblings.
@@ -44,119 +44,132 @@
     - languages [base.languages](base.md#base.languages)
     - resolve [check.resolve](check.md#check.resolve)
     - span [base.span](base.md#base.span)
+    - parser [lang.parser](lang.md#lang.parser)
     - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
     - test-report [check.test-report](check.md#check.test-report)
     - trace-evidence [check.trace-evidence](check.md#check.trace-evidence)
     - verdict [check.verdict](check.md#check.verdict)
-    - type [SnapshotEdge](../../src/flows.ts#L17) <!-- internal -->
+    - type [SnapshotEdge](../../src/flows.ts#L18) <!-- internal -->
       <a id="check.flows.SnapshotEdge"></a><br>Shape of one edge in a snapshot: kind, source, resolved target or candidate list, resolution status, and file/line/col position, plus optional reason, text, injection mode, hook, site, closure and type-only flags. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
-    - type [SnapshotNodeView](../../src/flows.ts#L39) <!-- internal -->
+    - type [SnapshotNodeView](../../src/flows.ts#L40) <!-- internal -->
       <a id="check.flows.SnapshotNodeView"></a><br>Describes the shape of one node as read from a snapshot: its kind, optional class flag, layer, members and signature, source file and line span, plus an optional record of where and why the node escapes. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [FlowInput](../../src/flows.ts#L52)
-      <a id="check.flows.FlowInput"></a><br>Shape of the data handed to the flow checker: a snapshot's nodes and edges plus uncovered constructs, the resolved static mode and who set it, test cases, trace runs, and an optional probe for whether a test path exists in the repository. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Planned](../../src/flows.ts#L76) <!-- internal -->
+    - type [FlowInput](../../src/flows.ts#L53)
+      <a id="check.flows.FlowInput"></a><br>Shape of the data handed to the flow checker: a snapshot's nodes and edges plus uncovered constructs, the resolved static mode and who set it, test cases, trace runs, and an optional probe for whether a test path exists in the repository. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+    - type [EntryView](../../src/flows.ts#L83)
+      <a id="check.flows.EntryView"></a><br>An entry point as flows read it.
+    - type [Planned](../../src/flows.ts#L90) <!-- internal -->
       <a id="check.flows.Planned"></a><br>A `planned` declaration from the specs as the flow check tracks it: the declared kind and optional signature, where it is declared, and whether the code already has a symbol with that ID (`implemented`), which then yields K201 on a kind or signature mismatch, else K202. _(llm · claude · 2026-10-04)_
-    - type [Channel](../../src/flows.ts#L85) = "ID" | "static" | "tests" | "trace" <!-- internal -->
+    - type [Channel](../../src/flows.ts#L99) = "ID" | "static" | "tests" | "trace" <!-- internal -->
       <a id="check.flows.Channel"></a><br>The four evidence channels of a flow verdict — `ID`, `static`, `tests` and `trace` — written into each verdict as its `criterion` and `code`. _(llm · claude · 2026-10-04)_
-    - type [FlowNode](../../src/flows.ts#L87) = Trigger | FlowItem <!-- internal -->
+    - type [FlowNode](../../src/flows.ts#L101) = Trigger | FlowItem <!-- internal -->
       <a id="check.flows.FlowNode"></a><br>A union type alias that lets a single value in [`check.flows`](check.md#check.flows) stand for either a `Trigger` or a `FlowItem`, so flow-walking code can handle both the starting event and the subsequent steps through one type. The input shows no further definition for the two constituent types… _(llm · claude · 2026-10-04)_
-    - fn [evaluateFlows](../../src/flows.ts#L89) (compiled: SpecIR, index: Index, input: FlowInput) → { diagnostics: Diagnostic[]; verdicts: Verdict[] }
+    - fn [evaluateFlows](../../src/flows.ts#L103) (compiled: SpecIR, index: Index, input: FlowInput) → { diagnostics: Diagnostic[]; verdicts: Verdict[] }
       <a id="check.flows.evaluateFlows"></a><br>Walks each spec flow's steps, calls and claims to emit static reachability ([`check.flows.reachability`](check.md#check.flows.reachability)), trace ([`check.trace-evidence.traceFlow`](check.md#check.trace-evidence.traceFlow)) and test verdicts, plus K203 diagnostics for missing test files. _(llm · claude:claude-opus-5-5 · 2026-10-06 · stale)_
-      - calls [check.flows.collectPlanned](check.md#check.flows.collectPlanned), [check.flows.callGraph](check.md#check.flows.callGraph), [check.flows.specHash](check.md#check.flows.specHash), [check.trace-evidence.traceFlow](check.md#check.trace-evidence.traceFlow), [check.flows.idVerdict](check.md#check.flows.idVerdict), [check.flows.reachability](check.md#check.flows.reachability), [check.flows.traceProvenance](check.md#check.flows.traceProvenance), [check.flows.directCall](check.md#check.flows.directCall), [check.flows.claimArea](check.md#check.flows.claimArea), [check.flows.quantitative](check.md#check.flows.quantitative), [base.diag.diagnostic](base.md#base.diag.diagnostic), [check.test-report.matchTest](check.md#check.test-report.matchTest)
-    - fn [claimArea](../../src/flows.ts#L230) (node: ClaimItem | ThenItem | WhenItem) → string <!-- internal -->
-      <a id="check.flows.claimArea"></a><br>Builds a short human-readable label for a flow item by prefixing its kind to its condition, prose, or reference target, choosing the field based on the item's shape. Used by [`check.flows.evaluateFlows`](check.md#check.flows.evaluateFlows) to name the area a diagnostic or verdict refers to. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [traceProvenance](../../src/flows.ts#L236) (evidence: TraceEvidence) → Verdict["evidence"] <!-- internal -->
+      - calls [check.flows.collectPlanned](check.md#check.flows.collectPlanned), [check.flows.callGraph](check.md#check.flows.callGraph), [check.flows.specHash](check.md#check.flows.specHash), [check.trace-evidence.traceFlow](check.md#check.trace-evidence.traceFlow), [check.flows.idVerdict](check.md#check.flows.idVerdict), [check.flows.entryVerdict](check.md#check.flows.entryVerdict), [base.diag.diagnostic](base.md#base.diag.diagnostic), [check.flows.reachability](check.md#check.flows.reachability), [check.flows.traceProvenance](check.md#check.flows.traceProvenance), [check.flows.directCall](check.md#check.flows.directCall), [check.flows.claimArea](check.md#check.flows.claimArea), [check.flows.scheduleVerdict](check.md#check.flows.scheduleVerdict), [check.flows.quantitative](check.md#check.flows.quantitative), [check.test-report.matchTest](check.md#check.test-report.matchTest)
+    - fn [claimArea](../../src/flows.ts#L274) (node: ClaimItem | ThenItem | WhenItem | TimerItem) → string <!-- internal -->
+      <a id="check.flows.claimArea"></a><br>Builds a short human-readable label for a flow item by prefixing its kind to its condition, prose, or reference target, choosing the field based on the item's shape. Used by [`check.flows.evaluateFlows`](check.md#check.flows.evaluateFlows) to name the area a diagnostic or verdict refers to. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+    - fn [entryVerdict](../../src/flows.ts#L287) (kind: string, id: string, entries: readonly EntryView[] | undefined) → { verdict: Verdict["verdict"]; message: string; mismatch: boolean } <!-- internal -->
+      <a id="check.flows.entryVerdict"></a><br>`trigger <kind> <id>` against the entry points of the snapshot: `ok` with the entry's label when the fn is an entry of that kind; `mismatch` (K205) when it is an entry of other kinds only; `unverified` when no entry names it, since an adapter keylang lacks may know it.
+    - fn [scheduleForm](../../src/flows.ts#L311) (text: string) → { form: "cron" | "duration"; value: string } <!-- internal -->
+      <a id="check.flows.scheduleForm"></a><br>A schedule in a comparable form: cron fields (a macro expanded) or a duration.
+    - fn [labelSchedule](../../src/flows.ts#L322) (label: string) → string | null <!-- internal -->
+      <a id="check.flows.labelSchedule"></a><br>The schedule a cron entry's label carries: the whole label when it is one, else its last six or five words (`clean_quotes 0 0 * * *`); null when the adapter did not write it.
+      - calls [lang.parser.scheduleText](lang.md#lang.parser.scheduleText)
+    - fn [scheduleVerdict](../../src/flows.ts#L334) (parent: string | null, written: string, entries: readonly EntryView[] | undefined) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
+      <a id="check.flows.scheduleVerdict"></a><br>Static evidence of `every <schedule>`: the cron entry point of the parent (the trigger for a top-level line) runs on the written schedule. `ok` when one does, `fail` when every cron entry of the fn says another schedule of the same form, else `unverified` (no cron entry, no…
+      - calls [check.flows.scheduleForm](check.md#check.flows.scheduleForm), [check.flows.labelSchedule](check.md#check.flows.labelSchedule)
+    - fn [traceProvenance](../../src/flows.ts#L353) (evidence: TraceEvidence) → Verdict["evidence"] <!-- internal -->
       <a id="check.flows.traceProvenance"></a><br>Builds the evidence record attached to a trace-backed verdict: a fixed `provenance: "trace"` marker plus `runId` and `testId` copied over only when present on the input. Used by [`check.flows.evaluateFlows`](check.md#check.flows.evaluateFlows) to stamp verdicts derived from runtime traces. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [quantitative](../../src/flows.ts#L241) (text: string) → boolean <!-- internal -->
+    - fn [quantitative](../../src/flows.ts#L358) (text: string) → boolean <!-- internal -->
       <a id="check.flows.quantitative"></a><br>A count, a bound, or a negation: a subsequence of calls cannot prove it.
-    - fn [idVerdict](../../src/flows.ts#L245) ( id: string, plan: Planned | undefined, span: Span, file: string, index: Index, input: FlowInput, verdict: (channel: Channel, area: string, value: Verdict["verdict"], file: string, span: Span, message: string) => void, ) → Verdict["verdict"] <!-- internal -->
+    - fn [idVerdict](../../src/flows.ts#L362) ( id: string, plan: Planned | undefined, span: Span, file: string, index: Index, input: FlowInput, verdict: (channel: Channel, area: string, value: Verdict["verdict"], file: string, span: Span, message: string) => void, ) → Verdict["verdict"] <!-- internal -->
       <a id="check.flows.idVerdict"></a><br>Classifies a single referenced ID: "unverified" if it has a plan entry or [`check.flows.moduleMembers`](check.md#check.flows.moduleMembers) deems its module opaque, "ok" if present in the input nodes or [`check.resolve.Index.lookup`](check.md#check.resolve.Index.lookup) finds an exact match, otherwise "fail" with K001. It emits the result through the… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [check.resolve.Index.lookup](check.md#check.resolve.Index.lookup), [check.flows.moduleMembers](check.md#check.flows.moduleMembers)
-    - type [Step](../../src/flows.ts#L264) <!-- internal -->
+    - type [Step](../../src/flows.ts#L381) <!-- internal -->
       <a id="check.flows.Step"></a><br>Represents one hop in a traced path through the dependency graph: the source node ID, the target node ID, and the snapshot edge connecting them. Used to assemble flow chains during the check phase. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [CallGraph](../../src/flows.ts#L270) <!-- internal -->
+    - type [CallGraph](../../src/flows.ts#L387) <!-- internal -->
       <a id="check.flows.CallGraph"></a><br>Call-graph index for flow checks: resolved and open call edges by source, callers per function, name and case-insensitive lookups, and per-function flags for unread, replaced or unparsable code. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
-    - fn [callGraph](../../src/flows.ts#L296) (input: FlowInput) → CallGraph <!-- internal -->
+    - fn [callGraph](../../src/flows.ts#L413) (input: FlowInput) → CallGraph <!-- internal -->
       <a id="check.flows.callGraph"></a><br>Indexes call edges into resolved, unresolved and caller maps (mapping class targets to their constructors), plus function lookups by name and caseless name, unsupported coverage, and doubtful bodies via [`check.flows.doubtfulBodies`](check.md#check.flows.doubtfulBodies). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
       - calls [base.languages.constructorName](base.md#base.languages.constructorName), [check.flows.callName](check.md#check.flows.callName), [base.languages.caselessNames](base.md#base.languages.caselessNames), [base.languages.asciiLowerCase](base.md#base.languages.asciiLowerCase), [check.flows.doubtfulBodies](check.md#check.flows.doubtfulBodies)
-    - fn [doubtfulBodies](../../src/flows.ts#L338) (input: FlowInput) → { replaced: Map<string, string>; unreadable: Map<string, string> } <!-- internal -->
+    - fn [doubtfulBodies](../../src/flows.ts#L455) (input: FlowInput) → { replaced: Map<string, string>; unreadable: Map<string, string> } <!-- internal -->
       <a id="check.flows.doubtfulBodies"></a><br>Fns whose body a proof cannot pass through. A decorator in coverage (`@replace` before `def decorated`) belongs to the fn it names as its source or, when its source is the module, to the first fn declared at or after it.
       - calls [base.span.compareText](base.md#base.span.compareText)
-    - fn [lastSegment](../../src/flows.ts#L358) (text: string) → string <!-- internal -->
+    - fn [lastSegment](../../src/flows.ts#L475) (text: string) → string <!-- internal -->
       <a id="check.flows.lastSegment"></a><br>Returns the substring after the final dot in the input, or the whole string when no dot is present; used by [`check.flows.callName`](check.md#check.flows.callName), [`check.flows.describeHole`](check.md#check.flows.describeHole), [`check.flows.directCall`](check.md#check.flows.directCall) and [`check.flows.possibleRoute`](check.md#check.flows.possibleRoute) to strip dotted prefixes from node identifiers. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [callName](../../src/flows.ts#L366) (id: string) → string <!-- internal -->
+    - fn [callName](../../src/flows.ts#L483) (id: string) → string <!-- internal -->
       <a id="check.flows.callName"></a><br>The name code calls a fn by: `m` for `X.m` and `X.m-static`, `#go` for `X.go-private` (§11: a member that shares its name with another gets a suffix).
       - calls [check.flows.lastSegment](check.md#check.flows.lastSegment)
-    - fn [namedLike](../../src/flows.ts#L378) (graph: CallGraph, name: string) → string[] <!-- internal -->
+    - fn [namedLike](../../src/flows.ts#L495) (graph: CallGraph, name: string) → string[] <!-- internal -->
       <a id="check.flows.namedLike"></a><br>Fns a call by `name` (`feed`, `#work`) may run. A `#work` call also matches a private member whose ID has no suffix; a fn of PHP matches the name in any ASCII case (`x.RUN` may run `run`).
       - calls [base.languages.asciiLowerCase](base.md#base.languages.asciiLowerCase)
-    - fn [describeVia](../../src/flows.ts#L384) (edge: SnapshotEdge, where = true) → string <!-- internal -->
+    - fn [describeVia](../../src/flows.ts#L501) (edge: SnapshotEdge, where = true) → string <!-- internal -->
       <a id="check.flows.describeVia"></a><br>A `via` edge in words. `where`: with the position of a passed callable (a hole's message adds the edge's position itself).
       - calls [check.flows.at](check.md#check.flows.at)
-    - fn [provesIn](../../src/flows.ts#L396) (behavior: boolean) → (step: Step) => boolean <!-- internal -->
+    - fn [provesIn](../../src/flows.ts#L513) (behavior: boolean) → (step: Step) => boolean <!-- internal -->
       <a id="check.flows.provesIn"></a><br>The edges a static mode follows as a proof: plain calls outside closures; in `behavior` also hook edges, callables passed as arguments and calls in a closure passed as an argument (the callee of the call holds it).
-    - fn [closureOnly](../../src/flows.ts#L405) (edge: SnapshotEdge, behavior: boolean) → boolean <!-- internal -->
+    - fn [closureOnly](../../src/flows.ts#L522) (edge: SnapshotEdge, behavior: boolean) → boolean <!-- internal -->
       <a id="check.flows.closureOnly"></a><br>The edge is a route only when some holder calls the closure it sits in: a call in a stored closure, or (in `behavior`) a callable passed from inside one. In `shape`, a closure passed as an argument is named as its `via`.
-    - fn [describeHole](../../src/flows.ts#L409) (edge: SnapshotEdge, target: string, input: FlowInput) → string <!-- internal -->
+    - fn [describeHole](../../src/flows.ts#L526) (edge: SnapshotEdge, target: string, input: FlowInput) → string <!-- internal -->
       <a id="check.flows.describeHole"></a><br>Builds the human-readable reason a call edge couldn't be followed: ambiguous candidates, a resolved-but-`via` edge skipped in static mode, a possible dynamic dispatch via [`check.flows.lastSegment`](check.md#check.flows.lastSegment)/[`check.flows.callName`](check.md#check.flows.callName), or the edge's own unresolved reason. Used by… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [check.flows.describeVia](check.md#check.flows.describeVia), [check.flows.lastSegment](check.md#check.flows.lastSegment), [check.flows.callName](check.md#check.flows.callName)
-    - fn [at](../../src/flows.ts#L421) (edge: SnapshotEdge) → string <!-- internal -->
+    - fn [at](../../src/flows.ts#L538) (edge: SnapshotEdge) → string <!-- internal -->
       <a id="check.flows.at"></a><br>Formats a snapshot edge's file, line and column into a single `file:line:col` location string. Used by [`check.flows.directCall`](check.md#check.flows.directCall), [`check.flows.escapeOf`](check.md#check.flows.escapeOf) and [`check.flows.reachability`](check.md#check.flows.reachability) to cite where a flow was observed in their verdict messages. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [reachability](../../src/flows.ts#L448) (graph: CallGraph, input: FlowInput, parent: string | null, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
+    - fn [reachability](../../src/flows.ts#L565) (graph: CallGraph, input: FlowInput, parent: string | null, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
       <a id="check.flows.reachability"></a><br>Static reachability of `target` from `parent`.
       - calls [check.flows.externalImport](check.md#check.flows.externalImport), [check.flows.provesIn](check.md#check.flows.provesIn), [check.flows.search](check.md#check.flows.search), [check.flows.routeMessage](check.md#check.flows.routeMessage), [check.flows.routeSteps](check.md#check.flows.routeSteps), [check.flows.possibleRoute](check.md#check.flows.possibleRoute), [check.flows.closureOnly](check.md#check.flows.closureOnly), [check.flows.at](check.md#check.flows.at), [check.flows.describeHole](check.md#check.flows.describeHole), [check.flows.callersOf](check.md#check.flows.callersOf), [check.flows.escapeOf](check.md#check.flows.escapeOf), [check.flows.holeNear](check.md#check.flows.holeNear)
-    - fn [directCall](../../src/flows.ts#L512) (graph: CallGraph, input: FlowInput, parent: string | null, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
+    - fn [directCall](../../src/flows.ts#L629) (graph: CallGraph, input: FlowInput, parent: string | null, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
       <a id="check.flows.directCall"></a><br>Static evidence for `calls`: whether `parent` calls `target` itself, without order. `ok` is a resolved call in the parent's own body that this mode follows. `fail` is a confirmed absence under the rules of a step's absence: no call of the parent can be the target (no unresolved…
       - calls [check.flows.externalImport](check.md#check.flows.externalImport), [check.flows.provesIn](check.md#check.flows.provesIn), [check.flows.routeMessage](check.md#check.flows.routeMessage), [check.flows.closureOnly](check.md#check.flows.closureOnly), [check.flows.at](check.md#check.flows.at), [check.flows.describeHole](check.md#check.flows.describeHole), [check.flows.namedLike](check.md#check.flows.namedLike), [check.flows.lastSegment](check.md#check.flows.lastSegment), [base.languages.caselessNames](base.md#base.languages.caselessNames), [check.flows.callName](check.md#check.flows.callName), [base.languages.asciiLowerCase](base.md#base.languages.asciiLowerCase), [check.flows.escapeOf](check.md#check.flows.escapeOf), [check.flows.search](check.md#check.flows.search), [check.flows.routeSteps](check.md#check.flows.routeSteps)
-    - fn [search](../../src/flows.ts#L559) (graph: CallGraph, parent: string, target: string, follow: (step: Step) => boolean) → { route: Map<string, Step> | null; depth: Map<string, number> } <!-- internal -->
+    - fn [search](../../src/flows.ts#L676) (graph: CallGraph, parent: string, target: string, follow: (step: Step) => boolean) → { route: Map<string, Step> | null; depth: Map<string, number> } <!-- internal -->
       <a id="check.flows.search"></a><br>Breadth-first from `parent` over the steps `follow` accepts: the route to `target` (null when there is none) and the depth of every fn reached. The search stops at the target, so `depth` is complete only without a route.
-    - fn [routeSteps](../../src/flows.ts#L582) (parent: string, target: string, previous: Map<string, Step>) → Step[] <!-- internal -->
+    - fn [routeSteps](../../src/flows.ts#L699) (parent: string, target: string, previous: Map<string, Step>) → Step[] <!-- internal -->
       <a id="check.flows.routeSteps"></a><br>The steps of a route from `parent` to `target`, in call order.
-    - fn [fileModule](../../src/flows.ts#L595) (nodes: FlowInput["nodes"], id: string) → string | null <!-- internal -->
+    - fn [fileModule](../../src/flows.ts#L712) (nodes: FlowInput["nodes"], id: string) → string | null <!-- internal -->
       <a id="check.flows.fileModule"></a><br>The file module of a fn: the nearest module that is not a class.
-    - fn [externalImport](../../src/flows.ts#L611) (input: FlowInput, parent: string, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
+    - fn [externalImport](../../src/flows.ts#L728) (input: FlowInput, parent: string, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
       <a id="check.flows.externalImport"></a><br>Static proof for `external.<pkg>`: a resolved import from the parent fn's own module that loads the package. A type-only one (`import type`, `export type … from`) is erased from the code that runs, so it proves nothing.
       - calls [check.flows.fileModule](check.md#check.flows.fileModule), [check.flows.at](check.md#check.flows.at)
-    - fn [describeDocblock](../../src/flows.ts#L623) (edge: SnapshotEdge) → string <!-- internal -->
+    - fn [describeDocblock](../../src/flows.ts#L740) (edge: SnapshotEdge) → string <!-- internal -->
       <a id="check.flows.describeDocblock"></a><br>An edge that rests on a docblock: where PHP's `@var` or `@param` types the receiver.
       - calls [check.flows.at](check.md#check.flows.at)
-    - fn [routeMessage](../../src/flows.ts#L632) (parent: string, target: string, previous: Map<string, Step>) → string <!-- internal -->
+    - fn [routeMessage](../../src/flows.ts#L749) (parent: string, target: string, previous: Map<string, Step>) → string <!-- internal -->
       <a id="check.flows.routeMessage"></a><br>The route as the verdict prints it, with a note on every step that is not a plain call of the code: a hook (its default, or the value injected at a site) or a call whose receiver only a docblock types.
       - calls [check.flows.routeSteps](check.md#check.flows.routeSteps), [check.flows.describeVia](check.md#check.flows.describeVia), [check.flows.describeDocblock](check.md#check.flows.describeDocblock)
-    - fn [possibleRoute](../../src/flows.ts#L648) (graph: CallGraph, input: FlowInput, parent: string, target: string, proves: (step: Step) => boolean) → { edge: SnapshotEdge | null; seen: Set<string> } <!-- internal -->
+    - fn [possibleRoute](../../src/flows.ts#L765) (graph: CallGraph, input: FlowInput, parent: string, target: string, proves: (step: Step) => boolean) → { edge: SnapshotEdge | null; seen: Set<string> } <!-- internal -->
       <a id="check.flows.possibleRoute"></a><br>Breadth-first search that also follows calls with more than one possible target and calls in closures. Returns the first such call on the shortest route (null when there is none) and every fn the search reached.
       - calls [check.flows.namedLike](check.md#check.flows.namedLike), [check.flows.callName](check.md#check.flows.callName), [check.flows.lastSegment](check.md#check.flows.lastSegment)
-    - fn [callersOf](../../src/flows.ts#L676) (graph: CallGraph, target: string) → Set<string> <!-- internal -->
+    - fn [callersOf](../../src/flows.ts#L793) (graph: CallGraph, target: string) → Set<string> <!-- internal -->
       <a id="check.flows.callersOf"></a><br>Every fn with a resolved or candidate route to `target`, the target included.
-    - fn [escapeOf](../../src/flows.ts#L694) (graph: CallGraph, input: FlowInput, routes: Set<string>, reachable: ReadonlySet<string>) → { reason: string; from: string | null } | null <!-- internal -->
+    - fn [escapeOf](../../src/flows.ts#L811) (graph: CallGraph, input: FlowInput, routes: Set<string>, reachable: ReadonlySet<string>) → { reason: string; from: string | null } | null <!-- internal -->
       <a id="check.flows.escapeOf"></a><br>Why code keylang cannot follow may still run a fn of `routes`, and the fn whose code hands that fn on (null when it is not in a fn: module level, an unsupported construct); null when every route is by name.
       - calls [check.flows.fnAt](check.md#check.flows.fnAt), [check.flows.at](check.md#check.flows.at), [check.flows.callName](check.md#check.flows.callName), [base.languages.caselessNames](base.md#base.languages.caselessNames), [check.flows.identifierPattern](check.md#check.flows.identifierPattern), [base.span.compareText](base.md#base.span.compareText)
-    - fn [identifierPattern](../../src/flows.ts#L732) (name: string, caseless = false) → RegExp <!-- internal -->
+    - fn [identifierPattern](../../src/flows.ts#L849) (name: string, caseless = false) → RegExp <!-- internal -->
       <a id="check.flows.identifierPattern"></a><br>`name` as a whole identifier: `$save` and `зберегти` too, which `\b` does not delimit; `caseless`: in any ASCII case, as PHP compares names (`HELPER` is `helper`, `ÄNDERN` is no `ändern`), which the flag `i` would not keep apart.
-    - fn [fnAt](../../src/flows.ts#L739) (input: FlowInput, file: string, line: number) → string | null <!-- internal -->
+    - fn [fnAt](../../src/flows.ts#L856) (input: FlowInput, file: string, line: number) → string | null <!-- internal -->
       <a id="check.flows.fnAt"></a><br>The innermost fn whose declaration holds `file:line`.
-    - fn [holeNear](../../src/flows.ts#L753) (graph: CallGraph, holes: { edge: SnapshotEdge }[], from: string) → SnapshotEdge | null <!-- internal -->
+    - fn [holeNear](../../src/flows.ts#L870) (graph: CallGraph, holes: { edge: SnapshotEdge }[], from: string) → SnapshotEdge | null <!-- internal -->
       <a id="check.flows.holeNear"></a><br>The unresolved call in reachable code nearest `from` among the fns `from` calls, itself included: where a value handed on by `from` may be called. Null when no hole is downstream of it.
       - calls [base.span.compareText](base.md#base.span.compareText)
-    - fn [moduleMembers](../../src/flows.ts#L769) (nodes: FlowInput["nodes"], id: string) → "complete" | "opaque" | null <!-- internal -->
+    - fn [moduleMembers](../../src/flows.ts#L886) (nodes: FlowInput["nodes"], id: string) → "complete" | "opaque" | null <!-- internal -->
       <a id="check.flows.moduleMembers"></a><br>Walks up the dotted ancestors of an ID until it finds an enclosing module node whose membership is declared "complete" or "opaque", returning that value. Yields null if no such module appears before the ID runs out of segments; used by [`check.flows.idVerdict`](check.md#check.flows.idVerdict). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [collectPlanned](../../src/flows.ts#L785) (spec: SpecIR, input: FlowInput, diagnostics: Diagnostic[]) → Map<string, Planned> <!-- internal -->
+    - fn [collectPlanned](../../src/flows.ts#L902) (spec: SpecIR, input: FlowInput, diagnostics: Diagnostic[]) → Map<string, Planned> <!-- internal -->
       <a id="check.flows.collectPlanned"></a><br>`planned` declarations. A duplicate is K002.
       - calls [check.flows.codeLocation](check.md#check.flows.codeLocation), [check.flows.plannedMismatch](check.md#check.flows.plannedMismatch), [base.diag.diagnostic](base.md#base.diag.diagnostic)
-    - fn [codeLocation](../../src/flows.ts#L814) (id: string, code: SnapshotNodeView, edges: readonly SnapshotEdge[]) → string <!-- internal -->
+    - fn [codeLocation](../../src/flows.ts#L931) (id: string, code: SnapshotNodeView, edges: readonly SnapshotEdge[]) → string <!-- internal -->
       <a id="check.flows.codeLocation"></a><br>Where the code of a planned id is: its file and line, or for a node without a file (a package) its first importer. Neither: `in the code`.
       - calls [base.span.compareText](base.md#base.span.compareText)
-    - fn [plannedMismatch](../../src/flows.ts#L825) (item: { decl: string; signature: string | null }, code: { kind: string; signature?: string | null; file?: string | null }) → "kind" | "signature" | null
+    - fn [plannedMismatch](../../src/flows.ts#L942) (item: { decl: string; signature: string | null }, code: { kind: string; signature?: string | null; file?: string | null }) → "kind" | "signature" | null
       <a id="check.flows.plannedMismatch"></a><br>How the code differs from a `planned` declaration of the same id: K201 for a kind or a signature, null (K202) when it matches.
       - calls [check.flows.sameSignature](check.md#check.flows.sameSignature)
-    - fn [sameSignature](../../src/flows.ts#L838) (planned: string, code: string, file: string | null) → boolean <!-- internal -->
+    - fn [sameSignature](../../src/flows.ts#L955) (planned: string, code: string, file: string | null) → boolean <!-- internal -->
       <a id="check.flows.sameSignature"></a><br>Signatures match without spaces, `->` as `→`. A Python method shows its receiver (`(self, to: str)`), a plan may name only what the caller passes (`(to: str)`): both match.
       - calls [check.flows.normalizeSignature](check.md#check.flows.normalizeSignature), [check.flows.parameterList](check.md#check.flows.parameterList)
-    - fn [parameterList](../../src/flows.ts#L849) (signature: string) → string | null <!-- internal -->
+    - fn [parameterList](../../src/flows.ts#L966) (signature: string) → string | null <!-- internal -->
       <a id="check.flows.parameterList"></a><br>The leading `(…)` of a normalized signature, up to the parenthesis that closes the first; null when there is none.
-    - fn [normalizeSignature](../../src/flows.ts#L859) (text: string) → string <!-- internal -->
+    - fn [normalizeSignature](../../src/flows.ts#L976) (text: string) → string <!-- internal -->
       <a id="check.flows.normalizeSignature"></a><br>Canonicalizes a signature string by replacing every `->` with `→`, stripping all whitespace, and dropping a trailing semicolon. Used by [`check.flows.plannedMismatch`](check.md#check.flows.plannedMismatch) so planned and actual signatures can be compared without formatting noise. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [specHash](../../src/flows.ts#L863) (text: string) → string <!-- internal -->
+    - fn [specHash](../../src/flows.ts#L980) (text: string) → string <!-- internal -->
       <a id="check.flows.specHash"></a><br>Computes a SHA-256 digest of the given text and returns it as a hex string. [`check.flows.evaluateFlows`](check.md#check.flows.evaluateFlows) uses it to fingerprint spec content so results can be tied to a specific spec version. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [resolve](../../src/resolve.ts#L1)
     <a id="check.resolve"></a><br>Cross-file ID resolution: builds the declaration index and reports duplicate declarations (K002) and dangling references (K001).
@@ -211,10 +224,13 @@
     - fn [danglingMessage](../../src/resolve.ts#L249) (index: Index, doc: Document, target: string) → string <!-- internal -->
       <a id="check.resolve.danglingMessage"></a><br>K001 text. A generated file is regenerated, not edited, so `did you mean` and `planned` would mislead there: the hint names the command from its marker.
       - calls [check.resolve.Index.suggest](check.md#check.resolve.Index.suggest)
-    - fn [checkRefs](../../src/resolve.ts#L259) (index: Index, doc: Document, node: Node, diags: Diagnostic[], unverified: Unverified[], knownExternal: ReadonlySet<string>) → void <!-- internal -->
+    - fn [checkContinues](../../src/resolve.ts#L260) (index: Index, doc: Document, node: Node, diags: Diagnostic[]) → void <!-- internal -->
+      <a id="check.resolve.checkContinues"></a><br>K206: `continues <flow>` names a flow no `# flow` declares.
+      - calls [check.resolve.similarity](check.md#check.resolve.similarity), [base.span.compareText](base.md#base.span.compareText), [base.diag.diagnostic](base.md#base.diag.diagnostic)
+    - fn [checkRefs](../../src/resolve.ts#L271) (index: Index, doc: Document, node: Node, diags: Diagnostic[], unverified: Unverified[], knownExternal: ReadonlySet<string>) → void <!-- internal -->
       <a id="check.resolve.checkRefs"></a><br>Recursively walks a node tree, reporting dangling reference targets as K001 errors via [`base.diag.diagnostic`](base.md#base.diag.diagnostic) and logging refs to opaque snapshot modules as unverified; children of a failing rule-module are skipped. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
-      - calls [check.resolve.warnBareThen](check.md#check.resolve.warnBareThen), [check.resolve.Index.lookup](check.md#check.resolve.Index.lookup), [base.diag.diagnostic](base.md#base.diag.diagnostic), [check.resolve.danglingMessage](check.md#check.resolve.danglingMessage), [check.resolve.Index.snapshotOpaque](check.md#check.resolve.Index.snapshotOpaque), [lang.parser.renderMeaning](lang.md#lang.parser.renderMeaning)
-    - fn [levenshtein](../../src/resolve.ts#L288) (a: string, b: string) → number <!-- internal -->
+      - calls [check.resolve.warnBareThen](check.md#check.resolve.warnBareThen), [check.resolve.checkContinues](check.md#check.resolve.checkContinues), [check.resolve.Index.lookup](check.md#check.resolve.Index.lookup), [base.diag.diagnostic](base.md#base.diag.diagnostic), [check.resolve.danglingMessage](check.md#check.resolve.danglingMessage), [check.resolve.Index.snapshotOpaque](check.md#check.resolve.Index.snapshotOpaque), [lang.parser.renderMeaning](lang.md#lang.parser.renderMeaning)
+    - fn [levenshtein](../../src/resolve.ts#L301) (a: string, b: string) → number <!-- internal -->
       <a id="check.resolve.levenshtein"></a><br>Computes the edit distance between two strings using a two-row dynamic-programming table, iterating over Unicode code points rather than UTF-16 units. [`check.resolve.similarity`](check.md#check.resolve.similarity) uses the result to score how close two names are. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [rules](../../src/rules.ts#L1)
     <a id="check.rules"></a><br>Rules over a fresh analysis snapshot. Without a snapshot (a spec directory that has no code), rule results are unverified rather than a graph rebuilt from Markdown.
@@ -255,7 +271,7 @@
       <a id="check.rules.evaluateRules"></a><br>Collects spec rules with node kinds resolved from snapshot, index, or [`check.rules.plannedDecl`](check.md#check.rules.plannedDecl), then evaluates them via [`check.rules.evaluateOnSnapshot`](check.md#check.rules.evaluateOnSnapshot), or without a snapshot emits one "unverified" verdict at the first rule line. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [check.rules.plannedDecl](check.md#check.rules.plannedDecl), [check.rules.collectRules](check.md#check.rules.collectRules), [check.rules.incomparableWarnings](check.md#check.rules.incomparableWarnings), [check.rules.firstRuleLine](check.md#check.rules.firstRuleLine), [check.rules.hashText](check.md#check.rules.hashText), [check.rules.noSnapshotSpec](check.md#check.rules.noSnapshotSpec), [check.rules.evaluateOnSnapshot](check.md#check.rules.evaluateOnSnapshot)
     - fn [specOf](../../src/rules.ts#L153) (source: readonly Document[] | SpecIR) → SpecIR <!-- internal -->
-      <a id="check.rules.specOf"></a><br>Normalizes input to a compiled spec: returns it unchanged if it already has `rules`, otherwise compiles the documents via [`lang.spec-ir.compileSpec`](lang.md#lang.spec-ir.compileSpec) and discards the diagnostics. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
+      <a id="check.rules.specOf"></a><br>Normalizes input to a compiled spec: returns it unchanged if it already has `rules`, otherwise compiles the documents via [`lang.spec-ir.compileSpec`](lang.md#lang.spec-ir.compileSpec) and discards the diagnostics. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [lang.spec-ir.compileSpec](lang.md#lang.spec-ir.compileSpec)
     - fn [plannedDecl](../../src/rules.ts#L158) (spec: SpecIR, id: string) → string <!-- internal -->
       <a id="check.rules.plannedDecl"></a><br>Looks up the planned entry in the spec whose `id` matches and returns its `decl` field, defaulting to `"fn"` when no match exists; used by [`check.rules.dependencyKindOf`](check.md#check.rules.dependencyKindOf) and [`check.rules.evaluateRules`](check.md#check.rules.evaluateRules) to classify declarations. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
@@ -408,76 +424,84 @@
       <a id="check.trace-evidence.readEvent"></a>
     - fn [finishRun](../../src/trace-evidence.ts#L203) (draft: RunDraft) → TraceRun <!-- internal -->
       <a id="check.trace-evidence.finishRun"></a><br>The run once every file is read: each end closes its start, wherever the two were.
-    - type [ShapeNode](../../src/trace-evidence.ts#L233)
-      <a id="check.trace-evidence.ShapeNode"></a><br>A flow as trace matching sees it. `key` identifies the spec node across runs.
-    - type [TraceEvidence](../../src/trace-evidence.ts#L235)
+    - type [ShapeNode](../../src/trace-evidence.ts#L238)
+      <a id="check.trace-evidence.ShapeNode"></a><br>A flow as trace matching sees it. `key` identifies the spec node across runs. A `parallel` group's steps are matched under the group's parent in any order, each after the sibling before the group; the sibling after the group starts after every step of it.
+    - type [TraceEvidence](../../src/trace-evidence.ts#L243)
       <a id="check.trace-evidence.TraceEvidence"></a><br>Describes the outcome of verifying a trace: a three-state verdict (`ok`, `fail`, or `unverified`) with a human-readable message, plus optional run and test identifiers that are null when no linked run or test was found. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Outcome](../../src/trace-evidence.ts#L242) = TraceEvidence <!-- internal -->
+    - type [Outcome](../../src/trace-evidence.ts#L250) = TraceEvidence <!-- internal -->
       <a id="check.trace-evidence.Outcome"></a><br>A local type alias that names the result of a trace-evidence check as the same shape as `TraceEvidence`, so the check's output type reads as an outcome without adding any new fields or behavior. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [traceFlow](../../src/trace-evidence.ts#L250) (runs: readonly TraceRun[], flow: string, trigger: { key: number; id: string } | null, shape: readonly ShapeNode[], snapshotId: string | null) → Map<number, TraceEvidence>
+    - fn [traceFlow](../../src/trace-evidence.ts#L258) (runs: readonly TraceRun[], flow: string, trigger: { key: number; id: string } | null, shape: readonly ShapeNode[], snapshotId: string | null) → Map<number, TraceEvidence>
       <a id="check.trace-evidence.traceFlow"></a><br>Trace verdicts for every step and `when` of one flow, keyed by `ShapeNode.key`. The trigger (if any) must be observed; its steps are matched inside it.
       - calls [check.trace-evidence.keysOf](check.md#check.trace-evidence.keysOf), [check.trace-evidence.Matcher.match](check.md#check.trace-evidence.Matcher.match), [check.trace-evidence.Matcher](check.md#check.trace-evidence.Matcher)
-    - fn [keysOf](../../src/trace-evidence.ts#L293) (nodes: readonly ShapeNode[]) → number[] <!-- internal -->
+    - fn [keysOf](../../src/trace-evidence.ts#L301) (nodes: readonly ShapeNode[]) → number[] <!-- internal -->
       <a id="check.trace-evidence.keysOf"></a><br>Flattens a tree of shape nodes into a pre-order list of their numeric keys, recursing into each node's `children`. Used by [`check.trace-evidence.traceFlow`](check.md#check.trace-evidence.traceFlow) and the `Matcher` methods to enumerate every key a shape covers. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - module [OverBudget](../../src/trace-evidence.ts#L300) <!-- internal -->
+    - module [OverBudget](../../src/trace-evidence.ts#L308) <!-- internal -->
       <a id="check.trace-evidence.OverBudget"></a><br>An empty `Error` subclass with no extra fields or behavior, used as a distinct throwable type that callers can catch to recognize this specific failure when a limit is exceeded during trace-evidence checking. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Assignment](../../src/trace-evidence.ts#L303) <!-- internal -->
+    - type [Assignment](../../src/trace-evidence.ts#L311) <!-- internal -->
       <a id="check.trace-evidence.Assignment"></a><br>Spans assigned to flow nodes: an outcome per node and the spans it took.
-    - fn [assignment](../../src/trace-evidence.ts#L312) (outcomes: [number, Outcome][], spans: string[] = []) → Assignment <!-- internal -->
+    - fn [assignment](../../src/trace-evidence.ts#L320) (outcomes: [number, Outcome][], spans: string[] = []) → Assignment <!-- internal -->
       <a id="check.trace-evidence.assignment"></a><br>Builds the result record the matcher returns from [`check.trace-evidence.Matcher.branch`](check.md#check.trace-evidence.Matcher.branch), [`check.trace-evidence.Matcher.solve`](check.md#check.trace-evidence.Matcher.solve) and [`check.trace-evidence.Matcher.take`](check.md#check.trace-evidence.Matcher.take), bundling the index–outcome pairs and span IDs. It also precomputes counts of outcomes whose verdict is "ok"… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [combine](../../src/trace-evidence.ts#L316) (...parts: Assignment[]) → Assignment <!-- internal -->
+    - fn [combine](../../src/trace-evidence.ts#L324) (...parts: Assignment[]) → Assignment <!-- internal -->
       <a id="check.trace-evidence.combine"></a><br>Merges several `Assignment` values into one by concatenating their outcomes and spans and summing their `ok` and `fail` counts. Used by [`check.trace-evidence.Matcher.branch`](check.md#check.trace-evidence.Matcher.branch), [`check.trace-evidence.Matcher.solve`](check.md#check.trace-evidence.Matcher.solve), and [`check.trace-evidence.Matcher.take`](check.md#check.trace-evidence.Matcher.take) to fold sub-results… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [better](../../src/trace-evidence.ts#L321) (a: Assignment, b: Assignment) → boolean <!-- internal -->
+    - fn [better](../../src/trace-evidence.ts#L329) (a: Assignment, b: Assignment) → boolean <!-- internal -->
       <a id="check.trace-evidence.better"></a><br>More steps observed wins, then fewer failures; an earlier candidate keeps a tie.
-    - module [Matcher](../../src/trace-evidence.ts#L331) <!-- internal -->
+    - module [Matcher](../../src/trace-evidence.ts#L339) <!-- internal -->
       <a id="check.trace-evidence.Matcher"></a><br>Matches one run against a flow. A test may call the trigger or a step more than once (an early `return` first, the real call later), so every span of a symbol is a candidate: the search keeps the assignment with the most observed steps, and a step fails only when no assignment…
-      - fn [constructor](../../src/trace-evidence.ts#L344) (run: TraceRun)
+      - fn [constructor](../../src/trace-evidence.ts#L353) (run: TraceRun)
         <a id="check.trace-evidence.Matcher.constructor"></a><br>Stores the given trace run and indexes every span by its own ID and under its parent's ID, so later lookups can find a span directly or list the children of any span. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - fn [match](../../src/trace-evidence.ts#L355) (nodes: readonly ShapeNode[], trigger: boolean) → [number, Outcome][]
+      - fn [match](../../src/trace-evidence.ts#L364) (nodes: readonly ShapeNode[], trigger: boolean) → [number, Outcome][]
         <a id="check.trace-evidence.Matcher.match"></a><br>Outcomes for `nodes` (the trigger with the steps inside it when `trigger`).
         - calls [check.trace-evidence.Matcher.list](check.md#check.trace-evidence.Matcher.list), [check.trace-evidence.keysOf](check.md#check.trace-evidence.keysOf), [check.trace-evidence.Matcher.base](check.md#check.trace-evidence.Matcher.base), [check.trace-evidence.Matcher.incompleteness](check.md#check.trace-evidence.Matcher.incompleteness)
-      - fn [base](../../src/trace-evidence.ts#L369) () → { runId: string; testId: string } <!-- internal -->
+      - fn [base](../../src/trace-evidence.ts#L378) () → { runId: string; testId: string } <!-- internal -->
         <a id="check.trace-evidence.Matcher.base"></a><br>Builds the shared `{ runId, testId }` fields that identify the current run, which [`check.trace-evidence.Matcher.branch`](check.md#check.trace-evidence.Matcher.branch), [`check.trace-evidence.Matcher.match`](check.md#check.trace-evidence.Matcher.match), [`check.trace-evidence.Matcher.orderOutcome`](check.md#check.trace-evidence.Matcher.orderOutcome), and [`check.trace-evidence.Matcher.solve`](check.md#check.trace-evidence.Matcher.solve) stamp onto the outcomes they… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - fn [descendants](../../src/trace-evidence.ts#L374) (parent: TraceSpan | null) → TraceSpan[] <!-- internal -->
+      - fn [descendants](../../src/trace-evidence.ts#L383) (parent: TraceSpan | null) → TraceSpan[] <!-- internal -->
         <a id="check.trace-evidence.Matcher.descendants"></a><br>Spans under `parent` (all spans for null), depth-first in start order.
-      - fn [candidates](../../src/trace-evidence.ts#L393) (parent: TraceSpan | null, id: string) → TraceSpan[] <!-- internal -->
+      - fn [candidates](../../src/trace-evidence.ts#L402) (parent: TraceSpan | null, id: string) → TraceSpan[] <!-- internal -->
         <a id="check.trace-evidence.Matcher.candidates"></a><br>Collects the spans under `parent` via [`check.trace-evidence.Matcher.descendants`](check.md#check.trace-evidence.Matcher.descendants), keeping only those whose symbol matches `id` and that are not yet marked used. Feeds candidate spans to [`check.trace-evidence.Matcher.branch`](check.md#check.trace-evidence.Matcher.branch) and [`check.trace-evidence.Matcher.solve`](check.md#check.trace-evidence.Matcher.solve). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
         - calls [check.trace-evidence.Matcher.descendants](check.md#check.trace-evidence.Matcher.descendants)
-      - fn [incompleteness](../../src/trace-evidence.ts#L398) () → string | null <!-- internal -->
+      - fn [incompleteness](../../src/trace-evidence.ts#L407) () → string | null <!-- internal -->
         <a id="check.trace-evidence.Matcher.incompleteness"></a><br>Why the run cannot confirm or refute what it shows, or null for a finished run.
-      - fn [absenceDoubt](../../src/trace-evidence.ts#L408) (id: string) → string | null <!-- internal -->
+      - fn [absenceDoubt](../../src/trace-evidence.ts#L417) (id: string) → string | null <!-- internal -->
         <a id="check.trace-evidence.Matcher.absenceDoubt"></a><br>Why an unobserved step is not a proven absence, or null when it is.
         - calls [check.trace-evidence.Matcher.incompleteness](check.md#check.trace-evidence.Matcher.incompleteness)
-      - fn [bound](../../src/trace-evidence.ts#L420) (parent: TraceSpan | null, node: ShapeNode) → number <!-- internal -->
+      - fn [bound](../../src/trace-evidence.ts#L429) (parent: TraceSpan | null, node: ShapeNode) → number <!-- internal -->
         <a id="check.trace-evidence.Matcher.bound"></a><br>The most steps of `node` and below that any assignment under `parent` could observe.
         - calls [check.trace-evidence.Matcher.descendants](check.md#check.trace-evidence.Matcher.descendants)
-      - fn [symbolsFrom](../../src/trace-evidence.ts#L432) (nodes: readonly ShapeNode[], i: number) → Set<string> <!-- internal -->
+      - fn [symbolsFrom](../../src/trace-evidence.ts#L445) (nodes: readonly ShapeNode[], i: number) → Set<string> <!-- internal -->
         <a id="check.trace-evidence.Matcher.symbolsFrom"></a><br>Symbols of `nodes[i..]` and everything under them.
-      - fn [list](../../src/trace-evidence.ts#L456) (parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, previous: TraceSpan | null, trigger: boolean) → Assignment <!-- internal -->
-        <a id="check.trace-evidence.Matcher.list"></a><br>The best assignment for `nodes[i..]` under `parent`, the sibling before them matched to `previous`. Memoized: the answer depends on the spans taken so far only through those it could take itself, so the search stays polynomial in the spans of a symbol.
+      - fn [list](../../src/trace-evidence.ts#L469) (parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, previous: readonly TraceSpan[], trigger: boolean) → Assignment <!-- internal -->
+        <a id="check.trace-evidence.Matcher.list"></a><br>The best assignment for `nodes[i..]` under `parent`, the sibling before them matched to `previous` (every step of it for a `parallel` group). Memoized: the answer depends on the spans taken so far only through those it could take itself, so the search stays polynomial in the…
         - calls [check.trace-evidence.Matcher.symbolsFrom](check.md#check.trace-evidence.Matcher.symbolsFrom), [check.trace-evidence.Matcher.descendants](check.md#check.trace-evidence.Matcher.descendants), [check.trace-evidence.Matcher.solve](check.md#check.trace-evidence.Matcher.solve)
-      - fn [solve](../../src/trace-evidence.ts#L480) (parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, previous: TraceSpan | null, trigger: boolean) → Assignment <!-- internal -->
+      - fn [solve](../../src/trace-evidence.ts#L493) (parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, previous: readonly TraceSpan[], trigger: boolean) → Assignment <!-- internal -->
         <a id="check.trace-evidence.Matcher.solve"></a><br>Matches one shape step against trace spans under a parent, delegating `when` nodes to [`check.trace-evidence.Matcher.branch`](check.md#check.trace-evidence.Matcher.branch), trying each in-order candidate via [`check.trace-evidence.Matcher.take`](check.md#check.trace-evidence.Matcher.take) and keeping the best by [`check.trace-evidence.better`](check.md#check.trace-evidence.better). When no span fits it emits… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-        - calls [check.trace-evidence.Matcher.branch](check.md#check.trace-evidence.Matcher.branch), [check.trace-evidence.Matcher.candidates](check.md#check.trace-evidence.Matcher.candidates), [check.trace-evidence.startsBefore](check.md#check.trace-evidence.startsBefore), [check.trace-evidence.Matcher.bound](check.md#check.trace-evidence.Matcher.bound), [check.trace-evidence.Matcher.take](check.md#check.trace-evidence.Matcher.take), [check.trace-evidence.Matcher.orderOutcome](check.md#check.trace-evidence.Matcher.orderOutcome), [check.trace-evidence.better](check.md#check.trace-evidence.better), [check.trace-evidence.Matcher.base](check.md#check.trace-evidence.Matcher.base), [check.trace-evidence.Matcher.absenceDoubt](check.md#check.trace-evidence.Matcher.absenceDoubt), [check.trace-evidence.Matcher.outsideRoot](check.md#check.trace-evidence.Matcher.outsideRoot), [check.trace-evidence.combine](check.md#check.trace-evidence.combine), [check.trace-evidence.assignment](check.md#check.trace-evidence.assignment), [check.trace-evidence.keysOf](check.md#check.trace-evidence.keysOf), [check.trace-evidence.Matcher.list](check.md#check.trace-evidence.Matcher.list)
-      - fn [take](../../src/trace-evidence.ts#L511) (parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, node: ShapeNode, span: TraceSpan, outcome: Outcome, trigger: boolean) → Assignment <!-- internal -->
+        - calls [check.trace-evidence.Matcher.branch](check.md#check.trace-evidence.Matcher.branch), [check.trace-evidence.Matcher.group](check.md#check.trace-evidence.Matcher.group), [check.trace-evidence.Matcher.candidates](check.md#check.trace-evidence.Matcher.candidates), [check.trace-evidence.startsBefore](check.md#check.trace-evidence.startsBefore), [check.trace-evidence.Matcher.bound](check.md#check.trace-evidence.Matcher.bound), [check.trace-evidence.Matcher.take](check.md#check.trace-evidence.Matcher.take), [check.trace-evidence.Matcher.orderOutcome](check.md#check.trace-evidence.Matcher.orderOutcome), [check.trace-evidence.better](check.md#check.trace-evidence.better), [check.trace-evidence.Matcher.base](check.md#check.trace-evidence.Matcher.base), [check.trace-evidence.Matcher.absenceDoubt](check.md#check.trace-evidence.Matcher.absenceDoubt), [check.trace-evidence.Matcher.outsideRoot](check.md#check.trace-evidence.Matcher.outsideRoot), [check.trace-evidence.combine](check.md#check.trace-evidence.combine), [check.trace-evidence.assignment](check.md#check.trace-evidence.assignment), [check.trace-evidence.keysOf](check.md#check.trace-evidence.keysOf), [check.trace-evidence.Matcher.list](check.md#check.trace-evidence.Matcher.list)
+      - fn [take](../../src/trace-evidence.ts#L526) (parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, node: ShapeNode, span: TraceSpan, outcome: Outcome, trigger: boolean) → Assignment <!-- internal -->
         <a id="check.trace-evidence.Matcher.take"></a><br>`span` as `node`: its children are matched inside it, the siblings after it.
         - calls [check.trace-evidence.OverBudget](check.md#check.trace-evidence.OverBudget), [check.trace-evidence.Matcher.list](check.md#check.trace-evidence.Matcher.list), [check.trace-evidence.combine](check.md#check.trace-evidence.combine), [check.trace-evidence.assignment](check.md#check.trace-evidence.assignment)
-      - fn [branch](../../src/trace-evidence.ts#L523) (parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, node: ShapeNode, previous: TraceSpan | null, trigger: boolean) → Assignment <!-- internal -->
+      - fn [branch](../../src/trace-evidence.ts#L538) (parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, node: ShapeNode, previous: readonly TraceSpan[], trigger: boolean) → Assignment <!-- internal -->
         <a id="check.trace-evidence.Matcher.branch"></a><br>A `when` is exercised in this test when its first step is observed; its steps are not ordered after the siblings before it.
         - calls [check.trace-evidence.Matcher.candidates](check.md#check.trace-evidence.Matcher.candidates), [check.trace-evidence.Matcher.base](check.md#check.trace-evidence.Matcher.base), [check.trace-evidence.combine](check.md#check.trace-evidence.combine), [check.trace-evidence.assignment](check.md#check.trace-evidence.assignment), [check.trace-evidence.keysOf](check.md#check.trace-evidence.keysOf), [check.trace-evidence.Matcher.list](check.md#check.trace-evidence.Matcher.list)
-      - fn [rootSpan](../../src/trace-evidence.ts#L537) (span: TraceSpan) → TraceSpan <!-- internal -->
+      - fn [group](../../src/trace-evidence.ts#L557) (parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, node: ShapeNode, previous: readonly TraceSpan[], trigger: boolean) → Assignment <!-- internal -->
+        <a id="check.trace-evidence.Matcher.group"></a><br>A `parallel` group: each step is matched under the group's parent after the sibling before the group, in any order with the others, overlap allowed. The sibling after the group is ordered after every step it observed.
+        - calls [check.trace-evidence.Matcher.list](check.md#check.trace-evidence.Matcher.list), [check.trace-evidence.Matcher.alone](check.md#check.trace-evidence.Matcher.alone), [check.trace-evidence.combine](check.md#check.trace-evidence.combine), [check.trace-evidence.Matcher.base](check.md#check.trace-evidence.Matcher.base), [check.trace-evidence.assignment](check.md#check.trace-evidence.assignment)
+      - fn [alone](../../src/trace-evidence.ts#L579) (node: ShapeNode) → readonly ShapeNode[] <!-- internal -->
+        <a id="check.trace-evidence.Matcher.alone"></a><br>`[node]`, the same array every time: `list` memoizes by the array.
+      - fn [rootSpan](../../src/trace-evidence.ts#L589) (span: TraceSpan) → TraceSpan <!-- internal -->
         <a id="check.trace-evidence.Matcher.rootSpan"></a><br>Root of the `parentSpanId` chain. A span whose parent is missing is its own root.
-      - fn [outsideRoot](../../src/trace-evidence.ts#L554) (parent: TraceSpan, id: string) → TraceSpan | null <!-- internal -->
+      - fn [outsideRoot](../../src/trace-evidence.ts#L606) (parent: TraceSpan, id: string) → TraceSpan | null <!-- internal -->
         <a id="check.trace-evidence.Matcher.outsideRoot"></a><br>A span of `id` whose call tree is not the parent's, and which did not start before the parent image on the same clock. Spans that did start earlier, and spans in the parent's own tree, stay a confirmed absence.
         - calls [check.trace-evidence.Matcher.rootSpan](check.md#check.trace-evidence.Matcher.rootSpan), [check.trace-evidence.startsBefore](check.md#check.trace-evidence.startsBefore)
-      - fn [nestedIn](../../src/trace-evidence.ts#L566) (span: TraceSpan, ancestor: TraceSpan) → boolean <!-- internal -->
+      - fn [nestedIn](../../src/trace-evidence.ts#L618) (span: TraceSpan, ancestor: TraceSpan) → boolean <!-- internal -->
         <a id="check.trace-evidence.Matcher.nestedIn"></a><br>`span`'s parent chain passes through `ancestor` (the image of the previous sibling).
-      - fn [orderOutcome](../../src/trace-evidence.ts#L577) (parent: TraceSpan | null, span: TraceSpan, after: TraceSpan | null) → Outcome <!-- internal -->
-        <a id="check.trace-evidence.Matcher.orderOutcome"></a><br>Decides whether a matched span is validly ordered against its parent and the preceding sibling, using [`check.trace-evidence.Matcher.nestedIn`](check.md#check.trace-evidence.Matcher.nestedIn) and [`check.trace-evidence.sameClock`](check.md#check.trace-evidence.sameClock). Returns fail when nested in the predecessor, unverified for async children or cross-clock/parallel… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      - fn [orderOutcome](../../src/trace-evidence.ts#L630) (parent: TraceSpan | null, span: TraceSpan, previous: readonly TraceSpan[]) → Outcome <!-- internal -->
+        <a id="check.trace-evidence.Matcher.orderOutcome"></a><br>The order of `span` after every span of `previous`: the first that is not `ok`, else `ok`.
+        - calls [check.trace-evidence.Matcher.orderAfter](check.md#check.trace-evidence.Matcher.orderAfter)
+      - fn [orderAfter](../../src/trace-evidence.ts#L636) (parent: TraceSpan | null, span: TraceSpan, after: TraceSpan | null) → Outcome <!-- internal -->
+        <a id="check.trace-evidence.Matcher.orderAfter"></a>
         - calls [check.trace-evidence.Matcher.nestedIn](check.md#check.trace-evidence.Matcher.nestedIn), [check.trace-evidence.Matcher.base](check.md#check.trace-evidence.Matcher.base), [check.trace-evidence.sameClock](check.md#check.trace-evidence.sameClock)
-    - fn [sameClock](../../src/trace-evidence.ts#L597) (a: Mark, b: Mark) → boolean <!-- internal -->
+    - fn [sameClock](../../src/trace-evidence.ts#L656) (a: Mark, b: Mark) → boolean <!-- internal -->
       <a id="check.trace-evidence.sameClock"></a><br>Reports whether two marks carry the same `clockId`, so callers like [`check.trace-evidence.startsBefore`](check.md#check.trace-evidence.startsBefore) and [`check.trace-evidence.Matcher.orderOutcome`](check.md#check.trace-evidence.Matcher.orderOutcome) only compare timestamps that share a clock. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [startsBefore](../../src/trace-evidence.ts#L601) (span: TraceSpan, other: TraceSpan) → boolean <!-- internal -->
+    - fn [startsBefore](../../src/trace-evidence.ts#L660) (span: TraceSpan, other: TraceSpan) → boolean <!-- internal -->
       <a id="check.trace-evidence.startsBefore"></a><br>Returns true when both spans' start marks share a clock per [`check.trace-evidence.sameClock`](check.md#check.trace-evidence.sameClock) and the first span's start sequence number is strictly lower. Used by [`check.trace-evidence.Matcher.solve`](check.md#check.trace-evidence.Matcher.solve) and [`check.trace-evidence.Matcher.outsideRoot`](check.md#check.trace-evidence.Matcher.outsideRoot) to order spans. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [check.trace-evidence.sameClock](check.md#check.trace-evidence.sameClock)
   - module [verdict](../../src/verdict.ts#L1)

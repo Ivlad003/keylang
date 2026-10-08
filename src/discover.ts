@@ -8,6 +8,7 @@
 
 import { distinctNames, draftFlow, type FlowDraft } from "./draft.ts";
 import { DISCOVERED_FLOWS_DIR } from "./map.ts";
+import { isTriggerKind } from "./parser.ts";
 import type { Flow } from "./spec-ir.ts";
 import type { AnalysisSnapshot, EntryKind, EntryPoint } from "./snapshot.ts";
 import { compareText } from "./span.ts";
@@ -94,7 +95,8 @@ export function discoverFlows(snapshot: AnalysisSnapshot, specified: ReadonlyMap
     chosen.push(entry);
   }
   const depth = options.depth ?? 4;
-  const drafts = distinctNames(chosen.map((entry) => draftFlow(snapshot, entry.id, { depth })));
+  // An entry point of a kind the grammar names is written as a typed trigger, which `check` compares with the entry.
+  const drafts = distinctNames(chosen.map((entry) => draftFlow(snapshot, entry.id, { depth, ...(isTriggerKind(entry.kind) ? { entry: entry.kind } : {}) })));
   const holes = holesBySource(snapshot);
   const flows = drafts.map((draft, i): DiscoveredFlow => {
     const entry = chosen[i]!;

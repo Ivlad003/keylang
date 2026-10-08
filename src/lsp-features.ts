@@ -16,7 +16,7 @@ import { readTextOrNull } from "./files.ts";
 import { kindLabel, sectionNodes, walk, type Document, type Node, type Section, type SectionKind } from "./ir.ts";
 import { EXPLAINED_MAP_DIR } from "./map.ts";
 import { searchNodes, type NodeHit } from "./node-search.ts";
-import { keywordsAt, parse, roleAt } from "./parser.ts";
+import { isTriggerKind, keywordsAt, parse, roleAt, TRIGGER_KINDS } from "./parser.ts";
 import { blocksDependency, dependencyKindOf } from "./rules.ts";
 import { flowsUsing, plannedDeclaration, walkFlow, type FlowItem, type SpecIR, type Trigger } from "./spec-ir.ts";
 import { spanContains, type Pos, type Span } from "./span.ts";
@@ -648,6 +648,25 @@ export function completions(ws: Workspace, path: string, position: LspPosition):
   }
   if (!argument) return [];
   const keyword = argument[2] ?? "";
+  // The words written after the keyword, the one being typed excluded.
+  const written = before.slice(0, wordStart).trim().split(/\s+/).slice(2);
+  if (keyword === "continues" && written.length === 0) {
+    const current = sectionAt(doc, position.line + 1)?.name?.value;
+    const names = [...new Set(ws.analysis.spec.flows.map((flow) => flow.name))].filter((name) => name !== current).sort();
+    return names.map((name) => ({ label: name, kind: COMPLETION.event, detail: "flow", sortText: `1${name}`, ...replacing(name) }));
+  }
+  if (keyword === "trigger" && written.length === 1 && isTriggerKind(written[0]!)) {
+    // `trigger <kind> ` names an entry point of that kind: its fn, with the label it is known by.
+    const kind = written[0]!;
+    const entries = (ws.analysis.snapshot?.entries ?? []).filter((entry) => entry.kind === kind);
+    const seen = new Map<string, CompletionItem>();
+    for (const entry of entries) {
+      if (seen.has(entry.id)) continue;
+      seen.set(entry.id, { label: entry.id, kind: COMPLETION.function, detail: `${kind} ${entry.label}`, labelDetails: { description: entry.label }, sortText: `1${entry.id}`, ...replacing(entry.id) });
+    }
+    return [...seen.values()].sort((a, b) => (a.label < b.label ? -1 : a.label > b.label ? 1 : 0));
+  }
+  if (keyword === "trigger" && written.length > 0) return [];
   const callableOnly = CALLABLE_ARGS.has(keyword);
   if (!callableOnly && !ID_ARGS.has(keyword)) return [];
   // `allow` / `deny` name the pairs the rules are about, so their targets are not filtered by them.
@@ -667,7 +686,10 @@ export function completions(ws: Workspace, path: string, position: LspPosition):
     const kind = item.decl === "fn" ? COMPLETION.function : item.decl === "type" ? COMPLETION.struct : item.decl === "event" ? COMPLETION.event : COMPLETION.module;
     labels.set(item.id, { label: item.id, kind, detail: `planned ${item.decl}${item.signature ? ` ${item.signature}` : ""}`, labelDetails: { description: "planned" }, sortText: `2${item.id}`, ...replacing(item.id) });
   }
-  return [...labels.values()].sort((a, b) => (a.label < b.label ? -1 : a.label > b.label ? 1 : 0));
+  const sorted = [...labels.values()].sort((a, b) => (a.label < b.label ? -1 : a.label > b.label ? 1 : 0));
+  // `trigger ` may go on with the kind of entry point it starts from.
+  if (keyword === "trigger") return [...TRIGGER_KINDS.map((kind) => ({ label: kind, kind: COMPLETION.keyword, detail: `trigger ${kind} <id>: an entry point of this kind`, sortText: `0${kind}`, ...replacing(kind) })), ...sorted];
+  return sorted;
 }
 
 function sectionAt(doc: Document, line: number): Section | undefined {
