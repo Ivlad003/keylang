@@ -123,8 +123,92 @@ test("editor «з коду»: a flow opens with its lanes and shapes; a shape mo
   await page.locator("#status", { hasText: /editor · discovered:listOrders/ }).waitFor();
   await page.locator("#views .row.item", { hasText: /^flowcheckout$/ }).click();
   await page.locator("#status", { hasText: /editor · flow:checkout/ }).waitFor();
-  const back = (await model(page)).nodes.find((n) => n.key === buy.key)!;
+  const again = await model(page);
+  assert.equal(again.nodes.length, before.nodes.length, "the view is drawn once, not over the last one");
+  const back = again.nodes.find((n) => n.key === buy.key)!;
   assert.deepEqual([back.x, back.y], [a.x, a.y]);
 
+  assert.deepEqual(problems, []);
+});
+
+/** Drags a palette item onto the canvas at a model point. */
+async function dropFromPalette(page: Page, item: string, at: { x: number; y: number }): Promise<void> {
+  const target = await screenPoint(page, at.x, at.y);
+  const box = await page.locator("#editor-graph").boundingBox();
+  await page.locator(`#editor-palette [data-item="${item}"]`).dragTo(page.locator("#editor-graph"), { targetPosition: { x: target.x - box!.x, y: target.y - box!.y } });
+}
+
+/** Drags with the mouse from one page point to another, in steps, as a person does. */
+async function drag(page: Page, from: { x: number; y: number }, to: { x: number; y: number }): Promise<void> {
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move((from.x + to.x) / 2, (from.y + to.y) / 2, { steps: 5 });
+  await page.mouse.move(to.x, to.y, { steps: 5 });
+  await page.mouse.up();
+}
+
+test("editor «чернетка»: the palette draws a lane and steps with planned IDs of their lane; the tab's draft survives a reload; «скинути чернетку» goes back to the code", { skip, timeout: 120000 }, async (t) => {
+  const { page, problems } = await openEditor(t);
+  const start = await model(page);
+  const application = start.lanes.find((l) => l.id === "application")!;
+
+  // «з коду» draws no step: only notes.
+  assert.equal(await page.locator('#editor-palette [data-item="step"]').isDisabled(), true);
+  assert.equal(await page.locator('#editor-palette [data-item="note"]').isDisabled(), false);
+
+  await page.click("#editor-mode-draft");
+  assert.equal((await model(page)).mode, "draft");
+  // Room below the lanes: the wheel zooms out around the cursor.
+  const canvas = (await page.locator("#editor-graph").boundingBox())!;
+  await page.mouse.move(canvas.x + canvas.width / 2, canvas.y + 40);
+  for (let i = 0; i < 4; i++) await page.mouse.wheel(0, 100);
+  await dropFromPalette(page, "step", { x: application.x + 120, y: application.y + application.h / 2 });
+  const bottom = (await model(page)).lanes.reduce((max, l) => Math.max(max, l.y + l.h), 0);
+  await dropFromPalette(page, "step", { x: application.x + 120, y: bottom + 60 });
+  await dropFromPalette(page, "layer", { x: application.x, y: bottom + 200 });
+  let now = await model(page);
+  const steps = now.nodes.filter((n) => n.key.startsWith("draft:") && n.kind === "task");
+  assert.deepEqual(
+    steps.map((n) => [n.id, n.layer, n.planned]),
+    [
+      ["planned:application.step", "application", true],
+      ["planned:step", null, true],
+    ],
+  );
+  const lane = now.lanes.find((l) => l.key.startsWith("draft:"))!;
+  assert.equal(lane.id, "planned:layer");
+
+  // The second step moves into the new lane: its planned ID takes the layer.
+  const loose = steps[1]!;
+  await drag(page, await centre(page, loose), await screenPoint(page, lane.x + 200, lane.y + lane.h / 2));
+  now = await model(page);
+  assert.deepEqual(
+    now.nodes.filter((n) => n.key === loose.key).map((n) => [n.id, n.layer]),
+    [["planned:layer.step", "layer"]],
+  );
+
+  // A reload comes back to the draft of this tab: the mode, the new lane and steps.
+  await page.waitForTimeout(400);
+  await page.reload();
+  await page.locator("#status", { hasText: /draft of this tab is back/ }).waitFor();
+  const back = await model(page);
+  assert.equal(back.mode, "draft");
+  assert.deepEqual(back.nodes.map((n) => n.id).sort(), now.nodes.map((n) => n.id).sort());
+  assert.equal(back.lanes.length, 5);
+
+  // «видалити» removes a drawn step; «скинути чернетку» draws the view from the code again.
+  const drawn = back.nodes.find((n) => n.id === "planned:application.step")!;
+  const there = await centre(page, drawn);
+  await page.mouse.click(there.x, there.y);
+  await page.click("#editor-delete");
+  assert.equal((await model(page)).nodes.some((n) => n.id === "planned:application.step"), false);
+  await page.click("#editor-reset");
+  await page.locator("#status", { hasText: /з коду: 4 shapes/ }).waitFor();
+  const reset = await model(page);
+  assert.equal(reset.mode, "code");
+  assert.equal(reset.nodes.length, 4);
+  assert.equal(reset.lanes.length, 4);
+
+  if (process.env["EDITOR_SHOT2"]) await page.screenshot({ path: process.env["EDITOR_SHOT2"] });
   assert.deepEqual(problems, []);
 });

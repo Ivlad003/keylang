@@ -126,3 +126,8 @@ body[data-mode="editor"] #stage, body[data-mode="editor"] #details, body[data-mo
 #editor .snap { display: inline-flex; align-items: center; gap: 2px; color: #455a64; }
 #editor .editor-body { flex: 1; display: flex; min-height: 0; }
 #editor .editor-canvas { flex: 1; position: relative; overflow: hidden; background-color: #fbfcfc; background-image: radial-gradient(#cfd8dc 1px, transparent 1px); background-size: 10px 10px; outline: none; }
+#editor .editor-palette { width: 132px; flex: none; overflow: auto; border-right: 1px solid #eceff1; background: #f7f9fa; padding: 6px; display: flex; flex-direction: column; gap: 3px; }
+#editor .palette-head { font-size: 11px; color: #607d8b; text-transform: uppercase; letter-spacing: 0.04em; margin: 2px 0 4px; }
+#editor .palette-item { text-align: left; border: 1px solid #cfd8dc; border-radius: 4px; background: #ffffff; padding: 4px 6px; cursor: grab; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#editor .palette-item:hover:not(:disabled) { border-color: #1565c0; background: #e3f2fd; }
+#editor .palette-item:disabled { opacity: 0.4; cursor: not-allowed; }

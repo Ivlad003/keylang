@@ -6,7 +6,15 @@
 // or the layout store keeps (layout-store.ts), and only the layout changes:
 // move, resize, bend an edge, group, align, snap to the grid.
 //
-// The editor writes nothing to the specs: its state lives in memory, the
+// «Чернетка» makes everything editable: the palette on the left (drag a
+// shape onto the canvas, or click it) draws layers as lanes, modules, fns,
+// types, steps, `when` and `parallel` gateways, events, timers, triggers and
+// webhooks, external systems and notes; a new shape gets its kind and a
+// temporary ID `planned:<layer>.<name>` from the lane it lands in. Notes are
+// layout, so «з коду» draws them too.
+//
+// The editor writes nothing to the specs: its state lives in memory and in a
+// draft of the tab (`sessionStorage`, so a reload comes back to it), the
 // positions go to the layout store, and `currentModel()` is what ticket 24
 // diffs against the model to write proposals.
 
@@ -183,6 +191,48 @@ export interface EditorModel {
 const SMALL: ReadonlySet<ShapeKind> = new Set(["start", "event", "timer", "gateway", "parallel"]);
 const LANE_STYLE: CellStyle = { shape: "swimlane", horizontal: false, startSize: 26, fillColor: "#eef2f4", swimlaneFillColor: "#ffffff", strokeColor: "#b0bec5", fontColor: "#37474f", fontStyle: 1, fontSize: 12 };
 const GRID = 10;
+/** The draft of a view in `sessionStorage`: `keylang-editor:<view>`. */
+const DRAFT_PREFIX = "keylang-editor:";
+
+/** One item of the palette: what it draws, its kind, its name stem and size. */
+export interface PaletteItem {
+  item: string;
+  text: string;
+  title: string;
+  kind: ShapeKind;
+  stem: string;
+  size: [number, number];
+  trigger?: string;
+  /** The shape carries a keylang ID (`planned:<layer>.<name>` until it is built). */
+  named: boolean;
+}
+
+export const PALETTE: readonly PaletteItem[] = [
+  { item: "layer", text: "▭ шар", title: "Шар: доріжка-контейнер", kind: "lane", stem: "layer", size: [720, 150], named: true },
+  { item: "module", text: "▣ модуль", title: "Модуль", kind: "module", stem: "module", size: [180, 70], named: true },
+  { item: "fn", text: "ƒ fn", title: "Функція", kind: "fn", stem: "fn", size: [160, 60], named: true },
+  { item: "type", text: "T тип", title: "Тип", kind: "type", stem: "Type", size: [150, 50], named: true },
+  { item: "step", text: "▢ крок", title: "Крок флоу (задача)", kind: "task", stem: "step", size: [160, 60], named: true },
+  { item: "trigger", text: "○ тригер", title: "Тригер: стартова подія флоу", kind: "start", stem: "trigger", size: [36, 36], trigger: "fn", named: true },
+  { item: "when", text: "◇× when", title: "Шлюз when: ексклюзивне розгалуження", kind: "gateway", stem: "condition", size: [50, 50], named: false },
+  { item: "parallel", text: "◇+ parallel", title: "Паралельний шлюз", kind: "parallel", stem: "parallel", size: [50, 50], named: false },
+  { item: "event", text: "◎ подія", title: "Подія (emits)", kind: "event", stem: "event", size: [36, 36], named: true },
+  { item: "timer", text: "⏱ таймер", title: "Таймер (after / every)", kind: "timer", stem: "after 1h", size: [36, 36], named: false },
+  { item: "webhook", text: "✉ вебхук", title: "Вебхук: стартова подія-повідомлення", kind: "start", stem: "webhook", size: [36, 36], trigger: "webhook", named: true },
+  { item: "external", text: "┆▢┆ зовнішня система", title: "Зовнішня система чи пакет: окремий пул", kind: "external", stem: "system", size: [160, 60], named: true },
+  { item: "note", text: "✎ примітка", title: "Примітка (проза)", kind: "note", stem: "примітка", size: [170, 80], named: false },
+];
+
+/** One cell of a draft: a shape or an edge with its parent, geometry relative to it, and its keylang side. */
+type DraftCell =
+  | { type: "shape"; parent: string | null; shape: Record<string, unknown>; x: number; y: number; w: number; h: number }
+  | { type: "link"; parent: string | null; link: Record<string, unknown>; source: string; target: string; points: { x: number; y: number }[] };
+
+interface Draft {
+  view: string;
+  mode: EditorMode;
+  cells: DraftCell[];
+}
 
 /** The style of a shape: the viewer's BPMN-like look, a caption under a small shape, dashed for `planned`. */
 export function shapeStyle(shape: Shape): CellStyle {
@@ -227,6 +277,11 @@ export function linkStyle(link: Link): CellStyle {
 const NODE_KINDS: ReadonlySet<string> = new Set(["start", "task", "gateway", "parallel", "event", "timer", "external", "hole", "module", "fn", "layer"]);
 const LINK_KINDS: ReadonlySet<string> = new Set(["sequence", "call", "dependency", "allow", "deny", "emits", "subscribes", "continues"]);
 
+/** The layer a lane stands for: its ID without `planned:`. */
+function layerOf(lane: Shape): string {
+  return lane.id.replace(/^planned:/, "");
+}
+
 function shapeOf(cell: Cell | null | undefined): Shape | null {
   const value: unknown = cell?.getValue();
   return value instanceof Shape ? value : null;
@@ -252,6 +307,10 @@ export class Editor {
   private mode: EditorMode = "code";
   private saveTimer = 0;
   private loading = false;
+  /** The diagram the open view came from: «скинути чернетку» draws it again. */
+  private source: Diagram = { nodes: [], edges: [], groups: [] };
+  private counter = 0;
+  private readonly palette: HTMLDivElement;
 
   constructor(root: HTMLElement, api: Api, host: EditorHost) {
     register();
@@ -260,12 +319,17 @@ export class Editor {
     this.bar = make("div", { className: "editor-bar" });
     this.canvas = make("div", { className: "editor-canvas" });
     this.canvas.id = "editor-graph";
-    root.replaceChildren(this.bar, make("div", { className: "editor-body" }, this.canvas));
+    this.palette = make("div", { className: "editor-palette" });
+    this.palette.id = "editor-palette";
+    this.palette.setAttribute("aria-label", "Палітра");
+    root.replaceChildren(this.bar, make("div", { className: "editor-body" }, this.palette, this.canvas));
     // Bends: a virtual handle in the middle of each segment adds a point, as in diagrams.net.
     EdgeHandlerConfig.virtualBendsEnabled = true;
     this.graph = new BaseGraph({ container: this.canvas, plugins: [SelectionCellsHandler, SelectionHandler, RubberBandHandler, PanningHandler] });
     this.configure();
     this.toolbar();
+    this.fillPalette();
+    this.applyMode();
   }
 
   private configure(): void {
@@ -299,6 +363,14 @@ export class Editor {
       if (kind !== "lane" && kind !== "group") return false;
       return !(cells ?? []).some((c) => shapeOf(c)?.kind === "lane");
     };
+    // «з коду» deletes only what is layout: notes and group frames.
+    graph.isCellDeletable = (cell: Cell): boolean => {
+      if (this.mode === "draft" || this.loading) return true;
+      const kind = shapeOf(cell)?.kind;
+      return kind === "note" || kind === "group";
+    };
+    // A planned shape moved into another lane takes that layer into its ID.
+    graph.addListener(InternalEvent.MOVE_CELLS, () => this.relayer());
     // The wheel zooms around the cursor.
     this.canvas.addEventListener(
       "wheel",
@@ -339,7 +411,20 @@ export class Editor {
     ungroup.id = "editor-ungroup";
     const fit = button("вмістити", () => this.fit(), { title: "Вмістити (Ctrl+Shift+H)" });
     fit.id = "editor-fit";
+    const code = button("з коду", () => this.setMode("code"), { title: "Фігури з моделі: змінюється лише розкладка (і примітки)" });
+    code.id = "editor-mode-code";
+    const draft = button("чернетка", () => this.setMode("draft"), { title: "Усе редаговане: нові фігури отримують planned-ID" });
+    draft.id = "editor-mode-draft";
+    const remove = button("видалити", () => this.deleteSelection(), { title: "Видалити вибране (Delete)" });
+    remove.id = "editor-delete";
+    const reset = button("скинути чернетку", () => void this.resetDraft(), { title: "Забути чернетку вкладки й відкрити вид з коду заново" });
+    reset.id = "editor-reset";
     this.bar.append(
+      code,
+      draft,
+      make("span", { className: "sep" }),
+      remove,
+      make("span", { className: "sep" }),
       make("span", { className: "editor-label", text: "вирівняти:" }),
       align("left", "⇤", "За лівим краєм"),
       align("center", "↔", "По центру"),
@@ -351,7 +436,244 @@ export class Editor {
       ungroup,
       snap,
       fit,
+      make("span", { className: "sep" }),
+      reset,
     );
+  }
+
+  private fillPalette(): void {
+    this.palette.append(make("div", { className: "palette-head", text: "Палітра" }));
+    for (const entry of PALETTE) {
+      const item = make("button", { className: "palette-item", text: entry.text, title: `${entry.title} — перетягніть на полотно або клацніть` });
+      item.type = "button";
+      item.draggable = true;
+      item.dataset["item"] = entry.item;
+      item.addEventListener("dragstart", (event) => {
+        event.dataTransfer?.setData("text/plain", `keylang-palette:${entry.item}`);
+        if (event.dataTransfer) event.dataTransfer.effectAllowed = "copy";
+      });
+      // A click drops it in the middle of the canvas.
+      item.addEventListener("click", () => {
+        const box = this.canvas.getBoundingClientRect();
+        this.addFromPalette(entry, this.modelPoint(box.left + box.width / 2, box.top + box.height / 2));
+      });
+      this.palette.append(item);
+    }
+    this.canvas.addEventListener("dragover", (event) => {
+      if (event.dataTransfer?.types.includes("text/plain")) {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "copy";
+      }
+    });
+    this.canvas.addEventListener("drop", (event) => {
+      const data = event.dataTransfer?.getData("text/plain") ?? "";
+      const entry = PALETTE.find((p) => `keylang-palette:${p.item}` === data);
+      if (!entry) return;
+      event.preventDefault();
+      this.addFromPalette(entry, this.modelPoint(event.clientX, event.clientY));
+    });
+  }
+
+  /** A point of the page in model coordinates. */
+  private modelPoint(clientX: number, clientY: number): { x: number; y: number } {
+    const view = this.graph.getView();
+    const box = this.canvas.getBoundingClientRect();
+    return { x: (clientX - box.left) / view.scale - view.translate.x, y: (clientY - box.top) / view.scale - view.translate.y };
+  }
+
+  /** The lanes, with their boxes in model coordinates. */
+  private lanes(): { cell: Cell; shape: Shape; x: number; y: number; w: number; h: number }[] {
+    const out: { cell: Cell; shape: Shape; x: number; y: number; w: number; h: number }[] = [];
+    for (const cell of this.graph.getDefaultParent().getChildren()) {
+      const shape = shapeOf(cell);
+      const geometry = cell.getGeometry();
+      if (shape?.kind === "lane" && geometry) out.push({ cell, shape, x: geometry.x, y: geometry.y, w: geometry.width, h: geometry.height });
+    }
+    return out;
+  }
+
+  /** A key no shape of the canvas has. */
+  private newKey(): string {
+    const used = new Set(this.allCells().map((cell) => shapeOf(cell)?.key ?? linkOf(cell)?.key));
+    let key = "";
+    do key = `draft:${++this.counter}`;
+    while (used.has(key));
+    return key;
+  }
+
+  /** `stem`, `stem2`, … : the first name no shape of that layer uses. */
+  private newName(layer: string | null, stem: string): string {
+    const prefix = layer === null ? "planned:" : `planned:${layer}.`;
+    const ids = new Set(this.allCells().map((cell) => shapeOf(cell)?.id));
+    for (let n = 1; ; n++) {
+      const name = n === 1 ? stem : `${stem}${n}`;
+      if (!ids.has(`${prefix}${name}`)) return name;
+    }
+  }
+
+  /** Draws a palette shape at a model point: in the lane under it, with a planned ID of that lane's layer. */
+  addFromPalette(entry: PaletteItem, at: { x: number; y: number }): Cell | null {
+    if (this.mode === "code" && entry.kind !== "note") {
+      this.host.status("«з коду» змінює лише розкладку й примітки: перейдіть у «чернетку», щоб додати фігуру");
+      return null;
+    }
+    const graph = this.graph;
+    const [w, h] = entry.size;
+    let cell: Cell;
+    if (entry.kind === "lane") {
+      const name = this.newName(null, entry.stem);
+      const shape = new Shape(this.newKey(), "lane", `planned:${name}`, name);
+      cell = graph.insertVertex({ parent: graph.getDefaultParent(), value: shape, position: [Math.round(at.x / GRID) * GRID, Math.round(at.y / GRID) * GRID], size: [w, h], style: shapeStyle(shape) });
+    } else {
+      const lane = this.lanes().find((l) => at.x >= l.x && at.x <= l.x + l.w && at.y >= l.y && at.y <= l.y + l.h);
+      const layer = lane ? layerOf(lane.shape) : null;
+      const name = entry.named ? this.newName(layer, entry.stem) : entry.stem;
+      const id = entry.named ? `planned:${layer === null ? "" : `${layer}.`}${name}` : "";
+      const shape = new Shape(this.newKey(), entry.kind, id, name);
+      if (entry.trigger) shape.trigger = entry.trigger;
+      if (entry.kind === "parallel") shape.role = "split";
+      if (entry.kind === "note") shape.description = "примітка";
+      const x = Math.round((at.x - w / 2 - (lane?.x ?? 0)) / GRID) * GRID;
+      const y = Math.round((at.y - h / 2 - (lane?.y ?? 0)) / GRID) * GRID;
+      cell = graph.insertVertex({ parent: lane?.cell ?? graph.getDefaultParent(), value: shape, position: [x, y], size: [w, h], style: shapeStyle(shape) });
+    }
+    graph.setSelectionCell(cell);
+    this.host.status(`added ${entry.item}${shapeOf(cell)?.id ? ` ${shapeOf(cell)?.id}` : ""}`);
+    return cell;
+  }
+
+  /** «з коду» or «чернетка»: what the canvas lets change. */
+  setMode(mode: EditorMode): void {
+    this.mode = mode;
+    this.applyMode();
+    this.changed();
+    this.host.status(mode === "draft" ? `editor · ${this.viewKey || "empty canvas"} · чернетка: everything changes; new shapes get planned IDs` : `editor · ${this.viewKey || "empty canvas"} · з коду: only the layout and notes change`);
+  }
+
+  private applyMode(): void {
+    const draft = this.mode === "draft";
+    this.graph.setDropEnabled(draft);
+    for (const id of ["editor-mode-code", "editor-mode-draft"]) document.getElementById(id)?.setAttribute("aria-pressed", String(id.endsWith(this.mode)));
+    for (const item of this.palette.querySelectorAll<HTMLButtonElement>(".palette-item")) item.disabled = !draft && item.dataset["item"] !== "note";
+    this.canvas.dataset["mode"] = this.mode;
+  }
+
+  /** Deletes the selection, as far as the mode lets. */
+  deleteSelection(): void {
+    const cells = this.graph.getDeletableCells(this.graph.getSelectionCells());
+    if (cells.length === 0) {
+      if (this.graph.getSelectionCount() > 0) this.host.status("«з коду» не видаляє фігур моделі: лише примітки й групи");
+      return;
+    }
+    this.graph.removeCells(cells, true);
+  }
+
+  /** After a move: a planned shape in another lane takes that lane's layer into its ID. */
+  private relayer(): void {
+    if (this.mode !== "draft") return;
+    const model = this.graph.getDataModel();
+    this.graph.batchUpdate(() => {
+      for (const cell of this.allCells()) {
+        const shape = shapeOf(cell);
+        if (!shape || !cell.isVertex() || !shape.id.startsWith("planned:") || shape.kind === "lane") continue;
+        const lane = this.laneOf(cell);
+        const layer = lane ? layerOf(lane) : null;
+        const name = shape.id.slice(shape.id.lastIndexOf(".") + 1).replace(/^planned:/, "");
+        const id = `planned:${layer === null ? "" : `${layer}.`}${name}`;
+        if (id === shape.id) continue;
+        const next = shape.clone();
+        next.id = id;
+        model.setValue(cell, next);
+      }
+    });
+  }
+
+  /** The lane a cell sits in, at any depth. */
+  private laneOf(cell: Cell): Shape | null {
+    for (let up = cell.getParent(); up && up.isVertex(); up = up.getParent()) {
+      const shape = shapeOf(up);
+      if (shape?.kind === "lane") return shape;
+    }
+    return null;
+  }
+
+  /** The draft of this tab as JSON-ready cells, parents before children. */
+  private draft(): Draft {
+    const cells: DraftCell[] = [];
+    const keyOf = (cell: Cell | null): string | null => shapeOf(cell)?.key ?? null;
+    for (const cell of this.allCells()) {
+      const shape = shapeOf(cell);
+      const geometry = cell.getGeometry();
+      if (shape && geometry) cells.push({ type: "shape", parent: keyOf(cell.getParent()), shape: { ...shape }, x: geometry.x, y: geometry.y, w: geometry.width, h: geometry.height });
+    }
+    for (const cell of this.allCells()) {
+      const link = linkOf(cell);
+      const source = keyOf(cell.getTerminal(true));
+      const target = keyOf(cell.getTerminal(false));
+      if (link && source && target) cells.push({ type: "link", parent: keyOf(cell.getParent()), link: { ...link }, source, target, points: (cell.getGeometry()?.points ?? []).map((p) => ({ x: p.x, y: p.y })) });
+    }
+    return { view: this.viewKey, mode: this.mode, cells };
+  }
+
+  /** Draws a draft again: every cell where it was. */
+  private restore(draft: Draft): void {
+    const graph = this.graph;
+    const root = graph.getDefaultParent();
+    graph.batchUpdate(() => {
+      graph.removeCells(graph.getChildCells(root, true, true), true);
+      const byKey = new Map<string, Cell>();
+      for (const item of draft.cells) {
+        const parent = (item.parent !== null ? byKey.get(item.parent) : undefined) ?? root;
+        if (item.type === "shape") {
+          const shape = Object.assign(new Shape("", "task", "", ""), item.shape) as Shape;
+          byKey.set(shape.key, graph.insertVertex({ parent, value: shape, position: [item.x, item.y], size: [item.w, item.h], style: shapeStyle(shape) }));
+        } else {
+          const source = byKey.get(item.source);
+          const target = byKey.get(item.target);
+          if (!source || !target) continue;
+          const link = Object.assign(new Link("", "sequence"), item.link) as Link;
+          const cell = graph.insertEdge({ parent, value: link, source, target, style: linkStyle(link) });
+          if (item.points.length > 0) {
+            const geometry = cell.getGeometry()!.clone();
+            geometry.points = item.points.map((p) => new Point(p.x, p.y));
+            graph.getDataModel().setGeometry(cell, geometry);
+          }
+        }
+      }
+    });
+    this.mode = draft.mode;
+    this.applyMode();
+  }
+
+  private readDraft(view: string): Draft | null {
+    try {
+      const text = sessionStorage.getItem(`${DRAFT_PREFIX}${view}`);
+      if (!text) return null;
+      const draft = JSON.parse(text) as Draft;
+      return draft.view === view && Array.isArray(draft.cells) ? draft : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private writeDraft(): void {
+    try {
+      sessionStorage.setItem(`${DRAFT_PREFIX}${this.viewKey}`, JSON.stringify(this.draft()));
+    } catch {
+      // A full or blocked storage keeps the draft in memory only.
+    }
+  }
+
+  /** Forgets this tab's draft of the view and draws the view from the code again. */
+  async resetDraft(): Promise<void> {
+    window.clearTimeout(this.saveTimer);
+    this.saveTimer = 0;
+    try {
+      sessionStorage.removeItem(`${DRAFT_PREFIX}${this.viewKey}`);
+    } catch {
+      // Nothing stored.
+    }
+    await this.openDiagram(this.viewKey, this.source, true);
   }
 
   /** The view open in the editor (`flow:checkout`, or "" for an empty canvas). */
@@ -359,27 +681,37 @@ export class Editor {
     return this.viewKey;
   }
 
-  /** Opens a diagram «з коду»: its shapes at the positions the layout store keeps, or the server's. */
-  async openDiagram(key: string, diagram: Diagram): Promise<void> {
-    // The view being left keeps its layout.
+  /**
+   * Opens a diagram «з коду»: its shapes at the positions the layout store keeps, or the server's.
+   * This tab's draft of the view, when there is one, comes back instead (`fresh` skips it).
+   */
+  async openDiagram(key: string, diagram: Diagram, fresh = false): Promise<void> {
+    // The view being left keeps its layout and its draft.
     await this.flush();
     this.viewKey = key;
+    this.source = diagram;
     this.mode = "code";
-    const layout = await layoutStore().load(key);
+    const draft = fresh ? null : this.readDraft(key);
+    const layout = draft ? null : await layoutStore().load(key);
     this.loading = true;
     try {
-      this.build(diagram, layout);
+      if (draft) this.restore(draft);
+      else this.build(diagram, layout);
     } finally {
       this.loading = false;
     }
+    this.applyMode();
+    this.graph.clearSelection();
     this.fit();
-    this.host.status(diagram.reason ?? `editor · ${key} · з коду: ${diagram.nodes.length} shapes, ${diagram.edges.length} edges · only the layout changes`);
+    if (draft) this.host.status(`editor · ${key || "empty canvas"} · the draft of this tab is back (${draft.mode === "draft" ? "чернетка" : "з коду"}); «скинути чернетку» draws the view from the code`);
+    else this.host.status(diagram.reason ?? `editor · ${key} · з коду: ${diagram.nodes.length} shapes, ${diagram.edges.length} edges · only the layout changes`);
   }
 
   /** An empty canvas: nothing from the code yet. */
   async openEmpty(): Promise<void> {
     await this.openDiagram("", { nodes: [], edges: [], groups: [] });
-    this.host.status("editor · an empty canvas: pick a view on the left to open it «з коду»");
+    if (this.allCells().length === 0) this.setMode("draft");
+    this.host.status("editor · an empty canvas, чернетка: drag shapes from the palette, or pick a view on the left to open it «з коду»");
   }
 
   private build(diagram: Diagram, layout: Layout | null): void {
@@ -488,7 +820,7 @@ export class Editor {
           const above = shapeOf(up);
           if (above?.kind === "group" && group === undefined) group = above.key;
           if (above?.kind === "lane") {
-            layer = above.id.replace(/^planned:/, "");
+            layer = layerOf(above);
             break;
           }
         }
@@ -529,11 +861,12 @@ export class Editor {
     this.saveTimer = window.setTimeout(() => void this.flush(), 250);
   }
 
-  /** Writes the layout of the open view now if a change waits for it. */
+  /** Writes the layout and the draft of the open view now if a change waits for them. */
   async flush(): Promise<void> {
     if (this.saveTimer === 0) return;
     window.clearTimeout(this.saveTimer);
     this.saveTimer = 0;
+    this.writeDraft();
     if (this.viewKey !== "") await layoutStore().save(this.viewKey, this.layout());
   }
 
