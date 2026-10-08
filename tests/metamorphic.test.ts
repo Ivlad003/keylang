@@ -453,8 +453,12 @@ test("a framework's config left unread (`frameworks: []`) or unparsed moves a ve
     "flow:static:sales.Model.OrderService.OrderService.place:keylang/flows.md:6 ok → unverified",
     "flow:static:sales.Model.Totals.Totals.collect:keylang/flows.md:7 ok → unverified",
     "rule:deny checkout sales.Model fail → unverified",
-    "rule:deny promo sales ok → unverified",
   ]);
+  // `deny promo sales` is unverified even with the config read: the observer added for events
+  // (business-flows/08) imports `Magento\Framework\Event\ObserverInterface`, which the fixture
+  // does not have — a hole in promo's area. Unread config can only keep it unverified.
+  assert.equal(read.get("rule:deny promo sales")?.verdict, "unverified");
+  assert.equal(without.get("rule:deny promo sales")?.verdict, "unverified");
   // A config keylang cannot parse is lost the same way: its file stays, its facts are a hole. (Deleting the
   // file is no loss of information but another program: a plugin no config registers is not called.)
   const broken = mkdtempSync(join(tmpdir(), "keylang-meta-magento-"));
