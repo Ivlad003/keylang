@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [agent-cli](#features.agent-cli) · [agent-context](#features.agent-context) · [baseline](#features.baseline) · [call-sites](#features.call-sites) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [clone](#features.clone) · [coverage-report](#features.coverage-report) · [discover](#features.discover) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [feature-status](#features.feature-status) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [harness](#features.harness) · [integrations](#features.integrations) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stale](#features.stale) · [stats](#features.stats) · [voice-local](#features.voice-local) · [voice](#features.voice)
+[README](README.md) · modules: [agent-cli](#features.agent-cli) · [agent-context](#features.agent-context) · [baseline](#features.baseline) · [call-sites](#features.call-sites) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [clone](#features.clone) · [coverage-report](#features.coverage-report) · [discover-names](#features.discover-names) · [discover](#features.discover) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [feature-status](#features.feature-status) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [harness](#features.harness) · [integrations](#features.integrations) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stale](#features.stale) · [stats](#features.stats) · [voice-local](#features.voice-local) · [voice](#features.voice)
 
 # map
 
@@ -453,35 +453,122 @@
     - fn [coverageText](../../src/coverage-report.ts#L218) (report: CoverageReport, specDir = "keylang") → string
       <a id="features.coverage-report.coverageText"></a><br>What `keylang coverage` prints: the five sections, each with what to do about it.
       - calls [features.coverage-report.percent](features.md#features.coverage-report.percent)
+  - module [discover-names](../../src/discover-names.ts#L1)
+    <a id="features.discover-names"></a><br>Business names of discovered flows (business-flows/12): a model groups the flows of one layer into business processes — name, a few sentences, a domain, the entities in and out, the flows that belong to it — in one request per layer group, never per flow. Offline first: each…
+    - node [external.node](external.md#external.node)
+    - config [base.config](base.md#base.config)
+    - diagram [map.diagram](map.md#map.diagram)
+    - discover [features.discover](features.md#features.discover)
+    - explanations [map.explanations](map.md#map.explanations)
+    - graph [map.graph](map.md#map.graph)
+    - llm [features.llm](features.md#features.llm)
+    - snapshot [map.snapshot](map.md#map.snapshot)
+    - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
+    - span [base.span](base.md#base.span)
+    - type [NameMode](../../src/discover-names.ts#L30) = (typeof NAME_MODES)[number]
+      <a id="features.discover-names.NameMode"></a>
+    - fn [isNameMode](../../src/discover-names.ts#L32) (value: string) → value is NameMode
+      <a id="features.discover-names.isNameMode"></a>
+    - type [BusinessProcess](../../src/discover-names.ts#L44)
+      <a id="features.discover-names.BusinessProcess"></a><br>One business process as saved in the README.
+    - type [NameGroup](../../src/discover-names.ts#L62)
+      <a id="features.discover-names.NameGroup"></a><br>The flows of one layer: one request.
+    - fn [nameGroups](../../src/discover-names.ts#L68) (flows: readonly DiscoveredFlow[]) → NameGroup[]
+      <a id="features.discover-names.nameGroups"></a><br>The flows of the discovery by the layer of their trigger, layers and flows sorted.
+      - calls [base.span.compareText](base.md#base.span.compareText)
+    - fn [processBaseline](../../src/discover-names.ts#L80) (snapshot: AnalysisSnapshot, flows: readonly Pick<DiscoveredFlow, "name" | "steps">[]) → string
+      <a id="features.discover-names.processBaseline"></a><br>The baseline of a process: a hash of every step of its flows with the baseline of an explanation of that step (`snapshotBaseline`, the closure fingerprint of a fn). A step's code changing, a step added or gone, makes it differ.
+      - calls [base.span.compareText](base.md#base.span.compareText), [map.explanations.snapshotBaseline](map.md#map.explanations.snapshotBaseline)
+    - fn [isStaleProcess](../../src/discover-names.ts#L87) (snapshot: AnalysisSnapshot, byName: ReadonlyMap<string, DiscoveredFlow>, process: BusinessProcess) → boolean
+      <a id="features.discover-names.isStaleProcess"></a><br>A saved process whose flows are gone or whose baseline changed.
+      - calls [features.discover-names.processBaseline](features.md#features.discover-names.processBaseline)
+    - type [NamesPlan](../../src/discover-names.ts#L94)
+      <a id="features.discover-names.NamesPlan"></a><br>What a `--names` run asks: the groups, and the saved processes that are stale.
+    - fn [planNames](../../src/discover-names.ts#L104) (snapshot: AnalysisSnapshot, flows: readonly DiscoveredFlow[], saved: readonly BusinessProcess[], options: { stale: boolean; layer?: string; limit?: number }) → NamesPlan
+      <a id="features.discover-names.planNames"></a><br>The groups to ask for: with `stale`, only the layers of stale processes; otherwise also every layer with a flow no fresh process has. `layer` narrows to one layer, `limit` keeps the first groups.
+      - calls [features.discover-names.isStaleProcess](features.md#features.discover-names.isStaleProcess), [features.discover-names.nameGroups](features.md#features.discover-names.nameGroups)
+    - fn [namesRequest](../../src/discover-names.ts#L123) (snapshot: AnalysisSnapshot, group: NameGroup, options: { lang: string; briefs: ReadonlyMap<string, StoredExplanation> }) → LlmRequest
+      <a id="features.discover-names.namesRequest"></a><br>The request for one layer group: each flow with its entry point, trigger, offline description and its steps with what the explained map says about them (doc comments, briefs). The answer is JSON.
+      - calls [map.explanations.explanationOf](map.md#map.explanations.explanationOf)
+    - fn [estimateNameTokens](../../src/discover-names.ts#L153) (requests: readonly LlmRequest[]) → { input: number; output: number }
+      <a id="features.discover-names.estimateNameTokens"></a><br>A rough size of the requests for `--dry-run`: about four characters a token, about 300 tokens out per process group.
+    - type [AnsweredProcess](../../src/discover-names.ts#L159)
+      <a id="features.discover-names.AnsweredProcess"></a><br>One process of an answer, checked: what is saved without the provenance.
+    - fn [parseNamesAnswer](../../src/discover-names.ts#L168) (snapshot: AnalysisSnapshot, group: NameGroup, answer: string) → { processes: AnsweredProcess[]; dropped: string[]; unknownIds: string[] } | { error: string }
+      <a id="features.discover-names.parseNamesAnswer"></a><br>The model's answer for `group`, checked: flow names the group does not have are dropped (`dropped`), a flow named twice stays with its first process, a process left without flows is dropped; `unknownIds` are the IDs in backticks it mentions that the snapshot does not have. Not…
+      - calls [features.discover-names.jsonOf](features.md#features.discover-names.jsonOf), [features.discover-names.isRecord](features.md#features.discover-names.isRecord), [features.discover-names.oneLine](features.md#features.discover-names.oneLine), [features.discover-names.entities](features.md#features.discover-names.entities), [base.span.compareText](base.md#base.span.compareText), [features.discover-names.unknownIdsIn](features.md#features.discover-names.unknownIdsIn)
+    - fn [unknownIdsIn](../../src/discover-names.ts#L207) (snapshot: AnalysisSnapshot, text: string) → string[] <!-- internal -->
+      <a id="features.discover-names.unknownIdsIn"></a><br>`` `a.b.c` `` in `text` whose first segment is a layer of the snapshot and which the snapshot does not have.
+      - calls [base.span.compareText](base.md#base.span.compareText)
+    - fn [jsonOf](../../src/discover-names.ts#L217) (answer: string) → unknown <!-- internal -->
+      <a id="features.discover-names.jsonOf"></a>
+    - fn [isRecord](../../src/discover-names.ts#L229) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+      <a id="features.discover-names.isRecord"></a>
+    - fn [oneLine](../../src/discover-names.ts#L234) (value: unknown) → string <!-- internal -->
+      <a id="features.discover-names.oneLine"></a><br>A string of the answer on one line, without a comment it could open.
+    - fn [entities](../../src/discover-names.ts#L239) (value: unknown) → string[] <!-- internal -->
+      <a id="features.discover-names.entities"></a><br>Entities as the README lists them: one line each, no `, ` inside (the list's separator).
+      - calls [features.discover-names.oneLine](features.md#features.discover-names.oneLine)
+    - fn [flowAnchor](../../src/discover-names.ts#L246) (name: string) → string
+      <a id="features.discover-names.flowAnchor"></a><br>GitHub's anchor of a `# flow <name>` heading.
+    - fn [domainOrder](../../src/discover-names.ts#L256) (a: string, b: string) → number <!-- internal -->
+      <a id="features.discover-names.domainOrder"></a><br>Domains in the README's order: the known ones, then others by name, `Інше` last.
+      - calls [base.span.compareText](base.md#base.span.compareText)
+    - fn [renderProcesses](../../src/discover-names.ts#L266) (processes: readonly BusinessProcess[], fileOf: (flow: string) => string | null) → string
+      <a id="features.discover-names.renderProcesses"></a><br>The README of the view: domain → process → flows, each process under its provenance, with its description, entities and links to its flows in the layer files. The same processes give the same bytes.
+      - calls [features.discover-names.domainOrder](features.md#features.discover-names.domainOrder), [base.span.compareText](base.md#base.span.compareText), [features.discover.proseLine](features.md#features.discover.proseLine), [features.discover-names.flowAnchor](features.md#features.discover-names.flowAnchor)
+    - fn [parseProcesses](../../src/discover-names.ts#L287) (text: string) → BusinessProcess[]
+      <a id="features.discover-names.parseProcesses"></a><br>The processes of a README `renderProcesses` wrote; a file without the generated marker has none.
+      - calls [features.discover.unproseLine](features.md#features.discover.unproseLine)
+    - fn [processesPath](../../src/discover-names.ts#L318) (specDir: string) → string
+      <a id="features.discover-names.processesPath"></a><br>The README's path relative to the root.
+      - calls [base.config.specPath](base.md#base.config.specPath)
+    - fn [readProcesses](../../src/discover-names.ts#L323) (root: string, specDir: string) → BusinessProcess[]
+      <a id="features.discover-names.readProcesses"></a><br>The processes saved under `<dir>/flows-discovered/README.md` of `root`; none without the file.
+      - calls [features.discover-names.processesPath](features.md#features.discover-names.processesPath), [features.discover-names.parseProcesses](features.md#features.discover-names.parseProcesses)
+    - fn [processViews](../../src/discover-names.ts#L333) (snapshot: AnalysisSnapshot, spec: SpecIR, processes: readonly BusinessProcess[]) → DiagramProcess[]
+      <a id="features.discover-names.processViews"></a><br>The saved processes as the diagram draws them: each flow found again in a fresh discovery, with its trigger and the steps right under it; a flow no longer discovered is left out, and a process left without flows too.
+      - calls [features.discover.discoverFlows](features.md#features.discover.discoverFlows), [features.discover.specifiedTriggers](features.md#features.discover.specifiedTriggers), [features.discover.firstLevelSteps](features.md#features.discover.firstLevelSteps)
   - module [discover](../../src/discover.ts#L1)
     <a id="features.discover"></a><br>`keylang flows discover` and `keylang flows adopt` (business-flows/11): a flow draft for every entry point of the snapshot, `draftFlow` from the entry's fn, as a generated view `<dir>/flows-discovered/<layer>.md` (ADR 0014: a view, not a spec — `check` does not read it). A…
+    - brief [base.brief](base.md#base.brief)
     - draft [features.draft](features.md#features.draft)
     - map [map.map](map.md#map.map)
     - parser [lang.parser](lang.md#lang.parser)
     - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
     - snapshot [map.snapshot](map.md#map.snapshot)
     - span [base.span](base.md#base.span)
-    - type [DiscoverOptions](../../src/discover.ts#L22)
+    - type [DiscoverOptions](../../src/discover.ts#L23)
       <a id="features.discover.DiscoverOptions"></a>
-    - type [DiscoveredFlow](../../src/discover.ts#L34)
+    - type [DiscoveredFlow](../../src/discover.ts#L35)
       <a id="features.discover.DiscoveredFlow"></a><br>One discovered flow: the draft of one entry point's fn.
-    - type [Discovery](../../src/discover.ts#L50)
+    - type [Discovery](../../src/discover.ts#L53)
       <a id="features.discover.Discovery"></a>
-    - fn [specifiedTriggers](../../src/discover.ts#L61) (flows: readonly Flow[]) → Map<string, { file: string; flow: string }>
+    - fn [specifiedTriggers](../../src/discover.ts#L64) (flows: readonly Flow[]) → Map<string, { file: string; flow: string }>
       <a id="features.discover.specifiedTriggers"></a><br>Each trigger the hand-written flows name, with the first flow (by file, then name) that names it.
       - calls [base.span.compareText](base.md#base.span.compareText)
-    - fn [discoverFlows](../../src/discover.ts#L74) (snapshot: AnalysisSnapshot, specified: ReadonlyMap<string, { file: string; flow: string }>, options: DiscoverOptions = {}) → Discovery
+    - fn [discoverFlows](../../src/discover.ts#L77) (snapshot: AnalysisSnapshot, specified: ReadonlyMap<string, { file: string; flow: string }>, options: DiscoverOptions = {}) → Discovery
       <a id="features.discover.discoverFlows"></a><br>The flows of the view: one draft per fn an entry point names (the first entry of a fn, in the snapshot's order, labels it), names kept apart as `code-to-spec` keeps them, grouped by the trigger's layer, flows of a file by name. The same snapshot and specs give the same bytes.
-      - calls [features.draft.distinctNames](features.md#features.draft.distinctNames), [features.draft.draftFlow](features.md#features.draft.draftFlow), [lang.parser.isTriggerKind](lang.md#lang.parser.isTriggerKind), [features.discover.holesBySource](features.md#features.discover.holesBySource), [features.discover.withComment](features.md#features.discover.withComment), [features.discover.quoted](features.md#features.discover.quoted), [base.span.compareText](base.md#base.span.compareText)
-    - fn [adoptedFlow](../../src/discover.ts#L122) (flow: DiscoveredFlow, specDir: string) → FlowDraft
+      - calls [features.draft.distinctNames](features.md#features.draft.distinctNames), [features.draft.draftFlow](features.md#features.draft.draftFlow), [lang.parser.isTriggerKind](lang.md#lang.parser.isTriggerKind), [features.discover.holesBySource](features.md#features.discover.holesBySource), [features.discover.offlineDescription](features.md#features.discover.offlineDescription), [features.discover.firstLevelSteps](features.md#features.discover.firstLevelSteps), [features.discover.withComment](features.md#features.discover.withComment), [features.discover.quoted](features.md#features.discover.quoted), [base.span.compareText](base.md#base.span.compareText)
+    - fn [adoptedFlow](../../src/discover.ts#L126) (flow: DiscoveredFlow, specDir: string) → FlowDraft
       <a id="features.discover.adoptedFlow"></a><br>The draft `flows adopt` proposes: the discovered flow with its comment turned into provenance — `adopted`, and the view's file it came from.
-    - fn [discoverySummary](../../src/discover.ts#L129) (discovery: Pick<Discovery, "flows" | "specified">) → string
+    - fn [discoverySummary](../../src/discover.ts#L133) (discovery: Pick<Discovery, "flows" | "specified">) → string
       <a id="features.discover.discoverySummary"></a><br>`discovered N flows (M already specified), K with blind spots`.
-    - fn [holesBySource](../../src/discover.ts#L135) (snapshot: AnalysisSnapshot) → Map<string, number> <!-- internal -->
+    - fn [holesBySource](../../src/discover.ts#L139) (snapshot: AnalysisSnapshot) → Map<string, number> <!-- internal -->
       <a id="features.discover.holesBySource"></a><br>The unresolved and dynamic calls of each fn: what `draftFlow` writes as an `unresolved` comment.
-    - fn [withComment](../../src/discover.ts#L145) (text: string, comment: string) → string <!-- internal -->
-      <a id="features.discover.withComment"></a><br>The draft with an HTML comment as its own paragraph under the heading.
-    - fn [quoted](../../src/discover.ts#L151) (label: string) → string <!-- internal -->
+    - fn [withComment](../../src/discover.ts#L149) (text: string, comment: string, described: { text: string; ids: string[] } | null = null) → string <!-- internal -->
+      <a id="features.discover.withComment"></a><br>The draft with an HTML comment as its own paragraph under the heading, then the description with its provenance.
+      - calls [features.discover.proseLine](features.md#features.discover.proseLine)
+    - fn [firstLevelSteps](../../src/discover.ts#L156) (draftText: string) → string[]
+      <a id="features.discover.firstLevelSteps"></a><br>IDs of the steps right under the trigger of a draft (` - step <id>`), in order.
+    - fn [offlineDescription](../../src/discover.ts#L170) (snapshot: AnalysisSnapshot, trigger: string, steps: readonly string[]) → { text: string; ids: string[] } | null
+      <a id="features.discover.offlineDescription"></a><br>What a discovered flow does, in the words of the code (business-flows/12, offline first): the trigger's doc comment (a JSDoc, docblock, Python docstring or Rust doc comment, as the snapshot keeps it in `doc`), then the first sentence of the doc of each step right under it.…
+      - calls [base.brief.firstSentence](base.md#base.brief.firstSentence)
+    - fn [proseLine](../../src/discover.ts#L195) (text: string) → string
+      <a id="features.discover.proseLine"></a><br>One line of prose that opens no block and hides nothing: `<` outside code is `&lt;`, `-->` is `--&gt;`, a start that would be a list item, heading, quote or fence is escaped with a backslash.
+    - fn [unproseLine](../../src/discover.ts#L208) (line: string) → string
+      <a id="features.discover.unproseLine"></a><br>The text of `proseLine` back: the escape and the entities undone.
+    - fn [quoted](../../src/discover.ts#L218) (label: string) → string <!-- internal -->
       <a id="features.discover.quoted"></a><br>A label inside `"…"` of a comment: no double quote, no `-->`.
   - module [draft-llm](../../src/draft-llm.ts#L1)
     <a id="features.draft-llm"></a><br>`draft flow --mode llm|hybrid` (design §5.1): the model proposes a flow from a compact map, the flow grammar and flows of this repository; an ID that is neither in the snapshot nor declared `planned` sends the draft back once with the nearest real IDs. The answer is reconciled…
