@@ -1,6 +1,6 @@
 # 62: keylang.json з UTF-8 BOM ламає кожну команду (код 2 «invalid JSON»)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -50,11 +50,13 @@ keylang.json починається з байтів EF BB BF, далі валі�
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/config.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/config.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+- 2026-10-08: Регресійний тест `keylang.json with a UTF-8 BOM reads as the same JSON…` у tests/review-config.test.ts (справжній CLI: `check`, `fmt --check keylang`, `parse keylang/rules.md` на репозиторії з keylang.json, що починається з U+FEFF; плюс `withLayers` напряму, бо його кличе лише TUI) падав на старому коді: `invalid JSON: Unexpected token '﻿'`, код 2. Виправлення: `withoutBom` у src/config.ts знімає початковий U+FEFF перед `JSON.parse` у `parseConfig`, `assertFormatOnly` і `withLayers`. docs/design.md §8 це фіксує. `node --test tests/review-config.test.ts` — 10/11; єдиний збій (`the snapshot records the real versions…`) — оточення worktree без власного `node_modules/web-tree-sitter/package.json`, падає й без цієї зміни, `npm run typecheck` — чисто.

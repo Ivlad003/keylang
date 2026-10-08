@@ -212,11 +212,20 @@ function defaultModule(languages: readonly Language[]): Config["module"] {
   return modes.size === 1 ? [...modes][0]! : "file";
 }
 
+/**
+ * `text` without a leading U+FEFF: a keylang.json saved with a UTF-8 BOM
+ * (PowerShell 5.1 `-Encoding UTF8`, old Notepad) is the same JSON, as the
+ * `.md` parser, test reports and trace already read theirs.
+ */
+function withoutBom(text: string): string {
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+}
+
 /** Parse and validate `keylang.json`. Errors name the file and the field. */
 export function parseConfig(file: string, text: string): RawConfig {
   let value: unknown;
   try {
-    value = JSON.parse(text);
+    value = JSON.parse(withoutBom(text));
   } catch (e) {
     throw new Error(`${file}: invalid JSON: ${e instanceof Error ? e.message : String(e)}`);
   }
@@ -365,7 +374,7 @@ export function acceptFormat(file: string, got: unknown): RuleFormat {
 export function assertFormatOnly(file: string, text: string): void {
   let value: unknown;
   try {
-    value = JSON.parse(text);
+    value = JSON.parse(withoutBom(text));
   } catch (e) {
     throw new Error(`${file}: cannot determine \`format\`: invalid JSON: ${e instanceof Error ? e.message : String(e)}`);
   }
@@ -398,7 +407,7 @@ export function configToJson(c: Config): string {
 export function withLayers(file: string, text: string, layers: Readonly<Record<string, readonly string[]>>): { text: string } | { error: string } {
   let value: unknown;
   try {
-    value = JSON.parse(text);
+    value = JSON.parse(withoutBom(text));
   } catch (e) {
     return { error: `${file}: invalid JSON: ${e instanceof Error ? e.message : String(e)}` };
   }
