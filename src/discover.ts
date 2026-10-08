@@ -60,12 +60,39 @@ export interface Discovery {
   files: Map<string, string>;
 }
 
-/** Each trigger the hand-written flows name, with the first flow (by file, then name) that names it. */
+/**
+ * Each trigger the hand-written flows name, with the first flow (by file, then
+ * name) that names it. A `trigger event <id>` flow also names the subscribers
+ * it starts from: the steps right under it (ADR 0023 п. 1).
+ */
 export function specifiedTriggers(flows: readonly Flow[]): Map<string, { file: string; flow: string }> {
   const out = new Map<string, { file: string; flow: string }>();
   const sorted = [...flows].sort((a, b) => compareText(a.file, b.file) || compareText(a.name, b.name));
-  for (const flow of sorted) for (const trigger of flow.triggers) if (!out.has(trigger.target.target)) out.set(trigger.target.target, { file: flow.file, flow: flow.name });
+  const add = (id: string, flow: Flow): void => {
+    if (!out.has(id)) out.set(id, { file: flow.file, flow: flow.name });
+  };
+  for (const flow of sorted) {
+    for (const trigger of flow.triggers) {
+      add(trigger.target.target, flow);
+      if (trigger.event === null || trigger !== flow.triggers[0]) continue;
+      for (const item of [...trigger.children, ...flow.items]) if (item.kind === "step") add(item.target.target, flow);
+    }
+  }
   return out;
+}
+
+/**
+ * The event an `observer` entry point subscribes its fn to: the event node
+ * whose observer edge targets the fn at the entry's config line. Null when
+ * the snapshot has no such edge (an adapter that gives no event nodes).
+ */
+function observedEvent(snapshot: AnalysisSnapshot, entry: EntryPoint): string | null {
+  if (entry.kind !== "observer") return null;
+  for (const edge of snapshot.edges) {
+    if (edge.kind !== "call" || edge.via !== "observer" || edge.target !== entry.id || snapshot.nodes[edge.source]?.kind !== "event") continue;
+    if (edge.site !== undefined && edge.site.replace(/:\d+$/, "") === entry.source) return edge.source;
+  }
+  return null;
 }
 
 /**
@@ -98,8 +125,14 @@ export function discoverFlows(snapshot: AnalysisSnapshot, specified: ReadonlyMap
     chosen.push(entry);
   }
   const depth = options.depth ?? 4;
-  // An entry point of a kind the grammar names is written as a typed trigger, which `check` compares with the entry.
-  const drafts = distinctNames(chosen.map((entry) => draftFlow(snapshot, entry.id, { depth, ...(isTriggerKind(entry.kind) ? { entry: entry.kind } : {}) })));
+  // An entry point of a kind the grammar names is written as a typed trigger, which `check` compares with the entry;
+  // an observer whose event the snapshot knows, as `trigger event <id>` with the observer as its first step.
+  const drafts = distinctNames(
+    chosen.map((entry) => {
+      const event = observedEvent(snapshot, entry);
+      return draftFlow(snapshot, entry.id, { depth, ...(isTriggerKind(entry.kind) ? { entry: entry.kind } : {}), ...(event !== null ? { event } : {}) });
+    }),
+  );
   const holes = holesBySource(snapshot);
   const flows = drafts.map((draft, i): DiscoveredFlow => {
     const entry = chosen[i]!;
@@ -152,10 +185,15 @@ function withComment(text: string, comment: string, described: { text: string; i
   return [heading, "", `<!-- ${comment} -->`, ...description, ...rest].join("\n");
 }
 
-/** IDs of the steps right under the trigger of a draft (`  - step <id>`), in order. */
+/**
+ * IDs of the steps right under the trigger of a draft (`  - step <id>`), in
+ * order; under `trigger event`, the steps of its subscriber, which is the one
+ * step under the trigger (`    - step <id>`).
+ */
 export function firstLevelSteps(draftText: string): string[] {
   const out: string[] = [];
-  for (const m of draftText.matchAll(/^ {2}- step (\S+)/gm)) out.push(m[1]!);
+  const pattern = /^- trigger event /m.test(draftText) ? /^ {4}- step (\S+)/gm : /^ {2}- step (\S+)/gm;
+  for (const m of draftText.matchAll(pattern)) out.push(m[1]!);
   return out;
 }
 

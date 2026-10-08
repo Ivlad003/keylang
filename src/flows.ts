@@ -135,6 +135,8 @@ export function evaluateFlows(compiled: SpecIR, index: Index, input: FlowInput):
     // A flow is matched from its first trigger. Later triggers stay in the spec and are reported, not matched.
     const triggerNode = flow.triggers[0];
     const trigger = triggerNode?.target.target ?? null;
+    // `trigger event <id>` (ADR 0023 п. 1): the steps right under it run in the event's subscribers.
+    const eventTrigger = triggerNode?.event && trigger !== null && input.nodes[trigger]?.kind === "event" ? trigger : null;
     let key = 0;
     const keys = new Map<FlowNode, number>();
     const shape = (nodes: readonly FlowItem[]): ShapeNode[] =>
@@ -168,7 +170,18 @@ export function evaluateFlows(compiled: SpecIR, index: Index, input: FlowInput):
         const ownBlock = laterTrigger ? "a flow is matched from its first trigger only" : blocked;
         const plan = planned.get(id);
         const pending = plan !== undefined && !plan.implemented;
-        const known = idVerdict(id, pending ? plan : undefined, node.span, file, index, input, verdict);
+        const isEvent = node.kind === "trigger" && node.event !== null;
+        // An unknown event is K204 of resolution, not a dangling K001.
+        const known = idVerdict(id, pending ? plan : undefined, node.span, file, index, input, verdict, isEvent ? "K204 unknown event" : undefined);
+        if (isEvent && known !== "fail") {
+          const declared = index.lookup(id);
+          const code = input.nodes[id];
+          // A fn, type or module is K205 of resolution.
+          if (code?.kind === "event" || (code === undefined && declared.kind === "exact" && declared.decl.kind === "event")) {
+            const subscribers = subscribersVerdict(graph, id, input);
+            verdict("static", `event ${id}`, subscribers.verdict, file, node.span, subscribers.message, { provenance: "syntactic" });
+          }
+        }
         if (node.kind === "trigger" && node.entry !== null && known !== "fail") {
           const entry = entryVerdict(node.entry.kind, id, input.entries);
           if (entry.mismatch) diagnostics.push(diagnostic("K205", file, node.entry.span, entry.message));
@@ -180,7 +193,7 @@ export function evaluateFlows(compiled: SpecIR, index: Index, input: FlowInput):
           if (pending) verdict("static", id, "unverified", file, node.span, `planned ${plan.kind}, not implemented`);
           else if (parentPlanned) verdict("static", id, "unverified", file, node.span, `parent \`${parent}\` is planned, not implemented`);
           else if (input.nodes[id] !== undefined) {
-            const reach = reachability(graph, input, parent, id);
+            const reach = parent !== null && parent === eventTrigger ? subscriberReach(graph, input, parent, id) : reachability(graph, input, parent, id);
             verdict("static", id, reach.verdict, file, node.span, reach.message, { provenance: "syntactic" });
           } else verdict("static", id, "unverified", file, node.span, "not in the snapshot (opaque module)");
         }
@@ -248,6 +261,20 @@ export function evaluateFlows(compiled: SpecIR, index: Index, input: FlowInput):
       if (node.kind === "when") {
         const evidence = traceOf();
         if (evidence) verdict("trace", `when ${node.condition}`, evidence.verdict, file, node.span, evidence.message, traceProvenance(evidence));
+      }
+      // `emits event events.<name>` (ADR 0023 п. 1): a dispatch of the event in the code the parent reaches. A prose name has no static verdict.
+      if (node.kind === "emits" && node.target !== null) {
+        const id = node.target.target;
+        const parentPlanned = parent !== null && planned.get(parent)?.implemented === false;
+        const area = `emits ${id}`;
+        // An unknown event is K204, a non-event K205 (resolution): no verdict would add to them.
+        if (parentPlanned) verdict("static", area, "unverified", file, node.target.span, `parent \`${parent}\` is planned, not implemented`);
+        else if (input.nodes[id]?.kind === "event") {
+          const reach = emitsVerdict(graph, input, parent, id);
+          verdict("static", area, reach.verdict, file, node.target.span, reach.message, { provenance: "syntactic" });
+        } else if (index.lookup(id).kind === "exact" && input.nodes[id] === undefined) {
+          verdict("static", area, "unverified", file, node.target.span, `\`${id}\` is not an event the snapshot records; run \`keylang map\` again`);
+        }
       }
       // Without `check.tests` the channel is not asked for: nothing is printed and nothing counts.
       const tests = input.tests;
@@ -374,6 +401,7 @@ function idVerdict(
   index: Index,
   input: FlowInput,
   verdict: (channel: Channel, area: string, value: Verdict["verdict"], file: string, span: Span, message: string) => void,
+  missing = "K001 dangling reference",
 ): Verdict["verdict"] {
   const say = (value: Verdict["verdict"], message: string): Verdict["verdict"] => {
     verdict("ID", id, value, file, span, message);
@@ -382,7 +410,62 @@ function idVerdict(
   if (plan) return say("unverified", `planned ${plan.kind}`);
   if (input.nodes[id] !== undefined || index.lookup(id).kind === "exact") return say("ok", "exact");
   if (moduleMembers(input.nodes, id) === "opaque") return say("unverified", "opaque module");
-  return say("fail", "K001 dangling reference");
+  return say("fail", missing);
+}
+
+/** The subscribers of an event: its `observer` edges, whichever static mode, in the snapshot's order. */
+function subscribersOf(graph: CallGraph, event: string): Step[] {
+  return (graph.resolved.get(event) ?? []).filter((step) => step.edge.via === "observer");
+}
+
+/** A subscriber as a verdict names it: the fn and the line that subscribes it, with the area when it is not global. */
+function describeSubscriber(step: Step): string {
+  const scope = step.edge.scope && step.edge.scope !== "global" ? `, scope ${step.edge.scope}` : "";
+  return `\`${step.to}\` (${step.edge.site ?? at(step.edge)}${scope})`;
+}
+
+/**
+ * Static evidence of `trigger event <id>`: the event's subscribers, listed with
+ * the config lines that subscribe them. None is `unverified`: a subscriber
+ * keylang did not read (another module, a config it skips) may still exist.
+ */
+function subscribersVerdict(graph: CallGraph, event: string, input: FlowInput): { verdict: Verdict["verdict"]; message: string } {
+  if (input.nodes[event]?.kind !== "event") return { verdict: "unverified", message: `\`${event}\` is not an event the snapshot records; run \`keylang map\` again` };
+  const subscribers = subscribersOf(graph, event);
+  if (subscribers.length === 0) return { verdict: "unverified", message: `no subscriber of \`${event}\` in the code and config keylang read` };
+  return { verdict: "ok", message: `subscribers: ${subscribers.map(describeSubscriber).join(", ")}` };
+}
+
+/**
+ * A step right under `trigger event <id>`: reached from at least one of the
+ * event's subscribers (or a subscriber itself). `ok` names the subscriber;
+ * otherwise `unverified` when some subscriber may reach it, `fail` when every
+ * one is a confirmed absence.
+ */
+function subscriberReach(graph: CallGraph, input: FlowInput, event: string, target: string): { verdict: Verdict["verdict"]; message: string } {
+  const subscribers = subscribersOf(graph, event);
+  if (subscribers.length === 0) return { verdict: "unverified", message: `no subscriber of \`${event}\` to reach it from` };
+  const own = subscribers.find((step) => step.to === target);
+  if (own) return { verdict: "ok", message: `a subscriber of \`${event}\` through ${describeConfig(own.edge)}` };
+  const results = subscribers.map((step) => ({ step, reach: reachability(graph, input, step.to, target) }));
+  const ok = results.find((item) => item.reach.verdict === "ok");
+  if (ok) return { verdict: "ok", message: `subscriber ${describeSubscriber(ok.step)}: ${ok.reach.message}` };
+  const open = results.find((item) => item.reach.verdict === "unverified");
+  if (open) return { verdict: "unverified", message: `subscriber ${describeSubscriber(open.step)}: ${open.reach.message}` };
+  return { verdict: "fail", message: `absence: no subscriber of \`${event}\` reaches it: no call path from ${results.map((item) => `\`${item.step.to}\``).join(", ")}; add a call to \`${target}\` in a subscriber or in a function it reaches` };
+}
+
+/**
+ * Static evidence of `emits event <id>` (ADR 0023 п. 1): the code `parent`
+ * reaches dispatches the event, by the rules of a step to an event: `ok` over
+ * the edges the mode follows (in `shape` a dispatch is a framework call, so it
+ * is `unverified` there), `unverified` with the reason when a hole or a
+ * dispatch of a computed name lies on the way, `fail` when the area is read in
+ * full and holds no dispatch of it.
+ */
+function emitsVerdict(graph: CallGraph, input: FlowInput, parent: string | null, event: string): { verdict: Verdict["verdict"]; message: string } {
+  if (parent === null) return { verdict: "unverified", message: "no trigger or step that emits it" };
+  return reachability(graph, input, parent, event);
 }
 
 interface Step {
@@ -645,6 +728,7 @@ function reachability(graph: CallGraph, input: FlowInput, parent: string | null,
   // Calls read from a file that does not parse may be missing: an absence there is not confirmed.
   const unread = [...depth.keys()].map((id) => graph.unreadable.get(id)).find((reason) => reason !== undefined);
   if (unread) return { verdict: "unverified", message: `no call path from ${parent} in the static graph; ${unread}` };
+  if (to?.kind === "event") return { verdict: "fail", message: `absence: no dispatch of \`${target}\` in the code ${parent} reaches; its dispatchers are called only by name, and no call from ${parent}'s reachable code can reach them` };
   return { verdict: "fail", message: `absence: no call path from ${parent}; \`${target}\` and its callers are called only by name, and no call from ${parent}'s reachable code can reach them; add a call to \`${target}\` in \`${parent}\` or in a function it reaches` };
 }
 

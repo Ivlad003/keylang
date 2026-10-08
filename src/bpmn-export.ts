@@ -48,10 +48,10 @@ function ids(): (key: string) => string {
 
 type StartKind = "message" | "timer" | "signal" | null;
 
-/** The start event of an entry point's kind (ADR 0023): a request or a message waits for a message, cron for a timer, an observer for a signal. */
+/** The start event of an entry point's kind (ADR 0023): a request or a message waits for a message, cron for a timer, an observer or `trigger event` for a signal. */
 export function startKindOf(kind: string | null | undefined): StartKind {
   if (kind === "cron") return "timer";
-  if (kind === "observer") return "signal";
+  if (kind === "observer" || kind === "event") return "signal";
   if (kind === "route" || kind === "rest" || kind === "graphql" || kind === "consumer" || kind === "webhook" || kind === "controller") return "message";
   return null;
 }
@@ -66,7 +66,7 @@ function flowFacts(input: DiagramInput): { triggers: Map<string, string | null>;
   if (flow) {
     const entries = new Map((input.snapshot?.entries ?? []).map((entry) => [entry.id, entry.kind as string]));
     walkFlow(flow, (item) => {
-      if (item.kind === "trigger") triggers.set(`trigger:${item.span.start.line}`, item.entry?.kind ?? entries.get(item.target.target) ?? null);
+      if (item.kind === "trigger") triggers.set(`trigger:${item.span.start.line}`, item.event !== null ? "event" : (item.entry?.kind ?? entries.get(item.target.target) ?? null));
       else if (item.kind === "continues") continues.push(item.flow);
     });
   }
@@ -199,6 +199,8 @@ function bpmnOf(diagram: Diagram, input: DiagramInput, name: string): string {
 
   const signals = new Map<string, string>();
   for (const node of inside) if (node.kind === "event" && !signals.has(node.label)) signals.set(node.label, id(`signal:${node.label}`));
+  // `trigger event <id>` starts on the signal its event throws: the same signal as an `emits event <id>` of another flow.
+  for (const node of inside) if (node.kind === "start" && facts.triggers.get(node.id) === "event" && !signals.has(node.label)) signals.set(node.label, id(`signal:${node.label}`));
 
   const out: string[] = [];
   out.push('<?xml version="1.0" encoding="UTF-8"?>');
@@ -264,6 +266,7 @@ function flowNode(node: DiagramNode, element: string, attrs: string, entryKind: 
       const head = `    <bpmn:startEvent id="${element}"${named}${attrs}`;
       if (kind === null) return [`${head} />`];
       if (kind === "timer") return [`${head}>`, `      <bpmn:timerEventDefinition id="${id(`${node.id}:def`)}" />`, "    </bpmn:startEvent>"];
+      if (kind === "signal" && entryKind === "event" && signals.has(node.label)) return [`${head}>`, `      <bpmn:signalEventDefinition id="${id(`${node.id}:def`)}" signalRef="${signals.get(node.label)!}" />`, "    </bpmn:startEvent>"];
       return [`${head}>`, `      <bpmn:${kind}EventDefinition id="${id(`${node.id}:def`)}" />`, "    </bpmn:startEvent>"];
     }
     case "gateway":
