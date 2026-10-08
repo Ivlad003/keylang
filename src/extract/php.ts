@@ -16,7 +16,7 @@
 // writes, which PHP does not check: provenance `docblock`.
 
 import { asciiLowerCase } from "../languages.ts";
-import type { CallFact, DeclFact, ExportRow, FileFacts, ImportFact, TypeRefFact, UnsupportedFact, ValueRefFact } from "./facts.ts";
+import type { CallFact, DeclFact, ExportRow, FileFacts, ImportFact, PassFact, TypeRefFact, UnsupportedFact, ValueRefFact } from "./facts.ts";
 import { blockCommentBody, isLicense, jsdocDescription, nonEmpty } from "./doc-comments.ts";
 import { errorLine, fingerprint, located, withTree, type Node } from "./treesitter.ts";
 
@@ -638,13 +638,23 @@ function walkScope(node: Node, visit: (n: Node) => void): void {
  */
 function callsIn(node: Node, scope: Scope, collector: Collector, closure: boolean): CallFact[] {
   const out: CallFact[] = [];
-  const walk = (n: Node, inner: boolean): void => {
+  const walk = (n: Node, inner: ClosureState): void => {
     if (DECLARATION_NODES.has(n.type) && n.id !== node.id) return;
     if (CALL_NODES.has(n.type)) {
       const fact = callOf(n, scope, collector);
       if (fact) {
         const at = located(n);
-        out.push({ ...fact, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, ...(inner ? { closure: true as const } : {}) });
+        const passes = passesOf(n, scope, collector);
+        out.push({
+          ...fact,
+          ...(passes.length > 0 ? { passes } : {}),
+          line: at.line,
+          col: at.col,
+          endLine: at.endLine,
+          endCol: at.endCol,
+          ...(inner ? { closure: true as const } : {}),
+          ...(inner && inner !== "stored" ? { closureArg: inner } : {}),
+        });
       }
     } else if (n.type === "class_constant_access_expression") {
       // `X::class` reads the class as a value: whoever holds it may construct it.
@@ -656,20 +666,158 @@ function callsIn(node: Node, scope: Scope, collector: Collector, closure: boolea
       const written = classNameOf(n.childForFieldName("scope"));
       if (written && !SPECIAL_CLASSES.has(asciiLowerCase(written))) collector.klass(written, n.childForFieldName("scope")!, scope.names);
     } else if (n.type === "array_creation_expression") arrayCallable(n, scope, collector);
-    for (const child of n.namedChildren) walk(child, inner || CLOSURE_NODES.has(n.type));
+    for (const child of n.namedChildren) walk(child, CLOSURE_NODES.has(n.type) ? closureState(n, inner) : inner);
   };
-  walk(node, closure);
+  walk(node, closure ? "stored" : null);
   return out;
 }
 
-/** `[$this, 'save']`, `[Order::class, 'place']`, `['Order', 'place']`: a method read as a callable value. */
+/**
+ * Where a call sits with respect to closures: null outside them; `stored`
+ * under a closure some value holds (`$f = fn() => …`, a returned closure, an
+ * anonymous class); otherwise the position of the outermost closure, every
+ * closure between being an argument of a call (`$mutex->execute($id, fn() => …)`).
+ */
+type ClosureState = null | "stored" | { line: number; col: number };
+
+function closureState(closure: Node, inner: ClosureState): ClosureState {
+  if (inner === "stored") return "stored";
+  if (closure.type === "anonymous_class" || closure.parent?.type !== "argument") return "stored";
+  if (inner) return inner;
+  const at = located(closure);
+  return { line: at.line, col: at.col };
+}
+
+/** Builtins whose string argument PHP reads as a function name: `'helper'` there is a callable, not text. */
+const CALLABLE_TAKING = new Set([...CALLABLE_CALLS, "array_map", "array_filter", "array_walk", "array_walk_recursive", "array_reduce", "usort", "uasort", "uksort", "iterator_apply", "is_callable", "register_shutdown_function", "spl_autoload_register", "set_error_handler", "set_exception_handler"]);
+
+/**
+ * Callable references among the arguments of a call: `[$this, 'm']`,
+ * `[self::class, 'm']`, `[$obj, 'm']` with the class of `$obj` known,
+ * `[Order::class, 'm']`, `'Order::m'`, `\Closure::fromCallable(<any of these>)`,
+ * the first-class callable `$this->m(...)` / `Order::m(...)` / `f(...)`, and a
+ * plain `'f'` where PHP reads the string as a function name. A closure literal
+ * is not a pass: its calls carry `closureArg`.
+ */
+function passesOf(call: Node, scope: Scope, collector: Collector): PassFact[] {
+  const args = call.childForFieldName("arguments") ?? call.namedChildren.find((c) => c.type === "arguments");
+  if (!args) return [];
+  const fn = call.type === "function_call_expression" ? call.childForFieldName("function") : null;
+  const plain = fn?.type === "name" || fn?.type === "qualified_name" ? CALLABLE_TAKING.has(asciiLowerCase(lastSegment(fn.text.replace(/\s+/g, "")))) : false;
+  const out: PassFact[] = [];
+  args.namedChildren
+    .filter((a) => a.type === "argument")
+    .forEach((arg, index) => {
+      // A named argument (`callback: $f`) holds its value last.
+      const value = arg.namedChildren.at(-1);
+      const found = value ? callableOf(value, scope, collector, plain) : null;
+      if (!found) return;
+      const at = located(found.node);
+      out.push({
+        arg: index,
+        path: "",
+        callee: found.callee,
+        ...(found.bound ? { bound: found.bound } : {}),
+        ...(found.receiver ? { receiver: found.receiver } : {}),
+        ...(found.docblock ? { docblock: found.docblock } : {}),
+        text: firstLine(at.text),
+        line: at.line,
+        col: at.col,
+        endLine: at.endLine,
+        endCol: at.endCol,
+      });
+    });
+  return out;
+}
+
+/** The callable an expression names, with the node that spells it; null when it names none keylang can follow. */
+function callableOf(value: Node, scope: Scope, collector: Collector, plainStrings: boolean): { callee: string; bound?: "parameter" | "local"; receiver?: string; docblock?: { line: number; col: number }; node: Node } | null {
+  const node = unparenthesized(value);
+  const method = (holder: string | null, name: string): string | null => (holder ? `${holder}.${name}` : null);
+  if (node.type === "array_creation_expression") {
+    const elements = node.namedChildren.filter((c) => c.type === "array_element_initializer");
+    if (elements.length !== 2) return null;
+    const [target, member] = elements.map((e) => e.namedChildren[0] ?? null);
+    const name = member ? stringValue(member) : null;
+    if (!target || !name || !/^[A-Za-z_\x80-￿][A-Za-z0-9_\x80-￿]*$/.test(name)) return null;
+    if (target.type === "variable_name") {
+      const variable = target.text.replace(/^\$/, "");
+      if (variable === "this") return scope.ctx ? { callee: `this.${name}`, node } : null;
+      const receiver = scope.classes.get(variable);
+      return receiver ? { callee: `${variable}.${name}`, bound: scope.bound.get(variable) ?? "local", receiver, node } : null;
+    }
+    // `[$this->store, 'flush']`: a property whose class the class body names (or its docblock does).
+    if ((target.type === "member_access_expression" || target.type === "nullsafe_member_access_expression") && target.childForFieldName("object")?.text === "$this") {
+      const prop = target.childForFieldName("name");
+      const field = prop?.type === "name" ? scope.ctx?.fields.get(prop.text) : undefined;
+      if (!prop || !field) return null;
+      return { callee: `this.${prop.text}.${name}`, receiver: field.cls, ...(field.docblock ? { docblock: field.docblock } : {}), node };
+    }
+    if (target.type === "class_constant_access_expression") {
+      const [scopeNode, constant] = target.namedChildren;
+      if (asciiLowerCase(constant?.text ?? "") !== "class" || !scopeNode) return null;
+      const callee = method(classHolder(scopeNode, name, scope, collector), name);
+      return callee ? { callee, node } : null;
+    }
+    // A class name in a string is fully qualified, whatever `use` and namespace surround it.
+    const written = stringValue(target);
+    if (written && /^\\?[A-Za-z_\x80-￿][A-Za-z0-9_\\\x80-￿]*$/.test(written) && !SPECIAL_CLASSES.has(asciiLowerCase(written))) return { callee: `${collector.klass(qualifiedString(written), target, scope.names)}.${name}`, node };
+    return null;
+  }
+  if (node.type === "string" || node.type === "encapsed_string") {
+    const text = stringValue(node);
+    if (!text) return null;
+    const scoped = /^(\\?[A-Za-z_\x80-￿][A-Za-z0-9_\\\x80-￿]*)::([A-Za-z_\x80-￿][A-Za-z0-9_\x80-￿]*)$/.exec(text);
+    if (scoped) {
+      if (SPECIAL_CLASSES.has(asciiLowerCase(scoped[1]!))) return null;
+      return { callee: `${collector.klass(qualifiedString(scoped[1]!), node, scope.names)}.${scoped[2]}`, node };
+    }
+    if (plainStrings && /^\\?[A-Za-z_\x80-￿][A-Za-z0-9_\\\x80-￿]*$/.test(text)) return { callee: collector.fn(qualifiedString(text), node, scope.names), node };
+    return null;
+  }
+  // `\Closure::fromCallable($x)` makes a closure of the callable `$x`.
+  if (node.type === "scoped_call_expression" && asciiLowerCase(node.childForFieldName("name")?.text ?? "") === "fromcallable" && asciiLowerCase((node.childForFieldName("scope")?.text ?? "").replace(/^\\/, "")) === "closure") {
+    const inner = node.childForFieldName("arguments")?.namedChildren.find((c) => c.type === "argument")?.namedChildren.at(-1);
+    return inner ? callableOf(inner, scope, collector, true) : null;
+  }
+  if (CALL_NODES.has(node.type) && firstClassCallable(node)) {
+    const fact = calleeOf(node, scope, collector);
+    if (!fact || fact.opaque || (fact.bound && !fact.receiver)) return null;
+    return { callee: fact.callee, ...(fact.bound ? { bound: fact.bound } : {}), ...(fact.receiver ? { receiver: fact.receiver } : {}), ...(fact.docblock ? { docblock: fact.docblock } : {}), node };
+  }
+  return null;
+}
+
+/** A name in a string (`'Shop\Infra\Logger'`, `'helper'`) is fully qualified: PHP reads no `use` or namespace into it. */
+function qualifiedString(name: string): string {
+  return name.startsWith("\\") ? name : `\\${name}`;
+}
+
+/** What `X::class` in `[X::class, 'm']` holds: `this` for `self`/`static` (the class for a static `m`), the class for a name; null for `parent`. */
+function classHolder(scopeNode: Node, member: string, scope: Scope, collector: Collector): string | null {
+  const written = classNameOf(scopeNode);
+  if (scopeNode.type === "relative_scope" || (written && SPECIAL_CLASSES.has(asciiLowerCase(written)))) {
+    const relative = asciiLowerCase(scopeNode.text);
+    if (!scope.ctx || relative === "parent") return null;
+    return scope.ctx.statics.has(asciiLowerCase(member)) ? scope.ctx.name : "this";
+  }
+  return written ? collector.klass(written, scopeNode, scope.names) : null;
+}
+
+/** `[$this, 'save']`, `[$this->repo, 'save']`, `[Order::class, 'place']`, `['Order', 'place']`: a method read as a callable value. */
 function arrayCallable(n: Node, scope: Scope, collector: Collector): void {
   const elements = n.namedChildren.filter((c) => c.type === "array_element_initializer");
   if (elements.length !== 2) return;
   const [target, method] = elements.map((e) => e.namedChildren[0] ?? null);
   const name = method?.type === "string" || method?.type === "encapsed_string" ? stringValue(method) : null;
   if (!name || !/^[A-Za-z_\x80-￿][A-Za-z0-9_\x80-￿]*$/.test(name)) return;
-  const holder = target?.type === "variable_name" || target?.type === "class_constant_access_expression" || target?.type === "string" || target?.type === "encapsed_string";
+  const holder =
+    target?.type === "variable_name" ||
+    target?.type === "member_access_expression" ||
+    target?.type === "nullsafe_member_access_expression" ||
+    target?.type === "class_constant_access_expression" ||
+    target?.type === "string" ||
+    target?.type === "encapsed_string";
   if (holder) collector.value(name, n, true);
 }
 
@@ -698,6 +846,15 @@ function firstClassCallable(n: Node): boolean {
  * value.
  */
 function callOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "callee" | "bound" | "receiver" | "opaque" | "docblock"> | null {
+  if (n.type !== "object_creation_expression" && firstClassCallable(n)) {
+    callableValue(n, scope, collector);
+    return null;
+  }
+  return calleeOf(n, scope, collector);
+}
+
+/** The callee of a call node as `callOf` reads it, whether or not the arguments are `(...)`. */
+function calleeOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "callee" | "bound" | "receiver" | "opaque" | "docblock"> | null {
   const opaque = (): Pick<CallFact, "callee" | "opaque"> => ({ callee: n.text.replace(/\s+/g, " ").slice(0, MAX_CALLEE), opaque: true });
   if (n.type === "object_creation_expression") {
     const target = n.namedChildren[0];
@@ -711,10 +868,6 @@ function callOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "ca
     }
     if (target.type === "variable_name") return variableCall(target.text.replace(/^\$/, ""), scope);
     return opaque();
-  }
-  if (firstClassCallable(n)) {
-    callableValue(n, scope, collector);
-    return null;
   }
   if (n.type === "function_call_expression") {
     const fn = n.childForFieldName("function");

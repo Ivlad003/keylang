@@ -1,6 +1,6 @@
 # 05: Граф і draft: callable-посилання й closure, передані аргументом (`cartMutex->execute(\Closure::fromCallable([$this, 'placeOrderRun']))`)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -23,10 +23,10 @@
 
 ## Критерії готовності
 
-- [ ] `draft flow …placeOrder --mode algo --print` на фікстурі-копії Magento-патерну містить `placeOrderRun` → `submitQuote`
-- [ ] тести для PHP, TS, Python: closure-аргумент → ребро; closure у змінній → дірка
-- [ ] семантика в `docs/semantics.md` (розділ «Хуки й режим static») і `docs/snapshot.md`
-- [ ] бенч 03 показує непорожній `placeOrder`
+- [x] `draft flow …placeOrder --mode algo --print` на фікстурі-копії Magento-патерну містить `placeOrderRun` → `submitQuote`
+- [x] тести для PHP, TS, Python: closure-аргумент → ребро; closure у змінній → дірка
+- [x] семантика в `docs/semantics.md` (розділ «Хуки й режим static») і `docs/snapshot.md`
+- [ ] бенч 03 показує непорожній `placeOrder` (перевіряє тікет 03 на справжньому Magento; тут — фікстура-копія патерну)
 
 **Межі:** без читання конфігів фреймворку.
 
@@ -43,3 +43,14 @@
 4. `draft flow` показує такі кроки з коментарем `<!-- keylang:algo via callable -->`.
 
 **Тип `Call.via`** (`src/graph.ts:166`) сьогодні `"default" | "injected"` — розширити об'єднанням і оновити `covers()` (`graph.ts:1212`) та `flows.ts:435/496` (`proves`), де `via` зараз означає лише хуки.
+
+### Реалізовано (2026-10-07)
+
+За постановкою рев'ю (callable-посилання першими, closure — другим):
+
+- **Факти.** `PassFact` (`src/extract/facts.ts`) тепер несе текст і позицію аргумента (і `docblock`, коли клас отримувача — лише з `@var`); `CallFact.closureArg` — позиція найзовнішньої closure, коли кожна closure між викликом і тілом fn — аргумент виклику. Екстрактори: PHP (`passesOf`/`callableOf`: `[$this, 'm']`, `[self::class|static::class, 'm']`, `[$obj, 'm']` і `[$this->prop, 'm']` з відомим класом, `[Order::class, 'm']`, `'Order::m'`, `\Closure::fromCallable(…)`, first-class callable `$this->m(...)` / `Order::m(...)` / `f(...)`, рядок `'f'` в аргументах `call_user_func`/`array_map`/`usort`/…; ім'я в рядку — повне), TS (`passesOf` + `this.m.bind(this)`; `markClosure` замість `insideClosure`), Python (`self.m`, `Cls.m`, `obj.m`, `callback=self.m`, `functools.partial(self.m, …)`; lambda), Rust (`Self::m`, `m`, шлях; `|x| …`).
+- **Граф.** `Call.via` / `SnapshotEdge.via`: `"default" | "injected" | "callable-arg" | "closure-arg"` (тип `Via` у `graph.ts`). `passCallables` додає ребро `callable-arg` на позиції аргумента для кожного pass із `path: ""`, що розв'язується в fn (клас — ні, його конструктор «тікає», як і раніше), незалежно від того, чи розв'язався сам виклик (`$this->cartMutex->execute` через інтерфейс лишається діркою). `push` дає виклику з `closureArg` `via: closure-arg` і `site`. `addCall.covers` — за рангом: прямий виклик (3) > хук/callable/closure-аргумент (2, один перекриває інший) > виклик у збереженій closure (1, різні `via` співіснують). `callsResolved` ребра `callable-arg` не рахує (документовано в `docs/snapshot.md`, рядок `stats`).
+- **Flows.** `provesIn(behavior)`: у `behavior` доводять ребра поза closure і ребра `closure-arg`; у `shape` — лише звичайні виклики поза closure. `closureOnly` відрізняє збережену closure від переданої. Повідомлення: «called from X through the callable `[$this, 'placeOrderRun']` passed at file:line:col», «through the closure passed at file:line:col»; у `shape` — «the callable `…` passed as an argument (not followed in static mode shape, set by --static) at … may reach it». `calls`-рядок — так само. `explain`: `(a callable passed as an argument)` / `(in a closure passed as an argument at …)`.
+- **Draft.** `draftFlow` ставить `<!-- keylang:algo via callable -->` / `<!-- keylang:algo via closure -->` на крок за таким ребром.
+- **Тести.** `tests/php.test.ts` (фікстура за `QuoteManagement::placeOrder`: draft, behavior, shape, знімок, `callsResolved`), `tests/analyzer.test.ts` (TS; плюс оновлені очікування для `forEach`/`.map`-closure і JSX-фабрик — `Cart`, передане звичайному виклику, тепер `callable-arg`), `tests/languages.test.ts` (Python, Rust), `tests/flows.test.ts` (колбек у `behavior` — ok через callable; формати — на `shape`), `tests/metamorphic.test.ts` (`--static shape` лише послаблює).
+- **Поза обсягом / помічено.** Rust-шлях `crate::a::b::f` аргументом не розв'язується так само, як і прямий виклик `crate::a::b::f()` (імпорт `crate::a::b::f` нерозв'язаний — наявне обмеження резолвера, не цього тікета). Пункт «бенч 03 показує непорожній `placeOrder`» перевіряє тікет 03 на справжньому Magento.

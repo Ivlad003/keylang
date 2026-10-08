@@ -153,6 +153,9 @@ export interface Escape {
   reason: string;
 }
 
+/** How a call edge that is not a plain call of the code came about; see `Call.via`. */
+export type Via = "default" | "injected" | "callable-arg" | "closure-arg";
+
 export interface Call {
   target: string;
   line: number;
@@ -163,12 +166,18 @@ export interface Call {
   /**
    * Absent for a call written in the code. `default`: the default of a hook
    * (`request.generate ?? generateMap`); `injected`: a value a resolved caller
-   * passes for the hook (`analyze({ generate: worker.generate })`, at `site`).
+   * passes for the hook (`analyze({ generate: worker.generate })`, at `site`);
+   * `callable-arg`: a callable reference the fn passes as an argument of a
+   * call (`[$this, 'm']`, `this.m.bind(this)`, `self.m`, `Self::m`), whose
+   * callee may run it — the edge sits at the argument; `closure-arg`: a call
+   * written in a closure literal the fn passes as an argument (`run(() =>
+   * m())`), at `site`, so the enclosing call's callee may run it. `--static
+   * behavior` follows all four; `shape` none.
    */
-  via?: "default" | "injected";
+  via?: Via;
   /** The local, parameter or field the hook call goes through. */
   hook?: string;
-  /** `file:line:col` of the call that injects the value. */
+  /** `file:line:col` of the call that injects the value, or of the closure passed as an argument. */
   site?: string;
   /** The call sits in a closure of the function: whoever holds that value may run it. */
   closure?: true;
@@ -859,14 +868,41 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
         if (initializer) fn.escapes ??= { file: facts.path, line: d.line, col: d.col, reason: "a static initializer runs when the module loads" };
         const push = (target: string, c: CallFact, extra: Partial<Call> = {}): void => {
           // A self-call stays an edge: recursion is a static path from a function to itself.
-          const added = addCall(fn, { target, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, ...(c.closure ? { closure: true as const } : {}), ...extra });
+          // A call in a closure passed as an argument is a plain call of the code (counted as resolved) that the callee of the enclosing call may run.
+          const inArg = c.closureArg ? { via: "closure-arg" as const, site: `${facts.path}:${c.closureArg.line}:${c.closureArg.col}` } : {};
+          const added = addCall(fn, { target, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, ...(c.closure ? { closure: true as const } : {}), ...inArg, ...extra });
           if (added && !extra.via) stats.callsResolved++;
+        };
+        /**
+         * A callable reference passed as the argument itself (`[$this, 'm']`, `this.m.bind(this)`,
+         * `self.m`, `Self::m`) is an edge the callee of the call may run; a class so passed stays a
+         * value read (its constructor escapes). Not a call, so not counted as one.
+         */
+        const passCallables = (c: CallFact): void => {
+          for (const pass of c.passes ?? []) {
+            if (pass.path !== "") continue;
+            const value = single(pass, cls, isStatic);
+            if (!value || decls.classes.has(value)) continue;
+            addCall(fn, {
+              target: value,
+              line: pass.line,
+              col: pass.col,
+              endLine: pass.endLine,
+              endCol: pass.endCol,
+              text: pass.text,
+              via: "callable-arg",
+              ...(c.closure ? { closure: true as const } : {}),
+              ...(pass.docblock ? { docblock: `${facts.path}:${pass.docblock.line}:${pass.docblock.col}` } : {}),
+            });
+          }
         };
         const dynamic = (c: CallFact, reason: string): void => {
           stats.callsDynamic++;
           gaps.push({ kind: "dynamic-call", file: facts.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, reason, source: fn.id });
         };
         for (const c of d.calls) {
+          // Whatever the call itself resolves to, the callables it passes are edges of their own.
+          passCallables(c);
           // An expression keylang does not name is a hole, never an edge.
           if (c.opaque) {
             dynamic(c, `call through an expression \`${c.callee}\``);
@@ -1233,12 +1269,17 @@ function isIndexFile(file: string): boolean {
 }
 
 /**
- * Add a call unless an edge to the same target already says as much: a
- * direct call proves what a hook edge does, a call outside a closure what one
- * inside does. A stronger edge replaces the weaker ones. True when added.
+ * Add a call unless an edge to the same target already says as much. Edges
+ * rank by what they prove: a plain call outside a closure (3) proves the
+ * path in every mode; a hook's default, a callable passed as an argument or
+ * a call in a closure passed as one (2) prove it in `behavior`, and one of
+ * them says as much as another; a call in a stored closure (1) is only a
+ * possible route, and two of them differ by `via`. A stronger edge replaces
+ * the weaker ones. True when added.
  */
 function addCall(fn: Fn, call: Call): boolean {
-  const covers = (a: Call, b: Call): boolean => a.target === b.target && (a.via === undefined || a.via === b.via) && (a.closure !== true || b.closure === true);
+  const rank = (c: Call): number => (c.via === undefined ? (c.closure ? 1 : 3) : c.via === "closure-arg" || !c.closure ? 2 : 1);
+  const covers = (a: Call, b: Call): boolean => a.target === b.target && (rank(a) > rank(b) || (rank(a) === rank(b) && (rank(a) !== 1 || a.via === b.via)));
   if (fn.calls.some((c) => covers(c, call))) return false;
   fn.calls = fn.calls.filter((c) => !covers(call, c));
   fn.calls.push(call);

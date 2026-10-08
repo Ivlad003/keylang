@@ -253,8 +253,10 @@ test("rust: a call keylang cannot name is a hole, so the step is unverified, nev
   assert.ok(lines.includes("static unverified app.db.Db.save: no resolved path from app.main.Order.run; call through a local value `self.db.save` at src/main.rs:10:9 may reach it (and 1 more unresolved call in reachable code)"), lines.join("\n"));
   assert.ok(lines.some((line) => line.startsWith("static unverified app.db.Db.flush: ") && line.includes("`self.items[0].flush`")), lines.join("\n"));
   assert.ok(lines.includes("static unverified app.main.Order.total: no resolved path from app.main.helper; call through a local value `Order::new().total` at src/main.rs:19:5 may reach it"), lines.join("\n"));
-  // A fn passed as a value may be called by whoever holds it.
-  assert.ok(lines.some((line) => line.startsWith("static unverified app.main.later: ") && line.includes("`later` is read as a value at src/main.rs:24:12")), lines.join("\n"));
+  // A fn passed as an argument is a callable the callee may run: `behavior` follows it, `shape` names it.
+  assert.ok(lines.includes("static ok app.main.later: called from app.main.main through the callable `later` passed at src/main.rs:24:12"), lines.join("\n"));
+  const shape = verdicts(dir, ["--static", "shape"]).lines;
+  assert.ok(shape.some((line) => line.startsWith("static unverified app.main.later: no resolved path from app.main.main; the callable `later` passed as an argument (not followed in static mode shape, set by --static) at src/main.rs:24:12 may reach it")), shape.join("\n"));
   // `self: Box<Self>` is a receiver: `self.run()` is the method.
   assert.ok(lines.includes("static ok app.main.Order.run: called from app.main.Order.boxed"), lines.join("\n"));
   // The end of a scope calls `Drop::drop`; an inherent `add` is called only by name.
@@ -312,6 +314,118 @@ test("python: `x.m()` through a parameter annotated with a class or a local `x =
     // `list[Sender]` and an alias that is not a class name no class of `x`.
     "static unverified app.repo.Sender.send: no resolved path from app.api.untyped; call through a local value `senders.send` at app/api.py:37:5 may reach it (and 1 more unresolved call in reachable code)",
   ]) assert.ok(lines.includes(line), `${line}\n---\n${lines.join("\n")}`);
+});
+
+test("python: `self.m`, `Cls.m`, `obj.m`, `callback=self.m` and `functools.partial(self.m)` passed as arguments and a lambda passed as one are routes `behavior` follows and `shape` names; a stored lambda stays a closure hole", (t) => {
+  const dir = repo(t, {
+    "keylang.json": JSON.stringify({ languages: ["python"], layers: { app: ["app/**"] } }),
+    "app/__init__.py": "",
+    "app/lib.py": "def run(f=None, callback=None):\n    pass\n\n\ndef save():\n    pass\n\n\nclass Repo:\n    def load(self):\n        pass\n",
+    "app/svc.py": [
+      "import functools",
+      "",
+      "from app.lib import run, save, Repo",
+      "",
+      "",
+      "class Svc:",
+      "    def main(self, repo: Repo, items):",
+      "        run(self.ref)",
+      "        run(Svc.static_one)",
+      "        run(repo.load)",
+      "        run(functools.partial(self.partial_one, 1))",
+      "        run(lambda: self.in_lambda())",
+      "        g = lambda: self.stored()",
+      "        sorted(items, key=lambda x: self.key(x))",
+      "        run(callback=self.kw)",
+      "        run(save)",
+      "        g()",
+      "",
+      "    def ref(self):",
+      "        pass",
+      "",
+      "    @staticmethod",
+      "    def static_one():",
+      "        pass",
+      "",
+      "    def partial_one(self, x):",
+      "        pass",
+      "",
+      "    def in_lambda(self):",
+      "        pass",
+      "",
+      "    def stored(self):",
+      "        pass",
+      "",
+      "    def key(self, x):",
+      "        return x",
+      "",
+      "    def kw(self):",
+      "        pass",
+      "",
+    ].join("\n"),
+    "keylang/flows.md":
+      "# flow main\n\n- trigger app.svc.Svc.main\n  - step app.svc.Svc.ref\n  - step app.svc.Svc.static_one\n  - step app.lib.Repo.load\n  - step app.svc.Svc.partial_one\n  - step app.svc.Svc.in_lambda\n  - step app.svc.Svc.stored\n  - step app.svc.Svc.key\n  - step app.svc.Svc.kw\n  - step app.lib.save\n",
+  });
+  const { lines } = verdicts(dir);
+  assert.deepEqual(lines.filter((line) => line.startsWith("static ")), [
+    "static ok app.svc.Svc.ref: called from app.svc.Svc.main through the callable `self.ref` passed at app/svc.py:8:13",
+    "static ok app.svc.Svc.static_one: called from app.svc.Svc.main through the callable `Svc.static_one` passed at app/svc.py:9:13",
+    "static ok app.lib.Repo.load: called from app.svc.Svc.main through the callable `repo.load` passed at app/svc.py:10:13",
+    "static ok app.svc.Svc.partial_one: called from app.svc.Svc.main through the callable `self.partial_one` passed at app/svc.py:11:31",
+    "static ok app.svc.Svc.in_lambda: called from app.svc.Svc.main through the closure passed at app/svc.py:12:13",
+    "static unverified app.svc.Svc.stored: no resolved path from app.svc.Svc.main; reached only through a closure of app.svc.Svc.main: `this.stored` at app/svc.py:13:21 runs only when that function value is called (and 1 more unresolved call in reachable code)",
+    "static ok app.svc.Svc.key: called from app.svc.Svc.main through the closure passed at app/svc.py:14:27",
+    "static ok app.svc.Svc.kw: called from app.svc.Svc.main through the callable `self.kw` passed at app/svc.py:15:22",
+    "static ok app.lib.save: called from app.svc.Svc.main through the callable `save` passed at app/svc.py:16:13",
+  ]);
+  const shape = verdicts(dir, ["--static", "shape"]).lines;
+  assert.ok(shape.includes("static unverified app.svc.Svc.ref: no resolved path from app.svc.Svc.main; the callable `self.ref` passed as an argument (not followed in static mode shape, set by --static) at app/svc.py:8:13 may reach it (and 1 more unresolved call in reachable code)"), shape.join("\n"));
+  assert.ok(shape.includes("static unverified app.svc.Svc.key: no resolved path from app.svc.Svc.main; the closure passed at app/svc.py:14:27 (not followed in static mode shape, set by --static) at app/svc.py:14:37 may reach it (and 1 more unresolved call in reachable code)"), shape.join("\n"));
+  assert.ok(!shape.some((line) => line.startsWith("static ok")), shape.join("\n"));
+});
+
+test("rust: `Self::m` and a fn path passed as arguments and a closure passed as one are routes `behavior` follows and `shape` names; a stored closure stays a closure hole", (t) => {
+  const dir = repo(t, {
+    "Cargo.toml": cargoToml,
+    "keylang.json": JSON.stringify({ languages: ["rust"], layers: { app: ["src/**"] } }),
+    "src/main.rs": [
+      "pub struct Order;",
+      "",
+      "impl Order {",
+      "    pub fn place(&self, items: Vec<i32>) {",
+      "        run(Self::assoc);",
+      "        run(free);",
+      "        run_boxed(|x| self.in_closure(x));",
+      "        let g = |x: i32| self.stored(x);",
+      "        let _: Vec<i32> = items.iter().map(|x| self.each(*x)).collect();",
+      "        g(1);",
+      "    }",
+      "    pub fn assoc() {}",
+      "    pub fn in_closure(&self, _x: i32) {}",
+      "    pub fn stored(&self, _x: i32) {}",
+      "    pub fn each(&self, x: i32) -> i32 { x }",
+      "}",
+      "",
+      "pub fn free() {}",
+      "pub fn run(f: fn()) { f(); }",
+      "pub fn run_boxed(f: impl Fn(i32)) { f(1); }",
+      "fn main() {}",
+      "",
+    ].join("\n"),
+    "keylang/flows.md": "# flow place\n\n- trigger app.main.Order.place\n  - step app.main.Order.assoc\n  - step app.main.free\n  - step app.main.Order.in_closure\n  - step app.main.Order.stored\n  - step app.main.Order.each\n",
+  });
+  const { lines } = verdicts(dir);
+  assert.deepEqual(lines.filter((line) => line.startsWith("static ")), [
+    "static ok app.main.Order.assoc: called from app.main.Order.place through the callable `Self::assoc` passed at src/main.rs:5:13",
+    "static ok app.main.free: called from app.main.Order.place through the callable `free` passed at src/main.rs:6:13",
+    "static ok app.main.Order.in_closure: called from app.main.Order.place through the closure passed at src/main.rs:7:19",
+    "static unverified app.main.Order.stored: no resolved path from app.main.Order.place; reached only through a closure of app.main.Order.place: `this.stored` at src/main.rs:8:26 runs only when that function value is called (and 6 more unresolved calls in reachable code)",
+    "static ok app.main.Order.each: called from app.main.Order.place through the closure passed at src/main.rs:9:44",
+  ]);
+  const shape = verdicts(dir, ["--static", "shape"]).lines;
+  assert.ok(shape.some((line) => line.startsWith("static unverified app.main.Order.assoc: no resolved path from app.main.Order.place; the callable `Self::assoc` passed as an argument (not followed in static mode shape, set by --static) at src/main.rs:5:13 may reach it")), shape.join("\n"));
+  assert.ok(shape.some((line) => line.startsWith("static unverified app.main.Order.each: no resolved path from app.main.Order.place; the closure passed at src/main.rs:9:44 (not followed in static mode shape, set by --static) at src/main.rs:9:48 may reach it")), shape.join("\n"));
+  assert.ok(!shape.some((line) => line.startsWith("static ok")), shape.join("\n"));
 });
 
 test("an import inside a function body is a dependency: `deny` fails on it (Python and Rust)", (t) => {

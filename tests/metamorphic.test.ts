@@ -366,3 +366,29 @@ test("08: excluding the only importer of an allowed package adds no K001", (t) =
   assert.equal(status, 0, JSON.stringify(excluded));
   assert.equal(excluded.find((item) => item.criterion === "deny infra external")?.verdict, "unverified", JSON.stringify(excluded));
 });
+
+/** PHP: a callable and a closure passed as arguments, a callable stored in a variable, and a plain call beside them. */
+const PHP_CALLABLES: Record<string, string> = {
+  "keylang.json": `${JSON.stringify({ languages: ["php"], layers: { app: ["src/App/**"], domain: ["src/Domain/**"] } })}\n`,
+  "src/Domain/Store.php": "<?php\nnamespace Shop\\Domain;\n\nclass Store\n{\n    public function save(): void {}\n    public function flush(): void {}\n    public function audit(): void {}\n    public function later(): void {}\n}\n",
+  "src/App/Checkout.php":
+    "<?php\nnamespace Shop\\App;\n\nuse Shop\\Domain\\Store;\n\nclass Checkout\n{\n    public function __construct(private Store $store) {}\n\n    public function buy(): void\n    {\n        $this->store->save();\n        $this->lock(\\Closure::fromCallable([$this->store, 'flush']), fn() => $this->store->audit());\n        $cb = [$this->store, 'later'];\n    }\n\n    private function lock(callable $a, callable $b): void {}\n}\n",
+  "keylang/flows.md": "# flow buy\n\n- trigger app.Checkout.Checkout.buy\n  - step domain.Store.Store.save\n  - step domain.Store.Store.flush\n  - step domain.Store.Store.audit\n  - step domain.Store.Store.later\n",
+};
+
+test("--static shape only weakens a step through a callable or a closure passed as an argument: ok → unverified, never fail", (t) => {
+  const php = mkdtempSync(join(tmpdir(), "keylang-meta-callables-"));
+  t.after(() => rmSync(php, { recursive: true, force: true }));
+  for (const [path, text] of Object.entries(PHP_CALLABLES)) write(php, path, text);
+  const before = aggregate(results(php, ["--static", "behavior"]), []);
+  const after = aggregate(results(php, ["--static", "shape"]), []);
+  monotonic("php-callables", "--static shape", before, after);
+  const changed = [...before]
+    .filter(([key, left]) => left.verdict !== (after.get(key)?.verdict ?? "unverified"))
+    .map(([key, left]) => `${key.split(":")[2]} ${left.verdict} → ${after.get(key)?.verdict ?? "unverified"}`)
+    .sort();
+  // The plain call stays ok in both; the stored callable is unverified in both.
+  assert.deepEqual(changed, ["domain.Store.Store.audit ok → unverified", "domain.Store.Store.flush ok → unverified"]);
+  assert.equal(before.get("flow:static:domain.Store.Store.save:keylang/flows.md:4")?.verdict, "ok");
+  assert.equal(before.get("flow:static:domain.Store.Store.later:keylang/flows.md:7")?.verdict, "unverified");
+});

@@ -216,13 +216,13 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
       const call = parentOf(c.node);
       const passes = call ? passesOf(call, body, cls) : [];
       if (passes.length > 0) fact.passes = passes;
-      if (insideClosure(c.node, body)) fact.closure = true;
+      markClosure(fact, c.node, body);
       out.push(fact);
       // `jsx(Cart)` is the same call as `<Cart />` when `jsx` is React's. The factory call and its `passes` stay.
       if (!call) continue;
       const component = componentOfFactory(call, c.node, body, cls, react);
       if (!component) continue;
-      if (insideClosure(c.node, body)) component.closure = true;
+      markClosure(component, c.node, body);
       out.push(component);
     }
     if (!jsxTags) return out;
@@ -230,7 +230,7 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
       if (!keep(c.node)) continue;
       const fact = componentOfTag(c.node, body, cls);
       if (!fact) continue;
-      if (insideClosure(c.node, body)) fact.closure = true;
+      markClosure(fact, c.node, body);
       out.push(fact);
     }
     // Two queries walk the body in turn; the facts are kept in source order.
@@ -1119,20 +1119,30 @@ function classThis(n: Node): boolean {
   return false;
 }
 
-/** Function values in the arguments: the argument itself or a property of an object literal. */
+/**
+ * Function values in the arguments: the argument itself (`run(save)`,
+ * `run(this.m)`, `run(obj.m)` with the class of `obj` known, `run(this.m.bind(this))`)
+ * or a property of an object literal. A closure literal is not a pass: its
+ * calls carry `closureArg`.
+ */
 function passesOf(call: Node, stop: Node, cls: ClassScope | null): PassFact[] {
   if (call.type !== "call_expression" && call.type !== "new_expression") return [];
   const args = call.childForFieldName("arguments");
   if (args?.type !== "arguments") return [];
   const out: PassFact[] = [];
   args.namedChildren.filter((arg) => arg.type !== "comment").forEach((arg, index) => {
-    const add = (node: Node, path: string): void => {
+    const add = (node: Node, path: string, written: Node = node): void => {
       const fact = calleeFact(node, stop, cls);
       // A local value of unknown class names nothing the graph can resolve.
       if (!fact || (fact.bound && !fact.receiver)) return;
-      out.push({ arg: index, path, callee: fact.callee, ...(fact.bound ? { bound: fact.bound } : {}), ...(fact.receiver ? { receiver: fact.receiver } : {}) });
+      const at = located(written);
+      out.push({ arg: index, path, callee: fact.callee, ...(fact.bound ? { bound: fact.bound } : {}), ...(fact.receiver ? { receiver: fact.receiver } : {}), text: collapse(at.text).slice(0, MAX_CALLEE), line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol });
     };
     if (arg.type === "identifier" || arg.type === "member_expression") add(arg, "");
+    // `this.m.bind(this)`: the function `this.m`, with `this` fixed.
+    const bound = arg.type === "call_expression" ? arg.childForFieldName("function") : null;
+    const fn = bound?.type === "member_expression" && bound.childForFieldName("property")?.text === "bind" ? bound.childForFieldName("object") : null;
+    if (fn && (fn.type === "identifier" || fn.type === "member_expression")) add(fn, "", arg);
     if (arg.type !== "object") return;
     for (const p of arg.namedChildren) {
       if (p.type === "shorthand_property_identifier") add(p, p.text);
@@ -1145,10 +1155,24 @@ function passesOf(call: Node, stop: Node, cls: ClassScope | null): PassFact[] {
   return out;
 }
 
-/** A call inside a function nested in the declaration `stop`. */
-function insideClosure(n: Node, stop: Node): boolean {
-  for (let at = parentOf(n); at && at.id !== stop.id; at = parentOf(at)) if (FUNCTION_NODES.has(at.type)) return true;
-  return false;
+/**
+ * A call inside a function nested in the declaration `stop` gets `closure`;
+ * when every such function is a closure literal written as an argument of a
+ * call (`items.map(() => hit())`, `new Promise((ok) => hit())`), also
+ * `closureArg` at the outermost one. A closure stored in a value, a method of
+ * an object literal, a nested `function` declaration: `closure` alone.
+ */
+function markClosure(fact: CallFact, n: Node, stop: Node): void {
+  let outermost: Node | null = null;
+  let stored = false;
+  for (let at = parentOf(n); at && at.id !== stop.id; at = parentOf(at)) {
+    if (!FUNCTION_NODES.has(at.type)) continue;
+    outermost = at;
+    if (parentOf(at)?.type !== "arguments") stored = true;
+  }
+  if (!outermost) return;
+  fact.closure = true;
+  if (!stored) fact.closureArg = { line: outermost.startPosition.row + 1, col: startCol(outermost) };
 }
 
 /** `: X` → `X`; generics, unions and qualified names are not a class the graph can resolve. */

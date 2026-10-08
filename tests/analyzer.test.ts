@@ -37,7 +37,7 @@ function statics(dir: string): string[] {
 interface Snapshot {
   snapshotId: string;
   nodes: Record<string, { kind: string; class?: true; static?: true; name?: string; file: string | null; members?: string; escapes?: { reason: string } }>;
-  edges: { kind: string; source: string; target: string | null; resolution: string; text: string; alias?: string; reason?: string; closure?: true; typeOnly?: true }[];
+  edges: { kind: string; source: string; target: string | null; resolution: string; text: string; alias?: string; reason?: string; closure?: true; typeOnly?: true; via?: string }[];
   coverage: { kind: string; file: string; line: number; reason: string }[];
   exports: { module: string; name: string; symbol: string | null; kind: string; form?: string; local?: string; from?: string; reason?: string }[];
 }
@@ -327,8 +327,11 @@ test("static: `this` in an object-literal method is not the class; a route only 
   const lines = statics(dir);
   assert.match(lines[0]!, /static unverified a\.x\.Z\.helper: no resolved path from a\.x\.Z\.run; call through `this` of a function value `this\.helper` at src\/a\/x\.ts:4:24/);
   assert.match(lines[1]!, /static unverified a\.x\.hit: no resolved path from a\.x\.s; reached only through a closure of a\.x\.s: `hit` at src\/a\/x\.ts:10:16 runs only when that function value is called/);
-  // An arrow keeps the method's `this`: the call resolves, still only through the closure.
-  assert.match(lines[2]!, /static unverified a\.x\.Z\.helper: no resolved path from a\.x\.Z\.each; reached only through a closure of a\.x\.Z\.each/);
+  // An arrow keeps the method's `this`: the call resolves; the arrow is an argument of `forEach`, so `behavior` follows it as a closure passed.
+  assert.match(lines[2]!, /static ok a\.x\.Z\.helper: called from a\.x\.Z\.each through the closure passed at src\/a\/x\.ts:7:47/);
+  const shape = keylang(dir, ["check", "--static", "shape"]).stdout.split("\n").filter((line) => / static /.test(line));
+  assert.match(shape[1]!, /static unverified a\.x\.hit: no resolved path from a\.x\.s; reached only through a closure of a\.x\.s/);
+  assert.match(shape[2]!, /static unverified a\.x\.Z\.helper: no resolved path from a\.x\.Z\.each; the closure passed at src\/a\/x\.ts:7:47 \(not followed in static mode shape, set by --static\) at src\/a\/x\.ts:7:53 may reach it/);
 });
 
 test("classes: a static initializer runs on module load; `this` in it is the class", (t) => {
@@ -727,7 +730,10 @@ test("jsx: a tag naming a component is a call in `.tsx`; intrinsic, fragment and
   assert.equal(lines.length, 3, lines.join("\n"));
   assert.match(lines[0]!, /static ok ui\.cart\.Cart: called from app\.page\.Page/);
   assert.match(lines[1]!, /static ok ui\.menu\.Item: called from app\.page\.Page/);
-  assert.match(lines[2]!, /static unverified ui\.cart\.Cart: no resolved path from app\.page\.List; reached only through a closure of app\.page\.List/);
+  // The arrow in `.map` is a closure passed as an argument: `behavior` follows it, `shape` names it.
+  assert.match(lines[2]!, /static ok ui\.cart\.Cart: called from app\.page\.List through the closure passed at src\/app\/page\.tsx:19:25/);
+  const shape = keylang(dir, ["check", "--static", "shape"]).stdout.split("\n").filter((line) => / static /.test(line));
+  assert.match(shape[2]!, /static unverified ui\.cart\.Cart: no resolved path from app\.page\.List; the closure passed at src\/app\/page\.tsx:19:25 \(not followed in static mode shape, set by --static\)/);
 });
 
 test("jsx: a `.jsx` file goes through the `javascript` grammar and gets the same tag calls", (t) => {
@@ -957,7 +963,11 @@ test("jsx: `createElement` / `jsx` / `jsxs` / `jsxDEV` imported from React call 
     ].join("\n"),
   });
   const snap = snapshot(dir);
-  const calls = snap.edges.filter((e) => e.kind === "call" && e.source.startsWith("app.")).map((e) => `${e.source}: ${e.text} → ${e.target}${e.closure ? " (closure)" : ""}`).sort();
+  const calls = snap.edges
+    .filter((e) => e.kind === "call" && e.source.startsWith("app."))
+    .map((e) => `${e.source}: ${e.text} → ${e.target}${e.closure ? " (closure)" : ""}${e.via === "callable-arg" ? " (callable)" : ""}`)
+    .sort();
+  // A component call covers the same component passed as a callable; `div` and the shadowed factory's `Cart` are callables passed, not component calls.
   assert.deepEqual(calls, [
     "app.page.List: Cart → ui.cart.Cart (closure)",
     "app.page.List: items.map → null",
@@ -965,9 +975,11 @@ test("jsx: `createElement` / `jsx` / `jsxs` / `jsxDEV` imported from React call 
     "app.page.Page: Cart → ui.cart.Cart",
     "app.page.Page: Cart.Item → null",
     "app.page.Page: Fragment → app.page.Fragment",
+    "app.page.Page: div → app.page.div (callable)",
+    "app.page.Shadow: Cart → ui.cart.Cart (callable)",
     "app.page.Shadow: createElement → null",
   ]);
-  assert.ok(!calls.some((line) => line.includes("div")), calls.join("\n"));
+  assert.ok(!calls.some((line) => line.includes("div") && !line.endsWith("(callable)")), calls.join("\n"));
   const facts = JSON.parse(readFileSync(join(dir, ".keylang/cache/facts.json"), "utf8")) as {
     files: Record<string, { facts: { decls: { name: string; calls: { callee: string; passes?: { arg: number; callee: string }[] }[] }[] } }>;
   };
@@ -993,9 +1005,12 @@ test("jsx: a type-only import from React binds no factory: `import type React`, 
     "src/app/value.ts": ['import React, { type memo, createElement } from "react";', 'import { Cart } from "../ui/cart.ts";', "export function Page() { createElement(Cart); return React.createElement(Cart); }", ""].join("\n"),
   });
   const snap = snapshot(dir);
-  const calls = snap.edges.filter((e) => e.kind === "call").map((e) => `${e.source}: ${e.text} → ${e.target}`).sort();
-  // The factory call goes into the `react` package (no edge); only a value import adds the component call.
-  assert.deepEqual(calls, ["app.value.Page: Cart → ui.cart.Cart"]);
+  const calls = snap.edges
+    .filter((e) => e.kind === "call")
+    .map((e) => `${e.source}: ${e.text} → ${e.target}${e.via === "callable-arg" ? " (callable)" : ""}`)
+    .sort();
+  // The factory call goes into the `react` package (no edge); only a value import adds the component call. Elsewhere `Cart` is a callable passed to an ordinary call.
+  assert.deepEqual(calls, ["app.default.Page: Cart → ui.cart.Cart (callable)", "app.named.Page: Cart → ui.cart.Cart (callable)", "app.ns.Page: Cart → ui.cart.Cart (callable)", "app.value.Page: Cart → ui.cart.Cart"]);
   const facts = JSON.parse(readFileSync(join(dir, ".keylang/cache/facts.json"), "utf8")) as {
     files: Record<string, { facts: { decls: { name: string; calls: { callee: string; passes?: { arg: number; callee: string }[] }[] }[] } }>;
   };
@@ -1032,8 +1047,12 @@ test("jsx: a local `createElement` or one imported from another module does not 
     ].join("\n"),
   });
   const snap = snapshot(dir);
-  const calls = snap.edges.filter((e) => e.kind === "call").map((e) => `${e.source}: ${e.text} → ${e.target}`).sort();
-  assert.deepEqual(calls, ["app.page.Page: createElement → app.dom.createElement", "local.own.Page: createElement → null"]);
+  const calls = snap.edges
+    .filter((e) => e.kind === "call")
+    .map((e) => `${e.source}: ${e.text} → ${e.target}${e.via === "callable-arg" ? " (callable)" : ""}`)
+    .sort();
+  // No component call; `Cart` is a callable passed as the argument itself, `go: save` inside an object is not.
+  assert.deepEqual(calls, ["app.page.Page: Cart → ui.cart.Cart (callable)", "app.page.Page: createElement → app.dom.createElement", "local.own.Page: Cart → local.own.Cart (callable)", "local.own.Page: createElement → null"]);
   const facts = JSON.parse(readFileSync(join(dir, ".keylang/cache/facts.json"), "utf8")) as {
     files: Record<string, { facts: { decls: { name: string; calls: { callee: string; passes?: { arg: number; path: string; callee: string }[] }[] }[] } }>;
   };
@@ -1043,4 +1062,79 @@ test("jsx: a local `createElement` or one imported from another module does not 
   const local = facts.files["src/local/own.ts"]!.facts.decls.find((d) => d.name === "Page")!;
   assert.deepEqual(local.calls.map((c) => c.callee), ["createElement"]);
   assert.deepEqual(local.calls[0]!.passes?.map((p) => `${p.arg}:${p.path}:${p.callee}`), ["0::Cart", "1:go:Page"]);
+});
+
+test("static: a callable passed as an argument (`this.m.bind(this)`, `this.m`, `obj.m`, `save`) and a closure passed as one are routes `behavior` follows and `shape` names; a stored arrow stays a closure hole", (t) => {
+  const dir = repo(t, {
+    "src/lib/x.ts": "export function run(f: () => void): void { f(); }\nexport function save(): void {}\nexport class B { m(): void {} }\n",
+    "src/app/a.ts": [
+      'import { run, save, B } from "../lib/x.ts";',
+      "export class A {",
+      "  main(obj: B, items: number[]): void {",
+      "    run(this.bound.bind(this));",
+      "    run(this.ref);",
+      "    run(obj.m);",
+      "    run(() => this.inArrow());",
+      "    const g = () => this.stored();",
+      "    items.forEach((x) => this.each(x));",
+      "    run(save);",
+      "    g();",
+      "  }",
+      "  bound(): void {}",
+      "  ref(): void {}",
+      "  inArrow(): void {}",
+      "  stored(): void {}",
+      "  each(x: number): void {}",
+      "}",
+      "",
+    ].join("\n"),
+    "keylang/flows/f.md": [
+      "# flow main",
+      "",
+      "- trigger app.a.A.main",
+      "  - calls app.a.A.bound, app.a.A.stored",
+      "  - step app.a.A.bound",
+      "  - step app.a.A.ref",
+      "  - step lib.x.B.m",
+      "  - step app.a.A.inArrow",
+      "  - step app.a.A.stored",
+      "  - step app.a.A.each",
+      "  - step lib.x.save",
+      "",
+    ].join("\n"),
+  });
+  const lines = statics(dir).map((line) => line.replace(/^keylang\/flows\/f\.md:\d+:\d+: /, ""));
+  assert.deepEqual(lines, [
+    "static ok app.a.A.bound: called from app.a.A.main through the callable `this.bound.bind(this)` passed at src/app/a.ts:4:9",
+    "static unverified app.a.A.stored: `this.stored` at src/app/a.ts:8:21 is in a closure of app.a.A.main and runs only when that function value is called",
+    "static ok app.a.A.bound: called from app.a.A.main through the callable `this.bound.bind(this)` passed at src/app/a.ts:4:9",
+    "static ok app.a.A.ref: called from app.a.A.main through the callable `this.ref` passed at src/app/a.ts:5:9",
+    "static ok lib.x.B.m: called from app.a.A.main through the callable `obj.m` passed at src/app/a.ts:6:9",
+    "static ok app.a.A.inArrow: called from app.a.A.main through the closure passed at src/app/a.ts:7:9",
+    // The four holes: `this.bound.bind` (a call of `Function.prototype.bind`), `items.forEach`, `g()` and `f()` in `run`.
+    "static unverified app.a.A.stored: no resolved path from app.a.A.main; reached only through a closure of app.a.A.main: `this.stored` at src/app/a.ts:8:21 runs only when that function value is called (and 4 more unresolved calls in reachable code)",
+    "static ok app.a.A.each: called from app.a.A.main through the closure passed at src/app/a.ts:9:19",
+    "static ok lib.x.save: called from app.a.A.main through the callable `save` passed at src/app/a.ts:10:9",
+  ]);
+  const shape = keylang(dir, ["check", "--static", "shape"]).stdout;
+  assert.match(shape, /static unverified app\.a\.A\.bound: the callable `this\.bound\.bind\(this\)` passed as an argument \(not followed in static mode shape, set by --static\) at src\/app\/a\.ts:4:9\n/);
+  assert.match(shape, /static unverified lib\.x\.save: no resolved path from app\.a\.A\.main; the callable `save` passed as an argument \(not followed in static mode shape, set by --static\) at src\/app\/a\.ts:10:9 may reach it/);
+  assert.match(shape, /static unverified app\.a\.A\.each: no resolved path from app\.a\.A\.main; the closure passed at src\/app\/a\.ts:9:19 \(not followed in static mode shape, set by --static\) at src\/app\/a\.ts:9:26 may reach it/);
+  assert.doesNotMatch(shape, /static ok/);
+  const snap = snapshot(dir) as Snapshot & { edges: { via?: string; site?: string }[]; stats: { callsResolved: number } };
+  const main = snap.edges
+    .filter((e) => e.kind === "call" && e.source === "app.a.A.main" && e.resolution === "resolved")
+    .map((e) => `${e.text} → ${e.target}${e.via ? ` via ${e.via}` : ""}${e.closure ? " (closure)" : ""}`);
+  assert.deepEqual(main, [
+    "this.bound.bind(this) → app.a.A.bound via callable-arg",
+    "run → lib.x.run",
+    "this.ref → app.a.A.ref via callable-arg",
+    "obj.m → lib.x.B.m via callable-arg",
+    "this.inArrow → app.a.A.inArrow via closure-arg (closure)",
+    "this.stored → app.a.A.stored (closure)",
+    "this.each → app.a.A.each via closure-arg (closure)",
+    "save → lib.x.save via callable-arg",
+  ]);
+  // Resolved call edges: `run` and the three calls in closures; callables passed are not calls.
+  assert.equal(snap.stats.callsResolved, 4);
 });
