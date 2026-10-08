@@ -349,7 +349,7 @@ test("tui: changed check is the CLI's --changed slice for a changed source, an u
   const clean = await changedCheck(s, root);
   const cleanSlice = checkPayload(clean).changed!;
   assert.deepEqual([clean.result!.exitCode, checkPayload(clean).results.length], [0, 0]);
-  assert.deepEqual({ ...cleanSlice }, { since: "HEAD", unborn: false, files: [], deleted: [], shown: 0, hidden: checkPayload(full).results.length });
+  assert.deepEqual({ ...cleanSlice }, { since: "HEAD", unborn: false, files: [], deleted: [], shown: 0, hidden: checkPayload(full).results.length, weakening: { accepted: [], note: null } });
   assert.deepEqual((clean.params as { changed?: boolean; since?: string }).changed, true);
   assert.equal((clean.params as { since?: string }).since, undefined, "HEAD is the default ref");
   // A changed source: the checkout flow steps into it; the other flow stays hidden.

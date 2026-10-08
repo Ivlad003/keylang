@@ -48,6 +48,10 @@
       - module [canvas](../../web/src/canvas.ts#L1) <!-- outside -->
       - module [diagrams](../../web/src/diagrams.ts#L1) <!-- outside -->
       - module [dom](../../web/src/dom.ts#L1) <!-- outside -->
+      - module [editor](../../web/src/editor.ts#L1) <!-- outside -->
       - module [explorer](../../web/src/explorer.ts#L1) <!-- outside -->
       - module [export](../../web/src/export.ts#L1) <!-- outside -->
+      - module [layout-store](../../web/src/layout-store.ts#L1) <!-- outside -->
       - module [list](../../web/src/list.ts#L1) <!-- outside -->
+      - module [properties](../../web/src/properties.ts#L1) <!-- outside -->
+      - module [tour](../../web/src/tour.ts#L1) <!-- outside -->

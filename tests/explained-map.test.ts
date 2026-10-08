@@ -456,3 +456,47 @@ test("explained map navigation: every link to a map file lands on an anchor, cod
   assert.equal(stale.status, 1);
   assert.equal(stale.stdout, "keylang/map-explained/README.md: stale, run `keylang map`\n");
 });
+
+test("explain --stale: a changed module constant or class field no fn reads makes the brief of its module and class stale; a comment does not (TS, Python, PHP)", async (t) => {
+  // Ticket review-2026-10-06/70: the baseline of a module or class saw only the fns and types under it.
+  const dir = mkdtempSync(join(tmpdir(), "keylang-explained-values-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const sources: Record<string, string> = {
+    "src/config.ts": "export const LIMIT = 100;\n\nexport function twice(n: number): number {\n  return n * 2;\n}\n\nexport class Box {\n  size = 3;\n  constructor(private cap = 10) {}\n  area(): number {\n    return 1;\n  }\n}\n",
+    "src/limits.py": "MAX = 100\n\n\ndef twice(n):\n    return n * 2\n\n\nclass Box:\n    def __init__(self):\n        self.size = 3\n\n    def area(self):\n        return 1\n",
+    "src/box.php": "<?php\n\nconst MAX = 100;\n\nfunction twice($n) {\n    return $n * 2;\n}\n\nclass Box {\n    public $size = 3;\n\n    public function area() {\n        return 1;\n    }\n}\n",
+    "src/plain.ts": "export function once(n: number): number {\n  return n;\n}\n",
+  };
+  writeFileSync(join(dir, "keylang.json"), JSON.stringify({ languages: ["typescript", "python", "php"], layers: { main: ["src/**"] } }));
+  mkdirSync(join(dir, "src"));
+  for (const [file, text] of Object.entries(sources)) writeFileSync(join(dir, file), text);
+  const mock = await mockAnthropic(t);
+  const env = withModel(dir, mock);
+  mock.reply = (prompt) => `Brief of ${askedId(prompt)}.`;
+  const run = await keylangAsync(dir, ["explain", "--missing", "--llm"], env);
+  assert.equal(run.status, 0, run.stderr);
+  const stale = (): string[] =>
+    keylang(dir, ["explain", "--stale"])
+      .stdout.split("\n")
+      .filter((line) => line.includes(": stale"))
+      .map((line) => line.split(" ")[0]!)
+      .sort();
+  assert.deepEqual(stale(), []);
+  const edit = (file: string, from: string, to: string): void => writeFileSync(join(dir, file), sources[file]!.replace(from, to));
+
+  edit("src/config.ts", "export const LIMIT = 100;", "// The cap.\nexport const LIMIT =\n  100;");
+  edit("src/limits.py", "MAX = 100", "# The cap.\nMAX  =  100");
+  edit("src/box.php", "const MAX = 100;", "/** The cap. */\nconst MAX = 100;");
+  assert.deepEqual(stale(), [], "comments and layout are no change");
+
+  edit("src/config.ts", "LIMIT = 100", "LIMIT = 5");
+  edit("src/limits.py", "MAX = 100", "MAX = 5");
+  edit("src/box.php", "MAX = 100", "MAX = 5");
+  assert.deepEqual(stale(), ["main", "main.box", "main.config", "main.limits"]);
+
+  for (const file of Object.keys(sources)) writeFileSync(join(dir, file), sources[file]!);
+  edit("src/config.ts", "cap = 10", "cap = 3");
+  edit("src/limits.py", "self.size = 3", "self.size = 4");
+  edit("src/box.php", "$size = 3", "$size = 4");
+  assert.deepEqual(stale(), ["main", "main.box", "main.box.Box", "main.config", "main.config.Box", "main.config.Box.constructor", "main.limits", "main.limits.Box", "main.limits.Box.__init__"]);
+});

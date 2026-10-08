@@ -215,7 +215,8 @@ test("agents: MCP servers, skill copies, Claude deny and a stale --check that wr
     hooks: { PostToolUse: unknown[]; Stop: { hooks: { command: string }[] }[] };
   };
   assert.deepEqual(settings.permissions.allow, ["Bash"]);
-  for (const rule of ["Edit(keylang/rules.md)", "Write(keylang/rules.md)", "Edit(keylang/rules.baseline.md)", "Write(keylang/rules.baseline.md)", "Bash(* proposals accept *)", "Bash(* proposals reject *)"]) assert.ok(settings.permissions.deny.includes(rule), rule);
+  // keylang.json decides what the rules see, and every rules file is the person's (ticket 49).
+  for (const rule of ["Edit(keylang/rules.md)", "Write(keylang/rules.md)", "Edit(keylang/rules.baseline.md)", "Write(keylang/rules.baseline.md)", "Edit(keylang/rules*.md)", "Write(keylang/rules*.md)", "Edit(keylang.json)", "Write(keylang.json)", "Bash(* proposals accept *)", "Bash(* proposals reject *)"]) assert.ok(settings.permissions.deny.includes(rule), rule);
   assert.ok(settings.permissions.deny.includes("Read(secret)"));
   assert.equal(settings.hooks.PostToolUse.length, 1);
   assert.match(JSON.stringify(settings.hooks.Stop), new RegExp(`keylang@${VERSION.replace(/\./g, "\\.")} hook stop`));
@@ -225,7 +226,12 @@ test("agents: MCP servers, skill copies, Claude deny and a stale --check that wr
   // The CLI fallback is the command MCP and the hook pin: no global `keylang`, no unpinned `npx keylang`.
   const pinned = `npx -y keylang@${VERSION}`;
   for (const text of [agentsMd, skillA]) {
-    for (const command of ["feature <slug> --format json", "check", "spec-to-code <id> --print", "baseline"]) assert.ok(text.includes(`\`${pinned} ${command}\``), `${pinned} ${command}`);
+    for (const command of ["feature <slug> --format json", "check", "spec-to-code <id> --print"]) assert.ok(text.includes(`\`${pinned} ${command}\``), `${pinned} ${command}`);
+    // A person regenerates the baseline: the agent is not told to run it, and changes rules and keylang.json only as a proposal.
+    assert.ok(!text.includes(`\`${pinned} baseline\``), "no baseline advice");
+    assert.match(text, /keylang\.json/);
+    assert.match(text, /proposal to a person/);
+    assert.match(text, /K108/);
     assert.doesNotMatch(text, /`keylang (feature|check|spec-to-code|baseline)\b/);
     assert.doesNotMatch(text, /keylang@<version>/);
   }

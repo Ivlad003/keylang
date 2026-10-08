@@ -97,16 +97,16 @@
   - module [diag](../../src/diag.ts#L1)
     - span base.span
     - type [Code](../../src/diag.ts#L5)
-    - type [Severity](../../src/diag.ts#L54) = "error" | "warning"
-    - type [K005Reason](../../src/diag.ts#L57) = "arguments" | "id" | "link" | "quote" | "layer" | "scope"
-    - fn [severityOf](../../src/diag.ts#L59) (code: Code) → Severity
-    - type [Diagnostic](../../src/diag.ts#L63)
-    - fn [diagnostic](../../src/diag.ts#L93) (code: Exclude<Code, "K005">, file: string, span: Span, message: string, target?: string) → Diagnostic
+    - type [Severity](../../src/diag.ts#L56) = "error" | "warning"
+    - type [K005Reason](../../src/diag.ts#L59) = "arguments" | "id" | "link" | "quote" | "layer" | "scope"
+    - fn [severityOf](../../src/diag.ts#L61) (code: Code) → Severity
+    - type [Diagnostic](../../src/diag.ts#L65)
+    - fn [diagnostic](../../src/diag.ts#L95) (code: Exclude<Code, "K005">, file: string, span: Span, message: string, target?: string) → Diagnostic
       - calls base.diag.severityOf
-    - fn [isError](../../src/diag.ts#L104) (d: Diagnostic) → boolean
-    - fn [formatDiagnostic](../../src/diag.ts#L109) (d: Diagnostic) → string
-    - fn [compareDiagnostics](../../src/diag.ts#L114) (a: Diagnostic, b: Diagnostic) → number
-    - fn [errorText](../../src/diag.ts#L124) (error: unknown) → string
+    - fn [isError](../../src/diag.ts#L106) (d: Diagnostic) → boolean
+    - fn [formatDiagnostic](../../src/diag.ts#L111) (d: Diagnostic) → string
+    - fn [compareDiagnostics](../../src/diag.ts#L116) (a: Diagnostic, b: Diagnostic) → number
+    - fn [errorText](../../src/diag.ts#L126) (error: unknown) → string
   - module [external-ids](../../src/external-ids.ts#L1)
     - config base.config
     - fn [externalSegment](../../src/external-ids.ts#L10) (pkg: string) → string
@@ -115,31 +115,39 @@
       - calls base.external-ids.externalSegment
     - fn [externalPackageId](../../src/external-ids.ts#L44) (id: string) → string | null
   - module [adapter](../../src/frameworks/adapter.ts#L1)
+    - facts extract.facts
+    - laravel base.laravel
     - magento base.magento
     - sfcc base.sfcc
-    - type [TypeName](../../src/frameworks/adapter.ts#L20)
-    - type [ConfigAt](../../src/frameworks/adapter.ts#L26)
-    - type [BindingFact](../../src/frameworks/adapter.ts#L32) extends ConfigAt
-    - type [ArgumentFact](../../src/frameworks/adapter.ts#L38) extends ConfigAt
-    - type [AliasFact](../../src/frameworks/adapter.ts#L45) extends ConfigAt
-    - type [InterceptFact](../../src/frameworks/adapter.ts#L51) extends ConfigAt
-    - type [EntryConfigFact](../../src/frameworks/adapter.ts#L67) extends ConfigAt
-    - type [ConfigFacts](../../src/frameworks/adapter.ts#L75)
-    - type [FrameworkConfig](../../src/frameworks/adapter.ts#L90)
-    - type [FrameworkInput](../../src/frameworks/adapter.ts#L97)
-    - type [FrameworkContext](../../src/frameworks/adapter.ts#L103)
-    - type [FrameworkAdapter](../../src/frameworks/adapter.ts#L114)
-    - fn [activeAdapters](../../src/frameworks/adapter.ts#L139) (frameworks: readonly string[] | null, context: FrameworkContext, available: readonly FrameworkAdapter[] = FRAMEWORK_ADAPTERS) → FrameworkAdapter[]
-    - fn [typeLabel](../../src/frameworks/adapter.ts#L145) (t: TypeName) → string
-    - fn [isConfigFacts](../../src/frameworks/adapter.ts#L150) (value: unknown) → value is ConfigFacts
+    - symfony base.symfony
+    - type [TypeName](../../src/frameworks/adapter.ts#L23)
+    - type [ConfigAt](../../src/frameworks/adapter.ts#L29)
+    - type [BindingFact](../../src/frameworks/adapter.ts#L35) extends ConfigAt
+    - type [ArgumentFact](../../src/frameworks/adapter.ts#L45) extends ConfigAt
+    - type [AliasFact](../../src/frameworks/adapter.ts#L52) extends ConfigAt
+    - type [InterceptFact](../../src/frameworks/adapter.ts#L58) extends ConfigAt
+    - type [EntryConfigFact](../../src/frameworks/adapter.ts#L79) extends ConfigAt
+    - type [ListenFact](../../src/frameworks/adapter.ts#L97) extends ConfigAt
+    - type [HandlerFact](../../src/frameworks/adapter.ts#L108) extends ConfigAt
+    - type [DispatchFact](../../src/frameworks/adapter.ts#L116) extends ConfigAt
+    - type [ConfigHole](../../src/frameworks/adapter.ts#L125) extends ConfigAt
+    - type [RoutePrefixFact](../../src/frameworks/adapter.ts#L131) extends ConfigAt
+    - type [ConfigFacts](../../src/frameworks/adapter.ts#L137)
+    - type [FrameworkConfig](../../src/frameworks/adapter.ts#L162)
+    - type [FrameworkInput](../../src/frameworks/adapter.ts#L169)
+    - type [FrameworkContext](../../src/frameworks/adapter.ts#L175)
+    - type [FrameworkAdapter](../../src/frameworks/adapter.ts#L186)
+    - fn [activeAdapters](../../src/frameworks/adapter.ts#L222) (frameworks: readonly string[] | null, context: FrameworkContext, available: readonly FrameworkAdapter[] = FRAMEWORK_ADAPTERS) → FrameworkAdapter[]
+    - fn [typeLabel](../../src/frameworks/adapter.ts#L228) (t: TypeName) → string
+    - fn [isConfigFacts](../../src/frameworks/adapter.ts#L233) (value: unknown) → value is ConfigFacts
       - calls base.adapter.isRecord, base.adapter.every, base.adapter.isAt, base.adapter.isTypeName
-    - fn [isAt](../../src/frameworks/adapter.ts#L164) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isAt](../../src/frameworks/adapter.ts#L252) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       - calls base.adapter.isRecord
-    - fn [isTypeName](../../src/frameworks/adapter.ts#L168) (value: unknown) → boolean <!-- internal -->
+    - fn [isTypeName](../../src/frameworks/adapter.ts#L256) (value: unknown) → boolean <!-- internal -->
       - calls base.adapter.isRecord
-    - fn [every](../../src/frameworks/adapter.ts#L172) (value: unknown, check: (item: Record<string, unknown>) => boolean) → boolean <!-- internal -->
+    - fn [every](../../src/frameworks/adapter.ts#L260) (value: unknown, check: (item: Record<string, unknown>) => boolean) → boolean <!-- internal -->
       - calls base.adapter.isRecord
-    - fn [isRecord](../../src/frameworks/adapter.ts#L176) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isRecord](../../src/frameworks/adapter.ts#L264) (value: unknown) → value is Record<string, unknown> <!-- internal -->
   - module [bindings](../../src/frameworks/bindings.ts#L1)
     - adapter base.adapter
     - type [ResolvedType](../../src/frameworks/bindings.ts#L16)
@@ -152,36 +160,38 @@
     - type [Declared](../../src/frameworks/bindings.ts#L80) <!-- internal -->
     - type [Plugin](../../src/frameworks/bindings.ts#L96) <!-- internal -->
     - module [FrameworkBindings](../../src/frameworks/bindings.ts#L120)
-      - fn [constructor](../../src/frameworks/bindings.ts#L134) (inputs: readonly FrameworkInput[], deps: BindingDeps)
+      - fn [constructor](../../src/frameworks/bindings.ts#L136) (inputs: readonly FrameworkInput[], deps: BindingDeps)
         - calls base.bindings.key, base.bindings.FrameworkBindings.hole, base.adapter.typeLabel, base.bindings.asciiLower, base.bindings.FrameworkBindings.activePlugins
-      - fn [hole](../../src/frameworks/bindings.ts#L190) (file: string, at: { line: number; col: number }, text: string, reason: string, source: string | null) → void <!-- internal -->
-      - fn [binds](../../src/frameworks/bindings.ts#L195) (type: string) → boolean
-      - fn [argumentFor](../../src/frameworks/bindings.ts#L200) (classId: string, param: string) → boolean
-        - calls base.bindings.asciiLower
-      - fn [callThroughType](../../src/frameworks/bindings.ts#L205) (type: string, member: string) → BoundCall
+      - fn [hole](../../src/frameworks/bindings.ts#L198) (file: string, at: { line: number; col: number }, text: string, reason: string, source: string | null) → void <!-- internal -->
+      - fn [binds](../../src/frameworks/bindings.ts#L203) (type: string) → boolean
+      - fn [argumentFor](../../src/frameworks/bindings.ts#L208) (classId: string, param: string) → boolean
+        - calls base.bindings.FrameworkBindings.valuesOf
+      - fn [callThroughType](../../src/frameworks/bindings.ts#L213) (type: string, member: string) → BoundCall
         - calls base.bindings.emptyCall, base.bindings.FrameworkBindings.effective, base.bindings.FrameworkBindings.place, base.bindings.finish
-      - fn [callThroughArgument](../../src/frameworks/bindings.ts#L212) (classId: string, param: string, member: string) → BoundCall
-        - calls base.bindings.emptyCall, base.bindings.asciiLower, base.bindings.groupBy, base.bindings.distinctTargets, base.bindings.describe, base.bindings.FrameworkBindings.effective, base.bindings.FrameworkBindings.place, base.bindings.finish
-      - fn [effective](../../src/frameworks/bindings.ts#L239) (type: string, out: BoundCall) → Map<string, Declared[]> <!-- internal -->
+      - fn [callThroughArgument](../../src/frameworks/bindings.ts#L220) (classId: string, param: string, member: string) → BoundCall
+        - calls base.bindings.emptyCall, base.bindings.FrameworkBindings.valuesOf, base.bindings.groupBy, base.bindings.distinctTargets, base.bindings.describe, base.bindings.FrameworkBindings.effective, base.bindings.FrameworkBindings.place, base.bindings.finish
+      - fn [valuesOf](../../src/frameworks/bindings.ts#L242) (classId: string, param: string) → (Declared & { param: string })[] <!-- internal -->
+        - calls base.bindings.asciiLower
+      - fn [effective](../../src/frameworks/bindings.ts#L253) (type: string, out: BoundCall) → Map<string, Declared[]> <!-- internal -->
         - calls base.bindings.distinctTargets, base.bindings.describe
-      - fn [place](../../src/frameworks/bindings.ts#L269) (out: BoundCall, chain: readonly Declared[], member: string, via: "preference" | "argument", scope: string, lead = "") → void <!-- internal -->
+      - fn [place](../../src/frameworks/bindings.ts#L283) (out: BoundCall, chain: readonly Declared[], member: string, via: "preference" | "argument", scope: string, lead = "") → void <!-- internal -->
         - calls base.bindings.scopeOrder
-      - fn [activePlugins](../../src/frameworks/bindings.ts#L305) () → Plugin[] <!-- internal -->
+      - fn [activePlugins](../../src/frameworks/bindings.ts#L319) () → Plugin[] <!-- internal -->
         - calls base.bindings.groupBy, base.bindings.merge
-      - fn [interceptors](../../src/frameworks/bindings.ts#L331) (types: readonly string[], member: string) → PluginEdge[]
+      - fn [interceptors](../../src/frameworks/bindings.ts#L345) (types: readonly string[], member: string) → PluginEdge[]
         - calls base.bindings.asciiLower, base.bindings.FrameworkBindings.activePlugins
-    - fn [emptyCall](../../src/frameworks/bindings.ts#L352) () → BoundCall <!-- internal -->
-    - fn [finish](../../src/frameworks/bindings.ts#L356) (out: BoundCall) → BoundCall <!-- internal -->
+    - fn [emptyCall](../../src/frameworks/bindings.ts#L366) () → BoundCall <!-- internal -->
+    - fn [finish](../../src/frameworks/bindings.ts#L370) (out: BoundCall) → BoundCall <!-- internal -->
       - calls base.bindings.scopeOrder
-    - fn [distinctTargets](../../src/frameworks/bindings.ts#L362) (list: readonly T[]) → T[] <!-- internal -->
+    - fn [distinctTargets](../../src/frameworks/bindings.ts#L376) (list: readonly T[]) → T[] <!-- internal -->
       - calls base.bindings.key
-    - fn [describe](../../src/frameworks/bindings.ts#L371) (d: Declared) → string <!-- internal -->
-    - fn [merge](../../src/frameworks/bindings.ts#L376) (decls: readonly Plugin[]) → Plugin | null <!-- internal -->
-    - fn [groupBy](../../src/frameworks/bindings.ts#L390) (list: readonly T[], keyOf: (item: T) => string) → Map<string, T[]> <!-- internal -->
-    - fn [scopeOrder](../../src/frameworks/bindings.ts#L396) (a: string, b: string) → number <!-- internal -->
-    - fn [key](../../src/frameworks/bindings.ts#L400) (name: string) → string <!-- internal -->
+    - fn [describe](../../src/frameworks/bindings.ts#L385) (d: Declared) → string <!-- internal -->
+    - fn [merge](../../src/frameworks/bindings.ts#L390) (decls: readonly Plugin[]) → Plugin | null <!-- internal -->
+    - fn [groupBy](../../src/frameworks/bindings.ts#L404) (list: readonly T[], keyOf: (item: T) => string) → Map<string, T[]> <!-- internal -->
+    - fn [scopeOrder](../../src/frameworks/bindings.ts#L410) (a: string, b: string) → number <!-- internal -->
+    - fn [key](../../src/frameworks/bindings.ts#L414) (name: string) → string <!-- internal -->
       - calls base.bindings.asciiLower
-    - fn [asciiLower](../../src/frameworks/bindings.ts#L404) (name: string) → string <!-- internal -->
+    - fn [asciiLower](../../src/frameworks/bindings.ts#L418) (name: string) → string <!-- internal -->
   - module [cartridges](../../src/frameworks/cartridges.ts#L1)
     - node external.node
     - type [Cartridge](../../src/frameworks/cartridges.ts#L18)
@@ -197,6 +207,46 @@
     - fn [cartridgeOf](../../src/frameworks/cartridges.ts#L123) (layout: CartridgeLayout, file: string) → Cartridge | null
     - fn [cartridgeAnswers](../../src/frameworks/cartridges.ts#L138) (layout: CartridgeLayout, fromFile: string, spec: string, probe: (candidate: string) => string | null) → string[] | "external" | null
       - calls base.cartridges.cartridgeOf
+  - module [laravel](../../src/frameworks/laravel.ts#L1)
+    - node external.node
+    - facts extract.facts
+    - adapter base.adapter
+    - php-code base.php-code
+    - fn [parseJson](../../src/frameworks/laravel.ts#L74) (text: string | null) → unknown <!-- internal -->
+    - fn [isOneOf](../../src/frameworks/laravel.ts#L83) (name: string | null | undefined, names: readonly string[]) → boolean <!-- internal -->
+      - calls base.php-code.key
+    - fn [laravelFacts](../../src/frameworks/laravel.ts#L88) (files: readonly FileFacts[]) → FrameworkConfig[]
+      - calls base.php-code.PhpCode, base.php-code.codeFacts, base.php-code.PhpCode.extends, base.laravel.readProvider, base.laravel.readFacade, base.php-code.key, base.laravel.readCommand, base.php-code.PhpCode.implements, base.php-code.PhpCode.method, base.php-code.type, base.laravel.commandNames, base.laravel.readRoutes, base.laravel.readConsole, base.laravel.readKernel, base.php-code.dispatchesIn, base.php-code.hasFacts
+    - fn [readProvider](../../src/frameworks/laravel.ts#L125) (code: PhpCode, provider: PhpClass, facts: ConfigFacts, keyed: Map<string, string>) → void <!-- internal -->
+      - calls base.laravel.bind, base.php-code.eventName, base.laravel.listen, base.php-code.cls, base.laravel.subscribe, base.php-code.arg, base.laravel.isOneOf, base.php-code.PhpCode.calleeClass
+    - fn [bind](../../src/frameworks/laravel.ts#L160) (facts: ConfigFacts, keyed: Map<string, string>, abstract: LiteralFact | null, concrete: LiteralFact | null, at: { line: number; col: number }, written: string) → void <!-- internal -->
+      - calls base.php-code.cls, base.php-code.str, base.php-code.key, base.php-code.type
+    - fn [listen](../../src/frameworks/laravel.ts#L176) (code: PhpCode, file: string, facts: ConfigFacts, event: string, listener: LiteralFact, at: { line: number; col: number }) → void <!-- internal -->
+      - calls base.php-code.type, base.php-code.key, base.php-code.PhpCode.method
+    - fn [subscribe](../../src/frameworks/laravel.ts#L191) (code: PhpCode, subscriber: string, facts: ConfigFacts, at: { line: number; col: number }) → void <!-- internal -->
+      - calls base.php-code.PhpCode.method, base.php-code.eventName, base.php-code.str, base.php-code.type
+    - fn [readFacade](../../src/frameworks/laravel.ts#L206) (code: PhpCode, facade: PhpClass, facts: ConfigFacts, keyed: Map<string, string>) → void <!-- internal -->
+      - calls base.php-code.PhpCode.method, base.php-code.cls, base.php-code.str, base.php-code.type
+    - fn [readCommand](../../src/frameworks/laravel.ts#L220) (command: PhpClass, facts: ConfigFacts) → void <!-- internal -->
+      - calls base.laravel.commandName, base.php-code.key, base.php-code.type
+    - fn [commandName](../../src/frameworks/laravel.ts#L227) (command: PhpClass) → string | null <!-- internal -->
+      - calls base.php-code.str, base.php-code.key, base.php-code.arg
+    - fn [commandNames](../../src/frameworks/laravel.ts#L237) (code: PhpCode, classes: readonly PhpClass[]) → Map<string, PhpClass> <!-- internal -->
+      - calls base.php-code.PhpCode.extends, base.laravel.commandName
+    - type [Group](../../src/frameworks/laravel.ts#L247) <!-- internal -->
+    - fn [readRoutes](../../src/frameworks/laravel.ts#L258) (code: PhpCode, file: FileFacts, facts: ConfigFacts) → void <!-- internal -->
+      - calls base.laravel.isOneOf, base.php-code.PhpCode.calleeClass, base.php-code.str, base.php-code.cls, base.laravel.resource, base.php-code.strings, base.php-code.arg, base.laravel.joinPath, base.laravel.routeAction, base.php-code.type
+    - fn [routeAction](../../src/frameworks/laravel.ts#L319) (action: LiteralFact | null, controller: string | null) → { type: string | null; fn: string | null; note?: string } | { reason: string } <!-- internal -->
+    - fn [resource](../../src/frameworks/laravel.ts#L330) (code: PhpCode, facts: ConfigFacts, call: CallFact, prefix: string[], args: CallFact["args"] & {}, api: boolean, chain: { name: string; args: NonNullable<CallFact["args"]> }[]) → void <!-- internal -->
+      - calls base.php-code.str, base.php-code.arg, base.php-code.cls, base.php-code.strings, base.laravel.singular, base.php-code.PhpCode.method, base.laravel.joinPath, base.php-code.type
+    - fn [singular](../../src/frameworks/laravel.ts#L353) (word: string) → string <!-- internal -->
+    - fn [joinPath](../../src/frameworks/laravel.ts#L361) (parts: readonly string[]) → string <!-- internal -->
+    - fn [readConsole](../../src/frameworks/laravel.ts#L367) (code: PhpCode, file: FileFacts, facts: ConfigFacts, commands: ReadonlyMap<string, PhpClass>) → void <!-- internal -->
+      - calls base.php-code.PhpCode.calleeClass, base.laravel.isOneOf, base.php-code.str, base.php-code.arg, base.laravel.schedule
+    - fn [readKernel](../../src/frameworks/laravel.ts#L380) (code: PhpCode, file: FileFacts, facts: ConfigFacts, commands: ReadonlyMap<string, PhpClass>) → void <!-- internal -->
+      - calls base.php-code.callsOf, base.php-code.key, base.php-code.PhpCode.qualified, base.laravel.schedule
+    - fn [schedule](../../src/frameworks/laravel.ts#L387) (facts: ConfigFacts, file: string, call: CallFact, method: string, commands: ReadonlyMap<string, PhpClass>) → void <!-- internal -->
+      - calls base.php-code.arg, base.php-code.key, base.php-code.str, base.php-code.type
   - module [magento](../../src/frameworks/magento.ts#L1)
     - node external.node
     - saxes external.saxes
@@ -207,6 +257,43 @@
     - type [Open](../../src/frameworks/magento.ts#L74) <!-- internal -->
     - fn [parseDi](../../src/frameworks/magento.ts#L83) (path: string, text: string) → ConfigFacts
       - calls base.magento.scopeOf, base.magento.className
+  - module [php-code](../../src/frameworks/php-code.ts#L1)
+    - facts extract.facts
+    - adapter base.adapter
+    - type [PhpClass](../../src/frameworks/php-code.ts#L11)
+    - module [PhpCode](../../src/frameworks/php-code.ts#L24)
+      - fn [constructor](../../src/frameworks/php-code.ts#L29) (files: readonly FileFacts[])
+        - calls base.php-code.localNames, base.php-code.PhpCode.qualified, base.php-code.key
+      - fn [qualified](../../src/frameworks/php-code.ts#L46) (file: string, written: string) → string
+        - calls base.php-code.key
+      - fn [get](../../src/frameworks/php-code.ts#L51) (qualified: string) → PhpClass | undefined
+        - calls base.php-code.key
+      - fn [lineage](../../src/frameworks/php-code.ts#L56) (qualified: string) → PhpClass[]
+        - calls base.php-code.PhpCode.get
+      - fn [extends](../../src/frameworks/php-code.ts#L67) (cls: PhpClass, base: string) → boolean
+        - calls base.php-code.PhpCode.lineage, base.php-code.key
+      - fn [implements](../../src/frameworks/php-code.ts#L72) (cls: PhpClass, iface: string) → boolean
+        - calls base.php-code.PhpCode.lineage, base.php-code.key, base.php-code.PhpCode.get
+      - fn [method](../../src/frameworks/php-code.ts#L86) (qualified: string, name: string) → { cls: PhpClass; decl: DeclFact } | null
+        - calls base.php-code.PhpCode.lineage, base.php-code.key
+      - fn [calleeClass](../../src/frameworks/php-code.ts#L95) (file: string, callee: string) → string | null
+        - calls base.php-code.PhpCode.qualified
+    - fn [localNames](../../src/frameworks/php-code.ts#L103) (file: FileFacts) → Map<string, string> <!-- internal -->
+      - calls base.php-code.key
+    - fn [key](../../src/frameworks/php-code.ts#L113) (name: string) → string
+    - fn [sameClass](../../src/frameworks/php-code.ts#L117) (a: string, b: string) → boolean
+      - calls base.php-code.key
+    - fn [arg](../../src/frameworks/php-code.ts#L122) (args: readonly ArgFact[] | undefined, name: string | null, position: number | null) → LiteralFact | null
+    - fn [str](../../src/frameworks/php-code.ts#L133) (value: LiteralFact | null | undefined) → string | null
+    - fn [cls](../../src/frameworks/php-code.ts#L137) (value: LiteralFact | null | undefined) → string | null
+    - fn [strings](../../src/frameworks/php-code.ts#L142) (value: LiteralFact | null | undefined) → string[]
+    - fn [eventName](../../src/frameworks/php-code.ts#L150) (value: LiteralFact | null | undefined) → string | null
+    - fn [type](../../src/frameworks/php-code.ts#L158) (name: string) → TypeName
+    - fn [callsOf](../../src/frameworks/php-code.ts#L163) (file: FileFacts) → Generator<{ call: CallFact; symbol: string | null; decl: DeclFact | null; cls: DeclFact | null }>
+    - fn [codeFacts](../../src/frameworks/php-code.ts#L172) (path: string) → ConfigFacts
+    - fn [hasFacts](../../src/frameworks/php-code.ts#L177) (facts: ConfigFacts) → boolean
+    - fn [dispatchesIn](../../src/frameworks/php-code.ts#L196) (code: PhpCode, file: FileFacts) → { symbol: string; call: CallFact; event: string }[]
+      - calls base.php-code.callsOf, base.php-code.arg, base.php-code.PhpCode.get, base.php-code.PhpCode.qualified, base.php-code.str
   - module [sfcc](../../src/frameworks/sfcc.ts#L1)
     - node external.node
     - adapter base.adapter
@@ -217,6 +304,37 @@
       - calls base.sfcc.parseJson, base.sfcc.field
     - fn [field](../../src/frameworks/sfcc.ts#L98) (value: unknown, key: string) → unknown <!-- internal -->
     - fn [parseJson](../../src/frameworks/sfcc.ts#L102) (text: string | null) → { value: unknown; error: string | null } <!-- internal -->
+  - module [symfony](../../src/frameworks/symfony.ts#L1)
+    - node external.node
+    - yaml external.yaml
+    - facts extract.facts
+    - adapter base.adapter
+    - php-code base.php-code
+    - fn [parseJson](../../src/frameworks/symfony.ts#L63) (text: string | null) → unknown <!-- internal -->
+    - fn [className](../../src/frameworks/symfony.ts#L73) (written: string) → string <!-- internal -->
+    - fn [parseSymfonyConfig](../../src/frameworks/symfony.ts#L86) (path: string, text: string) → ConfigFacts
+      - calls base.symfony.argument, base.symfony.serviceRef, base.php-code.type, base.symfony.className, base.php-code.key
+    - fn [serviceRef](../../src/frameworks/symfony.ts#L175) (value: string) → string | null <!-- internal -->
+      - calls base.symfony.className
+    - fn [argument](../../src/frameworks/symfony.ts#L182) (facts: ConfigFacts, owner: string, pair: Pair, at: (node: YamlNode | Pair | null | undefined) => { line: number; col: number }, hole: (node: YamlNode | Pair | null | undefined, text: string, reason: string) => void) → void <!-- internal -->
+      - calls base.symfony.serviceRef, base.php-code.type
+    - fn [symfonyFacts](../../src/frameworks/symfony.ts#L197) (files: readonly FileFacts[], configs: readonly ConfigFacts[]) → FrameworkConfig[]
+      - calls base.php-code.PhpCode, base.php-code.codeFacts, base.symfony.routes, base.symfony.listeners, base.symfony.handlers, base.symfony.commands, base.symfony.tasks, base.symfony.aliases, base.php-code.dispatchesIn, base.php-code.hasFacts
+    - fn [attributes](../../src/frameworks/symfony.ts#L222) (decl: { attributes?: { name: string; args: { name?: string; value: LiteralFact }[]; line: number; col: number }[] }, names: readonly string[]) <!-- internal -->
+      - calls base.php-code.key
+    - fn [routes](../../src/frameworks/symfony.ts#L227) (c: PhpClass, facts: ConfigFacts, prefixes: readonly RoutePrefixFact[]) → void <!-- internal -->
+      - calls base.symfony.attributes, base.php-code.str, base.php-code.arg, base.symfony.joinPath, base.php-code.strings, base.php-code.type
+    - fn [joinPath](../../src/frameworks/symfony.ts#L249) (parts: readonly string[]) → string <!-- internal -->
+    - fn [listeners](../../src/frameworks/symfony.ts#L255) (code: PhpCode, c: PhpClass, facts: ConfigFacts) → void <!-- internal -->
+      - calls base.php-code.type, base.symfony.attributes, base.php-code.str, base.php-code.arg, base.php-code.eventName, base.php-code.PhpCode.implements
+    - fn [handlers](../../src/frameworks/symfony.ts#L293) (c: PhpClass, facts: ConfigFacts) → void <!-- internal -->
+      - calls base.php-code.cls, base.php-code.type, base.symfony.attributes, base.php-code.str, base.php-code.arg
+    - fn [commands](../../src/frameworks/symfony.ts#L304) (code: PhpCode, c: PhpClass, facts: ConfigFacts) → void <!-- internal -->
+      - calls base.symfony.attributes, base.php-code.str, base.php-code.arg, base.php-code.PhpCode.extends, base.php-code.PhpCode.method, base.php-code.type
+    - fn [tasks](../../src/frameworks/symfony.ts#L318) (c: PhpClass, facts: ConfigFacts) → void <!-- internal -->
+      - calls base.php-code.key, base.php-code.type, base.symfony.attributes, base.php-code.str, base.php-code.arg
+    - fn [aliases](../../src/frameworks/symfony.ts#L328) (c: PhpClass, facts: ConfigFacts) → void <!-- internal -->
+      - calls base.symfony.attributes, base.php-code.cls, base.php-code.arg, base.php-code.str, base.symfony.className, base.php-code.type
   - module [glob](../../src/glob.ts#L1)
     - fn [globToRegExp](../../src/glob.ts#L11) (glob: string) → RegExp
       - calls base.glob.source

@@ -84,7 +84,7 @@ keylang має допомагати швидко зануритись у чуж�
 | [12](issues/12-flows-business-names.md) | Бізнес-назви, описи й групування флоу в процеси (модель) | resolved | 11 |
 | [13](issues/13-blind-spots-report.md) | Звіт покриття: сліпі зони, сироти, «логіка в даних» | resolved | 09, 11 |
 | [14](issues/14-integrations-inventory.md) | Інвентар інтеграцій: вихідні HTTP/SDK, вхідні вебхуки, черги | resolved | 09 |
-| [15](issues/15-project-tour.md) | `keylang tour`: онбординг-бриф проєкту за 10 хвилин | ready-for-agent | 12, 13, 14 |
+| [15](issues/15-project-tour.md) | `keylang tour`: онбординг-бриф проєкту за 10 хвилин | resolved | 12, 13, 14 |
 | [16](issues/16-grammar-events.md) | Мова: `trigger event`, перевірка `emits event` проти фактів | ready-for-agent | 02, 08 |
 | [17](issues/17-grammar-parallel.md) | Мова: паралельні групи кроків `parallel` | resolved | 02 |
 | [18](issues/18-grammar-async-triggers.md) | Мова: асинхронні тригери (route/cron/consumer/webhook), `continues`, таймери | resolved | 02, 09 |
@@ -92,10 +92,10 @@ keylang має допомагати швидко зануритись у чуж�
 | [20](issues/20-web-diagram-model.md) | Web: API моделі діаграм (флоу, точки входу, події, шари) з розкладкою | resolved | — |
 | [21](issues/21-web-flow-viewer.md) | Web: перегляд флоу як діаграми (пошук, вердикти, перехід у код) | resolved | 20, 33 |
 | [22](issues/22-web-entry-explorer.md) | Web: дослідник точок входу й подій — інтерактивне дерево викликів | resolved | 09, 20 |
-| [23](issues/23-web-diagram-editor.md) | Web-редактор діаграм у стилі diagrams.net (draw.io) | ready-for-agent | 20, 21, 33 |
+| [23](issues/23-web-diagram-editor.md) | Web-редактор діаграм у стилі diagrams.net (draw.io) | resolved | 20, 21, 33 |
 | [24](issues/24-diagram-to-proposals.md) | Редактор → специфікація: зміни діаграми як пропозиції, файл розкладки | ready-for-agent | 23 |
 | [25](issues/25-diagram-copy-paste.md) | Копіювання фрагмента діаграми між вкладками й проєктами | ready-for-agent | 23, 26 |
-| [26](issues/26-flow-bundle-export-import.md) | `keylang flow export\|import`: переносний пакет бізнес-флоу | ready-for-agent | 12 |
+| [26](issues/26-flow-bundle-export-import.md) | `keylang flow export\|import`: переносний пакет бізнес-флоу | resolved | 12 |
 | [27](issues/27-migration-parity.md) | Міграція: таблиця відповідності ID і перевірка паритету старого й нового стеку | ready-for-agent | 26 |
 | [28](issues/28-export-bpmn-drawio.md) | Експорт у BPMN 2.0 і draw.io (.drawio), імпорт .drawio як чернетки | resolved | 20 |
 | [29](issues/29-greenfield-from-diagram.md) | Проєкт з нуля з діаграми: від ідеї до фічі для агентів | ready-for-agent | 24, 25 |

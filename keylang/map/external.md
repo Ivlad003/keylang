@@ -13,4 +13,5 @@
   - module smol-toml
   - module web-tree-sitter
   - module ws
+  - module yaml
   - module zod

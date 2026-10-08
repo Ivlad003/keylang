@@ -156,7 +156,6 @@ test("trace adapter: a server's two concurrent requests of two flows are two run
     ].join("\n"),
     ...FLOWS,
   });
-  assert.deepEqual(entryPlan(dir, "app.shop.handle", "server").ids, ["app.shop.buy", "app.shop.charge", "app.shop.credit", "app.shop.handle", "app.shop.refund", "app.shop.tick"]);
   // The server names each request's flow from its header; the client sends both requests at once.
   writeFileSync(
     join(dir, "run.mjs"),
@@ -178,6 +177,8 @@ test("trace adapter: a server's two concurrent requests of two flows are two run
       "",
     ].join("\n"),
   );
+  // The plan carries the snapshot id: plan after every file of the fixture exists (a new file outside the layers changes the id).
+  assert.deepEqual(entryPlan(dir, "app.shop.handle", "server").ids, ["app.shop.buy", "app.shop.charge", "app.shop.credit", "app.shop.handle", "app.shop.refund", "app.shop.tick"]);
   const env: Record<string, string | undefined> = { ...process.env, KEYLANG_TRACE: ".keylang/trace/server.jsonl", KEYLANG_TRACE_PLAN: "plan.json" };
   for (const name of ["KEYLANG_TRACE_RUN", "KEYLANG_TRACE_TEST", "KEYLANG_TRACE_FLOW", "KEYLANG_FLOW"]) delete env[name];
   const r = spawnSync(process.execPath, ["--import", adapter, "run.mjs"], { cwd: dir, encoding: "utf8", env, timeout: 60_000 });
@@ -205,8 +206,8 @@ test("trace adapter: a server's two concurrent requests of two flows are two run
 
 test("draft flow --from-trace: a step the static graph cannot see (a call through a value) is drafted with the trace marker, and check proves it by trace", (t) => {
   const dir = repo(t, JS, VALUE_CALL);
-  entryPlan(dir, "app.main.main");
   writeFileSync(join(dir, "run.mjs"), "const { main } = await import('./src/app/main.ts');\nmain(process.argv[2]);\n");
+  entryPlan(dir, "app.main.main");
   const record = (kind: string, test: string): void => {
     const env: Record<string, string | undefined> = { ...process.env, KEYLANG_TRACE: ".keylang/trace/checkout.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_FLOW: "checkout", KEYLANG_TRACE_TEST: test };
     for (const name of ["KEYLANG_TRACE_RUN", "KEYLANG_TRACE_FLOW"]) delete env[name];
@@ -285,6 +286,8 @@ test("python: keylang_trace.flow() on two threads at once makes two runs of two 
     ].join("\n"),
     ...FLOWS,
   });
+  // Every file of the fixture exists before the plan: the plan carries the snapshot id.
+  writeFileSync(join(dir, "cli.py"), "import threading\n\nfrom app.shop import buy\n\nprint(buy(threading.Barrier(1)))\n");
   entryPlan(dir, "app.shop.handle", "server");
   const env: Record<string, string | undefined> = { ...process.env, KEYLANG_TRACE: ".keylang/trace/server.jsonl", KEYLANG_TRACE_PLAN: "plan.json" };
   for (const name of ["KEYLANG_TRACE_RUN", "KEYLANG_TRACE_TEST", "KEYLANG_FLOW"]) delete env[name];
@@ -303,7 +306,6 @@ test("python: keylang_trace.flow() on two threads at once makes two runs of two 
 
   // KEYLANG_FLOW names the flow of a whole process (a command, not a server).
   rmSync(join(dir, ".keylang/trace"), { recursive: true, force: true });
-  writeFileSync(join(dir, "cli.py"), "import threading\n\nfrom app.shop import buy\n\nprint(buy(threading.Barrier(1)))\n");
   const cli = spawnSync("python3", [join(root, "adapters/python/keylang_trace.py"), "cli.py"], { cwd: dir, encoding: "utf8", env: { ...env, KEYLANG_FLOW: "buy" }, timeout: 60_000 });
   assert.equal(cli.status, 0, cli.stderr);
   const one = [...runsOf(events(join(dir, ".keylang/trace/server.jsonl"))).values()];

@@ -570,7 +570,7 @@
       - calls lang.spec-ir.plannedDeclaration
   - module [explain](../../src/explain.ts#L1)
     - diag base.diag
-    - fn [explainCode](../../src/explain.ts#L130) (code: string) → string | null
+    - fn [explainCode](../../src/explain.ts#L135) (code: string) → string | null
   - module [explorer](../../src/explorer.ts#L1)
     - external-ids base.external-ids
     - draft features.draft
@@ -613,39 +613,113 @@
     - span base.span
     - spec-ir lang.spec-ir
     - verdict check.verdict
-    - type [Stage](../../src/feature-status.ts#L34) = "idea" | "behavior" | "structure" | "ready" | "done"
-    - type [Gap](../../src/feature-status.ts#L40)
-    - type [Hint](../../src/feature-status.ts#L54)
-    - type [FeatureInfo](../../src/feature-status.ts#L64)
-    - type [BaseChanges](../../src/feature-status.ts#L78)
-    - type [BaseSource](../../src/feature-status.ts#L88) = "since" | "merge-base" | "HEAD"
-    - type [BaseOrigin](../../src/feature-status.ts#L91)
-    - type [FeatureBase](../../src/feature-status.ts#L112)
-    - type [FeatureBaseInfo](../../src/feature-status.ts#L120)
-    - type [FeatureReport](../../src/feature-status.ts#L122)
-    - type [FeatureInput](../../src/feature-status.ts#L140)
-    - fn [idsIn](../../src/feature-status.ts#L174) (doc: Document) → string[]
+    - weakening features.weakening
+    - type [Stage](../../src/feature-status.ts#L35) = "idea" | "behavior" | "structure" | "ready" | "done"
+    - type [Gap](../../src/feature-status.ts#L41)
+    - type [Hint](../../src/feature-status.ts#L55)
+    - type [FeatureInfo](../../src/feature-status.ts#L65)
+    - type [BaseChanges](../../src/feature-status.ts#L79)
+    - type [BaseSource](../../src/feature-status.ts#L89) = "since" | "merge-base" | "HEAD"
+    - type [BaseOrigin](../../src/feature-status.ts#L92)
+    - type [FeatureBase](../../src/feature-status.ts#L113)
+    - type [FeatureBaseInfo](../../src/feature-status.ts#L121)
+    - type [FeatureReport](../../src/feature-status.ts#L123)
+    - type [FeatureInput](../../src/feature-status.ts#L141)
+    - fn [idsIn](../../src/feature-status.ts#L177) (doc: Document) → string[]
       - calls lang.ir.sectionNodes, lang.ir.walk
-    - fn [featureStatus](../../src/feature-status.ts#L191) (input: FeatureInput, slug: string) → FeatureReport | null
+    - fn [featureStatus](../../src/feature-status.ts#L194) (input: FeatureInput, slug: string) → FeatureReport | null
       - calls base.config.specPath, base.diag.isError, lang.spec-ir.walkFlow, features.feature-status.denyGaps, features.feature-status.finding, features.feature-status.claimsOf, features.feature-status.thisChange, features.feature-status.idsIn, features.feature-status.ruleFails, features.feature-status.weakenedPlan, base.span.compareText, features.feature-status.stageOf, features.feature-status.baseInfo
-    - fn [baseInfo](../../src/feature-status.ts#L301) (base: FeatureBase) → FeatureBaseInfo <!-- internal -->
-    - type [RuleFail](../../src/feature-status.ts#L307) <!-- internal -->
-    - fn [ruleFails](../../src/feature-status.ts#L318) (input: FeatureInput) → RuleFail[] <!-- internal -->
+    - fn [baseInfo](../../src/feature-status.ts#L308) (base: FeatureBase) → FeatureBaseInfo <!-- internal -->
+    - type [RuleFail](../../src/feature-status.ts#L314) <!-- internal -->
+    - fn [ruleFails](../../src/feature-status.ts#L325) (input: FeatureInput) → RuleFail[] <!-- internal -->
       - calls base.diag.isError, check.assess.sameFinding
-    - fn [thisChange](../../src/feature-status.ts#L340) (input: FeatureInput, path: string, named: readonly string[]) → (fail: RuleFail) => boolean <!-- internal -->
+    - fn [thisChange](../../src/feature-status.ts#L347) (input: FeatureInput, path: string, named: readonly string[]) → (fail: RuleFail) => boolean <!-- internal -->
       - calls features.changed.filterChanged
-    - fn [stageOf](../../src/feature-status.ts#L368) (hasFlow: boolean, gaps: readonly Gap[], hints: readonly Hint[]) → Stage <!-- internal -->
-    - fn [denyGaps](../../src/feature-status.ts#L388) (input: FeatureInput, path: string, flows: readonly Flow[]) → Gap[] <!-- internal -->
+    - fn [stageOf](../../src/feature-status.ts#L375) (hasFlow: boolean, gaps: readonly Gap[], hints: readonly Hint[]) → Stage <!-- internal -->
+    - fn [denyGaps](../../src/feature-status.ts#L395) (input: FeatureInput, path: string, flows: readonly Flow[]) → Gap[] <!-- internal -->
       - calls check.rules.dependencyKindOf, check.rules.denyingRule
-    - fn [claimsOf](../../src/feature-status.ts#L430) (flow: Flow) → { id: string; span: Span }[] <!-- internal -->
+    - fn [claimsOf](../../src/feature-status.ts#L437) (flow: Flow) → { id: string; span: Span }[] <!-- internal -->
       - calls lang.spec-ir.walkFlow
-    - fn [weakenedPlan](../../src/feature-status.ts#L445) (input: FeatureInput, path: string, base: Extract<FeatureBase, { state: "compared" | "absent" }>) → Gap[] <!-- internal -->
+    - fn [weakenedPlan](../../src/feature-status.ts#L452) (input: FeatureInput, path: string, base: Extract<FeatureBase, { state: "compared" | "absent" }>) → Gap[] <!-- internal -->
       - calls features.feature-status.planGaps
-    - fn [planGaps](../../src/feature-status.ts#L462) (input: FeatureInput, path: string, at: string, baseDoc: Document) → { key: string; gap: Gap }[] <!-- internal -->
+    - fn [planGaps](../../src/feature-status.ts#L469) (input: FeatureInput, path: string, at: string, baseDoc: Document) → { key: string; gap: Gap }[] <!-- internal -->
       - calls lang.spec-ir.compileSpec, check.flows.plannedMismatch, features.feature-status.planItems
-    - type [PlanItem](../../src/feature-status.ts#L498) = Trigger | FlowStep | QuestionItem <!-- internal -->
-    - fn [planItems](../../src/feature-status.ts#L501) (flow: Flow) → { key: string; item: PlanItem }[] <!-- internal -->
-    - fn [finding](../../src/feature-status.ts#L515) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
+    - type [PlanItem](../../src/feature-status.ts#L505) = Trigger | FlowStep | QuestionItem
+    - fn [planItems](../../src/feature-status.ts#L508) (flow: Flow) → { key: string; item: PlanItem }[]
+    - fn [finding](../../src/feature-status.ts#L522) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
+  - module [flow-bundle](../../src/flow-bundle.ts#L1)
+    - brief base.brief
+    - glob base.glob
+    - ir lang.ir
+    - llm features.llm
+    - parser lang.parser
+    - snapshot map.snapshot
+    - span base.span
+    - type [BundleHeader](../../src/flow-bundle.ts#L37)
+    - type [BundleLayer](../../src/flow-bundle.ts#L50)
+    - type [BundleNode](../../src/flow-bundle.ts#L58)
+    - type [BundleTest](../../src/flow-bundle.ts#L74)
+    - type [BundleReach](../../src/flow-bundle.ts#L81)
+    - type [BundleFlow](../../src/flow-bundle.ts#L91)
+    - type [Bundle](../../src/flow-bundle.ts#L101)
+    - type [ExportFlow](../../src/flow-bundle.ts#L113)
+    - fn [flowIds](../../src/flow-bundle.ts#L126) (text: string) → string[]
+      - calls features.flow-bundle.idSpots
+    - fn [flowTests](../../src/flow-bundle.ts#L133) (flow: string, text: string) → BundleTest[]
+      - calls features.flow-bundle.flowNodes, lang.ir.walk
+    - fn [flowEvents](../../src/flow-bundle.ts#L142) (flow: string, text: string) → BundleReach[]
+      - calls features.flow-bundle.flowNodes, lang.ir.walk
+    - fn [bundleNodes](../../src/flow-bundle.ts#L156) (snapshot: AnalysisSnapshot, flows: readonly ExportFlow[], withCallees: number) → BundleNode[]
+      - calls features.flow-bundle.describe, features.flow-bundle.plannedIn, features.flow-bundle.flowIds
+    - fn [describe](../../src/flow-bundle.ts#L195) (snapshot: AnalysisSnapshot, id: string) → Omit<BundleNode, "role" | "flows"> <!-- internal -->
+      - calls base.brief.firstSentence
+    - fn [bundleText](../../src/flow-bundle.ts#L209) (input: { header: BundleHeader; layers: readonly BundleLayer[]; nodes: readonly BundleNode[]; tests: readonly BundleTest[]; reached: readonly BundleReach[]; flows: readonly ExportFlow[] }) → string
+      - calls features.flow-bundle.word, features.flow-bundle.cell, features.flow-bundle.row, features.flow-bundle.code, features.flow-bundle.text, features.flow-bundle.withBundleComment
+    - fn [withBundleComment](../../src/flow-bundle.ts#L247) (flow: ExportFlow) → string <!-- internal -->
+      - calls features.flow-bundle.quoteLine, features.flow-bundle.word
+    - fn [quoteLine](../../src/flow-bundle.ts#L256) (text: string) → string <!-- internal -->
+    - fn [word](../../src/flow-bundle.ts#L261) (value: string) → string <!-- internal -->
+    - fn [code](../../src/flow-bundle.ts#L265) (value: string) → string <!-- internal -->
+      - calls features.flow-bundle.cell
+    - fn [text](../../src/flow-bundle.ts#L270) (value: string) → string <!-- internal -->
+      - calls features.flow-bundle.cell
+    - fn [cell](../../src/flow-bundle.ts#L275) (value: string) → string <!-- internal -->
+    - fn [row](../../src/flow-bundle.ts#L279) (cells: readonly string[]) → string <!-- internal -->
+    - fn [parseBundle](../../src/flow-bundle.ts#L286) (source: string) → Bundle | { error: string }
+      - calls features.flow-bundle.cells, features.flow-bundle.plain, features.flow-bundle.unescapeText, lang.parser.parse
+    - fn [cells](../../src/flow-bundle.ts#L352) (line: string) → string[] <!-- internal -->
+    - fn [plain](../../src/flow-bundle.ts#L371) (value: string | undefined) → string <!-- internal -->
+    - fn [unescapeText](../../src/flow-bundle.ts#L376) (value: string) → string <!-- internal -->
+    - type [TargetLayer](../../src/flow-bundle.ts#L383)
+    - type [LayerChoice](../../src/flow-bundle.ts#L390)
+    - fn [parseLayerMap](../../src/flow-bundle.ts#L398) (text: string) → Map<string, string> | { error: string }
+    - fn [usedLayers](../../src/flow-bundle.ts#L410) (bundle: Bundle) → string[]
+      - calls features.flow-bundle.flowIds, features.flow-bundle.layerOfPath, base.span.compareText
+    - fn [algoLayers](../../src/flow-bundle.ts#L426) (layers: readonly string[], target: readonly TargetLayer[], taken: ReadonlyMap<string, LayerChoice> = new Map()) → { choices: LayerChoice[]; notes: string[] }
+    - fn [layerMapRequest](../../src/flow-bundle.ts#L442) (bundle: Bundle, layers: readonly string[], target: readonly TargetLayer[]) → LlmRequest
+    - fn [parseLayerMapAnswer](../../src/flow-bundle.ts#L468) (answer: string, layers: readonly string[], target: readonly TargetLayer[]) → { choices: LayerChoice[]; notes: string[] }
+      - calls features.flow-bundle.jsonOf, features.flow-bundle.isRecord
+    - fn [jsonOf](../../src/flow-bundle.ts#L483) (answer: string) → unknown <!-- internal -->
+    - fn [isRecord](../../src/flow-bundle.ts#L495) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [layerOfPath](../../src/flow-bundle.ts#L500) (layers: readonly { name: string; globs: string[] }[], path: string) → { name: string; root: string } | null <!-- internal -->
+      - calls base.glob.globPrefix
+    - type [ImportPlan](../../src/flow-bundle.ts#L513)
+    - type [ImportTarget](../../src/flow-bundle.ts#L523)
+    - fn [importPlan](../../src/flow-bundle.ts#L538) (bundle: Bundle, choices: readonly LayerChoice[], target: ImportTarget, options: { name: string; bundleFile: string; mode: string }) → ImportPlan
+      - calls base.glob.globPrefix, features.flow-bundle.layerOfPath, features.flow-bundle.word, features.flow-bundle.flowIds, features.flow-bundle.plannedIn, features.flow-bundle.plannedLine, features.flow-bundle.rehomedFlow
+    - fn [plannedLine](../../src/flow-bundle.ts#L599) (kind: string | undefined, id: string, signature: string | null, notes: string[]) → string <!-- internal -->
+      - calls lang.parser.parse
+    - fn [rehomedFlow](../../src/flow-bundle.ts#L613) (text: string, rehome: (id: string) => string, rehomePath: (path: string) => string, provenance: string, planned: readonly string[]) → string <!-- internal -->
+      - calls features.flow-bundle.idSpots, features.flow-bundle.flowNodes, lang.ir.walk
+    - fn [withMigration](../../src/flow-bundle.ts#L637) (existing: string | null, name: string, section: string) → string
+      - calls lang.parser.parse
+    - type [IdSpot](../../src/flow-bundle.ts#L654) <!-- internal -->
+    - fn [flowNodes](../../src/flow-bundle.ts#L660) (text: string) → Node[] <!-- internal -->
+      - calls lang.parser.parse
+    - fn [idSpots](../../src/flow-bundle.ts#L665) (text: string) → IdSpot[] <!-- internal -->
+      - calls features.flow-bundle.flowNodes, lang.ir.walk, lang.parser.isId
+    - fn [plannedIn](../../src/flow-bundle.ts#L681) (text: string) → Map<string, { kind: string; signature: string | null }> <!-- internal -->
+      - calls features.flow-bundle.flowNodes, lang.ir.walk
   - module [ghost](../../src/ghost.ts#L1)
     - analyze map.analyze
     - agent-context features.agent-context
@@ -681,11 +755,13 @@
       - calls base.config.toPosix
     - fn [gitFileAt](../../src/git-changes.ts#L157) (root: string, ref: string, path: string, label: string) → string | null
       - calls features.git-changes.assertRef, features.git-changes.gitIn
-    - fn [readFeatureBase](../../src/git-changes.ts#L179) (root: string, path: string, since: string | undefined, label: string) → FeatureBase
+    - fn [gitSpecFilesAt](../../src/git-changes.ts#L177) (root: string, ref: string, dir: string, label: string, skip: (path: string) => boolean = () => false) → Map<string, string>
+      - calls features.git-changes.assertRef, features.git-changes.gitIn, base.span.compareText
+    - fn [readFeatureBase](../../src/git-changes.ts#L203) (root: string, path: string, since: string | undefined, label: string) → FeatureBase
       - calls features.git-changes.featureBaseOrigin, features.git-changes.gitFileAt, features.git-changes.gitChangedFiles, base.span.compareText, lang.parser.parse
-    - fn [featureBaseOrigin](../../src/git-changes.ts#L218) (root: string, label: string) → BaseOrigin
+    - fn [featureBaseOrigin](../../src/git-changes.ts#L242) (root: string, label: string) → BaseOrigin
       - calls features.git-changes.gitIn
-    - fn [deletedModuleIds](../../src/git-changes.ts#L241) (config: Config, files: readonly string[]) → string[]
+    - fn [deletedModuleIds](../../src/git-changes.ts#L265) (config: Config, files: readonly string[]) → string[]
       - calls map.graph.placeFile
   - module [git-hook](../../src/git-hook.ts#L1)
     - node external.node
@@ -708,86 +784,86 @@
     - safe-write base.safe-write
     - fn [skillFile](../../src/harness.ts#L36) () → string
     - type [HarnessName](../../src/harness.ts#L41) = (typeof HARNESS_NAMES)[number]
-    - fn [denyRules](../../src/harness.ts#L60) (dir: string) → string[] <!-- internal -->
-    - fn [specDir](../../src/harness.ts#L65) (root: string) → string <!-- internal -->
+    - fn [denyRules](../../src/harness.ts#L66) (dir: string) → string[] <!-- internal -->
+    - fn [specDir](../../src/harness.ts#L81) (root: string) → string <!-- internal -->
       - calls base.config.parseConfig
-    - type [HarnessSelection](../../src/harness.ts#L74)
-    - type [HarnessFile](../../src/harness.ts#L80)
-    - type [HarnessPlan](../../src/harness.ts#L86)
-    - fn [parseAgents](../../src/harness.ts#L92) (value: string) → HarnessSelection
-    - type [HarnessProbe](../../src/harness.ts#L106)
-    - fn [detectHarnesses](../../src/harness.ts#L116) (probe: HarnessProbe) → HarnessName[]
+    - type [HarnessSelection](../../src/harness.ts#L90)
+    - type [HarnessFile](../../src/harness.ts#L96)
+    - type [HarnessPlan](../../src/harness.ts#L102)
+    - fn [parseAgents](../../src/harness.ts#L108) (value: string) → HarnessSelection
+    - type [HarnessProbe](../../src/harness.ts#L122)
+    - fn [detectHarnesses](../../src/harness.ts#L132) (probe: HarnessProbe) → HarnessName[]
       - calls features.harness.claudePresent
-    - fn [claudePresent](../../src/harness.ts#L127) (probe: HarnessProbe) → boolean <!-- internal -->
+    - fn [claudePresent](../../src/harness.ts#L143) (probe: HarnessProbe) → boolean <!-- internal -->
       - calls features.harness.claudeHasUserFile
-    - fn [claudeHasUserFile](../../src/harness.ts#L135) (probe: HarnessProbe, dir: string) → boolean <!-- internal -->
-    - fn [agentsBody](../../src/harness.ts#L149) (version: string, dir: string) → string
+    - fn [claudeHasUserFile](../../src/harness.ts#L151) (probe: HarnessProbe, dir: string) → boolean <!-- internal -->
+    - fn [agentsBody](../../src/harness.ts#L165) (version: string, dir: string) → string
       - calls features.harness.cliCommand
-    - fn [mcpCommand](../../src/harness.ts#L185) (version: string) → { command: string; args: string[] }
-    - fn [cliCommand](../../src/harness.ts#L190) (version: string) → string
-    - fn [pinSkill](../../src/harness.ts#L199) (skill: string, version: string, dir: string) → string
-    - fn [hookCommand](../../src/harness.ts#L204) (version: string) → string
+    - fn [mcpCommand](../../src/harness.ts#L201) (version: string) → { command: string; args: string[] }
+    - fn [cliCommand](../../src/harness.ts#L206) (version: string) → string
+    - fn [pinSkill](../../src/harness.ts#L215) (skill: string, version: string, dir: string) → string
+    - fn [hookCommand](../../src/harness.ts#L220) (version: string) → string
       - calls features.harness.cliCommand
-    - fn [planHarness](../../src/harness.ts#L214) (input: { selection: HarnessSelection; version: string; dir: string; skill: string; files: ReadonlyMap<string, string | null> }) → HarnessPlan
+    - fn [planHarness](../../src/harness.ts#L230) (input: { selection: HarnessSelection; version: string; dir: string; skill: string; files: ReadonlyMap<string, string | null> }) → HarnessPlan
       - calls features.harness.agentsBody, features.harness.mergeMarked, features.harness.mergeClaude, features.harness.mergeMcpJson, features.harness.mergeCodexToml, features.harness.opencodeFile, features.harness.mergeOpencode, features.harness.pinSkill, features.harness.mergeSettings, features.harness.mergeHooksFile
-    - fn [mergeMarked](../../src/harness.ts#L298) (existing: string | null, body: string | null) → { text: string | null } | { error: string }
+    - fn [mergeMarked](../../src/harness.ts#L314) (existing: string | null, body: string | null) → { text: string | null } | { error: string }
       - calls base.safe-write.allCrlf, features.harness.marked
-    - fn [marked](../../src/harness.ts#L324) (body: string, nl: "\n" | "\r\n") → string <!-- internal -->
-    - fn [mergeClaude](../../src/harness.ts#L333) (existing: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [marked](../../src/harness.ts#L340) (body: string, nl: "\n" | "\r\n") → string <!-- internal -->
+    - fn [mergeClaude](../../src/harness.ts#L349) (existing: string | null) → { text: string | null } | { error: string } <!-- internal -->
       - calls features.harness.outsideMarkers, features.harness.mergeMarked
-    - fn [outsideMarkers](../../src/harness.ts#L340) (existing: string | null) → string | { error: string } <!-- internal -->
-    - fn [mergeMcpJson](../../src/harness.ts#L350) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [outsideMarkers](../../src/harness.ts#L356) (existing: string | null) → string | { error: string } <!-- internal -->
+    - fn [mergeMcpJson](../../src/harness.ts#L366) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
       - calls features.harness.mergeJsonKey, features.harness.mcpCommand
-    - fn [mergeOpencode](../../src/harness.ts#L355) (existing: string | null, version: string | null, jsonc: boolean) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeOpencode](../../src/harness.ts#L371) (existing: string | null, version: string | null, jsonc: boolean) → { text: string | null } | { error: string } <!-- internal -->
       - calls features.harness.mergeJsonKey
-    - fn [mergeCodexToml](../../src/harness.ts#L381) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeCodexToml](../../src/harness.ts#L397) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
       - calls features.harness.isRecord, features.harness.codexTableRegion, features.harness.rewriteCodexToml, features.harness.withoutLines, features.harness.codexEntryIs, features.harness.mcpCommand
-    - fn [codexTableRegion](../../src/harness.ts#L419) (lines: readonly string[]) → { start: number; end: number } | null <!-- internal -->
-    - fn [withoutLines](../../src/harness.ts#L428) (lines: readonly string[], region: { start: number; end: number }) → string[] <!-- internal -->
-    - fn [codexEntryIs](../../src/harness.ts#L439) (text: string, entry: Record<string, unknown> | undefined) → boolean <!-- internal -->
+    - fn [codexTableRegion](../../src/harness.ts#L435) (lines: readonly string[]) → { start: number; end: number } | null <!-- internal -->
+    - fn [withoutLines](../../src/harness.ts#L444) (lines: readonly string[], region: { start: number; end: number }) → string[] <!-- internal -->
+    - fn [codexEntryIs](../../src/harness.ts#L455) (text: string, entry: Record<string, unknown> | undefined) → boolean <!-- internal -->
       - calls features.harness.isRecord
-    - fn [rewriteCodexToml](../../src/harness.ts#L451) (data: Record<string, unknown>, entry: Record<string, unknown> | null) → { text: string | null } <!-- internal -->
-    - fn [mergeSettings](../../src/harness.ts#L462) (existing: string | null, version: string | null, dir: string) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [rewriteCodexToml](../../src/harness.ts#L467) (data: Record<string, unknown>, entry: Record<string, unknown> | null) → { text: string | null } <!-- internal -->
+    - fn [mergeSettings](../../src/harness.ts#L478) (existing: string | null, version: string | null, dir: string) → { text: string | null } | { error: string } <!-- internal -->
       - calls features.harness.parseObject, features.harness.holdsKeylangSettings, features.harness.mergeDeny, features.harness.mergeHooksValue, features.harness.finishJson
-    - fn [mergeHooksFile](../../src/harness.ts#L478) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeHooksFile](../../src/harness.ts#L494) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
       - calls features.harness.parseObject, features.harness.holdsOurHook, features.harness.mergeHooksValue, features.harness.finishJson
-    - fn [mergeDeny](../../src/harness.ts#L495) (permissions: unknown, install: boolean, dir: string) → { value: unknown } | { error: string } <!-- internal -->
+    - fn [mergeDeny](../../src/harness.ts#L511) (permissions: unknown, install: boolean, dir: string) → { value: unknown } | { error: string } <!-- internal -->
       - calls features.harness.isRecord, features.harness.denyRules
-    - fn [mergeHooksValue](../../src/harness.ts#L511) (hooks: unknown, version: string | null) → { value: unknown } | { error: string } <!-- internal -->
+    - fn [mergeHooksValue](../../src/harness.ts#L527) (hooks: unknown, version: string | null) → { value: unknown } | { error: string } <!-- internal -->
       - calls features.harness.isRecord, features.harness.rewriteGroup, features.harness.hookCommand, features.harness.emptyGroup
-    - fn [rewriteGroup](../../src/harness.ts#L530) (group: unknown, version: string | null) → Record<string, unknown> | { error: string } <!-- internal -->
+    - fn [rewriteGroup](../../src/harness.ts#L546) (group: unknown, version: string | null) → Record<string, unknown> | { error: string } <!-- internal -->
       - calls features.harness.isRecord, features.harness.isOurHook, features.harness.hookCommand
-    - fn [emptyGroup](../../src/harness.ts#L546) (group: Record<string, unknown>) → boolean <!-- internal -->
-    - fn [isOurHook](../../src/harness.ts#L550) (command: string) → boolean <!-- internal -->
-    - fn [holdsKeylangSettings](../../src/harness.ts#L555) (data: Record<string, unknown>, dir: string) → boolean <!-- internal -->
+    - fn [emptyGroup](../../src/harness.ts#L562) (group: Record<string, unknown>) → boolean <!-- internal -->
+    - fn [isOurHook](../../src/harness.ts#L566) (command: string) → boolean <!-- internal -->
+    - fn [holdsKeylangSettings](../../src/harness.ts#L571) (data: Record<string, unknown>, dir: string) → boolean <!-- internal -->
       - calls features.harness.isRecord, features.harness.denyRules, features.harness.holdsOurHook
-    - fn [holdsOurHook](../../src/harness.ts#L562) (hooks: unknown) → boolean <!-- internal -->
+    - fn [holdsOurHook](../../src/harness.ts#L578) (hooks: unknown) → boolean <!-- internal -->
       - calls features.harness.isRecord, features.harness.isOurHook
-    - fn [mergeJsonKey](../../src/harness.ts#L567) (existing: string | null, path: readonly string[], server: unknown, jsonc = false) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeJsonKey](../../src/harness.ts#L583) (existing: string | null, path: readonly string[], server: unknown, jsonc = false) → { text: string | null } | { error: string } <!-- internal -->
       - calls features.harness.parseObject, features.harness.isRecord, features.harness.finishJson
-    - fn [parseObject](../../src/harness.ts#L584) (existing: string | null, jsonc = false) → { value: Record<string, unknown> } | { error: string } <!-- internal -->
+    - fn [parseObject](../../src/harness.ts#L600) (existing: string | null, jsonc = false) → { value: Record<string, unknown> } | { error: string } <!-- internal -->
       - calls map.imports.parseJsoncStrict, features.harness.isRecord
-    - fn [finishJson](../../src/harness.ts#L595) (data: Record<string, unknown>) → { text: string | null } <!-- internal -->
-    - fn [opencodeFile](../../src/harness.ts#L600) (files: ReadonlyMap<string, string | null>) → string <!-- internal -->
-    - fn [isRecord](../../src/harness.ts#L606) (value: unknown) → value is Record<string, unknown> <!-- internal -->
-    - type [HarnessChoice](../../src/harness.ts#L613) = "auto" | "none" | readonly HarnessName[]
-    - fn [harnessChoice](../../src/harness.ts#L616) (flag: string | undefined) → HarnessChoice
+    - fn [finishJson](../../src/harness.ts#L611) (data: Record<string, unknown>) → { text: string | null } <!-- internal -->
+    - fn [opencodeFile](../../src/harness.ts#L616) (files: ReadonlyMap<string, string | null>) → string <!-- internal -->
+    - fn [isRecord](../../src/harness.ts#L622) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - type [HarnessChoice](../../src/harness.ts#L629) = "auto" | "none" | readonly HarnessName[]
+    - fn [harnessChoice](../../src/harness.ts#L632) (flag: string | undefined) → HarnessChoice
       - calls features.harness.parseAgents
-    - fn [keylangVersion](../../src/harness.ts#L623) () → string
-    - type [HarnessCategory](../../src/harness.ts#L628) = "instructions" | "mcp" | "skill" | "settings" | "hooks"
-    - fn [harnessCategory](../../src/harness.ts#L630) (path: string) → HarnessCategory
-    - fn [diskProbe](../../src/harness.ts#L639) (root: string) → HarnessProbe
-    - fn [resolveChoice](../../src/harness.ts#L660) (choice: HarnessChoice, probe: HarnessProbe) → HarnessSelection
+    - fn [keylangVersion](../../src/harness.ts#L639) () → string
+    - type [HarnessCategory](../../src/harness.ts#L644) = "instructions" | "mcp" | "skill" | "settings" | "hooks"
+    - fn [harnessCategory](../../src/harness.ts#L646) (path: string) → HarnessCategory
+    - fn [diskProbe](../../src/harness.ts#L655) (root: string) → HarnessProbe
+    - fn [resolveChoice](../../src/harness.ts#L676) (choice: HarnessChoice, probe: HarnessProbe) → HarnessSelection
       - calls features.harness.detectHarnesses
-    - type [HarnessTarget](../../src/harness.ts#L670)
-    - type [AgentsPlan](../../src/harness.ts#L682)
-    - fn [planAgents](../../src/harness.ts#L698) (root: string, choice: HarnessChoice) → AgentsPlan
+    - type [HarnessTarget](../../src/harness.ts#L686)
+    - type [AgentsPlan](../../src/harness.ts#L698)
+    - fn [planAgents](../../src/harness.ts#L714) (root: string, choice: HarnessChoice) → AgentsPlan
       - calls features.harness.resolveChoice, features.harness.diskProbe, features.harness.specDir, features.harness.readInputs, features.harness.skillFile, features.harness.keylangVersion, features.harness.planHarness, features.harness.harnessCategory
-    - fn [readInputs](../../src/harness.ts#L714) (root: string) → Map<string, string | null> <!-- internal -->
-    - fn [agentsPlanProblems](../../src/harness.ts#L726) (plan: AgentsPlan) → string[]
+    - fn [readInputs](../../src/harness.ts#L730) (root: string) → Map<string, string | null> <!-- internal -->
+    - fn [agentsPlanProblems](../../src/harness.ts#L742) (plan: AgentsPlan) → string[]
       - calls features.harness.readInputs, features.harness.specDir, base.safe-write.writeProblem, base.safe-write.targetProblem, features.harness.detectHarnesses, features.harness.diskProbe
-    - type [HarnessStep](../../src/harness.ts#L753)
-    - fn [commitAgents](../../src/harness.ts#L770) ( plan: AgentsPlan, options: { signal?: AbortSignal; onStep?: (step: { path: string; action: "write" | "remove" }) => void } = {}, ) → Promise<{ steps: HarnessStep[]; outcome: "completed" | "failed" | "cancelled" }>
+    - type [HarnessStep](../../src/harness.ts#L769)
+    - fn [commitAgents](../../src/harness.ts#L786) ( plan: AgentsPlan, options: { signal?: AbortSignal; onStep?: (step: { path: string; action: "write" | "remove" }) => void } = {}, ) → Promise<{ steps: HarnessStep[]; outcome: "completed" | "failed" | "cancelled" }>
       - calls base.safe-write.targetProblem, base.safe-write.landing, base.safe-write.writeAtomic
   - module [integrations](../../src/integrations.ts#L1)
     - node external.node
@@ -1156,6 +1232,47 @@
       - calls features.stats.readStatsFile, base.safe-write.safeWrite
     - fn [statusesIn](../../src/stats.ts#L68) (lines: readonly string[]) → Record<string, number>
     - fn [addDrafts](../../src/stats.ts#L77) (stats: Stats, counts: Record<string, number>, field: keyof Tally) → void
+  - module [tour](../../src/tour.ts#L1)
+    - node external.node
+    - call-sites features.call-sites
+    - config base.config
+    - coverage-report features.coverage-report
+    - diagram map.diagram
+    - discover features.discover
+    - discover-names features.discover-names
+    - external-ids base.external-ids
+    - integrations features.integrations
+    - snapshot map.snapshot
+    - spec-ir lang.spec-ir
+    - span base.span
+    - type [TourFlow](../../src/tour.ts#L39)
+    - type [TourProcess](../../src/tour.ts#L56)
+    - type [Tour](../../src/tour.ts#L64)
+    - type [TourInputs](../../src/tour.ts#L121)
+    - fn [diagramLink](../../src/tour.ts#L128) (view: "flow" | "discovered", name: string) → string <!-- internal -->
+    - fn [readOrNull](../../src/tour.ts#L132) (abs: string) → string | null <!-- internal -->
+    - fn [moduleOf](../../src/tour.ts#L141) (snapshot: AnalysisSnapshot, id: string) → string | null <!-- internal -->
+    - fn [layerOrder](../../src/tour.ts#L153) (snapshot: AnalysisSnapshot) → string[] <!-- internal -->
+      - calls base.span.compareText
+    - fn [layersOf](../../src/tour.ts#L162) (snapshot: AnalysisSnapshot) → Tour["layers"] <!-- internal -->
+      - calls features.tour.layerOrder, features.tour.moduleOf, base.span.compareText
+    - fn [processesOf](../../src/tour.ts#L201) (inputs: TourInputs, flows: readonly DiscoveredFlow[], specDir: string) → Tour["processes"] <!-- internal -->
+      - calls features.tour.readOrNull, base.config.specPath, features.tour.diagramLink, base.span.compareText, features.discover-names.readProcesses
+    - fn [entriesOf](../../src/tour.ts#L263) (snapshot: AnalysisSnapshot) → Tour["entries"] <!-- internal -->
+    - fn [eventsOf](../../src/tour.ts#L278) (snapshot: AnalysisSnapshot) → Tour["events"] <!-- internal -->
+      - calls base.span.compareText
+    - fn [integrationsOf](../../src/tour.ts#L286) (report: IntegrationsReport) → Tour["integrations"] <!-- internal -->
+      - calls base.span.compareText
+    - fn [blindSpotsOf](../../src/tour.ts#L307) (report: CoverageReport) → Tour["blindSpots"] <!-- internal -->
+    - fn [startHereOf](../../src/tour.ts#L331) (snapshot: AnalysisSnapshot, spec: SpecIR, flows: readonly DiscoveredFlow[]) → Tour["startHere"] <!-- internal -->
+      - calls map.diagram.flowIds, features.call-sites.isTestFile, base.span.compareText
+    - fn [buildTour](../../src/tour.ts#L352) (inputs: TourInputs) → Promise<Tour>
+      - calls features.discover.specifiedTriggers, features.discover.discoverFlows, features.coverage-report.loadDataLogic, features.coverage-report.findDataLogic, features.coverage-report.coverageReport, features.tour.readOrNull, features.integrations.findIntegrations, features.integrations.loadIntegrations, features.tour.layersOf, features.tour.processesOf, features.tour.entriesOf, features.tour.eventsOf, features.tour.integrationsOf, features.tour.blindSpotsOf, features.tour.startHereOf
+    - fn [percent](../../src/tour.ts#L384) (share: number) → string <!-- internal -->
+    - fn [code](../../src/tour.ts#L385) (text: string) → string <!-- internal -->
+    - fn [cell](../../src/tour.ts#L387) (text: string) → string <!-- internal -->
+    - fn [tourMarkdown](../../src/tour.ts#L390) (tour: Tour) → string
+      - calls features.discover.proseLine, features.tour.code, features.tour.cell, features.tour.percent
   - module [voice-local](../../src/voice-local.ts#L1)
     - node external.node
     - voice features.voice
@@ -1213,3 +1330,40 @@
     - fn [transcriptOf](../../src/voice.ts#L204) (reply: string) → string <!-- internal -->
     - fn [transcribeOpenRouter](../../src/voice.ts#L219) (engine: Extract<VoiceEngine, { kind: "openrouter" }>, pcm: Int16Array, terms: readonly string[]) → Promise<string>
       - calls features.voice.windows, features.voice.wav, features.voice.transcriptOf, features.voice.joinWindows
+  - module [weakening](../../src/weakening.ts#L1)
+    - node external.node
+    - analyze map.analyze
+    - config base.config
+    - diag base.diag
+    - feature-status features.feature-status
+    - files lang.files
+    - git-changes features.git-changes
+    - graph map.graph
+    - ir lang.ir
+    - parser lang.parser
+    - span base.span
+    - spec-ir lang.spec-ir
+    - type [Weakening](../../src/weakening.ts#L27)
+    - type [WeakeningReport](../../src/weakening.ts#L37)
+    - type [ScopeFields](../../src/weakening.ts#L43) <!-- internal -->
+    - type [ClassField](../../src/weakening.ts#L54) = "exclude" | "outside" | "assume" <!-- internal -->
+    - fn [strings](../../src/weakening.ts#L56) (value: unknown) → string[] | undefined <!-- internal -->
+    - fn [scopeFields](../../src/weakening.ts#L58) (text: string) → ScopeFields <!-- internal -->
+      - calls base.config.withoutBom, features.weakening.strings
+    - fn [fieldLine](../../src/weakening.ts#L89) (text: string, field: string) → number <!-- internal -->
+    - fn [listText](../../src/weakening.ts#L94) (list: readonly string[] | undefined) → string <!-- internal -->
+    - fn [someFiles](../../src/weakening.ts#L96) (files: readonly string[]) → string <!-- internal -->
+    - fn [configWeakenings](../../src/weakening.ts#L107) (input: { base: string; now: string; files?: readonly string[]; place?: (file: string, fields: ScopeFields) => string; reached: (layer: string) => string | null; }) → Weakening[]
+      - calls features.weakening.scopeFields, features.weakening.fieldLine, base.config.sourceClass, features.weakening.listText, features.weakening.someFiles
+    - type [Atom](../../src/weakening.ts#L156) <!-- internal -->
+    - fn [atoms](../../src/weakening.ts#L164) (spec: SpecIR) → Atom[] <!-- internal -->
+    - fn [counts](../../src/weakening.ts#L174) (items: readonly T[], key: (item: T) => string) → Map<string, number> <!-- internal -->
+    - fn [ruleLayers](../../src/weakening.ts#L181) (rule: RuleAssertion) → string[] <!-- internal -->
+    - fn [reachingRule](../../src/weakening.ts#L191) (specs: readonly SpecIR[]) → (layer: string) => string | null
+      - calls features.weakening.ruleLayers
+    - fn [specWeakenings](../../src/weakening.ts#L200) (baseDocs: readonly Document[], nowDocs: readonly Document[], dir: string, at: string) → Weakening[]
+      - calls lang.spec-ir.compileSpec, base.config.specPath, features.weakening.atoms, features.weakening.counts, features.feature-status.planItems, base.span.compareText
+    - fn [weakeningDiagnostic](../../src/weakening.ts#L253) (weakening: Weakening, display: (path: string) => string = (path) => path) → Diagnostic
+      - calls base.diag.diagnostic
+    - fn [readWeakenings](../../src/weakening.ts#L265) (config: Config, ref: string, label: string, at: string = ref) → WeakeningReport
+      - calls base.config.specPath, map.analyze.readingAid, features.git-changes.gitFileAt, features.weakening.scopeFields, features.git-changes.gitSpecFilesAt, lang.files.collectMdFiles, base.config.toPosix, base.span.compareText, lang.parser.parse, features.weakening.reachingRule, lang.spec-ir.compileSpec, base.config.guessLayers, map.graph.placeFile, base.config.classifySources, features.weakening.configWeakenings, features.weakening.specWeakenings
