@@ -9,12 +9,14 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { gitUnavailable } from "./git-changes.ts";
-import { safeWrite, targetProblem, writeAtomic } from "./safe-write.ts";
+import { safeWrite, targetProblem } from "./safe-write.ts";
 
 /** What to clone and where it sits under the cache root. */
 export interface RepoSource {
-  /** What git clones: the URL as given, or an absolute local path. */
+  /** What git clones: the URL as given, or an absolute local path. Only git sees it: it may carry credentials. */
   url: string;
+  /** `url` without its userinfo (`user:token@`): what keylang prints and keeps in the marker. */
+  displayUrl: string;
   /** Path segments under the cache root: host and path for a URL, `local/<name>-<hash>` for a path. */
   key: string[];
 }
@@ -31,6 +33,15 @@ export function isCloneExplain(text: string): text is CloneExplain {
 /** Marks a directory keylang cloned: only such a directory is ever reset to the remote. */
 export const CLONE_MARKER = ".keylang/clone.json";
 
+/**
+ * A URL with its userinfo (`user:token@`) cut, as git does in its own
+ * messages; anything else is returned as is. A token passed in the URL goes to
+ * git and nowhere else: not to stdout (a CI log), stderr or the marker.
+ */
+export function redactUrl(text: string): string {
+  return text.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/?#@]*@/i, "$1");
+}
+
 const SAFE_SEGMENT = /^[A-Za-z0-9._~-]+$/;
 const SCP_LIKE = /^(?:[^@/\s]+@)?([^:/\s]+):(.+)$/;
 
@@ -42,13 +53,13 @@ const SCP_LIKE = /^(?:[^@/\s]+@)?([^:/\s]+):(.+)$/;
 export function parseRepoSource(text: string, cwd: string): RepoSource | { error: string } {
   const source = text.trim();
   if (source === "") return { error: "clone: a repository URL or path is required" };
-  if (source.startsWith("-")) return { error: `clone: \`${source}\` is not a repository URL` };
+  if (source.startsWith("-")) return { error: `clone: \`${redactUrl(source)}\` is not a repository URL` };
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(source)) return fromUrl(source);
   const local = resolve(cwd, source);
   if (existsSync(local)) {
     if (!statSync(local).isDirectory()) return { error: `clone: ${source} is not a directory` };
     const hash = createHash("sha256").update(local).digest("hex").slice(0, 8);
-    return { url: local, key: ["local", `${placeable(basename(local)) ?? "repo"}-${hash}`] };
+    return { url: local, displayUrl: local, key: ["local", `${placeable(basename(local)) ?? "repo"}-${hash}`] };
   }
   const scp = SCP_LIKE.exec(source);
   if (scp !== null) return keyed(source, scp[1]!, scp[2]!);
@@ -60,7 +71,7 @@ function fromUrl(source: string): RepoSource | { error: string } {
   try {
     url = new URL(source);
   } catch {
-    return { error: `clone: \`${source}\` is not a valid URL` };
+    return { error: `clone: \`${redactUrl(source)}\` is not a valid URL` };
   }
   const scheme = url.protocol.slice(0, -1).toLowerCase();
   if (scheme === "file") return parseRepoSource(decodeURIComponent(url.pathname), "/");
@@ -70,13 +81,14 @@ function fromUrl(source: string): RepoSource | { error: string } {
 }
 
 function keyed(url: string, host: string, path: string): RepoSource | { error: string } {
+  const displayUrl = redactUrl(url);
   const segments = path.split("/").filter((segment) => segment !== "");
   const last = segments.pop()?.replace(/\.git$/, "");
-  if (last === undefined || last === "") return { error: `clone: \`${url}\` names no repository` };
+  if (last === undefined || last === "") return { error: `clone: \`${displayUrl}\` names no repository` };
   const key = [host.toLowerCase(), ...segments, last];
   const bad = key.find((segment) => placeable(segment) === undefined);
-  if (bad !== undefined) return { error: `clone: \`${bad}\` in \`${url}\` cannot be a directory name; pass --dir` };
-  return { url, key };
+  if (bad !== undefined) return { error: `clone: \`${bad}\` in \`${displayUrl}\` cannot be a directory name; pass --dir` };
+  return { url, displayUrl, key };
 }
 
 function placeable(segment: string): string | undefined {
@@ -108,18 +120,19 @@ export function syncClone(source: RepoSource, dir: string): CloneSync {
     mkdirSync(dirname(dir), { recursive: true });
     git(dirname(dir), ["clone", "--quiet", "--depth", "1", "--", source.url, dir]);
     try {
-      safeWrite(dir, CLONE_MARKER, `${JSON.stringify({ url: source.url, key: source.key }, null, 2)}\n`, { under: ".keylang" });
+      safeWrite(dir, CLONE_MARKER, `${JSON.stringify({ url: source.displayUrl, key: source.key }, null, 2)}\n`, { under: ".keylang" });
     } catch (error) {
       rmSync(dir, { recursive: true, force: true });
       if (existed) mkdirSync(dir);
-      throw new Error(`clone: ${error instanceof Error ? error.message : String(error)}; the clone of ${source.url} was removed`);
+      throw new Error(`clone: ${error instanceof Error ? error.message : String(error)}; the clone of ${source.displayUrl} was removed`);
     }
     return { action: "cloned", dir };
   }
   const cloned = readMarker(dir);
   if (cloned === undefined) throw new Error(`clone: ${dir} exists and keylang did not clone it; pass another --dir`);
+  // A marker an older keylang wrote may hold credentials: shown without them.
   // The same repository spelled another way (`.git`, scp form, ssh) has the same key; fetch goes to the first URL's origin.
-  if (cloned.key.join("/") !== source.key.join("/")) throw new Error(`clone: ${dir} is a clone of ${cloned.url}, not ${source.url}; pass another --dir`);
+  if (cloned.key.join("/") !== source.key.join("/")) throw new Error(`clone: ${dir} is a clone of ${redactUrl(cloned.url)}, not ${source.displayUrl}; pass another --dir`);
   git(dir, ["fetch", "--quiet", "--depth", "1", "origin", "HEAD"]);
   git(dir, ["reset", "--quiet", "--hard", "FETCH_HEAD"]);
   return { action: "updated", dir };
@@ -156,8 +169,13 @@ function git(cwd: string, args: string[]): void {
 /**
  * Turns on the explained map (`"explain": {"map": true}`) in the clone's
  * keylang.json; the rest of the file stays. Returns an error to name, or null.
+ * The file is written under the repository's write rules, as the marker is: a
+ * `keylang.json` the clone's own commit made a link out of the clone is
+ * neither read as the clone's configuration nor written through.
  */
 export function enableExplainedMap(root: string): string | null {
+  const place = targetProblem(root, "keylang.json");
+  if (place !== null) return `keylang.json: ${place}`;
   const file = join(root, "keylang.json");
   let config: unknown;
   try {
@@ -171,6 +189,10 @@ export function enableExplainedMap(root: string): string | null {
   if (explain !== undefined && (typeof explain !== "object" || explain === null || Array.isArray(explain))) return "keylang.json: `explain` is not an object";
   if ((explain as Record<string, unknown> | undefined)?.map === true) return null;
   record.explain = { ...(explain as Record<string, unknown> | undefined), map: true };
-  writeAtomic(file, `${JSON.stringify(record, null, 2)}\n`);
+  try {
+    safeWrite(root, "keylang.json", `${JSON.stringify(record, null, 2)}\n`);
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
   return null;
 }

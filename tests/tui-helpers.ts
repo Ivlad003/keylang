@@ -27,7 +27,25 @@ export function session(root: string, options: { cols?: number; rows?: number; a
   const vt = new VirtualTerminal(cols, rows);
   const app = new App({ root, cols, rows, home: options.home ?? tempHome(), ...(options.analyzer ? { analyzer: options.analyzer } : {}), ...(options.operations ? { operations: options.operations } : {}), ...(options.microphone ? { microphone: options.microphone } : {}), ...(options.onQuit ? { onQuit: options.onQuit } : {}) });
   app.attach({ write: (ansi) => vt.feed(ansi) }, cols, rows);
-  return { app, vt, send: (keys) => app.input(keys), lines: () => vt.lines(), text: () => vt.text() };
+  const send = (keys: string): void => {
+    app.input(keys);
+    checkInvariants(app);
+  };
+  return { app, vt, send, lines: () => vt.lines(), text: () => vt.text() };
+}
+
+/**
+ * What no key may leave behind (review 2026-10-06, ticket 46): the session is
+ * in MERGE exactly when a merge is open — a `merge` mode without `state.merge`
+ * takes every key and answers none — and the back stack (`Ctrl+O`) remembers
+ * places in the editor only, never a MERGE or the code viewer, since coming
+ * back restores the mode without what it showed. `send` checks after every key.
+ */
+export function checkInvariants(app: App): void {
+  const state = app.state;
+  assert.equal(state.mode === "merge", state.merge !== null, `mode ${state.mode} while merge is ${state.merge === null ? "null" : state.merge.path}`);
+  const held = state.back.filter((place) => place.mode === "merge" || place.mode === "code");
+  assert.deepEqual(held, [], `the back stack holds ${JSON.stringify(held)}`);
 }
 
 export const sleep = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms));

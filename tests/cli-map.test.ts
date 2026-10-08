@@ -4,10 +4,12 @@
 // fact cache, a manual map file, and module ID collisions.
 
 import assert from "node:assert/strict";
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { analyze } from "../src/analyze.ts";
+import { runOperation } from "../src/operations.ts";
 import { keylang, mainRepo, repoCopy, root, tempDir, writeTree } from "./cli-helpers.ts";
 
 // M1: map of a small TS repository — one file per layer, deps, calls,
@@ -24,7 +26,7 @@ test("map generates the expected map and index", (t) => {
     assert.equal(readFileSync(join(dir, "keylang/map", n), "utf8"), readFileSync(join(expectedDir, n), "utf8"), n);
   }
   const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8"));
-  assert.equal(index.schema, 7);
+  assert.equal(index.schema, 8);
   assert.equal(index.nodes["domain.order"].members, "complete");
   assert.equal(index.nodes["external.node"].members, "opaque");
   assert.deepEqual(index.nodes["domain.order.createOrder"].callers, ["app.checkout.checkout"]);
@@ -309,7 +311,7 @@ test("an incompatible index is rebuilt without a diagnostic", (t) => {
   assert.equal(o.status, 0, out);
   assert.doesNotMatch(out, /incompatible|schema|corrupt/i);
   const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8"));
-  assert.equal(index.schema, 7);
+  assert.equal(index.schema, 8);
   assert.match(index.snapshotId, /^[0-9a-f]{64}$/);
 });
 
@@ -562,4 +564,54 @@ test("a module ID collision from two globs of one layer suggests splitting the l
   const o = keylang(dir, ["map"]);
   assert.match(o.stderr, /warning: app\/db\/__init__\.py: module ID collision: same module ID as `app\/core\/__init__\.py` \(`core\.__init__`\) from another path; the module is opaque until one of them is renamed; or split layer `core` so `app\/core\/\*\*` and `app\/db\/\*\*` are separate layers\n/);
   assert.match(o.stderr, /warning: web\/foo_bar\.ts: module ID collision: same module ID as `web\/foo\.bar\.ts` \(`web\.foo_bar`\) from another path; the module is opaque until one of them is renamed\n/);
+});
+
+// A `keylang.json` saved while the analysis runs (Ctrl+S in the TUI, an editor): the plan was computed from the old text, so the commit must refuse.
+test("map and wire: keylang.json changed during the analysis refuses the commit (failed, 1, nothing written), as a change after the plan does", async (t) => {
+  const dir = tempDir(t, "keylang-map-race-");
+  writeTree(dir, {
+    "keylang.json": `${JSON.stringify({ languages: ["typescript"], layers: { app: ["src/app/**"] } })}\n`,
+    "src/app/a.ts": "export function a(): number {\n  return 1;\n}\n",
+    "src/core/c.ts": "export function c(): number {\n  return 2;\n}\n",
+  });
+  const withCore = `${JSON.stringify({ languages: ["typescript"], layers: { app: ["src/app/**"], core: ["src/core/**"] } })}\n`;
+  const map = await runOperation(
+    { kind: "map", root: dir },
+    {
+      analyze: async (request) => {
+        const analyzed = await analyze(request);
+        writeFileSync(join(dir, "keylang.json"), withCore);
+        return analyzed;
+      },
+      beforeCommit: async () => undefined,
+    },
+  );
+  assert.equal(map.status, "failed", JSON.stringify(map.messages));
+  assert.equal(map.exitCode, 1);
+  assert.ok(map.messages.some((m) => m.text === "keylang.json: changed on disk while the map was computed"), JSON.stringify(map.messages));
+  assert.equal(existsSync(join(dir, "keylang/map")), false, "nothing written");
+  assert.equal(existsSync(join(dir, ".keylang/index.json")), false);
+  // The map of the saved config is then not stale.
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  assert.equal(keylang(dir, ["map", "--check"]).status, 0);
+
+  const shop = tempDir(t, "keylang-wire-race-");
+  cpSync(join(root, "tests/fixtures/wiring-shop"), shop, { recursive: true });
+  const config = readFileSync(join(shop, "keylang.json"), "utf8");
+  const excluded = `${JSON.stringify({ ...JSON.parse(config), exclude: ["src/infra/memory-db.ts"] })}\n`;
+  const wire = await runOperation(
+    { kind: "wire", root: shop, check: false },
+    {
+      analyze: async (request) => {
+        const analyzed = await analyze(request);
+        writeFileSync(join(shop, "keylang.json"), excluded);
+        return analyzed;
+      },
+      beforeCommit: async () => undefined,
+    },
+  );
+  assert.equal(wire.status, "failed", JSON.stringify(wire.messages));
+  assert.equal(wire.exitCode, 1);
+  assert.ok(wire.messages.some((m) => m.text === "keylang.json: changed on disk while the wiring was computed"), JSON.stringify(wire.messages));
+  assert.equal(existsSync(join(shop, "keylang.gen.ts")), false, "nothing written");
 });

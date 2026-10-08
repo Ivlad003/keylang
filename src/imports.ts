@@ -26,6 +26,7 @@ import { posix } from "node:path";
 import { toPosix } from "./config.ts";
 import { isNodeBuiltin } from "./extract/ts.ts";
 import { languageOf } from "./languages.ts";
+import { exactExistence, nodeFs, type ExactFs } from "./exact-path.ts";
 
 export type Resolution =
   /** `workspace`: the package that names the file, when a workspace package resolved it. */
@@ -98,6 +99,8 @@ export class ImportResolver {
   private readonly read: (file: string) => unknown;
   /** Source files of the analysis: they exist even when the disk does not have them (yet). */
   private readonly sources: ReadonlySet<string>;
+  /** A file on disk, spelled exactly so: `existsSync` alone finds `User.ts` through `user.ts` on APFS and NTFS. */
+  private readonly onDisk: (file: string) => boolean;
   private readonly cache = new Map<string, Resolution>();
   private readonly located = new Map<string, Located>();
   /** Per directory under the root: the packages its own `package.json` declares, with their ranges. */
@@ -111,9 +114,10 @@ export class ImportResolver {
   /** Config files read, with their text (null: absent); edges depend on them, so the snapshot id does too. */
   readonly inputs = new Map<string, string | null>();
 
-  constructor(root: string, sources: ReadonlySet<string> = new Set()) {
+  constructor(root: string, sources: ReadonlySet<string> = new Set(), fs: ExactFs = nodeFs) {
     this.root = root;
     this.sources = sources;
+    this.onDisk = exactExistence(root, fs);
     // One read per file: the text hashed into the snapshot id is the text parsed.
     const text = (file: string): string | null => {
       const known = this.inputs.get(file);
@@ -504,7 +508,7 @@ export class ImportResolver {
     for (const p of probeCandidates(candidate)) {
       if (this.sources.has(p)) return p;
       const abs = join(this.root, p);
-      if (existsSync(abs) && statSync(abs).isFile()) return p;
+      if (this.onDisk(p) && statSync(abs).isFile()) return p;
     }
     return null;
   }

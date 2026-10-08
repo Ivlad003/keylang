@@ -1,6 +1,6 @@
 # 10: Python `from m import *` не приносить імен, які m імпортує (модуль без `__all__`): дірка, а із зовнішнім glob — хибний static fail
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -57,11 +57,15 @@
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/graph.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/graph.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+- 2026-10-07: Регресійний тест `tests/languages.test.ts` «python: `from m import *` of a module without `__all__` brings the names m imports…» — фікстура тікета через справжній CLI (`app/util.py`, `app/base.py` без `__all__` з `from .util import helper`, `app/main.py` з `from math import *` і `from .base import *`, потік `trigger app.main.run / step app.util.helper`). До виправлення: `map` — `calls 1 resolved, 2 external` (`helper` зараховано пакету), `check` — `static fail`. Очікується: `calls 2 resolved, 1 external, 0 dynamic`, ребро `app.main.run -> app.util.helper`, жодного ребра `reexport`, таблиця `app.base` = `helper` (symbol `app.util.helper`, from `app.util`, без form) і `own`; `check` — `static ok`, exit 0; без `from math import *` — те саме. Далі правило `exports own` для `app.base` → K104 «exports `helper` (fn, imported from `app.util`)», `exports own, helper` — чисто. Останній блок: `for flag in (1,)` на верхньому рівні `base.py` і виклик `mystery()` поруч із `sqrt(4)` → `calls 1 resolved, 0 external, 2 dynamic`, дірка «call through `mystery`, a name from a glob import keylang does not follow», рядок `*` таблиці `app.base` з причиною «a module-level `for` binds names keylang does not list», правило `exports` — `unverified` з цією причиною.
+- 2026-10-07: Виправлення. `src/extract/python.ts`: для модуля без `__all__`, що не є `__init__.py`, публічні імена імпортів верхнього рівня (`import_statement`/`import_from_statement` серед `topLevel`, зокрема під `if`/`try`) додаються в таблицю експортів рядком `kind: value` без `reexport` — `exportInput` у graph.ts сам знаходить символ через імпорт і ставить `from`; ребро лишається `import` (той самий вигляд, що TS дає `import { a } from "./x"; export { a }`). Там само: `FileFacts.exportsIncomplete` (новий необов\'язковий рядок у `src/extract/facts.ts`) — причина, коли верхній рівень модуля без `__all__` прив\'язує імена, яких таблиця не перелічує (`for`, `while`, `with`, `match`, `except … as`, tuple-присвоєння); `src/graph.ts` перетворює його на джерело `*` з невідомим вмістом (`starFrom({ target: null, reason })`), тож `globOrigin()` каже `unknown`, а не `external`, через наявний механізм `UNKNOWN_EXPORT`. Наслідок, який прийнято: поруч із таким glob і `sqrt` з `from math import *` стає діркою, а не зовнішнім викликом — як поруч із нерозв\'язаним glob (`unknown` переважає `external`, graph.ts `globOrigin`). `src/rules.ts`: K104 для зайвого імені з `from` без форми пише «(fn, imported from `m`)», бо таке ім\'я — не оголошення модуля. Другий варіант з «Що зробити» (вважати glob будь-якого модуля без `__all__` unknown) не брав: він зробив би правило «glob stdlib → зовнішній виклик» майже мертвим для Python.
+- 2026-10-07: Контракт: `docs/snapshot.md` (Python: `from m import *` без `__all__` приносить і імпортовані імена; модуль із неперелічуваними прив\'язками — рядок `*`, дірка замість зовнішнього виклику, `exports` unverified; імпортоване публічне ім\'я звичайного модуля в таблиці без `form: reexport` і без ребра), `docs/semantics.md` § `exports` (K104 «imported from»); `llm.txt` без змін (glob Python там не описано). `docs/review-2026-10-06.md` п. 8 позначено ✔. Карту перегенеровано (зсув рядків у graph.ts/rules.ts/python.ts). Перевірки: `node --test tests/languages.test.ts tests/analyzer.test.ts tests/cli-map.test.ts tests/review-config.test.ts tests/review-graph.test.ts tests/cli-rules.test.ts tests/php.test.ts` — усе зелене, крім «the snapshot records the real versions of the tree-sitter runtime and grammars», яка падає в цьому worktree через відсутній `node_modules/web-tree-sitter/package.json` (середовище, не код); `npm run typecheck` — ок; `node bin/keylang.js map --check`, `check` — ок.

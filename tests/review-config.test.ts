@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
+import { withLayers } from "../src/config.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin/keylang.js");
@@ -342,4 +343,25 @@ test("assume is validated like exclude, and init and draft map do not write it",
   const fresh = repo(t, { ...SHOP, "src/config.ts": CONFIG_TS });
   assert.equal(keylang(fresh, ["init", "--agents=none"]).status, 0);
   assert.doesNotMatch(readFileSync(join(fresh, "keylang.json"), "utf8"), /assume/);
+});
+
+test("keylang.json with a UTF-8 BOM reads as the same JSON: check, fmt --check and parse work, and withLayers keeps the fields", (t) => {
+  const config = { format: 2, languages: ["typescript"], module: "file", layers: { app: ["src/app/**"], domain: ["src/domain/**"] } };
+  const dir = repo(t, {
+    "keylang.json": `\uFEFF${json(config)}`,
+    "keylang/rules.md": "# rules\n\n- deny domain app\n",
+    "src/app/a.ts": 'import { b } from "../domain/b.ts";\nexport function a(): number {\n  return b();\n}\n',
+    "src/domain/b.ts": "export function b(): number {\n  return 1;\n}\n",
+  });
+  const check = keylang(dir, ["check"]);
+  assert.equal(check.status, 0, check.stdout + check.stderr);
+  assert.doesNotMatch(check.stderr, /invalid JSON/);
+  const fmt = keylang(dir, ["fmt", "--check", "keylang"]);
+  assert.equal(fmt.status, 0, fmt.stdout + fmt.stderr);
+  const parse = keylang(dir, ["parse", "keylang/rules.md"]);
+  assert.equal(parse.status, 0, parse.stdout + parse.stderr);
+  assert.match(parse.stdout, /deny/);
+  const edited = withLayers("keylang.json", `\uFEFF${json(config)}`, { app: ["src/app/**"] });
+  assert.ok("text" in edited, JSON.stringify(edited));
+  assert.deepEqual(JSON.parse(edited.text), { ...config, layers: { app: ["src/app/**"] } });
 });

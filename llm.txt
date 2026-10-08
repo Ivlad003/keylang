@@ -102,7 +102,7 @@ If the bug the person cares about never shows up as an import or a call, say so.
 
 The person writes the spec: `keylang/rules.md`, flows, and feature files. You write the program from that spec.
 
-This file names the default spec directory, `keylang/`. When `keylang.json` sets `dir` (for example `"dir": "spec"`), every `keylang/…` path here is under that directory instead. The `AGENTS.md` block, the skill and the deny rules that `agents` writes already name it.
+This file names the default spec directory, `keylang/`. When `keylang.json` sets `dir` (for example `"dir": "spec"`), every `keylang/…` path here is under that directory instead; with `"dir": "."` they sit at the repository root (`features/<slug>.md`, `explain/`, `map/`, `rules.baseline.md`, `baseline.json`). The `AGENTS.md` block, the skill and the deny rules that `agents` writes already name it.
 
 When the person asks you to add a feature, you may create `keylang/features/<slug>.md` yourself. The slug matches `^[A-Za-z0-9][A-Za-z0-9._-]*$`. You still do not hand-edit the rules.
 
@@ -204,6 +204,7 @@ Server name: `keylang`. Only `apply_diff` writes to the repository, and only a p
 | `validate_spec` | Parse text as the file at `path`. Nothing is written |
 | `scaffold` | Stub and failing tests for one `planned fn`. Nothing is written |
 | `feature_status` | `{slug}`. Done or the gaps |
+| `list_entries` | Where execution starts: routes, `bin`, scripts, `main`. Same list as `keylang entries --json` |
 | `apply_diff` | Propose the full new text of one hand-written spec |
 
 CLI when MCP is off:

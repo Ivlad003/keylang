@@ -478,7 +478,8 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
     for (const row of actual) {
       if (row.name === "*" || rule.names.has(row.name.normalize("NFC"))) continue;
       failed = true;
-      const how = row.form === "reexport" && row.from ? `${row.kind}, re-exported from \`${row.from}\`` : row.form && row.form !== "reexport" ? `${row.kind}, ${row.form}` : row.kind;
+      // A name a Python module without `__all__` imports is public too, and no declaration of the module: say where it is from.
+      const how = row.form === "reexport" && row.from ? `${row.kind}, re-exported from \`${row.from}\`` : row.form && row.form !== "reexport" ? `${row.kind}, ${row.form}` : row.from ? `${row.kind}, imported from \`${row.from}\`` : row.kind;
       pushFail("K104", ...at, `divergence: \`${rule.module}\` exports \`${row.name}\` (${how}), which is not listed in \`exports\``, criterion, rule.module, spec, `${rule.module}.${row.name.normalize("NFC")}`);
     }
     const missing = [...rule.names].sort().filter((name) => !names.has(name));

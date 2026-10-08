@@ -164,6 +164,31 @@ test("clone: a repository whose `.keylang` is a link out of the clone gets no ma
   assert.equal(readFileSync(join(mine, "notes.txt"), "utf8"), "keep me\n");
 });
 
+test("clone --explain: a committed `keylang.json` that is a link out of the clone is not written through; the clone is removed, no model is asked", async (t) => {
+  const { dir, origin } = sandbox(t);
+  const outside = join(dir, "outside");
+  mkdirSync(outside, { recursive: true });
+  const config = `${JSON.stringify({ layers: { api: ["src/api/**"], domain: ["src/domain/**"] } }, null, 2)}\n`;
+  writeFileSync(join(outside, "keylang.json"), config);
+  symlinkSync(join(outside, "keylang.json"), join(origin, "keylang.json"), "file");
+  git(origin, ["add", "-A"]);
+  git(origin, ["commit", "-qm", "config link"]);
+  const fake = fakeAgents(t, ["claude"], { reply: "Does the thing." });
+
+  const refused = await keylang(dir, ["clone", "origin", "--explain", "map-and-ai"], fake, { KEYLANG_AGENT: "cli:claude" });
+  assert.equal(refused.status, 2, refused.stdout + refused.stderr);
+  assert.match(refused.stderr, /clone: keylang\.json: leads out of the repository through a link; the clone of .* was removed/);
+  assert.equal(readFileSync(join(outside, "keylang.json"), "utf8"), config, "the file behind the link is untouched");
+  assert.deepEqual(readdirSync(outside), ["keylang.json"]);
+  assert.equal(fake.calls().length, 0, "no explanation is asked for a clone keylang cannot configure");
+  const local = join(dir, "cache/keylang/repos/local");
+  assert.ok(!existsSync(local) || readdirSync(local).length === 0, "the clone is removed");
+  // Without --explain the clone is a plain map of the repository: nothing is written to keylang.json.
+  const plain = await keylang(dir, ["clone", "origin"]);
+  assert.equal(plain.status, 0, plain.stdout + plain.stderr);
+  assert.equal(readFileSync(join(outside, "keylang.json"), "utf8"), config);
+});
+
 test("clone --explain map-and-ai --dry-run estimates and asks nothing; map-and-ai writes briefs and the explained map; all adds a full explanation per layer", async (t) => {
   const { dir } = sandbox(t);
   const fake = fakeAgents(t, ["claude"], { reply: "Does the thing." });
@@ -191,4 +216,34 @@ test("clone --explain map-and-ai --dry-run estimates and asks nothing; map-and-a
   assert.match(all.stdout, /keylang\/explain\/domain\.md: written/);
   // The briefs were fresh: only the two layers were asked.
   assert.equal(fake.calls().length, asked + 2);
+});
+
+test("clone: credentials in a URL reach git only; stdout, the marker and a mismatch message show the URL without them", async (t) => {
+  const { dir, origin } = sandbox(t);
+  const secret = "https://alice:s3cretTOKEN@git.example.invalid/org/repo.git";
+  // git maps the credentialed URL to the local origin; keylang runs unchanged and offline.
+  const insteadOf = { GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: `url.file://${origin}.insteadOf`, GIT_CONFIG_VALUE_0: secret };
+  const first = await keylang(dir, ["clone", secret], null, insteadOf);
+  assert.equal(first.status, 0, first.stderr);
+  const clone = join(dir, "cache/keylang/repos/git.example.invalid/org/repo");
+  assert.match(first.stdout, new RegExp(`^${clone}: cloned from https://git\\.example\\.invalid/org/repo\\.git\n`));
+  assert.doesNotMatch(first.stdout + first.stderr, /s3cretTOKEN|alice/);
+  const marker = readFileSync(join(clone, ".keylang/clone.json"), "utf8");
+  assert.doesNotMatch(marker, /s3cretTOKEN|alice/);
+  assert.equal(JSON.parse(marker).url, "https://git.example.invalid/org/repo.git");
+
+  const again = await keylang(dir, ["clone", secret], null, insteadOf);
+  assert.equal(again.status, 0, again.stderr);
+  assert.match(again.stdout, new RegExp(`^${clone}: updated from https://git\\.example\\.invalid/org/repo\\.git\n`));
+
+  // A marker an older keylang wrote with credentials is shown without them too.
+  writeFileSync(join(clone, ".keylang/clone.json"), `${JSON.stringify({ url: secret, key: ["git.example.invalid", "org", "repo"] })}\n`);
+  const other = await keylang(dir, ["clone", "https://bob:OTHERtoken@127.0.0.1:1/org/other.git", "--dir", clone]);
+  assert.equal(other.status, 2);
+  assert.match(other.stderr, /is a clone of https:\/\/git\.example\.invalid\/org\/repo\.git, not https:\/\/127\.0\.0\.1:1\/org\/other\.git; pass another --dir/);
+  assert.doesNotMatch(other.stderr, /s3cretTOKEN|OTHERtoken|alice|bob/);
+
+  const bad = await keylang(dir, ["clone", "https://carol:T0KEN@git.example.invalid/"]);
+  assert.equal(bad.status, 2);
+  assert.doesNotMatch(bad.stderr, /T0KEN|carol/);
 });

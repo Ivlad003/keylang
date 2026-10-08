@@ -1,6 +1,6 @@
 # 48: Пропозиція з чату обрізається на першій вкладеній огорожі коду в специфікації
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -53,11 +53,13 @@ scratchpad/review/tui-new/parse.ts і fence.ts. fence.ts: checkoutRepo з пот
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/operations/assistant.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/operations/assistant.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+**2026-10-08:** `assistantSystem` (`src/operations/assistant.ts`) now asks for the candidate in a ````keylang path=<file> fence of four or more backticks, longer than any run in the file, closed with the same fence. `parseReply` closes a candidate at the fence that matches it (`candidateEnd`): for a candidate fence not longer than the file's own, a same-character fence with an info string (````ts`) inside opens a block of the file's own and takes the next closing fence; a nested block left open leaves the candidate unclosed (dropped by path, as an answer cut at the token limit). The opening fence's indent (up to its width) is removed from the body lines, as CommonMark has it. Other fenced blocks keep plain CommonMark. Regressions: `tests/tui-clip-chat.test.ts` «a spec's own code block inside the candidate survives…» (unit, both fence widths, unclosed nested, list-item indent) and the system-prompt rule list; `tests/tui-clip-proposals.test.ts` «a flow with its own code block comes back whole…» through the TUI chat with `mockModel` (127.0.0.1), four and three backticks: the proposal and the file after `w` are the full text (three backticks failed before). docs/tui.md updated (the prompt's fence and how the block closes); `llm.txt` does not describe the clip's block format.

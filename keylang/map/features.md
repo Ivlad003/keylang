@@ -6,72 +6,72 @@
   - module [agent-cli](../../src/agent-cli.ts#L1)
     - node external.node
     - config base.config
-    - type [Env](../../src/agent-cli.ts#L19) = Readonly<Record<string, string | undefined>> <!-- internal -->
-    - type [Preset](../../src/agent-cli.ts#L20) = (typeof AGENT_CLI_PRESETS)[number] <!-- internal -->
-    - type [CliDefinition](../../src/agent-cli.ts#L23) = { command: string[] } | { bin: string }
-    - type [AgentSettings](../../src/agent-cli.ts#L26)
-    - type [AgentSource](../../src/agent-cli.ts#L32) = "KEYLANG_AGENT" | "agents.json" | "keylang.json"
-    - type [CliRequest](../../src/agent-cli.ts#L34)
-    - type [CliCallOptions](../../src/agent-cli.ts#L40)
-    - type [CliClient](../../src/agent-cli.ts#L48)
-    - module [CliCancelled](../../src/agent-cli.ts#L59)
-      - fn [constructor](../../src/agent-cli.ts#L60) (agent: string)
-    - fn [agentsFile](../../src/agent-cli.ts#L75) (home: string) → string
-    - fn [readAgentSettings](../../src/agent-cli.ts#L80) (home: string) → AgentSettings
+    - type [Env](../../src/agent-cli.ts#L20) = Readonly<Record<string, string | undefined>> <!-- internal -->
+    - type [Preset](../../src/agent-cli.ts#L21) = (typeof AGENT_CLI_PRESETS)[number] <!-- internal -->
+    - type [CliDefinition](../../src/agent-cli.ts#L24) = { command: string[] } | { bin: string }
+    - type [AgentSettings](../../src/agent-cli.ts#L27)
+    - type [AgentSource](../../src/agent-cli.ts#L33) = "KEYLANG_AGENT" | "agents.json" | "keylang.json"
+    - type [CliRequest](../../src/agent-cli.ts#L35)
+    - type [CliCallOptions](../../src/agent-cli.ts#L41)
+    - type [CliClient](../../src/agent-cli.ts#L49)
+    - module [CliCancelled](../../src/agent-cli.ts#L60)
+      - fn [constructor](../../src/agent-cli.ts#L61) (agent: string)
+    - fn [agentsFile](../../src/agent-cli.ts#L76) (home: string) → string
+    - fn [readAgentSettings](../../src/agent-cli.ts#L81) (home: string) → AgentSettings
       - calls features.agent-cli.agentsFile, features.agent-cli.parseAgentSettings
-    - fn [parseAgentSettings](../../src/agent-cli.ts#L93) (file: string, value: unknown) → AgentSettings
+    - fn [parseAgentSettings](../../src/agent-cli.ts#L94) (file: string, value: unknown) → AgentSettings
       - calls features.agent-cli.isObject, base.config.isAgent, features.agent-cli.cliDefinition
-    - fn [cliDefinition](../../src/agent-cli.ts#L109) (file: string, name: string, def: unknown) → CliDefinition <!-- internal -->
+    - fn [cliDefinition](../../src/agent-cli.ts#L110) (file: string, name: string, def: unknown) → CliDefinition <!-- internal -->
       - calls features.agent-cli.isObject
-    - fn [resolveAgent](../../src/agent-cli.ts#L144) (configAgent: string | null, env: Env, home: string) → { agent: string | null; source: AgentSource | null }
+    - fn [resolveAgent](../../src/agent-cli.ts#L145) (configAgent: string | null, env: Env, home: string) → { agent: string | null; source: AgentSource | null }
       - calls base.config.isAgent, features.agent-cli.readAgentSettings
-    - fn [selectedAgent](../../src/agent-cli.ts#L159) (configAgent: string | null, env: Env = process.env, home: string = homedir()) → string | null
+    - fn [selectedAgent](../../src/agent-cli.ts#L160) (configAgent: string | null, env: Env = process.env, home: string = homedir()) → string | null
       - calls features.agent-cli.resolveAgent
-    - fn [parseCliAgent](../../src/agent-cli.ts#L168) (agent: string) → { name: string; model: string }
-    - type [Runner](../../src/agent-cli.ts#L175) = { preset: Preset; bin: string } | { command: string[] } <!-- internal -->
-    - fn [cliClient](../../src/agent-cli.ts#L182) (agent: string, options: { root: string; env: Env; home: string }) → { client: CliClient } | { missing: string }
+    - fn [parseCliAgent](../../src/agent-cli.ts#L169) (agent: string) → { name: string; model: string }
+    - type [Runner](../../src/agent-cli.ts#L176) = { preset: Preset; bin: string } | { command: string[] } <!-- internal -->
+    - fn [cliClient](../../src/agent-cli.ts#L183) (agent: string, options: { root: string; env: Env; home: string }) → { client: CliClient } | { missing: string }
       - calls features.agent-cli.parseCliAgent, features.agent-cli.readAgentSettings, features.agent-cli.agentsFile, features.agent-cli.findBinary, features.agent-cli.presetBinary, features.agent-cli.completeWith
-    - fn [presetBinary](../../src/agent-cli.ts#L217) (preset: Preset, bin: string | null, env: Env, home: string) → { bin: string } | { missing: string } <!-- internal -->
+    - fn [presetBinary](../../src/agent-cli.ts#L218) (preset: Preset, bin: string | null, env: Env, home: string) → { bin: string } | { missing: string } <!-- internal -->
       - calls features.agent-cli.findBinary, features.agent-cli.agentsFile, features.agent-cli.binaryVersion
-    - fn [binaryVersion](../../src/agent-cli.ts#L238) (bin: string, env: Env) → string | null <!-- internal -->
-    - fn [shortVersion](../../src/agent-cli.ts#L248) (line: string) → string
-    - fn [cliVersion](../../src/agent-cli.ts#L253) (bin: string, env: Env = process.env) → Promise<string | null>
+    - fn [binaryVersion](../../src/agent-cli.ts#L239) (bin: string, env: Env) → string | null <!-- internal -->
+    - fn [shortVersion](../../src/agent-cli.ts#L249) (line: string) → string
+    - fn [cliVersion](../../src/agent-cli.ts#L254) (bin: string, env: Env = process.env) → Promise<string | null>
       - calls features.agent-cli.shortVersion
-    - type [AgentCliProbe](../../src/agent-cli.ts#L272)
-    - fn [probeAgentClis](../../src/agent-cli.ts#L279) (env: Env = process.env, home: string = homedir()) → Promise<AgentCliProbe[]>
+    - type [AgentCliProbe](../../src/agent-cli.ts#L276)
+    - fn [probeAgentClis](../../src/agent-cli.ts#L283) (env: Env = process.env, home: string = homedir()) → Promise<AgentCliProbe[]>
       - calls features.agent-cli.readAgentSettings, features.agent-cli.presetBinary, features.agent-cli.cliVersion
-    - fn [findBinary](../../src/agent-cli.ts#L297) (name: string, env: Env) → string | null
+    - fn [findBinary](../../src/agent-cli.ts#L301) (name: string, env: Env) → string | null
       - calls features.agent-cli.executable
-    - fn [executable](../../src/agent-cli.ts#L307) (path: string) → boolean <!-- internal -->
-    - type [AnswerKind](../../src/agent-cli.ts#L320) = "result-json" | "file" | "opencode-events" | "stdout"
-    - type [Invocation](../../src/agent-cli.ts#L322)
-    - fn [invocation](../../src/agent-cli.ts#L337) (runner: Runner, model: string, request: CliRequest, root: string, env: Env, tmp: string) → Invocation
+    - fn [executable](../../src/agent-cli.ts#L311) (path: string) → boolean <!-- internal -->
+    - type [AnswerKind](../../src/agent-cli.ts#L324) = "result-json" | "file" | "opencode-events" | "stdout"
+    - type [Invocation](../../src/agent-cli.ts#L326)
+    - fn [invocation](../../src/agent-cli.ts#L341) (runner: Runner, model: string, request: CliRequest, root: string, env: Env, tmp: string) → Invocation
       - calls features.agent-cli.wellFormed, features.agent-cli.opencodeConfig
-    - fn [opencodeConfig](../../src/agent-cli.ts#L418) (existing: string | undefined, system: string) → string <!-- internal -->
+    - fn [opencodeConfig](../../src/agent-cli.ts#L422) (existing: string | undefined, system: string) → string <!-- internal -->
       - calls features.agent-cli.isObject
-    - fn [wellFormed](../../src/agent-cli.ts#L432) (text: string) → string <!-- internal -->
-    - type [ResultLine](../../src/agent-cli.ts#L436) = { text: string; model: string | null } | { error: string } <!-- internal -->
-    - fn [parseResultLine](../../src/agent-cli.ts#L439) (line: string) → ResultLine | null
+    - fn [wellFormed](../../src/agent-cli.ts#L436) (text: string) → string <!-- internal -->
+    - type [ResultLine](../../src/agent-cli.ts#L440) = { text: string; model: string | null } | { error: string } <!-- internal -->
+    - fn [parseResultLine](../../src/agent-cli.ts#L443) (line: string) → ResultLine | null
       - calls features.agent-cli.parseJson, features.agent-cli.isObject, features.agent-cli.answeringModel
-    - fn [answeringModel](../../src/agent-cli.ts#L452) (usage: unknown) → string | null <!-- internal -->
+    - fn [answeringModel](../../src/agent-cli.ts#L456) (usage: unknown) → string | null <!-- internal -->
       - calls features.agent-cli.isObject
-    - fn [parseOpencodeEvents](../../src/agent-cli.ts#L466) (output: string) → { text: string } | { error: string }
+    - fn [parseOpencodeEvents](../../src/agent-cli.ts#L470) (output: string) → { text: string } | { error: string }
       - calls features.agent-cli.parseJson, features.agent-cli.isObject
-    - fn [completeWith](../../src/agent-cli.ts#L485) (agent: string, runner: Runner, model: string, request: CliRequest, options: { root: string; env: Env }, call: CliCallOptions) → Promise<string> <!-- internal -->
+    - fn [completeWith](../../src/agent-cli.ts#L489) (agent: string, runner: Runner, model: string, request: CliRequest, options: { root: string; env: Env }, call: CliCallOptions) → Promise<string> <!-- internal -->
       - calls features.agent-cli.CliCancelled, features.agent-cli.invocation, features.agent-cli.runInvocation, features.agent-cli.readAnswer
-    - type [RunResult](../../src/agent-cli.ts#L505) <!-- internal -->
-    - fn [readAnswer](../../src/agent-cli.ts#L512) (agent: string, inv: Invocation, run: RunResult) → { text: string; model: string | null } <!-- internal -->
+    - type [RunResult](../../src/agent-cli.ts#L509) <!-- internal -->
+    - fn [readAnswer](../../src/agent-cli.ts#L516) (agent: string, inv: Invocation, run: RunResult) → { text: string; model: string | null } <!-- internal -->
       - calls features.agent-cli.lastResult, features.agent-cli.parseOpencodeEvents
-    - fn [lastResult](../../src/agent-cli.ts#L532) (stdout: string) → ResultLine | null <!-- internal -->
+    - fn [lastResult](../../src/agent-cli.ts#L536) (stdout: string) → ResultLine | null <!-- internal -->
       - calls features.agent-cli.parseResultLine
-    - fn [killGroup](../../src/agent-cli.ts#L542) (pid: number, signal: NodeJS.Signals) → void <!-- internal -->
-    - fn [hookExit](../../src/agent-cli.ts#L551) () → void <!-- internal -->
+    - fn [killGroup](../../src/agent-cli.ts#L546) (pid: number, signal: NodeJS.Signals) → void <!-- internal -->
+    - fn [hookExit](../../src/agent-cli.ts#L555) () → void <!-- internal -->
       - calls features.agent-cli.killGroup
-    - fn [runInvocation](../../src/agent-cli.ts#L570) (agent: string, inv: Invocation, root: string, call: CliCallOptions) → Promise<RunResult> <!-- internal -->
+    - fn [runInvocation](../../src/agent-cli.ts#L574) (agent: string, inv: Invocation, root: string, call: CliCallOptions) → Promise<RunResult> <!-- internal -->
       - calls features.agent-cli.hookExit, features.agent-cli.killGroup, features.agent-cli.CliCancelled, features.agent-cli.parseResultLine, features.agent-cli.stripAnsi
-    - fn [stripAnsi](../../src/agent-cli.ts#L668) (text: string) → string <!-- internal -->
-    - fn [parseJson](../../src/agent-cli.ts#L673) (text: string) → unknown <!-- internal -->
-    - fn [isObject](../../src/agent-cli.ts#L682) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [stripAnsi](../../src/agent-cli.ts#L677) (text: string) → string <!-- internal -->
+    - fn [parseJson](../../src/agent-cli.ts#L682) (text: string) → unknown <!-- internal -->
+    - fn [isObject](../../src/agent-cli.ts#L691) (value: unknown) → value is Record<string, unknown> <!-- internal -->
   - module [agent-context](../../src/agent-context.ts#L1)
     - node external.node
     - analyze map.analyze
@@ -109,6 +109,7 @@
       - calls features.baseline.externalModule
     - fn [externalModule](../../src/baseline.ts#L62) (snapshot: AnalysisSnapshot, id: string) → string | null <!-- internal -->
     - fn [baselinePath](../../src/baseline.ts#L74) (config: Pick<Config, "dir">) → string
+      - calls base.config.specPath
     - type [BaselinePlan](../../src/baseline.ts#L82)
     - fn [planBaseline](../../src/baseline.ts#L103) (config: Config, snapshot: AnalysisSnapshot) → BaselinePlan
       - calls features.baseline.baselinePath, features.baseline.baselineText, lang.files.readTextOrNull, base.safe-write.isGeneratedText, features.baseline.ruleLines, map.map.sourceInputs
@@ -178,25 +179,26 @@
     - git-changes features.git-changes
     - safe-write base.safe-write
     - type [RepoSource](../../src/clone.ts#L15)
-    - type [CloneExplain](../../src/clone.ts#L23) = "map-only" | "map-and-ai" | "all"
-    - fn [isCloneExplain](../../src/clone.ts#L27) (text: string) → text is CloneExplain
-    - fn [parseRepoSource](../../src/clone.ts#L42) (text: string, cwd: string) → RepoSource | { error: string }
-      - calls features.clone.fromUrl, features.clone.placeable, features.clone.keyed
-    - fn [fromUrl](../../src/clone.ts#L58) (source: string) → RepoSource | { error: string } <!-- internal -->
-      - calls features.clone.parseRepoSource, features.clone.keyed
-    - fn [keyed](../../src/clone.ts#L72) (url: string, host: string, path: string) → RepoSource | { error: string } <!-- internal -->
-      - calls features.clone.placeable
-    - fn [placeable](../../src/clone.ts#L82) (segment: string) → string | undefined <!-- internal -->
-    - fn [cloneCacheRoot](../../src/clone.ts#L87) (env: Readonly<Record<string, string | undefined>>, home: string) → string
-    - type [CloneSync](../../src/clone.ts#L92)
-    - fn [syncClone](../../src/clone.ts#L105) (source: RepoSource, dir: string) → CloneSync
-      - calls features.clone.git, base.safe-write.safeWrite, features.clone.readMarker
-    - fn [readMarker](../../src/clone.ts#L129) (dir: string) → { url: string; key: string[] } | undefined <!-- internal -->
+    - type [CloneExplain](../../src/clone.ts#L25) = "map-only" | "map-and-ai" | "all"
+    - fn [isCloneExplain](../../src/clone.ts#L29) (text: string) → text is CloneExplain
+    - fn [redactUrl](../../src/clone.ts#L41) (text: string) → string
+    - fn [parseRepoSource](../../src/clone.ts#L53) (text: string, cwd: string) → RepoSource | { error: string }
+      - calls features.clone.redactUrl, features.clone.fromUrl, features.clone.placeable, features.clone.keyed
+    - fn [fromUrl](../../src/clone.ts#L69) (source: string) → RepoSource | { error: string } <!-- internal -->
+      - calls features.clone.redactUrl, features.clone.parseRepoSource, features.clone.keyed
+    - fn [keyed](../../src/clone.ts#L83) (url: string, host: string, path: string) → RepoSource | { error: string } <!-- internal -->
+      - calls features.clone.redactUrl, features.clone.placeable
+    - fn [placeable](../../src/clone.ts#L94) (segment: string) → string | undefined <!-- internal -->
+    - fn [cloneCacheRoot](../../src/clone.ts#L99) (env: Readonly<Record<string, string | undefined>>, home: string) → string
+    - type [CloneSync](../../src/clone.ts#L104)
+    - fn [syncClone](../../src/clone.ts#L117) (source: RepoSource, dir: string) → CloneSync
+      - calls features.clone.git, base.safe-write.safeWrite, features.clone.readMarker, features.clone.redactUrl
+    - fn [readMarker](../../src/clone.ts#L142) (dir: string) → { url: string; key: string[] } | undefined <!-- internal -->
       - calls base.safe-write.targetProblem
-    - fn [git](../../src/clone.ts#L144) (cwd: string, args: string[]) → void <!-- internal -->
+    - fn [git](../../src/clone.ts#L157) (cwd: string, args: string[]) → void <!-- internal -->
       - calls features.git-changes.gitUnavailable
-    - fn [enableExplainedMap](../../src/clone.ts#L160) (root: string) → string | null
-      - calls base.safe-write.writeAtomic
+    - fn [enableExplainedMap](../../src/clone.ts#L176) (root: string) → string | null
+      - calls base.safe-write.targetProblem, base.safe-write.safeWrite
   - module [draft-llm](../../src/draft-llm.ts#L1)
     - analyze map.analyze
     - assess check.assess
@@ -429,7 +431,7 @@
     - fn [idsIn](../../src/feature-status.ts#L174) (doc: Document) → string[]
       - calls lang.ir.sectionNodes, lang.ir.walk
     - fn [featureStatus](../../src/feature-status.ts#L191) (input: FeatureInput, slug: string) → FeatureReport | null
-      - calls base.diag.isError, lang.spec-ir.walkFlow, features.feature-status.denyGaps, features.feature-status.finding, features.feature-status.claimsOf, features.feature-status.thisChange, features.feature-status.idsIn, features.feature-status.ruleFails, features.feature-status.weakenedPlan, base.span.compareText, features.feature-status.stageOf, features.feature-status.baseInfo
+      - calls base.config.specPath, base.diag.isError, lang.spec-ir.walkFlow, features.feature-status.denyGaps, features.feature-status.finding, features.feature-status.claimsOf, features.feature-status.thisChange, features.feature-status.idsIn, features.feature-status.ruleFails, features.feature-status.weakenedPlan, base.span.compareText, features.feature-status.stageOf, features.feature-status.baseInfo
     - fn [baseInfo](../../src/feature-status.ts#L301) (base: FeatureBase) → FeatureBaseInfo <!-- internal -->
     - type [RuleFail](../../src/feature-status.ts#L307) <!-- internal -->
     - fn [ruleFails](../../src/feature-status.ts#L318) (input: FeatureInput) → RuleFail[] <!-- internal -->
@@ -491,102 +493,105 @@
       - calls map.graph.placeFile
   - module [git-hook](../../src/git-hook.ts#L1)
     - node external.node
-    - fn [preCommitCommand](../../src/git-hook.ts#L11) (version: string) → string
-    - fn [preCommitText](../../src/git-hook.ts#L16) (version: string) → string
+    - fn [preCommitCommand](../../src/git-hook.ts#L13) (version: string) → string
+    - fn [preCommitText](../../src/git-hook.ts#L22) (version: string, subdir = "") → string
       - calls features.git-hook.preCommitCommand
-    - type [PreCommitState](../../src/git-hook.ts#L27) = "missing" | "foreign" | "stale" | "current"
-    - fn [preCommitState](../../src/git-hook.ts#L29) (current: string | null, executable: boolean, version: string) → PreCommitState
+    - type [PreCommitState](../../src/git-hook.ts#L34) = "missing" | "foreign" | "stale" | "current"
+    - fn [preCommitState](../../src/git-hook.ts#L36) (current: string | null, executable: boolean, version: string, subdir = "") → PreCommitState
       - calls features.git-hook.preCommitText
-    - fn [gitHooksDir](../../src/git-hook.ts#L41) (cwd: string) → string
+    - fn [gitHooksDir](../../src/git-hook.ts#L48) (cwd: string) → string
+      - calls features.git-hook.gitTopLevel, features.git-hook.git
+    - fn [gitTopLevel](../../src/git-hook.ts#L54) (cwd: string) → string
       - calls features.git-hook.git
-    - fn [git](../../src/git-hook.ts#L46) (cwd: string, args: string[]) → string <!-- internal -->
+    - fn [git](../../src/git-hook.ts#L58) (cwd: string, args: string[]) → string <!-- internal -->
   - module [harness](../../src/harness.ts#L1)
     - node external.node
     - smol-toml external.smol-toml
     - config base.config
+    - imports map.imports
     - safe-write base.safe-write
-    - fn [skillFile](../../src/harness.ts#L35) () → string
-    - type [HarnessName](../../src/harness.ts#L40) = (typeof HARNESS_NAMES)[number]
-    - fn [denyRules](../../src/harness.ts#L59) (dir: string) → string[] <!-- internal -->
-    - fn [specDir](../../src/harness.ts#L64) (root: string) → string <!-- internal -->
+    - fn [skillFile](../../src/harness.ts#L36) () → string
+    - type [HarnessName](../../src/harness.ts#L41) = (typeof HARNESS_NAMES)[number]
+    - fn [denyRules](../../src/harness.ts#L60) (dir: string) → string[] <!-- internal -->
+    - fn [specDir](../../src/harness.ts#L65) (root: string) → string <!-- internal -->
       - calls base.config.parseConfig
-    - type [HarnessSelection](../../src/harness.ts#L73)
-    - type [HarnessFile](../../src/harness.ts#L79)
-    - type [HarnessPlan](../../src/harness.ts#L85)
-    - fn [parseAgents](../../src/harness.ts#L91) (value: string) → HarnessSelection
-    - type [HarnessProbe](../../src/harness.ts#L105)
-    - fn [detectHarnesses](../../src/harness.ts#L115) (probe: HarnessProbe) → HarnessName[]
+    - type [HarnessSelection](../../src/harness.ts#L74)
+    - type [HarnessFile](../../src/harness.ts#L80)
+    - type [HarnessPlan](../../src/harness.ts#L86)
+    - fn [parseAgents](../../src/harness.ts#L92) (value: string) → HarnessSelection
+    - type [HarnessProbe](../../src/harness.ts#L106)
+    - fn [detectHarnesses](../../src/harness.ts#L116) (probe: HarnessProbe) → HarnessName[]
       - calls features.harness.claudePresent
-    - fn [claudePresent](../../src/harness.ts#L126) (probe: HarnessProbe) → boolean <!-- internal -->
+    - fn [claudePresent](../../src/harness.ts#L127) (probe: HarnessProbe) → boolean <!-- internal -->
       - calls features.harness.claudeHasUserFile
-    - fn [claudeHasUserFile](../../src/harness.ts#L134) (probe: HarnessProbe, dir: string) → boolean <!-- internal -->
-    - fn [agentsBody](../../src/harness.ts#L148) (version: string, dir: string) → string
+    - fn [claudeHasUserFile](../../src/harness.ts#L135) (probe: HarnessProbe, dir: string) → boolean <!-- internal -->
+    - fn [agentsBody](../../src/harness.ts#L149) (version: string, dir: string) → string
       - calls features.harness.cliCommand
-    - fn [mcpCommand](../../src/harness.ts#L184) (version: string) → { command: string; args: string[] }
-    - fn [cliCommand](../../src/harness.ts#L189) (version: string) → string
-    - fn [pinSkill](../../src/harness.ts#L198) (skill: string, version: string, dir: string) → string
-    - fn [hookCommand](../../src/harness.ts#L203) (version: string) → string
+    - fn [mcpCommand](../../src/harness.ts#L185) (version: string) → { command: string; args: string[] }
+    - fn [cliCommand](../../src/harness.ts#L190) (version: string) → string
+    - fn [pinSkill](../../src/harness.ts#L199) (skill: string, version: string, dir: string) → string
+    - fn [hookCommand](../../src/harness.ts#L204) (version: string) → string
       - calls features.harness.cliCommand
-    - fn [planHarness](../../src/harness.ts#L213) (input: { selection: HarnessSelection; version: string; dir: string; skill: string; files: ReadonlyMap<string, string | null> }) → HarnessPlan
+    - fn [planHarness](../../src/harness.ts#L214) (input: { selection: HarnessSelection; version: string; dir: string; skill: string; files: ReadonlyMap<string, string | null> }) → HarnessPlan
       - calls features.harness.agentsBody, features.harness.mergeMarked, features.harness.mergeClaude, features.harness.mergeMcpJson, features.harness.mergeCodexToml, features.harness.opencodeFile, features.harness.mergeOpencode, features.harness.pinSkill, features.harness.mergeSettings, features.harness.mergeHooksFile
-    - fn [mergeMarked](../../src/harness.ts#L297) (existing: string | null, body: string | null) → { text: string | null } | { error: string }
+    - fn [mergeMarked](../../src/harness.ts#L298) (existing: string | null, body: string | null) → { text: string | null } | { error: string }
       - calls base.safe-write.allCrlf, features.harness.marked
-    - fn [marked](../../src/harness.ts#L323) (body: string, nl: "\n" | "\r\n") → string <!-- internal -->
-    - fn [mergeClaude](../../src/harness.ts#L332) (existing: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [marked](../../src/harness.ts#L324) (body: string, nl: "\n" | "\r\n") → string <!-- internal -->
+    - fn [mergeClaude](../../src/harness.ts#L333) (existing: string | null) → { text: string | null } | { error: string } <!-- internal -->
       - calls features.harness.outsideMarkers, features.harness.mergeMarked
-    - fn [outsideMarkers](../../src/harness.ts#L339) (existing: string | null) → string | { error: string } <!-- internal -->
-    - fn [mergeMcpJson](../../src/harness.ts#L349) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [outsideMarkers](../../src/harness.ts#L340) (existing: string | null) → string | { error: string } <!-- internal -->
+    - fn [mergeMcpJson](../../src/harness.ts#L350) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
       - calls features.harness.mergeJsonKey, features.harness.mcpCommand
-    - fn [mergeOpencode](../../src/harness.ts#L353) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeOpencode](../../src/harness.ts#L355) (existing: string | null, version: string | null, jsonc: boolean) → { text: string | null } | { error: string } <!-- internal -->
       - calls features.harness.mergeJsonKey
-    - fn [mergeCodexToml](../../src/harness.ts#L379) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeCodexToml](../../src/harness.ts#L381) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
       - calls features.harness.isRecord, features.harness.codexTableRegion, features.harness.rewriteCodexToml, features.harness.withoutLines, features.harness.codexEntryIs, features.harness.mcpCommand
-    - fn [codexTableRegion](../../src/harness.ts#L417) (lines: readonly string[]) → { start: number; end: number } | null <!-- internal -->
-    - fn [withoutLines](../../src/harness.ts#L426) (lines: readonly string[], region: { start: number; end: number }) → string[] <!-- internal -->
-    - fn [codexEntryIs](../../src/harness.ts#L437) (text: string, entry: Record<string, unknown> | undefined) → boolean <!-- internal -->
+    - fn [codexTableRegion](../../src/harness.ts#L419) (lines: readonly string[]) → { start: number; end: number } | null <!-- internal -->
+    - fn [withoutLines](../../src/harness.ts#L428) (lines: readonly string[], region: { start: number; end: number }) → string[] <!-- internal -->
+    - fn [codexEntryIs](../../src/harness.ts#L439) (text: string, entry: Record<string, unknown> | undefined) → boolean <!-- internal -->
       - calls features.harness.isRecord
-    - fn [rewriteCodexToml](../../src/harness.ts#L449) (data: Record<string, unknown>, entry: Record<string, unknown> | null) → { text: string | null } <!-- internal -->
-    - fn [mergeSettings](../../src/harness.ts#L460) (existing: string | null, version: string | null, dir: string) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [rewriteCodexToml](../../src/harness.ts#L451) (data: Record<string, unknown>, entry: Record<string, unknown> | null) → { text: string | null } <!-- internal -->
+    - fn [mergeSettings](../../src/harness.ts#L462) (existing: string | null, version: string | null, dir: string) → { text: string | null } | { error: string } <!-- internal -->
       - calls features.harness.parseObject, features.harness.holdsKeylangSettings, features.harness.mergeDeny, features.harness.mergeHooksValue, features.harness.finishJson
-    - fn [mergeHooksFile](../../src/harness.ts#L476) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeHooksFile](../../src/harness.ts#L478) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
       - calls features.harness.parseObject, features.harness.holdsOurHook, features.harness.mergeHooksValue, features.harness.finishJson
-    - fn [mergeDeny](../../src/harness.ts#L493) (permissions: unknown, install: boolean, dir: string) → { value: unknown } | { error: string } <!-- internal -->
+    - fn [mergeDeny](../../src/harness.ts#L495) (permissions: unknown, install: boolean, dir: string) → { value: unknown } | { error: string } <!-- internal -->
       - calls features.harness.isRecord, features.harness.denyRules
-    - fn [mergeHooksValue](../../src/harness.ts#L509) (hooks: unknown, version: string | null) → { value: unknown } | { error: string } <!-- internal -->
+    - fn [mergeHooksValue](../../src/harness.ts#L511) (hooks: unknown, version: string | null) → { value: unknown } | { error: string } <!-- internal -->
       - calls features.harness.isRecord, features.harness.rewriteGroup, features.harness.hookCommand, features.harness.emptyGroup
-    - fn [rewriteGroup](../../src/harness.ts#L528) (group: unknown, version: string | null) → Record<string, unknown> | { error: string } <!-- internal -->
+    - fn [rewriteGroup](../../src/harness.ts#L530) (group: unknown, version: string | null) → Record<string, unknown> | { error: string } <!-- internal -->
       - calls features.harness.isRecord, features.harness.isOurHook, features.harness.hookCommand
-    - fn [emptyGroup](../../src/harness.ts#L544) (group: Record<string, unknown>) → boolean <!-- internal -->
-    - fn [isOurHook](../../src/harness.ts#L548) (command: string) → boolean <!-- internal -->
-    - fn [holdsKeylangSettings](../../src/harness.ts#L553) (data: Record<string, unknown>, dir: string) → boolean <!-- internal -->
+    - fn [emptyGroup](../../src/harness.ts#L546) (group: Record<string, unknown>) → boolean <!-- internal -->
+    - fn [isOurHook](../../src/harness.ts#L550) (command: string) → boolean <!-- internal -->
+    - fn [holdsKeylangSettings](../../src/harness.ts#L555) (data: Record<string, unknown>, dir: string) → boolean <!-- internal -->
       - calls features.harness.isRecord, features.harness.denyRules, features.harness.holdsOurHook
-    - fn [holdsOurHook](../../src/harness.ts#L560) (hooks: unknown) → boolean <!-- internal -->
+    - fn [holdsOurHook](../../src/harness.ts#L562) (hooks: unknown) → boolean <!-- internal -->
       - calls features.harness.isRecord, features.harness.isOurHook
-    - fn [mergeJsonKey](../../src/harness.ts#L565) (existing: string | null, path: readonly string[], server: unknown) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeJsonKey](../../src/harness.ts#L567) (existing: string | null, path: readonly string[], server: unknown, jsonc = false) → { text: string | null } | { error: string } <!-- internal -->
       - calls features.harness.parseObject, features.harness.isRecord, features.harness.finishJson
-    - fn [parseObject](../../src/harness.ts#L581) (existing: string | null) → { value: Record<string, unknown> } | { error: string } <!-- internal -->
-      - calls features.harness.isRecord
-    - fn [finishJson](../../src/harness.ts#L592) (data: Record<string, unknown>) → { text: string | null } <!-- internal -->
-    - fn [opencodeFile](../../src/harness.ts#L597) (files: ReadonlyMap<string, string | null>) → string <!-- internal -->
-    - fn [isRecord](../../src/harness.ts#L603) (value: unknown) → value is Record<string, unknown> <!-- internal -->
-    - type [HarnessChoice](../../src/harness.ts#L610) = "auto" | "none" | readonly HarnessName[]
-    - fn [harnessChoice](../../src/harness.ts#L613) (flag: string | undefined) → HarnessChoice
+    - fn [parseObject](../../src/harness.ts#L584) (existing: string | null, jsonc = false) → { value: Record<string, unknown> } | { error: string } <!-- internal -->
+      - calls map.imports.parseJsoncStrict, features.harness.isRecord
+    - fn [finishJson](../../src/harness.ts#L595) (data: Record<string, unknown>) → { text: string | null } <!-- internal -->
+    - fn [opencodeFile](../../src/harness.ts#L600) (files: ReadonlyMap<string, string | null>) → string <!-- internal -->
+    - fn [isRecord](../../src/harness.ts#L606) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - type [HarnessChoice](../../src/harness.ts#L613) = "auto" | "none" | readonly HarnessName[]
+    - fn [harnessChoice](../../src/harness.ts#L616) (flag: string | undefined) → HarnessChoice
       - calls features.harness.parseAgents
-    - fn [keylangVersion](../../src/harness.ts#L620) () → string
-    - type [HarnessCategory](../../src/harness.ts#L625) = "instructions" | "mcp" | "skill" | "settings" | "hooks"
-    - fn [harnessCategory](../../src/harness.ts#L627) (path: string) → HarnessCategory
-    - fn [diskProbe](../../src/harness.ts#L636) (root: string) → HarnessProbe
-    - fn [resolveChoice](../../src/harness.ts#L657) (choice: HarnessChoice, probe: HarnessProbe) → HarnessSelection
+    - fn [keylangVersion](../../src/harness.ts#L623) () → string
+    - type [HarnessCategory](../../src/harness.ts#L628) = "instructions" | "mcp" | "skill" | "settings" | "hooks"
+    - fn [harnessCategory](../../src/harness.ts#L630) (path: string) → HarnessCategory
+    - fn [diskProbe](../../src/harness.ts#L639) (root: string) → HarnessProbe
+    - fn [resolveChoice](../../src/harness.ts#L660) (choice: HarnessChoice, probe: HarnessProbe) → HarnessSelection
       - calls features.harness.detectHarnesses
-    - type [HarnessTarget](../../src/harness.ts#L667)
-    - type [AgentsPlan](../../src/harness.ts#L679)
-    - fn [planAgents](../../src/harness.ts#L695) (root: string, choice: HarnessChoice) → AgentsPlan
+    - type [HarnessTarget](../../src/harness.ts#L670)
+    - type [AgentsPlan](../../src/harness.ts#L682)
+    - fn [planAgents](../../src/harness.ts#L698) (root: string, choice: HarnessChoice) → AgentsPlan
       - calls features.harness.resolveChoice, features.harness.diskProbe, features.harness.specDir, features.harness.readInputs, features.harness.skillFile, features.harness.keylangVersion, features.harness.planHarness, features.harness.harnessCategory
-    - fn [readInputs](../../src/harness.ts#L711) (root: string) → Map<string, string | null> <!-- internal -->
-    - fn [agentsPlanProblems](../../src/harness.ts#L723) (plan: AgentsPlan) → string[]
+    - fn [readInputs](../../src/harness.ts#L714) (root: string) → Map<string, string | null> <!-- internal -->
+    - fn [agentsPlanProblems](../../src/harness.ts#L726) (plan: AgentsPlan) → string[]
       - calls features.harness.readInputs, features.harness.specDir, base.safe-write.writeProblem, base.safe-write.targetProblem, features.harness.detectHarnesses, features.harness.diskProbe
-    - type [HarnessStep](../../src/harness.ts#L750)
-    - fn [commitAgents](../../src/harness.ts#L767) ( plan: AgentsPlan, options: { signal?: AbortSignal; onStep?: (step: { path: string; action: "write" | "remove" }) => void } = {}, ) → Promise<{ steps: HarnessStep[]; outcome: "completed" | "failed" | "cancelled" }>
+    - type [HarnessStep](../../src/harness.ts#L753)
+    - fn [commitAgents](../../src/harness.ts#L770) ( plan: AgentsPlan, options: { signal?: AbortSignal; onStep?: (step: { path: string; action: "write" | "remove" }) => void } = {}, ) → Promise<{ steps: HarnessStep[]; outcome: "completed" | "failed" | "cancelled" }>
       - calls base.safe-write.targetProblem, base.safe-write.landing, base.safe-write.writeAtomic
   - module [keys](../../src/keys.ts#L1)
     - node external.node
@@ -614,12 +619,13 @@
     - type [Deadline](../../src/llm.ts#L148) <!-- internal -->
     - fn [deadline](../../src/llm.ts#L153) (variable: number, own: number | undefined) → Deadline <!-- internal -->
     - fn [timeoutMessage](../../src/llm.ts#L157) (provider: string, bound: Deadline) → string <!-- internal -->
-    - fn [callSignal](../../src/llm.ts#L166) (timeout: number, outer: AbortSignal | undefined) → { signal: AbortSignal; timedOut: () => boolean; cancelled: () => boolean; dispose: () => void } <!-- internal -->
-    - fn [anthropicComplete](../../src/llm.ts#L190) (client: Anthropic, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal) → Promise<string> <!-- internal -->
-      - calls features.llm.callSignal, features.llm.LlmCancelled, features.llm.timeoutMessage
-    - fn [openrouterComplete](../../src/llm.ts#L224) (base: string, key: string, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal) → Promise<string> <!-- internal -->
-      - calls features.llm.callSignal, features.llm.parseJson, features.llm.LlmCancelled, features.llm.timeoutMessage
-    - fn [parseJson](../../src/llm.ts#L283) (text: string) → unknown <!-- internal -->
+    - fn [truncatedMessage](../../src/llm.ts#L162) (model: string, reason: "max_tokens" | "length") → string <!-- internal -->
+    - fn [callSignal](../../src/llm.ts#L171) (timeout: number, outer: AbortSignal | undefined) → { signal: AbortSignal; timedOut: () => boolean; cancelled: () => boolean; dispose: () => void } <!-- internal -->
+    - fn [anthropicComplete](../../src/llm.ts#L195) (client: Anthropic, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal) → Promise<string> <!-- internal -->
+      - calls features.llm.callSignal, features.llm.LlmCancelled, features.llm.timeoutMessage, features.llm.truncatedMessage
+    - fn [openrouterComplete](../../src/llm.ts#L231) (base: string, key: string, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal) → Promise<string> <!-- internal -->
+      - calls features.llm.callSignal, features.llm.parseJson, features.llm.truncatedMessage, features.llm.LlmCancelled, features.llm.timeoutMessage
+    - fn [parseJson](../../src/llm.ts#L293) (text: string) → unknown <!-- internal -->
   - module [lsp-features](../../src/lsp-features.ts#L1)
     - node external.node
     - analyze map.analyze
@@ -644,7 +650,7 @@
     - type [Location](../../src/lsp-features.ts#L35)
     - type [Workspace](../../src/lsp-features.ts#L41)
     - fn [workspace](../../src/lsp-features.ts#L48) (root: string, analysis: Analysis, buffers: ReadonlyMap<string, string>) → Workspace
-      - calls lang.parser.parse, lang.files.readTextOrNull, map.emit.isGeneratedMap
+      - calls base.config.specPath, lang.parser.parse, lang.files.readTextOrNull, map.emit.isGeneratedMap
     - fn [lineStarts](../../src/lsp-features.ts#L83) (text: string) → number[] <!-- internal -->
     - fn [lspPoint](../../src/lsp-features.ts#L93) (text: string | null, line: number, col: number) → LspPosition <!-- internal -->
     - fn [fromPos](../../src/lsp-features.ts#L99) (text: string | null, pos: Pos) → LspPosition <!-- internal -->
@@ -663,7 +669,7 @@
     - fn [docOf](../../src/lsp-features.ts#L154) (ws: Workspace, path: string) → Document | undefined <!-- internal -->
       - calls features.lsp-features.readingDoc
     - fn [readingDoc](../../src/lsp-features.ts#L166) (ws: Workspace, path: string) → Document | undefined <!-- internal -->
-      - calls lang.parser.parse
+      - calls base.config.specPath, lang.parser.parse
     - fn [at](../../src/lsp-features.ts#L177) (ws: Workspace, path: string, position: LspPosition) → Target | null <!-- internal -->
       - calls features.lsp-features.docOf, features.lsp-features.targetAt, features.lsp-features.toOffset
     - type [LspDiagnostic](../../src/lsp-features.ts#L186)
@@ -896,6 +902,7 @@
     - type [StaleFinding](../../src/stale.ts#L43) extends Statement
     - type [StaleReport](../../src/stale.ts#L55)
     - fn [staleBaselinePath](../../src/stale.ts#L63) (config: Pick<Config, "dir">) → string
+      - calls base.config.specPath
     - fn [specStatements](../../src/stale.ts#L72) (docs: readonly Document[]) → Statement[]
       - calls features.stale.sectionRefs, features.stale.subtreeRefs, lang.ir.sectionNodes
     - fn [subtreeRefs](../../src/stale.ts#L107) (node: Node) → string[] <!-- internal -->

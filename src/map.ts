@@ -16,6 +16,7 @@ import { explanationOf, loadBriefs } from "./explanations.ts";
 import { buildGraph, placeFile, type Graph } from "./graph.ts";
 import { FACT_CACHE_FILE, FactCache } from "./fact-cache.ts";
 import { landing, writeAtomic, writeProblem } from "./safe-write.ts";
+import { collectEntries, ENTRY_MANIFESTS, type EntryManifests } from "./entries.ts";
 import { buildSnapshot, EXTRACTOR_VERSION, grammarVersions, sha256, type AnalysisSnapshot, type RepositoryDocs, type SystemDoc } from "./snapshot.ts";
 
 export interface MapResult {
@@ -58,12 +59,15 @@ export async function generateMap(config: Config, options: { persist?: boolean |
   // One read per file: the manifest hash, the cache key and the extracted facts come from the same text.
   const indexed: { path: string; sha256: string }[] = [];
   const sources = new Map<string, { text: string; sha256: string }>();
+  // Files keylang may not read (EACCES/EPERM): opaque modules and holes, as an unreadable directory.
+  const unreadableFiles: { file: string; reason: string }[] = [];
   for (const p of [...all]) {
     const abs = join(config.root, p);
-    const src = options.overlay?.get(abs) ?? readSource(abs);
-    if (src === null) {
-      // Removed between listing and reading: not part of this snapshot.
+    const src = options.overlay?.get(abs) ?? readAnalysedSource(abs);
+    if (src === null || typeof src !== "string") {
+      // Removed between listing and reading: not part of this snapshot. Not readable: a hole, its module opaque.
       all.splice(all.indexOf(p), 1);
+      if (src !== null && (!config.guessed || placeFile(config, p) !== null)) unreadableFiles.push({ file: p, reason: src.unreadable });
       continue;
     }
     const hash = sha256(src);
@@ -90,9 +94,10 @@ export async function generateMap(config: Config, options: { persist?: boolean |
   // A file `outside` the architecture is not read either, but it is no hole: a module of the layer `outside`.
   const outside = tree.outside;
   for (const p of outside) facts.push(opaqueFacts(p));
+  for (const { file } of unreadableFiles) facts.push(opaqueFacts(file));
   const graph = buildGraph(config, facts);
   // Layers written in keylang.json that overlap or match nothing: the layout still works, so a warning, first.
-  if (!config.guessed) graph.warnings.unshift(...layerGlobWarnings(config, [...all, ...excluded]));
+  if (!config.guessed) graph.warnings.unshift(...layerGlobWarnings(config, [...all, ...excluded, ...unreadableFiles.map((u) => u.file)].sort(compareText)));
   for (const [files, comment] of [[excluded, "excluded"], [outside, "outside"]] as const) {
     for (const p of files) {
       const module = graph.byPath.get(p);
@@ -106,12 +111,18 @@ export async function generateMap(config: Config, options: { persist?: boolean |
     const place = placeFile(config, `${dir}/${UNREADABLE_PROBE}`);
     return place === null ? [] : [{ file: dir, reason, source: [place.layer, ...place.segments.slice(0, -1)].join(".") }];
   });
+  for (const { file, reason } of unreadableFiles) graph.warnings.push(`\`${file}\`: ${reason}; its contents are not indexed`);
+  // Entry points: what the code and the root manifests write (ADR 0022 п. 5); the manifests join `snapshotId`.
+  const manifests: EntryManifests = { "package.json": null, "pyproject.toml": null, "Cargo.toml": null };
+  for (const name of ENTRY_MANIFESTS) manifests[name] = readSource(join(config.root, name));
+  const entries = collectEntries({ graph, facts, manifests, exists: (path) => existsSync(join(config.root, path)) });
   const index = buildSnapshot(graph, config, indexed, [
     ...skipped.map((file) => ({ file, reason: "outside guessed layers" })),
     ...excluded.map((file) => ({ file, reason: "excluded by keylang.json" })),
     ...outside.map((file) => ({ file, reason: "outside the architecture (`outside` in keylang.json)", kind: "outside-file" as const })),
     ...unreadable,
-  ], readRepositoryDocs(config));
+    ...unreadableFiles,
+  ], readRepositoryDocs(config), { list: entries, inputs: ENTRY_MANIFESTS.map((name) => [name, manifests[name]] as const) });
   let explained: Map<string, string> | null = null;
   if (config.explain.map) {
     const briefs = loadBriefs(config);
@@ -212,6 +223,17 @@ function readSource(abs: string): string | null {
     return readFileSync(abs, "utf8");
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+/** A source file's text as {@link readSource}, or the reason when keylang may not read it (EACCES/EPERM): a hole, not an I/O error. */
+function readAnalysedSource(abs: string): string | null | { unreadable: string } {
+  try {
+    return readSource(abs);
+  } catch (error) {
+    const code = error instanceof Error && "code" in error ? error.code : undefined;
+    if (code === "EACCES" || code === "EPERM") return { unreadable: `file is not readable (${code})` };
     throw error;
   }
 }
@@ -321,9 +343,13 @@ interface MapInputs extends SourceInputs {
   briefs: string | null;
 }
 
-/** The inputs of a snapshot as they are on disk now: the saved `keylang.json` and the snapshot's manifest. */
+/**
+ * The inputs of a snapshot: the `keylang.json` text the analysis parsed
+ * (not the disk now — a save made during the analysis must be caught at the
+ * commit, not become the base) and the snapshot's manifest.
+ */
 export function sourceInputs(config: Config, sources: readonly { path: string; sha256: string }[]): SourceInputs {
-  return { config: readOrNull(join(config.root, CONFIG_FILE)), sources };
+  return { config: config.text, sources };
 }
 
 /**

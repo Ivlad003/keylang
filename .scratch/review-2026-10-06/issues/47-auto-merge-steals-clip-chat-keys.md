@@ -1,6 +1,6 @@
 # 47: MERGE, що відкрився сам, перехоплює клавіші, які людина друкує в чат скрепки, і записує спеку
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -62,11 +62,13 @@ scratchpad/review/tui-new/mergefocus.ts (TMPDIR=$PWD node mergefocus.ts): checko
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/tui/app.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/tui/app.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+**2026-10-08:** `stillWhereStarted` (`src/tui/app.ts`) now also requires `!state.clip.chat.focused`: a proposal that ends while the clip's chat has the focus waits with its message (`m`, Proposals or Enter in F6 opens MERGE) and the focus stays in the chat. This covers every `afterProposal` caller (draft flow/rules, code-to-spec, Ctrl+Space, spec-to-code, questions). Regression: `tests/tui-drafts.test.ts` «a draft that ends while the clip's chat has the focus waits as a proposal…» (on the old code MERGE opened and took the focus). docs/tui.md: the draft-flow and Ctrl+Space paragraphs name the chat's focus among the reasons the proposal waits. `llm.txt` does not describe this; unchanged.

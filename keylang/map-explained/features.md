@@ -10,117 +10,117 @@
     <a id="features.agent-cli"></a><br>An agent CLI as a text model (ADR 0009): `cli:claude`, `cli:codex`, `cli:opencode`, `cli:cursor` or a command defined in `~/.config/keylang/agents.json`. One request is one run of the CLI in "answer only" form: no project hooks, MCP servers or instructions where the CLI can…
     - node [external.node](external.md#external.node)
     - config [base.config](base.md#base.config)
-    - type [Env](../../src/agent-cli.ts#L19) = Readonly<Record<string, string | undefined>> <!-- internal -->
+    - type [Env](../../src/agent-cli.ts#L20) = Readonly<Record<string, string | undefined>> <!-- internal -->
       <a id="features.agent-cli.Env"></a><br>A read-only map of environment variable names to their string values, where missing variables appear as `undefined`. It is the shape the agent CLI uses when reading process environment settings. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Preset](../../src/agent-cli.ts#L20) = (typeof AGENT_CLI_PRESETS)[number] <!-- internal -->
+    - type [Preset](../../src/agent-cli.ts#L21) = (typeof AGENT_CLI_PRESETS)[number] <!-- internal -->
       <a id="features.agent-cli.Preset"></a><br>Derives a string-literal union type from the elements of the `AGENT_CLI_PRESETS` array, so a value can only be one of the preset names listed there. Used to type-check preset selection in the agent CLI module. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [CliDefinition](../../src/agent-cli.ts#L23) = { command: string[] } | { bin: string }
+    - type [CliDefinition](../../src/agent-cli.ts#L24) = { command: string[] } | { bin: string }
       <a id="features.agent-cli.CliDefinition"></a><br>A user's own CLI: `command[0]` is the binary; `{prompt_file}` and `{model}` are placeholders. A preset name takes only `bin`.
-    - type [AgentSettings](../../src/agent-cli.ts#L26)
+    - type [AgentSettings](../../src/agent-cli.ts#L27)
       <a id="features.agent-cli.AgentSettings"></a><br>`~/.config/keylang/agents.json`, validated.
-    - type [AgentSource](../../src/agent-cli.ts#L32) = "KEYLANG_AGENT" | "agents.json" | "keylang.json"
+    - type [AgentSource](../../src/agent-cli.ts#L33) = "KEYLANG_AGENT" | "agents.json" | "keylang.json"
       <a id="features.agent-cli.AgentSource"></a><br>Where the effective agent came from.
-    - type [CliRequest](../../src/agent-cli.ts#L34)
+    - type [CliRequest](../../src/agent-cli.ts#L35)
       <a id="features.agent-cli.CliRequest"></a><br>Defines the shape of a single request handed to the CLI agent layer: a `system` string carrying instructions and a `prompt` string carrying the user-facing text to be answered. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [CliCallOptions](../../src/agent-cli.ts#L40)
+    - type [CliCallOptions](../../src/agent-cli.ts#L41)
       <a id="features.agent-cli.CliCallOptions"></a><br>`ms`: the call's bound; `fromVariable`: the bound is `KEYLANG_LLM_TIMEOUT_MS`, which the timeout message then names.
-    - type [CliClient](../../src/agent-cli.ts#L48)
+    - type [CliClient](../../src/agent-cli.ts#L49)
       <a id="features.agent-cli.CliClient"></a><br>Contract for a handle onto an external agent CLI binary: it exposes the agent identifier, the chosen model (empty for the CLI default) and the executable path. Its single method sends a `CliRequest` with `CliCallOptions` and resolves to the CLI's text output. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - module [CliCancelled](../../src/agent-cli.ts#L59)
+    - module [CliCancelled](../../src/agent-cli.ts#L60)
       <a id="features.agent-cli.CliCancelled"></a><br>The caller cancelled the run; `llm.ts` turns it into `LlmCancelled`.
-      - fn [constructor](../../src/agent-cli.ts#L60) (agent: string)
+      - fn [constructor](../../src/agent-cli.ts#L61) (agent: string)
         <a id="features.agent-cli.CliCancelled.constructor"></a><br>Builds an error whose message prefixes "cancelled" with the given agent label and sets the instance name to "CliCancelled" so callers can distinguish it from other failures. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [agentsFile](../../src/agent-cli.ts#L75) (home: string) → string
+    - fn [agentsFile](../../src/agent-cli.ts#L76) (home: string) → string
       <a id="features.agent-cli.agentsFile"></a><br>Builds the path to the per-user agent settings file by joining the given home directory with `.config/keylang/agents.json`. Used by [`features.agent-cli.readAgentSettings`](features.md#features.agent-cli.readAgentSettings), [`features.agent-cli.cliClient`](features.md#features.agent-cli.cliClient), and [`features.agent-cli.presetBinary`](features.md#features.agent-cli.presetBinary) to locate that file. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [readAgentSettings](../../src/agent-cli.ts#L80) (home: string) → AgentSettings
+    - fn [readAgentSettings](../../src/agent-cli.ts#L81) (home: string) → AgentSettings
       <a id="features.agent-cli.readAgentSettings"></a><br>agents.json, validated; an absent file is empty settings. Errors name the file and the field.
       - calls [features.agent-cli.agentsFile](features.md#features.agent-cli.agentsFile), [features.agent-cli.parseAgentSettings](features.md#features.agent-cli.parseAgentSettings)
-    - fn [parseAgentSettings](../../src/agent-cli.ts#L93) (file: string, value: unknown) → AgentSettings
+    - fn [parseAgentSettings](../../src/agent-cli.ts#L94) (file: string, value: unknown) → AgentSettings
       <a id="features.agent-cli.parseAgentSettings"></a><br>The settings of an agents.json already parsed as JSON.
       - calls [features.agent-cli.isObject](features.md#features.agent-cli.isObject), [base.config.isAgent](base.md#base.config.isAgent), [features.agent-cli.cliDefinition](features.md#features.agent-cli.cliDefinition)
-    - fn [cliDefinition](../../src/agent-cli.ts#L109) (file: string, name: string, def: unknown) → CliDefinition <!-- internal -->
+    - fn [cliDefinition](../../src/agent-cli.ts#L110) (file: string, name: string, def: unknown) → CliDefinition <!-- internal -->
       <a id="features.agent-cli.cliDefinition"></a><br>Validates one `clis.<name>` entry from a settings file, checking the name format, allowed fields, and either a non-empty `bin` string or a `command` array whose placeholders are known, throwing descriptive errors on any violation. Preset names may only override `bin`; it uses… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.agent-cli.isObject](features.md#features.agent-cli.isObject)
-    - fn [resolveAgent](../../src/agent-cli.ts#L144) (configAgent: string | null, env: Env, home: string) → { agent: string | null; source: AgentSource | null }
+    - fn [resolveAgent](../../src/agent-cli.ts#L145) (configAgent: string | null, env: Env, home: string) → { agent: string | null; source: AgentSource | null }
       <a id="features.agent-cli.resolveAgent"></a><br>The agent in effect and where it came from: `KEYLANG_AGENT` (an empty variable is unset), else agents.json "use", else keylang.json `agent`. An invalid variable or agents.json throws, naming it.
       - calls [base.config.isAgent](base.md#base.config.isAgent), [features.agent-cli.readAgentSettings](features.md#features.agent-cli.readAgentSettings)
-    - fn [selectedAgent](../../src/agent-cli.ts#L159) (configAgent: string | null, env: Env = process.env, home: string = homedir()) → string | null
+    - fn [selectedAgent](../../src/agent-cli.ts#L160) (configAgent: string | null, env: Env = process.env, home: string = homedir()) → string | null
       <a id="features.agent-cli.selectedAgent"></a><br>The effective agent for deciding whether to ask at all (ghost, forms): a broken setting counts as an agent, so the request that follows reports it.
       - calls [features.agent-cli.resolveAgent](features.md#features.agent-cli.resolveAgent)
-    - fn [parseCliAgent](../../src/agent-cli.ts#L168) (agent: string) → { name: string; model: string }
+    - fn [parseCliAgent](../../src/agent-cli.ts#L169) (agent: string) → { name: string; model: string }
       <a id="features.agent-cli.parseCliAgent"></a><br>`cli:opencode:anthropic/claude-sonnet-5` → name and model (the model keeps its colons).
-    - type [Runner](../../src/agent-cli.ts#L175) = { preset: Preset; bin: string } | { command: string[] } <!-- internal -->
+    - type [Runner](../../src/agent-cli.ts#L176) = { preset: Preset; bin: string } | { command: string[] } <!-- internal -->
       <a id="features.agent-cli.Runner"></a><br>What `cliClient` runs: a preset with its binary, or a user's command.
-    - fn [cliClient](../../src/agent-cli.ts#L182) (agent: string, options: { root: string; env: Env; home: string }) → { client: CliClient } | { missing: string }
+    - fn [cliClient](../../src/agent-cli.ts#L183) (agent: string, options: { root: string; env: Env; home: string }) → { client: CliClient } | { missing: string }
       <a id="features.agent-cli.cliClient"></a><br>A client for a `cli:` agent, or why there is none (a missing binary, a Grok `agent` where Cursor's was expected): only a PATH scan and, for an `agent` binary, one memoized `--version`. Invalid agents.json throws.
       - calls [features.agent-cli.parseCliAgent](features.md#features.agent-cli.parseCliAgent), [features.agent-cli.readAgentSettings](features.md#features.agent-cli.readAgentSettings), [features.agent-cli.agentsFile](features.md#features.agent-cli.agentsFile), [features.agent-cli.findBinary](features.md#features.agent-cli.findBinary), [features.agent-cli.presetBinary](features.md#features.agent-cli.presetBinary), [features.agent-cli.completeWith](features.md#features.agent-cli.completeWith)
-    - fn [presetBinary](../../src/agent-cli.ts#L217) (preset: Preset, bin: string | null, env: Env, home: string) → { bin: string } | { missing: string } <!-- internal -->
+    - fn [presetBinary](../../src/agent-cli.ts#L218) (preset: Preset, bin: string | null, env: Env, home: string) → { bin: string } | { missing: string } <!-- internal -->
       <a id="features.agent-cli.presetBinary"></a><br>The binary of a preset: `bin` from agents.json, else its name on PATH; Cursor's is `cursor-agent`, or `agent` when its version is Cursor's.
       - calls [features.agent-cli.findBinary](features.md#features.agent-cli.findBinary), [features.agent-cli.agentsFile](features.md#features.agent-cli.agentsFile), [features.agent-cli.binaryVersion](features.md#features.agent-cli.binaryVersion)
-    - fn [binaryVersion](../../src/agent-cli.ts#L238) (bin: string, env: Env) → string | null <!-- internal -->
+    - fn [binaryVersion](../../src/agent-cli.ts#L239) (bin: string, env: Env) → string | null <!-- internal -->
       <a id="features.agent-cli.binaryVersion"></a><br>The first line of `<bin> --version`, at most 5 s, memoized per process; null when it gives none.
-    - fn [shortVersion](../../src/agent-cli.ts#L248) (line: string) → string
+    - fn [shortVersion](../../src/agent-cli.ts#L249) (line: string) → string
       <a id="features.agent-cli.shortVersion"></a><br>`2.1.289 (Claude Code)` → `2.1.289`; `codex-cli 0.155.1` → `0.155.1`; a Cursor build keeps its hash.
-    - fn [cliVersion](../../src/agent-cli.ts#L253) (bin: string, env: Env = process.env) → Promise<string | null>
+    - fn [cliVersion](../../src/agent-cli.ts#L254) (bin: string, env: Env = process.env) → Promise<string | null>
       <a id="features.agent-cli.cliVersion"></a><br>The version of a binary for doctor, asynchronously (5 s cap, never a login or status command).
       - calls [features.agent-cli.shortVersion](features.md#features.agent-cli.shortVersion)
-    - type [AgentCliProbe](../../src/agent-cli.ts#L272)
+    - type [AgentCliProbe](../../src/agent-cli.ts#L276)
       <a id="features.agent-cli.AgentCliProbe"></a><br>A preset as doctor sees it: its binary (null: none usable) and that binary's version (null: it gave none).
-    - fn [probeAgentClis](../../src/agent-cli.ts#L279) (env: Env = process.env, home: string = homedir()) → Promise<AgentCliProbe[]>
+    - fn [probeAgentClis](../../src/agent-cli.ts#L283) (env: Env = process.env, home: string = homedir()) → Promise<AgentCliProbe[]>
       <a id="features.agent-cli.probeAgentClis"></a><br>Every preset, probed in parallel with `--version` only: offline, never a login or status command.
       - calls [features.agent-cli.readAgentSettings](features.md#features.agent-cli.readAgentSettings), [features.agent-cli.presetBinary](features.md#features.agent-cli.presetBinary), [features.agent-cli.cliVersion](features.md#features.agent-cli.cliVersion)
-    - fn [findBinary](../../src/agent-cli.ts#L297) (name: string, env: Env) → string | null
+    - fn [findBinary](../../src/agent-cli.ts#L301) (name: string, env: Env) → string | null
       <a id="features.agent-cli.findBinary"></a><br>A name on PATH or a path, if it is an executable file.
       - calls [features.agent-cli.executable](features.md#features.agent-cli.executable)
-    - fn [executable](../../src/agent-cli.ts#L307) (path: string) → boolean <!-- internal -->
+    - fn [executable](../../src/agent-cli.ts#L311) (path: string) → boolean <!-- internal -->
       <a id="features.agent-cli.executable"></a><br>Checks whether a filesystem path points to a regular file that the current process may execute, returning false on any stat or access error. Used by [`features.agent-cli.findBinary`](features.md#features.agent-cli.findBinary) to validate candidate binaries. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [AnswerKind](../../src/agent-cli.ts#L320) = "result-json" | "file" | "opencode-events" | "stdout"
+    - type [AnswerKind](../../src/agent-cli.ts#L324) = "result-json" | "file" | "opencode-events" | "stdout"
       <a id="features.agent-cli.AnswerKind"></a><br>How the answer is read: a `type:"result"` JSON line, Codex's `-o` file, opencode's NDJSON events, or stdout.
-    - type [Invocation](../../src/agent-cli.ts#L322)
+    - type [Invocation](../../src/agent-cli.ts#L326)
       <a id="features.agent-cli.Invocation"></a><br>Describes a fully prepared external agent CLI run: the binary and arguments, optional stdin text, environment, how the answer is retrieved (`AnswerKind`), and any files to write (mode 0600) beforehand, including an answer file path when the answer is read from disk. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [invocation](../../src/agent-cli.ts#L337) (runner: Runner, model: string, request: CliRequest, root: string, env: Env, tmp: string) → Invocation
+    - fn [invocation](../../src/agent-cli.ts#L341) (runner: Runner, model: string, request: CliRequest, root: string, env: Env, tmp: string) → Invocation
       <a id="features.agent-cli.invocation"></a><br>The process to run for one request; `tmp` is a private directory outside the repository.
       - calls [features.agent-cli.wellFormed](features.md#features.agent-cli.wellFormed), [features.agent-cli.opencodeConfig](features.md#features.agent-cli.opencodeConfig)
-    - fn [opencodeConfig](../../src/agent-cli.ts#L418) (existing: string | undefined, system: string) → string <!-- internal -->
+    - fn [opencodeConfig](../../src/agent-cli.ts#L422) (existing: string | undefined, system: string) → string <!-- internal -->
       <a id="features.agent-cli.opencodeConfig"></a><br>The user's `OPENCODE_CONFIG_CONTENT` with keylang's agent on top: every permission denied.
       - calls [features.agent-cli.isObject](features.md#features.agent-cli.isObject)
-    - fn [wellFormed](../../src/agent-cli.ts#L432) (text: string) → string <!-- internal -->
+    - fn [wellFormed](../../src/agent-cli.ts#L436) (text: string) → string <!-- internal -->
       <a id="features.agent-cli.wellFormed"></a><br>Replaces any lone UTF-16 surrogate halves in the string with the U+FFFD replacement character so the result is valid Unicode. Used by [`features.agent-cli.invocation`](features.md#features.agent-cli.invocation) to sanitize text before passing it on. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [ResultLine](../../src/agent-cli.ts#L436) = { text: string; model: string | null } | { error: string } <!-- internal -->
+    - type [ResultLine](../../src/agent-cli.ts#L440) = { text: string; model: string | null } | { error: string } <!-- internal -->
       <a id="features.agent-cli.ResultLine"></a><br>Discriminated union for one line of CLI result output: either a successful response carrying `text` and the `model` that produced it (or null), or a failure carrying only an `error` message. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [parseResultLine](../../src/agent-cli.ts#L439) (line: string) → ResultLine | null
+    - fn [parseResultLine](../../src/agent-cli.ts#L443) (line: string) → ResultLine | null
       <a id="features.agent-cli.parseResultLine"></a><br>A `{"type":"result"}` line of Claude Code or Cursor: the answer with the model that wrote it, an error, or null for any other line.
       - calls [features.agent-cli.parseJson](features.md#features.agent-cli.parseJson), [features.agent-cli.isObject](features.md#features.agent-cli.isObject), [features.agent-cli.answeringModel](features.md#features.agent-cli.answeringModel)
-    - fn [answeringModel](../../src/agent-cli.ts#L452) (usage: unknown) → string | null <!-- internal -->
+    - fn [answeringModel](../../src/agent-cli.ts#L456) (usage: unknown) → string | null <!-- internal -->
       <a id="features.agent-cli.answeringModel"></a><br>The model of Claude Code's `modelUsage` (`{"<model>": {"outputTokens": n, …}}`) that wrote the most output: the CLI may also use a small model on the side. Null when the line has none (Cursor) or its shape is not that.
       - calls [features.agent-cli.isObject](features.md#features.agent-cli.isObject)
-    - fn [parseOpencodeEvents](../../src/agent-cli.ts#L466) (output: string) → { text: string } | { error: string }
+    - fn [parseOpencodeEvents](../../src/agent-cli.ts#L470) (output: string) → { text: string } | { error: string }
       <a id="features.agent-cli.parseOpencodeEvents"></a><br>opencode's NDJSON: the text parts after the last step start, or the first error.
       - calls [features.agent-cli.parseJson](features.md#features.agent-cli.parseJson), [features.agent-cli.isObject](features.md#features.agent-cli.isObject)
-    - fn [completeWith](../../src/agent-cli.ts#L485) (agent: string, runner: Runner, model: string, request: CliRequest, options: { root: string; env: Env }, call: CliCallOptions) → Promise<string> <!-- internal -->
-      <a id="features.agent-cli.completeWith"></a><br>Runs one agent-CLI call in a throwaway temp dir: builds the command via [`features.agent-cli.invocation`](features.md#features.agent-cli.invocation), writes its files, executes with [`features.agent-cli.runInvocation`](features.md#features.agent-cli.runInvocation), and parses output through [`features.agent-cli.readAnswer`](features.md#features.agent-cli.readAnswer). Throws [`features.agent-cli.CliCancelled`](features.md#features.agent-cli.CliCancelled) if… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+    - fn [completeWith](../../src/agent-cli.ts#L489) (agent: string, runner: Runner, model: string, request: CliRequest, options: { root: string; env: Env }, call: CliCallOptions) → Promise<string> <!-- internal -->
+      <a id="features.agent-cli.completeWith"></a><br>Runs one agent-CLI call in a throwaway temp dir: builds the command via [`features.agent-cli.invocation`](features.md#features.agent-cli.invocation), writes its files, executes with [`features.agent-cli.runInvocation`](features.md#features.agent-cli.runInvocation), and parses output through [`features.agent-cli.readAnswer`](features.md#features.agent-cli.readAnswer). Throws [`features.agent-cli.CliCancelled`](features.md#features.agent-cli.CliCancelled) if… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.agent-cli.CliCancelled](features.md#features.agent-cli.CliCancelled), [features.agent-cli.invocation](features.md#features.agent-cli.invocation), [features.agent-cli.runInvocation](features.md#features.agent-cli.runInvocation), [features.agent-cli.readAnswer](features.md#features.agent-cli.readAnswer)
-    - type [RunResult](../../src/agent-cli.ts#L505) <!-- internal -->
+    - type [RunResult](../../src/agent-cli.ts#L509) <!-- internal -->
       <a id="features.agent-cli.RunResult"></a><br>Bundles what a CLI subprocess run produced: the full captured stdout text plus an optional already-parsed `ResultLine` taken from an early `type:"result"` line, or null when none was found. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [readAnswer](../../src/agent-cli.ts#L512) (agent: string, inv: Invocation, run: RunResult) → { text: string; model: string | null } <!-- internal -->
+    - fn [readAnswer](../../src/agent-cli.ts#L516) (agent: string, inv: Invocation, run: RunResult) → { text: string; model: string | null } <!-- internal -->
       <a id="features.agent-cli.readAnswer"></a><br>The answer, with the model that wrote it when the CLI's output names it.
       - calls [features.agent-cli.lastResult](features.md#features.agent-cli.lastResult), [features.agent-cli.parseOpencodeEvents](features.md#features.agent-cli.parseOpencodeEvents)
-    - fn [lastResult](../../src/agent-cli.ts#L532) (stdout: string) → ResultLine | null <!-- internal -->
+    - fn [lastResult](../../src/agent-cli.ts#L536) (stdout: string) → ResultLine | null <!-- internal -->
       <a id="features.agent-cli.lastResult"></a><br>Scans every line of captured stdout through [`features.agent-cli.parseResultLine`](features.md#features.agent-cli.parseResultLine) and keeps the last one that parses, returning null if none did. Used by [`features.agent-cli.readAnswer`](features.md#features.agent-cli.readAnswer) to pick the final result record from an agent's streamed output. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.agent-cli.parseResultLine](features.md#features.agent-cli.parseResultLine)
-    - fn [killGroup](../../src/agent-cli.ts#L542) (pid: number, signal: NodeJS.Signals) → void <!-- internal -->
+    - fn [killGroup](../../src/agent-cli.ts#L546) (pid: number, signal: NodeJS.Signals) → void <!-- internal -->
       <a id="features.agent-cli.killGroup"></a><br>Sends a signal to a spawned child's whole process group (negating the pid on POSIX, using it directly on Windows) and silently swallows errors when the group has already exited; used by [`features.agent-cli.hookExit`](features.md#features.agent-cli.hookExit) and [`features.agent-cli.runInvocation`](features.md#features.agent-cli.runInvocation) to tear down… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [hookExit](../../src/agent-cli.ts#L551) () → void <!-- internal -->
+    - fn [hookExit](../../src/agent-cli.ts#L555) () → void <!-- internal -->
       <a id="features.agent-cli.hookExit"></a><br>Once: keylang's exit kills every live group; a fatal signal with no handler of its own kills them first and is raised again.
       - calls [features.agent-cli.killGroup](features.md#features.agent-cli.killGroup)
-    - fn [runInvocation](../../src/agent-cli.ts#L570) (agent: string, inv: Invocation, root: string, call: CliCallOptions) → Promise<RunResult> <!-- internal -->
-      <a id="features.agent-cli.runInvocation"></a><br>Spawns the CLI in its own process group, feeds it stdin, and resolves with the collected output or the first [`features.agent-cli.parseResultLine`](features.md#features.agent-cli.parseResultLine) hit, killing the group via [`features.agent-cli.killGroup`](features.md#features.agent-cli.killGroup). Rejects on timeout, abort ([`features.agent-cli.CliCancelled`](features.md#features.agent-cli.CliCancelled)), oversized… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+    - fn [runInvocation](../../src/agent-cli.ts#L574) (agent: string, inv: Invocation, root: string, call: CliCallOptions) → Promise<RunResult> <!-- internal -->
+      <a id="features.agent-cli.runInvocation"></a><br>Spawns the CLI in its own process group, feeds it stdin, and resolves with the collected output or the first [`features.agent-cli.parseResultLine`](features.md#features.agent-cli.parseResultLine) hit, killing the group via [`features.agent-cli.killGroup`](features.md#features.agent-cli.killGroup). Rejects on timeout, abort ([`features.agent-cli.CliCancelled`](features.md#features.agent-cli.CliCancelled)), oversized… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.agent-cli.hookExit](features.md#features.agent-cli.hookExit), [features.agent-cli.killGroup](features.md#features.agent-cli.killGroup), [features.agent-cli.CliCancelled](features.md#features.agent-cli.CliCancelled), [features.agent-cli.parseResultLine](features.md#features.agent-cli.parseResultLine), [features.agent-cli.stripAnsi](features.md#features.agent-cli.stripAnsi)
-    - fn [stripAnsi](../../src/agent-cli.ts#L668) (text: string) → string <!-- internal -->
+    - fn [stripAnsi](../../src/agent-cli.ts#L677) (text: string) → string <!-- internal -->
       <a id="features.agent-cli.stripAnsi"></a><br>Removes ANSI escape sequences (ESC-bracket codes ending in a letter) from a string via a global regex replace, returning plain text. [`features.agent-cli.runInvocation`](features.md#features.agent-cli.runInvocation) uses it to clean captured CLI output. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [parseJson](../../src/agent-cli.ts#L673) (text: string) → unknown <!-- internal -->
+    - fn [parseJson](../../src/agent-cli.ts#L682) (text: string) → unknown <!-- internal -->
       <a id="features.agent-cli.parseJson"></a><br>Lenient JSON parser that returns `undefined` for empty input or invalid JSON instead of throwing, so callers can skip bad lines. Used by [`features.agent-cli.parseOpencodeEvents`](features.md#features.agent-cli.parseOpencodeEvents) and [`features.agent-cli.parseResultLine`](features.md#features.agent-cli.parseResultLine) to decode CLI output lines. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [isObject](../../src/agent-cli.ts#L682) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isObject](../../src/agent-cli.ts#L691) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       <a id="features.agent-cli.isObject"></a><br>Type guard that narrows an unknown value to a plain string-keyed record, rejecting null and arrays. Used by parsers such as [`features.agent-cli.parseResultLine`](features.md#features.agent-cli.parseResultLine) and [`features.agent-cli.parseAgentSettings`](features.md#features.agent-cli.parseAgentSettings) to validate decoded JSON before reading fields. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [agent-context](../../src/agent-context.ts#L1)
     <a id="features.agent-context"></a><br>What goes to the model (design §7.3 «Контекст»): the buffer, the nodes on the cursor line and their neighbours, the flows and rules naming them, their code and the tests of those flows — each item with a token estimate, so the person sees and trims what the agent reads. `@id`…
@@ -177,6 +177,7 @@
       <a id="features.baseline.externalModule"></a><br>The external module an id belongs to (`external.stripe` for a symbol under it).
     - fn [baselinePath](../../src/baseline.ts#L74) (config: Pick<Config, "dir">) → string
       <a id="features.baseline.baselinePath"></a><br>Where the baseline lives: `<dir>/rules.baseline.md`, relative to the root, POSIX.
+      - calls [base.config.specPath](base.md#base.config.specPath)
     - type [BaselinePlan](../../src/baseline.ts#L82)
       <a id="features.baseline.BaselinePlan"></a><br>What `keylang baseline` would do, computed before anything is written. Internal to one operation — not a stored format.
     - fn [planBaseline](../../src/baseline.ts#L103) (config: Config, snapshot: AnalysisSnapshot) → BaselinePlan
@@ -286,37 +287,39 @@
     - safe-write [base.safe-write](base.md#base.safe-write)
     - type [RepoSource](../../src/clone.ts#L15)
       <a id="features.clone.RepoSource"></a><br>What to clone and where it sits under the cache root.
-    - type [CloneExplain](../../src/clone.ts#L23) = "map-only" | "map-and-ai" | "all"
+    - type [CloneExplain](../../src/clone.ts#L25) = "map-only" | "map-and-ai" | "all"
       <a id="features.clone.CloneExplain"></a><br>How far `clone --explain` goes past the map.
-    - fn [isCloneExplain](../../src/clone.ts#L27) (text: string) → text is CloneExplain
+    - fn [isCloneExplain](../../src/clone.ts#L29) (text: string) → text is CloneExplain
       <a id="features.clone.isCloneExplain"></a>
-    - fn [parseRepoSource](../../src/clone.ts#L42) (text: string, cwd: string) → RepoSource | { error: string }
+    - fn [redactUrl](../../src/clone.ts#L41) (text: string) → string
+      <a id="features.clone.redactUrl"></a><br>A URL with its userinfo (`user:token@`) cut, as git does in its own messages; anything else is returned as is. A token passed in the URL goes to git and nowhere else: not to stdout (a CI log), stderr or the marker.
+    - fn [parseRepoSource](../../src/clone.ts#L53) (text: string, cwd: string) → RepoSource | { error: string }
       <a id="features.clone.parseRepoSource"></a><br>Reads a clone source: an `http(s)://`, `ssh://`, `git://` or `file://` URL, the scp form `git@host:owner/repo.git`, or a path to a local repository. The key never holds credentials, `..` or characters a file name cannot carry.
-      - calls [features.clone.fromUrl](features.md#features.clone.fromUrl), [features.clone.placeable](features.md#features.clone.placeable), [features.clone.keyed](features.md#features.clone.keyed)
-    - fn [fromUrl](../../src/clone.ts#L58) (source: string) → RepoSource | { error: string } <!-- internal -->
+      - calls [features.clone.redactUrl](features.md#features.clone.redactUrl), [features.clone.fromUrl](features.md#features.clone.fromUrl), [features.clone.placeable](features.md#features.clone.placeable), [features.clone.keyed](features.md#features.clone.keyed)
+    - fn [fromUrl](../../src/clone.ts#L69) (source: string) → RepoSource | { error: string } <!-- internal -->
       <a id="features.clone.fromUrl"></a>
-      - calls [features.clone.parseRepoSource](features.md#features.clone.parseRepoSource), [features.clone.keyed](features.md#features.clone.keyed)
-    - fn [keyed](../../src/clone.ts#L72) (url: string, host: string, path: string) → RepoSource | { error: string } <!-- internal -->
+      - calls [features.clone.redactUrl](features.md#features.clone.redactUrl), [features.clone.parseRepoSource](features.md#features.clone.parseRepoSource), [features.clone.keyed](features.md#features.clone.keyed)
+    - fn [keyed](../../src/clone.ts#L83) (url: string, host: string, path: string) → RepoSource | { error: string } <!-- internal -->
       <a id="features.clone.keyed"></a>
-      - calls [features.clone.placeable](features.md#features.clone.placeable)
-    - fn [placeable](../../src/clone.ts#L82) (segment: string) → string | undefined <!-- internal -->
+      - calls [features.clone.redactUrl](features.md#features.clone.redactUrl), [features.clone.placeable](features.md#features.clone.placeable)
+    - fn [placeable](../../src/clone.ts#L94) (segment: string) → string | undefined <!-- internal -->
       <a id="features.clone.placeable"></a>
-    - fn [cloneCacheRoot](../../src/clone.ts#L87) (env: Readonly<Record<string, string | undefined>>, home: string) → string
+    - fn [cloneCacheRoot](../../src/clone.ts#L99) (env: Readonly<Record<string, string | undefined>>, home: string) → string
       <a id="features.clone.cloneCacheRoot"></a><br>`$XDG_CACHE_HOME/keylang/repos`, else `~/.cache/keylang/repos`.
-    - type [CloneSync](../../src/clone.ts#L92)
+    - type [CloneSync](../../src/clone.ts#L104)
       <a id="features.clone.CloneSync"></a>
-    - fn [syncClone](../../src/clone.ts#L105) (source: RepoSource, dir: string) → CloneSync
+    - fn [syncClone](../../src/clone.ts#L117) (source: RepoSource, dir: string) → CloneSync
       <a id="features.clone.syncClone"></a><br>Clones `source` into `dir`, or brings a clone keylang made there up to the remote's default branch. A directory keylang did not clone is never touched: the reset would drop its work.
-      - calls [features.clone.git](features.md#features.clone.git), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite), [features.clone.readMarker](features.md#features.clone.readMarker)
-    - fn [readMarker](../../src/clone.ts#L129) (dir: string) → { url: string; key: string[] } | undefined <!-- internal -->
+      - calls [features.clone.git](features.md#features.clone.git), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite), [features.clone.readMarker](features.md#features.clone.readMarker), [features.clone.redactUrl](features.md#features.clone.redactUrl)
+    - fn [readMarker](../../src/clone.ts#L142) (dir: string) → { url: string; key: string[] } | undefined <!-- internal -->
       <a id="features.clone.readMarker"></a><br>The marker of `dir`, or undefined: absent, unreadable, or behind a link out of the directory — a file elsewhere is no proof keylang cloned `dir`.
       - calls [base.safe-write.targetProblem](base.md#base.safe-write.targetProblem)
-    - fn [git](../../src/clone.ts#L144) (cwd: string, args: string[]) → void <!-- internal -->
+    - fn [git](../../src/clone.ts#L157) (cwd: string, args: string[]) → void <!-- internal -->
       <a id="features.clone.git"></a>
       - calls [features.git-changes.gitUnavailable](features.md#features.git-changes.gitUnavailable)
-    - fn [enableExplainedMap](../../src/clone.ts#L160) (root: string) → string | null
+    - fn [enableExplainedMap](../../src/clone.ts#L176) (root: string) → string | null
       <a id="features.clone.enableExplainedMap"></a><br>Turns on the explained map (`"explain": {"map": true}`) in the clone's keylang.json; the rest of the file stays. Returns an error to name, or null.
-      - calls [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic)
+      - calls [base.safe-write.targetProblem](base.md#base.safe-write.targetProblem), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite)
   - module [draft-llm](../../src/draft-llm.ts#L1)
     <a id="features.draft-llm"></a><br>`draft flow --mode llm|hybrid` (design §5.1): the model proposes a flow from a compact map, the flow grammar and flows of this repository; an ID that is neither in the snapshot nor declared `planned` sends the draft back once with the nearest real IDs. The answer is reconciled…
     - analyze [map.analyze](map.md#map.analyze)
@@ -517,7 +520,7 @@
       <a id="features.explain-llm.currentBaseline"></a><br>The baseline an explanation of `id` is compared with now (`snapshotBaseline`): "" for a planned node, which has no code yet; null when the id is gone.
       - calls [map.explanations.systemBaseline](map.md#map.explanations.systemBaseline), [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs), [map.explanations.snapshotBaseline](map.md#map.explanations.snapshotBaseline), [lang.spec-ir.plannedDeclaration](lang.md#lang.spec-ir.plannedDeclaration)
     - fn [isStale](../../src/explain-llm.ts#L55) (analysis: Analysis, id: string, e: Explanation) → boolean
-      <a id="features.explain-llm.isStale"></a><br>Reports whether a saved explanation is outdated by comparing its stored closure hash against the node's current baseline from [`features.explain-llm.currentBaseline`](features.md#features.explain-llm.currentBaseline); any mismatch, including a missing baseline, counts as stale. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
+      <a id="features.explain-llm.isStale"></a><br>Reports whether a saved explanation is outdated by comparing its stored closure hash against the node's current baseline from [`features.explain-llm.currentBaseline`](features.md#features.explain-llm.currentBaseline); any mismatch, including a missing baseline, counts as stale. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [features.explain-llm.currentBaseline](features.md#features.explain-llm.currentBaseline)
     - fn [briefText](../../src/explain-llm.ts#L60) (answer: string) → string
       <a id="features.explain-llm.briefText"></a><br>A model's brief as saved: one or two sentences in one paragraph of `answerText`, cut by the rule doc comments follow.
@@ -615,7 +618,7 @@
       <a id="features.explain-offline.nodeExplanation"></a><br>The offline explanation of `id` on `analysis`, or why there is none.
       - calls [features.explain-node.summarizeNode](features.md#features.explain-node.summarizeNode), [features.explain-llm.readExplanation](features.md#features.explain-llm.readExplanation), [features.explain-offline.savedAnswer](features.md#features.explain-offline.savedAnswer), [features.explain-offline.summaryLinks](features.md#features.explain-offline.summaryLinks)
     - fn [savedAnswer](../../src/explain-offline.ts#L99) (analysis: Analysis, id: string, e: Explanation) → SavedAnswer
-      <a id="features.explain-offline.savedAnswer"></a><br>Converts a stored explanation into a reply record, marking freshness via [`features.explain-llm.isStale`](features.md#features.explain-llm.isStale), listing unrecognized IDs via [`features.explain-llm.unknownIds`](features.md#features.explain-llm.unknownIds), and attaching its file path from [`map.explanations.explanationPath`](map.md#map.explanations.explanationPath). _(llm · claude:claude-opus-5-5 · 2026-10-05)_
+      <a id="features.explain-offline.savedAnswer"></a><br>Converts a stored explanation into a reply record, marking freshness via [`features.explain-llm.isStale`](features.md#features.explain-llm.isStale), listing unrecognized IDs via [`features.explain-llm.unknownIds`](features.md#features.explain-llm.unknownIds), and attaching its file path from [`map.explanations.explanationPath`](map.md#map.explanations.explanationPath). _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [features.explain-llm.isStale](features.md#features.explain-llm.isStale), [features.explain-llm.unknownIds](features.md#features.explain-llm.unknownIds), [map.explanations.explanationPath](map.md#map.explanations.explanationPath)
     - type [AnswerMiss](../../src/explain-offline.ts#L104) = "missing" | "stale" | "lang" | "detail"
       <a id="features.explain-offline.AnswerMiss"></a><br>Why a saved explanation does not answer `explain <id> --llm`: none, stale, another language or another detail.
@@ -675,7 +678,7 @@
       - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)
     - fn [featureStatus](../../src/feature-status.ts#L191) (input: FeatureInput, slug: string) → FeatureReport | null
       <a id="features.feature-status.featureStatus"></a><br>The feature report, or null when `keylang/<dir>/features/<slug>.md` is not one of the specs. Gaps are ordered by kind, then file, line, column, id.
-      - calls [base.diag.isError](base.md#base.diag.isError), [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow), [features.feature-status.denyGaps](features.md#features.feature-status.denyGaps), [features.feature-status.finding](features.md#features.feature-status.finding), [features.feature-status.claimsOf](features.md#features.feature-status.claimsOf), [features.feature-status.thisChange](features.md#features.feature-status.thisChange), [features.feature-status.idsIn](features.md#features.feature-status.idsIn), [features.feature-status.ruleFails](features.md#features.feature-status.ruleFails), [features.feature-status.weakenedPlan](features.md#features.feature-status.weakenedPlan), [base.span.compareText](base.md#base.span.compareText), [features.feature-status.stageOf](features.md#features.feature-status.stageOf), [features.feature-status.baseInfo](features.md#features.feature-status.baseInfo)
+      - calls [base.config.specPath](base.md#base.config.specPath), [base.diag.isError](base.md#base.diag.isError), [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow), [features.feature-status.denyGaps](features.md#features.feature-status.denyGaps), [features.feature-status.finding](features.md#features.feature-status.finding), [features.feature-status.claimsOf](features.md#features.feature-status.claimsOf), [features.feature-status.thisChange](features.md#features.feature-status.thisChange), [features.feature-status.idsIn](features.md#features.feature-status.idsIn), [features.feature-status.ruleFails](features.md#features.feature-status.ruleFails), [features.feature-status.weakenedPlan](features.md#features.feature-status.weakenedPlan), [base.span.compareText](base.md#base.span.compareText), [features.feature-status.stageOf](features.md#features.feature-status.stageOf), [features.feature-status.baseInfo](features.md#features.feature-status.baseInfo)
     - fn [baseInfo](../../src/feature-status.ts#L301) (base: FeatureBase) → FeatureBaseInfo <!-- internal -->
       <a id="features.feature-status.baseInfo"></a><br>The base as the report names it: the commit and its state first, as they always came, then how it was chosen.
     - type [RuleFail](../../src/feature-status.ts#L307) <!-- internal -->
@@ -769,165 +772,169 @@
   - module [git-hook](../../src/git-hook.ts#L1)
     <a id="features.git-hook"></a><br>`keylang hook install`: the git pre-commit hook that runs `check --changed`. The hook file is keylang's as a whole, found by its marker; a hook without the marker belongs to someone else and is never rewritten.
     - node [external.node](external.md#external.node)
-    - fn [preCommitCommand](../../src/git-hook.ts#L11) (version: string) → string
+    - fn [preCommitCommand](../../src/git-hook.ts#L13) (version: string) → string
       <a id="features.git-hook.preCommitCommand"></a><br>What the hook runs: the published CLI of this version, as the harness hooks do.
-    - fn [preCommitText](../../src/git-hook.ts#L16) (version: string) → string
-      <a id="features.git-hook.preCommitText"></a><br>The whole hook file.
+    - fn [preCommitText](../../src/git-hook.ts#L22) (version: string, subdir = "") → string
+      <a id="features.git-hook.preCommitText"></a><br>The whole hook file. `subdir` is the keylang root relative to the top of the work tree, POSIX, "" when they are the same: the hook enters it before `check --changed`, since git starts every hook at the top level.
       - calls [features.git-hook.preCommitCommand](features.md#features.git-hook.preCommitCommand)
-    - type [PreCommitState](../../src/git-hook.ts#L27) = "missing" | "foreign" | "stale" | "current"
+    - type [PreCommitState](../../src/git-hook.ts#L34) = "missing" | "foreign" | "stale" | "current"
       <a id="features.git-hook.PreCommitState"></a><br>`missing`: no file; `foreign`: a hook without keylang's marker; `stale`: keylang's, but other text or not executable.
-    - fn [preCommitState](../../src/git-hook.ts#L29) (current: string | null, executable: boolean, version: string) → PreCommitState
-      <a id="features.git-hook.preCommitState"></a><br>Classifies an existing pre-commit hook as "missing" when absent, "foreign" when it lacks the keylang marker, "current" when it matches the output of [`features.git-hook.preCommitText`](features.md#features.git-hook.preCommitText) for the given version and is executable, otherwise "stale". _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+    - fn [preCommitState](../../src/git-hook.ts#L36) (current: string | null, executable: boolean, version: string, subdir = "") → PreCommitState
+      <a id="features.git-hook.preCommitState"></a><br>Classifies an existing pre-commit hook as "missing" when absent, "foreign" when it lacks the keylang marker, "current" when it matches the output of [`features.git-hook.preCommitText`](features.md#features.git-hook.preCommitText) for the given version and is executable, otherwise "stale". _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.git-hook.preCommitText](features.md#features.git-hook.preCommitText)
-    - fn [gitHooksDir](../../src/git-hook.ts#L41) (cwd: string) → string
+    - fn [gitHooksDir](../../src/git-hook.ts#L48) (cwd: string) → string
       <a id="features.git-hook.gitHooksDir"></a><br>The hooks directory git uses for the repository around `cwd`, absolute: `git rev-parse --git-path hooks` honours `core.hooksPath` and linked worktrees. It is asked from the top level, where a relative `core.hooksPath` is resolved.
+      - calls [features.git-hook.gitTopLevel](features.md#features.git-hook.gitTopLevel), [features.git-hook.git](features.md#features.git-hook.git)
+    - fn [gitTopLevel](../../src/git-hook.ts#L54) (cwd: string) → string
+      <a id="features.git-hook.gitTopLevel"></a><br>The top of the work tree around `cwd`, absolute. Throws outside a git work tree.
       - calls [features.git-hook.git](features.md#features.git-hook.git)
-    - fn [git](../../src/git-hook.ts#L46) (cwd: string, args: string[]) → string <!-- internal -->
+    - fn [git](../../src/git-hook.ts#L58) (cwd: string, args: string[]) → string <!-- internal -->
       <a id="features.git-hook.git"></a><br>Runs a git command synchronously in the given directory and returns its trimmed stdout, throwing a hook-install error if git can't launch or exits non-zero; used by [`features.git-hook.gitHooksDir`](features.md#features.git-hook.gitHooksDir). _(llm · claude:claude-opus-5-5 · 2026-10-05)_
   - module [harness](../../src/harness.ts#L1)
     <a id="features.harness"></a><br>Harness adapters: one pure merge from the files on disk and the selected harnesses to the next text. Markdown keeps a marked block; JSON replaces only the `keylang` key; TOML splices only the `[mcp_servers.keylang]` table, so comments and layout around it stay. `--agents=none`…
     - node [external.node](external.md#external.node)
     - smol-toml [external.smol-toml](external.md#external.smol-toml)
     - config [base.config](base.md#base.config)
+    - imports [map.imports](map.md#map.imports)
     - safe-write [base.safe-write](base.md#base.safe-write)
-    - fn [skillFile](../../src/harness.ts#L35) () → string
+    - fn [skillFile](../../src/harness.ts#L36) () → string
       <a id="features.harness.skillFile"></a><br>The skill shipped in the package. The same relative path works from `src` and from `dist`.
-    - type [HarnessName](../../src/harness.ts#L40) = (typeof HARNESS_NAMES)[number]
+    - type [HarnessName](../../src/harness.ts#L41) = (typeof HARNESS_NAMES)[number]
       <a id="features.harness.HarnessName"></a><br>A string union type derived from the entries of the `HARNESS_NAMES` array, so values are constrained to the harness identifiers listed there. Used to type-check which harness a feature refers to without duplicating the list. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [denyRules](../../src/harness.ts#L59) (dir: string) → string[] <!-- internal -->
+    - fn [denyRules](../../src/harness.ts#L60) (dir: string) → string[] <!-- internal -->
       <a id="features.harness.denyRules"></a><br>Claude's deny entries that keep an agent from editing the rules of the spec directory `dir`, or deciding a proposal.
-    - fn [specDir](../../src/harness.ts#L64) (root: string) → string <!-- internal -->
+    - fn [specDir](../../src/harness.ts#L65) (root: string) → string <!-- internal -->
       <a id="features.harness.specDir"></a><br>The spec directory of `keylang.json` under `root` (`dir`, normalized), or `keylang` without the file. A broken file throws, naming the file and the field.
       - calls [base.config.parseConfig](base.md#base.config.parseConfig)
-    - type [HarnessSelection](../../src/harness.ts#L73)
+    - type [HarnessSelection](../../src/harness.ts#L74)
       <a id="features.harness.HarnessSelection"></a><br>Carries the resolved set of agent harnesses chosen by the user as `HarnessName` values, plus a flag that disables the instruction block and adapter file emission when `--agents=none` is given. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [HarnessFile](../../src/harness.ts#L79)
+    - type [HarnessFile](../../src/harness.ts#L80)
       <a id="features.harness.HarnessFile"></a><br>Describes one file in a test harness as a path plus its full contents, where a null `text` marks a file that must not exist. Used to declare or verify the expected state of files on disk. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [HarnessPlan](../../src/harness.ts#L85)
+    - type [HarnessPlan](../../src/harness.ts#L86)
       <a id="features.harness.HarnessPlan"></a><br>Describes the outcome of assembling a harness: the list of `HarnessFile` entries to write, plus either `null` or a single failure record naming the offending file and the reason it could not be prepared. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [parseAgents](../../src/harness.ts#L91) (value: string) → HarnessSelection
+    - fn [parseAgents](../../src/harness.ts#L92) (value: string) → HarnessSelection
       <a id="features.harness.parseAgents"></a><br>`--agents=<list>`. `none` is the empty selection. An unknown name throws and lists the allowed names.
-    - type [HarnessProbe](../../src/harness.ts#L105)
+    - type [HarnessProbe](../../src/harness.ts#L106)
       <a id="features.harness.HarnessProbe"></a><br>What is on disk for harness detection. `list` returns child names, or null when the path is not a directory.
-    - fn [detectHarnesses](../../src/harness.ts#L115) (probe: HarnessProbe) → HarnessName[]
+    - fn [detectHarnesses](../../src/harness.ts#L116) (probe: HarnessProbe) → HarnessName[]
       <a id="features.harness.detectHarnesses"></a><br>Directories and files that mean a harness is already in use. Order matches `HARNESS_NAMES`. `.claude/skills/keylang-feature` is the copy `agents` writes for every harness, so that tree alone is not Claude.
       - calls [features.harness.claudePresent](features.md#features.harness.claudePresent)
-    - fn [claudePresent](../../src/harness.ts#L126) (probe: HarnessProbe) → boolean <!-- internal -->
+    - fn [claudePresent](../../src/harness.ts#L127) (probe: HarnessProbe) → boolean <!-- internal -->
       <a id="features.harness.claudePresent"></a><br>Decides whether the Claude harness is in use by listing the `.claude` directory via the probe: missing means no, empty means yes, otherwise it defers to [`features.harness.claudeHasUserFile`](features.md#features.harness.claudeHasUserFile) to check for user-authored files. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.harness.claudeHasUserFile](features.md#features.harness.claudeHasUserFile)
-    - fn [claudeHasUserFile](../../src/harness.ts#L134) (probe: HarnessProbe, dir: string) → boolean <!-- internal -->
+    - fn [claudeHasUserFile](../../src/harness.ts#L135) (probe: HarnessProbe, dir: string) → boolean <!-- internal -->
       <a id="features.harness.claudeHasUserFile"></a><br>A file under `.claude` that is not the keylang skill copy.
-    - fn [agentsBody](../../src/harness.ts#L148) (version: string, dir: string) → string
+    - fn [agentsBody](../../src/harness.ts#L149) (version: string, dir: string) → string
       <a id="features.harness.agentsBody"></a><br>The instruction body between the markers, without a trailing newline. The CLI fallback pins `version`; paths are under the spec directory `dir`.
       - calls [features.harness.cliCommand](features.md#features.harness.cliCommand)
-    - fn [mcpCommand](../../src/harness.ts#L184) (version: string) → { command: string; args: string[] }
+    - fn [mcpCommand](../../src/harness.ts#L185) (version: string) → { command: string; args: string[] }
       <a id="features.harness.mcpCommand"></a><br>`npx -y keylang@<version> mcp`, split the way MCP configs store a command.
-    - fn [cliCommand](../../src/harness.ts#L189) (version: string) → string
+    - fn [cliCommand](../../src/harness.ts#L190) (version: string) → string
       <a id="features.harness.cliCommand"></a><br>The pinned CLI the fallback names: the same package and version as the MCP server, so it needs no global `keylang`.
-    - fn [pinSkill](../../src/harness.ts#L198) (skill: string, version: string, dir: string) → string
+    - fn [pinSkill](../../src/harness.ts#L199) (skill: string, version: string, dir: string) → string
       <a id="features.harness.pinSkill"></a><br>The skill resource names the CLI as `npx -y keylang@<version>` and the spec directory as `<dir>/`; the copy a harness gets pins the running version and the repository's `dir`.
-    - fn [hookCommand](../../src/harness.ts#L203) (version: string) → string
+    - fn [hookCommand](../../src/harness.ts#L204) (version: string) → string
       <a id="features.harness.hookCommand"></a><br>What the Stop hook runs.
       - calls [features.harness.cliCommand](features.md#features.harness.cliCommand)
-    - fn [planHarness](../../src/harness.ts#L213) (input: { selection: HarnessSelection; version: string; dir: string; skill: string; files: ReadonlyMap<string, string | null> }) → HarnessPlan
+    - fn [planHarness](../../src/harness.ts#L214) (input: { selection: HarnessSelection; version: string; dir: string; skill: string; files: ReadonlyMap<string, string | null> }) → HarnessPlan
       <a id="features.harness.planHarness"></a><br>Desired text of every harness file this selection owns. `files` holds the current text, null when the file is absent; `dir` is the spec directory the instructions, the skill and the deny rules name. The first broken marker or invalid JSON/TOML is `error` and `files` is empty…
       - calls [features.harness.agentsBody](features.md#features.harness.agentsBody), [features.harness.mergeMarked](features.md#features.harness.mergeMarked), [features.harness.mergeClaude](features.md#features.harness.mergeClaude), [features.harness.mergeMcpJson](features.md#features.harness.mergeMcpJson), [features.harness.mergeCodexToml](features.md#features.harness.mergeCodexToml), [features.harness.opencodeFile](features.md#features.harness.opencodeFile), [features.harness.mergeOpencode](features.md#features.harness.mergeOpencode), [features.harness.pinSkill](features.md#features.harness.pinSkill), [features.harness.mergeSettings](features.md#features.harness.mergeSettings), [features.harness.mergeHooksFile](features.md#features.harness.mergeHooksFile)
-    - fn [mergeMarked](../../src/harness.ts#L297) (existing: string | null, body: string | null) → { text: string | null } | { error: string }
+    - fn [mergeMarked](../../src/harness.ts#L298) (existing: string | null, body: string | null) → { text: string | null } | { error: string }
       <a id="features.harness.mergeMarked"></a><br>Splice `body` between the markers. Text outside them is copied byte for byte. `body` null removes the block.
       - calls [base.safe-write.allCrlf](base.md#base.safe-write.allCrlf), [features.harness.marked](features.md#features.harness.marked)
-    - fn [marked](../../src/harness.ts#L323) (body: string, nl: "\n" | "\r\n") → string <!-- internal -->
+    - fn [marked](../../src/harness.ts#L324) (body: string, nl: "\n" | "\r\n") → string <!-- internal -->
       <a id="features.harness.marked"></a><br>Normalizes every line break in the body to the requested newline style, then wraps the result between the begin and end marker constants on their own lines, so [`features.harness.mergeMarked`](features.md#features.harness.mergeMarked) can splice a consistently delimited block into existing text. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [mergeClaude](../../src/harness.ts#L332) (existing: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeClaude](../../src/harness.ts#L333) (existing: string | null) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeClaude"></a><br>`@AGENTS.md` lives in the managed block. A file that already says it outside the block is left without a second copy (the block is removed).
       - calls [features.harness.outsideMarkers](features.md#features.harness.outsideMarkers), [features.harness.mergeMarked](features.md#features.harness.mergeMarked)
-    - fn [outsideMarkers](../../src/harness.ts#L339) (existing: string | null) → string | { error: string } <!-- internal -->
+    - fn [outsideMarkers](../../src/harness.ts#L340) (existing: string | null) → string | { error: string } <!-- internal -->
       <a id="features.harness.outsideMarkers"></a><br>Strips the block between the begin/end marker constants out of an existing file's text, returning the surrounding content (or an empty string for null input). Reports an error object when only one marker is present or the end precedes the begin, so… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [mergeMcpJson](../../src/harness.ts#L349) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeMcpJson](../../src/harness.ts#L350) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeMcpJson"></a><br>Rewrites an `.mcp.json` document so its `mcpServers` key holds the launch entry built by [`features.harness.mcpCommand`](features.md#features.harness.mcpCommand) for the given version, or removes it when the version is null, via [`features.harness.mergeJsonKey`](features.md#features.harness.mergeJsonKey). Returns the updated text or a parse error for… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.harness.mergeJsonKey](features.md#features.harness.mergeJsonKey), [features.harness.mcpCommand](features.md#features.harness.mcpCommand)
-    - fn [mergeOpencode](../../src/harness.ts#L353) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
-      <a id="features.harness.mergeOpencode"></a><br>Builds a local MCP server entry that runs `npx -y keylang@<version> mcp` (or null when no version is given) and delegates to [`features.harness.mergeJsonKey`](features.md#features.harness.mergeJsonKey) to write it under the `mcp` key of an opencode JSON config, returning the merged text or an error. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+    - fn [mergeOpencode](../../src/harness.ts#L355) (existing: string | null, version: string | null, jsonc: boolean) → { text: string | null } | { error: string } <!-- internal -->
+      <a id="features.harness.mergeOpencode"></a><br>`jsonc`: the file is `opencode.jsonc`, so comments and trailing commas parse; a rewrite is still plain JSON.
       - calls [features.harness.mergeJsonKey](features.md#features.harness.mergeJsonKey)
-    - fn [mergeCodexToml](../../src/harness.ts#L379) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeCodexToml](../../src/harness.ts#L381) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeCodexToml"></a><br>The whole file is parsed (invalid TOML is an error, and the entry's own keys come from the parse), but only the lines of the `[mcp_servers.keylang]` table — header to the next header, its sub-tables included — are replaced, removed or appended, so the person's comments and…
       - calls [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.codexTableRegion](features.md#features.harness.codexTableRegion), [features.harness.rewriteCodexToml](features.md#features.harness.rewriteCodexToml), [features.harness.withoutLines](features.md#features.harness.withoutLines), [features.harness.codexEntryIs](features.md#features.harness.codexEntryIs), [features.harness.mcpCommand](features.md#features.harness.mcpCommand)
-    - fn [codexTableRegion](../../src/harness.ts#L417) (lines: readonly string[]) → { start: number; end: number } | null <!-- internal -->
+    - fn [codexTableRegion](../../src/harness.ts#L419) (lines: readonly string[]) → { start: number; end: number } | null <!-- internal -->
       <a id="features.harness.codexTableRegion"></a><br>Lines `[start, end)` of the `[mcp_servers.keylang]` table and its sub-tables, or null without the header.
-    - fn [withoutLines](../../src/harness.ts#L426) (lines: readonly string[], region: { start: number; end: number }) → string[] <!-- internal -->
+    - fn [withoutLines](../../src/harness.ts#L428) (lines: readonly string[], region: { start: number; end: number }) → string[] <!-- internal -->
       <a id="features.harness.withoutLines"></a><br>The lines without `[start, end)`; a blank line the removal left doubled (or last) goes with them.
-    - fn [codexEntryIs](../../src/harness.ts#L437) (text: string, entry: Record<string, unknown> | undefined) → boolean <!-- internal -->
+    - fn [codexEntryIs](../../src/harness.ts#L439) (text: string, entry: Record<string, unknown> | undefined) → boolean <!-- internal -->
       <a id="features.harness.codexEntryIs"></a><br>Whether `text` parses and its `mcp_servers.keylang` is exactly `entry` (undefined: absent).
       - calls [features.harness.isRecord](features.md#features.harness.isRecord)
-    - fn [rewriteCodexToml](../../src/harness.ts#L449) (data: Record<string, unknown>, entry: Record<string, unknown> | null) → { text: string | null } <!-- internal -->
+    - fn [rewriteCodexToml](../../src/harness.ts#L451) (data: Record<string, unknown>, entry: Record<string, unknown> | null) → { text: string | null } <!-- internal -->
       <a id="features.harness.rewriteCodexToml"></a><br>The whole file re-serialized with `entry` as the keylang server (null: without one); empty data is no file.
-    - fn [mergeSettings](../../src/harness.ts#L460) (existing: string | null, version: string | null, dir: string) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeSettings](../../src/harness.ts#L462) (existing: string | null, version: string | null, dir: string) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeSettings"></a><br>Parses an existing settings JSON via [`features.harness.parseObject`](features.md#features.harness.parseObject), updates its permission deny list ([`features.harness.mergeDeny`](features.md#features.harness.mergeDeny)) and hooks ([`features.harness.mergeHooksValue`](features.md#features.harness.mergeHooksValue)), dropping emptied keys, and serializes via [`features.harness.finishJson`](features.md#features.harness.finishJson); any error short-circuits. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [features.harness.parseObject](features.md#features.harness.parseObject), [features.harness.holdsKeylangSettings](features.md#features.harness.holdsKeylangSettings), [features.harness.mergeDeny](features.md#features.harness.mergeDeny), [features.harness.mergeHooksValue](features.md#features.harness.mergeHooksValue), [features.harness.finishJson](features.md#features.harness.finishJson)
-    - fn [mergeHooksFile](../../src/harness.ts#L476) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeHooksFile](../../src/harness.ts#L478) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeHooksFile"></a><br>Parses existing JSON text via [`features.harness.parseObject`](features.md#features.harness.parseObject), merges its `hooks` key using [`features.harness.mergeHooksValue`](features.md#features.harness.mergeHooksValue) (removing it when undefined), and serializes via [`features.harness.finishJson`](features.md#features.harness.finishJson), passing errors through. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [features.harness.parseObject](features.md#features.harness.parseObject), [features.harness.holdsOurHook](features.md#features.harness.holdsOurHook), [features.harness.mergeHooksValue](features.md#features.harness.mergeHooksValue), [features.harness.finishJson](features.md#features.harness.finishJson)
-    - fn [mergeDeny](../../src/harness.ts#L493) (permissions: unknown, install: boolean, dir: string) → { value: unknown } | { error: string } <!-- internal -->
+    - fn [mergeDeny](../../src/harness.ts#L495) (permissions: unknown, install: boolean, dir: string) → { value: unknown } | { error: string } <!-- internal -->
       <a id="features.harness.mergeDeny"></a><br>keylang's deny entries for the spec directory `dir` are added (`install`) or removed. Its entries for the default directory are keylang's too: they go once `dir` is another one, so a changed `dir` leaves no stale entry behind.
       - calls [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.denyRules](features.md#features.harness.denyRules)
-    - fn [mergeHooksValue](../../src/harness.ts#L509) (hooks: unknown, version: string | null) → { value: unknown } | { error: string } <!-- internal -->
+    - fn [mergeHooksValue](../../src/harness.ts#L511) (hooks: unknown, version: string | null) → { value: unknown } | { error: string } <!-- internal -->
       <a id="features.harness.mergeHooksValue"></a><br>Validates a hooks object and rewrites its Stop groups via [`features.harness.rewriteGroup`](features.md#features.harness.rewriteGroup), appending the versioned [`features.harness.hookCommand`](features.md#features.harness.hookCommand) if missing and pruning empty groups, returning undefined when nothing remains. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
       - calls [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.rewriteGroup](features.md#features.harness.rewriteGroup), [features.harness.hookCommand](features.md#features.harness.hookCommand), [features.harness.emptyGroup](features.md#features.harness.emptyGroup)
-    - fn [rewriteGroup](../../src/harness.ts#L528) (group: unknown, version: string | null) → Record<string, unknown> | { error: string } <!-- internal -->
+    - fn [rewriteGroup](../../src/harness.ts#L530) (group: unknown, version: string | null) → Record<string, unknown> | { error: string } <!-- internal -->
       <a id="features.harness.rewriteGroup"></a><br>Validates one hooks.Stop group and rebuilds its hook list, replacing commands matched by [`features.harness.isOurHook`](features.md#features.harness.isOurHook) with [`features.harness.hookCommand`](features.md#features.harness.hookCommand) output, or dropping them when version is null. Returns an error object for malformed entries. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
       - calls [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.isOurHook](features.md#features.harness.isOurHook), [features.harness.hookCommand](features.md#features.harness.hookCommand)
-    - fn [emptyGroup](../../src/harness.ts#L544) (group: Record<string, unknown>) → boolean <!-- internal -->
+    - fn [emptyGroup](../../src/harness.ts#L546) (group: Record<string, unknown>) → boolean <!-- internal -->
       <a id="features.harness.emptyGroup"></a><br>Returns true when the object's `hooks` is an empty array and it has no keys besides `hooks` and `matcher`. [`features.harness.mergeHooksValue`](features.md#features.harness.mergeHooksValue) uses it to detect hook groups that carry no handlers. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [isOurHook](../../src/harness.ts#L548) (command: string) → boolean <!-- internal -->
+    - fn [isOurHook](../../src/harness.ts#L550) (command: string) → boolean <!-- internal -->
       <a id="features.harness.isOurHook"></a><br>Tests a hook command string against a regex matching `keylang hook stop` with an optional `@version` suffix, returning whether it is one of our own stop hooks; [`features.harness.rewriteGroup`](features.md#features.harness.rewriteGroup) uses it to filter hook entries. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [holdsKeylangSettings](../../src/harness.ts#L553) (data: Record<string, unknown>, dir: string) → boolean <!-- internal -->
+    - fn [holdsKeylangSettings](../../src/harness.ts#L555) (data: Record<string, unknown>, dir: string) → boolean <!-- internal -->
       <a id="features.harness.holdsKeylangSettings"></a><br>Whether Claude's settings hold anything of keylang's: a deny rule of the spec directory `dir` (or of the default one), or the Stop hook.
       - calls [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.denyRules](features.md#features.harness.denyRules), [features.harness.holdsOurHook](features.md#features.harness.holdsOurHook)
-    - fn [holdsOurHook](../../src/harness.ts#L560) (hooks: unknown) → boolean <!-- internal -->
+    - fn [holdsOurHook](../../src/harness.ts#L562) (hooks: unknown) → boolean <!-- internal -->
       <a id="features.harness.holdsOurHook"></a>
       - calls [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.isOurHook](features.md#features.harness.isOurHook)
-    - fn [mergeJsonKey](../../src/harness.ts#L565) (existing: string | null, path: readonly string[], server: unknown) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeJsonKey](../../src/harness.ts#L567) (existing: string | null, path: readonly string[], server: unknown, jsonc = false) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeJsonKey"></a><br>Parses the config text via [`features.harness.parseObject`](features.md#features.harness.parseObject), then sets or removes the `keylang` entry inside the nested object at the first path key, dropping that key when it becomes empty. Rejects a non-object value there and re-serializes with [`features.harness.finishJson`](features.md#features.harness.finishJson). _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.harness.parseObject](features.md#features.harness.parseObject), [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.finishJson](features.md#features.harness.finishJson)
-    - fn [parseObject](../../src/harness.ts#L581) (existing: string | null) → { value: Record<string, unknown> } | { error: string } <!-- internal -->
-      <a id="features.harness.parseObject"></a><br>Turns a possibly missing config file body into a shallow-copied object: null or blank input yields `{}`, otherwise it `JSON.parse`s and checks the result with [`features.harness.isRecord`](features.md#features.harness.isRecord). Non-object values or parse failures come back as an error string instead of throwing, so… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - calls [features.harness.isRecord](features.md#features.harness.isRecord)
-    - fn [finishJson](../../src/harness.ts#L592) (data: Record<string, unknown>) → { text: string | null } <!-- internal -->
+    - fn [parseObject](../../src/harness.ts#L584) (existing: string | null, jsonc = false) → { value: Record<string, unknown> } | { error: string } <!-- internal -->
+      <a id="features.harness.parseObject"></a><br>The object in a JSON file; with `jsonc`, comments and trailing commas are allowed (`opencode.jsonc`).
+      - calls [map.imports.parseJsoncStrict](map.md#map.imports.parseJsoncStrict), [features.harness.isRecord](features.md#features.harness.isRecord)
+    - fn [finishJson](../../src/harness.ts#L595) (data: Record<string, unknown>) → { text: string | null } <!-- internal -->
       <a id="features.harness.finishJson"></a><br>Serializes a merged config object into pretty-printed JSON with a trailing newline, or yields `null` when the object is empty so callers like [`features.harness.mergeSettings`](features.md#features.harness.mergeSettings) can skip writing the file. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [opencodeFile](../../src/harness.ts#L597) (files: ReadonlyMap<string, string | null>) → string <!-- internal -->
+    - fn [opencodeFile](../../src/harness.ts#L600) (files: ReadonlyMap<string, string | null>) → string <!-- internal -->
       <a id="features.harness.opencodeFile"></a><br>Picks which OpenCode config filename to target: returns `opencode.json` if that entry exists with non-null content in the map, else `opencode.jsonc` if that one does, otherwise defaults to `opencode.json`. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [isRecord](../../src/harness.ts#L603) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isRecord](../../src/harness.ts#L606) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       <a id="features.harness.isRecord"></a><br>Type guard that returns true only for non-null objects that are not arrays, narrowing the value to a string-keyed record. Used by [`features.harness.parseObject`](features.md#features.harness.parseObject), [`features.harness.mergeDeny`](features.md#features.harness.mergeDeny) and the other merge helpers to validate parsed config shapes. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [HarnessChoice](../../src/harness.ts#L610) = "auto" | "none" | readonly HarnessName[]
+    - type [HarnessChoice](../../src/harness.ts#L613) = "auto" | "none" | readonly HarnessName[]
       <a id="features.harness.HarnessChoice"></a><br>Which harnesses: detected from the disk, none (strip keylang's files), or a named, non-empty list.
-    - fn [harnessChoice](../../src/harness.ts#L613) (flag: string | undefined) → HarnessChoice
+    - fn [harnessChoice](../../src/harness.ts#L616) (flag: string | undefined) → HarnessChoice
       <a id="features.harness.harnessChoice"></a><br>`--agents=<list>` as a choice; left out, the harnesses are detected. Throws as `parseAgents` does.
       - calls [features.harness.parseAgents](features.md#features.harness.parseAgents)
-    - fn [keylangVersion](../../src/harness.ts#L620) () → string
+    - fn [keylangVersion](../../src/harness.ts#L623) () → string
       <a id="features.harness.keylangVersion"></a><br>The version the MCP command and the Stop hook pin: the running keylang's `package.json`, from `src` and from `dist`.
-    - type [HarnessCategory](../../src/harness.ts#L625) = "instructions" | "mcp" | "skill" | "settings" | "hooks"
+    - type [HarnessCategory](../../src/harness.ts#L628) = "instructions" | "mcp" | "skill" | "settings" | "hooks"
       <a id="features.harness.HarnessCategory"></a><br>What a harness file is for, as a step before the write names it.
-    - fn [harnessCategory](../../src/harness.ts#L627) (path: string) → HarnessCategory
+    - fn [harnessCategory](../../src/harness.ts#L630) (path: string) → HarnessCategory
       <a id="features.harness.harnessCategory"></a><br>Maps a harness file path to its category: root `AGENTS.md`/`CLAUDE.md` become instructions, the skill constants map to skill, specific `.claude`/`.codex` files map to settings or hooks, and anything else falls back to mcp. Used by [`features.harness.planAgents`](features.md#features.harness.planAgents) to group planned… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [diskProbe](../../src/harness.ts#L636) (root: string) → HarnessProbe
+    - fn [diskProbe](../../src/harness.ts#L639) (root: string) → HarnessProbe
       <a id="features.harness.diskProbe"></a><br>The probe of the real disk: `.claude` and the other harness directories are directories; opencode is a file.
-    - fn [resolveChoice](../../src/harness.ts#L657) (choice: HarnessChoice, probe: HarnessProbe) → HarnessSelection
+    - fn [resolveChoice](../../src/harness.ts#L660) (choice: HarnessChoice, probe: HarnessProbe) → HarnessSelection
       <a id="features.harness.resolveChoice"></a><br>The selection a choice resolves to on this disk: `auto` keeps the instruction block even when nothing is detected; `none` has none.
       - calls [features.harness.detectHarnesses](features.md#features.harness.detectHarnesses)
-    - type [HarnessTarget](../../src/harness.ts#L667)
+    - type [HarnessTarget](../../src/harness.ts#L670)
       <a id="features.harness.HarnessTarget"></a><br>One file of the plan: the text it should hold (null: absent) against what is there now.
-    - type [AgentsPlan](../../src/harness.ts#L679)
+    - type [AgentsPlan](../../src/harness.ts#L682)
       <a id="features.harness.AgentsPlan"></a><br>What `keylang agents` would do, computed before anything is written. Internal to one operation — not a stored format.
-    - fn [planAgents](../../src/harness.ts#L695) (root: string, choice: HarnessChoice) → AgentsPlan
+    - fn [planAgents](../../src/harness.ts#L698) (root: string, choice: HarnessChoice) → AgentsPlan
       <a id="features.harness.planAgents"></a><br>Plans the harness files of `choice` against the disk under `root`. Reads, writes nothing; throws on a read error or a broken keylang.json.
       - calls [features.harness.resolveChoice](features.md#features.harness.resolveChoice), [features.harness.diskProbe](features.md#features.harness.diskProbe), [features.harness.specDir](features.md#features.harness.specDir), [features.harness.readInputs](features.md#features.harness.readInputs), [features.harness.skillFile](features.md#features.harness.skillFile), [features.harness.keylangVersion](features.md#features.harness.keylangVersion), [features.harness.planHarness](features.md#features.harness.planHarness), [features.harness.harnessCategory](features.md#features.harness.harnessCategory)
-    - fn [readInputs](../../src/harness.ts#L711) (root: string) → Map<string, string | null> <!-- internal -->
+    - fn [readInputs](../../src/harness.ts#L714) (root: string) → Map<string, string | null> <!-- internal -->
       <a id="features.harness.readInputs"></a><br>Reads every file listed in `HARNESS_PATHS` relative to the given root, mapping each path to its UTF-8 contents or null when the file is absent. Used by [`features.harness.planAgents`](features.md#features.harness.planAgents) and [`features.harness.agentsPlanProblems`](features.md#features.harness.agentsPlanProblems) to inspect existing harness files. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [agentsPlanProblems](../../src/harness.ts#L723) (plan: AgentsPlan) → string[]
+    - fn [agentsPlanProblems](../../src/harness.ts#L726) (plan: AgentsPlan) → string[]
       <a id="features.harness.agentsPlanProblems"></a><br>Why the plan may not be committed now (`path: reason` lines; empty when it may): every harness path must still hold the bytes the plan read, keylang.json must still name the same spec directory, a target must pass the repository's write rules (a removal too: the entry must be…
       - calls [features.harness.readInputs](features.md#features.harness.readInputs), [features.harness.specDir](features.md#features.harness.specDir), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [base.safe-write.targetProblem](base.md#base.safe-write.targetProblem), [features.harness.detectHarnesses](features.md#features.harness.detectHarnesses), [features.harness.diskProbe](features.md#features.harness.diskProbe)
-    - type [HarnessStep](../../src/harness.ts#L750)
+    - type [HarnessStep](../../src/harness.ts#L753)
       <a id="features.harness.HarnessStep"></a><br>One file step of a commit, with what became of it.
-    - fn [commitAgents](../../src/harness.ts#L767) ( plan: AgentsPlan, options: { signal?: AbortSignal; onStep?: (step: { path: string; action: "write" | "remove" }) => void } = {}, ) → Promise<{ steps: HarnessStep[]; outcome: "completed" | "failed" | "cancelled" }>
+    - fn [commitAgents](../../src/harness.ts#L770) ( plan: AgentsPlan, options: { signal?: AbortSignal; onStep?: (step: { path: string; action: "write" | "remove" }) => void } = {}, ) → Promise<{ steps: HarnessStep[]; outcome: "completed" | "failed" | "cancelled" }>
       <a id="features.harness.commitAgents"></a><br>Writes and removes the changed targets one by one, in plan order. A write is atomic at the target (a link inside the repository is followed; CRLF of the old file kept); a removal removes the entry itself, and only when the entry is inside the repository with links followed — a…
       - calls [base.safe-write.targetProblem](base.md#base.safe-write.targetProblem), [base.safe-write.landing](base.md#base.safe-write.landing), [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic)
   - module [keys](../../src/keys.ts#L1)
@@ -974,15 +981,17 @@
       <a id="features.llm.deadline"></a><br>Picks the effective timeout by returning the caller-specific value when it is set and smaller than the environment-derived one, otherwise the environment value, tagging which source won. Used by [`features.llm.llmClient`](features.md#features.llm.llmClient) to build the request deadline. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [timeoutMessage](../../src/llm.ts#L157) (provider: string, bound: Deadline) → string <!-- internal -->
       <a id="features.llm.timeoutMessage"></a><br>Builds the error text used when an LLM call exceeds its deadline, naming the provider and the millisecond limit from `bound`. Appends a note that the limit came from the `KEYLANG_LLM_TIMEOUT_MS` environment variable when `bound.fromVariable` is set. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [callSignal](../../src/llm.ts#L166) (timeout: number, outer: AbortSignal | undefined) → { signal: AbortSignal; timedOut: () => boolean; cancelled: () => boolean; dispose: () => void } <!-- internal -->
+    - fn [truncatedMessage](../../src/llm.ts#L162) (model: string, reason: "max_tokens" | "length") → string <!-- internal -->
+      <a id="features.llm.truncatedMessage"></a><br>The provider stopped the answer at the token limit (`stop_reason: max_tokens`, `finish_reason: length`): what came is not an answer.
+    - fn [callSignal](../../src/llm.ts#L171) (timeout: number, outer: AbortSignal | undefined) → { signal: AbortSignal; timedOut: () => boolean; cancelled: () => boolean; dispose: () => void } <!-- internal -->
       <a id="features.llm.callSignal"></a><br>One signal for a whole call: aborted by the deadline or by the caller's signal, whichever comes first; `dispose` clears the timer and the listener on the caller's signal, so a long-lived signal does not collect them.
-    - fn [anthropicComplete](../../src/llm.ts#L190) (client: Anthropic, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal) → Promise<string> <!-- internal -->
-      <a id="features.llm.anthropicComplete"></a><br>Sends one user prompt to the Anthropic messages API under a deadline built by [`features.llm.callSignal`](features.md#features.llm.callSignal), enabling server-side fallbacks for matching models, and raises [`features.llm.LlmCancelled`](features.md#features.llm.LlmCancelled) or a timeout from [`features.llm.timeoutMessage`](features.md#features.llm.timeoutMessage) on abort. It then returns the… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - calls [features.llm.callSignal](features.md#features.llm.callSignal), [features.llm.LlmCancelled](features.md#features.llm.LlmCancelled), [features.llm.timeoutMessage](features.md#features.llm.timeoutMessage)
-    - fn [openrouterComplete](../../src/llm.ts#L224) (base: string, key: string, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal) → Promise<string> <!-- internal -->
-      <a id="features.llm.openrouterComplete"></a><br>Streams a chat completion from an OpenRouter-compatible endpoint under one deadline from [`features.llm.callSignal`](features.md#features.llm.callSignal), accumulating SSE deltas or reading a plain JSON reply via [`features.llm.parseJson`](features.md#features.llm.parseJson). Empty or erroring answers become errors; cancellation raises… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - calls [features.llm.callSignal](features.md#features.llm.callSignal), [features.llm.parseJson](features.md#features.llm.parseJson), [features.llm.LlmCancelled](features.md#features.llm.LlmCancelled), [features.llm.timeoutMessage](features.md#features.llm.timeoutMessage)
-    - fn [parseJson](../../src/llm.ts#L283) (text: string) → unknown <!-- internal -->
+    - fn [anthropicComplete](../../src/llm.ts#L195) (client: Anthropic, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal) → Promise<string> <!-- internal -->
+      <a id="features.llm.anthropicComplete"></a><br>Sends one user prompt to the Anthropic messages API under a deadline built by [`features.llm.callSignal`](features.md#features.llm.callSignal), enabling server-side fallbacks for matching models, and raises [`features.llm.LlmCancelled`](features.md#features.llm.LlmCancelled) or a timeout from [`features.llm.timeoutMessage`](features.md#features.llm.timeoutMessage) on abort. It then returns the… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+      - calls [features.llm.callSignal](features.md#features.llm.callSignal), [features.llm.LlmCancelled](features.md#features.llm.LlmCancelled), [features.llm.timeoutMessage](features.md#features.llm.timeoutMessage), [features.llm.truncatedMessage](features.md#features.llm.truncatedMessage)
+    - fn [openrouterComplete](../../src/llm.ts#L231) (base: string, key: string, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal) → Promise<string> <!-- internal -->
+      <a id="features.llm.openrouterComplete"></a><br>Streams a chat completion from an OpenRouter-compatible endpoint under one deadline from [`features.llm.callSignal`](features.md#features.llm.callSignal), accumulating SSE deltas or reading a plain JSON reply via [`features.llm.parseJson`](features.md#features.llm.parseJson). Empty or erroring answers become errors; cancellation raises… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+      - calls [features.llm.callSignal](features.md#features.llm.callSignal), [features.llm.parseJson](features.md#features.llm.parseJson), [features.llm.truncatedMessage](features.md#features.llm.truncatedMessage), [features.llm.LlmCancelled](features.md#features.llm.LlmCancelled), [features.llm.timeoutMessage](features.md#features.llm.timeoutMessage)
+    - fn [parseJson](../../src/llm.ts#L293) (text: string) → unknown <!-- internal -->
       <a id="features.llm.parseJson"></a><br>Wraps `JSON.parse` so malformed input yields `undefined` instead of throwing, letting [`features.llm.openrouterComplete`](features.md#features.llm.openrouterComplete) safely probe OpenRouter response bodies for JSON. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [lsp-features](../../src/lsp-features.ts#L1)
     <a id="features.lsp-features"></a><br>Language features over one analysis: pure functions from an `Analysis`, a document, and a position to LSP results. Positions are LSP's: 0-based line, UTF-16 character.
@@ -1013,8 +1022,8 @@
     - type [Workspace](../../src/lsp-features.ts#L41)
       <a id="features.lsp-features.Workspace"></a><br>What features read: the analysis, the root, and the text of any document.
     - fn [workspace](../../src/lsp-features.ts#L48) (root: string, analysis: Analysis, buffers: ReadonlyMap<string, string>) → Workspace
-      <a id="features.lsp-features.workspace"></a><br>Builds an editor view of an analysis, reparsing generated map docs with [`lang.parser.parse`](lang.md#lang.parser.parse) when an open buffer differs from the fresh render. Its text lookup prefers open buffers, then rendered map content, then disk. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
-      - calls [lang.parser.parse](lang.md#lang.parser.parse), [lang.files.readTextOrNull](lang.md#lang.files.readTextOrNull), [map.emit.isGeneratedMap](map.md#map.emit.isGeneratedMap)
+      <a id="features.lsp-features.workspace"></a><br>Builds an editor view of an analysis, reparsing generated map docs with [`lang.parser.parse`](lang.md#lang.parser.parse) when an open buffer differs from the fresh render. Its text lookup prefers open buffers, then rendered map content, then disk. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
+      - calls [base.config.specPath](base.md#base.config.specPath), [lang.parser.parse](lang.md#lang.parser.parse), [lang.files.readTextOrNull](lang.md#lang.files.readTextOrNull), [map.emit.isGeneratedMap](map.md#map.emit.isGeneratedMap)
     - fn [lineStarts](../../src/lsp-features.ts#L83) (text: string) → number[] <!-- internal -->
       <a id="features.lsp-features.lineStarts"></a><br>Scans the text once and returns the character offsets at which each line begins, treating only `\n` (code 10) as a line break and always including offset 0. [`features.lsp-features.toOffset`](features.md#features.lsp-features.toOffset) uses this table to convert an LSP line/character position into a flat string index. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [lspPoint](../../src/lsp-features.ts#L93) (text: string | null, line: number, col: number) → LspPosition <!-- internal -->
@@ -1041,13 +1050,13 @@
       <a id="features.lsp-features.targetAt"></a><br>The id, reference, or code link at an offset of a document. Spans are half-open: the offset after an id is not in it.
       - calls [features.lsp-features.nodesOf](features.md#features.lsp-features.nodesOf), [base.span.spanContains](base.md#base.span.spanContains)
     - fn [docOf](../../src/lsp-features.ts#L154) (ws: Workspace, path: string) → Document | undefined <!-- internal -->
-      <a id="features.lsp-features.docOf"></a><br>Looks up the analyzed document matching a file path in the workspace, falling back to [`features.lsp-features.readingDoc`](features.md#features.lsp-features.readingDoc) when none is found; shared by LSP handlers like [`features.lsp-features.completions`](features.md#features.lsp-features.completions). _(llm · claude:claude-opus-5-5 · 2026-10-05)_
+      <a id="features.lsp-features.docOf"></a><br>Looks up the analyzed document matching a file path in the workspace, falling back to [`features.lsp-features.readingDoc`](features.md#features.lsp-features.readingDoc) when none is found; shared by LSP handlers like [`features.lsp-features.completions`](features.md#features.lsp-features.completions). _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [features.lsp-features.readingDoc](features.md#features.lsp-features.readingDoc)
     - fn [readingDoc](../../src/lsp-features.ts#L166) (ws: Workspace, path: string) → Document | undefined <!-- internal -->
       <a id="features.lsp-features.readingDoc"></a><br>A file of the explained map. The analysis does not check it (it is no spec), but its IDs and code links lead where the map's do: hover, definition and Enter in the TUI work there too.
-      - calls [lang.parser.parse](lang.md#lang.parser.parse)
+      - calls [base.config.specPath](base.md#base.config.specPath), [lang.parser.parse](lang.md#lang.parser.parse)
     - fn [at](../../src/lsp-features.ts#L177) (ws: Workspace, path: string, position: LspPosition) → Target | null <!-- internal -->
-      <a id="features.lsp-features.at"></a><br>Resolves the symbol target under an LSP cursor position by converting it to a text offset via [`features.lsp-features.toOffset`](features.md#features.lsp-features.toOffset) and querying [`features.lsp-features.targetAt`](features.md#features.lsp-features.targetAt), returning null if the document or text is unavailable. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
+      <a id="features.lsp-features.at"></a><br>Resolves the symbol target under an LSP cursor position by converting it to a text offset via [`features.lsp-features.toOffset`](features.md#features.lsp-features.toOffset) and querying [`features.lsp-features.targetAt`](features.md#features.lsp-features.targetAt), returning null if the document or text is unavailable. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [features.lsp-features.docOf](features.md#features.lsp-features.docOf), [features.lsp-features.targetAt](features.md#features.lsp-features.targetAt), [features.lsp-features.toOffset](features.md#features.lsp-features.toOffset)
     - type [LspDiagnostic](../../src/lsp-features.ts#L186)
       <a id="features.lsp-features.LspDiagnostic"></a><br>Shape of a single diagnostic emitted to the editor: a source `LspRange`, numeric severity 1–4, message, optional code, fixed source "keylang", and a `data` payload carrying the verdict plus an optional reason. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
@@ -1064,7 +1073,7 @@
     - type [HoverResult](../../src/lsp-features.ts#L257) <!-- internal -->
       <a id="features.lsp-features.HoverResult"></a>
     - fn [hover](../../src/lsp-features.ts#L259) (ws: Workspace, path: string, position: LspPosition) → HoverResult | null
-      <a id="features.lsp-features.hover"></a><br>Builds the LSP hover response for a position: gets hover data via [`features.lsp-features.hoverContent`](features.md#features.lsp-features.hoverContent), renders it as markdown with [`features.lsp-features.hoverMarkdown`](features.md#features.lsp-features.hoverMarkdown), and keeps its range, returning null when nothing is found. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
+      <a id="features.lsp-features.hover"></a><br>Builds the LSP hover response for a position: gets hover data via [`features.lsp-features.hoverContent`](features.md#features.lsp-features.hoverContent), renders it as markdown with [`features.lsp-features.hoverMarkdown`](features.md#features.lsp-features.hoverMarkdown), and keeps its range, returning null when nothing is found. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [features.lsp-features.hoverContent](features.md#features.lsp-features.hoverContent), [features.lsp-features.hoverMarkdown](features.md#features.lsp-features.hoverMarkdown)
     - fn [hoverMarkdown](../../src/lsp-features.ts#L265) (content: HoverContent) → string
       <a id="features.lsp-features.hoverMarkdown"></a><br>The hover as LSP Markdown: title, place, a `- ` line per evidence, the flows; a blank line between them.
@@ -1085,7 +1094,7 @@
       <a id="features.lsp-features.roleHover"></a><br>Hover on a keyword, or on a line without an ID: what the line does under its parent (grammar.md §5), then the diagnostics and verdicts of that line.
       - calls [features.lsp-features.docOf](features.md#features.lsp-features.docOf), [features.lsp-features.toOffset](features.md#features.lsp-features.toOffset), [features.lsp-features.nodesOf](features.md#features.lsp-features.nodesOf), [base.span.spanContains](base.md#base.span.spanContains), [lang.parser.roleAt](lang.md#lang.parser.roleAt), [lang.ir.kindLabel](lang.md#lang.ir.kindLabel), [features.lsp-features.inlineRuns](features.md#features.lsp-features.inlineRuns), [features.lsp-features.evidenceLine](features.md#features.lsp-features.evidenceLine), [check.assess.sameFinding](check.md#check.assess.sameFinding), [features.lsp-features.fromSpan](features.md#features.lsp-features.fromSpan)
     - fn [definition](../../src/lsp-features.ts#L361) (ws: Workspace, path: string, position: LspPosition) → Location | null
-      <a id="features.lsp-features.definition"></a><br>Resolves the target under the cursor via [`features.lsp-features.at`](features.md#features.lsp-features.at) into a go-to location: links open the referenced file at their line, and nodes jump to their source position from [`features.lsp-features.describe`](features.md#features.lsp-features.describe), otherwise null. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
+      <a id="features.lsp-features.definition"></a><br>Resolves the target under the cursor via [`features.lsp-features.at`](features.md#features.lsp-features.at) into a go-to location: links open the referenced file at their line, and nodes jump to their source position from [`features.lsp-features.describe`](features.md#features.lsp-features.describe), otherwise null. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [features.lsp-features.at](features.md#features.lsp-features.at), [features.lsp-features.describe](features.md#features.lsp-features.describe), [features.lsp-features.lspPoint](features.md#features.lsp-features.lspPoint), [features.lsp-features.uriOf](features.md#features.lsp-features.uriOf)
     - fn [signatureHelp](../../src/lsp-features.ts#L375) (ws: Workspace, path: string, position: LspPosition) → { signatures: { label: string; documentation?: string }[]; activeSignature: 0; activeParameter: 0 } | null
       <a id="features.lsp-features.signatureHelp"></a><br>Finds the last dotted identifier before the cursor on the current line, looks it up via [`features.lsp-features.describe`](features.md#features.lsp-features.describe), and returns its signature as the label with its file:line as documentation, or null. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
@@ -1113,7 +1122,7 @@
     - fn [itemPhrase](../../src/lsp-features.ts#L504) (item: Trigger | FlowItem) → string | null <!-- internal -->
       <a id="features.lsp-features.itemPhrase"></a><br>Extracts the human-readable text from a flow element by kind: the target string for triggers, steps, and ref-form `then` items, the condition for `when`, and the prose for non-ref `then`. Returns null for any other kind, which [`features.lsp-features.flowPhrases`](features.md#features.lsp-features.flowPhrases) uses to skip… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [documentSymbols](../../src/lsp-features.ts#L511) (ws: Workspace, path: string) → DocumentSymbol[]
-      <a id="features.lsp-features.documentSymbols"></a><br>Builds the LSP outline tree for a document, grouping flow and rules sections and tagging each symbol with its worst verification status from [`features.lsp-features.statusOf`](features.md#features.lsp-features.statusOf); served via [`cli.lsp.Server.request`](cli.md#cli.lsp.Server.request). _(llm · claude:claude-opus-5-5 · 2026-10-05)_
+      <a id="features.lsp-features.documentSymbols"></a><br>Builds the LSP outline tree for a document, grouping flow and rules sections and tagging each symbol with its worst verification status from [`features.lsp-features.statusOf`](features.md#features.lsp-features.statusOf); served via [`cli.lsp.Server.request`](cli.md#cli.lsp.Server.request). _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [features.lsp-features.docOf](features.md#features.lsp-features.docOf), [features.lsp-features.flowPhrases](features.md#features.lsp-features.flowPhrases), [lang.ir.walk](lang.md#lang.ir.walk), [features.lsp-features.statusOf](features.md#features.lsp-features.statusOf), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [features.lsp-features.fromPos](features.md#features.lsp-features.fromPos), [features.lsp-features.fromSpan](features.md#features.lsp-features.fromSpan)
     - type [CompletionItem](../../src/lsp-features.ts#L598)
       <a id="features.lsp-features.CompletionItem"></a><br>Shape of one entry the completion provider returns: a label with an LSP kind code, optional detail, description, sort key, and a `filterText`/`textEdit` pair that lets the dotted label replace the whole typed path rather than just the last segment after a dot. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
@@ -1404,6 +1413,7 @@
       <a id="features.stale.StaleReport"></a><br>Groups the output of a staleness check: a list of findings sorted by file then position, plus baseline entries whose statement no longer exists in the checked files because its text changed or was removed. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [staleBaselinePath](../../src/stale.ts#L63) (config: Pick<Config, "dir">) → string
       <a id="features.stale.staleBaselinePath"></a><br>Where the accepted fingerprints live, relative to the root, POSIX.
+      - calls [base.config.specPath](base.md#base.config.specPath)
     - fn [specStatements](../../src/stale.ts#L72) (docs: readonly Document[]) → Statement[]
       <a id="features.stale.specStatements"></a><br>The statements of hand-written specs: descriptions of nodes in map and flow sections, and every flow `when`, `then` and `invariant`. Generated map files are skipped: their text is the code's own.
       - calls [features.stale.sectionRefs](features.md#features.stale.sectionRefs), [features.stale.subtreeRefs](features.md#features.stale.subtreeRefs), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes)

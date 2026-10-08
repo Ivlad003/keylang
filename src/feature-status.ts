@@ -13,7 +13,7 @@
 
 import { sameFinding } from "./assess.ts";
 import { filterChanged } from "./changed.ts";
-import type { RuleFormat } from "./config.ts";
+import { specPath, type RuleFormat } from "./config.ts";
 import type { Diagnostic } from "./diag.ts";
 import { isError } from "./diag.ts";
 import { plannedMismatch } from "./flows.ts";
@@ -189,7 +189,7 @@ export function idsIn(doc: Document): string[] {
  * one of the specs. Gaps are ordered by kind, then file, line, column, id.
  */
 export function featureStatus(input: FeatureInput, slug: string): FeatureReport | null {
-  const path = `${input.dir}/features/${slug}.md`;
+  const path = specPath(input.dir, `features/${slug}.md`);
   const doc = input.docs.find((item) => item.path === path);
   if (doc === undefined) return null;
   const gaps: Gap[] = [];

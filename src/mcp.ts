@@ -20,7 +20,7 @@ import { keepsFactCache, saveFactCache } from "./fact-cache.ts";
 import { idsIn } from "./feature-status.ts";
 import { runOperation } from "./operations.ts";
 import { specToCode } from "./spec-to-code.ts";
-import { CONFIG_FILE, evidenceFiles, loadConfig, toPosix } from "./config.ts";
+import { CONFIG_FILE, evidenceFiles, loadConfig, specPath, toPosix } from "./config.ts";
 import { isStale, readExplanation } from "./explain-llm.ts";
 import { summarizeNode } from "./explain-node.ts";
 import { explanationOf, loadBriefs, type NodeExplanation } from "./explanations.ts";
@@ -30,6 +30,7 @@ import { sectionNodes, walk } from "./ir.ts";
 import { generateMap } from "./map.ts";
 import { searchNodes } from "./node-search.ts";
 import { lineDiff, PROPOSALS_DIR, proposalProblem, writeProposal } from "./proposals.ts";
+import { ENTRY_KINDS } from "./snapshot.ts";
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
 
@@ -219,7 +220,7 @@ export function mcpServer(root: string, version: string): McpServer {
       if ((id === undefined) === (feature === undefined)) return failure("pass exactly one of id or feature");
       const analysis = await fresh();
       if (feature !== undefined) {
-        const path = `${analysis.config.dir}/features/${feature}.md`;
+        const path = specPath(analysis.config.dir, `features/${feature}.md`);
         const doc = analysis.docs.find((item) => item.path === path);
         if (!doc) return failure(`no feature \`${feature}\``);
         return json(contextForIds(analysis, idsIn(doc)));
@@ -300,6 +301,21 @@ export function mcpServer(root: string, version: string): McpServer {
       const result = await runOperation({ kind: "feature", root, slug, ...(since !== undefined ? { since } : {}) }, { analyze: () => fresh() });
       if (result.payload === null) return failure(result.messages.find((message) => message.level === "error")?.text ?? `no feature \`${slug}\``);
       return json(result.payload.report);
+    },
+  );
+
+  server.registerTool(
+    "list_entries",
+    {
+      description:
+        "Where execution starts, as the code and its manifests write it (`keylang entries`): each entry point with kind (route, cli, main; a framework's rest, graphql, cron, consumer, observer, webhook, controller come from its adapter), label (`GET /orders`, a bin or script name, a script path), the fn or module id, file and line, framework and the source the fact is written in. Sorted by kind, label, id; `kind` narrows to one kind. Read-only; nothing calls these from inside the repository.",
+      inputSchema: { kind: z.enum(ENTRY_KINDS).optional() },
+    },
+    async ({ kind }) => {
+      const analysis = await fresh();
+      const snapshot = analysis.snapshot;
+      if (snapshot === null) return failure("no code to read (`languages` in keylang.json is empty)");
+      return json({ snapshotId: snapshot.snapshotId, kind: kind ?? null, entries: snapshot.entries.filter((entry) => kind === undefined || entry.kind === kind) });
     },
   );
 

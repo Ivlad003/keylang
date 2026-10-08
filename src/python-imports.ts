@@ -14,6 +14,7 @@
 import { existsSync, statSync } from "node:fs";
 import { join, posix } from "node:path";
 import type { Resolution, SourceResolver } from "./imports.ts";
+import { exactExistence, nodeFs, type ExactFs } from "./exact-path.ts";
 import { isPythonStdlib } from "./python-stdlib.ts";
 
 const ROOTS = ["", "src"];
@@ -26,10 +27,13 @@ export class PythonResolver implements SourceResolver {
   private readonly sourceDirs: ReadonlySet<string>;
   /** The resolver reads no configuration files: edges depend only on the indexed sources. */
   readonly inputs = new Map<string, string | null>();
+  /** A file on disk, spelled exactly so: `existsSync` alone finds `User.py` through `user.py` on APFS and NTFS. */
+  private readonly onDisk: (file: string) => boolean;
 
-  constructor(root: string, sources: ReadonlySet<string> = new Set()) {
+  constructor(root: string, sources: ReadonlySet<string> = new Set(), fs: ExactFs = nodeFs) {
     this.root = root;
     this.sources = sources;
+    this.onDisk = exactExistence(root, fs);
     this.sourceDirs = directoriesOf(sources);
     this.roots = ROOTS.filter((dir) => dir === "" || this.isDir(dir));
   }
@@ -72,7 +76,7 @@ export class PythonResolver implements SourceResolver {
 
   /** `a/b.py`, else the package `a/b/__init__.py`; null for neither. */
   private moduleFile(path: string): string | null {
-    for (const file of [`${path}.py`, posix.join(path, "__init__.py")]) if (this.sources.has(file) || existsSync(join(this.root, file))) return file;
+    for (const file of [`${path}.py`, posix.join(path, "__init__.py")]) if (this.sources.has(file) || this.onDisk(file)) return file;
     return null;
   }
 
