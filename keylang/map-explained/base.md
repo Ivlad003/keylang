@@ -250,34 +250,36 @@
       <a id="base.adapter.FrameworkModule"></a><br>A module of the framework, by the name its config uses (`Magento_Checkout`), and its directory.
     - type [FrameworkInput](../../src/frameworks/adapter.ts#L277)
       <a id="base.adapter.FrameworkInput"></a><br>What the graph receives from one active adapter.
-    - type [GeneratedClass](../../src/frameworks/adapter.ts#L300)
+    - type [ServiceLocator](../../src/frameworks/adapter.ts#L302)
+      <a id="base.adapter.ServiceLocator"></a><br>A service locator of the framework (Magento's ObjectManager, business-flows 40): a call of one of `methods` on a value of one of `types` (or of a class implementing one) whose first argument names a class as a literal (`X::class`, `'Vendor\X'`) gives an instance of that class…
+    - type [GeneratedClass](../../src/frameworks/adapter.ts#L315)
       <a id="base.adapter.GeneratedClass"></a><br>A class the framework generates instead of the code declaring it, by a convention of names (Magento's ObjectManager: `XFactory` with `create(): X`, business-flows 40). keylang applies it only to a class no file it reads declares, whose stem (`X`) is a class or an interface it…
-    - type [FrameworkContext](../../src/frameworks/adapter.ts#L308)
+    - type [FrameworkContext](../../src/frameworks/adapter.ts#L323)
       <a id="base.adapter.FrameworkContext"></a><br>What an adapter sees of the repository: the analysed source files and a reader.
-    - type [FrameworkAdapter](../../src/frameworks/adapter.ts#L319)
+    - type [FrameworkAdapter](../../src/frameworks/adapter.ts#L341)
       <a id="base.adapter.FrameworkAdapter"></a>
-    - type [ControllerConvention](../../src/frameworks/adapter.ts#L352)
+    - type [ControllerConvention](../../src/frameworks/adapter.ts#L379)
       <a id="base.adapter.ControllerConvention"></a><br>Where a framework keeps the controllers of a route and how it names their URLs: a controller is a class in a file under `<module dir>/<dir>/`, whose `member` runs; the HTTP method comes from the interfaces it implements.
-    - fn [activeAdapters](../../src/frameworks/adapter.ts#L377) (frameworks: readonly string[] | null, context: FrameworkContext, available: readonly FrameworkAdapter[] = FRAMEWORK_ADAPTERS) → FrameworkAdapter[]
+    - fn [activeAdapters](../../src/frameworks/adapter.ts#L404) (frameworks: readonly string[] | null, context: FrameworkContext, available: readonly FrameworkAdapter[] = FRAMEWORK_ADAPTERS) → FrameworkAdapter[]
       <a id="base.adapter.activeAdapters"></a><br>The adapters of a repository: those `frameworks` names, or with the field absent those detected. `available` lets a test add an adapter of its own.
-    - fn [typeLabel](../../src/frameworks/adapter.ts#L383) (t: TypeName) → string
+    - fn [typeLabel](../../src/frameworks/adapter.ts#L410) (t: TypeName) → string
       <a id="base.adapter.typeLabel"></a><br>A label for a type the configuration names: its qualified name, or `file#name`.
-    - fn [isConfigFacts](../../src/frameworks/adapter.ts#L388) (value: unknown) → value is ConfigFacts
+    - fn [isConfigFacts](../../src/frameworks/adapter.ts#L415) (value: unknown) → value is ConfigFacts
       <a id="base.adapter.isConfigFacts"></a><br>Whether a cached value has the shape of `ConfigFacts`; a cache entry of another shape is parsed again.
       - calls [base.adapter.isRecord](base.md#base.adapter.isRecord), [base.adapter.every](base.md#base.adapter.every), [base.adapter.isAt](base.md#base.adapter.isAt), [base.adapter.isTypeName](base.md#base.adapter.isTypeName), [base.adapter.isToken](base.md#base.adapter.isToken)
-    - fn [isAt](../../src/frameworks/adapter.ts#L410) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isAt](../../src/frameworks/adapter.ts#L437) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       <a id="base.adapter.isAt"></a>
       - calls [base.adapter.isRecord](base.md#base.adapter.isRecord)
-    - fn [isToken](../../src/frameworks/adapter.ts#L414) (value: unknown) → boolean <!-- internal -->
+    - fn [isToken](../../src/frameworks/adapter.ts#L441) (value: unknown) → boolean <!-- internal -->
       <a id="base.adapter.isToken"></a>
       - calls [base.adapter.isRecord](base.md#base.adapter.isRecord)
-    - fn [isTypeName](../../src/frameworks/adapter.ts#L418) (value: unknown) → boolean <!-- internal -->
+    - fn [isTypeName](../../src/frameworks/adapter.ts#L445) (value: unknown) → boolean <!-- internal -->
       <a id="base.adapter.isTypeName"></a>
       - calls [base.adapter.isRecord](base.md#base.adapter.isRecord)
-    - fn [every](../../src/frameworks/adapter.ts#L422) (value: unknown, check: (item: Record<string, unknown>) => boolean) → boolean <!-- internal -->
+    - fn [every](../../src/frameworks/adapter.ts#L449) (value: unknown, check: (item: Record<string, unknown>) => boolean) → boolean <!-- internal -->
       <a id="base.adapter.every"></a>
       - calls [base.adapter.isRecord](base.md#base.adapter.isRecord)
-    - fn [isRecord](../../src/frameworks/adapter.ts#L426) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isRecord](../../src/frameworks/adapter.ts#L453) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       <a id="base.adapter.isRecord"></a>
   - module [bindings](../../src/frameworks/bindings.ts#L1)
     <a id="base.bindings"></a><br>What the graph does with framework facts (ADR 0022), the same for every language: a call through a type the config binds (an interface, or a class with a preference of its own) becomes a `call` edge to the bound class's member, `via: "preference"`; a call through a property the…
@@ -292,72 +294,83 @@
       <a id="base.bindings.BoundEdge"></a><br>One edge a binding makes, before the graph places it at a call.
     - type [BoundCall](../../src/frameworks/bindings.ts#L55)
       <a id="base.bindings.BoundCall"></a><br>A call through a bound type: the edges, and what keeps it from being resolved in an area.
-    - type [BindingHole](../../src/frameworks/bindings.ts#L68)
+    - type [BoundClasses](../../src/frameworks/bindings.ts#L68)
+      <a id="base.bindings.BoundClasses"></a><br>Per area, the class a value of a bound type is: its name, its node when the graph has one, and the preferences it rests on.
+    - type [BindingHole](../../src/frameworks/bindings.ts#L75)
       <a id="base.bindings.BindingHole"></a><br>A config fact that names a class keylang does not have: a hole of the module whose config it is.
-    - type [PluginEdge](../../src/frameworks/bindings.ts#L77)
+    - type [PluginEdge](../../src/frameworks/bindings.ts#L84)
       <a id="base.bindings.PluginEdge"></a>
-    - type [Declared](../../src/frameworks/bindings.ts#L87) <!-- internal -->
+    - type [Declared](../../src/frameworks/bindings.ts#L94) <!-- internal -->
       <a id="base.bindings.Declared"></a>
-    - type [Plugin](../../src/frameworks/bindings.ts#L103) <!-- internal -->
+    - type [Plugin](../../src/frameworks/bindings.ts#L110) <!-- internal -->
       <a id="base.bindings.Plugin"></a>
-    - module [FrameworkBindings](../../src/frameworks/bindings.ts#L127)
+    - module [FrameworkBindings](../../src/frameworks/bindings.ts#L134)
       <a id="base.bindings.FrameworkBindings"></a>
-      - fn [constructor](../../src/frameworks/bindings.ts#L145) (inputs: readonly FrameworkInput[], deps: BindingDeps)
+      - fn [constructor](../../src/frameworks/bindings.ts#L154) (inputs: readonly FrameworkInput[], deps: BindingDeps)
         <a id="base.bindings.FrameworkBindings.constructor"></a>
         - calls [base.bindings.key](base.md#base.bindings.key), [base.bindings.FrameworkBindings.hole](base.md#base.bindings.FrameworkBindings.hole), [base.adapter.typeLabel](base.md#base.adapter.typeLabel), [base.bindings.asciiLower](base.md#base.bindings.asciiLower), [base.bindings.FrameworkBindings.linkTokens](base.md#base.bindings.FrameworkBindings.linkTokens), [base.bindings.FrameworkBindings.activePlugins](base.md#base.bindings.FrameworkBindings.activePlugins)
-      - fn [linkTokens](../../src/frameworks/bindings.ts#L216) (configs: readonly FrameworkInput["configs"][number][], declared: (written: TypeName, scope: string, file: string, at: { line: number; col: number }, owner: string | null, from?: string | null) => Declared) → void <!-- internal -->
+      - fn [linkTokens](../../src/frameworks/bindings.ts#L232) (configs: readonly FrameworkInput["configs"][number][], declared: (written: TypeName, scope: string, file: string, at: { line: number; col: number }, owner: string | null, from?: string | null) => Declared) → void <!-- internal -->
         <a id="base.bindings.FrameworkBindings.linkTokens"></a><br>Tokens (NestJS): an injection `@Inject(T)` of a constructor parameter gets what the providers of `T` give — the class of `useClass` (or of a class provider), through `useExisting` to another token's — as a constructor argument the config sets, so `this.x.m()` goes to that…
         - calls [base.bindings.FrameworkBindings.hole](base.md#base.bindings.FrameworkBindings.hole), [base.bindings.tokenLabel](base.md#base.bindings.tokenLabel), [base.adapter.typeLabel](base.md#base.adapter.typeLabel), [base.bindings.asciiLower](base.md#base.bindings.asciiLower)
-      - fn [hole](../../src/frameworks/bindings.ts#L260) (file: string, at: { line: number; col: number }, text: string, reason: string, source: string | null) → void <!-- internal -->
+      - fn [hole](../../src/frameworks/bindings.ts#L276) (file: string, at: { line: number; col: number }, text: string, reason: string, source: string | null) → void <!-- internal -->
         <a id="base.bindings.FrameworkBindings.hole"></a>
-      - fn [binds](../../src/frameworks/bindings.ts#L265) (type: string) → boolean
+      - fn [binds](../../src/frameworks/bindings.ts#L281) (type: string) → boolean
         <a id="base.bindings.FrameworkBindings.binds"></a><br>A type the config binds: a call through it goes where the binding says.
-      - fn [argumentFor](../../src/frameworks/bindings.ts#L270) (classId: string, param: string) → boolean
+      - fn [argumentFor](../../src/frameworks/bindings.ts#L286) (classId: string, param: string) → boolean
         <a id="base.bindings.FrameworkBindings.argumentFor"></a><br>The values the config sets for the constructor parameter `param` of the class; none when it sets none.
         - calls [base.bindings.FrameworkBindings.valuesOf](base.md#base.bindings.FrameworkBindings.valuesOf)
-      - fn [callThroughType](../../src/frameworks/bindings.ts#L275) (type: string, member: string) → BoundCall
+      - fn [callThroughType](../../src/frameworks/bindings.ts#L291) (type: string, member: string) → BoundCall
         <a id="base.bindings.FrameworkBindings.callThroughType"></a><br>A call of `member` through a value typed `type` (a type or a class the config binds).
         - calls [base.bindings.emptyCall](base.md#base.bindings.emptyCall), [base.bindings.FrameworkBindings.effective](base.md#base.bindings.FrameworkBindings.effective), [base.bindings.FrameworkBindings.place](base.md#base.bindings.FrameworkBindings.place), [base.bindings.finish](base.md#base.bindings.finish)
-      - fn [callThroughArgument](../../src/frameworks/bindings.ts#L282) (classId: string, param: string, member: string) → BoundCall
+      - fn [callThroughArgument](../../src/frameworks/bindings.ts#L298) (classId: string, param: string, member: string) → BoundCall
         <a id="base.bindings.FrameworkBindings.callThroughArgument"></a><br>A call of `member` through the property the constructor parameter `param` of `classId` fills.
         - calls [base.bindings.emptyCall](base.md#base.bindings.emptyCall), [base.bindings.FrameworkBindings.valuesOf](base.md#base.bindings.FrameworkBindings.valuesOf), [base.bindings.groupBy](base.md#base.bindings.groupBy), [base.bindings.distinctTargets](base.md#base.bindings.distinctTargets), [base.bindings.describe](base.md#base.bindings.describe), [base.bindings.FrameworkBindings.effective](base.md#base.bindings.FrameworkBindings.effective), [base.bindings.FrameworkBindings.place](base.md#base.bindings.FrameworkBindings.place), [base.bindings.finish](base.md#base.bindings.finish)
-      - fn [valuesOf](../../src/frameworks/bindings.ts#L304) (classId: string, param: string) → (Declared & { param: string })[] <!-- internal -->
+      - fn [valuesOf](../../src/frameworks/bindings.ts#L320) (classId: string, param: string) → (Declared & { param: string })[] <!-- internal -->
         <a id="base.bindings.FrameworkBindings.valuesOf"></a><br>What the config sets for the parameter of the class: its own arguments, else those for every class.
         - calls [base.bindings.asciiLower](base.md#base.bindings.asciiLower)
-      - fn [effective](../../src/frameworks/bindings.ts#L315) (type: string, out: BoundCall) → Map<string, Declared[]> <!-- internal -->
+      - fn [effective](../../src/frameworks/bindings.ts#L331) (type: string, out: BoundCall) → Map<string, Declared[]> <!-- internal -->
         <a id="base.bindings.FrameworkBindings.effective"></a><br>Per area, the chain of preferences from `type` to the class a value of it is: `I → C`, then `C → D` when C has a preference of its own, until a class without one (or a cycle). An area without its own preference uses the global one; two in one area make it ambiguous.
         - calls [base.bindings.distinctTargets](base.md#base.bindings.distinctTargets), [base.bindings.describe](base.md#base.bindings.describe)
-      - fn [place](../../src/frameworks/bindings.ts#L345) (out: BoundCall, chain: readonly Declared[], member: string, via: "preference" | "argument", scope: string, lead = "") → void <!-- internal -->
+      - fn [boundByName](../../src/frameworks/bindings.ts#L366) (name: string) → BoundClasses
+        <a id="base.bindings.FrameworkBindings.boundByName"></a><br>A type the graph has no node for (an interface `outside` the architecture, business-flows 40), by its qualified name: per area, the class a value of it is through the preferences — the last name of the chain as `effective` follows it, by name until a preference names a graph…
+        - calls [base.bindings.FrameworkBindings.bound](base.md#base.bindings.FrameworkBindings.bound), [base.bindings.key](base.md#base.bindings.key)
+      - fn [boundClasses](../../src/frameworks/bindings.ts#L371) (type: string) → BoundClasses
+        <a id="base.bindings.FrameworkBindings.boundClasses"></a><br>The same for a type of the graph (`effective`, ending at the class rather than at a member).
+        - calls [base.bindings.FrameworkBindings.bound](base.md#base.bindings.FrameworkBindings.bound)
+      - fn [bound](../../src/frameworks/bindings.ts#L375) ({ name }: { name: string }, own: readonly Declared[]) → BoundClasses <!-- internal -->
+        <a id="base.bindings.FrameworkBindings.bound"></a>
+        - calls [base.bindings.emptyCall](base.md#base.bindings.emptyCall), [base.bindings.key](base.md#base.bindings.key), [base.bindings.distinctTargets](base.md#base.bindings.distinctTargets), [base.bindings.describe](base.md#base.bindings.describe)
+      - fn [place](../../src/frameworks/bindings.ts#L410) (out: BoundCall, chain: readonly Declared[], member: string, via: "preference" | "argument", scope: string, lead = "") → void <!-- internal -->
         <a id="base.bindings.FrameworkBindings.place"></a><br>The edge (or the reason there is none) of one area's chain.
         - calls [base.bindings.scopeOrder](base.md#base.bindings.scopeOrder)
-      - fn [activePlugins](../../src/frameworks/bindings.ts#L381) () → Plugin[] <!-- internal -->
+      - fn [activePlugins](../../src/frameworks/bindings.ts#L446) () → Plugin[] <!-- internal -->
         <a id="base.bindings.FrameworkBindings.activePlugins"></a><br>Plugin declarations in effect: per type, name and area, the last one wins; a disabled one or one of no class is not.
         - calls [base.bindings.groupBy](base.md#base.bindings.groupBy), [base.bindings.merge](base.md#base.bindings.merge)
-      - fn [interceptors](../../src/frameworks/bindings.ts#L407) (types: readonly string[], member: string) → PluginEdge[]
+      - fn [interceptors](../../src/frameworks/bindings.ts#L472) (types: readonly string[], member: string) → PluginEdge[]
         <a id="base.bindings.FrameworkBindings.interceptors"></a><br>The plugin methods that wrap `member` of a value of `types` (the receiver's class, and the interface a binding went through), in the order they run: by `sortOrder`, then name; each plugin's `before`, `around`, `after`.
         - calls [base.bindings.asciiLower](base.md#base.bindings.asciiLower), [base.bindings.FrameworkBindings.activePlugins](base.md#base.bindings.FrameworkBindings.activePlugins)
-    - fn [tokenLabel](../../src/frameworks/bindings.ts#L429) (t: TokenRef) → string <!-- internal -->
+    - fn [tokenLabel](../../src/frameworks/bindings.ts#L494) (t: TokenRef) → string <!-- internal -->
       <a id="base.bindings.tokenLabel"></a><br>A token as the code writes it: `ORDER_REPO`, `'CLOCK'`.
-    - fn [emptyCall](../../src/frameworks/bindings.ts#L433) () → BoundCall <!-- internal -->
+    - fn [emptyCall](../../src/frameworks/bindings.ts#L498) () → BoundCall <!-- internal -->
       <a id="base.bindings.emptyCall"></a>
-    - fn [finish](../../src/frameworks/bindings.ts#L437) (out: BoundCall) → BoundCall <!-- internal -->
+    - fn [finish](../../src/frameworks/bindings.ts#L502) (out: BoundCall) → BoundCall <!-- internal -->
       <a id="base.bindings.finish"></a>
       - calls [base.bindings.scopeOrder](base.md#base.bindings.scopeOrder)
-    - fn [distinctTargets](../../src/frameworks/bindings.ts#L443) (list: readonly T[]) → T[] <!-- internal -->
+    - fn [distinctTargets](../../src/frameworks/bindings.ts#L508) (list: readonly T[]) → T[] <!-- internal -->
       <a id="base.bindings.distinctTargets"></a><br>Declarations that name different classes: one per class.
       - calls [base.bindings.key](base.md#base.bindings.key)
-    - fn [describe](../../src/frameworks/bindings.ts#L452) (d: Declared) → string <!-- internal -->
+    - fn [describe](../../src/frameworks/bindings.ts#L517) (d: Declared) → string <!-- internal -->
       <a id="base.bindings.describe"></a>
-    - fn [merge](../../src/frameworks/bindings.ts#L457) (decls: readonly Plugin[]) → Plugin | null <!-- internal -->
+    - fn [merge](../../src/frameworks/bindings.ts#L522) (decls: readonly Plugin[]) → Plugin | null <!-- internal -->
       <a id="base.bindings.merge"></a><br>Declarations of one plugin in config order, merged: a later one changes what it writes.
-    - fn [groupBy](../../src/frameworks/bindings.ts#L471) (list: readonly T[], keyOf: (item: T) => string) → Map<string, T[]> <!-- internal -->
+    - fn [groupBy](../../src/frameworks/bindings.ts#L536) (list: readonly T[], keyOf: (item: T) => string) → Map<string, T[]> <!-- internal -->
       <a id="base.bindings.groupBy"></a>
-    - fn [scopeOrder](../../src/frameworks/bindings.ts#L477) (a: string, b: string) → number <!-- internal -->
+    - fn [scopeOrder](../../src/frameworks/bindings.ts#L542) (a: string, b: string) → number <!-- internal -->
       <a id="base.bindings.scopeOrder"></a>
-    - fn [key](../../src/frameworks/bindings.ts#L481) (name: string) → string <!-- internal -->
+    - fn [key](../../src/frameworks/bindings.ts#L546) (name: string) → string <!-- internal -->
       <a id="base.bindings.key"></a>
       - calls [base.bindings.asciiLower](base.md#base.bindings.asciiLower)
-    - fn [asciiLower](../../src/frameworks/bindings.ts#L485) (name: string) → string <!-- internal -->
+    - fn [asciiLower](../../src/frameworks/bindings.ts#L550) (name: string) → string <!-- internal -->
       <a id="base.bindings.asciiLower"></a>
   - module [cartridges](../../src/frameworks/cartridges.ts#L1)
     <a id="base.cartridges"></a><br>Salesforce Commerce Cloud cartridges (SFRA): where they are, the cartridge path they are searched in, and what an SFCC `require` names. A cartridge is a directory `…/cartridges/<name>/` with a `cartridge/` inside it; the cartridge path orders them, first cartridge first, and…
@@ -432,49 +445,49 @@
     - node [external.node](external.md#external.node)
     - saxes [external.saxes](external.md#external.saxes)
     - adapter [base.adapter](base.md#base.adapter)
-    - fn [componentRoots](../../src/frameworks/magento.ts#L122) (context: FrameworkContext, pattern: RegExp) → string[] <!-- internal -->
-      <a id="base.magento.componentRoots"></a><br>Directories of the analysed `registration.php` files whose text registers a component as `pattern` says.
-    - fn [scopeOf](../../src/frameworks/magento.ts#L133) (path: string) → string <!-- internal -->
+    - fn [componentRoots](../../src/frameworks/magento.ts#L140) (context: FrameworkContext, pattern: RegExp, files: readonly string[] = context.sources) → string[] <!-- internal -->
+      <a id="base.magento.componentRoots"></a><br>Directories of the `registration.php` files of `files` (the analysed sources) whose text registers a component as `pattern` says.
+    - fn [scopeOf](../../src/frameworks/magento.ts#L151) (path: string) → string <!-- internal -->
       <a id="base.magento.scopeOf"></a><br>`etc/di.xml` → `global`; `etc/frontend/di.xml` → `frontend`.
-    - fn [className](../../src/frameworks/magento.ts#L140) (written: string) → string
+    - fn [className](../../src/frameworks/magento.ts#L158) (written: string) → string
       <a id="base.magento.className"></a><br>A class name as Magento resolves it: no leading `\`, no spaces; a generated proxy stands for its class.
-    - type [MagentoFacts](../../src/frameworks/magento.ts#L145) <!-- internal -->
+    - type [MagentoFacts](../../src/frameworks/magento.ts#L163) <!-- internal -->
       <a id="base.magento.MagentoFacts"></a><br>The facts of a Magento config file: every kind it may hold is present.
-    - fn [noFacts](../../src/frameworks/magento.ts#L148) (path: string, scope: string, error: ConfigFacts["error"] = null) → MagentoFacts <!-- internal -->
+    - fn [noFacts](../../src/frameworks/magento.ts#L166) (path: string, scope: string, error: ConfigFacts["error"] = null) → MagentoFacts <!-- internal -->
       <a id="base.magento.noFacts"></a><br>The `ConfigFacts` of a file with no facts, and the reason when it gave none.
-    - fn [type](../../src/frameworks/magento.ts#L152) (name: string) → TypeName <!-- internal -->
+    - fn [type](../../src/frameworks/magento.ts#L170) (name: string) → TypeName <!-- internal -->
       <a id="base.magento.type"></a>
       - calls [base.magento.className](base.md#base.magento.className)
-    - type [XmlElement](../../src/frameworks/magento.ts#L157)
+    - type [XmlElement](../../src/frameworks/magento.ts#L175)
       <a id="base.magento.XmlElement"></a><br>An element of a config file, with where its start tag is and the text directly in it.
-    - fn [parseXml](../../src/frameworks/magento.ts#L167) (path: string, text: string) → { root: XmlElement | null; error: { line: number; reason: string } | null }
+    - fn [parseXml](../../src/frameworks/magento.ts#L185) (path: string, text: string) → { root: XmlElement | null; error: { line: number; reason: string } | null }
       <a id="base.magento.parseXml"></a><br>The root element of an XML file, or why it does not parse.
-    - fn [fromXml](../../src/frameworks/magento.ts#L202) (path: string, text: string, read: (root: XmlElement, facts: MagentoFacts) => void) → ConfigFacts <!-- internal -->
+    - fn [fromXml](../../src/frameworks/magento.ts#L220) (path: string, text: string, read: (root: XmlElement, facts: MagentoFacts) => void) → ConfigFacts <!-- internal -->
       <a id="base.magento.fromXml"></a><br>The facts of an XML config file: `read` takes them from the root element. A file that does not parse gives none, only the reason.
       - calls [base.magento.noFacts](base.md#base.magento.noFacts), [base.magento.scopeOf](base.md#base.magento.scopeOf), [base.magento.parseXml](base.md#base.magento.parseXml)
-    - fn [childrenNamed](../../src/frameworks/magento.ts#L210) (element: XmlElement, name: string) → XmlElement[] <!-- internal -->
+    - fn [childrenNamed](../../src/frameworks/magento.ts#L228) (element: XmlElement, name: string) → XmlElement[] <!-- internal -->
       <a id="base.magento.childrenNamed"></a>
-    - fn [flag](../../src/frameworks/magento.ts#L215) (value: string | undefined) → boolean <!-- internal -->
+    - fn [flag](../../src/frameworks/magento.ts#L233) (value: string | undefined) → boolean <!-- internal -->
       <a id="base.magento.flag"></a><br>`true` or `1` in an attribute Magento reads as a boolean.
-    - fn [parseDi](../../src/frameworks/magento.ts#L220) (path: string, text: string) → ConfigFacts
+    - fn [parseDi](../../src/frameworks/magento.ts#L238) (path: string, text: string) → ConfigFacts
       <a id="base.magento.parseDi"></a><br>The facts of one `di.xml`.
       - calls [base.magento.fromXml](base.md#base.magento.fromXml), [base.magento.type](base.md#base.magento.type), [base.magento.className](base.md#base.magento.className), [base.magento.childrenNamed](base.md#base.magento.childrenNamed), [base.magento.flag](base.md#base.magento.flag)
-    - fn [parseEvents](../../src/frameworks/magento.ts#L261) (path: string, text: string) → ConfigFacts
+    - fn [parseEvents](../../src/frameworks/magento.ts#L279) (path: string, text: string) → ConfigFacts
       <a id="base.magento.parseEvents"></a><br>`etc/events.xml`: `<event name="e"><observer name="o" instance="C" method="m" disabled="true"/>`.
       - calls [base.magento.fromXml](base.md#base.magento.fromXml), [base.magento.childrenNamed](base.md#base.magento.childrenNamed), [base.magento.type](base.md#base.magento.type), [base.magento.flag](base.md#base.magento.flag)
-    - fn [parseRoutes](../../src/frameworks/magento.ts#L278) (path: string, text: string) → ConfigFacts
+    - fn [parseRoutes](../../src/frameworks/magento.ts#L296) (path: string, text: string) → ConfigFacts
       <a id="base.magento.parseRoutes"></a><br>`etc/<area>/routes.xml`: `<router id="standard"><route id="checkout" frontName="checkout"><module name="Magento_Checkout"/>`.
       - calls [base.magento.fromXml](base.md#base.magento.fromXml), [base.magento.childrenNamed](base.md#base.magento.childrenNamed)
-    - fn [parseWebapi](../../src/frameworks/magento.ts#L293) (path: string, text: string) → ConfigFacts
+    - fn [parseWebapi](../../src/frameworks/magento.ts#L311) (path: string, text: string) → ConfigFacts
       <a id="base.magento.parseWebapi"></a><br>`etc/webapi.xml`: `<route url="/V1/x" method="POST"><service class="I" method="m"/><resources><resource ref="self"/>` → `rest`, labelled `POST /V1/x [self]`.
       - calls [base.magento.fromXml](base.md#base.magento.fromXml), [base.magento.childrenNamed](base.md#base.magento.childrenNamed), [base.magento.type](base.md#base.magento.type)
-    - fn [parseCrontab](../../src/frameworks/magento.ts#L315) (path: string, text: string) → ConfigFacts
+    - fn [parseCrontab](../../src/frameworks/magento.ts#L333) (path: string, text: string) → ConfigFacts
       <a id="base.magento.parseCrontab"></a><br>`etc/crontab.xml`: `<group id="default"><job name="n" instance="C" method="m"><schedule>0 0 * * *</schedule>` → `cron`, labelled `n 0 0 * * *` (the schedule last, as `every` reads it); a job the admin's config schedules says `(config_path …)` instead.
       - calls [base.magento.fromXml](base.md#base.magento.fromXml), [base.magento.childrenNamed](base.md#base.magento.childrenNamed), [base.magento.type](base.md#base.magento.type)
-    - fn [parseConsumers](../../src/frameworks/magento.ts#L335) (path: string, text: string) → ConfigFacts
+    - fn [parseConsumers](../../src/frameworks/magento.ts#L353) (path: string, text: string) → ConfigFacts
       <a id="base.magento.parseConsumers"></a><br>`etc/queue_consumer.xml`: `<consumer name="n" queue="q" handler="C::m"/>` → `consumer` on `C::m`; without a handler, the `consumerInstance`'s `process`.
       - calls [base.magento.fromXml](base.md#base.magento.fromXml), [base.magento.childrenNamed](base.md#base.magento.childrenNamed), [base.magento.type](base.md#base.magento.type)
-    - fn [parseGraphql](../../src/frameworks/magento.ts#L359) (path: string, text: string) → ConfigFacts
+    - fn [parseGraphql](../../src/frameworks/magento.ts#L377) (path: string, text: string) → ConfigFacts
       <a id="base.magento.parseGraphql"></a><br>`etc/schema.graphqls`: a field with `@resolver(class: "C")` → `graphql` on `C::resolve`, labelled `Type.field`. A small scanner over the SDL (no XML, no parser package for it): comments, strings, braces and parentheses; a field is a name followed by `(` or `:` right inside a…
       - calls [base.magento.noFacts](base.md#base.magento.noFacts), [base.magento.scopeOf](base.md#base.magento.scopeOf), [base.magento.type](base.md#base.magento.type)
   - module [nestjs](../../src/frameworks/nestjs.ts#L1)

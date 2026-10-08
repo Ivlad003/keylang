@@ -123,72 +123,72 @@
     - fn [describeVia](../../src/flows.ts#L597) (edge: SnapshotEdge, where = true) → string <!-- internal -->
       <a id="check.flows.describeVia"></a><br>A `via` edge in words. `where`: with the position of a passed callable (a hole's message adds the edge's position itself).
       - calls [check.flows.describeConfig](check.md#check.flows.describeConfig), [check.flows.at](check.md#check.flows.at)
-    - fn [describeConfig](../../src/flows.ts#L612) (edge: Pick<SnapshotEdge, "via" | "binding" | "site" | "scope">) → string
+    - fn [describeConfig](../../src/flows.ts#L613) (edge: Pick<SnapshotEdge, "via" | "binding" | "site" | "scope">) → string
       <a id="check.flows.describeConfig"></a><br>A call the framework makes by its config, as the verdict names it: `the preference `I → C` in `etc/di.xml:12``, `the plugin `p` (`P`) on `X` (plugin:around) in `etc/di.xml:30``, with the area when it is not global.
-    - fn [provesIn](../../src/flows.ts#L626) (behavior: boolean) → (step: Step) => boolean <!-- internal -->
+    - fn [provesIn](../../src/flows.ts#L627) (behavior: boolean) → (step: Step) => boolean <!-- internal -->
       <a id="check.flows.provesIn"></a><br>The edges a static mode follows as a proof: plain calls outside closures; in `behavior` also hook edges, callables passed as arguments and calls in a closure passed as an argument (the callee of the call holds it).
-    - fn [closureOnly](../../src/flows.ts#L635) (edge: SnapshotEdge, behavior: boolean) → boolean <!-- internal -->
+    - fn [closureOnly](../../src/flows.ts#L636) (edge: SnapshotEdge, behavior: boolean) → boolean <!-- internal -->
       <a id="check.flows.closureOnly"></a><br>The edge is a route only when some holder calls the closure it sits in: a call in a stored closure, or (in `behavior`) a callable passed from inside one. In `shape`, a closure passed as an argument is named as its `via`.
-    - fn [describeHole](../../src/flows.ts#L639) (edge: SnapshotEdge, target: string, input: FlowInput) → string <!-- internal -->
+    - fn [describeHole](../../src/flows.ts#L640) (edge: SnapshotEdge, target: string, input: FlowInput) → string <!-- internal -->
       <a id="check.flows.describeHole"></a><br>Builds the human-readable reason a call edge couldn't be followed: ambiguous candidates, a resolved-but-`via` edge skipped in static mode, a possible dynamic dispatch via [`check.flows.lastSegment`](check.md#check.flows.lastSegment)/[`check.flows.callName`](check.md#check.flows.callName), or the edge's own unresolved reason. Used by… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [check.flows.describeVia](check.md#check.flows.describeVia), [check.flows.lastSegment](check.md#check.flows.lastSegment), [check.flows.callName](check.md#check.flows.callName)
-    - fn [at](../../src/flows.ts#L651) (edge: SnapshotEdge) → string <!-- internal -->
+    - fn [at](../../src/flows.ts#L652) (edge: SnapshotEdge) → string <!-- internal -->
       <a id="check.flows.at"></a><br>Formats a snapshot edge's file, line and column into a single `file:line:col` location string. Used by [`check.flows.directCall`](check.md#check.flows.directCall), [`check.flows.escapeOf`](check.md#check.flows.escapeOf) and [`check.flows.reachability`](check.md#check.flows.reachability) to cite where a flow was observed in their verdict messages. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [reachability](../../src/flows.ts#L678) (graph: CallGraph, input: FlowInput, parent: string | null, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
+    - fn [reachability](../../src/flows.ts#L679) (graph: CallGraph, input: FlowInput, parent: string | null, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
       <a id="check.flows.reachability"></a><br>Static reachability of `target` from `parent`.
       - calls [check.flows.externalImport](check.md#check.flows.externalImport), [check.flows.provesIn](check.md#check.flows.provesIn), [check.flows.search](check.md#check.flows.search), [check.flows.routeMessage](check.md#check.flows.routeMessage), [check.flows.routeSteps](check.md#check.flows.routeSteps), [check.flows.possibleRoute](check.md#check.flows.possibleRoute), [check.flows.closureOnly](check.md#check.flows.closureOnly), [check.flows.at](check.md#check.flows.at), [check.flows.describeHole](check.md#check.flows.describeHole), [check.flows.callersOf](check.md#check.flows.callersOf), [check.flows.escapeOf](check.md#check.flows.escapeOf), [check.flows.holeNear](check.md#check.flows.holeNear)
-    - fn [directCall](../../src/flows.ts#L747) (graph: CallGraph, input: FlowInput, parent: string | null, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
+    - fn [directCall](../../src/flows.ts#L748) (graph: CallGraph, input: FlowInput, parent: string | null, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
       <a id="check.flows.directCall"></a><br>Static evidence for `calls`: whether `parent` calls `target` itself, without order. `ok` is a resolved call in the parent's own body that this mode follows. `fail` is a confirmed absence under the rules of a step's absence: no call of the parent can be the target (no unresolved…
       - calls [check.flows.externalImport](check.md#check.flows.externalImport), [check.flows.provesIn](check.md#check.flows.provesIn), [check.flows.routeMessage](check.md#check.flows.routeMessage), [check.flows.closureOnly](check.md#check.flows.closureOnly), [check.flows.at](check.md#check.flows.at), [check.flows.describeHole](check.md#check.flows.describeHole), [check.flows.namedLike](check.md#check.flows.namedLike), [check.flows.lastSegment](check.md#check.flows.lastSegment), [base.languages.caselessNames](base.md#base.languages.caselessNames), [check.flows.callName](check.md#check.flows.callName), [base.languages.asciiLowerCase](base.md#base.languages.asciiLowerCase), [check.flows.escapeOf](check.md#check.flows.escapeOf), [check.flows.search](check.md#check.flows.search), [check.flows.routeSteps](check.md#check.flows.routeSteps)
-    - fn [search](../../src/flows.ts#L795) (graph: CallGraph, parent: string, target: string, follow: (step: Step) => boolean) → { route: Map<string, Step> | null; depth: Map<string, number> } <!-- internal -->
+    - fn [search](../../src/flows.ts#L796) (graph: CallGraph, parent: string, target: string, follow: (step: Step) => boolean) → { route: Map<string, Step> | null; depth: Map<string, number> } <!-- internal -->
       <a id="check.flows.search"></a><br>Breadth-first from `parent` over the steps `follow` accepts: the route to `target` (null when there is none) and the depth of every fn reached. The search stops at the target, so `depth` is complete only without a route.
-    - fn [routeSteps](../../src/flows.ts#L818) (parent: string, target: string, previous: Map<string, Step>) → Step[] <!-- internal -->
+    - fn [routeSteps](../../src/flows.ts#L819) (parent: string, target: string, previous: Map<string, Step>) → Step[] <!-- internal -->
       <a id="check.flows.routeSteps"></a><br>The steps of a route from `parent` to `target`, in call order.
-    - fn [fileModule](../../src/flows.ts#L831) (nodes: FlowInput["nodes"], id: string) → string | null <!-- internal -->
+    - fn [fileModule](../../src/flows.ts#L832) (nodes: FlowInput["nodes"], id: string) → string | null <!-- internal -->
       <a id="check.flows.fileModule"></a><br>The file module of a fn: the nearest module that is not a class.
-    - fn [externalImport](../../src/flows.ts#L847) (input: FlowInput, parent: string, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
+    - fn [externalImport](../../src/flows.ts#L848) (input: FlowInput, parent: string, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
       <a id="check.flows.externalImport"></a><br>Static proof for `external.<pkg>`: a resolved import from the parent fn's own module that loads the package. A type-only one (`import type`, `export type … from`) is erased from the code that runs, so it proves nothing.
       - calls [check.flows.fileModule](check.md#check.flows.fileModule), [check.flows.at](check.md#check.flows.at)
-    - fn [describeDocblock](../../src/flows.ts#L859) (edge: SnapshotEdge) → string <!-- internal -->
+    - fn [describeDocblock](../../src/flows.ts#L860) (edge: SnapshotEdge) → string <!-- internal -->
       <a id="check.flows.describeDocblock"></a><br>An edge that rests on a docblock: where PHP's `@var` or `@param` types the receiver.
       - calls [check.flows.at](check.md#check.flows.at)
-    - fn [routeMessage](../../src/flows.ts#L868) (parent: string, target: string, previous: Map<string, Step>) → string <!-- internal -->
+    - fn [routeMessage](../../src/flows.ts#L869) (parent: string, target: string, previous: Map<string, Step>) → string <!-- internal -->
       <a id="check.flows.routeMessage"></a><br>The route as the verdict prints it, with a note on every step that is not a plain call of the code: a hook (its default, or the value injected at a site) or a call whose receiver only a docblock types.
       - calls [check.flows.routeSteps](check.md#check.flows.routeSteps), [check.flows.describeVia](check.md#check.flows.describeVia), [check.flows.describeDocblock](check.md#check.flows.describeDocblock)
-    - fn [possibleRoute](../../src/flows.ts#L884) (graph: CallGraph, input: FlowInput, parent: string, target: string, proves: (step: Step) => boolean) → { edge: SnapshotEdge | null; seen: Set<string> } <!-- internal -->
+    - fn [possibleRoute](../../src/flows.ts#L885) (graph: CallGraph, input: FlowInput, parent: string, target: string, proves: (step: Step) => boolean) → { edge: SnapshotEdge | null; seen: Set<string> } <!-- internal -->
       <a id="check.flows.possibleRoute"></a><br>Breadth-first search that also follows calls with more than one possible target and calls in closures. Returns the first such call on the shortest route (null when there is none) and every fn the search reached.
       - calls [check.flows.namedLike](check.md#check.flows.namedLike), [check.flows.callName](check.md#check.flows.callName), [check.flows.lastSegment](check.md#check.flows.lastSegment)
-    - fn [callersOf](../../src/flows.ts#L912) (graph: CallGraph, target: string) → Set<string> <!-- internal -->
+    - fn [callersOf](../../src/flows.ts#L913) (graph: CallGraph, target: string) → Set<string> <!-- internal -->
       <a id="check.flows.callersOf"></a><br>Every fn with a resolved or candidate route to `target`, the target included.
-    - fn [escapeOf](../../src/flows.ts#L930) (graph: CallGraph, input: FlowInput, routes: Set<string>, reachable: ReadonlySet<string>) → { reason: string; from: string | null } | null <!-- internal -->
+    - fn [escapeOf](../../src/flows.ts#L931) (graph: CallGraph, input: FlowInput, routes: Set<string>, reachable: ReadonlySet<string>) → { reason: string; from: string | null } | null <!-- internal -->
       <a id="check.flows.escapeOf"></a><br>Why code keylang cannot follow may still run a fn of `routes`, and the fn whose code hands that fn on (null when it is not in a fn: module level, an unsupported construct); null when every route is by name.
       - calls [check.flows.fnAt](check.md#check.flows.fnAt), [check.flows.at](check.md#check.flows.at), [check.flows.callName](check.md#check.flows.callName), [base.languages.caselessNames](base.md#base.languages.caselessNames), [check.flows.identifierPattern](check.md#check.flows.identifierPattern), [base.span.compareText](base.md#base.span.compareText)
-    - fn [identifierPattern](../../src/flows.ts#L970) (name: string, caseless = false) → RegExp <!-- internal -->
+    - fn [identifierPattern](../../src/flows.ts#L971) (name: string, caseless = false) → RegExp <!-- internal -->
       <a id="check.flows.identifierPattern"></a><br>`name` as a whole identifier: `$save` and `зберегти` too, which `\b` does not delimit; `caseless`: in any ASCII case, as PHP compares names (`HELPER` is `helper`, `ÄNDERN` is no `ändern`), which the flag `i` would not keep apart.
-    - fn [fnAt](../../src/flows.ts#L977) (input: FlowInput, file: string, line: number) → string | null <!-- internal -->
+    - fn [fnAt](../../src/flows.ts#L978) (input: FlowInput, file: string, line: number) → string | null <!-- internal -->
       <a id="check.flows.fnAt"></a><br>The innermost fn whose declaration holds `file:line`.
-    - fn [holeNear](../../src/flows.ts#L991) (graph: CallGraph, holes: { edge: SnapshotEdge }[], from: string) → SnapshotEdge | null <!-- internal -->
+    - fn [holeNear](../../src/flows.ts#L992) (graph: CallGraph, holes: { edge: SnapshotEdge }[], from: string) → SnapshotEdge | null <!-- internal -->
       <a id="check.flows.holeNear"></a><br>The unresolved call in reachable code nearest `from` among the fns `from` calls, itself included: where a value handed on by `from` may be called. Null when no hole is downstream of it.
       - calls [base.span.compareText](base.md#base.span.compareText)
-    - fn [moduleMembers](../../src/flows.ts#L1007) (nodes: FlowInput["nodes"], id: string) → "complete" | "opaque" | null <!-- internal -->
+    - fn [moduleMembers](../../src/flows.ts#L1008) (nodes: FlowInput["nodes"], id: string) → "complete" | "opaque" | null <!-- internal -->
       <a id="check.flows.moduleMembers"></a><br>Walks up the dotted ancestors of an ID until it finds an enclosing module node whose membership is declared "complete" or "opaque", returning that value. Yields null if no such module appears before the ID runs out of segments; used by [`check.flows.idVerdict`](check.md#check.flows.idVerdict). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [collectPlanned](../../src/flows.ts#L1023) (spec: SpecIR, input: FlowInput, diagnostics: Diagnostic[]) → Map<string, Planned> <!-- internal -->
+    - fn [collectPlanned](../../src/flows.ts#L1024) (spec: SpecIR, input: FlowInput, diagnostics: Diagnostic[]) → Map<string, Planned> <!-- internal -->
       <a id="check.flows.collectPlanned"></a><br>`planned` declarations. A duplicate is K002.
       - calls [check.flows.codeLocation](check.md#check.flows.codeLocation), [check.flows.plannedMismatch](check.md#check.flows.plannedMismatch), [base.diag.diagnostic](base.md#base.diag.diagnostic)
-    - fn [codeLocation](../../src/flows.ts#L1052) (id: string, code: SnapshotNodeView, edges: readonly SnapshotEdge[]) → string <!-- internal -->
+    - fn [codeLocation](../../src/flows.ts#L1053) (id: string, code: SnapshotNodeView, edges: readonly SnapshotEdge[]) → string <!-- internal -->
       <a id="check.flows.codeLocation"></a><br>Where the code of a planned id is: its file and line, or for a node without a file (a package) its first importer. Neither: `in the code`.
       - calls [base.span.compareText](base.md#base.span.compareText)
-    - fn [plannedMismatch](../../src/flows.ts#L1063) (item: { decl: string; signature: string | null }, code: { kind: string; signature?: string | null; file?: string | null }) → "kind" | "signature" | null
+    - fn [plannedMismatch](../../src/flows.ts#L1064) (item: { decl: string; signature: string | null }, code: { kind: string; signature?: string | null; file?: string | null }) → "kind" | "signature" | null
       <a id="check.flows.plannedMismatch"></a><br>How the code differs from a `planned` declaration of the same id: K201 for a kind or a signature, null (K202) when it matches.
       - calls [check.flows.sameSignature](check.md#check.flows.sameSignature)
-    - fn [sameSignature](../../src/flows.ts#L1076) (planned: string, code: string, file: string | null) → boolean <!-- internal -->
+    - fn [sameSignature](../../src/flows.ts#L1077) (planned: string, code: string, file: string | null) → boolean <!-- internal -->
       <a id="check.flows.sameSignature"></a><br>Signatures match without spaces, `->` as `→`. A Python method shows its receiver (`(self, to: str)`), a plan may name only what the caller passes (`(to: str)`): both match.
       - calls [check.flows.normalizeSignature](check.md#check.flows.normalizeSignature), [check.flows.parameterList](check.md#check.flows.parameterList)
-    - fn [parameterList](../../src/flows.ts#L1087) (signature: string) → string | null <!-- internal -->
+    - fn [parameterList](../../src/flows.ts#L1088) (signature: string) → string | null <!-- internal -->
       <a id="check.flows.parameterList"></a><br>The leading `(…)` of a normalized signature, up to the parenthesis that closes the first; null when there is none.
-    - fn [normalizeSignature](../../src/flows.ts#L1097) (text: string) → string <!-- internal -->
+    - fn [normalizeSignature](../../src/flows.ts#L1098) (text: string) → string <!-- internal -->
       <a id="check.flows.normalizeSignature"></a><br>Canonicalizes a signature string by replacing every `->` with `→`, stripping all whitespace, and dropping a trailing semicolon. Used by [`check.flows.plannedMismatch`](check.md#check.flows.plannedMismatch) so planned and actual signatures can be compared without formatting noise. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [specHash](../../src/flows.ts#L1101) (text: string) → string <!-- internal -->
+    - fn [specHash](../../src/flows.ts#L1102) (text: string) → string <!-- internal -->
       <a id="check.flows.specHash"></a><br>Computes a SHA-256 digest of the given text and returns it as a hex string. [`check.flows.evaluateFlows`](check.md#check.flows.evaluateFlows) uses it to fingerprint spec content so results can be tied to a specific spec version. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [migration](../../src/migration.ts#L1)
     <a id="check.migration"></a><br>Migration between stacks (business-flows/27): the rows of `# migration <name>` (`map <old> → [planned] <new>`, `dropped <old> <reason>`) checked against both sides, and the parity of the old stack's flows with the new one. Pure over two stacks — snapshot nodes, entries, flows…
