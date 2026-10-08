@@ -1731,11 +1731,11 @@
     - fn [offeredToken](../../src/tui/web.ts#L160) (request: IncomingMessage) → string | null <!-- internal -->
     - type [WebOptions](../../src/tui/web.ts#L168)
     - fn [serveWeb](../../src/tui/web.ts#L179) (options: WebOptions) → Promise<WebServer>
-      - calls tui.background.SnapshotWorker, map.analyze.analyze, tui.web.sameSecret, tui.web.offeredToken, tui.web.bearerToken, tui.web.reply, map.diagram.parseView, map.diagram.viewsOf, map.diagram.diagramOf, features.check-results.checkResults, tui.web.pathOf, tui.web.assetPath, tui.web.page, tui.web.clampSize, tui.web.pcmOf, tui.app.App, tui.web.AudioQueue, tui.web.control, tui.web.AudioQueue.chunks, tui.web.AudioQueue.end, tui.background.SnapshotWorker.close
-    - fn [bearerToken](../../src/tui/web.ts#L432) (request: IncomingMessage) → string | null <!-- internal -->
-    - fn [pathOf](../../src/tui/web.ts#L438) (target: string | undefined) → string | null <!-- internal -->
-    - fn [reply](../../src/tui/web.ts#L446) (response: ServerResponse, status: number, type: string, body: string | Buffer) → void <!-- internal -->
-    - fn [page](../../src/tui/web.ts#L452) () → string <!-- internal -->
+      - calls tui.background.SnapshotWorker, map.analyze.analyze, tui.web.sameSecret, tui.web.offeredToken, tui.web.reply, tui.web.bearerToken, map.diagram.parseView, map.diagram.viewsOf, map.diagram.diagramOf, features.check-results.checkResults, tui.web.pathOf, tui.web.assetPath, tui.web.page, tui.web.clampSize, tui.web.pcmOf, tui.app.App, tui.web.AudioQueue, tui.web.control, tui.web.AudioQueue.chunks, tui.web.AudioQueue.end, tui.background.SnapshotWorker.close
+    - fn [bearerToken](../../src/tui/web.ts#L433) (request: IncomingMessage) → string | null <!-- internal -->
+    - fn [pathOf](../../src/tui/web.ts#L439) (target: string | undefined) → string | null <!-- internal -->
+    - fn [reply](../../src/tui/web.ts#L447) (response: ServerResponse, status: number, type: string, body: string | Buffer) → void <!-- internal -->
+    - fn [page](../../src/tui/web.ts#L453) () → string <!-- internal -->
   - module [width](../../src/tui/width.ts#L1)
     - fn [graphemes](../../src/tui/width.ts#L13) (text: string) → string[]
     - fn [clusters](../../src/tui/width.ts#L20) (text: string) → Generator<string>
