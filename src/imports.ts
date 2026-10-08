@@ -23,7 +23,7 @@
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { posix } from "node:path";
-import { toPosix } from "./config.ts";
+import { toPosix, withoutBom } from "./config.ts";
 import { isNodeBuiltin } from "./extract/ts.ts";
 import { languageOf } from "./languages.ts";
 import { exactExistence, nodeFs, type ExactFs } from "./exact-path.ts";
@@ -699,8 +699,9 @@ function readText(path: string): string | null {
   }
 }
 
-/** Remove comments and trailing commas outside of strings. */
-function stripJsonc(text: string): string {
+/** Remove a leading BOM, and comments and trailing commas outside of strings. */
+function stripJsonc(source: string): string {
+  const text = withoutBom(source);
   let out = "";
   for (let i = 0; i < text.length; i++) {
     const c = text[i]!;

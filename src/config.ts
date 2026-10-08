@@ -222,11 +222,12 @@ function defaultModule(languages: readonly Language[]): Config["module"] {
 }
 
 /**
- * `text` without a leading U+FEFF: a keylang.json saved with a UTF-8 BOM
- * (PowerShell 5.1 `-Encoding UTF8`, old Notepad) is the same JSON, as the
- * `.md` parser, test reports and trace already read theirs.
+ * `text` without a leading U+FEFF: a JSON file saved with a UTF-8 BOM
+ * (PowerShell 5.1 `-Encoding UTF8`, old Notepad, Visual Studio) is the same
+ * JSON, as Node and npm read a `package.json`, and as the `.md` parser, test
+ * reports and trace already read theirs.
  */
-function withoutBom(text: string): string {
+export function withoutBom(text: string): string {
   return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
 }
 
@@ -704,7 +705,7 @@ function sourceRoot(root: string, exclude: readonly string[]): string {
 function composerSourceRoot(root: string): string | null {
   let manifest: unknown;
   try {
-    manifest = JSON.parse(readFileSync(join(root, "composer.json"), "utf8"));
+    manifest = JSON.parse(withoutBom(readFileSync(join(root, "composer.json"), "utf8")));
   } catch {
     return null;
   }

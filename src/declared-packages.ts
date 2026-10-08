@@ -16,7 +16,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, posix } from "node:path";
 import { parse as parseToml } from "smol-toml";
-import { isAnalysed, toPosix, type Config } from "./config.ts";
+import { isAnalysed, toPosix, withoutBom, type Config } from "./config.ts";
 import { assignExternalIds } from "./external-ids.ts";
 import { parseJsonc, parseJsoncStrict, pnpmWorkspacePackages } from "./imports.ts";
 import { compareText } from "./span.ts";
@@ -171,7 +171,7 @@ function composerPathNames(read: (rel: string) => string | null, list: (rel: str
   const rootText = read("composer.json");
   let manifest: unknown = null;
   try {
-    manifest = rootText === null ? null : JSON.parse(rootText);
+    manifest = rootText === null ? null : JSON.parse(withoutBom(rootText));
   } catch {
     // Reported where its packages are read.
   }
@@ -182,7 +182,7 @@ function composerPathNames(read: (rel: string) => string | null, list: (rel: str
     for (const dir of workspaceDirs(repository.url, list)) {
       const text = read(`${dir}/composer.json`);
       try {
-        const member: unknown = text === null ? null : JSON.parse(text);
+        const member: unknown = text === null ? null : JSON.parse(withoutBom(text));
         if (isRecord(member) && typeof member.name === "string") names.add(member.name);
       } catch {
         // A member that does not parse names no package.
@@ -234,10 +234,13 @@ function isDirectory(abs: string): boolean {
   }
 }
 
-/** The file is there but cannot be read. That is not the same error as invalid contents. */
+/**
+ * The file is there but cannot be read. That is not the same error as invalid
+ * contents. A leading BOM is dropped: Node and npm read such a manifest.
+ */
 function readText(path: string, rel: string): string {
   try {
-    return readFileSync(path, "utf8");
+    return withoutBom(readFileSync(path, "utf8"));
   } catch (error) {
     const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
     throw new Error(`${rel}: cannot read${code === "" ? "" : ` (${code})`}`);
@@ -274,7 +277,7 @@ function addPackages(rel: string, text: string, add: Add): void {
 function addCrates(rel: string, text: string, add: Add): void {
   let value: unknown;
   try {
-    value = parseToml(text);
+    value = parseToml(withoutBom(text));
   } catch (error) {
     throw new Error(`${rel}: invalid TOML: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -299,7 +302,7 @@ function addCrates(rel: string, text: string, add: Add): void {
 function addComposer(rel: string, text: string, add: Add): void {
   let value: unknown;
   try {
-    value = JSON.parse(text);
+    value = JSON.parse(withoutBom(text));
   } catch (error) {
     throw new Error(`${rel}: invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
   }
