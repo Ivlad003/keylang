@@ -563,39 +563,81 @@
       - calls map.php.key, map.php.type, map.symfony.attributes, map.php.str, map.php.arg
     - fn [aliases](../../src/framework-code/symfony.ts#L160) (c: PhpClass, facts: ConfigFacts) → void <!-- internal -->
       - calls map.symfony.attributes, map.php.cls, map.php.arg, map.php.str, map.symfony.className, map.php.type
+  - module [web-entries](../../src/framework-code/web-entries.ts#L1)
+    - entries map.entries
+    - facts extract.facts
+    - graph map.graph
+    - snapshot map.snapshot
+    - type [Arg](../../src/framework-code/web-entries.ts#L32) = DecoratorArg & { line: number; col: number } <!-- internal -->
+    - type [WebEntries](../../src/framework-code/web-entries.ts#L34)
+    - type [Registration](../../src/framework-code/web-entries.ts#L48) <!-- internal -->
+    - type [Mount](../../src/framework-code/web-entries.ts#L55) <!-- internal -->
+    - fn [webEntries](../../src/framework-code/web-entries.ts#L60) (facts: readonly FileFacts[], scope: EntryScope, active: readonly string[]) → WebEntries
+      - calls map.web-entries.routerEntries, map.web-entries.nextEntries
+    - fn [routerEntries](../../src/framework-code/web-entries.ts#L67) (facts: readonly FileFacts[], scope: EntryScope, active: readonly string[], out: WebEntries) → void <!-- internal -->
+      - calls map.web-entries.Values, map.web-entries.valueKey, map.web-entries.fnKey, map.web-entries.Values.value, map.web-entries.cmp, map.web-entries.pathOf, map.web-entries.routePath, map.web-entries.Values.mounted, map.entries.fnIn, map.web-entries.hole, map.web-entries.argText, map.web-entries.keyParts, map.web-entries.handlerOf, map.web-entries.middlewareText, map.web-entries.prop, map.web-entries.hooksOf, map.web-entries.joinPath, map.entries.frameworkEntry
+    - module [Values](../../src/framework-code/web-entries.ts#L238) <!-- internal -->
+      - fn [constructor](../../src/framework-code/web-entries.ts#L241) (scope: EntryScope)
+      - fn [value](../../src/framework-code/web-entries.ts#L246) (file: string, name: string, depth = 0) → { file: string; name: string }
+        - calls map.web-entries.Values.target, map.web-entries.Values.exported
+      - fn [exported](../../src/framework-code/web-entries.ts#L263) (file: string, name: string, depth: number) → { file: string; name: string } | null
+        - calls map.web-entries.Values.target, map.web-entries.Values.value
+      - fn [target](../../src/framework-code/web-entries.ts#L275) (file: string, source: string, line: number | null, col: number | null, text: string | null) → string | null
+      - fn [mounted](../../src/framework-code/web-entries.ts#L286) (file: string, arg: Arg, as: "value" | "fn") → string | null
+        - calls map.web-entries.Values.value, map.web-entries.fnKey, map.web-entries.Values.target, map.web-entries.Values.exported, map.web-entries.valueKey
+    - fn [valueKey](../../src/framework-code/web-entries.ts#L301) (file: string, name: string) → string <!-- internal -->
+    - fn [fnKey](../../src/framework-code/web-entries.ts#L306) (file: string, name: string | null, at: { line: number; col: number } | null) → string <!-- internal -->
+    - fn [keyParts](../../src/framework-code/web-entries.ts#L310) (key: string) → { file: string; name: string | null } <!-- internal -->
+    - fn [pathOf](../../src/framework-code/web-entries.ts#L315) (call: WebCallFact) → string | null <!-- internal -->
+    - fn [routePath](../../src/framework-code/web-entries.ts#L321) (path: string) → boolean <!-- internal -->
+    - fn [prop](../../src/framework-code/web-entries.ts#L325) (arg: DecoratorArg, key: string) → DecoratorArg | undefined <!-- internal -->
+    - fn [hooksOf](../../src/framework-code/web-entries.ts#L330) (opts: DecoratorArg) → DecoratorArg[] <!-- internal -->
+      - calls map.web-entries.prop
+    - fn [handlerOf](../../src/framework-code/web-entries.ts#L338) (scope: EntryScope, file: string, handler: DecoratorArg | undefined) → { id: string | null; note: string | null } <!-- internal -->
+      - calls map.entries.fnIn, map.web-entries.argText
+    - fn [middlewareText](../../src/framework-code/web-entries.ts#L349) (scope: EntryScope, file: string, arg: DecoratorArg) → string <!-- internal -->
+      - calls map.entries.fnIn, map.web-entries.argText
+    - fn [argText](../../src/framework-code/web-entries.ts#L358) (arg: DecoratorArg) → string <!-- internal -->
+    - fn [hole](../../src/framework-code/web-entries.ts#L377) (file: string, at: { line: number; col: number }, reason: string, module: Module | undefined) → Gap <!-- internal -->
+    - fn [joinPath](../../src/framework-code/web-entries.ts#L382) (...parts: string[]) → string <!-- internal -->
+    - fn [nextEntries](../../src/framework-code/web-entries.ts#L393) (facts: readonly FileFacts[], scope: EntryScope, out: WebEntries) → void <!-- internal -->
+      - calls map.entries.frameworkEntry, map.web-entries.prop, map.web-entries.argText, map.entries.fnIn
+    - fn [cmp](../../src/framework-code/web-entries.ts#L441) (a: string, b: string) → number <!-- internal -->
   - module [framework-entries](../../src/framework-entries.ts#L1)
     - config base.config
     - entries map.entries
     - facts extract.facts
     - adapter base.adapter
     - cartridges base.cartridges
+    - web-entries map.web-entries
     - python-web base.python-web
+    - web base.web
     - graph map.graph
     - imports map.imports
     - python-web-entries map.python-web-entries
     - snapshot map.snapshot
-    - type [FrameworkEntryInputs](../../src/framework-entries.ts#L25)
-    - fn [frameworkEntries](../../src/framework-entries.ts#L33) ({ config, graph, facts, frameworks }: FrameworkEntryInputs) → { entries: EntryPoint[]; holes: Gap[]; warnings: string[] }
-      - calls map.entries.entryScope, map.imports.probeCandidates, map.framework-entries.phpClassFiles, map.framework-entries.placeMethod, map.framework-entries.withExtras, map.entries.frameworkEntry, map.entries.fnIn, base.cartridges.cartridgeLayout, map.framework-entries.guessedOrder, map.framework-entries.controllerEntries, map.framework-entries.nestEntries, map.framework-entries.pwaEntries, map.python-web-entries.pythonWebEntries, map.entries.compareEntries
-    - fn [withExtras](../../src/framework-entries.ts#L97) (entry: EntryPoint, fact: EntryConfigFact) → EntryPoint <!-- internal -->
-    - fn [phpClassFiles](../../src/framework-entries.ts#L102) (facts: readonly FileFacts[]) → Map<string, { file: string; name: string; facts: FileFacts }> <!-- internal -->
+    - type [FrameworkEntryInputs](../../src/framework-entries.ts#L29)
+    - fn [frameworkEntries](../../src/framework-entries.ts#L37) ({ config, graph, facts, frameworks }: FrameworkEntryInputs) → { entries: EntryPoint[]; holes: Gap[]; warnings: string[]; supersedes: Set<string> }
+      - calls map.entries.entryScope, map.imports.probeCandidates, map.framework-entries.phpClassFiles, map.framework-entries.placeMethod, map.framework-entries.withExtras, map.entries.frameworkEntry, map.entries.fnIn, base.cartridges.cartridgeLayout, map.framework-entries.guessedOrder, map.framework-entries.controllerEntries, map.framework-entries.nestEntries, map.framework-entries.pwaEntries, map.python-web-entries.pythonWebEntries, map.web-entries.webEntries, map.entries.compareEntries
+    - fn [withExtras](../../src/framework-entries.ts#L110) (entry: EntryPoint, fact: EntryConfigFact) → EntryPoint <!-- internal -->
+    - fn [phpClassFiles](../../src/framework-entries.ts#L115) (facts: readonly FileFacts[]) → Map<string, { file: string; name: string; facts: FileFacts }> <!-- internal -->
       - calls map.framework-entries.lower
-    - fn [lower](../../src/framework-entries.ts#L110) (name: string) → string <!-- internal -->
-    - fn [placeMethod](../../src/framework-entries.ts#L118) (scope: EntryScope, classes: ReadonlyMap<string, { file: string; name: string; facts: FileFacts }>, type: TypeName, method: string) → { id: string; at: { file: string; line: number } } | { reason: string } <!-- internal -->
+    - fn [lower](../../src/framework-entries.ts#L123) (name: string) → string <!-- internal -->
+    - fn [placeMethod](../../src/framework-entries.ts#L131) (scope: EntryScope, classes: ReadonlyMap<string, { file: string; name: string; facts: FileFacts }>, type: TypeName, method: string) → { id: string; at: { file: string; line: number } } | { reason: string } <!-- internal -->
       - calls map.framework-entries.lower, map.entries.fnIn
-    - fn [guessedOrder](../../src/framework-entries.ts#L146) (layout: CartridgeLayout, graph: Graph, facts: readonly FileFacts[], probe: (candidate: string) => string | null) → Gap[] <!-- internal -->
+    - fn [guessedOrder](../../src/framework-entries.ts#L159) (layout: CartridgeLayout, graph: Graph, facts: readonly FileFacts[], probe: (candidate: string) => string | null) → Gap[] <!-- internal -->
       - calls base.cartridges.cartridgeAnswers
-    - fn [controllerEntries](../../src/framework-entries.ts#L172) (graph: Graph, facts: readonly FileFacts[], scope: EntryScope) → EntryPoint[] <!-- internal -->
+    - fn [controllerEntries](../../src/framework-entries.ts#L185) (graph: Graph, facts: readonly FileFacts[], scope: EntryScope) → EntryPoint[] <!-- internal -->
       - calls map.entries.fnIn, map.entries.frameworkEntry
-    - fn [nestEntries](../../src/framework-entries.ts#L208) (facts: readonly FileFacts[], scope: EntryScope, files: ReadonlySet<string>) → EntryPoint[] <!-- internal -->
+    - fn [nestEntries](../../src/framework-entries.ts#L221) (facts: readonly FileFacts[], scope: EntryScope, files: ReadonlySet<string>) → EntryPoint[] <!-- internal -->
       - calls map.framework-entries.allCalls, map.framework-entries.pathsOf, map.entries.fnIn, map.entries.frameworkEntry, map.framework-entries.joinPath, map.framework-entries.argText
-    - fn [allCalls](../../src/framework-entries.ts#L260) (file: FileFacts) → CallFact[] <!-- internal -->
-    - fn [pathsOf](../../src/framework-entries.ts#L273) (arg: DecoratorArg | undefined, key: string) → string[] | null <!-- internal -->
-    - fn [joinPath](../../src/framework-entries.ts#L288) (...parts: string[]) → string <!-- internal -->
-    - fn [argText](../../src/framework-entries.ts#L296) (arg: DecoratorArg | undefined) → string <!-- internal -->
-    - fn [pwaEntries](../../src/framework-entries.ts#L324) (facts: readonly FileFacts[], scope: EntryScope, files: ReadonlySet<string>) → EntryPoint[] <!-- internal -->
+    - fn [allCalls](../../src/framework-entries.ts#L273) (file: FileFacts) → CallFact[] <!-- internal -->
+    - fn [pathsOf](../../src/framework-entries.ts#L286) (arg: DecoratorArg | undefined, key: string) → string[] | null <!-- internal -->
+    - fn [joinPath](../../src/framework-entries.ts#L301) (...parts: string[]) → string <!-- internal -->
+    - fn [argText](../../src/framework-entries.ts#L309) (arg: DecoratorArg | undefined) → string <!-- internal -->
+    - fn [pwaEntries](../../src/framework-entries.ts#L337) (facts: readonly FileFacts[], scope: EntryScope, files: ReadonlySet<string>) → EntryPoint[] <!-- internal -->
       - calls map.entries.fnIn, map.framework-entries.lazyDefault, map.entries.frameworkEntry
-    - fn [lazyDefault](../../src/framework-entries.ts#L361) (scope: EntryScope, module: { deps: readonly { file: string; text: string; target: string }[] }, file: string, source: string) → string | null <!-- internal -->
+    - fn [lazyDefault](../../src/framework-entries.ts#L374) (scope: EntryScope, module: { deps: readonly { file: string; text: string; target: string }[] }, file: string, source: string) → string | null <!-- internal -->
   - module [frontends](../../src/frontends.ts#L1)
     - config base.config
     - facts extract.facts
@@ -816,54 +858,54 @@
     - snapshot map.snapshot
     - type [MapResult](../../src/map.ts#L25)
     - fn [generateMap](../../src/map.ts#L47) (config: Config, options: { persist?: boolean | "changed"; overlay?: ReadonlyMap<string, string>; adapters?: readonly FrameworkAdapter[] } = {}) → Promise<MapResult>
-      - calls base.config.classifySources, base.config.toPosix, base.languages.languageOf, base.config.isAnalysed, base.span.compareText, map.map.readAnalysedSource, map.graph.placeFile, map.snapshot.sha256, map.fact-cache.FactCache.open, map.map.extractorCode, map.snapshot.grammarVersions, map.frontends.frontendFor, map.map.extractGuarded, map.map.readFrameworks, map.map.opaqueFacts, map.graph.buildGraph, base.config.layerGlobWarnings, map.map.readSource, map.entries.collectEntries, map.framework-entries.frameworkEntries, map.entries.compareEntries, map.snapshot.buildSnapshot, map.map.ownerSource, map.map.readRepositoryDocs, map.explanations.loadBriefs, map.emit.renderExplainedMap, map.explanations.explanationOf, map.emit.renderMap
-    - fn [readFrameworks](../../src/map.ts#L154) ( config: Config, sources: readonly string[], read: ReadonlyMap<string, { text: string; sha256: string }>, overlay: ReadonlyMap<string, string> | undefined, cache: FactCache, available: readonly FrameworkAdapter[] | undefined, facts: readonly FileFacts[], ) → { inputs: FrameworkInput[]; manifest: FrameworkManifest[]; unread: { path: string; owner: string | null; reason: string; framework: string }[] } <!-- internal -->
+      - calls base.config.classifySources, base.config.toPosix, base.languages.languageOf, base.config.isAnalysed, base.span.compareText, map.map.readAnalysedSource, map.graph.placeFile, map.snapshot.sha256, map.fact-cache.FactCache.open, map.map.extractorCode, map.snapshot.grammarVersions, map.frontends.frontendFor, map.map.extractGuarded, map.map.readFrameworks, map.map.opaqueFacts, map.graph.buildGraph, base.config.layerGlobWarnings, map.map.readSource, map.framework-entries.frameworkEntries, map.entries.collectEntries, map.entries.compareEntries, map.snapshot.buildSnapshot, map.map.ownerSource, map.map.readRepositoryDocs, map.explanations.loadBriefs, map.emit.renderExplainedMap, map.explanations.explanationOf, map.emit.renderMap
+    - fn [readFrameworks](../../src/map.ts#L156) ( config: Config, sources: readonly string[], read: ReadonlyMap<string, { text: string; sha256: string }>, overlay: ReadonlyMap<string, string> | undefined, cache: FactCache, available: readonly FrameworkAdapter[] | undefined, facts: readonly FileFacts[], ) → { inputs: FrameworkInput[]; manifest: FrameworkManifest[]; unread: { path: string; owner: string | null; reason: string; framework: string }[] } <!-- internal -->
       - calls map.map.readSource, base.span.compareText, base.config.isAnalysed, base.adapter.activeAdapters, map.snapshot.sha256, map.fact-cache.FactCache.config
-    - fn [ownerSource](../../src/map.ts#L217) (config: Config, graph: Graph, owner: string | null) → { source?: string } <!-- internal -->
+    - fn [ownerSource](../../src/map.ts#L219) (config: Config, graph: Graph, owner: string | null) → { source?: string } <!-- internal -->
       - calls map.graph.directoryModule, base.span.compareText
-    - fn [readRepositoryDocs](../../src/map.ts#L233) (config: Config) → RepositoryDocs <!-- internal -->
+    - fn [readRepositoryDocs](../../src/map.ts#L235) (config: Config) → RepositoryDocs <!-- internal -->
       - calls base.glob.globDirectory, map.map.readReadme, base.brief.readmeBrief, map.map.readSystemDoc
-    - fn [readSystemDoc](../../src/map.ts#L244) (root: string) → SystemDoc <!-- internal -->
+    - fn [readSystemDoc](../../src/map.ts#L246) (root: string) → SystemDoc <!-- internal -->
       - calls map.map.manifestAbout, map.map.readSource, map.map.readReadme, base.brief.readmeBrief, base.brief.briefOf
-    - fn [readReadme](../../src/map.ts#L258) (root: string, dir: string) → { path: string; text: string } | null <!-- internal -->
+    - fn [readReadme](../../src/map.ts#L260) (root: string, dir: string) → { path: string; text: string } | null <!-- internal -->
       - calls base.span.compareText, map.map.readSource
-    - fn [manifestAbout](../../src/map.ts#L280) (file: (typeof ROOT_MANIFESTS)[number], text: string | null) → { name: string | null; description: string | null } <!-- internal -->
-    - fn [opaqueFacts](../../src/map.ts#L312) (path: string) → FileFacts <!-- internal -->
-    - fn [readSource](../../src/map.ts#L317) (abs: string) → string | null <!-- internal -->
-    - fn [readAnalysedSource](../../src/map.ts#L327) (abs: string) → string | null | { unreadable: string } <!-- internal -->
+    - fn [manifestAbout](../../src/map.ts#L282) (file: (typeof ROOT_MANIFESTS)[number], text: string | null) → { name: string | null; description: string | null } <!-- internal -->
+    - fn [opaqueFacts](../../src/map.ts#L314) (path: string) → FileFacts <!-- internal -->
+    - fn [readSource](../../src/map.ts#L319) (abs: string) → string | null <!-- internal -->
+    - fn [readAnalysedSource](../../src/map.ts#L329) (abs: string) → string | null | { unreadable: string } <!-- internal -->
       - calls map.map.readSource
-    - fn [extractGuarded](../../src/map.ts#L342) (extract: (path: string, src: string) => Promise<FileFacts>, path: string, src: string) → Promise<FileFacts> <!-- internal -->
+    - fn [extractGuarded](../../src/map.ts#L344) (extract: (path: string, src: string) => Promise<FileFacts>, path: string, src: string) → Promise<FileFacts> <!-- internal -->
       - calls map.map.opaqueFacts
-    - type [MapDiff](../../src/map.ts#L353)
-    - fn [targets](../../src/map.ts#L364) (config: Config, r: MapResult) → { dir: string; files: ReadonlyMap<string, string>; artifact: "map" | "explained" }[] <!-- internal -->
-    - type [ExtraGenerated](../../src/map.ts#L372) <!-- internal -->
-    - fn [extraGenerated](../../src/map.ts#L385) (dir: string, files: ReadonlyMap<string, string>) → ExtraGenerated[] <!-- internal -->
+    - type [MapDiff](../../src/map.ts#L355)
+    - fn [targets](../../src/map.ts#L366) (config: Config, r: MapResult) → { dir: string; files: ReadonlyMap<string, string>; artifact: "map" | "explained" }[] <!-- internal -->
+    - type [ExtraGenerated](../../src/map.ts#L374) <!-- internal -->
+    - fn [extraGenerated](../../src/map.ts#L387) (dir: string, files: ReadonlyMap<string, string>) → ExtraGenerated[] <!-- internal -->
       - calls map.map.readOrNull, map.emit.isGeneratedMap
-    - fn [mapConflicts](../../src/map.ts#L410) (config: Config, r: MapResult) → string[]
+    - fn [mapConflicts](../../src/map.ts#L412) (config: Config, r: MapResult) → string[]
       - calls map.map.targets, map.emit.isGeneratedMap
-    - type [MapArtifact](../../src/map.ts#L422) = "map" | "explained" | "index" | "facts"
-    - type [MapStep](../../src/map.ts#L425)
-    - type [PlannedStep](../../src/map.ts#L431) extends MapStep <!-- internal -->
-    - type [MapPlan](../../src/map.ts#L447)
-    - type [SourceInputs](../../src/map.ts#L459)
-    - type [MapInputs](../../src/map.ts#L467) extends SourceInputs <!-- internal -->
-    - fn [sourceInputs](../../src/map.ts#L477) (config: Config, sources: readonly { path: string; sha256: string }[]) → SourceInputs
-    - fn [sourceInputProblems](../../src/map.ts#L486) (config: Config, inputs: SourceInputs, subject: string) → string[]
+    - type [MapArtifact](../../src/map.ts#L424) = "map" | "explained" | "index" | "facts"
+    - type [MapStep](../../src/map.ts#L427)
+    - type [PlannedStep](../../src/map.ts#L433) extends MapStep <!-- internal -->
+    - type [MapPlan](../../src/map.ts#L449)
+    - type [SourceInputs](../../src/map.ts#L461)
+    - type [MapInputs](../../src/map.ts#L469) extends SourceInputs <!-- internal -->
+    - fn [sourceInputs](../../src/map.ts#L479) (config: Config, sources: readonly { path: string; sha256: string }[]) → SourceInputs
+    - fn [sourceInputProblems](../../src/map.ts#L488) (config: Config, inputs: SourceInputs, subject: string) → string[]
       - calls map.map.readOrNull, base.config.sourceTree, map.snapshot.sha256
-    - type [CommittedStep](../../src/map.ts#L505) extends MapStep
-    - type [MapCommit](../../src/map.ts#L510)
-    - fn [planMap](../../src/map.ts#L521) (config: Config, r: MapResult) → MapPlan
+    - type [CommittedStep](../../src/map.ts#L507) extends MapStep
+    - type [MapCommit](../../src/map.ts#L512)
+    - fn [planMap](../../src/map.ts#L523) (config: Config, r: MapResult) → MapPlan
       - calls base.config.toPosix, map.map.targets, map.map.extraGenerated, map.map.readOrNull, map.map.mapConflicts, map.map.sourceInputs, map.map.briefsKey
-    - fn [mapPlanProblems](../../src/map.ts#L562) (plan: MapPlan) → string[]
+    - fn [mapPlanProblems](../../src/map.ts#L564) (plan: MapPlan) → string[]
       - calls base.safe-write.writeProblem, map.map.sourceInputProblems, map.map.briefsKey
-    - fn [commitMap](../../src/map.ts#L581) (plan: MapPlan, options: { signal?: AbortSignal; onStep?: (step: MapStep) => void } = {}) → Promise<MapCommit>
+    - fn [commitMap](../../src/map.ts#L583) (plan: MapPlan, options: { signal?: AbortSignal; onStep?: (step: MapStep) => void } = {}) → Promise<MapCommit>
       - calls base.safe-write.writeAtomic, base.safe-write.landing
-    - fn [briefsKey](../../src/map.ts#L610) (config: Config) → string <!-- internal -->
+    - fn [briefsKey](../../src/map.ts#L612) (config: Config) → string <!-- internal -->
       - calls map.snapshot.sha256, map.explanations.loadBriefs
-    - fn [readOrNull](../../src/map.ts#L615) (abs: string) → string | null <!-- internal -->
-    - fn [diffMap](../../src/map.ts#L624) (config: Config, r: MapResult) → MapDiff
+    - fn [readOrNull](../../src/map.ts#L617) (abs: string) → string | null <!-- internal -->
+    - fn [diffMap](../../src/map.ts#L626) (config: Config, r: MapResult) → MapDiff
       - calls map.map.mapConflicts, map.map.targets, map.map.readOrNull, map.map.extraGenerated
-    - fn [extractorCode](../../src/map.ts#L649) () → string <!-- internal -->
+    - fn [extractorCode](../../src/map.ts#L651) () → string <!-- internal -->
       - calls map.snapshot.sha256
   - module [php-imports](../../src/php-imports.ts#L1)
     - node external.node
