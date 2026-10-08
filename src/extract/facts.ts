@@ -65,10 +65,15 @@ export interface FileFacts {
  * `label` is `GET /x`, `callee` is `h` as written. `main`: a Python
  * `if __name__ == "__main__":` block — `callee` is the fn it calls, or null
  * when it names none directly (the module's top level is the entry then).
+ * `sfra`: `server.get('Show', …, h)` in an SFRA controller — `callee` is the
+ * last argument when it is a name, null for a handler written in place.
  */
 export interface EntryFact {
-  kind: "route" | "main";
+  kind: "route" | "main" | "sfra";
+  /** `sfra`: the action name, `Show`; the SFCC adapter adds the controller's. */
   label: string;
+  /** `sfra`: the `server` method that registers it (`get`, `post`, `use`, `append`, `prepend`, `replace`). */
+  method?: string;
   callee: string | null;
   line: number;
   col: number;
@@ -171,6 +176,18 @@ export interface DeclFact {
   base?: string;
   /** Classes: the traits the class uses, as written (PHP `use Logs;`): their methods are the class's own. */
   traits?: string[];
+  /**
+   * Classes: the conflict rules of the PHP `use` block, traits as written: `T::m insteadof U, V`
+   * (`insteadof`: U's and V's `m` are not the class's) and `T::m as alias` / `m as alias` (`alias`;
+   * `trait` null when not named).
+   */
+  traitRules?: { trait: string | null; method: string; insteadof?: string[]; alias?: string }[];
+  /**
+   * Classes: the interfaces the class implements; interfaces: those it extends — as written
+   * (PHP `implements A, B`, `interface I extends J`). A framework's interceptor on an
+   * interface wraps the classes that implement it.
+   */
+  implements?: string[];
   /** The declaration's documentation comment without comment syntax, lines kept; absent when it has none. */
   doc?: string;
 }
@@ -196,6 +213,11 @@ export interface CallFact {
    * with `const worker = new SnapshotWorker()` or a parameter `worker: SnapshotWorker`.
    */
   receiver?: string;
+  /**
+   * The receiver is a property the constructor fills from its parameter `param` (PHP
+   * `$this->x = $x`, a promoted `private X $x`): a framework's config may set that argument.
+   */
+  param?: string;
   /**
    * The receiver's class is written in a docblock the language does not check (PHP `@var Foo`
    * above the property, `@param Foo $x` of the constructor parameter assigned to it), at this

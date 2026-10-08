@@ -57,6 +57,11 @@ function placeOf(scope: EntryScope, id: string, fallback: { file: string; line: 
   return module?.path != null ? { file: module.path, line: module.line ?? 1 } : fallback;
 }
 
+/** An entry a framework adapter found: placed like a language-level one, with its framework's name. */
+export function frameworkEntry(scope: EntryScope, framework: string, kind: EntryPoint["kind"], id: string, label: string, source: string, fallback: { file: string; line: number }): EntryPoint {
+  return { ...entry(scope, kind, id, label, source, fallback), framework };
+}
+
 /** A fn's place for the entry, with the manifest or the code position the fact is written at as `source`. */
 function entry(scope: EntryScope, kind: EntryPoint["kind"], id: string, label: string, source: string, fallback: { file: string; line: number }): EntryPoint {
   const place = placeOf(scope, id, fallback);

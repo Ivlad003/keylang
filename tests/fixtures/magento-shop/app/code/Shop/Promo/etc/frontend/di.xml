@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <type name="Shop\Sales\Api\OrderManagementInterface">
+        <plugin name="guard" type="Shop\Promo\Plugin\GuardPlugin"/>
+    </type>
+</config>

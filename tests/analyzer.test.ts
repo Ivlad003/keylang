@@ -1138,3 +1138,104 @@ test("static: a callable passed as an argument (`this.m.bind(this)`, `this.m`, `
   // Resolved call edges: `run` and the three calls in closures; callables passed are not calls.
   assert.equal(snap.stats.callsResolved, 4);
 });
+
+/**
+ * Runs `keylang <args>` for each command in a copy of `files` on a casefold
+ * tmpfs in a user namespace, which models APFS and NTFS. Each command's
+ * output follows a `=== <i>` line; null when the platform has no such file system.
+ */
+function onCasefold(t: { after: (f: () => void) => void }, files: Record<string, string>, commands: string[][]): string | null {
+  if (process.platform !== "linux" || spawnSync("unshare", ["-rm", "true"]).status !== 0) return null;
+  const fixture = mkdtempSync(join(tmpdir(), "keylang-casefold-src-"));
+  const mount = mkdtempSync(join(tmpdir(), "keylang-casefold-"));
+  t.after(() => {
+    rmSync(fixture, { recursive: true, force: true });
+    rmSync(mount, { recursive: true, force: true });
+  });
+  for (const [path, text] of Object.entries(files)) {
+    mkdirSync(dirname(join(fixture, path)), { recursive: true });
+    writeFileSync(join(fixture, path), text);
+  }
+  const script = [
+    'mount -t tmpfs -o casefold tmpfs "$1" 2>/dev/null || { echo SKIP:mount; exit 0; }',
+    'mkdir "$1/repo" && chattr +F "$1/repo" 2>/dev/null || { echo SKIP:chattr; exit 0; }',
+    'cp -r "$2/." "$1/repo/" && cd "$1/repo" || exit 1',
+    'node=$3; bin=$4; shift 4; i=0',
+    'for c in "$@"; do echo "=== $i"; eval "\\"$node\\" \\"$bin\\" $c" 2>&1; i=$((i+1)); done',
+  ].join("\n");
+  const run = spawnSync("unshare", ["-rm", "sh", "-c", script, "sh", mount, fixture, process.execPath, bin, ...commands.map((c) => c.join(" "))], { encoding: "utf8" });
+  assert.equal(run.status, 0, run.stderr);
+  return /^SKIP:/m.test(run.stdout) ? null : run.stdout;
+}
+
+test("guessed layout: an import of a directory in another letter case is a hole on a case-insensitive file system, not silently dropped", (t) => {
+  const files = {
+    "keylang/rules.md": "# rules\n\n- deny ui db\n",
+    "src/ui/view.ts": 'import { query } from "../DB/conn";\nexport function view(): void { query(); }\n',
+    "src/db/conn.ts": "export function query(): void {}\n",
+  };
+  const out = onCasefold(t, files, [["check"]]);
+  if (out === null) return t.skip("casefold tmpfs is not available here");
+  assert.match(out, /unverified unresolved import `\.\.\/DB\/conn`/, out);
+  assert.match(out, /0 fail, 1 unverified, 0 ok/, out);
+});
+
+test("no-cycles: `import(\"./a\").A` and `typeof import(\"./a\")` in a type are type-only dependencies, not a runtime cycle", (t) => {
+  const a = 'import { fb } from "./b";\nexport type A = number;\nexport function fa(): void {\n  fb(1);\n}\n';
+  const variants = [
+    'export function fb(x: import("./a").A): void {}\n',
+    'export type B = import("./a").A;\nexport function fb(x: B): void {}\n',
+    'let x: typeof import("./a");\nexport function fb(x2: number): void {}\n',
+    'export function fb(x: Array<import("./a").A>): import("./a").A {\n  return x[0] as import("./a").A;\n}\n',
+  ];
+  for (const b of variants) {
+    const dir = repo(t, { "keylang/rules.md": "# rules\n\n- no-cycles\n", "src/app/a.ts": a, "src/app/b.ts": b });
+    const o = keylang(dir, ["check"]);
+    assert.equal(o.status, 0, `${b}\n${o.stdout}`);
+    assert.match(o.stdout + o.stderr, /0 fail, 0 unverified, 1 ok/, b);
+    const edge = snapshot(dir).edges.find((e) => e.kind === "import" && e.source === "app.b" && e.target === "app.a");
+    assert.equal(edge?.typeOnly, true, `${b}: ${JSON.stringify(edge)}`);
+  }
+  // A runtime `import()` still is one.
+  const dir = repo(t, { "keylang/rules.md": "# rules\n\n- no-cycles\n", "src/app/a.ts": a, "src/app/b.ts": 'export async function fb(x: number): Promise<void> {\n  await import("./a");\n}\n' });
+  assert.match(keylang(dir, ["check"]).stdout, /K105 divergence: dependency cycle app\.a → app\.b → app\.a/);
+});
+
+test("a relative import of a module that only has a declaration file (`.d.ts`, `.d.mts`, `index.d.ts`) is left out silently, not a hole", (t) => {
+  const dir = repo(t, {
+    "keylang/rules.md": "# rules\n\n- deny app external\n",
+    "src/app/types.d.ts": "export interface Order {\n  id: string;\n}\n",
+    "src/app/env.d.mts": "export declare const mode: string;\n",
+    "src/app/gql/index.d.ts": "export type Query = string;\n",
+    "src/app/a.ts": 'import type { Order } from "./types";\nimport type { Query } from "./gql";\nimport { mode } from "./env.mjs";\nexport function total(o: Order, q: Query): string {\n  return o.id + q + mode;\n}\n',
+  });
+  const map = keylang(dir, ["map"]);
+  assert.equal(map.status, 0, map.stdout + map.stderr);
+  assert.doesNotMatch(map.stdout + map.stderr, /unresolved import/);
+  const check = keylang(dir, ["check", "--strict"]);
+  assert.equal(check.status, 0, check.stdout + check.stderr);
+  assert.match(check.stdout + check.stderr, /0 fail, 0 unverified, 1 ok/);
+});
+
+test("exports: two `export *` sources with different values of one name export neither, as ESM; one value reached twice is exported", (t) => {
+  const files = {
+    "src/app/a.ts": "export const V = 1;\nexport function f(): void {}\n",
+    "src/app/b.ts": "export const V = 2;\nexport function g(): void {}\n",
+    "src/app/index.ts": 'export * from "./a.ts";\nexport * from "./b.ts";\n',
+  };
+  const listed = repo(t, { ...files, "keylang/rules.md": "# rules\n\n- module app.index\n  - exports f, g\n" });
+  const ok = keylang(listed, ["check"]);
+  assert.equal(ok.status, 0, ok.stdout);
+  assert.match(ok.stdout + ok.stderr, /0 fail, 0 unverified, 1 ok/);
+  const withV = repo(t, { ...files, "keylang/rules.md": "# rules\n\n- module app.index\n  - exports f, g, V\n" });
+  assert.match(keylang(withV, ["check"]).stdout, /K104 absence: `app\.index` does not export `V`/);
+  // A diamond: `V` of `a` through two barrels is one declaration.
+  const diamond = repo(t, {
+    "src/app/a.ts": "export const V = 1;\n",
+    "src/app/x.ts": 'export * from "./a.ts";\n',
+    "src/app/y.ts": 'export * from "./a.ts";\n',
+    "src/app/index.ts": 'export * from "./x.ts";\nexport * from "./y.ts";\n',
+    "keylang/rules.md": "# rules\n\n- module app.index\n  - exports V\n",
+  });
+  assert.match(keylang(diamond, ["check"]).stdout + keylang(diamond, ["check"]).stderr, /0 fail, 0 unverified, 1 ok/);
+});

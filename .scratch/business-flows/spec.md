@@ -73,10 +73,10 @@ keylang має допомагати швидко зануритись у чуж�
 | [01](issues/01-adr-framework-facts.md) | ADR: факти фреймворків — прив'язки, перехоплення, події й точки входу | resolved | — |
 | [02](issues/02-adr-async-flows.md) | ADR: асинхронні флоу — події, паралельні групи, асинхронні тригери, таймери | resolved | — |
 | [03](issues/03-magento-bench-baseline.md) | Бенч на Magento: базова лінія й метрики успіху | resolved | — |
-| [04](issues/04-binding-calls.md) | Граф: виклик через інтерфейс за прив'язкою з адаптера | ready-for-agent | 01, 32 |
+| [04](issues/04-binding-calls.md) | Граф: виклик через інтерфейс за прив'язкою з адаптера | resolved | 01, 32 |
 | [05](issues/05-closure-arg-calls.md) | Граф і draft: callable-посилання й closure, передані аргументом (`cartMutex->execute(\Closure::fromCallable([$this, 'placeOrderRun']))`) | resolved | 01 |
-| [06](issues/06-magento-di-bindings.md) | Magento: `di.xml` (preference, type arguments, virtualType) → прив'язки | ready-for-agent | 04 |
-| [07](issues/07-magento-plugins.md) | Magento: plugins (before/around/after) як перехоплення викликів | ready-for-agent | 04 |
+| [06](issues/06-magento-di-bindings.md) | Magento: `di.xml` (preference, type arguments, virtualType) → прив'язки | resolved | 04 |
+| [07](issues/07-magento-plugins.md) | Magento: plugins (before/around/after) як перехоплення викликів | resolved | 04 |
 | [08](issues/08-magento-events.md) | Magento: `events.xml` і `dispatch()` → події та підписники | ready-for-agent | 01, 09 |
 | [09](issues/09-entries-snapshot.md) | Знімок: точки входу як факти й команда `keylang entries` | resolved | 01 |
 | [10](issues/10-magento-entries.md) | Magento: точки входу — routes/controllers, webapi, GraphQL, cron, queue, console | ready-for-agent | 06, 09 |
@@ -91,18 +91,24 @@ keylang має допомагати швидко зануритись у чуж�
 | [19](issues/19-php-trace-real-requests.md) | Trace на реальних запитах і інтеграційних тестах (PHP/Magento, TS, Python, Rust) | resolved | 09 |
 | [20](issues/20-web-diagram-model.md) | Web: API моделі діаграм (флоу, точки входу, події, шари) з розкладкою | resolved | — |
 | [21](issues/21-web-flow-viewer.md) | Web: перегляд флоу як діаграми (пошук, вердикти, перехід у код) | resolved | 20, 33 |
-| [22](issues/22-web-entry-explorer.md) | Web: дослідник точок входу й подій — інтерактивне дерево викликів | ready-for-agent | 09, 20 |
+| [22](issues/22-web-entry-explorer.md) | Web: дослідник точок входу й подій — інтерактивне дерево викликів | resolved | 09, 20 |
 | [23](issues/23-web-diagram-editor.md) | Web-редактор діаграм у стилі diagrams.net (draw.io) | ready-for-agent | 20, 21, 33 |
 | [24](issues/24-diagram-to-proposals.md) | Редактор → специфікація: зміни діаграми як пропозиції, файл розкладки | ready-for-agent | 23 |
 | [25](issues/25-diagram-copy-paste.md) | Копіювання фрагмента діаграми між вкладками й проєктами | ready-for-agent | 23, 26 |
-| [26](issues/26-flow-bundle-export-import.md) | `keylang flow export\|import`: переносний пакет бізнес-флоу | ready-for-agent | 12 |
+| [26](issues/26-flow-bundle-export-import.md) | `keylang flow export\|import`: переносний пакет бізнес-флоу | resolved | 12 |
 | [27](issues/27-migration-parity.md) | Міграція: таблиця відповідності ID і перевірка паритету старого й нового стеку | ready-for-agent | 26 |
-| [28](issues/28-export-bpmn-drawio.md) | Експорт у BPMN 2.0 і draw.io (.drawio), імпорт .drawio як чернетки | ready-for-agent | 20 |
+| [28](issues/28-export-bpmn-drawio.md) | Експорт у BPMN 2.0 і draw.io (.drawio), імпорт .drawio як чернетки | resolved | 20 |
 | [29](issues/29-greenfield-from-diagram.md) | Проєкт з нуля з діаграми: від ідеї до фічі для агентів | ready-for-agent | 24, 25 |
-| [30](issues/30-sfcc-sfra-frontend.md) | Цільовий стек: Salesforce Commerce Cloud (SFRA-картриджі, PWA Kit) | ready-for-agent | 01, 09 |
-| [31](issues/31-more-framework-adapters.md) | Наступні адаптери фреймворків: Laravel, Symfony, NestJS, Express/Next, Django/FastAPI | ready-for-human | 01, 04, 09 |
+| [30](issues/30-sfcc-sfra-frontend.md) | Цільовий стек: Salesforce Commerce Cloud (SFRA-картриджі, PWA Kit) | resolved | 01, 09 |
+| [31](issues/31-more-framework-adapters.md) | Наступні адаптери фреймворків: Laravel, Symfony, NestJS, Express/Next, Django/FastAPI | resolved | 01, 04, 09 |
 | [32](issues/32-php-property-types.md) | PHP: тип властивості з присвоєння в конструкторі та з docblock `@var` | resolved | — |
 | [33](issues/33-web-client-build.md) | Веб-клієнт діаграм: збірка (esbuild), каркас SPA, автентифікація API | resolved | 20 |
+| [34](issues/34-nestjs-adapter.md) | NestJS: providers, контролери, події, cron, мікросервіси | ready-for-agent | — |
+| [35](issues/35-laravel-adapter.md) | Laravel: container, фасади, маршрути, події, черги, scheduler | ready-for-agent | — |
+| [36](issues/36-symfony-adapter.md) | Symfony: services.yaml, маршрути, підписники, Messenger, команди | ready-for-agent | — |
+| [37](issues/37-express-next-adapter.md) | Express/Fastify/Next.js: маршрути, middleware, server actions | ready-for-agent | — |
+| [38](issues/38-python-web-adapter.md) | Django/FastAPI/Flask/Celery: маршрути, сигнали, задачі | ready-for-agent | — |
+| [39](issues/39-pwa-kit-overrides.md) | PWA Kit / Composable Storefront: ccExtensibility overrides і маршрути | ready-for-agent | — |
 
 ## 9. Рев'ю плану на реалістичність (2026-10-07)
 

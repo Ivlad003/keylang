@@ -2191,7 +2191,7 @@ export class App {
       case "explain-batch":
         return naming(specs, [`${explainDir({ dir: this.specDir() })}/brief/<id>.md of each planned node`]);
       case "explain-llm":
-        return naming(specs, [explanationPath({ dir: this.specDir() }, request.id, request.detail ?? "short")]);
+        return naming(specs, [explanationPath({ dir: this.specDir(), root: this.state.root }, request.id, request.detail ?? "short")]);
       // The diagram reads the code, keylang.json and the saved briefs.
       case "export-c4":
         return naming(specs, request.out === undefined ? null : [request.out]);
@@ -2211,6 +2211,11 @@ export class App {
         return naming(specs, request.output === "write" ? [`${dir}flows-discovered/<layer>.md`] : null);
       case "flows-adopt":
         return naming(specs, [`${PROPOSALS_DIR}/${request.into ?? `${dir}flows/${request.name}.md`}`]);
+      // The bundle reads the code, keylang.json and the specs; the import writes two proposals.
+      case "flow-export":
+        return naming(specs, request.out === undefined ? null : [request.out]);
+      case "flow-import":
+        return naming(specs, [`${PROPOSALS_DIR}/${request.into ?? `${dir}features/<first flow>.md`}`, `${PROPOSALS_DIR}/${dir}migration.md`]);
       // The candidate reads the specs (the planned signature, the flows' tests), keylang.json and the code.
       case "spec-to-code": {
         const placed = specCodePlace(this.state.analysis, { id: request.id, into: request.into ?? "", mode: request.mode ?? "algo", output: request.output });

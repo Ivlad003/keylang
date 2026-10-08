@@ -43,6 +43,8 @@ export interface ModuleExportsInput {
   stars: { target: string | null; reason: string }[];
   /** Not every member is known (a syntax error, an excluded file): `export *` from it may supply any name. */
   opaque: boolean;
+  /** Stars bind in order and a later one rebinds a name (Python `from .x import *`); else two sources of a name export neither (ESM). */
+  lastStarWins?: boolean;
 }
 
 export interface ExportEntry {
@@ -140,7 +142,7 @@ export function resolveExports(inputs: ReadonlyMap<string, ModuleExportsInput>, 
         if (from.value) found.push({ entry: from.value, star: star.target });
         else if (name === UNKNOWN_EXPORT && inputs.get(star.target)?.opaque) found.push({ entry: unknown(module, `re-export from \`${star.target}\`, whose contents keylang did not read`), star: null });
       }
-      return { value: pickStar(module, name, found), low };
+      return { value: pickStar(module, name, found, input.lastStarWins === true), low };
     });
 
   const symbolFrom = (module: string, name: string): Result<string | null> => {
@@ -187,14 +189,19 @@ export function resolveExports(inputs: ReadonlyMap<string, ModuleExportsInput>, 
 /**
  * The entry `export *` gives a name: the one source that has it. Two sources
  * whose names stand for different declarations make the name ambiguous, and
- * ESM exports neither; an unknown source is reported once, with its reason.
+ * ESM exports neither; with `lastWins` (Python's glob imports) the last such
+ * source gives it. An unknown source is reported once, with its reason.
  */
-function pickStar(module: string, name: string, found: readonly { entry: ExportEntry; star: string | null }[]): ExportEntry | null {
+function pickStar(module: string, name: string, found: readonly { entry: ExportEntry; star: string | null }[], lastWins = false): ExportEntry | null {
   const known = found.filter((f) => f.entry.name !== UNKNOWN_EXPORT || name === UNKNOWN_EXPORT);
   if (known.length === 0) return null;
-  const symbols = new Set(known.map((f) => f.entry.symbol).filter((s): s is string => s !== null));
-  if (symbols.size > 1) return null;
-  const chosen = known.find((f) => f.entry.symbol !== null) ?? known[0]!;
+  // A value (`export const V`) has no symbol: its origin is the module that declares it and its name
+  // there. A name from no module of the snapshot (the standard library) has no origin to compare.
+  const originOf = (e: ExportEntry): string | null => e.symbol ?? (e.from !== undefined ? `${e.from}\0${e.local ?? e.name}` : e.form === undefined ? `${e.module}\0${e.name}` : null);
+  const origins = new Set(known.filter((f) => f.entry.name !== UNKNOWN_EXPORT).map((f) => originOf(f.entry)).filter((o) => o !== null));
+  if (origins.size > 1 && !lastWins) return null;
+  // Python binds names in statement order: the last `from .x import *` that has the name wins.
+  const chosen = lastWins && origins.size > 1 ? known.at(-1)! : (known.find((f) => f.entry.symbol !== null) ?? known[0]!);
   if (chosen.entry.name === UNKNOWN_EXPORT) return { ...chosen.entry, module };
   // `from`: the module the name comes from, through a chain of re-exports.
   const from = chosen.entry.form === "reexport" && chosen.entry.from ? chosen.entry.from : chosen.star;

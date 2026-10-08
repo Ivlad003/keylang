@@ -7,7 +7,6 @@
     - module [clone](../../bench/clone.ts#L1) <!-- outside -->
     - module [inject](../../bench/inject.ts#L1) <!-- outside -->
     - module lib
-      - module [metrics_d](../../bench/lib/metrics.d.mts#L1) <!-- outside -->
       - module [metrics](../../bench/lib/metrics.mjs#L1) <!-- outside -->
     - module magento
       - module [run](../../bench/magento/run.mjs#L1) <!-- outside -->
@@ -45,6 +44,10 @@
   - module web
     - module src
       - module [api](../../web/src/api.ts#L1) <!-- outside -->
+      - module [blind](../../web/src/blind.ts#L1) <!-- outside -->
       - module [canvas](../../web/src/canvas.ts#L1) <!-- outside -->
       - module [diagrams](../../web/src/diagrams.ts#L1) <!-- outside -->
+      - module [dom](../../web/src/dom.ts#L1) <!-- outside -->
+      - module [explorer](../../web/src/explorer.ts#L1) <!-- outside -->
+      - module [export](../../web/src/export.ts#L1) <!-- outside -->
       - module [list](../../web/src/list.ts#L1) <!-- outside -->

@@ -1,6 +1,6 @@
 # 22: Відносний імпорт модуля з `.d.ts` стає діркою, і deny цього модуля переходить в unverified
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -61,11 +61,15 @@ fx/t8: `COV unresolved-import src/a.ts:1 app.a :: unresolved import \`./types\``
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/imports.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/imports.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+- 2026-10-08: Регресійний тест `tests/analyzer.test.ts` «a relative import of a module that only has a declaration file…» — справжній CLI: `./types` → `types.d.ts`, `./gql` → `gql/index.d.ts`, `./env.mjs` → `env.d.mts`; `map` без `unresolved import`, `check --strict` з `deny app external` — `0 fail, 0 unverified, 1 ok`, exit 0. До виправлення — три дірки, `unverified`, exit 1.
+- 2026-10-08: Виправлення: `probeCandidates` (`src/imports.ts`) після кандидатів з кодом пробує `.d.ts`/`.d.mts`/`.d.cts` (і заміну `.js`/`.mjs`/`.cjs` → `.d.ts`/`.d.mts`/`.d.cts`), а після `index.<ext>` — `index.d.ts`; знайдений файл оголошень `notIndexed` пропускає мовчки. `packageEntry` не змінено (і далі пропускає `.d.ts`). `DEFAULT_EXCLUDE` (`src/config.ts`) доповнено `**/*.d.mts` і `**/*.d.cts` — два рядки, решту файла не чіпав.
+- 2026-10-08: Контракт: `docs/snapshot.md` (резолвінг TS/JS: файл оголошень і порядок кандидатів). Перевірки: `node --test tests/analyzer.test.ts tests/languages.test.ts tests/outside.test.ts tests/cli-map.test.ts` — 83/83, `npm run typecheck` — ок.

@@ -1,6 +1,6 @@
 # 22: Web: дослідник точок входу й подій — інтерактивне дерево викликів
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -23,9 +23,17 @@
 
 ## Критерії готовності
 
-- [ ] e2e: відкрити точку входу, розгорнути 3 рівні, зберегти як флоу → пропозиція існує
-- [ ] docs/tui.md
+- [x] e2e: відкрити точку входу, розгорнути 3 рівні, зберегти як флоу → пропозиція існує (`tests/web-e2e/explorer.test.ts`, TS + Python)
+- [x] docs/tui.md
 
 **Межі:** —
 
 ## Comments
+
+### Реалізація (2026-10-08)
+
+- **Модель — `src/explorer.ts`**, чиста над знімком (ADR 0014: представлення). `callsOf(snapshot, id)` — один рівень довкола ID: прямі callees з `via`/`hook`/`site`/`closure` першого за позицією ребра, кількістю місць і лічильниками «чи є що розгортати» (`calls`, `holes`, `callers`), дірки (нерозв'язані/неоднозначні ребра `call` плюс записи `coverage` цього ID, напр. `dynamic-event`), callers і `reachedFrom` — точки входу, з яких ID досяжний (BFS угору по розв'язаних ребрах, до 50, найближчі першими). Індекси ребер і `coverage` будуються раз на знімок (`WeakMap`), тож на Magento розгортання рядка не сканує всі ребра. `eventsOf` — вузли `event` знімка з кількістю видавців і підписників або `reason`, поки їх немає. `explorerFlow` — позначені гілки як `FlowDraft`: кожен крок — fn репозиторію, яку крок над ним викликає **розв'язаним** ребром (інакше 400), коментарі `via`/`unresolved` — як у `draft flow`, під заголовком — `<!-- keylang:web explorer -->`; точка входу виду з граматики (route, cron, consumer, webhook) стає типізованим тригером `trigger route <id>`, як у `flows discover` після злиття 18.
+- **API** (`src/tui/web.ts`, той самий Bearer-токен, Host і Origin): `GET /api/calls?id=`, `GET /api/coverage` (операція `coverage` над аналізатором сервера; JSON = `keylang coverage --json`), `POST /api/flow-proposal` `{name, trigger, steps}` → одна пропозиція `.keylang/proposals/<dir>/flows/<name>.md` через `flowCandidate` → `proposalRefusal` → `commitProposal` — той самий ланцюжок, що `flows adopt`, тож згенерована ціль і пропозиція, що вже чекає, відмовлені однаково (409). CSRF: токен у заголовку + лише `application/json` (415) + `Origin`/`Sec-Fetch-Site` того ж походження (403); тіло до 64 КіБ (413). `/api/views` несе `events` / `eventsReason`.
+- **Клієнт** — у наявному (`web/src/`): режими «Діаграми · Дослідник · Сліпі зони» над списком і у фрагменті (`#view=explore&id=`, `#view=blind`). Дослідник (`explorer.ts`): список точок входу за видами (+ «Події»), два ліниві дерева — «Викликає ↓» і «Хто викликає ↑ (до точок входу)», позначки `via` (callable, closure, in closure, injected/default hook; preference, plugin, observer, dispatch — коли адаптери їх дадуть), рядок дірки «? тут keylang сліпий — <причина>» серед викликів у порядку коду, `↻` для циклу, `↗` «дослідити звідси», прапорці з правилом «позначка ставить предків, зняття знімає нащадків» і «Зберегти як флоу». Для події — «Підписники ↓ / Видавці ↑». Діаграма fn/точки входу має кнопку «explore the calls of …». Спільні DOM-хелпери винесено в `web/src/dom.ts`, хелпери браузерних тестів — у `tests/web-e2e/browser.ts`.
+- **Події:** тікет 08 ще не злитий, вузлів `event` у знімку немає — дослідник і `/api/views` показують причину; модель читає вузли `event` і ребра `fn → event` / `event → fn` за ADR 0022 п. 6, тож після 08 дерево події запрацює без змін клієнта (перевірити тестом разом із 08).
+- **Тести:** `tests/web.test.ts` — `/api/calls` (TS + Python: `closure-arg`, `callable-arg`, дірки, callers, `reachedFrom`, 400/403), `/api/coverage` (= `keylang coverage --json`, 403), `/api/flow-proposal` (403 без токена/з чужим Origin/`Sec-Fetch-Site: cross-site`, 415 без JSON, 405, 400 на крок поза деревом, 409 на згенеровану ціль і на пропозицію, що чекає; рівно один файл пропозиції, який `keylang proposals` перелічує; Python із `via callable`; після `accept` — `check` бачить флоу). `tests/web-e2e/explorer.test.ts` — сценарій критерію (3 рівні, дірка, збереження → пропозиція), «хто викликає» до точки входу, «Сліпі зони» → дослідник; знімок `docs/course/images/diagrams-explorer.png`. Знімок `diagrams-flow.png` перезнято: на ньому тепер перемикач режимів.

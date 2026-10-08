@@ -105,19 +105,19 @@
     - safe-write base.safe-write
     - snapshot map.snapshot
     - span base.span
-    - fn [baselineText](../../src/baseline.ts#L25) (snapshot: AnalysisSnapshot) → string
+    - fn [baselineText](../../src/baseline.ts#L27) (snapshot: AnalysisSnapshot) → string
       - calls base.span.compareText, features.baseline.externalModule
-    - fn [externalModule](../../src/baseline.ts#L62) (snapshot: AnalysisSnapshot, id: string) → string | null <!-- internal -->
-    - fn [baselinePath](../../src/baseline.ts#L74) (config: Pick<Config, "dir">) → string
+    - fn [externalModule](../../src/baseline.ts#L74) (snapshot: AnalysisSnapshot, id: string) → string | null <!-- internal -->
+    - fn [baselinePath](../../src/baseline.ts#L86) (config: Pick<Config, "dir">) → string
       - calls base.config.specPath
-    - type [BaselinePlan](../../src/baseline.ts#L82)
-    - fn [planBaseline](../../src/baseline.ts#L103) (config: Config, snapshot: AnalysisSnapshot) → BaselinePlan
+    - type [BaselinePlan](../../src/baseline.ts#L94)
+    - fn [planBaseline](../../src/baseline.ts#L115) (config: Config, snapshot: AnalysisSnapshot) → BaselinePlan
       - calls features.baseline.baselinePath, features.baseline.baselineText, lang.files.readTextOrNull, base.safe-write.isGeneratedText, features.baseline.ruleLines, map.map.sourceInputs
-    - fn [baselinePlanProblems](../../src/baseline.ts#L128) (plan: BaselinePlan) → string[]
+    - fn [baselinePlanProblems](../../src/baseline.ts#L140) (plan: BaselinePlan) → string[]
       - calls base.safe-write.writeProblem, map.map.sourceInputProblems
-    - fn [commitBaseline](../../src/baseline.ts#L137) (plan: BaselinePlan) → void
+    - fn [commitBaseline](../../src/baseline.ts#L149) (plan: BaselinePlan) → void
       - calls base.safe-write.landing, base.safe-write.writeAtomic
-    - fn [ruleLines](../../src/baseline.ts#L144) (text: string) → string[] <!-- internal -->
+    - fn [ruleLines](../../src/baseline.ts#L156) (text: string) → string[] <!-- internal -->
   - module [call-sites](../../src/call-sites.ts#L1)
     - node external.node
     - config base.config
@@ -408,42 +408,44 @@
     - trace-evidence check.trace-evidence
     - type [FlowDraft](../../src/draft.ts#L15)
     - fn [draftFlow](../../src/draft.ts#L23) (snapshot: AnalysisSnapshot, trigger: string, options: { name?: string; depth?: number; entry?: string } = {}) → FlowDraft
-    - fn [draftFlowFromTrace](../../src/draft.ts#L74) (snapshot: AnalysisSnapshot, run: TraceRun, options: { name?: string } = {}) → FlowDraft & { rest: string[] }
+    - fn [draftFlowFromTrace](../../src/draft.ts#L77) (snapshot: AnalysisSnapshot, run: TraceRun, options: { name?: string } = {}) → FlowDraft & { rest: string[] }
       - calls features.draft.reachesByCalls
-    - fn [reachesByCalls](../../src/draft.ts#L103) (snapshot: AnalysisSnapshot, from: string, to: string) → boolean <!-- internal -->
-    - fn [withFlow](../../src/draft.ts#L124) (existing: string | null, draft: Pick<FlowDraft, "name" | "text">) → string
+    - fn [reachesByCalls](../../src/draft.ts#L106) (snapshot: AnalysisSnapshot, from: string, to: string) → boolean <!-- internal -->
+    - fn [withFlow](../../src/draft.ts#L127) (existing: string | null, draft: Pick<FlowDraft, "name" | "text">) → string
       - calls lang.parser.parse, features.draft.nextHeading, base.safe-write.keepLineEndings
-    - fn [withRules](../../src/draft.ts#L148) (existing: string | null, draftText: string) → string
+    - fn [withRules](../../src/draft.ts#L151) (existing: string | null, draftText: string) → string
       - calls lang.parser.parse, lang.ir.sectionNodes, lang.parser.renderMeaning, features.draft.nextHeading, base.safe-write.keepLineEndings
-    - fn [nextHeading](../../src/draft.ts#L178) (sections: readonly { heading: { span: { start: { line: number } } } | null }[], index: number) → number | null <!-- internal -->
-    - fn [distinctNames](../../src/draft.ts#L188) (drafts: readonly FlowDraft[]) → FlowDraft[]
-    - fn [draftRules](../../src/draft.ts#L218) (snapshot: AnalysisSnapshot, cyclic: boolean) → string
+    - fn [nextHeading](../../src/draft.ts#L181) (sections: readonly { heading: { span: { start: { line: number } } } | null }[], index: number) → number | null <!-- internal -->
+    - fn [distinctNames](../../src/draft.ts#L191) (drafts: readonly FlowDraft[]) → FlowDraft[]
+    - fn [draftRules](../../src/draft.ts#L221) (snapshot: AnalysisSnapshot, cyclic: boolean) → string
       - calls features.draft.layerOrder
-    - fn [layerOrder](../../src/draft.ts#L243) (layers: readonly string[], uses: ReadonlyMap<string, ReadonlySet<string>>) → string[] | null <!-- internal -->
-    - fn [codeToSpecTriggers](../../src/draft.ts#L262) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; triggers: string[] }
-    - fn [codeToSpec](../../src/draft.ts#L285) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; drafts: FlowDraft[] }
+    - fn [layerOrder](../../src/draft.ts#L246) (layers: readonly string[], uses: ReadonlyMap<string, ReadonlySet<string>>) → string[] | null <!-- internal -->
+    - fn [codeToSpecTriggers](../../src/draft.ts#L265) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; triggers: string[] }
+    - fn [codeToSpec](../../src/draft.ts#L288) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; drafts: FlowDraft[] }
       - calls features.draft.codeToSpecTriggers, features.draft.draftFlow, features.draft.distinctNames
-    - type [ChangedLines](../../src/draft.ts#L292)
-    - fn [diffHunks](../../src/draft.ts#L298) (diff: string) → Map<string, [number, number][]>
+    - type [ChangedLines](../../src/draft.ts#L295)
+    - fn [diffHunks](../../src/draft.ts#L301) (diff: string) → Map<string, [number, number][]>
       - calls features.draft.gitPath
-    - fn [deletedDiffPaths](../../src/draft.ts#L321) (diff: string) → string[]
+    - fn [deletedDiffPaths](../../src/draft.ts#L324) (diff: string) → string[]
       - calls features.draft.gitPath
-    - fn [gitPath](../../src/draft.ts#L335) (text: string) → string <!-- internal -->
-    - fn [changedFlows](../../src/draft.ts#L363) (snapshot: AnalysisSnapshot, changed: ChangedLines, named: ReadonlySet<string>) → { drafts: FlowDraft[]; named: string[] }
+    - fn [gitPath](../../src/draft.ts#L338) (text: string) → string <!-- internal -->
+    - fn [changedFlows](../../src/draft.ts#L366) (snapshot: AnalysisSnapshot, changed: ChangedLines, named: ReadonlySet<string>) → { drafts: FlowDraft[]; named: string[] }
       - calls features.draft.draftFlow, features.draft.distinctNames
   - module [explain-edge](../../src/explain-edge.ts#L1)
     - snapshot map.snapshot
+    - flows check.flows
     - span base.span
-    - type [EdgeEvidence](../../src/explain-edge.ts#L10)
-    - type [EdgeConclusion](../../src/explain-edge.ts#L20) = "edges" | "complete" | "unresolved"
-    - type [EdgeExplanation](../../src/explain-edge.ts#L22)
-    - fn [edgeIdKnown](../../src/explain-edge.ts#L33) (snapshot: AnalysisSnapshot, id: string) → boolean
-    - fn [under](../../src/explain-edge.ts#L37) (id: string, scope: string) → boolean <!-- internal -->
-    - fn [explainEdge](../../src/explain-edge.ts#L40) (snapshot: AnalysisSnapshot, from: string, to: string) → EdgeExplanation
+    - type [EdgeEvidence](../../src/explain-edge.ts#L11)
+    - type [EdgeConclusion](../../src/explain-edge.ts#L21) = "edges" | "complete" | "unresolved"
+    - type [EdgeExplanation](../../src/explain-edge.ts#L23)
+    - fn [edgeIdKnown](../../src/explain-edge.ts#L34) (snapshot: AnalysisSnapshot, id: string) → boolean
+    - fn [under](../../src/explain-edge.ts#L38) (id: string, scope: string) → boolean <!-- internal -->
+    - fn [explainEdge](../../src/explain-edge.ts#L41) (snapshot: AnalysisSnapshot, from: string, to: string) → EdgeExplanation
       - calls base.span.compareText, features.explain-edge.under, map.snapshot.leavesUnresolved
-    - fn [edgeLine](../../src/explain-edge.ts#L59) (edge: SnapshotEdge) → string
-    - fn [holeLine](../../src/explain-edge.ts#L73) (hole: CoverageItem) → string
-    - fn [edgeExplanationLines](../../src/explain-edge.ts#L78) (explanation: EdgeExplanation) → string[]
+    - fn [edgeLine](../../src/explain-edge.ts#L60) (edge: SnapshotEdge) → string
+      - calls check.flows.describeConfig
+    - fn [holeLine](../../src/explain-edge.ts#L75) (hole: CoverageItem) → string
+    - fn [edgeExplanationLines](../../src/explain-edge.ts#L80) (explanation: EdgeExplanation) → string[]
       - calls features.explain-edge.edgeLine, features.explain-edge.holeLine
   - module [explain-inventory](../../src/explain-inventory.ts#L1)
     - analyze map.analyze
@@ -531,13 +533,13 @@
     - fn [nodeFacts](../../src/explain-node.ts#L34) (analysis: Analysis, id: string) → NodeFacts | null
       - calls lang.spec-ir.plannedDeclaration
     - type [NodeSummary](../../src/explain-node.ts#L47)
-    - type [ExplainResult](../../src/explain-node.ts#L70)
-    - fn [summarizeNode](../../src/explain-node.ts#L72) (analysis: Analysis, id: string) → ExplainResult
+    - type [ExplainResult](../../src/explain-node.ts#L72)
+    - fn [summarizeNode](../../src/explain-node.ts#L74) (analysis: Analysis, id: string) → ExplainResult
       - calls features.explain-node.nodeFacts, features.explain-node.rulesNaming, lang.spec-ir.flowsUsing, map.snapshot.leavesUnresolved
-    - fn [rulesNaming](../../src/explain-node.ts#L109) (analysis: Analysis, id: string) → string[] <!-- internal -->
+    - fn [rulesNaming](../../src/explain-node.ts#L112) (analysis: Analysis, id: string) → string[] <!-- internal -->
       - calls features.explain-node.nodeHolding
-    - fn [nodeHolding](../../src/explain-node.ts#L138) (root: Node, ref: Ref) → Node | null <!-- internal -->
-    - fn [formatSummary](../../src/explain-node.ts#L148) (s: NodeSummary) → string
+    - fn [nodeHolding](../../src/explain-node.ts#L141) (root: Node, ref: Ref) → Node | null <!-- internal -->
+    - fn [formatSummary](../../src/explain-node.ts#L151) (s: NodeSummary) → string
   - module [explain-offline](../../src/explain-offline.ts#L1)
     - analyze map.analyze
     - explain features.explain
@@ -569,6 +571,36 @@
   - module [explain](../../src/explain.ts#L1)
     - diag base.diag
     - fn [explainCode](../../src/explain.ts#L130) (code: string) → string | null
+  - module [explorer](../../src/explorer.ts#L1)
+    - external-ids base.external-ids
+    - draft features.draft
+    - parser lang.parser
+    - snapshot map.snapshot
+    - span base.span
+    - type [CallSite](../../src/explorer.ts#L20)
+    - type [CallRef](../../src/explorer.ts#L27)
+    - type [CallHole](../../src/explorer.ts#L60)
+    - type [Calls](../../src/explorer.ts#L69)
+    - fn [follows](../../src/explorer.ts#L92) (edge: SnapshotEdge) → boolean <!-- internal -->
+    - type [Index](../../src/explorer.ts#L97) <!-- internal -->
+    - fn [indexOf](../../src/explorer.ts#L107) (snapshot: AnalysisSnapshot) → Index <!-- internal -->
+      - calls features.explorer.follows
+    - fn [byPosition](../../src/explorer.ts#L138) (a: CallSite, b: CallSite) → number <!-- internal -->
+      - calls base.span.compareText
+    - fn [callsOf](../../src/explorer.ts#L144) (snapshot: AnalysisSnapshot, id: string) → Calls
+      - calls features.explorer.indexOf, features.explorer.byPosition, base.span.compareText, features.explorer.holesOf, features.explorer.reachedFrom
+    - fn [holesOf](../../src/explorer.ts#L193) (index: Index, id: string) → CallHole[] <!-- internal -->
+      - calls features.explorer.byPosition
+    - fn [reachedFrom](../../src/explorer.ts#L213) (snapshot: AnalysisSnapshot, index: Index, id: string) → Calls["reachedFrom"] <!-- internal -->
+      - calls base.span.compareText
+    - type [EventListing](../../src/explorer.ts#L236)
+    - fn [eventsOf](../../src/explorer.ts#L245) (snapshot: AnalysisSnapshot | null) → { events: EventListing[]; reason?: string }
+      - calls features.explorer.indexOf, base.span.compareText
+    - type [ExplorerStep](../../src/explorer.ts#L259)
+    - type [ExplorerFlowRequest](../../src/explorer.ts#L264)
+    - fn [parseExplorerFlow](../../src/explorer.ts#L283) (body: unknown) → ExplorerFlowRequest | string
+    - fn [explorerFlow](../../src/explorer.ts#L323) (snapshot: AnalysisSnapshot, request: ExplorerFlowRequest) → FlowDraft | string
+      - calls features.explorer.indexOf, features.explorer.byPosition, features.explorer.holesOf, lang.parser.isTriggerKind
   - module [feature-status](../../src/feature-status.ts#L1)
     - assess check.assess
     - changed features.changed
@@ -614,6 +646,79 @@
     - type [PlanItem](../../src/feature-status.ts#L498) = Trigger | FlowStep | QuestionItem <!-- internal -->
     - fn [planItems](../../src/feature-status.ts#L501) (flow: Flow) → { key: string; item: PlanItem }[] <!-- internal -->
     - fn [finding](../../src/feature-status.ts#L515) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
+  - module [flow-bundle](../../src/flow-bundle.ts#L1)
+    - brief base.brief
+    - glob base.glob
+    - ir lang.ir
+    - llm features.llm
+    - parser lang.parser
+    - snapshot map.snapshot
+    - span base.span
+    - type [BundleHeader](../../src/flow-bundle.ts#L37)
+    - type [BundleLayer](../../src/flow-bundle.ts#L50)
+    - type [BundleNode](../../src/flow-bundle.ts#L58)
+    - type [BundleTest](../../src/flow-bundle.ts#L74)
+    - type [BundleReach](../../src/flow-bundle.ts#L81)
+    - type [BundleFlow](../../src/flow-bundle.ts#L91)
+    - type [Bundle](../../src/flow-bundle.ts#L101)
+    - type [ExportFlow](../../src/flow-bundle.ts#L113)
+    - fn [flowIds](../../src/flow-bundle.ts#L126) (text: string) → string[]
+      - calls features.flow-bundle.idSpots
+    - fn [flowTests](../../src/flow-bundle.ts#L133) (flow: string, text: string) → BundleTest[]
+      - calls features.flow-bundle.flowNodes, lang.ir.walk
+    - fn [flowEvents](../../src/flow-bundle.ts#L142) (flow: string, text: string) → BundleReach[]
+      - calls features.flow-bundle.flowNodes, lang.ir.walk
+    - fn [bundleNodes](../../src/flow-bundle.ts#L156) (snapshot: AnalysisSnapshot, flows: readonly ExportFlow[], withCallees: number) → BundleNode[]
+      - calls features.flow-bundle.describe, features.flow-bundle.plannedIn, features.flow-bundle.flowIds
+    - fn [describe](../../src/flow-bundle.ts#L195) (snapshot: AnalysisSnapshot, id: string) → Omit<BundleNode, "role" | "flows"> <!-- internal -->
+      - calls base.brief.firstSentence
+    - fn [bundleText](../../src/flow-bundle.ts#L209) (input: { header: BundleHeader; layers: readonly BundleLayer[]; nodes: readonly BundleNode[]; tests: readonly BundleTest[]; reached: readonly BundleReach[]; flows: readonly ExportFlow[] }) → string
+      - calls features.flow-bundle.word, features.flow-bundle.cell, features.flow-bundle.row, features.flow-bundle.code, features.flow-bundle.text, features.flow-bundle.withBundleComment
+    - fn [withBundleComment](../../src/flow-bundle.ts#L247) (flow: ExportFlow) → string <!-- internal -->
+      - calls features.flow-bundle.quoteLine, features.flow-bundle.word
+    - fn [quoteLine](../../src/flow-bundle.ts#L256) (text: string) → string <!-- internal -->
+    - fn [word](../../src/flow-bundle.ts#L261) (value: string) → string <!-- internal -->
+    - fn [code](../../src/flow-bundle.ts#L265) (value: string) → string <!-- internal -->
+      - calls features.flow-bundle.cell
+    - fn [text](../../src/flow-bundle.ts#L270) (value: string) → string <!-- internal -->
+      - calls features.flow-bundle.cell
+    - fn [cell](../../src/flow-bundle.ts#L275) (value: string) → string <!-- internal -->
+    - fn [row](../../src/flow-bundle.ts#L279) (cells: readonly string[]) → string <!-- internal -->
+    - fn [parseBundle](../../src/flow-bundle.ts#L286) (source: string) → Bundle | { error: string }
+      - calls features.flow-bundle.cells, features.flow-bundle.plain, features.flow-bundle.unescapeText, lang.parser.parse
+    - fn [cells](../../src/flow-bundle.ts#L352) (line: string) → string[] <!-- internal -->
+    - fn [plain](../../src/flow-bundle.ts#L371) (value: string | undefined) → string <!-- internal -->
+    - fn [unescapeText](../../src/flow-bundle.ts#L376) (value: string) → string <!-- internal -->
+    - type [TargetLayer](../../src/flow-bundle.ts#L383)
+    - type [LayerChoice](../../src/flow-bundle.ts#L390)
+    - fn [parseLayerMap](../../src/flow-bundle.ts#L398) (text: string) → Map<string, string> | { error: string }
+    - fn [usedLayers](../../src/flow-bundle.ts#L410) (bundle: Bundle) → string[]
+      - calls features.flow-bundle.flowIds, features.flow-bundle.layerOfPath, base.span.compareText
+    - fn [algoLayers](../../src/flow-bundle.ts#L426) (layers: readonly string[], target: readonly TargetLayer[], taken: ReadonlyMap<string, LayerChoice> = new Map()) → { choices: LayerChoice[]; notes: string[] }
+    - fn [layerMapRequest](../../src/flow-bundle.ts#L442) (bundle: Bundle, layers: readonly string[], target: readonly TargetLayer[]) → LlmRequest
+    - fn [parseLayerMapAnswer](../../src/flow-bundle.ts#L468) (answer: string, layers: readonly string[], target: readonly TargetLayer[]) → { choices: LayerChoice[]; notes: string[] }
+      - calls features.flow-bundle.jsonOf, features.flow-bundle.isRecord
+    - fn [jsonOf](../../src/flow-bundle.ts#L483) (answer: string) → unknown <!-- internal -->
+    - fn [isRecord](../../src/flow-bundle.ts#L495) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [layerOfPath](../../src/flow-bundle.ts#L500) (layers: readonly { name: string; globs: string[] }[], path: string) → { name: string; root: string } | null <!-- internal -->
+      - calls base.glob.globPrefix
+    - type [ImportPlan](../../src/flow-bundle.ts#L513)
+    - type [ImportTarget](../../src/flow-bundle.ts#L523)
+    - fn [importPlan](../../src/flow-bundle.ts#L538) (bundle: Bundle, choices: readonly LayerChoice[], target: ImportTarget, options: { name: string; bundleFile: string; mode: string }) → ImportPlan
+      - calls base.glob.globPrefix, features.flow-bundle.layerOfPath, features.flow-bundle.word, features.flow-bundle.flowIds, features.flow-bundle.plannedIn, features.flow-bundle.plannedLine, features.flow-bundle.rehomedFlow
+    - fn [plannedLine](../../src/flow-bundle.ts#L599) (kind: string | undefined, id: string, signature: string | null, notes: string[]) → string <!-- internal -->
+      - calls lang.parser.parse
+    - fn [rehomedFlow](../../src/flow-bundle.ts#L613) (text: string, rehome: (id: string) => string, rehomePath: (path: string) => string, provenance: string, planned: readonly string[]) → string <!-- internal -->
+      - calls features.flow-bundle.idSpots, features.flow-bundle.flowNodes, lang.ir.walk
+    - fn [withMigration](../../src/flow-bundle.ts#L637) (existing: string | null, name: string, section: string) → string
+      - calls lang.parser.parse
+    - type [IdSpot](../../src/flow-bundle.ts#L654) <!-- internal -->
+    - fn [flowNodes](../../src/flow-bundle.ts#L660) (text: string) → Node[] <!-- internal -->
+      - calls lang.parser.parse
+    - fn [idSpots](../../src/flow-bundle.ts#L665) (text: string) → IdSpot[] <!-- internal -->
+      - calls features.flow-bundle.flowNodes, lang.ir.walk, lang.parser.isId
+    - fn [plannedIn](../../src/flow-bundle.ts#L681) (text: string) → Map<string, { kind: string; signature: string | null }> <!-- internal -->
+      - calls features.flow-bundle.flowNodes, lang.ir.walk
   - module [ghost](../../src/ghost.ts#L1)
     - analyze map.analyze
     - agent-context features.agent-context

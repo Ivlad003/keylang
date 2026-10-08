@@ -3,6 +3,7 @@
 // capabilities say which edges it looks for. Graph, snapshot and checks are
 // the same for every language; adding one means a frontend here.
 
+import type { Config } from "./config.ts";
 import type { FileFacts } from "./extract/facts.ts";
 import { extractPhp } from "./extract/php.ts";
 import { extractPython } from "./extract/python.ts";
@@ -23,7 +24,7 @@ export interface Frontend {
    * the disk does not have them (an unsaved or proposed file); `files`: their
    * facts, for a language whose imports name declarations, not files (PHP).
    */
-  resolver(root: string, sources: ReadonlySet<string>, files: readonly FileFacts[]): SourceResolver;
+  resolver(root: string, sources: ReadonlySet<string>, files: readonly FileFacts[], config?: Pick<Config, "sfcc" | "frameworks">): SourceResolver;
   /** Edge kinds the extractor reports; a kind missing here is absent from the snapshot, not proven absent from the code. */
   edges: readonly ("import" | "call" | "type" | "reexport")[];
   /** Names of the language and platform: a call or type through them is external, not unresolved. */
@@ -93,8 +94,10 @@ const FRONTENDS: Record<Language, Frontend> = {
   typescript: ecmascript,
 };
 
-function ecmascriptResolver(root: string, sources: ReadonlySet<string>): SourceResolver {
-  return new ImportResolver(root, sources);
+function ecmascriptResolver(root: string, sources: ReadonlySet<string>, _files: readonly FileFacts[], config?: Pick<Config, "sfcc" | "frameworks">): SourceResolver {
+  // `frameworks` in keylang.json that leaves `sfcc` out turns the cartridge path off with the adapter.
+  const sfcc = config?.frameworks == null || config.frameworks.includes("sfcc");
+  return new ImportResolver(root, sources, undefined, { cartridgePath: config?.sfcc.cartridgePath ?? null, sfcc });
 }
 
 function pythonResolver(root: string, sources: ReadonlySet<string>): SourceResolver {

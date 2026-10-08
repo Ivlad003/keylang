@@ -226,6 +226,23 @@ Commands:
                             Propose one discovered flow as a spec, with a provenance
                             comment, as .keylang/proposals/<dir>/flows/<name>.md (or the
                             --into target); merge it with m in the TUI
+  flow export <name>… [--with-callees N] [--out <file.md>]
+                            A portable bundle of business flows (hand-written, else
+                            discovered) as one Markdown file: provenance (repo,
+                            commit, snapshotId, keylang version), each node with its
+                            kind, signature, doc and file:line, tests, events and
+                            integrations, and an empty keylang-layout block; parse
+                            reads it without a diagnostic. --with-callees: their
+                            callees to depth N. Stdout, or --out (a new file or a
+                            bundle, never under <dir>/)
+  flow import <bundle.md> [--into <spec.md>] [--layer-map old=new,…] [--mode algo|llm|hybrid] [--print]
+                            Propose a feature (<dir>/features/<first flow>.md) whose
+                            flows step on planned nodes re-homed into this
+                            repository's layers, with the original signatures, tests
+                            and provenance, and the rows of <dir>/migration.md
+                            (# migration <slug>). Layers: --layer-map, else algo (same
+                            name, else the first layer), llm|hybrid: the model's map,
+                            checked. --print: stdout only
   export c4 [--format plantuml|mermaid] [--level component|container] [--layer <name>] [--out f]
                             Print a C4 diagram of the map, no model: layers as boundaries,
                             their modules as components, packages as external systems
@@ -233,6 +250,21 @@ Commands:
                             --layer: one layer's components and what they touch;
                             --out: write f, relative to the root, only when it is new or
                             a diagram this command wrote; stdout stays empty)
+  export bpmn <flow|process:<domain>|discovered:<name>> [--out f.bpmn]
+                            BPMN 2.0 XML of the diagram /diagrams draws, with its BPMNDI:
+                            lanes per layer, start events by trigger kind, tasks,
+                            gateways, timers, packages as collapsed pools; keylang:id
+                            and keylang:verdict on every element. --out: as export c4
+  export drawio <view> [--out f.drawio]
+                            The same diagram as a draw.io file (uncompressed mxGraph);
+                            view: <flow>, discovered:<name>, process:<domain>,
+                            entry:<id> or layers; cells carry keylang_id/keylang_kind
+  import drawio <file> [--into <spec.md>] [--print]
+                            A flow's draw.io drawing back as ONE proposal for its spec:
+                            a changed ID or label rewrites its line, a new shape becomes
+                            a step after the shape its edge leaves, an unknown shape a
+                            note comment; an unchanged drawing proposes nothing.
+                            --print: the change on stdout, nothing written
   check [paths…] [--changed] [--since <ref>] [--accept-weakening]
                             Resolve IDs and check rules (default: ./keylang)
                             Given files, it prints verdicts and the summary for those
@@ -332,6 +364,8 @@ const OPTIONS = {
   level: { type: "string" },
   kind: { type: "string" },
   depth: { type: "string" },
+  "with-callees": { type: "string" },
+  "layer-map": { type: "string" },
   entry: { type: "string" },
   "from-trace": { type: "string" },
   run: { type: "string" },
@@ -445,8 +479,12 @@ async function run(argv: readonly string[]): Promise<number> {
       return cmdIntegrations(values.json === true);
     case "flows":
       return cmdFlows(paths, { kind: values.kind, layer: values.layer, limit: values.limit, depth: values.depth, into: values.into, print: values.print === true, check: values.check === true, names: values.names === true, mode: values.mode, dryRun: values["dry-run"] === true, jobs: values.jobs, stale: values.stale === true });
+    case "flow":
+      return cmdFlow(paths, { withCallees: values["with-callees"], out: values.out, into: values.into, layerMap: values["layer-map"], mode: values.mode, print: values.print === true });
     case "export":
       return cmdExport(paths, { format: values.format, level: values.level, layer: values.layer, out: values.out });
+    case "import":
+      return cmdImport(paths, { into: values.into, print: values.print === true });
     case "clone":
       return (await prepareClone(paths[0], { dir: values.dir, explain: values.explain, dryRun: values["dry-run"] === true })).code;
     case "web": {
@@ -871,7 +909,16 @@ async function draftRulesPrinter(root: string, mode: "algo" | "llm" | "hybrid", 
  */
 async function cmdExport(args: readonly string[], options: { format: string | undefined; level: string | undefined; layer: string | undefined; out: string | undefined }): Promise<number> {
   const [what, ...rest] = args;
-  if (what !== "c4") throw new Error("export: expected `c4`; see --help");
+  if (what === "bpmn" || what === "drawio") {
+    if (rest.length !== 1) throw new Error(`export ${what}: ${rest.length === 0 ? "a view is required: a flow name, discovered:<name> or process:<domain>" : `unexpected argument \`${rest[1]}\``}`);
+    const { runDiagramExport } = await import("./operations/diagram-export.ts");
+    const result = await runDiagramExport({ root: findRoot(process.cwd()), format: what, view: rest[0]!, ...(options.out !== undefined ? { out: toPosix(options.out) } : {}) });
+    if (result.error !== null) process.stderr.write(`keylang: ${result.error}\n`);
+    else if (result.out !== null) process.stderr.write(`${result.out}: written\n`);
+    else if (result.text !== null) process.stdout.write(result.text);
+    return result.exitCode;
+  }
+  if (what !== "c4") throw new Error("export: expected `c4`, `bpmn` or `drawio`; see --help");
   if (rest.length > 0) throw new Error(`export c4: unexpected argument \`${rest[0]}\``);
   const result = await runOperation({
     kind: "export-c4",
@@ -884,6 +931,24 @@ async function cmdExport(args: readonly string[], options: { format: string | un
   for (const message of result.messages) process.stderr.write(message.level === "error" ? `keylang: ${message.text}\n` : `${message.text}\n`);
   if (result.exitCode === 0 && result.payload !== null && result.payload.out === null) process.stdout.write(result.payload.text);
   return result.exitCode ?? 2;
+}
+
+/**
+ * `keylang import drawio <file>` (business-flows/28): one proposal for the
+ * flow the drawing draws; `--print` puts the change on stdout. Notes and
+ * refusals to stderr. 0 proposed or nothing to propose, 1 a proposal already
+ * waiting or a refused write, 2 a bad invocation, file or target.
+ */
+async function cmdImport(args: readonly string[], options: { into: string | undefined; print: boolean }): Promise<number> {
+  const [what, file, ...rest] = args;
+  if (what !== "drawio") throw new Error("import: expected `drawio`; see --help");
+  if (file === undefined) throw new Error("import drawio: a .drawio file is required");
+  if (rest.length > 0) throw new Error(`import drawio: unexpected argument \`${rest[0]}\``);
+  const { runImportDrawio } = await import("./operations/diagram-export.ts");
+  const result = await runImportDrawio({ root: findRoot(process.cwd()), file: resolve(process.cwd(), file), ...(options.into !== undefined ? { into: toPosix(options.into) } : {}), print: options.print });
+  if (options.print && result.diff !== null) process.stdout.write(`${result.diff}\n`);
+  for (const message of result.messages) process.stderr.write(message.level === "error" ? `keylang: ${message.text}\n` : `${message.text}\n`);
+  return result.exitCode;
 }
 
 /**
@@ -1082,6 +1147,50 @@ async function cmdFlowsNames(root: string, opts: { kind: string | undefined; lay
   );
   if (opts.dryRun && result.payload?.names) process.stdout.write(result.payload.names.text);
   for (const m of result.messages) process.stderr.write(`keylang: ${m.text}\n`);
+  return result.exitCode ?? 2;
+}
+
+/**
+ * `flow export <name>… [--with-callees N] [--out f]` and `flow import
+ * <bundle.md> [--into] [--layer-map] [--mode] [--print]`: the shared
+ * operations. Export prints the bundle (or names the file written on
+ * stderr); import prints the proposed texts with `--print`, else names the
+ * proposals; notes on stderr.
+ */
+async function cmdFlow(args: readonly string[], opts: { withCallees: string | undefined; out: string | undefined; into: string | undefined; layerMap: string | undefined; mode: string | undefined; print: boolean }): Promise<number> {
+  const [action, ...rest] = args;
+  if (action !== "export" && action !== "import") throw new Error(`flow: expected export or import${action === undefined ? "" : `, got \`${action}\``}`);
+  const root = findRoot(process.cwd());
+  const report = (messages: readonly { level: string; text: string }[]): void => {
+    for (const m of messages) process.stderr.write(`keylang: ${m.text}\n`);
+  };
+  if (action === "export") {
+    if (rest.length === 0) throw new Error("flow export: at least one flow name is required");
+    if (opts.into !== undefined || opts.layerMap !== undefined || opts.mode !== undefined || opts.print) throw new Error("flow export: --into, --layer-map, --mode and --print belong to flow import");
+    const withCallees = opts.withCallees === undefined ? undefined : wholeNumber("--with-callees", opts.withCallees, 0);
+    const pkg = createRequire(import.meta.url)("../package.json") as { version: string };
+    const result = await runOperation({ kind: "flow-export", root, names: rest, version: pkg.version, ...(withCallees !== undefined ? { withCallees } : {}), ...(opts.out !== undefined ? { out: resolve(process.cwd(), opts.out) } : {}) });
+    if (result.payload !== null && opts.out === undefined) process.stdout.write(result.payload.text);
+    report(result.messages);
+    return result.exitCode ?? 2;
+  }
+  const [bundle, extra] = rest;
+  if (bundle === undefined) throw new Error("flow import: a bundle file is required");
+  if (extra !== undefined) throw new Error(`flow import: unexpected \`${extra}\`; one bundle at a time`);
+  if (opts.withCallees !== undefined || opts.out !== undefined) throw new Error("flow import: --with-callees and --out belong to flow export");
+  const mode = opts.mode ?? "algo";
+  if (mode !== "algo" && mode !== "llm" && mode !== "hybrid") throw new Error(`flow import: --mode must be algo, llm or hybrid, got \`${mode}\``);
+  const result = await runOperation({
+    kind: "flow-import",
+    root,
+    bundle: resolve(process.cwd(), bundle),
+    mode,
+    output: opts.print ? "preview" : "proposal",
+    ...(opts.into !== undefined ? { into: toPosix(opts.into) } : {}),
+    ...(opts.layerMap !== undefined ? { layerMap: opts.layerMap } : {}),
+  });
+  if (opts.print && result.payload !== null) process.stdout.write(`${result.payload.feature}\n<!-- ${result.payload.migrationTarget} -->\n\n${result.payload.migration}`);
+  report(result.messages);
   return result.exitCode ?? 2;
 }
 

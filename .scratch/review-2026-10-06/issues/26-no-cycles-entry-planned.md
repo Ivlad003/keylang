@@ -1,6 +1,6 @@
 # 26: `no-cycles` і `entry` під planned-підмодулем застосовуються до батьківського модуля
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -54,11 +54,15 @@ scratchpad/review/rule-flow-semantics/f2: `node bin/keylang.js check` дає `ke
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/rules.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/rules.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+- 2026-10-08: Регресійний тест `tests/rules-area.test.ts` «no-cycles and entry under a planned submodule of a file module do not stand for the parent module» — справжній CLI: `app.x`↔`app.z` у циклі, `planned module app.x.fresh`, `- module app.x.fresh` / `  - no-cycles` → exit 0, без K105, `unverified … \`app.x.fresh\` is planned: no code yet` (було K105, exit 1); `entry` з `app.main` і `app.x.fresh` → K103 для `app.x` і `app.z` (було хибне «every module is reachable»).
+- 2026-10-08: Виправлення в `src/rules.ts` (`evaluateOnSnapshot`): `no-cycles` під planned-ID, що не є модулем знімка, дає `unverified` «planned: no code yet», як `deny` і `exports`; пункт `entry` з таким ID не піднімається через `scopeOf` до батька, а сіє лише units під ним (префікс). Зміни локальні — два місця, повідомлення K102 не чіпав.
+- 2026-10-08: Контракт: `docs/semantics.md` (абзац про цикли). Перевірки: `node --test tests/rules-area.test.ts tests/cli-rules.test.ts` — 35/35, `npm run typecheck` — ок.

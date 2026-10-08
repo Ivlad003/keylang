@@ -255,7 +255,7 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
           const value = d.childForFieldName("value");
           if (!nameNode || nameNode.type !== "identifier") continue;
           const name = nameNode.text;
-          const req = value ? requireSource(value, requires) : null;
+          const req = value ? (requireSource(value, requires) ?? superModuleSource(value)) : null;
           if (req) {
             facts.imports.push(importAt(d, req.source, [{ kind: "module", local: name, ...(req.namespace ? { namespace: true as const } : {}) }], false));
             continue;
@@ -1023,11 +1023,17 @@ function importStatement(node: Node): ImportFact[] {
 
 /** Literal `import("…")` / `require("…")` anywhere in the file. A non-literal specifier is coverage, not an edge. */
 function collectDynamicImports(root: Node, facts: FileFacts): void {
-  const add = (node: Node, spec: string, optional: boolean): void => {
+  const add = (node: Node, spec: string, optional: boolean, typeOnly = false): void => {
     const line = node.startPosition.row + 1;
-    if (facts.imports.some((i) => i.source === spec && i.line === line)) return;
+    const same = facts.imports.find((i) => i.source === spec && i.line === line);
+    if (same) {
+      // One runtime `import()` on the line makes the dependency a runtime one.
+      if (same.typeOnly && !typeOnly) delete same.typeOnly;
+      return;
+    }
     const fact = importAt(node, spec, [], false);
     if (optional) fact.optional = true;
+    if (typeOnly) fact.typeOnly = true;
     facts.imports.push(fact);
   };
   walkNamed(root, (node) => {
@@ -1036,6 +1042,8 @@ function collectDynamicImports(root: Node, facts: FileFacts): void {
       if (specs === null) facts.unsupported.push(unsupported(node, "computed specifier"));
       for (const spec of specs ?? []) add(node, spec.spec, spec.optional);
     }
+    // SFCC `module.superModule`: the same file in the next cartridge of the cartridge path, an import the resolver places.
+    if (node.type === "member_expression" && isSuperModule(node)) add(node, SUPER_MODULE, false);
     if (node.type === "call_expression") {
       const fn = node.childForFieldName("function");
       const isImport = fn?.type === "import";
@@ -1047,13 +1055,30 @@ function collectDynamicImports(root: Node, facts: FileFacts): void {
         const arg = node.childForFieldName("arguments")?.namedChildren[0];
         if (arg?.type === "string") {
           const spec = stringValue(arg);
-          if (spec) add(node, spec, false);
+          if (spec) add(node, spec, false, isImport && inTypePosition(node));
         } else if (arg) {
           facts.unsupported.push(unsupported(node, "computed specifier"));
         }
       }
     }
   });
+}
+
+/** Nodes whose whole subtree is a type: an `import("./a")` in one is erased by tsc. */
+const TYPE_CONTEXT = new Set(["type_annotation", "opting_type_annotation", "omitting_type_annotation", "asserts_annotation", "type_predicate_annotation", "type_query", "type_arguments", "type_parameters", "type_alias_declaration", "interface_declaration", "implements_clause"]);
+
+/**
+ * Whether an `import(…)` call is written where a type goes (`x: import("./a").A`,
+ * `typeof import("./a")`, `v as import("./a").T`): a type-only dependency, as `import type` is.
+ */
+function inTypePosition(node: Node): boolean {
+  for (let child = node, parent = node.parent; parent !== null; child = parent, parent = parent.parent) {
+    if (TYPE_CONTEXT.has(parent.type)) return true;
+    // `v as T`, `v satisfies T`: the operand after the value is the type.
+    if ((parent.type === "as_expression" || parent.type === "satisfies_expression") && parent.namedChildren[0]?.id !== child.id) return true;
+    if (parent.type === "statement_block" || parent.type === "program") return false;
+  }
+  return false;
 }
 
 /** Namespace, `eval`, `new Function`, and a call through `obj[expr]` are coverage, not edges. */
@@ -1655,6 +1680,18 @@ function requireSource(value: Node, requires: ReturnType<typeof query>): { sourc
   return null;
 }
 
+/** The specifier of SFCC's `module.superModule` (`src/frameworks/cartridges.ts` resolves the same literal). */
+const SUPER_MODULE = "module.superModule";
+
+function isSuperModule(node: Node): boolean {
+  return node.type === "member_expression" && node.text.replace(/\s+/g, "") === SUPER_MODULE;
+}
+
+/** `const base = module.superModule`: the whole module of the next cartridge, as `require` binds one. */
+function superModuleSource(value: Node): { source: string; namespace: boolean } | null {
+  return isSuperModule(value) ? { source: SUPER_MODULE, namespace: false } : null;
+}
+
 /**
  * `module.exports = {…}`, `module.exports = f`, `exports.x = …`. A function
  * value assigned there is a fn of the module, like `export const x = () => …`:
@@ -1718,6 +1755,10 @@ function stringValue(n: Node): string | null {
 /** HTTP verbs of a router's registration methods, as Express, Koa-router, Fastify and Hono write them. */
 const ROUTE_METHODS = new Set(["get", "post", "put", "patch", "delete", "all"]);
 
+/** SFRA's `server` registrations: a route (`get`, `post`, `use`) or a change of one another cartridge declared. */
+const SFRA_METHODS = new Set(["get", "post", "use", "append", "prepend", "replace"]);
+const SFRA_CONTROLLER = /(?:^|\/)cartridges\/[^/]+\/cartridge\/controllers\/[^/]+\.js$/;
+
 /**
  * `app.get('/x', h)`, `router.post('/x', auth, h)`: a handler registered on a
  * literal path — a `route` entry labelled `GET /x` whose callee is the last
@@ -1726,6 +1767,7 @@ const ROUTE_METHODS = new Set(["get", "post", "put", "patch", "delete", "all"]);
  */
 function collectRouteEntries(root: Node, facts: FileFacts): void {
   const entries: NonNullable<FileFacts["entries"]> = [];
+  const controller = SFRA_CONTROLLER.test(facts.path);
   const walk = (node: Node): void => {
     if (node.type === "call_expression") {
       const fn = node.childForFieldName("function");
@@ -1737,6 +1779,13 @@ function collectRouteEntries(root: Node, facts: FileFacts): void {
       if (method !== null && ROUTE_METHODS.has(method) && path !== null && path.startsWith("/") && handler !== undefined && (handler.type === "identifier" || handler.type === "member_expression")) {
         const at = located(node);
         entries.push({ kind: "route", label: `${method.toUpperCase()} ${path}`, callee: collapse(handler.text), line: at.line, col: at.col });
+      }
+      // SFRA: `server.get('Show', mw, handler)` in a cartridge's `controllers/<Name>.js`; the adapter names it `<Name>-Show`.
+      const target = fn?.type === "member_expression" ? fn.childForFieldName("object") : null;
+      if (controller && method !== null && SFRA_METHODS.has(method) && target?.type === "identifier" && target.text === "server" && path !== null && path !== "" && handler !== undefined) {
+        const at = located(node);
+        const named = handler.type === "identifier" || handler.type === "member_expression";
+        entries.push({ kind: "sfra", label: path, method, callee: named ? collapse(handler.text) : null, line: at.line, col: at.col });
       }
     }
     for (const child of node.namedChildren) walk(child);

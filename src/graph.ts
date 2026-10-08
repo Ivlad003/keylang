@@ -13,6 +13,9 @@ import { frontendFor, frontendOf, type Frontend, type SourceResolver } from "./f
 import { assumedTarget, type Resolution } from "./imports.ts";
 import { asciiLowerCase, caselessNames, constructorName, implicitMember, interfaceTypes, languageOf, LANGUAGES } from "./languages.ts";
 import { compareText } from "./span.ts";
+import type { FrameworkInput, TypeName } from "./frameworks/adapter.ts";
+import { FrameworkBindings, type BoundCall, type ResolvedType } from "./frameworks/bindings.ts";
+import type { Interception } from "./snapshot.ts";
 
 export { EXTERNAL };
 
@@ -38,7 +41,11 @@ export interface Graph {
 }
 
 export interface Gap {
-  kind: "unresolved-import" | "dynamic-call" | "unresolved-call" | "parse-error" | "unassigned-file" | "unsupported";
+  /**
+   * `ambiguous-binding`: a call through a type a framework's config binds to two classes in one
+   * area; `unresolved-binding`: a config fact names a class the snapshot does not have (ADR 0022).
+   */
+  kind: "unresolved-import" | "dynamic-call" | "unresolved-call" | "parse-error" | "unassigned-file" | "unsupported" | "ambiguous-binding" | "unresolved-binding";
   file: string;
   line: number;
   col: number;
@@ -144,6 +151,8 @@ export interface Fn {
   escapes?: Escape;
   /** Documentation comment of the first declaration that has one (overloads share a node). */
   doc?: string;
+  /** Plugin methods a framework's config wraps the fn in (ADR 0022), in the order they run. */
+  interceptedBy?: Interception[];
 }
 
 export interface Escape {
@@ -154,7 +163,7 @@ export interface Escape {
 }
 
 /** How a call edge that is not a plain call of the code came about; see `Call.via`. */
-export type Via = "default" | "injected" | "callable-arg" | "closure-arg";
+export type Via = "default" | "injected" | "callable-arg" | "closure-arg" | "preference" | "argument" | "plugin:before" | "plugin:around" | "plugin:after";
 
 export interface Call {
   target: string;
@@ -172,9 +181,19 @@ export interface Call {
    * callee may run it — the edge sits at the argument; `closure-arg`: a call
    * written in a closure literal the fn passes as an argument (`run(() =>
    * m())`), at `site`, so the enclosing call's callee may run it. `--static
-   * behavior` follows all four; `shape` none.
+   * behavior` follows all four; `shape` none. A call the framework makes by
+   * its config (ADR 0022): `preference`, `argument`, `plugin:before|around|after`,
+   * at `site` in the config; `behavior` follows them, `shape` does not.
    */
   via?: Via;
+  /** Config edges: the area the fact applies in. */
+  scope?: string;
+  /** Config edges: the module whose config declares the edge. */
+  owner?: string;
+  /** Config edges: the fact in words, for the verdict. */
+  binding?: string;
+  /** Plugin edges: the fn the plugin wraps at this call. */
+  intercepts?: string;
   /** The local, parameter or field the hook call goes through. */
   hook?: string;
   /** `file:line:col` of the call that injects the value, or of the closure passed as an argument. */
@@ -231,14 +250,14 @@ interface FileEntry {
   module: Module;
 }
 
-export function buildGraph(config: Config, files: FileFacts[]): Graph {
+export function buildGraph(config: Config, files: FileFacts[], frameworks: readonly FrameworkInput[] = []): Graph {
   // Resolvers read their config files up front: the snapshot id depends on them even without imports.
   // They see the files of this analysis, unsaved ones included, whatever is on disk now.
   const sources = new Set(files.map((f) => f.path));
   const resolvers = new Map<Frontend, SourceResolver>();
   for (const language of config.languages) {
     const frontend = frontendOf(language);
-    if (!resolvers.has(frontend)) resolvers.set(frontend, frontend.resolver(config.root, sources, files));
+    if (!resolvers.has(frontend)) resolvers.set(frontend, frontend.resolver(config.root, sources, files, config));
   }
   const resolverFor = (file: string): SourceResolver | null => {
     const frontend = frontendFor(file);
@@ -552,14 +571,16 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
   for (const [id, entries] of moduleFiles) {
     const module = entries[0]!.module;
     const opaque = module.members === "opaque";
+    // Python's `from .x import *` rebinds a name; ESM's `export *` of two sources exports neither.
+    const lastStar = languageOf(entries[0]!.facts.path) === "python" ? { lastStarWins: true } : {};
     const rows: ExportRowInput[] = [];
     for (const { facts } of entries) {
       const listed: ExportRow[] = facts.exportRows.length > 0 ? facts.exportRows : [...facts.exports].sort().map((name) => ({ name, kind: "value", local: name }));
       const own = listed.filter((row) => row.name !== "*").map((row) => exportInput(row, facts, fileDecls.get(facts.path)!, importTargets.get(facts.path)!));
       rows.push(...own);
-      if (entries.length > 1) exportInputs.set(`${FILE_UNIT}${facts.path}`, { rows: own, stars: fileStars.get(facts.path)!, opaque });
+      if (entries.length > 1) exportInputs.set(`${FILE_UNIT}${facts.path}`, { rows: own, stars: fileStars.get(facts.path)!, opaque, ...lastStar });
     }
-    exportInputs.set(id, { rows, stars: module.starSources, opaque });
+    exportInputs.set(id, { rows, stars: module.starSources, opaque, ...lastStar });
   }
   const symbolKind = (id: string): ExportKind | null => (decls.classes.has(id) ? "class" : decls.fns.has(id) ? "fn" : decls.types.has(id) ? "type" : null);
   const exportTables = resolveExports(exportInputs, symbolKind, (unit, name) => (unit.startsWith(FILE_UNIT) ? fileDecls.get(unit.slice(FILE_UNIT.length)) : declModule.get(unit))?.get(layerName(name)) ?? null);
@@ -579,6 +600,10 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
   const classBase = new Map<string, BaseLink>();
   /** Class → the traits it uses (PHP `use Logs;`), resolved in its file. */
   const classTraits = new Map<string, string[]>();
+  /** Class → the `insteadof` and `as` rules of its trait `use` block (PHP), traits resolved. */
+  const classTraitRules = new Map<string, { trait: string | null; method: string; insteadof?: string[]; alias?: string }[]>();
+  /** Class → the interfaces it implements; interface → those it extends: resolved in its file. */
+  const implemented = new Map<string, string[]>();
   /**
    * A member of a class by name: its own, then a used trait's (PHP), then its
    * bases' — as the language looks a method up. `staticToo`: an instance may
@@ -588,19 +613,32 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
   const findMember = (start: string, member: string, isStatic: boolean, staticToo: boolean): { target: string | null; last: BaseLink | null } => {
     // PHP finds `total()` for `$o->TOTAL()`; its bases and traits are PHP too.
     const caseless = caselessNames(decls.classes.get(start)?.path);
-    const keys = [member === "constructor" ? "constructor" : memberKey(member, isStatic, caseless), ...(staticToo && !isStatic ? [memberKey(member, true, caseless)] : [])];
+    const keysOf = (name: string): string[] => [name === "constructor" ? "constructor" : memberKey(name, isStatic, caseless), ...(staticToo && !isStatic ? [memberKey(name, true, caseless)] : [])];
+    const same = (a: string, b: string): boolean => (caseless ? asciiLowerCase(a) === asciiLowerCase(b) : a === b);
     const seen = new Set<string>();
-    const inClass = (id: string): string | null => {
-      if (seen.has(id)) return null;
-      seen.add(id);
+    const inClass = (id: string, name = member, visited = seen): string | null => {
+      if (visited.has(id)) return null;
+      visited.add(id);
       const members = declModule.get(id);
-      for (const key of keys) {
+      for (const key of keysOf(name)) {
         const hit = members?.get(key);
         if (hit) return hit;
       }
+      const rules = classTraitRules.get(id) ?? [];
+      // `Loud::hello insteadof Quiet`: Quiet's `hello` is not the class's.
+      const excluded = (trait: string, method: string): boolean => rules.some((r) => r.insteadof?.includes(trait) === true && same(r.method, method));
       for (const trait of classTraits.get(id) ?? []) {
-        const hit = inClass(trait);
+        if (excluded(trait, name)) continue;
+        const hit = inClass(trait, name, visited);
         if (hit) return hit;
+      }
+      // `Quiet::hello as whisper`, `hello as shout`: the alias is that trait's method.
+      for (const rule of rules) {
+        if (rule.alias === undefined || !same(rule.alias, name)) continue;
+        for (const trait of rule.trait !== null ? [rule.trait] : (classTraits.get(id) ?? []).filter((t) => !excluded(t, rule.method))) {
+          const hit = inClass(trait, rule.method, new Set());
+          if (hit) return hit;
+        }
       }
       return null;
     };
@@ -829,9 +867,18 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
     const { resolveCallees, classNamed, external } = scopes.get(facts.path)!;
     const visit = (factDecls: readonly DeclFact[]): void => {
       for (const d of factDecls) {
+        if (d.implements && d.kind !== "fn") {
+          const owner = decls.ids.get(d);
+          const { typeNamed } = scopes.get(facts.path)!;
+          if (owner) implemented.set(owner, d.implements.map((name) => typeNamed(name) ?? classNamed(name)).filter((t): t is string => t !== null));
+        }
         const id = d.kind === "class" ? decls.ids.get(d) : undefined;
         if (!id) continue;
         if (d.traits) classTraits.set(id, d.traits.map(classNamed).filter((t): t is string => t !== null));
+        if (d.traitRules) {
+          const named = (written: string | null): string | null => (written === null ? null : classNamed(written));
+          classTraitRules.set(id, d.traitRules.map((r) => ({ ...r, trait: named(r.trait), ...(r.insteadof ? { insteadof: r.insteadof.map(named).filter((t): t is string => t !== null) } : {}) })));
+        }
         if (!d.base) continue;
         const internal = d.base.includes(".") ? resolveCallees(d.base, null, false).filter((t) => decls.classes.has(t)) : [classNamed(d.base)].filter((t): t is string => t !== null);
         // Whether an unread base is a package's or the language's is known in the class's own file.
@@ -851,8 +898,103 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
     const found = findMember(base.internal, member, isStatic, staticToo);
     return { target: found.target, last: found.last ?? base };
   };
+  /** What the graph lends the framework facts: its declarations, by the names a config writes. */
+  function frameworkBindings(inputs: readonly FrameworkInput[]): FrameworkBindings {
+    // PHP names a class by its qualified name (`FileFacts.symbols`), in any ASCII case.
+    const qualified = new Map<string, string>();
+    for (const f of [...files].sort((a, b) => compareText(a.path, b.path))) {
+      for (const symbol of f.symbols ?? []) {
+        if (symbol.table !== "class") continue;
+        const id = fileDecls.get(f.path)?.get(layerName(symbol.name));
+        const key = asciiLowerCase(symbol.qualified);
+        if (id !== undefined && !qualified.has(key)) qualified.set(key, id);
+      }
+    }
+    const resolve = (type: TypeName): ResolvedType => {
+      if (type.file !== undefined) {
+        const id = fileDecls.get(type.file)?.get(layerName(type.name));
+        return id !== undefined && (decls.classes.has(id) || decls.types.has(id)) ? { kind: "node", id } : { kind: "missing" };
+      }
+      const id = qualified.get(asciiLowerCase(type.name));
+      if (id !== undefined) return { kind: "node", id };
+      // A class no analysed file declares: a package's (composer's autoload) or PHP's own is outside the graph, not missing.
+      const r = resolverFor("keylang.php")?.resolve("", type.name);
+      return r?.kind === "external" || r?.kind === "stdlib" ? { kind: "external" } : { kind: "missing" };
+    };
+    const supertypes = (id: string): string[] => {
+      const out = new Set<string>();
+      const stack = [id];
+      while (stack.length > 0) {
+        const at = stack.pop()!;
+        if (out.has(at)) continue;
+        out.add(at);
+        const base = classBase.get(at)?.internal;
+        if (base) stack.push(base);
+        stack.push(...(implemented.get(at) ?? []), ...(classTraits.get(at) ?? []));
+      }
+      return [...out];
+    };
+    return new FrameworkBindings(inputs, {
+      resolve,
+      isClass: (id) => decls.classes.has(id),
+      member: (classId, name) => findMember(classId, name, false, staticThroughInstance(decls.classes.get(classId)?.path ?? "")).target,
+      opaqueBase: (classId) => unreadBase(classId) !== null || decls.classes.get(classId)?.members === "opaque",
+      supertypes,
+      owner: (dir) => (dir === null ? null : directoryModuleIn(config, dir, modules, layers)),
+    });
+  }
+
+  /**
+   * Plugin edges (ADR 0022): every call of a public method a plugin wraps gets
+   * edges to the plugin's `before` and `around` methods ahead of it and its
+   * `after` method behind it, in the order they run; every such method lists
+   * its interceptors (`interceptedBy`).
+   */
+  function intercept(found: FrameworkBindings): void {
+    const memberName = (fnId: string): string | null => {
+      const fn = decls.fns.get(fnId);
+      const owner = fnId.slice(0, fnId.lastIndexOf("."));
+      if (!fn || fn.static || !fn.exported || !decls.classes.has(owner)) return null;
+      const name = decls.members.get(fnId)?.name ?? fn.written ?? fn.name;
+      return name === constructorName(fn.file) ? null : name;
+    };
+    for (const fn of decls.fns.values()) {
+      if (fn.calls.length === 0) continue;
+      const out: Call[] = [];
+      const seen = new Set<string>();
+      for (const call of fn.calls) {
+        const member = call.via === "injected" || call.via?.startsWith("plugin:") ? null : memberName(call.target);
+        const wraps = member === null ? [] : found.interceptors(receiverOf.get(call) ?? [call.target.slice(0, call.target.lastIndexOf("."))], member);
+        const edge = (w: (typeof wraps)[number]): void => {
+          const key = `${w.target}\0${w.via}`;
+          if (seen.has(key)) return;
+          seen.add(key);
+          out.push({ target: w.target, line: call.line, col: call.col, endLine: call.endLine, endCol: call.endCol, text: call.text, via: w.via, site: w.site, scope: w.scope, binding: w.binding, intercepts: call.target, ...(w.owner !== null ? { owner: w.owner } : {}), ...(call.closure ? { closure: true as const } : {}) });
+        };
+        for (const w of wraps) if (w.via !== "plugin:after") edge(w);
+        out.push(call);
+        for (const w of wraps) if (w.via === "plugin:after") edge(w);
+      }
+      fn.calls = out;
+    }
+    for (const [classId, cls] of decls.classes) {
+      for (const fn of cls.fns) {
+        const member = memberName(fn.id);
+        const wraps = member === null ? [] : found.interceptors([classId], member);
+        // In the order they run around a call: `before` and `around` of each plugin by `sortOrder`, then the `after`s.
+        const ordered = [...wraps.filter((w) => w.via !== "plugin:after"), ...wraps.filter((w) => w.via === "plugin:after")];
+        if (ordered.length > 0) fn.interceptedBy = ordered.map((w) => ({ plugin: w.target, via: w.via, name: w.name, site: w.site, scope: w.scope }));
+      }
+    }
+  }
+
+  // 4a. Framework facts (ADR 0022): bindings, constructor arguments and plugins from the config the framework runs.
+  const bindings = frameworks.length === 0 ? null : frameworkBindings(frameworks);
+  /** The receiver's class of a call edge (and the interface a binding went through): what a plugin wraps. */
+  const receiverOf = new WeakMap<Call, string[]>();
+  for (const hole of bindings?.holes ?? []) gaps.push({ kind: "unresolved-binding", file: hole.file, line: hole.line, col: hole.col, endLine: hole.line, endCol: hole.col + 1, text: hole.text, reason: hole.reason, source: hole.source });
   for (const { facts, module } of byFile.values()) {
-    const { locals, localDecls, importedSymbol, typeNamed, resolveCallees, receiverTarget, single, external, globOrigin } = scopes.get(facts.path)!;
+    const { locals, localDecls, importedSymbol, classNamed, typeNamed, resolveCallees, receiverTarget, single, external, globOrigin } = scopes.get(facts.path)!;
     const attach = (factDecls: DeclFact[], cls: Module | null): void => {
       for (const d of factDecls) {
         if (d.kind === "class") {
@@ -869,12 +1011,59 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
         if (d.accessor) fn.escapes ??= { file: facts.path, line: d.line, col: d.col, reason: "an accessor runs on property access" };
         if (d.implicit) fn.escapes ??= { file: facts.path, line: d.line, col: d.col, reason: `\`${d.name}\` is called implicitly` };
         if (initializer) fn.escapes ??= { file: facts.path, line: d.line, col: d.col, reason: "a static initializer runs when the module loads" };
-        const push = (target: string, c: CallFact, extra: Partial<Call> = {}): void => {
+        const push = (target: string, c: CallFact, extra: Partial<Call> = {}, receiver: string | null = null): void => {
           // A self-call stays an edge: recursion is a static path from a function to itself.
           // A call in a closure passed as an argument is a plain call of the code (counted as resolved) that the callee of the enclosing call may run.
           const inArg = c.closureArg ? { via: "closure-arg" as const, site: `${facts.path}:${c.closureArg.line}:${c.closureArg.col}` } : {};
-          const added = addCall(fn, { target, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, ...(c.closure ? { closure: true as const } : {}), ...inArg, ...extra });
+          const call: Call = { target, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, ...(c.closure ? { closure: true as const } : {}), ...inArg, ...extra };
+          const added = addCall(fn, call);
+          if (receiver !== null) receiverOf.set(call, [receiver]);
           if (added && !extra.via) stats.callsResolved++;
+        };
+        /**
+         * What the framework's config says a call goes to: the value the config sets for the
+         * constructor argument the receiver holds, else the class a binding gives the receiver's
+         * type (an interface, or a class with a preference of its own). Null when it says nothing.
+         */
+        const configured = (c: CallFact, typedClass: string | null): { bound: BoundCall; through: string | null } | null => {
+          if (!bindings) return null;
+          const member = c.callee.slice(c.callee.lastIndexOf(".") + 1);
+          if (c.param !== undefined && cls && bindings.argumentFor(cls.id, c.param)) return { bound: bindings.callThroughArgument(cls.id, c.param, member), through: null };
+          const type = typedClass ?? (c.receiver ? typeNamed(c.receiver) : null);
+          return type !== null && bindings.binds(type) ? { bound: bindings.callThroughType(type, member), through: type } : null;
+        };
+        /** The edges a config gives a call; `counted`: the call has no edge of the code, so the config decides whether it is resolved or a hole. */
+        const placeConfigured = (c: CallFact, { bound, through }: { bound: BoundCall; through: string | null }, counted: boolean): void => {
+          for (const e of bound.edges) {
+            const call: Call = {
+              target: e.target,
+              line: c.line,
+              col: c.col,
+              endLine: c.endLine,
+              endCol: c.endCol,
+              text: c.callee,
+              via: e.via,
+              site: e.site,
+              scope: e.scope,
+              binding: e.binding,
+              ...(e.owner !== null ? { owner: e.owner } : {}),
+              ...(c.closure && !c.closureArg ? { closure: true as const } : {}),
+              ...(c.docblock ? { docblock: `${facts.path}:${c.docblock.line}:${c.docblock.col}` } : {}),
+            };
+            if (addCall(fn, call)) receiverOf.set(call, through === null ? [e.impl] : [e.impl, through]);
+          }
+          if (!counted) return;
+          if (bound.edges.length > 0) stats.callsResolved++;
+          if (bound.ambiguous !== null) {
+            if (bound.edges.length === 0) stats.callsDynamic++;
+            gaps.push({ kind: "ambiguous-binding", file: facts.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, reason: bound.ambiguous, source: fn.id });
+          } else if (bound.edges.length > 0) return;
+          else if (bound.external) stats.callsExternal++;
+          else if (bound.opaque !== null) dynamic(c, bound.opaque);
+          else {
+            stats.callsUnresolved++;
+            gaps.push({ kind: "unresolved-call", file: facts.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, reason: bound.missing ?? `unresolved call \`${c.callee}\``, source: fn.id });
+          }
         };
         /**
          * A callable reference passed as the argument itself (`[$this, 'm']`, `this.m.bind(this)`,
@@ -945,8 +1134,16 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
             if (owner && c.hook.param !== null) hookCalls.push({ fn, hook: c.hook, owner, call: c });
           }
           const typed = receiverTarget(c.callee, c.receiver);
+          const typedClass = typed && c.receiver ? classNamed(c.receiver) : null;
+          const framework = configured(c, typedClass);
           if (typed) {
-            push(typed, c, c.docblock ? { docblock: `${facts.path}:${c.docblock.line}:${c.docblock.col}` } : {});
+            push(typed, c, c.docblock ? { docblock: `${facts.path}:${c.docblock.line}:${c.docblock.col}` } : {}, typedClass);
+            // A preference of the class itself, or an argument the config sets: the class that runs may be another one.
+            if (framework) placeConfigured(c, framework, false);
+            continue;
+          }
+          if (framework) {
+            placeConfigured(c, framework, true);
             continue;
           }
           // `this.waiting.get()` with `waiting = new Map()`: a method of a global or package class.
@@ -977,6 +1174,10 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
             continue;
           }
           const target = targets[0] ?? null;
+          if (target && head === "this" && cls) {
+            push(target, c, {}, cls.id);
+            continue;
+          }
           if (!target) {
             const imported = (locals.get(head) ?? [])[0];
             if (imported?.module.layer === EXTERNAL || globalsOf(facts.path).values.has(head)) stats.callsExternal++;
@@ -1123,6 +1324,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
     if (!base || !cls) continue;
     for (const fn of cls.fns) if (fn.name !== constructorName(fn.file ?? cls.path)) fn.escapes ??= { file: fn.file ?? cls.path ?? "", line: fn.line, col: fn.col, reason: `\`${fn.name}\` may be called by the base class \`${base}\`` };
   }
+  if (bindings) intercept(bindings);
   markEscapes(modules, readIds, readMembers, calledNames, decls.members);
 
   stats.modules = [...modules.values()].filter((m) => m.layer !== EXTERNAL).length;
@@ -1147,6 +1349,23 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
       .map((e) => ({ ...e, symbol: e.symbol === null ? null : moduleOfUnit(e.symbol), ...(e.from !== undefined ? { from: moduleOfUnit(e.from) } : {}) })),
     packages,
   };
+}
+
+/** A file name no language claims: placing it in a directory gives the directory's module. */
+const DIRECTORY_PROBE = "keylang-directory-probe";
+
+/** The module of a directory (a framework module's root): a directory module, or the layer itself when the layer's glob starts there; null when the graph has neither. */
+export function directoryModule(config: Config, dir: string, graph: Pick<Graph, "modules" | "layers">): string | null {
+  return directoryModuleIn(config, dir, graph.modules, new Map(graph.layers.map((l) => [l.name, l])));
+}
+
+function directoryModuleIn(config: Config, dir: string, modules: ReadonlyMap<string, Module>, layers: ReadonlyMap<string, Layer>): string | null {
+  const place = placeFile(config, dir === "" ? DIRECTORY_PROBE : `${dir}/${DIRECTORY_PROBE}`);
+  if (place === null) return null;
+  const segments = config.module === "dir" ? place.segments : place.segments.slice(0, -1);
+  const id = [place.layer, ...segments].join(".");
+  if (modules.has(id)) return id;
+  return segments.length === 0 && (layers.get(place.layer)?.modules.length ?? 0) > 0 ? place.layer : null;
 }
 
 const IDENTIFIER = /^[\p{L}\p{Nl}_$][\p{L}\p{Nl}\p{Mn}\p{Mc}\p{Nd}\p{Pc}_$]*$/u;

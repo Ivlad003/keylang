@@ -1,12 +1,13 @@
 // Reports of discovered flows: the generated view `flows discover` writes
 // (each flow opens at its heading in the view), and the one flow `flows
-// adopt` proposed as a spec.
+// adopt` proposed as a spec; and the portable bundle of `flow export` and
+// `flow import` (business-flows/26), which the CLI runs.
 
 import type { FlowsDiscoverPayload } from "../../operations.ts";
 import { THEME } from "../theme.ts";
 import { BOLD, codeOf, messageRow, MUTED, outcomeRow, shortId, type Report, type ReportItem, type ReportRow } from "./rows.ts";
 
-type DiscoverKind = "flows-discover" | "flows-adopt";
+type DiscoverKind = "flows-discover" | "flows-adopt" | "flow-export" | "flow-import";
 
 /** Each discovered flow at its `# flow` heading in the view's file. */
 function flowPlaces(payload: FlowsDiscoverPayload): ReportItem[] {
@@ -45,6 +46,27 @@ export const DISCOVER_REPORTS: { [K in DiscoverKind]: Report<K> } = {
       const rows: ReportRow[] = [{ text: `Adopt flow ${result.payload.flow.name} → ${result.payload.candidate.target}`, style: BOLD }, outcomeRow(view.summary, result.exitCode === 0)];
       for (const message of result.messages) rows.push(messageRow(message));
       for (const line of result.payload.flow.text.trimEnd().split("\n")) rows.push({ text: `  ${line}`, style: THEME.panel });
+      return rows;
+    },
+  },
+  "flow-export": {
+    label: (request) => `flow export ${request.names.join(" ")}`,
+    params: (request) => request.names.join(" "),
+    summary: (_record, result) => `${result.payload.out !== null ? `wrote ${result.payload.out}` : "bundle"}${codeOf(result.exitCode)}`,
+    rows(_state, _record, result, view) {
+      const rows: ReportRow[] = [{ text: `Flow bundle · ${result.payload.header.flows.join(", ")}`, style: BOLD }, outcomeRow(view.summary, result.exitCode === 0)];
+      for (const message of result.messages) rows.push(messageRow(message));
+      return rows;
+    },
+  },
+  "flow-import": {
+    label: (request) => `flow import ${request.bundle}`,
+    params: (request) => request.bundle,
+    summary: (_record, result) => `${result.payload.proposals.length > 0 ? `proposed ${result.payload.target}` : "nothing written"}${codeOf(result.exitCode)}`,
+    rows(_state, _record, result, view) {
+      const rows: ReportRow[] = [{ text: `Flow import → ${result.payload.target}`, style: BOLD }, outcomeRow(view.summary, result.exitCode === 0)];
+      for (const message of result.messages) rows.push(messageRow(message));
+      for (const line of result.payload.feature.trimEnd().split("\n")) rows.push({ text: `  ${line}`, style: THEME.panel });
       return rows;
     },
   },

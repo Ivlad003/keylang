@@ -56,6 +56,8 @@ export interface NodeSummary {
   exported: boolean | null;
   calls: string[];
   callers: string[];
+  /** Plugin methods a framework's config wraps the fn in (ADR 0022), in the order they run: `P.aroundM (plugin:around `p`, etc/di.xml:12:5)`. */
+  interceptedBy: string[];
   deps: string[];
   dependents: string[];
   flows: string[];
@@ -90,6 +92,7 @@ export function summarizeNode(analysis: Analysis, id: string): ExplainResult {
         exported: node.exported ?? null,
         calls: node.calls ?? [],
         callers: node.callers ?? [],
+        interceptedBy: (node.interceptedBy ?? []).map((i) => `${i.plugin} (${i.via} \`${i.name}\`, ${i.site}${i.scope !== "global" ? `, scope ${i.scope}` : ""})`),
         deps: node.deps ?? [],
         dependents: node.dependents ?? [],
         flows,
@@ -101,7 +104,7 @@ export function summarizeNode(analysis: Analysis, id: string): ExplainResult {
     };
   }
   return {
-    summary: { id, kind: facts.kind, signature: facts.signature, doc: null, at, exported: null, calls: [], callers: [], deps: [], dependents: [], flows, rules, holes: {}, fingerprint: null, planned: true },
+    summary: { id, kind: facts.kind, signature: facts.signature, doc: null, at, exported: null, calls: [], callers: [], interceptedBy: [], deps: [], dependents: [], flows, rules, holes: {}, fingerprint: null, planned: true },
   };
 }
 
@@ -156,6 +159,7 @@ export function formatSummary(s: NodeSummary): string {
   };
   list("calls", s.calls);
   list("called by", s.callers);
+  list("intercepted by", s.interceptedBy);
   list("depends on", s.deps);
   list("used by", s.dependents);
   list("flows", s.flows);

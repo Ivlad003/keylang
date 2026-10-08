@@ -52,9 +52,45 @@ export function explainDir(config: Pick<Config, "dir">): string {
 /** The explanation store of keylang 0.1: not read any more, only named so its files can be moved. */
 export const OLD_EXPLAIN_DIR = ".keylang/explain";
 
-/** File of an explanation relative to the root: `<dir>/explain/<id>.md`, a brief in `<dir>/explain/brief/<id>.md`. */
-export function explanationPath(config: Pick<Config, "dir">, id: string, detail: ExplanationDetail): string {
-  return detail === "brief" ? `${explainDir(config)}/brief/${id}.md` : `${explainDir(config)}/${id}.md`;
+/**
+ * File of an explanation relative to the root: `<dir>/explain/<id>.md`, a
+ * brief in `<dir>/explain/brief/<id>.md`. IDs that differ only in letter case
+ * (`type Order`, `fn order`) would share that file on APFS and NTFS, and a
+ * checkout of both breaks there, so an ID with such a twin — a file of the
+ * store (with `root`) or one of `also`, the IDs saved with it — gets
+ * `<id>~<hash>.md`, `<hash>` the first 8 hex digits of the ID's sha256. A
+ * file already saved under either name keeps it. Names are matched as the
+ * directory listing spells them: `existsSync` on APFS finds `Order.md` through
+ * `order.md`.
+ */
+export function explanationPath(config: Pick<Config, "dir"> & { root?: string }, id: string, detail: ExplanationDetail, also: Iterable<string> = []): string {
+  const dir = detail === "brief" ? `${explainDir(config)}/brief` : explainDir(config);
+  return `${dir}/${storeName(config.root === undefined ? [] : storeNames(config.root, dir), id, also)}`;
+}
+
+/** The file name of `id` in a store whose files are `names`. */
+function storeName(names: readonly string[], id: string, also: Iterable<string>): string {
+  const twinned = `${id}~${createHash("sha256").update(id).digest("hex").slice(0, 8)}.md`;
+  const plain = `${id}.md`;
+  if (names.includes(twinned)) return twinned;
+  if (names.includes(plain)) return plain;
+  const folded = id.toLowerCase();
+  const twin = (other: string): boolean => other !== id && other.toLowerCase() === folded;
+  return names.some((name) => twin(storedId(name))) || [...also].some(twin) ? twinned : plain;
+}
+
+/** The ID a store file saves: `<id>.md` or `<id>~<hash>.md`. */
+function storedId(name: string): string {
+  return name.slice(0, -3).replace(/~[0-9a-f]{8}$/, "");
+}
+
+/** Names of the `.md` files in `dir` (relative to the root), as the listing spells them. */
+function storeNames(root: string, dir: string): string[] {
+  const abs = join(root, dir);
+  if (!existsSync(abs)) return [];
+  return readdirSync(abs, { withFileTypes: true })
+    .filter((e) => e.isFile() && e.name.endsWith(".md"))
+    .map((e) => e.name.normalize("NFC"));
 }
 
 export function readStoredExplanation(root: string, rel: string): StoredExplanation | null {
@@ -64,20 +100,16 @@ export function readStoredExplanation(root: string, rel: string): StoredExplanat
 
 /** IDs with a saved file in `dir` (relative to the root), sorted. */
 export function storedIds(root: string, dir: string): string[] {
-  const abs = join(root, dir);
-  if (!existsSync(abs)) return [];
-  return readdirSync(abs, { withFileTypes: true })
-    .filter((e) => e.isFile() && e.name.endsWith(".md"))
-    .map((e) => e.name.slice(0, -3))
-    .sort();
+  return [...new Set(storeNames(root, dir).map(storedId))].sort();
 }
 
 /** Briefs saved under `<dir>/explain/brief/`, by ID. A file without keylang's header is not one. */
 export function loadBriefs(config: Config): Map<string, StoredExplanation> {
   const dir = `${explainDir(config)}/brief`;
+  const names = storeNames(config.root, dir);
   const out = new Map<string, StoredExplanation>();
-  for (const id of storedIds(config.root, dir)) {
-    const e = readStoredExplanation(config.root, `${dir}/${id}.md`);
+  for (const id of [...new Set(names.map(storedId))].sort()) {
+    const e = readStoredExplanation(config.root, `${dir}/${storeName(names, id, [])}`);
     if (e?.detail === "brief") out.set(id, e);
   }
   return out;
