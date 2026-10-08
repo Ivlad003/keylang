@@ -9,14 +9,14 @@ import type { OperationRecord, State } from "../state.ts";
 import { THEME } from "../theme.ts";
 import { CHAT_REPORTS } from "./chat.ts";
 import { CHECK_REPORTS } from "./check.ts";
-import { COVERAGE_REPORTS, INTEGRATIONS_REPORTS } from "./coverage.ts";
+import { COVERAGE_REPORTS, INTEGRATIONS_REPORTS, MIGRATION_REPORTS } from "./coverage.ts";
 import { DISCOVER_REPORTS } from "./discover.ts";
 import { DRAFT_REPORTS } from "./draft.ts";
 import { EXPLAIN_REPORTS } from "./explain.ts";
 import { messageRow, MUTED, WARNING, type Done, type Kind, type Report, type ReportItem, type ReportRow, type RequestOf } from "./rows.ts";
 import { SETUP_REPORTS } from "./setup.ts";
 
-const REPORTS: { [K in Kind]: Report<K> } = { ...SETUP_REPORTS, ...CHECK_REPORTS, ...EXPLAIN_REPORTS, ...DRAFT_REPORTS, ...DISCOVER_REPORTS, ...COVERAGE_REPORTS, ...INTEGRATIONS_REPORTS, ...CHAT_REPORTS };
+const REPORTS: { [K in Kind]: Report<K> } = { ...SETUP_REPORTS, ...CHECK_REPORTS, ...EXPLAIN_REPORTS, ...DRAFT_REPORTS, ...DISCOVER_REPORTS, ...COVERAGE_REPORTS, ...INTEGRATIONS_REPORTS, ...MIGRATION_REPORTS, ...CHAT_REPORTS };
 
 /** The records whose action is no palette action: a key or the clip's chat asked for them. */
 const SESSION_ACTIONS: Readonly<Record<string, string>> = { "agent-draft": "Ctrl+Space: the agent's flow draft", "clip-reply": "Clip: the model's reply" };

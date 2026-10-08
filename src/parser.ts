@@ -1022,8 +1022,10 @@ class Parser {
 
   /**
    * `map <old> → [planned] <new>`: `id` is the old stack's ID, `text` the
-   * row as written, `label` `planned` when the new ID is an intention. No
-   * reference: the old ID lives in another repository (ticket 27 checks both).
+   * row as written, `label` `planned` when the new ID is an intention. The
+   * new ID is a reference of this repository (K001 unless the code has it or
+   * a `planned` declares it); the old ID lives in another repository and is
+   * checked against its snapshot (`migration.from`, business-flows/27).
    */
   private migrationRow(n: Node, l: Line, rest: Token[]): void {
     const [old, arrow, ...tail] = rest;
@@ -1035,6 +1037,7 @@ class Parser {
       return;
     }
     n.id = nfc(old.text);
+    n.refs.push({ text: target.text, target: nfc(target.text), span: target.span });
     if (planned) n.label = spanned(planned);
     this.freeText(n, l, rest);
   }

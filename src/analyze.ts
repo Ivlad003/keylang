@@ -15,6 +15,7 @@ import type { Document } from "./ir.ts";
 import { keepsFactCache, saveFactCache } from "./fact-cache.ts";
 import { DISCOVERED_FLOWS_DIR, EXPLAINED_MAP_DIR, generateMap, type MapResult } from "./map.ts";
 import { parse } from "./parser.ts";
+import type { OldSnapshot } from "./migration.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
 import { loadReports } from "./test-report.ts";
 import { loadTraces } from "./trace-evidence.ts";
@@ -44,6 +45,12 @@ export interface AnalysisRequest {
   generate?: (config: Config, options: { persist: boolean | "changed"; overlay: ReadonlyMap<string, string> }) => Promise<MapResult>;
   /** Overrides `config.check.static`. Omitted leaves the config, then `behavior`. */
   static?: StaticMode;
+  /**
+   * Leave `migration.from` unread: the old IDs of `# migration` rows stay
+   * unverified. The old repository's own analysis passes it, so a chain of
+   * migrations is never followed.
+   */
+  withoutMigration?: boolean;
 }
 
 export interface Analysis extends Assessment {
@@ -104,6 +111,11 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
   const traceFiles = evidence ? evidenceFiles(config, "trace") : null;
   const staticMode = resolveStatic(request.static, config.check.static);
   const packages = request.withoutCode === true ? [] : (map?.graph.packages ?? readManifests(config, []).packages);
+  // The old stack of a migration (business-flows/27), loaded only when keylang.json names one.
+  const migration: OldSnapshot =
+    request.withoutMigration === true || request.withoutCode === true || config.migration.from === null
+      ? { state: "absent" }
+      : await (await import("./migration-stack.ts")).oldSnapshotFor(root, config.migration.from);
   const assessment = assess(
     docs,
     snapshot,
@@ -111,6 +123,7 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
       tests: testFiles === null ? null : loadReports(root, testFiles),
       traces: traceFiles === null ? null : loadTraces(root, traceFiles),
       static: staticMode.mode,
+      migration,
       ...(staticMode.setBy ? { staticSetBy: staticMode.setBy } : {}),
       ...(request.withoutCode ? {} : { knownExternal: new Set(packages.map((p) => p.id)), testFileExists: (path: string) => repositoryFile(root, path) }),
     },

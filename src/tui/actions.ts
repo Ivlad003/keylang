@@ -223,6 +223,14 @@ export const ACTIONS: readonly Action[] = [
     when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
   },
   {
+    id: "migration-status",
+    label: "Migration status: parity of the old stack's flows, what is not migrated yet",
+    group: "Map",
+    aliases: ["migration", "migration status", "keylang migration status", "parity", "old stack", "migrate", "міграція", "паритет"],
+    // Reads the saved code, keylang.json, the specs and the old stack of `migration.from` in a worker; writes nothing but the fact cache.
+    when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
+  },
+  {
     id: "export",
     label: "Export the report to a file",
     group: "Check",

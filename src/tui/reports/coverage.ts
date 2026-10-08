@@ -1,10 +1,12 @@
 // Reports of the views over the snapshot that say where to look by hand:
-// «Blind spots» (`keylang coverage`) and «Integrations» (`keylang
-// integrations`). Each place a report names — an orphan fn, a module with
-// holes, an entry point without a flow, a call into a configuration reader,
-// a call site of a client, a webhook — opens in the code.
+// «Blind spots» (`keylang coverage`), «Integrations» (`keylang
+// integrations`) and «Migration status» (`keylang migration status`). Each
+// place a report names — an orphan fn, a module with holes, an entry point
+// without a flow, a call into a configuration reader, a call site of a
+// client, a webhook, a flow of this repository a migrated flow became —
+// opens in the code or the spec.
 
-import type { CoveragePayload, IntegrationsPayload } from "../../operations.ts";
+import type { CoveragePayload, IntegrationsPayload, MigrationStatusPayload } from "../../operations.ts";
 import { THEME } from "../theme.ts";
 import { BOLD, codeOf, MUTED, outcomeRow, shortId, textRows, type Report, type ReportItem, type ReportRow } from "./rows.ts";
 
@@ -65,5 +67,33 @@ export const INTEGRATIONS_REPORTS: { integrations: Report<"integrations"> } = {
       return rows;
     },
     items: { noun: "call site", of: (_state, result) => integrationPlaces(result.payload) },
+  },
+};
+
+/** The places of the parity: each counterpart flow of this repository (its spec), then each dropped row of the table. */
+export function migrationPlaces(payload: MigrationStatusPayload): ReportItem[] {
+  return [
+    ...payload.flows.flatMap((flow) => (flow.counterpart?.file == null ? [] : [{ file: flow.counterpart.file, line: 1, col: 1, text: `${flow.verdict}  ${flow.name} → ${flow.counterpart.name}  ${flow.reasons[0] ?? ""}` }])),
+    ...payload.dropped.map((row) => ({ file: row.file, line: row.line, col: 1, text: `dropped  ${row.id}  ${row.reason}` })),
+  ];
+}
+
+export const MIGRATION_REPORTS: { "migration-status": Report<"migration-status"> } = {
+  "migration-status": {
+    label: () => "migration status",
+    summary: (_record, result) => `${result.payload.counts.fail} fail · ${result.payload.counts.unverified} unverified · ${result.payload.counts.ok} ok · ${result.payload.notMigrated.flows.length} flow(s) not migrated${codeOf(result.exitCode)}`,
+    rows(_state, _record, result, view) {
+      const { payload } = result;
+      const rows: ReportRow[] = [
+        { text: `Migration status · old ${payload.from} → this repository · read-only, nothing written · fresh snapshot ${shortId(payload.newSnapshotId)}`, style: BOLD },
+        outcomeRow(view.summary, result.exitCode === 0),
+        { text: "  every flow of the old stack through the rows of # migration: counterpart, steps, the same tests passing in both reports", style: MUTED },
+      ];
+      migrationPlaces(payload).forEach((item, index) => rows.push({ text: `  ${item.text}`, style: index === view.selected ? THEME.selected : THEME.panel, gap: index }));
+      rows.push({ text: "  Tab, then ↑↓ select a flow or a dropped row and Enter opens its spec", style: THEME.hint });
+      rows.push(...textRows("keylang migration status · stdout", payload.text));
+      return rows;
+    },
+    items: { noun: "flow", of: (_state, result) => migrationPlaces(result.payload) },
   },
 };

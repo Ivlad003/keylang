@@ -367,6 +367,21 @@ export function mcpServer(root: string, version: string): McpServer {
     },
   );
 
+  server.registerTool(
+    "migration_status",
+    {
+      description:
+        "Parity of a migration between stacks, as `keylang migration status --json` computes it: every flow of the old stack (hand-written and discovered; `from` is the old repository's directory, analysed read-only, or an index file — `keylang map --export-index` of the old repository, or its plain .keylang/index.json; default `migration.from` of keylang.json, relative to the root) against this repository through the rows of `# migration` (`map <old> → [planned] <new>`, `dropped <old> <reason>`): its counterpart flow (by `flow import` provenance, the mapped trigger, or the most mapped steps), each step's new ID present or missing, each old test name passing in both test reports. Per flow `ok`, `fail` (no counterpart, a mapped step missing in fully indexed code, a shared test failing here) or `unverified` (no tests, no report, a step not in the table, an opaque module); then `notMigrated` (flows, cron/consumer/observer/webhook entries, integrations), `withoutTests`, `dropped`, `notes`. Read-only.",
+      inputSchema: { from: z.string().min(1).optional() },
+    },
+    async ({ from }) => {
+      const result = await runOperation({ kind: "migration-status", root, ...(from !== undefined ? { from } : {}) }, { analyze: () => fresh() });
+      if (result.payload === null) return failure(result.messages[0]?.text ?? "migration status failed");
+      const { text: _text, ...status } = result.payload;
+      return json(status);
+    },
+  );
+
   return server;
 }
 
