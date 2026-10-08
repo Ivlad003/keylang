@@ -109,6 +109,7 @@ keylang має допомагати швидко зануритись у чуж�
 | [37](issues/37-express-next-adapter.md) | Express/Fastify/Next.js: маршрути, middleware, server actions | resolved | — |
 | [38](issues/38-python-web-adapter.md) | Django/FastAPI/Flask/Celery: маршрути, сигнали, задачі | resolved | — |
 | [39](issues/39-pwa-kit-overrides.md) | PWA Kit / Composable Storefront: ccExtensibility overrides і маршрути | ready-for-agent | — |
+| [40](issues/40-php-type-inference-60.md) | PHP: типи локальних значень і члени базових класів поза аналізом — до цілі ≥ 60 % розв'язаних викликів | ready-for-agent | — |
 
 ## 9. Рев'ю плану на реалістичність (2026-10-07)
 
