@@ -207,6 +207,7 @@ Server name: `keylang`. Only `apply_diff` writes to the repository, and only a p
 | `list_entries` | Where execution starts: routes, `bin`, scripts, `main`. Same list as `keylang entries --json` |
 | `discover_flows` | A flow draft per entry point, as `keylang flows discover --print`: a generated view, not a spec; `check` ignores it. Nothing is written |
 | `coverage_report` | Blind spots, as `keylang coverage --json`: reach from entry points, orphan fns, holes by module and reason, entries without a flow, logic in data to check by hand. A view; nothing is written |
+| `list_integrations` | What the code talks to, as `keylang integrations --json`: HTTP/SOAP/SDK/queue call sites with host and the entry points that reach them, incoming webhooks, queues. Nothing is written or contacted |
 | `apply_diff` | Propose the full new text of one hand-written spec |
 
 CLI when MCP is off:

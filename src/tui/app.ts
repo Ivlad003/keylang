@@ -2169,6 +2169,7 @@ export class App {
         return { inputs: config };
       // The blind spots read the code, keylang.json and the hand-written flows (a trigger they name has a flow).
       case "coverage":
+      case "integrations":
         return { inputs: specs };
       // A code's help reads nothing. A node's summary, the inventory and a trace plan read the specs and
       // the saved explanations under the spec directory, keylang.json and the code.
@@ -3274,6 +3275,8 @@ export class App {
         return this.requestOperation("flows-discover", { kind: "flows-discover", root: this.state.root, output: "write" });
       case "coverage":
         return this.requestOperation("coverage", { kind: "coverage", root: this.state.root });
+      case "integrations":
+        return this.requestOperation("integrations", { kind: "integrations", root: this.state.root });
       case "feature":
         return this.runs.openFeaturePrompt();
       case "export-c4":

@@ -349,6 +349,21 @@ export function mcpServer(root: string, version: string): McpServer {
     },
   );
 
+  server.registerTool(
+    "list_integrations",
+    {
+      description:
+        "What the code talks to, as `keylang integrations --json` computes it: outgoing integrations (HTTP, SOAP, SDK and queue clients of resources/integrations.json) each with its call sites (file, line, callee, enclosing fn, the host of a literal URL or `dynamic`/`n/a`) and the entry points that reach each site with their hand-written or discovered flow; the client's imports; incoming webhooks (entries of kind webhook, routes whose path names a webhook, callback, notify or IPN, `integrations.webhooks` of keylang.json); queue publishers, consumers and pairs. A view; read-only, nothing is contacted.",
+      inputSchema: {},
+    },
+    async () => {
+      const result = await runOperation({ kind: "integrations", root }, { analyze: () => fresh() });
+      if (result.payload === null) return failure(result.messages[0]?.text ?? "integrations failed");
+      const { text: _text, ...report } = result.payload;
+      return json(report);
+    },
+  );
+
   return server;
 }
 

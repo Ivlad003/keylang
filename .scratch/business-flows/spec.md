@@ -83,7 +83,7 @@ keylang має допомагати швидко зануритись у чуж�
 | [11](issues/11-flows-discover.md) | `keylang flows discover`: чернетка флоу для кожної точки входу | resolved | 09 |
 | [12](issues/12-flows-business-names.md) | Бізнес-назви, описи й групування флоу в процеси (модель) | ready-for-agent | 11 |
 | [13](issues/13-blind-spots-report.md) | Звіт покриття: сліпі зони, сироти, «логіка в даних» | resolved | 09, 11 |
-| [14](issues/14-integrations-inventory.md) | Інвентар інтеграцій: вихідні HTTP/SDK, вхідні вебхуки, черги | ready-for-agent | 09 |
+| [14](issues/14-integrations-inventory.md) | Інвентар інтеграцій: вихідні HTTP/SDK, вхідні вебхуки, черги | resolved | 09 |
 | [15](issues/15-project-tour.md) | `keylang tour`: онбординг-бриф проєкту за 10 хвилин | ready-for-agent | 12, 13, 14 |
 | [16](issues/16-grammar-events.md) | Мова: `trigger event`, перевірка `emits event` проти фактів | ready-for-agent | 02, 08 |
 | [17](issues/17-grammar-parallel.md) | Мова: паралельні групи кроків `parallel` | ready-for-agent | 02 |

@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [agent-cli](#features.agent-cli) · [agent-context](#features.agent-context) · [baseline](#features.baseline) · [call-sites](#features.call-sites) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [clone](#features.clone) · [coverage-report](#features.coverage-report) · [discover](#features.discover) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [feature-status](#features.feature-status) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [harness](#features.harness) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stale](#features.stale) · [stats](#features.stats) · [voice-local](#features.voice-local) · [voice](#features.voice)
+[README](README.md) · modules: [agent-cli](#features.agent-cli) · [agent-context](#features.agent-context) · [baseline](#features.baseline) · [call-sites](#features.call-sites) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [clone](#features.clone) · [coverage-report](#features.coverage-report) · [discover](#features.discover) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [feature-status](#features.feature-status) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [harness](#features.harness) · [integrations](#features.integrations) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stale](#features.stale) · [stats](#features.stats) · [voice-local](#features.voice-local) · [voice](#features.voice)
 
 # map
 
@@ -276,10 +276,13 @@
     - fn [urlOf](../../src/call-sites.ts#L382) (text: string, starts: readonly number[], line: number, col: number, callee: string) → { url: "literal" | "dynamic" | "n/a"; host: string | null }
       <a id="features.call-sites.urlOf"></a><br>The URL a call names: the host of a literal absolute URL among its first two arguments (a literal prefix counts: `"https://api.x.com/" + id`), `dynamic` when an argument there is an expression, `n/a` when the call has no arguments, only literals that are no URL, or no argument…
       - calls [features.call-sites.firstArguments](features.md#features.call-sites.firstArguments)
-    - fn [firstArguments](../../src/call-sites.ts#L404) (text: string, starts: readonly number[], line: number, col: number, callee: string, max: number) → string[] | null <!-- internal -->
+    - fn [literalArgument](../../src/call-sites.ts#L404) (text: string, starts: readonly number[], line: number, col: number, callee: string) → string | null
+      <a id="features.call-sites.literalArgument"></a><br>The first argument of the call when it is a plain string literal (a queue's topic), else null.
+      - calls [features.call-sites.firstArguments](features.md#features.call-sites.firstArguments)
+    - fn [firstArguments](../../src/call-sites.ts#L412) (text: string, starts: readonly number[], line: number, col: number, callee: string, max: number) → string[] | null <!-- internal -->
       <a id="features.call-sites.firstArguments"></a><br>The first `max` arguments of the call at the position, as written: after the callee's last name; null when no argument list follows it.
       - calls [features.call-sites.segments](features.md#features.call-sites.segments)
-    - fn [sourceReader](../../src/call-sites.ts#L451) (root: string) → (file: string) => { text: string; starts: number[] } | null
+    - fn [sourceReader](../../src/call-sites.ts#L459) (root: string) → (file: string) => { text: string; starts: number[] } | null
       <a id="features.call-sites.sourceReader"></a><br>A text read once per file.
       - calls [features.call-sites.lineStarts](features.md#features.call-sites.lineStarts)
   - module [changed](../../src/changed.ts#L1)
@@ -1094,6 +1097,42 @@
     - fn [commitAgents](../../src/harness.ts#L770) ( plan: AgentsPlan, options: { signal?: AbortSignal; onStep?: (step: { path: string; action: "write" | "remove" }) => void } = {}, ) → Promise<{ steps: HarnessStep[]; outcome: "completed" | "failed" | "cancelled" }>
       <a id="features.harness.commitAgents"></a><br>Writes and removes the changed targets one by one, in plan order. A write is atomic at the target (a link inside the repository is followed; CRLF of the old file kept); a removal removes the entry itself, and only when the entry is inside the repository with links followed — a…
       - calls [base.safe-write.targetProblem](base.md#base.safe-write.targetProblem), [base.safe-write.landing](base.md#base.safe-write.landing), [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic)
+  - module [integrations](../../src/integrations.ts#L1)
+    <a id="features.integrations"></a><br>`keylang integrations` (business-flows/14): what the repository talks to, the first thing to know before a migration. A view over the snapshot (ADR 0014), no verdict and no network: outgoing calls into the HTTP, SOAP, SDK and queue clients `resources/integrations.json` lists…
+    - node [external.node](external.md#external.node)
+    - call-sites [features.call-sites](features.md#features.call-sites)
+    - config [base.config](base.md#base.config)
+    - discover [features.discover](features.md#features.discover)
+    - glob [base.glob](base.md#base.glob)
+    - snapshot [map.snapshot](map.md#map.snapshot)
+    - span [base.span](base.md#base.span)
+    - type [IntegrationKind](../../src/integrations.ts#L19) = "http" | "soap" | "sdk" | "payment" | "queue"
+      <a id="features.integrations.IntegrationKind"></a>
+    - type [IntegrationClient](../../src/integrations.ts#L22) extends Matcher
+      <a id="features.integrations.IntegrationClient"></a><br>One client the data file names.
+    - type [Reach](../../src/integrations.ts#L29)
+      <a id="features.integrations.Reach"></a><br>An entry point that reaches a call site, with the flow that starts from it.
+    - type [IntegrationSite](../../src/integrations.ts#L37)
+      <a id="features.integrations.IntegrationSite"></a>
+    - type [Integration](../../src/integrations.ts#L51)
+      <a id="features.integrations.Integration"></a>
+    - type [Webhook](../../src/integrations.ts#L61)
+      <a id="features.integrations.Webhook"></a>
+    - type [IntegrationsReport](../../src/integrations.ts#L73)
+      <a id="features.integrations.IntegrationsReport"></a>
+    - fn [loadIntegrations](../../src/integrations.ts#L90) (path = resourcePath("integrations.json")) → IntegrationClient[]
+      <a id="features.integrations.loadIntegrations"></a><br>`resources/integrations.json`.
+      - calls [features.call-sites.resourcePath](features.md#features.call-sites.resourcePath)
+    - fn [routePath](../../src/integrations.ts#L105) (label: string) → string <!-- internal -->
+      <a id="features.integrations.routePath"></a><br>The path of a route label (`POST /stripe/webhook` → `/stripe/webhook`).
+    - fn [findWebhooks](../../src/integrations.ts#L110) (snapshot: AnalysisSnapshot, globs: readonly string[]) → Webhook[]
+      <a id="features.integrations.findWebhooks"></a><br>Incoming webhooks: entries of kind webhook, routes whose path names one, and what `integrations.webhooks` names.
+      - calls [base.glob.firstMatchingGlob](base.md#base.glob.firstMatchingGlob), [features.integrations.routePath](features.md#features.integrations.routePath), [base.span.compareText](base.md#base.span.compareText)
+    - fn [findIntegrations](../../src/integrations.ts#L137) (config: Config, snapshot: AnalysisSnapshot, clients: readonly IntegrationClient[], specified: ReadonlyMap<string, { file: string; flow: string }>) → Promise<IntegrationsReport>
+      <a id="features.integrations.findIntegrations"></a><br>The report. `specified`: the triggers of hand-written flows, by trigger, with the flow's name. Reads the analysed files' facts and, at each matched call, the source text for its first arguments.
+      - calls [features.call-sites.callsOf](features.md#features.call-sites.callsOf), [features.call-sites.snapshotFacts](features.md#features.call-sites.snapshotFacts), [features.call-sites.internalCallPositions](features.md#features.call-sites.internalCallPositions), [features.call-sites.sourceReader](features.md#features.call-sites.sourceReader), [features.call-sites.callGraph](features.md#features.call-sites.callGraph), [features.discover.discoverFlows](features.md#features.discover.discoverFlows), [features.call-sites.compileMatcher](features.md#features.call-sites.compileMatcher), [features.call-sites.importMatches](features.md#features.call-sites.importMatches), [features.call-sites.callMatches](features.md#features.call-sites.callMatches), [features.call-sites.urlOf](features.md#features.call-sites.urlOf), [features.call-sites.literalArgument](features.md#features.call-sites.literalArgument), [base.span.compareText](base.md#base.span.compareText), [features.integrations.findWebhooks](features.md#features.integrations.findWebhooks)
+    - fn [integrationsText](../../src/integrations.ts#L213) (report: IntegrationsReport) → string
+      <a id="features.integrations.integrationsText"></a><br>What `keylang integrations` prints.
   - module [keys](../../src/keys.ts#L1)
     <a id="features.keys"></a><br>API keys kept outside the environment: `~/.config/keylang/<name>.key`, mode 0600. Shared by the model adapter and voice, without loading either.
     - node [external.node](external.md#external.node)

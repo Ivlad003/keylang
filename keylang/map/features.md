@@ -170,9 +170,11 @@
     - fn [lineStarts](../../src/call-sites.ts#L369) (text: string) → number[]
     - fn [urlOf](../../src/call-sites.ts#L382) (text: string, starts: readonly number[], line: number, col: number, callee: string) → { url: "literal" | "dynamic" | "n/a"; host: string | null }
       - calls features.call-sites.firstArguments
-    - fn [firstArguments](../../src/call-sites.ts#L404) (text: string, starts: readonly number[], line: number, col: number, callee: string, max: number) → string[] | null <!-- internal -->
+    - fn [literalArgument](../../src/call-sites.ts#L404) (text: string, starts: readonly number[], line: number, col: number, callee: string) → string | null
+      - calls features.call-sites.firstArguments
+    - fn [firstArguments](../../src/call-sites.ts#L412) (text: string, starts: readonly number[], line: number, col: number, callee: string, max: number) → string[] | null <!-- internal -->
       - calls features.call-sites.segments
-    - fn [sourceReader](../../src/call-sites.ts#L451) (root: string) → (file: string) => { text: string; starts: number[] } | null
+    - fn [sourceReader](../../src/call-sites.ts#L459) (root: string) → (file: string) => { text: string; starts: number[] } | null
       - calls features.call-sites.lineStarts
   - module [changed](../../src/changed.ts#L1)
     - assess check.assess
@@ -691,6 +693,29 @@
     - type [HarnessStep](../../src/harness.ts#L753)
     - fn [commitAgents](../../src/harness.ts#L770) ( plan: AgentsPlan, options: { signal?: AbortSignal; onStep?: (step: { path: string; action: "write" | "remove" }) => void } = {}, ) → Promise<{ steps: HarnessStep[]; outcome: "completed" | "failed" | "cancelled" }>
       - calls base.safe-write.targetProblem, base.safe-write.landing, base.safe-write.writeAtomic
+  - module [integrations](../../src/integrations.ts#L1)
+    - node external.node
+    - call-sites features.call-sites
+    - config base.config
+    - discover features.discover
+    - glob base.glob
+    - snapshot map.snapshot
+    - span base.span
+    - type [IntegrationKind](../../src/integrations.ts#L19) = "http" | "soap" | "sdk" | "payment" | "queue"
+    - type [IntegrationClient](../../src/integrations.ts#L22) extends Matcher
+    - type [Reach](../../src/integrations.ts#L29)
+    - type [IntegrationSite](../../src/integrations.ts#L37)
+    - type [Integration](../../src/integrations.ts#L51)
+    - type [Webhook](../../src/integrations.ts#L61)
+    - type [IntegrationsReport](../../src/integrations.ts#L73)
+    - fn [loadIntegrations](../../src/integrations.ts#L90) (path = resourcePath("integrations.json")) → IntegrationClient[]
+      - calls features.call-sites.resourcePath
+    - fn [routePath](../../src/integrations.ts#L105) (label: string) → string <!-- internal -->
+    - fn [findWebhooks](../../src/integrations.ts#L110) (snapshot: AnalysisSnapshot, globs: readonly string[]) → Webhook[]
+      - calls base.glob.firstMatchingGlob, features.integrations.routePath, base.span.compareText
+    - fn [findIntegrations](../../src/integrations.ts#L137) (config: Config, snapshot: AnalysisSnapshot, clients: readonly IntegrationClient[], specified: ReadonlyMap<string, { file: string; flow: string }>) → Promise<IntegrationsReport>
+      - calls features.call-sites.callsOf, features.call-sites.snapshotFacts, features.call-sites.internalCallPositions, features.call-sites.sourceReader, features.call-sites.callGraph, features.discover.discoverFlows, features.call-sites.compileMatcher, features.call-sites.importMatches, features.call-sites.callMatches, features.call-sites.urlOf, features.call-sites.literalArgument, base.span.compareText, features.integrations.findWebhooks
+    - fn [integrationsText](../../src/integrations.ts#L213) (report: IntegrationsReport) → string
   - module [keys](../../src/keys.ts#L1)
     - node external.node
     - fn [readKey](../../src/keys.ts#L8) (home: string, name: string) → string | undefined

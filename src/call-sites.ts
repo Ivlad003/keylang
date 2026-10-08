@@ -400,6 +400,14 @@ export function urlOf(text: string, starts: readonly number[], line: number, col
   return dynamic ? { url: "dynamic", host: null } : { url: "n/a", host: null };
 }
 
+/** The first argument of the call when it is a plain string literal (a queue's topic), else null. */
+export function literalArgument(text: string, starts: readonly number[], line: number, col: number, callee: string): string | null {
+  const first = firstArguments(text, starts, line, col, callee, 1)?.[0];
+  if (first === undefined) return null;
+  const found = /^(['"`])([^'"`\\$]*)\1$/.exec(first);
+  return found === null ? null : found[2]!;
+}
+
 /** The first `max` arguments of the call at the position, as written: after the callee's last name; null when no argument list follows it. */
 function firstArguments(text: string, starts: readonly number[], line: number, col: number, callee: string, max: number): string[] | null {
   const at = (starts[line - 1] ?? -1) + col - 1;

@@ -164,7 +164,7 @@ Commands:
   mcp                       Serve MCP over stdio for agents: search, node, code, flows,
                             check, explain, context, validate_spec, scaffold,
                             feature_status, list_entries, discover_flows, coverage_report,
-                            apply_diff
+                            list_integrations, apply_diff
                             (proposals only; no spec is written, the fact cache
                             .keylang/cache/ is kept current)
   wire [--check] [--out f]  Generate keylang.gen.ts (or f: a .ts/.mts/.cts path relative to
@@ -188,6 +188,15 @@ Commands:
                             data»: calls into configuration readers listed in
                             resources/data-logic.json, to check by hand. --json: the
                             report as JSON. Exit 0; writes only the fact cache
+  integrations [--json]     What the code talks to, a view (nothing is contacted):
+                            calls into HTTP, SOAP, SDK and queue clients listed in
+                            resources/integrations.json, by integration → call site
+                            (file:line, fn, host of a literal URL) → the entry points
+                            and flows that reach it; incoming webhooks (entries of
+                            kind webhook, routes whose path names a webhook, callback,
+                            notify or ipn, integrations.webhooks globs of keylang.json);
+                            queue publishers, consumers and pairs. --json: as JSON.
+                            Exit 0; writes only the fact cache
   flows discover [--kind k] [--layer l] [--limit n] [--depth d] [--print] [--check]
                             A flow draft for every entry point (draft flow from its fn)
                             as the generated view <dir>/flows-discovered/<layer>.md,
@@ -402,6 +411,8 @@ async function run(argv: readonly string[]): Promise<number> {
       return cmdEntries(values.kind, values.json === true);
     case "coverage":
       return cmdCoverage(values.json === true);
+    case "integrations":
+      return cmdIntegrations(values.json === true);
     case "flows":
       return cmdFlows(paths, { kind: values.kind, layer: values.layer, limit: values.limit, depth: values.depth, into: values.into, print: values.print === true, check: values.check === true });
     case "export":
@@ -944,6 +955,15 @@ async function cmdEntries(kind: string | undefined, json: boolean): Promise<numb
 async function cmdCoverage(json: boolean): Promise<number> {
   const result = await runOperation({ kind: "coverage", root: findRoot(process.cwd()) });
   if (result.payload === null) throw new Error(result.messages[0]?.text ?? "coverage failed");
+  const { text, ...report } = result.payload;
+  process.stdout.write(json ? `${JSON.stringify(report, null, 2)}\n` : text);
+  return 0;
+}
+
+/** `integrations [--json]`: the inventory of the shared operation, or its payload without the text as JSON; exit 0. */
+async function cmdIntegrations(json: boolean): Promise<number> {
+  const result = await runOperation({ kind: "integrations", root: findRoot(process.cwd()) });
+  if (result.payload === null) throw new Error(result.messages[0]?.text ?? "integrations failed");
   const { text, ...report } = result.payload;
   process.stdout.write(json ? `${JSON.stringify(report, null, 2)}\n` : text);
   return 0;
