@@ -5,12 +5,13 @@
 
 import assert from "node:assert/strict";
 import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { analyze } from "../src/analyze.ts";
 import { runOperation } from "../src/operations.ts";
-import { keylang, mainRepo, repoCopy, root, tempDir, writeTree } from "./cli-helpers.ts";
+import { bin, keylang, mainRepo, repoCopy, root, tempDir, writeTree } from "./cli-helpers.ts";
 
 // M1: map of a small TS repository — one file per layer, deps, calls,
 // class methods, `internal`, signatures — plus the index.
@@ -614,4 +615,46 @@ test("map and wire: keylang.json changed during the analysis refuses the commit 
   assert.equal(wire.exitCode, 1);
   assert.ok(wire.messages.some((m) => m.text === "keylang.json: changed on disk while the wiring was computed"), JSON.stringify(wire.messages));
   assert.equal(existsSync(join(shop, "keylang.gen.ts")), false, "nothing written");
+});
+
+// A layer renamed by case only (`Domain` → `domain`) on a case-insensitive file system: `domain.md` and `Domain.md` are one file, so removing the old name after writing the new one deleted the map.
+test("map after a case-only layer rename on a case-insensitive file system keeps the layer file (casefold tmpfs in a user namespace)", { skip: process.platform !== "linux" }, (t) => {
+  const probe = spawnSync("unshare", ["-rm", "true"], { encoding: "utf8" });
+  if (probe.status !== 0) return t.skip("unshare -rm is not available here");
+  const mount = tempDir(t, "keylang-casefold-map-");
+  const config = (layer: string): string => `${JSON.stringify({ languages: ["typescript"], layers: { [layer]: ["src/domain/**"] } })}\n`;
+  const script = [
+    'mount -t tmpfs -o casefold tmpfs "$1" 2>/dev/null || { echo SKIP:mount; exit 0; }',
+    'mkdir "$1/repo" && chattr +F "$1/repo" 2>/dev/null || { echo SKIP:chattr; exit 0; }',
+    'cd "$1/repo" && mkdir -p src/domain || exit 1',
+    'printf "export function a(): number {\\n  return 1;\\n}\\n" > src/domain/a.ts',
+    'printf %s "$4" > keylang.json',
+    '"$2" "$3" map >/dev/null 2>&1; echo "MAP1:$?"',
+    'echo "LS1:$(ls keylang/map)"',
+    'printf %s "$5" > keylang.json',
+    '"$2" "$3" map; echo "MAP2:$?"',
+    'echo "LS2:$(ls keylang/map)"',
+    '"$2" "$3" map --check; echo "CHECK:$?"',
+  ].join("\n");
+  const run = spawnSync("unshare", ["-rm", "sh", "-c", script, "sh", mount, process.execPath, bin, config("Domain"), config("domain")], { encoding: "utf8" });
+  assert.equal(run.status, 0, run.stderr);
+  if (/^SKIP:/m.test(run.stdout)) return t.skip(`casefold tmpfs is not available here (${run.stdout.match(/^SKIP:(\w+)/m)?.[1]})`);
+  const out = run.stdout + run.stderr;
+  assert.match(run.stdout, /^LS1:Domain\.md$/m, out);
+  assert.match(run.stdout, /^MAP2:0$/m, out);
+  assert.match(run.stdout, /^LS2:domain\.md$/m, out);
+  assert.match(run.stdout, /^CHECK:0$/m, out);
+});
+
+// The same rename on a case-sensitive file system: the old file goes, the new one stays.
+test("map after a case-only layer rename removes the old file and keeps the new one", (t) => {
+  const dir = tempDir(t, "keylang-case-rename-");
+  const config = (layer: string): string => `${JSON.stringify({ languages: ["typescript"], layers: { [layer]: ["src/domain/**"] } })}\n`;
+  writeTree(dir, { "keylang.json": config("Domain"), "src/domain/a.ts": "export function a(): number {\n  return 1;\n}\n" });
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  writeFileSync(join(dir, "keylang.json"), config("domain"));
+  const map = keylang(dir, ["map"]);
+  assert.equal(map.status, 0, map.stderr);
+  assert.deepEqual(readdirSync(join(dir, "keylang/map")), ["domain.md"]);
+  assert.equal(keylang(dir, ["map", "--check"]).status, 0);
 });

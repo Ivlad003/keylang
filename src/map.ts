@@ -1,6 +1,6 @@
 // `keylang map`: source files → facts → graph → map/*.md + .keylang/index.json.
 
-import { existsSync, readdirSync, readFileSync, rmdirSync, rmSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmdirSync, rmSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseToml } from "smol-toml";
@@ -275,12 +275,41 @@ function targets(config: Config, r: MapResult): { dir: string; files: ReadonlyMa
   ];
 }
 
-/** Generated files in `dir` that should not be there. */
-function extraGenerated(dir: string, files: ReadonlyMap<string, string>): string[] {
+/** A generated file in a map directory that is not listed under its name. */
+interface ExtraGenerated {
+  path: string;
+  text: string;
+  /**
+   * The listed name that opens the same file, or null. On a case-insensitive
+   * file system `Domain.md` is `domain.md` after a layer renamed by case: it
+   * is not stale but misspelled, and removing it after the write would delete
+   * the new map.
+   */
+  alias: string | null;
+}
+
+/** Generated files in `dir` that should not be there under their names. */
+function extraGenerated(dir: string, files: ReadonlyMap<string, string>): ExtraGenerated[] {
   if (!existsSync(dir)) return [];
-  return readdirSync(dir)
-    .filter((e) => e.endsWith(".md") && !files.has(e) && isGeneratedMap(readFileSync(join(dir, e), "utf8")))
-    .map((e) => join(dir, e));
+  const identity = (p: string): string | null => {
+    const st = statSync(p, { throwIfNoEntry: false });
+    return st === undefined ? null : `${st.dev}:${st.ino}`;
+  };
+  const listed = new Map<string, string>();
+  for (const name of files.keys()) {
+    const id = identity(join(dir, name));
+    if (id !== null) listed.set(id, name);
+  }
+  const extra: ExtraGenerated[] = [];
+  for (const e of readdirSync(dir)) {
+    if (!e.endsWith(".md") || files.has(e)) continue;
+    const p = join(dir, e);
+    const text = readFileSync(p, "utf8");
+    if (!isGeneratedMap(text)) continue;
+    const id = identity(p);
+    extra.push({ path: p, text, alias: id === null ? null : (listed.get(id) ?? null) });
+  }
+  return extra;
 }
 
 /** Target files of both maps that exist and are not generated. Sorted. */
@@ -400,13 +429,20 @@ export function planMap(config: Config, r: MapResult): MapPlan {
   const steps: PlannedStep[] = [];
   const emptyDirs: string[] = [];
   for (const { dir, files, artifact } of targets(config, r)) {
+    const extra = extraGenerated(dir, files);
+    const aliases = new Map(extra.flatMap((e) => (e.alias === null ? [] : [[e.alias, e] as const])));
     for (const [name, text] of files) {
       const p = join(dir, name);
       const current = readOrNull(p);
-      if (current !== text) steps.push({ path: rel(p), action: "write", artifact, text, expect: current });
+      const alias = aliases.get(name);
+      // The same file under another spelling: removed first, then written under the listed name.
+      if (alias !== undefined) {
+        steps.push({ path: rel(alias.path), action: "remove", artifact, text: "", expect: alias.text });
+        steps.push({ path: rel(p), action: "write", artifact, text, expect: current });
+      } else if (current !== text) steps.push({ path: rel(p), action: "write", artifact, text, expect: current });
     }
     // Only generated files of layers that no longer exist (or of a map turned off) may be removed.
-    for (const p of extraGenerated(dir, files)) steps.push({ path: rel(p), action: "remove", artifact, text: "", expect: readFileSync(p, "utf8") });
+    for (const e of extra) if (e.alias === null) steps.push({ path: rel(e.path), action: "remove", artifact, text: "", expect: e.text });
     // A map turned off leaves no empty directory behind; one with manual files stays.
     if (files.size === 0) emptyDirs.push(rel(dir));
   }
@@ -501,7 +537,8 @@ export function diffMap(config: Config, r: MapResult): MapDiff {
       if (conflicted.has(p)) continue;
       if (!existsSync(p) || readFileSync(p, "utf8") !== text) stale.push(p);
     }
-    stale.push(...extraGenerated(dir, files));
+    // A misspelled alias of a listed file is stale too: `map` renames it.
+    stale.push(...extraGenerated(dir, files).map((e) => e.path));
   }
   return { conflicts, stale };
 }
