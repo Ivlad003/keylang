@@ -145,6 +145,9 @@ export function errorLine(node: Node): number {
  * SHA-256 of the node's syntax: node types and token texts, without comments
  * and whitespace. `>` → `>=` changes it; reformatting or editing a comment
  * does not. Nesting is part of it, so moving a statement out of a block counts.
+ * Line endings inside a token (a multi-line string, docstring or heredoc) are
+ * read as LF: a CRLF checkout of the same commit has the same fingerprint, as
+ * the languages themselves read CRLF in such literals as LF.
  */
 export function fingerprint(node: Node): string {
   const hash = createHash("sha256");
@@ -158,7 +161,7 @@ export function fingerprint(node: Node): string {
     }
     if (n.type.includes("comment")) continue;
     if (n.childCount === 0) {
-      hash.update(`${n.type}\u0001${n.text}\u0002`);
+      hash.update(`${n.type}\u0001${n.text.replace(/\r\n?/g, "\n")}\u0002`);
       continue;
     }
     hash.update(`(${n.type}\u0002`);

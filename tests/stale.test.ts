@@ -206,3 +206,23 @@ test("check --stale --strict: exit 1 while a statement or obsolete entry is to r
   assert.match(incomplete.stdout, /incomplete/);
   assert.equal(incomplete.status, 1, incomplete.stdout);
 });
+
+test("check --stale --strict: a CRLF checkout of the same code leaves multi-line strings and their callers fresh", (t) => {
+  // Ticket review-2026-10-06/30: a multi-line string leaf carried `\r\n` into the fingerprint.
+  const py = 'def total(items):\n    """Sum the items.\n\n    Returns zero for an empty list.\n    """\n    return sum(items)\n\n\ndef plain(n):\n    return n + 1\n\n\ndef checkout(items):\n    return total(items)\n';
+  const ts = "export function banner(name: string): string {\n  return `Hello\n  ${name}\n  bye`;\n}\n\nexport function plain(n: number): number {\n  return n + 1;\n}\n";
+  const r = repo(t, {
+    "keylang.json": JSON.stringify({ languages: ["python", "typescript"], layers: { main: ["src/**"] } }),
+    "src/calc.py": py,
+    "src/banner.ts": ts,
+    "keylang/flows/r.md": "# flow r\n\n- step main.calc.total\n  Sums.\n- step main.calc.plain\n  Adds one.\n- step main.calc.checkout\n  Checks out.\n- step main.banner.banner\n  Greets.\n- step main.banner.plain\n  Adds one.\n",
+  });
+  const accept = r.run("check", "--stale", "--accept");
+  assert.equal(accept.status, 0, accept.stderr);
+  assert.match(r.run("check", "--stale", "--strict").stderr, /0 stale, 0 new, 5 fresh, 0 incomplete/);
+  r.write("src/calc.py", py.replace(/\n/g, "\r\n"));
+  r.write("src/banner.ts", ts.replace(/\n/g, "\r\n"));
+  const crlf = r.run("check", "--stale", "--strict");
+  assert.equal(crlf.status, 0, crlf.stdout + crlf.stderr);
+  assert.match(crlf.stderr, /0 stale, 0 new, 5 fresh/);
+});

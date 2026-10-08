@@ -100,3 +100,16 @@ test("fingerprint: a decorator that may replace a fn makes its closure and its c
   assert.equal(nodes["main.main.plain"]!.closure!.complete, true);
   assert.equal(nodes["main.main.make"]!.closure!.complete, true, "`C()` runs `C.__init__`, which is complete");
 });
+
+test("fingerprint: CRLF and LF checkouts of a multi-line string give the same fingerprint and closure; a changed string does not", (t) => {
+  // Ticket review-2026-10-06/30.
+  const source = 'export function banner(name: string): string {\n  return `Hello\n  ${name}\n  bye`;\n}\n\nexport function greet(): string {\n  return banner("you");\n}\n';
+  const r = repo(t, { "src/b.ts": source });
+  const lf = r.map().nodes;
+  r.write("src/b.ts", source.replace(/\n/g, "\r\n"));
+  const crlf = r.map().nodes;
+  assert.equal(crlf["main.b.banner"]!.fingerprint, lf["main.b.banner"]!.fingerprint);
+  assert.equal(crlf["main.b.greet"]!.closure!.fingerprint, lf["main.b.greet"]!.closure!.fingerprint);
+  r.write("src/b.ts", source.replace("bye", "ciao"));
+  assert.notEqual(r.map().nodes["main.b.banner"]!.fingerprint, lf["main.b.banner"]!.fingerprint, "the text of a string is still part of it");
+});
