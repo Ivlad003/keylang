@@ -1217,22 +1217,25 @@
     - type [Mark](../../src/tui/evidence.ts#L11)
       <a id="tui.evidence.Mark"></a><br>`question`: an open question of a flow (`- ? …`, c4-zoom/11), a mark of its own and no verdict.
     - type [LineEvidence](../../src/tui/evidence.ts#L16)
-      <a id="tui.evidence.LineEvidence"></a><br>Per-line evidence shown in the TUI: a mark, ordered criterion verdicts (ok/fail/unverified) with messages, diagnostics, and flags for planned lines and open questions awaiting a human answer. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
-    - fn [worse](../../src/tui/evidence.ts#L29) (a: Mark | null, b: Mark | null) → Mark | null
+      <a id="tui.evidence.LineEvidence"></a><br>Per-line evidence shown in the TUI: a mark, ordered criterion verdicts (ok/fail/unverified) with messages, diagnostics, and flags for planned lines and open questions awaiting a human answer. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
+    - fn [worse](../../src/tui/evidence.ts#L31) (a: Mark | null, b: Mark | null) → Mark | null
       <a id="tui.evidence.worse"></a><br>Picks the more severe of two optional marks by comparing their `RANK` values, returning whichever one is present when the other is null and favoring the first on ties. Used by [`tui.evidence.allEvidence`](tui.md#tui.evidence.allEvidence) and [`tui.nav.markOver`](tui.md#tui.nav.markOver) to fold per-line evidence into a single worst mark. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-    - fn [linesOf](../../src/tui/evidence.ts#L35) (doc: Document, kind: "planned" | "question") → Set<number> <!-- internal -->
+    - fn [linesOf](../../src/tui/evidence.ts#L37) (doc: Document, kind: "planned" | "question") → Set<number> <!-- internal -->
       <a id="tui.evidence.linesOf"></a>
       - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)
-    - fn [pendingPlanned](../../src/tui/evidence.ts#L48) (analysis: Analysis) → Set<string> <!-- internal -->
+    - fn [pendingPlanned](../../src/tui/evidence.ts#L50) (analysis: Analysis) → Set<string> <!-- internal -->
       <a id="tui.evidence.pendingPlanned"></a><br>IDs declared `planned` that the snapshot does not have yet: evidence about them is missing by intention.
       - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)
-    - fn [allEvidence](../../src/tui/evidence.ts#L66) (analysis: Analysis) → Map<string, Map<number, LineEvidence>> <!-- internal -->
+    - fn [allEvidence](../../src/tui/evidence.ts#L68) (analysis: Analysis) → Map<string, Map<number, LineEvidence>> <!-- internal -->
       <a id="tui.evidence.allEvidence"></a><br>Builds a cached per-file, per-line map merging diagnostics, criterion verdicts and planned/question doc lines, then assigns each line its worst mark via [`tui.evidence.worse`](tui.md#tui.evidence.worse), treating unverified verdicts in [`tui.evidence.pendingPlanned`](tui.md#tui.evidence.pendingPlanned) areas as planned. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
-      - calls [tui.evidence.pendingPlanned](tui.md#tui.evidence.pendingPlanned), [tui.evidence.linesOf](tui.md#tui.evidence.linesOf), [tui.evidence.worse](tui.md#tui.evidence.worse)
-    - fn [evidenceOf](../../src/tui/evidence.ts#L118) (analysis: Analysis, path: string) → Map<number, LineEvidence>
+      - calls [tui.evidence.pendingPlanned](tui.md#tui.evidence.pendingPlanned), [tui.evidence.linesOf](tui.md#tui.evidence.linesOf), [tui.evidence.worse](tui.md#tui.evidence.worse), [tui.evidence.groupMarks](tui.md#tui.evidence.groupMarks)
+    - fn [groupMarks](../../src/tui/evidence.ts#L119) (analysis: Analysis, byPath: Map<string, Map<number, LineEvidence>>) → void <!-- internal -->
+      <a id="tui.evidence.groupMarks"></a><br>A `parallel` group (ADR 0023) shows the worst mark of the lines under it, so the gutter reads the group at a glance.
+      - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk), [tui.evidence.worse](tui.md#tui.evidence.worse)
+    - fn [evidenceOf](../../src/tui/evidence.ts#L144) (analysis: Analysis, path: string) → Map<number, LineEvidence>
       <a id="tui.evidence.evidenceOf"></a><br>Evidence by 1-based line of one document. Lines with nothing reported are absent.
       - calls [tui.evidence.allEvidence](tui.md#tui.evidence.allEvidence)
-    - fn [totals](../../src/tui/evidence.ts#L125) (analysis: Analysis) → { fail: number; unverified: number; ok: number }
+    - fn [totals](../../src/tui/evidence.ts#L151) (analysis: Analysis) → { fail: number; unverified: number; ok: number }
       <a id="tui.evidence.totals"></a><br>Totals for the status bar: failing, unverified and passing lines across all documents.
       - calls [tui.evidence.allEvidence](tui.md#tui.evidence.allEvidence)
   - module [findings](../../src/tui/findings.ts#L1)
