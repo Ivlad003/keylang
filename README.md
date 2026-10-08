@@ -114,6 +114,19 @@ Pressing `K`, or hovering with the mouse, shows the function's signature, its fi
 
 You will find more pictures in [lesson 8 of the course](docs/course/08-use-cases.md).
 
+## Diving into someone else's project
+
+Four commands, no model, nothing written but generated views:
+
+```sh
+keylang entries          # where execution starts: routes, bin scripts, main
+keylang flows discover   # a flow draft per entry point, in keylang/flows-discovered/
+keylang tour             # one page: the system, layers, processes, integrations, blind spots, what to read first
+keylang web              # the same flows as diagrams; the «Огляд» tab is the tour
+```
+
+`keylang tour --out keylang/tour.md` saves the page as a generated file that `check` does not read; `--json` gives the same data, and agents get it through the MCP tool `project_tour`. See [`docs/cli.md`](docs/cli.md#tour).
+
 ## What it costs
 
 The grammar is a small slice of Markdown, and a word means whatever its parent line allows it to mean. A full code fence inside a list item is not supported. When `keylang fmt` cannot trust a file's nesting, it refuses to reformat it, so that after `fmt` what GitHub renders and what `check` understands still agree.
