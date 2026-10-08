@@ -2659,69 +2659,70 @@
     - tour [features.tour](features.md#features.tour)
     - parser [lang.parser](lang.md#lang.parser)
     - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
+    - span [base.span](base.md#base.span)
     - app [tui.app](tui.md#tui.app)
     - background [tui.background](tui.md#tui.background)
     - screen [tui.screen](tui.md#tui.screen)
-    - type [AssetName](../../src/tui/web.ts#L61) = keyof typeof ASSETS <!-- internal -->
+    - type [AssetName](../../src/tui/web.ts#L62) = keyof typeof ASSETS <!-- internal -->
       <a id="tui.web.AssetName"></a><br>A string-literal union derived from the keys of `ASSETS`, so lookups into that asset table are restricted to names that actually exist. It gives web asset accessors compile-time checking instead of accepting arbitrary strings. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-    - type [BuiltName](../../src/tui/web.ts#L69) = keyof typeof BUILT <!-- internal -->
+    - type [BuiltName](../../src/tui/web.ts#L70) = keyof typeof BUILT <!-- internal -->
       <a id="tui.web.BuiltName"></a>
-    - fn [newestUnder](../../src/tui/web.ts#L78) (dir: string) → number <!-- internal -->
+    - fn [newestUnder](../../src/tui/web.ts#L79) (dir: string) → number <!-- internal -->
       <a id="tui.web.newestUnder"></a><br>The newest modification time under a directory, in ms.
-    - fn [clientStale](../../src/tui/web.ts#L87) () → boolean <!-- internal -->
+    - fn [clientStale](../../src/tui/web.ts#L88) () → boolean <!-- internal -->
       <a id="tui.web.clientStale"></a><br>Whether the bundle is missing or older than the client's sources or its build script.
       - calls [tui.web.newestUnder](tui.md#tui.web.newestUnder)
-    - fn [ensureClient](../../src/tui/web.ts#L98) () → Promise<void> <!-- internal -->
+    - fn [ensureClient](../../src/tui/web.ts#L99) () → Promise<void> <!-- internal -->
       <a id="tui.web.ensureClient"></a><br>In a checkout, builds the diagram client when it is missing or stale (esbuild takes about a second); concurrent requests share one build.
       - calls [tui.web.clientStale](tui.md#tui.web.clientStale)
-    - fn [assetPath](../../src/tui/web.ts#L111) (name: AssetName) → string | null
+    - fn [assetPath](../../src/tui/web.ts#L112) (name: AssetName) → string | null
       <a id="tui.web.assetPath"></a><br>The published package carries the assets in `dist/web/`; a checkout reads them from `node_modules`.
-    - type [WebServer](../../src/tui/web.ts#L125)
+    - type [WebServer](../../src/tui/web.ts#L126)
       <a id="tui.web.WebServer"></a><br>Handle returned for a running local web UI, exposing its `url` and `port`, listing specs that still have unsaved edits across sessions via `unsaved()`, and shutting the server down with `close()`. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Session](../../src/tui/web.ts#L137) <!-- internal -->
+    - type [Session](../../src/tui/web.ts#L138) <!-- internal -->
       <a id="tui.web.Session"></a><br>Holds the per-browser-tab state of the web TUI: the running `App`, the open WebSocket (or null when disconnected), a pending timer, and an `AudioQueue` that buffers PCM sent by the page while Ctrl+R recording is active. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [control](../../src/tui/web.ts#L146) (message: object) → string <!-- internal -->
+    - fn [control](../../src/tui/web.ts#L147) (message: object) → string <!-- internal -->
       <a id="tui.web.control"></a><br>A control message for the page: a frame that starts with NUL, which no ANSI frame does.
-    - module [AudioQueue](../../src/tui/web.ts#L154) <!-- internal -->
+    - module [AudioQueue](../../src/tui/web.ts#L155) <!-- internal -->
       <a id="tui.web.AudioQueue"></a><br>PCM chunks from the page, read by the session's recognizer as they arrive.
-      - fn [push](../../src/tui/web.ts#L161) (chunk: Int16Array) → void
+      - fn [push](../../src/tui/web.ts#L162) (chunk: Int16Array) → void
         <a id="tui.web.AudioQueue.push"></a><br>Appends a block of audio samples to the pending buffer, silently dropping it if the queue has ended or the total would exceed the sample cap. After enqueueing, it calls [`tui.web.AudioQueue.wake`](tui.md#tui.web.AudioQueue.wake) to resume playback. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
         - calls [tui.web.AudioQueue.wake](tui.md#tui.web.AudioQueue.wake)
-      - fn [end](../../src/tui/web.ts#L168) (failure: Error | null = null) → void
+      - fn [end](../../src/tui/web.ts#L169) (failure: Error | null = null) → void
         <a id="tui.web.AudioQueue.end"></a><br>Marks the queue as finished, records the given error only if none was stored earlier, and calls [`tui.web.AudioQueue.wake`](tui.md#tui.web.AudioQueue.wake) so any pending consumer notices the close. Used by [`tui.web.serveWeb`](tui.md#tui.web.serveWeb) to shut down audio streaming. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
         - calls [tui.web.AudioQueue.wake](tui.md#tui.web.AudioQueue.wake)
-      - fn [wake](../../src/tui/web.ts#L174) () → void <!-- internal -->
+      - fn [wake](../../src/tui/web.ts#L175) () → void <!-- internal -->
         <a id="tui.web.AudioQueue.wake"></a><br>Clears the stored waiter callback and, if one was set, invokes it so a consumer blocked on the queue resumes. Called by [`tui.web.AudioQueue.push`](tui.md#tui.web.AudioQueue.push) and [`tui.web.AudioQueue.end`](tui.md#tui.web.AudioQueue.end) whenever new data or completion arrives. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-      - fn [chunks](../../src/tui/web.ts#L181) () → AsyncGenerator<Int16Array>
+      - fn [chunks](../../src/tui/web.ts#L182) () → AsyncGenerator<Int16Array>
         <a id="tui.web.AudioQueue.chunks"></a><br>The chunks as they come, until `end`.
-    - fn [pcmOf](../../src/tui/web.ts#L196) (data: unknown) → Int16Array | null <!-- internal -->
+    - fn [pcmOf](../../src/tui/web.ts#L197) (data: unknown) → Int16Array | null <!-- internal -->
       <a id="tui.web.pcmOf"></a><br>s16le PCM from base64; an odd byte count or bad base64 is dropped, not trusted.
-    - fn [clampSize](../../src/tui/web.ts#L206) (value: unknown, fallback: number, max: number) → number
+    - fn [clampSize](../../src/tui/web.ts#L207) (value: unknown, fallback: number, max: number) → number
       <a id="tui.web.clampSize"></a><br>A size from the client: an integer within the grid limits, else the fallback.
-    - fn [sameSecret](../../src/tui/web.ts#L211) (given: string | null | undefined, token: string) → boolean <!-- internal -->
+    - fn [sameSecret](../../src/tui/web.ts#L212) (given: string | null | undefined, token: string) → boolean <!-- internal -->
       <a id="tui.web.sameSecret"></a><br>Checks whether a supplied credential matches the expected token using a constant-time byte comparison, returning false for non-string input or mismatched lengths. Used by [`tui.web.serveWeb`](tui.md#tui.web.serveWeb) to gate web requests. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [offeredToken](../../src/tui/web.ts#L219) (request: IncomingMessage) → string | null <!-- internal -->
+    - fn [offeredToken](../../src/tui/web.ts#L220) (request: IncomingMessage) → string | null <!-- internal -->
       <a id="tui.web.offeredToken"></a><br>The token a socket offers among its subprotocols.
-    - type [WebOptions](../../src/tui/web.ts#L227)
+    - type [WebOptions](../../src/tui/web.ts#L228)
       <a id="tui.web.WebOptions"></a><br>Configuration for starting the browser-served TUI: the repository root, listening port and optional host, plus an optional analyzer, a shared operation runner for all sessions, and how long a detached session is kept alive awaiting reconnect. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [serveWeb](../../src/tui/web.ts#L238) (options: WebOptions) → Promise<WebServer>
+    - fn [serveWeb](../../src/tui/web.ts#L239) (options: WebOptions) → Promise<WebServer>
       <a id="tui.web.serveWeb"></a><br>Starts a token-guarded HTTP and WebSocket server that serves the static page and assets, and runs one [`tui.app.App`](tui.md#tui.app.App) session per tab, relaying keystrokes, resizes and microphone PCM through an [`tui.web.AudioQueue`](tui.md#tui.web.AudioQueue). _(llm · claude:claude-opus-5-5 · 2026-10-06 · stale)_
-      - calls [tui.background.SnapshotWorker](tui.md#tui.background.SnapshotWorker), [map.analyze.analyze](map.md#map.analyze.analyze), [tui.web.sameSecret](tui.md#tui.web.sameSecret), [tui.web.offeredToken](tui.md#tui.web.offeredToken), [lang.parser.parse](lang.md#lang.parser.parse), [base.config.toPosix](base.md#base.config.toPosix), [lang.spec-ir.compileSpec](lang.md#lang.spec-ir.compileSpec), [tui.web.readBody](tui.md#tui.web.readBody), [features.explorer.parseExplorerFlow](features.md#features.explorer.parseExplorerFlow), [features.explorer.explorerFlow](features.md#features.explorer.explorerFlow), [operations.shared.rootRelative](operations.md#operations.shared.rootRelative), [operations.shared.generatedIn](operations.md#operations.shared.generatedIn), [operations.draft.flowCandidate](operations.md#operations.draft.flowCandidate), [operations.shared.proposalRefusal](operations.md#operations.shared.proposalRefusal), [operations.shared.commitProposal](operations.md#operations.shared.commitProposal), [map.map.sourceInputs](map.md#map.map.sourceInputs), [tui.web.bearerToken](tui.md#tui.web.bearerToken), [features.tour.buildTour](features.md#features.tour.buildTour), [features.tour.tourMarkdown](features.md#features.tour.tourMarkdown), [map.diagram.usagesOf](map.md#map.diagram.usagesOf), [features.explorer.callsOf](features.md#features.explorer.callsOf), [operations.diagram-export.exportViewOfQuery](operations.md#operations.diagram-export.exportViewOfQuery), [operations.diagram-export.diagramExportText](operations.md#operations.diagram-export.diagramExportText), [operations.diagram-export.exportSourcesOf](operations.md#operations.diagram-export.exportSourcesOf), [operations.coverage.runCoverage](operations.md#operations.coverage.runCoverage), [map.diagram.parseView](map.md#map.diagram.parseView), [features.discover-names.processViews](features.md#features.discover-names.processViews), [features.discover-names.readProcesses](features.md#features.discover-names.readProcesses), [features.explorer.eventsOf](features.md#features.explorer.eventsOf), [map.diagram.viewsOf](map.md#map.diagram.viewsOf), [map.diagram.flowListing](map.md#map.diagram.flowListing), [map.diagram.diagramOf](map.md#map.diagram.diagramOf), [features.check-results.checkResults](features.md#features.check-results.checkResults), [tui.web.withResults](tui.md#tui.web.withResults), [tui.web.ensureClient](tui.md#tui.web.ensureClient), [tui.web.assetPath](tui.md#tui.web.assetPath), [tui.web.diagramsPage](tui.md#tui.web.diagramsPage), [tui.web.page](tui.md#tui.web.page), [tui.web.reply](tui.md#tui.web.reply), [tui.web.pathOf](tui.md#tui.web.pathOf), [tui.web.clampSize](tui.md#tui.web.clampSize), [tui.web.pcmOf](tui.md#tui.web.pcmOf), [tui.app.App](tui.md#tui.app.App), [tui.web.AudioQueue](tui.md#tui.web.AudioQueue), [tui.web.control](tui.md#tui.web.control), [tui.web.AudioQueue.chunks](tui.md#tui.web.AudioQueue.chunks), [tui.web.AudioQueue.end](tui.md#tui.web.AudioQueue.end), [tui.background.SnapshotWorker.close](tui.md#tui.background.SnapshotWorker.close)
-    - fn [readBody](../../src/tui/web.ts#L669) (request: IncomingMessage, max: number) → Promise<string | null> <!-- internal -->
+      - calls [tui.background.SnapshotWorker](tui.md#tui.background.SnapshotWorker), [map.analyze.analyze](map.md#map.analyze.analyze), [tui.web.sameSecret](tui.md#tui.web.sameSecret), [tui.web.offeredToken](tui.md#tui.web.offeredToken), [lang.parser.parse](lang.md#lang.parser.parse), [base.config.toPosix](base.md#base.config.toPosix), [lang.spec-ir.compileSpec](lang.md#lang.spec-ir.compileSpec), [tui.web.readBody](tui.md#tui.web.readBody), [features.explorer.parseExplorerFlow](features.md#features.explorer.parseExplorerFlow), [features.explorer.explorerFlow](features.md#features.explorer.explorerFlow), [operations.shared.rootRelative](operations.md#operations.shared.rootRelative), [operations.shared.generatedIn](operations.md#operations.shared.generatedIn), [operations.draft.flowCandidate](operations.md#operations.draft.flowCandidate), [operations.shared.proposalRefusal](operations.md#operations.shared.proposalRefusal), [operations.shared.commitProposal](operations.md#operations.shared.commitProposal), [map.map.sourceInputs](map.md#map.map.sourceInputs), [tui.web.bearerToken](tui.md#tui.web.bearerToken), [features.tour.buildTour](features.md#features.tour.buildTour), [features.tour.tourMarkdown](features.md#features.tour.tourMarkdown), [map.diagram.usagesOf](map.md#map.diagram.usagesOf), [features.explorer.callsOf](features.md#features.explorer.callsOf), [base.span.compareText](base.md#base.span.compareText), [operations.diagram-export.exportViewOfQuery](operations.md#operations.diagram-export.exportViewOfQuery), [operations.diagram-export.diagramExportText](operations.md#operations.diagram-export.diagramExportText), [operations.diagram-export.exportSourcesOf](operations.md#operations.diagram-export.exportSourcesOf), [operations.coverage.runCoverage](operations.md#operations.coverage.runCoverage), [map.diagram.parseView](map.md#map.diagram.parseView), [features.discover-names.processViews](features.md#features.discover-names.processViews), [features.discover-names.readProcesses](features.md#features.discover-names.readProcesses), [features.explorer.eventsOf](features.md#features.explorer.eventsOf), [map.diagram.viewsOf](map.md#map.diagram.viewsOf), [map.diagram.flowListing](map.md#map.diagram.flowListing), [map.diagram.diagramOf](map.md#map.diagram.diagramOf), [features.check-results.checkResults](features.md#features.check-results.checkResults), [tui.web.withResults](tui.md#tui.web.withResults), [tui.web.ensureClient](tui.md#tui.web.ensureClient), [tui.web.assetPath](tui.md#tui.web.assetPath), [tui.web.diagramsPage](tui.md#tui.web.diagramsPage), [tui.web.page](tui.md#tui.web.page), [tui.web.reply](tui.md#tui.web.reply), [tui.web.pathOf](tui.md#tui.web.pathOf), [tui.web.clampSize](tui.md#tui.web.clampSize), [tui.web.pcmOf](tui.md#tui.web.pcmOf), [tui.app.App](tui.md#tui.app.App), [tui.web.AudioQueue](tui.md#tui.web.AudioQueue), [tui.web.control](tui.md#tui.web.control), [tui.web.AudioQueue.chunks](tui.md#tui.web.AudioQueue.chunks), [tui.web.AudioQueue.end](tui.md#tui.web.AudioQueue.end), [tui.background.SnapshotWorker.close](tui.md#tui.background.SnapshotWorker.close)
+    - fn [readBody](../../src/tui/web.ts#L684) (request: IncomingMessage, max: number) → Promise<string | null> <!-- internal -->
       <a id="tui.web.readBody"></a><br>A request's body as text, or null when it is larger than `max` bytes (the rest is not read).
-    - type [NodeResult](../../src/tui/web.ts#L694) = { verdict: string; criterion: string; message: string } <!-- internal -->
+    - type [NodeResult](../../src/tui/web.ts#L709) = { verdict: string; criterion: string; message: string } <!-- internal -->
       <a id="tui.web.NodeResult"></a>
-    - fn [withResults](../../src/tui/web.ts#L701) (diagram: Diagram, results: readonly CheckResult[]) → Omit<Diagram, "nodes"> & { nodes: (DiagramNode & { results?: NodeResult[] })[] } <!-- internal -->
+    - fn [withResults](../../src/tui/web.ts#L716) (diagram: Diagram, results: readonly CheckResult[]) → Omit<Diagram, "nodes"> & { nodes: (DiagramNode & { results?: NodeResult[] })[] } <!-- internal -->
       <a id="tui.web.withResults"></a><br>Each shape with the check results behind its verdict, for the side panel of the diagram page: those on its spec line, or, for a shape of code alone (an entry's call tree), those about its ID.
-    - fn [bearerToken](../../src/tui/web.ts#L723) (request: IncomingMessage) → string | null <!-- internal -->
+    - fn [bearerToken](../../src/tui/web.ts#L738) (request: IncomingMessage) → string | null <!-- internal -->
       <a id="tui.web.bearerToken"></a><br>The token of an `Authorization: Bearer <token>` header.
-    - fn [pathOf](../../src/tui/web.ts#L729) (target: string | undefined) → string | null <!-- internal -->
+    - fn [pathOf](../../src/tui/web.ts#L744) (target: string | undefined) → string | null <!-- internal -->
       <a id="tui.web.pathOf"></a><br>The path of a request target, or null when it is not a URL at all.
-    - fn [reply](../../src/tui/web.ts#L737) (response: ServerResponse, status: number, type: string, body: string | Buffer) → void <!-- internal -->
+    - fn [reply](../../src/tui/web.ts#L752) (response: ServerResponse, status: number, type: string, body: string | Buffer) → void <!-- internal -->
       <a id="tui.web.reply"></a><br>Writes a complete HTTP response for [`tui.web.serveWeb`](tui.md#tui.web.serveWeb): sets the given status and content type, adds `Cache-Control: no-store` and `X-Content-Type-Options: nosniff` headers, then ends the response with the body. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [diagramsPage](../../src/tui/web.ts#L743) () → string <!-- internal -->
+    - fn [diagramsPage](../../src/tui/web.ts#L758) () → string <!-- internal -->
       <a id="tui.web.diagramsPage"></a><br>The diagram page: markup only; `/assets/diagrams.js` takes the token from the fragment and fills it from `/api/`.
-    - fn [page](../../src/tui/web.ts#L781) () → string <!-- internal -->
+    - fn [page](../../src/tui/web.ts#L797) () → string <!-- internal -->
       <a id="tui.web.page"></a><br>The page: xterm.js from `/assets/`, a WebSocket back to this server, reconnect with the same session.
   - module [width](../../src/tui/width.ts#L1)
     <a id="tui.width"></a><br>Terminal cell width of text: graphemes, not code units. A wide character (CJK, most emoji, a keycap) takes two cells; combining marks, joiners, the other invisible format characters (Default_Ignorable_Code_Point: ZWSP, soft hyphen, word joiner) and Hangul vowels and finals…
