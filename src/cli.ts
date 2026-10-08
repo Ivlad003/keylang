@@ -231,6 +231,21 @@ Commands:
                             --layer: one layer's components and what they touch;
                             --out: write f, relative to the root, only when it is new or
                             a diagram this command wrote; stdout stays empty)
+  export bpmn <flow|process:<domain>|discovered:<name>> [--out f.bpmn]
+                            BPMN 2.0 XML of the diagram /diagrams draws, with its BPMNDI:
+                            lanes per layer, start events by trigger kind, tasks,
+                            gateways, timers, packages as collapsed pools; keylang:id
+                            and keylang:verdict on every element. --out: as export c4
+  export drawio <view> [--out f.drawio]
+                            The same diagram as a draw.io file (uncompressed mxGraph);
+                            view: <flow>, discovered:<name>, process:<domain>,
+                            entry:<id> or layers; cells carry keylang_id/keylang_kind
+  import drawio <file> [--into <spec.md>] [--print]
+                            A flow's draw.io drawing back as ONE proposal for its spec:
+                            a changed ID or label rewrites its line, a new shape becomes
+                            a step after the shape its edge leaves, an unknown shape a
+                            note comment; an unchanged drawing proposes nothing.
+                            --print: the change on stdout, nothing written
   check [paths…] [--changed] [--since <ref>]
                             Resolve IDs and check rules (default: ./keylang)
                             Given files, it prints verdicts and the summary for those
@@ -438,6 +453,8 @@ async function run(argv: readonly string[]): Promise<number> {
       return cmdFlows(paths, { kind: values.kind, layer: values.layer, limit: values.limit, depth: values.depth, into: values.into, print: values.print === true, check: values.check === true, names: values.names === true, mode: values.mode, dryRun: values["dry-run"] === true, jobs: values.jobs, stale: values.stale === true });
     case "export":
       return cmdExport(paths, { format: values.format, level: values.level, layer: values.layer, out: values.out });
+    case "import":
+      return cmdImport(paths, { into: values.into, print: values.print === true });
     case "clone":
       return (await prepareClone(paths[0], { dir: values.dir, explain: values.explain, dryRun: values["dry-run"] === true })).code;
     case "web": {
@@ -862,7 +879,16 @@ async function draftRulesPrinter(root: string, mode: "algo" | "llm" | "hybrid", 
  */
 async function cmdExport(args: readonly string[], options: { format: string | undefined; level: string | undefined; layer: string | undefined; out: string | undefined }): Promise<number> {
   const [what, ...rest] = args;
-  if (what !== "c4") throw new Error("export: expected `c4`; see --help");
+  if (what === "bpmn" || what === "drawio") {
+    if (rest.length !== 1) throw new Error(`export ${what}: ${rest.length === 0 ? "a view is required: a flow name, discovered:<name> or process:<domain>" : `unexpected argument \`${rest[1]}\``}`);
+    const { runDiagramExport } = await import("./operations/diagram-export.ts");
+    const result = await runDiagramExport({ root: findRoot(process.cwd()), format: what, view: rest[0]!, ...(options.out !== undefined ? { out: toPosix(options.out) } : {}) });
+    if (result.error !== null) process.stderr.write(`keylang: ${result.error}\n`);
+    else if (result.out !== null) process.stderr.write(`${result.out}: written\n`);
+    else if (result.text !== null) process.stdout.write(result.text);
+    return result.exitCode;
+  }
+  if (what !== "c4") throw new Error("export: expected `c4`, `bpmn` or `drawio`; see --help");
   if (rest.length > 0) throw new Error(`export c4: unexpected argument \`${rest[0]}\``);
   const result = await runOperation({
     kind: "export-c4",
@@ -875,6 +901,24 @@ async function cmdExport(args: readonly string[], options: { format: string | un
   for (const message of result.messages) process.stderr.write(message.level === "error" ? `keylang: ${message.text}\n` : `${message.text}\n`);
   if (result.exitCode === 0 && result.payload !== null && result.payload.out === null) process.stdout.write(result.payload.text);
   return result.exitCode ?? 2;
+}
+
+/**
+ * `keylang import drawio <file>` (business-flows/28): one proposal for the
+ * flow the drawing draws; `--print` puts the change on stdout. Notes and
+ * refusals to stderr. 0 proposed or nothing to propose, 1 a proposal already
+ * waiting or a refused write, 2 a bad invocation, file or target.
+ */
+async function cmdImport(args: readonly string[], options: { into: string | undefined; print: boolean }): Promise<number> {
+  const [what, file, ...rest] = args;
+  if (what !== "drawio") throw new Error("import: expected `drawio`; see --help");
+  if (file === undefined) throw new Error("import drawio: a .drawio file is required");
+  if (rest.length > 0) throw new Error(`import drawio: unexpected argument \`${rest[0]}\``);
+  const { runImportDrawio } = await import("./operations/diagram-export.ts");
+  const result = await runImportDrawio({ root: findRoot(process.cwd()), file: resolve(process.cwd(), file), ...(options.into !== undefined ? { into: toPosix(options.into) } : {}), print: options.print });
+  if (options.print && result.diff !== null) process.stdout.write(`${result.diff}\n`);
+  for (const message of result.messages) process.stderr.write(message.level === "error" ? `keylang: ${message.text}\n` : `${message.text}\n`);
+  return result.exitCode;
 }
 
 /**

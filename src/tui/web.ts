@@ -32,6 +32,7 @@ import { PROCESSES_FILE, processViews, readProcesses } from "../discover-names.t
 import { callsOf, eventsOf, explorerFlow, parseExplorerFlow } from "../explorer.ts";
 import { DISCOVERED_FLOWS_DIR, sourceInputs } from "../map.ts";
 import { runCoverage } from "../operations/coverage.ts";
+import { DIAGRAM_FORMATS, diagramExportText, exportSourcesOf, exportViewOfQuery } from "../operations/diagram-export.ts";
 import { flowCandidate } from "../operations/draft.ts";
 import { commitProposal, generatedIn, proposalRefusal, rootRelative } from "../operations/shared.ts";
 import { parse } from "../parser.ts";
@@ -339,7 +340,7 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
     });
   };
 
-  /** `GET /api/views`, `/api/diagram?view=…`, `/api/usages?id=…`, `/api/calls?id=…`, `/api/coverage`; `POST /api/flow-proposal`: JSON for the diagram client, with the socket's token as a Bearer. */
+  /** `GET /api/views`, `/api/diagram?view=…`, `/api/usages?id=…`, `/api/calls?id=…`, `/api/coverage`; `POST /api/flow-proposal`: JSON for the diagram client (`GET /api/export?format=bpmn|drawio&view=…`: the file), with the socket's token as a Bearer. */
   const api = async (request: IncomingMessage, response: ServerResponse, path: string, query: URLSearchParams): Promise<void> => {
     // These paths are public (docs/tui.md); any other is the 404 of every unknown path, token or not.
     if (!API_PATHS.has(path)) return reply(response, 404, "text/plain", "not found\n");
@@ -364,6 +365,23 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
       const done = await analysis();
       if (!done.snapshot) return json(200, { id, node: null, entries: [], callees: [], holes: [], callers: [], reachedFrom: [], reason: "no snapshot: the specs were checked without code" });
       return json(200, callsOf(done.snapshot, id));
+    }
+    if (path === "/api/export") {
+      // The diagram as a file for other tools (business-flows/28): the view as `/api/diagram` names it, the bytes `keylang export` writes.
+      const format = DIAGRAM_FORMATS.find((item) => item === query.get("format"));
+      if (format === undefined) return json(400, { error: `export needs format=${DIAGRAM_FORMATS.join("|")}` });
+      const wanted = exportViewOfQuery(query);
+      if (typeof wanted === "string") return json(400, { error: wanted });
+      const done = await analysis();
+      let text: string;
+      try {
+        text = diagramExportText(format, wanted, exportSourcesOf(done, wanted.discovered ? discoveredSpec(done) : null));
+      } catch (error) {
+        return json(400, { error: error instanceof Error ? error.message : String(error) });
+      }
+      const file = `${wanted.name.replace(/[^A-Za-z0-9._-]+/g, "_")}.${format}`;
+      response.setHeader("Content-Disposition", `attachment; filename="${file}"`);
+      return reply(response, 200, "application/xml; charset=utf-8", text);
     }
     if (path === "/api/coverage") {
       // The payload of `keylang coverage --json`: the same operation over the same analyzer as the other requests.
@@ -634,7 +652,7 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
 }
 
 /** The paths of the diagram API; any other under `/api/` is 404. */
-const API_PATHS: ReadonlySet<string> = new Set(["/api/views", "/api/diagram", "/api/usages", "/api/calls", "/api/coverage", "/api/flow-proposal"]);
+const API_PATHS: ReadonlySet<string> = new Set(["/api/views", "/api/diagram", "/api/usages", "/api/calls", "/api/coverage", "/api/flow-proposal", "/api/export"]);
 
 /** The largest body `POST /api/flow-proposal` reads. */
 const MAX_BODY = 64 * 1024;

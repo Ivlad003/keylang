@@ -31,6 +31,24 @@
     - fn [specPathProblem](../../src/analyze.ts#L174) (config: Config, abs: string) → string | null
       - calls map.analyze.within, lang.files.walkReaches, map.analyze.readingAid
     - fn [within](../../src/analyze.ts#L185) (abs: string, dir: string) → boolean
+  - module [bpmn-export](../../src/bpmn-export.ts#L1)
+    - diagram map.diagram
+    - external-ids base.external-ids
+    - spec-ir lang.spec-ir
+    - fn [xmlEscape](../../src/bpmn-export.ts#L29) (text: string) → string
+    - fn [ids](../../src/bpmn-export.ts#L34) () → (key: string) => string <!-- internal -->
+    - type [StartKind](../../src/bpmn-export.ts#L49) = "message" | "timer" | "signal" | null <!-- internal -->
+    - fn [startKindOf](../../src/bpmn-export.ts#L52) (kind: string | null | undefined) → StartKind
+    - fn [flowFacts](../../src/bpmn-export.ts#L60) (input: DiagramInput) → { triggers: Map<string, string | null>; continues: string[]; flow: Flow | null } <!-- internal -->
+      - calls lang.spec-ir.walkFlow
+    - type [Box](../../src/bpmn-export.ts#L76) <!-- internal -->
+    - fn [route](../../src/bpmn-export.ts#L84) (from: Box, to: Box) → [number, number][] <!-- internal -->
+    - fn [renderBpmn](../../src/bpmn-export.ts#L106) (input: DiagramInput, name: string) → string
+      - calls map.diagram.diagramOf, map.bpmn-export.bpmnOf
+    - fn [bpmnOf](../../src/bpmn-export.ts#L113) (diagram: Diagram, input: DiagramInput, name: string) → string <!-- internal -->
+      - calls map.bpmn-export.ids, map.bpmn-export.flowFacts, map.bpmn-export.xmlEscape, map.bpmn-export.flowNode, map.bpmn-export.route
+    - fn [flowNode](../../src/bpmn-export.ts#L259) (node: DiagramNode, element: string, attrs: string, entryKind: string | null, signals: ReadonlyMap<string, string>, diagram: Diagram, id: (key: string) => string) → string[] <!-- internal -->
+      - calls map.bpmn-export.xmlEscape, map.bpmn-export.startKindOf
   - module [c4-export](../../src/c4-export.ts#L1)
     - explanations map.explanations
     - graph map.graph
@@ -147,6 +165,44 @@
     - fn [layersDiagram](../../src/diagram.ts#L607) (snapshot: AnalysisSnapshot, spec: SpecIR, results: readonly DiagramResult[]) → Diagram <!-- internal -->
       - calls map.diagram.layerOrder, map.diagram.byArea, map.diagram.layerOf, map.diagram.worst
     - fn [layout](../../src/diagram.ts#L668) (diagram: Diagram, positions: Positions = {}) → Diagram
+  - module [drawio](../../src/drawio.ts#L1)
+    - node external.node
+    - bpmn-export map.bpmn-export
+    - diagram map.diagram
+    - parser lang.parser
+    - spec-ir lang.spec-ir
+    - fn [style](../../src/drawio.ts#L30) (parts: Record<string, string | number>) → string <!-- internal -->
+    - fn [nodeStyle](../../src/drawio.ts#L37) (node: Pick<DiagramNode, "kind" | "verdict">) → string
+      - calls map.drawio.style
+    - fn [edgeStyle](../../src/drawio.ts#L63) (edge: DiagramEdge) → string <!-- internal -->
+      - calls map.drawio.style
+    - fn [htmlText](../../src/drawio.ts#L72) (text: string) → string <!-- internal -->
+    - fn [labelOf](../../src/drawio.ts#L77) (node: DiagramNode) → string <!-- internal -->
+      - calls map.drawio.htmlText
+    - fn [renderDrawio](../../src/drawio.ts#L86) (input: DiagramInput, view: string) → string
+      - calls map.diagram.diagramOf, map.bpmn-export.xmlEscape, map.drawio.htmlText, map.drawio.labelOf, map.drawio.nodeStyle, map.drawio.edgeStyle
+    - type [XmlElement](../../src/drawio.ts#L118)
+    - fn [decode](../../src/drawio.ts#L127) (text: string) → string <!-- internal -->
+    - fn [parseXml](../../src/drawio.ts#L141) (text: string) → XmlElement
+      - calls map.drawio.decode
+    - type [DrawioCell](../../src/drawio.ts#L197)
+    - type [DrawioModel](../../src/drawio.ts#L209)
+    - fn [plain](../../src/drawio.ts#L216) (label: string) → string <!-- internal -->
+      - calls map.drawio.decode
+    - fn [find](../../src/drawio.ts#L223) (element: XmlElement, name: string) → XmlElement | null <!-- internal -->
+    - fn [parseDrawio](../../src/drawio.ts#L237) (text: string) → DrawioModel
+      - calls map.drawio.parseXml, map.drawio.find, map.drawio.plain
+    - type [Entry](../../src/drawio.ts#L282) <!-- internal -->
+    - fn [indentOf](../../src/drawio.ts#L289) (line: string) → number <!-- internal -->
+    - fn [listLine](../../src/drawio.ts#L294) (indent: number, body: string) → string <!-- internal -->
+    - fn [commentSafe](../../src/drawio.ts#L299) (text: string) → string <!-- internal -->
+    - fn [lineOf](../../src/drawio.ts#L304) (cell: DrawioCell) → string | null <!-- internal -->
+    - fn [rewritten](../../src/drawio.ts#L328) (line: string, item: Trigger | FlowItem, cell: DrawioCell) → string | null <!-- internal -->
+    - fn [flowFromDrawio](../../src/drawio.ts#L367) (model: DrawioModel, name: string, current: { text: string; flow: Flow; firstLine: number } | null) → string
+      - calls lang.spec-ir.walkFlow, map.drawio.indentOf, map.drawio.rewritten, map.drawio.lineOf, map.drawio.listLine, map.drawio.commentSafe
+    - fn [drawioFlowName](../../src/drawio.ts#L481) (model: DrawioModel) → string | null
+    - fn [flowSection](../../src/drawio.ts#L490) (text: string, name: string) → { text: string; firstLine: number } | null
+      - calls lang.parser.parse
   - module [emit](../../src/emit.ts#L1)
     - node external.node
     - explanations map.explanations
