@@ -285,6 +285,29 @@ test("tui: the navigation panel lists layers, modules, flows and rules; Enter op
   assert.equal(s.app.state.current, "keylang/rules.md");
 });
 
+test("tui: a click on a navigation arrow while editing folds the item and keeps the focus and the cursor in the editor (review 2026-10-06, ticket 67)", async (t) => {
+  const s = session(checkoutRepo(t));
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send("i");
+  assert.equal(s.app.state.mode, "edit");
+  assert.notEqual(s.app.frame().cursor, null);
+  const arrow = locate(s.lines(), "▾ domain");
+  s.send(click(arrow.x, arrow.y));
+  assert.ok(s.text().includes("▸ domain"), "the layer folded");
+  assert.equal(s.app.state.mode, "edit");
+  assert.equal(s.app.state.focus, "editor", "the keys still go to the editor, so the focus stays there");
+  assert.notEqual(s.app.frame().cursor, null, "the cursor stays shown while typing goes on");
+  s.send("X");
+  assert.match(s.app.state.buffers.get(FLOW_PATH)!.text, /^X# flow checkout/);
+  // In the view the same click focuses the navigation, as before.
+  await esc(s.send);
+  const folded = locate(s.lines(), "▸ domain");
+  s.send(click(folded.x, folded.y));
+  assert.ok(s.text().includes("▾ domain"));
+  assert.equal(s.app.state.focus, "nav");
+});
+
 test("tui: an unknown step id typed in the editor shows K001 and a hint at once", async (t) => {
   const root = checkoutRepo(t);
   const s = session(root);

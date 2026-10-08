@@ -3074,7 +3074,9 @@ export class App {
       const index = this.state.navTop + row;
       // The title, the space below the last item and the explanation under the list open nothing.
       if (row < 0 || row >= navListHeight(this.state, area.nav) - 1 || index >= navEntries(this.state).length) return;
-      this.state.focus = "nav";
+      // As F3 and the context panel: the focus moves only where keys go to the focused panel; while
+      // editing the keys still type, so the focus (and with it the cursor) stays in the editor.
+      if (this.state.mode === "view" || this.state.mode === "read") this.state.focus = "nav";
       this.state.navIndex = index;
       this.fixNavIndex(1);
       const item = navEntries(this.state)[this.state.navIndex];
