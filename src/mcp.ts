@@ -334,6 +334,21 @@ export function mcpServer(root: string, version: string): McpServer {
     },
   );
 
+  server.registerTool(
+    "coverage_report",
+    {
+      description:
+        "Where keylang does not see, as `keylang coverage --json` computes it: reach (fns reachable from at least one entry point over resolved call edges, and the share), orphans (fns no entry point reaches: dead code or an entry point keylang does not know; entry fns and test files left out), holes by module with reasons normalised (backticked names as `X`) and counted, entry points no hand-written flow starts from (with the discovered flow `flows discover` would draft and whether the view has it), and «logic in data»: calls into configuration readers (resources/data-logic.json) to check by hand. A view, not a verdict; read-only.",
+      inputSchema: {},
+    },
+    async () => {
+      const result = await runOperation({ kind: "coverage", root }, { analyze: () => fresh() });
+      if (result.payload === null) return failure(result.messages[0]?.text ?? "coverage failed");
+      const { text: _text, ...report } = result.payload;
+      return json(report);
+    },
+  );
+
   return server;
 }
 

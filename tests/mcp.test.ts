@@ -361,6 +361,27 @@ test("mcp: list_entries gives the entry points of the fresh snapshot, narrowed b
   assert.equal(bad.isError, true);
 });
 
+test("mcp: coverage_report gives the blind spots of the fresh snapshot, as `keylang coverage --json`, and writes nothing", async (t) => {
+  const mcp = await connect(t);
+  assert.ok((await mcp.list()).includes("coverage_report"));
+  writeFileSync(join(mcp.dir, "src/app/orders.ts"), "export function listOrders(): string[] {\n  return [String(process.env.LIMIT)];\n}\n");
+  writeFileSync(join(mcp.dir, "src/app/server.ts"), 'import { checkout } from "./checkout.ts";\nimport { listOrders } from "./orders.ts";\nconst app = { get: (_p: string, _h: unknown) => 0, post: (_p: string, _h: unknown) => 0 };\napp.post("/checkout", checkout);\napp.get("/orders", listOrders);\n');
+  const before = treeBytes(mcp.dir);
+  const answer = await mcp.call("coverage_report");
+  assert.equal(answer.isError, false, answer.text);
+  const report = JSON.parse(answer.text) as { snapshotId: string; reach: { entries: number; reachable: number }; orphans: { id: string }[]; unflowed: { id: string; discovered: { name: string } | null }[]; dataLogic: { sites: { signal: string; file: string; in: string }[] } };
+  assert.match(report.snapshotId, /^[0-9a-f]{64}$/);
+  assert.equal("text" in report, false);
+  assert.equal(report.reach.entries, 2);
+  // checkout reaches createOrder, total and save; the Db class is reached by nothing.
+  assert.equal(report.reach.reachable, 5);
+  assert.deepEqual(report.orphans.map((orphan) => orphan.id), ["infra.db.Db.query", "infra.db.Db.parse"]);
+  // `checkout` has the hand-written flow; `listOrders` only a discovered one.
+  assert.deepEqual(report.unflowed.map((entry) => [entry.id, entry.discovered?.name]), [["app.orders.listOrders", "listOrders"]]);
+  assert.deepEqual(report.dataLogic.sites.map((site) => [site.signal, site.file, site.in]), [["node-env", "src/app/orders.ts", "app.orders.listOrders"]]);
+  assert.equal(treeBytes(mcp.dir), before, "read-only");
+});
+
 test("mcp: discover_flows drafts a flow per entry point and writes nothing; apply_diff refuses the generated view", async (t) => {
   const mcp = await connect(t);
   assert.ok((await mcp.list()).includes("discover_flows"));

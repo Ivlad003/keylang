@@ -207,6 +207,14 @@ export const ACTIONS: readonly Action[] = [
     when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
   },
   {
+    id: "coverage",
+    label: "Blind spots: unreached fns, holes, entry points without a flow, logic in data",
+    group: "Map",
+    aliases: ["coverage", "keylang coverage", "blind spots", "orphans", "dead code", "holes", "logic in data", "сліпі зони"],
+    // Reads the saved code, keylang.json and the specs in a worker; writes nothing but the fact cache.
+    when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
+  },
+  {
     id: "export",
     label: "Export the report to a file",
     group: "Check",
