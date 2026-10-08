@@ -2545,13 +2545,15 @@ export class App {
   /**
    * The file, mode and text an operation started from are current and nothing
    * else is open; with `report`, F6 may show the report it started from, else
-   * it must be closed.
+   * it must be closed. The clip's chat with the focus counts as open: MERGE
+   * takes the focus from it, so the letters typed for a message would decide
+   * the hunks and `w` would write the spec.
    */
   private stillWhereStarted(origin: DraftOrigin, report: boolean): boolean {
     const results = this.state.results;
     const panel = report && origin.results ? results.open && !results.viewing && results.entry === "record" && results.index === origin.record : !results.open;
     const current = this.state.current === origin.path && this.state.mode === origin.mode && (origin.path === null || this.state.buffers.get(origin.path)?.version === origin.version);
-    return panel && current && this.state.merge === null && this.state.prompt === null && this.state.barrier === null && !this.state.help;
+    return panel && current && this.state.merge === null && this.state.prompt === null && this.state.barrier === null && !this.state.help && !this.state.clip.chat.focused;
   }
 
   /** The session's operation worker, started on first use; after a failure the next request starts a new one. */

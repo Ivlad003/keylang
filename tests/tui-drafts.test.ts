@@ -89,6 +89,29 @@ test("tui: Enter in F6 while a MERGE is open is refused as the palette refuses: 
   assert.equal(s.app.state.mode, "edit", "the keys reach the editor");
 });
 
+test("tui: a draft that ends while the clip's chat has the focus waits as a proposal: the keys typed for the chat stay in the chat, MERGE does not open, nothing is written", async (t) => {
+  const root = checkoutRepo(t);
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = treeBytes(root);
+  draftForm(s, { trigger: "application.purchase.buy", name: "buy", into: FLOW_PATH });
+  assert.notEqual(s.app.state.activeOperation, null, "the draft is still running");
+  s.send(KEY.f7);
+  assert.equal(s.app.state.clip.chat.focused, true);
+  for (const ch of "hello") s.send(ch);
+  await s.app.idle();
+  assert.equal(s.app.state.activeOperation, null);
+  assert.deepEqual([s.app.state.mode, s.app.state.merge, s.app.state.clip.chat.focused], ["view", null, true], s.app.state.message ?? "");
+  assert.match(s.app.state.message ?? "", /waits: m, Proposals or Enter in F6 opens MERGE/);
+  for (const ch of " can we add a new step") s.send(ch);
+  assert.equal(s.app.state.clip.chat.input, "hello can we add a new step");
+  assert.deepEqual([s.app.state.mode, s.app.state.merge], ["view", null]);
+  const after = treeBytes(root);
+  for (const [path, bytes] of before) if (!path.startsWith(".keylang/")) assert.equal(after.get(path), bytes, path);
+  assert.ok(existsSync(join(root, ".keylang/proposals", FLOW_PATH)), "the proposal waits");
+});
+
 test("tui: draft flow (algo) of a callable with two calls: the preview is the CLI's --print and writes nothing; the proposal is the CLI's full target with another flow kept; the target stays until w", async (t) => {
   const specs = { "keylang/flows/buying.md": BUYING_SPEC };
   const root = checkoutRepo(t, specs);
