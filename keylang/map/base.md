@@ -245,6 +245,9 @@
       - calls base.languages.languageOf
     - fn [implicitMember](../../src/languages.ts#L80) (file: string | null | undefined, name: string) → boolean
       - calls base.languages.languageOf
+  - module [line-diff](../../src/line-diff.ts#L1)
+    - type [Hunk](../../src/line-diff.ts#L5)
+    - fn [diffLines](../../src/line-diff.ts#L14) (base: readonly string[], proposed: readonly string[]) → Hunk[]
   - module [safe-write](../../src/safe-write.ts#L1)
     - node external.node
     - type [WriteOptions](../../src/safe-write.ts#L16)

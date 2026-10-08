@@ -9,6 +9,7 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { assess, type Assessment } from "./assess.ts";
 import { CONFIG_FILE, evidenceFiles, loadConfig, resolveStatic, toPosix, type Config, type StaticMode } from "./config.ts";
 import { readManifests, type DeclaredPackage } from "./declared-packages.ts";
+import { DIAGRAMS_DIR } from "./diagram-layout.ts";
 import { compareText } from "./span.ts";
 import { collectMdFiles, walkReaches } from "./files.ts";
 import type { Document } from "./ir.ts";
@@ -161,9 +162,9 @@ function repositoryFile(root: string, path: string): boolean {
   }
 }
 
-/** A generated reading aid beside the specs (the explained map, explanations, discovered flows, the project tour): never a spec. */
+/** A generated reading aid beside the specs (the explained map, explanations, discovered flows, the project tour, diagram layouts): never a spec. */
 export function readingAid(specDir: string, abs: string): boolean {
-  return [EXPLAINED_MAP_DIR, "explain", DISCOVERED_FLOWS_DIR, TOUR_FILE].some((dir) => within(abs, join(specDir, dir)));
+  return [EXPLAINED_MAP_DIR, "explain", DISCOVERED_FLOWS_DIR, TOUR_FILE, DIAGRAMS_DIR].some((dir) => within(abs, join(specDir, dir)));
 }
 
 /**

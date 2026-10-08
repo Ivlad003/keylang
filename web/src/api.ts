@@ -189,6 +189,38 @@ export interface Diagram {
   edges: DiagramEdge[];
   groups: DiagramGroup[];
   reason?: string;
+  /** The specs the diagram was drawn from (business-flows/24): «Запропонувати зміни» sends it back. */
+  specHash?: string;
+}
+
+/** One entry of `GET /api/layout`: a shape's box, an edge's bends, a note, a drawn shape a proposal took (src/diagram-layout.ts). */
+export interface LayoutEntry {
+  x: number;
+  y: number;
+  w?: number;
+  h?: number;
+  points?: { x: number; y: number }[];
+  id?: string;
+  kind?: string;
+  label?: string;
+  note?: string;
+  colour?: string;
+  proposed?: string;
+  from?: string;
+  to?: string;
+  status?: "pending" | "rejected";
+}
+
+/** The answer of `POST /api/diagram-proposal` (src/operations/diagram-propose.ts). */
+export interface DiagramProposal {
+  status: "proposed" | "printed" | "nothing" | "conflict" | "refused" | "invalid" | "failed";
+  error?: string | null;
+  view: string;
+  targets: { target: string; proposal: string | null; newFile: boolean; hunks: { line: number; removed: string[]; added: string[] }[]; diff: string; shapes: string[] }[];
+  weakenings: { file: string; line: number; col: number; message: string }[];
+  config: { target: string; text: string; diff: string; note: string } | null;
+  notes: string[];
+  merge: string | null;
 }
 
 export interface Usages {
@@ -250,6 +282,25 @@ export class Api {
     const response = await fetch("/api/flow-proposal", { method: "POST", headers: { Authorization: `Bearer ${this.token}`, "Content-Type": "application/json" }, body: JSON.stringify(body), cache: "no-store" });
     if (!response.ok) throw new ApiError(response.status, await errorText(response));
     return (await response.json()) as FlowProposal;
+  }
+
+  /** The layout file of a view (`flow:checkout`), in the keys of the editor's canvas. */
+  async layout(view: string): Promise<{ exists: boolean; file: string; layout: Record<string, LayoutEntry> }> {
+    return this.get(`/api/layout?${new URLSearchParams({ view }).toString()}`);
+  }
+
+  /** Replaces the layout file of a view. */
+  async saveLayout(view: string, layout: Record<string, LayoutEntry>): Promise<void> {
+    const response = await fetch(`/api/layout?${new URLSearchParams({ view }).toString()}`, { method: "PUT", headers: { Authorization: `Bearer ${this.token}`, "Content-Type": "application/json" }, body: JSON.stringify({ layout }), cache: "no-store" });
+    if (!response.ok) throw new ApiError(response.status, await errorText(response));
+  }
+
+  /** The drawing as proposals; a conflict or a refusal (409) is an answer too, with its `status` and `error`. */
+  async diagramProposal(model: unknown, specHash: string | null): Promise<DiagramProposal> {
+    const response = await fetch("/api/diagram-proposal", { method: "POST", headers: { Authorization: `Bearer ${this.token}`, "Content-Type": "application/json" }, body: JSON.stringify({ model, specHash }), cache: "no-store" });
+    if (response.status === 409) return (await response.json()) as DiagramProposal;
+    if (!response.ok) throw new ApiError(response.status, await errorText(response));
+    return (await response.json()) as DiagramProposal;
   }
 
   private async get<T>(path: string): Promise<T> {

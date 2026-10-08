@@ -93,7 +93,7 @@ keylang має допомагати швидко зануритись у чуж�
 | [21](issues/21-web-flow-viewer.md) | Web: перегляд флоу як діаграми (пошук, вердикти, перехід у код) | resolved | 20, 33 |
 | [22](issues/22-web-entry-explorer.md) | Web: дослідник точок входу й подій — інтерактивне дерево викликів | resolved | 09, 20 |
 | [23](issues/23-web-diagram-editor.md) | Web-редактор діаграм у стилі diagrams.net (draw.io) | resolved | 20, 21, 33 |
-| [24](issues/24-diagram-to-proposals.md) | Редактор → специфікація: зміни діаграми як пропозиції, файл розкладки | ready-for-agent | 23 |
+| [24](issues/24-diagram-to-proposals.md) | Редактор → специфікація: зміни діаграми як пропозиції, файл розкладки | resolved | 23 |
 | [25](issues/25-diagram-copy-paste.md) | Копіювання фрагмента діаграми між вкладками й проєктами | ready-for-agent | 23, 26 |
 | [26](issues/26-flow-bundle-export-import.md) | `keylang flow export\|import`: переносний пакет бізнес-флоу | resolved | 12 |
 | [27](issues/27-migration-parity.md) | Міграція: таблиця відповідності ID і перевірка паритету старого й нового стеку | ready-for-agent | 26 |

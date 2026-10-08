@@ -14,8 +14,9 @@
 // which browser it takes; without one the test is skipped and says why).
 
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { diagramsRepo } from "../diagrams-fixture.ts";
@@ -71,7 +72,7 @@ async function centre(page: Page, node: { x: number; y: number; w: number; h: nu
   return screenPoint(page, node.x + node.w / 2, node.y + node.h / 2);
 }
 
-async function openEditor(t: { after: (f: () => void | Promise<void>) => void }): Promise<{ page: Page; problems: string[] }> {
+async function openEditor(t: { after: (f: () => void | Promise<void>) => void }): Promise<{ page: Page; problems: string[]; repo: string; url: URL; browser: Browser }> {
   const repo = diagramsRepo(t);
   const url = await startWeb(t, repo);
   const browser: Browser = await chromium.launch({ headless: true, ...options });
@@ -84,7 +85,7 @@ async function openEditor(t: { after: (f: () => void | Promise<void>) => void })
   await page.locator("#views .row.item", { hasText: /^flowcheckout$/ }).click();
   await page.locator("#status", { hasText: /editor · flow:checkout/ }).waitFor();
   assert.match(page.url(), /#view=editor&of=flow%3Acheckout$/);
-  return { page, problems };
+  return { page, problems, repo, url, browser };
 }
 
 test("editor «з коду»: a flow opens with its lanes and shapes; a shape moves, the model and the layout store follow; the content stays", { skip, timeout: 120000 }, async (t) => {
@@ -447,4 +448,115 @@ test("editor keys of diagrams.net: a move undone and redone (Ctrl+Z, Ctrl+Y, Ctr
   assert.ok(png.length > 5000, `${png.length} bytes`);
 
   assert.deepEqual(problems, []);
+});
+
+/** The same page in a fresh browser context (no tab draft in `sessionStorage`), the editor on the checkout flow. */
+async function reopen(browser: Browser, url: URL): Promise<{ page: Page; problems: string[] }> {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 860 } });
+  const page = await context.newPage();
+  const problems = watch(page);
+  await page.goto(`${url.origin}/diagrams${url.hash.replace(/^#/, "#view=editor&of=flow%3Acheckout&")}`);
+  await page.locator("#status", { hasText: /editor · flow:checkout/ }).waitFor();
+  return { page, problems };
+}
+
+/** The layout of the canvas (`layout()` of the editor): every shape's box by key, in model coordinates. */
+function canvasLayout(page: Page): Promise<Record<string, { x: number; y: number; w?: number; h?: number; note?: string; proposed?: string }>> {
+  return page.evaluate(() => (globalThis as unknown as { keylangEditor: { layout(): unknown } }).keylangEditor.layout()) as Promise<Record<string, { x: number; y: number }>>;
+}
+
+test("editor layout file: a moved step and a note go to keylang/diagrams/flow--checkout.layout.json; another browser, with no tab draft, opens the view with them in place (business-flows/24)", { skip, timeout: 120000 }, async (t) => {
+  const { page, problems, repo, url, browser } = await openEditor(t);
+  const before = await model(page);
+  const buy = before.nodes.find((n) => n.id === "application.purchase.buy")!;
+  await drag(page, await centre(page, buy), { ...(await centre(page, buy)), x: (await centre(page, buy)).x + 80 });
+  const moved = (await model(page)).nodes.find((n) => n.key === buy.key)!;
+  assert.ok(moved.x > buy.x + 30, `${buy.x} → ${moved.x}`);
+  // A note: layout, so «з коду» draws it too.
+  await page.locator('#editor-palette [data-item="note"]').click();
+  await page.fill("#prop-description", "Ask the shop about refunds");
+  await page.locator("#prop-description").blur();
+  const file = join(repo, "keylang/diagrams/flow--checkout.layout.json");
+  const start = Date.now();
+  while (!(existsSync(file) && readFileSync(file, "utf8").includes("Ask the shop about refunds"))) {
+    if (Date.now() - start > 10000) throw new Error("the layout file was not written");
+    await page.waitForTimeout(100);
+  }
+  const saved = JSON.parse(readFileSync(file, "utf8")) as { view: string; shapes: Record<string, { x: number; note?: string }> };
+  assert.equal(saved.view, "flow:checkout");
+  assert.equal(saved.shapes["step:application.purchase.buy"]?.x, Math.round(moved.x * 100) / 100);
+  assert.ok(Object.values(saved.shapes).some((shape) => shape.note === "Ask the shop about refunds"));
+
+  // Another browser: no draft of this tab, the view from the code at the places of the layout file.
+  const other = await reopen(browser, url);
+  const again = await model(other.page);
+  const back = again.nodes.find((n) => n.key === buy.key)!;
+  assert.deepEqual([back.x, back.y], [moved.x, moved.y]);
+  assert.match((await other.page.locator("#status").textContent()) ?? "", /з коду/);
+  assert.ok(Object.values(await canvasLayout(other.page)).some((entry) => entry.note === "Ask the shop about refunds"), "the note is back");
+  assert.deepEqual(problems, []);
+  assert.deepEqual(other.problems, []);
+});
+
+test("editor «Запропонувати зміни»: a step drawn after `save` is one proposal on disk; rejected, it comes back «не прийнято» where it was drawn (business-flows/24)", { skip, timeout: 120000 }, async (t) => {
+  const { page, problems, repo, url, browser } = await openEditor(t);
+  await page.click("#editor-mode-draft");
+  const start = await model(page);
+  const application = start.lanes.find((l) => l.id === "application")!;
+  const save = start.nodes.find((n) => n.id === "infrastructure.store.save")!;
+  // Room around the lanes: the wheel zooms out around the cursor.
+  const canvas = (await page.locator("#editor-graph").boundingBox())!;
+  await page.mouse.move(canvas.x + canvas.width / 2, canvas.y + 40);
+  for (let i = 0; i < 3; i++) await page.mouse.wheel(0, 100);
+  await dropFromPalette(page, "step", { x: save.x + save.w / 2, y: application.y + application.h / 2 });
+  const drawn = (await model(page)).nodes.find((n) => n.key.startsWith("draft:") && n.kind === "task")!;
+  assert.equal(drawn.id, "planned:application.step");
+  await page.mouse.move((await centre(page, save)).x, (await centre(page, save)).y);
+  await connect(page, await arrowOf(page, save), await centre(page, drawn));
+  const edges = (await model(page)).edges.filter((e) => e.key.startsWith("draft:"));
+  assert.deepEqual(edges.map((e) => [e.kind, e.fromId, e.toId]), [["sequence", "infrastructure.store.save", "planned:application.step"]]);
+
+  await page.click("#editor-propose");
+  await page.locator("#editor-result", { hasText: "Пропозиції: 1" }).waitFor();
+  assert.match((await page.locator("#editor-result").textContent()) ?? "", /keylang\/flows\/checkout\.md — 1 шматок/);
+  const proposal = readFileSync(join(repo, ".keylang/proposals/keylang/flows/checkout.md"), "utf8");
+  assert.match(proposal, /^ {2}- step infrastructure\.store\.save\n {2}- step application\.step\n- planned fn application\.step\n/m);
+  assert.equal(readFileSync(join(repo, "keylang/flows/checkout.md"), "utf8").includes("application.step"), false, "a proposal, not the spec");
+
+  // A person rejects it; the view, opened again, keeps the drawn step where it was, marked «не прийнято».
+  assert.equal(spawnSync(process.execPath, [join(root, "bin/keylang.js"), "proposals", "reject", "keylang/flows/checkout.md"], { cwd: repo, encoding: "utf8" }).status, 0);
+  const other = await reopen(browser, url);
+  await other.page.locator("#editor-graph", { hasText: "не прийнято" }).waitFor();
+  const layout = await canvasLayout(other.page);
+  const rejected = layout["step:application.step"];
+  assert.ok(rejected, JSON.stringify(layout));
+  assert.deepEqual([rejected.x, rejected.y], [drawn.x, drawn.y]);
+  assert.equal(rejected.proposed, "keylang/flows/checkout.md");
+  // It is no part of the drawing: proposing again proposes nothing.
+  assert.equal((await model(other.page)).nodes.some((n) => n.id === "planned:application.step"), false);
+  assert.deepEqual(problems, []);
+  assert.deepEqual(other.problems, []);
+});
+
+test("editor «Запропонувати зміни» after the spec changed on disk: the page says so and draws the view again from the specs; nothing is proposed (business-flows/24)", { skip, timeout: 120000 }, async (t) => {
+  const { page, problems, repo } = await openEditor(t);
+  await page.click("#editor-mode-draft");
+  const start = await model(page);
+  const application = start.lanes.find((l) => l.id === "application")!;
+  const save = start.nodes.find((n) => n.id === "infrastructure.store.save")!;
+  await dropFromPalette(page, "step", { x: save.x + save.w / 2, y: application.y + application.h / 2 });
+  assert.equal((await model(page)).nodes.length, start.nodes.length + 1);
+  const flow = join(repo, "keylang/flows/checkout.md");
+  writeFileSync(flow, readFileSync(flow, "utf8").replace("Checkout from the terminal.", "Checkout from the terminal, paid at once."));
+  await page.click("#editor-propose");
+  await page.locator('#editor-result[data-status="conflict"]').waitFor();
+  assert.match((await page.locator("#editor-result").textContent()) ?? "", /Специфікації змінились після відкриття діаграми/);
+  const after = await model(page);
+  assert.deepEqual([after.mode, after.nodes.length], ["code", start.nodes.length]);
+  assert.equal(existsSync(join(repo, ".keylang/proposals")), false);
+  assert.deepEqual(
+    // The conflict is a 409 by design; nothing else went wrong.
+    problems.filter((p) => !/\b409\b/.test(p)),
+    [],
+  );
 });

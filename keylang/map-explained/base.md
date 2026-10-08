@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [brief](#base.brief) · [config](#base.config) · [diag](#base.diag) · [external-ids](#base.external-ids) · [adapter](#base.adapter) · [bindings](#base.bindings) · [cartridges](#base.cartridges) · [magento](#base.magento) · [sfcc](#base.sfcc) · [glob](#base.glob) · [languages](#base.languages) · [safe-write](#base.safe-write) · [span](#base.span)
+[README](README.md) · modules: [brief](#base.brief) · [config](#base.config) · [diag](#base.diag) · [external-ids](#base.external-ids) · [adapter](#base.adapter) · [bindings](#base.bindings) · [cartridges](#base.cartridges) · [magento](#base.magento) · [sfcc](#base.sfcc) · [glob](#base.glob) · [languages](#base.languages) · [line-diff](#base.line-diff) · [safe-write](#base.safe-write) · [span](#base.span)
 
 # map
 
@@ -413,6 +413,12 @@
     - fn [implicitMember](../../src/languages.ts#L80) (file: string | null | undefined, name: string) → boolean
       <a id="base.languages.implicitMember"></a><br>A member of a class in `file` that the language calls without naming it.
       - calls [base.languages.languageOf](base.md#base.languages.languageOf)
+  - module [line-diff](../../src/line-diff.ts#L1)
+    <a id="base.line-diff"></a><br>A line diff as hunks (business-flows/24 moved it here from `tui/merge.ts`): MERGE in the TUI takes them one by one, and a diagram proposal of `keylang web` names how many its targets hold. Pure, no dependencies.
+    - type [Hunk](../../src/line-diff.ts#L5)
+      <a id="base.line-diff.Hunk"></a>
+    - fn [diffLines](../../src/line-diff.ts#L14) (base: readonly string[], proposed: readonly string[]) → Hunk[]
+      <a id="base.line-diff.diffLines"></a><br>Longest-common-subsequence diff; specs are small enough for the quadratic table.
   - module [safe-write](../../src/safe-write.ts#L1)
     <a id="base.safe-write"></a><br>One protocol for every file keylang writes into a repository: proposals, `spec-to-code --apply`, `wire`, `.keylang/stats.json`, explanations, the map with its index and fact cache (byte-exact, see `writeAtomic`). The path is plain and relative, and it stays inside the…
     - node [external.node](external.md#external.node)

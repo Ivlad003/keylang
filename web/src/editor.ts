@@ -28,10 +28,14 @@
 // Mac). Copy and paste stay within the page. The canvas exports as SVG and
 // PNG in the browser (`ImageExport` over an `SvgCanvas2D`, then a canvas).
 //
-// The editor writes nothing to the specs: its state lives in memory and in a
-// draft of the tab (`sessionStorage`, so a reload comes back to it), the
-// positions go to the layout store, and `currentModel()` is what ticket 24
-// diffs against the model to write proposals.
+// The editor writes nothing to the specs itself: its state lives in memory and
+// in a draft of the tab (`sessionStorage`, so a reload comes back to it), the
+// layout — places, sizes, bends, colours, notes — goes to the layout store,
+// the view's `keylang/diagrams/<view>.layout.json` (business-flows/24), and
+// «Запропонувати зміни» sends `currentModel()` to `POST /api/diagram-proposal`,
+// which writes proposals. A drawn shape a proposal took and a merge did not
+// put in the spec comes back dashed, «не прийнято» (or «очікує злиття» while
+// its proposal waits).
 
 import {
   BaseGraph,
@@ -52,10 +56,10 @@ import {
   type EventObject,
   type CellStyle,
 } from "@maxgraph/core";
-import type { Api, Diagram, DiagramNode, Verdict, Views } from "./api.ts";
+import type { Api, Diagram, DiagramNode, DiagramProposal, Verdict, Views } from "./api.ts";
 import { register, VERDICT_COLOUR, VERDICT_GLYPH, nodeStyle, wrapLabel } from "./canvas.ts";
 import { button, make } from "./dom.ts";
-import { layoutStore, type Layout } from "./layout-store.ts";
+import { layoutStore, type Layout, type Position } from "./layout-store.ts";
 import { Properties } from "./properties.ts";
 
 /** The kinds of shape the editor knows: those of the diagram model and those a person draws. */
@@ -174,6 +178,12 @@ export class Shape {
   reason = "";
   /** From the model (`code`) or drawn on the canvas (`draft`). */
   origin: "code" | "draft" = "draft";
+  /** A fill colour of the layout (`#rrggbb`), or "" for the look of its kind. */
+  colour = "";
+  /** The spec a proposal of this drawn shape went to (business-flows/24). */
+  proposed = "";
+  /** A drawn shape a proposal took: its proposal waits, or a merge did not put it in the spec. */
+  status: "pending" | "rejected" | null = null;
 
   constructor(key: string, kind: ShapeKind, id: string, label: string) {
     this.key = key;
@@ -186,8 +196,13 @@ export class Shape {
     return Object.assign(new Shape(this.key, this.kind, this.id, this.label), this, { tests: [...this.tests] });
   }
 
-  /** The text maxGraph draws. */
+  /** The text maxGraph draws: a proposed shape says what became of its proposal. */
   toString(): string {
+    const mark = this.status === "rejected" ? "✗ не прийнято\n" : this.status === "pending" ? "⧗ очікує злиття\n" : "";
+    return `${mark}${this.text()}`;
+  }
+
+  private text(): string {
     const glyph = this.verdict ? `${VERDICT_GLYPH[this.verdict] ?? ""} ` : "";
     switch (this.kind) {
       case "lane":
@@ -252,6 +267,8 @@ export interface ModelNode {
   description?: string;
   /** The key of the group it sits in. */
   group?: string;
+  /** A drawn shape a proposal took: its proposal waits, or was not merged. */
+  status?: "pending" | "rejected";
   x: number;
   y: number;
   w: number;
@@ -352,6 +369,8 @@ export function shapeStyle(shape: Shape): CellStyle {
   if (shape.kind === "parallel" || shape.kind === "gateway") style.fontSize = 11;
   if (shape.kind === "event" || shape.kind === "timer") style.fontSize = 11;
   if (SMALL.has(shape.kind)) Object.assign(style, { verticalLabelPosition: "bottom", verticalAlign: "top", labelBackgroundColor: "none" });
+  if (shape.status !== null) Object.assign(style, { dashed: true, dashPattern: "4 3", strokeColor: shape.status === "rejected" ? "#9e9e9e" : "#b26a00", fontColor: shape.status === "rejected" ? "#757575" : "#8d5300" });
+  if (shape.colour) style.fillColor = shape.colour;
   return style;
 }
 
@@ -385,6 +404,12 @@ function layerOf(lane: Shape): string {
   return lane.id.replace(/^planned:/, "");
 }
 
+/** The layer of a keylang ID (`planned:application.pay` → `application`), or null for one without. */
+function laneLayer(id: string): string | null {
+  const bare = id.replace(/^planned:/, "");
+  return bare.includes(".") ? bare.slice(0, bare.indexOf(".")) : null;
+}
+
 function shapeOf(cell: Cell | null | undefined): Shape | null {
   const value: unknown = cell?.getValue();
   return value instanceof Shape ? value : null;
@@ -398,6 +423,8 @@ function linkOf(cell: Cell | null | undefined): Link | null {
 export interface EditorHost {
   status(text: string): void;
   views(): Views | null;
+  /** Draws a view again from the specs as they are now (`openDiagram(key, …, true)`). */
+  reload?(key: string): Promise<void>;
 }
 
 export class Editor {
@@ -416,6 +443,7 @@ export class Editor {
   private readonly palette: HTMLDivElement;
   private readonly properties: Properties;
   private readonly tipBox: HTMLDivElement;
+  private readonly result: HTMLDivElement;
   private tipTimer = 0;
   private pointer = { x: 0, y: 0 };
   /** The meaning of the next connection drawn. */
@@ -441,7 +469,11 @@ export class Editor {
     this.tipBox.id = "editor-tip";
     this.tipBox.setAttribute("role", "alert");
     this.tipBox.hidden = true;
-    root.replaceChildren(this.bar, make("div", { className: "editor-body" }, this.palette, this.canvas, panel, this.tipBox));
+    this.result = make("div", { className: "editor-result" });
+    this.result.id = "editor-result";
+    this.result.setAttribute("role", "status");
+    this.result.hidden = true;
+    root.replaceChildren(this.bar, this.result, make("div", { className: "editor-body" }, this.palette, this.canvas, panel, this.tipBox));
     this.properties = new Properties(panel, api, { mode: () => this.editMode, updateShape: (cell, patch) => this.updateShape(cell, patch), updateLink: (cell, patch) => this.updateLink(cell, patch) }, () => this.host.views());
     // Bends: a virtual handle in the middle of each segment adds a point, as in diagrams.net.
     EdgeHandlerConfig.virtualBendsEnabled = true;
@@ -490,7 +522,8 @@ export class Editor {
     graph.isCellDeletable = (cell: Cell): boolean => {
       if (this.editMode === "draft" || this.loading) return true;
       const kind = shapeOf(cell)?.kind;
-      return kind === "note" || kind === "group";
+      // A proposed shape the spec does not have is layout too: the canvas may let it go.
+      return kind === "note" || kind === "group" || shapeOf(cell)?.status != null;
     };
     // Connections: from the arrow over a shape, with the meaning picked in the bar; refused with a tooltip when it means nothing.
     graph.setAllowLoops(true);
@@ -606,6 +639,8 @@ export class Editor {
     remove.id = "editor-delete";
     const reset = button("скинути чернетку", () => void this.resetDraft(), { title: "Забути чернетку вкладки й відкрити вид з коду заново" });
     reset.id = "editor-reset";
+    const propose = button("Запропонувати зміни", () => void this.propose(), { title: "Зміни полотна проти моделі — як пропозиції для специфікацій (злиття: MERGE чи keylang proposals accept)" });
+    propose.id = "editor-propose";
     this.bar.append(
       code,
       draft,
@@ -633,6 +668,7 @@ export class Editor {
       png,
       make("span", { className: "sep" }),
       reset,
+      propose,
     );
   }
 
@@ -973,10 +1009,12 @@ export class Editor {
   }
 
   /** The panel's change of a shape: one undoable value (and style, size) change; a refusal as text. */
-  updateShape(cell: Cell, patch: Partial<Pick<Shape, "id" | "label" | "kind" | "trigger" | "role" | "signature" | "tests" | "description">>): string | null {
+  updateShape(cell: Cell, patch: Partial<Pick<Shape, "id" | "label" | "kind" | "trigger" | "role" | "signature" | "tests" | "description" | "colour">>): string | null {
     const shape = shapeOf(cell);
     if (!shape) return "не фігура";
-    if (this.editMode === "code" && shape.kind !== "note") return "«з коду»: зміст змінюється лише в «чернетці»";
+    // A colour is layout: «з коду» changes it too.
+    const layoutOnly = Object.keys(patch).every((key) => key === "colour");
+    if (this.editMode === "code" && shape.kind !== "note" && !layoutOnly) return "«з коду»: зміст змінюється лише в «чернетці»";
     const next = shape.clone();
     Object.assign(next, patch);
     if (patch.id !== undefined) {
@@ -1231,7 +1269,36 @@ export class Editor {
           graph.getDataModel().setGeometry(cell, geometry);
         }
       }
+      // What the layout file keeps beside the code's shapes: colours, notes, and the drawn shapes a proposal took.
+      for (const [key, at] of Object.entries(layout ?? {})) {
+        const known = cells.get(key) ?? lanes.get(key.replace(/^lane:/, ""));
+        if (known) {
+          const shape = shapeOf(known);
+          if (shape && at.colour) {
+            shape.colour = at.colour;
+            graph.getDataModel().setStyle(known, shapeStyle(shape));
+          }
+          continue;
+        }
+        if (at.kind === "note") this.insertSaved(key, at, null);
+        else if (at.status && at.kind && NODE_KINDS.has(at.kind)) this.insertSaved(key, at, lanes.get(laneLayer(at.id ?? "") ?? "") ?? null);
+      }
     });
+  }
+
+  /** A note or a proposed shape of the layout file, at its place in model coordinates (inside its lane when it has one). */
+  private insertSaved(key: string, at: Position, lane: Cell | null): void {
+    const kind = (at.kind ?? "note") as ShapeKind;
+    const shape = new Shape(key, kind, at.id ?? "", at.label ?? "");
+    if (kind === "note") shape.description = at.note ?? "";
+    if (at.colour) shape.colour = at.colour;
+    if (at.proposed) shape.proposed = at.proposed;
+    if (at.status) shape.status = at.status;
+    if (kind === "start") shape.trigger = "fn";
+    if (kind === "parallel") shape.role = "split";
+    const offset = lane ? this.origin(lane) : { x: 0, y: 0 };
+    const size = PALETTE.find((p) => p.kind === kind)?.size ?? [160, 60];
+    this.graph.insertVertex({ parent: lane ?? this.graph.getDefaultParent(), value: shape, position: [at.x - offset.x, at.y - offset.y], size: [at.w ?? size[0], at.h ?? size[1]], style: shapeStyle(shape) });
   }
 
   private shapeFromNode(node: DiagramNode, entries: Map<string, string>): Shape {
@@ -1300,6 +1367,8 @@ export class Editor {
             break;
           }
         }
+        // A proposed shape the spec does not have stays out: it is a mark of the layout, not part of the drawing.
+        if (shape.status !== null) continue;
         const node: ModelNode = { key: shape.key, id: shape.id, kind: shape.kind, label: shape.label, layer, planned: shape.id.startsWith("planned:"), tests: [...shape.tests], ...box };
         if (shape.trigger) node.trigger = shape.trigger;
         if (shape.role) node.role = shape.role;
@@ -1322,13 +1391,128 @@ export class Editor {
     return { view: this.viewKey, mode: this.editMode, nodes, edges, lanes };
   }
 
-  /** Positions of every shape and the bends of every edge, by key: what the layout store keeps. */
+  /**
+   * The layout of the canvas, by key: every shape's box in model coordinates
+   * (a drawn one with its ID, kind and label, a note with its text, a colour),
+   * the bends of every edge with the keys of its ends. What the layout store
+   * keeps; the server keys the file by what each shape says.
+   */
   layout(): Layout {
-    const model = this.currentModel();
     const layout: Layout = {};
-    for (const box of [...model.lanes, ...model.nodes]) layout[box.key] = { x: box.x, y: box.y, w: box.w, h: box.h };
-    for (const edge of model.edges) if (edge.points.length > 0) layout[edge.key] = { x: 0, y: 0, points: edge.points };
+    for (const cell of this.allCells()) {
+      const shape = shapeOf(cell);
+      if (shape && cell.isVertex()) {
+        if (shape.kind === "group") continue;
+        const geometry = cell.getGeometry()!;
+        const at = this.origin(cell);
+        const entry: Position = { x: at.x, y: at.y, w: geometry.width, h: geometry.height };
+        if (shape.origin !== "code" || shape.status !== null) Object.assign(entry, { id: shape.id, kind: shape.kind, label: shape.label });
+        if (shape.kind === "note") entry.note = shape.description || shape.label;
+        if (shape.colour) entry.colour = shape.colour;
+        if (shape.proposed) entry.proposed = shape.proposed;
+        layout[shape.key] = entry;
+      }
+      const link = linkOf(cell);
+      if (link && cell.isEdge()) {
+        const source = shapeOf(cell.getTerminal(true));
+        const target = shapeOf(cell.getTerminal(false));
+        const points = cell.getGeometry()?.points ?? [];
+        if (!source || !target || points.length === 0) continue;
+        const offset = this.origin(cell.getParent());
+        layout[link.key] = { x: 0, y: 0, points: points.map((p) => ({ x: p.x + offset.x, y: p.y + offset.y })), from: source.key, to: target.key };
+      }
+    }
     return layout;
+  }
+
+  /**
+   * «Запропонувати зміни» (business-flows/24): the canvas against the model of
+   * its view, as proposals the server writes. A conflict (the specs changed
+   * since the view was opened) says why and draws the view again; a proposal
+   * clears the tab's draft, so a reload draws the specs, with the drawn shapes
+   * not merged yet marked.
+   */
+  async propose(): Promise<DiagramProposal | null> {
+    await this.flush();
+    const model = this.currentModel();
+    let answer: DiagramProposal;
+    try {
+      answer = await this.api.diagramProposal(model, this.source.specHash ?? null);
+    } catch (error) {
+      this.host.status(`propose failed: ${error instanceof Error ? error.message : String(error)}`);
+      return null;
+    }
+    if (answer.status === "conflict") {
+      this.tip(answer.error ?? "the specs changed since this diagram was opened");
+      this.forgetDraft();
+      await this.host.reload?.(this.viewKey);
+      this.showResult(answer);
+      return answer;
+    }
+    this.showResult(answer);
+    if (answer.status !== "proposed") return answer;
+    // The drawn shapes the proposals took: marked on the canvas, and the layout keeps the mark.
+    const taken = new Map(answer.targets.flatMap((target) => target.shapes.map((key) => [key, target.target] as const)));
+    const graph = this.graph;
+    this.loading = true;
+    try {
+      graph.batchUpdate(() => {
+        for (const cell of this.allCells()) {
+          const shape = shapeOf(cell);
+          const target = shape ? taken.get(shape.key) : undefined;
+          if (!shape || target === undefined || !cell.isVertex()) continue;
+          shape.proposed = target;
+        }
+      });
+    } finally {
+      this.loading = false;
+    }
+    this.forgetDraft();
+    return answer;
+  }
+
+  /** Drops this tab's draft of the open view: a reload draws the view from the specs and the layout file. */
+  private forgetDraft(): void {
+    window.clearTimeout(this.saveTimer);
+    this.saveTimer = 0;
+    try {
+      sessionStorage.removeItem(`${DRAFT_PREFIX}${this.viewKey}`);
+    } catch {
+      // Nothing stored.
+    }
+  }
+
+  /** The answer of a proposal above the canvas: each target with its hunks, the K108 warnings, keylang.json, the notes. */
+  private showResult(answer: DiagramProposal): void {
+    const close = button("×", () => (this.result.hidden = true), { title: "Сховати" });
+    close.className = "editor-result-close";
+    const items: Node[] = [close];
+    const head =
+      answer.status === "proposed" ? `Пропозиції: ${answer.targets.length}` :
+      answer.status === "nothing" ? "Нічого пропонувати: діаграма каже те саме, що специфікації" :
+      answer.status === "conflict" ? "Специфікації змінились після відкриття діаграми: вид перемальовано з них" :
+      `Не запропоновано: ${answer.error ?? answer.status}`;
+    items.push(make("strong", { text: head }));
+    if (answer.status === "conflict" && answer.error) items.push(make("p", { text: answer.error }));
+    const list = make("ul");
+    for (const target of answer.targets) {
+      const row = make("li");
+      row.dataset["target"] = target.target;
+      row.append(make("code", { text: target.target }), ` — ${target.hunks.length} шматок(ки)${target.newFile ? ", новий файл" : ""}${target.proposal ? `: ${target.proposal}` : ""}`);
+      list.append(row);
+    }
+    if (answer.targets.length > 0) items.push(list);
+    for (const weakening of answer.weakenings) {
+      const warning = make("p", { className: "editor-result-warning", text: `${weakening.file}:${weakening.line}: ${weakening.message}` });
+      items.push(warning);
+    }
+    if (answer.config) items.push(make("p", { text: answer.config.note }), make("pre", { text: answer.config.diff }));
+    for (const note of answer.notes) items.push(make("p", { className: "editor-result-note", text: note }));
+    if (answer.merge) items.push(make("p", { text: answer.merge }));
+    this.result.replaceChildren(...items);
+    this.result.dataset["status"] = answer.status;
+    this.result.hidden = false;
+    this.host.status(answer.status === "proposed" ? `proposed: ${answer.targets.map((t) => `${t.target} (${t.hunks.length} hunk${t.hunks.length === 1 ? "" : "s"})`).join(", ")}${answer.weakenings.length > 0 ? ` · ${answer.weakenings.length} K108` : ""}` : head);
   }
 
   private changed(): void {

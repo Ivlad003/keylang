@@ -27,12 +27,15 @@ import { WebSocketServer, type WebSocket } from "ws";
 import { analyze, type Analysis } from "../analyze.ts";
 import { checkResults, type CheckResult } from "../check-results.ts";
 import { toPosix } from "../config.ts";
-import { diagramOf, flowListing, parseView, usagesOf, viewsOf, type Diagram, type DiagramNode } from "../diagram.ts";
+import { diagramOf, flowListing, parseView, usagesOf, viewOfKey, viewsOf, type Diagram, type DiagramNode } from "../diagram.ts";
+import { layoutFromFile, layoutText, layoutToFile, readLayout, writeLayout, type ClientEntry, type ClientLayout, type LayoutFile } from "../diagram-layout.ts";
+import { pendingTargets } from "../proposals.ts";
 import { PROCESSES_FILE, processViews, readProcesses } from "../discover-names.ts";
 import { callsOf, eventsOf, explorerFlow, parseExplorerFlow } from "../explorer.ts";
 import { DISCOVERED_FLOWS_DIR, sourceInputs } from "../map.ts";
 import { runCoverage } from "../operations/coverage.ts";
 import { DIAGRAM_FORMATS, diagramExportText, exportSourcesOf, exportViewOfQuery } from "../operations/diagram-export.ts";
+import { runDiagramPropose, specHash } from "../operations/diagram-propose.ts";
 import { flowCandidate } from "../operations/draft.ts";
 import { commitProposal, generatedIn, proposalRefusal, rootRelative } from "../operations/shared.ts";
 import { buildTour, tourMarkdown } from "../tour.ts";
@@ -295,19 +298,8 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
    */
   const flowProposal = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     const json = (status: number, body: unknown): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
-    if (request.method !== "POST") {
-      response.setHeader("Allow", "POST");
-      return json(405, { error: "flow-proposal takes POST" });
-    }
-    if (!/^application\/json\s*(;|$)/i.test(String(request.headers["content-type"] ?? ""))) return json(415, { error: "flow-proposal takes Content-Type: application/json" });
-    const text = await readBody(request, MAX_BODY);
-    if (text === null) return json(413, { error: `the body is larger than ${MAX_BODY} bytes` });
-    let body: unknown;
-    try {
-      body = JSON.parse(text);
-    } catch {
-      return json(400, { error: "the body is no JSON" });
-    }
+    const body = await jsonBody(request, response, "flow-proposal", "POST", MAX_BODY);
+    if (body === NO_BODY) return;
     const wanted = parseExplorerFlow(body);
     if (typeof wanted === "string") return json(400, { error: wanted });
     const done = await analysis();
@@ -342,17 +334,89 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
     });
   };
 
+  /** The diagram of a view key (`flow:checkout`, `discovered:<name>`, `layers`…) as `diagramOf` draws it, before any layout file; a string says why there is none. */
+  const keyedDiagram = (done: Analysis, key: string): Diagram | string => {
+    const wanted = viewOfKey(key);
+    if (wanted === null) return `view: a view key such as flow:<name>, discovered:<name>, entry:<id>, process:<domain> or layers`;
+    const spec = wanted.discovered ? discoveredSpec(done) : done.spec;
+    if (spec === null) return { nodes: [], edges: [], groups: [] };
+    const processes = done.snapshot ? processViews(done.snapshot, done.spec, readProcesses(done.config.root, done.config.dir)) : [];
+    return diagramOf({ snapshot: done.snapshot, spec, results: [], view: wanted.view, processes });
+  };
+
+  /**
+   * `GET /api/layout?view=<key>` and `PUT` (business-flows/24): the layout file of a view,
+   * `<dir>/diagrams/<view>.layout.json`, in the keys of the editor's canvas. A PUT replaces
+   * it; the same guards as every write (token, JSON, origin).
+   */
+  const layoutRequest = async (request: IncomingMessage, response: ServerResponse, query: URLSearchParams): Promise<void> => {
+    const json = (status: number, body: unknown): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
+    const view = query.get("view") ?? "";
+    if (request.method !== "GET" && request.method !== "PUT") {
+      response.setHeader("Allow", "GET, PUT");
+      return json(405, { error: "layout takes GET or PUT" });
+    }
+    const body = request.method === "PUT" ? await jsonBody(request, response, "layout", "PUT", MAX_LAYOUT_BODY) : null;
+    if (body === NO_BODY) return;
+    const done = await analysis();
+    const diagram = keyedDiagram(done, view);
+    if (typeof diagram === "string") return json(400, { error: diagram });
+    const specDir = rootRelative(options.root, done.config.dir);
+    let saved: { path: string; file: LayoutFile | null };
+    try {
+      saved = readLayout(options.root, specDir, view);
+    } catch (error) {
+      return json(409, { error: error instanceof Error ? error.message : String(error) });
+    }
+    if (request.method === "GET") {
+      const pending = new Set(pendingTargets(options.root));
+      return json(200, { view, file: saved.path, exists: saved.file !== null, layout: saved.file === null ? {} : layoutFromFile(saved.file, diagram, pending) });
+    }
+    const layout = parseClientLayout(body);
+    if (typeof layout === "string") return json(400, { error: layout });
+    const file = layoutToFile(view, layout, diagram);
+    if (saved.file !== null && layoutText(saved.file) === layoutText(file)) return json(200, { view, file: saved.path, written: false });
+    try {
+      writeLayout(options.root, specDir, file);
+    } catch (error) {
+      return json(409, { error: error instanceof Error ? error.message : String(error) });
+    }
+    return json(200, { view, file: saved.path, written: true });
+  };
+
+  /**
+   * `POST /api/diagram-proposal` (business-flows/24): «Запропонувати зміни» of the editor —
+   * `{model, specHash}`, the canvas and the specs it was opened with — as proposals, by
+   * the operation `keylang diagram propose` runs. 409 when the specs changed since or a
+   * proposal waits; 200 with the targets, their hunks and the K108 warnings.
+   */
+  const diagramProposal = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
+    const json = (status: number, body: unknown): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
+    const body = await jsonBody(request, response, "diagram-proposal", "POST", MAX_MODEL_BODY);
+    if (body === NO_BODY) return;
+    if (body === null || typeof body !== "object" || Array.isArray(body)) return json(400, { error: "the body: {model, specHash}" });
+    const { model, specHash: hash } = body as { model?: unknown; specHash?: unknown };
+    const view = model !== null && typeof model === "object" && typeof (model as { view?: unknown }).view === "string" ? (model as { view: string }).view : null;
+    if (view === null) return json(400, { error: "model.view: a view key such as `flow:checkout`" });
+    if (hash !== undefined && hash !== null && typeof hash !== "string") return json(400, { error: "specHash: the string /api/diagram answered" });
+    const done = await runDiagramPropose({ root: options.root, view, model, specHash: hash ?? null }, { analyze: () => analysis() });
+    const status = done.status === "invalid" ? 400 : done.status === "conflict" || done.status === "refused" ? 409 : done.status === "failed" ? 500 : 200;
+    return json(status, { ...done, ...(done.error !== null ? { error: done.error } : {}) });
+  };
+
   /** `GET /api/views`, `/api/diagram?view=…`, `/api/usages?id=…`, `/api/calls?id=…`, `/api/ids?prefix=…`, `/api/coverage`, `/api/tour`; `POST /api/flow-proposal`: JSON for the diagram client (`GET /api/export?format=bpmn|drawio&view=…`: the file), with the socket's token as a Bearer. */
   const api = async (request: IncomingMessage, response: ServerResponse, path: string, query: URLSearchParams): Promise<void> => {
     // These paths are public (docs/tui.md); any other is the 404 of every unknown path, token or not.
     if (!API_PATHS.has(path)) return reply(response, 404, "text/plain", "not found\n");
     if (!sameOrigin(request) || !sameSecret(bearerToken(request), token)) return reply(response, 403, "text/plain", "forbidden\n");
-    if (path === "/api/flow-proposal") {
+    if (request.method !== "GET") {
       // A write: a browser's own word that the request comes from another site refuses it, besides Origin.
       const site = request.headers["sec-fetch-site"];
       if (site !== undefined && site !== "same-origin" && site !== "none") return reply(response, 403, "text/plain", "forbidden\n");
-      return flowProposal(request, response);
     }
+    if (path === "/api/flow-proposal") return flowProposal(request, response);
+    if (path === "/api/diagram-proposal") return diagramProposal(request, response);
+    if (path === "/api/layout") return layoutRequest(request, response, query);
     if (request.method !== "GET") return reply(response, 405, "text/plain", "method not allowed\n");
     const json = (status: number, body: unknown): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
     // The project tour (business-flows/15): the data of `keylang tour --json` and its Markdown, for the «Огляд» tab.
@@ -435,10 +499,24 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
     }
     if (discovered) {
       const found = discoveredSpec(done);
-      return json(200, found ? diagramOf({ snapshot: done.snapshot, spec: found, results: [], view }) : { nodes: [], edges: [], groups: [], reason: "no discovered flows: run `keylang flows discover`" });
+      let saved: LayoutFile | null = null;
+      try {
+        saved = readLayout(options.root, rootRelative(options.root, done.config.dir), `discovered:${query.get("name") ?? ""}`).file;
+      } catch {
+        saved = null;
+      }
+      return json(200, found ? { ...diagramOf({ snapshot: done.snapshot, spec: found, results: [], view, saved }), specHash: specHash(options.root, done.docs) } : { nodes: [], edges: [], groups: [], reason: "no discovered flows: run `keylang flows discover`" });
     }
     const results = checkResults(done.verdicts, done.snapshot?.snapshotId ?? null, done.diagnostics);
-    return json(200, withResults(diagramOf({ snapshot: done.snapshot, spec: done.spec, results, view, processes }), results));
+    // The view's layout file places the shapes (business-flows/24); one that cannot be read leaves the computed places.
+    const key = view.kind === "flow" ? `flow:${view.name}` : view.kind === "entry" ? `entry:${view.id}` : view.kind === "process" ? `process:${view.domain}` : view.kind === "layers" ? "layers" : null;
+    let saved: LayoutFile | null = null;
+    try {
+      if (key !== null) saved = readLayout(options.root, rootRelative(options.root, done.config.dir), key).file;
+    } catch {
+      saved = null;
+    }
+    return json(200, { ...withResults(diagramOf({ snapshot: done.snapshot, spec: done.spec, results, view, processes, saved }), results), specHash: specHash(options.root, done.docs) });
   };
 
   const serve = (request: IncomingMessage, response: ServerResponse): void => {
@@ -672,13 +750,70 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
 }
 
 /** The paths of the diagram API; any other under `/api/` is 404. */
-const API_PATHS: ReadonlySet<string> = new Set(["/api/views", "/api/diagram", "/api/usages", "/api/calls", "/api/ids", "/api/coverage", "/api/tour", "/api/flow-proposal", "/api/export"]);
+const API_PATHS: ReadonlySet<string> = new Set(["/api/views", "/api/diagram", "/api/usages", "/api/calls", "/api/ids", "/api/coverage", "/api/tour", "/api/flow-proposal", "/api/export", "/api/layout", "/api/diagram-proposal"]);
 
 /** At most this many IDs in one answer of `GET /api/ids`. */
 const MAX_IDS = 100;
 
 /** The largest body `POST /api/flow-proposal` reads. */
 const MAX_BODY = 64 * 1024;
+/** The largest layout `PUT /api/layout` reads. */
+const MAX_LAYOUT_BODY = 2 * 1024 * 1024;
+/** The largest model `POST /api/diagram-proposal` reads. */
+const MAX_MODEL_BODY = 4 * 1024 * 1024;
+
+/** What `jsonBody` returns when it has answered the request itself. */
+const NO_BODY: unique symbol = Symbol("no body");
+
+/**
+ * The JSON body of a write, or `NO_BODY` once the refusal is sent: another
+ * method is 405, a content type that is not `application/json` 415 (an HTML
+ * form cannot send it), a body over `max` 413, no JSON 400.
+ */
+async function jsonBody(request: IncomingMessage, response: ServerResponse, name: string, method: string, max: number): Promise<unknown> {
+  const json = (status: number, body: unknown): typeof NO_BODY => {
+    reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
+    return NO_BODY;
+  };
+  if (request.method !== method) {
+    response.setHeader("Allow", method);
+    return json(405, { error: `${name} takes ${method}` });
+  }
+  if (!/^application\/json\s*(;|$)/i.test(String(request.headers["content-type"] ?? ""))) return json(415, { error: `${name} takes Content-Type: application/json` });
+  const text = await readBody(request, max);
+  if (text === null) return json(413, { error: `the body is larger than ${max} bytes` });
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return json(400, { error: "the body is no JSON" });
+  }
+}
+
+/** The editor's layout from a `PUT /api/layout` body (`{layout: {key: {x, y, …}}}`), or what is wrong with it. */
+function parseClientLayout(body: unknown): ClientLayout | string {
+  const layout = body !== null && typeof body === "object" && !Array.isArray(body) ? (body as { layout?: unknown }).layout : undefined;
+  if (layout === null || typeof layout !== "object" || Array.isArray(layout)) return "the body: {layout: {<shape key>: {x, y, w?, h?, points?}}}";
+  const out: ClientLayout = {};
+  const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
+  for (const [key, raw] of Object.entries(layout as Record<string, unknown>)) {
+    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return `layout.${key}: an object`;
+    const entry = raw as Record<string, unknown>;
+    if (!finite(entry.x) || !finite(entry.y)) return `layout.${key}: needs x and y`;
+    const clean: ClientEntry = { x: entry.x, y: entry.y };
+    if (finite(entry.w)) clean.w = entry.w;
+    if (finite(entry.h)) clean.h = entry.h;
+    if (Array.isArray(entry.points)) {
+      if (!entry.points.every((p: unknown) => p !== null && typeof p === "object" && finite((p as { x?: unknown }).x) && finite((p as { y?: unknown }).y))) return `layout.${key}.points: {x, y} each`;
+      clean.points = (entry.points as { x: number; y: number }[]).map((p) => ({ x: p.x, y: p.y }));
+    }
+    for (const field of ["id", "kind", "label", "note", "colour", "proposed", "from", "to"] as const) {
+      const value = entry[field];
+      if (typeof value === "string") clean[field] = value;
+    }
+    out[key] = clean;
+  }
+  return out;
+}
 
 /** A request's body as text, or null when it is larger than `max` bytes (the rest is not read). */
 function readBody(request: IncomingMessage, max: number): Promise<string | null> {

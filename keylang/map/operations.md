@@ -118,6 +118,38 @@
     - type [ImportDrawioResult](../../src/operations/diagram-export.ts#L205)
     - fn [runImportDrawio](../../src/operations/diagram-export.ts#L225) (request: ImportDrawioRequest, context: OperationContext = {}) → Promise<ImportDrawioResult>
       - calls map.drawio.parseDrawio, base.diag.errorText, map.drawio.drawioFlowName, operations.shared.rootRelative, lang.files.existingText, map.drawio.flowSection, map.drawio.flowFromDrawio, features.draft.withFlow, features.proposals.lineDiff, operations.shared.generatedIn, features.proposals.proposalProblem, base.safe-write.writeProblem, operations.shared.proposalRefusal, operations.shared.commitProposal, map.map.sourceInputs, base.config.toPosix
+  - module [diagram-propose](../../src/operations/diagram-propose.ts#L1)
+    - node external.node
+    - analyze map.analyze
+    - config base.config
+    - diag base.diag
+    - diagram-layout map.diagram-layout
+    - diagram-proposal features.diagram-proposal
+    - diagram map.diagram
+    - files lang.files
+    - ir lang.ir
+    - line-diff base.line-diff
+    - map map.map
+    - parser lang.parser
+    - proposals features.proposals
+    - safe-write base.safe-write
+    - snapshot map.snapshot
+    - span base.span
+    - weakening features.weakening
+    - diagram-export operations.diagram-export
+    - shared operations.shared
+    - types operations.types
+    - fn [specHash](../../src/operations/diagram-propose.ts#L44) (root: string, docs: readonly Document[]) → string
+      - calls base.span.compareText, map.snapshot.sha256, lang.files.readTextOrNull
+    - type [DiagramProposeRequest](../../src/operations/diagram-propose.ts#L53)
+    - type [ProposedHunk](../../src/operations/diagram-propose.ts#L66)
+    - type [ProposedFile](../../src/operations/diagram-propose.ts#L72)
+    - type [DiagramProposeResult](../../src/operations/diagram-propose.ts#L85)
+    - fn [result](../../src/operations/diagram-propose.ts#L99) (view: string, status: DiagramProposeResult["status"], exitCode: 0 | 1 | 2, error: string | null = null) → DiagramProposeResult <!-- internal -->
+    - fn [baseDiagram](../../src/operations/diagram-propose.ts#L104) (analysis: Analysis, root: string, view: string) → Diagram | string <!-- internal -->
+      - calls map.diagram.viewOfKey, operations.diagram-export.discoveredSpecOf, operations.shared.rootRelative, map.diagram.diagramOf
+    - fn [runDiagramPropose](../../src/operations/diagram-propose.ts#L119) (request: DiagramProposeRequest, context: OperationContext = {}) → Promise<DiagramProposeResult>
+      - calls operations.diagram-propose.result, features.diagram-proposal.parseEditorModel, base.diag.errorText, operations.diagram-propose.specHash, operations.diagram-propose.baseDiagram, operations.shared.rootRelative, features.diagram-proposal.diagramChanges, lang.files.readTextOrNull, features.proposals.lineDiff, operations.shared.generatedIn, features.proposals.proposalProblem, base.safe-write.writeProblem, lang.files.existingText, operations.shared.proposalRefusal, lang.parser.parse, features.weakening.specWeakenings, base.line-diff.diffLines, map.map.sourceInputs, operations.shared.commitProposal, map.diagram-layout.readLayout, map.diagram-layout.layoutToFile, map.diagram-layout.writeLayout
   - module [discover-names](../../src/operations/discover-names.ts#L1)
     - analyze map.analyze
     - diag base.diag

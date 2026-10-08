@@ -19,6 +19,7 @@ import { BlindSpots } from "./blind.ts";
 import { Canvas, VERDICT_COLOUR, VERDICT_GLYPH } from "./canvas.ts";
 import { codeLink, element, make } from "./dom.ts";
 import { Editor } from "./editor.ts";
+import { FileLayoutStore, useLayoutStore } from "./layout-store.ts";
 import { Explorer } from "./explorer.ts";
 import { mountExport } from "./export.ts";
 import { VirtualList, type ListItem } from "./list.ts";
@@ -174,7 +175,17 @@ class Page {
     this.canvas = new Canvas(element("graph"), element("minimap"), { select: (node) => this.pick(node) });
     const host = { root: () => this.views?.root, explore: (id: string) => void this.open({ view: "explore", id }), status: (text: string) => (this.status.textContent = text) };
     this.explorer = new Explorer(element("explorer"), this.api, host);
-    this.editor = new Editor(element("editor"), this.api, { status: (text: string) => (this.status.textContent = text), views: () => this.views });
+    // The editor's layouts are the view's layout files in the repository (business-flows/24).
+    useLayoutStore(new FileLayoutStore(this.api));
+    this.editor = new Editor(element("editor"), this.api, {
+      status: (text: string) => (this.status.textContent = text),
+      views: () => this.views,
+      // A view drawn again from the specs as they are now (a conflict of «Запропонувати зміни»).
+      reload: async (key: string) => {
+        const query = viewOfKey(key);
+        if (query) await this.editor.openDiagram(key, await this.api.diagram(query), true);
+      },
+    });
     (window as unknown as { keylangEditor: unknown }).keylangEditor = this.editor;
     this.blind = new BlindSpots(element("blind"), this.api, { ...host, discovered: (name: string) => void this.open({ view: "discovered", name }) });
     for (const tab of document.querySelectorAll<HTMLButtonElement>("#modes button[data-mode]")) {

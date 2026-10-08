@@ -147,3 +147,13 @@ body[data-mode="editor"] #stage, body[data-mode="editor"] #details, body[data-mo
 #editor .editor-panel .prop-reason { color: #6d4c00; white-space: pre-wrap; margin: 0; }
 #editor .editor-tip { position: absolute; z-index: 10; max-width: 250px; background: #b71c1c; color: #ffffff; border-radius: 4px; padding: 6px 8px; font-size: 12px; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25); pointer-events: none; }
 #editor .editor-tip[hidden] { display: none; }
+#editor #editor-propose { background: #1565c0; border-color: #1565c0; color: #ffffff; padding: 0 10px; }
+#editor .editor-result { position: relative; max-height: 30vh; overflow: auto; padding: 6px 30px 6px 10px; border-bottom: 1px solid #cfd8dc; background: #e8f5e9; font-size: 12px; }
+#editor .editor-result[data-status="conflict"], #editor .editor-result[data-status="refused"], #editor .editor-result[data-status="failed"], #editor .editor-result[data-status="invalid"] { background: #fff3e0; }
+#editor .editor-result[hidden] { display: none; }
+#editor .editor-result ul { margin: 4px 0; padding-left: 18px; }
+#editor .editor-result p { margin: 4px 0; }
+#editor .editor-result pre { margin: 4px 0; font-size: 11px; white-space: pre-wrap; }
+#editor .editor-result .editor-result-warning { color: #b71c1c; }
+#editor .editor-result .editor-result-note { color: #607d8b; }
+#editor .editor-result .editor-result-close { position: absolute; top: 4px; right: 6px; border: none; background: none; cursor: pointer; font-size: 16px; }
