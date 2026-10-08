@@ -13,6 +13,7 @@ import type { FileFacts } from "../extract/facts.ts";
 import { laravel } from "./laravel.ts";
 import { magento } from "./magento.ts";
 import { sfcc } from "./sfcc.ts";
+import { symfony } from "./symfony.ts";
 
 /**
  * A type the configuration names: a qualified name of a language whose
@@ -210,7 +211,7 @@ export const EVERY_CLASS = "*";
 export const FRAMEWORK_CONFIG = "framework:";
 
 /** Adapters keylang has, by name. */
-export const FRAMEWORK_ADAPTERS: readonly FrameworkAdapter[] = [laravel, magento, sfcc];
+export const FRAMEWORK_ADAPTERS: readonly FrameworkAdapter[] = [laravel, magento, sfcc, symfony];
 
 export const FRAMEWORK_NAMES: readonly string[] = FRAMEWORK_ADAPTERS.map((a) => a.name).sort();
 
