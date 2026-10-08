@@ -89,7 +89,7 @@ keylang має допомагати швидко зануритись у чуж�
 | [17](issues/17-grammar-parallel.md) | Мова: паралельні групи кроків `parallel` | ready-for-agent | 02 |
 | [18](issues/18-grammar-async-triggers.md) | Мова: асинхронні тригери (route/cron/consumer/webhook), `continues`, таймери | ready-for-agent | 02, 09 |
 | [19](issues/19-php-trace-real-requests.md) | Trace на реальних запитах і інтеграційних тестах (PHP/Magento, TS, Python, Rust) | ready-for-agent | 09 |
-| [20](issues/20-web-diagram-model.md) | Web: API моделі діаграм (флоу, точки входу, події, шари) з розкладкою | ready-for-agent | — |
+| [20](issues/20-web-diagram-model.md) | Web: API моделі діаграм (флоу, точки входу, події, шари) з розкладкою | resolved | — |
 | [21](issues/21-web-flow-viewer.md) | Web: перегляд флоу як діаграми (пошук, вердикти, перехід у код) | ready-for-agent | 20, 33 |
 | [22](issues/22-web-entry-explorer.md) | Web: дослідник точок входу й подій — інтерактивне дерево викликів | ready-for-agent | 09, 20 |
 | [23](issues/23-web-diagram-editor.md) | Web-редактор діаграм у стилі diagrams.net (draw.io) | ready-for-agent | 20, 21, 33 |

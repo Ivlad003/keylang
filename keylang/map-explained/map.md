@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [analyze](#map.analyze) · [c4-export](#map.c4-export) · [declared-packages](#map.declared-packages) · [emit](#map.emit) · [entries](#map.entries) · [exact-path](#map.exact-path) · [explanations](#map.explanations) · [exports](#map.exports) · [fact-cache](#map.fact-cache) · [frontends](#map.frontends) · [graph](#map.graph) · [imports](#map.imports) · [map](#map.map) · [php-imports](#map.php-imports) · [python-imports](#map.python-imports) · [python-stdlib](#map.python-stdlib) · [rust-imports](#map.rust-imports) · [snapshot](#map.snapshot) · [trace-plan](#map.trace-plan) · [wire-gen](#map.wire-gen)
+[README](README.md) · modules: [analyze](#map.analyze) · [c4-export](#map.c4-export) · [declared-packages](#map.declared-packages) · [diagram](#map.diagram) · [emit](#map.emit) · [entries](#map.entries) · [exact-path](#map.exact-path) · [explanations](#map.explanations) · [exports](#map.exports) · [fact-cache](#map.fact-cache) · [frontends](#map.frontends) · [graph](#map.graph) · [imports](#map.imports) · [map](#map.map) · [php-imports](#map.php-imports) · [python-imports](#map.python-imports) · [python-stdlib](#map.python-stdlib) · [rust-imports](#map.rust-imports) · [snapshot](#map.snapshot) · [trace-plan](#map.trace-plan) · [wire-gen](#map.wire-gen)
 
 # map
 
@@ -128,6 +128,70 @@
     - fn [crateTables](../../src/declared-packages.ts#L314) (rel: string, source: Record<string, unknown>, prefix: string) → [DependencyField, Record<string, unknown>][] <!-- internal -->
       <a id="map.declared-packages.crateTables"></a><br>Walks the fixed list of Cargo dependency section keys, running each present entry in a manifest object through [`map.declared-packages.table`](map.md#map.declared-packages.table) with a prefixed field path for validation. Returns the pairs of section key and name map that validated, skipping absent or invalid ones. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [map.declared-packages.table](map.md#map.declared-packages.table)
+  - module [diagram](../../src/diagram.ts#L1)
+    <a id="map.diagram"></a><br>Diagrams of the model (business-flows/20, ADR 0014): a flow as BPMN-like shapes, an entry point's call tree, the layers and their rules. A view is a pure function of the snapshot, the SpecIR and the check results — no model, no file — so the same inputs give the same JSON.
+    - external-ids [base.external-ids](base.md#base.external-ids)
+    - snapshot [map.snapshot](map.md#map.snapshot)
+    - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
+    - span [base.span](base.md#base.span)
+    - type [DiagramView](../../src/diagram.ts#L17)
+      <a id="map.diagram.DiagramView"></a>
+    - type [DiagramVerdict](../../src/diagram.ts#L24) = "ok" | "fail" | "unverified" | "planned" | null
+      <a id="map.diagram.DiagramVerdict"></a>
+    - type [DiagramNode](../../src/diagram.ts#L26)
+      <a id="map.diagram.DiagramNode"></a>
+    - type [DiagramEdge](../../src/diagram.ts#L43)
+      <a id="map.diagram.DiagramEdge"></a>
+    - type [DiagramGroup](../../src/diagram.ts#L52)
+      <a id="map.diagram.DiagramGroup"></a><br>A lane: one layer, a band across the diagram.
+    - type [Diagram](../../src/diagram.ts#L62)
+      <a id="map.diagram.Diagram"></a>
+    - type [DiagramResult](../../src/diagram.ts#L71)
+      <a id="map.diagram.DiagramResult"></a><br>What a diagram reads of a check result: `CheckResult` and `Verdict` both fit.
+    - type [DiagramInput](../../src/diagram.ts#L82)
+      <a id="map.diagram.DiagramInput"></a>
+    - type [Positions](../../src/diagram.ts#L90)
+      <a id="map.diagram.Positions"></a><br>Positions that win over the automatic layout, by node id.
+    - fn [parseView](../../src/diagram.ts#L100) (query: URLSearchParams) → DiagramView | string
+      <a id="map.diagram.parseView"></a><br>A view from the query of `GET /api/diagram`, or why it names none.
+    - fn [viewsOf](../../src/diagram.ts#L132) (snapshot: AnalysisSnapshot | null, spec: SpecIR) → { flows: string[]; entries: { id: string; kind: string; label: string }[]; layers: string[] }
+      <a id="map.diagram.viewsOf"></a><br>What there is to draw: flow names in spec order, entry points as the snapshot lists them, layers in their order.
+      - calls [map.diagram.layerOrder](map.md#map.diagram.layerOrder)
+    - fn [diagramOf](../../src/diagram.ts#L140) (input: DiagramInput) → Diagram
+      <a id="map.diagram.diagramOf"></a>
+      - calls [map.diagram.layout](map.md#map.diagram.layout), [map.diagram.flowDiagram](map.md#map.diagram.flowDiagram), [map.diagram.empty](map.md#map.diagram.empty), [map.diagram.entryDiagram](map.md#map.diagram.entryDiagram), [map.diagram.layersDiagram](map.md#map.diagram.layersDiagram)
+    - fn [empty](../../src/diagram.ts#L150) (reason: string) → Diagram <!-- internal -->
+      <a id="map.diagram.empty"></a>
+    - fn [worst](../../src/diagram.ts#L158) (values: readonly string[]) → DiagramVerdict <!-- internal -->
+      <a id="map.diagram.worst"></a>
+    - fn [messageOf](../../src/diagram.ts#L164) (result: DiagramResult) → string <!-- internal -->
+      <a id="map.diagram.messageOf"></a>
+    - fn [byLine](../../src/diagram.ts#L169) (results: readonly DiagramResult[]) → Map<string, DiagramResult[]> <!-- internal -->
+      <a id="map.diagram.byLine"></a><br>Results by `file:line`.
+    - fn [byArea](../../src/diagram.ts#L181) (results: readonly DiagramResult[]) → Map<string, DiagramVerdict> <!-- internal -->
+      <a id="map.diagram.byArea"></a><br>The worst verdict about each ID and every ID above it (`a.b.c` counts for `a.b` and `a`).
+      - calls [map.diagram.worst](map.md#map.diagram.worst)
+    - fn [layerOrder](../../src/diagram.ts#L197) (snapshot: AnalysisSnapshot) → string[] <!-- internal -->
+      <a id="map.diagram.layerOrder"></a><br>The repository's layers in `keylang.json` order, then the others (packages last).
+      - calls [base.span.compareText](base.md#base.span.compareText)
+    - fn [layerOf](../../src/diagram.ts#L206) (snapshot: AnalysisSnapshot | null, id: string) → string | undefined <!-- internal -->
+      <a id="map.diagram.layerOf"></a>
+    - fn [lanes](../../src/diagram.ts#L214) (snapshot: AnalysisSnapshot | null, nodes: readonly DiagramNode[]) → DiagramGroup[] <!-- internal -->
+      <a id="map.diagram.lanes"></a><br>One lane per layer some node sits in, in the layers' order; sized by `layout`.
+      - calls [map.diagram.layerOrder](map.md#map.diagram.layerOrder)
+    - fn [flowDiagram](../../src/diagram.ts#L223) (input: DiagramInput, name: string) → Diagram <!-- internal -->
+      <a id="map.diagram.flowDiagram"></a>
+      - calls [map.diagram.empty](map.md#map.diagram.empty), [map.diagram.byLine](map.md#map.diagram.byLine), [map.diagram.worst](map.md#map.diagram.worst), [map.diagram.layerOf](map.md#map.diagram.layerOf), [map.diagram.stripLead](map.md#map.diagram.stripLead), [map.diagram.messageOf](map.md#map.diagram.messageOf), [map.diagram.lanes](map.md#map.diagram.lanes)
+    - fn [stripLead](../../src/diagram.ts#L343) (message: string, id: string) → string <!-- internal -->
+      <a id="map.diagram.stripLead"></a><br>`check`'s message without its `unverified <id>: ` lead.
+    - fn [entryDiagram](../../src/diagram.ts#L350) (snapshot: AnalysisSnapshot, results: readonly DiagramResult[], id: string, depth: number) → Diagram <!-- internal -->
+      <a id="map.diagram.entryDiagram"></a>
+      - calls [map.diagram.empty](map.md#map.diagram.empty), [map.diagram.byArea](map.md#map.diagram.byArea), [map.diagram.lanes](map.md#map.diagram.lanes)
+    - fn [layersDiagram](../../src/diagram.ts#L446) (snapshot: AnalysisSnapshot, spec: SpecIR, results: readonly DiagramResult[]) → Diagram <!-- internal -->
+      <a id="map.diagram.layersDiagram"></a>
+      - calls [map.diagram.layerOrder](map.md#map.diagram.layerOrder), [map.diagram.byArea](map.md#map.diagram.byArea), [map.diagram.layerOf](map.md#map.diagram.layerOf), [map.diagram.worst](map.md#map.diagram.worst)
+    - fn [layout](../../src/diagram.ts#L507) (diagram: Diagram, positions: Positions = {}) → Diagram
+      <a id="map.diagram.layout"></a><br>Places the shapes: the rank of a node is its longest path from a node without predecessors (back edges of a cycle ignored), its column; within a lane and a rank, nodes go by spec line, then by their order in the diagram. Lanes are horizontal bands as tall as their fullest rank.…
   - module [emit](../../src/emit.ts#L1)
     <a id="map.emit"></a><br>Snapshot → generated `map/<layer>.md` files, and the explained map: the same tree with an explanation under every node (ADR 0004).
     - node [external.node](external.md#external.node)
