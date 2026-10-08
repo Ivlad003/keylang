@@ -552,14 +552,16 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
   for (const [id, entries] of moduleFiles) {
     const module = entries[0]!.module;
     const opaque = module.members === "opaque";
+    // Python's `from .x import *` rebinds a name; ESM's `export *` of two sources exports neither.
+    const lastStar = languageOf(entries[0]!.facts.path) === "python" ? { lastStarWins: true } : {};
     const rows: ExportRowInput[] = [];
     for (const { facts } of entries) {
       const listed: ExportRow[] = facts.exportRows.length > 0 ? facts.exportRows : [...facts.exports].sort().map((name) => ({ name, kind: "value", local: name }));
       const own = listed.filter((row) => row.name !== "*").map((row) => exportInput(row, facts, fileDecls.get(facts.path)!, importTargets.get(facts.path)!));
       rows.push(...own);
-      if (entries.length > 1) exportInputs.set(`${FILE_UNIT}${facts.path}`, { rows: own, stars: fileStars.get(facts.path)!, opaque });
+      if (entries.length > 1) exportInputs.set(`${FILE_UNIT}${facts.path}`, { rows: own, stars: fileStars.get(facts.path)!, opaque, ...lastStar });
     }
-    exportInputs.set(id, { rows, stars: module.starSources, opaque });
+    exportInputs.set(id, { rows, stars: module.starSources, opaque, ...lastStar });
   }
   const symbolKind = (id: string): ExportKind | null => (decls.classes.has(id) ? "class" : decls.fns.has(id) ? "fn" : decls.types.has(id) ? "type" : null);
   const exportTables = resolveExports(exportInputs, symbolKind, (unit, name) => (unit.startsWith(FILE_UNIT) ? fileDecls.get(unit.slice(FILE_UNIT.length)) : declModule.get(unit))?.get(layerName(name)) ?? null);

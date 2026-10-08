@@ -977,3 +977,18 @@ test("rust: a fn declared inside a fn, or a parameter of one, shadows the module
   assert.deepEqual(toHelper, ["app.main.main"]);
   assert.match(keylang(dir, ["check"]).stdout, /static unverified app\.main\.helper: .*shadowed by local `helper`/);
 });
+
+test("python: two `from .x import *` in `__init__.py` with one name export the last one, as Python binds it", (t) => {
+  const files = {
+    "keylang.json": JSON.stringify({ languages: ["python"], layers: { app: "shop/app/**" } }),
+    "shop/app/a.py": "def V():\n    return 1\n\n\ndef f():\n    return 0\n",
+    "shop/app/b.py": "def V():\n    return 2\n\n\ndef g():\n    return 0\n",
+    "shop/app/__init__.py": "from .a import *\nfrom .b import *\n",
+  };
+  const all = repo(t, { ...files, "keylang/rules.md": "# rules\n\n- module app.__init__\n  - exports V, f, g\n" });
+  const ok = keylang(all, ["check"]);
+  assert.equal(ok.status, 0, ok.stdout);
+  assert.match(ok.stdout + ok.stderr, /0 fail, 0 unverified, 1 ok/);
+  const without = repo(t, { ...files, "keylang/rules.md": "# rules\n\n- module app.__init__\n  - exports f, g\n" });
+  assert.match(keylang(without, ["check"]).stdout, /K104 divergence: `app\.__init__` exports `V` \(fn, re-exported from `app\.b`\)/);
+});
