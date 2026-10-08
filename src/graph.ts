@@ -163,7 +163,7 @@ export interface Escape {
 }
 
 /** How a call edge that is not a plain call of the code came about; see `Call.via`. */
-export type Via = "default" | "injected" | "callable-arg" | "closure-arg" | "preference" | "argument" | "plugin:before" | "plugin:around" | "plugin:after";
+export type Via = "default" | "injected" | "callable-arg" | "closure-arg" | "preference" | "argument" | "plugin:before" | "plugin:around" | "plugin:after" | "observer" | "dispatch";
 
 export interface Call {
   target: string;
@@ -183,7 +183,9 @@ export interface Call {
    * m())`), at `site`, so the enclosing call's callee may run it. `--static
    * behavior` follows all four; `shape` none. A call the framework makes by
    * its config (ADR 0022): `preference`, `argument`, `plugin:before|around|after`,
-   * at `site` in the config; `behavior` follows them, `shape` does not.
+   * `observer` (a listener of an event the call dispatches), `dispatch` (the
+   * handler of a job or message the call dispatches), at `site` in the
+   * config; `behavior` follows them, `shape` does not.
    */
   via?: Via;
   /** Config edges: the area the fact applies in. */
@@ -940,7 +942,8 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
       member: (classId, name) => findMember(classId, name, false, staticThroughInstance(decls.classes.get(classId)?.path ?? "")).target,
       opaqueBase: (classId) => unreadBase(classId) !== null || decls.classes.get(classId)?.members === "opaque",
       supertypes,
-      owner: (dir) => (dir === null ? null : directoryModuleIn(config, dir, modules, layers)),
+      // A config written in code (a Laravel service provider) belongs to its file's module.
+      owner: (dir) => (dir === null ? null : (byFile.get(dir)?.module.id ?? directoryModuleIn(config, dir, modules, layers))),
     });
   }
 
@@ -1030,7 +1033,12 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
           const member = c.callee.slice(c.callee.lastIndexOf(".") + 1);
           if (c.param !== undefined && cls && bindings.argumentFor(cls.id, c.param)) return { bound: bindings.callThroughArgument(cls.id, c.param, member), through: null };
           const type = typedClass ?? (c.receiver ? typeNamed(c.receiver) : null);
-          return type !== null && bindings.binds(type) ? { bound: bindings.callThroughType(type, member), through: type } : null;
+          if (type !== null) return bindings.binds(type) ? { bound: bindings.callThroughType(type, member), through: type } : null;
+          // `Payment::charge()` on a class the config binds that declares no `charge` (a Laravel facade): the bound class's member.
+          const parts = c.callee.split(".");
+          const holder = parts.length === 2 && !c.receiver && !c.bound && parts[0] !== "this" && parts[0] !== "super" ? classNamed(parts[0]!) : null;
+          if (holder === null || !bindings.binds(holder) || findMember(holder, member, true, false).target !== null) return null;
+          return { bound: bindings.callThroughType(holder, member), through: holder };
         };
         /** The edges a config gives a call; `counted`: the call has no edge of the code, so the config decides whether it is resolved or a hole. */
         const placeConfigured = (c: CallFact, { bound, through }: { bound: BoundCall; through: string | null }, counted: boolean): void => {

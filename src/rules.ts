@@ -65,7 +65,7 @@ function docblockNote(edge: Pick<UseEdge, "docblock" | "config">): string {
 }
 
 /** Via values of the calls a framework makes by its config: the module whose config declares one depends on its target. */
-const CONFIG_VIA = new Set(["preference", "argument", "plugin:before", "plugin:around", "plugin:after"]);
+const CONFIG_VIA = new Set(["preference", "argument", "plugin:before", "plugin:around", "plugin:after", "observer", "dispatch"]);
 
 /** A config edge in words for a K102: `the preference `I → C` (app/etc/di.xml:12)`. */
 function configNote(edge: { via?: string; binding?: string; site?: string; scope?: string }): string {

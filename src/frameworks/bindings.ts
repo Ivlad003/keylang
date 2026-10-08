@@ -10,7 +10,7 @@
 // one type in one area are an `ambiguous-binding` hole; a class the snapshot
 // does not have is a hole with the reason. Nothing is guessed from names.
 
-import { typeLabel, type FrameworkInput, type TypeName } from "./adapter.ts";
+import { EVERY_CLASS, typeLabel, type FrameworkInput, type TypeName } from "./adapter.ts";
 
 /** What a name of the config stands for in the snapshot. */
 export type ResolvedType = { kind: "node"; id: string } | { kind: "external" } | { kind: "missing" };
@@ -130,6 +130,8 @@ export class FrameworkBindings {
   private readonly interceptorCache = new Map<string, PluginEdge[]>();
   private active: Plugin[] | null = null;
   readonly any: boolean;
+  /** Constructor parameter in ASCII lower case → the values the config sets for every class (Symfony `_defaults: bind: $p: '@C'`). */
+  private readonly everyClass = new Map<string, (Declared & { param: string })[]>();
 
   constructor(inputs: readonly FrameworkInput[], deps: BindingDeps) {
     this.deps = deps;
@@ -164,6 +166,12 @@ export class FrameworkBindings {
         if (to.resolved.kind === "missing") this.hole(facts.path, b, `<preference for="${typeLabel(b.from)}" type="${typeLabel(b.to)}">`, `the preference \`${typeLabel(b.from)} → ${typeLabel(b.to)}\` names \`${typeLabel(to.written)}\`, which no analysed file declares`, owner);
       }
       for (const a of facts.arguments) {
+        if (a.type.name === EVERY_CLASS && a.type.file === undefined) {
+          const value = { ...declared(a.value, facts.scope, facts.path, a, owner), param: a.param };
+          this.everyClass.set(asciiLower(a.param), [...(this.everyClass.get(asciiLower(a.param)) ?? []), value]);
+          if (value.resolved.kind === "missing") this.hole(facts.path, a, `${a.param}: ${typeLabel(a.value)}`, `the argument \`${a.param}\` of every class names \`${typeLabel(value.written)}\`, which no analysed file declares`, owner);
+          continue;
+        }
         // A virtualType's arguments are those of its class, for the instances it names.
         const holder = deps.resolve(unalias(a.type, facts.scope).type);
         if (holder.kind !== "node" || !deps.isClass(holder.id)) continue;
@@ -198,7 +206,7 @@ export class FrameworkBindings {
 
   /** The values the config sets for the constructor parameter `param` of the class; none when it sets none. */
   argumentFor(classId: string, param: string): boolean {
-    return (this.argumentsOf.get(classId)?.get(asciiLower(param))?.length ?? 0) > 0;
+    return this.valuesOf(classId, param).length > 0;
   }
 
   /** A call of `member` through a value typed `type` (a type or a class the config binds). */
@@ -211,7 +219,7 @@ export class FrameworkBindings {
   /** A call of `member` through the property the constructor parameter `param` of `classId` fills. */
   callThroughArgument(classId: string, param: string, member: string): BoundCall {
     const out = emptyCall();
-    const values = this.argumentsOf.get(classId)?.get(asciiLower(param)) ?? [];
+    const values = this.valuesOf(classId, param);
     for (const [scope, list] of groupBy(values, (v) => v.scope)) {
       const distinct = distinctTargets(list);
       if (distinct.length > 1) {
@@ -228,6 +236,12 @@ export class FrameworkBindings {
       this.place(out, chain, member, "argument", scope, `the argument \`${param}\``);
     }
     return finish(out);
+  }
+
+  /** What the config sets for the parameter of the class: its own arguments, else those for every class. */
+  private valuesOf(classId: string, param: string): (Declared & { param: string })[] {
+    const own = this.argumentsOf.get(classId)?.get(asciiLower(param)) ?? [];
+    return own.length > 0 ? own : (this.everyClass.get(asciiLower(param)) ?? []);
   }
 
   /**

@@ -17,7 +17,7 @@ import { components } from "./scc.ts";
 
 export const SNAPSHOT_SCHEMA = 8;
 /** Bump when extraction or resolution changes the facts that `snapshotId` covers. */
-export const EXTRACTOR_VERSION = "m1.18";
+export const EXTRACTOR_VERSION = "m1.19";
 
 export type Resolution = "resolved" | "ambiguous" | "unresolved";
 /**
@@ -61,7 +61,10 @@ export interface SnapshotEdge {
    * through an interface (or a class) the config binds to a class;
    * `argument` — a call through a constructor argument the config sets
    * (Magento `<argument xsi:type="object">`); `plugin:before`, `plugin:around`,
-   * `plugin:after` — a plugin method that wraps the call. `keylang check
+   * `plugin:after` — a plugin method that wraps the call; `observer` — a
+   * listener of the event the call dispatches (Laravel `$listen`, Symfony
+   * subscribers); `dispatch` — the handler of the job or message the call
+   * dispatches (a Laravel queued job, a Symfony Messenger handler). `keylang check
    * --static=shape` follows none of them; rules do not see `injected`, and see
    * a config edge as a dependency of `owner`.
    */

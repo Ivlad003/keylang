@@ -190,6 +190,65 @@ export interface DeclFact {
   implements?: string[];
   /** The declaration's documentation comment without comment syntax, lines kept; absent when it has none. */
   doc?: string;
+  /** PHP: the attributes written on the class or the method (`#[Route('/x', methods: ['POST'])]`), in order. A framework adapter reads them (ADR 0022). */
+  attributes?: AttributeFact[];
+  /** PHP classes: the properties whose default value is a literal a framework reads (`protected $listen = [OrderPlaced::class => [...]]`). */
+  properties?: PropertyFact[];
+  /** PHP functions and methods: the parameters, when at least one is typed with a single class (`handle(OrderPlaced $event)`). */
+  params?: ParamFact[];
+  /** PHP functions and methods: the literal a body of one `return <literal>;` gives (`getSubscribedEvents`, `getFacadeAccessor`). */
+  returns?: LiteralFact;
+}
+
+/**
+ * A value PHP code writes as a literal, as far as a framework adapter reads it
+ * (ADR 0022): a string without interpolation, `X::class` (`self::class` is the
+ * enclosing class), a class constant `X::NAME`, `new X(…)`, an array of them,
+ * a closure literal at its position; anything else is `other`. Class names are
+ * qualified as PHP resolves them, without the leading `\`.
+ */
+export type LiteralFact =
+  | { kind: "string"; value: string }
+  | { kind: "class"; name: string }
+  | { kind: "const"; class: string; name: string }
+  | { kind: "new"; name: string }
+  | { kind: "array"; items: { key: LiteralFact | null; value: LiteralFact }[] }
+  | { kind: "closure"; line: number; col: number }
+  | { kind: "other" };
+
+/** One argument of a call or an attribute: named (`methods: ['POST']`) or positional. */
+export interface ArgFact {
+  name?: string;
+  value: LiteralFact;
+}
+
+/** `#[Name(args)]` on a declaration; `name` qualified as PHP resolves it. */
+export interface AttributeFact {
+  name: string;
+  args: ArgFact[];
+  line: number;
+  col: number;
+}
+
+/** A class property with a literal default value. */
+export interface PropertyFact {
+  name: string;
+  value: LiteralFact;
+  line: number;
+  col: number;
+}
+
+/** A parameter of a function; `type` is the qualified class when the parameter is typed with one. */
+export interface ParamFact {
+  name: string;
+  type?: string;
+}
+
+/** One call of a chain `Route::prefix('admin')->name('a.')->group(…)`, root first; the root names its class when it is a static call. */
+export interface ChainLinkFact {
+  name: string;
+  class?: string;
+  args: ArgFact[];
 }
 
 export interface CallFact {
@@ -241,6 +300,12 @@ export interface CallFact {
    * closure. Absent when some enclosing closure is stored in a value (`const f = () => hit()`).
    */
   closureArg?: { line: number; col: number };
+  /** PHP: every closure literal the call is nested in as an argument, outermost first, when there are two or more (`closureArg` is the first). */
+  closures?: { line: number; col: number }[];
+  /** PHP: the arguments as literals, when at least one is a literal a framework reads (a string, `X::class`, `new X`, an array, a closure). */
+  args?: ArgFact[];
+  /** PHP: a call on the result of other calls (`Route::prefix('admin')->group(…)`): the calls of the chain, root first, this one last. */
+  chain?: ChainLinkFact[];
   line: number;
   col: number;
   endLine: number;

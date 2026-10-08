@@ -39,7 +39,7 @@ export function draftFlow(snapshot: AnalysisSnapshot, trigger: string, options: 
     const key = `${e.source}\u0000${e.target}`;
     if (via.has(key)) continue;
     // A call the framework makes by its config (ADR 0022): a preference, a constructor argument, a plugin around the call.
-    const config = e.via === "preference" || e.via === "argument" || e.via?.startsWith("plugin:") ? ` <!-- keylang:algo via ${e.via} ${e.site ?? "?"}${e.scope && e.scope !== "global" ? ` scope ${e.scope}` : ""} -->` : null;
+    const config = e.via === "preference" || e.via === "argument" || e.via === "observer" || e.via === "dispatch" || e.via?.startsWith("plugin:") ? ` <!-- keylang:algo via ${e.via} ${e.site ?? "?"}${e.scope && e.scope !== "global" ? ` scope ${e.scope}` : ""} -->` : null;
     via.set(key, config ?? (e.via === "callable-arg" ? " <!-- keylang:algo via callable -->" : e.via === "closure-arg" ? " <!-- keylang:algo via closure -->" : ""));
   }
   const listed = new Set<string>();
