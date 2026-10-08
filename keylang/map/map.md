@@ -583,7 +583,8 @@
     - fn [shortHash](../../src/wire-gen.ts#L182) (text: string) → string <!-- internal -->
     - fn [key](../../src/wire-gen.ts#L186) (name: string) → string <!-- internal -->
     - fn [importExtension](../../src/wire-gen.ts#L195) (root: string) → "ts" | "js" | "none" <!-- internal -->
-      - calls map.wire-gen.compilerOptions
-    - fn [compilerOptions](../../src/wire-gen.ts#L203) (file: string, depth: number) → Record<string, unknown> <!-- internal -->
+      - calls map.wire-gen.compilerOptions, map.wire-gen.moduleResolution
+    - fn [moduleResolution](../../src/wire-gen.ts#L204) (options: Record<string, unknown>) → string <!-- internal -->
+    - fn [compilerOptions](../../src/wire-gen.ts#L211) (file: string, depth: number) → Record<string, unknown> <!-- internal -->
       - calls map.imports.readJsonc
-    - fn [specifier](../../src/wire-gen.ts#L218) (out: string, file: string, ext: "ts" | "js" | "none") → string <!-- internal -->
+    - fn [specifier](../../src/wire-gen.ts#L226) (out: string, file: string, ext: "ts" | "js" | "none") → string <!-- internal -->

@@ -914,9 +914,11 @@
       <a id="map.wire-gen.key"></a><br>Returns the given string unchanged if it is a valid JavaScript identifier, otherwise wraps it as a JSON string literal so it can be safely emitted as an object key in generated wire code by [`map.wire-gen.generateWire`](map.md#map.wire-gen.generateWire). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [importExtension](../../src/wire-gen.ts#L195) (root: string) → "ts" | "js" | "none" <!-- internal -->
       <a id="map.wire-gen.importExtension"></a><br>How the project writes relative imports: `.ts` with `allowImportingTsExtensions` or `rewriteRelativeImportExtensions`, `.js` under `node16`/`nodenext` resolution, no extension otherwise (bundlers). Relative `extends` are followed.
-      - calls [map.wire-gen.compilerOptions](map.md#map.wire-gen.compilerOptions)
-    - fn [compilerOptions](../../src/wire-gen.ts#L203) (file: string, depth: number) → Record<string, unknown> <!-- internal -->
+      - calls [map.wire-gen.compilerOptions](map.md#map.wire-gen.compilerOptions), [map.wire-gen.moduleResolution](map.md#map.wire-gen.moduleResolution)
+    - fn [moduleResolution](../../src/wire-gen.ts#L204) (options: Record<string, unknown>) → string <!-- internal -->
+      <a id="map.wire-gen.moduleResolution"></a><br>The module resolution tsc uses: the explicit one, else the one `module` implies (node16/node18/node20 → node16, nodenext → nodenext).
+    - fn [compilerOptions](../../src/wire-gen.ts#L211) (file: string, depth: number) → Record<string, unknown> <!-- internal -->
       <a id="map.wire-gen.compilerOptions"></a><br>`compilerOptions` of a tsconfig over those of its relative `extends`; package configs are not read.
       - calls [map.imports.readJsonc](map.md#map.imports.readJsonc)
-    - fn [specifier](../../src/wire-gen.ts#L218) (out: string, file: string, ext: "ts" | "js" | "none") → string <!-- internal -->
+    - fn [specifier](../../src/wire-gen.ts#L226) (out: string, file: string, ext: "ts" | "js" | "none") → string <!-- internal -->
       <a id="map.wire-gen.specifier"></a><br>Builds a relative import path from the output file to `file`, forcing a `./` prefix, then rewrites its extension per the `ext` mode: kept for `ts`, mapped through `RUNTIME_EXTENSION` for `js`, or stripped for TS/JS sources under `none`. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
