@@ -6,4 +6,11 @@
         <plugin name="audit" type="Shop\Promo\Plugin\AuditPlugin" sortOrder="10"/>
         <plugin name="legacy" type="Shop\Promo\Plugin\LegacyPlugin" sortOrder="5" disabled="true"/>
     </type>
+    <type name="Magento\Framework\Console\CommandList">
+        <arguments>
+            <argument name="commands" xsi:type="array">
+                <item name="shop_promo_reindex" xsi:type="object">Shop\Promo\Console\ReindexCommand</item>
+            </argument>
+        </arguments>
+    </type>
 </config>

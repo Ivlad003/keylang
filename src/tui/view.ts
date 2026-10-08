@@ -325,7 +325,7 @@ export function zoomListHeight(state: Pick<State, "rows">, rect: Rect): number {
 /** Below this many terminal columns a zoom row leaves its brief out; the mark and the edges stay. */
 const ZOOM_BRIEF_COLS = 100;
 
-const ZOOM_KIND: Record<ZoomRow["kind"], string> = { layer: "layer", module: "module", class: "class", package: "pkg", fn: "fn", type: "type", more: "" };
+const ZOOM_KIND: Record<ZoomRow["kind"], string> = { layer: "layer", module: "module", class: "class", package: "pkg", fn: "fn", type: "type", event: "event", more: "" };
 
 /** Where an explanation's words come from, as the nav panel says it. */
 function originText(e: NodeExplanation): string {

@@ -21,7 +21,7 @@ export const MAX_DEPTH = 3;
 
 export interface ZoomRow {
   id: string;
-  kind: "layer" | "module" | "class" | "package" | "fn" | "type" | "more";
+  kind: "layer" | "module" | "class" | "package" | "fn" | "type" | "event" | "more";
   /** A child by its name under the focus; a neighbor by its whole ID. */
   label: string;
   /** 0 for a child of the focus; n for a neighbor n edges away from it. */

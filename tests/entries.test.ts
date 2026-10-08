@@ -6,7 +6,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { binSource, binTargets, nextRoutePath, phpScript, pyprojectScripts, pythonModuleFile, rustBinTarget } from "../src/entries.ts";
 import { entriesText } from "../src/operations.ts";
-import { keylang, tempDir, writeTree } from "./cli-helpers.ts";
+import { cpSync } from "node:fs";
+import { join } from "node:path";
+import { keylang, root, tempDir, writeTree } from "./cli-helpers.ts";
 import { checkoutRepo, KEY } from "./tui-fixture.ts";
 import { session } from "./tui-helpers.ts";
 
@@ -128,6 +130,24 @@ test("entries: Python main and scripts, a Rust bin crate and a PHP front control
   const json = JSON.parse(entries(dir, ["--json"]).stdout) as { entries: { label: string; source: string }[] };
   assert.equal(json.entries.find((entry) => entry.label === "shop-cli")?.source, "pyproject.toml");
   assert.equal(json.entries.find((entry) => entry.label === "src/shop/cli.py")?.source, "src/shop/cli.py:8");
+});
+
+test("entries: a framework adapter adds its kinds (Magento: rest, graphql, cron, consumer, cli, observer, route); an unresolved one says why", (t) => {
+  const dir = tempDir(t, "keylang-entries-magento-");
+  cpSync(join(root, "tests/fixtures/magento-shop"), dir, { recursive: true });
+  const parsed = JSON.parse(entries(dir, ["--json"]).stdout) as { entries: { kind: string; label: string; framework: string | null; unresolved?: string }[] };
+  assert.deepEqual([...new Set(parsed.entries.map((entry) => entry.kind))], ["cli", "consumer", "cron", "graphql", "observer", "rest", "route"]);
+  assert.ok(parsed.entries.every((entry) => entry.framework === "magento"));
+  const rest = entries(dir, ["--kind", "rest"]);
+  assert.equal(rest.status, 0, rest.stderr);
+  assert.equal(
+    rest.stdout,
+    [
+      "rest  POST /V1/orders/:id/place [Shop_Sales::place, self]  sales.Model.OrderService.OrderService.place  app/code/Shop/Sales/Model/OrderService.php:8",
+      "rest  POST /V1/orders/:id/refund [anonymous]               Shop\\Sales\\Api\\RefundInterface::refund       app/code/Shop/Sales/etc/webapi.xml:10  unresolved: `Shop\\Sales\\Api\\RefundInterface` is named by the config, but no analysed file declares it",
+      "",
+    ].join("\n"),
+  );
 });
 
 test("entries: nothing found is exit 0 with the note and a hint; --json gives an empty list", (t) => {

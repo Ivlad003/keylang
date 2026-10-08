@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [analyze](#map.analyze) · [bpmn-export](#map.bpmn-export) · [c4-export](#map.c4-export) · [declared-packages](#map.declared-packages) · [diagram-layout](#map.diagram-layout) · [diagram](#map.diagram) · [drawio](#map.drawio) · [emit](#map.emit) · [entries](#map.entries) · [exact-path](#map.exact-path) · [explanations](#map.explanations) · [exports](#map.exports) · [fact-cache](#map.fact-cache) · [framework-entries](#map.framework-entries) · [frontends](#map.frontends) · [graph](#map.graph) · [imports](#map.imports) · [map](#map.map) · [php-imports](#map.php-imports) · [python-imports](#map.python-imports) · [python-stdlib](#map.python-stdlib) · [rust-imports](#map.rust-imports) · [snapshot](#map.snapshot) · [trace-plan](#map.trace-plan) · [wire-gen](#map.wire-gen)
+[README](README.md) · modules: [analyze](#map.analyze) · [bpmn-export](#map.bpmn-export) · [c4-export](#map.c4-export) · [declared-packages](#map.declared-packages) · [diagram-layout](#map.diagram-layout) · [diagram](#map.diagram) · [drawio](#map.drawio) · [emit](#map.emit) · [entries](#map.entries) · [exact-path](#map.exact-path) · [explanations](#map.explanations) · [exports](#map.exports) · [fact-cache](#map.fact-cache) · [index](#map.index) · [laravel](#map.laravel) · [php](#map.php) · [symfony](#map.symfony) · [framework-entries](#map.framework-entries) · [frontends](#map.frontends) · [graph](#map.graph) · [imports](#map.imports) · [map](#map.map) · [php-imports](#map.php-imports) · [python-imports](#map.python-imports) · [python-stdlib](#map.python-stdlib) · [python-web-entries](#map.python-web-entries) · [rust-imports](#map.rust-imports) · [snapshot](#map.snapshot) · [trace-plan](#map.trace-plan) · [wire-gen](#map.wire-gen)
 
 # map
 
@@ -19,31 +19,35 @@
     - fact-cache [map.fact-cache](map.md#map.fact-cache)
     - map [map.map](map.md#map.map)
     - parser [lang.parser](lang.md#lang.parser)
+    - migration [check.migration](check.md#check.migration)
     - snapshot [map.snapshot](map.md#map.snapshot)
     - test-report [check.test-report](check.md#check.test-report)
     - trace-evidence [check.trace-evidence](check.md#check.trace-evidence)
-    - type [AnalysisRequest](../../src/analyze.ts#L23)
-      <a id="map.analyze.AnalysisRequest"></a><br>Options for one analysis run: an absolute repository root, optional spec paths and unsaved buffer overlays, flags to skip code or evidence and to persist or save the fact cache, plus a pluggable snapshot generator and static-mode override. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
-    - type [Analysis](../../src/analyze.ts#L50) extends Assessment
+    - type [AnalysisRequest](../../src/analyze.ts#L24)
+      <a id="map.analyze.AnalysisRequest"></a><br>Options for one analysis run: an absolute repository root, optional spec paths and unsaved buffer overlays, flags to skip code or evidence and to persist or save the fact cache, plus a pluggable snapshot generator and static-mode override. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
+    - type [Analysis](../../src/analyze.ts#L57) extends Assessment
       <a id="map.analyze.Analysis"></a><br>Result record of analyzing a repository: bundles the resolved config, an optional map and snapshot, parsed spec documents, request paths that held no specs, and the declared packages sorted by id. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [analyze](../../src/analyze.ts#L64) (request: AnalysisRequest) → Promise<Analysis>
+    - fn [analyze](../../src/analyze.ts#L71) (request: AnalysisRequest) → Promise<Analysis>
       <a id="map.analyze.analyze"></a><br>Generates the code map via [`map.map.generateMap`](map.md#map.map.generateMap), parses spec Markdown plus rendered map files, and runs [`check.assess.assess`](check.md#check.assess.assess) with test and trace evidence, returning the result with config, map and docs. _(llm · claude:claude-opus-5-5 · 2026-10-06 · stale)_
-      - calls [base.config.loadConfig](base.md#base.config.loadConfig), [base.config.toPosix](base.md#base.config.toPosix), [map.fact-cache.keepsFactCache](map.md#map.fact-cache.keepsFactCache), [map.map.generateMap](map.md#map.map.generateMap), [map.fact-cache.saveFactCache](map.md#map.fact-cache.saveFactCache), [map.analyze.readingAid](map.md#map.analyze.readingAid), [lang.files.collectMdFiles](lang.md#lang.files.collectMdFiles), [lang.files.walkReaches](lang.md#lang.files.walkReaches), [lang.parser.parse](lang.md#lang.parser.parse), [map.analyze.within](map.md#map.analyze.within), [map.analyze.parseRenderedMap](map.md#map.analyze.parseRenderedMap), [base.span.compareText](base.md#base.span.compareText), [base.config.evidenceFiles](base.md#base.config.evidenceFiles), [base.config.resolveStatic](base.md#base.config.resolveStatic), [map.declared-packages.readManifests](map.md#map.declared-packages.readManifests), [check.assess.assess](check.md#check.assess.assess), [check.test-report.loadReports](check.md#check.test-report.loadReports), [check.trace-evidence.loadTraces](check.md#check.trace-evidence.loadTraces), [map.analyze.repositoryFile](map.md#map.analyze.repositoryFile)
-    - fn [parseRenderedMap](../../src/analyze.ts#L134) (path: string, text: string) → Document <!-- internal -->
+      - calls [base.config.loadConfig](base.md#base.config.loadConfig), [base.config.toPosix](base.md#base.config.toPosix), [map.fact-cache.keepsFactCache](map.md#map.fact-cache.keepsFactCache), [map.map.generateMap](map.md#map.map.generateMap), [map.fact-cache.saveFactCache](map.md#map.fact-cache.saveFactCache), [map.analyze.readingAid](map.md#map.analyze.readingAid), [lang.files.collectMdFiles](lang.md#lang.files.collectMdFiles), [lang.files.walkReaches](lang.md#lang.files.walkReaches), [lang.parser.parse](lang.md#lang.parser.parse), [map.analyze.within](map.md#map.analyze.within), [map.analyze.parseRenderedMap](map.md#map.analyze.parseRenderedMap), [base.span.compareText](base.md#base.span.compareText), [base.config.evidenceFiles](base.md#base.config.evidenceFiles), [base.config.resolveStatic](base.md#base.config.resolveStatic), [map.declared-packages.readManifests](map.md#map.declared-packages.readManifests), [map.analyze.oldSnapshotFor](map.md#map.analyze.oldSnapshotFor), [check.assess.assess](check.md#check.assess.assess), [check.test-report.loadReports](check.md#check.test-report.loadReports), [check.trace-evidence.loadTraces](check.md#check.trace-evidence.loadTraces), [map.analyze.repositoryFile](map.md#map.analyze.repositoryFile)
+    - fn [oldSnapshotFor](../../src/analyze.ts#L146) (root: string, from: string) → Promise<OldSnapshot>
+      <a id="map.analyze.oldSnapshotFor"></a><br>The nodes of the old stack of a migration (`migration.from` of keylang.json, relative to the root; business-flows/27): an index file, or the old checkout analysed read-only — no fact cache, its own `migration.from` unread. An unreadable one is a state, never a thrown error: the…
+      - calls [map.analyze.analyze](map.md#map.analyze.analyze), [check.migration.readOldIndex](check.md#check.migration.readOldIndex)
+    - fn [parseRenderedMap](../../src/analyze.ts#L182) (path: string, text: string) → Document <!-- internal -->
       <a id="map.analyze.parseRenderedMap"></a>
       - calls [lang.parser.parse](lang.md#lang.parser.parse)
-    - fn [findRoot](../../src/analyze.ts#L144) (start: string) → string
+    - fn [findRoot](../../src/analyze.ts#L192) (start: string) → string
       <a id="map.analyze.findRoot"></a><br>Walk up from `start` to the directory that holds `keylang.json`; `start` when there is none.
-    - fn [repositoryFile](../../src/analyze.ts#L155) (root: string, path: string) → boolean <!-- internal -->
+    - fn [repositoryFile](../../src/analyze.ts#L203) (root: string, path: string) → boolean <!-- internal -->
       <a id="map.analyze.repositoryFile"></a><br>`path` (relative to the root, as a flow's `test` writes it) is a file inside the repository.
       - calls [map.analyze.within](map.md#map.analyze.within)
-    - fn [readingAid](../../src/analyze.ts#L166) (specDir: string, abs: string) → boolean
+    - fn [readingAid](../../src/analyze.ts#L214) (specDir: string, abs: string) → boolean
       <a id="map.analyze.readingAid"></a><br>A generated reading aid beside the specs (the explained map, explanations, discovered flows, the project tour, diagram layouts): never a spec.
       - calls [map.analyze.within](map.md#map.analyze.within)
-    - fn [specPathProblem](../../src/analyze.ts#L175) (config: Config, abs: string) → string | null
+    - fn [specPathProblem](../../src/analyze.ts#L223) (config: Config, abs: string) → string | null
       <a id="map.analyze.specPathProblem"></a><br>Why `check` does not read `abs` as a spec, or null when it does: a `.md` file the walk of the spec directory reaches (no hidden directory, `node_modules` or `target` on the way) outside the reading aids.
       - calls [map.analyze.within](map.md#map.analyze.within), [lang.files.walkReaches](lang.md#lang.files.walkReaches), [map.analyze.readingAid](map.md#map.analyze.readingAid)
-    - fn [within](../../src/analyze.ts#L186) (abs: string, dir: string) → boolean
+    - fn [within](../../src/analyze.ts#L234) (abs: string, dir: string) → boolean
       <a id="map.analyze.within"></a><br>Reports whether an absolute path lies inside a directory by taking the relative path and rejecting results that climb out via `..` or resolve to a different root. Used as the boundary check by callers like [`map.analyze.repositoryFile`](map.md#map.analyze.repositoryFile) and [`tui.disk.leavesBoundary`](tui.md#tui.disk.leavesBoundary). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [bpmn-export](../../src/bpmn-export.ts#L1)
     <a id="map.bpmn-export"></a><br>BPMN 2.0 of a diagram (business-flows/28): the picture `/diagrams` draws (`diagramOf` + `layout`), as XML with its BPMNDI so Camunda Modeler or bpmn.io opens it as drawn. The mapping is the table «Відображення в BPMN» of ADR 0023: a layer is a lane of the one pool, a trigger a…
@@ -299,7 +303,7 @@
       - calls [map.diagram.unplaced](map.md#map.diagram.unplaced), [map.diagram.layout](map.md#map.diagram.layout), [map.diagram-layout.savedPositions](map.md#map.diagram-layout.savedPositions)
     - fn [unplaced](../../src/diagram.ts#L277) (input: DiagramInput) → Diagram <!-- internal -->
       <a id="map.diagram.unplaced"></a><br>The diagram of a view before `layout` places it.
-      - calls [map.diagram.flowDiagram](map.md#map.diagram.flowDiagram), [map.diagram.empty](map.md#map.diagram.empty), [map.diagram.processDiagram](map.md#map.diagram.processDiagram), [map.diagram.entryDiagram](map.md#map.diagram.entryDiagram), [map.diagram.layersDiagram](map.md#map.diagram.layersDiagram)
+      - calls [map.diagram.flowDiagram](map.md#map.diagram.flowDiagram), [map.diagram.empty](map.md#map.diagram.empty), [map.diagram.eventDiagram](map.md#map.diagram.eventDiagram), [map.diagram.processDiagram](map.md#map.diagram.processDiagram), [map.diagram.entryDiagram](map.md#map.diagram.entryDiagram), [map.diagram.layersDiagram](map.md#map.diagram.layersDiagram)
     - fn [empty](../../src/diagram.ts#L287) (reason: string) → Diagram <!-- internal -->
       <a id="map.diagram.empty"></a>
     - fn [worst](../../src/diagram.ts#L295) (values: readonly string[]) → DiagramVerdict <!-- internal -->
@@ -324,16 +328,21 @@
       - calls [map.diagram.empty](map.md#map.diagram.empty), [map.diagram.byLine](map.md#map.diagram.byLine), [map.diagram.worst](map.md#map.diagram.worst), [map.diagram.layerOf](map.md#map.diagram.layerOf), [map.diagram.stripLead](map.md#map.diagram.stripLead), [map.diagram.messageOf](map.md#map.diagram.messageOf), [map.diagram.lanes](map.md#map.diagram.lanes)
     - fn [stripLead](../../src/diagram.ts#L498) (message: string, id: string) → string <!-- internal -->
       <a id="map.diagram.stripLead"></a><br>`check`'s message without its `unverified <id>: ` lead.
-    - fn [entryDiagram](../../src/diagram.ts#L505) (snapshot: AnalysisSnapshot, results: readonly DiagramResult[], id: string, depth: number) → Diagram <!-- internal -->
+    - fn [eventNamed](../../src/diagram.ts#L506) (snapshot: AnalysisSnapshot, name: string) → string | null
+      <a id="map.diagram.eventNamed"></a><br>The event node a view names: its ID, `events.<literal>`, or the literal it is dispatched with.
+    - fn [eventDiagram](../../src/diagram.ts#L517) (snapshot: AnalysisSnapshot, results: readonly DiagramResult[], name: string) → Diagram <!-- internal -->
+      <a id="map.diagram.eventDiagram"></a><br>An event (ADR 0022 п. 6, business-flows/08): the fns that dispatch it, the event, and the fns its observers run, each in the lane of its layer. A dispatch is an `emits` edge, an observer a `call` named after it.
+      - calls [map.diagram.eventNamed](map.md#map.diagram.eventNamed), [map.diagram.empty](map.md#map.diagram.empty), [map.diagram.byArea](map.md#map.diagram.byArea), [map.diagram.lanes](map.md#map.diagram.lanes)
+    - fn [entryDiagram](../../src/diagram.ts#L542) (snapshot: AnalysisSnapshot, results: readonly DiagramResult[], id: string, depth: number) → Diagram <!-- internal -->
       <a id="map.diagram.entryDiagram"></a>
       - calls [map.diagram.empty](map.md#map.diagram.empty), [map.diagram.byArea](map.md#map.diagram.byArea), [map.diagram.lanes](map.md#map.diagram.lanes)
-    - fn [processDiagram](../../src/diagram.ts#L606) (snapshot: AnalysisSnapshot, processes: readonly DiagramProcess[], results: readonly DiagramResult[], domain: string) → Diagram <!-- internal -->
+    - fn [processDiagram](../../src/diagram.ts#L643) (snapshot: AnalysisSnapshot, processes: readonly DiagramProcess[], results: readonly DiagramResult[], domain: string) → Diagram <!-- internal -->
       <a id="map.diagram.processDiagram"></a><br>The processes of a domain (or the one process of that name): lanes per layer, one start per flow of each process (its trigger), and the steps right under it as tasks. A step two flows share is drawn once.
       - calls [map.diagram.empty](map.md#map.diagram.empty), [map.diagram.byArea](map.md#map.diagram.byArea), [map.diagram.layerOf](map.md#map.diagram.layerOf), [map.diagram.lanes](map.md#map.diagram.lanes)
-    - fn [layersDiagram](../../src/diagram.ts#L641) (snapshot: AnalysisSnapshot, spec: SpecIR, results: readonly DiagramResult[]) → Diagram <!-- internal -->
+    - fn [layersDiagram](../../src/diagram.ts#L678) (snapshot: AnalysisSnapshot, spec: SpecIR, results: readonly DiagramResult[]) → Diagram <!-- internal -->
       <a id="map.diagram.layersDiagram"></a>
       - calls [map.diagram.layerOrder](map.md#map.diagram.layerOrder), [map.diagram.byArea](map.md#map.diagram.byArea), [map.diagram.layerOf](map.md#map.diagram.layerOf), [map.diagram.worst](map.md#map.diagram.worst)
-    - fn [layout](../../src/diagram.ts#L702) (diagram: Diagram, positions: Positions = {}) → Diagram
+    - fn [layout](../../src/diagram.ts#L739) (diagram: Diagram, positions: Positions = {}) → Diagram
       <a id="map.diagram.layout"></a><br>Places the shapes: the rank of a node is its longest path from a node without predecessors (back edges of a cycle ignored), its column; within a lane and a rank, nodes go by spec line, then by their order in the diagram. Lanes are horizontal bands as tall as their fullest rank.…
   - module [drawio](../../src/drawio.ts#L1)
     <a id="map.drawio"></a><br>draw.io (diagrams.net) of a diagram, and a flow from a draw.io file (business-flows/28). The export is the picture `/diagrams` draws (`diagramOf` + `layout`) as an uncompressed `<mxfile>`: lanes as swimlanes, shapes styled as the web canvas styles them, every shape and edge an…
@@ -423,53 +432,53 @@
       <a id="map.emit.Render"></a><br>Bundles the state the map emitter threads through one render pass: the analysis snapshot, the parent-to-children index, the output directory, and an optional node whose map is being explained. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [renderLayers](../../src/emit.ts#L68) (r: Render) → Map<string, string> <!-- internal -->
       <a id="map.emit.renderLayers"></a><br>Builds one markdown file per layer from [`map.emit.layerIds`](map.md#map.emit.layerIds), each with a generated marker, optional contents from [`map.emit.contents`](map.md#map.emit.contents), the layer's description, and its sorted child modules rendered via [`map.emit.renderModule`](map.md#map.emit.renderModule). _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
-      - calls [map.emit.layerIds](map.md#map.emit.layerIds), [map.emit.contents](map.md#map.emit.contents), [map.emit.describe](map.md#map.emit.describe), [map.emit.sortIds](map.md#map.emit.sortIds), [map.emit.renderModule](map.md#map.emit.renderModule)
-    - fn [layerIds](../../src/emit.ts#L78) (snapshot: AnalysisSnapshot) → string[] <!-- internal -->
+      - calls [map.emit.layerIds](map.md#map.emit.layerIds), [map.emit.contents](map.md#map.emit.contents), [map.emit.describe](map.md#map.emit.describe), [map.emit.sortIds](map.md#map.emit.sortIds), [map.emit.renderDecl](map.md#map.emit.renderDecl), [map.emit.renderModule](map.md#map.emit.renderModule)
+    - fn [layerIds](../../src/emit.ts#L82) (snapshot: AnalysisSnapshot) → string[] <!-- internal -->
       <a id="map.emit.layerIds"></a><br>Collects the IDs of every node in the snapshot whose kind is `"layer"` and returns them as an alphabetically sorted list. Used by [`map.emit.renderLayers`](map.md#map.emit.renderLayers) and [`map.emit.renderReadme`](map.md#map.emit.renderReadme) to iterate layers in stable order. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [anchorOf](../../src/emit.ts#L88) (id: string) → string
+    - fn [anchorOf](../../src/emit.ts#L92) (id: string) → string
       <a id="map.emit.anchorOf"></a><br>The anchor of a node in the explained map: its ID, with every character other than an ASCII letter, digit, `.`, `_` or `-` written as `~<hex>~` (its code point). GitHub keeps such an `id` as written, and `~` never occurs in an ID, so two IDs never share an anchor.
-    - fn [ref](../../src/emit.ts#L93) (r: Render, id: string) → string <!-- internal -->
+    - fn [ref](../../src/emit.ts#L97) (r: Render, id: string) → string <!-- internal -->
       <a id="map.emit.ref"></a><br>A link to the node's anchor in its layer file; the bare ID in the canonical map.
       - calls [map.emit.anchorOf](map.md#map.emit.anchorOf)
-    - fn [contents](../../src/emit.ts#L100) (r: Render, layerId: string) → string <!-- internal -->
+    - fn [contents](../../src/emit.ts#L104) (r: Render, layerId: string) → string <!-- internal -->
       <a id="map.emit.contents"></a><br>The first lines of a layer file: back to the start page, and every module of the layer, in map order.
       - calls [map.emit.anchorOf](map.md#map.emit.anchorOf), [map.emit.sortIds](map.md#map.emit.sortIds)
-    - fn [describe](../../src/emit.ts#L116) (r: Render, id: string, depth: number) → string <!-- internal -->
+    - fn [describe](../../src/emit.ts#L120) (r: Render, id: string, depth: number) → string <!-- internal -->
       <a id="map.emit.describe"></a><br>The description line of a node at `depth`: in the explained map its anchor and its explanation, if any; nothing in the canonical map.
       - calls [map.emit.anchorOf](map.md#map.emit.anchorOf), [map.emit.descriptionText](map.md#map.emit.descriptionText), [map.emit.ref](map.md#map.emit.ref)
-    - fn [descriptionText](../../src/emit.ts#L131) (e: NodeExplanation, link: (id: string) => string | null = () => null) → string
+    - fn [descriptionText](../../src/emit.ts#L135) (e: NodeExplanation, link: (id: string) => string | null = () => null) → string
       <a id="map.emit.descriptionText"></a><br>The text of a description line: `<br>` so a Markdown viewer starts it on a line of its own, the explanation, and for a brief from a model its origin. The text never starts a block (a list item, a heading, a quote, a fence), and `<` outside code is `&lt;`, so no HTML in it…
       - calls [map.explanations.modelName](map.md#map.explanations.modelName)
-    - type [Counts](../../src/emit.ts#L149) <!-- internal -->
+    - type [Counts](../../src/emit.ts#L153) <!-- internal -->
       <a id="map.emit.Counts"></a><br>Explanation counts of the nodes of one layer (the layer included).
-    - fn [renderReadme](../../src/emit.ts#L156) (snapshot: AnalysisSnapshot, children: Map<string, string[]>, explain: ExplainNode) → string <!-- internal -->
+    - fn [renderReadme](../../src/emit.ts#L160) (snapshot: AnalysisSnapshot, children: Map<string, string[]>, explain: ExplainNode) → string <!-- internal -->
       <a id="map.emit.renderReadme"></a><br>Builds the map's top-level README: system section via [`map.emit.systemSection`](map.md#map.emit.systemSection), a per-layer table counting nodes by brief source (code doc, LLM, stale, none) with totals, and a name index from [`map.emit.index`](map.md#map.emit.index). _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [map.emit.layerIds](map.md#map.emit.layerIds), [map.emit.descriptionText](map.md#map.emit.descriptionText), [map.emit.ref](map.md#map.emit.ref), [map.emit.systemSection](map.md#map.emit.systemSection), [map.emit.index](map.md#map.emit.index)
-    - fn [systemSection](../../src/emit.ts#L209) (r: Render) → string[] <!-- internal -->
+    - fn [systemSection](../../src/emit.ts#L213) (r: Render) → string[] <!-- internal -->
       <a id="map.emit.systemSection"></a><br>The start of the start page: what the repository is (the system level of C4), under its manifest name. The words come from the README or a manifest, named after them, else from a model's brief with its origin; without either, a dash and how to ask for a brief.
       - calls [map.emit.descriptionText](map.md#map.emit.descriptionText), [map.emit.ref](map.md#map.emit.ref)
-    - fn [index](../../src/emit.ts#L218) (r: Render) → string[] <!-- internal -->
+    - fn [index](../../src/emit.ts#L222) (r: Render) → string[] <!-- internal -->
       <a id="map.emit.index"></a><br>One paragraph per first letter: every module and class of the repository (packages left out), by name.
       - calls [map.emit.nameOf](map.md#map.emit.nameOf), [base.span.compareText](base.md#base.span.compareText), [map.emit.anchorOf](map.md#map.emit.anchorOf)
-    - fn [childrenByParent](../../src/emit.ts#L237) (snapshot: AnalysisSnapshot) → Map<string, string[]> <!-- internal -->
+    - fn [childrenByParent](../../src/emit.ts#L241) (snapshot: AnalysisSnapshot) → Map<string, string[]> <!-- internal -->
       <a id="map.emit.childrenByParent"></a><br>Groups node IDs from `snapshot.nodes` under their parent by splitting each dotted ID at its last dot, skipping IDs without a dot. Used by [`map.emit.renderMap`](map.md#map.emit.renderMap) and [`map.emit.renderExplainedMap`](map.md#map.emit.renderExplainedMap) to build the tree. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [sortIds](../../src/emit.ts#L255) (snapshot: AnalysisSnapshot, ids: readonly string[]) → string[] <!-- internal -->
+    - fn [sortIds](../../src/emit.ts#L259) (snapshot: AnalysisSnapshot, ids: readonly string[]) → string[] <!-- internal -->
       <a id="map.emit.sortIds"></a><br>Children by file (a directory module by its name), then by line. Code-unit order, as the index and the snapshot sort: ICU collation differs between Node builds, and the map's bytes must not.
       - calls [map.emit.nameOf](map.md#map.emit.nameOf), [base.span.compareText](base.md#base.span.compareText)
-    - fn [nameOf](../../src/emit.ts#L265) (id: string) → string <!-- internal -->
+    - fn [nameOf](../../src/emit.ts#L269) (id: string) → string <!-- internal -->
       <a id="map.emit.nameOf"></a><br>Returns the substring after the last dot in a dotted node ID, giving the bare local name (or the whole string if there is no dot). Used by [`map.emit.renderDecl`](map.md#map.emit.renderDecl), [`map.emit.renderModule`](map.md#map.emit.renderModule), [`map.emit.sortIds`](map.md#map.emit.sortIds), and [`map.emit.index`](map.md#map.emit.index) when rendering and ordering output. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [linkedName](../../src/emit.ts#L269) (mapDir: string, node: SnapshotNode, name: string) → string <!-- internal -->
+    - fn [linkedName](../../src/emit.ts#L273) (mapDir: string, node: SnapshotNode, name: string) → string <!-- internal -->
       <a id="map.emit.linkedName"></a><br>Wraps a display name in a Markdown link pointing at the node's source location, built via [`map.emit.codeHref`](map.md#map.emit.codeHref). Returns the bare name when the node lacks a file or line. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [map.emit.codeHref](map.md#map.emit.codeHref)
-    - fn [renderModule](../../src/emit.ts#L274) (r: Render, id: string, depth: number) → string <!-- internal -->
+    - fn [renderModule](../../src/emit.ts#L278) (r: Render, id: string, depth: number) → string <!-- internal -->
       <a id="map.emit.renderModule"></a><br>Renders a module as an indented markdown bullet with its linked name, comment, description and dependency edges, then recurses into nested modules or emits child declarations via [`map.emit.renderDecl`](map.md#map.emit.renderDecl) in sorted order. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [map.emit.linkedName](map.md#map.emit.linkedName), [map.emit.nameOf](map.md#map.emit.nameOf), [map.emit.describe](map.md#map.emit.describe), [map.emit.depsOf](map.md#map.emit.depsOf), [map.emit.ref](map.md#map.emit.ref), [map.emit.sortIds](map.md#map.emit.sortIds), [map.emit.renderDecl](map.md#map.emit.renderDecl)
-    - fn [edgesFrom](../../src/emit.ts#L297) (snapshot: AnalysisSnapshot, id: string) → readonly SnapshotEdge[] <!-- internal -->
+    - fn [edgesFrom](../../src/emit.ts#L301) (snapshot: AnalysisSnapshot, id: string) → readonly SnapshotEdge[] <!-- internal -->
       <a id="map.emit.edgesFrom"></a><br>Returns all edges whose source is the given id, building and memoizing a per-snapshot source→edges map on first use. Serves [`map.emit.depsOf`](map.md#map.emit.depsOf) and [`map.emit.renderDecl`](map.md#map.emit.renderDecl) as their edge lookup. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-    - fn [depsOf](../../src/emit.ts#L312) (snapshot: AnalysisSnapshot, id: string) → SnapshotEdge[] <!-- internal -->
+    - fn [depsOf](../../src/emit.ts#L316) (snapshot: AnalysisSnapshot, id: string) → SnapshotEdge[] <!-- internal -->
       <a id="map.emit.depsOf"></a><br>One line per dependency alias: an import and a re-export of one module are one dependency with two edges.
       - calls [map.emit.edgesFrom](map.md#map.emit.edgesFrom)
-    - fn [renderDecl](../../src/emit.ts#L320) (r: Render, id: string, node: SnapshotNode, depth: number) → string <!-- internal -->
+    - fn [renderDecl](../../src/emit.ts#L324) (r: Render, id: string, node: SnapshotNode, depth: number) → string <!-- internal -->
       <a id="map.emit.renderDecl"></a><br>Builds one indented markdown bullet for a declaration: a `fn`/`type` keyword, a linked name via [`map.emit.linkedName`](map.md#map.emit.linkedName), its signature, an internal marker, and the description from [`map.emit.describe`](map.md#map.emit.describe). Then appends a "calls" line listing deduplicated resolved, non-self… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [map.emit.linkedName](map.md#map.emit.linkedName), [map.emit.nameOf](map.md#map.emit.nameOf), [map.emit.describe](map.md#map.emit.describe), [map.emit.edgesFrom](map.md#map.emit.edgesFrom), [map.emit.ref](map.md#map.emit.ref)
   - module [entries](../../src/entries.ts#L1)
@@ -721,6 +730,169 @@
     - fn [saveFactCache](../../src/fact-cache.ts#L315) (root: string, text: string) → boolean
       <a id="map.fact-cache.saveFactCache"></a><br>Writes the fact cache for the next process, best-effort: the cache only saves time, so a write the protocol refuses (a link out of `.keylang/`) or the file system refuses (read-only, a sandbox, EACCES) leaves the old cache, or none, and is no error. The generator's bytes, as…
       - calls [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic), [base.safe-write.landing](base.md#base.safe-write.landing)
+  - module [index](../../src/framework-code/index.ts#L1)
+    <a id="map.index"></a><br>Facts the framework adapters take from code rather than config files (ADR 0022): Laravel's service providers and route files, Symfony's attributes. They read the PHP extractor's facts, so they live beside the graph (layer `map`) while the adapters themselves (`src/frameworks/`)…
+    - facts [extract.facts](extract.md#extract.facts)
+    - adapter [base.adapter](base.md#base.adapter)
+    - laravel [map.laravel](map.md#map.laravel)
+    - symfony [map.symfony](map.md#map.symfony)
+    - type [CodeReader](../../src/framework-code/index.ts#L14)
+      <a id="map.index.CodeReader"></a><br>What an adapter reads from code: one config per source file that says anything, given the adapter's parsed config files.
+  - module [laravel](../../src/framework-code/laravel.ts#L1)
+    <a id="map.laravel"></a><br>What Laravel wires in code (ADR 0022; business-flows 35), for the adapter `src/frameworks/laravel.ts`. Laravel writes its wiring in PHP, not in config files: service providers bind interfaces (`$this->app->bind(I::class, C::class)`, `$bindings`, `$singletons`)…
+    - node [external.node](external.md#external.node)
+    - facts [extract.facts](extract.md#extract.facts)
+    - adapter [base.adapter](base.md#base.adapter)
+    - php [map.php](map.md#map.php)
+    - fn [isOneOf](../../src/framework-code/laravel.ts#L51) (name: string | null | undefined, names: readonly string[]) → boolean <!-- internal -->
+      <a id="map.laravel.isOneOf"></a>
+      - calls [map.php.key](map.md#map.php.key)
+    - fn [laravelFacts](../../src/framework-code/laravel.ts#L56) (files: readonly FileFacts[]) → FrameworkConfig[]
+      <a id="map.laravel.laravelFacts"></a><br>What a Laravel repository's code wires, one `ConfigFacts` per file that says anything.
+      - calls [map.php.PhpCode](map.md#map.php.PhpCode), [map.php.codeFacts](map.md#map.php.codeFacts), [map.php.PhpCode.extends](map.md#map.php.PhpCode.extends), [map.laravel.readProvider](map.md#map.laravel.readProvider), [map.laravel.readFacade](map.md#map.laravel.readFacade), [map.php.key](map.md#map.php.key), [map.laravel.readCommand](map.md#map.laravel.readCommand), [map.php.PhpCode.implements](map.md#map.php.PhpCode.implements), [map.php.PhpCode.method](map.md#map.php.PhpCode.method), [map.php.type](map.md#map.php.type), [map.laravel.commandNames](map.md#map.laravel.commandNames), [map.laravel.readRoutes](map.md#map.laravel.readRoutes), [map.laravel.readConsole](map.md#map.laravel.readConsole), [map.laravel.readKernel](map.md#map.laravel.readKernel), [map.php.dispatchesIn](map.md#map.php.dispatchesIn), [map.php.hasFacts](map.md#map.php.hasFacts)
+    - fn [readProvider](../../src/framework-code/laravel.ts#L92) (code: PhpCode, provider: PhpClass, facts: ConfigFacts, keyed: Map<string, string>) → void <!-- internal -->
+      <a id="map.laravel.readProvider"></a><br>A service provider: its `$bindings`, `$singletons`, `$listen`, `$subscribe` and the container calls of its methods.
+      - calls [map.laravel.bind](map.md#map.laravel.bind), [map.php.eventName](map.md#map.php.eventName), [map.laravel.listen](map.md#map.laravel.listen), [map.php.cls](map.md#map.php.cls), [map.laravel.subscribe](map.md#map.laravel.subscribe), [map.php.arg](map.md#map.php.arg), [map.laravel.isOneOf](map.md#map.laravel.isOneOf), [map.php.PhpCode.calleeClass](map.md#map.php.PhpCode.calleeClass)
+    - fn [bind](../../src/framework-code/laravel.ts#L127) (facts: ConfigFacts, keyed: Map<string, string>, abstract: LiteralFact | null, concrete: LiteralFact | null, at: { line: number; col: number }, written: string) → void <!-- internal -->
+      <a id="map.laravel.bind"></a><br>One binding of a provider: `I::class => C::class`, `bind(I::class, C::class)`; a string key is the container's name for the class.
+      - calls [map.php.cls](map.md#map.php.cls), [map.php.str](map.md#map.php.str), [map.php.key](map.md#map.php.key), [map.php.type](map.md#map.php.type)
+    - fn [listen](../../src/framework-code/laravel.ts#L143) (code: PhpCode, file: string, facts: ConfigFacts, event: string, listener: LiteralFact, at: { line: number; col: number }) → void <!-- internal -->
+      <a id="map.laravel.listen"></a><br>A listener of `$listen` or `Event::listen`: `L::class` (its `handle`), `[L::class, 'm']`, `'L@m'`.
+      - calls [map.laravel.shortName](map.md#map.laravel.shortName), [map.php.type](map.md#map.php.type), [map.php.key](map.md#map.php.key), [map.php.PhpCode.method](map.md#map.php.PhpCode.method)
+    - fn [subscribe](../../src/framework-code/laravel.ts#L158) (code: PhpCode, subscriber: string, facts: ConfigFacts, at: { line: number; col: number }) → void <!-- internal -->
+      <a id="map.laravel.subscribe"></a><br>A subscriber of `$subscribe`: the array its `subscribe()` returns (`[OrderPlaced::class => 'handleOrder']`); otherwise a hole.
+      - calls [map.php.PhpCode.method](map.md#map.php.PhpCode.method), [map.php.eventName](map.md#map.php.eventName), [map.php.str](map.md#map.php.str), [map.laravel.shortName](map.md#map.laravel.shortName), [map.php.type](map.md#map.php.type)
+    - fn [readFacade](../../src/framework-code/laravel.ts#L173) (code: PhpCode, facade: PhpClass, facts: ConfigFacts, keyed: Map<string, string>) → void <!-- internal -->
+      <a id="map.laravel.readFacade"></a><br>A facade of the repository: `getFacadeAccessor()` returns the class it stands for, or the container key a provider binds.
+      - calls [map.php.PhpCode.method](map.md#map.php.PhpCode.method), [map.php.cls](map.md#map.php.cls), [map.php.str](map.md#map.php.str), [map.php.type](map.md#map.php.type)
+    - fn [readCommand](../../src/framework-code/laravel.ts#L187) (command: PhpClass, facts: ConfigFacts) → void <!-- internal -->
+      <a id="map.laravel.readCommand"></a><br>An Artisan command class: its `$signature` (or `$name`, `#[AsCommand]`) names it; `handle` runs.
+      - calls [map.laravel.commandName](map.md#map.laravel.commandName), [map.php.key](map.md#map.php.key), [map.php.type](map.md#map.php.type)
+    - fn [commandName](../../src/framework-code/laravel.ts#L194) (command: PhpClass) → string | null <!-- internal -->
+      <a id="map.laravel.commandName"></a>
+      - calls [map.php.str](map.md#map.php.str), [map.php.key](map.md#map.php.key), [map.php.arg](map.md#map.php.arg)
+    - fn [commandNames](../../src/framework-code/laravel.ts#L204) (code: PhpCode, classes: readonly PhpClass[]) → Map<string, PhpClass> <!-- internal -->
+      <a id="map.laravel.commandNames"></a><br>Command name → its class, for the schedule.
+      - calls [map.php.PhpCode.extends](map.md#map.php.PhpCode.extends), [map.laravel.commandName](map.md#map.laravel.commandName)
+    - type [Group](../../src/framework-code/laravel.ts#L214) <!-- internal -->
+      <a id="map.laravel.Group"></a>
+    - fn [readRoutes](../../src/framework-code/laravel.ts#L225) (code: PhpCode, file: FileFacts, facts: ConfigFacts) → void <!-- internal -->
+      <a id="map.laravel.readRoutes"></a><br>The routes of `routes/web.php`, `routes/api.php` (under `/api`) and the other route files: `Route::get|post|put|patch|delete|options|any|match`, `Route::resource`/`apiResource`, inside `Route::prefix(…)->group(fn)`, `Route::group(['prefix' => …], fn)` and…
+      - calls [map.laravel.isOneOf](map.md#map.laravel.isOneOf), [map.php.PhpCode.calleeClass](map.md#map.php.PhpCode.calleeClass), [map.php.str](map.md#map.php.str), [map.php.cls](map.md#map.php.cls), [map.laravel.resource](map.md#map.laravel.resource), [map.php.strings](map.md#map.php.strings), [map.php.arg](map.md#map.php.arg), [map.laravel.joinPath](map.md#map.laravel.joinPath), [map.laravel.routeAction](map.md#map.laravel.routeAction), [map.php.type](map.md#map.php.type)
+    - fn [routeAction](../../src/framework-code/laravel.ts#L286) (action: LiteralFact | null, controller: string | null) → { type: string | null; fn: string | null; note?: string } | { reason: string } <!-- internal -->
+      <a id="map.laravel.routeAction"></a><br>The controller method a route action names; a closure is the route file's own code.
+    - fn [resource](../../src/framework-code/laravel.ts#L297) (code: PhpCode, facts: ConfigFacts, call: CallFact, prefix: string[], args: CallFact["args"] & {}, api: boolean, chain: { name: string; args: NonNullable<CallFact["args"]> }[]) → void <!-- internal -->
+      <a id="map.laravel.resource"></a><br>`Route::resource('photos', C::class)`: one route per action the controller declares, `->only([…])`/`->except([…])` applied.
+      - calls [map.php.str](map.md#map.php.str), [map.php.arg](map.md#map.php.arg), [map.php.cls](map.md#map.php.cls), [map.php.strings](map.md#map.php.strings), [map.laravel.singular](map.md#map.laravel.singular), [map.php.PhpCode.method](map.md#map.php.PhpCode.method), [map.laravel.joinPath](map.md#map.laravel.joinPath), [map.php.type](map.md#map.php.type)
+    - fn [singular](../../src/framework-code/laravel.ts#L320) (word: string) → string <!-- internal -->
+      <a id="map.laravel.singular"></a><br>The singular Laravel's `Str::singular` gives the regular plurals of a resource name.
+    - fn [joinPath](../../src/framework-code/laravel.ts#L328) (parts: readonly string[]) → string <!-- internal -->
+      <a id="map.laravel.joinPath"></a>
+    - fn [readConsole](../../src/framework-code/laravel.ts#L334) (code: PhpCode, file: FileFacts, facts: ConfigFacts, commands: ReadonlyMap<string, PhpClass>) → void <!-- internal -->
+      <a id="map.laravel.readConsole"></a><br>`routes/console.php`: `Artisan::command('name', fn)` is a command; `Schedule::command|job|call(…)` the schedule.
+      - calls [map.php.PhpCode.calleeClass](map.md#map.php.PhpCode.calleeClass), [map.laravel.isOneOf](map.md#map.laravel.isOneOf), [map.php.str](map.md#map.php.str), [map.php.arg](map.md#map.php.arg), [map.laravel.schedule](map.md#map.laravel.schedule)
+    - fn [readKernel](../../src/framework-code/laravel.ts#L347) (code: PhpCode, file: FileFacts, facts: ConfigFacts, commands: ReadonlyMap<string, PhpClass>) → void <!-- internal -->
+      <a id="map.laravel.readKernel"></a><br>`Kernel::schedule(Schedule $schedule)`: `$schedule->command|job|call(…)`.
+      - calls [map.php.callsOf](map.md#map.php.callsOf), [map.php.key](map.md#map.php.key), [map.php.PhpCode.qualified](map.md#map.php.PhpCode.qualified), [map.laravel.schedule](map.md#map.laravel.schedule)
+    - fn [schedule](../../src/framework-code/laravel.ts#L354) (facts: ConfigFacts, file: string, call: CallFact, method: string, commands: ReadonlyMap<string, PhpClass>) → void <!-- internal -->
+      <a id="map.laravel.schedule"></a>
+      - calls [map.php.arg](map.md#map.php.arg), [map.php.key](map.md#map.php.key), [map.php.str](map.md#map.php.str), [map.php.type](map.md#map.php.type)
+    - fn [shortName](../../src/framework-code/laravel.ts#L374) (qualified: string) → string <!-- internal -->
+      <a id="map.laravel.shortName"></a><br>The class name without its namespace: an observer's name in the binding.
+  - module [php](../../src/framework-code/php.ts#L1)
+    <a id="map.php"></a><br>What the PHP framework readers (Laravel, Symfony) take from the code the PHP extractor recorded: classes by their qualified names with their bases and interfaces, the names a file's `use` statements bind, and the literals of attributes, properties and call arguments…
+    - facts [extract.facts](extract.md#extract.facts)
+    - adapter [base.adapter](base.md#base.adapter)
+    - type [PhpClass](../../src/framework-code/php.ts#L11)
+      <a id="map.php.PhpClass"></a><br>A class (or interface) of the repository by its qualified name.
+    - module [PhpCode](../../src/framework-code/php.ts#L24)
+      <a id="map.php.PhpCode"></a><br>The repository's PHP classes, interfaces and traits by their qualified names in ASCII lower case.
+      - fn [constructor](../../src/framework-code/php.ts#L29) (files: readonly FileFacts[])
+        <a id="map.php.PhpCode.constructor"></a>
+        - calls [map.php.localNames](map.md#map.php.localNames), [map.php.PhpCode.qualified](map.md#map.php.PhpCode.qualified), [map.php.key](map.md#map.php.key)
+      - fn [qualified](../../src/framework-code/php.ts#L46) (file: string, written: string) → string
+        <a id="map.php.PhpCode.qualified"></a><br>The qualified name a class name written in `file` stands for (its `use`, else its namespace as the extractor recorded it).
+        - calls [map.php.key](map.md#map.php.key)
+      - fn [get](../../src/framework-code/php.ts#L51) (qualified: string) → PhpClass | undefined
+        <a id="map.php.PhpCode.get"></a>
+        - calls [map.php.key](map.md#map.php.key)
+      - fn [lineage](../../src/framework-code/php.ts#L56) (qualified: string) → PhpClass[]
+        <a id="map.php.PhpCode.lineage"></a><br>The class and its bases keylang has read, the class first.
+        - calls [map.php.PhpCode.get](map.md#map.php.PhpCode.get)
+      - fn [extends](../../src/framework-code/php.ts#L67) (cls: PhpClass, base: string) → boolean
+        <a id="map.php.PhpCode.extends"></a><br>The class extends `base` (qualified), directly or through bases keylang has read.
+        - calls [map.php.PhpCode.lineage](map.md#map.php.PhpCode.lineage), [map.php.key](map.md#map.php.key)
+      - fn [implements](../../src/framework-code/php.ts#L72) (cls: PhpClass, iface: string) → boolean
+        <a id="map.php.PhpCode.implements"></a><br>The class or a base implements `iface` (qualified), directly or through interfaces keylang has read.
+        - calls [map.php.PhpCode.lineage](map.md#map.php.PhpCode.lineage), [map.php.key](map.md#map.php.key), [map.php.PhpCode.get](map.md#map.php.PhpCode.get)
+      - fn [method](../../src/framework-code/php.ts#L86) (qualified: string, name: string) → { cls: PhpClass; decl: DeclFact } | null
+        <a id="map.php.PhpCode.method"></a><br>A public method of the class or a base keylang has read; null when none declares it.
+        - calls [map.php.PhpCode.lineage](map.md#map.php.PhpCode.lineage), [map.php.key](map.md#map.php.key)
+      - fn [calleeClass](../../src/framework-code/php.ts#L95) (file: string, callee: string) → string | null
+        <a id="map.php.PhpCode.calleeClass"></a><br>The qualified class the head of a callee written in `file` names (`Route.get` → `Illuminate\Support\Facades\Route`).
+        - calls [map.php.PhpCode.qualified](map.md#map.php.PhpCode.qualified)
+    - fn [localNames](../../src/framework-code/php.ts#L103) (file: FileFacts) → Map<string, string> <!-- internal -->
+      <a id="map.php.localNames"></a><br>Local class names of a file's imports (in ASCII lower case) → the qualified names they bind.
+      - calls [map.php.key](map.md#map.php.key)
+    - fn [key](../../src/framework-code/php.ts#L113) (name: string) → string
+      <a id="map.php.key"></a><br>PHP class names compare without ASCII case.
+    - fn [sameClass](../../src/framework-code/php.ts#L117) (a: string, b: string) → boolean
+      <a id="map.php.sameClass"></a>
+      - calls [map.php.key](map.md#map.php.key)
+    - fn [arg](../../src/framework-code/php.ts#L122) (args: readonly ArgFact[] | undefined, name: string | null, position: number | null) → LiteralFact | null
+      <a id="map.php.arg"></a><br>An argument by its name, else by its position.
+    - fn [str](../../src/framework-code/php.ts#L133) (value: LiteralFact | null | undefined) → string | null
+      <a id="map.php.str"></a>
+    - fn [cls](../../src/framework-code/php.ts#L137) (value: LiteralFact | null | undefined) → string | null
+      <a id="map.php.cls"></a>
+    - fn [strings](../../src/framework-code/php.ts#L142) (value: LiteralFact | null | undefined) → string[]
+      <a id="map.php.strings"></a><br>The strings of a string or an array of strings.
+    - fn [eventName](../../src/framework-code/php.ts#L150) (value: LiteralFact | null | undefined) → string | null
+      <a id="map.php.eventName"></a><br>An event a listener or a dispatch names: a class by its qualified name, a string as written, a class constant as `X::NAME`.
+    - fn [type](../../src/framework-code/php.ts#L158) (name: string) → TypeName
+      <a id="map.php.type"></a>
+    - fn [callsOf](../../src/framework-code/php.ts#L163) (file: FileFacts) → Generator<{ call: CallFact; symbol: string | null; decl: DeclFact | null; cls: DeclFact | null }>
+      <a id="map.php.callsOf"></a><br>Every call of a file with the declaration it sits in (`Class.method`, a function's name) or null at the module level.
+    - fn [codeFacts](../../src/framework-code/php.ts#L172) (path: string) → ConfigFacts
+      <a id="map.php.codeFacts"></a><br>Facts of one source file a framework reads, empty to start with.
+    - fn [hasFacts](../../src/framework-code/php.ts#L177) (facts: ConfigFacts) → boolean
+      <a id="map.php.hasFacts"></a><br>Whether a code configuration says anything.
+    - fn [dispatchesIn](../../src/framework-code/php.ts#L196) (code: PhpCode, file: FileFacts) → { symbol: string; call: CallFact; event: string }[]
+      <a id="map.php.dispatchesIn"></a><br>Calls that dispatch an event or a message object, in a declaration of the file: `event(new X)`, `dispatch(new J)`, `Event::dispatch(new X)`, `Bus::dispatch(new J)`, `$dispatcher->dispatch(new X)` (a string second argument names the event: Symfony `dispatch($e…
+      - calls [map.php.callsOf](map.md#map.php.callsOf), [map.php.arg](map.md#map.php.arg), [map.php.PhpCode.get](map.md#map.php.PhpCode.get), [map.php.PhpCode.qualified](map.md#map.php.PhpCode.qualified), [map.php.PhpCode.method](map.md#map.php.PhpCode.method), [map.php.str](map.md#map.php.str)
+  - module [symfony](../../src/framework-code/symfony.ts#L1)
+    <a id="map.symfony"></a><br>What Symfony wires in code (ADR 0022; business-flows 36), for the adapter `src/frameworks/symfony.ts`: the PHP attributes the extractor records (`#[Route]`, `#[AsEventListener]`, `#[AsMessageHandler]`, `#[AsCommand]`, `#[AsCronTask]`, `#[AsPeriodicTask]`, `#[AsAlias]`), a…
+    - facts [extract.facts](extract.md#extract.facts)
+    - adapter [base.adapter](base.md#base.adapter)
+    - php [map.php](map.md#map.php)
+    - fn [className](../../src/framework-code/symfony.ts#L24) (written: string) → string <!-- internal -->
+      <a id="map.symfony.className"></a>
+    - fn [symfonyFacts](../../src/framework-code/symfony.ts#L29) (files: readonly FileFacts[], configs: readonly ConfigFacts[]) → FrameworkConfig[]
+      <a id="map.symfony.symfonyFacts"></a><br>What a Symfony repository's code wires: attributes, subscribers, dispatches; the route prefixes of `configs` apply to attribute routes.
+      - calls [map.php.PhpCode](map.md#map.php.PhpCode), [map.php.codeFacts](map.md#map.php.codeFacts), [map.symfony.routes](map.md#map.symfony.routes), [map.symfony.listeners](map.md#map.symfony.listeners), [map.symfony.handlers](map.md#map.symfony.handlers), [map.symfony.commands](map.md#map.symfony.commands), [map.symfony.tasks](map.md#map.symfony.tasks), [map.symfony.aliases](map.md#map.symfony.aliases), [map.php.dispatchesIn](map.md#map.php.dispatchesIn), [map.php.hasFacts](map.md#map.php.hasFacts)
+    - fn [attributes](../../src/framework-code/symfony.ts#L54) (decl: { attributes?: { name: string; args: { name?: string; value: LiteralFact }[]; line: number; col: number }[] }, names: readonly string[]) <!-- internal -->
+      <a id="map.symfony.attributes"></a>
+      - calls [map.php.key](map.md#map.php.key)
+    - fn [routes](../../src/framework-code/symfony.ts#L59) (c: PhpClass, facts: ConfigFacts, prefixes: readonly RoutePrefixFact[]) → void <!-- internal -->
+      <a id="map.symfony.routes"></a><br>`#[Route]` on the class (a prefix) and on its public methods; `__invoke` for one on an invokable class.
+      - calls [map.symfony.attributes](map.md#map.symfony.attributes), [map.php.str](map.md#map.php.str), [map.php.arg](map.md#map.php.arg), [map.symfony.joinPath](map.md#map.symfony.joinPath), [map.php.strings](map.md#map.php.strings), [map.php.type](map.md#map.php.type)
+    - fn [joinPath](../../src/framework-code/symfony.ts#L81) (parts: readonly string[]) → string <!-- internal -->
+      <a id="map.symfony.joinPath"></a>
+    - fn [listeners](../../src/framework-code/symfony.ts#L87) (code: PhpCode, c: PhpClass, facts: ConfigFacts) → void <!-- internal -->
+      <a id="map.symfony.listeners"></a><br>`#[AsEventListener]` on the class or a method, and `getSubscribedEvents()` of an `EventSubscriberInterface`: observers.
+      - calls [map.php.type](map.md#map.php.type), [map.symfony.attributes](map.md#map.symfony.attributes), [map.php.str](map.md#map.php.str), [map.php.arg](map.md#map.php.arg), [map.php.eventName](map.md#map.php.eventName), [map.php.PhpCode.implements](map.md#map.php.PhpCode.implements)
+    - fn [handlers](../../src/framework-code/symfony.ts#L124) (c: PhpClass, facts: ConfigFacts) → void <!-- internal -->
+      <a id="map.symfony.handlers"></a><br>`#[AsMessageHandler]` on the class (`__invoke`, or `method:`) or a method: a consumer of the message its `handles:` or first parameter names.
+      - calls [map.php.cls](map.md#map.php.cls), [map.php.type](map.md#map.php.type), [map.symfony.attributes](map.md#map.symfony.attributes), [map.php.str](map.md#map.php.str), [map.php.arg](map.md#map.php.arg)
+    - fn [commands](../../src/framework-code/symfony.ts#L136) (code: PhpCode, c: PhpClass, facts: ConfigFacts) → void <!-- internal -->
+      <a id="map.symfony.commands"></a><br>`#[AsCommand('app:x')]` (or `$defaultName`) on a command: `execute`, or `__invoke` of an invokable command.
+      - calls [map.symfony.attributes](map.md#map.symfony.attributes), [map.php.str](map.md#map.php.str), [map.php.arg](map.md#map.php.arg), [map.php.PhpCode.extends](map.md#map.php.PhpCode.extends), [map.php.PhpCode.method](map.md#map.php.PhpCode.method), [map.php.type](map.md#map.php.type)
+    - fn [tasks](../../src/framework-code/symfony.ts#L150) (c: PhpClass, facts: ConfigFacts) → void <!-- internal -->
+      <a id="map.symfony.tasks"></a><br>`#[AsCronTask('0 3 * * *')]`, `#[AsPeriodicTask('1 hour')]` on the class (`__invoke`, or `method:`) or a method: cron.
+      - calls [map.php.key](map.md#map.php.key), [map.php.type](map.md#map.php.type), [map.symfony.attributes](map.md#map.symfony.attributes), [map.php.str](map.md#map.php.str), [map.php.arg](map.md#map.php.arg)
+    - fn [aliases](../../src/framework-code/symfony.ts#L160) (c: PhpClass, facts: ConfigFacts) → void <!-- internal -->
+      <a id="map.symfony.aliases"></a><br>`#[AsAlias(I::class)]` on a class: a binding `I → class`; without an id, the one interface the class implements.
+      - calls [map.symfony.attributes](map.md#map.symfony.attributes), [map.php.cls](map.md#map.php.cls), [map.php.arg](map.md#map.php.arg), [map.php.str](map.md#map.php.str), [map.symfony.className](map.md#map.symfony.className), [map.php.type](map.md#map.php.type)
   - module [framework-entries](../../src/framework-entries.ts#L1)
     <a id="map.framework-entries"></a><br>Entry points and holes the framework adapters add to a snapshot (ADR 0022 п. 5), placed on the graph: an entry a config file names (SFCC `hooks.json`, `steptypes.json`) becomes the fn or module of its script, and SFCC adds the controllers the TypeScript extractor records…
     - config [base.config](base.md#base.config)
@@ -728,20 +900,48 @@
     - facts [extract.facts](extract.md#extract.facts)
     - adapter [base.adapter](base.md#base.adapter)
     - cartridges [base.cartridges](base.md#base.cartridges)
+    - python-web [base.python-web](base.md#base.python-web)
     - graph [map.graph](map.md#map.graph)
     - imports [map.imports](map.md#map.imports)
+    - python-web-entries [map.python-web-entries](map.md#map.python-web-entries)
     - snapshot [map.snapshot](map.md#map.snapshot)
-    - type [FrameworkEntryInputs](../../src/framework-entries.ts#L18)
+    - type [FrameworkEntryInputs](../../src/framework-entries.ts#L25)
       <a id="map.framework-entries.FrameworkEntryInputs"></a>
-    - fn [frameworkEntries](../../src/framework-entries.ts#L26) ({ config, graph, facts, frameworks }: FrameworkEntryInputs) → { entries: EntryPoint[]; holes: Gap[]; warnings: string[] }
+    - fn [frameworkEntries](../../src/framework-entries.ts#L33) ({ config, graph, facts, frameworks }: FrameworkEntryInputs) → { entries: EntryPoint[]; holes: Gap[]; warnings: string[] }
       <a id="map.framework-entries.frameworkEntries"></a>
-      - calls [map.entries.entryScope](map.md#map.entries.entryScope), [map.imports.probeCandidates](map.md#map.imports.probeCandidates), [map.entries.fnIn](map.md#map.entries.fnIn), [map.entries.frameworkEntry](map.md#map.entries.frameworkEntry), [base.cartridges.cartridgeLayout](base.md#base.cartridges.cartridgeLayout), [map.framework-entries.guessedOrder](map.md#map.framework-entries.guessedOrder), [map.framework-entries.controllerEntries](map.md#map.framework-entries.controllerEntries), [map.entries.compareEntries](map.md#map.entries.compareEntries)
-    - fn [guessedOrder](../../src/framework-entries.ts#L71) (layout: CartridgeLayout, graph: Graph, facts: readonly FileFacts[], probe: (candidate: string) => string | null) → Gap[] <!-- internal -->
+      - calls [map.entries.entryScope](map.md#map.entries.entryScope), [map.imports.probeCandidates](map.md#map.imports.probeCandidates), [map.framework-entries.phpClassFiles](map.md#map.framework-entries.phpClassFiles), [map.framework-entries.placeMethod](map.md#map.framework-entries.placeMethod), [map.framework-entries.withExtras](map.md#map.framework-entries.withExtras), [map.entries.frameworkEntry](map.md#map.entries.frameworkEntry), [map.entries.fnIn](map.md#map.entries.fnIn), [base.cartridges.cartridgeLayout](base.md#base.cartridges.cartridgeLayout), [map.framework-entries.guessedOrder](map.md#map.framework-entries.guessedOrder), [map.framework-entries.controllerEntries](map.md#map.framework-entries.controllerEntries), [map.framework-entries.nestEntries](map.md#map.framework-entries.nestEntries), [map.framework-entries.pwaEntries](map.md#map.framework-entries.pwaEntries), [map.python-web-entries.pythonWebEntries](map.md#map.python-web-entries.pythonWebEntries), [map.entries.compareEntries](map.md#map.entries.compareEntries)
+    - fn [withExtras](../../src/framework-entries.ts#L97) (entry: EntryPoint, fact: EntryConfigFact) → EntryPoint <!-- internal -->
+      <a id="map.framework-entries.withExtras"></a><br>The HTTP method and the note an entry fact gives its entry.
+    - fn [phpClassFiles](../../src/framework-entries.ts#L102) (facts: readonly FileFacts[]) → Map<string, { file: string; name: string; facts: FileFacts }> <!-- internal -->
+      <a id="map.framework-entries.phpClassFiles"></a><br>PHP classes by their qualified name in ASCII lower case → the file and the name it declares.
+      - calls [map.framework-entries.lower](map.md#map.framework-entries.lower)
+    - fn [lower](../../src/framework-entries.ts#L110) (name: string) → string <!-- internal -->
+      <a id="map.framework-entries.lower"></a>
+    - fn [placeMethod](../../src/framework-entries.ts#L118) (scope: EntryScope, classes: ReadonlyMap<string, { file: string; name: string; facts: FileFacts }>, type: TypeName, method: string) → { id: string; at: { file: string; line: number } } | { reason: string } <!-- internal -->
+      <a id="map.framework-entries.placeMethod"></a><br>The fn of `method` of the class a config names, its own or a base's the analysis has; the reason when it has neither the class nor the method.
+      - calls [map.framework-entries.lower](map.md#map.framework-entries.lower), [map.entries.fnIn](map.md#map.entries.fnIn)
+    - fn [guessedOrder](../../src/framework-entries.ts#L146) (layout: CartridgeLayout, graph: Graph, facts: readonly FileFacts[], probe: (candidate: string) => string | null) → Gap[] <!-- internal -->
       <a id="map.framework-entries.guessedOrder"></a><br>A `*\/cartridge/…` require that two cartridges answer, or a `module.superModule`, resolved along a guessed cartridge path: the order decided the edge, and nothing the repository writes gave the order. A hole (`unsupported`) of the requiring module, so a rule over it is…
       - calls [base.cartridges.cartridgeAnswers](base.md#base.cartridges.cartridgeAnswers)
-    - fn [controllerEntries](../../src/framework-entries.ts#L97) (graph: Graph, facts: readonly FileFacts[], scope: EntryScope) → EntryPoint[] <!-- internal -->
+    - fn [controllerEntries](../../src/framework-entries.ts#L172) (graph: Graph, facts: readonly FileFacts[], scope: EntryScope) → EntryPoint[] <!-- internal -->
       <a id="map.framework-entries.controllerEntries"></a><br>`server.get('Show', …, handler)` in `controllers/Cart.js`: a `route` labelled `Cart-Show`. The handler is the last argument when it names a fn keylang resolves; a handler written in place has no fn ID, so the controller module stands for it, at the registration's line, with a…
       - calls [map.entries.fnIn](map.md#map.entries.fnIn), [map.entries.frameworkEntry](map.md#map.entries.frameworkEntry)
+    - fn [nestEntries](../../src/framework-entries.ts#L208) (facts: readonly FileFacts[], scope: EntryScope, files: ReadonlySet<string>) → EntryPoint[] <!-- internal -->
+      <a id="map.framework-entries.nestEntries"></a><br>NestJS entry points from the decorators of its config files (the sources that import `@nestjs/…`): `@Controller('orders')` + `@Get(':id')` → `route` `GET /api/orders/:id` (with the global prefix of `setGlobalPrefix('api')` when it is one literal); `@Cron('0 * * * *')`…
+      - calls [map.framework-entries.allCalls](map.md#map.framework-entries.allCalls), [map.framework-entries.pathsOf](map.md#map.framework-entries.pathsOf), [map.entries.fnIn](map.md#map.entries.fnIn), [map.entries.frameworkEntry](map.md#map.entries.frameworkEntry), [map.framework-entries.joinPath](map.md#map.framework-entries.joinPath), [map.framework-entries.argText](map.md#map.framework-entries.argText)
+    - fn [allCalls](../../src/framework-entries.ts#L260) (file: FileFacts) → CallFact[] <!-- internal -->
+      <a id="map.framework-entries.allCalls"></a><br>Every call of a file: its declarations' (members too) and its top level's.
+    - fn [pathsOf](../../src/framework-entries.ts#L273) (arg: DecoratorArg | undefined, key: string) → string[] | null <!-- internal -->
+      <a id="map.framework-entries.pathsOf"></a><br>`'orders'`, `['a', 'b']`, `{ path: 'orders' }` → the paths; none written → `['']`; null for a path keylang cannot read.
+    - fn [joinPath](../../src/framework-entries.ts#L288) (...parts: string[]) → string <!-- internal -->
+      <a id="map.framework-entries.joinPath"></a><br>`/api/orders/:id` from its parts, each with or without slashes.
+    - fn [argText](../../src/framework-entries.ts#L296) (arg: DecoratorArg | undefined) → string <!-- internal -->
+      <a id="map.framework-entries.argText"></a><br>A decorator argument in words: a string's value, a name, a number; an object or an array as written.
+    - fn [pwaEntries](../../src/framework-entries.ts#L324) (facts: readonly FileFacts[], scope: EntryScope, files: ReadonlySet<string>) → EntryPoint[] <!-- internal -->
+      <a id="map.framework-entries.pwaEntries"></a><br>PWA Kit entry points: each `{ path, component }` of a `routes.*` file is a `route` labelled with the path on the component — a fn the file declares or imports, else the default export of the module a lazy `import()` loads, else the routes module with a note; `app.get('*'…
+      - calls [map.entries.fnIn](map.md#map.entries.fnIn), [map.framework-entries.lazyDefault](map.md#map.framework-entries.lazyDefault), [map.entries.frameworkEntry](map.md#map.entries.frameworkEntry)
+    - fn [lazyDefault](../../src/framework-entries.ts#L361) (scope: EntryScope, module: { deps: readonly { file: string; text: string; target: string }[] }, file: string, source: string) → string | null <!-- internal -->
+      <a id="map.framework-entries.lazyDefault"></a><br>The default export of the module a routes file loads with `import('<source>')` when it is a fn, else that module; null when the import does not resolve.
   - module [frontends](../../src/frontends.ts#L1)
     <a id="map.frontends"></a><br>A frontend reads one family of languages: its extractor turns a file into `FileFacts`, its resolver turns an import specifier into a file, and its capabilities say which edges it looks for. Graph, snapshot and checks are the same for every language; adding one means a frontend…
     - config [base.config](base.md#base.config)
@@ -760,18 +960,18 @@
     - fn [ecmascriptResolver](../../src/frontends.ts#L97) (root: string, sources: ReadonlySet<string>, _files: readonly FileFacts[], config?: Pick<Config, "sfcc" | "frameworks">) → SourceResolver <!-- internal -->
       <a id="map.frontends.ecmascriptResolver"></a><br>Builds the source resolver for JavaScript/TypeScript frontends by constructing a [`map.imports.ImportResolver`](map.md#map.imports.ImportResolver) over the given project root and set of known source files. _(llm · claude:claude-opus-5-5 · 2026-10-06 · stale)_
       - calls [map.imports.ImportResolver](map.md#map.imports.ImportResolver)
-    - fn [pythonResolver](../../src/frontends.ts#L103) (root: string, sources: ReadonlySet<string>) → SourceResolver <!-- internal -->
+    - fn [pythonResolver](../../src/frontends.ts#L105) (root: string, sources: ReadonlySet<string>) → SourceResolver <!-- internal -->
       <a id="map.frontends.pythonResolver"></a><br>Factory adapter that wraps a project root and its known source paths in a [`map.python-imports.PythonResolver`](map.md#map.python-imports.PythonResolver) instance and returns it typed as a generic SourceResolver. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [map.python-imports.PythonResolver](map.md#map.python-imports.PythonResolver)
-    - fn [rustResolver](../../src/frontends.ts#L107) (root: string, sources: ReadonlySet<string>) → SourceResolver <!-- internal -->
+    - fn [rustResolver](../../src/frontends.ts#L109) (root: string, sources: ReadonlySet<string>) → SourceResolver <!-- internal -->
       <a id="map.frontends.rustResolver"></a><br>Factory that builds a Rust source resolver by constructing [`map.rust-imports.RustResolver`](map.md#map.rust-imports.RustResolver) from the project root and the set of known source files, returning it as a generic resolver. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [map.rust-imports.RustResolver](map.md#map.rust-imports.RustResolver)
-    - fn [phpResolver](../../src/frontends.ts#L111) (root: string, sources: ReadonlySet<string>, files: readonly FileFacts[]) → SourceResolver <!-- internal -->
+    - fn [phpResolver](../../src/frontends.ts#L113) (root: string, sources: ReadonlySet<string>, files: readonly FileFacts[]) → SourceResolver <!-- internal -->
       <a id="map.frontends.phpResolver"></a>
       - calls [map.php-imports.PhpResolver](map.md#map.php-imports.PhpResolver)
-    - fn [frontendOf](../../src/frontends.ts#L115) (language: Language) → Frontend
+    - fn [frontendOf](../../src/frontends.ts#L117) (language: Language) → Frontend
       <a id="map.frontends.frontendOf"></a><br>Looks up the frontend registered for a language in the module-level `FRONTENDS` table and returns it directly, with no fallback for unknown languages. [`map.graph.buildGraph`](map.md#map.graph.buildGraph) uses it to pick the parser per file. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-    - fn [frontendFor](../../src/frontends.ts#L122) (path: string) → Frontend | undefined
+    - fn [frontendFor](../../src/frontends.ts#L124) (path: string) → Frontend | undefined
       <a id="map.frontends.frontendFor"></a><br>Resolves a file path to the language-specific frontend used to parse it, looking the language up via [`base.languages.languageOf`](base.md#base.languages.languageOf) and indexing a static table. Returns nothing when the path's language is unknown. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [base.languages.languageOf](base.md#base.languages.languageOf)
   - module [graph](../../src/graph.ts#L1)
@@ -789,101 +989,111 @@
     - span [base.span](base.md#base.span)
     - adapter [base.adapter](base.md#base.adapter)
     - bindings [base.bindings](base.md#base.bindings)
+    - entries [base.entries](base.md#base.entries)
+    - events [base.events](base.md#base.events)
     - snapshot [map.snapshot](map.md#map.snapshot)
-    - type [Graph](../../src/graph.ts#L22)
-      <a id="map.graph.Graph"></a><br>The full analysis result: layers, modules keyed by ID and by owning source path, stats, warnings, coverage gaps, assumed imports, ambiguous open edges, resolver config inputs, sorted exports and declared packages. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
-    - type [Gap](../../src/graph.ts#L43)
+    - type [Graph](../../src/graph.ts#L24)
+      <a id="map.graph.Graph"></a><br>The full analysis result: layers, modules keyed by ID and by owning source path, stats, warnings, coverage gaps, assumed imports, ambiguous open edges, resolver config inputs, sorted exports and declared packages. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
+    - type [EventNode](../../src/graph.ts#L54)
+      <a id="map.graph.EventNode"></a><br>An event (ADR 0022 п. 6): a node of the generated group `events`, named by the literal code dispatches it with. Its calls are the observers the framework runs when it is dispatched, each at its config line.
+    - type [Gap](../../src/graph.ts#L65)
       <a id="map.graph.Gap"></a><br>Records a spot in the codebase the mapper could not resolve, tagging it with one of six kinds, a file position span, the offending text, and a reason. Also optionally names the enclosing module or function. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-    - type [AssumedImport](../../src/graph.ts#L61) = Omit<Gap, "kind">
+    - type [AssumedImport](../../src/graph.ts#L84) = Omit<Gap, "kind">
       <a id="map.graph.AssumedImport"></a><br>An import of a file `assume` lists: the architecture imports it, and keylang neither reads nor requires it.
-    - type [OpenEdge](../../src/graph.ts#L63)
+    - type [OpenEdge](../../src/graph.ts#L86)
       <a id="map.graph.OpenEdge"></a><br>Describes a single call or type reference from a source node to a target that may be resolved, ambiguous (with a candidates list), or unresolved, along with the file position and span and the referencing text. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Layer](../../src/graph.ts#L77)
+    - type [Layer](../../src/graph.ts#L100)
       <a id="map.graph.Layer"></a><br>Describes one architectural layer of the repository as a named group holding its top-level modules in the order the map lists them. It is a plain data shape with no behaviour, consumed by code that builds or renders the codebase map. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Module](../../src/graph.ts#L83)
+    - type [Module](../../src/graph.ts#L106)
       <a id="map.graph.Module"></a><br>Describes one node of the dependency map — a file, directory, package or class — with its location, nested `Dep`, `Fn`, `TypeNode` and child `Module` entries, plus whether its member list is complete and which `export *` sources it re-exports. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-    - type [Dep](../../src/graph.ts#L117)
+    - type [Dep](../../src/graph.ts#L140)
       <a id="map.graph.Dep"></a><br>Records one import edge between modules: the alias, target module, importing file with its exact source span and text, and whether it re-exports. It also flags type-only imports, which the cycle check ignores. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
-    - type [Fn](../../src/graph.ts#L138)
+    - type [Fn](../../src/graph.ts#L161)
       <a id="map.graph.Fn"></a><br>Describes one function node in the code map: where it is declared, its signature and export status, static/private naming, an optional fingerprint of its declarations, its outgoing `Call` list, and how it may be reached without a direct named call via `Escape`. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-    - type [Escape](../../src/graph.ts#L164)
+    - type [Escape](../../src/graph.ts#L187)
       <a id="map.graph.Escape"></a><br>Record of a source location (file, line, column) paired with a free-text reason, used to report a spot where graph analysis could not resolve a reference. Carries no behavior; it is pure data shaped for diagnostics output. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Via](../../src/graph.ts#L172)
+    - type [Via](../../src/graph.ts#L195)
       <a id="map.graph.Via"></a><br>How a call edge that is not a plain call of the code came about; see `Call.via`.
-    - type [Call](../../src/graph.ts#L174)
+    - type [Call](../../src/graph.ts#L197)
       <a id="map.graph.Call"></a><br>Describes one outgoing call edge recorded for a function: the callee name, the source span and text of the call, and optional fields marking calls that arrive through a hook (a parameter default or a value injected at a recorded site) or from inside a closure. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-    - type [TypeNode](../../src/graph.ts#L213)
+    - type [TypeNode](../../src/graph.ts#L244)
       <a id="map.graph.TypeNode"></a><br>Describes one declared type in the dependency graph: its unique id, display name, source file and start/end position, optional signature and doc text, whether it is exported, and an optional content fingerprint. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Stats](../../src/graph.ts#L227)
+    - type [Stats](../../src/graph.ts#L258)
       <a id="map.graph.Stats"></a><br>Holds counters summarizing a built graph: counts of files, modules, functions, types, and dependencies, plus call-resolution tallies (resolved, unresolved, external, dynamic), unresolved imports, and files assigned to no module. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [globalsOf](../../src/graph.ts#L250) (file: string) → Frontend["globals"] <!-- internal -->
+    - fn [globalsOf](../../src/graph.ts#L281) (file: string) → Frontend["globals"] <!-- internal -->
       <a id="map.graph.globalsOf"></a><br>Looks up the language frontend for a file path via [`map.frontends.frontendFor`](map.md#map.frontends.frontendFor) and returns its globals table, falling back to an empty set when no frontend matches. Used by [`map.graph.buildGraph`](map.md#map.graph.buildGraph) to seed per-file global symbols. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [map.frontends.frontendFor](map.md#map.frontends.frontendFor)
-    - type [FileEntry](../../src/graph.ts#L254) <!-- internal -->
+    - type [FileEntry](../../src/graph.ts#L285) <!-- internal -->
       <a id="map.graph.FileEntry"></a><br>Pairs a file's extracted facts with the module it belongs to, giving the graph builder a single record per source file to hold both pieces of per-file state together. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [buildGraph](../../src/graph.ts#L259) (config: Config, files: FileFacts[], frameworks: readonly FrameworkInput[] = []) → Graph
+    - fn [buildGraph](../../src/graph.ts#L290) (config: Config, files: FileFacts[], frameworks: readonly FrameworkInput[] = []) → Graph
       <a id="map.graph.buildGraph"></a><br>Turns analyzed files into the architecture graph: places them into layered modules, registers declarations, resolves imports, exports and calls into edges, and records unresolved spots as gaps and warnings. _(llm · claude:claude-opus-5-5 · 2026-10-06 · stale)_
-      - calls [map.frontends.frontendOf](map.md#map.frontends.frontendOf), [map.frontends.frontendFor](map.md#map.frontends.frontendFor), [map.graph.placeFile](map.md#map.graph.placeFile), [map.graph.isIndexFile](map.md#map.graph.isIndexFile), [map.graph.topSegments](map.md#map.graph.topSegments), [base.config.layerName](base.md#base.config.layerName), [map.graph.addDecl](map.md#map.graph.addDecl), [map.graph.markOpaque](map.md#map.graph.markOpaque), [map.declared-packages.readManifests](map.md#map.declared-packages.readManifests), [base.external-ids.assignExternalIds](base.md#base.external-ids.assignExternalIds), [map.graph.importedPackages](map.md#map.graph.importedPackages), [base.span.compareText](base.md#base.span.compareText), [map.imports.assumedTarget](map.md#map.imports.assumedTarget), [base.config.isAssumed](base.md#base.config.isAssumed), [map.graph.importTarget](map.md#map.graph.importTarget), [map.graph.notIndexed](map.md#map.graph.notIndexed), [base.external-ids.externalSegment](base.md#base.external-ids.externalSegment), [base.languages.languageOf](base.md#base.languages.languageOf), [map.graph.exportInput](map.md#map.graph.exportInput), [map.exports.resolveExports](map.md#map.exports.resolveExports), [base.languages.caselessNames](base.md#base.languages.caselessNames), [map.graph.memberKey](map.md#map.graph.memberKey), [base.languages.asciiLowerCase](base.md#base.languages.asciiLowerCase), [map.graph.caselessIndex](map.md#map.graph.caselessIndex), [map.graph.staticThroughInstance](map.md#map.graph.staticThroughInstance), [map.graph.globalsOf](map.md#map.graph.globalsOf), [base.bindings.FrameworkBindings](base.md#base.bindings.FrameworkBindings), [map.graph.directoryModuleIn](map.md#map.graph.directoryModuleIn), [base.bindings.FrameworkBindings.interceptors](base.md#base.bindings.FrameworkBindings.interceptors), [map.graph.addCall](map.md#map.graph.addCall), [base.languages.interfaceTypes](base.md#base.languages.interfaceTypes), [map.graph.holeReason](map.md#map.graph.holeReason), [base.languages.constructorName](base.md#base.languages.constructorName), [map.graph.markEscapes](map.md#map.graph.markEscapes)
-    - fn [directoryModule](../../src/graph.ts#L1381) (config: Config, dir: string, graph: Pick<Graph, "modules" | "layers">) → string | null
+      - calls [map.frontends.frontendOf](map.md#map.frontends.frontendOf), [map.frontends.frontendFor](map.md#map.frontends.frontendFor), [map.graph.placeFile](map.md#map.graph.placeFile), [map.graph.isIndexFile](map.md#map.graph.isIndexFile), [map.graph.topSegments](map.md#map.graph.topSegments), [base.config.layerName](base.md#base.config.layerName), [map.graph.addDecl](map.md#map.graph.addDecl), [map.graph.markOpaque](map.md#map.graph.markOpaque), [map.declared-packages.readManifests](map.md#map.declared-packages.readManifests), [base.external-ids.assignExternalIds](base.md#base.external-ids.assignExternalIds), [map.graph.importedPackages](map.md#map.graph.importedPackages), [base.span.compareText](base.md#base.span.compareText), [map.imports.assumedTarget](map.md#map.imports.assumedTarget), [base.config.isAssumed](base.md#base.config.isAssumed), [map.graph.importTarget](map.md#map.graph.importTarget), [map.graph.notIndexed](map.md#map.graph.notIndexed), [base.external-ids.externalSegment](base.md#base.external-ids.externalSegment), [base.languages.languageOf](base.md#base.languages.languageOf), [map.graph.exportInput](map.md#map.graph.exportInput), [map.exports.resolveExports](map.md#map.exports.resolveExports), [base.languages.caselessNames](base.md#base.languages.caselessNames), [map.graph.memberKey](map.md#map.graph.memberKey), [map.graph.caselessIndex](map.md#map.graph.caselessIndex), [map.graph.staticThroughInstance](map.md#map.graph.staticThroughInstance), [map.graph.globalsOf](map.md#map.graph.globalsOf), [map.graph.qualifiedIn](map.md#map.graph.qualifiedIn), [base.bindings.FrameworkBindings](base.md#base.bindings.FrameworkBindings), [map.graph.directoryModuleIn](map.md#map.graph.directoryModuleIn), [base.bindings.FrameworkBindings.interceptors](base.md#base.bindings.FrameworkBindings.interceptors), [base.entries.frameworkEntries](base.md#base.entries.frameworkEntries), [base.languages.asciiLowerCase](base.md#base.languages.asciiLowerCase), [map.graph.addCall](map.md#map.graph.addCall), [base.languages.interfaceTypes](base.md#base.languages.interfaceTypes), [map.graph.holeReason](map.md#map.graph.holeReason), [base.languages.constructorName](base.md#base.languages.constructorName), [map.graph.markEscapes](map.md#map.graph.markEscapes), [map.graph.eventNodes](map.md#map.graph.eventNodes)
+    - fn [eventNodes](../../src/graph.ts#L1548) (dispatches: readonly { call: Call; name: string; file: string }[], observers: readonly ObserverEdge[], declared: readonly { name: string; file: string; line: number; col: number }[]) → EventNode[] <!-- internal -->
+      <a id="map.graph.eventNodes"></a><br>Event nodes (ADR 0022 п. 6): every name a literal dispatch or an observer's config writes, with an ID of the group `events`. A dispatch call gets the event's ID as its target; an observer is a call of the event, at its config line.
+      - calls [base.events.eventIds](base.md#base.events.eventIds), [base.span.compareText](base.md#base.span.compareText)
+    - fn [qualifiedIn](../../src/graph.ts#L1576) (facts: FileFacts, written: string) → string <!-- internal -->
+      <a id="map.graph.qualifiedIn"></a><br>A class name as a file writes it, qualified through the file's imports: PHP `Foo` with `use A\Foo` → `A\Foo`, `\A\Foo` → `A\Foo`; TS/JS `EventEmitter2` with `import { EventEmitter2 } from "@nestjs/event-emitter"` → `@nestjs/event-emitter\EventEmitter2` (the package, `\`, the…
+      - calls [base.languages.languageOf](base.md#base.languages.languageOf)
+    - fn [directoryModule](../../src/graph.ts#L1598) (config: Config, dir: string, graph: Pick<Graph, "modules" | "layers">) → string | null
       <a id="map.graph.directoryModule"></a><br>The module of a directory (a framework module's root): a directory module, or the layer itself when the layer's glob starts there; null when the graph has neither.
       - calls [map.graph.directoryModuleIn](map.md#map.graph.directoryModuleIn)
-    - fn [directoryModuleIn](../../src/graph.ts#L1385) (config: Config, dir: string, modules: ReadonlyMap<string, Module>, layers: ReadonlyMap<string, Layer>) → string | null <!-- internal -->
+    - fn [directoryModuleIn](../../src/graph.ts#L1602) (config: Config, dir: string, modules: ReadonlyMap<string, Module>, layers: ReadonlyMap<string, Layer>) → string | null <!-- internal -->
       <a id="map.graph.directoryModuleIn"></a>
       - calls [map.graph.placeFile](map.md#map.graph.placeFile)
-    - type [GlobSource](../../src/graph.ts#L1403) <!-- internal -->
+    - type [GlobSource](../../src/graph.ts#L1620) <!-- internal -->
       <a id="map.graph.GlobSource"></a><br>What one glob import (`use m::*`, `from m import *`) brings into a file's scope.
-    - type [BaseLink](../../src/graph.ts#L1411) <!-- internal -->
+    - type [BaseLink](../../src/graph.ts#L1628) <!-- internal -->
       <a id="map.graph.BaseLink"></a><br>A class's `extends`: the base keylang has read, or the text of one it has not, and whether that names a package's or the language's class.
-    - fn [staticThroughInstance](../../src/graph.ts#L1418) (file: string) → boolean <!-- internal -->
+    - fn [staticThroughInstance](../../src/graph.ts#L1635) (file: string) → boolean <!-- internal -->
       <a id="map.graph.staticThroughInstance"></a><br>Python and PHP reach a static member through an instance (`s.make()`, `$this->make()`); JavaScript does not.
       - calls [base.languages.languageOf](base.md#base.languages.languageOf)
-    - type [ImportTarget](../../src/graph.ts#L1424) <!-- internal -->
+    - type [ImportTarget](../../src/graph.ts#L1641) <!-- internal -->
       <a id="map.graph.ImportTarget"></a><br>What one import binding names in the file: a declaration of the module (`named`, `default`) or the module itself.
-    - fn [unindexedModule](../../src/graph.ts#L1440) (name: string) → Module <!-- internal -->
+    - fn [unindexedModule](../../src/graph.ts#L1657) (name: string) → Module <!-- internal -->
       <a id="map.graph.unindexedModule"></a><br>A module an import may bind that is never added to the graph: an external one, so calls through its names are external. Its ID is no valid ID, so it names no node.
-    - fn [importTarget](../../src/graph.ts#L1454) (module: Module, unit: string, binding: ImportBinding, whole: boolean) → ImportTarget <!-- internal -->
+    - fn [importTarget](../../src/graph.ts#L1671) (module: Module, unit: string, binding: ImportBinding, whole: boolean) → ImportTarget <!-- internal -->
       <a id="map.graph.importTarget"></a><br>A specifier that names the module itself (Rust `use crate::a`, Python `from pkg import mod`) binds the module object, which is no function, like an ESM namespace.
-    - fn [exportInput](../../src/graph.ts#L1466) (row: ExportRow, facts: FileFacts, scope: ReadonlyMap<string, string>, imported: ReadonlyMap<string, ImportTarget[]>) → ExportRowInput <!-- internal -->
+    - fn [exportInput](../../src/graph.ts#L1683) (row: ExportRow, facts: FileFacts, scope: ReadonlyMap<string, string>, imported: ReadonlyMap<string, ImportTarget[]>) → ExportRowInput <!-- internal -->
       <a id="map.graph.exportInput"></a><br>One export row of a file, with what it stands for: a declaration of the file (`scope`), a name or the namespace of the module an import binds, or nothing keylang indexes. A re-export (`export { a } from`, Rust `pub use`) goes through its own import; any other name through a…
       - calls [base.config.layerName](base.md#base.config.layerName)
-    - fn [importedPackages](../../src/graph.ts#L1486) (files: readonly FileFacts[], resolve: (file: string, spec: string) => Resolution) → Set<string> <!-- internal -->
+    - fn [importedPackages](../../src/graph.ts#L1703) (files: readonly FileFacts[], resolve: (file: string, spec: string) => Resolution) → Set<string> <!-- internal -->
       <a id="map.graph.importedPackages"></a><br>Names of the external packages (and `node` for built-ins) the files import.
-    - fn [notIndexed](../../src/graph.ts#L1503) (config: Config, file: string) → string | null <!-- internal -->
+    - fn [notIndexed](../../src/graph.ts#L1720) (config: Config, file: string) → string | null <!-- internal -->
       <a id="map.graph.notIndexed"></a><br>Why a resolved source file has no module; null when it is left out on purpose: not source code (JSON, CSS), a test or declaration file, `exclude`, outside guessed layers.
       - calls [base.languages.languageOf](base.md#base.languages.languageOf), [base.config.isExcluded](base.md#base.config.isExcluded), [base.config.isOutside](base.md#base.config.isOutside), [map.graph.placeFile](map.md#map.graph.placeFile)
-    - fn [isIndexFile](../../src/graph.ts#L1510) (file: string) → boolean <!-- internal -->
+    - fn [isIndexFile](../../src/graph.ts#L1727) (file: string) → boolean <!-- internal -->
       <a id="map.graph.isIndexFile"></a><br>Reports whether a path's extension-stripped basename appears in the per-language index list, resolving the language via [`base.languages.languageOf`](base.md#base.languages.languageOf) and returning false when no language matches. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [base.languages.languageOf](base.md#base.languages.languageOf)
-    - fn [addCall](../../src/graph.ts#L1525) (fn: Fn, call: Call) → boolean <!-- internal -->
+    - fn [addCall](../../src/graph.ts#L1742) (fn: Fn, call: Call) → boolean <!-- internal -->
       <a id="map.graph.addCall"></a><br>Add a call unless an edge to the same target already says as much. Edges rank by what they prove: a plain call outside a closure (3) proves the path in every mode; a hook's default, a callable passed as an argument or a call in a closure passed as one (2) prove it in…
-    - fn [holeReason](../../src/graph.ts#L1534) (c: CallFact) → string <!-- internal -->
+    - fn [holeReason](../../src/graph.ts#L1751) (c: CallFact) → string <!-- internal -->
       <a id="map.graph.holeReason"></a><br>Builds a human-readable explanation for why a call site could not be resolved to a concrete target, distinguishing hook-based calls, calls through `this`, and calls through local values. [`map.graph.buildGraph`](map.md#map.graph.buildGraph) uses the string to annotate unresolved edges. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [markEscapes](../../src/graph.ts#L1547) (modules: Map<string, Module>, readIds: ReadonlyMap<string, Escape>, readMembers: ReadonlyMap<string, Escape>, calledNames: ReadonlyMap<string, Escape>, members: Decls["members"]) → void <!-- internal -->
+    - fn [markEscapes](../../src/graph.ts#L1764) (modules: Map<string, Module>, readIds: ReadonlyMap<string, Escape>, readMembers: ReadonlyMap<string, Escape>, calledNames: ReadonlyMap<string, Escape>, members: Decls["members"]) → void <!-- internal -->
       <a id="map.graph.markEscapes"></a><br>Functions that code may reach without naming them in a call: read as a value (`later(save)` names the declaration `save` resolves to; `obj.save` any method `save`), called implicitly, or the constructor of a class read as a value (`extends A` runs `A`'s constructor). Names read…
       - calls [map.graph.foldCase](map.md#map.graph.foldCase), [base.languages.caselessNames](base.md#base.languages.caselessNames), [base.languages.asciiLowerCase](base.md#base.languages.asciiLowerCase), [base.languages.constructorName](base.md#base.languages.constructorName), [base.languages.implicitMember](base.md#base.languages.implicitMember)
-    - fn [foldCase](../../src/graph.ts#L1569) (names: ReadonlyMap<string, Escape>) → Map<string, Escape> <!-- internal -->
+    - fn [foldCase](../../src/graph.ts#L1786) (names: ReadonlyMap<string, Escape>) → Map<string, Escape> <!-- internal -->
       <a id="map.graph.foldCase"></a><br>Names keyed in ASCII lower case, each with the escape of its first spelling: what a language whose names compare without case looks up.
       - calls [base.languages.asciiLowerCase](base.md#base.languages.asciiLowerCase)
-    - fn [markOpaque](../../src/graph.ts#L1575) (m: Module) → void <!-- internal -->
+    - fn [markOpaque](../../src/graph.ts#L1792) (m: Module) → void <!-- internal -->
       <a id="map.graph.markOpaque"></a><br>Sets a module's `members` field to the string `"opaque"`, then recurses into each entry of `m.children` so the whole subtree is marked the same way; used by [`map.graph.buildGraph`](map.md#map.graph.buildGraph). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Decls](../../src/graph.ts#L1581) <!-- internal -->
+    - type [Decls](../../src/graph.ts#L1798) <!-- internal -->
       <a id="map.graph.Decls"></a><br>Where each declaration went: several facts (overloads) may share one node.
-    - fn [caselessIndex](../../src/graph.ts#L1595) (rows: readonly ExportRowInput[]) → Map<string, string[]> <!-- internal -->
+    - fn [caselessIndex](../../src/graph.ts#L1812) (rows: readonly ExportRowInput[]) → Map<string, string[]> <!-- internal -->
       <a id="map.graph.caselessIndex"></a><br>Name in ASCII lower case → the names of the declarations an export table lists under it. A row that stands for no declaration (a PHP constant, which keeps its case) is left out.
       - calls [base.languages.asciiLowerCase](base.md#base.languages.asciiLowerCase)
-    - fn [memberKey](../../src/graph.ts#L1607) (member: string, isStatic: boolean, caseless = false) → string
+    - fn [memberKey](../../src/graph.ts#L1824) (member: string, isStatic: boolean, caseless = false) → string
       <a id="map.graph.memberKey"></a><br>Lookup key of a class member: `this.#m` in a static method is `static #m`. `caseless`: a language whose method names compare without ASCII case (PHP).
       - calls [base.config.layerName](base.md#base.config.layerName), [base.languages.asciiLowerCase](base.md#base.languages.asciiLowerCase)
-    - fn [memberSegments](../../src/graph.ts#L1623) (members: readonly DeclFact[], caseless: boolean) → Map<DeclFact, { key: string; segment: string }> <!-- internal -->
+    - fn [memberSegments](../../src/graph.ts#L1840) (members: readonly DeclFact[], caseless: boolean) → Map<DeclFact, { key: string; segment: string }> <!-- internal -->
       <a id="map.graph.memberSegments"></a><br>ID segments of class members. An instance member keeps its name; a static or `#private` member of the same name as another gets a suffix (`m-static`, `go-private`, `go-static-private`), which no JS name can collide with.
       - calls [map.graph.memberKey](map.md#map.graph.memberKey), [base.config.layerName](base.md#base.config.layerName)
-    - fn [topSegments](../../src/graph.ts#L1652) (module: Module, files: readonly FileFacts[], warnings: string[]) → Map<DeclFact, string> <!-- internal -->
+    - fn [topSegments](../../src/graph.ts#L1869) (module: Module, files: readonly FileFacts[], warnings: string[]) → Map<DeclFact, string> <!-- internal -->
       <a id="map.graph.topSegments"></a><br>ID segments of a module's top-level declarations. One file's declarations of a name share a node (overloads, a class merged with its interface); the same name in another file of the module (`module: "dir"`, `x.ts` beside `x/index.ts`) is another symbol, whose segment gets `-2`…
       - calls [base.span.compareText](base.md#base.span.compareText), [base.config.layerName](base.md#base.config.layerName)
-    - fn [addDecl](../../src/graph.ts#L1682) (module: Module, d: DeclFact, names: Map<string, string>, declModule: Map<string, Map<string, string>>, decls: Decls, stats: Stats, file: string, member?: { key: string; segment: string }) → void <!-- internal -->
+    - fn [addDecl](../../src/graph.ts#L1899) (module: Module, d: DeclFact, names: Map<string, string>, declModule: Map<string, Map<string, string>>, decls: Decls, stats: Stats, file: string, member?: { key: string; segment: string }) → void <!-- internal -->
       <a id="map.graph.addDecl"></a><br>Registers a declaration in a module as a function, type, or class node, recursing into class members. Overloads merge into the first function node, and a type yields to a same-named class or function. _(llm · claude:claude-opus-5-5 · 2026-10-06 · stale)_
       - calls [base.config.layerName](base.md#base.config.layerName), [map.graph.memberSegments](map.md#map.graph.memberSegments), [base.languages.caselessNames](base.md#base.languages.caselessNames)
-    - fn [placeFile](../../src/graph.ts#L1768) (config: Config, file: string) → { layer: string; segments: string[]; stem: string; glob: string | null } | null
+    - fn [placeFile](../../src/graph.ts#L1985) (config: Config, file: string) → { layer: string; segments: string[]; stem: string; glob: string | null } | null
       <a id="map.graph.placeFile"></a><br>Where `file` lands: its layer, module ID segments and path stem, and the layer glob that placed it (none for `outside`).
       - calls [base.config.isOutside](base.md#base.config.isOutside), [base.config.layerName](base.md#base.config.layerName), [base.glob.matchesGlob](base.md#base.glob.matchesGlob), [base.glob.globPrefix](base.md#base.glob.globPrefix), [base.languages.languageOf](base.md#base.languages.languageOf)
   - module [imports](../../src/imports.ts#L1)
@@ -895,137 +1105,144 @@
     - exact-path [map.exact-path](map.md#map.exact-path)
     - glob [base.glob](base.md#base.glob)
     - cartridges [base.cartridges](base.md#base.cartridges)
-    - type [Resolution](../../src/imports.ts#L37)
+    - pwa-kit [base.pwa-kit](base.md#base.pwa-kit)
+    - type [Resolution](../../src/imports.ts#L42)
       <a id="map.imports.Resolution"></a><br>Classifies where an import specifier leads: an internal file (optionally via a workspace package, as the whole module, or a nested module), the importing file itself, an external package, a builtin, stdlib, generated, or unresolved. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
-    - type [SourceResolver](../../src/imports.ts#L51)
+    - type [SourceResolver](../../src/imports.ts#L56)
       <a id="map.imports.SourceResolver"></a><br>Per-language contract for turning an import specifier into a `Resolution`, exposing the config files read (which feed the snapshot id) plus optional hooks for candidate paths and TypeScript `verbatimModuleSyntax`. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
-    - fn [assumedTarget](../../src/imports.ts#L77) (r: Resolution, wouldName: () => readonly string[], assumed: (path: string) => boolean) → string | null
+    - fn [assumedTarget](../../src/imports.ts#L82) (r: Resolution, wouldName: () => readonly string[], assumed: (path: string) => boolean) → string | null
       <a id="map.imports.assumedTarget"></a><br>The path an import names when `assumed` holds for it (`assume` in keylang.json): the file `r` resolved it to, or — when no file answers, as in a checkout without the generated or untracked file — a path the specifier would name with the usual extension candidates (`wouldName`…
       - calls [base.languages.languageOf](base.md#base.languages.languageOf)
-    - type [PathRule](../../src/imports.ts#L87) <!-- internal -->
+    - type [PathRule](../../src/imports.ts#L92) <!-- internal -->
       <a id="map.imports.PathRule"></a><br>Pairs a module-specifier pattern with the list of filesystem targets it maps to, each already resolved relative to the repository root. Used by the import resolver to turn aliased specifiers into candidate paths. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - module [ImportResolver](../../src/imports.ts#L93)
+    - module [ImportResolver](../../src/imports.ts#L98)
       <a id="map.imports.ImportResolver"></a><br>Resolves import specifiers from project files to internal files, packages, or builtins via [`map.imports.ImportResolver.resolve`](map.md#map.imports.ImportResolver.resolve), reading tsconfig paths, package.json and node_modules, and records every config read as snapshot inputs. _(llm · claude:claude-opus-5-5 · 2026-10-06 · stale)_
-      - fn [constructor](../../src/imports.ts#L127) (root: string, sources: ReadonlySet<string> = new Set(), fs: ExactFs = nodeFs, options: { cartridgePath?: readonly string[] | null; sfcc?: boolean } = {})
+      - fn [constructor](../../src/imports.ts#L136) (root: string, sources: ReadonlySet<string> = new Set(), fs: ExactFs = nodeFs, options: { cartridgePath?: readonly string[] | null; sfcc?: boolean; pwaKit?: boolean } = {})
         <a id="map.imports.ImportResolver.constructor"></a><br>Sets up a cached reader so each file is read once via [`map.imports.readText`](map.md#map.imports.readText) and [`map.imports.parseJsonc`](map.md#map.imports.parseJsonc), then loads baseUrl/paths through [`map.imports.loadTsconfig`](map.md#map.imports.loadTsconfig). Also collects package.json dependency names and workspaces. _(llm · claude:claude-opus-5-5 · 2026-10-06 · stale)_
         - calls [map.imports.ImportResolver.cartridges](map.md#map.imports.ImportResolver.cartridges), [map.exact-path.exactExistence](map.md#map.exact-path.exactExistence), [map.imports.readText](map.md#map.imports.readText), [map.imports.parseJsonc](map.md#map.imports.parseJsonc), [map.imports.ImportResolver.governingConfig](map.md#map.imports.ImportResolver.governingConfig), [map.imports.dependencies](map.md#map.imports.dependencies), [map.imports.isObject](map.md#map.imports.isObject), [map.imports.pnpmWorkspacePackages](map.md#map.imports.pnpmWorkspacePackages)
-      - fn [verbatimModuleSyntax](../../src/imports.ts#L168) (file: string) → boolean
+      - fn [verbatimModuleSyntax](../../src/imports.ts#L178) (file: string) → boolean
         <a id="map.imports.ImportResolver.verbatimModuleSyntax"></a><br>Whether `compilerOptions.verbatimModuleSyntax` holds for `file`: in the tsconfig that governs it — the nearest `tsconfig.json` (else `jsconfig.json`) from its directory up to the root, through `extends` — or in a config that one `references`, since a solution config (Vite's…
         - calls [map.imports.ImportResolver.governingConfig](map.md#map.imports.ImportResolver.governingConfig), [map.imports.ImportResolver.verbatimSetting](map.md#map.imports.ImportResolver.verbatimSetting), [map.imports.isObject](map.md#map.imports.isObject), [base.config.toPosix](base.md#base.config.toPosix)
-      - fn [optionsFor](../../src/imports.ts#L197) (fromFile: string) → Tsconfig <!-- internal -->
+      - fn [optionsFor](../../src/imports.ts#L207) (fromFile: string) → Tsconfig <!-- internal -->
         <a id="map.imports.ImportResolver.optionsFor"></a><br>The `baseUrl`/`paths` that apply to `fromFile`: those of the tsconfig that governs it (`governingConfig`, the same one `verbatimModuleSyntax` reads) after its `extends` chain. A config without `paths` of its own that `references` projects (a solution config, Vite's `"files"…
         - calls [map.imports.ImportResolver.governingConfig](map.md#map.imports.ImportResolver.governingConfig), [map.imports.loadTsconfig](map.md#map.imports.loadTsconfig)
-      - fn [governingConfig](../../src/imports.ts#L224) (dir: string) → string | null <!-- internal -->
+      - fn [governingConfig](../../src/imports.ts#L234) (dir: string) → string | null <!-- internal -->
         <a id="map.imports.ImportResolver.governingConfig"></a><br>The tsconfig (else jsconfig) of `dir` or the nearest directory above it, up to the root; null without one.
-      - fn [verbatimSetting](../../src/imports.ts#L242) (file: string, depth: number) → boolean | "unset" | "unknown" <!-- internal -->
+      - fn [verbatimSetting](../../src/imports.ts#L252) (file: string, depth: number) → boolean | "unset" | "unknown" <!-- internal -->
         <a id="map.imports.ImportResolver.verbatimSetting"></a><br>`verbatimModuleSyntax` as `file` sets it, its own option first, then its `extends` from the last (which tsc lets override the earlier ones). `unknown`: a config in the chain is missing, is no JSON object, is a package keylang does not find, or the chain is deeper than tsc would…
         - calls [map.imports.isObject](map.md#map.imports.isObject), [map.imports.ImportResolver.extendedConfig](map.md#map.imports.ImportResolver.extendedConfig)
-      - fn [extendedConfig](../../src/imports.ts#L267) (dir: string, spec: string) → string | null <!-- internal -->
+      - fn [extendedConfig](../../src/imports.ts#L277) (dir: string, spec: string) → string | null <!-- internal -->
         <a id="map.imports.ImportResolver.extendedConfig"></a><br>The config file an `extends` entry of a config in `dir` names, as tsc finds it: a relative path (with `.json` added when the path itself is no file), or a package's config in a `node_modules` from `dir` up to the root — `<pkg>/<path>.json` as written or with `.json` added, the…
         - calls [base.config.toPosix](base.md#base.config.toPosix)
-      - fn [locate](../../src/imports.ts#L292) (pkg: string) → Located <!-- internal -->
+      - fn [locate](../../src/imports.ts#L302) (pkg: string) → Located <!-- internal -->
         <a id="map.imports.ImportResolver.locate"></a><br>Where `node_modules` at or above the root has the package: a link into the repository is a workspace package. Without an install, a `workspaces` entry of the root `package.json` or a `packages` entry of `pnpm-workspace.yaml` with that `name` is one too.
         - calls [map.imports.inside](map.md#map.imports.inside), [map.imports.ImportResolver.workspaceDirs](map.md#map.imports.ImportResolver.workspaceDirs)
-      - fn [workspaceDirs](../../src/imports.ts#L325) () → string[] <!-- internal -->
+      - fn [workspaceDirs](../../src/imports.ts#L335) () → string[] <!-- internal -->
         <a id="map.imports.ImportResolver.workspaceDirs"></a><br>Directories the workspace globs name (`packages/*`, `packages/**`, `apps/web`): root `workspaces` and pnpm `packages`, less what a `!pattern` takes out. Each listing is an input of the snapshot id.
         - calls [map.imports.workspaceGlob](map.md#map.imports.workspaceGlob), [map.imports.isGlob](map.md#map.imports.isGlob), [map.imports.listWorkspaceGlob](map.md#map.imports.listWorkspaceGlob), [map.imports.withoutNegated](map.md#map.imports.withoutNegated)
-      - fn [packageEntry](../../src/imports.ts#L346) (dir: string, subpath: string) → string | null <!-- internal -->
+      - fn [packageEntry](../../src/imports.ts#L356) (dir: string, subpath: string) → string | null <!-- internal -->
         <a id="map.imports.ImportResolver.packageEntry"></a><br>The source file a workspace package names for `subpath` (`""`, `/util`): `exports` (a string, subpaths, `*` patterns, conditions), else `module`, `main`, `index`. A declaration file is not source.
         - calls [map.imports.flattenTarget](map.md#map.imports.flattenTarget), [map.imports.isObject](map.md#map.imports.isObject), [map.imports.matchPattern](map.md#map.imports.matchPattern), [map.imports.ImportResolver.probe](map.md#map.imports.ImportResolver.probe), [base.config.toPosix](base.md#base.config.toPosix)
-      - fn [resolve](../../src/imports.ts#L376) (fromFile: string, spec: string) → Resolution
+      - fn [resolve](../../src/imports.ts#L386) (fromFile: string, spec: string) → Resolution
         <a id="map.imports.ImportResolver.resolve"></a><br>Resolves an import specifier from a given file, memoizing results per file-and-specifier pair and delegating cache misses to [`map.imports.ImportResolver.resolveUncached`](map.md#map.imports.ImportResolver.resolveUncached). _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
         - calls [map.imports.ImportResolver.resolveUncached](map.md#map.imports.ImportResolver.resolveUncached)
-      - fn [cartridges](../../src/imports.ts#L390) () → CartridgeLayout | null
+      - fn [cartridges](../../src/imports.ts#L400) () → CartridgeLayout | null
         <a id="map.imports.ImportResolver.cartridges"></a><br>The SFCC cartridges of the analysis, once: their order joins the snapshot id as an input, so a changed cartridge path changes edges on the next run.
         - calls [base.cartridges.cartridgeLayout](base.md#base.cartridges.cartridgeLayout)
-      - fn [resolveUncached](../../src/imports.ts#L398) (fromFile: string, spec: string) → Resolution <!-- internal -->
+      - fn [resolveUncached](../../src/imports.ts#L408) (fromFile: string, spec: string) → Resolution <!-- internal -->
         <a id="map.imports.ImportResolver.resolveUncached"></a><br>Classifies an import specifier as generated, internal file, builtin, or package: relative paths go through [`map.imports.ImportResolver.probe`](map.md#map.imports.ImportResolver.probe), `#` through [`map.imports.ImportResolver.resolveSubpathImport`](map.md#map.imports.ImportResolver.resolveSubpathImport). Others try [`map.imports.bestMatch`](map.md#map.imports.bestMatch) paths, then baseUrl… _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
-        - calls [map.imports.ImportResolver.probe](map.md#map.imports.ImportResolver.probe), [map.imports.ImportResolver.cartridges](map.md#map.imports.ImportResolver.cartridges), [base.cartridges.cartridgeAnswers](base.md#base.cartridges.cartridgeAnswers), [map.imports.ImportResolver.resolveSubpathImport](map.md#map.imports.ImportResolver.resolveSubpathImport), [map.imports.ImportResolver.optionsFor](map.md#map.imports.ImportResolver.optionsFor), [map.imports.bestMatch](map.md#map.imports.bestMatch), [extract.ts.isNodeBuiltin](extract.md#extract.ts.isNodeBuiltin), [map.imports.ImportResolver.resolvePackage](map.md#map.imports.ImportResolver.resolvePackage)
-      - fn [resolveSubpathImport](../../src/imports.ts#L434) (fromFile: string, spec: string) → Resolution <!-- internal -->
+        - calls [map.imports.ImportResolver.probe](map.md#map.imports.ImportResolver.probe), [map.imports.ImportResolver.cartridges](map.md#map.imports.ImportResolver.cartridges), [base.cartridges.cartridgeAnswers](base.md#base.cartridges.cartridgeAnswers), [map.imports.ImportResolver.templateImport](map.md#map.imports.ImportResolver.templateImport), [map.imports.ImportResolver.resolveSubpathImport](map.md#map.imports.ImportResolver.resolveSubpathImport), [map.imports.ImportResolver.optionsFor](map.md#map.imports.ImportResolver.optionsFor), [map.imports.bestMatch](map.md#map.imports.bestMatch), [extract.ts.isNodeBuiltin](extract.md#extract.ts.isNodeBuiltin), [map.imports.ImportResolver.resolvePackage](map.md#map.imports.ImportResolver.resolvePackage)
+      - fn [templateImport](../../src/imports.ts#L448) (fromFile: string, spec: string) → Resolution | null <!-- internal -->
+        <a id="map.imports.ImportResolver.templateImport"></a><br>PWA Kit template extensibility: `<base>/x` (the `extends` of `ccExtensibility` in the nearest `package.json`) is `<overridesDir>/x` of that project when the file exists — an override replaces the base template's file — else the base package; `^<base>/x` is the base package…
+        - calls [map.imports.ImportResolver.extensibilityAt](map.md#map.imports.ImportResolver.extensibilityAt), [map.imports.ImportResolver.probe](map.md#map.imports.ImportResolver.probe)
+      - fn [extensibilityAt](../../src/imports.ts#L462) (dir: string) → { dir: string; cc: Extensibility } | null <!-- internal -->
+        <a id="map.imports.ImportResolver.extensibilityAt"></a><br>The PWA Kit project of a directory: the nearest `package.json` at or above it, when it writes `ccExtensibility`.
+        - calls [base.pwa-kit.extensibilityOf](base.md#base.pwa-kit.extensibilityOf), [map.imports.parseJsonc](map.md#map.imports.parseJsonc)
+      - fn [resolveSubpathImport](../../src/imports.ts#L481) (fromFile: string, spec: string) → Resolution <!-- internal -->
         <a id="map.imports.ImportResolver.resolveSubpathImport"></a><br>`#alias`: the `imports` of the nearest `package.json` above the importing file, as Node scopes them (an exact key, else the longest pattern prefix). A target that is not a relative path names a package.
         - calls [map.imports.ImportResolver.scopeImports](map.md#map.imports.ImportResolver.scopeImports), [map.imports.bestMatch](map.md#map.imports.bestMatch), [base.config.toPosix](base.md#base.config.toPosix), [map.imports.ImportResolver.resolve](map.md#map.imports.ImportResolver.resolve), [map.imports.ImportResolver.probe](map.md#map.imports.ImportResolver.probe)
-      - fn [scopeImports](../../src/imports.ts#L457) (dir: string) → PathRule[] | null <!-- internal -->
+      - fn [scopeImports](../../src/imports.ts#L504) (dir: string) → PathRule[] | null <!-- internal -->
         <a id="map.imports.ImportResolver.scopeImports"></a><br>`imports` of `<dir>/package.json`; an empty list when it has none, null without the file.
         - calls [map.imports.isObject](map.md#map.imports.isObject), [map.imports.flattenTarget](map.md#map.imports.flattenTarget)
-      - fn [resolvePackage](../../src/imports.ts#L474) (fromFile: string, spec: string) → Resolution <!-- internal -->
+      - fn [resolvePackage](../../src/imports.ts#L521) (fromFile: string, spec: string) → Resolution <!-- internal -->
         <a id="map.imports.ImportResolver.resolvePackage"></a><br>A bare specifier's package: a workspace package at the root (`locate`) names its file; one installed at or above the root is external; otherwise the `node_modules` and `package.json` on the way from the file up (`near`), then the root's declaration, decide — and a package…
         - calls [map.imports.packageName](map.md#map.imports.packageName), [map.imports.ImportResolver.locate](map.md#map.imports.ImportResolver.locate), [map.imports.ImportResolver.workspaceFile](map.md#map.imports.ImportResolver.workspaceFile), [map.imports.ImportResolver.near](map.md#map.imports.ImportResolver.near), [map.imports.ImportResolver.declaredDependency](map.md#map.imports.ImportResolver.declaredDependency)
-      - fn [workspaceFile](../../src/imports.ts#L484) (dir: string, pkg: string, subpath: string) → Resolution <!-- internal -->
+      - fn [workspaceFile](../../src/imports.ts#L531) (dir: string, pkg: string, subpath: string) → Resolution <!-- internal -->
         <a id="map.imports.ImportResolver.workspaceFile"></a><br>The file a workspace package in `dir` names for `subpath`; unresolved without one (a `dist/` entry keylang does not index).
         - calls [map.imports.ImportResolver.packageEntry](map.md#map.imports.ImportResolver.packageEntry)
-      - fn [near](../../src/imports.ts#L498) (fromFile: string, pkg: string, subpath: string) → Resolution | null <!-- internal -->
+      - fn [near](../../src/imports.ts#L545) (fromFile: string, pkg: string, subpath: string) → Resolution | null <!-- internal -->
         <a id="map.imports.ImportResolver.near"></a><br>The package as Node finds it from `fromFile` up to (not including) the root: in the `node_modules` of a directory on the way — a link into the repository is a workspace package, as pnpm installs them next to the importing package rather than at the root — or declared by that…
         - calls [map.imports.inside](map.md#map.imports.inside), [map.imports.ImportResolver.workspaceFile](map.md#map.imports.ImportResolver.workspaceFile), [map.imports.dependencies](map.md#map.imports.dependencies), [map.imports.ImportResolver.declaredDependency](map.md#map.imports.ImportResolver.declaredDependency)
-      - fn [declaredDependency](../../src/imports.ts#L526) (dir: string, declared: ReadonlyMap<string, string | null>, pkg: string, subpath: string) → Resolution | null <!-- internal -->
+      - fn [declaredDependency](../../src/imports.ts#L573) (dir: string, declared: ReadonlyMap<string, string | null>, pkg: string, subpath: string) → Resolution | null <!-- internal -->
         <a id="map.imports.ImportResolver.declaredDependency"></a><br>What a `package.json` in `dir` (`""`: the root) says about `pkg` through its dependency fields: null when it does not declare it (nor its `@types`); external for a version range; for a `workspace:`, `file:`, `link:` or `portal:` range this repository's code (ADR 0010) — the…
         - calls [base.config.toPosix](base.md#base.config.toPosix), [map.imports.ImportResolver.workspaceFile](map.md#map.imports.ImportResolver.workspaceFile)
-      - fn [probe](../../src/imports.ts#L540) (candidate: string) → string | null <!-- internal -->
+      - fn [probe](../../src/imports.ts#L587) (candidate: string) → string | null <!-- internal -->
         <a id="map.imports.ImportResolver.probe"></a><br>Candidate file (POSIX, relative to root) → existing source file, or null.
         - calls [map.imports.probeCandidates](map.md#map.imports.probeCandidates)
-      - fn [wouldName](../../src/imports.ts#L558) (fromFile: string, spec: string) → string[]
+      - fn [wouldName](../../src/imports.ts#L605) (fromFile: string, spec: string) → string[]
         <a id="map.imports.ImportResolver.wouldName"></a><br>The paths a relative specifier, the `imports` of the nearest `package.json`, the most specific `paths` pattern or `baseUrl` would name, each with the candidates `probe` tries, whether they exist or not.
         - calls [map.imports.probeCandidates](map.md#map.imports.probeCandidates), [map.imports.ImportResolver.scopeImports](map.md#map.imports.ImportResolver.scopeImports), [map.imports.bestMatch](map.md#map.imports.bestMatch), [base.config.toPosix](base.md#base.config.toPosix), [map.imports.ImportResolver.optionsFor](map.md#map.imports.ImportResolver.optionsFor)
-    - fn [probeCandidates](../../src/imports.ts#L593) (candidate: string) → string[]
+    - fn [probeCandidates](../../src/imports.ts#L640) (candidate: string) → string[]
       <a id="map.imports.probeCandidates"></a><br>The files a candidate path may be, in the order resolution tries them: as written, the NodeNext swaps (`./x.js` written for `./x.ts`, `.tsx` or `.jsx`; `./x.jsx` for `./x.tsx`), with each extension, then its index file. None for a path that leaves the root.
-    - type [Located](../../src/imports.ts#L604) <!-- internal -->
+    - type [Located](../../src/imports.ts#L651) <!-- internal -->
       <a id="map.imports.Located"></a><br>Describes where an imported package was resolved: inside a workspace member at a given directory, in installed dependencies, or not found at all (`null`). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [inside](../../src/imports.ts#L607) (root: string, abs: string) → string | null
+    - fn [inside](../../src/imports.ts#L654) (root: string, abs: string) → string | null
       <a id="map.imports.inside"></a><br>`abs` (after links) as a POSIX path under `root`, outside any `node_modules`; null otherwise.
       - calls [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [isObject](../../src/imports.ts#L622) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isObject](../../src/imports.ts#L669) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       <a id="map.imports.isObject"></a><br>Type guard that returns true only for non-null, non-array object values, narrowing them to a string-keyed record. Used by the resolver and tsconfig loaders in [`map.imports`](map.md#map.imports) to validate parsed JSON before reading fields. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [dependencies](../../src/imports.ts#L630) (manifest: unknown) → Map<string, string | null> <!-- internal -->
+    - fn [dependencies](../../src/imports.ts#L677) (manifest: unknown) → Map<string, string | null> <!-- internal -->
       <a id="map.imports.dependencies"></a><br>The packages a manifest's dependency fields declare: name → range as written (null when it is no string); the first field that has a name wins.
       - calls [map.imports.isObject](map.md#map.imports.isObject)
-    - fn [workspaceGlob](../../src/imports.ts#L641) (pattern: string) → string | null
+    - fn [workspaceGlob](../../src/imports.ts#L688) (pattern: string) → string | null
       <a id="map.imports.workspaceGlob"></a><br>A workspace pattern (`packages/*`, `./apps/web/`) as a root-relative POSIX glob; null when it leaves the root.
       - calls [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [isGlob](../../src/imports.ts#L647) (glob: string) → boolean
+    - fn [isGlob](../../src/imports.ts#L694) (glob: string) → boolean
       <a id="map.imports.isGlob"></a><br>Whether a workspace glob has a wildcard, so names its directories through a listing.
-    - fn [listWorkspaceGlob](../../src/imports.ts#L658) (root: string, glob: string) → string
+    - fn [listWorkspaceGlob](../../src/imports.ts#L705) (root: string, glob: string) → string
       <a id="map.imports.listWorkspaceGlob"></a><br>The directories a workspace glob names, root-relative, sorted and joined by newlines: `base/*` lists every subdirectory of `base`, as before; any other glob (`packages/**`, `packages/{libs,tools}/*`) walks the directories under its fixed prefix, never into `node_modules` or a…
       - calls [map.imports.isGlob](map.md#map.imports.isGlob), [base.glob.globToRegExp](base.md#base.glob.globToRegExp)
-    - fn [withoutNegated](../../src/imports.ts#L688) (dirs: readonly string[], patterns: readonly unknown[]) → string[]
+    - fn [withoutNegated](../../src/imports.ts#L735) (dirs: readonly string[], patterns: readonly unknown[]) → string[]
       <a id="map.imports.withoutNegated"></a><br>`dirs` without those a `!pattern` of `patterns` names (npm `workspaces` negation).
       - calls [map.imports.workspaceGlob](map.md#map.imports.workspaceGlob), [base.glob.globToRegExp](base.md#base.glob.globToRegExp)
-    - fn [pnpmWorkspacePackages](../../src/imports.ts#L702) (text: string) → string[]
+    - fn [pnpmWorkspacePackages](../../src/imports.ts#L749) (text: string) → string[]
       <a id="map.imports.pnpmWorkspacePackages"></a><br>The `packages` globs of a `pnpm-workspace.yaml`: the block list under the key (items quoted or bare, a trailing `# comment` dropped) or an inline `[a, b]` list. An exclusion (`!**\/test/**`) names no directory.
-    - fn [bestMatch](../../src/imports.ts#L730) (rules: readonly PathRule[], spec: string) → { rule: PathRule; star: string } | null <!-- internal -->
+    - fn [bestMatch](../../src/imports.ts#L777) (rules: readonly PathRule[], spec: string) → { rule: PathRule; star: string } | null <!-- internal -->
       <a id="map.imports.bestMatch"></a><br>The rule `tsc` (`matchPatternOrExact`) and Node (`PATTERN_KEY_COMPARE`) apply: an exact key, else the matching pattern with the longest prefix before `*` (then the longer key), else the first in the file. `star` is the text the `*` stands for.
       - calls [map.imports.matchPattern](map.md#map.imports.matchPattern)
-    - fn [matchPattern](../../src/imports.ts#L742) (pattern: string, spec: string) → string | null <!-- internal -->
+    - fn [matchPattern](../../src/imports.ts#L789) (pattern: string, spec: string) → string | null <!-- internal -->
       <a id="map.imports.matchPattern"></a><br>Tests a module specifier against a single-wildcard glob (prefix`*`suffix), returning the text matched by the star, an empty string for an exact literal match, or null when it doesn't fit. Used by [`map.imports.ImportResolver.packageEntry`](map.md#map.imports.ImportResolver.packageEntry) and [`map.imports.bestMatch`](map.md#map.imports.bestMatch) to resolve… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [flattenTarget](../../src/imports.ts#L753) (t: unknown) → string[] <!-- internal -->
+    - fn [flattenTarget](../../src/imports.ts#L800) (t: unknown) → string[] <!-- internal -->
       <a id="map.imports.flattenTarget"></a><br>Recursively collapses a package.json `exports`/`imports` target—string, array, or conditional object—into a flat list of every string path it contains, dropping anything else. [`map.imports.ImportResolver.packageEntry`](map.md#map.imports.ImportResolver.packageEntry) and [`map.imports.ImportResolver.scopeImports`](map.md#map.imports.ImportResolver.scopeImports) use it to… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [packageName](../../src/imports.ts#L760) (spec: string) → string
+    - fn [packageName](../../src/imports.ts#L807) (spec: string) → string
       <a id="map.imports.packageName"></a><br>Extracts the bare package name from an import specifier, keeping the first path segment, or the first two when the specifier starts with `@` (a scoped package). Used by [`map.imports.ImportResolver.resolvePackage`](map.md#map.imports.ImportResolver.resolvePackage) to locate the package being imported. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [readJsonc](../../src/imports.ts#L766) (path: string) → unknown
+    - fn [readJsonc](../../src/imports.ts#L813) (path: string) → unknown
       <a id="map.imports.readJsonc"></a><br>JSON with comments and trailing commas (tsconfig style).
       - calls [map.imports.readText](map.md#map.imports.readText), [map.imports.parseJsonc](map.md#map.imports.parseJsonc)
-    - fn [parseJsonc](../../src/imports.ts#L772) (text: string) → unknown
+    - fn [parseJsonc](../../src/imports.ts#L819) (text: string) → unknown
       <a id="map.imports.parseJsonc"></a><br>The value of JSONC text; null when it does not parse.
       - calls [map.imports.stripJsonc](map.md#map.imports.stripJsonc)
-    - fn [parseJsoncStrict](../../src/imports.ts#L781) (text: string) → unknown
+    - fn [parseJsoncStrict](../../src/imports.ts#L828) (text: string) → unknown
       <a id="map.imports.parseJsoncStrict"></a><br>The value of JSONC text; throws the `JSON.parse` error when it does not parse.
       - calls [map.imports.stripJsonc](map.md#map.imports.stripJsonc)
-    - fn [readText](../../src/imports.ts#L791) (path: string) → string | null <!-- internal -->
+    - fn [readText](../../src/imports.ts#L838) (path: string) → string | null <!-- internal -->
       <a id="map.imports.readText"></a><br>A file's text, or null when the path is no regular file (missing, or a directory, as `configs/base/` beside `configs/base.json` when `extends` names `./configs/base`) or cannot be read — tsc's `fileExists`, so an `extends` without `.json` falls back to `<path>.json` instead of…
-    - fn [stripJsonc](../../src/imports.ts#L800) (source: string) → string <!-- internal -->
+    - fn [stripJsonc](../../src/imports.ts#L847) (source: string) → string <!-- internal -->
       <a id="map.imports.stripJsonc"></a><br>Remove a leading BOM, and comments and trailing commas outside of strings.
       - calls [base.config.withoutBom](base.md#base.config.withoutBom)
-    - type [Tsconfig](../../src/imports.ts#L822) <!-- internal -->
+    - type [Tsconfig](../../src/imports.ts#L869) <!-- internal -->
       <a id="map.imports.Tsconfig"></a><br>Holds the resolved compiler options from a tsconfig that matter for import resolution: an optional base directory and a list of `PathRule` alias patterns used to rewrite module specifiers. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [LoadedTsconfig](../../src/imports.ts#L828) <!-- internal -->
+    - type [LoadedTsconfig](../../src/imports.ts#L875) <!-- internal -->
       <a id="map.imports.LoadedTsconfig"></a><br>One config file as `optionsFor` combines it: its own options, and those of each project it `references` with that project's directory.
-    - type [MergedOptions](../../src/imports.ts#L834) <!-- internal -->
+    - type [MergedOptions](../../src/imports.ts#L881) <!-- internal -->
       <a id="map.imports.MergedOptions"></a><br>Options of one config after its `extends` chain, before `paths` targets are placed.
-    - fn [loadTsconfig](../../src/imports.ts#L850) (read: (file: string) => unknown, file: string) → LoadedTsconfig <!-- internal -->
+    - fn [loadTsconfig](../../src/imports.ts#L897) (read: (file: string) => unknown, file: string) → LoadedTsconfig <!-- internal -->
       <a id="map.imports.loadTsconfig"></a><br>`compilerOptions.baseUrl`/`paths` of one config following relative `extends` chains. As in `tsc`, `paths` targets resolve against the `baseUrl` of the final options (a child config's `baseUrl` moves inherited `paths` too), or the directory of the config that declares them.
       - calls [map.imports.mergedOptions](map.md#map.imports.mergedOptions), [map.imports.placePaths](map.md#map.imports.placePaths), [map.imports.isObject](map.md#map.imports.isObject), [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [mergedOptions](../../src/imports.ts#L869) (read: (file: string) => unknown, file: string, depth: number) → MergedOptions <!-- internal -->
+    - fn [mergedOptions](../../src/imports.ts#L916) (read: (file: string) => unknown, file: string, depth: number) → MergedOptions <!-- internal -->
       <a id="map.imports.mergedOptions"></a><br>Resolves a tsconfig's effective `baseUrl` and `paths` by recursively following relative `extends` entries (up to depth 5, skipping package names and paths outside the tree), letting child settings override parents. Returned values are anchored to each config's directory, so… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [map.imports.isObject](map.md#map.imports.isObject), [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [placePaths](../../src/imports.ts#L888) (options: MergedOptions) → PathRule[] <!-- internal -->
+    - fn [placePaths](../../src/imports.ts#L935) (options: MergedOptions) → PathRule[] <!-- internal -->
       <a id="map.imports.placePaths"></a><br>Turns the tsconfig `paths` block into rules whose target entries are resolved to normalized POSIX paths under `baseUrl` (or the paths file's directory), dropping non-string targets. Uses [`base.config.toPosix`](base.md#base.config.toPosix) and feeds [`map.imports.loadTsconfig`](map.md#map.imports.loadTsconfig). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [base.config.toPosix](base.md#base.config.toPosix)
   - module [map](../../src/map.ts#L1)
@@ -1042,95 +1259,96 @@
     - emit [map.emit](map.md#map.emit)
     - explanations [map.explanations](map.md#map.explanations)
     - graph [map.graph](map.md#map.graph)
+    - index [map.index](map.md#map.index)
     - adapter [base.adapter](base.md#base.adapter)
     - fact-cache [map.fact-cache](map.md#map.fact-cache)
     - safe-write [base.safe-write](base.md#base.safe-write)
     - entries [map.entries](map.md#map.entries)
     - framework-entries [map.framework-entries](map.md#map.framework-entries)
     - snapshot [map.snapshot](map.md#map.snapshot)
-    - type [MapResult](../../src/map.ts#L24)
+    - type [MapResult](../../src/map.ts#L25)
       <a id="map.map.MapResult"></a><br>Bundles everything one map run produces: the `Graph`, generated map files and optional explanations keyed by file name, the `AnalysisSnapshot`, skip and fact-cache reuse counts, and the serialized fact cache text for the next run. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [generateMap](../../src/map.ts#L46) (config: Config, options: { persist?: boolean | "changed"; overlay?: ReadonlyMap<string, string>; adapters?: readonly FrameworkAdapter[] } = {}) → Promise<MapResult>
+    - fn [generateMap](../../src/map.ts#L47) (config: Config, options: { persist?: boolean | "changed"; overlay?: ReadonlyMap<string, string>; adapters?: readonly FrameworkAdapter[] } = {}) → Promise<MapResult>
       <a id="map.map.generateMap"></a><br>`persist` prepares the fact cache for the next process: `true` always (`keylang map`, whose commit step writes it), `"changed"` only when the facts of this run differ from the cache on disk (an analysis that saves it best-effort); generation writes nothing. `overlay` gives…
       - calls [base.config.classifySources](base.md#base.config.classifySources), [base.config.toPosix](base.md#base.config.toPosix), [base.languages.languageOf](base.md#base.languages.languageOf), [base.config.isAnalysed](base.md#base.config.isAnalysed), [base.span.compareText](base.md#base.span.compareText), [map.map.readAnalysedSource](map.md#map.map.readAnalysedSource), [map.graph.placeFile](map.md#map.graph.placeFile), [map.snapshot.sha256](map.md#map.snapshot.sha256), [map.fact-cache.FactCache.open](map.md#map.fact-cache.FactCache.open), [map.map.extractorCode](map.md#map.map.extractorCode), [map.snapshot.grammarVersions](map.md#map.snapshot.grammarVersions), [map.frontends.frontendFor](map.md#map.frontends.frontendFor), [map.map.extractGuarded](map.md#map.map.extractGuarded), [map.map.readFrameworks](map.md#map.map.readFrameworks), [map.map.opaqueFacts](map.md#map.map.opaqueFacts), [map.graph.buildGraph](map.md#map.graph.buildGraph), [base.config.layerGlobWarnings](base.md#base.config.layerGlobWarnings), [map.map.readSource](map.md#map.map.readSource), [map.entries.collectEntries](map.md#map.entries.collectEntries), [map.framework-entries.frameworkEntries](map.md#map.framework-entries.frameworkEntries), [map.entries.compareEntries](map.md#map.entries.compareEntries), [map.snapshot.buildSnapshot](map.md#map.snapshot.buildSnapshot), [map.map.ownerSource](map.md#map.map.ownerSource), [map.map.readRepositoryDocs](map.md#map.map.readRepositoryDocs), [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs), [map.emit.renderExplainedMap](map.md#map.emit.renderExplainedMap), [map.explanations.explanationOf](map.md#map.explanations.explanationOf), [map.emit.renderMap](map.md#map.emit.renderMap)
-    - fn [readFrameworks](../../src/map.ts#L152) ( config: Config, sources: readonly string[], read: ReadonlyMap<string, { text: string; sha256: string }>, overlay: ReadonlyMap<string, string> | undefined, cache: FactCache, available: readonly FrameworkAdapter[] | undefined, ) → { inputs: FrameworkInput[]; manifest: FrameworkManifest[]; unread: { path: string; owner: string | null; reason: string; framework: string }[] } <!-- internal -->
+    - fn [readFrameworks](../../src/map.ts#L154) ( config: Config, sources: readonly string[], read: ReadonlyMap<string, { text: string; sha256: string }>, overlay: ReadonlyMap<string, string> | undefined, cache: FactCache, available: readonly FrameworkAdapter[] | undefined, facts: readonly FileFacts[], ) → { inputs: FrameworkInput[]; manifest: FrameworkManifest[]; unread: { path: string; owner: string | null; reason: string; framework: string }[] } <!-- internal -->
       <a id="map.map.readFrameworks"></a><br>The config files of the framework adapters the repository uses, parsed (or reused from the fact cache by content), and what the manifest lists of them.
       - calls [map.map.readSource](map.md#map.map.readSource), [base.span.compareText](base.md#base.span.compareText), [base.config.isAnalysed](base.md#base.config.isAnalysed), [base.adapter.activeAdapters](base.md#base.adapter.activeAdapters), [map.snapshot.sha256](map.md#map.snapshot.sha256), [map.fact-cache.FactCache.config](map.md#map.fact-cache.FactCache.config)
-    - fn [ownerSource](../../src/map.ts#L202) (config: Config, graph: Graph, owner: string | null) → { source?: string } <!-- internal -->
+    - fn [ownerSource](../../src/map.ts#L217) (config: Config, graph: Graph, owner: string | null) → { source?: string } <!-- internal -->
       <a id="map.map.ownerSource"></a><br>The module a config file of `owner`'s directory belongs to, for a hole of its own: the directory's module, or the module of a file in it when the directory is a whole layer (a rule's area holds that module, not the layer node).
       - calls [map.graph.directoryModule](map.md#map.graph.directoryModule), [base.span.compareText](base.md#base.span.compareText)
-    - fn [readRepositoryDocs](../../src/map.ts#L218) (config: Config) → RepositoryDocs <!-- internal -->
+    - fn [readRepositoryDocs](../../src/map.ts#L233) (config: Config) → RepositoryDocs <!-- internal -->
       <a id="map.map.readRepositoryDocs"></a><br>What the repository writes about itself (ADR 0014, the system and container levels of C4): the root README or a root manifest, and the README in each layer's own directory. Read on every analysis, so an edit shows in the next map without touching `snapshotId`.
       - calls [base.glob.globDirectory](base.md#base.glob.globDirectory), [map.map.readReadme](map.md#map.map.readReadme), [base.brief.readmeBrief](base.md#base.brief.readmeBrief), [map.map.readSystemDoc](map.md#map.map.readSystemDoc)
-    - fn [readSystemDoc](../../src/map.ts#L229) (root: string) → SystemDoc <!-- internal -->
+    - fn [readSystemDoc](../../src/map.ts#L244) (root: string) → SystemDoc <!-- internal -->
       <a id="map.map.readSystemDoc"></a>
       - calls [map.map.manifestAbout](map.md#map.map.manifestAbout), [map.map.readSource](map.md#map.map.readSource), [map.map.readReadme](map.md#map.map.readReadme), [base.brief.readmeBrief](base.md#base.brief.readmeBrief), [base.brief.briefOf](base.md#base.brief.briefOf)
-    - fn [readReadme](../../src/map.ts#L243) (root: string, dir: string) → { path: string; text: string } | null <!-- internal -->
+    - fn [readReadme](../../src/map.ts#L258) (root: string, dir: string) → { path: string; text: string } | null <!-- internal -->
       <a id="map.map.readReadme"></a><br>`README.md` in `dir` (relative, POSIX; "" for the root), its name in any case; null without one.
       - calls [base.span.compareText](base.md#base.span.compareText), [map.map.readSource](map.md#map.map.readSource)
-    - fn [manifestAbout](../../src/map.ts#L265) (file: (typeof ROOT_MANIFESTS)[number], text: string | null) → { name: string | null; description: string | null } <!-- internal -->
+    - fn [manifestAbout](../../src/map.ts#L280) (file: (typeof ROOT_MANIFESTS)[number], text: string | null) → { name: string | null; description: string | null } <!-- internal -->
       <a id="map.map.manifestAbout"></a><br>`name` and `description` of a root manifest: `package.json` and `composer.json` at the top, `[package]` (or `[workspace.package]`) of `Cargo.toml`, `[project]` of `pyproject.toml`. A manifest that does not parse gives neither: the analysis reports it where it reads the…
-    - fn [opaqueFacts](../../src/map.ts#L297) (path: string) → FileFacts <!-- internal -->
+    - fn [opaqueFacts](../../src/map.ts#L312) (path: string) → FileFacts <!-- internal -->
       <a id="map.map.opaqueFacts"></a><br>Builds an empty `FileFacts` record for a path with completeness set to "opaque": no imports, declarations, exports, or references, and no parse error. [`map.map.extractGuarded`](map.md#map.map.extractGuarded) and [`map.map.generateMap`](map.md#map.map.generateMap) use it as the placeholder when a file cannot or should not be analyzed. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [readSource](../../src/map.ts#L302) (abs: string) → string | null <!-- internal -->
+    - fn [readSource](../../src/map.ts#L317) (abs: string) → string | null <!-- internal -->
       <a id="map.map.readSource"></a><br>A file's text; null when it no longer exists.
-    - fn [readAnalysedSource](../../src/map.ts#L312) (abs: string) → string | null | { unreadable: string } <!-- internal -->
+    - fn [readAnalysedSource](../../src/map.ts#L327) (abs: string) → string | null | { unreadable: string } <!-- internal -->
       <a id="map.map.readAnalysedSource"></a><br>A source file's text as readSource, or the reason when keylang may not read it (EACCES/EPERM): a hole, not an I/O error.
       - calls [map.map.readSource](map.md#map.map.readSource)
-    - fn [extractGuarded](../../src/map.ts#L327) (extract: (path: string, src: string) => Promise<FileFacts>, path: string, src: string) → Promise<FileFacts> <!-- internal -->
+    - fn [extractGuarded](../../src/map.ts#L342) (extract: (path: string, src: string) => Promise<FileFacts>, path: string, src: string) → Promise<FileFacts> <!-- internal -->
       <a id="map.map.extractGuarded"></a><br>Facts of one file; a file whose syntax nests deeper than the extractor's stack (thousands of `+` terms or parentheses) is opaque with a parse error, so one pathological file does not stop the whole analysis.
       - calls [map.map.opaqueFacts](map.md#map.map.opaqueFacts)
-    - type [MapDiff](../../src/map.ts#L338)
+    - type [MapDiff](../../src/map.ts#L353)
       <a id="map.map.MapDiff"></a><br>Describes the result of comparing generated output against the target directory: paths of existing files the generator does not own, and paths of generated files that are missing, changed, or extra. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [targets](../../src/map.ts#L349) (config: Config, r: MapResult) → { dir: string; files: ReadonlyMap<string, string>; artifact: "map" | "explained" }[] <!-- internal -->
+    - fn [targets](../../src/map.ts#L364) (config: Config, r: MapResult) → { dir: string; files: ReadonlyMap<string, string>; artifact: "map" | "explained" }[] <!-- internal -->
       <a id="map.map.targets"></a><br>Directories the generator owns and what they should hold: the map, and the explained map (empty when `explain.map` is off, so its generated files go).
-    - type [ExtraGenerated](../../src/map.ts#L357) <!-- internal -->
+    - type [ExtraGenerated](../../src/map.ts#L372) <!-- internal -->
       <a id="map.map.ExtraGenerated"></a><br>A generated file in a map directory that is not listed under its name.
-    - fn [extraGenerated](../../src/map.ts#L370) (dir: string, files: ReadonlyMap<string, string>) → ExtraGenerated[] <!-- internal -->
+    - fn [extraGenerated](../../src/map.ts#L385) (dir: string, files: ReadonlyMap<string, string>) → ExtraGenerated[] <!-- internal -->
       <a id="map.map.extraGenerated"></a><br>Generated files in `dir` that should not be there under their names.
       - calls [map.map.readOrNull](map.md#map.map.readOrNull), [map.emit.isGeneratedMap](map.md#map.emit.isGeneratedMap)
-    - fn [mapConflicts](../../src/map.ts#L395) (config: Config, r: MapResult) → string[]
+    - fn [mapConflicts](../../src/map.ts#L410) (config: Config, r: MapResult) → string[]
       <a id="map.map.mapConflicts"></a><br>Target files of both maps that exist and are not generated. Sorted.
       - calls [map.map.targets](map.md#map.map.targets), [map.emit.isGeneratedMap](map.md#map.emit.isGeneratedMap)
-    - type [MapArtifact](../../src/map.ts#L407) = "map" | "explained" | "index" | "facts"
+    - type [MapArtifact](../../src/map.ts#L422) = "map" | "explained" | "index" | "facts"
       <a id="map.map.MapArtifact"></a><br>What a step of the map's commit touches.
-    - type [MapStep](../../src/map.ts#L410)
+    - type [MapStep](../../src/map.ts#L425)
       <a id="map.map.MapStep"></a><br>One file step of `keylang map`: a path relative to the root, POSIX.
-    - type [PlannedStep](../../src/map.ts#L416) extends MapStep <!-- internal -->
+    - type [PlannedStep](../../src/map.ts#L431) extends MapStep <!-- internal -->
       <a id="map.map.PlannedStep"></a><br>Extends `MapStep` with the bytes a write step should produce and a precondition snapshot: the file's expected current content, null for absent, or undefined when no check applies. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [MapPlan](../../src/map.ts#L432)
+    - type [MapPlan](../../src/map.ts#L447)
       <a id="map.map.MapPlan"></a><br>What `keylang map` will do, computed before anything is written: the expected bytes of every target, the removals, and what the render was made from. Internal to one operation — not a stored format.
-    - type [SourceInputs](../../src/map.ts#L444)
+    - type [SourceInputs](../../src/map.ts#L459)
       <a id="map.map.SourceInputs"></a><br>What a snapshot was computed from: `keylang.json` and the source files. A change in either makes a plan built on it unfit.
-    - type [MapInputs](../../src/map.ts#L452) extends SourceInputs <!-- internal -->
+    - type [MapInputs](../../src/map.ts#L467) extends SourceInputs <!-- internal -->
       <a id="map.map.MapInputs"></a><br>The inputs of the render: a change in any makes the plan unfit.
-    - fn [sourceInputs](../../src/map.ts#L462) (config: Config, sources: readonly { path: string; sha256: string }[]) → SourceInputs
+    - fn [sourceInputs](../../src/map.ts#L477) (config: Config, sources: readonly { path: string; sha256: string }[]) → SourceInputs
       <a id="map.map.sourceInputs"></a><br>The inputs of a snapshot: the `keylang.json` text the analysis parsed (not the disk now — a save made during the analysis must be caught at the commit, not become the base) and the snapshot's manifest.
-    - fn [sourceInputProblems](../../src/map.ts#L471) (config: Config, inputs: SourceInputs, subject: string) → string[]
+    - fn [sourceInputProblems](../../src/map.ts#L486) (config: Config, inputs: SourceInputs, subject: string) → string[]
       <a id="map.map.sourceInputProblems"></a><br>How `keylang.json` and the source files differ from the ones `subject` was computed from (`path: reason` lines, empty when none does): a changed config, a source added, changed or removed since.
       - calls [map.map.readOrNull](map.md#map.map.readOrNull), [base.config.sourceTree](base.md#base.config.sourceTree), [map.snapshot.sha256](map.md#map.snapshot.sha256)
-    - type [CommittedStep](../../src/map.ts#L490) extends MapStep
+    - type [CommittedStep](../../src/map.ts#L505) extends MapStep
       <a id="map.map.CommittedStep"></a><br>A step after the commit: done, failed with the reason, or never tried.
-    - type [MapCommit](../../src/map.ts#L495)
+    - type [MapCommit](../../src/map.ts#L510)
       <a id="map.map.MapCommit"></a><br>Result record of a map commit, holding the list of steps that were actually written plus a flag saying whether the run finished, failed, or was cancelled by a signal between steps. Cancelled runs keep whatever steps already landed. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [planMap](../../src/map.ts#L506) (config: Config, r: MapResult) → MapPlan
+    - fn [planMap](../../src/map.ts#L521) (config: Config, r: MapResult) → MapPlan
       <a id="map.map.planMap"></a><br>Plans both maps, the index and the fact cache: a write for every missing or changed generated file, a removal for every generated file of a layer that is gone (or of a map turned off). Reads the disk, writes nothing.
       - calls [base.config.toPosix](base.md#base.config.toPosix), [map.map.targets](map.md#map.map.targets), [map.map.extraGenerated](map.md#map.map.extraGenerated), [map.map.readOrNull](map.md#map.map.readOrNull), [map.map.mapConflicts](map.md#map.map.mapConflicts), [map.map.sourceInputs](map.md#map.map.sourceInputs), [map.map.briefsKey](map.md#map.map.briefsKey)
-    - fn [mapPlanProblems](../../src/map.ts#L547) (plan: MapPlan) → string[]
+    - fn [mapPlanProblems](../../src/map.ts#L562) (plan: MapPlan) → string[]
       <a id="map.map.mapPlanProblems"></a><br>Why the plan may not be committed now, as `path: reason` lines; empty when it may. Every target must pass the repository's write rules (a plain path that stays inside the repository through links) and still hold the bytes the plan saw — a manual file created meanwhile included…
       - calls [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [map.map.sourceInputProblems](map.md#map.map.sourceInputProblems), [map.map.briefsKey](map.md#map.map.briefsKey)
-    - fn [commitMap](../../src/map.ts#L566) (plan: MapPlan, options: { signal?: AbortSignal; onStep?: (step: MapStep) => void } = {}) → Promise<MapCommit>
+    - fn [commitMap](../../src/map.ts#L581) (plan: MapPlan, options: { signal?: AbortSignal; onStep?: (step: MapStep) => void } = {}) → Promise<MapCommit>
       <a id="map.map.commitMap"></a><br>Runs the plan's steps in order, each an atomic write (the generator's exact bytes, the permissions of the file it replaces, links followed inside the repository) or a removal. The signal is checked between steps: the step under way finishes. `onStep` is told before each step…
       - calls [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic), [base.safe-write.landing](base.md#base.safe-write.landing)
-    - fn [briefsKey](../../src/map.ts#L595) (config: Config) → string <!-- internal -->
+    - fn [briefsKey](../../src/map.ts#L610) (config: Config) → string <!-- internal -->
       <a id="map.map.briefsKey"></a><br>A hash of the briefs the explained map reads.
       - calls [map.snapshot.sha256](map.md#map.snapshot.sha256), [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs)
-    - fn [readOrNull](../../src/map.ts#L600) (abs: string) → string | null <!-- internal -->
+    - fn [readOrNull](../../src/map.ts#L615) (abs: string) → string | null <!-- internal -->
       <a id="map.map.readOrNull"></a><br>A file's text, or null when there is none.
-    - fn [diffMap](../../src/map.ts#L609) (config: Config, r: MapResult) → MapDiff
+    - fn [diffMap](../../src/map.ts#L624) (config: Config, r: MapResult) → MapDiff
       <a id="map.map.diffMap"></a><br>Compare both generated maps with the files on disk (`map --check`).
       - calls [map.map.mapConflicts](map.md#map.map.mapConflicts), [map.map.targets](map.md#map.map.targets), [map.map.readOrNull](map.md#map.map.readOrNull), [map.map.extraGenerated](map.md#map.map.extraGenerated)
-    - fn [extractorCode](../../src/map.ts#L634) () → string <!-- internal -->
+    - fn [extractorCode](../../src/map.ts#L649) () → string <!-- internal -->
       <a id="map.map.extractorCode"></a><br>A hash of the extractor's own code. Facts cached by a changed extractor are stale even when nobody bumped `EXTRACTOR_VERSION`; in the package the same files are the built `.js`.
       - calls [map.snapshot.sha256](map.md#map.snapshot.sha256)
   - module [php-imports](../../src/php-imports.ts#L1)
@@ -1186,6 +1404,161 @@
     <a id="map.python-stdlib"></a><br>Top-level modules of the Python standard library: the union of `sys.stdlib_module_names` over CPython 3.10–3.14, copied from the generated `Python/stdlib_module_names.h` of each CPython branch (no npm package carries this list, and analysis never runs a Python interpreter). The…
     - fn [isPythonStdlib](../../src/python-stdlib.ts#L49) (name: string) → boolean
       <a id="map.python-stdlib.isPythonStdlib"></a><br>`name` (the first segment of a dotted import) is a module of the Python standard library.
+  - module [python-web-entries](../../src/python-web-entries.ts#L1)
+    <a id="map.python-web-entries"></a><br>The registrations of the Python web frameworks (business-flows/38, ADR 0022), placed on the graph: Django `urls.py` (`path`, `re_path`, `include`, class-based views), signals (`signal.connect(h)`, `@receiver`) and management commands; FastAPI routers (`APIRouter(prefix=…)`…
+    - config [base.config](base.md#base.config)
+    - entries [map.entries](map.md#map.entries)
+    - facts [extract.facts](extract.md#extract.facts)
+    - graph [map.graph](map.md#map.graph)
+    - python-imports [map.python-imports](map.md#map.python-imports)
+    - snapshot [map.snapshot](map.md#map.snapshot)
+    - type [Ref](../../src/python-web-entries.ts#L31) <!-- internal -->
+      <a id="map.python-web-entries.Ref"></a><br>What a dotted name written in a file stands for.
+    - type [ObjectKind](../../src/python-web-entries.ts#L38) = "fastapi" | "flask" | "blueprint" | "celery" | "signal" <!-- internal -->
+      <a id="map.python-web-entries.ObjectKind"></a>
+    - type [FrameworkObject](../../src/python-web-entries.ts#L41) <!-- internal -->
+      <a id="map.python-web-entries.FrameworkObject"></a><br>An object a module-level statement makes with a framework's constructor: `router = APIRouter(prefix="/x")`.
+    - type [Mount](../../src/python-web-entries.ts#L54) <!-- internal -->
+      <a id="map.python-web-entries.Mount"></a><br>`parent.include_router(child, prefix=…)`, `app.register_blueprint(bp, url_prefix=…)`.
+    - type [Receiver](../../src/python-web-entries.ts#L62) <!-- internal -->
+      <a id="map.python-web-entries.Receiver"></a>
+    - type [PythonWebResult](../../src/python-web-entries.ts#L72)
+      <a id="map.python-web-entries.PythonWebResult"></a>
+    - fn [pythonWebEntries](../../src/python-web-entries.ts#L83) (config: Config, graph: Graph, facts: readonly FileFacts[], scope: EntryScope, active: readonly string[]) → PythonWebResult
+      <a id="map.python-web-entries.pythonWebEntries"></a><br>The entries, edges and holes of the active Python web adapters (`active`, their names). Adds the edges to the graph's fns and lifts the holes the registrations answer (a recognised decorator, a `.delay()` or `.send()` whose target it names).
+      - calls [map.python-web-entries.PythonWeb.run](map.md#map.python-web-entries.PythonWeb.run), [map.python-web-entries.PythonWeb](map.md#map.python-web-entries.PythonWeb)
+    - module [PythonWeb](../../src/python-web-entries.ts#L87) <!-- internal -->
+      <a id="map.python-web-entries.PythonWeb"></a>
+      - fn [constructor](../../src/python-web-entries.ts#L108) (config: Config, graph: Graph, facts: readonly FileFacts[], scope: EntryScope, active: ReadonlySet<string>)
+        <a id="map.python-web-entries.PythonWeb.constructor"></a>
+        - calls [map.python-imports.PythonResolver](map.md#map.python-imports.PythonResolver)
+      - fn [run](../../src/python-web-entries.ts#L121) () → PythonWebResult
+        <a id="map.python-web-entries.PythonWeb.run"></a>
+        - calls [map.python-web-entries.PythonWeb.collectObjects](map.md#map.python-web-entries.PythonWeb.collectObjects), [map.python-web-entries.PythonWeb.collectMounts](map.md#map.python-web-entries.PythonWeb.collectMounts), [map.python-web-entries.PythonWeb.decorated](map.md#map.python-web-entries.PythonWeb.decorated), [map.python-web-entries.PythonWeb.dependsInParams](map.md#map.python-web-entries.PythonWeb.dependsInParams), [map.python-web-entries.PythonWeb.connects](map.md#map.python-web-entries.PythonWeb.connects), [map.python-web-entries.PythonWeb.urls](map.md#map.python-web-entries.PythonWeb.urls), [map.python-web-entries.PythonWeb.command](map.md#map.python-web-entries.PythonWeb.command), [map.python-web-entries.PythonWeb.beat](map.md#map.python-web-entries.PythonWeb.beat), [map.python-web-entries.PythonWeb.dispatches](map.md#map.python-web-entries.PythonWeb.dispatches), [map.python-web-entries.PythonWeb.lift](map.md#map.python-web-entries.PythonWeb.lift)
+      - fn [resolve](../../src/python-web-entries.ts#L140) (file: string, dotted: string, depth = 0) → Ref | null <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.resolve"></a><br>What `dotted`, written in `file`, stands for; null for a name the file neither declares nor imports.
+        - calls [map.python-web-entries.PythonWeb.declares](map.md#map.python-web-entries.PythonWeb.declares), [map.python-imports.PythonResolver.resolve](map.md#map.python-imports.PythonResolver.resolve), [map.python-web-entries.PythonWeb.descend](map.md#map.python-web-entries.PythonWeb.descend)
+      - fn [descend](../../src/python-web-entries.ts#L165) (ref: Ref, rest: string[], depth: number) → Ref | null <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.descend"></a><br>A module or name with more attributes read on it; a name another module only imports is followed there.
+        - calls [map.python-web-entries.PythonWeb.follow](map.md#map.python-web-entries.PythonWeb.follow)
+      - fn [follow](../../src/python-web-entries.ts#L174) (file: string, name: string, rest: string[], depth: number) → Ref | null <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.follow"></a>
+        - calls [map.python-web-entries.PythonWeb.declares](map.md#map.python-web-entries.PythonWeb.declares), [map.python-web-entries.PythonWeb.resolve](map.md#map.python-web-entries.PythonWeb.resolve)
+      - fn [declares](../../src/python-web-entries.ts#L183) (facts: FileFacts, name: string) → boolean <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.declares"></a><br>The file binds `name` at its top: a `def`, a `class` or an assignment.
+      - fn [qualified](../../src/python-web-entries.ts#L190) (file: string, dotted: string) → string | null <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.qualified"></a><br>The qualified name of a package's name written in `file`: `APIRouter` → `fastapi.APIRouter`.
+        - calls [map.python-web-entries.PythonWeb.resolve](map.md#map.python-web-entries.PythonWeb.resolve)
+      - fn [fnOf](../../src/python-web-entries.ts#L195) (file: string, dotted: string) → string | null <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.fnOf"></a>
+        - calls [map.python-web-entries.PythonWeb.resolve](map.md#map.python-web-entries.PythonWeb.resolve), [map.entries.fnIn](map.md#map.entries.fnIn)
+      - fn [classOf](../../src/python-web-entries.ts#L201) (file: string, dotted: string) → Module | null <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.classOf"></a>
+        - calls [map.python-web-entries.PythonWeb.resolve](map.md#map.python-web-entries.PythonWeb.resolve)
+      - fn [objectOf](../../src/python-web-entries.ts#L207) (file: string, dotted: string) → FrameworkObject | null <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.objectOf"></a>
+        - calls [map.python-web-entries.PythonWeb.resolve](map.md#map.python-web-entries.PythonWeb.resolve)
+      - fn [collectObjects](../../src/python-web-entries.ts#L214) (file: FileFacts) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.collectObjects"></a>
+        - calls [map.python-web-entries.PythonWeb.qualified](map.md#map.python-web-entries.PythonWeb.qualified), [map.python-web-entries.objectKind](map.md#map.python-web-entries.objectKind), [map.python-web-entries.frameworkOf](map.md#map.python-web-entries.frameworkOf), [map.python-web-entries.kwarg](map.md#map.python-web-entries.kwarg), [map.python-web-entries.str](map.md#map.python-web-entries.str)
+      - fn [collectMounts](../../src/python-web-entries.ts#L227) (file: FileFacts) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.collectMounts"></a>
+        - calls [map.python-web-entries.PythonWeb.objectOf](map.md#map.python-web-entries.PythonWeb.objectOf), [map.python-web-entries.PythonWeb.hole](map.md#map.python-web-entries.PythonWeb.hole), [map.python-web-entries.text](map.md#map.python-web-entries.text), [map.python-web-entries.str](map.md#map.python-web-entries.str), [map.python-web-entries.kwarg](map.md#map.python-web-entries.kwarg)
+      - fn [prefixes](../../src/python-web-entries.ts#L248) (key: string, seen: ReadonlySet<string> = new Set()) → string[] <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.prefixes"></a><br>Every URL prefix an object's routes have: its own, behind each mount's (through the objects that mount it).
+      - fn [decorated](../../src/python-web-entries.ts#L264) (file: FileFacts) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.decorated"></a>
+        - calls [map.python-web-entries.PythonWeb.objectOf](map.md#map.python-web-entries.PythonWeb.objectOf), [map.python-web-entries.PythonWeb.qualified](map.md#map.python-web-entries.PythonWeb.qualified), [map.python-web-entries.PythonWeb.route](map.md#map.python-web-entries.PythonWeb.route), [map.python-web-entries.isQualified](map.md#map.python-web-entries.isQualified), [map.python-web-entries.PythonWeb.task](map.md#map.python-web-entries.PythonWeb.task), [map.python-web-entries.PythonWeb.receiver](map.md#map.python-web-entries.PythonWeb.receiver)
+      - fn [route](../../src/python-web-entries.ts#L277) (file: FileFacts, d: NonNullable<FileFacts["decorators"]>[number], object: FrameworkObject, verb: string) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.route"></a>
+        - calls [map.entries.fnIn](map.md#map.entries.fnIn), [map.python-web-entries.str](map.md#map.python-web-entries.str), [map.python-web-entries.kwarg](map.md#map.python-web-entries.kwarg), [map.python-web-entries.PythonWeb.hole](map.md#map.python-web-entries.PythonWeb.hole), [map.python-web-entries.strings](map.md#map.python-web-entries.strings), [map.python-web-entries.PythonWeb.prefixes](map.md#map.python-web-entries.PythonWeb.prefixes), [map.python-web-entries.joinUrl](map.md#map.python-web-entries.joinUrl), [map.entries.frameworkEntry](map.md#map.entries.frameworkEntry), [map.python-web-entries.PythonWeb.depends](map.md#map.python-web-entries.PythonWeb.depends)
+      - fn [task](../../src/python-web-entries.ts#L305) (file: FileFacts, d: NonNullable<FileFacts["decorators"]>[number]) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.task"></a>
+        - calls [map.entries.fnIn](map.md#map.entries.fnIn), [map.python-web-entries.PythonWeb.hole](map.md#map.python-web-entries.PythonWeb.hole), [map.python-web-entries.str](map.md#map.python-web-entries.str), [map.python-web-entries.kwarg](map.md#map.python-web-entries.kwarg), [map.python-web-entries.moduleName](map.md#map.python-web-entries.moduleName), [map.entries.frameworkEntry](map.md#map.entries.frameworkEntry)
+      - fn [receiver](../../src/python-web-entries.ts#L318) (file: FileFacts, d: NonNullable<FileFacts["decorators"]>[number]) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.receiver"></a>
+        - calls [map.entries.fnIn](map.md#map.entries.fnIn), [map.python-web-entries.PythonWeb.hole](map.md#map.python-web-entries.PythonWeb.hole), [map.python-web-entries.PythonWeb.observe](map.md#map.python-web-entries.PythonWeb.observe), [map.python-web-entries.kwarg](map.md#map.python-web-entries.kwarg)
+      - fn [observe](../../src/python-web-entries.ts#L331) (file: string, line: number, col: number, signal: LiteralValue, fn: string, sender: LiteralValue | undefined) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.observe"></a><br>A receiver of a signal: an `observer` entry, and the fn `signal.send()` reaches.
+        - calls [map.python-web-entries.PythonWeb.signalKey](map.md#map.python-web-entries.PythonWeb.signalKey), [map.python-web-entries.PythonWeb.hole](map.md#map.python-web-entries.PythonWeb.hole), [map.python-web-entries.text](map.md#map.python-web-entries.text), [map.entries.frameworkEntry](map.md#map.entries.frameworkEntry)
+      - fn [signalKey](../../src/python-web-entries.ts#L345) (file: string, dotted: string) → string | null <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.signalKey"></a><br>A signal's identity: the qualified name of Django's, `file#name` of one the repository makes with `Signal()`.
+        - calls [map.python-web-entries.PythonWeb.resolve](map.md#map.python-web-entries.PythonWeb.resolve), [map.python-web-entries.isQualified](map.md#map.python-web-entries.isQualified)
+      - fn [connects](../../src/python-web-entries.ts#L355) (file: FileFacts) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.connects"></a><br>`signal.connect(handler, sender=M)` at module level, or in a fn (`AppConfig.ready`).
+        - calls [map.python-web-entries.PythonWeb.signalKey](map.md#map.python-web-entries.PythonWeb.signalKey), [map.python-web-entries.kwarg](map.md#map.python-web-entries.kwarg), [map.python-web-entries.PythonWeb.fnOf](map.md#map.python-web-entries.PythonWeb.fnOf), [map.python-web-entries.PythonWeb.hole](map.md#map.python-web-entries.PythonWeb.hole), [map.python-web-entries.text](map.md#map.python-web-entries.text), [map.python-web-entries.PythonWeb.observe](map.md#map.python-web-entries.PythonWeb.observe), [map.python-web-entries.PythonWeb.eachCall](map.md#map.python-web-entries.PythonWeb.eachCall)
+      - fn [urls](../../src/python-web-entries.ts#L383) () → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.urls"></a><br>`urlpatterns` from each root urls module (one no other `include`s), with the prefixes `include` adds.
+        - calls [map.python-web-entries.PythonWeb.patterns](map.md#map.python-web-entries.PythonWeb.patterns), [map.python-web-entries.PythonWeb.includes](map.md#map.python-web-entries.PythonWeb.includes), [map.python-web-entries.PythonWeb.walkUrls](map.md#map.python-web-entries.PythonWeb.walkUrls)
+      - fn [patterns](../../src/python-web-entries.ts#L390) (file: FileFacts) → LiteralValue[] <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.patterns"></a>
+      - fn [includes](../../src/python-web-entries.ts#L395) (file: string, value: LiteralValue, found: (target: string) => void) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.includes"></a><br>The urls modules a pattern `include`s, without reporting anything.
+        - calls [map.python-web-entries.PythonWeb.isDjango](map.md#map.python-web-entries.PythonWeb.isDjango), [map.python-web-entries.kwarg](map.md#map.python-web-entries.kwarg), [map.python-web-entries.PythonWeb.includedFile](map.md#map.python-web-entries.PythonWeb.includedFile)
+      - fn [includedFile](../../src/python-web-entries.ts#L405) (file: string, arg: LiteralValue | undefined) → string | LiteralValue[] | null <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.includedFile"></a><br>What `include(x)` includes: a urls module's file, an inline list of patterns, or null.
+        - calls [map.python-imports.PythonResolver.resolve](map.md#map.python-imports.PythonResolver.resolve), [map.python-web-entries.PythonWeb.resolve](map.md#map.python-web-entries.PythonWeb.resolve)
+      - fn [walkUrls](../../src/python-web-entries.ts#L421) (path: string, prefix: string, seen: ReadonlySet<string>) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.walkUrls"></a>
+        - calls [map.python-web-entries.PythonWeb.patterns](map.md#map.python-web-entries.PythonWeb.patterns), [map.python-web-entries.PythonWeb.urlPattern](map.md#map.python-web-entries.PythonWeb.urlPattern)
+      - fn [urlPattern](../../src/python-web-entries.ts#L428) (file: FileFacts, value: LiteralValue, prefix: string, seen: ReadonlySet<string>) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.urlPattern"></a>
+        - calls [map.python-web-entries.PythonWeb.isDjango](map.md#map.python-web-entries.PythonWeb.isDjango), [map.python-web-entries.PythonWeb.hole](map.md#map.python-web-entries.PythonWeb.hole), [map.python-web-entries.text](map.md#map.python-web-entries.text), [map.python-web-entries.str](map.md#map.python-web-entries.str), [map.python-web-entries.kwarg](map.md#map.python-web-entries.kwarg), [map.python-web-entries.PythonWeb.includedFile](map.md#map.python-web-entries.PythonWeb.includedFile), [map.python-web-entries.PythonWeb.walkUrls](map.md#map.python-web-entries.PythonWeb.walkUrls), [map.python-web-entries.PythonWeb.classOf](map.md#map.python-web-entries.PythonWeb.classOf), [map.entries.frameworkEntry](map.md#map.entries.frameworkEntry), [map.python-web-entries.PythonWeb.fnOf](map.md#map.python-web-entries.PythonWeb.fnOf)
+      - fn [isDjango](../../src/python-web-entries.ts#L475) (file: string, callee: string, names: string[]) → boolean <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.isDjango"></a>
+        - calls [map.python-web-entries.PythonWeb.qualified](map.md#map.python-web-entries.PythonWeb.qualified), [map.python-web-entries.isQualified](map.md#map.python-web-entries.isQualified)
+      - fn [command](../../src/python-web-entries.ts#L481) (file: FileFacts) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.command"></a><br>`<app>/management/commands/<name>.py` with a class `Command`: `manage.py <name>` runs its `handle`.
+        - calls [map.entries.fnIn](map.md#map.entries.fnIn), [map.entries.frameworkEntry](map.md#map.entries.frameworkEntry)
+      - fn [beat](../../src/python-web-entries.ts#L494) (file: FileFacts) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.beat"></a><br>`beat_schedule = {name: {"task": "…", "schedule": crontab(…)}}`, in a Celery config or Django settings.
+        - calls [map.python-web-entries.kwarg](map.md#map.python-web-entries.kwarg), [map.python-web-entries.str](map.md#map.python-web-entries.str), [map.python-web-entries.entryOf](map.md#map.python-web-entries.entryOf), [map.python-web-entries.PythonWeb.hole](map.md#map.python-web-entries.PythonWeb.hole), [map.python-web-entries.text](map.md#map.python-web-entries.text), [map.python-web-entries.PythonWeb.qualified](map.md#map.python-web-entries.PythonWeb.qualified), [map.python-web-entries.scheduleText](map.md#map.python-web-entries.scheduleText), [map.entries.frameworkEntry](map.md#map.entries.frameworkEntry)
+      - fn [dependsInParams](../../src/python-web-entries.ts#L520) (file: FileFacts) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.dependsInParams"></a><br>`Depends(f)` in a parameter: the fn calls `f` with what the framework injects.
+        - calls [map.entries.fnIn](map.md#map.entries.fnIn), [map.python-web-entries.PythonWeb.depends](map.md#map.python-web-entries.PythonWeb.depends)
+      - fn [depends](../../src/python-web-entries.ts#L527) (file: string, fn: string, value: LiteralValue, hook: string) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.depends"></a>
+        - calls [map.python-web-entries.PythonWeb.qualified](map.md#map.python-web-entries.PythonWeb.qualified), [map.python-web-entries.isQualified](map.md#map.python-web-entries.isQualified), [map.python-web-entries.kwarg](map.md#map.python-web-entries.kwarg), [map.python-web-entries.PythonWeb.resolve](map.md#map.python-web-entries.PythonWeb.resolve), [map.python-web-entries.PythonWeb.fnOf](map.md#map.python-web-entries.PythonWeb.fnOf), [map.python-web-entries.PythonWeb.constructorOf](map.md#map.python-web-entries.PythonWeb.constructorOf), [map.python-web-entries.PythonWeb.hole](map.md#map.python-web-entries.PythonWeb.hole), [map.python-web-entries.text](map.md#map.python-web-entries.text), [map.python-web-entries.PythonWeb.edge](map.md#map.python-web-entries.PythonWeb.edge)
+      - fn [constructorOf](../../src/python-web-entries.ts#L544) (file: string, dotted: string) → string | null <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.constructorOf"></a>
+        - calls [map.python-web-entries.PythonWeb.classOf](map.md#map.python-web-entries.PythonWeb.classOf)
+      - fn [dispatches](../../src/python-web-entries.ts#L550) (file: FileFacts) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.dispatches"></a><br>`task.delay()` / `task.apply_async()` → the task (`dispatch`); `signal.send()` → its receivers (`observer`).
+        - calls [map.python-web-entries.PythonWeb.eachCall](map.md#map.python-web-entries.PythonWeb.eachCall), [map.python-web-entries.PythonWeb.fnOf](map.md#map.python-web-entries.PythonWeb.fnOf), [map.python-web-entries.PythonWeb.edge](map.md#map.python-web-entries.PythonWeb.edge), [map.python-web-entries.PythonWeb.signalKey](map.md#map.python-web-entries.PythonWeb.signalKey)
+      - fn [eachCall](../../src/python-web-entries.ts#L574) (file: FileFacts, visit: (caller: string, call: CallFact) => void) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.eachCall"></a><br>Every call written in a fn of the file (methods of top-level classes included), with the fn's id.
+        - calls [map.entries.fnIn](map.md#map.entries.fnIn)
+      - fn [edge](../../src/python-web-entries.ts#L587) (source: string, call: Call) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.edge"></a>
+      - fn [lift](../../src/python-web-entries.ts#L595) () → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.lift"></a><br>Lifts the holes a registration answers: a recognised decorator's, a dispatch's or a send's call.
+      - fn [hole](../../src/python-web-entries.ts#L610) (file: string, line: number, col: number, fragment: string, reason: string, source: string | null) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.hole"></a>
+    - fn [objectKind](../../src/python-web-entries.ts#L615) (q: string | null) → ObjectKind | null <!-- internal -->
+      <a id="map.python-web-entries.objectKind"></a>
+      - calls [map.python-web-entries.isQualified](map.md#map.python-web-entries.isQualified)
+    - fn [frameworkOf](../../src/python-web-entries.ts#L625) (kind: ObjectKind) → string <!-- internal -->
+      <a id="map.python-web-entries.frameworkOf"></a>
+    - fn [isQualified](../../src/python-web-entries.ts#L630) (q: string, pkg: string, names: readonly string[]) → boolean <!-- internal -->
+      <a id="map.python-web-entries.isQualified"></a><br>`fastapi.routing.APIRouter` is `APIRouter` of `fastapi`; no `names` accepts any name of the package.
+    - fn [kwarg](../../src/python-web-entries.ts#L635) (kwargs: readonly Kwarg[], name: string) → LiteralValue | undefined <!-- internal -->
+      <a id="map.python-web-entries.kwarg"></a>
+    - fn [entryOf](../../src/python-web-entries.ts#L639) (dict: Extract<LiteralValue, { kind: "dict" }>, key: string) → LiteralValue | undefined <!-- internal -->
+      <a id="map.python-web-entries.entryOf"></a>
+    - fn [str](../../src/python-web-entries.ts#L643) (value: LiteralValue | undefined) → string | undefined <!-- internal -->
+      <a id="map.python-web-entries.str"></a>
+    - fn [strings](../../src/python-web-entries.ts#L648) (value: LiteralValue | undefined) → string[] | undefined <!-- internal -->
+      <a id="map.python-web-entries.strings"></a><br>A list of string literals, or undefined for anything else.
+      - calls [map.python-web-entries.str](map.md#map.python-web-entries.str)
+    - fn [text](../../src/python-web-entries.ts#L655) (value: LiteralValue) → string <!-- internal -->
+      <a id="map.python-web-entries.text"></a><br>A value in words: a literal as written, a call by its callee.
+    - fn [joinUrl](../../src/python-web-entries.ts#L675) (prefix: string, path: string) → string <!-- internal -->
+      <a id="map.python-web-entries.joinUrl"></a><br>A URL from a router's prefix and a route's path: `/orders` + `/{id}`; at least `/`.
+    - fn [moduleName](../../src/python-web-entries.ts#L681) (file: string) → string <!-- internal -->
+      <a id="map.python-web-entries.moduleName"></a><br>The dotted module name of a Python file, as Celery names its tasks: `shop/tasks.py` → `shop.tasks`.
+    - fn [scheduleText](../../src/python-web-entries.ts#L686) (value: LiteralValue | undefined, qualified: (dotted: string) => string | null) → string <!-- internal -->
+      <a id="map.python-web-entries.scheduleText"></a><br>Celery's `crontab(minute=0, hour="*\/3")` as cron fields; a number of seconds; another schedule as written.
+      - calls [map.python-web-entries.isQualified](map.md#map.python-web-entries.isQualified), [map.python-web-entries.kwarg](map.md#map.python-web-entries.kwarg), [map.python-web-entries.text](map.md#map.python-web-entries.text)
   - module [rust-imports](../../src/rust-imports.ts#L1)
     <a id="map.rust-imports"></a><br>Rust path → file. A crate is a directory with `Cargo.toml` and `[package]`; each target — the library (`src/lib.rs` or `[lib] path`), and each binary (`src/main.rs`, `src/bin/*.rs`, `src/bin/*/main.rs`, `[[bin]] path`) — is a module tree of its own rooted at that file…
     - node [external.node](external.md#external.node)
@@ -1245,74 +1618,75 @@
     - exports [map.exports](map.md#map.exports)
     - brief [base.brief](base.md#base.brief)
     - glob [base.glob](base.md#base.glob)
+    - events [base.events](base.md#base.events)
     - graph [map.graph](map.md#map.graph)
     - languages [base.languages](base.md#base.languages)
     - scc [check.scc](check.md#check.scc)
-    - type [Resolution](../../src/snapshot.ts#L22) = "resolved" | "ambiguous" | "unresolved"
+    - type [Resolution](../../src/snapshot.ts#L23) = "resolved" | "ambiguous" | "unresolved"
       <a id="map.snapshot.Resolution"></a><br>A string union naming the three outcomes of resolving a reference in the map snapshot: a single target found, several candidates competing, or no target at all. Used as a tag on snapshot entries to record how each lookup fared. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Provenance](../../src/snapshot.ts#L29) = "syntactic" | "docblock"
+    - type [Provenance](../../src/snapshot.ts#L30) = "syntactic" | "docblock"
       <a id="map.snapshot.Provenance"></a><br>`syntactic`: a fact of the code the language runs. `docblock`: a fact written only in a documentation comment the language does not check (PHP `@var Foo` above an untyped property, `@param Foo $x`): static analysers trust it, and so does keylang, naming it in the verdict.
-    - type [EdgeKind](../../src/snapshot.ts#L30) = "import" | "call" | "type" | "reexport"
+    - type [EdgeKind](../../src/snapshot.ts#L31) = "import" | "call" | "type" | "reexport"
       <a id="map.snapshot.EdgeKind"></a><br>Defines the closed set of string tags a snapshot edge can carry: one of four values marking whether the edge records an import, a call, a type reference, or a re-export between two nodes. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [SnapshotEdge](../../src/snapshot.ts#L32)
+    - type [SnapshotEdge](../../src/snapshot.ts#L33)
       <a id="map.snapshot.SnapshotEdge"></a><br>A reference edge in the snapshot: kind, source, resolved target or ambiguous candidates, exact source span and text, resolution and provenance, plus flags for hook-default/injected calls, closures and type-only imports. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
-    - type [SnapshotExport](../../src/snapshot.ts#L94)
+    - type [SnapshotExport](../../src/snapshot.ts#L99)
       <a id="map.snapshot.SnapshotExport"></a><br>Describes one public name a module exports in the snapshot: the node it resolves to through aliases and re-export chains (or null), its kind, and how it is exported (alias, default, re-export from another module, or namespace). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [CoverageItem](../../src/snapshot.ts#L123)
+    - type [CoverageItem](../../src/snapshot.ts#L128)
       <a id="map.snapshot.CoverageItem"></a><br>A coverage entry pinning a source span (file, start/end line and column, text) with a reason and optional source; its kind is a gap kind or marks a skipped file, a file placed outside, or an assumed import. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
-    - fn [leavesUnresolved](../../src/snapshot.ts#L144) (item: Pick<CoverageItem, "kind">) → boolean
+    - fn [leavesUnresolved](../../src/snapshot.ts#L149) (item: Pick<CoverageItem, "kind">) → boolean
       <a id="map.snapshot.leavesUnresolved"></a><br>A coverage entry that leaves something unresolved: every kind but `assumed-import`, an import of a file `assume` lists, which names no node on purpose and so can hide no edge.
-    - type [SnapshotNode](../../src/snapshot.ts#L148)
+    - type [SnapshotNode](../../src/snapshot.ts#L153)
       <a id="map.snapshot.SnapshotNode"></a><br>Shape of one entry in the serialized map: kind, layer, source span, signature and flags, plus dependency, call, fingerprint and closure fields. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-    - type [Interception](../../src/snapshot.ts#L201)
+    - type [Interception](../../src/snapshot.ts#L211)
       <a id="map.snapshot.Interception"></a><br>A plugin method that wraps a fn, from a framework config.
-    - type [FrameworkManifest](../../src/snapshot.ts#L213)
+    - type [FrameworkManifest](../../src/snapshot.ts#L223)
       <a id="map.snapshot.FrameworkManifest"></a><br>A framework adapter that read the repository, with the config files it read: inputs of `snapshotId`.
-    - type [SystemDoc](../../src/snapshot.ts#L223)
+    - type [SystemDoc](../../src/snapshot.ts#L233)
       <a id="map.snapshot.SystemDoc"></a><br>What the repository says about itself: the system level of C4. A node of the explained map and the zoom screen, never an ID of the language (ADR 0014).
-    - type [RepositoryDocs](../../src/snapshot.ts#L233)
+    - type [RepositoryDocs](../../src/snapshot.ts#L243)
       <a id="map.snapshot.RepositoryDocs"></a><br>Text the repository writes about itself and its layers, read at the edge (`map.ts`).
-    - type [EntryKind](../../src/snapshot.ts#L241) = (typeof ENTRY_KINDS)[number]
+    - type [EntryKind](../../src/snapshot.ts#L251) = (typeof ENTRY_KINDS)[number]
       <a id="map.snapshot.EntryKind"></a>
-    - fn [isEntryKind](../../src/snapshot.ts#L243) (value: string) → value is EntryKind
+    - fn [isEntryKind](../../src/snapshot.ts#L253) (value: string) → value is EntryKind
       <a id="map.snapshot.isEntryKind"></a>
-    - type [EntryPoint](../../src/snapshot.ts#L252)
+    - type [EntryPoint](../../src/snapshot.ts#L262)
       <a id="map.snapshot.EntryPoint"></a><br>An entry point: a fn (or a module's top level) execution starts from, as the code or a manifest writes it. A fact, not an edge: nothing calls it from inside the repository.
-    - type [AnalysisSnapshot](../../src/snapshot.ts#L271)
+    - type [AnalysisSnapshot](../../src/snapshot.ts#L287)
       <a id="map.snapshot.AnalysisSnapshot"></a><br>A versioned, serialisable record of one analysis run: extractor, grammars, config and file hashes, plus the resulting nodes, edges, exports, coverage and stats. It also carries the repo description, which is kept out of its ID. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
-    - fn [sha256](../../src/snapshot.ts#L309) (text: string) → string
+    - fn [sha256](../../src/snapshot.ts#L325) (text: string) → string
       <a id="map.snapshot.sha256"></a><br>Hashes the given text with SHA-256 and returns the hex digest. Used across the codebase as the single content-fingerprinting primitive, e.g. by [`map.snapshot.buildSnapshot`](map.md#map.snapshot.buildSnapshot) and `operations.operations.hashOrNull`. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [buildSnapshot](../../src/snapshot.ts#L313) ( graph: Graph, config: Config, files: readonly { path: string; sha256: string }[], /** Files (or an unreadable directory) left out; `source`: the ID scope they belong to when no module has the file. */ skipped: readonly { file: string; reason: string; source?: string; kind?: "skipped-file" | "outside-file"; text?: string }[], docs: RepositoryDocs = { system: { name: null, brief: null, source: null }, layers: new Map() }, /** The entry points and the manifests they were read from (path → text or null), which `snapshotId` covers like the sources. */ entries: { list: readonly EntryPoint[]; inputs: readonly (readonly [string, string | null])[] } = { list: [], inputs: [] }, /** Framework adapters in use and their config files, which `snapshotId` covers like the sources. */ frameworks: readonly FrameworkManifest[] = [], ) → AnalysisSnapshot
+    - fn [buildSnapshot](../../src/snapshot.ts#L329) ( graph: Graph, config: Config, files: readonly { path: string; sha256: string }[], /** Files (or an unreadable directory) left out; `source`: the ID scope they belong to when no module has the file. */ skipped: readonly { file: string; reason: string; source?: string; kind?: "skipped-file" | "outside-file"; text?: string }[], docs: RepositoryDocs = { system: { name: null, brief: null, source: null }, layers: new Map() }, /** The entry points and the manifests they were read from (path → text or null), which `snapshotId` covers like the sources. */ entries: { list: readonly EntryPoint[]; inputs: readonly (readonly [string, string | null])[] } = { list: [], inputs: [] }, /** Framework adapters in use and their config files, which `snapshotId` covers like the sources. */ frameworks: readonly FrameworkManifest[] = [], ) → AnalysisSnapshot
       <a id="map.snapshot.buildSnapshot"></a><br>Converts the analyzed graph into a sorted snapshot of layer/module/fn/type nodes with reverse links, resolved and unresolved edges, and coverage gaps, keyed by a hash of config, files and grammars; [`map.snapshot.closures`](map.md#map.snapshot.closures) finishes it. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [map.snapshot.grammarVersions](map.md#map.snapshot.grammarVersions), [map.snapshot.sha256](map.md#map.snapshot.sha256), [map.snapshot.docBrief](map.md#map.snapshot.docBrief), [map.snapshot.readsImportedValue](map.md#map.snapshot.readsImportedValue), [map.snapshot.indexDoc](map.md#map.snapshot.indexDoc), [base.glob.globDirectory](base.md#base.glob.globDirectory), [map.snapshot.compareCoverage](map.md#map.snapshot.compareCoverage), [map.snapshot.closures](map.md#map.snapshot.closures), [map.snapshot.exportRow](map.md#map.snapshot.exportRow)
-    - fn [closures](../../src/snapshot.ts#L553) (nodes: Record<string, SnapshotNode>, coverage: readonly CoverageItem[], readsImported: ReadonlySet<string>) → void <!-- internal -->
+    - fn [closures](../../src/snapshot.ts#L607) (nodes: Record<string, SnapshotNode>, coverage: readonly CoverageItem[], readsImported: ReadonlySet<string>) → void <!-- internal -->
       <a id="map.snapshot.closures"></a><br>`closure` of every fn and type, bottom-up over strongly connected components of the call graph: a component hashes its members' own fingerprints with the closures it calls outside itself, so a cycle terminates and every member of it changes together.
       - calls [base.languages.constructorName](base.md#base.languages.constructorName), [check.scc.components](check.md#check.scc.components), [map.snapshot.sha256](map.md#map.snapshot.sha256)
-    - fn [readsImportedValue](../../src/snapshot.ts#L603) (print: string) → boolean <!-- internal -->
+    - fn [readsImportedValue](../../src/snapshot.ts#L659) (print: string) → boolean <!-- internal -->
       <a id="map.snapshot.readsImportedValue"></a><br>Whether an extractor fingerprint marks a declaration that reads a value imported from another file of the repository: it ends with `+` (`READS_IMPORTED_VALUE` of `extract/treesitter.ts`, never a hex digit; overloads join with `:`, so any part may carry it).
-    - fn [docBrief](../../src/snapshot.ts#L607) (doc: string | null | undefined) → string | null <!-- internal -->
+    - fn [docBrief](../../src/snapshot.ts#L663) (doc: string | null | undefined) → string | null <!-- internal -->
       <a id="map.snapshot.docBrief"></a><br>Returns null for an empty, null, or undefined doc string; otherwise hands the text to [`base.brief.briefOf`](base.md#base.brief.briefOf) and returns its result. Used by [`map.snapshot.buildSnapshot`](map.md#map.snapshot.buildSnapshot) to produce short summaries for the snapshot. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [base.brief.briefOf](base.md#base.brief.briefOf)
-    - fn [indexDoc](../../src/snapshot.ts#L616) (modules: readonly Module[], dir: string | null) → string | null <!-- internal -->
+    - fn [indexDoc](../../src/snapshot.ts#L672) (modules: readonly Module[], dir: string | null) → string | null <!-- internal -->
       <a id="map.snapshot.indexDoc"></a><br>The doc comment of the index module right in a layer's own directory (`src/tui/index.ts`, `mod.rs`, `__init__.py`: the index names of its language), as a brief.
       - calls [base.languages.languageOf](base.md#base.languages.languageOf), [map.snapshot.docBrief](map.md#map.snapshot.docBrief)
-    - fn [exportRow](../../src/snapshot.ts#L628) (entry: ExportEntry) → SnapshotExport <!-- internal -->
+    - fn [exportRow](../../src/snapshot.ts#L684) (entry: ExportEntry) → SnapshotExport <!-- internal -->
       <a id="map.snapshot.exportRow"></a><br>A row of the graph's export table, with its fields in a fixed order.
-    - fn [compareCoverage](../../src/snapshot.ts#L641) (a: CoverageItem, b: CoverageItem) → number <!-- internal -->
+    - fn [compareCoverage](../../src/snapshot.ts#L697) (a: CoverageItem, b: CoverageItem) → number <!-- internal -->
       <a id="map.snapshot.compareCoverage"></a><br>Orders two coverage entries for stable sorting: first by file path via [`map.snapshot.cmp`](map.md#map.snapshot.cmp), then numerically by line, then by kind, and finally by reason, returning the first nonzero comparison. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [map.snapshot.cmp](map.md#map.snapshot.cmp)
-    - fn [cmp](../../src/snapshot.ts#L645) (a: string, b: string) → number <!-- internal -->
+    - fn [cmp](../../src/snapshot.ts#L701) (a: string, b: string) → number <!-- internal -->
       <a id="map.snapshot.cmp"></a><br>Compares two strings by plain lexical ordering and returns -1, 1, or 0, giving [`map.snapshot.compareCoverage`](map.md#map.snapshot.compareCoverage) a stable tiebreaker when it sorts coverage items. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [grammarVersions](../../src/snapshot.ts#L659) () → Record<string, string>
+    - fn [grammarVersions](../../src/snapshot.ts#L715) () → Record<string, string>
       <a id="map.snapshot.grammarVersions"></a><br>What parses the code, in `snapshotId` and the fact-cache key: the web-tree-sitter runtime as Node resolves it, and the grammars as the extractor loads them — from `dist/wasm` in the package, whose version prepack writes beside them, else from the installed…
       - calls [map.snapshot.installedVersion](map.md#map.snapshot.installedVersion), [map.snapshot.bundledGrammarsVersion](map.md#map.snapshot.bundledGrammarsVersion)
-    - fn [bundledGrammarsVersion](../../src/snapshot.ts#L670) () → string | null <!-- internal -->
+    - fn [bundledGrammarsVersion](../../src/snapshot.ts#L726) () → string | null <!-- internal -->
       <a id="map.snapshot.bundledGrammarsVersion"></a><br>The version prepack recorded beside the grammars in `dist/wasm`; null in a checkout.
       - calls [map.snapshot.readJson](map.md#map.snapshot.readJson)
-    - fn [installedVersion](../../src/snapshot.ts#L681) (name: string, resolve: () => string) → string | null <!-- internal -->
+    - fn [installedVersion](../../src/snapshot.ts#L737) (name: string, resolve: () => string) → string | null <!-- internal -->
       <a id="map.snapshot.installedVersion"></a><br>The version in the nearest `package.json` of that name above the file `resolve` finds: a package's `exports` may not list `./package.json` (web-tree-sitter does not), so reading it by name fails. Null when the package is not installed.
       - calls [map.snapshot.readJson](map.md#map.snapshot.readJson)
-    - fn [readJson](../../src/snapshot.ts#L697) (file: string) → Record<string, unknown> | null <!-- internal -->
+    - fn [readJson](../../src/snapshot.ts#L753) (file: string) → Record<string, unknown> | null <!-- internal -->
       <a id="map.snapshot.readJson"></a>
   - module [trace-plan](../../src/trace-plan.ts#L1)
     <a id="map.trace-plan"></a><br>The functions of one flow that a trace adapter instruments: the flow's `trigger` and `step` IDs that are functions of a fresh snapshot, with the file, position and file hash the snapshot saw. Adapters of languages without Node hooks (Python, Rust) read this plan instead of the…

@@ -38,10 +38,10 @@ export async function runEntries(request: EntriesRequest, context: OperationCont
   return { ...empty("entries", "completed", 0), payload, messages: text.trimEnd().split("\n").map((line) => ({ level: "info" as const, text: line })) };
 }
 
-/** The table `keylang entries` prints: `kind · label · id · file:line`, aligned; or the note and the hint when there is nothing. */
+/** The table `keylang entries` prints: `kind · label · id · file:line`, aligned, and why when the config's class is not a fn keylang read; or the note and the hint when there is nothing. */
 export function entriesText(entries: readonly EntryPoint[], kind: EntryPoint["kind"] | null = null): string {
   if (entries.length === 0) return `no entry points found${kind === null ? "" : ` of kind ${kind}`}\n${ENTRIES_HINT}\n`;
-  const rows = entries.map((entry) => [entry.kind, entry.label, entry.id, `${entry.file}:${entry.line}`]);
+  const rows = entries.map((entry) => [entry.kind, entry.label, entry.id, `${entry.file}:${entry.line}${entry.unresolved ? `  unresolved: ${entry.unresolved}` : ""}`]);
   const widths = [0, 1, 2].map((column) => Math.max(...rows.map((row) => row[column]!.length)));
   return rows.map((row) => row.map((cell, column) => (column < 3 ? cell.padEnd(widths[column]!) : cell)).join("  ")).join("\n") + "\n";
 }

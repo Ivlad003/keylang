@@ -56,8 +56,8 @@ test("bench-magento: metrics of the fixture snapshot", () => {
   assert.deepEqual(validate, { id: "quote.Model.SubmitQuoteValidator.SubmitQuoteValidator.validateQuote", inMap: true, inFlow: false, inDrafts: ["quote.Model.QuoteManagement.QuoteManagement.submitQuote"] });
   assert.equal(m.golden.ids.find((g) => g.id.endsWith("validateOrder"))?.inMap, false);
   assert.deepEqual(m.golden.events, [
-    { name: "checkout_submit_before", id: null, inFlow: false },
-    { name: "checkout_submit_all_after", id: null, inFlow: false },
+    { name: "events.checkout_submit_before", id: null, inFlow: false },
+    { name: "events.checkout_submit_all_after", id: null, inFlow: false },
   ]);
   assert.equal(summaryLine(m), "resolved 28.6 % (2/7) | holes 5 | entries n/a | drafts 1/2 | golden 0/6");
 });
@@ -65,17 +65,17 @@ test("bench-magento: metrics of the fixture snapshot", () => {
 test("bench-magento: golden IDs found when the flow lists them; entries and events counted when present", () => {
   const snapshot = loadSnapshot();
   snapshot.entries = [{ kind: "webapi", id: "e1" }, { kind: "cron", id: "e2" }, { kind: "webapi", id: "e3" }];
-  snapshot.nodes = { ...(snapshot.nodes as object), "event.checkout_submit_before": { kind: "event", layer: "quote" } };
-  const text = `# flow placeOrder\n\n- trigger quote.Model.QuoteManagement.QuoteManagement.placeOrder\n  - step quote.Model.QuoteManagement.QuoteManagement.placeOrderRun\n    - step quote.Model.QuoteManagement.QuoteManagement.submitQuote\n      - step event.checkout_submit_before\n`;
+  snapshot.nodes = { ...(snapshot.nodes as object), "events.checkout_submit_before": { kind: "event", layer: "events" } };
+  const text = `# flow placeOrder\n\n- trigger quote.Model.QuoteManagement.QuoteManagement.placeOrder\n  - step quote.Model.QuoteManagement.QuoteManagement.placeOrderRun\n    - step quote.Model.QuoteManagement.QuoteManagement.submitQuote\n      - step events.checkout_submit_before\n`;
   const m = collectMetrics(snapshot, { drafts: [{ trigger: expect.flow, text }], expect });
   assert.deepEqual(m.entries, [["cron", 1], ["webapi", 2]]);
-  assert.deepEqual(m.events, ["event.checkout_submit_before"]);
+  assert.deepEqual(m.events, ["events.checkout_submit_before"]);
   assert.equal(m.golden?.found, 2);
-  assert.deepEqual(m.golden?.events[0], { name: "checkout_submit_before", id: "event.checkout_submit_before", inFlow: true });
+  assert.deepEqual(m.golden?.events[0], { name: "events.checkout_submit_before", id: "events.checkout_submit_before", inFlow: true });
   const md = formatReport(m);
   assert.match(md, /\| `webapi` \| 2 \|/);
   assert.match(md, /found \*\*2\/6\*\* у чернетці; бракує: `quote\.Model\.SubmitQuoteValidator/);
-  assert.match(md, /\| `checkout_submit_before` \| `event\.checkout_submit_before` \| так \|/);
+  assert.match(md, /\| `events\.checkout_submit_before` \| `events\.checkout_submit_before` \| так \|/);
 });
 
 test("bench-magento: the Markdown report has every section and the run block last", () => {
@@ -97,9 +97,9 @@ test("bench-magento: the Markdown report has every section and the run block las
   assert.match(md, /Розв'язано \*\*28\.6 %\*\* \(2 з 7; ціль spec §6 — ≥ 60 %\)\./);
   assert.match(md, /\| 1 \| dynamic-call: call through an interface `X` \| 2 \|/);
   assert.match(md, /n\/a — у знімку немає `entries` \(тікет 09\)\./);
-  assert.match(md, /n\/a — у знімку немає вузлів `event\.\*` \(тікет 08\)\./);
+  assert.match(md, /n\/a — у знімку немає вузлів виду `event` \(`events\.\*`, тікет 08\)\./);
   assert.match(md, /\| `quote\.Model\.QuoteManagement\.QuoteManagement\.submitQuote` \| 2 \|/);
-  assert.match(md, /\| `checkout_submit_before` \| n\/a \(тікет 08\) \| — \|/);
+  assert.match(md, /\| `events\.checkout_submit_before` \| n\/a \(тікет 08\) \| — \|/);
   assert.match(md, /\| `map` \| 5\.3 с, maxRSS 610 МБ \|/);
   assert.ok(md.endsWith("|\n"), "ends with one newline");
   // Everything before the run block is the same whether or not a run block is given.

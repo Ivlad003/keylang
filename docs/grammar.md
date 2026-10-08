@@ -76,7 +76,7 @@ keylang/map.md:4:18: K001 dangling reference `b`; declare `planned` if this is a
 - **Р2. Вид визначає заголовок, а не шлях файлу.** Тому `rules.md` може лежати будь-де, а файл без жодного заголовка (як на слайдах) — це секція **map**.
 - **Р3. В одному файлі може бути кілька секцій**: кожен `# …` починає нову (наприклад, кілька `# flow` в одному файлі). Вміст до першого заголовка — неявна секція map.
 - Невідомий заголовок першого рівня (`# Shop`) — попередження **K006**, секція вважається map. Заголовок без виду (`#`, `# <!-- … -->`) — теж K006: «section heading without a kind».
-- Зайві слова в заголовку — K005 (закривні `#` — не слова, §1); `# flow` чи `# migration` без імені — K005. Ім'я мають лише `flow` і `migration` (таблиця відповідності ID між стеками, business-flows/26–27; `check` її рядків поки не судить): слово після `# rules`, `# map` чи `# wiring` (`# rules foo`) — K005, а не ім'я секції.
+- Зайві слова в заголовку — K005 (закривні `#` — не слова, §1); `# flow` чи `# migration` без імені — K005. Ім'я мають лише `flow` і `migration` (таблиця відповідності ID між стеками, business-flows/26–27; як `check` судить її рядки — нижче, «Рядки migration»): слово після `# rules`, `# map` чи `# wiring` (`# rules foo`) — K005, а не ім'я секції.
 - Імена потоків — окремий простір імен: `# flow checkout` не конфліктує з ID карти, але два потоки з однаковим ім'ям — K002.
 
 **Р2.** Файл у `keylang/flows/` із заголовком `# rules` — це правила, тож `layer` там невідомий. Файл без жодного заголовка — карта: голе ім'я є шаром.
@@ -303,9 +303,9 @@ Alias залежності не збігається з контекстним �
 | верх секції flow | `kind`, `trigger`, `continues`, `step`, `parallel`, `reads`, `emits`, `calls`, `invariant`, `when`, `after`, `every`, `test`, `planned`, `?` | K004 |
 | верх секції wiring | `wire` | K004 |
 | верх секції migration | `map`, `dropped` | K004 |
-| під `layer` | `module` | `<name>` — модуль |
+| під `layer` | `module`, `event` (згенерована група `events`, [semantics.md](semantics.md) §6) | `<name>` — модуль |
 | під `module` (map) | `module`, `fn`, `type`, `event` | `<alias> <id>` — залежність |
-| під `fn` | `calls` | K004 |
+| під `fn`, під `event` | `calls` (під `event` — observers, які викликає фреймворк) | K004 |
 | під `layers`, `entry` | — | `<id>` — посилання |
 | під `module` (rules) | `exports`, `no-cycles` | K004 |
 | під `step` / `trigger` | `step`, `parallel`, `reads`, `emits`, `calls`, `when`, `after`, `every`, `test`, `invariant`, `?` | K004 |
@@ -361,9 +361,17 @@ Alias залежності не збігається з контекстним �
 | `then <id>` / `then <текст>` | один токен-ID з крапкою → посилання, інакше текст | |
 | `test <file> ["<name>"]` | шлях + назва в лапках | `text` = файл, `label` = назва |
 | `wire <id>`, `compose <id>` | одне ID | посилання |
-| `map <id> → [planned] <id>` (migration) | ID старого стеку, `→` або `->`, необов'язкове `planned`, ID цього репозиторію | `id` — старе ID, `text` — рядок, `label` — `planned`; не резолвиться (старе ID — з іншого репозиторію; перевірки — тікет 27) |
-| `dropped <id> <причина>` (migration) | ID старого стеку й текст | `id` + `text`; не резолвиться |
+| `map <id> → [planned] <id>` (migration) | ID старого стеку, `→` або `->`, необов'язкове `planned`, ID цього репозиторію | `id` — старе ID, `text` — рядок, `label` — `planned`; нове ID — посилання (K001, якщо його немає ні в коді, ні в `planned`), старе — проти знімка `migration.from` |
+| `dropped <id> <причина>` (migration) | ID старого стеку й текст; без причини — K005 | `id` + `text`; старе ID — проти знімка `migration.from` |
 | `when <умова> → <id>` (wiring) | текст, `→` або `->`, ID | `text` + посилання |
+
+**Рядки migration** (business-flows/27). Таблиця відповідності — твердження про два репозиторії, і `check` судить обидва боки рядка:
+
+- **новий бік** `map <старе> → [planned] <нове>` — звичайне посилання цього репозиторію: ID має бути в коді або оголошене `planned` (його пише `flow import` у фічі), інакше K001 на новому ID. Слово `planned` у рядку — позначка для людини й для `migration status` («ще не реалізовано»), не оголошення: без `- planned <вид> <ID>` у специфікації рядок `→ planned x` теж K001;
+- **старий бік** (`map` і `dropped`) резолвиться проти **старого знімка** — `migration.from` у `keylang.json`: шлях (відносно кореня) до експортованого `index.json` старого репозиторію (`keylang map --export-index <файл>` чи звичайний `.keylang/index.json`) або до його checkout, який `check` аналізує лише на читання (нічого не пише туди, навіть кеш фактів; його власний `migration.from` не читається). Старе ID є в знімку — вердикт `migration ok`; немає, а область прочитано — K001 «in the old stack»; всередині непрозорого модуля — `migration unverified`; без `migration.from` — `migration unverified … no old snapshot`; знімок не читається — `migration unverified … unreadable` з причиною, не помилка;
+- `dropped <id>` без причини — K005 (причина — для людини, яка вирішує, що не переносити).
+
+Паритет флоу (чи старий флоу має пару, чи кроки є в новому коді, чи ті самі тести проходять в обох звітах) `check` не рахує — це `keylang migration status` ([cli.md](cli.md#migration)), бо він читає ще й потоки, звіти тестів та інтеграції старого стеку.
 
 `text` вільного тексту (`invariant`, `?`, `when`, текстовий `then`) — канонічний, як його пише `fmt`: токени через один пробіл, кома — `a, b`. Тож `fmt` не змінює ні текст, ні `specHash` вердиктів над ним.
 
@@ -634,9 +642,9 @@ map-top = "layer" | "layers" | "allow" | "deny" | "entry" | "module" -> rule-mod
 rules-top = "layers" | "allow" | "deny" | "entry" | "module" -> rule-module | "no-cycles" ;
 flow-top = "kind" | "trigger" | "continues" | "step" | "parallel" | "reads" | "emits" | "calls" | "invariant" | "when" | "after" | "every" | "test" | "planned" | "?" -> question ;
 wiring-top = "wire" ;
-under-layer = "module" ;
+under-layer = "module" | "event" ;
 under-module = "module" | "fn" | "type" | "event" ;
-under-fn = "calls" ;
+under-fn = "calls" ; (* також під event у map *)
 under-ref = (* під layers і під entry: голе id, без ключових слів *) ;
 under-rule-module = "exports" | "no-cycles" ;
 under-step = "step" | "parallel" | "reads" | "emits" | "calls" | "when" | "after" | "every" | "test" | "invariant" | "?" -> question ;

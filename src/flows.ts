@@ -16,7 +16,7 @@ import { traceFlow, type ShapeNode, type TraceEvidence, type TraceRun } from "./
 import type { Verdict } from "./verdict.ts";
 
 /** How a call edge came about when it is not a plain call of the code (`Via` of the graph): a hook, an argument, a framework's config. */
-type Via = "default" | "injected" | "callable-arg" | "closure-arg" | "preference" | "argument" | "plugin:before" | "plugin:around" | "plugin:after";
+type Via = "default" | "injected" | "callable-arg" | "closure-arg" | "preference" | "argument" | "plugin:before" | "plugin:around" | "plugin:after" | "dispatch" | "observer";
 
 interface SnapshotEdge {
   kind: string;
@@ -510,7 +510,8 @@ function namedLike(graph: CallGraph, name: string): string[] {
 
 /** A `via` edge in words. `where`: with the position of a passed callable (a hole's message adds the edge's position itself). */
 function describeVia(edge: SnapshotEdge, where = true): string {
-  if (edge.via === "preference" || edge.via === "argument" || edge.via?.startsWith("plugin:")) return describeConfig(edge);
+  if (edge.via === "preference" || edge.via === "argument" || edge.via === "observer" || (edge.via === "dispatch" && edge.site !== undefined) || edge.via?.startsWith("plugin:")) return describeConfig(edge);
+  if (edge.via === "dispatch") return `the dispatch \`${edge.text ?? ""}\`${where ? ` at ${at(edge)}` : ""}`;
   if (edge.via === "injected") return `\`${edge.hook ?? edge.text ?? ""}\` injected at ${edge.site ?? "?"}`;
   if (edge.via === "callable-arg") return `the callable \`${edge.text ?? ""}\` passed${where ? ` at ${at(edge)}` : " as an argument"}`;
   if (edge.via === "closure-arg") return `the closure passed at ${edge.site ?? at(edge)}`;
@@ -527,6 +528,7 @@ export function describeConfig(edge: Pick<SnapshotEdge, "via" | "binding" | "sit
   const scope = edge.scope && edge.scope !== "global" ? ` (scope ${edge.scope})` : "";
   if (edge.via === "preference") return `the preference ${edge.binding ?? ""}${where}${scope}`;
   if (edge.via === "argument") return `${edge.binding ?? "a constructor argument"}${where}${scope}`;
+  if (edge.via === "observer") return `the ${edge.binding ?? "observer"}${where}${scope}`;
   return `the ${edge.binding ?? "plugin"} (${edge.via})${where}${scope}`;
 }
 
@@ -591,12 +593,13 @@ function reachability(graph: CallGraph, input: FlowInput, parent: string | null,
   if (parent === null) return { verdict: "unverified", message: "no trigger to reach it from" };
   const from = input.nodes[parent];
   if (!from) return { verdict: "unverified", message: `parent \`${parent}\` is not in the snapshot` };
-  if (from.kind !== "fn") return { verdict: "unverified", message: `parent \`${parent}\` is a ${from.kind}, not a callable` };
+  if (from.kind !== "fn" && from.kind !== "event") return { verdict: "unverified", message: `parent \`${parent}\` is a ${from.kind}, not a callable` };
   const to = input.nodes[target];
   // A step to a package is the import from the parent fn's module, not a call.
   // An import in some other module does not prove this step.
   if (to?.kind === "module" && to.layer === "external") return externalImport(input, parent, target);
-  if (to && to.kind !== "fn") return { verdict: "unverified", message: `\`${target}\` is a ${to.kind}, not a callable` };
+  // An event (ADR 0022 п. 6) is reached through a dispatch and reaches its observers: a step like a fn.
+  if (to && to.kind !== "fn" && to.kind !== "event") return { verdict: "unverified", message: `\`${target}\` is a ${to.kind}, not a callable` };
   const behavior = input.static === "behavior";
   // A call in a stored closure runs only when that function value is called: it is a possible route, not a proof.
   const proves = provesIn(behavior);
@@ -634,6 +637,9 @@ function reachability(graph: CallGraph, input: FlowInput, parent: string | null,
     const lead = near ? `no resolved path from ${parent}; ${describeHole(near, target, input)} at ${at(near)} may reach it${more(near)}` : `no call path from ${parent} in the static graph`;
     return { verdict: "unverified", message: `${lead}; ${blocker.reason}` };
   }
+  // A dispatch whose name is computed at run time in reachable code may publish the event.
+  const dynamicEvent = to?.kind === "event" ? (input.coverage ?? []).find((item) => item.kind === "dynamic-event" && typeof item.source === "string" && depth.has(item.source)) : undefined;
+  if (dynamicEvent) return { verdict: "unverified", message: `no dispatch of \`${target}\` from ${parent} in the static graph; ${dynamicEvent.reason} at ${dynamicEvent.file}:${dynamicEvent.line} may publish it` };
   const unseen = holes.length > 0 && graph.opaque ? graph.opaque : null;
   if (unseen) return { verdict: "unverified", message: `no call path from ${parent} in the static graph; \`${unseen}\` is opaque and may call it` };
   // Calls read from a file that does not parse may be missing: an absence there is not confirmed.
@@ -655,10 +661,11 @@ function directCall(graph: CallGraph, input: FlowInput, parent: string | null, t
   if (parent === null) return { verdict: "unverified", message: "no trigger or step to call it from" };
   const from = input.nodes[parent];
   if (!from) return { verdict: "unverified", message: `parent \`${parent}\` is not in the snapshot` };
-  if (from.kind !== "fn") return { verdict: "unverified", message: `parent \`${parent}\` is a ${from.kind}, not a callable` };
+  if (from.kind !== "fn" && from.kind !== "event") return { verdict: "unverified", message: `parent \`${parent}\` is a ${from.kind}, not a callable` };
   const to = input.nodes[target];
   if (to?.kind === "module" && to.layer === "external") return externalImport(input, parent, target);
-  if (to && to.kind !== "fn") return { verdict: "unverified", message: `\`${target}\` is a ${to.kind}, not a callable` };
+  // An event (ADR 0022 п. 6) is reached through a dispatch and reaches its observers: a step like a fn.
+  if (to && to.kind !== "fn" && to.kind !== "event") return { verdict: "unverified", message: `\`${target}\` is a ${to.kind}, not a callable` };
   const behavior = input.static === "behavior";
   const proves = provesIn(behavior);
   const own = graph.resolved.get(parent) ?? [];

@@ -77,9 +77,9 @@ keylang має допомагати швидко зануритись у чуж�
 | [05](issues/05-closure-arg-calls.md) | Граф і draft: callable-посилання й closure, передані аргументом (`cartMutex->execute(\Closure::fromCallable([$this, 'placeOrderRun']))`) | resolved | 01 |
 | [06](issues/06-magento-di-bindings.md) | Magento: `di.xml` (preference, type arguments, virtualType) → прив'язки | resolved | 04 |
 | [07](issues/07-magento-plugins.md) | Magento: plugins (before/around/after) як перехоплення викликів | resolved | 04 |
-| [08](issues/08-magento-events.md) | Magento: `events.xml` і `dispatch()` → події та підписники | ready-for-agent | 01, 09 |
+| [08](issues/08-magento-events.md) | Magento: `events.xml` і `dispatch()` → події та підписники | resolved | 01, 09 |
 | [09](issues/09-entries-snapshot.md) | Знімок: точки входу як факти й команда `keylang entries` | resolved | 01 |
-| [10](issues/10-magento-entries.md) | Magento: точки входу — routes/controllers, webapi, GraphQL, cron, queue, console | ready-for-agent | 06, 09 |
+| [10](issues/10-magento-entries.md) | Magento: точки входу — routes/controllers, webapi, GraphQL, cron, queue, console | resolved | 06, 09 |
 | [11](issues/11-flows-discover.md) | `keylang flows discover`: чернетка флоу для кожної точки входу | resolved | 09 |
 | [12](issues/12-flows-business-names.md) | Бізнес-назви, описи й групування флоу в процеси (модель) | resolved | 11 |
 | [13](issues/13-blind-spots-report.md) | Звіт покриття: сліпі зони, сироти, «логіка в даних» | resolved | 09, 11 |
@@ -96,18 +96,18 @@ keylang має допомагати швидко зануритись у чуж�
 | [24](issues/24-diagram-to-proposals.md) | Редактор → специфікація: зміни діаграми як пропозиції, файл розкладки | resolved | 23 |
 | [25](issues/25-diagram-copy-paste.md) | Копіювання фрагмента діаграми між вкладками й проєктами | ready-for-agent | 23, 26 |
 | [26](issues/26-flow-bundle-export-import.md) | `keylang flow export\|import`: переносний пакет бізнес-флоу | resolved | 12 |
-| [27](issues/27-migration-parity.md) | Міграція: таблиця відповідності ID і перевірка паритету старого й нового стеку | ready-for-agent | 26 |
+| [27](issues/27-migration-parity.md) | Міграція: таблиця відповідності ID і перевірка паритету старого й нового стеку | resolved | 26 |
 | [28](issues/28-export-bpmn-drawio.md) | Експорт у BPMN 2.0 і draw.io (.drawio), імпорт .drawio як чернетки | resolved | 20 |
 | [29](issues/29-greenfield-from-diagram.md) | Проєкт з нуля з діаграми: від ідеї до фічі для агентів | ready-for-agent | 24, 25 |
 | [30](issues/30-sfcc-sfra-frontend.md) | Цільовий стек: Salesforce Commerce Cloud (SFRA-картриджі, PWA Kit) | resolved | 01, 09 |
 | [31](issues/31-more-framework-adapters.md) | Наступні адаптери фреймворків: Laravel, Symfony, NestJS, Express/Next, Django/FastAPI | resolved | 01, 04, 09 |
 | [32](issues/32-php-property-types.md) | PHP: тип властивості з присвоєння в конструкторі та з docblock `@var` | resolved | — |
 | [33](issues/33-web-client-build.md) | Веб-клієнт діаграм: збірка (esbuild), каркас SPA, автентифікація API | resolved | 20 |
-| [34](issues/34-nestjs-adapter.md) | NestJS: providers, контролери, події, cron, мікросервіси | ready-for-agent | — |
-| [35](issues/35-laravel-adapter.md) | Laravel: container, фасади, маршрути, події, черги, scheduler | ready-for-agent | — |
-| [36](issues/36-symfony-adapter.md) | Symfony: services.yaml, маршрути, підписники, Messenger, команди | ready-for-agent | — |
+| [34](issues/34-nestjs-adapter.md) | NestJS: providers, контролери, події, cron, мікросервіси | resolved | — |
+| [35](issues/35-laravel-adapter.md) | Laravel: container, фасади, маршрути, події, черги, scheduler | resolved | — |
+| [36](issues/36-symfony-adapter.md) | Symfony: services.yaml, маршрути, підписники, Messenger, команди | resolved | — |
 | [37](issues/37-express-next-adapter.md) | Express/Fastify/Next.js: маршрути, middleware, server actions | ready-for-agent | — |
-| [38](issues/38-python-web-adapter.md) | Django/FastAPI/Flask/Celery: маршрути, сигнали, задачі | ready-for-agent | — |
+| [38](issues/38-python-web-adapter.md) | Django/FastAPI/Flask/Celery: маршрути, сигнали, задачі | resolved | — |
 | [39](issues/39-pwa-kit-overrides.md) | PWA Kit / Composable Storefront: ccExtensibility overrides і маршрути | ready-for-agent | — |
 
 ## 9. Рев'ю плану на реалістичність (2026-10-07)
