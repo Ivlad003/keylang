@@ -14,19 +14,24 @@
     - fn [collectMdFiles](../../src/files.ts#L16) (paths: readonly string[], base?: string) → string[]
       <a id="lang.files.collectMdFiles"></a><br>Expand files and directories into a sorted list of `*.md` files. Hidden directories, `node_modules` and `target` are skipped.
       - calls [lang.files.walkDir](lang.md#lang.files.walkDir), [lang.files.realPath](lang.md#lang.files.realPath)
-    - fn [walkDir](../../src/files.ts#L42) (dir: string, out: string[], walked: Set<string>, at: (p: string) => string) → void <!-- internal -->
-      <a id="lang.files.walkDir"></a><br>Recursively scans a directory in sorted order, appending `.md` file paths to the output while skipping dot-directories, `target`, and `node_modules`. It records each visited real path via [`lang.files.realPath`](lang.md#lang.files.realPath) so symlink cycles back to an ancestor stop instead of looping… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - calls [lang.files.realPath](lang.md#lang.files.realPath), [lang.files.entryType](lang.md#lang.files.entryType)
-    - fn [entryType](../../src/files.ts#L60) (e: Dirent, path: string) → "dir" | "file" | null <!-- internal -->
+    - fn [skippedDirectory](../../src/files.ts#L43) (name: string) → boolean
+      <a id="lang.files.skippedDirectory"></a><br>A directory the walk over a spec directory does not enter: hidden, `node_modules`, `target`.
+    - fn [walkReaches](../../src/files.ts#L48) (dir: string, abs: string) → boolean
+      <a id="lang.files.walkReaches"></a><br>Whether the walk from `dir` (or `dir` itself, a file) reaches `abs`: inside it, and through no skipped directory below it.
+      - calls [lang.files.skippedDirectory](lang.md#lang.files.skippedDirectory)
+    - fn [walkDir](../../src/files.ts#L55) (dir: string, out: string[], walked: Set<string>, at: (p: string) => string) → void <!-- internal -->
+      <a id="lang.files.walkDir"></a><br>Recursively scans a directory in sorted order, appending `.md` file paths to the output while skipping dot-directories, `target`, and `node_modules`. It records each visited real path via [`lang.files.realPath`](lang.md#lang.files.realPath) so symlink cycles back to an ancestor stop instead of looping… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+      - calls [lang.files.realPath](lang.md#lang.files.realPath), [lang.files.entryType](lang.md#lang.files.entryType), [lang.files.skippedDirectory](lang.md#lang.files.skippedDirectory)
+    - fn [entryType](../../src/files.ts#L73) (e: Dirent, path: string) → "dir" | "file" | null <!-- internal -->
       <a id="lang.files.entryType"></a><br>What a directory entry is, through a link; a dangling link is neither.
-    - fn [realPath](../../src/files.ts#L70) (path: string) → string <!-- internal -->
+    - fn [realPath](../../src/files.ts#L83) (path: string) → string <!-- internal -->
       <a id="lang.files.realPath"></a><br>Resolves a filesystem path to its canonical form with symlinks followed, falling back to a plain absolute resolution when the path does not exist. Used by [`lang.files.walkDir`](lang.md#lang.files.walkDir) and [`lang.files.collectMdFiles`](lang.md#lang.files.collectMdFiles) to dedupe directories and files. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [load](../../src/files.ts#L79) (files: readonly string[]) → Document[]
+    - fn [load](../../src/files.ts#L92) (files: readonly string[]) → Document[]
       <a id="lang.files.load"></a><br>Read and parse files.
       - calls [lang.parser.parse](lang.md#lang.parser.parse)
-    - fn [readTextOrNull](../../src/files.ts#L84) (path: string) → string | null
+    - fn [readTextOrNull](../../src/files.ts#L97) (path: string) → string | null
       <a id="lang.files.readTextOrNull"></a><br>A file's text, or null when it cannot be read for any reason: missing, a directory, no permission.
-    - fn [existingText](../../src/files.ts#L93) (path: string) → string | null
+    - fn [existingText](../../src/files.ts#L106) (path: string) → string | null
       <a id="lang.files.existingText"></a><br>A file's text, or null when there is no file; a directory or an unreadable file throws, so the caller names it.
   - module [fmt](../../src/fmt.ts#L1)
     <a id="lang.fmt"></a><br>Canonical formatting (`keylang fmt`). Rendered from the IR, so the output is idempotent by construction: `format(parse(format(x))) == format(x)`.

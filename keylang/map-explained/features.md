@@ -555,10 +555,10 @@
       <a id="features.draft.draftFlow"></a><br>Walks the call graph from a fn in an `AnalysisSnapshot` to a bounded depth, skipping non-fn and external callees, and emits a Markdown flow with `trigger`/`step` lines. Unresolved or dynamic calls per step are appended as HTML comments, and the ordered step IDs are returned… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
     - fn [withFlow](../../src/draft.ts#L67) (existing: string | null, draft: Pick<FlowDraft, "name" | "text">) → string
       <a id="features.draft.withFlow"></a><br>A spec with the draft added: the section of the same flow is replaced, whatever follows the name on its heading line, otherwise the draft is appended. Sections come from the parser, so a `# ` line in a code block is not a heading.
-      - calls [lang.parser.parse](lang.md#lang.parser.parse), [features.draft.nextHeading](features.md#features.draft.nextHeading), [base.safe-write.allCrlf](base.md#base.safe-write.allCrlf)
+      - calls [lang.parser.parse](lang.md#lang.parser.parse), [features.draft.nextHeading](features.md#features.draft.nextHeading), [base.safe-write.keepLineEndings](base.md#base.safe-write.keepLineEndings)
     - fn [withRules](../../src/draft.ts#L91) (existing: string | null, draftText: string) → string
       <a id="features.draft.withRules"></a><br>`draft rules` into an existing spec: the drafted rules go at the end of its last `# rules` section, or into a new `# rules` section at the end, never under a trailing `# flow`. A rule the file already has (comments aside) is not repeated.
-      - calls [lang.parser.parse](lang.md#lang.parser.parse), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.parser.renderMeaning](lang.md#lang.parser.renderMeaning), [features.draft.nextHeading](features.md#features.draft.nextHeading), [base.safe-write.allCrlf](base.md#base.safe-write.allCrlf)
+      - calls [lang.parser.parse](lang.md#lang.parser.parse), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.parser.renderMeaning](lang.md#lang.parser.renderMeaning), [features.draft.nextHeading](features.md#features.draft.nextHeading), [base.safe-write.keepLineEndings](base.md#base.safe-write.keepLineEndings)
     - fn [nextHeading](../../src/draft.ts#L121) (sections: readonly { heading: { span: { start: { line: number } } } | null }[], index: number) → number | null <!-- internal -->
       <a id="features.draft.nextHeading"></a><br>0-based line index of the heading after `sections[index]`, or null at the end of the file.
     - fn [distinctNames](../../src/draft.ts#L131) (drafts: readonly FlowDraft[]) → FlowDraft[]
@@ -689,41 +689,41 @@
       - calls [features.explain-llm.answerText](features.md#features.explain-llm.answerText), [base.brief.briefOf](base.md#base.brief.briefOf)
     - fn [answerText](../../src/explain-llm.ts#L74) (answer: string) → string
       <a id="features.explain-llm.answerText"></a><br>A model's explanation as saved (`short`, `full`, and the text a brief is cut from): without the wrappers a chatty answer puts around it — a leading remark paragraph that ends with `:` or has fewer than four words («Sure, here is the brief:», «Certainly!») while more follows…
-      - calls [features.explain-llm.withoutRemark](features.md#features.explain-llm.withoutRemark), [features.explain-llm.unfenced](features.md#features.explain-llm.unfenced)
-    - fn [unfenced](../../src/explain-llm.ts#L84) (text: string) → string <!-- internal -->
+      - calls [features.explain-llm.unfenced](features.md#features.explain-llm.unfenced), [features.explain-llm.withoutRemark](features.md#features.explain-llm.withoutRemark)
+    - fn [unfenced](../../src/explain-llm.ts#L80) (text: string) → string <!-- internal -->
       <a id="features.explain-llm.unfenced"></a><br>The inside of one fenced block of Markdown or plain text that is the whole of `text`; `text` itself otherwise.
-    - fn [withoutRemark](../../src/explain-llm.ts#L96) (text: string) → string <!-- internal -->
+    - fn [withoutRemark](../../src/explain-llm.ts#L92) (text: string) → string <!-- internal -->
       <a id="features.explain-llm.withoutRemark"></a><br>`text` without its first paragraph when that is a remark before the answer and another paragraph follows.
-    - fn [unknownIds](../../src/explain-llm.ts#L110) (analysis: Analysis, text: string) → string[]
+    - fn [unknownIds](../../src/explain-llm.ts#L106) (analysis: Analysis, text: string) → string[]
       <a id="features.explain-llm.unknownIds"></a><br>`` `a.b.c` `` in the answer that are neither snapshot IDs nor declared `planned`. Only a path that starts with a layer is an ID at all: `` `process.env` `` is code.
       - calls [lang.spec-ir.plannedDeclaration](lang.md#lang.spec-ir.plannedDeclaration)
-    - fn [explanationRequest](../../src/explain-llm.ts#L125) (analysis: Analysis, summary: NodeSummary, options: { lang: string; detail: ExplanationDetail; briefs: ReadonlyMap<string, StoredExplanation> }) → LlmRequest
+    - fn [explanationRequest](../../src/explain-llm.ts#L121) (analysis: Analysis, summary: NodeSummary, options: { lang: string; detail: ExplanationDetail; briefs: ReadonlyMap<string, StoredExplanation> }) → LlmRequest
       <a id="features.explain-llm.explanationRequest"></a><br>The request: the node's summary, its code, the signatures around it, and the words of the specs that mention it (layer, flows, rules). Not the repository.
       - calls [features.agent-context.snapshotSource](features.md#features.agent-context.snapshotSource), [features.explain-llm.sourceLines](features.md#features.explain-llm.sourceLines), [features.explain-node.formatSummary](features.md#features.explain-node.formatSummary), [features.explain-llm.members](features.md#features.explain-llm.members), [features.explain-llm.unresolved](features.md#features.explain-llm.unresolved)
-    - fn [unresolved](../../src/explain-llm.ts#L179) (analysis: Analysis, id: string) → string[] <!-- internal -->
+    - fn [unresolved](../../src/explain-llm.ts#L175) (analysis: Analysis, id: string) → string[] <!-- internal -->
       <a id="features.explain-llm.unresolved"></a><br>The constructs inside the node keylang did not turn into edges, with their line and code, for the calls section of `full`. An import of a file `assume` names is no such construct: the architecture leaves it unread.
       - calls [map.snapshot.leavesUnresolved](map.md#map.snapshot.leavesUnresolved)
-    - fn [members](../../src/explain-llm.ts#L198) (analysis: Analysis, id: string, briefs: ReadonlyMap<string, StoredExplanation>) → string[] <!-- internal -->
+    - fn [members](../../src/explain-llm.ts#L194) (analysis: Analysis, id: string, briefs: ReadonlyMap<string, StoredExplanation>) → string[] <!-- internal -->
       <a id="features.explain-llm.members"></a><br>The members right under a module, class or layer with their explanations (doc comments, briefs): a layer is explained through its modules, a module through its functions and types.
       - calls [map.explanations.explanationOf](map.md#map.explanations.explanationOf)
-    - fn [sourceLines](../../src/explain-llm.ts#L214) (text: string, from: number, to: number) → string <!-- internal -->
+    - fn [sourceLines](../../src/explain-llm.ts#L210) (text: string, from: number, to: number) → string <!-- internal -->
       <a id="features.explain-llm.sourceLines"></a><br>Extracts the 1-based inclusive line range `from`–`to` from `text` and returns it joined with newlines. If the slice exceeds 200 lines, only the first 200 are kept, followed by a note stating how many lines were omitted; used by [`features.explain-llm.explanationRequest`](features.md#features.explain-llm.explanationRequest) to embed… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [BriefBatch](../../src/explain-llm.ts#L221) = "missing" | "stale"
+    - type [BriefBatch](../../src/explain-llm.ts#L217) = "missing" | "stale"
       <a id="features.explain-llm.BriefBatch"></a><br>Which briefs a batch writes: nodes with no explanation or a stale brief (`missing`), or only stale briefs (`stale`).
-    - type [BriefLevel](../../src/explain-llm.ts#L224) = "fn/type" | "class/module" | "layer" | "system"
+    - type [BriefLevel](../../src/explain-llm.ts#L220) = "fn/type" | "class/module" | "layer" | "system"
       <a id="features.explain-llm.BriefLevel"></a><br>Levels of the explained map, explained bottom-up: a parent's prompt carries its members' briefs.
-    - type [PlannedBrief](../../src/explain-llm.ts#L226)
+    - type [PlannedBrief](../../src/explain-llm.ts#L222)
       <a id="features.explain-llm.PlannedBrief"></a><br>Records a single brief-generation task: a node id, its `BriefLevel`, and a wave index that orders generation so each node only depends on briefs produced in earlier waves (functions and types first, then modules deepest-first, then layers). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [planBriefs](../../src/explain-llm.ts#L240) (analysis: Analysis, batch: BriefBatch, briefs: ReadonlyMap<string, StoredExplanation>) → PlannedBrief[]
+    - fn [planBriefs](../../src/explain-llm.ts#L236) (analysis: Analysis, batch: BriefBatch, briefs: ReadonlyMap<string, StoredExplanation>) → PlannedBrief[]
       <a id="features.explain-llm.planBriefs"></a><br>The nodes a batch explains, in the order it asks: fn and types, then classes and modules from the deepest up, then layers, then the repository itself (`SYSTEM_ID`). A node with a doc comment is never asked about: the code already says what it does; nor is the repository when…
       - calls [map.explanations.snapshotBaseline](map.md#map.explanations.snapshotBaseline), [map.explanations.systemBaseline](map.md#map.explanations.systemBaseline), [base.span.compareText](base.md#base.span.compareText)
-    - fn [systemRequest](../../src/explain-llm.ts#L270) (analysis: Analysis, options: { lang: string; briefs: ReadonlyMap<string, StoredExplanation> }) → LlmRequest
+    - fn [systemRequest](../../src/explain-llm.ts#L266) (analysis: Analysis, options: { lang: string; briefs: ReadonlyMap<string, StoredExplanation> }) → LlmRequest
       <a id="features.explain-llm.systemRequest"></a><br>The request for the repository's brief: its name, its layers with what the explained map says about them, its flows and the packages it uses. The README and manifests had nothing to say, or no model is asked at all.
       - calls [map.explanations.ownLayers](map.md#map.explanations.ownLayers), [map.explanations.explanationOf](map.md#map.explanations.explanationOf)
-    - fn [estimateTokens](../../src/explain-llm.ts#L295) (analysis: Analysis, plan: readonly PlannedBrief[], briefs: ReadonlyMap<string, StoredExplanation>) → { input: number; output: number }
+    - fn [estimateTokens](../../src/explain-llm.ts#L291) (analysis: Analysis, plan: readonly PlannedBrief[], briefs: ReadonlyMap<string, StoredExplanation>) → { input: number; output: number }
       <a id="features.explain-llm.estimateTokens"></a><br>A rough size of the batch for `--dry-run`: about four characters a token, and a brief of about 80 tokens out.
       - calls [features.explain-llm.briefRequest](features.md#features.explain-llm.briefRequest)
-    - fn [briefRequest](../../src/explain-llm.ts#L305) (analysis: Analysis, id: string, lang: string, briefs: ReadonlyMap<string, StoredExplanation>) → LlmRequest | null
+    - fn [briefRequest](../../src/explain-llm.ts#L301) (analysis: Analysis, id: string, lang: string, briefs: ReadonlyMap<string, StoredExplanation>) → LlmRequest | null
       <a id="features.explain-llm.briefRequest"></a><br>The request for the brief of `id`: the repository's or a node's; null when the id is gone from the snapshot.
       - calls [features.explain-llm.systemRequest](features.md#features.explain-llm.systemRequest), [features.explain-node.summarizeNode](features.md#features.explain-node.summarizeNode), [features.explain-llm.explanationRequest](features.md#features.explain-llm.explanationRequest)
   - module [explain-node](../../src/explain-node.ts#L1)
@@ -1171,25 +1171,25 @@
       - calls [features.agent-cli.resolveAgent](features.md#features.agent-cli.resolveAgent), [features.llm.timeoutMs](features.md#features.llm.timeoutMs), [base.config.isCliAgent](base.md#base.config.isCliAgent), [features.agent-cli.cliClient](features.md#features.agent-cli.cliClient), [features.llm.deadline](features.md#features.llm.deadline), [features.llm.LlmCancelled](features.md#features.llm.LlmCancelled), [features.keys.readKey](features.md#features.keys.readKey), [features.llm.anthropicComplete](features.md#features.llm.anthropicComplete), [features.llm.openrouterComplete](features.md#features.llm.openrouterComplete)
     - fn [answeringAgent](../../src/llm.ts#L136) (client: LlmClient, reported: string | null) → string
       <a id="features.llm.answeringAgent"></a><br>The agent an answer is signed with: `cli:claude` becomes `cli:claude:<model>` when the CLI reported the model; an agent that names its model stays as configured.
-    - fn [timeoutMs](../../src/llm.ts#L141) (env: Env) → number | string <!-- internal -->
-      <a id="features.llm.timeoutMs"></a><br>`KEYLANG_LLM_TIMEOUT_MS`, a positive whole number of milliseconds; the reason when it is not one.
-    - type [Deadline](../../src/llm.ts#L148) <!-- internal -->
+    - fn [timeoutMs](../../src/llm.ts#L144) (env: Env) → number | string <!-- internal -->
+      <a id="features.llm.timeoutMs"></a><br>`KEYLANG_LLM_TIMEOUT_MS`, a positive whole number of milliseconds a timer can hold; the reason when it is not one.
+    - type [Deadline](../../src/llm.ts#L153) <!-- internal -->
       <a id="features.llm.Deadline"></a><br>A call's bound: the variable's, or the call's own when that is tighter; `fromVariable` decides whether the timeout message cites the variable.
-    - fn [deadline](../../src/llm.ts#L153) (variable: number, own: number | undefined) → Deadline <!-- internal -->
+    - fn [deadline](../../src/llm.ts#L158) (variable: number, own: number | undefined) → Deadline <!-- internal -->
       <a id="features.llm.deadline"></a><br>Picks the effective timeout by returning the caller-specific value when it is set and smaller than the environment-derived one, otherwise the environment value, tagging which source won. Used by [`features.llm.llmClient`](features.md#features.llm.llmClient) to build the request deadline. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [timeoutMessage](../../src/llm.ts#L157) (provider: string, bound: Deadline) → string <!-- internal -->
+    - fn [timeoutMessage](../../src/llm.ts#L162) (provider: string, bound: Deadline) → string <!-- internal -->
       <a id="features.llm.timeoutMessage"></a><br>Builds the error text used when an LLM call exceeds its deadline, naming the provider and the millisecond limit from `bound`. Appends a note that the limit came from the `KEYLANG_LLM_TIMEOUT_MS` environment variable when `bound.fromVariable` is set. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [truncatedMessage](../../src/llm.ts#L162) (model: string, reason: "max_tokens" | "length") → string <!-- internal -->
+    - fn [truncatedMessage](../../src/llm.ts#L167) (model: string, reason: "max_tokens" | "length") → string <!-- internal -->
       <a id="features.llm.truncatedMessage"></a><br>The provider stopped the answer at the token limit (`stop_reason: max_tokens`, `finish_reason: length`): what came is not an answer.
-    - fn [callSignal](../../src/llm.ts#L171) (timeout: number, outer: AbortSignal | undefined) → { signal: AbortSignal; timedOut: () => boolean; cancelled: () => boolean; dispose: () => void } <!-- internal -->
+    - fn [callSignal](../../src/llm.ts#L176) (timeout: number, outer: AbortSignal | undefined) → { signal: AbortSignal; timedOut: () => boolean; cancelled: () => boolean; dispose: () => void } <!-- internal -->
       <a id="features.llm.callSignal"></a><br>One signal for a whole call: aborted by the deadline or by the caller's signal, whichever comes first; `dispose` clears the timer and the listener on the caller's signal, so a long-lived signal does not collect them.
-    - fn [anthropicComplete](../../src/llm.ts#L195) (client: Anthropic, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal) → Promise<string> <!-- internal -->
+    - fn [anthropicComplete](../../src/llm.ts#L200) (client: Anthropic, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal) → Promise<string> <!-- internal -->
       <a id="features.llm.anthropicComplete"></a><br>Sends one user prompt to the Anthropic messages API under a deadline built by [`features.llm.callSignal`](features.md#features.llm.callSignal), enabling server-side fallbacks for matching models, and raises [`features.llm.LlmCancelled`](features.md#features.llm.LlmCancelled) or a timeout from [`features.llm.timeoutMessage`](features.md#features.llm.timeoutMessage) on abort. It then returns the… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.llm.callSignal](features.md#features.llm.callSignal), [features.llm.LlmCancelled](features.md#features.llm.LlmCancelled), [features.llm.timeoutMessage](features.md#features.llm.timeoutMessage), [features.llm.truncatedMessage](features.md#features.llm.truncatedMessage)
-    - fn [openrouterComplete](../../src/llm.ts#L231) (base: string, key: string, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal) → Promise<string> <!-- internal -->
+    - fn [openrouterComplete](../../src/llm.ts#L236) (base: string, key: string, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal) → Promise<string> <!-- internal -->
       <a id="features.llm.openrouterComplete"></a><br>Streams a chat completion from an OpenRouter-compatible endpoint under one deadline from [`features.llm.callSignal`](features.md#features.llm.callSignal), accumulating SSE deltas or reading a plain JSON reply via [`features.llm.parseJson`](features.md#features.llm.parseJson). Empty or erroring answers become errors; cancellation raises… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.llm.callSignal](features.md#features.llm.callSignal), [features.llm.parseJson](features.md#features.llm.parseJson), [features.llm.truncatedMessage](features.md#features.llm.truncatedMessage), [features.llm.LlmCancelled](features.md#features.llm.LlmCancelled), [features.llm.timeoutMessage](features.md#features.llm.timeoutMessage)
-    - fn [parseJson](../../src/llm.ts#L293) (text: string) → unknown <!-- internal -->
+    - fn [parseJson](../../src/llm.ts#L298) (text: string) → unknown <!-- internal -->
       <a id="features.llm.parseJson"></a><br>Wraps `JSON.parse` so malformed input yields `undefined` instead of throwing, letting [`features.llm.openrouterComplete`](features.md#features.llm.openrouterComplete) safely probe OpenRouter response bodies for JSON. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [lsp-features](../../src/lsp-features.ts#L1)
     <a id="features.lsp-features"></a><br>Language features over one analysis: pure functions from an `Analysis`, a document, and a position to LSP results. Positions are LSP's: 0-based line, UTF-16 character.
@@ -1489,7 +1489,7 @@
       <a id="features.spec-to-code.CodeCandidate"></a><br>A generated source file for one feature ID, bundled with the e2e test files it adds, the `test` entries it couldn't automate (with reasons), and the `check` verdicts and diagnostics it introduces versus the codebase without it. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [specToCode](../../src/spec-to-code.ts#L55) (analysis: Analysis, id: string, into?: string, model?: LlmClient, options: LlmCallOptions = {}) → Promise<CodeCandidate>
       <a id="features.spec-to-code.specToCode"></a><br>`model`: the body comes from the model instead of the stub — the whole function with the declared signature, in one fenced block — and is analyzed the same way before anything is written. `options.signal` cancels the model's requests (`LlmCancelled`); the file is read before…
-      - calls [features.spec-to-code.plannedCodeTarget](features.md#features.spec-to-code.plannedCodeTarget), [lang.files.existingText](lang.md#lang.files.existingText), [features.spec-to-code.modelBody](features.md#features.spec-to-code.modelBody), [features.spec-to-code.stubFor](features.md#features.spec-to-code.stubFor), [features.spec-to-code.placeStub](features.md#features.spec-to-code.placeStub), [features.spec-to-code.phpFileHead](features.md#features.spec-to-code.phpFileHead), [base.safe-write.allCrlf](base.md#base.safe-write.allCrlf), [map.analyze.analyze](map.md#map.analyze.analyze), [features.spec-to-code.introduced](features.md#features.spec-to-code.introduced), [features.spec-to-code.testCandidates](features.md#features.spec-to-code.testCandidates)
+      - calls [features.spec-to-code.plannedCodeTarget](features.md#features.spec-to-code.plannedCodeTarget), [lang.files.existingText](lang.md#lang.files.existingText), [features.spec-to-code.modelBody](features.md#features.spec-to-code.modelBody), [features.spec-to-code.stubFor](features.md#features.spec-to-code.stubFor), [features.spec-to-code.placeStub](features.md#features.spec-to-code.placeStub), [features.spec-to-code.phpFileHead](features.md#features.spec-to-code.phpFileHead), [base.safe-write.keepLineEndings](base.md#base.safe-write.keepLineEndings), [map.analyze.analyze](map.md#map.analyze.analyze), [features.spec-to-code.introduced](features.md#features.spec-to-code.introduced), [features.spec-to-code.testCandidates](features.md#features.spec-to-code.testCandidates)
     - type [CodeTarget](../../src/spec-to-code.ts#L74)
       <a id="features.spec-to-code.CodeTarget"></a><br>Where the code of a planned fn goes: the file, and the class it is a method of.
     - fn [plannedCodeTarget](../../src/spec-to-code.ts#L98) (analysis: Analysis, id: string, into?: string) → CodeTarget | { error: string; field: "id" | "into" }

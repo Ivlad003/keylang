@@ -1172,48 +1172,49 @@
     - span base.span
     - stats features.stats
     - buffer tui.buffer
+    - safe-write base.safe-write
     - disk tui.disk
     - input tui.input
     - merge tui.merge
     - state tui.state
-    - type [MergeHost](../../src/tui/merge-session.ts#L24)
-    - type [ProposalEntry](../../src/tui/merge-session.ts#L39)
-    - module [MergeSession](../../src/tui/merge-session.ts#L52)
-      - fn [constructor](../../src/tui/merge-session.ts#L55) (host: MergeHost)
-      - fn [state](../../src/tui/merge-session.ts#L59) () → State <!-- internal -->
-      - fn [scan](../../src/tui/merge-session.ts#L66) () → string[]
+    - type [MergeHost](../../src/tui/merge-session.ts#L25)
+    - type [ProposalEntry](../../src/tui/merge-session.ts#L40)
+    - module [MergeSession](../../src/tui/merge-session.ts#L53)
+      - fn [constructor](../../src/tui/merge-session.ts#L56) (host: MergeHost)
+      - fn [state](../../src/tui/merge-session.ts#L60) () → State <!-- internal -->
+      - fn [scan](../../src/tui/merge-session.ts#L67) () → string[]
         - calls tui.merge-session.MergeSession.files, tui.merge-session.MergeSession.problem
-      - fn [files](../../src/tui/merge-session.ts#L70) () → string[] <!-- internal -->
+      - fn [files](../../src/tui/merge-session.ts#L71) () → string[] <!-- internal -->
         - calls base.config.toPosix, base.span.compareText
-      - fn [entries](../../src/tui/merge-session.ts#L89) () → ProposalEntry[]
+      - fn [entries](../../src/tui/merge-session.ts#L90) () → ProposalEntry[]
         - calls base.config.toPosix, tui.merge-session.proposalKind, tui.merge-session.MergeSession.files, tui.merge-session.MergeSession.entry, base.span.compareText
-      - fn [entry](../../src/tui/merge-session.ts#L105) (path: string) → ProposalEntry <!-- internal -->
-        - calls tui.merge-session.proposalKind, tui.merge-session.MergeSession.problem, tui.disk.readText, tui.merge-session.MergeSession.proposalAbs, tui.merge.diffLines, tui.disk.splitEol, tui.disk.lf, tui.buffer.isDirty
-      - fn [specDir](../../src/tui/merge-session.ts#L120) () → string
+      - fn [entry](../../src/tui/merge-session.ts#L106) (path: string) → ProposalEntry <!-- internal -->
+        - calls tui.merge-session.proposalKind, tui.merge-session.MergeSession.problem, tui.disk.readText, tui.merge-session.MergeSession.proposalAbs, tui.merge.diffLines, tui.disk.lf, tui.buffer.isDirty
+      - fn [specDir](../../src/tui/merge-session.ts#L121) () → string
         - calls base.config.loadConfig, base.config.toPosix
-      - fn [problem](../../src/tui/merge-session.ts#L136) (path: string) → string | null
+      - fn [problem](../../src/tui/merge-session.ts#L137) (path: string) → string | null
         - calls features.proposals.codeProposalProblem, features.proposals.proposalProblem, tui.merge-session.MergeSession.specDir, tui.merge-session.errorText
-      - fn [boundary](../../src/tui/merge-session.ts#L146) (code: boolean) → string <!-- internal -->
+      - fn [boundary](../../src/tui/merge-session.ts#L147) (code: boolean) → string <!-- internal -->
         - calls tui.merge-session.MergeSession.specDir
-      - fn [proposalAbs](../../src/tui/merge-session.ts#L150) (path: string) → string <!-- internal -->
-      - fn [open](../../src/tui/merge-session.ts#L161) (wanted?: string) → void
-        - calls tui.merge-session.MergeSession.scan, tui.merge-session.MergeSession.files, tui.merge-session.MergeSession.problem, tui.disk.readText, tui.merge-session.MergeSession.proposalAbs, tui.merge-session.MergeSession.start, tui.disk.splitEol, tui.disk.lf, tui.buffer.isDirty
-      - fn [start](../../src/tui/merge-session.ts#L203) (path: string, origin: MergeState["origin"], base: string[], proposed: string[], disk: string | null, proposal: string | null) → void
+      - fn [proposalAbs](../../src/tui/merge-session.ts#L151) (path: string) → string <!-- internal -->
+      - fn [open](../../src/tui/merge-session.ts#L162) (wanted?: string) → void
+        - calls tui.merge-session.MergeSession.scan, tui.merge-session.MergeSession.files, tui.merge-session.MergeSession.problem, tui.disk.readText, tui.merge-session.MergeSession.proposalAbs, tui.merge-session.MergeSession.start, tui.disk.lf, tui.buffer.isDirty
+      - fn [start](../../src/tui/merge-session.ts#L204) (path: string, origin: MergeState["origin"], base: string[], proposed: string[], disk: string | null, proposal: string | null) → void
         - calls tui.merge.diffLines, tui.merge-session.MergeSession.dropProposal, tui.merge-session.MergeSession.scan
-      - fn [dropProposal](../../src/tui/merge-session.ts#L222) (path: string, text: string) → void <!-- internal -->
+      - fn [dropProposal](../../src/tui/merge-session.ts#L223) (path: string, text: string) → void <!-- internal -->
         - calls tui.merge-session.MergeSession.proposalAbs, tui.disk.readText, tui.disk.removeInside
-      - fn [key](../../src/tui/merge-session.ts#L233) (event: KeyEvent) → void
+      - fn [key](../../src/tui/merge-session.ts#L234) (event: KeyEvent) → void
         - calls tui.merge-session.MergeSession.write, tui.merge-session.MergeSession.leave
-      - fn [leave](../../src/tui/merge-session.ts#L288) (merge: MergeState, message: string) → void <!-- internal -->
+      - fn [leave](../../src/tui/merge-session.ts#L289) (merge: MergeState, message: string) → void <!-- internal -->
         - calls tui.merge-session.MergeSession.scan
-      - fn [write](../../src/tui/merge-session.ts#L307) () → void <!-- internal -->
-        - calls tui.merge-session.MergeSession.writeBuffer, tui.disk.readText, tui.merge-session.MergeSession.leave, tui.buffer.isDirty, tui.merge-session.MergeSession.proposalAbs, tui.merge.applyHunks, tui.disk.splitEol, tui.disk.withEol, tui.disk.writeInside, tui.merge-session.MergeSession.boundary, tui.buffer.setText, tui.disk.removeInside, tui.merge-session.errorText, tui.merge-session.MergeSession.scan, features.stats.updateStats, features.stats.addDrafts, features.stats.statusesIn
-      - fn [writeBuffer](../../src/tui/merge-session.ts#L377) (merge: MergeState) → void <!-- internal -->
+      - fn [write](../../src/tui/merge-session.ts#L308) () → void <!-- internal -->
+        - calls tui.merge-session.MergeSession.writeBuffer, tui.disk.readText, tui.merge-session.MergeSession.leave, tui.buffer.isDirty, tui.merge-session.MergeSession.proposalAbs, tui.merge.applyHunks, tui.disk.splitEol, tui.disk.withEol, base.safe-write.keepLineEndings, tui.disk.writeInside, tui.merge-session.MergeSession.boundary, tui.buffer.setText, tui.disk.removeInside, tui.merge-session.errorText, tui.merge-session.MergeSession.scan, features.stats.updateStats, features.stats.addDrafts, features.stats.statusesIn
+      - fn [writeBuffer](../../src/tui/merge-session.ts#L380) (merge: MergeState) → void <!-- internal -->
         - calls tui.merge-session.MergeSession.leave, tui.merge.applyHunks, tui.buffer.setText
-      - fn [undo](../../src/tui/merge-session.ts#L396) () → void
+      - fn [undo](../../src/tui/merge-session.ts#L399) () → void
         - calls tui.disk.readText, tui.merge-session.MergeSession.boundary, tui.disk.removeInside, tui.disk.writeInside, tui.buffer.setText, tui.merge-session.MergeSession.scan
-    - fn [proposalKind](../../src/tui/merge-session.ts#L436) (path: string) → ProposalEntry["kind"] <!-- internal -->
-    - fn [errorText](../../src/tui/merge-session.ts#L440) (error: unknown) → string
+    - fn [proposalKind](../../src/tui/merge-session.ts#L439) (path: string) → ProposalEntry["kind"] <!-- internal -->
+    - fn [errorText](../../src/tui/merge-session.ts#L443) (error: unknown) → string
   - module [merge](../../src/tui/merge.ts#L1)
     - type [Hunk](../../src/tui/merge.ts#L5)
     - type [Decision](../../src/tui/merge.ts#L13) = "pending" | "accepted" | "rejected"
