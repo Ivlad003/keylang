@@ -2639,3 +2639,26 @@ test("width: sliceCells keeps whole clusters, blanks a wide one cut by the edge 
   assert.equal(sliceCells("支付支付支付", 1, 5), "…付…");
   assert.equal(sliceCells("👨‍👩‍👧 done", 0, 3), "👨‍👩‍👧…");
 });
+
+test("tui: over the editor the help takes a chunk of keys as help keys and drops a paste; the hidden buffer is not changed (review 2026-10-06, ticket 64)", async (t) => {
+  const root = checkoutRepo(t);
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send("i");
+  s.send(KEY.ctrlP);
+  for (const ch of "help") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.help, true);
+  assert.equal(s.app.state.mode, "edit");
+  // A held `j` arrives as one chunk: it scrolls the help twice, as two separate keys do.
+  s.send("jj");
+  assert.equal(s.app.state.help, true);
+  assert.equal(s.app.state.helpTop, 2);
+  // A bracketed paste does not reach the buffer under the help either.
+  s.send("\x1b[200~XYZ\x1b[201~");
+  assert.equal(s.app.state.help, true);
+  assert.equal(s.app.state.buffers.get(FLOW_PATH)!.text, CHECKOUT_FLOW);
+  assert.deepEqual(s.app.unsaved(), []);
+  assert.doesNotMatch(s.lines()[0]!, /\[\+\]/);
+});
