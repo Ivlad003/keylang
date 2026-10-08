@@ -2192,6 +2192,11 @@ export class App {
         return naming(config, request.output === "proposal" ? [`${PROPOSALS_DIR}/${rulesDraftTarget(this.merges.specDir(), request.into ?? "")}`] : null);
       case "code-to-spec":
         return naming(config, request.output === "proposal" ? [`${PROPOSALS_DIR}/${codeDraftTarget(this.merges.specDir(), this.state.analysis?.snapshot ?? null, codeDraftFormOf(request))}`] : null);
+      // Discovered flows read the code, keylang.json and the hand-written flows (a trigger they name is skipped).
+      case "flows-discover":
+        return naming(specs, request.output === "write" ? [`${dir}flows-discovered/<layer>.md`] : null);
+      case "flows-adopt":
+        return naming(specs, [`${PROPOSALS_DIR}/${request.into ?? `${dir}flows/${request.name}.md`}`]);
       // The candidate reads the specs (the planned signature, the flows' tests), keylang.json and the code.
       case "spec-to-code": {
         const placed = specCodePlace(this.state.analysis, { id: request.id, into: request.into ?? "", mode: request.mode ?? "algo", output: request.output });
@@ -3262,6 +3267,8 @@ export class App {
         return this.requestOperation("doctor", { kind: "doctor", root: this.state.root });
       case "entries":
         return this.requestOperation("entries", { kind: "entries", root: this.state.root });
+      case "flows-discover":
+        return this.requestOperation("flows-discover", { kind: "flows-discover", root: this.state.root, output: "write" });
       case "feature":
         return this.runs.openFeaturePrompt();
       case "export-c4":

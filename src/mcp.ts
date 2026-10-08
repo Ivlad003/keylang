@@ -319,6 +319,21 @@ export function mcpServer(root: string, version: string): McpServer {
     },
   );
 
+  server.registerTool(
+    "discover_flows",
+    {
+      description:
+        "A flow draft for every entry point, as `keylang flows discover --print` computes it: each flow's name, trigger fn, entry kind and label, layer, steps and the count of unresolved calls on its route (holes), with the view's file texts; triggers a hand-written flow already names are listed as specified. Read-only: nothing is written. A discovered flow is no spec and `check` does not read it; to make one a spec, ask a person to run `keylang flows adopt <name>`, or propose it with apply_diff.",
+      inputSchema: { kind: z.enum(ENTRY_KINDS).optional(), layer: z.string().min(1).optional(), limit: z.number().int().min(1).optional(), depth: z.number().int().min(0).optional() },
+    },
+    async ({ kind, layer, limit, depth }) => {
+      const result = await runOperation({ kind: "flows-discover", root, output: "print", ...(kind !== undefined ? { only: kind } : {}), ...(layer !== undefined ? { layer } : {}), ...(limit !== undefined ? { limit } : {}), ...(depth !== undefined ? { depth } : {}) });
+      if (result.payload === null) return failure(result.messages[0]?.text ?? "flows discover failed");
+      const { snapshotId, summary, flows, specified, files } = result.payload;
+      return json({ snapshotId, summary, flows: flows.map(({ text: _text, ...flow }) => flow), specified, files });
+    },
+  );
+
   return server;
 }
 

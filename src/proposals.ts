@@ -15,7 +15,7 @@ import { toPosix } from "./config.ts";
 import { errorText } from "./diag.ts";
 import { existingText } from "./files.ts";
 import { languageOf } from "./languages.ts";
-import { EXPLAINED_MAP_DIR } from "./map.ts";
+import { DISCOVERED_FLOWS_DIR, EXPLAINED_MAP_DIR } from "./map.ts";
 import { parse } from "./parser.ts";
 import { isGeneratedText, landing, safeWrite, writeProblem } from "./safe-write.ts";
 import { compareText } from "./span.ts";
@@ -94,6 +94,7 @@ const GENERATED_SPEC_DIRS: readonly [string, string][] = [
   ["map", "a generated map file: change the code or the rules, then run `keylang map`"],
   [EXPLAINED_MAP_DIR, "the explained map is generated: `keylang map` writes it"],
   ["explain", "saved explanations: only `keylang explain` writes them"],
+  [DISCOVERED_FLOWS_DIR, "discovered flows are a generated view: `keylang flows discover` writes it; `keylang flows adopt <name>` proposes one as a spec"],
 ];
 
 /** Why the spec path `inside` the spec directory is in a reserved directory by its text alone (case aside), or null: the fast path. */

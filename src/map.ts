@@ -210,6 +210,9 @@ function manifestAbout(file: (typeof ROOT_MANIFESTS)[number], text: string | nul
 /** The explained map's directory under the spec directory. */
 export const EXPLAINED_MAP_DIR = "map-explained";
 
+/** The directory of discovered flows under the spec directory: a view `keylang flows discover` writes, never read as specs. */
+export const DISCOVERED_FLOWS_DIR = "flows-discovered";
+
 /** A file name to place an unreadable directory in the layers, as any of its source files would be. */
 const UNREADABLE_PROBE = "keylang-unreadable.ts";
 

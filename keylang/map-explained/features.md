@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [agent-cli](#features.agent-cli) · [agent-context](#features.agent-context) · [baseline](#features.baseline) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [clone](#features.clone) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [feature-status](#features.feature-status) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [harness](#features.harness) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stale](#features.stale) · [stats](#features.stats) · [voice-local](#features.voice-local) · [voice](#features.voice)
+[README](README.md) · modules: [agent-cli](#features.agent-cli) · [agent-context](#features.agent-context) · [baseline](#features.baseline) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [clone](#features.clone) · [discover](#features.discover) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [feature-status](#features.feature-status) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [harness](#features.harness) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stale](#features.stale) · [stats](#features.stats) · [voice-local](#features.voice-local) · [voice](#features.voice)
 
 # map
 
@@ -320,6 +320,35 @@
     - fn [enableExplainedMap](../../src/clone.ts#L176) (root: string) → string | null
       <a id="features.clone.enableExplainedMap"></a><br>Turns on the explained map (`"explain": {"map": true}`) in the clone's keylang.json; the rest of the file stays. Returns an error to name, or null.
       - calls [base.safe-write.targetProblem](base.md#base.safe-write.targetProblem), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite)
+  - module [discover](../../src/discover.ts#L1)
+    <a id="features.discover"></a><br>`keylang flows discover` and `keylang flows adopt` (business-flows/11): a flow draft for every entry point of the snapshot, `draftFlow` from the entry's fn, as a generated view `<dir>/flows-discovered/<layer>.md` (ADR 0014: a view, not a spec — `check` does not read it). A…
+    - draft [features.draft](features.md#features.draft)
+    - map [map.map](map.md#map.map)
+    - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
+    - snapshot [map.snapshot](map.md#map.snapshot)
+    - span [base.span](base.md#base.span)
+    - type [DiscoverOptions](../../src/discover.ts#L21)
+      <a id="features.discover.DiscoverOptions"></a>
+    - type [DiscoveredFlow](../../src/discover.ts#L33)
+      <a id="features.discover.DiscoveredFlow"></a><br>One discovered flow: the draft of one entry point's fn.
+    - type [Discovery](../../src/discover.ts#L49)
+      <a id="features.discover.Discovery"></a>
+    - fn [specifiedTriggers](../../src/discover.ts#L60) (flows: readonly Flow[]) → Map<string, { file: string; flow: string }>
+      <a id="features.discover.specifiedTriggers"></a><br>Each trigger the hand-written flows name, with the first flow (by file, then name) that names it.
+      - calls [base.span.compareText](base.md#base.span.compareText)
+    - fn [discoverFlows](../../src/discover.ts#L73) (snapshot: AnalysisSnapshot, specified: ReadonlyMap<string, { file: string; flow: string }>, options: DiscoverOptions = {}) → Discovery
+      <a id="features.discover.discoverFlows"></a><br>The flows of the view: one draft per fn an entry point names (the first entry of a fn, in the snapshot's order, labels it), names kept apart as `code-to-spec` keeps them, grouped by the trigger's layer, flows of a file by name. The same snapshot and specs give the same bytes.
+      - calls [features.draft.distinctNames](features.md#features.draft.distinctNames), [features.draft.draftFlow](features.md#features.draft.draftFlow), [features.discover.holesBySource](features.md#features.discover.holesBySource), [features.discover.withComment](features.md#features.discover.withComment), [features.discover.quoted](features.md#features.discover.quoted), [base.span.compareText](base.md#base.span.compareText)
+    - fn [adoptedFlow](../../src/discover.ts#L120) (flow: DiscoveredFlow, specDir: string) → FlowDraft
+      <a id="features.discover.adoptedFlow"></a><br>The draft `flows adopt` proposes: the discovered flow with its comment turned into provenance — `adopted`, and the view's file it came from.
+    - fn [discoverySummary](../../src/discover.ts#L127) (discovery: Pick<Discovery, "flows" | "specified">) → string
+      <a id="features.discover.discoverySummary"></a><br>`discovered N flows (M already specified), K with blind spots`.
+    - fn [holesBySource](../../src/discover.ts#L133) (snapshot: AnalysisSnapshot) → Map<string, number> <!-- internal -->
+      <a id="features.discover.holesBySource"></a><br>The unresolved and dynamic calls of each fn: what `draftFlow` writes as an `unresolved` comment.
+    - fn [withComment](../../src/discover.ts#L143) (text: string, comment: string) → string <!-- internal -->
+      <a id="features.discover.withComment"></a><br>The draft with an HTML comment as its own paragraph under the heading.
+    - fn [quoted](../../src/discover.ts#L149) (label: string) → string <!-- internal -->
+      <a id="features.discover.quoted"></a><br>A label inside `"…"` of a comment: no double quote, no `-->`.
   - module [draft-llm](../../src/draft-llm.ts#L1)
     <a id="features.draft-llm"></a><br>`draft flow --mode llm|hybrid` (design §5.1): the model proposes a flow from a compact map, the flow grammar and flows of this repository; an ID that is neither in the snapshot nor declared `planned` sends the draft back once with the nearest real IDs. The answer is reconciled…
     - analyze [map.analyze](map.md#map.analyze)
@@ -1196,74 +1225,74 @@
     - fn [landsUnread](../../src/proposals.ts#L81) (root: string, lands: string) → boolean <!-- internal -->
       <a id="features.proposals.landsUnread"></a><br>Whether the landing place `lands` (below `root`, links resolved) is in a directory `check` does not read: an ancestor below `root` whose name is hidden, `node_modules` or `target` (the segments not on disk yet by their text), or whose entry on disk is the `node_modules` or…
       - calls [features.proposals.statOrNull](features.md#features.proposals.statOrNull), [map.analyze.within](map.md#map.analyze.within), [features.proposals.sameEntry](features.md#features.proposals.sameEntry), [features.proposals.unreadName](features.md#features.proposals.unreadName)
-    - fn [reservedSpecText](../../src/proposals.ts#L100) (inside: string) → string | null <!-- internal -->
+    - fn [reservedSpecText](../../src/proposals.ts#L101) (inside: string) → string | null <!-- internal -->
       <a id="features.proposals.reservedSpecText"></a><br>Why the spec path `inside` the spec directory is in a reserved directory by its text alone (case aside), or null: the fast path.
       - calls [features.proposals.unreadDirectory](features.md#features.proposals.unreadDirectory)
-    - fn [reservedSpecLanding](../../src/proposals.ts#L108) (specRoot: string, lands: string) → string | null <!-- internal -->
+    - fn [reservedSpecLanding](../../src/proposals.ts#L109) (specRoot: string, lands: string) → string | null <!-- internal -->
       <a id="features.proposals.reservedSpecLanding"></a><br>Why the landing place `lands` of a spec is in a reserved directory of `specRoot` (the spec directory on disk), or null.
       - calls [features.proposals.landsUnread](features.md#features.proposals.landsUnread), [features.proposals.landsIn](features.md#features.proposals.landsIn)
-    - fn [proposalProblem](../../src/proposals.ts#L122) (root: string, specDir: string, path: string, generated: (path: string) => boolean = () => false) → string | null
+    - fn [proposalProblem](../../src/proposals.ts#L123) (root: string, specDir: string, path: string, generated: (path: string) => boolean = () => false) → string | null
       <a id="features.proposals.proposalProblem"></a><br>Why `.keylang/proposals/<path>` may not be merged, or null. A proposal replaces one hand-written spec: a Markdown file under the spec directory, not one keylang generates (the map, the explained map, a saved model explanation, a file with the generated marker), and not reached…
       - calls [features.proposals.notPlain](features.md#features.proposals.notPlain), [features.proposals.reservedSpecText](features.md#features.proposals.reservedSpecText), [base.safe-write.landing](base.md#base.safe-write.landing), [map.analyze.within](map.md#map.analyze.within), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [features.proposals.reservedSpecLanding](features.md#features.proposals.reservedSpecLanding), [lang.files.existingText](lang.md#lang.files.existingText), [lang.parser.parse](lang.md#lang.parser.parse), [base.safe-write.isGeneratedText](base.md#base.safe-write.isGeneratedText), [features.proposals.generatedSpecProblem](features.md#features.proposals.generatedSpecProblem)
-    - fn [generatedSpecProblem](../../src/proposals.ts#L152) (marker: string | null, specDir: string) → string <!-- internal -->
+    - fn [generatedSpecProblem](../../src/proposals.ts#L153) (marker: string | null, specDir: string) → string <!-- internal -->
       <a id="features.proposals.generatedSpecProblem"></a><br>The refusal for a generated spec, naming the command its marker names (`keylang baseline` for the baseline; `keylang map` otherwise).
-    - fn [codeProposalProblem](../../src/proposals.ts#L166) (root: string, path: string) → string | null
+    - fn [codeProposalProblem](../../src/proposals.ts#L167) (root: string, path: string) → string | null
       <a id="features.proposals.codeProposalProblem"></a><br>Why a proposal for the source file `path` may not be merged, or null: a file of a language keylang reads, a plain relative path inside the repository (links included, one whose target does not exist yet too), outside the directories sources are not read from, and not one…
       - calls [base.languages.languageOf](base.md#base.languages.languageOf), [features.proposals.notPlain](features.md#features.proposals.notPlain), [features.proposals.unreadDirectory](features.md#features.proposals.unreadDirectory), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [base.safe-write.landing](base.md#base.safe-write.landing), [features.proposals.landsUnread](features.md#features.proposals.landsUnread), [lang.files.existingText](lang.md#lang.files.existingText), [base.safe-write.isGeneratedText](base.md#base.safe-write.isGeneratedText)
-    - fn [targetProblem](../../src/proposals.ts#L182) (root: string, specDir: string, path: string, generated?: (path: string) => boolean) → string | null
+    - fn [targetProblem](../../src/proposals.ts#L183) (root: string, specDir: string, path: string, generated?: (path: string) => boolean) → string | null
       <a id="features.proposals.targetProblem"></a><br>The gate of a proposal's target: a Markdown file is a spec, any other a source file.
       - calls [features.proposals.proposalProblem](features.md#features.proposals.proposalProblem), [features.proposals.codeProposalProblem](features.md#features.proposals.codeProposalProblem)
-    - type [ProposalBasis](../../src/proposals.ts#L191)
+    - type [ProposalBasis](../../src/proposals.ts#L192)
       <a id="features.proposals.ProposalBasis"></a><br>What a proposal was built from: the target on disk and the proposal already waiting for it (null: no file). A write that carries it lands only while both are still so.
-    - fn [proposalWriteProblem](../../src/proposals.ts#L201) (root: string, path: string, basis: ProposalBasis) → string | null
+    - fn [proposalWriteProblem](../../src/proposals.ts#L202) (root: string, path: string, basis: ProposalBasis) → string | null
       <a id="features.proposals.proposalWriteProblem"></a><br>Why the proposal of `path` built from `basis` may not be written now, or null: the target or the waiting proposal changed, appeared or went away since, or the store breaks the write policy. Each reason names its file.
       - calls [lang.files.existingText](lang.md#lang.files.existingText), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem)
-    - fn [writeProposal](../../src/proposals.ts#L217) (root: string, path: string, text: string, basis?: ProposalBasis) → string
+    - fn [writeProposal](../../src/proposals.ts#L218) (root: string, path: string, text: string, basis?: ProposalBasis) → string
       <a id="features.proposals.writeProposal"></a><br>Writes the proposal for `path` (relative, POSIX) atomically and returns its file; `.keylang/proposals/` is keylang's own store, so a link there that leads elsewhere is refused like any other. With `basis` nothing is written unless the target and the waiting proposal are still…
       - calls [features.proposals.proposalWriteProblem](features.md#features.proposals.proposalWriteProblem), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite)
-    - fn [lineDiff](../../src/proposals.ts#L226) (before: string, after: string) → string
+    - fn [lineDiff](../../src/proposals.ts#L227) (before: string, after: string) → string
       <a id="features.proposals.lineDiff"></a><br>`-`/`+` lines between a common prefix and suffix: enough to see what a proposal changes.
-    - type [PendingProposal](../../src/proposals.ts#L243)
+    - type [PendingProposal](../../src/proposals.ts#L244)
       <a id="features.proposals.PendingProposal"></a><br>One pending proposal as `keylang proposals` lists it.
-    - fn [proposalTarget](../../src/proposals.ts#L260) (name: string) → string | null
+    - fn [proposalTarget](../../src/proposals.ts#L261) (name: string) → string | null
       <a id="features.proposals.proposalTarget"></a><br>The target of a proposal as a person names it: as `keylang proposals` lists it, or as its store path `.keylang/proposals/<target>`; POSIX. Null when it is no plain relative path.
       - calls [base.config.toPosix](base.md#base.config.toPosix), [features.proposals.notPlain](features.md#features.proposals.notPlain)
-    - fn [pendingTargets](../../src/proposals.ts#L271) (root: string) → string[]
+    - fn [pendingTargets](../../src/proposals.ts#L272) (root: string) → string[]
       <a id="features.proposals.pendingTargets"></a><br>Every target with a file or a link under `.keylang/proposals/`, sorted. The store is listed only while it stays inside the repository; a link in it is listed, never followed.
       - calls [base.safe-write.landing](base.md#base.safe-write.landing), [map.analyze.within](map.md#map.analyze.within), [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [storeEntry](../../src/proposals.ts#L286) (root: string, target: string) → { abs: string; link: boolean } | { problem: string } | null <!-- internal -->
+    - fn [storeEntry](../../src/proposals.ts#L287) (root: string, target: string) → { abs: string; link: boolean } | { problem: string } | null <!-- internal -->
       <a id="features.proposals.storeEntry"></a><br>The store entry of `target` where its directory lands: null when there is none, else the entry and whether it is a link. A store whose directory leads out of the repository is a problem, and nothing there is looked at.
       - calls [base.safe-write.landing](base.md#base.safe-write.landing), [map.analyze.within](map.md#map.analyze.within)
-    - type [ReadProposal](../../src/proposals.ts#L300) <!-- internal -->
+    - type [ReadProposal](../../src/proposals.ts#L301) <!-- internal -->
       <a id="features.proposals.ReadProposal"></a><br>A proposal that may be accepted: its text and the target's (null: no file).
-    - fn [readProposal](../../src/proposals.ts#L310) (root: string, specDir: string, target: string) → ReadProposal | { problem: string } | null <!-- internal -->
+    - fn [readProposal](../../src/proposals.ts#L311) (root: string, specDir: string, target: string) → ReadProposal | { problem: string } | null <!-- internal -->
       <a id="features.proposals.readProposal"></a><br>The proposal of `target` read after both gates — a plain file in the store, a target a proposal may change — or why it cannot be accepted; null when none is pending.
       - calls [features.proposals.storeEntry](features.md#features.proposals.storeEntry), [features.proposals.targetProblem](features.md#features.proposals.targetProblem), [base.safe-write.landing](base.md#base.safe-write.landing), [lang.files.existingText](lang.md#lang.files.existingText)
-    - fn [lineCounts](../../src/proposals.ts#L321) (before: string, after: string) → { added: number; removed: number } <!-- internal -->
+    - fn [lineCounts](../../src/proposals.ts#L322) (before: string, after: string) → { added: number; removed: number } <!-- internal -->
       <a id="features.proposals.lineCounts"></a><br>`+` and `-` lines `lineDiff` prints.
       - calls [features.proposals.lineDiff](features.md#features.proposals.lineDiff)
-    - fn [listProposals](../../src/proposals.ts#L327) (root: string, specDir: string) → PendingProposal[]
+    - fn [listProposals](../../src/proposals.ts#L328) (root: string, specDir: string) → PendingProposal[]
       <a id="features.proposals.listProposals"></a><br>Every pending proposal with its target, line counts and why it cannot be accepted. Reads only.
       - calls [features.proposals.pendingTargets](features.md#features.proposals.pendingTargets), [features.proposals.readProposal](features.md#features.proposals.readProposal), [features.proposals.lineCounts](features.md#features.proposals.lineCounts)
-    - type [ProposalDiff](../../src/proposals.ts#L336)
+    - type [ProposalDiff](../../src/proposals.ts#L337)
       <a id="features.proposals.ProposalDiff"></a><br>What `keylang proposals show <target>` prints, or why not. Reads only.
-    - fn [proposalDiff](../../src/proposals.ts#L338) (root: string, specDir: string, target: string) → ProposalDiff
+    - fn [proposalDiff](../../src/proposals.ts#L339) (root: string, specDir: string, target: string) → ProposalDiff
       <a id="features.proposals.proposalDiff"></a>
       - calls [features.proposals.readProposal](features.md#features.proposals.readProposal), [features.proposals.lineDiff](features.md#features.proposals.lineDiff)
-    - type [AcceptResult](../../src/proposals.ts#L345)
+    - type [AcceptResult](../../src/proposals.ts#L346)
       <a id="features.proposals.AcceptResult"></a>
-    - fn [acceptProposal](../../src/proposals.ts#L363) (root: string, specDir: string, target: string) → AcceptResult
+    - fn [acceptProposal](../../src/proposals.ts#L364) (root: string, specDir: string, target: string) → AcceptResult
       <a id="features.proposals.acceptProposal"></a><br>`keylang proposals accept <target>`: the proposal's full text replaces the target, as MERGE does with every hunk accepted. The same gates as MERGE (the target's, a plain file in the store), a target that is not writable (a person's `chmod a-w`) is refused, and the write follows…
       - calls [features.proposals.readProposal](features.md#features.proposals.readProposal), [base.safe-write.landing](base.md#base.safe-write.landing), [features.proposals.dropProposal](features.md#features.proposals.dropProposal), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite), [features.proposals.countDecision](features.md#features.proposals.countDecision), [features.proposals.lineCounts](features.md#features.proposals.lineCounts)
-    - type [RejectResult](../../src/proposals.ts#L386)
+    - type [RejectResult](../../src/proposals.ts#L387)
       <a id="features.proposals.RejectResult"></a>
-    - fn [rejectProposal](../../src/proposals.ts#L393) (root: string, specDir: string, target: string) → RejectResult
+    - fn [rejectProposal](../../src/proposals.ts#L394) (root: string, specDir: string, target: string) → RejectResult
       <a id="features.proposals.rejectProposal"></a><br>`keylang proposals reject <target>`: the proposal is removed and the target stays as it is. A proposal no gate admits is still the person's to drop; a link in the store is removed itself, never followed.
       - calls [features.proposals.storeEntry](features.md#features.proposals.storeEntry), [features.proposals.targetProblem](features.md#features.proposals.targetProblem), [base.safe-write.landing](base.md#base.safe-write.landing), [features.proposals.countDecision](features.md#features.proposals.countDecision), [lang.files.existingText](lang.md#lang.files.existingText)
-    - fn [dropProposal](../../src/proposals.ts#L406) (root: string, target: string, text: string) → string | null <!-- internal -->
+    - fn [dropProposal](../../src/proposals.ts#L407) (root: string, target: string, text: string) → string | null <!-- internal -->
       <a id="features.proposals.dropProposal"></a><br>Removes the proposal while it still holds `text`: null, or why it stays.
       - calls [features.proposals.storeEntry](features.md#features.proposals.storeEntry), [base.diag.errorText](base.md#base.diag.errorText)
-    - fn [countDecision](../../src/proposals.ts#L418) (root: string, before: string, after: string, decision: "accepted" | "rejected") → void <!-- internal -->
+    - fn [countDecision](../../src/proposals.ts#L419) (root: string, before: string, after: string, decision: "accepted" | "rejected") → void <!-- internal -->
       <a id="features.proposals.countDecision"></a><br>The model lines a decision took or dropped, as MERGE counts them (design §5.1 p.7); a count that cannot be written is lost, never the decision.
       - calls [features.proposals.lineDiff](features.md#features.proposals.lineDiff), [features.stats.statusesIn](features.md#features.stats.statusesIn), [features.stats.updateStats](features.md#features.stats.updateStats), [features.stats.addDrafts](features.md#features.stats.addDrafts)
   - module [spec-to-code](../../src/spec-to-code.ts#L1)
