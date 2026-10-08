@@ -690,7 +690,9 @@ export class App {
             ? (result.payload?.snapshotId ?? undefined)
             : result?.kind === "trace-plan"
               ? (result.payload?.plan.snapshotId ?? undefined)
-              : undefined;
+              : result?.kind === "entries"
+                ? (result.payload?.snapshotId ?? undefined)
+                : undefined;
       if (computedOn !== undefined && computedOn !== snapshotId) record.outdated ??= "the code snapshot changed since this run";
     }
     if (this.state.current === null && this.state.files[0]) this.open(this.state.files[0], { line: 0, col: 0 }, false);
@@ -2161,8 +2163,9 @@ export class App {
       // Check reads the specs under its paths (the spec directory by default) and keylang.json.
       case "check":
         return { inputs: chosen(request.paths.length > 0 ? request.paths : [this.specDir()]) };
-      // An edge reads the saved code and keylang.json, never the specs.
+      // An edge and the entry points read the saved code and keylang.json, never the specs.
       case "explain-edge":
+      case "entries":
         return { inputs: config };
       // A code's help reads nothing. A node's summary, the inventory and a trace plan read the specs and
       // the saved explanations under the spec directory, keylang.json and the code.
@@ -3257,6 +3260,8 @@ export class App {
         return this.results.openResults();
       case "doctor":
         return this.requestOperation("doctor", { kind: "doctor", root: this.state.root });
+      case "entries":
+        return this.requestOperation("entries", { kind: "entries", root: this.state.root });
       case "feature":
         return this.runs.openFeaturePrompt();
       case "export-c4":

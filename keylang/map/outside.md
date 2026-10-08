@@ -6,6 +6,11 @@
   - module bench
     - module [clone](../../bench/clone.ts#L1) <!-- outside -->
     - module [inject](../../bench/inject.ts#L1) <!-- outside -->
+    - module lib
+      - module [metrics_d](../../bench/lib/metrics.d.mts#L1) <!-- outside -->
+      - module [metrics](../../bench/lib/metrics.mjs#L1) <!-- outside -->
+    - module magento
+      - module [run](../../bench/magento/run.mjs#L1) <!-- outside -->
     - module [run](../../bench/run.ts#L1) <!-- outside -->
   - module design
     - module scripts

@@ -5,7 +5,7 @@
 // command's handler, so `--version` and `check` do not compile it. The
 // specifiers stay literal: the map keeps the import edge.
 
-import { chmodSync, existsSync, readFileSync, statSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, rmSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { join, relative, resolve } from "node:path";
@@ -22,6 +22,7 @@ import { selectedAgent } from "./agent-cli.ts";
 import { CHECK_FORMATS, checkReportText, isCheckFormat } from "./check-format.ts";
 import type { BriefBatch } from "./explain-llm.ts";
 import { positiveIntegerProblem } from "./explain-inventory.ts";
+import { ENTRY_KINDS, isEntryKind } from "./snapshot.ts";
 import type { ExplanationDetail } from "./explanations.ts";
 import { changedPathSet, deletedModuleIds, gitChangedFiles } from "./git-changes.ts";
 import { checkSkipNote, checkSummary, featureSummary, fmtGeneratedNote, gapLine, gitignoreMessage, hintLine, initSources, mapCheckLines, mapConflictLines, mapStepLines, mapSummary, runOperation, type CodeToSpecSource, type ExplainPlanRequest, type GitignoreStage, type OperationEnvelope } from "./operations.ts";
@@ -162,14 +163,22 @@ Commands:
                             on PATH, voice (engine, local model, microphone); changes nothing
   mcp                       Serve MCP over stdio for agents: search, node, code, flows,
                             check, explain, context, validate_spec, scaffold,
-                            feature_status, apply_diff (proposals only; no spec is
-                            written, the fact cache .keylang/cache/ is kept current)
+                            feature_status, list_entries, apply_diff (proposals only;
+                            no spec is written, the fact cache .keylang/cache/ is kept
+                            current)
   wire [--check] [--out f]  Generate keylang.gen.ts (or f: a .ts/.mts/.cts path relative to
                             the root, inside it) from \`# wiring\`: a typed wire() that builds
                             each factory once, dependencies first
                             (--check: fail if the file is stale; writes nothing)
   trace-plan <flow>         Print JSON: the flow's functions a trace adapter instruments
                             (Python, Rust), with the snapshot id and file hashes
+  entries [--kind k] [--json]
+                            Where execution starts, from what the code and its manifests
+                            write: kind · label · id · file:line (route, cli, main; a
+                            framework's rest, graphql, cron, consumer, observer, webhook,
+                            controller need its adapter). --kind: one kind. --json: the
+                            list as JSON. Exit 0, also with nothing found; writes only
+                            the fact cache .keylang/cache/
   export c4 [--format plantuml|mermaid] [--level component|container] [--layer <name>] [--out f]
                             Print a C4 diagram of the map, no model: layers as boundaries,
                             their modules as components, packages as external systems
@@ -267,6 +276,7 @@ const OPTIONS = {
   changed: { type: "boolean" },
   layer: { type: "string" },
   level: { type: "string" },
+  kind: { type: "string" },
 } as const satisfies ParseArgsOptionsConfig;
 
 /** Runs the CLI and returns the exit code: 0 ok, 1 findings, 2 usage or I/O error. */
@@ -368,6 +378,8 @@ async function run(argv: readonly string[]): Promise<number> {
       return cmdWire(values.out ?? "keylang.gen.ts", values.check === true);
     case "trace-plan":
       return cmdTracePlan(paths[0]);
+    case "entries":
+      return cmdEntries(values.kind, values.json === true);
     case "export":
       return cmdExport(paths, { format: values.format, level: values.level, layer: values.layer, out: values.out });
     case "clone":
@@ -532,7 +544,10 @@ async function prepareClone(sourceText: string | undefined, opts: { dir: string 
   }
   const problem = enableExplainedMap(dir);
   if (problem !== null) {
-    process.stderr.write(`keylang: ${problem}\n`);
+    // A clone whose keylang.json keylang may not write is no place for --explain; it is keylang's own
+    // (fresh or marked), so it goes the way a clone with an unwritable marker does.
+    rmSync(dir, { recursive: true, force: true });
+    process.stderr.write(`keylang: clone: ${problem}; the clone of ${source.url} was removed\n`);
     return { code: 2, root: null };
   }
   let code = await cmdExplainBatch(dir, "missing", { llm: true, dryRun: false, limit: undefined, jobs: undefined });
@@ -889,6 +904,15 @@ async function cmdTracePlan(flow: string | undefined): Promise<number> {
   const result = await runOperation({ kind: "trace-plan", root: findRoot(process.cwd()), flow });
   if (result.payload === null) throw new Error(result.messages[0]?.text ?? "trace-plan failed");
   process.stdout.write(result.payload.text);
+  return result.exitCode ?? 2;
+}
+
+/** `entries [--kind k] [--json]`: the table of the shared operation, or its payload as JSON; exit 0 with an empty list too. */
+async function cmdEntries(kind: string | undefined, json: boolean): Promise<number> {
+  if (kind !== undefined && !isEntryKind(kind)) throw new Error(`entries: --kind is one of ${ENTRY_KINDS.join(", ")}, got \`${kind}\``);
+  const result = await runOperation({ kind: "entries", root: findRoot(process.cwd()), ...(kind !== undefined ? { only: kind } : {}) });
+  if (result.payload === null) throw new Error(result.messages[0]?.text ?? "entries failed");
+  process.stdout.write(json ? `${JSON.stringify({ snapshotId: result.payload.snapshotId, kind: result.payload.kind, entries: result.payload.entries }, null, 2)}\n` : result.payload.text);
   return result.exitCode ?? 2;
 }
 

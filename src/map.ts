@@ -16,6 +16,7 @@ import { explanationOf, loadBriefs } from "./explanations.ts";
 import { buildGraph, placeFile, type Graph } from "./graph.ts";
 import { FACT_CACHE_FILE, FactCache } from "./fact-cache.ts";
 import { landing, writeAtomic, writeProblem } from "./safe-write.ts";
+import { collectEntries, ENTRY_MANIFESTS, type EntryManifests } from "./entries.ts";
 import { buildSnapshot, EXTRACTOR_VERSION, grammarVersions, sha256, type AnalysisSnapshot, type RepositoryDocs, type SystemDoc } from "./snapshot.ts";
 
 export interface MapResult {
@@ -106,12 +107,16 @@ export async function generateMap(config: Config, options: { persist?: boolean |
     const place = placeFile(config, `${dir}/${UNREADABLE_PROBE}`);
     return place === null ? [] : [{ file: dir, reason, source: [place.layer, ...place.segments.slice(0, -1)].join(".") }];
   });
+  // Entry points: what the code and the root manifests write (ADR 0022 п. 5); the manifests join `snapshotId`.
+  const manifests: EntryManifests = { "package.json": null, "pyproject.toml": null, "Cargo.toml": null };
+  for (const name of ENTRY_MANIFESTS) manifests[name] = readSource(join(config.root, name));
+  const entries = collectEntries({ graph, facts, manifests, exists: (path) => existsSync(join(config.root, path)) });
   const index = buildSnapshot(graph, config, indexed, [
     ...skipped.map((file) => ({ file, reason: "outside guessed layers" })),
     ...excluded.map((file) => ({ file, reason: "excluded by keylang.json" })),
     ...outside.map((file) => ({ file, reason: "outside the architecture (`outside` in keylang.json)", kind: "outside-file" as const })),
     ...unreadable,
-  ], readRepositoryDocs(config));
+  ], readRepositoryDocs(config), { list: entries, inputs: ENTRY_MANIFESTS.map((name) => [name, manifests[name]] as const) });
   let explained: Map<string, string> | null = null;
   if (config.explain.map) {
     const briefs = loadBriefs(config);

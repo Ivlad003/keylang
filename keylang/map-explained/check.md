@@ -256,85 +256,85 @@
     - fn [evaluateOnSnapshot](../../src/rules.ts#L162) (rules: EvaluatedRules, index: Index, snapshot: SnapshotView, planned: readonly string[], format: RuleFormat) → RuleReport <!-- internal -->
       <a id="check.rules.evaluateOnSnapshot"></a><br>Checks a snapshot's module dependency edges against deny/allow/layer rules, emitting K101/K102/K107 failures and ok or unverified verdicts that account for coverage holes, using [`check.scc.stronglyConnected`](check.md#check.scc.stronglyConnected) for cycles. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [check.rules.base](check.md#check.rules.base), [check.rules.holeAt](check.md#check.rules.holeAt), [check.rules.docblockNote](check.md#check.rules.docblockNote), [check.rules.ruleHits](check.md#check.rules.ruleHits), [check.rules.decide](check.md#check.rules.decide), [check.rules.crossRules](check.md#check.rules.crossRules), [check.rules.sameAreas](check.md#check.rules.sameAreas), [check.rules.layerViolation](check.md#check.rules.layerViolation), [check.rules.incomparableAside](check.md#check.rules.incomparableAside), [check.rules.componentSpec](check.md#check.rules.componentSpec), [check.rules.layerComponent](check.md#check.rules.layerComponent), [check.rules.holeText](check.md#check.rules.holeText), [check.rules.listAt](check.md#check.rules.listAt), [check.rules.overrideEvidence](check.md#check.rules.overrideEvidence), [base.diag.diagnostic](base.md#base.diag.diagnostic), [check.rules.pointAt](check.md#check.rules.pointAt), [check.rules.hashText](check.md#check.rules.hashText), [check.resolve.Index.lookup](check.md#check.resolve.Index.lookup), [check.scc.stronglyConnected](check.md#check.scc.stronglyConnected), [check.scc.cycleThrough](check.md#check.scc.cycleThrough)
-    - type [Hole](../../src/rules.ts#L569) = SnapshotView["coverage"][number] <!-- internal -->
+    - type [Hole](../../src/rules.ts#L570) = SnapshotView["coverage"][number] <!-- internal -->
       <a id="check.rules.Hole"></a><br>A coverage entry of the snapshot: a hole when its kind is one of `DEPENDENCY_HOLES`.
-    - type [IndexedHole](../../src/rules.ts#L572) <!-- internal -->
+    - type [IndexedHole](../../src/rules.ts#L573) <!-- internal -->
       <a id="check.rules.IndexedHole"></a><br>A hole and its place in the coverage list, which decides between two holes of one module.
-    - fn [listAt](../../src/rules.ts#L577) (map: Map<string, T[]>, key: string) → T[] <!-- internal -->
+    - fn [listAt](../../src/rules.ts#L578) (map: Map<string, T[]>, key: string) → T[] <!-- internal -->
       <a id="check.rules.listAt"></a>
-    - fn [holeText](../../src/rules.ts#L586) (hole: Hole) → string <!-- internal -->
+    - fn [holeText](../../src/rules.ts#L587) (hole: Hole) → string <!-- internal -->
       <a id="check.rules.holeText"></a><br>`unresolved import (src/a.ts:1:19)`: the hole in a verdict's reason.
       - calls [check.rules.holeAt](check.md#check.rules.holeAt)
-    - fn [holeAt](../../src/rules.ts#L591) (hole: Hole) → string <!-- internal -->
+    - fn [holeAt](../../src/rules.ts#L592) (hole: Hole) → string <!-- internal -->
       <a id="check.rules.holeAt"></a><br>`src/a.ts:1:19`: where the hole is, the `hole` field of a verdict.
-    - fn [layerViolation](../../src/rules.ts#L598) (rules: EvaluatedRules, fromLayer: string, toLayer: string) → string | null <!-- internal -->
+    - fn [layerViolation](../../src/rules.ts#L599) (rules: EvaluatedRules, fromLayer: string, toLayer: string) → string | null <!-- internal -->
       <a id="check.rules.layerViolation"></a><br>Why a dependency between two layers breaks the layer orders, or null.
-    - fn [layerComponent](../../src/rules.ts#L607) (rules: EvaluatedRules, layer: string) → Set<string> <!-- internal -->
+    - fn [layerComponent](../../src/rules.ts#L608) (rules: EvaluatedRules, layer: string) → Set<string> <!-- internal -->
       <a id="check.rules.layerComponent"></a><br>Layers joined to `layer` by the undirected partial order, including `layer` itself.
-    - fn [componentSpec](../../src/rules.ts#L621) (rules: EvaluatedRules, layer: string) → string <!-- internal -->
+    - fn [componentSpec](../../src/rules.ts#L622) (rules: EvaluatedRules, layer: string) → string <!-- internal -->
       <a id="check.rules.componentSpec"></a><br>Canonical texts of the `layers` lines in `layer`'s connected order, one hash input.
       - calls [check.rules.layerComponent](check.md#check.rules.layerComponent)
-    - type [RuleHit](../../src/rules.ts#L630) <!-- internal -->
+    - type [RuleHit](../../src/rules.ts#L631) <!-- internal -->
       <a id="check.rules.RuleHit"></a><br>Records a single rule match against a dependency edge: whether the matched `Rule` allows or denies it, a specificity score used to rank competing hits, and the deepest target path of that rule covering the edge. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [OverrideNote](../../src/rules.ts#L638) <!-- internal -->
+    - type [OverrideNote](../../src/rules.ts#L639) <!-- internal -->
       <a id="check.rules.OverrideNote"></a><br>Record describing why one deny rule was overridden: the overriding rule's text and source location, whether the two rules' areas could not be compared, whether the deny was a baseline rule, and the specificity scores of winner and loser. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [ruleHits](../../src/rules.ts#L650) (rules: EvaluatedRules, from: string, to: string, within: (id: string, scope: string) => boolean) → RuleHit[] <!-- internal -->
+    - fn [ruleHits](../../src/rules.ts#L651) (rules: EvaluatedRules, from: string, to: string, within: (id: string, scope: string) => boolean) → RuleHit[] <!-- internal -->
       <a id="check.rules.ruleHits"></a><br>Every allow or deny that matches the edge, scored by the deepest target it names.
       - calls [check.rules.scopeDepth](check.md#check.rules.scopeDepth)
-    - fn [byHit](../../src/rules.ts#L673) (a: RuleHit, b: RuleHit) → number <!-- internal -->
+    - fn [byHit](../../src/rules.ts#L674) (a: RuleHit, b: RuleHit) → number <!-- internal -->
       <a id="check.rules.byHit"></a><br>Comparator that orders two rule hits by the file path of the rule that produced them, falling back to the rule's starting line number when the files match. Used to give rule hits a stable, source-ordered sort. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [dominates](../../src/rules.ts#L679) (a: RuleHit, b: RuleHit) → boolean <!-- internal -->
+    - fn [dominates](../../src/rules.ts#L680) (a: RuleHit, b: RuleHit) → boolean <!-- internal -->
       <a id="check.rules.dominates"></a><br>`a` is strictly more specific than `b`: neither of its areas is wider, and one is narrower.
       - calls [check.rules.areaWithin](check.md#check.rules.areaWithin)
-    - fn [crossRules](../../src/rules.ts#L686) (a: RuleHit, b: RuleHit) → boolean <!-- internal -->
+    - fn [crossRules](../../src/rules.ts#L687) (a: RuleHit, b: RuleHit) → boolean <!-- internal -->
       <a id="check.rules.crossRules"></a><br>One rule is narrower on the source and the other on the target.
       - calls [check.rules.areaWithin](check.md#check.rules.areaWithin)
-    - fn [sameAreas](../../src/rules.ts#L694) (a: RuleHit, b: RuleHit) → boolean <!-- internal -->
+    - fn [sameAreas](../../src/rules.ts#L695) (a: RuleHit, b: RuleHit) → boolean <!-- internal -->
       <a id="check.rules.sameAreas"></a><br>Compares two rule hits by their rule's source area and their target, returning true when both match. Used by [`check.rules.overManualRules`](check.md#check.rules.overManualRules) and [`check.rules.evaluateOnSnapshot`](check.md#check.rules.evaluateOnSnapshot) to group or deduplicate hits covering the same area pair. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [overManualRules](../../src/rules.ts#L699) (hits: readonly RuleHit[]) → RuleHit[] <!-- internal -->
+    - fn [overManualRules](../../src/rules.ts#L700) (hits: readonly RuleHit[]) → RuleHit[] <!-- internal -->
       <a id="check.rules.overManualRules"></a><br>The baseline is a lower rule layer: a manual hit over the same areas drops a generated one.
       - calls [check.rules.sameAreas](check.md#check.rules.sameAreas)
-    - fn [areaWithin](../../src/rules.ts#L703) (id: string, scope: string) → boolean <!-- internal -->
+    - fn [areaWithin](../../src/rules.ts#L704) (id: string, scope: string) → boolean <!-- internal -->
       <a id="check.rules.areaWithin"></a><br>Tests whether a dotted node ID equals a scope or sits beneath it as a dot-separated descendant, so [`check.rules.dominates`](check.md#check.rules.dominates), [`check.rules.crossRules`](check.md#check.rules.crossRules) and [`check.rules.incomparableWarnings`](check.md#check.rules.incomparableWarnings) can compare rule reach by area. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [decide](../../src/rules.ts#L712) (all: readonly RuleHit[], format: RuleFormat) → { winners: RuleHit[]; denyWins: boolean } <!-- internal -->
+    - fn [decide](../../src/rules.ts#L713) (all: readonly RuleHit[], format: RuleFormat) → { winners: RuleHit[]; denyWins: boolean } <!-- internal -->
       <a id="check.rules.decide"></a><br>First a manual hit drops a baseline hit over the same areas (both formats). Format 1: the greatest depth sum, and every `deny` on that sum.
       - calls [check.rules.overManualRules](check.md#check.rules.overManualRules), [check.rules.dominates](check.md#check.rules.dominates)
-    - fn [incomparableAside](../../src/rules.ts#L726) (deny: RuleHit, hits: readonly RuleHit[], format: RuleFormat) → string <!-- internal -->
+    - fn [incomparableAside](../../src/rules.ts#L727) (deny: RuleHit, hits: readonly RuleHit[], format: RuleFormat) → string <!-- internal -->
       <a id="check.rules.incomparableAside"></a><br>Builds the explanatory suffix listing allow rules that [`check.rules.crossRules`](check.md#check.rules.crossRules) deems incomparable with the winning deny, deduplicated per rule and sorted, saying why each lost (deny-overrides mode, depth-sum tie, or lower depth sum). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [check.rules.crossRules](check.md#check.rules.crossRules)
-    - fn [overrideEvidence](../../src/rules.ts#L743) (deny: Rule, targets: string, notes: readonly OverrideNote[]) → string <!-- internal -->
+    - fn [overrideEvidence](../../src/rules.ts#L744) (deny: Rule, targets: string, notes: readonly OverrideNote[]) → string <!-- internal -->
       <a id="check.rules.overrideEvidence"></a><br>Builds the explanatory sentence a rule report shows when a deny rule is overridden, sorting override notes into incomparable, more-specific, and manual-over-baseline groups and listing them with their winning scores or quoted rule texts; used by [`check.rules.evaluateOnSnapshot`](check.md#check.rules.evaluateOnSnapshot). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [incomparableWarnings](../../src/rules.ts#L759) (rules: EvaluatedRules, format: RuleFormat) → Diagnostic[] <!-- internal -->
+    - fn [incomparableWarnings](../../src/rules.ts#L760) (rules: EvaluatedRules, format: RuleFormat) → Diagnostic[] <!-- internal -->
       <a id="check.rules.incomparableWarnings"></a><br>One K106 per incomparable allow/deny line pair, on the allow line. Static: no snapshot required.
       - calls [check.rules.areaWithin](check.md#check.rules.areaWithin), [check.rules.scopeDepth](check.md#check.rules.scopeDepth), [base.diag.diagnostic](base.md#base.diag.diagnostic), [check.rules.hashText](check.md#check.rules.hashText)
-    - fn [canonicalRuleSpec](../../src/rules.ts#L803) (spec: SpecIR, file: string, line: number) → string | null
+    - fn [canonicalRuleSpec](../../src/rules.ts#L804) (spec: SpecIR, file: string, line: number) → string | null
       <a id="check.rules.canonicalRuleSpec"></a><br>Canonical text of the rule line at `file:line`, or null when that line is not a rule. K101, K103, and an unreachable module's entry verdict hash several lines themselves.
       - calls [check.rules.collectRules](check.md#check.rules.collectRules)
-    - fn [noSnapshotSpec](../../src/rules.ts#L820) (spec: SpecIR) → string
+    - fn [noSnapshotSpec](../../src/rules.ts#L821) (spec: SpecIR) → string
       <a id="check.rules.noSnapshotSpec"></a><br>Every rule line of the specs, valid or not, joined in file and line order. The hash of `no snapshot`.
-    - fn [firstRuleLine](../../src/rules.ts#L830) (spec: SpecIR) → { file: string; span: Span } | null <!-- internal -->
+    - fn [firstRuleLine](../../src/rules.ts#L831) (spec: SpecIR) → { file: string; span: Span } | null <!-- internal -->
       <a id="check.rules.firstRuleLine"></a><br>The first rule line in file, line and column order, a rejected `layers` line included; null without one.
-    - fn [scopeDepth](../../src/rules.ts#L839) (id: string) → number
+    - fn [scopeDepth](../../src/rules.ts#L840) (id: string) → number
       <a id="check.rules.scopeDepth"></a><br>How specific a scope is: its depth in segments (`app.purchase` is 2), not its length in characters.
-    - fn [specific](../../src/rules.ts#L850) (rules: EvaluatedRules, from: string, to: string, within: (id: string, scope: string) => boolean) → { kind: "allow" | "deny"; rule: Rule } | null <!-- internal -->
+    - fn [specific](../../src/rules.ts#L851) (rules: EvaluatedRules, from: string, to: string, within: (id: string, scope: string) => boolean) → { kind: "allow" | "deny"; rule: Rule } | null <!-- internal -->
       <a id="check.rules.specific"></a><br>The rule that decides `from → to` in format 1: the one whose scopes are deepest in total (`deny app.purchase domain` and `allow app domain.store` both 3), a `deny` on a tie. Format 2 keeps every undominated rule and lets any undominated `deny` win (deny-overrides), so an…
       - calls [check.rules.decide](check.md#check.rules.decide), [check.rules.ruleHits](check.md#check.rules.ruleHits)
-    - type [EvaluatedRules](../../src/rules.ts#L856) <!-- internal -->
+    - type [EvaluatedRules](../../src/rules.ts#L857) <!-- internal -->
       <a id="check.rules.EvaluatedRules"></a><br>Holds the parsed, validated result of the rules file: layer orders merged into one "above" partial order, allow/deny rules, entry points, no-cycle and exports constraints, plus diagnostics for rules dropped as unevaluable. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [collectRules](../../src/rules.ts#L877) (spec: SpecIR, kindOf: (id: string) => string | undefined) → EvaluatedRules <!-- internal -->
+    - fn [collectRules](../../src/rules.ts#L878) (spec: SpecIR, kindOf: (id: string) => string | undefined) → EvaluatedRules <!-- internal -->
       <a id="check.rules.collectRules"></a><br>Sorts spec rules into allow/deny, entry, no-cycles and exports lists, flagging K005 via [`base.diag.diagnostic`](base.md#base.diag.diagnostic) when a dependency rule names a function or member, and merges layer chains through [`check.rules.combineOrders`](check.md#check.rules.combineOrders). _(llm · claude:claude-opus-5-5 · 2026-10-05)_
       - calls [base.diag.diagnostic](base.md#base.diag.diagnostic), [check.rules.combineOrders](check.md#check.rules.combineOrders)
-    - fn [combineOrders](../../src/rules.ts#L935) (chains: readonly LayerOrder[], diagnostics: Diagnostic[]) → { orders: LayerOrder[]; above: Map<string, Set<string>> } <!-- internal -->
+    - fn [combineOrders](../../src/rules.ts#L936) (chains: readonly LayerOrder[], diagnostics: Diagnostic[]) → { orders: LayerOrder[]; above: Map<string, Set<string>> } <!-- internal -->
       <a id="check.rules.combineOrders"></a><br>All `layers` lines as one partial order: `a < b` and `b < c` put `c` above `a`, while `a < b` and `c < d` say nothing about `a` and `d`. A line that contradicts the lines before it is K005 and left out.
       - calls [base.diag.diagnostic](base.md#base.diag.diagnostic), [check.rules.transitive](check.md#check.rules.transitive)
-    - fn [transitive](../../src/rules.ts#L965) (direct: ReadonlyMap<string, ReadonlySet<string>>) → Map<string, Set<string>> <!-- internal -->
+    - fn [transitive](../../src/rules.ts#L966) (direct: ReadonlyMap<string, ReadonlySet<string>>) → Map<string, Set<string>> <!-- internal -->
       <a id="check.rules.transitive"></a><br>Computes the transitive closure of a directed graph given as adjacency sets, using an iterative depth-first walk from every key. [`check.rules.combineOrders`](check.md#check.rules.combineOrders) uses it to derive which layers sit above which others. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [pointAt](../../src/rules.ts#L982) (line: number, col: number) → Span <!-- internal -->
+    - fn [pointAt](../../src/rules.ts#L983) (line: number, col: number) → Span <!-- internal -->
       <a id="check.rules.pointAt"></a><br>A one-column span at a code position (a rule finding has no source offset).
-    - fn [base](../../src/rules.ts#L987) (snapshot: SnapshotView, criterion: string, area: string, verdict: Verdict["verdict"], file: string, line: number, col: number, code: string | null, message: string, spec = criterion) → Verdict <!-- internal -->
+    - fn [base](../../src/rules.ts#L988) (snapshot: SnapshotView, criterion: string, area: string, verdict: Verdict["verdict"], file: string, line: number, col: number, code: string | null, message: string, spec = criterion) → Verdict <!-- internal -->
       <a id="check.rules.base"></a><br>`spec` is the rule as written; its hash changes when the rule does.
       - calls [check.rules.hashText](check.md#check.rules.hashText)
-    - fn [hashText](../../src/rules.ts#L991) (text: string) → string <!-- internal -->
+    - fn [hashText](../../src/rules.ts#L992) (text: string) → string <!-- internal -->
       <a id="check.rules.hashText"></a><br>Computes the SHA-256 digest of a string and returns it as a hex string. Used by [`check.rules.base`](check.md#check.rules.base) and the other callers to fingerprint message or code text for stable verdict identity. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [scc](../../src/scc.ts#L1)
     <a id="check.scc"></a><br>Strongly connected components of a directed module graph. A component is cyclic when it has two or more modules, or a self-loop.

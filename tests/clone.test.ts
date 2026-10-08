@@ -164,6 +164,31 @@ test("clone: a repository whose `.keylang` is a link out of the clone gets no ma
   assert.equal(readFileSync(join(mine, "notes.txt"), "utf8"), "keep me\n");
 });
 
+test("clone --explain: a committed `keylang.json` that is a link out of the clone is not written through; the clone is removed, no model is asked", async (t) => {
+  const { dir, origin } = sandbox(t);
+  const outside = join(dir, "outside");
+  mkdirSync(outside, { recursive: true });
+  const config = `${JSON.stringify({ layers: { api: ["src/api/**"], domain: ["src/domain/**"] } }, null, 2)}\n`;
+  writeFileSync(join(outside, "keylang.json"), config);
+  symlinkSync(join(outside, "keylang.json"), join(origin, "keylang.json"), "file");
+  git(origin, ["add", "-A"]);
+  git(origin, ["commit", "-qm", "config link"]);
+  const fake = fakeAgents(t, ["claude"], { reply: "Does the thing." });
+
+  const refused = await keylang(dir, ["clone", "origin", "--explain", "map-and-ai"], fake, { KEYLANG_AGENT: "cli:claude" });
+  assert.equal(refused.status, 2, refused.stdout + refused.stderr);
+  assert.match(refused.stderr, /clone: keylang\.json: leads out of the repository through a link; the clone of .* was removed/);
+  assert.equal(readFileSync(join(outside, "keylang.json"), "utf8"), config, "the file behind the link is untouched");
+  assert.deepEqual(readdirSync(outside), ["keylang.json"]);
+  assert.equal(fake.calls().length, 0, "no explanation is asked for a clone keylang cannot configure");
+  const local = join(dir, "cache/keylang/repos/local");
+  assert.ok(!existsSync(local) || readdirSync(local).length === 0, "the clone is removed");
+  // Without --explain the clone is a plain map of the repository: nothing is written to keylang.json.
+  const plain = await keylang(dir, ["clone", "origin"]);
+  assert.equal(plain.status, 0, plain.stdout + plain.stderr);
+  assert.equal(readFileSync(join(outside, "keylang.json"), "utf8"), config);
+});
+
 test("clone --explain map-and-ai --dry-run estimates and asks nothing; map-and-ai writes briefs and the explained map; all adds a full explanation per layer", async (t) => {
   const { dir } = sandbox(t);
   const fake = fakeAgents(t, ["claude"], { reply: "Does the thing." });

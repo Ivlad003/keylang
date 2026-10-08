@@ -196,8 +196,8 @@
       - calls base.safe-write.targetProblem
     - fn [git](../../src/clone.ts#L144) (cwd: string, args: string[]) → void <!-- internal -->
       - calls features.git-changes.gitUnavailable
-    - fn [enableExplainedMap](../../src/clone.ts#L160) (root: string) → string | null
-      - calls base.safe-write.writeAtomic
+    - fn [enableExplainedMap](../../src/clone.ts#L163) (root: string) → string | null
+      - calls base.safe-write.targetProblem, base.safe-write.safeWrite
   - module [draft-llm](../../src/draft-llm.ts#L1)
     - analyze map.analyze
     - assess check.assess

@@ -164,53 +164,53 @@
     - fn [plannedDecl](../../src/rules.ts#L158) (spec: SpecIR, id: string) → string <!-- internal -->
     - fn [evaluateOnSnapshot](../../src/rules.ts#L162) (rules: EvaluatedRules, index: Index, snapshot: SnapshotView, planned: readonly string[], format: RuleFormat) → RuleReport <!-- internal -->
       - calls check.rules.base, check.rules.holeAt, check.rules.docblockNote, check.rules.ruleHits, check.rules.decide, check.rules.crossRules, check.rules.sameAreas, check.rules.layerViolation, check.rules.incomparableAside, check.rules.componentSpec, check.rules.layerComponent, check.rules.holeText, check.rules.listAt, check.rules.overrideEvidence, base.diag.diagnostic, check.rules.pointAt, check.rules.hashText, check.resolve.Index.lookup, check.scc.stronglyConnected, check.scc.cycleThrough
-    - type [Hole](../../src/rules.ts#L569) = SnapshotView["coverage"][number] <!-- internal -->
-    - type [IndexedHole](../../src/rules.ts#L572) <!-- internal -->
-    - fn [listAt](../../src/rules.ts#L577) (map: Map<string, T[]>, key: string) → T[] <!-- internal -->
-    - fn [holeText](../../src/rules.ts#L586) (hole: Hole) → string <!-- internal -->
+    - type [Hole](../../src/rules.ts#L570) = SnapshotView["coverage"][number] <!-- internal -->
+    - type [IndexedHole](../../src/rules.ts#L573) <!-- internal -->
+    - fn [listAt](../../src/rules.ts#L578) (map: Map<string, T[]>, key: string) → T[] <!-- internal -->
+    - fn [holeText](../../src/rules.ts#L587) (hole: Hole) → string <!-- internal -->
       - calls check.rules.holeAt
-    - fn [holeAt](../../src/rules.ts#L591) (hole: Hole) → string <!-- internal -->
-    - fn [layerViolation](../../src/rules.ts#L598) (rules: EvaluatedRules, fromLayer: string, toLayer: string) → string | null <!-- internal -->
-    - fn [layerComponent](../../src/rules.ts#L607) (rules: EvaluatedRules, layer: string) → Set<string> <!-- internal -->
-    - fn [componentSpec](../../src/rules.ts#L621) (rules: EvaluatedRules, layer: string) → string <!-- internal -->
+    - fn [holeAt](../../src/rules.ts#L592) (hole: Hole) → string <!-- internal -->
+    - fn [layerViolation](../../src/rules.ts#L599) (rules: EvaluatedRules, fromLayer: string, toLayer: string) → string | null <!-- internal -->
+    - fn [layerComponent](../../src/rules.ts#L608) (rules: EvaluatedRules, layer: string) → Set<string> <!-- internal -->
+    - fn [componentSpec](../../src/rules.ts#L622) (rules: EvaluatedRules, layer: string) → string <!-- internal -->
       - calls check.rules.layerComponent
-    - type [RuleHit](../../src/rules.ts#L630) <!-- internal -->
-    - type [OverrideNote](../../src/rules.ts#L638) <!-- internal -->
-    - fn [ruleHits](../../src/rules.ts#L650) (rules: EvaluatedRules, from: string, to: string, within: (id: string, scope: string) => boolean) → RuleHit[] <!-- internal -->
+    - type [RuleHit](../../src/rules.ts#L631) <!-- internal -->
+    - type [OverrideNote](../../src/rules.ts#L639) <!-- internal -->
+    - fn [ruleHits](../../src/rules.ts#L651) (rules: EvaluatedRules, from: string, to: string, within: (id: string, scope: string) => boolean) → RuleHit[] <!-- internal -->
       - calls check.rules.scopeDepth
-    - fn [byHit](../../src/rules.ts#L673) (a: RuleHit, b: RuleHit) → number <!-- internal -->
-    - fn [dominates](../../src/rules.ts#L679) (a: RuleHit, b: RuleHit) → boolean <!-- internal -->
+    - fn [byHit](../../src/rules.ts#L674) (a: RuleHit, b: RuleHit) → number <!-- internal -->
+    - fn [dominates](../../src/rules.ts#L680) (a: RuleHit, b: RuleHit) → boolean <!-- internal -->
       - calls check.rules.areaWithin
-    - fn [crossRules](../../src/rules.ts#L686) (a: RuleHit, b: RuleHit) → boolean <!-- internal -->
+    - fn [crossRules](../../src/rules.ts#L687) (a: RuleHit, b: RuleHit) → boolean <!-- internal -->
       - calls check.rules.areaWithin
-    - fn [sameAreas](../../src/rules.ts#L694) (a: RuleHit, b: RuleHit) → boolean <!-- internal -->
-    - fn [overManualRules](../../src/rules.ts#L699) (hits: readonly RuleHit[]) → RuleHit[] <!-- internal -->
+    - fn [sameAreas](../../src/rules.ts#L695) (a: RuleHit, b: RuleHit) → boolean <!-- internal -->
+    - fn [overManualRules](../../src/rules.ts#L700) (hits: readonly RuleHit[]) → RuleHit[] <!-- internal -->
       - calls check.rules.sameAreas
-    - fn [areaWithin](../../src/rules.ts#L703) (id: string, scope: string) → boolean <!-- internal -->
-    - fn [decide](../../src/rules.ts#L712) (all: readonly RuleHit[], format: RuleFormat) → { winners: RuleHit[]; denyWins: boolean } <!-- internal -->
+    - fn [areaWithin](../../src/rules.ts#L704) (id: string, scope: string) → boolean <!-- internal -->
+    - fn [decide](../../src/rules.ts#L713) (all: readonly RuleHit[], format: RuleFormat) → { winners: RuleHit[]; denyWins: boolean } <!-- internal -->
       - calls check.rules.overManualRules, check.rules.dominates
-    - fn [incomparableAside](../../src/rules.ts#L726) (deny: RuleHit, hits: readonly RuleHit[], format: RuleFormat) → string <!-- internal -->
+    - fn [incomparableAside](../../src/rules.ts#L727) (deny: RuleHit, hits: readonly RuleHit[], format: RuleFormat) → string <!-- internal -->
       - calls check.rules.crossRules
-    - fn [overrideEvidence](../../src/rules.ts#L743) (deny: Rule, targets: string, notes: readonly OverrideNote[]) → string <!-- internal -->
-    - fn [incomparableWarnings](../../src/rules.ts#L759) (rules: EvaluatedRules, format: RuleFormat) → Diagnostic[] <!-- internal -->
+    - fn [overrideEvidence](../../src/rules.ts#L744) (deny: Rule, targets: string, notes: readonly OverrideNote[]) → string <!-- internal -->
+    - fn [incomparableWarnings](../../src/rules.ts#L760) (rules: EvaluatedRules, format: RuleFormat) → Diagnostic[] <!-- internal -->
       - calls check.rules.areaWithin, check.rules.scopeDepth, base.diag.diagnostic, check.rules.hashText
-    - fn [canonicalRuleSpec](../../src/rules.ts#L803) (spec: SpecIR, file: string, line: number) → string | null
+    - fn [canonicalRuleSpec](../../src/rules.ts#L804) (spec: SpecIR, file: string, line: number) → string | null
       - calls check.rules.collectRules
-    - fn [noSnapshotSpec](../../src/rules.ts#L820) (spec: SpecIR) → string
-    - fn [firstRuleLine](../../src/rules.ts#L830) (spec: SpecIR) → { file: string; span: Span } | null <!-- internal -->
-    - fn [scopeDepth](../../src/rules.ts#L839) (id: string) → number
-    - fn [specific](../../src/rules.ts#L850) (rules: EvaluatedRules, from: string, to: string, within: (id: string, scope: string) => boolean) → { kind: "allow" | "deny"; rule: Rule } | null <!-- internal -->
+    - fn [noSnapshotSpec](../../src/rules.ts#L821) (spec: SpecIR) → string
+    - fn [firstRuleLine](../../src/rules.ts#L831) (spec: SpecIR) → { file: string; span: Span } | null <!-- internal -->
+    - fn [scopeDepth](../../src/rules.ts#L840) (id: string) → number
+    - fn [specific](../../src/rules.ts#L851) (rules: EvaluatedRules, from: string, to: string, within: (id: string, scope: string) => boolean) → { kind: "allow" | "deny"; rule: Rule } | null <!-- internal -->
       - calls check.rules.decide, check.rules.ruleHits
-    - type [EvaluatedRules](../../src/rules.ts#L856) <!-- internal -->
-    - fn [collectRules](../../src/rules.ts#L877) (spec: SpecIR, kindOf: (id: string) => string | undefined) → EvaluatedRules <!-- internal -->
+    - type [EvaluatedRules](../../src/rules.ts#L857) <!-- internal -->
+    - fn [collectRules](../../src/rules.ts#L878) (spec: SpecIR, kindOf: (id: string) => string | undefined) → EvaluatedRules <!-- internal -->
       - calls base.diag.diagnostic, check.rules.combineOrders
-    - fn [combineOrders](../../src/rules.ts#L935) (chains: readonly LayerOrder[], diagnostics: Diagnostic[]) → { orders: LayerOrder[]; above: Map<string, Set<string>> } <!-- internal -->
+    - fn [combineOrders](../../src/rules.ts#L936) (chains: readonly LayerOrder[], diagnostics: Diagnostic[]) → { orders: LayerOrder[]; above: Map<string, Set<string>> } <!-- internal -->
       - calls base.diag.diagnostic, check.rules.transitive
-    - fn [transitive](../../src/rules.ts#L965) (direct: ReadonlyMap<string, ReadonlySet<string>>) → Map<string, Set<string>> <!-- internal -->
-    - fn [pointAt](../../src/rules.ts#L982) (line: number, col: number) → Span <!-- internal -->
-    - fn [base](../../src/rules.ts#L987) (snapshot: SnapshotView, criterion: string, area: string, verdict: Verdict["verdict"], file: string, line: number, col: number, code: string | null, message: string, spec = criterion) → Verdict <!-- internal -->
+    - fn [transitive](../../src/rules.ts#L966) (direct: ReadonlyMap<string, ReadonlySet<string>>) → Map<string, Set<string>> <!-- internal -->
+    - fn [pointAt](../../src/rules.ts#L983) (line: number, col: number) → Span <!-- internal -->
+    - fn [base](../../src/rules.ts#L988) (snapshot: SnapshotView, criterion: string, area: string, verdict: Verdict["verdict"], file: string, line: number, col: number, code: string | null, message: string, spec = criterion) → Verdict <!-- internal -->
       - calls check.rules.hashText
-    - fn [hashText](../../src/rules.ts#L991) (text: string) → string <!-- internal -->
+    - fn [hashText](../../src/rules.ts#L992) (text: string) → string <!-- internal -->
   - module [scc](../../src/scc.ts#L1)
     - fn [stronglyConnected](../../src/scc.ts#L4) (adj: ReadonlyMap<string, ReadonlySet<string>>) → string[][]
       - calls check.scc.components

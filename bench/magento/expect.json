@@ -1,0 +1,11 @@
+{
+  "flow": "quote.Model.QuoteManagement.QuoteManagement.placeOrder",
+  "ids": [
+    "quote.Model.QuoteManagement.QuoteManagement.placeOrderRun",
+    "quote.Model.QuoteManagement.QuoteManagement.submitQuote",
+    "quote.Model.SubmitQuoteValidator.SubmitQuoteValidator.validateQuote",
+    "quote.Model.SubmitQuoteValidator.SubmitQuoteValidator.validateOrder",
+    "sales.Model.Service.OrderService.OrderService.place"
+  ],
+  "events": ["checkout_submit_before", "checkout_submit_all_after"]
+}
