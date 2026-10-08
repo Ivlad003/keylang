@@ -1,6 +1,11 @@
 // Language-independent facts extracted from one source file. Everything the
 // map and the index need; nothing about layers or IDs yet.
 
+import type { CodeDecorator } from "../frameworks/adapter.ts";
+
+// Decorators are what a framework adapter reads of the code: their shape is the adapters' (`base`).
+export type { CodeDecorator, DecoratorArg } from "../frameworks/adapter.ts";
+
 export interface FileFacts {
   /** POSIX path relative to the repository root. */
   path: string;
@@ -146,14 +151,20 @@ export interface ParamCallFact {
  * when it names none directly (the module's top level is the entry then).
  * `sfra`: `server.get('Show', …, h)` in an SFRA controller — `callee` is the
  * last argument when it is a name, null for a handler written in place.
+ * `page`: an element `{ path: '/cart', component: Cart }` of an array in a
+ * `routes.{js,jsx,ts,tsx}` file (React Router, PWA Kit) — `label` is the
+ * path, `callee` the component's name, `source` the module a lazy component
+ * loads (`const Cart = loadable(() => import('./pages/cart'))`).
  */
 export interface EntryFact {
-  kind: "route" | "main" | "sfra";
+  kind: "route" | "main" | "sfra" | "page";
   /** `sfra`: the action name, `Show`; the SFCC adapter adds the controller's. */
   label: string;
   /** `sfra`: the `server` method that registers it (`get`, `post`, `use`, `append`, `prepend`, `replace`). */
   method?: string;
   callee: string | null;
+  /** `page`: the specifier the component's `import()` names, when it is loaded lazily. */
+  source?: string;
   line: number;
   col: number;
 }
@@ -283,6 +294,71 @@ export interface DeclFact {
   implements?: string[];
   /** The declaration's documentation comment without comment syntax, lines kept; absent when it has none. */
   doc?: string;
+  /**
+   * TypeScript decorators of a class or a member, in source order (`@Controller('orders')`,
+   * `@Get(':id')`), and on a constructor those of its parameters (`@Inject(TOKEN)`, with
+   * `param`). A framework adapter reads them as its configuration (ADR 0022); absent without any.
+   */
+  decorators?: CodeDecorator[];
+  /** PHP: the attributes written on the class or the method (`#[Route('/x', methods: ['POST'])]`), in order. A framework adapter reads them (ADR 0022). */
+  attributes?: AttributeFact[];
+  /** PHP classes: the properties whose default value is a literal a framework reads (`protected $listen = [OrderPlaced::class => [...]]`). */
+  properties?: PropertyFact[];
+  /** PHP functions and methods: the parameters, when at least one is typed with a single class (`handle(OrderPlaced $event)`). */
+  params?: ParamFact[];
+  /** PHP functions and methods: the literal a body of one `return <literal>;` gives (`getSubscribedEvents`, `getFacadeAccessor`). */
+  returns?: LiteralFact;
+}
+
+/**
+ * A value PHP code writes as a literal, as far as a framework adapter reads it
+ * (ADR 0022): a string without interpolation, `X::class` (`self::class` is the
+ * enclosing class), a class constant `X::NAME`, `new X(…)`, an array of them,
+ * a closure literal at its position; anything else is `other`. Class names are
+ * qualified as PHP resolves them, without the leading `\`.
+ */
+export type LiteralFact =
+  | { kind: "string"; value: string }
+  | { kind: "class"; name: string }
+  | { kind: "const"; class: string; name: string }
+  | { kind: "new"; name: string }
+  | { kind: "array"; items: { key: LiteralFact | null; value: LiteralFact }[] }
+  | { kind: "closure"; line: number; col: number }
+  | { kind: "other" };
+
+/** One argument of a call or an attribute: named (`methods: ['POST']`) or positional. */
+export interface ArgFact {
+  name?: string;
+  value: LiteralFact;
+}
+
+/** `#[Name(args)]` on a declaration; `name` qualified as PHP resolves it. */
+export interface AttributeFact {
+  name: string;
+  args: ArgFact[];
+  line: number;
+  col: number;
+}
+
+/** A class property with a literal default value. */
+export interface PropertyFact {
+  name: string;
+  value: LiteralFact;
+  line: number;
+  col: number;
+}
+
+/** A parameter of a function; `type` is the qualified class when the parameter is typed with one. */
+export interface ParamFact {
+  name: string;
+  type?: string;
+}
+
+/** One call of a chain `Route::prefix('admin')->name('a.')->group(…)`, root first; the root names its class when it is a static call. */
+export interface ChainLinkFact {
+  name: string;
+  class?: string;
+  args: ArgFact[];
 }
 
 export interface CallFact {
@@ -342,6 +418,18 @@ export interface CallFact {
    * closure. Absent when some enclosing closure is stored in a value (`const f = () => hit()`).
    */
   closureArg?: { line: number; col: number };
+  /** PHP: every closure literal the call is nested in as an argument, outermost first, when there are two or more (`closureArg` is the first). */
+  closures?: { line: number; col: number }[];
+  /** PHP: the arguments as literals, when at least one is a literal a framework reads (a string, `X::class`, `new X`, an array, a closure). */
+  args?: ArgFact[];
+  /** PHP: a call on the result of other calls (`Route::prefix('admin')->group(…)`): the calls of the chain, root first, this one last. */
+  chain?: ChainLinkFact[];
+  /**
+   * `setGlobalPrefix('api')`: the first argument of a call of a member named `setGlobalPrefix`
+   * when it is a string literal; null when it is another expression. The NestJS adapter reads it
+   * (the global route prefix).
+   */
+  literal?: string | null;
   line: number;
   col: number;
   endLine: number;

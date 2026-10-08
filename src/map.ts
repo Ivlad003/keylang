@@ -14,6 +14,7 @@ import { frontendFor } from "./frontends.ts";
 import { isGeneratedMap, renderExplainedMap, renderMap } from "./emit.ts";
 import { explanationOf, loadBriefs } from "./explanations.ts";
 import { buildGraph, directoryModule, placeFile, type Graph } from "./graph.ts";
+import { FRAMEWORK_CODE } from "./framework-code/index.ts";
 import { activeAdapters, FRAMEWORK_ADAPTERS, FRAMEWORK_CONFIG, type FrameworkAdapter, type FrameworkContext, type FrameworkInput } from "./frameworks/adapter.ts";
 import { FACT_CACHE_FILE, FactCache } from "./fact-cache.ts";
 import { landing, writeAtomic, writeProblem } from "./safe-write.ts";
@@ -89,7 +90,7 @@ export async function generateMap(config: Config, options: { persist?: boolean |
     facts.push(await cache.facts(p, src.sha256, () => extractGuarded(frontend.extract, p, src.text)));
   }
   // Framework config files (ADR 0022): read by the adapters the repository uses, cached by content like the sources.
-  const frameworks = readFrameworks(config, all, sources, options.overlay, cache, options.adapters);
+  const frameworks = readFrameworks(config, all, sources, options.overlay, cache, options.adapters, facts);
   const factCache = options.persist === true || (options.persist === "changed" && cache.changed()) ? cache.serialize() : null;
   // An explicitly excluded file is a module with unknown contents: in its layer, or in `unassigned`
   // under an explicit config. A guessed layout keeps a file outside its guessed layers out of the graph.
@@ -157,6 +158,7 @@ function readFrameworks(
   overlay: ReadonlyMap<string, string> | undefined,
   cache: FactCache,
   available: readonly FrameworkAdapter[] | undefined,
+  facts: readonly FileFacts[],
 ): { inputs: FrameworkInput[]; manifest: FrameworkManifest[]; unread: { path: string; owner: string | null; reason: string; framework: string }[] } {
   const text = (path: string): string | null => read.get(path)?.text ?? overlay?.get(join(config.root, path)) ?? readSource(join(config.root, path));
   const context: FrameworkContext = {
@@ -171,6 +173,7 @@ function readFrameworks(
     },
     analysed: (path) => isAnalysed(path, config),
   };
+  const byPath = new Map(facts.map((f) => [f.path, f]));
   const inputs: FrameworkInput[] = [];
   const manifest: FrameworkManifest[] = [];
   const active = activeAdapters(config.frameworks, context, available);
@@ -187,8 +190,13 @@ function readFrameworks(
       if (body === null) continue;
       const hash = sha256(body);
       files.push({ path, sha256: hash });
-      configs.push({ facts: cache.config(path, hash, `${adapter.name}@${adapter.version}`, () => adapter.parse(path, body)), owner });
+      // A config written in the code (decorators) is read from the source's facts, cached with them.
+      const code = adapter.code === undefined ? undefined : byPath.get(path);
+      configs.push({ facts: code !== undefined ? adapter.code!(path, code) : cache.config(path, hash, `${adapter.name}@${adapter.version}`, () => adapter.parse(path, body)), owner });
     }
+    // Wiring the framework reads from code (attributes, service providers): from the sources' facts, which the snapshot covers already.
+    const reader = FRAMEWORK_CODE.get(adapter.name);
+    if (reader) configs.push(...reader(facts, configs.map((c) => c.facts)));
     inputs.push({
       name: adapter.name,
       configs,

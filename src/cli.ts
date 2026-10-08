@@ -289,6 +289,15 @@ Commands:
                             a step after the shape its edge leaves, an unknown shape a
                             note comment; an unchanged drawing proposes nothing.
                             --print: the change on stdout, nothing written
+  diagram propose <view> --from <model.json> [--print]
+                            The editor's drawing of a view (window.keylangEditor
+                            .currentModel() of keylang web, as JSON) as proposals, one
+                            per spec it changes: flows (steps, when, parallel, trigger
+                            kinds, continues, emits, planned), rules from allow/deny
+                            lines between lanes and the layers order; new lanes as
+                            keylang.json layers, printed only. K108 of the proposed
+                            text on stderr. --print: the changes on stdout, nothing
+                            written
   check [paths…] [--changed] [--since <ref>] [--accept-weakening]
                             Resolve IDs and check rules (default: ./keylang)
                             Given files, it prints verdicts and the summary for those
@@ -515,6 +524,8 @@ async function run(argv: readonly string[]): Promise<number> {
       return cmdExport(paths, { format: values.format, level: values.level, layer: values.layer, out: values.out });
     case "import":
       return cmdImport(paths, { into: values.into, print: values.print === true });
+    case "diagram":
+      return cmdDiagram(paths, { from: values.from, print: values.print === true });
     case "clone":
       return (await prepareClone(paths[0], { dir: values.dir, explain: values.explain, dryRun: values["dry-run"] === true })).code;
     case "web": {
@@ -961,6 +972,49 @@ async function cmdExport(args: readonly string[], options: { format: string | un
   for (const message of result.messages) process.stderr.write(message.level === "error" ? `keylang: ${message.text}\n` : `${message.text}\n`);
   if (result.exitCode === 0 && result.payload !== null && result.payload.out === null) process.stdout.write(result.payload.text);
   return result.exitCode ?? 2;
+}
+
+/**
+ * `keylang diagram propose <view> --from <model.json> [--print]`
+ * (business-flows/24): the editor's drawing as proposals, the operation
+ * `POST /api/diagram-proposal` runs. Stdout: the changes with `--print`;
+ * stderr: each proposal, the K108 warnings, keylang.json with new layers
+ * (printed only) and what the drawing says that keylang cannot write.
+ * 0 proposed, printed or nothing to propose; 1 a proposal waiting, a refused
+ * write or specs changed since the drawing (`specHash`); 2 a bad invocation.
+ */
+async function cmdDiagram(args: readonly string[], options: { from: string | undefined; print: boolean }): Promise<number> {
+  const [what, view, ...rest] = args;
+  if (what !== "propose") throw new Error("diagram: expected `diagram propose <view> --from <model.json>`; see --help");
+  if (view === undefined) throw new Error("diagram propose: a view is required: flow:<name>, layers, entry:<id>, discovered:<name>, process:<domain>");
+  if (rest.length > 0) throw new Error(`diagram propose: unexpected argument \`${rest[0]}\``);
+  if (options.from === undefined) throw new Error("diagram propose: --from <model.json> is required (window.keylangEditor.currentModel() as JSON)");
+  let model: unknown;
+  try {
+    model = JSON.parse(readFileSync(resolve(process.cwd(), options.from), "utf8"));
+  } catch (error) {
+    throw new Error(`diagram propose: --from ${options.from}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  // A saved request of the page (`{model, specHash}`) or the model alone.
+  const wrapped = model !== null && typeof model === "object" && "model" in model ? (model as { model: unknown; specHash?: unknown }) : null;
+  const { runDiagramPropose } = await import("./operations/diagram-propose.ts");
+  const result = await runDiagramPropose({
+    root: findRoot(process.cwd()),
+    view: view === "empty" ? "" : view,
+    model: wrapped ? wrapped.model : model,
+    specHash: wrapped && typeof wrapped.specHash === "string" ? wrapped.specHash : null,
+    print: options.print,
+  });
+  if (result.error !== null) process.stderr.write(`keylang: ${result.error}\n`);
+  for (const target of result.targets) {
+    if (options.print) process.stdout.write(`${target.target}${target.newFile ? " (new file)" : ""}\n${target.diff}\n`);
+    else if (target.proposal !== null) process.stderr.write(`${target.proposal}: proposed for ${target.target} (${target.hunks.length} hunk${target.hunks.length === 1 ? "" : "s"})\n`);
+  }
+  for (const weakening of result.weakenings) process.stderr.write(`${weakening.file}:${weakening.line}:${weakening.col}: ${weakening.message}\n`);
+  if (result.config !== null) process.stderr.write(`${result.config.note}:\n${result.config.diff}\n`);
+  for (const note of result.notes) process.stderr.write(`${note}\n`);
+  if (result.merge !== null) process.stderr.write(`${result.merge}\n`);
+  return result.exitCode;
 }
 
 /**

@@ -18,7 +18,7 @@ import { components } from "./scc.ts";
 
 export const SNAPSHOT_SCHEMA = 9;
 /** Bump when extraction or resolution changes the facts that `snapshotId` covers. */
-export const EXTRACTOR_VERSION = "m1.20";
+export const EXTRACTOR_VERSION = "m1.23";
 
 export type Resolution = "resolved" | "ambiguous" | "unresolved";
 /**
@@ -61,11 +61,12 @@ export interface SnapshotEdge {
    * configuration (ADR 0022), at `site` in the config: `preference` — a call
    * through an interface (or a class) the config binds to a class;
    * `argument` — a call through a constructor argument the config sets
-   * (Magento `<argument xsi:type="object">`); `plugin:before`, `plugin:around`,
+   * (Magento `<argument xsi:type="object">`, NestJS `@Inject(T)`); `plugin:before`, `plugin:around`,
    * `plugin:after` — a plugin method that wraps the call; `dispatch` — a
    * call of the framework's event dispatcher with a literal name, from the fn
    * to the event's node; `observer` — from an event to the fn an observer
-   * runs, `file` and `site` at the config line. `keylang check
+   * runs, `file` and `site` at the config line (Magento `events.xml`, Laravel
+   * `$listen`, Symfony listeners, queued jobs and Messenger handlers). `keylang check
    * --static=shape` follows none of them; rules do not see `injected`, and see
    * a config edge as a dependency of `owner`.
    */

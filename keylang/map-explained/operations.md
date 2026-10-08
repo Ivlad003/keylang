@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [operations](#operations.operations) · [assistant](#operations.assistant) · [code](#operations.code) · [coverage](#operations.coverage) · [diagram-export](#operations.diagram-export) · [discover-names](#operations.discover-names) · [discover](#operations.discover) · [doctor](#operations.doctor) · [draft](#operations.draft) · [entries](#operations.entries) · [explain](#operations.explain) · [export](#operations.export) · [feature](#operations.feature) · [flow-bundle](#operations.flow-bundle) · [generate](#operations.generate) · [integrations](#operations.integrations) · [migration](#operations.migration) · [shared](#operations.shared) · [spec](#operations.spec) · [tour](#operations.tour) · [types](#operations.types)
+[README](README.md) · modules: [operations](#operations.operations) · [assistant](#operations.assistant) · [code](#operations.code) · [coverage](#operations.coverage) · [diagram-export](#operations.diagram-export) · [diagram-propose](#operations.diagram-propose) · [discover-names](#operations.discover-names) · [discover](#operations.discover) · [doctor](#operations.doctor) · [draft](#operations.draft) · [entries](#operations.entries) · [explain](#operations.explain) · [export](#operations.export) · [feature](#operations.feature) · [flow-bundle](#operations.flow-bundle) · [generate](#operations.generate) · [integrations](#operations.integrations) · [migration](#operations.migration) · [shared](#operations.shared) · [spec](#operations.spec) · [tour](#operations.tour) · [types](#operations.types)
 
 # map
 
@@ -161,6 +161,47 @@
     - fn [runImportDrawio](../../src/operations/diagram-export.ts#L225) (request: ImportDrawioRequest, context: OperationContext = {}) → Promise<ImportDrawioResult>
       <a id="operations.diagram-export.runImportDrawio"></a><br>`keylang import drawio <file> [--into spec.md] [--print]`: the drawing as ONE proposal for the flow it draws (`keylang_view` `flow:<name>` or `discovered:<name>`). The flow's section is edited as the drawing asks (`flowFromDrawio`) and compared with the section as it is: no…
       - calls [map.drawio.parseDrawio](map.md#map.drawio.parseDrawio), [base.diag.errorText](base.md#base.diag.errorText), [map.drawio.drawioFlowName](map.md#map.drawio.drawioFlowName), [operations.shared.rootRelative](operations.md#operations.shared.rootRelative), [lang.files.existingText](lang.md#lang.files.existingText), [map.drawio.flowSection](map.md#map.drawio.flowSection), [map.drawio.flowFromDrawio](map.md#map.drawio.flowFromDrawio), [features.draft.withFlow](features.md#features.draft.withFlow), [features.proposals.lineDiff](features.md#features.proposals.lineDiff), [operations.shared.generatedIn](operations.md#operations.shared.generatedIn), [features.proposals.proposalProblem](features.md#features.proposals.proposalProblem), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [operations.shared.proposalRefusal](operations.md#operations.shared.proposalRefusal), [operations.shared.commitProposal](operations.md#operations.shared.commitProposal), [map.map.sourceInputs](map.md#map.map.sourceInputs), [base.config.toPosix](base.md#base.config.toPosix)
+  - module [diagram-propose](../../src/operations/diagram-propose.ts#L1)
+    <a id="operations.diagram-propose"></a><br>«Запропонувати зміни» of the diagram editor (business-flows/24): the editor's canvas against the diagram of the same view, written as proposals — one per spec it changes — through the gates every proposal passes. `POST /api/diagram-proposal` of `keylang web` and `keylang…
+    - node [external.node](external.md#external.node)
+    - analyze [map.analyze](map.md#map.analyze)
+    - config [base.config](base.md#base.config)
+    - diag [base.diag](base.md#base.diag)
+    - diagram-layout [map.diagram-layout](map.md#map.diagram-layout)
+    - diagram-proposal [features.diagram-proposal](features.md#features.diagram-proposal)
+    - diagram [map.diagram](map.md#map.diagram)
+    - files [lang.files](lang.md#lang.files)
+    - ir [lang.ir](lang.md#lang.ir)
+    - line-diff [base.line-diff](base.md#base.line-diff)
+    - map [map.map](map.md#map.map)
+    - parser [lang.parser](lang.md#lang.parser)
+    - proposals [features.proposals](features.md#features.proposals)
+    - safe-write [base.safe-write](base.md#base.safe-write)
+    - snapshot [map.snapshot](map.md#map.snapshot)
+    - span [base.span](base.md#base.span)
+    - weakening [features.weakening](features.md#features.weakening)
+    - diagram-export [operations.diagram-export](operations.md#operations.diagram-export)
+    - shared [operations.shared](operations.md#operations.shared)
+    - types [operations.types](operations.md#operations.types)
+    - fn [specHash](../../src/operations/diagram-propose.ts#L44) (root: string, docs: readonly Document[]) → string
+      <a id="operations.diagram-propose.specHash"></a><br>The specs a diagram was drawn from, as one hash: every hand-written spec (its path and the SHA-256 of its text on disk) and keylang.json. The page keeps it from `/api/diagram` and sends it back with the drawing.
+      - calls [base.span.compareText](base.md#base.span.compareText), [map.snapshot.sha256](map.md#map.snapshot.sha256), [lang.files.readTextOrNull](lang.md#lang.files.readTextOrNull)
+    - type [DiagramProposeRequest](../../src/operations/diagram-propose.ts#L53)
+      <a id="operations.diagram-propose.DiagramProposeRequest"></a>
+    - type [ProposedHunk](../../src/operations/diagram-propose.ts#L66)
+      <a id="operations.diagram-propose.ProposedHunk"></a><br>One hunk as MERGE offers it: the first base line (1-based), the lines it takes out and those it puts in.
+    - type [ProposedFile](../../src/operations/diagram-propose.ts#L72)
+      <a id="operations.diagram-propose.ProposedFile"></a>
+    - type [DiagramProposeResult](../../src/operations/diagram-propose.ts#L85)
+      <a id="operations.diagram-propose.DiagramProposeResult"></a>
+    - fn [result](../../src/operations/diagram-propose.ts#L99) (view: string, status: DiagramProposeResult["status"], exitCode: 0 | 1 | 2, error: string | null = null) → DiagramProposeResult <!-- internal -->
+      <a id="operations.diagram-propose.result"></a>
+    - fn [baseDiagram](../../src/operations/diagram-propose.ts#L104) (analysis: Analysis, root: string, view: string) → Diagram | string <!-- internal -->
+      <a id="operations.diagram-propose.baseDiagram"></a><br>The diagram of a view the drawing is compared with: the specs' flow, a discovered flow, an entry, the layers; empty for the empty canvas.
+      - calls [map.diagram.viewOfKey](map.md#map.diagram.viewOfKey), [operations.diagram-export.discoveredSpecOf](operations.md#operations.diagram-export.discoveredSpecOf), [operations.shared.rootRelative](operations.md#operations.shared.rootRelative), [map.diagram.diagramOf](map.md#map.diagram.diagramOf)
+    - fn [runDiagramPropose](../../src/operations/diagram-propose.ts#L119) (request: DiagramProposeRequest, context: OperationContext = {}) → Promise<DiagramProposeResult>
+      <a id="operations.diagram-propose.runDiagramPropose"></a><br>The drawing as proposals. 2: the model or the view is not one; 1: the specs changed since the drawing was opened (`conflict`), or a proposal is already waiting for a target, or a write was refused (`refused`); 0: proposed, printed, or nothing to propose.
+      - calls [operations.diagram-propose.result](operations.md#operations.diagram-propose.result), [features.diagram-proposal.parseEditorModel](features.md#features.diagram-proposal.parseEditorModel), [base.diag.errorText](base.md#base.diag.errorText), [operations.diagram-propose.specHash](operations.md#operations.diagram-propose.specHash), [operations.diagram-propose.baseDiagram](operations.md#operations.diagram-propose.baseDiagram), [operations.shared.rootRelative](operations.md#operations.shared.rootRelative), [features.diagram-proposal.diagramChanges](features.md#features.diagram-proposal.diagramChanges), [lang.files.readTextOrNull](lang.md#lang.files.readTextOrNull), [features.proposals.lineDiff](features.md#features.proposals.lineDiff), [operations.shared.generatedIn](operations.md#operations.shared.generatedIn), [features.proposals.proposalProblem](features.md#features.proposals.proposalProblem), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [lang.files.existingText](lang.md#lang.files.existingText), [operations.shared.proposalRefusal](operations.md#operations.shared.proposalRefusal), [lang.parser.parse](lang.md#lang.parser.parse), [features.weakening.specWeakenings](features.md#features.weakening.specWeakenings), [base.line-diff.diffLines](base.md#base.line-diff.diffLines), [map.map.sourceInputs](map.md#map.map.sourceInputs), [operations.shared.commitProposal](operations.md#operations.shared.commitProposal), [map.diagram-layout.readLayout](map.md#map.diagram-layout.readLayout), [map.diagram-layout.layoutToFile](map.md#map.diagram-layout.layoutToFile), [map.diagram-layout.writeLayout](map.md#map.diagram-layout.writeLayout)
   - module [discover-names](../../src/operations/discover-names.ts#L1)
     <a id="operations.discover-names"></a><br>`keylang flows discover --names` (business-flows/12): the model's part of the discovery. One request per layer group (`planNames`), at most `jobs` at a time; each answer is checked (`parseNamesAnswer`) and the processes of the groups that answered replace their saved ones, the…
     - analyze [map.analyze](map.md#map.analyze)

@@ -97,7 +97,9 @@ const FRONTENDS: Record<Language, Frontend> = {
 function ecmascriptResolver(root: string, sources: ReadonlySet<string>, _files: readonly FileFacts[], config?: Pick<Config, "sfcc" | "frameworks">): SourceResolver {
   // `frameworks` in keylang.json that leaves `sfcc` out turns the cartridge path off with the adapter.
   const sfcc = config?.frameworks == null || config.frameworks.includes("sfcc");
-  return new ImportResolver(root, sources, undefined, { cartridgePath: config?.sfcc.cartridgePath ?? null, sfcc });
+  // Likewise `pwa-kit`: template extensibility (`overrides/`) is off with the adapter.
+  const pwaKit = config?.frameworks == null || config.frameworks.includes("pwa-kit");
+  return new ImportResolver(root, sources, undefined, { cartridgePath: config?.sfcc.cartridgePath ?? null, sfcc, pwaKit });
 }
 
 function pythonResolver(root: string, sources: ReadonlySet<string>): SourceResolver {

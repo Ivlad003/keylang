@@ -214,10 +214,13 @@ export interface Call {
    * its config (ADR 0022): `preference`, `argument`, `plugin:before|around|after`,
    * at `site` in the config; `behavior` follows them, `shape` does not.
    * `dispatch`: a call of the framework's dispatcher with a literal event
-   * name, to the event's node (Magento), or a job the fn hands to a queue
-   * (Celery `task.delay()`), at `site` of the task's registration;
-   * `observer`: from an event to the fn an observer runs, at its config
-   * line, or to a receiver of a signal the fn sends (Django `signal.send()`).
+   * name, to the event's node (Magento `dispatch`, NestJS `emit`), or a job
+   * the fn hands to a queue (Celery `task.delay()`), at `site` of the task's
+   * registration; `observer`: from an event to the fn an observer runs
+   * (Magento `events.xml`, NestJS `@OnEvent`), at its config line, or to a
+   * receiver of a signal the fn sends (Django `signal.send()`).
+   * PHP frameworks: Laravel `$listen` and Symfony listeners, queued jobs and
+   * Messenger handlers are observers of an event named by its class.
    */
   via?: Via;
   /** Config edges: the area the fact applies in. */
@@ -955,6 +958,13 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
     const found = findMember(base.internal, member, isStatic, staticToo);
     return { target: found.target, last: found.last ?? base };
   };
+  /** The ID of a declaration of a file by its dotted path there (`Class.method`, a function's name). */
+  const declIdIn = (path: string, symbol: string): string | null => {
+    const [head, member] = symbol.split(".");
+    const decl = byFile.get(path)?.facts.decls.find((d) => d.name === head);
+    const target = member === undefined ? decl : decl?.members.find((m) => m.name === member);
+    return target ? (decls.ids.get(target) ?? null) : null;
+  };
   /** What the graph lends the framework facts: its declarations, by the names a config writes. */
   function frameworkBindings(inputs: readonly FrameworkInput[]): FrameworkBindings {
     const { resolve, supertypes } = frameworkLookups();
@@ -964,7 +974,32 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
       member: (classId, name) => findMember(classId, name, false, staticThroughInstance(decls.classes.get(classId)?.path ?? "")).target,
       opaqueBase: (classId) => unreadBase(classId) !== null || decls.classes.get(classId)?.members === "opaque",
       supertypes,
-      owner: (dir) => (dir === null ? null : directoryModuleIn(config, dir, modules, layers)),
+      owner: (dir) => (dir === null ? null : (byFile.get(dir)?.module.id ?? directoryModuleIn(config, dir, modules, layers))),
+      token: (ref) => {
+        if (ref.kind === "string") return `string:${ref.value}`;
+        // The export a name stands for, through the file's import and any re-exports, as `unit#name`.
+        const scope = scopes.get(ref.file);
+        if (!scope) return null;
+        let unit: string;
+        let name: string;
+        const imported = scope.locals.get(ref.name)?.[0];
+        if (imported) {
+          if (imported.module.layer === EXTERNAL) return `external:${imported.module.id}#${imported.imported ?? ref.name}`;
+          if (imported.imported === null) return null;
+          unit = imported.unit;
+          name = imported.imported;
+        } else {
+          unit = unitOf(ref.file);
+          name = ref.name;
+        }
+        for (let hop = 0; hop < 8; hop++) {
+          const row = exportTables.lookup(unit, name);
+          if (row?.from === undefined || row.local === undefined) break;
+          unit = row.from;
+          name = row.local;
+        }
+        return `name:${unit}#${name}`;
+      },
     });
   }
 
@@ -987,7 +1022,13 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
     const resolve = (type: TypeName): ResolvedType => {
       if (type.file !== undefined) {
         const id = fileDecls.get(type.file)?.get(layerName(type.name));
-        return id !== undefined && (decls.classes.has(id) || decls.types.has(id)) ? { kind: "node", id } : { kind: "missing" };
+        if (id !== undefined) return decls.classes.has(id) || decls.types.has(id) ? { kind: "node", id } : { kind: "missing" };
+        // A name the file imports (NestJS `useClass: SqlOrderRepo` in a module file): what the import binds.
+        const scope = scopes.get(type.file);
+        const imported = scope?.classNamed(type.name) ?? scope?.typeNamed(type.name) ?? null;
+        if (imported !== null) return { kind: "node", id: imported };
+        if (scope?.external(type.name)) return { kind: "external" };
+        return { kind: "missing" };
       }
       const id = qualified.get(asciiLowerCase(type.name));
       if (id !== undefined) return { kind: "node", id };
@@ -1085,7 +1126,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
       const reason = b.ambiguous ?? (b.edges.length === 0 ? (b.missing ?? b.opaque ?? (b.external ? `bound to a class of a package keylang does not read` : null)) : null);
       return { targets: b.edges.map((e) => ({ target: e.target, scope: e.scope })), reason };
     },
-    owner: (dir) => (dir === null ? null : directoryModuleIn(config, dir, modules, layers)),
+    owner: (dir) => (dir === null ? null : (byFile.get(dir)?.module.id ?? directoryModuleIn(config, dir, modules, layers))),
     supertypeNames,
     classesIn: (file) => [...decls.classes.values()].filter((c) => c.path === file).sort((a, b) => (a.line ?? 0) - (b.line ?? 0)).map((c) => c.id),
     place: (id) => {
@@ -1138,7 +1179,12 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
           const member = c.callee.slice(c.callee.lastIndexOf(".") + 1);
           if (c.param !== undefined && cls && bindings.argumentFor(cls.id, c.param)) return { bound: bindings.callThroughArgument(cls.id, c.param, member), through: null };
           const type = typedClass ?? (c.receiver ? typeNamed(c.receiver) : null);
-          return type !== null && bindings.binds(type) ? { bound: bindings.callThroughType(type, member), through: type } : null;
+          if (type !== null) return bindings.binds(type) ? { bound: bindings.callThroughType(type, member), through: type } : null;
+          // `Payment::charge()` on a class the config binds that declares no `charge` (a Laravel facade): the bound class's member.
+          const parts = c.callee.split(".");
+          const holder = parts.length === 2 && !c.receiver && !c.bound && parts[0] !== "this" && parts[0] !== "super" ? classNamed(parts[0]!) : null;
+          if (holder === null || !bindings.binds(holder) || findMember(holder, member, true, false).target !== null) return null;
+          return { bound: bindings.callThroughType(holder, member), through: holder };
         };
         /** The edges a config gives a call; `counted`: the call has no edge of the code, so the config decides whether it is resolved or a hole. */
         const placeConfigured = (c: CallFact, { bound, through }: { bound: BoundCall; through: string | null }, counted: boolean): void => {
@@ -1451,6 +1497,18 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
     for (const fn of cls.fns) if (fn.name !== constructorName(fn.file ?? cls.path)) fn.escapes ??= { file: fn.file ?? cls.path ?? "", line: fn.line, col: fn.col, reason: `\`${fn.name}\` may be called by the base class \`${base}\`` };
   }
   if (bindings) intercept(bindings);
+  // Dispatches a framework reads from code (`event(new E)`, `$bus->dispatch(new M)`): an edge from the fn to the event its class names.
+  for (const input of frameworks) {
+    for (const { facts: config } of input.configs) {
+      for (const d of config.dispatches ?? []) {
+        const fn = decls.fns.get(declIdIn(config.path, d.symbol) ?? "");
+        if (!fn || fn.calls.some((c) => c.via === "dispatch" && c.line === d.line && c.col === d.col)) continue;
+        const call: Call = { target: "", line: d.line, col: d.col, endLine: d.endLine, endCol: d.endCol, text: d.text, via: "dispatch" };
+        fn.calls.push(call);
+        dispatches.push({ call, name: d.event, file: config.path });
+      }
+    }
+  }
   markEscapes(modules, readIds, readMembers, calledNames, decls.members);
   const events = eventNodes(dispatches, called?.observers ?? [], called?.events ?? []);
 
@@ -1510,8 +1568,20 @@ function eventNodes(dispatches: readonly { call: Call; name: string; file: strin
   return [...nodes.values()].sort((a, b) => compareText(a.id, b.id));
 }
 
-/** A class name as a PHP file writes it, qualified through the file's imports: `Foo` with `use A\Foo` → `A\Foo`; `\A\Foo` → `A\Foo`. */
+/**
+ * A class name as a file writes it, qualified through the file's imports: PHP `Foo` with `use A\Foo` → `A\Foo`,
+ * `\A\Foo` → `A\Foo`; TS/JS `EventEmitter2` with `import { EventEmitter2 } from "@nestjs/event-emitter"` →
+ * `@nestjs/event-emitter\EventEmitter2` (the package, `\`, the exported name).
+ */
 function qualifiedIn(facts: FileFacts, written: string): string {
+  const language = languageOf(facts.path);
+  if (language === "typescript" || language === "javascript") {
+    for (const imp of facts.imports) {
+      const binding = imp.bindings.find((b) => b.local === written);
+      if (binding !== undefined) return binding.kind === "named" ? `${imp.source}\\${binding.imported}` : imp.source;
+    }
+    return written;
+  }
   if (written.startsWith("\\")) return written.replace(/^\\+/, "");
   const [head, ...rest] = written.split("\\");
   for (const imp of facts.imports) {

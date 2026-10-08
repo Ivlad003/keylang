@@ -4,8 +4,9 @@
 // parallel gateway's role, the signature of a `planned` shape, its tests as
 // `test <file> "<name>"` lines and a description; for a connection, its
 // meaning and label. «з коду» shows the same fields read-only, except a
-// note's text. Every change goes through the editor (editor.ts), so it is one
-// step of undo.
+// note's text and a shape's colour (layout, kept in the view's layout file,
+// business-flows/24). Every change goes through the editor (editor.ts), so it
+// is one step of undo.
 
 import type { Api, Views } from "./api.ts";
 import { make } from "./dom.ts";
@@ -19,7 +20,7 @@ export const TEST_LINE = /^test\s+(\S+)\s+"([^"]+)"$/;
 export interface PanelEditor {
   mode(): "code" | "draft";
   /** Replaces a shape's keylang side (one undoable change); a refusal comes back as text. */
-  updateShape(cell: Cell, patch: Partial<Pick<Shape, "id" | "label" | "kind" | "trigger" | "role" | "signature" | "tests" | "description">>): string | null;
+  updateShape(cell: Cell, patch: Partial<Pick<Shape, "id" | "label" | "kind" | "trigger" | "role" | "signature" | "tests" | "description" | "colour">>): string | null;
   updateLink(cell: Cell, patch: Partial<Pick<Link, "kind" | "label">>): string | null;
 }
 
@@ -189,6 +190,15 @@ export class Properties {
       description.addEventListener("change", () => apply({ description: description.value }));
       out.push(this.field(shape.kind === "note" ? "текст" : "опис", description));
     }
+    if (shape.kind !== "group" && shape.kind !== "lane") {
+      const colour = make("input");
+      colour.type = "color";
+      colour.id = "prop-colour";
+      colour.value = shape.colour || "#ffffff";
+      colour.addEventListener("change", () => apply({ colour: colour.value }));
+      out.push(this.field("колір", colour, "розкладка: keylang/diagrams/"));
+    }
+    if (shape.status !== null) out.push(make("p", { className: "prop-hint", text: shape.status === "rejected" ? `не прийнято: пропозицію для ${shape.proposed} не злито — фігура лишається на діаграмі, у специфікації її немає` : `очікує злиття: ${shape.proposed} (MERGE чи keylang proposals accept)` }));
     if (shape.reason) out.push(make("h3", { text: "чому маршрут не доведено" }), make("p", { className: "prop-reason", text: shape.reason }));
     if (shape.verdict) out.push(make("p", { className: "prop-key", text: `вердикт: ${shape.verdict}` }));
     const error = make("p", { className: "prop-error" });

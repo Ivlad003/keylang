@@ -9,6 +9,7 @@
 // TypeScript (ranks by depth, order by spec line, fixed sizes); manual
 // positions (the layout file of ticket 24) override it.
 
+import { savedPositions, type LayoutFile } from "./diagram-layout.ts";
 import { EXTERNAL } from "./external-ids.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
 import { walkFlow, type Flow, type FlowItem, type SpecIR, type Trigger } from "./spec-ir.ts";
@@ -86,6 +87,8 @@ export interface DiagramInput {
   view: DiagramView;
   /** Business processes of the discovered flows (`flows discover --names`): what `{kind: "process"}` draws. */
   processes?: readonly DiagramProcess[];
+  /** The view's layout file (business-flows/24): its places win over the computed ones. */
+  saved?: LayoutFile | null;
 }
 
 /**
@@ -138,6 +141,24 @@ export function parseView(query: URLSearchParams): DiagramView | string {
     default:
       return `unknown view: expected one of ${VIEW_KINDS.join(", ")}`;
   }
+}
+
+/**
+ * The view a key of the page names (`flow:checkout`, `discovered:<name>`,
+ * `entry:<id>`, `process:<domain>`, `layers`), as `diagramOf` takes it; a
+ * discovered flow is drawn as a flow of the discovered view. Null for none.
+ */
+export function viewOfKey(key: string): { view: DiagramView; discovered: boolean } | null {
+  if (key === "layers") return { view: { kind: "layers" }, discovered: false };
+  const at = key.indexOf(":");
+  if (at === -1) return null;
+  const kind = key.slice(0, at);
+  const rest = key.slice(at + 1);
+  if (rest === "") return null;
+  if (kind === "flow" || kind === "discovered") return { view: { kind: "flow", name: rest }, discovered: kind === "discovered" };
+  if (kind === "entry") return { view: { kind: "entry", id: rest }, discovered: false };
+  if (kind === "process") return { view: { kind: "process", domain: rest }, discovered: false };
+  return null;
 }
 
 /**
@@ -241,13 +262,26 @@ export function usagesOf(snapshot: AnalysisSnapshot | null, spec: SpecIR, discov
 }
 
 export function diagramOf(input: DiagramInput): Diagram {
+  const raw = unplaced(input);
+  if (!input.saved) return layout(raw);
+  // The layout file (business-flows/24): saved places of nodes, and of lanes, win.
+  const placed = layout(raw, savedPositions(input.saved, raw));
+  const lanes = input.saved.shapes;
+  return { ...placed, groups: placed.groups.map((group) => {
+    const box = Object.hasOwn(lanes, `lane:${group.id}`) ? lanes[`lane:${group.id}`]! : undefined;
+    return box ? { ...group, x: box.x, y: box.y, w: box.w ?? group.w, h: box.h ?? group.h } : group;
+  }) };
+}
+
+/** The diagram of a view before `layout` places it. */
+function unplaced(input: DiagramInput): Diagram {
   const { view } = input;
-  if (view.kind === "flow") return layout(flowDiagram(input, view.name));
+  if (view.kind === "flow") return flowDiagram(input, view.name);
   if (!input.snapshot) return empty("no snapshot: the specs were checked without code");
-  if (view.kind === "event") return layout(eventDiagram(input.snapshot, input.results, view.name));
-  if (view.kind === "process") return layout(processDiagram(input.snapshot, input.processes ?? [], input.results, view.domain));
-  if (view.kind === "entry") return layout(entryDiagram(input.snapshot, input.results, view.id, view.depth ?? DEFAULT_DEPTH));
-  return layout(layersDiagram(input.snapshot, input.spec, input.results));
+  if (view.kind === "event") return eventDiagram(input.snapshot, input.results, view.name);
+  if (view.kind === "process") return processDiagram(input.snapshot, input.processes ?? [], input.results, view.domain);
+  if (view.kind === "entry") return entryDiagram(input.snapshot, input.results, view.id, view.depth ?? DEFAULT_DEPTH);
+  return layersDiagram(input.snapshot, input.spec, input.results);
 }
 
 function empty(reason: string): Diagram {

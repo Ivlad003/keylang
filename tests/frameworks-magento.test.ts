@@ -224,11 +224,11 @@ test("magento: `frameworks: []` turns the adapter off; `[\"magento\"]` turns it 
   assert.equal(on.manifest.frameworks?.[0]?.files.length, 13);
   assert.ok(on.edges.some((e) => e.via === "preference" && e.target === "sales.Model.OrderService.OrderService.place"));
   setConfig(explicit, (raw) => {
-    raw.frameworks = ["symfony"];
+    raw.frameworks = ["rails"];
   });
   const unknown = keylang(explicit, ["map"]);
   assert.equal(unknown.status, 2);
-  assert.match(unknown.stderr, /`frameworks\[0\]` must be one of [^\n]*"magento"[^\n]*"sfcc"[^\n]*, got "symfony"/);
+  assert.match(unknown.stderr, /`frameworks\[0\]` must be one of [^\n]*"magento"[^\n]*"sfcc"[^\n]*, got "rails"/);
 });
 
 test("magento: a changed di.xml is a new snapshot and a new fact-cache entry; one that does not parse is a skipped-file hole", (t) => {

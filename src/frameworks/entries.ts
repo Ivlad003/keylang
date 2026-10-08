@@ -109,7 +109,7 @@ export function frameworkEntries(inputs: readonly FrameworkInput[], deps: EntryD
       const text = `<observer name="${fact.name}" instance="${fact.instance ? typeLabel(fact.instance) : ""}"${fact.method ? ` method="${fact.method}"` : ""}>`;
       const found = target(deps, fact.instance!, method, scope);
       const label = `${fact.event} (${fact.name}${scope === GLOBAL ? "" : `, ${scope}`})`;
-      out.entries.push(entryOf(deps, input.name, "observer", found, label, at));
+      if (fact.entry !== false) out.entries.push(entryOf(deps, input.name, "observer", found, label, at));
       if (found.unresolved !== null) {
         out.holes.push({ ...at, text, reason: found.unresolved, source: owner });
         continue;

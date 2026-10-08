@@ -2,7 +2,7 @@
 // A tree walk over the top level plus tree-sitter queries inside bodies.
 
 import { builtinModules } from "node:module";
-import type { CallFact, DeclFact, FileFacts, HookFact, ImportBinding, ImportFact, PassFact, TypeRefFact, UnsupportedFact, ValueRefFact } from "./facts.ts";
+import type { CallFact, DeclFact, CodeDecorator, DecoratorArg, EntryFact, FileFacts, HookFact, ImportBinding, ImportFact, PassFact, TypeRefFact, UnsupportedFact, ValueRefFact } from "./facts.ts";
 import { blockCommentBody, isLicense, jsdocDescription, lineCommentsBody, nonEmpty } from "./doc-comments.ts";
 import { errorLine, fingerprintFacts, grammarFor, located, query, startCol, valuesFingerprint, withTree, type Grammar, type Language, type Node, type Tree } from "./treesitter.ts";
 
@@ -30,6 +30,11 @@ const REQUIRE_QUERY = `
 
 /** A callee longer than this is not a name keylang resolves; it stays a hole with a shortened text. */
 const MAX_CALLEE = 80;
+
+/** Members whose first string argument framework adapters read: the global route prefix (`CallFact.literal`). */
+const LITERAL_CALLS = new Set(["setGlobalPrefix"]);
+/** Members whose first argument names an event (`CallFact.nameArg`): NestJS `EventEmitter2.emit('order.created')`. */
+const NAME_ARG_CALLS = new Set(["emit", "emitAsync"]);
 
 export function extractTs(path: string, src: string): Promise<FileFacts> {
   const g = grammarFor(path);
@@ -214,6 +219,13 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
       const fact = calleeOfCall(c.node, body, cls);
       if (!fact) continue;
       const call = parentOf(c.node);
+      const member = fact.callee.slice(fact.callee.lastIndexOf(".") + 1);
+      const first = call?.type === "call_expression" && !fact.opaque && (LITERAL_CALLS.has(member) || NAME_ARG_CALLS.has(member)) ? call.childForFieldName("arguments")?.namedChildren.find((a) => a.type !== "comment") : undefined;
+      if (first) {
+        const value = stringValue(unwrapValue(first)) ?? templateValue(unwrapValue(first));
+        if (LITERAL_CALLS.has(member)) fact.literal = value;
+        else fact.nameArg = { literal: value, text: collapse(first.text).slice(0, MAX_CALLEE) };
+      }
       const passes = call ? passesOf(call, body, cls) : [];
       if (passes.length > 0) fact.passes = passes;
       markClosure(fact, c.node, body);
@@ -810,7 +822,16 @@ function classDecl(name: string, cls: Node, at: Node, exported: boolean, declCal
   const fieldTypes: TypeRefFact[] = [];
   const instance: { node: Node; calls: CallFact[] }[] = [];
   const statics: { node: Node; calls: CallFact[] }[] = [];
+  // Decorators of the next member: tree-sitter writes them as siblings before it in the class body.
+  let pending: CodeDecorator[] = [];
   for (const m of items) {
+    if (m.type === "decorator") {
+      const fact = decoratorFact(m);
+      if (fact) pending.push(fact);
+      continue;
+    }
+    const memberDecorators = [...pending, ...decoratorsOf(m)];
+    pending = [];
     const isField = m.type === "public_field_definition" || m.type === "field_definition";
     if (m.type === "class_static_block") {
       statics.push({ node: m, calls: declCalls(m, scope) });
@@ -839,6 +860,8 @@ function classDecl(name: string, cls: Node, at: Node, exported: boolean, declCal
     if (!isField) {
       const member = flag(decl("fn", mname, m, signature(m), !isPrivate, m.type === "method_definition" ? declCalls(m, scope) : [], collectTypeRefs(m, typeParams), []));
       if (m.children.some((c) => c.type === "get" || c.type === "set")) member.accessor = true;
+      const withParams = mname === "constructor" ? [...memberDecorators, ...parameterDecorators(m)] : memberDecorators;
+      if (withParams.length > 0) member.decorators = withParams;
       members.push(member);
       continue;
     }
@@ -872,7 +895,74 @@ function classDecl(name: string, cls: Node, at: Node, exported: boolean, declCal
   if (values !== undefined) out.values = values;
   const base = heritageNode ? baseClass(heritageNode) : null;
   if (base) out.base = base;
+  // `@Controller('x') export class X` puts the decorator on the `export` statement.
+  const wrapper = parentOf(cls);
+  const classDecorators = [...(wrapper?.type === "export_statement" ? decoratorsOf(wrapper) : []), ...decoratorsOf(cls)];
+  if (classDecorators.length > 0) out.decorators = classDecorators;
   return out;
+}
+
+/** The decorators that are children of a node: a class, an `export` statement, a member, a parameter. */
+function decoratorsOf(node: Node): CodeDecorator[] {
+  return node.children.flatMap((c) => (c.type === "decorator" ? (decoratorFact(c) ?? []) : []));
+}
+
+/** `constructor(@Inject(T) private readonly x: I)`: each parameter's decorators, with its position, name and type. */
+function parameterDecorators(ctor: Node): CodeDecorator[] {
+  const params = ctor.childForFieldName("parameters")?.namedChildren.filter((p) => p.type === "required_parameter" || p.type === "optional_parameter") ?? [];
+  return params.flatMap((param, index) => {
+    const pattern = param.childForFieldName("pattern");
+    const name = pattern?.type === "identifier" ? pattern.text : null;
+    const type = typeName(param.childForFieldName("type"));
+    return decoratorsOf(param).map((d) => ({ ...d, param: { index, name, type } }));
+  });
+}
+
+/** `@Get(':id')` → `Get` with its arguments; `@Injectable` → no arguments. Null for a decorator that names nothing (`@(x)`). */
+function decoratorFact(node: Node): CodeDecorator | null {
+  const expr = node.namedChildren.find((c) => c.type !== "comment");
+  if (!expr) return null;
+  const at = located(node);
+  const callee = expr.type === "call_expression" ? expr.childForFieldName("function") : expr;
+  if (!callee || (callee.type !== "identifier" && callee.type !== "member_expression")) return null;
+  const args = expr.type === "call_expression" ? (expr.childForFieldName("arguments")?.namedChildren.filter((a) => a.type !== "comment") ?? []) : [];
+  return { name: collapse(callee.text), args: args.map(decoratorArg), line: at.line, col: at.col };
+}
+
+/** A decorator argument as a value keylang reads without running code. */
+function decoratorArg(node: Node): DecoratorArg {
+  const n = unwrapValue(node);
+  const literal = stringValue(n) ?? templateValue(n);
+  if (literal !== null) return { kind: "string", value: literal };
+  if (n.type === "number" && Number.isFinite(Number(n.text))) return { kind: "number", value: Number(n.text) };
+  if (n.type === "identifier" || (n.type === "member_expression" && /^[\w$.]+$/.test(n.text))) return { kind: "name", name: n.text };
+  if (FUNCTION_VALUES.has(n.type)) return { kind: "function" };
+  if (n.type === "array") return { kind: "array", items: n.namedChildren.filter((c) => c.type !== "comment").map((c) => ({ ...decoratorArg(c), line: located(c).line, col: located(c).col })) };
+  if (n.type === "object") {
+    const props: { key: string; value: DecoratorArg; line: number; col: number }[] = [];
+    for (const p of n.namedChildren) {
+      const at = located(p);
+      if (p.type === "pair") {
+        const k = p.childForFieldName("key");
+        const v = p.childForFieldName("value");
+        const key = k ? (stringValue(k) ?? (k.type === "property_identifier" ? k.text : null)) : null;
+        if (key !== null && v) props.push({ key, value: decoratorArg(v), line: at.line, col: at.col });
+      } else if (p.type === "shorthand_property_identifier") props.push({ key: p.text, value: { kind: "name", name: p.text }, line: at.line, col: at.col });
+      else if (p.type === "method_definition") {
+        const k = p.childForFieldName("name");
+        if (k) props.push({ key: k.text, value: { kind: "function" }, line: at.line, col: at.col });
+      }
+    }
+    return { kind: "object", props };
+  }
+  const text = collapse(n.text);
+  return { kind: "other", text: text.length <= MAX_CALLEE ? text : `${text.slice(0, MAX_CALLEE - 1)}…` };
+}
+
+/** A template literal without substitutions: its text; null otherwise. */
+function templateValue(n: Node): string | null {
+  if (n.type !== "template_string" || n.namedChildren.some((c) => c.type === "template_substitution")) return null;
+  return n.text.slice(1, -1);
 }
 
 /** The `extends` expression: `(extends_clause value: …)` in TypeScript, the bare expression in JavaScript. */
@@ -933,11 +1023,14 @@ interface ClassScope {
   fields: Map<string, string>;
   /** Field → hook set in the constructor: `this.analyzer = options.analyzer ?? analyze`. */
   hooks: Map<string, HookFact>;
+  /** Field → the constructor parameter that fills it: a parameter property (`private readonly x`), or `this.x = p`. */
+  params: Map<string, string>;
 }
 
 function classScope(items: readonly Node[]): ClassScope {
   const fields = new Map<string, string>();
   const hooks = new Map<string, HookFact>();
+  const fromParams = new Map<string, string>();
   for (const m of items) {
     if (m.type !== "public_field_definition" && m.type !== "field_definition") continue;
     const nameNode = m.childForFieldName("name") ?? m.childForFieldName("property");
@@ -946,13 +1039,14 @@ function classScope(items: readonly Node[]): ClassScope {
     if (type) fields.set(memberName(nameNode), type);
   }
   const ctor = items.find((m) => m.type === "method_definition" && m.childForFieldName("name")?.text === "constructor");
-  if (!ctor) return { fields, hooks };
+  if (!ctor) return { fields, hooks, params: fromParams };
   const params = ctor.childForFieldName("parameters")?.namedChildren.filter((p) => p.type === "required_parameter" || p.type === "optional_parameter") ?? [];
   params.forEach((param, index) => {
     // `constructor(private readonly x: X = fallback)` declares a field.
     if (!param.children.some((c) => c.type === "accessibility_modifier" || c.type === "readonly" || c.type === "override_modifier")) return;
     const pattern = param.childForFieldName("pattern");
     if (pattern?.type !== "identifier") return;
+    fromParams.set(pattern.text, pattern.text);
     const type = typeName(param.childForFieldName("type"));
     if (type) fields.set(pattern.text, type);
     const fallback = param.childForFieldName("value");
@@ -970,6 +1064,7 @@ function classScope(items: readonly Node[]): ClassScope {
     const created = newClass(right);
     if (created) fields.set(field, created);
     else if (right.type === "identifier" && paramIndex(right.text) !== -1) {
+      fromParams.set(field, right.text);
       const type = typeName(params[paramIndex(right.text)]!.childForFieldName("type"));
       if (type) fields.set(field, type);
     }
@@ -986,7 +1081,7 @@ function classScope(items: readonly Node[]): ClassScope {
     }
     hooks.set(field, { name: field, fallback: hook.fallback, param: param === -1 ? null : param, path: param === -1 ? "" : path, owner: "constructor" });
   }
-  return { fields, hooks };
+  return { fields, hooks, params: fromParams };
 }
 
 function importStatement(node: Node): ImportFact[] {
@@ -1133,7 +1228,13 @@ function calleeFact(n: Node, stop: Node, cls: ClassScope | null): CallFact | nul
   // `this.decoder.feed()`: the receiver is a field whose class the class body names.
   const field = obj.type === "member_expression" && obj.childForFieldName("object")?.type === "this" ? obj.childForFieldName("property") : null;
   const type = field ? cls?.fields.get(memberName(field)) : undefined;
-  if (field && type && classThis(n)) return { ...callFact(`this.${field.text}.${prop.text}`, n), receiver: type };
+  if (field && type && classThis(n)) {
+    const param = cls?.params.get(memberName(field));
+    return { ...callFact(`this.${field.text}.${prop.text}`, n), receiver: type, ...(param !== undefined ? { param } : {}) };
+  }
+  // `this.repo.save()` with `constructor(@Inject(T) private repo)` and no class keylang can name: a framework's config may set it.
+  const param = field && classThis(n) ? cls?.params.get(memberName(field)) : undefined;
+  if (field && param !== undefined) return { ...callFact(`this.${field.text}.${prop.text}`, n), param };
   // `new Foo().run()`: an instance of the class `new` names, unless `Foo` is rebound here.
   const created = newClass(unwrapValue(obj));
   const text = collapse(n.text);
@@ -1781,7 +1882,7 @@ function collectRouteEntries(root: Node, facts: FileFacts): void {
       const args = node.childForFieldName("arguments")?.namedChildren.filter((arg) => arg.type !== "comment") ?? [];
       const path = args[0] === undefined ? null : stringValue(args[0]);
       const handler = args.length >= 2 ? args[args.length - 1] : undefined;
-      if (method !== null && ROUTE_METHODS.has(method) && path !== null && path.startsWith("/") && handler !== undefined && (handler.type === "identifier" || handler.type === "member_expression")) {
+      if (method !== null && ROUTE_METHODS.has(method) && path !== null && (path.startsWith("/") || path === "*") && handler !== undefined && (handler.type === "identifier" || handler.type === "member_expression")) {
         const at = located(node);
         entries.push({ kind: "route", label: `${method.toUpperCase()} ${path}`, callee: collapse(handler.text), line: at.line, col: at.col });
       }
@@ -1793,10 +1894,59 @@ function collectRouteEntries(root: Node, facts: FileFacts): void {
         entries.push({ kind: "sfra", label: path, method, callee: named ? collapse(handler.text) : null, line: at.line, col: at.col });
       }
     }
+    // `{ path: '/cart', component: Cart }` in an array of a `routes` file: a page of the router.
+    if (pages !== null && node.type === "object" && parentOf(node)?.type === "array") {
+      const page = pageOf(node, pages);
+      if (page !== null) entries.push(page);
+    }
     for (const child of node.namedChildren) walk(child);
   };
+  const pages = ROUTES_FILE.test(facts.path) ? lazyImports(root) : null;
   walk(root);
   if (entries.length > 0) facts.entries = entries;
+}
+
+const ROUTES_FILE = /(?:^|\/)routes\.(?:js|jsx|ts|tsx|mjs)$/;
+
+/** `const Cart = loadable(() => import('./pages/cart'))` (or `lazy`, `React.lazy`) at the top level: name → specifier. */
+function lazyImports(root: Node): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const stmt of root.namedChildren) {
+    const decl = stmt.type === "export_statement" ? stmt.childForFieldName("declaration") : stmt;
+    if (decl?.type !== "lexical_declaration" && decl?.type !== "variable_declaration") continue;
+    for (const d of decl.namedChildren) {
+      const name = d.type === "variable_declarator" ? d.childForFieldName("name") : null;
+      const value = d.childForFieldName("value");
+      if (name?.type !== "identifier" || !value) continue;
+      const call = unwrapValue(value);
+      const loader = call.type === "call_expression" ? call.childForFieldName("arguments")?.namedChildren.find((a) => a.type !== "comment") : undefined;
+      const body = loader && FUNCTION_VALUES.has(loader.type) ? loader.childForFieldName("body") : null;
+      const imported = body ? unwrapValue(body) : null;
+      if (imported?.type !== "call_expression" || imported.childForFieldName("function")?.type !== "import") continue;
+      const spec = imported.childForFieldName("arguments")?.namedChildren.find((a) => a.type !== "comment");
+      const source = spec ? stringValue(spec) : null;
+      if (source !== null) out.set(name.text, source);
+    }
+  }
+  return out;
+}
+
+/** A route object with a literal `path` and a named `component`; null for any other object. */
+function pageOf(node: Node, lazy: ReadonlyMap<string, string>): EntryFact | null {
+  let path: string | null = null;
+  let component: string | null = null;
+  for (const p of node.namedChildren) {
+    if (p.type !== "pair") continue;
+    const key = p.childForFieldName("key")?.text;
+    const value = p.childForFieldName("value");
+    if (!value) continue;
+    if (key === "path") path = stringValue(unwrapValue(value)) ?? templateValue(unwrapValue(value));
+    else if (key === "component" && (value.type === "identifier" || value.type === "member_expression")) component = collapse(value.text);
+  }
+  if (path === null || component === null) return null;
+  const at = located(node);
+  const source = lazy.get(component);
+  return { kind: "page", label: path, callee: component, ...(source !== undefined ? { source } : {}), line: at.line, col: at.col };
 }
 
 function signature(fn: Node): string {

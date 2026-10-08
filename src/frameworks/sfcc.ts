@@ -7,8 +7,8 @@
 // snapshot places them on the graph (`src/framework-entries.ts`), with the
 // controllers' `server.get('Show', …)` the TypeScript extractor records.
 // Requires resolve along the cartridge path in `src/imports.ts` through
-// `./cartridges.ts`. Composable Storefront (PWA Kit) is plain TypeScript/React
-// and needs no adapter; Apex (B2B Commerce) is not read.
+// `./cartridges.ts`. Composable Storefront (PWA Kit) has an adapter of its own
+// (`./pwa-kit.ts`); Apex (B2B Commerce) is not read.
 
 import { posix } from "node:path";
 import type { ConfigFacts, EntryConfigFact, FrameworkAdapter, FrameworkContext } from "./adapter.ts";

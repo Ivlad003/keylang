@@ -275,7 +275,9 @@ export function parseDrawio(text: string): DrawioModel {
 // ── a flow from a drawing ───────────────────────────────────────────────────
 
 /** The kinds a new shape may have to become a line of the flow. */
-const NEW_KINDS = new Set(["start", "task", "external", "gateway", "event", "timer"]);
+const NEW_KINDS = new Set(["start", "task", "external", "gateway", "parallel", "event", "timer"]);
+/** The kinds of entry point a trigger line names (`trigger route <id>`); any other is a plain trigger. */
+const TRIGGER_KINDS = new Set(["route", "cron", "consumer", "webhook"]);
 /** Ids of shapes the export makes for a flow but which no line edits: holes, `calls`, parallel gateways. */
 const DERIVED = /^(?:hole:\d+|calls:\d+:\d+|parallel:\d+(?::join)?)$/;
 
@@ -304,10 +306,15 @@ function commentSafe(text: string): string {
 function lineOf(cell: DrawioCell): string | null {
   const kind = cell.attrs.keylang_kind;
   const id = (cell.attrs.keylang_id ?? "").trim() || cell.label;
-  if (id === "") return null;
+  if (id === "" && kind !== "parallel") return null;
   switch (kind) {
-    case "start":
-      return `trigger ${id}`;
+    case "start": {
+      const trigger = cell.attrs.keylang_trigger ?? "";
+      return `trigger ${TRIGGER_KINDS.has(trigger) ? `${trigger} ` : ""}${id}`;
+    }
+    case "parallel":
+      // The split is the line; a join is where the group ends, no line of its own.
+      return cell.attrs.keylang_role === "join" ? null : "parallel";
     case "task":
     case "external":
       return `step ${id}`;
@@ -337,7 +344,14 @@ function rewritten(line: string, item: Trigger | FlowItem, cell: DrawioCell): st
     return id !== "" && id !== from ? id : cell.label;
   };
   switch (item.kind) {
-    case "trigger":
+    case "trigger": {
+      const named = swap(item.target.target, renamed(item.target.target)) ?? line;
+      // A trigger whose kind of entry point changed (the editor of `keylang web` says so only then).
+      const kind = cell.attrs.keylang_trigger;
+      if (kind === undefined) return named === line ? null : named;
+      const next = named.replace(/^(\s*- trigger)(?:\s+(?:route|cron|consumer|webhook))?(\s+)/, (_all, head: string, space: string) => `${head}${TRIGGER_KINDS.has(kind) ? ` ${kind}` : ""}${space}`);
+      return next === line ? null : next;
+    }
     case "step":
       return swap(item.target.target, renamed(item.target.target));
     case "then":
@@ -369,7 +383,7 @@ export function flowFromDrawio(model: DrawioModel, name: string, current: { text
   const items = new Map<string, Trigger | FlowItem>();
   if (current) {
     walkFlow(current.flow, (item) => {
-      if (item.kind === "trigger" || item.kind === "step" || item.kind === "then" || item.kind === "when" || item.kind === "emits" || item.kind === "after" || item.kind === "every") items.set(`${item.kind}:${item.span.start.line}`, item);
+      if (item.kind === "trigger" || item.kind === "step" || item.kind === "then" || item.kind === "when" || item.kind === "emits" || item.kind === "after" || item.kind === "every" || item.kind === "parallel") items.set(`${item.kind}:${item.span.start.line}`, item);
     });
   }
   const entries: Entry[] = lines.map((text) => ({ text, indent: indentOf(text), cell: null }));
@@ -422,7 +436,14 @@ export function flowFromDrawio(model: DrawioModel, name: string, current: { text
     while (end < entries.length && entries[end]!.text.trim() !== "" && entries[end]!.indent > entries[at]!.indent) end++;
     return end;
   };
-  const place = (cell: DrawioCell, after: Entry | null, branch: boolean): void => {
+  /** A new step's `test` lines (`keylang_tests`, one per line) go right under it. */
+  const testsOf = (cell: DrawioCell, indent: number): Entry[] =>
+    (cell.attrs.keylang_tests ?? "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => /^test\s/.test(line))
+      .map((line) => ({ text: listLine(indent + 2, line), indent: indent + 2, cell: null }));
+  const place = (cell: DrawioCell, after: Entry | null, branch: boolean, sibling = false): void => {
     const body = lineOf(cell)!;
     if (after === null) {
       const end = flowEnd();
@@ -430,18 +451,42 @@ export function flowFromDrawio(model: DrawioModel, name: string, current: { text
       // A first list line after prose needs a blank line before it.
       const before = entries[end - 1];
       const gap = before !== undefined && before.text.trim() !== "" && !/^\s*- /.test(before.text) ? [{ text: "", indent: 0, cell: null }] : [];
-      entries.splice(end, 0, ...gap, entry);
+      entries.splice(end, 0, ...gap, entry, ...testsOf(cell, 0));
       entryOf.set(cell.id, entry);
       return;
     }
     const at = entries.indexOf(after);
     const end = subtreeEnd(at);
     const gateway = after.cell !== null && (after.cell.startsWith("when:") || byId.get(after.cell)?.attrs.keylang_kind === "gateway");
-    // Into a gateway's branch when the edge carries its condition; else as the first nested line of a parent, or the next sibling.
-    const nested = gateway ? branch : end > at + 1;
-    const entry = nested ? { text: listLine(after.indent + 2, body), indent: after.indent + 2, cell: cell.id } : { text: listLine(after.indent, body), indent: after.indent, cell: cell.id };
-    entries.splice(nested ? at + 1 : end, 0, entry);
+    const parallel = after.cell !== null && (/^parallel:\d+$/.test(after.cell) || (byId.get(after.cell)?.attrs.keylang_kind === "parallel" && byId.get(after.cell)?.attrs.keylang_role !== "join"));
+    // Into a gateway's branch when the edge carries its condition, into a parallel group always; else as the first nested line of a parent, or the next sibling.
+    const nested = sibling ? false : parallel ? true : gateway ? branch : end > at + 1;
+    const indent = nested ? after.indent + 2 : after.indent;
+    const entry = { text: listLine(indent, body), indent, cell: cell.id };
+    // A group's steps keep the order they are placed in; a nested line otherwise goes first under its parent.
+    entries.splice(nested ? (parallel ? end : at + 1) : end, 0, entry, ...testsOf(cell, indent));
     entryOf.set(cell.id, entry);
+  };
+  /** The split of a parallel group a join closes: back along the edges into the join, to the first split. */
+  const splitOf = (join: string): string | null => {
+    const code = /^(parallel:\d+):join$/.exec(join);
+    if (code) return code[1]!;
+    let frontier = [join];
+    const seen = new Set(frontier);
+    for (let depth = 0; depth < 50 && frontier.length > 0; depth++) {
+      const next: string[] = [];
+      for (const id of frontier) {
+        for (const edge of model.cells) {
+          if (!edge.edge || edge.target !== id || edge.source === null || seen.has(edge.source)) continue;
+          const source = byId.get(edge.source);
+          if (source?.attrs.keylang_kind === "parallel" && source.attrs.keylang_role !== "join") return source.id;
+          seen.add(edge.source);
+          next.push(edge.source);
+        }
+      }
+      frontier = next;
+    }
+    return null;
   };
   for (let progress = true; progress && pending.size > 0; ) {
     progress = false;
@@ -450,8 +495,14 @@ export function flowFromDrawio(model: DrawioModel, name: string, current: { text
       const edge = incoming(cell.id);
       const from = edge?.source ?? null;
       if (from !== null && pending.has(from)) continue;
-      const anchor = from === null ? null : (entryOf.get(from) ?? null);
-      if (from !== null && anchor === null && !(cell.attrs.keylang_kind === "start")) {
+      // After the join of a parallel group: the next sibling of the group's line.
+      const fromJoin = from !== null && (/^parallel:\d+:join$/.test(from) || byId.get(from)?.attrs.keylang_role === "join");
+      const split = fromJoin ? splitOf(from!) : null;
+      if (split !== null && pending.has(split)) continue;
+      const anchor = from === null ? null : fromJoin ? (split === null ? null : (entryOf.get(split) ?? null)) : (entryOf.get(from) ?? null);
+      if (fromJoin && anchor !== null) {
+        place(cell, anchor, false, true);
+      } else if (from !== null && anchor === null && !(cell.attrs.keylang_kind === "start")) {
         // Its edge leaves a shape that is no line (a hole, a parallel gateway, a note): the end of the flow.
         place(cell, null, false);
       } else {

@@ -3,13 +3,18 @@
 // `steptypes.json`) becomes the fn or module of its script, and SFCC adds the
 // controllers the TypeScript extractor records (`server.get('Show', …)` →
 // `route` `Cart-Show`) and a coverage note for a `*/cartridge` require that
-// only a guessed cartridge path decided. The adapters themselves only parse
-// (`src/frameworks/`); everything that needs the graph is here.
+// only a guessed cartridge path decided; NestJS adds the methods its
+// decorators name (`@Get`, `@Cron`, `@OnEvent`, `@MessagePattern`, `@Query`),
+// PWA Kit the routes of `routes.jsx` and the server of `ssr.js`. A PHP
+// framework (Laravel, Symfony) names a class and its method instead of a
+// script; its listeners, job and message handlers are observers of events the
+// graph places itself (`src/frameworks/entries.ts`). The adapters themselves
+// only parse (`src/frameworks/`); everything that needs the graph is here.
 
 import type { Config } from "./config.ts";
 import { compareEntries, entryScope, fnIn, frameworkEntry, type EntryScope } from "./entries.ts";
-import type { FileFacts } from "./extract/facts.ts";
-import type { FrameworkInput } from "./frameworks/adapter.ts";
+import type { CallFact, DeclFact, DecoratorArg, FileFacts } from "./extract/facts.ts";
+import type { EntryConfigFact, FrameworkInput, TypeName } from "./frameworks/adapter.ts";
 import { cartridgeAnswers, cartridgeLayout, SUPER_MODULE, type CartridgeLayout } from "./frameworks/cartridges.ts";
 import { PYTHON_WEB_FRAMEWORKS } from "./frameworks/python-web.ts";
 import type { Gap, Graph } from "./graph.ts";
@@ -32,9 +37,20 @@ export function frameworkEntries({ config, graph, facts, frameworks }: Framework
   const entries: EntryPoint[] = [];
   const holes: Gap[] = [];
   const warnings: string[] = [];
+  const classes = phpClassFiles(facts);
   for (const framework of frameworks) {
     for (const { facts: file } of framework.configs) {
+      for (const hole of file.holes ?? []) holes.push({ kind: "unsupported", file: file.path, line: hole.line, col: hole.col, endLine: hole.line, endCol: hole.col, text: hole.text, reason: hole.reason, source: graph.byPath.get(file.path)?.id ?? null });
       for (const fact of file.entries ?? []) {
+        if (fact.type !== undefined) {
+          const placed = placeMethod(scope, classes, fact.type, fact.fn ?? "__invoke");
+          if ("reason" in placed) {
+            holes.push({ kind: "unsupported", file: file.path, line: fact.line, col: fact.col, endLine: fact.line, endCol: fact.col, text: fact.label, reason: `${fact.kind} \`${fact.label}\`: ${placed.reason}`, source: graph.byPath.get(file.path)?.id ?? null });
+            continue;
+          }
+          entries.push(withExtras(frameworkEntry(scope, framework.name, fact.kind, placed.id, fact.label, `${file.path}:${fact.line}`, placed.at), fact));
+          continue;
+        }
         const script = fact.files.map(probe).find((found) => found !== null) ?? null;
         const module = script === null ? undefined : graph.byPath.get(script);
         if (script === null || module === undefined) {
@@ -43,7 +59,10 @@ export function frameworkEntries({ config, graph, facts, frameworks }: Framework
           continue;
         }
         const fn = fact.fn === null ? null : fnIn(scope, script, fact.fn);
-        entries.push(frameworkEntry(scope, framework.name, fact.kind, fn ?? module.id, fact.label, `${file.path}:${fact.line}`, { file: script, line: 1 }));
+        // A handler written in place (a closure in a route file): the module stands for it, at the registration.
+        const at = fact.fn === null && fact.note !== undefined ? { file: script, line: fact.line } : { file: script, line: 1 };
+        const found = frameworkEntry(scope, framework.name, fact.kind, fn ?? module.id, fact.label, `${file.path}:${fact.line}`, at);
+        entries.push(withExtras(fn === null && fact.note !== undefined ? { ...found, ...at } : found, fact));
       }
     }
   }
@@ -60,6 +79,10 @@ export function frameworkEntries({ config, graph, facts, frameworks }: Framework
     }
     entries.push(...controllerEntries(graph, facts, scope));
   }
+  const nest = frameworks.find((f) => f.name === "nestjs");
+  if (nest !== undefined) entries.push(...nestEntries(facts, scope, new Set(nest.configs.map((c) => c.facts.path))));
+  const pwa = frameworks.find((f) => f.name === "pwa-kit");
+  if (pwa !== undefined) entries.push(...pwaEntries(facts, scope, new Set(pwa.configs.map((c) => c.facts.path))));
   // Django, FastAPI, Flask, Celery: registrations written in the Python code (`src/python-web-entries.ts`).
   const python = frameworks.map((f) => f.name).filter((name) => PYTHON_WEB_FRAMEWORKS.includes(name));
   if (python.length > 0) {
@@ -68,6 +91,49 @@ export function frameworkEntries({ config, graph, facts, frameworks }: Framework
     holes.push(...found.holes);
   }
   return { entries: entries.sort(compareEntries), holes, warnings };
+}
+
+/** The HTTP method and the note an entry fact gives its entry. */
+function withExtras(entry: EntryPoint, fact: EntryConfigFact): EntryPoint {
+  return { ...entry, ...(fact.method !== undefined ? { method: fact.method } : {}), ...(fact.note !== undefined ? { note: fact.note } : {}) };
+}
+
+/** PHP classes by their qualified name in ASCII lower case → the file and the name it declares. */
+function phpClassFiles(facts: readonly FileFacts[]): Map<string, { file: string; name: string; facts: FileFacts }> {
+  const out = new Map<string, { file: string; name: string; facts: FileFacts }>();
+  for (const file of [...facts].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))) {
+    for (const symbol of file.symbols ?? []) if (symbol.table === "class" && !out.has(lower(symbol.qualified))) out.set(lower(symbol.qualified), { file: file.path, name: symbol.name, facts: file });
+  }
+  return out;
+}
+
+function lower(name: string): string {
+  return name.replace(/^\\+/, "").replace(/[A-Z]+/g, (s) => s.toLowerCase());
+}
+
+/**
+ * The fn of `method` of the class a config names, its own or a base's the
+ * analysis has; the reason when it has neither the class nor the method.
+ */
+function placeMethod(scope: EntryScope, classes: ReadonlyMap<string, { file: string; name: string; facts: FileFacts }>, type: TypeName, method: string): { id: string; at: { file: string; line: number } } | { reason: string } {
+  const seen = new Set<string>();
+  let at = classes.get(lower(type.name));
+  if (at === undefined) return { reason: `it names \`${type.name}\`, which no analysed file declares` };
+  while (at !== undefined && !seen.has(at.file + at.name)) {
+    seen.add(at.file + at.name);
+    const decl = at.facts.decls.find((d) => d.kind === "class" && d.name === at!.name);
+    const member = decl?.members.find((m) => m.kind === "fn" && lower(m.name) === lower(method));
+    if (decl && member) {
+      const id = fnIn(scope, at.file, `${at.name}.${member.name}`);
+      if (id !== null) return { id, at: { file: at.file, line: member.line } };
+    }
+    // The method may be a base's: follow `extends` through the file's imports.
+    const base = decl?.base;
+    if (!base) break;
+    const qualified = at.facts.imports.find((imp) => imp.bindings.some((b) => lower(b.local) === lower(base)) && !/^(function|const|include) /.test(imp.source))?.source ?? base;
+    at = classes.get(lower(qualified));
+  }
+  return { reason: `\`${type.name}\` declares no method \`${method}\` keylang has read` };
 }
 
 /**
@@ -123,4 +189,178 @@ function controllerEntries(graph: Graph, facts: readonly FileFacts[], scope: Ent
     }
   }
   return out;
+}
+
+const NEST_HTTP: Record<string, string> = { Get: "GET", Post: "POST", Put: "PUT", Patch: "PATCH", Delete: "DELETE", Options: "OPTIONS", Head: "HEAD", All: "ALL", Search: "SEARCH" };
+const NEST_GRAPHQL = new Set(["Query", "Mutation", "Subscription"]);
+
+/**
+ * NestJS entry points from the decorators of its config files (the sources
+ * that import `@nestjs/…`): `@Controller('orders')` + `@Get(':id')` →
+ * `route` `GET /api/orders/:id` (with the global prefix of
+ * `setGlobalPrefix('api')` when it is one literal); `@Cron('0 * * * *')`,
+ * `@Interval(ms)`, `@Timeout(ms)` → `cron` labelled `Class.method <schedule>`;
+ * `@MessagePattern(p)`, `@EventPattern(p)`
+ * → `consumer`; `@Resolver()` + `@Query`/`@Mutation`/`@Subscription` →
+ * `graphql` `Query.name`. Each is the decorated method's fn; an `@OnEvent`
+ * observer is an entry of the events (`src/frameworks/entries.ts`).
+ */
+function nestEntries(facts: readonly FileFacts[], scope: EntryScope, files: ReadonlySet<string>): EntryPoint[] {
+  const prefixes = new Set<string>();
+  let computedPrefix: string | null = null;
+  for (const file of facts) {
+    for (const call of allCalls(file)) {
+      if (!call.callee.endsWith(".setGlobalPrefix") || call.literal === undefined) continue;
+      if (call.literal === null) computedPrefix ??= `${file.path}:${call.line}`;
+      else prefixes.add(call.literal);
+    }
+  }
+  const prefixNote = computedPrefix !== null ? `the global prefix at ${computedPrefix} is no literal: the path is without it` : prefixes.size > 1 ? `two global prefixes (${[...prefixes].sort().join(", ")}): the path is without them` : null;
+  const prefix = prefixNote === null && prefixes.size === 1 ? [...prefixes][0]! : "";
+  const out: EntryPoint[] = [];
+  for (const file of facts) {
+    if (!files.has(file.path)) continue;
+    for (const cls of file.decls) {
+      if (cls.kind !== "class") continue;
+      const classDecorators = cls.decorators ?? [];
+      const controller = classDecorators.find((d) => d.name === "Controller");
+      const resolver = classDecorators.some((d) => d.name === "Resolver");
+      const controllerPaths = controller === undefined ? null : pathsOf(controller.args[0], "path");
+      for (const member of cls.members) {
+        if (member.kind !== "fn") continue;
+        const id = fnIn(scope, file.path, `${cls.name}.${member.name}`);
+        if (id === null) continue;
+        for (const d of member.decorators ?? []) {
+          if (d.param !== undefined) continue;
+          const add = (kind: EntryPoint["kind"], label: string, extra: Partial<EntryPoint> = {}): void => {
+            out.push({ ...frameworkEntry(scope, "nestjs", kind, id, label, `${file.path}:${d.line}`, { file: file.path, line: member.line }), ...extra });
+          };
+          const method = NEST_HTTP[d.name];
+          if (method !== undefined && controllerPaths !== null) {
+            for (const base of controllerPaths) {
+              for (const path of pathsOf(d.args[0], "path") ?? [""]) add("route", `${method} ${joinPath(prefix, base, path)}`, { method, ...(prefixNote !== null ? { note: prefixNote } : {}) });
+            }
+          } else if (d.name === "Cron" || d.name === "Interval" || d.name === "Timeout") {
+            const schedule = d.name === "Cron" ? argText(d.args[0]) : `${d.name === "Interval" ? "every" : "after"} ${argText(d.args.at(-1))}ms`;
+            add("cron", `${cls.name}.${member.name} ${schedule}`);
+          } else if (d.name === "MessagePattern" || d.name === "EventPattern") {
+            add("consumer", argText(d.args[0]));
+          } else if (resolver && NEST_GRAPHQL.has(d.name)) {
+            const named = d.args.flatMap((a) => (a.kind === "object" ? a.props : [])).find((p) => p.key === "name")?.value;
+            add("graphql", `${d.name}.${named?.kind === "string" ? named.value : member.name}`);
+          }
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/** Every call of a file: its declarations' (members too) and its top level's. */
+function allCalls(file: FileFacts): CallFact[] {
+  const out: CallFact[] = [...file.moduleCalls];
+  const visit = (decls: readonly DeclFact[]): void => {
+    for (const d of decls) {
+      out.push(...d.calls);
+      visit(d.members);
+    }
+  };
+  visit(file.decls);
+  return out;
+}
+
+/** `'orders'`, `['a', 'b']`, `{ path: 'orders' }` → the paths; none written → `['']`; null for a path keylang cannot read. */
+function pathsOf(arg: DecoratorArg | undefined, key: string): string[] | null {
+  if (arg === undefined) return [""];
+  if (arg.kind === "string") return [arg.value];
+  if (arg.kind === "array") {
+    const paths = arg.items.flatMap((i) => (i.kind === "string" ? [i.value] : []));
+    return paths.length === arg.items.length ? paths : null;
+  }
+  if (arg.kind === "object") {
+    const path = arg.props.find((p) => p.key === key)?.value;
+    return path === undefined ? [""] : pathsOf(path, key);
+  }
+  return null;
+}
+
+/** `/api/orders/:id` from its parts, each with or without slashes. */
+function joinPath(...parts: string[]): string {
+  return `/${parts
+    .flatMap((p) => p.split("/"))
+    .filter((p) => p !== "")
+    .join("/")}`;
+}
+
+/** A decorator argument in words: a string's value, a name, a number; an object or an array as written. */
+function argText(arg: DecoratorArg | undefined): string {
+  if (arg === undefined) return "";
+  switch (arg.kind) {
+    case "string":
+      return arg.value;
+    case "number":
+      return String(arg.value);
+    case "name":
+      return arg.name;
+    case "object":
+      return `{ ${arg.props.map((p) => `${p.key}: ${p.value.kind === "string" ? JSON.stringify(p.value.value) : argText(p.value)}`).join(", ")} }`;
+    case "array":
+      return `[${arg.items.map(argText).join(", ")}]`;
+    case "function":
+      return "() => …";
+    case "other":
+      return arg.text;
+  }
+}
+
+/**
+ * PWA Kit entry points: each `{ path, component }` of a `routes.*` file is a
+ * `route` labelled with the path on the component — a fn the file declares
+ * or imports, else the default export of the module a lazy `import()` loads,
+ * else the routes module with a note; `app.get('*', runtime.render)` in
+ * `ssr.*` and its exported `get` (the Managed Runtime's handler) are
+ * `route` entries of the server module with a note.
+ */
+function pwaEntries(facts: readonly FileFacts[], scope: EntryScope, files: ReadonlySet<string>): EntryPoint[] {
+  const out: EntryPoint[] = [];
+  for (const file of facts) {
+    if (!files.has(file.path)) continue;
+    const module = scope.graph.byPath.get(file.path);
+    if (module === undefined) continue;
+    const ssr = /(?:^|\/)ssr\.[^/]+$/.test(file.path);
+    for (const fact of file.entries ?? []) {
+      const at = { file: file.path, line: fact.line };
+      if (fact.kind === "page") {
+        let id = fact.callee === null ? null : fnIn(scope, file.path, fact.callee);
+        if (id === null && fact.source !== undefined) id = lazyDefault(scope, module, file.path, fact.source);
+        const head = fact.callee?.split(".")[0];
+        const from = file.imports.find((imp) => imp.bindings.some((b) => b.local === head))?.source;
+        const why = from !== undefined && !from.startsWith(".") ? `is imported from \`${from}\`, outside the analysis` : "does not resolve to a fn";
+        const note = id === null ? `component \`${fact.callee ?? "?"}\` ${why}: the routes module stands for it` : null;
+        const found = frameworkEntry(scope, "pwa-kit", "route", id ?? module.id, fact.label, `${file.path}:${fact.line}`, at);
+        out.push({ ...found, ...(id === null ? at : {}), ...(note !== null ? { note } : {}) });
+      } else if (ssr && fact.kind === "route" && fact.label.endsWith(" *")) {
+        const id = fact.callee === null ? null : fnIn(scope, file.path, fact.callee);
+        const found = frameworkEntry(scope, "pwa-kit", "route", id ?? module.id, fact.label, `${file.path}:${fact.line}`, at);
+        const note = id === null ? `\`${fact.callee ?? "?"}\`: the PWA Kit runtime renders the app's routes (\`routes.jsx\`) on the server` : null;
+        out.push({ ...found, ...(id === null ? at : {}), method: fact.label.slice(0, fact.label.indexOf(" ")), ...(note !== null ? { note } : {}) });
+      }
+    }
+    // `exports.get = runtime.createHandler(…).handler`: the function the Managed Runtime calls.
+    if (ssr && file.exportRows.some((row) => row.name === "get")) {
+      const row = scope.graph.exports.find((e) => e.module === module.id && e.name === "get");
+      const id = row?.symbol != null && scope.fns.has(row.symbol) ? row.symbol : null;
+      const line = module.line ?? 1;
+      out.push({ ...frameworkEntry(scope, "pwa-kit", "route", id ?? module.id, "ssr handler", `${file.path}:${line}`, { file: file.path, line }), note: "the exported `get`: the Managed Runtime calls it for every request" });
+    }
+  }
+  return out;
+}
+
+/** The default export of the module a routes file loads with `import('<source>')` when it is a fn, else that module; null when the import does not resolve. */
+function lazyDefault(scope: EntryScope, module: { deps: readonly { file: string; text: string; target: string }[] }, file: string, source: string): string | null {
+  const dep = module.deps.find((d) => d.file === file && (d.text.includes(`"${source}"`) || d.text.includes(`'${source}'`) || d.text.includes(`\`${source}\``)));
+  if (dep === undefined) return null;
+  const row = scope.graph.exports.find((e) => e.module === dep.target && e.name === "default");
+  return row?.symbol != null && scope.fns.has(row.symbol) ? row.symbol : dep.target;
 }
