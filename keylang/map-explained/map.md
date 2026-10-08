@@ -36,7 +36,7 @@
     - fn [repositoryFile](../../src/analyze.ts#L154) (root: string, path: string) → boolean <!-- internal -->
       <a id="map.analyze.repositoryFile"></a><br>`path` (relative to the root, as a flow's `test` writes it) is a file inside the repository.
       - calls [map.analyze.within](map.md#map.analyze.within)
-    - fn [readingAid](../../src/analyze.ts#L165) (specDir: string, abs: string) → boolean <!-- internal -->
+    - fn [readingAid](../../src/analyze.ts#L165) (specDir: string, abs: string) → boolean
       <a id="map.analyze.readingAid"></a><br>A generated reading aid beside the specs (the explained map, explanations, discovered flows): never a spec.
       - calls [map.analyze.within](map.md#map.analyze.within)
     - fn [specPathProblem](../../src/analyze.ts#L174) (config: Config, abs: string) → string | null

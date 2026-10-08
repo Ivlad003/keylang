@@ -26,7 +26,7 @@
     - fn [findRoot](../../src/analyze.ts#L143) (start: string) → string
     - fn [repositoryFile](../../src/analyze.ts#L154) (root: string, path: string) → boolean <!-- internal -->
       - calls map.analyze.within
-    - fn [readingAid](../../src/analyze.ts#L165) (specDir: string, abs: string) → boolean <!-- internal -->
+    - fn [readingAid](../../src/analyze.ts#L165) (specDir: string, abs: string) → boolean
       - calls map.analyze.within
     - fn [specPathProblem](../../src/analyze.ts#L174) (config: Config, abs: string) → string | null
       - calls map.analyze.within, lang.files.walkReaches, map.analyze.readingAid

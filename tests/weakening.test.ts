@@ -165,6 +165,14 @@ test("weakening: --accept-weakening needs --changed", (t) => {
   assert.match(out.stderr, /--accept-weakening requires --changed/);
 });
 
+test("weakening: `frameworks: []` in keylang.json blocks hook stop with K108", (t) => {
+  const dir = repo(t);
+  setConfig(dir, { frameworks: [] });
+  const decision = hook(dir);
+  assert.equal(decision.decision, "block", JSON.stringify(decision));
+  assert.match(decision.reason ?? "", /keylang\.json:\d+: K108 spec weakened: `frameworks` \(detected\) → \[\]/);
+});
+
 test("weakening: `frameworks` turned off is K108; turned on or unchanged is not", () => {
   const ruled = { reached: (): string => "deny a b" };
   const off = configWeakenings({ base: '{ "layers": {} }\n', now: '{ "layers": {}, "frameworks": [] }\n', ...ruled });
