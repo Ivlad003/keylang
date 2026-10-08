@@ -24,6 +24,14 @@
 //
 // A class name is written with or without the leading `\`; `Foo\Proxy` is the
 // proxy Magento generates for `Foo`, which forwards every call to it.
+//
+// Generated factories (business-flows 40): for a class `X`, the ObjectManager's
+// code generator (`Magento\Framework\ObjectManager\Code\Generator\Factory`)
+// writes `XFactory` with `create(array $data = []): X` when no file declares
+// it. keylang applies the convention only to a factory no file it reads
+// declares, beside a class (or interface) `X` it reads: `create()` is then an
+// edge `via: generated-factory` to `X` and gives an `X`. A factory of a class
+// keylang has not read stays a hole: nothing says what it makes.
 
 import { posix } from "node:path";
 import { SaxesParser } from "saxes";
@@ -93,6 +101,7 @@ export const magento: FrameworkAdapter = {
     return out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0) || (a.dir < b.dir ? -1 : a.dir > b.dir ? 1 : 0));
   },
   dispatchers: ["Magento\\Framework\\Event\\ManagerInterface", "Magento\\Framework\\Event\\Manager"],
+  generated: [{ suffix: "Factory", method: "create" }],
   controllers: {
     dir: (area) => (area === "adminhtml" ? "Controller/Adminhtml" : "Controller"),
     prefix: (area) => (area === "adminhtml" ? "/admin" : ""),

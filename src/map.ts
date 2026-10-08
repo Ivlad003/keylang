@@ -228,6 +228,7 @@ function readFrameworks(
       ...(adapter.modules ? { modules: adapter.modules(context) } : {}),
       ...(adapter.dispatchers ? { dispatchers: [...adapter.dispatchers] } : {}),
       ...(adapter.controllers ? { controllers: adapter.controllers } : {}),
+      ...(adapter.generated ? { generated: [...adapter.generated] } : {}),
     });
     manifest.push({ name: adapter.name, version: adapter.version, files });
   }

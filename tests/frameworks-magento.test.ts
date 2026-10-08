@@ -30,6 +30,7 @@ interface Edge {
   binding?: string;
   intercepts?: string;
   reason?: string;
+  line: number;
 }
 
 interface Entry {
@@ -406,4 +407,63 @@ test("magento: entry points of every kind come from the config, labelled as the 
   const check = keylang(dir, ["check"]);
   assert.match(check.stdout, /flows\/cron\.md:3:1: [^\n]*ok[^\n]*entry point `shop_clean_orders 0 3 \* \* \*` \(magento\)/);
   assert.match(check.stdout, /flows\/cron\.md:4:1: static ok [^\n]*runs on `0 3 \* \* \*`/);
+});
+
+/** Factories Magento generates (business-flows 40): `InvoiceFactory` is declared nowhere, `TotalsFactory` by hand. */
+const FACTORIES: Record<string, string> = {
+  "app/code/Shop/Sales/Model/Invoice.php": "<?php\nnamespace Shop\\Sales\\Model;\n\nclass Invoice\n{\n    public function register(): void {}\n    public function pay(): void {}\n}\n",
+  "app/code/Shop/Sales/Model/TotalsFactory.php": "<?php\nnamespace Shop\\Sales\\Model;\n\nclass TotalsFactory\n{\n    public function create(): Totals { return new Totals(); }\n}\n",
+  "app/code/Shop/Sales/Model/InvoiceService.php": [
+    "<?php",
+    "namespace Shop\\Sales\\Model;",
+    "",
+    "use Magento\\Catalog\\Model\\ProductFactory;",
+    "",
+    "class InvoiceService",
+    "{",
+    "    public function __construct(",
+    "        private InvoiceFactory $invoiceFactory,",
+    "        private TotalsFactory $totalsFactory,",
+    "        private ProductFactory $productFactory",
+    "    ) {}",
+    "",
+    "    public function invoice(): void",
+    "    {",
+    "        $invoice = $this->invoiceFactory->create();",
+    "        $invoice->register();",
+    "        $this->invoiceFactory->create()->pay();",
+    "        $this->totalsFactory->create()->collect([]);",
+    "        $this->productFactory->create();",
+    "    }",
+    "}",
+    "",
+  ].join("\n"),
+  "keylang/flows/invoice.md": "# flow invoice\n\n- trigger sales.Model.InvoiceService.InvoiceService.invoice\n  - step sales.Model.Invoice.Invoice.register\n",
+};
+
+test("magento: a factory Magento generates (`XFactory` no file declares) makes an `X` — an edge `via: generated-factory` and the class of its result; off with the adapter", (t) => {
+  const dir = shop(t, FACTORIES);
+  const index = map(dir);
+  const source = "sales.Model.InvoiceService.InvoiceService.invoice";
+  const edges = calls(index, source).map((e) => `${e.line} ${e.target}${e.via ? ` ${e.via}` : ""}${e.binding ? ` (${e.binding})` : ""}`).sort();
+  assert.deepEqual(edges, [
+    "16 sales.Model.Invoice.Invoice generated-factory (`Shop\\Sales\\Model\\InvoiceFactory` is generated: `create()` returns a new `Invoice`)",
+    "17 sales.Model.Invoice.Invoice.register",
+    "18 sales.Model.Invoice.Invoice.pay",
+    // A factory the code declares is a class like any other.
+    "19 sales.Model.Totals.Totals.collect",
+    "19 sales.Model.TotalsFactory.TotalsFactory.create",
+  ]);
+  // A factory of a class keylang has not read is not a fact: the call stays a hole.
+  assert.ok(index.coverage.some((c) => c.source === source && c.line === 20 && c.reason === "unresolved call `this.productFactory.create`"), JSON.stringify(index.coverage));
+  assert.match(keylang(dir, ["check"]).stdout, /flows\/invoice\.md:4:3: static ok sales\.Model\.Invoice\.Invoice\.register: called from sales\.Model\.InvoiceService\.InvoiceService\.invoice\n/);
+
+  setConfig(dir, (raw) => {
+    raw.frameworks = [];
+  });
+  const off = map(dir);
+  assert.ok(!off.edges.some((e) => e.via === "generated-factory"));
+  assert.deepEqual(calls(off, source).map((e) => e.target).sort(), ["sales.Model.Totals.Totals.collect", "sales.Model.TotalsFactory.TotalsFactory.create"]);
+  // Without the adapter the step is not proven, and not disproven either: Magento's config is unread.
+  assert.match(keylang(dir, ["check"]).stdout, /flows\/invoice\.md:4:3: static unverified sales\.Model\.Invoice\.Invoice\.register/);
 });

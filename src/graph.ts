@@ -1627,7 +1627,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
             // `$this->quoteFactory->create()`: the class the framework generates makes a `Quote` (ADR 0022, business-flows 40).
             if (recv.ty.kind === "factory" && asciiLowerCase(member) === asciiLowerCase(recv.ty.method)) {
               const made = recv.ty.of;
-              const extra: Partial<Call> = { ...recvExtra, via: "generated-factory", binding: `\`${recv.ty.name}\` is generated: \`${member}()\` makes a \`${tyName(made)}\`` };
+              const extra: Partial<Call> = { ...recvExtra, via: "generated-factory", binding: `\`${recv.ty.name}\` is generated: \`${member}()\` returns a new \`${tyName(made)}\`` };
               if (made.kind === "class") {
                 push(made.id, c, extra);
                 stats.callsResolved++;

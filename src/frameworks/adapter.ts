@@ -340,6 +340,8 @@ export interface FrameworkAdapter {
   dispatchers?: readonly string[];
   /** URL path of a controller for a route (`Controller/Cart/Add.php` of `checkout` → `/checkout/cart/add`), and the HTTP methods of interfaces it implements. */
   controllers?: ControllerConvention;
+  /** Classes the framework generates by a naming convention; see `FrameworkInput.generated`. */
+  generated?: readonly GeneratedClass[];
 }
 
 /**

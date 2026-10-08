@@ -264,6 +264,19 @@ test("php: removing a file `outside` the architecture whose declarations type a 
   assert.deepEqual(moved, ["diag:K107:src/App/Order.php fail → unverified", "flow:static:domain.Repo.Repo.store ok → unverified"]);
 });
 
+test("magento: turning the adapter off, and with it the factories Magento generates, moves a verdict only to unverified", (t) => {
+  const dir = copyFixture(t, "magento-shop");
+  write(dir, "app/code/Shop/Sales/Model/Invoice.php", "<?php\nnamespace Shop\\Sales\\Model;\n\nclass Invoice\n{\n    public function register(): void {}\n}\n");
+  write(dir, "app/code/Shop/Sales/Model/InvoiceService.php", "<?php\nnamespace Shop\\Sales\\Model;\n\nclass InvoiceService\n{\n    public function __construct(private InvoiceFactory $invoiceFactory) {}\n\n    public function invoice(): void\n    {\n        $this->invoiceFactory->create()->register();\n    }\n}\n");
+  write(dir, "keylang/flows/invoice.md", "# flow invoice\n\n- trigger sales.Model.InvoiceService.InvoiceService.invoice\n  - step sales.Model.Invoice.Invoice\n  - step sales.Model.Invoice.Invoice.register\n");
+  write(dir, "keylang/rules.md", "# rules\n\n- deny sales checkout\n");
+  const before = aggregate(results(dir), []);
+  assert.equal(before.get("flow:static:sales.Model.Invoice.Invoice.register:keylang/flows/invoice.md:5")?.verdict, "ok");
+  const raw = JSON.parse(readFileSync(join(dir, "keylang.json"), "utf8")) as Record<string, unknown>;
+  write(dir, "keylang.json", `${JSON.stringify({ ...raw, frameworks: [] }, null, 2)}\n`);
+  monotonic("magento-shop", "frameworks: []", before, aggregate(results(dir), []));
+});
+
 test("exclude and --static shape never switch ok and fail", (t) => {
   const repo = copyFixture(t, "repo");
   const original = readFileSync(join(repo, "keylang/rules.md"), "utf8");
