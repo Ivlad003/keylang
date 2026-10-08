@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [agent-cli](#features.agent-cli) · [agent-context](#features.agent-context) · [baseline](#features.baseline) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [clone](#features.clone) · [discover](#features.discover) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [feature-status](#features.feature-status) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [harness](#features.harness) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stale](#features.stale) · [stats](#features.stats) · [voice-local](#features.voice-local) · [voice](#features.voice)
+[README](README.md) · modules: [agent-cli](#features.agent-cli) · [agent-context](#features.agent-context) · [baseline](#features.baseline) · [call-sites](#features.call-sites) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [clone](#features.clone) · [coverage-report](#features.coverage-report) · [discover](#features.discover) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [feature-status](#features.feature-status) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [harness](#features.harness) · [integrations](#features.integrations) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stale](#features.stale) · [stats](#features.stats) · [voice-local](#features.voice-local) · [voice](#features.voice)
 
 # map
 
@@ -191,6 +191,101 @@
       - calls [base.safe-write.landing](base.md#base.safe-write.landing), [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic)
     - fn [ruleLines](../../src/baseline.ts#L144) (text: string) → string[] <!-- internal -->
       <a id="features.baseline.ruleLines"></a><br>The `- deny` / `- allow` lines of a rules text, in order.
+  - module [call-sites](../../src/call-sites.ts#L1)
+    <a id="features.call-sites"></a><br>What the coverage report and the integrations inventory read beside the snapshot (business-flows/13, 14): every call written in the analysed files with the node that encloses it, matched against lists kept as data (`resources/*.json`), and reachability from entry points over…
+    - node [external.node](external.md#external.node)
+    - config [base.config](base.md#base.config)
+    - facts [extract.facts](extract.md#extract.facts)
+    - fact-cache [map.fact-cache](map.md#map.fact-cache)
+    - frontends [map.frontends](map.md#map.frontends)
+    - languages [base.languages](base.md#base.languages)
+    - snapshot [map.snapshot](map.md#map.snapshot)
+    - span [base.span](base.md#base.span)
+    - fn [resourcePath](../../src/call-sites.ts#L24) (name: string) → string
+      <a id="features.call-sites.resourcePath"></a><br>A data file of `resources/`, beside `src/` and `dist/` alike.
+    - type [Matcher](../../src/call-sites.ts#L35)
+      <a id="features.call-sites.Matcher"></a><br>How a data list names what it looks for. A call matches when any of `callees`, `imports` or `receivers` matches; `methods` narrows `imports` and `receivers` to calls whose last name is listed. `text` matches source lines (a read such as `process.env.X`, which is no call)…
+    - type [CallSite](../../src/call-sites.ts#L55)
+      <a id="features.call-sites.CallSite"></a><br>A call written in an analysed file.
+    - type [ReadSite](../../src/call-sites.ts#L69)
+      <a id="features.call-sites.ReadSite"></a><br>A read of a name keylang has no call for (`settings.X`), or a source line a `text` pattern matched.
+    - type [FileCalls](../../src/call-sites.ts#L78)
+      <a id="features.call-sites.FileCalls"></a><br>The facts of one analysed file with what a matcher needs: the imports by the local name they bind.
+    - type [Stored](../../src/call-sites.ts#L89) <!-- internal -->
+      <a id="features.call-sites.Stored"></a>
+    - fn [snapshotFacts](../../src/call-sites.ts#L97) (config: Config, snapshot: AnalysisSnapshot) → Promise<FileFacts[]>
+      <a id="features.call-sites.snapshotFacts"></a><br>The facts of every analysed file of the snapshot, in path order: the fact cache's entry when its hash is the manifest's (an analysis that saves the cache has just written it), else the file extracted again. A file that cannot be read or parsed gives none.
+      - calls [base.config.isAnalysed](base.md#base.config.isAnalysed), [features.call-sites.isFacts](features.md#features.call-sites.isFacts), [map.frontends.frontendFor](map.md#map.frontends.frontendFor)
+    - fn [isFacts](../../src/call-sites.ts#L124) (value: unknown) → value is FileFacts <!-- internal -->
+      <a id="features.call-sites.isFacts"></a>
+    - type [Span](../../src/call-sites.ts#L131) <!-- internal -->
+      <a id="features.call-sites.Span"></a><br>Spans of the nodes declared in each file: what places a call in a fn.
+    - fn [spansByFile](../../src/call-sites.ts#L133) (snapshot: AnalysisSnapshot) → { spans: Map<string, Span[]>; modules: Map<string, string> } <!-- internal -->
+      <a id="features.call-sites.spansByFile"></a>
+      - calls [features.call-sites.hasSpan](features.md#features.call-sites.hasSpan)
+    - fn [hasSpan](../../src/call-sites.ts#L150) (node: SnapshotNode) → boolean <!-- internal -->
+      <a id="features.call-sites.hasSpan"></a>
+    - fn [before](../../src/call-sites.ts#L154) (aLine: number, aCol: number, bLine: number, bCol: number) → boolean <!-- internal -->
+      <a id="features.call-sites.before"></a>
+    - fn [enclosing](../../src/call-sites.ts#L157) (spans: readonly Span[] | undefined, module: string | undefined, line: number, col: number) → string | null <!-- internal -->
+      <a id="features.call-sites.enclosing"></a><br>The innermost fn holding the position, else the innermost class, else the file's module.
+      - calls [features.call-sites.before](features.md#features.call-sites.before)
+    - fn [callsOf](../../src/call-sites.ts#L167) (snapshot: AnalysisSnapshot, facts: readonly FileFacts[]) → FileCalls[]
+      <a id="features.call-sites.callsOf"></a><br>Calls, reads and imports of each file, each placed in the node that holds it. Sorted by file, then position.
+      - calls [features.call-sites.spansByFile](features.md#features.call-sites.spansByFile), [base.span.compareText](base.md#base.span.compareText), [features.call-sites.enclosing](features.md#features.call-sites.enclosing), [base.languages.languageOf](base.md#base.languages.languageOf)
+    - type [CompiledMatcher](../../src/call-sites.ts#L200)
+      <a id="features.call-sites.CompiledMatcher"></a><br>A matcher with its regular expressions compiled once.
+    - fn [compileMatcher](../../src/call-sites.ts#L209) (matcher: Matcher) → CompiledMatcher
+      <a id="features.call-sites.compileMatcher"></a>
+      - calls [features.call-sites.withoutRoot](features.md#features.call-sites.withoutRoot)
+    - fn [withoutRoot](../../src/call-sites.ts#L221) (name: string) → string <!-- internal -->
+      <a id="features.call-sites.withoutRoot"></a><br>A PHP name written fully qualified (`\Foo\Bar`) is the name without the leading `\`.
+    - fn [importMatches](../../src/call-sites.ts#L226) (source: string, pattern: string) → boolean
+      <a id="features.call-sites.importMatches"></a><br>Whether an import's source is one the pattern names: exact, under a separator-ended prefix, or under a `*` prefix.
+      - calls [features.call-sites.withoutRoot](features.md#features.call-sites.withoutRoot)
+    - fn [segmentsOf](../../src/call-sites.ts#L237) (site: CallSite) → string[] <!-- internal -->
+      <a id="features.call-sites.segmentsOf"></a><br>The segments of a call's callee, split once.
+      - calls [features.call-sites.segments](features.md#features.call-sites.segments)
+    - fn [segments](../../src/call-sites.ts#L247) (callee: string) → string[] <!-- internal -->
+      <a id="features.call-sites.segments"></a><br>Segments of a callee: `this.config.getValue` → this, config, getValue; `reqwest::get` → reqwest, get.
+    - fn [lastName](../../src/call-sites.ts#L252) (name: string) → string <!-- internal -->
+      <a id="features.call-sites.lastName"></a><br>The last segment of a class name: `Magento\Framework\HTTP\Client\Curl` → `Curl`.
+    - fn [appliesTo](../../src/call-sites.ts#L257) (matcher: CompiledMatcher, language: Language | undefined) → boolean
+      <a id="features.call-sites.appliesTo"></a><br>Whether the matcher applies to files of this language.
+    - fn [callMatches](../../src/call-sites.ts#L265) (matcher: CompiledMatcher, site: CallSite, file: FileCalls, internal: boolean) → boolean
+      <a id="features.call-sites.callMatches"></a><br>Whether the call matches. `internal`: the call resolved to the repository's own code (a local `fetch`), which no `callees` pattern may claim.
+      - calls [features.call-sites.appliesTo](features.md#features.call-sites.appliesTo), [features.call-sites.segmentsOf](features.md#features.call-sites.segmentsOf), [features.call-sites.importMatches](features.md#features.call-sites.importMatches), [features.call-sites.withoutRoot](features.md#features.call-sites.withoutRoot), [features.call-sites.lastName](features.md#features.call-sites.lastName)
+    - fn [readMatches](../../src/call-sites.ts#L295) (matcher: CompiledMatcher, read: ReadSite, file: FileCalls) → boolean
+      <a id="features.call-sites.readMatches"></a><br>Whether a read (`settings.PAYMENT_URL`) goes through a name an import the matcher lists binds.
+      - calls [features.call-sites.appliesTo](features.md#features.call-sites.appliesTo), [features.call-sites.segments](features.md#features.call-sites.segments), [features.call-sites.importMatches](features.md#features.call-sites.importMatches)
+    - fn [textMatches](../../src/call-sites.ts#L308) (matcher: CompiledMatcher, file: FileCalls, source: string, place: (line: number, col: number) => string | null) → ReadSite[]
+      <a id="features.call-sites.textMatches"></a><br>Source lines the matcher's `text` patterns match, each placed in its node: 1-based line, column of the match.
+      - calls [features.call-sites.appliesTo](features.md#features.call-sites.appliesTo)
+    - fn [placer](../../src/call-sites.ts#L324) (snapshot: AnalysisSnapshot) → (file: string, line: number, col: number) => string | null
+      <a id="features.call-sites.placer"></a><br>A placer of positions of one file in its nodes, for matches the facts do not place.
+      - calls [features.call-sites.spansByFile](features.md#features.call-sites.spansByFile), [features.call-sites.enclosing](features.md#features.call-sites.enclosing)
+    - fn [internalCallPositions](../../src/call-sites.ts#L330) (snapshot: AnalysisSnapshot) → Set<string>
+      <a id="features.call-sites.internalCallPositions"></a><br>`file:line:col` of every call edge that resolved into the repository: no built-in or package is called there.
+    - fn [callGraph](../../src/call-sites.ts#L337) (snapshot: AnalysisSnapshot) → { out: Map<string, Set<string>>; in: Map<string, Set<string>> }
+      <a id="features.call-sites.callGraph"></a><br>The resolved call edges as adjacency: source → targets, and target → sources. Hook (`via`) edges included.
+    - fn [reachable](../../src/call-sites.ts#L351) (adjacency: ReadonlyMap<string, ReadonlySet<string>>, starts: Iterable<string>) → Set<string>
+      <a id="features.call-sites.reachable"></a><br>Every node reachable from the starts over the adjacency, the starts included.
+    - fn [isTestFile](../../src/call-sites.ts#L364) (path: string) → boolean
+      <a id="features.call-sites.isTestFile"></a><br>A file of tests: its fns are not expected to be reached from an entry point.
+    - fn [lineStarts](../../src/call-sites.ts#L369) (text: string) → number[]
+      <a id="features.call-sites.lineStarts"></a><br>Lines of a source text, for reading a call's arguments.
+    - fn [urlOf](../../src/call-sites.ts#L382) (text: string, starts: readonly number[], line: number, col: number, callee: string) → { url: "literal" | "dynamic" | "n/a"; host: string | null }
+      <a id="features.call-sites.urlOf"></a><br>The URL a call names: the host of a literal absolute URL among its first two arguments (a literal prefix counts: `"https://api.x.com/" + id`), `dynamic` when an argument there is an expression, `n/a` when the call has no arguments, only literals that are no URL, or no argument…
+      - calls [features.call-sites.firstArguments](features.md#features.call-sites.firstArguments)
+    - fn [literalArgument](../../src/call-sites.ts#L404) (text: string, starts: readonly number[], line: number, col: number, callee: string) → string | null
+      <a id="features.call-sites.literalArgument"></a><br>The first argument of the call when it is a plain string literal (a queue's topic), else null.
+      - calls [features.call-sites.firstArguments](features.md#features.call-sites.firstArguments)
+    - fn [firstArguments](../../src/call-sites.ts#L412) (text: string, starts: readonly number[], line: number, col: number, callee: string, max: number) → string[] | null <!-- internal -->
+      <a id="features.call-sites.firstArguments"></a><br>The first `max` arguments of the call at the position, as written: after the callee's last name; null when no argument list follows it.
+      - calls [features.call-sites.segments](features.md#features.call-sites.segments)
+    - fn [sourceReader](../../src/call-sites.ts#L459) (root: string) → (file: string) => { text: string; starts: number[] } | null
+      <a id="features.call-sites.sourceReader"></a><br>A text read once per file.
+      - calls [features.call-sites.lineStarts](features.md#features.call-sites.lineStarts)
   - module [changed](../../src/changed.ts#L1)
     <a id="features.changed"></a><br>`check --changed` keeps the full analysis and drops findings that do not touch the changed files: a changed spec (every finding in that file), a rule whose scope contains a changed module, and a flow with a step whose code is in a changed file. `hook stop` maps the fails that…
     - assess [check.assess](check.md#check.assess)
@@ -320,6 +415,43 @@
     - fn [enableExplainedMap](../../src/clone.ts#L176) (root: string) → string | null
       <a id="features.clone.enableExplainedMap"></a><br>Turns on the explained map (`"explain": {"map": true}`) in the clone's keylang.json; the rest of the file stays. Returns an error to name, or null.
       - calls [base.safe-write.targetProblem](base.md#base.safe-write.targetProblem), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite)
+  - module [coverage-report](../../src/coverage-report.ts#L1)
+    <a id="features.coverage-report"></a><br>`keylang coverage` (business-flows/13): where keylang does not see, so a person does not take the map for the whole program. A view over the snapshot (ADR 0014), never a verdict: (1) the share of fns reachable from at least one entry point over resolved call edges, (2) fns no…
+    - node [external.node](external.md#external.node)
+    - config [base.config](base.md#base.config)
+    - call-sites [features.call-sites](features.md#features.call-sites)
+    - discover [features.discover](features.md#features.discover)
+    - snapshot [map.snapshot](map.md#map.snapshot)
+    - span [base.span](base.md#base.span)
+    - type [DataLogicSignal](../../src/coverage-report.ts#L20) extends Matcher
+      <a id="features.coverage-report.DataLogicSignal"></a><br>One kind of «logic in data» the data file names.
+    - type [DataLogicSite](../../src/coverage-report.ts#L26)
+      <a id="features.coverage-report.DataLogicSite"></a><br>A call or read of a configuration reader: the program's behaviour is decided by data keylang does not read.
+    - type [HoleReason](../../src/coverage-report.ts#L38)
+      <a id="features.coverage-report.HoleReason"></a><br>A hole reason with the names in backticks replaced by `X`, and how often it occurs.
+    - type [CoverageReport](../../src/coverage-report.ts#L44)
+      <a id="features.coverage-report.CoverageReport"></a>
+    - fn [loadDataLogic](../../src/coverage-report.ts#L78) (path = resourcePath("data-logic.json")) → DataLogicSignal[]
+      <a id="features.coverage-report.loadDataLogic"></a><br>`resources/data-logic.json`: the configuration readers whose calls are «logic in data».
+      - calls [features.call-sites.resourcePath](features.md#features.call-sites.resourcePath)
+    - fn [findDataLogic](../../src/coverage-report.ts#L88) (config: Config, snapshot: AnalysisSnapshot, signals: readonly DataLogicSignal[]) → Promise<DataLogicSite[]>
+      <a id="features.coverage-report.findDataLogic"></a><br>Calls and reads of the snapshot's files that the signals match, in signal order, then file and position.
+      - calls [features.call-sites.callsOf](features.md#features.call-sites.callsOf), [features.call-sites.snapshotFacts](features.md#features.call-sites.snapshotFacts), [features.call-sites.internalCallPositions](features.md#features.call-sites.internalCallPositions), [features.call-sites.placer](features.md#features.call-sites.placer), [features.call-sites.sourceReader](features.md#features.call-sites.sourceReader), [features.call-sites.compileMatcher](features.md#features.call-sites.compileMatcher), [features.call-sites.callMatches](features.md#features.call-sites.callMatches), [features.call-sites.readMatches](features.md#features.call-sites.readMatches), [features.call-sites.appliesTo](features.md#features.call-sites.appliesTo), [features.call-sites.textMatches](features.md#features.call-sites.textMatches), [base.span.compareText](base.md#base.span.compareText)
+    - fn [normaliseReason](../../src/coverage-report.ts#L119) (reason: string) → string
+      <a id="features.coverage-report.normaliseReason"></a><br>A reason with every backticked name as `X`: `call through a local value \`X\``.
+    - fn [holeModule](../../src/coverage-report.ts#L124) (snapshot: AnalysisSnapshot, source: string | null) → string | null <!-- internal -->
+      <a id="features.coverage-report.holeModule"></a><br>The module a hole counts under: the file module of its fn or class, else its file.
+    - fn [reasonList](../../src/coverage-report.ts#L135) (counts: ReadonlyMap<string, HoleReason>) → HoleReason[] <!-- internal -->
+      <a id="features.coverage-report.reasonList"></a>
+      - calls [base.span.compareText](base.md#base.span.compareText)
+    - fn [coverageReport](../../src/coverage-report.ts#L144) ( snapshot: AnalysisSnapshot, specified: ReadonlyMap<string, { file: string; flow: string }>, signals: readonly DataLogicSignal[], dataLogic: readonly DataLogicSite[], viewText: (file: string) => string | null, ) → CoverageReport
+      <a id="features.coverage-report.coverageReport"></a><br>The report over a snapshot. `specified`: triggers the hand-written flows name; `viewText`: the text of a file of the discovered view, by its name (`<layer>.md`), or null; `dataLogic`: the sites `findDataLogic` found.
+      - calls [features.call-sites.callGraph](features.md#features.call-sites.callGraph), [features.call-sites.reachable](features.md#features.call-sites.reachable), [features.call-sites.isTestFile](features.md#features.call-sites.isTestFile), [base.span.compareText](base.md#base.span.compareText), [map.snapshot.leavesUnresolved](map.md#map.snapshot.leavesUnresolved), [features.coverage-report.holeModule](features.md#features.coverage-report.holeModule), [features.coverage-report.normaliseReason](features.md#features.coverage-report.normaliseReason), [features.discover.discoverFlows](features.md#features.discover.discoverFlows), [features.coverage-report.reasonList](features.md#features.coverage-report.reasonList)
+    - fn [percent](../../src/coverage-report.ts#L215) (share: number) → string <!-- internal -->
+      <a id="features.coverage-report.percent"></a>
+    - fn [coverageText](../../src/coverage-report.ts#L218) (report: CoverageReport, specDir = "keylang") → string
+      <a id="features.coverage-report.coverageText"></a><br>What `keylang coverage` prints: the five sections, each with what to do about it.
+      - calls [features.coverage-report.percent](features.md#features.coverage-report.percent)
   - module [discover](../../src/discover.ts#L1)
     <a id="features.discover"></a><br>`keylang flows discover` and `keylang flows adopt` (business-flows/11): a flow draft for every entry point of the snapshot, `draftFlow` from the entry's fn, as a generated view `<dir>/flows-discovered/<layer>.md` (ADR 0014: a view, not a spec — `check` does not read it). A…
     - draft [features.draft](features.md#features.draft)
@@ -967,6 +1099,42 @@
     - fn [commitAgents](../../src/harness.ts#L770) ( plan: AgentsPlan, options: { signal?: AbortSignal; onStep?: (step: { path: string; action: "write" | "remove" }) => void } = {}, ) → Promise<{ steps: HarnessStep[]; outcome: "completed" | "failed" | "cancelled" }>
       <a id="features.harness.commitAgents"></a><br>Writes and removes the changed targets one by one, in plan order. A write is atomic at the target (a link inside the repository is followed; CRLF of the old file kept); a removal removes the entry itself, and only when the entry is inside the repository with links followed — a…
       - calls [base.safe-write.targetProblem](base.md#base.safe-write.targetProblem), [base.safe-write.landing](base.md#base.safe-write.landing), [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic)
+  - module [integrations](../../src/integrations.ts#L1)
+    <a id="features.integrations"></a><br>`keylang integrations` (business-flows/14): what the repository talks to, the first thing to know before a migration. A view over the snapshot (ADR 0014), no verdict and no network: outgoing calls into the HTTP, SOAP, SDK and queue clients `resources/integrations.json` lists…
+    - node [external.node](external.md#external.node)
+    - call-sites [features.call-sites](features.md#features.call-sites)
+    - config [base.config](base.md#base.config)
+    - discover [features.discover](features.md#features.discover)
+    - glob [base.glob](base.md#base.glob)
+    - snapshot [map.snapshot](map.md#map.snapshot)
+    - span [base.span](base.md#base.span)
+    - type [IntegrationKind](../../src/integrations.ts#L19) = "http" | "soap" | "sdk" | "payment" | "queue"
+      <a id="features.integrations.IntegrationKind"></a>
+    - type [IntegrationClient](../../src/integrations.ts#L22) extends Matcher
+      <a id="features.integrations.IntegrationClient"></a><br>One client the data file names.
+    - type [Reach](../../src/integrations.ts#L29)
+      <a id="features.integrations.Reach"></a><br>An entry point that reaches a call site, with the flow that starts from it.
+    - type [IntegrationSite](../../src/integrations.ts#L37)
+      <a id="features.integrations.IntegrationSite"></a>
+    - type [Integration](../../src/integrations.ts#L51)
+      <a id="features.integrations.Integration"></a>
+    - type [Webhook](../../src/integrations.ts#L61)
+      <a id="features.integrations.Webhook"></a>
+    - type [IntegrationsReport](../../src/integrations.ts#L73)
+      <a id="features.integrations.IntegrationsReport"></a>
+    - fn [loadIntegrations](../../src/integrations.ts#L90) (path = resourcePath("integrations.json")) → IntegrationClient[]
+      <a id="features.integrations.loadIntegrations"></a><br>`resources/integrations.json`.
+      - calls [features.call-sites.resourcePath](features.md#features.call-sites.resourcePath)
+    - fn [routePath](../../src/integrations.ts#L105) (label: string) → string <!-- internal -->
+      <a id="features.integrations.routePath"></a><br>The path of a route label (`POST /stripe/webhook` → `/stripe/webhook`).
+    - fn [findWebhooks](../../src/integrations.ts#L110) (snapshot: AnalysisSnapshot, globs: readonly string[]) → Webhook[]
+      <a id="features.integrations.findWebhooks"></a><br>Incoming webhooks: entries of kind webhook, routes whose path names one, and what `integrations.webhooks` names.
+      - calls [base.glob.firstMatchingGlob](base.md#base.glob.firstMatchingGlob), [features.integrations.routePath](features.md#features.integrations.routePath), [base.span.compareText](base.md#base.span.compareText)
+    - fn [findIntegrations](../../src/integrations.ts#L137) (config: Config, snapshot: AnalysisSnapshot, clients: readonly IntegrationClient[], specified: ReadonlyMap<string, { file: string; flow: string }>) → Promise<IntegrationsReport>
+      <a id="features.integrations.findIntegrations"></a><br>The report. `specified`: the triggers of hand-written flows, by trigger, with the flow's name. Reads the analysed files' facts and, at each matched call, the source text for its first arguments.
+      - calls [features.call-sites.callsOf](features.md#features.call-sites.callsOf), [features.call-sites.snapshotFacts](features.md#features.call-sites.snapshotFacts), [features.call-sites.internalCallPositions](features.md#features.call-sites.internalCallPositions), [features.call-sites.sourceReader](features.md#features.call-sites.sourceReader), [features.call-sites.callGraph](features.md#features.call-sites.callGraph), [features.discover.discoverFlows](features.md#features.discover.discoverFlows), [features.call-sites.compileMatcher](features.md#features.call-sites.compileMatcher), [features.call-sites.importMatches](features.md#features.call-sites.importMatches), [features.call-sites.callMatches](features.md#features.call-sites.callMatches), [features.call-sites.urlOf](features.md#features.call-sites.urlOf), [features.call-sites.literalArgument](features.md#features.call-sites.literalArgument), [base.span.compareText](base.md#base.span.compareText), [features.integrations.findWebhooks](features.md#features.integrations.findWebhooks)
+    - fn [integrationsText](../../src/integrations.ts#L213) (report: IntegrationsReport) → string
+      <a id="features.integrations.integrationsText"></a><br>What `keylang integrations` prints.
   - module [keys](../../src/keys.ts#L1)
     <a id="features.keys"></a><br>API keys kept outside the environment: `~/.config/keylang/<name>.key`, mode 0600. Shared by the model adapter and voice, without loading either.
     - node [external.node](external.md#external.node)

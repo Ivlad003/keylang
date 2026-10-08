@@ -11,7 +11,7 @@
 
 import { EXTERNAL } from "./external-ids.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
-import type { Flow, FlowItem, SpecIR, Trigger } from "./spec-ir.ts";
+import { walkFlow, type Flow, type FlowItem, type SpecIR, type Trigger } from "./spec-ir.ts";
 import { compareText } from "./span.ts";
 
 export type DiagramView =
@@ -135,6 +135,87 @@ export function viewsOf(snapshot: AnalysisSnapshot | null, spec: SpecIR): { flow
     entries: (snapshot?.entries ?? []).map((entry) => ({ id: entry.id, kind: entry.kind, label: entry.label })),
     layers: snapshot ? layerOrder(snapshot) : [],
   };
+}
+
+/** A flow as the diagram page lists it: where it is, its trigger and lane, and every ID it names (for the search). */
+export interface FlowListing {
+  name: string;
+  file: string;
+  line: number;
+  trigger: string | null;
+  layer: string | null;
+  ids: string[];
+}
+
+/** The IDs a flow names — triggers, steps, `then <id>`, `calls` — in source order, each once. */
+export function flowIds(flow: Flow): string[] {
+  const ids = new Set<string>();
+  walkFlow(flow, (item) => {
+    if (item.kind === "trigger" || item.kind === "step" || (item.kind === "then" && item.form === "ref")) ids.add(item.target.target);
+    else if (item.kind === "calls") for (const ref of item.targets) ids.add(ref.target);
+  });
+  return [...ids];
+}
+
+/** The flows of a spec for the list of the diagram page: the first flow of each name, in spec order. */
+export function flowListing(snapshot: AnalysisSnapshot | null, spec: SpecIR): FlowListing[] {
+  const seen = new Set<string>();
+  const out: FlowListing[] = [];
+  for (const flow of spec.flows) {
+    if (seen.has(flow.name)) continue;
+    seen.add(flow.name);
+    const trigger = flow.triggers[0]?.target.target ?? null;
+    out.push({ name: flow.name, file: flow.file, line: flow.span.start.line, trigger, layer: trigger === null ? null : (layerOf(snapshot, trigger) ?? null), ids: flowIds(flow) });
+  }
+  return out;
+}
+
+/** Where an ID is used: flows and discovered flows that name it (or an ID under it), and entry points whose route does. */
+export interface Usages {
+  id: string;
+  flows: { name: string; file: string; line: number }[];
+  discovered: { name: string; file: string; line: number }[];
+  entries: { id: string; kind: string; label: string }[];
+}
+
+/** An ID or one under it: `a.b` matches `a.b` and `a.b.c`, not `a.bc`. */
+function covers(id: string, target: string): boolean {
+  return target === id || target.startsWith(`${id}.`);
+}
+
+/** The first line of a flow that names the ID, or null. */
+function useIn(flow: Flow, id: string): number | null {
+  let line: number | null = null;
+  walkFlow(flow, (item) => {
+    if (line !== null) return;
+    const targets = item.kind === "trigger" || item.kind === "step" || (item.kind === "then" && item.form === "ref") ? [item.target.target] : item.kind === "calls" ? item.targets.map((ref) => ref.target) : [];
+    if (targets.some((target) => covers(id, target))) line = item.span.start.line;
+  });
+  return line;
+}
+
+/**
+ * Where `id` is used (business-flows/21): the flows of the specs and of the
+ * discovered view that name it in a trigger, step, `then` or `calls`, and the
+ * entry points that are it or whose flow (written or discovered, by trigger)
+ * names it. Pure; each list in its source's order.
+ */
+export function usagesOf(snapshot: AnalysisSnapshot | null, spec: SpecIR, discovered: SpecIR | null, id: string): Usages {
+  const routes = new Set<string>();
+  const found = (flows: readonly Flow[]): { name: string; file: string; line: number }[] => {
+    const out: { name: string; file: string; line: number }[] = [];
+    for (const flow of flows) {
+      const line = useIn(flow, id);
+      if (line === null) continue;
+      out.push({ name: flow.name, file: flow.file, line });
+      for (const trigger of flow.triggers) routes.add(trigger.target.target);
+    }
+    return out;
+  };
+  const flows = found(spec.flows);
+  const fromDiscovered = found(discovered?.flows ?? []);
+  const entries = (snapshot?.entries ?? []).filter((entry) => covers(id, entry.id) || routes.has(entry.id)).map((entry) => ({ id: entry.id, kind: entry.kind, label: entry.label }));
+  return { id, flows, discovered: fromDiscovered, entries };
 }
 
 export function diagramOf(input: DiagramInput): Diagram {

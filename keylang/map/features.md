@@ -118,6 +118,65 @@
     - fn [commitBaseline](../../src/baseline.ts#L137) (plan: BaselinePlan) → void
       - calls base.safe-write.landing, base.safe-write.writeAtomic
     - fn [ruleLines](../../src/baseline.ts#L144) (text: string) → string[] <!-- internal -->
+  - module [call-sites](../../src/call-sites.ts#L1)
+    - node external.node
+    - config base.config
+    - facts extract.facts
+    - fact-cache map.fact-cache
+    - frontends map.frontends
+    - languages base.languages
+    - snapshot map.snapshot
+    - span base.span
+    - fn [resourcePath](../../src/call-sites.ts#L24) (name: string) → string
+    - type [Matcher](../../src/call-sites.ts#L35)
+    - type [CallSite](../../src/call-sites.ts#L55)
+    - type [ReadSite](../../src/call-sites.ts#L69)
+    - type [FileCalls](../../src/call-sites.ts#L78)
+    - type [Stored](../../src/call-sites.ts#L89) <!-- internal -->
+    - fn [snapshotFacts](../../src/call-sites.ts#L97) (config: Config, snapshot: AnalysisSnapshot) → Promise<FileFacts[]>
+      - calls base.config.isAnalysed, features.call-sites.isFacts, map.frontends.frontendFor
+    - fn [isFacts](../../src/call-sites.ts#L124) (value: unknown) → value is FileFacts <!-- internal -->
+    - type [Span](../../src/call-sites.ts#L131) <!-- internal -->
+    - fn [spansByFile](../../src/call-sites.ts#L133) (snapshot: AnalysisSnapshot) → { spans: Map<string, Span[]>; modules: Map<string, string> } <!-- internal -->
+      - calls features.call-sites.hasSpan
+    - fn [hasSpan](../../src/call-sites.ts#L150) (node: SnapshotNode) → boolean <!-- internal -->
+    - fn [before](../../src/call-sites.ts#L154) (aLine: number, aCol: number, bLine: number, bCol: number) → boolean <!-- internal -->
+    - fn [enclosing](../../src/call-sites.ts#L157) (spans: readonly Span[] | undefined, module: string | undefined, line: number, col: number) → string | null <!-- internal -->
+      - calls features.call-sites.before
+    - fn [callsOf](../../src/call-sites.ts#L167) (snapshot: AnalysisSnapshot, facts: readonly FileFacts[]) → FileCalls[]
+      - calls features.call-sites.spansByFile, base.span.compareText, features.call-sites.enclosing, base.languages.languageOf
+    - type [CompiledMatcher](../../src/call-sites.ts#L200)
+    - fn [compileMatcher](../../src/call-sites.ts#L209) (matcher: Matcher) → CompiledMatcher
+      - calls features.call-sites.withoutRoot
+    - fn [withoutRoot](../../src/call-sites.ts#L221) (name: string) → string <!-- internal -->
+    - fn [importMatches](../../src/call-sites.ts#L226) (source: string, pattern: string) → boolean
+      - calls features.call-sites.withoutRoot
+    - fn [segmentsOf](../../src/call-sites.ts#L237) (site: CallSite) → string[] <!-- internal -->
+      - calls features.call-sites.segments
+    - fn [segments](../../src/call-sites.ts#L247) (callee: string) → string[] <!-- internal -->
+    - fn [lastName](../../src/call-sites.ts#L252) (name: string) → string <!-- internal -->
+    - fn [appliesTo](../../src/call-sites.ts#L257) (matcher: CompiledMatcher, language: Language | undefined) → boolean
+    - fn [callMatches](../../src/call-sites.ts#L265) (matcher: CompiledMatcher, site: CallSite, file: FileCalls, internal: boolean) → boolean
+      - calls features.call-sites.appliesTo, features.call-sites.segmentsOf, features.call-sites.importMatches, features.call-sites.withoutRoot, features.call-sites.lastName
+    - fn [readMatches](../../src/call-sites.ts#L295) (matcher: CompiledMatcher, read: ReadSite, file: FileCalls) → boolean
+      - calls features.call-sites.appliesTo, features.call-sites.segments, features.call-sites.importMatches
+    - fn [textMatches](../../src/call-sites.ts#L308) (matcher: CompiledMatcher, file: FileCalls, source: string, place: (line: number, col: number) => string | null) → ReadSite[]
+      - calls features.call-sites.appliesTo
+    - fn [placer](../../src/call-sites.ts#L324) (snapshot: AnalysisSnapshot) → (file: string, line: number, col: number) => string | null
+      - calls features.call-sites.spansByFile, features.call-sites.enclosing
+    - fn [internalCallPositions](../../src/call-sites.ts#L330) (snapshot: AnalysisSnapshot) → Set<string>
+    - fn [callGraph](../../src/call-sites.ts#L337) (snapshot: AnalysisSnapshot) → { out: Map<string, Set<string>>; in: Map<string, Set<string>> }
+    - fn [reachable](../../src/call-sites.ts#L351) (adjacency: ReadonlyMap<string, ReadonlySet<string>>, starts: Iterable<string>) → Set<string>
+    - fn [isTestFile](../../src/call-sites.ts#L364) (path: string) → boolean
+    - fn [lineStarts](../../src/call-sites.ts#L369) (text: string) → number[]
+    - fn [urlOf](../../src/call-sites.ts#L382) (text: string, starts: readonly number[], line: number, col: number, callee: string) → { url: "literal" | "dynamic" | "n/a"; host: string | null }
+      - calls features.call-sites.firstArguments
+    - fn [literalArgument](../../src/call-sites.ts#L404) (text: string, starts: readonly number[], line: number, col: number, callee: string) → string | null
+      - calls features.call-sites.firstArguments
+    - fn [firstArguments](../../src/call-sites.ts#L412) (text: string, starts: readonly number[], line: number, col: number, callee: string, max: number) → string[] | null <!-- internal -->
+      - calls features.call-sites.segments
+    - fn [sourceReader](../../src/call-sites.ts#L459) (root: string) → (file: string) => { text: string; starts: number[] } | null
+      - calls features.call-sites.lineStarts
   - module [changed](../../src/changed.ts#L1)
     - assess check.assess
     - diag base.diag
@@ -199,6 +258,30 @@
       - calls features.git-changes.gitUnavailable
     - fn [enableExplainedMap](../../src/clone.ts#L176) (root: string) → string | null
       - calls base.safe-write.targetProblem, base.safe-write.safeWrite
+  - module [coverage-report](../../src/coverage-report.ts#L1)
+    - node external.node
+    - config base.config
+    - call-sites features.call-sites
+    - discover features.discover
+    - snapshot map.snapshot
+    - span base.span
+    - type [DataLogicSignal](../../src/coverage-report.ts#L20) extends Matcher
+    - type [DataLogicSite](../../src/coverage-report.ts#L26)
+    - type [HoleReason](../../src/coverage-report.ts#L38)
+    - type [CoverageReport](../../src/coverage-report.ts#L44)
+    - fn [loadDataLogic](../../src/coverage-report.ts#L78) (path = resourcePath("data-logic.json")) → DataLogicSignal[]
+      - calls features.call-sites.resourcePath
+    - fn [findDataLogic](../../src/coverage-report.ts#L88) (config: Config, snapshot: AnalysisSnapshot, signals: readonly DataLogicSignal[]) → Promise<DataLogicSite[]>
+      - calls features.call-sites.callsOf, features.call-sites.snapshotFacts, features.call-sites.internalCallPositions, features.call-sites.placer, features.call-sites.sourceReader, features.call-sites.compileMatcher, features.call-sites.callMatches, features.call-sites.readMatches, features.call-sites.appliesTo, features.call-sites.textMatches, base.span.compareText
+    - fn [normaliseReason](../../src/coverage-report.ts#L119) (reason: string) → string
+    - fn [holeModule](../../src/coverage-report.ts#L124) (snapshot: AnalysisSnapshot, source: string | null) → string | null <!-- internal -->
+    - fn [reasonList](../../src/coverage-report.ts#L135) (counts: ReadonlyMap<string, HoleReason>) → HoleReason[] <!-- internal -->
+      - calls base.span.compareText
+    - fn [coverageReport](../../src/coverage-report.ts#L144) ( snapshot: AnalysisSnapshot, specified: ReadonlyMap<string, { file: string; flow: string }>, signals: readonly DataLogicSignal[], dataLogic: readonly DataLogicSite[], viewText: (file: string) => string | null, ) → CoverageReport
+      - calls features.call-sites.callGraph, features.call-sites.reachable, features.call-sites.isTestFile, base.span.compareText, map.snapshot.leavesUnresolved, features.coverage-report.holeModule, features.coverage-report.normaliseReason, features.discover.discoverFlows, features.coverage-report.reasonList
+    - fn [percent](../../src/coverage-report.ts#L215) (share: number) → string <!-- internal -->
+    - fn [coverageText](../../src/coverage-report.ts#L218) (report: CoverageReport, specDir = "keylang") → string
+      - calls features.coverage-report.percent
   - module [discover](../../src/discover.ts#L1)
     - draft features.draft
     - map map.map
@@ -612,6 +695,29 @@
     - type [HarnessStep](../../src/harness.ts#L753)
     - fn [commitAgents](../../src/harness.ts#L770) ( plan: AgentsPlan, options: { signal?: AbortSignal; onStep?: (step: { path: string; action: "write" | "remove" }) => void } = {}, ) → Promise<{ steps: HarnessStep[]; outcome: "completed" | "failed" | "cancelled" }>
       - calls base.safe-write.targetProblem, base.safe-write.landing, base.safe-write.writeAtomic
+  - module [integrations](../../src/integrations.ts#L1)
+    - node external.node
+    - call-sites features.call-sites
+    - config base.config
+    - discover features.discover
+    - glob base.glob
+    - snapshot map.snapshot
+    - span base.span
+    - type [IntegrationKind](../../src/integrations.ts#L19) = "http" | "soap" | "sdk" | "payment" | "queue"
+    - type [IntegrationClient](../../src/integrations.ts#L22) extends Matcher
+    - type [Reach](../../src/integrations.ts#L29)
+    - type [IntegrationSite](../../src/integrations.ts#L37)
+    - type [Integration](../../src/integrations.ts#L51)
+    - type [Webhook](../../src/integrations.ts#L61)
+    - type [IntegrationsReport](../../src/integrations.ts#L73)
+    - fn [loadIntegrations](../../src/integrations.ts#L90) (path = resourcePath("integrations.json")) → IntegrationClient[]
+      - calls features.call-sites.resourcePath
+    - fn [routePath](../../src/integrations.ts#L105) (label: string) → string <!-- internal -->
+    - fn [findWebhooks](../../src/integrations.ts#L110) (snapshot: AnalysisSnapshot, globs: readonly string[]) → Webhook[]
+      - calls base.glob.firstMatchingGlob, features.integrations.routePath, base.span.compareText
+    - fn [findIntegrations](../../src/integrations.ts#L137) (config: Config, snapshot: AnalysisSnapshot, clients: readonly IntegrationClient[], specified: ReadonlyMap<string, { file: string; flow: string }>) → Promise<IntegrationsReport>
+      - calls features.call-sites.callsOf, features.call-sites.snapshotFacts, features.call-sites.internalCallPositions, features.call-sites.sourceReader, features.call-sites.callGraph, features.discover.discoverFlows, features.call-sites.compileMatcher, features.call-sites.importMatches, features.call-sites.callMatches, features.call-sites.urlOf, features.call-sites.literalArgument, base.span.compareText, features.integrations.findWebhooks
+    - fn [integrationsText](../../src/integrations.ts#L213) (report: IntegrationsReport) → string
   - module [keys](../../src/keys.ts#L1)
     - node external.node
     - fn [readKey](../../src/keys.ts#L8) (home: string, name: string) → string | undefined

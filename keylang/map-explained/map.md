@@ -157,40 +157,58 @@
     - fn [viewsOf](../../src/diagram.ts#L132) (snapshot: AnalysisSnapshot | null, spec: SpecIR) → { flows: string[]; entries: { id: string; kind: string; label: string }[]; layers: string[] }
       <a id="map.diagram.viewsOf"></a><br>What there is to draw: flow names in spec order, entry points as the snapshot lists them, layers in their order.
       - calls [map.diagram.layerOrder](map.md#map.diagram.layerOrder)
-    - fn [diagramOf](../../src/diagram.ts#L140) (input: DiagramInput) → Diagram
+    - type [FlowListing](../../src/diagram.ts#L141)
+      <a id="map.diagram.FlowListing"></a><br>A flow as the diagram page lists it: where it is, its trigger and lane, and every ID it names (for the search).
+    - fn [flowIds](../../src/diagram.ts#L151) (flow: Flow) → string[]
+      <a id="map.diagram.flowIds"></a><br>The IDs a flow names — triggers, steps, `then <id>`, `calls` — in source order, each once.
+      - calls [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow)
+    - fn [flowListing](../../src/diagram.ts#L161) (snapshot: AnalysisSnapshot | null, spec: SpecIR) → FlowListing[]
+      <a id="map.diagram.flowListing"></a><br>The flows of a spec for the list of the diagram page: the first flow of each name, in spec order.
+      - calls [map.diagram.layerOf](map.md#map.diagram.layerOf), [map.diagram.flowIds](map.md#map.diagram.flowIds)
+    - type [Usages](../../src/diagram.ts#L174)
+      <a id="map.diagram.Usages"></a><br>Where an ID is used: flows and discovered flows that name it (or an ID under it), and entry points whose route does.
+    - fn [covers](../../src/diagram.ts#L182) (id: string, target: string) → boolean <!-- internal -->
+      <a id="map.diagram.covers"></a><br>An ID or one under it: `a.b` matches `a.b` and `a.b.c`, not `a.bc`.
+    - fn [useIn](../../src/diagram.ts#L187) (flow: Flow, id: string) → number | null <!-- internal -->
+      <a id="map.diagram.useIn"></a><br>The first line of a flow that names the ID, or null.
+      - calls [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow), [map.diagram.covers](map.md#map.diagram.covers)
+    - fn [usagesOf](../../src/diagram.ts#L203) (snapshot: AnalysisSnapshot | null, spec: SpecIR, discovered: SpecIR | null, id: string) → Usages
+      <a id="map.diagram.usagesOf"></a><br>Where `id` is used (business-flows/21): the flows of the specs and of the discovered view that name it in a trigger, step, `then` or `calls`, and the entry points that are it or whose flow (written or discovered, by trigger) names it. Pure; each list in its source's order.
+      - calls [map.diagram.useIn](map.md#map.diagram.useIn), [map.diagram.covers](map.md#map.diagram.covers)
+    - fn [diagramOf](../../src/diagram.ts#L221) (input: DiagramInput) → Diagram
       <a id="map.diagram.diagramOf"></a>
       - calls [map.diagram.layout](map.md#map.diagram.layout), [map.diagram.flowDiagram](map.md#map.diagram.flowDiagram), [map.diagram.empty](map.md#map.diagram.empty), [map.diagram.entryDiagram](map.md#map.diagram.entryDiagram), [map.diagram.layersDiagram](map.md#map.diagram.layersDiagram)
-    - fn [empty](../../src/diagram.ts#L150) (reason: string) → Diagram <!-- internal -->
+    - fn [empty](../../src/diagram.ts#L231) (reason: string) → Diagram <!-- internal -->
       <a id="map.diagram.empty"></a>
-    - fn [worst](../../src/diagram.ts#L158) (values: readonly string[]) → DiagramVerdict <!-- internal -->
+    - fn [worst](../../src/diagram.ts#L239) (values: readonly string[]) → DiagramVerdict <!-- internal -->
       <a id="map.diagram.worst"></a>
-    - fn [messageOf](../../src/diagram.ts#L164) (result: DiagramResult) → string <!-- internal -->
+    - fn [messageOf](../../src/diagram.ts#L245) (result: DiagramResult) → string <!-- internal -->
       <a id="map.diagram.messageOf"></a>
-    - fn [byLine](../../src/diagram.ts#L169) (results: readonly DiagramResult[]) → Map<string, DiagramResult[]> <!-- internal -->
+    - fn [byLine](../../src/diagram.ts#L250) (results: readonly DiagramResult[]) → Map<string, DiagramResult[]> <!-- internal -->
       <a id="map.diagram.byLine"></a><br>Results by `file:line`.
-    - fn [byArea](../../src/diagram.ts#L181) (results: readonly DiagramResult[]) → Map<string, DiagramVerdict> <!-- internal -->
+    - fn [byArea](../../src/diagram.ts#L262) (results: readonly DiagramResult[]) → Map<string, DiagramVerdict> <!-- internal -->
       <a id="map.diagram.byArea"></a><br>The worst verdict about each ID and every ID above it (`a.b.c` counts for `a.b` and `a`).
       - calls [map.diagram.worst](map.md#map.diagram.worst)
-    - fn [layerOrder](../../src/diagram.ts#L197) (snapshot: AnalysisSnapshot) → string[] <!-- internal -->
+    - fn [layerOrder](../../src/diagram.ts#L278) (snapshot: AnalysisSnapshot) → string[] <!-- internal -->
       <a id="map.diagram.layerOrder"></a><br>The repository's layers in `keylang.json` order, then the others (packages last).
       - calls [base.span.compareText](base.md#base.span.compareText)
-    - fn [layerOf](../../src/diagram.ts#L206) (snapshot: AnalysisSnapshot | null, id: string) → string | undefined <!-- internal -->
+    - fn [layerOf](../../src/diagram.ts#L287) (snapshot: AnalysisSnapshot | null, id: string) → string | undefined <!-- internal -->
       <a id="map.diagram.layerOf"></a>
-    - fn [lanes](../../src/diagram.ts#L214) (snapshot: AnalysisSnapshot | null, nodes: readonly DiagramNode[]) → DiagramGroup[] <!-- internal -->
+    - fn [lanes](../../src/diagram.ts#L295) (snapshot: AnalysisSnapshot | null, nodes: readonly DiagramNode[]) → DiagramGroup[] <!-- internal -->
       <a id="map.diagram.lanes"></a><br>One lane per layer some node sits in, in the layers' order; sized by `layout`.
       - calls [map.diagram.layerOrder](map.md#map.diagram.layerOrder), [base.span.compareText](base.md#base.span.compareText)
-    - fn [flowDiagram](../../src/diagram.ts#L223) (input: DiagramInput, name: string) → Diagram <!-- internal -->
+    - fn [flowDiagram](../../src/diagram.ts#L304) (input: DiagramInput, name: string) → Diagram <!-- internal -->
       <a id="map.diagram.flowDiagram"></a>
       - calls [map.diagram.empty](map.md#map.diagram.empty), [map.diagram.byLine](map.md#map.diagram.byLine), [map.diagram.worst](map.md#map.diagram.worst), [map.diagram.layerOf](map.md#map.diagram.layerOf), [map.diagram.stripLead](map.md#map.diagram.stripLead), [map.diagram.messageOf](map.md#map.diagram.messageOf), [map.diagram.lanes](map.md#map.diagram.lanes)
-    - fn [stripLead](../../src/diagram.ts#L361) (message: string, id: string) → string <!-- internal -->
+    - fn [stripLead](../../src/diagram.ts#L442) (message: string, id: string) → string <!-- internal -->
       <a id="map.diagram.stripLead"></a><br>`check`'s message without its `unverified <id>: ` lead.
-    - fn [entryDiagram](../../src/diagram.ts#L368) (snapshot: AnalysisSnapshot, results: readonly DiagramResult[], id: string, depth: number) → Diagram <!-- internal -->
+    - fn [entryDiagram](../../src/diagram.ts#L449) (snapshot: AnalysisSnapshot, results: readonly DiagramResult[], id: string, depth: number) → Diagram <!-- internal -->
       <a id="map.diagram.entryDiagram"></a>
       - calls [map.diagram.empty](map.md#map.diagram.empty), [map.diagram.byArea](map.md#map.diagram.byArea), [map.diagram.lanes](map.md#map.diagram.lanes)
-    - fn [layersDiagram](../../src/diagram.ts#L464) (snapshot: AnalysisSnapshot, spec: SpecIR, results: readonly DiagramResult[]) → Diagram <!-- internal -->
+    - fn [layersDiagram](../../src/diagram.ts#L545) (snapshot: AnalysisSnapshot, spec: SpecIR, results: readonly DiagramResult[]) → Diagram <!-- internal -->
       <a id="map.diagram.layersDiagram"></a>
       - calls [map.diagram.layerOrder](map.md#map.diagram.layerOrder), [map.diagram.byArea](map.md#map.diagram.byArea), [map.diagram.layerOf](map.md#map.diagram.layerOf), [map.diagram.worst](map.md#map.diagram.worst)
-    - fn [layout](../../src/diagram.ts#L525) (diagram: Diagram, positions: Positions = {}) → Diagram
+    - fn [layout](../../src/diagram.ts#L606) (diagram: Diagram, positions: Positions = {}) → Diagram
       <a id="map.diagram.layout"></a><br>Places the shapes: the rank of a node is its longest path from a node without predecessors (back edges of a cycle ignored), its column; within a lane and a rank, nodes go by spec line, then by their order in the diagram. Lanes are horizontal bands as tall as their fullest rank.…
   - module [emit](../../src/emit.ts#L1)
     <a id="map.emit"></a><br>Snapshot → generated `map/<layer>.md` files, and the explained map: the same tree with an explanation under every node (ADR 0004).
