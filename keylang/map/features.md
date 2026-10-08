@@ -283,24 +283,81 @@
     - fn [percent](../../src/coverage-report.ts#L215) (share: number) → string <!-- internal -->
     - fn [coverageText](../../src/coverage-report.ts#L218) (report: CoverageReport, specDir = "keylang") → string
       - calls features.coverage-report.percent
+  - module [discover-names](../../src/discover-names.ts#L1)
+    - node external.node
+    - config base.config
+    - diagram map.diagram
+    - discover features.discover
+    - explanations map.explanations
+    - graph map.graph
+    - llm features.llm
+    - snapshot map.snapshot
+    - spec-ir lang.spec-ir
+    - span base.span
+    - type [NameMode](../../src/discover-names.ts#L30) = (typeof NAME_MODES)[number]
+    - fn [isNameMode](../../src/discover-names.ts#L32) (value: string) → value is NameMode
+    - type [BusinessProcess](../../src/discover-names.ts#L44)
+    - type [NameGroup](../../src/discover-names.ts#L62)
+    - fn [nameGroups](../../src/discover-names.ts#L68) (flows: readonly DiscoveredFlow[]) → NameGroup[]
+      - calls base.span.compareText
+    - fn [processBaseline](../../src/discover-names.ts#L80) (snapshot: AnalysisSnapshot, flows: readonly Pick<DiscoveredFlow, "name" | "steps">[]) → string
+      - calls base.span.compareText, map.explanations.snapshotBaseline
+    - fn [isStaleProcess](../../src/discover-names.ts#L87) (snapshot: AnalysisSnapshot, byName: ReadonlyMap<string, DiscoveredFlow>, process: BusinessProcess) → boolean
+      - calls features.discover-names.processBaseline
+    - type [NamesPlan](../../src/discover-names.ts#L94)
+    - fn [planNames](../../src/discover-names.ts#L104) (snapshot: AnalysisSnapshot, flows: readonly DiscoveredFlow[], saved: readonly BusinessProcess[], options: { stale: boolean; layer?: string; limit?: number }) → NamesPlan
+      - calls features.discover-names.isStaleProcess, features.discover-names.nameGroups
+    - fn [namesRequest](../../src/discover-names.ts#L123) (snapshot: AnalysisSnapshot, group: NameGroup, options: { lang: string; briefs: ReadonlyMap<string, StoredExplanation> }) → LlmRequest
+      - calls map.explanations.explanationOf
+    - fn [estimateNameTokens](../../src/discover-names.ts#L153) (requests: readonly LlmRequest[]) → { input: number; output: number }
+    - type [AnsweredProcess](../../src/discover-names.ts#L159)
+    - fn [parseNamesAnswer](../../src/discover-names.ts#L168) (snapshot: AnalysisSnapshot, group: NameGroup, answer: string) → { processes: AnsweredProcess[]; dropped: string[]; unknownIds: string[] } | { error: string }
+      - calls features.discover-names.jsonOf, features.discover-names.isRecord, features.discover-names.oneLine, features.discover-names.entities, base.span.compareText, features.discover-names.unknownIdsIn
+    - fn [unknownIdsIn](../../src/discover-names.ts#L207) (snapshot: AnalysisSnapshot, text: string) → string[] <!-- internal -->
+      - calls base.span.compareText
+    - fn [jsonOf](../../src/discover-names.ts#L217) (answer: string) → unknown <!-- internal -->
+    - fn [isRecord](../../src/discover-names.ts#L229) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [oneLine](../../src/discover-names.ts#L234) (value: unknown) → string <!-- internal -->
+    - fn [entities](../../src/discover-names.ts#L239) (value: unknown) → string[] <!-- internal -->
+      - calls features.discover-names.oneLine
+    - fn [flowAnchor](../../src/discover-names.ts#L246) (name: string) → string
+    - fn [domainOrder](../../src/discover-names.ts#L256) (a: string, b: string) → number <!-- internal -->
+      - calls base.span.compareText
+    - fn [renderProcesses](../../src/discover-names.ts#L266) (processes: readonly BusinessProcess[], fileOf: (flow: string) => string | null) → string
+      - calls features.discover-names.domainOrder, base.span.compareText, features.discover.proseLine, features.discover-names.flowAnchor
+    - fn [parseProcesses](../../src/discover-names.ts#L287) (text: string) → BusinessProcess[]
+      - calls features.discover.unproseLine
+    - fn [processesPath](../../src/discover-names.ts#L318) (specDir: string) → string
+      - calls base.config.specPath
+    - fn [readProcesses](../../src/discover-names.ts#L323) (root: string, specDir: string) → BusinessProcess[]
+      - calls features.discover-names.processesPath, features.discover-names.parseProcesses
+    - fn [processViews](../../src/discover-names.ts#L333) (snapshot: AnalysisSnapshot, spec: SpecIR, processes: readonly BusinessProcess[]) → DiagramProcess[]
+      - calls features.discover.discoverFlows, features.discover.specifiedTriggers, features.discover.firstLevelSteps
   - module [discover](../../src/discover.ts#L1)
+    - brief base.brief
     - draft features.draft
     - map map.map
     - spec-ir lang.spec-ir
     - snapshot map.snapshot
     - span base.span
-    - type [DiscoverOptions](../../src/discover.ts#L21)
-    - type [DiscoveredFlow](../../src/discover.ts#L33)
-    - type [Discovery](../../src/discover.ts#L49)
-    - fn [specifiedTriggers](../../src/discover.ts#L60) (flows: readonly Flow[]) → Map<string, { file: string; flow: string }>
+    - type [DiscoverOptions](../../src/discover.ts#L22)
+    - type [DiscoveredFlow](../../src/discover.ts#L34)
+    - type [Discovery](../../src/discover.ts#L52)
+    - fn [specifiedTriggers](../../src/discover.ts#L63) (flows: readonly Flow[]) → Map<string, { file: string; flow: string }>
       - calls base.span.compareText
-    - fn [discoverFlows](../../src/discover.ts#L73) (snapshot: AnalysisSnapshot, specified: ReadonlyMap<string, { file: string; flow: string }>, options: DiscoverOptions = {}) → Discovery
-      - calls features.draft.distinctNames, features.draft.draftFlow, features.discover.holesBySource, features.discover.withComment, features.discover.quoted, base.span.compareText
-    - fn [adoptedFlow](../../src/discover.ts#L120) (flow: DiscoveredFlow, specDir: string) → FlowDraft
-    - fn [discoverySummary](../../src/discover.ts#L127) (discovery: Pick<Discovery, "flows" | "specified">) → string
-    - fn [holesBySource](../../src/discover.ts#L133) (snapshot: AnalysisSnapshot) → Map<string, number> <!-- internal -->
-    - fn [withComment](../../src/discover.ts#L143) (text: string, comment: string) → string <!-- internal -->
-    - fn [quoted](../../src/discover.ts#L149) (label: string) → string <!-- internal -->
+    - fn [discoverFlows](../../src/discover.ts#L76) (snapshot: AnalysisSnapshot, specified: ReadonlyMap<string, { file: string; flow: string }>, options: DiscoverOptions = {}) → Discovery
+      - calls features.draft.distinctNames, features.draft.draftFlow, features.discover.holesBySource, features.discover.offlineDescription, features.discover.firstLevelSteps, features.discover.withComment, features.discover.quoted, base.span.compareText
+    - fn [adoptedFlow](../../src/discover.ts#L124) (flow: DiscoveredFlow, specDir: string) → FlowDraft
+    - fn [discoverySummary](../../src/discover.ts#L131) (discovery: Pick<Discovery, "flows" | "specified">) → string
+    - fn [holesBySource](../../src/discover.ts#L137) (snapshot: AnalysisSnapshot) → Map<string, number> <!-- internal -->
+    - fn [withComment](../../src/discover.ts#L147) (text: string, comment: string, described: { text: string; ids: string[] } | null = null) → string <!-- internal -->
+      - calls features.discover.proseLine
+    - fn [firstLevelSteps](../../src/discover.ts#L154) (draftText: string) → string[]
+    - fn [offlineDescription](../../src/discover.ts#L168) (snapshot: AnalysisSnapshot, trigger: string, steps: readonly string[]) → { text: string; ids: string[] } | null
+      - calls base.brief.firstSentence
+    - fn [proseLine](../../src/discover.ts#L193) (text: string) → string
+    - fn [unproseLine](../../src/discover.ts#L206) (line: string) → string
+    - fn [quoted](../../src/discover.ts#L216) (label: string) → string <!-- internal -->
   - module [draft-llm](../../src/draft-llm.ts#L1)
     - analyze map.analyze
     - assess check.assess

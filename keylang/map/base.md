@@ -6,13 +6,15 @@
   - module [brief](../../src/brief.ts#L1)
     - fn [briefOf](../../src/brief.ts#L16) (text: string) → string | null
       - calls base.brief.capText, base.brief.firstSentences
-    - fn [firstSentences](../../src/brief.ts#L27) (text: string, count: number) → string <!-- internal -->
-    - fn [readmeBrief](../../src/brief.ts#L45) (markdown: string) → string | null
+    - fn [firstSentence](../../src/brief.ts#L26) (text: string) → string | null
+      - calls base.brief.briefOf, base.brief.firstSentences
+    - fn [firstSentences](../../src/brief.ts#L33) (text: string, count: number) → string <!-- internal -->
+    - fn [readmeBrief](../../src/brief.ts#L51) (markdown: string) → string | null
       - calls base.brief.proseParagraphs, base.brief.plainInline, base.brief.words, base.brief.briefOf
-    - fn [proseParagraphs](../../src/brief.ts#L54) (markdown: string) → string[] <!-- internal -->
-    - fn [plainInline](../../src/brief.ts#L106) (text: string) → string <!-- internal -->
-    - fn [words](../../src/brief.ts#L118) (text: string) → number <!-- internal -->
-    - fn [capText](../../src/brief.ts#L123) (text: string, max: number) → string
+    - fn [proseParagraphs](../../src/brief.ts#L60) (markdown: string) → string[] <!-- internal -->
+    - fn [plainInline](../../src/brief.ts#L112) (text: string) → string <!-- internal -->
+    - fn [words](../../src/brief.ts#L124) (text: string) → number <!-- internal -->
+    - fn [capText](../../src/brief.ts#L129) (text: string, max: number) → string
   - module [config](../../src/config.ts#L1)
     - node external.node
     - glob base.glob
