@@ -1179,3 +1179,24 @@ test("guessed layout: an import of a directory in another letter case is a hole 
   assert.match(out, /unverified unresolved import `\.\.\/DB\/conn`/, out);
   assert.match(out, /0 fail, 1 unverified, 0 ok/, out);
 });
+
+test("no-cycles: `import(\"./a\").A` and `typeof import(\"./a\")` in a type are type-only dependencies, not a runtime cycle", (t) => {
+  const a = 'import { fb } from "./b";\nexport type A = number;\nexport function fa(): void {\n  fb(1);\n}\n';
+  const variants = [
+    'export function fb(x: import("./a").A): void {}\n',
+    'export type B = import("./a").A;\nexport function fb(x: B): void {}\n',
+    'let x: typeof import("./a");\nexport function fb(x2: number): void {}\n',
+    'export function fb(x: Array<import("./a").A>): import("./a").A {\n  return x[0] as import("./a").A;\n}\n',
+  ];
+  for (const b of variants) {
+    const dir = repo(t, { "keylang/rules.md": "# rules\n\n- no-cycles\n", "src/app/a.ts": a, "src/app/b.ts": b });
+    const o = keylang(dir, ["check"]);
+    assert.equal(o.status, 0, `${b}\n${o.stdout}`);
+    assert.match(o.stdout + o.stderr, /0 fail, 0 unverified, 1 ok/, b);
+    const edge = snapshot(dir).edges.find((e) => e.kind === "import" && e.source === "app.b" && e.target === "app.a");
+    assert.equal(edge?.typeOnly, true, `${b}: ${JSON.stringify(edge)}`);
+  }
+  // A runtime `import()` still is one.
+  const dir = repo(t, { "keylang/rules.md": "# rules\n\n- no-cycles\n", "src/app/a.ts": a, "src/app/b.ts": 'export async function fb(x: number): Promise<void> {\n  await import("./a");\n}\n' });
+  assert.match(keylang(dir, ["check"]).stdout, /K105 divergence: dependency cycle app\.a → app\.b → app\.a/);
+});
