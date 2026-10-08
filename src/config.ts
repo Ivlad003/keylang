@@ -129,6 +129,15 @@ export const OUTSIDE_LAYER = "outside";
  */
 export const RESERVED_LAYER_NAMES: ReadonlySet<string> = new Set([...SYNTHETIC_LAYERS, "layer", "layers", "allow", "deny", "entry", "module", "no-cycles"]);
 
+/**
+ * A reserved name, or `README` in any case: the explained map writes a layer
+ * as `<layer>.md` beside its start page `README.md`, and on a
+ * case-insensitive file system `readme.md` is that file too.
+ */
+export function isReservedLayerName(name: string): boolean {
+  return RESERVED_LAYER_NAMES.has(name) || name.toLowerCase() === "readme";
+}
+
 /** Directories never indexed. */
 const SKIP_DIRS = new Set(["node_modules", "dist", "build", "out", "coverage", "target", "vendor", "__pycache__", "venv", "site-packages"]);
 /** Test and tooling files: kept out of the map (flows reference tests by path, §3.4). */
@@ -288,7 +297,7 @@ export function parseConfig(file: string, text: string): RawConfig {
       written.set(name, key);
       // A layer is the first segment of every ID under it; `core.domain` would be two.
       if (layerName(name) !== name) throw new Error(`${file}: layer name \`${name}\` must be one ID segment (letters, digits, \`_\`, \`$\`, \`-\`), e.g. \`${layerName(name)}\``);
-      if (RESERVED_LAYER_NAMES.has(name)) throw new Error(`${file}: \`layers.${name}\`: ${reservedReason(name)}; rename the layer, e.g. \`${name}_\``);
+      if (isReservedLayerName(name)) throw new Error(`${file}: \`layers.${name}\`: ${reservedReason(name)}; rename the layer, e.g. \`${name}_\``);
       if (typeof globs === "string") layers[name] = validGlob(`layers.${name}`, globs);
       else if (Array.isArray(globs) && globs.every((glob) => typeof glob === "string")) layers[name] = (globs as string[]).map((glob, i) => validGlob(`layers.${name}[${i}]`, glob));
       else fail(`layers.${name}`, "a glob or an array of globs", globs);
@@ -681,7 +690,7 @@ export function guessLayout(root: string, exclude: readonly string[]): { layers:
   const add = (wanted: string, what: string, globs: string[]): void => {
     const name = freeLayerName(wanted, layers);
     if (name !== wanted) {
-      const why = RESERVED_LAYER_NAMES.has(wanted) ? reservedReason(wanted) : `\`${wanted}\` is already the layer of ${owners.get(wanted) ?? "another directory"}`;
+      const why = isReservedLayerName(wanted) ? reservedReason(wanted) : `\`${wanted}\` is already the layer of ${owners.get(wanted) ?? "another directory"}`;
       notes.push(`${what} is layer \`${name}\`: ${why}`);
     }
     layers.set(name, globs);
@@ -755,7 +764,7 @@ function layerDirs(root: string, dir: string, exclude: readonly string[]): { nam
 
 /** `wanted`, or the first free variant: a reserved name gets `_`, a taken one a number (`_2fa_2`). */
 function freeLayerName(wanted: string, taken: ReadonlyMap<string, unknown>): string {
-  const first = RESERVED_LAYER_NAMES.has(wanted) ? `${wanted}_` : wanted;
+  const first = isReservedLayerName(wanted) ? `${wanted}_` : wanted;
   if (!taken.has(first)) return first;
   for (let n = 2; ; n++) {
     const name = `${wanted}_${n}`;
@@ -767,6 +776,7 @@ function reservedReason(name: string): string {
   if (name === "external") return "`external` is reserved for packages outside the repository";
   if (name === "unassigned") return "`unassigned` is reserved for files outside every layer";
   if (name === OUTSIDE_LAYER) return "`outside` is reserved for files `outside` puts outside the architecture";
+  if (name.toLowerCase() === "readme") return `\`${name}\` is reserved: \`README.md\` is the start page of the explained map`;
   return `\`${name}\` is a keyword at the top of a map`;
 }
 

@@ -9,14 +9,17 @@
     - parser lang.parser
     - fn [collectMdFiles](../../src/files.ts#L16) (paths: readonly string[], base?: string) → string[]
       - calls lang.files.walkDir, lang.files.realPath
-    - fn [walkDir](../../src/files.ts#L42) (dir: string, out: string[], walked: Set<string>, at: (p: string) => string) → void <!-- internal -->
-      - calls lang.files.realPath, lang.files.entryType
-    - fn [entryType](../../src/files.ts#L60) (e: Dirent, path: string) → "dir" | "file" | null <!-- internal -->
-    - fn [realPath](../../src/files.ts#L70) (path: string) → string <!-- internal -->
-    - fn [load](../../src/files.ts#L79) (files: readonly string[]) → Document[]
+    - fn [skippedDirectory](../../src/files.ts#L43) (name: string) → boolean
+    - fn [walkReaches](../../src/files.ts#L48) (dir: string, abs: string) → boolean
+      - calls lang.files.skippedDirectory
+    - fn [walkDir](../../src/files.ts#L55) (dir: string, out: string[], walked: Set<string>, at: (p: string) => string) → void <!-- internal -->
+      - calls lang.files.realPath, lang.files.entryType, lang.files.skippedDirectory
+    - fn [entryType](../../src/files.ts#L73) (e: Dirent, path: string) → "dir" | "file" | null <!-- internal -->
+    - fn [realPath](../../src/files.ts#L83) (path: string) → string <!-- internal -->
+    - fn [load](../../src/files.ts#L92) (files: readonly string[]) → Document[]
       - calls lang.parser.parse
-    - fn [readTextOrNull](../../src/files.ts#L84) (path: string) → string | null
-    - fn [existingText](../../src/files.ts#L93) (path: string) → string | null
+    - fn [readTextOrNull](../../src/files.ts#L97) (path: string) → string | null
+    - fn [existingText](../../src/files.ts#L106) (path: string) → string | null
   - module [fmt](../../src/fmt.ts#L1)
     - diag base.diag
     - ir lang.ir

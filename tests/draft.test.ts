@@ -517,6 +517,35 @@ test("spec-to-code: the candidate shows every finding it adds, a K102 in the new
   assert.equal(statSync(file).mode & 0o777, 0o640);
 });
 
+// A file with mixed line endings is not normalized: lines nobody edited keep their own ending, new lines take the file's most common one.
+test("spec-to-code --apply, draft flow and draft rules keep the line endings of a file with mixed ones", (t) => {
+  const dir = copy(t);
+  mkdirSync(join(dir, "keylang/flows"), { recursive: true });
+  const file = join(dir, "src/app/refund.ts");
+  const code = "export const a = 1;\r\nexport const b = 2;\r\nexport const c = 3;\n";
+  writeFileSync(file, code);
+  writeFileSync(join(dir, "keylang/flows/refund.md"), "# flow refund\n\n- planned fn app.refund.refund (order: Order) → Order\n- trigger app.refund.refund\n");
+  const applied = keylang(dir, ["spec-to-code", "app.refund.refund", "--apply"]);
+  assert.equal(applied.status, 0, applied.stderr);
+  const text = readFileSync(file, "utf8");
+  assert.ok(text.startsWith(code), JSON.stringify(text));
+  assert.match(text.slice(code.length), /^\r\nexport function refund\(order: Order\): Order \{\r\n/, "new lines take CRLF, the most common ending");
+
+  const notes = "# notes\r\n\r\nWhy checkout exists.\n";
+  writeFileSync(join(dir, "keylang/flows/checkout.md"), notes);
+  assert.equal(keylang(dir, ["draft", "flow", "app.checkout.checkout", "--mode", "algo"]).status, 0);
+  const flow = readFileSync(join(dir, ".keylang/proposals/keylang/flows/checkout.md"), "utf8");
+  assert.ok(flow.startsWith(notes), JSON.stringify(flow));
+  assert.match(flow.slice(notes.length), /^\r\n# flow checkout\r\n/);
+
+  const rules = readFileSync(join(dir, "keylang/rules.md"), "utf8").replace("\n", "\r\n");
+  writeFileSync(join(dir, "keylang/rules.md"), rules);
+  assert.equal(keylang(dir, ["draft", "rules", "--mode", "algo"]).status, 0);
+  const proposal = readFileSync(join(dir, ".keylang/proposals/keylang/rules.md"), "utf8");
+  assert.ok(proposal.startsWith(rules.replace(/\n+$/, "")), JSON.stringify(proposal));
+  assert.match(proposal, /\n- layers domain < infra < app/, "the new rule takes LF, the most common ending");
+});
+
 test("spec-to-code: a Python stub keeps the declared annotations and result, so it matches its plan (K202, not K201)", (t) => {
   const dir = mkdtempSync(join(tmpdir(), "keylang-draft-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));

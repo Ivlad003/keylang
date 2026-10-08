@@ -20,13 +20,17 @@
     - type [AnalysisRequest](../../src/analyze.ts#L22)
     - type [Analysis](../../src/analyze.ts#L49) extends Assessment
     - fn [analyze](../../src/analyze.ts#L63) (request: AnalysisRequest) → Promise<Analysis>
-      - calls base.config.loadConfig, base.config.toPosix, map.fact-cache.keepsFactCache, map.map.generateMap, map.fact-cache.saveFactCache, lang.files.collectMdFiles, lang.parser.parse, map.analyze.within, map.analyze.parseRenderedMap, base.span.compareText, base.config.evidenceFiles, base.config.resolveStatic, map.declared-packages.readManifests, check.assess.assess, check.test-report.loadReports, check.trace-evidence.loadTraces, map.analyze.repositoryFile
+      - calls base.config.loadConfig, base.config.toPosix, map.fact-cache.keepsFactCache, map.map.generateMap, map.fact-cache.saveFactCache, map.analyze.readingAid, lang.files.collectMdFiles, lang.files.walkReaches, lang.parser.parse, map.analyze.within, map.analyze.parseRenderedMap, base.span.compareText, base.config.evidenceFiles, base.config.resolveStatic, map.declared-packages.readManifests, check.assess.assess, check.test-report.loadReports, check.trace-evidence.loadTraces, map.analyze.repositoryFile
     - fn [parseRenderedMap](../../src/analyze.ts#L133) (path: string, text: string) → Document <!-- internal -->
       - calls lang.parser.parse
     - fn [findRoot](../../src/analyze.ts#L143) (start: string) → string
     - fn [repositoryFile](../../src/analyze.ts#L154) (root: string, path: string) → boolean <!-- internal -->
       - calls map.analyze.within
-    - fn [within](../../src/analyze.ts#L164) (abs: string, dir: string) → boolean
+    - fn [readingAid](../../src/analyze.ts#L165) (specDir: string, abs: string) → boolean <!-- internal -->
+      - calls map.analyze.within
+    - fn [specPathProblem](../../src/analyze.ts#L174) (config: Config, abs: string) → string | null
+      - calls map.analyze.within, lang.files.walkReaches, map.analyze.readingAid
+    - fn [within](../../src/analyze.ts#L185) (abs: string, dir: string) → boolean
   - module [c4-export](../../src/c4-export.ts#L1)
     - explanations map.explanations
     - graph map.graph
@@ -543,33 +547,34 @@
       - calls map.map.opaqueFacts
     - type [MapDiff](../../src/map.ts#L260)
     - fn [targets](../../src/map.ts#L271) (config: Config, r: MapResult) → { dir: string; files: ReadonlyMap<string, string>; artifact: "map" | "explained" }[] <!-- internal -->
-    - fn [extraGenerated](../../src/map.ts#L279) (dir: string, files: ReadonlyMap<string, string>) → string[] <!-- internal -->
-      - calls map.emit.isGeneratedMap
-    - fn [mapConflicts](../../src/map.ts#L287) (config: Config, r: MapResult) → string[]
+    - type [ExtraGenerated](../../src/map.ts#L279) <!-- internal -->
+    - fn [extraGenerated](../../src/map.ts#L292) (dir: string, files: ReadonlyMap<string, string>) → ExtraGenerated[] <!-- internal -->
+      - calls map.map.readOrNull, map.emit.isGeneratedMap
+    - fn [mapConflicts](../../src/map.ts#L317) (config: Config, r: MapResult) → string[]
       - calls map.map.targets, map.emit.isGeneratedMap
-    - type [MapArtifact](../../src/map.ts#L299) = "map" | "explained" | "index" | "facts"
-    - type [MapStep](../../src/map.ts#L302)
-    - type [PlannedStep](../../src/map.ts#L308) extends MapStep <!-- internal -->
-    - type [MapPlan](../../src/map.ts#L324)
-    - type [SourceInputs](../../src/map.ts#L336)
-    - type [MapInputs](../../src/map.ts#L344) extends SourceInputs <!-- internal -->
-    - fn [sourceInputs](../../src/map.ts#L354) (config: Config, sources: readonly { path: string; sha256: string }[]) → SourceInputs
-    - fn [sourceInputProblems](../../src/map.ts#L363) (config: Config, inputs: SourceInputs, subject: string) → string[]
+    - type [MapArtifact](../../src/map.ts#L329) = "map" | "explained" | "index" | "facts"
+    - type [MapStep](../../src/map.ts#L332)
+    - type [PlannedStep](../../src/map.ts#L338) extends MapStep <!-- internal -->
+    - type [MapPlan](../../src/map.ts#L354)
+    - type [SourceInputs](../../src/map.ts#L366)
+    - type [MapInputs](../../src/map.ts#L374) extends SourceInputs <!-- internal -->
+    - fn [sourceInputs](../../src/map.ts#L384) (config: Config, sources: readonly { path: string; sha256: string }[]) → SourceInputs
+    - fn [sourceInputProblems](../../src/map.ts#L393) (config: Config, inputs: SourceInputs, subject: string) → string[]
       - calls map.map.readOrNull, base.config.sourceTree, map.snapshot.sha256
-    - type [CommittedStep](../../src/map.ts#L382) extends MapStep
-    - type [MapCommit](../../src/map.ts#L387)
-    - fn [planMap](../../src/map.ts#L398) (config: Config, r: MapResult) → MapPlan
-      - calls base.config.toPosix, map.map.targets, map.map.readOrNull, map.map.extraGenerated, map.map.mapConflicts, map.map.sourceInputs, map.map.briefsKey
-    - fn [mapPlanProblems](../../src/map.ts#L432) (plan: MapPlan) → string[]
+    - type [CommittedStep](../../src/map.ts#L412) extends MapStep
+    - type [MapCommit](../../src/map.ts#L417)
+    - fn [planMap](../../src/map.ts#L428) (config: Config, r: MapResult) → MapPlan
+      - calls base.config.toPosix, map.map.targets, map.map.extraGenerated, map.map.readOrNull, map.map.mapConflicts, map.map.sourceInputs, map.map.briefsKey
+    - fn [mapPlanProblems](../../src/map.ts#L469) (plan: MapPlan) → string[]
       - calls base.safe-write.writeProblem, map.map.sourceInputProblems, map.map.briefsKey
-    - fn [commitMap](../../src/map.ts#L451) (plan: MapPlan, options: { signal?: AbortSignal; onStep?: (step: MapStep) => void } = {}) → Promise<MapCommit>
+    - fn [commitMap](../../src/map.ts#L488) (plan: MapPlan, options: { signal?: AbortSignal; onStep?: (step: MapStep) => void } = {}) → Promise<MapCommit>
       - calls base.safe-write.writeAtomic, base.safe-write.landing
-    - fn [briefsKey](../../src/map.ts#L480) (config: Config) → string <!-- internal -->
+    - fn [briefsKey](../../src/map.ts#L517) (config: Config) → string <!-- internal -->
       - calls map.snapshot.sha256, map.explanations.loadBriefs
-    - fn [readOrNull](../../src/map.ts#L485) (abs: string) → string | null <!-- internal -->
-    - fn [diffMap](../../src/map.ts#L494) (config: Config, r: MapResult) → MapDiff
-      - calls map.map.mapConflicts, map.map.targets, map.map.extraGenerated
-    - fn [extractorCode](../../src/map.ts#L516) () → string <!-- internal -->
+    - fn [readOrNull](../../src/map.ts#L522) (abs: string) → string | null <!-- internal -->
+    - fn [diffMap](../../src/map.ts#L531) (config: Config, r: MapResult) → MapDiff
+      - calls map.map.mapConflicts, map.map.targets, map.map.readOrNull, map.map.extraGenerated
+    - fn [extractorCode](../../src/map.ts#L556) () → string <!-- internal -->
       - calls map.snapshot.sha256
   - module [php-imports](../../src/php-imports.ts#L1)
     - node external.node

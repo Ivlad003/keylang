@@ -1770,70 +1770,71 @@
     - span [base.span](base.md#base.span)
     - stats [features.stats](features.md#features.stats)
     - buffer [tui.buffer](tui.md#tui.buffer)
+    - safe-write [base.safe-write](base.md#base.safe-write)
     - disk [tui.disk](tui.md#tui.disk)
     - input [tui.input](tui.md#tui.input)
     - merge [tui.merge](tui.md#tui.merge)
     - state [tui.state](tui.md#tui.state)
-    - type [MergeHost](../../src/tui/merge-session.ts#L24)
+    - type [MergeHost](../../src/tui/merge-session.ts#L25)
       <a id="tui.merge-session.MergeHost"></a><br>What MERGE needs from the session around it.
-    - type [ProposalEntry](../../src/tui/merge-session.ts#L39)
+    - type [ProposalEntry](../../src/tui/merge-session.ts#L40)
       <a id="tui.merge-session.ProposalEntry"></a><br>One pending target of the proposals list: its kind, how many hunks it has against the file on disk, and why it cannot be merged now (null: it can). Built from disk each time the list opens or Enter is pressed; building it writes nothing.
-    - module [MergeSession](../../src/tui/merge-session.ts#L52)
+    - module [MergeSession](../../src/tui/merge-session.ts#L53)
       <a id="tui.merge-session.MergeSession"></a><br>Drives the TUI review of files under the proposals store: lists and validates proposals, opens each as a hunk-by-hunk diff against disk, takes accept/reject keys, then writes, undoes or cancels via [`tui.merge-session.MergeSession.write`](tui.md#tui.merge-session.MergeSession.write). _(llm · claude:claude-opus-5-5 · 2026-10-06 · stale)_
-      - fn [constructor](../../src/tui/merge-session.ts#L55) (host: MergeHost)
+      - fn [constructor](../../src/tui/merge-session.ts#L56) (host: MergeHost)
         <a id="tui.merge-session.MergeSession.constructor"></a><br>Stores the given host object on the instance as the sole setup step, with no validation or other work performed. The session relies on that stored host for all subsequent interaction. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-      - fn [state](../../src/tui/merge-session.ts#L59) () → State <!-- internal -->
+      - fn [state](../../src/tui/merge-session.ts#L60) () → State <!-- internal -->
         <a id="tui.merge-session.MergeSession.state"></a><br>Returns the current `State` object held by the host, so the merge session reads shared state without owning a copy. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-      - fn [scan](../../src/tui/merge-session.ts#L66) () → string[]
+      - fn [scan](../../src/tui/merge-session.ts#L67) () → string[]
         <a id="tui.merge-session.MergeSession.scan"></a><br>Proposals that may be merged; the rest are listed with the reason they are ignored.
         - calls [tui.merge-session.MergeSession.files](tui.md#tui.merge-session.MergeSession.files), [tui.merge-session.MergeSession.problem](tui.md#tui.merge-session.MergeSession.problem)
-      - fn [files](../../src/tui/merge-session.ts#L70) () → string[] <!-- internal -->
+      - fn [files](../../src/tui/merge-session.ts#L71) () → string[] <!-- internal -->
         <a id="tui.merge-session.MergeSession.files"></a><br>Lists every regular file under the session root's proposals directory, recursively, as sorted POSIX-style paths relative to that directory via [`base.config.toPosix`](base.md#base.config.toPosix). Returns an empty list when the directory is missing or unreadable. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
         - calls [base.config.toPosix](base.md#base.config.toPosix), [base.span.compareText](base.md#base.span.compareText)
-      - fn [entries](../../src/tui/merge-session.ts#L89) () → ProposalEntry[]
+      - fn [entries](../../src/tui/merge-session.ts#L90) () → ProposalEntry[]
         <a id="tui.merge-session.MergeSession.entries"></a><br>Every file under `.keylang/proposals/`, sorted by POSIX path, with its kind, hunk count and the reason it cannot be merged. A link in the store is listed but never followed: a proposal is a plain file.
         - calls [base.config.toPosix](base.md#base.config.toPosix), [tui.merge-session.proposalKind](tui.md#tui.merge-session.proposalKind), [tui.merge-session.MergeSession.files](tui.md#tui.merge-session.MergeSession.files), [tui.merge-session.MergeSession.entry](tui.md#tui.merge-session.MergeSession.entry), [base.span.compareText](base.md#base.span.compareText)
-      - fn [entry](../../src/tui/merge-session.ts#L105) (path: string) → ProposalEntry <!-- internal -->
+      - fn [entry](../../src/tui/merge-session.ts#L106) (path: string) → ProposalEntry <!-- internal -->
         <a id="tui.merge-session.MergeSession.entry"></a><br>The list entry of the proposal file `path`: read fresh, compared with the file on disk.
-        - calls [tui.merge-session.proposalKind](tui.md#tui.merge-session.proposalKind), [tui.merge-session.MergeSession.problem](tui.md#tui.merge-session.MergeSession.problem), [tui.disk.readText](tui.md#tui.disk.readText), [tui.merge-session.MergeSession.proposalAbs](tui.md#tui.merge-session.MergeSession.proposalAbs), [tui.merge.diffLines](tui.md#tui.merge.diffLines), [tui.disk.splitEol](tui.md#tui.disk.splitEol), [tui.disk.lf](tui.md#tui.disk.lf), [tui.buffer.isDirty](tui.md#tui.buffer.isDirty)
-      - fn [specDir](../../src/tui/merge-session.ts#L120) () → string
+        - calls [tui.merge-session.proposalKind](tui.md#tui.merge-session.proposalKind), [tui.merge-session.MergeSession.problem](tui.md#tui.merge-session.MergeSession.problem), [tui.disk.readText](tui.md#tui.disk.readText), [tui.merge-session.MergeSession.proposalAbs](tui.md#tui.merge-session.MergeSession.proposalAbs), [tui.merge.diffLines](tui.md#tui.merge.diffLines), [tui.disk.lf](tui.md#tui.disk.lf), [tui.buffer.isDirty](tui.md#tui.buffer.isDirty)
+      - fn [specDir](../../src/tui/merge-session.ts#L121) () → string
         <a id="tui.merge-session.MergeSession.specDir"></a><br>The spec directory relative to the root, POSIX (`keylang`).
         - calls [base.config.loadConfig](base.md#base.config.loadConfig), [base.config.toPosix](base.md#base.config.toPosix)
-      - fn [problem](../../src/tui/merge-session.ts#L136) (path: string) → string | null
+      - fn [problem](../../src/tui/merge-session.ts#L137) (path: string) → string | null
         <a id="tui.merge-session.MergeSession.problem"></a><br>Why `.keylang/proposals/<path>` may not be merged, or null. A Markdown proposal replaces one hand-written spec: a file under the spec directory, not a generated map file, and not reached through a link that leads out.
         - calls [features.proposals.codeProposalProblem](features.md#features.proposals.codeProposalProblem), [features.proposals.proposalProblem](features.md#features.proposals.proposalProblem), [tui.merge-session.MergeSession.specDir](tui.md#tui.merge-session.MergeSession.specDir), [tui.merge-session.errorText](tui.md#tui.merge-session.errorText)
-      - fn [boundary](../../src/tui/merge-session.ts#L146) (code: boolean) → string <!-- internal -->
+      - fn [boundary](../../src/tui/merge-session.ts#L147) (code: boolean) → string <!-- internal -->
         <a id="tui.merge-session.MergeSession.boundary"></a><br>The directory a merge of `path` may write in: the spec directory for a spec, the repository for code.
         - calls [tui.merge-session.MergeSession.specDir](tui.md#tui.merge-session.MergeSession.specDir)
-      - fn [proposalAbs](../../src/tui/merge-session.ts#L150) (path: string) → string <!-- internal -->
+      - fn [proposalAbs](../../src/tui/merge-session.ts#L151) (path: string) → string <!-- internal -->
         <a id="tui.merge-session.MergeSession.proposalAbs"></a><br>Joins the session's root directory, the proposals directory constant, and a relative path into one absolute filesystem path. Used by [`tui.merge-session.MergeSession.open`](tui.md#tui.merge-session.MergeSession.open), [`tui.merge-session.MergeSession.write`](tui.md#tui.merge-session.MergeSession.write), [`tui.merge-session.MergeSession.entry`](tui.md#tui.merge-session.MergeSession.entry), and… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-      - fn [open](../../src/tui/merge-session.ts#L161) (wanted?: string) → void
+      - fn [open](../../src/tui/merge-session.ts#L162) (wanted?: string) → void
         <a id="tui.merge-session.MergeSession.open"></a><br>Opens the proposal of `wanted`, else of the current file, else the first one, as a MERGE diff against the file on disk. Proposals that break the format's limits are ignored with the reason.
-        - calls [tui.merge-session.MergeSession.scan](tui.md#tui.merge-session.MergeSession.scan), [tui.merge-session.MergeSession.files](tui.md#tui.merge-session.MergeSession.files), [tui.merge-session.MergeSession.problem](tui.md#tui.merge-session.MergeSession.problem), [tui.disk.readText](tui.md#tui.disk.readText), [tui.merge-session.MergeSession.proposalAbs](tui.md#tui.merge-session.MergeSession.proposalAbs), [tui.merge-session.MergeSession.start](tui.md#tui.merge-session.MergeSession.start), [tui.disk.splitEol](tui.md#tui.disk.splitEol), [tui.disk.lf](tui.md#tui.disk.lf), [tui.buffer.isDirty](tui.md#tui.buffer.isDirty)
-      - fn [start](../../src/tui/merge-session.ts#L203) (path: string, origin: MergeState["origin"], base: string[], proposed: string[], disk: string | null, proposal: string | null) → void
+        - calls [tui.merge-session.MergeSession.scan](tui.md#tui.merge-session.MergeSession.scan), [tui.merge-session.MergeSession.files](tui.md#tui.merge-session.MergeSession.files), [tui.merge-session.MergeSession.problem](tui.md#tui.merge-session.MergeSession.problem), [tui.disk.readText](tui.md#tui.disk.readText), [tui.merge-session.MergeSession.proposalAbs](tui.md#tui.merge-session.MergeSession.proposalAbs), [tui.merge-session.MergeSession.start](tui.md#tui.merge-session.MergeSession.start), [tui.disk.lf](tui.md#tui.disk.lf), [tui.buffer.isDirty](tui.md#tui.buffer.isDirty)
+      - fn [start](../../src/tui/merge-session.ts#L204) (path: string, origin: MergeState["origin"], base: string[], proposed: string[], disk: string | null, proposal: string | null) → void
         <a id="tui.merge-session.MergeSession.start"></a><br>A merge of `proposed` into `base`; `proposal` is the proposal file's text (null for `Ctrl+G`).
         - calls [tui.merge.diffLines](tui.md#tui.merge.diffLines), [tui.merge-session.MergeSession.dropProposal](tui.md#tui.merge-session.MergeSession.dropProposal), [tui.merge-session.MergeSession.scan](tui.md#tui.merge-session.MergeSession.scan)
-      - fn [dropProposal](../../src/tui/merge-session.ts#L222) (path: string, text: string) → void <!-- internal -->
+      - fn [dropProposal](../../src/tui/merge-session.ts#L223) (path: string, text: string) → void <!-- internal -->
         <a id="tui.merge-session.MergeSession.dropProposal"></a><br>Removes the proposal of `path` while it is still `text`.
         - calls [tui.merge-session.MergeSession.proposalAbs](tui.md#tui.merge-session.MergeSession.proposalAbs), [tui.disk.readText](tui.md#tui.disk.readText), [tui.disk.removeInside](tui.md#tui.disk.removeInside)
-      - fn [key](../../src/tui/merge-session.ts#L233) (event: KeyEvent) → void
+      - fn [key](../../src/tui/merge-session.ts#L234) (event: KeyEvent) → void
         <a id="tui.merge-session.MergeSession.key"></a><br>Handles merge-review keystrokes: accepts/rejects the focused hunk and jumps to the next pending one, undoes decisions, moves between hunks, opens help, writes via [`tui.merge-session.MergeSession.write`](tui.md#tui.merge-session.MergeSession.write) or cancels via [`tui.merge-session.MergeSession.leave`](tui.md#tui.merge-session.MergeSession.leave). _(llm · claude:claude-opus-5-5 · 2026-10-06 · stale)_
         - calls [tui.merge-session.MergeSession.write](tui.md#tui.merge-session.MergeSession.write), [tui.merge-session.MergeSession.leave](tui.md#tui.merge-session.MergeSession.leave)
-      - fn [leave](../../src/tui/merge-session.ts#L288) (merge: MergeState, message: string) → void <!-- internal -->
+      - fn [leave](../../src/tui/merge-session.ts#L289) (merge: MergeState, message: string) → void <!-- internal -->
         <a id="tui.merge-session.MergeSession.leave"></a><br>Ends a merge: clears merge state, refreshes the proposal list via [`tui.merge-session.MergeSession.scan`](tui.md#tui.merge-session.MergeSession.scan) (agents may have changed it), restores the prior mode, sets a status message, and clamps the cursor. _(llm · claude:claude-opus-5-5 · 2026-10-06 · stale)_
         - calls [tui.merge-session.MergeSession.scan](tui.md#tui.merge-session.MergeSession.scan)
-      - fn [write](../../src/tui/merge-session.ts#L307) () → void <!-- internal -->
+      - fn [write](../../src/tui/merge-session.ts#L308) () → void <!-- internal -->
         <a id="tui.merge-session.MergeSession.write"></a><br>Applies the decided hunks. A proposal file is the external change being confirmed, so the result goes to disk.
-        - calls [tui.merge-session.MergeSession.writeBuffer](tui.md#tui.merge-session.MergeSession.writeBuffer), [tui.disk.readText](tui.md#tui.disk.readText), [tui.merge-session.MergeSession.leave](tui.md#tui.merge-session.MergeSession.leave), [tui.buffer.isDirty](tui.md#tui.buffer.isDirty), [tui.merge-session.MergeSession.proposalAbs](tui.md#tui.merge-session.MergeSession.proposalAbs), [tui.merge.applyHunks](tui.md#tui.merge.applyHunks), [tui.disk.splitEol](tui.md#tui.disk.splitEol), [tui.disk.withEol](tui.md#tui.disk.withEol), [tui.disk.writeInside](tui.md#tui.disk.writeInside), [tui.merge-session.MergeSession.boundary](tui.md#tui.merge-session.MergeSession.boundary), [tui.buffer.setText](tui.md#tui.buffer.setText), [tui.disk.removeInside](tui.md#tui.disk.removeInside), [tui.merge-session.errorText](tui.md#tui.merge-session.errorText), [tui.merge-session.MergeSession.scan](tui.md#tui.merge-session.MergeSession.scan), [features.stats.updateStats](features.md#features.stats.updateStats), [features.stats.addDrafts](features.md#features.stats.addDrafts), [features.stats.statusesIn](features.md#features.stats.statusesIn)
-      - fn [writeBuffer](../../src/tui/merge-session.ts#L377) (merge: MergeState) → void <!-- internal -->
+        - calls [tui.merge-session.MergeSession.writeBuffer](tui.md#tui.merge-session.MergeSession.writeBuffer), [tui.disk.readText](tui.md#tui.disk.readText), [tui.merge-session.MergeSession.leave](tui.md#tui.merge-session.MergeSession.leave), [tui.buffer.isDirty](tui.md#tui.buffer.isDirty), [tui.merge-session.MergeSession.proposalAbs](tui.md#tui.merge-session.MergeSession.proposalAbs), [tui.merge.applyHunks](tui.md#tui.merge.applyHunks), [tui.disk.splitEol](tui.md#tui.disk.splitEol), [tui.disk.withEol](tui.md#tui.disk.withEol), [base.safe-write.keepLineEndings](base.md#base.safe-write.keepLineEndings), [tui.disk.writeInside](tui.md#tui.disk.writeInside), [tui.merge-session.MergeSession.boundary](tui.md#tui.merge-session.MergeSession.boundary), [tui.buffer.setText](tui.md#tui.buffer.setText), [tui.disk.removeInside](tui.md#tui.disk.removeInside), [tui.merge-session.errorText](tui.md#tui.merge-session.errorText), [tui.merge-session.MergeSession.scan](tui.md#tui.merge-session.MergeSession.scan), [features.stats.updateStats](features.md#features.stats.updateStats), [features.stats.addDrafts](features.md#features.stats.addDrafts), [features.stats.statusesIn](features.md#features.stats.statusesIn)
+      - fn [writeBuffer](../../src/tui/merge-session.ts#L380) (merge: MergeState) → void <!-- internal -->
         <a id="tui.merge-session.MergeSession.writeBuffer"></a><br>`Ctrl+G`: the accepted hunks go into the buffer, which `Ctrl+S` saves.
         - calls [tui.merge-session.MergeSession.leave](tui.md#tui.merge-session.MergeSession.leave), [tui.merge.applyHunks](tui.md#tui.merge.applyHunks), [tui.buffer.setText](tui.md#tui.buffer.setText)
-      - fn [undo](../../src/tui/merge-session.ts#L396) () → void
+      - fn [undo](../../src/tui/merge-session.ts#L399) () → void
         <a id="tui.merge-session.MergeSession.undo"></a><br>`u` in the view: undoes the last merge while the file still holds its result, on disk too, and brings back the proposal as it was — unless a newer proposal was written since, which is kept.
         - calls [tui.disk.readText](tui.md#tui.disk.readText), [tui.merge-session.MergeSession.boundary](tui.md#tui.merge-session.MergeSession.boundary), [tui.disk.removeInside](tui.md#tui.disk.removeInside), [tui.disk.writeInside](tui.md#tui.disk.writeInside), [tui.buffer.setText](tui.md#tui.buffer.setText), [tui.merge-session.MergeSession.scan](tui.md#tui.merge-session.MergeSession.scan)
-    - fn [proposalKind](../../src/tui/merge-session.ts#L436) (path: string) → ProposalEntry["kind"] <!-- internal -->
+    - fn [proposalKind](../../src/tui/merge-session.ts#L439) (path: string) → ProposalEntry["kind"] <!-- internal -->
       <a id="tui.merge-session.proposalKind"></a><br>A Markdown proposal replaces a spec; any other replaces a source file (or a test).
-    - fn [errorText](../../src/tui/merge-session.ts#L440) (error: unknown) → string
+    - fn [errorText](../../src/tui/merge-session.ts#L443) (error: unknown) → string
       <a id="tui.merge-session.errorText"></a><br>Converts any thrown value into a display string, taking `message` from `Error` instances and stringifying everything else. Callers across [`tui.app`](tui.md#tui.app) and [`tui.assist`](tui.md#tui.assist) use it to turn caught failures into user-facing notes. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [merge](../../src/tui/merge.ts#L1)
     <a id="tui.merge"></a><br>Line diff of a document and a proposed version, as hunks a person accepts or rejects one by one. The result keeps the base lines of every hunk that is not accepted, so nothing reaches the file without an explicit `a`.

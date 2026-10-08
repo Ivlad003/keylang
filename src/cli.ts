@@ -1363,6 +1363,10 @@ function printMap(result: OperationEnvelope<"map">, root: string): number {
     return result.exitCode ?? 2;
   }
   for (const w of payload.warnings) process.stderr.write(`warning: ${w}\n`);
+  // A failure before the plan was checked (the map directory could not be read): only the messages name it.
+  if (result.status === "failed" && payload.refused.length === 0 && payload.steps.length === 0) {
+    for (const message of result.messages) if (message.level === "error") process.stderr.write(`keylang: ${message.text}\n`);
+  }
   for (const line of mapConflictLines(payload.conflicts, shown)) process.stdout.write(`${line}\n`);
   for (const line of payload.refused) process.stdout.write(`${line}\n`);
   if (payload.conflicts.length > 0) return result.exitCode ?? 2;
