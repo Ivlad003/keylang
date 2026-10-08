@@ -13,6 +13,14 @@
 // temporary ID `planned:<layer>.<name>` from the lane it lands in. Notes are
 // layout, so «з коду» draws them too.
 //
+// On the right, the properties panel (properties.ts): ID, kind, signature of
+// a planned shape, tests, description. Connections carry a meaning, picked in
+// the bar before drawing one (from the arrow over a shape) or in the panel:
+// sequence, call, dependency allowed or denied (line styles differ), event →
+// subscriber, `continues`. A connection that means nothing between those two
+// shapes — a layer denying itself, a sequence into a note — is refused with a
+// tooltip that says why.
+//
 // The editor writes nothing to the specs: its state lives in memory and in a
 // draft of the tab (`sessionStorage`, so a reload comes back to it), the
 // positions go to the layout store, and `currentModel()` is what ticket 24
@@ -21,8 +29,10 @@
 import {
   BaseGraph,
   Cell,
+  ConnectionHandler,
   EdgeHandlerConfig,
   Geometry,
+  ImageBox,
   InternalEvent,
   PanningHandler,
   Point,
@@ -35,6 +45,7 @@ import type { Api, Diagram, DiagramNode, Verdict, Views } from "./api.ts";
 import { register, VERDICT_COLOUR, VERDICT_GLYPH, nodeStyle, wrapLabel } from "./canvas.ts";
 import { button, make } from "./dom.ts";
 import { layoutStore, type Layout } from "./layout-store.ts";
+import { Properties } from "./properties.ts";
 
 /** The kinds of shape the editor knows: those of the diagram model and those a person draws. */
 export type ShapeKind = "lane" | "layer" | "module" | "fn" | "type" | "start" | "task" | "gateway" | "parallel" | "event" | "timer" | "external" | "hole" | "note" | "group";
@@ -44,6 +55,87 @@ export type LinkKind = "sequence" | "call" | "dependency" | "allow" | "deny" | "
 
 /** «з коду»: the model's shapes, only the layout changes; «чернетка»: everything changes. */
 export type EditorMode = "code" | "draft";
+
+/** The kinds as the panel names them. */
+export const SHAPE_NAMES: Record<string, string> = {
+  lane: "шар (доріжка)",
+  layer: "шар",
+  module: "модуль",
+  fn: "fn",
+  type: "тип",
+  start: "тригер (стартова подія)",
+  task: "крок (задача)",
+  gateway: "шлюз when",
+  parallel: "parallel",
+  event: "подія",
+  timer: "таймер",
+  external: "зовнішня система",
+  hole: "дірка: маршрут не доведено",
+  note: "примітка",
+  group: "група",
+};
+
+/** The meanings of a connection, as the bar and the panel name them. */
+export const LINK_NAMES: Record<LinkKind, string> = {
+  sequence: "послідовність (крок → крок)",
+  call: "виклик",
+  dependency: "залежність",
+  allow: "allow: залежність дозволено",
+  deny: "deny: залежність заборонено",
+  emits: "emits: крок → подія",
+  subscribes: "подія → підписник",
+  continues: "continues: до тригера іншого флоу",
+};
+
+const FLOW: ReadonlySet<ShapeKind> = new Set(["start", "task", "gateway", "parallel", "event", "timer", "external", "hole", "fn"]);
+const STRUCTURE: ReadonlySet<ShapeKind> = new Set(["lane", "layer", "module", "fn", "type"]);
+const ACTORS: ReadonlySet<ShapeKind> = new Set(["start", "task", "fn"]);
+
+/**
+ * Why a connection of `kind` from `source` to `target` means nothing, or null when it is fine.
+ * The rules follow the forms of keylang: rules between layers and modules, a flow's sequence
+ * between its shapes, `emits` into an event and its subscribers out of it, `continues` into
+ * another flow's trigger.
+ */
+export function linkError(kind: LinkKind, source: Shape | null, target: Shape | null): string | null {
+  if (!source || !target) return "";
+  if (source.kind === "note" || target.kind === "note") return "примітка — проза: з'єднань не має";
+  if (source.kind === "group" || target.kind === "group") return "група — лише рамка розкладки: з'єднуйте фігури в ній";
+  if (source === target) {
+    if (kind === "deny" || kind === "allow") return `${kind}: шар не може ${kind === "deny" ? "заборонити" : "дозволити"} залежність від самого себе`;
+    return "фігура не з'єднується сама з собою";
+  }
+  switch (kind) {
+    case "allow":
+    case "deny":
+    case "dependency":
+      if (!STRUCTURE.has(source.kind) || !STRUCTURE.has(target.kind)) return `${kind}: правило залежності — між шарами, модулями, fn чи типами, не між кроками флоу`;
+      return null;
+    case "sequence":
+      if (!FLOW.has(source.kind) || !FLOW.has(target.kind)) return "послідовність — між фігурами флоу (тригер, крок, шлюз, подія, таймер)";
+      if (target.kind === "start") return "послідовність не входить у тригер: інший флоу — continues";
+      return null;
+    case "call":
+      if (!ACTORS.has(source.kind) && source.kind !== "module") return "виклик — від кроку, fn чи модуля";
+      if (!ACTORS.has(target.kind) && target.kind !== "external" && target.kind !== "module") return "виклик — до кроку, fn, модуля чи зовнішньої системи";
+      return null;
+    case "emits":
+      if (!ACTORS.has(source.kind)) return "emits — від кроку, fn чи тригера";
+      if (target.kind !== "event") return "emits веде в подію";
+      return null;
+    case "subscribes":
+      if (source.kind !== "event") return "підписка починається в події";
+      if (!ACTORS.has(target.kind)) return "підписник події — крок, fn чи тригер";
+      return null;
+    case "continues":
+      if (target.kind !== "start") return "continues веде до тригера іншого флоу";
+      if (!FLOW.has(source.kind)) return "continues — від фігури флоу";
+      return null;
+  }
+}
+
+/** The arrow over a shape that starts a connection: an SVG image (the page allows `img-src data:`). */
+const CONNECT_ICON = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="8" fill="#1565c0" fill-opacity="0.85"/><path d="M5 9h7M9 5.5 12.5 9 9 12.5" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>')}`;
 
 /** What a start event stands for: a trigger fn or an entry point's kind. */
 export const TRIGGERS = ["fn", "route", "cron", "webhook", "consumer", "cli", "event"] as const;
@@ -304,13 +396,19 @@ export class Editor {
   private readonly canvas: HTMLDivElement;
   private readonly bar: HTMLDivElement;
   private viewKey = "";
-  private mode: EditorMode = "code";
+  private editMode: EditorMode = "code";
   private saveTimer = 0;
   private loading = false;
   /** The diagram the open view came from: «скинути чернетку» draws it again. */
   private source: Diagram = { nodes: [], edges: [], groups: [] };
   private counter = 0;
   private readonly palette: HTMLDivElement;
+  private readonly properties: Properties;
+  private readonly tipBox: HTMLDivElement;
+  private tipTimer = 0;
+  private pointer = { x: 0, y: 0 };
+  /** The meaning of the next connection drawn. */
+  private linkKind: LinkKind = "sequence";
 
   constructor(root: HTMLElement, api: Api, host: EditorHost) {
     register();
@@ -322,10 +420,18 @@ export class Editor {
     this.palette = make("div", { className: "editor-palette" });
     this.palette.id = "editor-palette";
     this.palette.setAttribute("aria-label", "Палітра");
-    root.replaceChildren(this.bar, make("div", { className: "editor-body" }, this.palette, this.canvas));
+    const panel = make("aside", { className: "editor-panel" });
+    panel.id = "editor-panel";
+    panel.setAttribute("aria-label", "Властивості");
+    this.tipBox = make("div", { className: "editor-tip" });
+    this.tipBox.id = "editor-tip";
+    this.tipBox.setAttribute("role", "alert");
+    this.tipBox.hidden = true;
+    root.replaceChildren(this.bar, make("div", { className: "editor-body" }, this.palette, this.canvas, panel, this.tipBox));
+    this.properties = new Properties(panel, api, { mode: () => this.editMode, updateShape: (cell, patch) => this.updateShape(cell, patch), updateLink: (cell, patch) => this.updateLink(cell, patch) }, () => this.host.views());
     // Bends: a virtual handle in the middle of each segment adds a point, as in diagrams.net.
     EdgeHandlerConfig.virtualBendsEnabled = true;
-    this.graph = new BaseGraph({ container: this.canvas, plugins: [SelectionCellsHandler, SelectionHandler, RubberBandHandler, PanningHandler] });
+    this.graph = new BaseGraph({ container: this.canvas, plugins: [SelectionCellsHandler, ConnectionHandler, SelectionHandler, RubberBandHandler, PanningHandler] });
     this.configure();
     this.toolbar();
     this.fillPalette();
@@ -365,10 +471,51 @@ export class Editor {
     };
     // «з коду» deletes only what is layout: notes and group frames.
     graph.isCellDeletable = (cell: Cell): boolean => {
-      if (this.mode === "draft" || this.loading) return true;
+      if (this.editMode === "draft" || this.loading) return true;
       const kind = shapeOf(cell)?.kind;
       return kind === "note" || kind === "group";
     };
+    // Connections: from the arrow over a shape, with the meaning picked in the bar; refused with a tooltip when it means nothing.
+    graph.setAllowLoops(true);
+    graph.setMultigraph(true);
+    graph.getEdgeValidationError = (edge: Cell | null = null, source: Cell | null = null, target: Cell | null = null): string | null => {
+      if (edge && linkOf(edge) && this.editMode === "code") return null;
+      if (this.editMode === "code") return "«з коду» не змінює з'єднань: перейдіть у «чернетку»";
+      const kind = linkOf(edge)?.kind ?? this.linkKind;
+      const refused = linkError(kind, shapeOf(source), shapeOf(target));
+      if (refused !== null) return refused;
+      const twin = this.graph.getDataModel().getEdgesBetween(source!, target!, true).some((other) => other !== edge && linkOf(other)?.kind === kind);
+      return twin ? `таке з'єднання (${kind}) вже є` : null;
+    };
+    graph.validationAlert = (message: string): void => this.tip(message);
+    const connect = graph.getPlugin<ConnectionHandler>("ConnectionHandler");
+    if (connect) {
+      connect.connectImage = new ImageBox(CONNECT_ICON, 18, 18);
+      connect.factoryMethod = (): Cell => {
+        const link = new Link(this.newKey(), this.linkKind);
+        const edge = new Cell(link, new Geometry(), linkStyle(link));
+        edge.setEdge(true);
+        edge.getGeometry()!.relative = true;
+        return edge;
+      };
+      // The arrow sits at a shape's right edge (outside a small one), so a drag from the middle still moves the shape; a lane's stays on its header.
+      const position = connect.getIconPosition.bind(connect);
+      connect.getIconPosition = (icon, state) => {
+        if (shapeOf(state.cell)?.kind === "lane") return position(icon, state);
+        const scale = this.graph.getView().scale;
+        const right = state.width > 80 * scale ? state.x + state.width - 12 * scale : state.x + state.width + 10;
+        return new Point(right - 9, state.getCenterY() - 9);
+      };
+    }
+    this.canvas.addEventListener("pointermove", (event) => (this.pointer = { x: event.clientX, y: event.clientY }), true);
+    this.canvas.addEventListener("pointerdown", (event) => (this.pointer = { x: event.clientX, y: event.clientY }), true);
+    // The panel follows the selection, and the model under it (an undo, a move into another lane).
+    graph.getSelectionModel().addListener(InternalEvent.CHANGE, () => this.properties.show(graph.getSelectionCount() === 1 ? graph.getSelectionCell() : null));
+    graph.getDataModel().addListener(InternalEvent.CHANGE, () => {
+      const shown = this.properties.current();
+      if (document.activeElement && document.getElementById("editor-panel")?.contains(document.activeElement)) return;
+      if (shown) this.properties.show(shown.getParent() || shown.isEdge() ? (graph.getSelectionCount() === 1 ? graph.getSelectionCell() : null) : null);
+    });
     // A planned shape moved into another lane takes that layer into its ID.
     graph.addListener(InternalEvent.MOVE_CELLS, () => this.relayer());
     // The wheel zooms around the cursor.
@@ -411,6 +558,14 @@ export class Editor {
     ungroup.id = "editor-ungroup";
     const fit = button("вмістити", () => this.fit(), { title: "Вмістити (Ctrl+Shift+H)" });
     fit.id = "editor-fit";
+    const kind = make("select", { title: "Значення нового з'єднання" });
+    kind.id = "editor-link-kind";
+    for (const [value, text] of Object.entries(LINK_NAMES)) {
+      const option = make("option", { text });
+      option.value = value;
+      kind.append(option);
+    }
+    kind.addEventListener("change", () => (this.linkKind = kind.value as LinkKind));
     const code = button("з коду", () => this.setMode("code"), { title: "Фігури з моделі: змінюється лише розкладка (і примітки)" });
     code.id = "editor-mode-code";
     const draft = button("чернетка", () => this.setMode("draft"), { title: "Усе редаговане: нові фігури отримують planned-ID" });
@@ -424,6 +579,8 @@ export class Editor {
       draft,
       make("span", { className: "sep" }),
       remove,
+      make("span", { className: "editor-label", text: "з'єднання:" }),
+      kind,
       make("span", { className: "sep" }),
       make("span", { className: "editor-label", text: "вирівняти:" }),
       align("left", "⇤", "За лівим краєм"),
@@ -513,7 +670,7 @@ export class Editor {
 
   /** Draws a palette shape at a model point: in the lane under it, with a planned ID of that lane's layer. */
   addFromPalette(entry: PaletteItem, at: { x: number; y: number }): Cell | null {
-    if (this.mode === "code" && entry.kind !== "note") {
+    if (this.editMode === "code" && entry.kind !== "note") {
       this.host.status("«з коду» змінює лише розкладку й примітки: перейдіть у «чернетку», щоб додати фігуру");
       return null;
     }
@@ -544,18 +701,95 @@ export class Editor {
 
   /** «з коду» or «чернетка»: what the canvas lets change. */
   setMode(mode: EditorMode): void {
-    this.mode = mode;
+    this.editMode = mode;
     this.applyMode();
     this.changed();
     this.host.status(mode === "draft" ? `editor · ${this.viewKey || "empty canvas"} · чернетка: everything changes; new shapes get planned IDs` : `editor · ${this.viewKey || "empty canvas"} · з коду: only the layout and notes change`);
   }
 
   private applyMode(): void {
-    const draft = this.mode === "draft";
+    const draft = this.editMode === "draft";
     this.graph.setDropEnabled(draft);
-    for (const id of ["editor-mode-code", "editor-mode-draft"]) document.getElementById(id)?.setAttribute("aria-pressed", String(id.endsWith(this.mode)));
+    this.graph.setConnectable(draft);
+    this.graph.setCellsDisconnectable(draft);
+    const kind = document.getElementById("editor-link-kind") as HTMLSelectElement | null;
+    if (kind) kind.disabled = !draft;
+    this.properties.show(this.graph.getSelectionCount() === 1 ? this.graph.getSelectionCell() : null);
+    for (const id of ["editor-mode-code", "editor-mode-draft"]) document.getElementById(id)?.setAttribute("aria-pressed", String(id.endsWith(this.editMode)));
     for (const item of this.palette.querySelectorAll<HTMLButtonElement>(".palette-item")) item.disabled = !draft && item.dataset["item"] !== "note";
-    this.canvas.dataset["mode"] = this.mode;
+    this.canvas.dataset["mode"] = this.editMode;
+  }
+
+  /** A message next to the pointer for a few seconds: why a connection or an edit was refused. */
+  tip(text: string): void {
+    const body = this.tipBox.parentElement!.getBoundingClientRect();
+    this.tipBox.textContent = text;
+    this.tipBox.hidden = false;
+    this.tipBox.style.left = `${Math.max(4, Math.min(body.width - 260, this.pointer.x - body.left + 12))}px`;
+    this.tipBox.style.top = `${Math.max(4, this.pointer.y - body.top + 12)}px`;
+    window.clearTimeout(this.tipTimer);
+    this.tipTimer = window.setTimeout(() => (this.tipBox.hidden = true), 4000);
+    this.host.status(text);
+  }
+
+  /** The panel's change of a shape: one undoable value (and style, size) change; a refusal as text. */
+  updateShape(cell: Cell, patch: Partial<Pick<Shape, "id" | "label" | "kind" | "trigger" | "role" | "signature" | "tests" | "description">>): string | null {
+    const shape = shapeOf(cell);
+    if (!shape) return "не фігура";
+    if (this.editMode === "code" && shape.kind !== "note") return "«з коду»: зміст змінюється лише в «чернетці»";
+    const next = shape.clone();
+    Object.assign(next, patch);
+    if (patch.id !== undefined) {
+      if (patch.id === "" || /\s/.test(patch.id)) return "ID — без пробілів і не порожній: planned:<шар>.<назва> чи ID з коду";
+      next.label = next.kind === "lane" || !patch.id.startsWith("planned:") ? patch.id.replace(/^planned:/, "") : patch.id.slice(patch.id.lastIndexOf(".") + 1).replace(/^planned:/, "");
+      if (!patch.id.startsWith("planned:")) next.signature = "";
+    }
+    const model = this.graph.getDataModel();
+    this.graph.batchUpdate(() => {
+      if (patch.kind !== undefined && patch.kind !== shape.kind) {
+        const named = PALETTE.find((p) => p.kind === patch.kind && p.named);
+        if (!named) next.id = "";
+        else if (next.id === "") {
+          const lane = this.laneOf(cell);
+          next.id = `planned:${lane ? `${layerOf(lane)}.` : ""}${this.newName(lane ? layerOf(lane) : null, next.label.replace(/\W+/g, "") || named.stem)}`;
+        }
+        if (patch.kind === "start" && !next.trigger) next.trigger = "fn";
+        if (patch.kind === "parallel" && !next.role) next.role = "split";
+        // A small shape and a box do not share a size.
+        if (SMALL.has(patch.kind) !== SMALL.has(shape.kind)) {
+          const size = PALETTE.find((p) => p.kind === patch.kind)?.size ?? [160, 60];
+          const geometry = cell.getGeometry()!.clone();
+          geometry.width = size[0];
+          geometry.height = size[1];
+          model.setGeometry(cell, geometry);
+        }
+      }
+      model.setValue(cell, next);
+      model.setStyle(cell, shapeStyle(next));
+    });
+    return null;
+  }
+
+  /** The panel's change of a connection: its meaning (checked as when it is drawn) or its label. */
+  updateLink(cell: Cell, patch: Partial<Pick<Link, "kind" | "label">>): string | null {
+    const link = linkOf(cell);
+    if (!link) return "не з'єднання";
+    if (this.editMode === "code") return "«з коду»: зміст змінюється лише в «чернетці»";
+    if (patch.kind !== undefined && patch.kind !== link.kind) {
+      const refused = linkError(patch.kind, shapeOf(cell.getTerminal(true)), shapeOf(cell.getTerminal(false)));
+      if (refused) {
+        this.tip(refused);
+        return refused;
+      }
+    }
+    const next = link.clone();
+    Object.assign(next, patch);
+    const model = this.graph.getDataModel();
+    this.graph.batchUpdate(() => {
+      model.setValue(cell, next);
+      model.setStyle(cell, linkStyle(next));
+    });
+    return null;
   }
 
   /** Deletes the selection, as far as the mode lets. */
@@ -570,7 +804,7 @@ export class Editor {
 
   /** After a move: a planned shape in another lane takes that lane's layer into its ID. */
   private relayer(): void {
-    if (this.mode !== "draft") return;
+    if (this.editMode !== "draft") return;
     const model = this.graph.getDataModel();
     this.graph.batchUpdate(() => {
       for (const cell of this.allCells()) {
@@ -612,7 +846,7 @@ export class Editor {
       const target = keyOf(cell.getTerminal(false));
       if (link && source && target) cells.push({ type: "link", parent: keyOf(cell.getParent()), link: { ...link }, source, target, points: (cell.getGeometry()?.points ?? []).map((p) => ({ x: p.x, y: p.y })) });
     }
-    return { view: this.viewKey, mode: this.mode, cells };
+    return { view: this.viewKey, mode: this.editMode, cells };
   }
 
   /** Draws a draft again: every cell where it was. */
@@ -641,7 +875,7 @@ export class Editor {
         }
       }
     });
-    this.mode = draft.mode;
+    this.editMode = draft.mode;
     this.applyMode();
   }
 
@@ -690,7 +924,7 @@ export class Editor {
     await this.flush();
     this.viewKey = key;
     this.source = diagram;
-    this.mode = "code";
+    this.editMode = "code";
     const draft = fresh ? null : this.readDraft(key);
     const layout = draft ? null : await layoutStore().load(key);
     this.loading = true;
@@ -843,7 +1077,7 @@ export class Editor {
         edges.push(edge);
       }
     }
-    return { view: this.viewKey, mode: this.mode, nodes, edges, lanes };
+    return { view: this.viewKey, mode: this.editMode, nodes, edges, lanes };
   }
 
   /** Positions of every shape and the bends of every edge, by key: what the layout store keeps. */

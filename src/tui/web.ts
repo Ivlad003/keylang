@@ -36,6 +36,7 @@ import { flowCandidate } from "../operations/draft.ts";
 import { commitProposal, generatedIn, proposalRefusal, rootRelative } from "../operations/shared.ts";
 import { parse } from "../parser.ts";
 import { compileSpec, type SpecIR } from "../spec-ir.ts";
+import { compareText } from "../span.ts";
 import { App, MAX_COLS, MAX_ROWS, type Analyzer, type OperationRunner } from "./app.ts";
 import { SnapshotWorker } from "./background.ts";
 import { ENTER } from "./screen.ts";
@@ -339,7 +340,7 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
     });
   };
 
-  /** `GET /api/views`, `/api/diagram?view=…`, `/api/usages?id=…`, `/api/calls?id=…`, `/api/coverage`; `POST /api/flow-proposal`: JSON for the diagram client, with the socket's token as a Bearer. */
+  /** `GET /api/views`, `/api/diagram?view=…`, `/api/usages?id=…`, `/api/calls?id=…`, `/api/ids?prefix=…`, `/api/coverage`; `POST /api/flow-proposal`: JSON for the diagram client, with the socket's token as a Bearer. */
   const api = async (request: IncomingMessage, response: ServerResponse, path: string, query: URLSearchParams): Promise<void> => {
     // These paths are public (docs/tui.md); any other is the 404 of every unknown path, token or not.
     if (!API_PATHS.has(path)) return reply(response, 404, "text/plain", "not found\n");
@@ -364,6 +365,17 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
       const done = await analysis();
       if (!done.snapshot) return json(200, { id, node: null, entries: [], callees: [], holes: [], callers: [], reachedFrom: [], reason: "no snapshot: the specs were checked without code" });
       return json(200, callsOf(done.snapshot, id));
+    }
+    if (path === "/api/ids") {
+      // The editor's ID field (business-flows/23): the snapshot's IDs that start with the prefix, in text order.
+      const prefix = query.get("prefix") ?? "";
+      const done = await analysis();
+      if (!done.snapshot) return json(200, { prefix, ids: [], more: false, reason: "no snapshot: the specs were checked without code" });
+      const found = Object.keys(done.snapshot.nodes)
+        .filter((id) => id.startsWith(prefix))
+        .sort(compareText);
+      const nodes = done.snapshot.nodes;
+      return json(200, { prefix, ids: found.slice(0, MAX_IDS).map((id) => ({ id, kind: nodes[id]!.kind })), more: found.length > MAX_IDS });
     }
     if (path === "/api/coverage") {
       // The payload of `keylang coverage --json`: the same operation over the same analyzer as the other requests.
@@ -634,7 +646,10 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
 }
 
 /** The paths of the diagram API; any other under `/api/` is 404. */
-const API_PATHS: ReadonlySet<string> = new Set(["/api/views", "/api/diagram", "/api/usages", "/api/calls", "/api/coverage", "/api/flow-proposal"]);
+const API_PATHS: ReadonlySet<string> = new Set(["/api/views", "/api/diagram", "/api/usages", "/api/calls", "/api/ids", "/api/coverage", "/api/flow-proposal"]);
+
+/** At most this many IDs in one answer of `GET /api/ids`. */
+const MAX_IDS = 100;
 
 /** The largest body `POST /api/flow-proposal` reads. */
 const MAX_BODY = 64 * 1024;

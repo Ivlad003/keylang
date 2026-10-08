@@ -212,3 +212,91 @@ test("editor «чернетка»: the palette draws a lane and steps with plann
   if (process.env["EDITOR_SHOT2"]) await page.screenshot({ path: process.env["EDITOR_SHOT2"] });
   assert.deepEqual(problems, []);
 });
+
+/** Where the arrow that starts a connection shows when the pointer is over a shape: at its right edge (outside a small one). */
+async function arrowOf(page: Page, node: { x: number; y: number; w: number; h: number }): Promise<{ x: number; y: number }> {
+  const scale = await page.evaluate(() => (globalThis as unknown as { keylangEditor: { graph: { getView(): { scale: number } } } }).keylangEditor.graph.getView().scale);
+  const at = await screenPoint(page, node.x + node.w, node.y + node.h / 2);
+  return node.w > 80 ? { x: at.x - 12 * scale, y: at.y } : { x: at.x + 10, y: at.y };
+}
+
+/** Starts a connection at the arrow over a shape (it shows on hover; a lane's on its header) and ends it at a page point. */
+async function connect(page: Page, from: { x: number; y: number }, to: { x: number; y: number }): Promise<void> {
+  await page.mouse.move(from.x + 6, from.y + 6);
+  await page.mouse.move(from.x, from.y, { steps: 2 });
+  await drag(page, from, to);
+}
+
+test("editor properties and connections: a palette shape gets its ID (suggested from /api/ids), kind, signature, tests and description in the panel; two steps connect as a sequence; a lane denying itself is refused with a tooltip", { skip, timeout: 120000 }, async (t) => {
+  const { page, problems } = await openEditor(t);
+  await page.click("#editor-mode-draft");
+  const start = await model(page);
+  const application = start.lanes.find((l) => l.id === "application")!;
+  const buy = start.nodes.find((n) => n.id === "application.purchase.buy")!;
+
+  // A fn from the palette, right of the step: the panel shows its planned ID.
+  await dropFromPalette(page, "fn", { x: buy.x + buy.w + 160, y: buy.y + buy.h / 2 });
+  const id = page.locator("#prop-id");
+  assert.equal(await id.inputValue(), "planned:application.fn");
+
+  // The ID field suggests the snapshot's IDs under what is typed.
+  await id.fill("application.pur");
+  await page.locator('#editor-ids option[value="application.purchase.buy"]').waitFor({ state: "attached" });
+
+  // ID, kind, signature, tests, description: each a change of the model.
+  await id.fill("planned:application.pay");
+  await id.press("Enter");
+  await page.selectOption("#prop-kind", "task");
+  await page.fill("#prop-signature", "(order: Order) => Receipt");
+  await page.press("#prop-signature", "Enter");
+  await page.fill("#prop-tests", 'not a test line');
+  await page.locator("#prop-description").focus();
+  await page.locator("#prop-error", { hasText: /не рядок тесту/ }).waitFor();
+  await page.fill("#prop-tests", 'test tests/pay.test.ts "charges the order"\ntest tests/pay.test.ts "refuses a closed order"');
+  await page.locator("#prop-description").focus();
+  await page.fill("#prop-description", "Charges the order once.");
+  await page.locator("#prop-id").focus();
+  let now = await model(page);
+  const pay = now.nodes.find((n) => n.id === "planned:application.pay")!;
+  assert.ok(pay, JSON.stringify(now.nodes));
+  assert.deepEqual(
+    [pay.kind, pay.layer, pay.planned, pay.label, pay.signature, pay.tests, pay.description],
+    ["task", "application", true, "pay", "(order: Order) => Receipt", ['test tests/pay.test.ts "charges the order"', 'test tests/pay.test.ts "refuses a closed order"'], "Charges the order once."],
+  );
+
+  // The step of the code connects to the new step: a sequence, by default.
+  await page.mouse.move((await centre(page, buy)).x, (await centre(page, buy)).y);
+  await connect(page, await arrowOf(page, buy), await centre(page, pay));
+  now = await model(page);
+  const added = now.edges.filter((e) => e.key.startsWith("draft:"));
+  assert.deepEqual(
+    added.map((e) => [e.kind, e.fromId, e.toId]),
+    [["sequence", "application.purchase.buy", "planned:application.pay"]],
+  );
+
+  // A lane that denies a dependency on itself means nothing: refused, with a tooltip saying why.
+  await page.selectOption("#editor-link-kind", "deny");
+  const lane = now.lanes.find((l) => l.id === "application")!;
+  const header = await screenPoint(page, lane.x + 13, lane.y + lane.h / 2);
+  await connect(page, header, { x: header.x, y: header.y + 30 });
+  const tip = page.locator("#editor-tip");
+  await tip.waitFor();
+  assert.match((await tip.textContent()) ?? "", /deny: шар не може заборонити залежність від самого себе/);
+  assert.equal((await model(page)).edges.length, now.edges.length, "nothing was connected");
+  assert.equal(application.id, "application");
+
+  // The panel of a connection: its meaning changes only to one that fits its ends.
+  const [p, q] = [await centre(page, buy), await centre(page, pay)];
+  await page.mouse.click((p.x + q.x) / 2, (p.y + q.y) / 2);
+  await page.locator("#prop-link-kind").waitFor();
+  await page.selectOption("#prop-link-kind", "emits");
+  await page.locator("#prop-error", { hasText: /emits веде в подію/ }).waitFor();
+  assert.equal(await page.locator("#prop-link-kind").inputValue(), "sequence");
+  await page.selectOption("#prop-link-kind", "call");
+  await page.fill("#prop-link-label", "charge");
+  await page.press("#prop-link-label", "Enter");
+  const edge = (await model(page)).edges.find((e) => e.key === added[0]!.key)!;
+  assert.deepEqual([edge.kind, (edge as { label?: string }).label], ["call", "charge"]);
+
+  assert.deepEqual(problems, []);
+});

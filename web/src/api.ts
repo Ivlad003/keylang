@@ -121,6 +121,14 @@ export interface Coverage {
   };
 }
 
+/** The answer of `GET /api/ids`. */
+export interface IdList {
+  prefix: string;
+  ids: { id: string; kind: string }[];
+  more: boolean;
+  reason?: string;
+}
+
 /** A ticked branch of the explorer: a step and the steps under it. */
 export interface FlowStep {
   id: string;
@@ -226,6 +234,11 @@ export class Api {
 
   calls(id: string): Promise<Calls> {
     return this.get<Calls>(`/api/calls?${new URLSearchParams({ id }).toString()}`);
+  }
+
+  /** The snapshot's IDs under a prefix (the editor's ID field). */
+  ids(prefix: string): Promise<IdList> {
+    return this.get<IdList>(`/api/ids?${new URLSearchParams({ prefix }).toString()}`);
   }
 
   coverage(): Promise<Coverage> {
