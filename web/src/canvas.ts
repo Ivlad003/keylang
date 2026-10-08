@@ -53,8 +53,8 @@ const LINE = 24;
 
 let registered = false;
 
-/** Only what this canvas draws: `BaseGraph` registers nothing itself. */
-function register(): void {
+/** Only what the canvases draw: `BaseGraph` registers nothing itself. The editor (editor.ts) shares it. */
+export function register(): void {
   if (registered) return;
   registered = true;
   ShapeRegistry.add("rectangle", RectangleShape);
@@ -90,7 +90,7 @@ export function wrapLabel(text: string, max = 3): string {
   return [...lines.slice(0, max - 1), `…${lines.slice(max - 1).join("").slice(-(LINE - 1))}`].join("\n");
 }
 
-function glyphOf(node: DiagramNode): string {
+export function glyphOf(node: { verdict?: string | null | undefined }): string {
   return node.verdict ? (VERDICT_GLYPH[node.verdict] ?? "") : "";
 }
 
@@ -115,7 +115,7 @@ function labelOf(node: DiagramNode): string {
   }
 }
 
-function nodeStyle(node: DiagramNode): CellStyle {
+export function nodeStyle(node: Pick<DiagramNode, "kind" | "verdict">): CellStyle {
   const colour = (node.verdict && VERDICT_COLOUR[node.verdict]) || NEUTRAL;
   const style: CellStyle = { strokeColor: colour.stroke, fillColor: colour.fill, fontColor: "#212121", fontSize: 11, strokeWidth: 1.5 };
   if (node.verdict === "planned") style.dashed = true;
