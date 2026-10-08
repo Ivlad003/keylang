@@ -139,7 +139,7 @@ export function discoverySummary(discovery: Pick<Discovery, "flows" | "specified
 function holesBySource(snapshot: AnalysisSnapshot): Map<string, number> {
   const out = new Map<string, number>();
   for (const c of snapshot.coverage) {
-    if ((c.kind !== "dynamic-call" && c.kind !== "unresolved-call") || c.source === null) continue;
+    if ((c.kind !== "dynamic-call" && c.kind !== "unresolved-call" && c.kind !== "ambiguous-binding") || c.source === null) continue;
     out.set(c.source, (out.get(c.source) ?? 0) + 1);
   }
   return out;

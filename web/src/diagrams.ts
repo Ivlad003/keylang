@@ -8,10 +8,16 @@
 // few seconds, so a `map`, a saved spec or a new discovered view shows up by
 // itself; the URL fragment names the open view, so a reload or a shared
 // link comes back to it. Shapes keep the positions `/api/diagram` computed:
-// the client places nothing itself. The editor is ticket 23.
+// the client places nothing itself. The editor is ticket 23. Two more modes
+// share the page (business-flows/22): the entry explorer (explorer.ts) — the
+// lazy call tree of an entry point with «Зберегти як флоу» — and «Сліпі
+// зони» (blind.ts), the report of `keylang coverage`.
 
-import { Api, ApiError, type Diagram, type DiagramNode, type Usages, type ViewQuery, type Views, takeToken } from "./api.ts";
+import { Api, ApiError, type Diagram, type DiagramNode, type PageQuery, type Usages, type ViewQuery, type Views, takeToken } from "./api.ts";
+import { BlindSpots } from "./blind.ts";
 import { Canvas, VERDICT_COLOUR, VERDICT_GLYPH } from "./canvas.ts";
+import { codeLink, element, make } from "./dom.ts";
+import { Explorer } from "./explorer.ts";
 import { mountExport } from "./export.ts";
 import { VirtualList, type ListItem } from "./list.ts";
 import "./diagrams.css";
@@ -19,30 +25,21 @@ import "./diagrams.css";
 /** How often the page asks again, ms; a request that takes longer delays the next one. */
 const POLL_MS = 5000;
 
-function element<T extends HTMLElement>(id: string): T {
-  const found = document.getElementById(id);
-  if (!found) throw new Error(`the page has no #${id}`);
-  return found as T;
-}
+type Mode = "diagrams" | "explore" | "blind";
 
-function make<K extends keyof HTMLElementTagNameMap>(tag: K, props: { className?: string; text?: string; title?: string } = {}, ...children: (Node | string)[]): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  if (props.className) node.className = props.className;
-  if (props.text !== undefined) node.textContent = props.text;
-  if (props.title !== undefined) node.title = props.title;
-  node.append(...children);
-  return node;
+function modeOf(query: PageQuery): Mode {
+  return query.view === "explore" ? "explore" : query.view === "blind" ? "blind" : "diagrams";
 }
 
 /** The fragment of a view (`view=flow&name=…`), with the selected node. */
-function hashOf(query: ViewQuery, node: string | null): string {
+function hashOf(query: PageQuery, node: string | null): string {
   const params = new URLSearchParams(query);
   if (node !== null) params.set("node", node);
   return params.toString();
 }
 
 /** The view and node the fragment names, or null. */
-function readHash(): { query: ViewQuery; node: string | null } | null {
+function readHash(): { query: PageQuery; node: string | null } | null {
   const params = new URLSearchParams(location.hash.slice(1));
   const view = params.get("view");
   const node = params.get("node");
@@ -51,19 +48,39 @@ function readHash(): { query: ViewQuery; node: string | null } | null {
   if ((view === "flow" || view === "discovered") && name) return { query: { view, name }, node };
   if (view === "entry" && id) return { query: { view, id }, node };
   if (view === "layers") return { query: { view }, node };
+  if (view === "explore") return { query: { view, id: id ?? "" }, node: null };
+  if (view === "blind") return { query: { view }, node: null };
   return null;
 }
 
-function keyOf(query: ViewQuery): string {
+function keyOf(query: PageQuery): string {
   switch (query.view) {
     case "flow":
     case "discovered":
       return `${query.view}:${query.name}`;
     case "entry":
       return `entry:${query.id}`;
+    case "explore":
+      return `explore:${query.id}`;
+    case "blind":
+      return "blind";
     default:
       return "layers";
   }
+}
+
+/** The explorer's list: entry points by kind, then the events of the snapshot; a click opens the call tree. */
+function exploreItemsOf(views: Views): ListItem[] {
+  const items: ListItem[] = [];
+  for (const entry of views.entries) {
+    const query: PageQuery = { view: "explore", id: entry.id };
+    items.push({ key: keyOf(query), label: entry.label, hint: entry.kind, group: `Точки входу · ${entry.kind}`, search: `${entry.label} ${entry.id} ${entry.kind}`.toLowerCase(), title: `${entry.label}\n${entry.id}`, query });
+  }
+  for (const event of views.events ?? []) {
+    const query: PageQuery = { view: "explore", id: event.id };
+    items.push({ key: keyOf(query), label: event.id, hint: `${event.publishers}→${event.subscribers}`, group: "Події", search: `${event.id} event подія`.toLowerCase(), title: `${event.id}\n${event.publishers} publisher(s), ${event.subscribers} subscriber(s)`, query });
+  }
+  return items;
 }
 
 /** Every view `/api/views` offers: flows by trigger layer, discovered flows by layer, entry points by kind, the layers view. */
@@ -120,7 +137,12 @@ class Page {
   private views: Views | null = null;
   private viewsText = "";
   private diagramText = "";
-  private active: ViewQuery | null = null;
+  private active: PageQuery | null = null;
+  /** The last diagram open: the «Діаграми» tab goes back to it. */
+  private lastDiagram: ViewQuery | null = null;
+  private mode: Mode = "diagrams";
+  private readonly explorer: Explorer;
+  private readonly blind: BlindSpots;
   private node: string | null = null;
   private usages: Usages | null = null;
   private items: ListItem[] = [];
@@ -129,6 +151,23 @@ class Page {
     this.api = new Api(takeToken());
     this.list = new VirtualList(element("views"), (item) => void this.open(item.query));
     this.canvas = new Canvas(element("graph"), element("minimap"), { select: (node) => this.pick(node) });
+    const host = { root: () => this.views?.root, explore: (id: string) => void this.open({ view: "explore", id }), status: (text: string) => (this.status.textContent = text) };
+    this.explorer = new Explorer(element("explorer"), this.api, host);
+    this.blind = new BlindSpots(element("blind"), this.api, { ...host, discovered: (name: string) => void this.open({ view: "discovered", name }) });
+    for (const tab of document.querySelectorAll<HTMLButtonElement>("#modes button[data-mode]")) {
+      tab.addEventListener("click", () => {
+        const mode = tab.dataset["mode"] as Mode;
+        if (mode === "explore") void this.open({ view: "explore", id: this.explorer.current() });
+        else if (mode === "blind") void this.open({ view: "blind" });
+        else if (this.lastDiagram) void this.open(this.lastDiagram);
+        else {
+          this.setMode("diagrams");
+          this.active = null;
+          history.replaceState(null, "", location.pathname);
+          this.status.textContent = "pick a view on the left";
+        }
+      });
+    }
     this.search.addEventListener("input", () => {
       // Typing starts a new search: the usages of the last ID let go of the list.
       if (this.usages) this.clearUsages();
@@ -146,11 +185,12 @@ class Page {
     element<HTMLButtonElement>("zoom-in").addEventListener("click", () => this.canvas.zoomAt(1.25));
     element<HTMLButtonElement>("zoom-out").addEventListener("click", () => this.canvas.zoomAt(1 / 1.25));
     element<HTMLButtonElement>("zoom-fit").addEventListener("click", () => this.canvas.fit());
-    mountExport(element("toolbar"), () => this.active, (text) => (this.status.textContent = text));
+    mountExport(element("toolbar"), () => (this.active === null || this.active.view === "explore" || this.active.view === "blind" ? null : this.active), (text) => (this.status.textContent = text));
     window.addEventListener("hashchange", () => {
       const wanted = readHash();
       if (wanted && (this.active === null || keyOf(wanted.query) !== keyOf(this.active))) void this.open(wanted.query, wanted.node);
     });
+    document.body.dataset["mode"] = this.mode;
     this.legend();
     this.renderDetails(null);
   }
@@ -174,10 +214,26 @@ class Page {
     if (text === this.viewsText) return false;
     this.viewsText = text;
     this.views = views;
-    this.items = itemsOf(views);
+    this.explorer.setEventsReason(views.eventsReason);
+    this.fillList();
+    return true;
+  }
+
+  /** The list of the mode: every view to draw, or the entry points and events to explore. */
+  private fillList(): void {
+    if (!this.views) return;
+    this.items = this.mode === "diagrams" ? itemsOf(this.views) : exploreItemsOf(this.views);
     this.list.setItems(this.items);
     this.markList();
-    return true;
+  }
+
+  /** Shows one mode's pane; the list follows the mode. */
+  private setMode(mode: Mode): void {
+    if (mode === this.mode) return;
+    this.mode = mode;
+    document.body.dataset["mode"] = mode;
+    for (const tab of document.querySelectorAll<HTMLButtonElement>("#modes button[data-mode]")) tab.setAttribute("aria-pressed", String(tab.dataset["mode"] === mode));
+    this.fillList();
   }
 
   /** Asks again every few seconds while the tab is visible: a new map, a saved spec or a discovered view shows up without a reload. */
@@ -186,9 +242,9 @@ class Page {
       if (!document.hidden) {
         try {
           await this.loadViews();
-          if (this.active) {
-            const query = this.active;
-            const diagram = await this.api.diagram(query);
+          const query = this.active;
+          if (query && modeOf(query) === "diagrams") {
+            const diagram = await this.api.diagram(query as ViewQuery);
             if (this.active === query) this.showDiagram(diagram, true);
           }
         } catch {
@@ -199,13 +255,18 @@ class Page {
     }, POLL_MS);
   }
 
-  async open(query: ViewQuery, node: string | null = null): Promise<void> {
-    this.active = query;
+  async open(wanted: PageQuery, node: string | null = null): Promise<void> {
+    this.active = wanted;
     this.node = node;
-    const key = keyOf(query);
+    this.setMode(modeOf(wanted));
+    const key = keyOf(wanted);
     this.list.setActive(key);
     this.list.reveal(key);
     this.writeHash();
+    if (wanted.view === "explore") return this.explorer.show(wanted.id);
+    if (wanted.view === "blind") return this.blind.show();
+    const query: ViewQuery = wanted;
+    this.lastDiagram = query;
     this.status.textContent = `loading ${key}…`;
     try {
       const diagram = await this.api.diagram(query);
@@ -258,13 +319,7 @@ class Page {
   }
 
   private link(file: string, line: number | undefined): HTMLElement {
-    const text = `${file}${line ? `:${line}` : ""}`;
-    const root = this.views?.root;
-    if (!root) return make("code", { text });
-    const a = make("a", { text, title: "open in VS Code" });
-    a.href = `vscode://file/${encodeURI(`${root.replace(/\\/g, "/").replace(/\/$/, "")}/${file}`)}${line ? `:${line}` : ""}`;
-    a.className = "code-link";
-    return a;
+    return codeLink(this.views?.root, file, line);
   }
 
   private renderDetails(node: DiagramNode | null): void {
@@ -295,6 +350,14 @@ class Page {
         button.id = "node-usages";
         button.addEventListener("click", () => void this.findUsages(id));
         body.push(button);
+        // A fn or an entry point opens in the explorer: its call tree, both ways.
+        if (node.kind === "start" || node.kind === "task" || node.kind === "fn") {
+          const explore = make("button", { className: "usages-button", text: `explore the calls of ${id}` });
+          explore.type = "button";
+          explore.id = "node-explore";
+          explore.addEventListener("click", () => void this.open({ view: "explore", id }));
+          body.push(explore);
+        }
       }
     }
     if (this.usages) body.push(this.usagesBlock(this.usages));

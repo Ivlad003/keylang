@@ -6,10 +6,17 @@
 
 Environment:
     KEYLANG_TRACE        JSONL file to append to; without it the script runs untraced
-    KEYLANG_TRACE_PLAN   plan from `keylang trace-plan <flow>` (required with KEYLANG_TRACE)
-    KEYLANG_TRACE_TEST   test id (required with KEYLANG_TRACE)
+    KEYLANG_TRACE_PLAN   plan from `keylang trace-plan <flow>` or `--entry <id>` (required with KEYLANG_TRACE)
+    KEYLANG_TRACE_TEST   test id (default: the command line)
     KEYLANG_TRACE_RUN    run id shared by the tests of one run (default: time and pid)
     KEYLANG_TRACE_ROOT   repository root the plan's paths are relative to (default: cwd)
+    KEYLANG_FLOW         the flow the process's run is of (default: the plan's)
+
+A server names the flow of each request with `keylang_trace.flow(name)`, a
+context manager (contextvars): the spans inside it, on the thread or task
+that entered it, are a run of their own of that flow, with its own run id
+and clock and its `run` record when the block ends. Under the wrapper the
+module is importable as `keylang_trace`; without it `flow()` does nothing.
 
 Without `KEYLANG_TRACE` there is nothing to record: the script runs as
 `python3 <script>` would, and the process exits with its code, so the wrapper
@@ -34,6 +41,7 @@ library; Python 3.12+ uses `sys.monitoring`, older versions `sys.setprofile`
 
 import ast
 import atexit
+import contextvars
 import hashlib
 import json
 import os
@@ -84,9 +92,58 @@ def yields(fn):
 BUFFER = 64
 
 
+class Scope:
+    """One run being recorded: the process's own, or one request's (`flow()`)."""
+
+    def __init__(self, run, test, flow, clock):
+        self.run = run
+        self.test = test
+        self.flow = flow
+        self.clock = clock
+        self.seq = 0
+        self.spans = 0
+        self.open = set()
+        # A forked child inherits the scope of a request in flight; it records as a process of its own.
+        self.pid = os.getpid()
+
+
+# The request scope of the current thread or task; None: the process's run.
+CURRENT = contextvars.ContextVar("keylang_trace_scope", default=None)
+# The tracer of this process, when the wrapper records.
+ACTIVE = None
+
+
+class flow:
+    """`with keylang_trace.flow("checkout"):` — the spans of the block are a run of that flow.
+
+    `test` names the run's test id (default: the process's). Without a name, or when nothing is
+    recorded, the block runs as it is. A block that raises is an incomplete run, as a crash is.
+    """
+
+    def __init__(self, name, test=None):
+        self.name = name
+        self.test = test
+        self.token = None
+        self.scope = None
+
+    def __enter__(self):
+        tracer = ACTIVE
+        if tracer is not None and self.name:
+            self.scope = tracer.scope(self.name, self.test)
+            self.token = CURRENT.set(self.scope)
+        return self
+
+    def __exit__(self, kind, value, traceback):
+        if self.scope is not None:
+            CURRENT.reset(self.token)
+            ACTIVE.finish_scope(self.scope, crashed=kind is not None)
+            self.scope = None
+        return False
+
+
 class Tracer:
     def __init__(self, plan, root, test, run, path):
-        self.flow = plan["flow"]
+        self.flow = os.environ.get("KEYLANG_FLOW") or plan["flow"]
         self.snapshot = plan["snapshotId"]
         self.test = test
         self.run = run
@@ -121,11 +178,17 @@ class Tracer:
         self.lines = []
         self.lock = threading.Lock()
         self.local = threading.local()
-        self.open = set()
-        self.seq = 0
-        self.spans = 0
+        self.process = Scope(self.run, self.test, self.flow, self.clock)
+        self.requests = 0
         self.crashed = False
         self.written = False
+
+    def scope(self, name, test):
+        """A run of flow `name` of its own: a run id and a clock of its own, numbered in this process."""
+        with self.lock:
+            self.requests += 1
+            n = self.requests
+        return Scope(f"{self.run}.r{n}", test or self.test, name, f"{self.clock}.r{n}")
 
     def forked(self):
         """In the child after `fork`: the inherited events, open spans, counters and stacks are the parent's.
@@ -151,8 +214,8 @@ class Tracer:
         self.codes[code] = found
         return found
 
-    def write(self, event):
-        self.lines.append(json.dumps({"schemaVersion": SCHEMA, "snapshotId": self.snapshot, "runId": self.run, "testId": self.test, "flow": self.flow, "traceId": f"{self.run}:{self.test}", **event}, separators=(",", ":")))
+    def write(self, scope, event):
+        self.lines.append(json.dumps({"schemaVersion": SCHEMA, "snapshotId": self.snapshot, "runId": scope.run, "testId": scope.test, "flow": scope.flow, "traceId": f"{scope.run}:{scope.test}", **event}, separators=(",", ":")))
 
     def flush(self):
         """Appends the events not yet in the file; the caller holds the lock."""
@@ -165,20 +228,26 @@ class Tracer:
             out.write(text)
 
     def stack(self):
+        """The spans open on this thread: (span id, its scope), innermost last."""
         stack = getattr(self.local, "stack", None)
         if stack is None:
             stack = self.local.stack = []
         return stack
 
     def start(self, symbol):
+        scope = CURRENT.get()
+        if scope is None or scope.pid != self.pid:
+            scope = self.process
         with self.lock:
-            self.spans += 1
-            self.seq += 1
-            span = f"{self.clock}:s{self.spans}"
+            scope.spans += 1
+            scope.seq += 1
+            span = f"{scope.clock}:s{scope.spans}"
             stack = self.stack()
-            self.write({"event": "start", "spanId": span, "parentSpanId": stack[-1] if stack else None, "symbolId": symbol, "clockId": self.clock, "seq": self.seq, "ts": time.perf_counter() * 1000})
-            self.open.add(span)
-            stack.append(span)
+            # A span of another run (the process's, around a request) is no parent: the request's run starts at its root.
+            parent = stack[-1][0] if stack and stack[-1][1] is scope else None
+            self.write(scope, {"event": "start", "spanId": span, "parentSpanId": parent, "symbolId": symbol, "clockId": scope.clock, "seq": scope.seq, "ts": time.perf_counter() * 1000})
+            scope.open.add(span)
+            stack.append((span, scope))
             if len(self.lines) >= BUFFER:
                 self.flush()
 
@@ -187,11 +256,24 @@ class Tracer:
             stack = self.stack()
             if not stack:
                 return
-            span = stack.pop()
-            self.seq += 1
-            self.open.discard(span)
-            self.write({"event": "end", "spanId": span, "outcome": outcome, "clockId": self.clock, "seq": self.seq, "ts": time.perf_counter() * 1000})
+            span, scope = stack.pop()
+            scope.seq += 1
+            scope.open.discard(span)
+            self.write(scope, {"event": "end", "spanId": span, "outcome": outcome, "clockId": scope.clock, "seq": scope.seq, "ts": time.perf_counter() * 1000})
             self.flush()
+
+    def record(self, scope, crashed):
+        """The `run` record of `scope`; the caller holds the lock."""
+        instrumented = sorted(i for i in self.instrumented if i not in self.suspending)
+        self.write(scope, {"event": "run", "clockId": scope.clock, "complete": not crashed and not scope.open, "dropped": 0, "instrumented": instrumented, "open": sorted(scope.open)})
+        self.flush()
+
+    def finish_scope(self, scope, crashed):
+        # A forked child leaving the block it inherited: the run is the parent's to close.
+        if scope.pid != self.pid:
+            return
+        with self.lock:
+            self.record(scope, crashed)
 
     def finish(self):
         """The `run` record of this process, once, and everything not yet in the file."""
@@ -199,9 +281,11 @@ class Tracer:
             if self.written:
                 return
             self.written = True
-            instrumented = sorted(i for i in self.instrumented if i not in self.suspending)
-            self.write({"event": "run", "clockId": self.clock, "complete": not self.crashed and not self.open, "dropped": 0, "instrumented": instrumented, "open": sorted(self.open)})
-            self.flush()
+            # A server whose every span was a request's has no run of its own to report.
+            if self.requests > 0 and self.process.spans == 0:
+                self.flush()
+                return
+            self.record(self.process, self.crashed)
 
 
 def install(tracer):
@@ -263,10 +347,9 @@ def main():
         run_script(script)
         return
     plan_path = os.environ.get("KEYLANG_TRACE_PLAN")
-    test = os.environ.get("KEYLANG_TRACE_TEST")
-    missing = [name for name, value in (("KEYLANG_TRACE_PLAN", plan_path), ("KEYLANG_TRACE_TEST", test)) if not value]
-    if missing:
-        fail(f"KEYLANG_TRACE is set, so {' and '.join(missing)} {'is' if len(missing) == 1 else 'are'} required too")
+    if not plan_path:
+        fail("KEYLANG_TRACE is set, so KEYLANG_TRACE_PLAN is required too")
+    test = os.environ.get("KEYLANG_TRACE_TEST") or " ".join(["python3", *sys.argv[1:]])
     # Relative paths are the startup directory's, once: a script that calls os.chdir() still writes into the
     # repository, and a child process started elsewhere gets the same absolute paths.
     path = os.environ["KEYLANG_TRACE"] = os.path.abspath(path)
@@ -282,7 +365,10 @@ def main():
     run = os.environ.get("KEYLANG_TRACE_RUN") or f"{int(time.time() * 1000):x}-{os.getpid()}"
     # Child processes under the adapter inherit the id, so the processes of one test are one run.
     os.environ["KEYLANG_TRACE_RUN"] = run
-    tracer = Tracer(plan, root, test, run, path)
+    global ACTIVE
+    tracer = ACTIVE = Tracer(plan, root, test, run, path)
+    # The script's `import keylang_trace` (for `flow()`) is this module, with this tracer.
+    sys.modules["keylang_trace"] = sys.modules[__name__]
     atexit.register(tracer.finish)
     # A forked child (`os.fork`, a `multiprocessing` worker on the fork start method) inherits the hooks and keeps recording, as its own process.
     os.register_at_fork(after_in_child=tracer.forked)

@@ -905,3 +905,90 @@ test("python: `from m import *` of a module without `__all__` brings the names m
   assert.match(unverified.stdout, /unverified a module-level `for` binds names keylang does not list/);
   assert.doesNotMatch(unverified.stdout, /K104/);
 });
+
+test("python: a root directory without Python code does not hide a pip package or a package under src/; a namespace package's head is no hole", (t) => {
+  const config = JSON.stringify({ languages: ["python"], layers: { app: "app/**", other: "other/**", cfg: "src/config/**" } });
+  // (b) `redis/` holds only a Dockerfile: `import redis` is the pip package.
+  const pip = repo(t, {
+    "keylang.json": config,
+    "keylang/rules.md": "# rules\n\n- deny app external.redis\n",
+    "redis/Dockerfile": "FROM redis\n",
+    "redis/redis.conf": "port 6379\n",
+    "app/cache.py": "import redis\n\n\ndef client():\n    return redis.Redis()\n",
+  });
+  assert.match(keylang(pip, ["check"]).stdout, /K102 divergence: `app\.cache` depends on `external\.redis`, which is denied by `deny app external\.redis`/);
+  // (c) A root `config/` with settings.yaml does not hide `src/config/`.
+  const src = repo(t, {
+    "keylang.json": config,
+    "keylang/rules.md": "# rules\n\n- deny app cfg\n",
+    "config/settings.yaml": "a: 1\n",
+    "src/config/__init__.py": "",
+    "src/config/settings.py": "DEBUG = True\n",
+    "app/main.py": "from config import settings\n\n\ndef debug():\n    return settings.DEBUG\n",
+  });
+  assert.match(keylang(src, ["check"]).stdout, /K102 divergence: `app\.main` depends on `cfg/);
+  // (a) PEP 420: `nsp/` has no `__init__.py`, yet `import nsp.inner.mod` works.
+  const ns = repo(t, {
+    "keylang.json": JSON.stringify({ languages: ["python"], layers: { app: "app/**", other: "other/**", nsp: "nsp/**" } }),
+    "keylang/rules.md": "# rules\n\n- deny app other\n",
+    "nsp/inner/mod.py": "def f():\n    return 1\n",
+    "other/x.py": "def g():\n    return 2\n",
+    "app/cache.py": "import nsp.inner.mod\n\n\ndef run():\n    return nsp.inner.mod.f()\n",
+  });
+  const checked = keylang(ns, ["check"]);
+  assert.match(checked.stdout + checked.stderr, /0 fail, 0 unverified, 1 ok/, checked.stdout);
+  assert.equal(keylang(ns, ["map"]).status, 0);
+  assert.ok(!snapshot(ns).coverage.some((c) => c.kind === "unresolved-import"), JSON.stringify(snapshot(ns).coverage));
+  assert.ok(snapshot(ns).edges.some((e) => e.kind === "import" && e.source === "app.cache" && e.target === "nsp.inner.mod"));
+});
+
+test("rust: a fn declared inside a fn, or a parameter of one, shadows the module item of that name", (t) => {
+  const dir = repo(t, {
+    "Cargo.toml": '[package]\nname = "app"\nversion = "0.1.0"\n',
+    "keylang.json": JSON.stringify({ languages: ["rust"], layers: { app: ["src/**"] } }),
+    "keylang/flows/f.md": "# flow f\n\n- trigger app.main.run\n  - step app.main.helper\n",
+    "src/main.rs": [
+      "fn helper() {}",
+      "",
+      "pub fn run() {",
+      "    fn helper() {}",
+      "    helper();",
+      "}",
+      "",
+      "pub fn run_param() {",
+      "    fn inner(helper: fn()) {",
+      "        helper();",
+      "    }",
+      "    inner(other);",
+      "}",
+      "",
+      "fn other() {}",
+      "",
+      "fn main() {",
+      "    run();",
+      "    run_param();",
+      "    helper();",
+      "}",
+      "",
+    ].join("\n"),
+  });
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const toHelper = snapshot(dir).edges.filter((e) => e.kind === "call" && e.target === "app.main.helper").map((e) => e.source);
+  assert.deepEqual(toHelper, ["app.main.main"]);
+  assert.match(keylang(dir, ["check"]).stdout, /static unverified app\.main\.helper: .*shadowed by local `helper`/);
+});
+
+test("python: two `from .x import *` in `__init__.py` with one name export the last one, as Python binds it", (t) => {
+  const files = {
+    "keylang.json": JSON.stringify({ languages: ["python"], layers: { app: "shop/app/**" } }),
+    "shop/app/a.py": "def V():\n    return 1\n\n\ndef f():\n    return 0\n",
+    "shop/app/b.py": "def V():\n    return 2\n\n\ndef g():\n    return 0\n",
+    "shop/app/__init__.py": "from .a import *\nfrom .b import *\n",
+  };
+  const all = repo(t, { ...files, "keylang/rules.md": "# rules\n\n- module app.__init__\n  - exports V, f, g\n" });
+  const ok = keylang(all, ["check"]);
+  assert.equal(ok.status, 0, ok.stdout);
+  assert.match(ok.stdout + ok.stderr, /0 fail, 0 unverified, 1 ok/);
+  const without = repo(t, { ...files, "keylang/rules.md": "# rules\n\n- module app.__init__\n  - exports f, g\n" });
+  assert.match(keylang(without, ["check"]).stdout, /K104 divergence: `app\.__init__` exports `V` \(fn, re-exported from `app\.b`\)/);
+});

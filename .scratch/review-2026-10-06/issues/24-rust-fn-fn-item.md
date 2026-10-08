@@ -1,6 +1,6 @@
 # 24: Rust: вкладена `fn` усередині fn не затіняє однойменний item модуля, тож keylang вигадує ребро
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -54,11 +54,15 @@
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/extract/rust.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/extract/rust.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+- 2026-10-08: Регресійний тест `tests/languages.test.ts` «rust: a fn declared inside a fn, or a parameter of one, shadows the module item of that name» — справжній CLI: `run` з вкладеною `fn helper` і викликом `helper()`, `run_param` з вкладеною `fn inner(helper: fn())`; ребро виклику в `app.main.helper` лишається лише з `main`, потік `trigger app.main.run` / `step app.main.helper` дає `static unverified … shadowed by local \`helper\``. До виправлення — ребра з `run` і `run_param` і хибне `static ok`.
+- 2026-10-08: Виправлення: `boundNames` (`src/extract/rust.ts`) додає ім'я кожного вкладеного `function_item` як `local` і його параметри як `parameter`. `EXTRACTOR_VERSION` m1.15 → m1.16. Компроміс: як і `let` вкладеної fn до того, параметр вкладеної fn затіняє ім'я в усій зовнішній fn — консервативно (дірка, не вигадане ребро).
+- 2026-10-08: Контракт: `docs/snapshot.md`, абзац Rust (що затіняє item модуля). Перевірки: `node --test tests/languages.test.ts` — 31/31, `npm run typecheck` — ок.

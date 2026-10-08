@@ -1,6 +1,6 @@
 # 25: PHP: `insteadof` і `as` у `use` трейтів ігноруються, тож `$this->m()` веде не в той метод трейту
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -45,11 +45,15 @@
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/extract/php.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/extract/php.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+- 2026-10-08: Регресійний тест `tests/php.test.ts` «php: `insteadof` and `as` in a trait `use` block decide which method `$this->m()` calls» — справжній CLI: `use Quiet, Loud { Loud::hello insteadof Quiet; Quiet::hello as protected whisper; hello as shout; }`; ребра `this.hello → app.A.Loud.hello`, `this.whisper → app.B.Quiet.hello`, `this.SHOUT → app.A.Loud.hello` (alias без трейту поважає `insteadof`, регістр — як у PHP), без `unresolved-call`. До виправлення — `this.hello → app.B.Quiet.hello`, `whisper`/`SHOUT` нерозв'язані.
+- 2026-10-08: Виправлення: `src/extract/php.ts` (`declarationOf`) розбирає `use_list` у `DeclFact.traitRules` (`{trait, method, insteadof?}` / `{trait|null, method, alias}`; нове поле в `src/extract/facts.ts`). `src/graph.ts`: нова мапа `classTraitRules`, що заповнюється поруч з `classTraits`, і `findMember`/`inClass` — пропускає трейт, виключений `insteadof` для цього методу, і розв'язує alias у метод названого трейту (чи першого невиключеного). Зміни в graph.ts — лише ця мапа, її заповнення й тіло `inClass`. `EXTRACTOR_VERSION` m1.16 → m1.17.
+- 2026-10-08: Контракт: `docs/snapshot.md`, абзац PHP (пошук методу). Перевірки: `node --test tests/php.test.ts tests/languages.test.ts` — 45 тестів, 42 pass, 3 skip (php/phpunit не встановлені), `npm run typecheck` — ок.

@@ -329,6 +329,12 @@ function boundNames(fn: Node): Map<string, "parameter" | "local"> {
       for (const c of node.namedChildren) if (c.id !== guard) names(c, "local");
     }
     if (node.type === "closure_parameters") for (const c of node.namedChildren) names(c, "parameter");
+    // A fn declared in the body shadows the module item of its name, and its parameters bind in its body.
+    if (node.type === "function_item") {
+      const name = node.childForFieldName("name");
+      if (name) out.set(name.text, "local");
+      for (const p of node.childForFieldName("parameters")?.namedChildren ?? []) if (p.type === "parameter") names(p.childForFieldName("pattern"), "parameter");
+    }
     for (const c of node.namedChildren) walk(c);
   };
   const body = fn.childForFieldName("body");
