@@ -250,32 +250,34 @@
       <a id="base.adapter.FrameworkModule"></a><br>A module of the framework, by the name its config uses (`Magento_Checkout`), and its directory.
     - type [FrameworkInput](../../src/frameworks/adapter.ts#L277)
       <a id="base.adapter.FrameworkInput"></a><br>What the graph receives from one active adapter.
-    - type [FrameworkContext](../../src/frameworks/adapter.ts#L293)
+    - type [GeneratedClass](../../src/frameworks/adapter.ts#L300)
+      <a id="base.adapter.GeneratedClass"></a><br>A class the framework generates instead of the code declaring it, by a convention of names (Magento's ObjectManager: `XFactory` with `create(): X`, business-flows 40). keylang applies it only to a class no file it reads declares, whose stem (`X`) is a class or an interface it…
+    - type [FrameworkContext](../../src/frameworks/adapter.ts#L308)
       <a id="base.adapter.FrameworkContext"></a><br>What an adapter sees of the repository: the analysed source files and a reader.
-    - type [FrameworkAdapter](../../src/frameworks/adapter.ts#L304)
+    - type [FrameworkAdapter](../../src/frameworks/adapter.ts#L319)
       <a id="base.adapter.FrameworkAdapter"></a>
-    - type [ControllerConvention](../../src/frameworks/adapter.ts#L335)
+    - type [ControllerConvention](../../src/frameworks/adapter.ts#L352)
       <a id="base.adapter.ControllerConvention"></a><br>Where a framework keeps the controllers of a route and how it names their URLs: a controller is a class in a file under `<module dir>/<dir>/`, whose `member` runs; the HTTP method comes from the interfaces it implements.
-    - fn [activeAdapters](../../src/frameworks/adapter.ts#L360) (frameworks: readonly string[] | null, context: FrameworkContext, available: readonly FrameworkAdapter[] = FRAMEWORK_ADAPTERS) → FrameworkAdapter[]
+    - fn [activeAdapters](../../src/frameworks/adapter.ts#L377) (frameworks: readonly string[] | null, context: FrameworkContext, available: readonly FrameworkAdapter[] = FRAMEWORK_ADAPTERS) → FrameworkAdapter[]
       <a id="base.adapter.activeAdapters"></a><br>The adapters of a repository: those `frameworks` names, or with the field absent those detected. `available` lets a test add an adapter of its own.
-    - fn [typeLabel](../../src/frameworks/adapter.ts#L366) (t: TypeName) → string
+    - fn [typeLabel](../../src/frameworks/adapter.ts#L383) (t: TypeName) → string
       <a id="base.adapter.typeLabel"></a><br>A label for a type the configuration names: its qualified name, or `file#name`.
-    - fn [isConfigFacts](../../src/frameworks/adapter.ts#L371) (value: unknown) → value is ConfigFacts
+    - fn [isConfigFacts](../../src/frameworks/adapter.ts#L388) (value: unknown) → value is ConfigFacts
       <a id="base.adapter.isConfigFacts"></a><br>Whether a cached value has the shape of `ConfigFacts`; a cache entry of another shape is parsed again.
       - calls [base.adapter.isRecord](base.md#base.adapter.isRecord), [base.adapter.every](base.md#base.adapter.every), [base.adapter.isAt](base.md#base.adapter.isAt), [base.adapter.isTypeName](base.md#base.adapter.isTypeName), [base.adapter.isToken](base.md#base.adapter.isToken)
-    - fn [isAt](../../src/frameworks/adapter.ts#L393) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isAt](../../src/frameworks/adapter.ts#L410) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       <a id="base.adapter.isAt"></a>
       - calls [base.adapter.isRecord](base.md#base.adapter.isRecord)
-    - fn [isToken](../../src/frameworks/adapter.ts#L397) (value: unknown) → boolean <!-- internal -->
+    - fn [isToken](../../src/frameworks/adapter.ts#L414) (value: unknown) → boolean <!-- internal -->
       <a id="base.adapter.isToken"></a>
       - calls [base.adapter.isRecord](base.md#base.adapter.isRecord)
-    - fn [isTypeName](../../src/frameworks/adapter.ts#L401) (value: unknown) → boolean <!-- internal -->
+    - fn [isTypeName](../../src/frameworks/adapter.ts#L418) (value: unknown) → boolean <!-- internal -->
       <a id="base.adapter.isTypeName"></a>
       - calls [base.adapter.isRecord](base.md#base.adapter.isRecord)
-    - fn [every](../../src/frameworks/adapter.ts#L405) (value: unknown, check: (item: Record<string, unknown>) => boolean) → boolean <!-- internal -->
+    - fn [every](../../src/frameworks/adapter.ts#L422) (value: unknown, check: (item: Record<string, unknown>) => boolean) → boolean <!-- internal -->
       <a id="base.adapter.every"></a>
       - calls [base.adapter.isRecord](base.md#base.adapter.isRecord)
-    - fn [isRecord](../../src/frameworks/adapter.ts#L409) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isRecord](../../src/frameworks/adapter.ts#L426) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       <a id="base.adapter.isRecord"></a>
   - module [bindings](../../src/frameworks/bindings.ts#L1)
     <a id="base.bindings"></a><br>What the graph does with framework facts (ADR 0022), the same for every language: a call through a type the config binds (an interface, or a class with a preference of its own) becomes a `call` edge to the bound class's member, `via: "preference"`; a call through a property the…
@@ -430,49 +432,49 @@
     - node [external.node](external.md#external.node)
     - saxes [external.saxes](external.md#external.saxes)
     - adapter [base.adapter](base.md#base.adapter)
-    - fn [componentRoots](../../src/frameworks/magento.ts#L113) (context: FrameworkContext, pattern: RegExp) → string[] <!-- internal -->
+    - fn [componentRoots](../../src/frameworks/magento.ts#L122) (context: FrameworkContext, pattern: RegExp) → string[] <!-- internal -->
       <a id="base.magento.componentRoots"></a><br>Directories of the analysed `registration.php` files whose text registers a component as `pattern` says.
-    - fn [scopeOf](../../src/frameworks/magento.ts#L124) (path: string) → string <!-- internal -->
+    - fn [scopeOf](../../src/frameworks/magento.ts#L133) (path: string) → string <!-- internal -->
       <a id="base.magento.scopeOf"></a><br>`etc/di.xml` → `global`; `etc/frontend/di.xml` → `frontend`.
-    - fn [className](../../src/frameworks/magento.ts#L131) (written: string) → string
+    - fn [className](../../src/frameworks/magento.ts#L140) (written: string) → string
       <a id="base.magento.className"></a><br>A class name as Magento resolves it: no leading `\`, no spaces; a generated proxy stands for its class.
-    - type [MagentoFacts](../../src/frameworks/magento.ts#L136) <!-- internal -->
+    - type [MagentoFacts](../../src/frameworks/magento.ts#L145) <!-- internal -->
       <a id="base.magento.MagentoFacts"></a><br>The facts of a Magento config file: every kind it may hold is present.
-    - fn [noFacts](../../src/frameworks/magento.ts#L139) (path: string, scope: string, error: ConfigFacts["error"] = null) → MagentoFacts <!-- internal -->
+    - fn [noFacts](../../src/frameworks/magento.ts#L148) (path: string, scope: string, error: ConfigFacts["error"] = null) → MagentoFacts <!-- internal -->
       <a id="base.magento.noFacts"></a><br>The `ConfigFacts` of a file with no facts, and the reason when it gave none.
-    - fn [type](../../src/frameworks/magento.ts#L143) (name: string) → TypeName <!-- internal -->
+    - fn [type](../../src/frameworks/magento.ts#L152) (name: string) → TypeName <!-- internal -->
       <a id="base.magento.type"></a>
       - calls [base.magento.className](base.md#base.magento.className)
-    - type [XmlElement](../../src/frameworks/magento.ts#L148)
+    - type [XmlElement](../../src/frameworks/magento.ts#L157)
       <a id="base.magento.XmlElement"></a><br>An element of a config file, with where its start tag is and the text directly in it.
-    - fn [parseXml](../../src/frameworks/magento.ts#L158) (path: string, text: string) → { root: XmlElement | null; error: { line: number; reason: string } | null }
+    - fn [parseXml](../../src/frameworks/magento.ts#L167) (path: string, text: string) → { root: XmlElement | null; error: { line: number; reason: string } | null }
       <a id="base.magento.parseXml"></a><br>The root element of an XML file, or why it does not parse.
-    - fn [fromXml](../../src/frameworks/magento.ts#L193) (path: string, text: string, read: (root: XmlElement, facts: MagentoFacts) => void) → ConfigFacts <!-- internal -->
+    - fn [fromXml](../../src/frameworks/magento.ts#L202) (path: string, text: string, read: (root: XmlElement, facts: MagentoFacts) => void) → ConfigFacts <!-- internal -->
       <a id="base.magento.fromXml"></a><br>The facts of an XML config file: `read` takes them from the root element. A file that does not parse gives none, only the reason.
       - calls [base.magento.noFacts](base.md#base.magento.noFacts), [base.magento.scopeOf](base.md#base.magento.scopeOf), [base.magento.parseXml](base.md#base.magento.parseXml)
-    - fn [childrenNamed](../../src/frameworks/magento.ts#L201) (element: XmlElement, name: string) → XmlElement[] <!-- internal -->
+    - fn [childrenNamed](../../src/frameworks/magento.ts#L210) (element: XmlElement, name: string) → XmlElement[] <!-- internal -->
       <a id="base.magento.childrenNamed"></a>
-    - fn [flag](../../src/frameworks/magento.ts#L206) (value: string | undefined) → boolean <!-- internal -->
+    - fn [flag](../../src/frameworks/magento.ts#L215) (value: string | undefined) → boolean <!-- internal -->
       <a id="base.magento.flag"></a><br>`true` or `1` in an attribute Magento reads as a boolean.
-    - fn [parseDi](../../src/frameworks/magento.ts#L211) (path: string, text: string) → ConfigFacts
+    - fn [parseDi](../../src/frameworks/magento.ts#L220) (path: string, text: string) → ConfigFacts
       <a id="base.magento.parseDi"></a><br>The facts of one `di.xml`.
       - calls [base.magento.fromXml](base.md#base.magento.fromXml), [base.magento.type](base.md#base.magento.type), [base.magento.className](base.md#base.magento.className), [base.magento.childrenNamed](base.md#base.magento.childrenNamed), [base.magento.flag](base.md#base.magento.flag)
-    - fn [parseEvents](../../src/frameworks/magento.ts#L252) (path: string, text: string) → ConfigFacts
+    - fn [parseEvents](../../src/frameworks/magento.ts#L261) (path: string, text: string) → ConfigFacts
       <a id="base.magento.parseEvents"></a><br>`etc/events.xml`: `<event name="e"><observer name="o" instance="C" method="m" disabled="true"/>`.
       - calls [base.magento.fromXml](base.md#base.magento.fromXml), [base.magento.childrenNamed](base.md#base.magento.childrenNamed), [base.magento.type](base.md#base.magento.type), [base.magento.flag](base.md#base.magento.flag)
-    - fn [parseRoutes](../../src/frameworks/magento.ts#L269) (path: string, text: string) → ConfigFacts
+    - fn [parseRoutes](../../src/frameworks/magento.ts#L278) (path: string, text: string) → ConfigFacts
       <a id="base.magento.parseRoutes"></a><br>`etc/<area>/routes.xml`: `<router id="standard"><route id="checkout" frontName="checkout"><module name="Magento_Checkout"/>`.
       - calls [base.magento.fromXml](base.md#base.magento.fromXml), [base.magento.childrenNamed](base.md#base.magento.childrenNamed)
-    - fn [parseWebapi](../../src/frameworks/magento.ts#L284) (path: string, text: string) → ConfigFacts
+    - fn [parseWebapi](../../src/frameworks/magento.ts#L293) (path: string, text: string) → ConfigFacts
       <a id="base.magento.parseWebapi"></a><br>`etc/webapi.xml`: `<route url="/V1/x" method="POST"><service class="I" method="m"/><resources><resource ref="self"/>` → `rest`, labelled `POST /V1/x [self]`.
       - calls [base.magento.fromXml](base.md#base.magento.fromXml), [base.magento.childrenNamed](base.md#base.magento.childrenNamed), [base.magento.type](base.md#base.magento.type)
-    - fn [parseCrontab](../../src/frameworks/magento.ts#L306) (path: string, text: string) → ConfigFacts
+    - fn [parseCrontab](../../src/frameworks/magento.ts#L315) (path: string, text: string) → ConfigFacts
       <a id="base.magento.parseCrontab"></a><br>`etc/crontab.xml`: `<group id="default"><job name="n" instance="C" method="m"><schedule>0 0 * * *</schedule>` → `cron`, labelled `n 0 0 * * *` (the schedule last, as `every` reads it); a job the admin's config schedules says `(config_path …)` instead.
       - calls [base.magento.fromXml](base.md#base.magento.fromXml), [base.magento.childrenNamed](base.md#base.magento.childrenNamed), [base.magento.type](base.md#base.magento.type)
-    - fn [parseConsumers](../../src/frameworks/magento.ts#L326) (path: string, text: string) → ConfigFacts
+    - fn [parseConsumers](../../src/frameworks/magento.ts#L335) (path: string, text: string) → ConfigFacts
       <a id="base.magento.parseConsumers"></a><br>`etc/queue_consumer.xml`: `<consumer name="n" queue="q" handler="C::m"/>` → `consumer` on `C::m`; without a handler, the `consumerInstance`'s `process`.
       - calls [base.magento.fromXml](base.md#base.magento.fromXml), [base.magento.childrenNamed](base.md#base.magento.childrenNamed), [base.magento.type](base.md#base.magento.type)
-    - fn [parseGraphql](../../src/frameworks/magento.ts#L350) (path: string, text: string) → ConfigFacts
+    - fn [parseGraphql](../../src/frameworks/magento.ts#L359) (path: string, text: string) → ConfigFacts
       <a id="base.magento.parseGraphql"></a><br>`etc/schema.graphqls`: a field with `@resolver(class: "C")` → `graphql` on `C::resolve`, labelled `Type.field`. A small scanner over the SDL (no XML, no parser package for it): comments, strings, braces and parentheses; a field is a name followed by `(` or `:` right inside a…
       - calls [base.magento.noFacts](base.md#base.magento.noFacts), [base.magento.scopeOf](base.md#base.magento.scopeOf), [base.magento.type](base.md#base.magento.type)
   - module [nestjs](../../src/frameworks/nestjs.ts#L1)

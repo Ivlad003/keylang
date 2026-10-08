@@ -148,22 +148,23 @@
     - type [FrameworkConfig](../../src/frameworks/adapter.ts#L264)
     - type [FrameworkModule](../../src/frameworks/adapter.ts#L271)
     - type [FrameworkInput](../../src/frameworks/adapter.ts#L277)
-    - type [FrameworkContext](../../src/frameworks/adapter.ts#L293)
-    - type [FrameworkAdapter](../../src/frameworks/adapter.ts#L304)
-    - type [ControllerConvention](../../src/frameworks/adapter.ts#L335)
-    - fn [activeAdapters](../../src/frameworks/adapter.ts#L360) (frameworks: readonly string[] | null, context: FrameworkContext, available: readonly FrameworkAdapter[] = FRAMEWORK_ADAPTERS) → FrameworkAdapter[]
-    - fn [typeLabel](../../src/frameworks/adapter.ts#L366) (t: TypeName) → string
-    - fn [isConfigFacts](../../src/frameworks/adapter.ts#L371) (value: unknown) → value is ConfigFacts
+    - type [GeneratedClass](../../src/frameworks/adapter.ts#L300)
+    - type [FrameworkContext](../../src/frameworks/adapter.ts#L308)
+    - type [FrameworkAdapter](../../src/frameworks/adapter.ts#L319)
+    - type [ControllerConvention](../../src/frameworks/adapter.ts#L352)
+    - fn [activeAdapters](../../src/frameworks/adapter.ts#L377) (frameworks: readonly string[] | null, context: FrameworkContext, available: readonly FrameworkAdapter[] = FRAMEWORK_ADAPTERS) → FrameworkAdapter[]
+    - fn [typeLabel](../../src/frameworks/adapter.ts#L383) (t: TypeName) → string
+    - fn [isConfigFacts](../../src/frameworks/adapter.ts#L388) (value: unknown) → value is ConfigFacts
       - calls base.adapter.isRecord, base.adapter.every, base.adapter.isAt, base.adapter.isTypeName, base.adapter.isToken
-    - fn [isAt](../../src/frameworks/adapter.ts#L393) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isAt](../../src/frameworks/adapter.ts#L410) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       - calls base.adapter.isRecord
-    - fn [isToken](../../src/frameworks/adapter.ts#L397) (value: unknown) → boolean <!-- internal -->
+    - fn [isToken](../../src/frameworks/adapter.ts#L414) (value: unknown) → boolean <!-- internal -->
       - calls base.adapter.isRecord
-    - fn [isTypeName](../../src/frameworks/adapter.ts#L401) (value: unknown) → boolean <!-- internal -->
+    - fn [isTypeName](../../src/frameworks/adapter.ts#L418) (value: unknown) → boolean <!-- internal -->
       - calls base.adapter.isRecord
-    - fn [every](../../src/frameworks/adapter.ts#L405) (value: unknown, check: (item: Record<string, unknown>) => boolean) → boolean <!-- internal -->
+    - fn [every](../../src/frameworks/adapter.ts#L422) (value: unknown, check: (item: Record<string, unknown>) => boolean) → boolean <!-- internal -->
       - calls base.adapter.isRecord
-    - fn [isRecord](../../src/frameworks/adapter.ts#L409) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isRecord](../../src/frameworks/adapter.ts#L426) (value: unknown) → value is Record<string, unknown> <!-- internal -->
   - module [bindings](../../src/frameworks/bindings.ts#L1)
     - adapter base.adapter
     - type [ResolvedType](../../src/frameworks/bindings.ts#L16)
@@ -255,32 +256,32 @@
     - node external.node
     - saxes external.saxes
     - adapter base.adapter
-    - fn [componentRoots](../../src/frameworks/magento.ts#L113) (context: FrameworkContext, pattern: RegExp) → string[] <!-- internal -->
-    - fn [scopeOf](../../src/frameworks/magento.ts#L124) (path: string) → string <!-- internal -->
-    - fn [className](../../src/frameworks/magento.ts#L131) (written: string) → string
-    - type [MagentoFacts](../../src/frameworks/magento.ts#L136) <!-- internal -->
-    - fn [noFacts](../../src/frameworks/magento.ts#L139) (path: string, scope: string, error: ConfigFacts["error"] = null) → MagentoFacts <!-- internal -->
-    - fn [type](../../src/frameworks/magento.ts#L143) (name: string) → TypeName <!-- internal -->
+    - fn [componentRoots](../../src/frameworks/magento.ts#L122) (context: FrameworkContext, pattern: RegExp) → string[] <!-- internal -->
+    - fn [scopeOf](../../src/frameworks/magento.ts#L133) (path: string) → string <!-- internal -->
+    - fn [className](../../src/frameworks/magento.ts#L140) (written: string) → string
+    - type [MagentoFacts](../../src/frameworks/magento.ts#L145) <!-- internal -->
+    - fn [noFacts](../../src/frameworks/magento.ts#L148) (path: string, scope: string, error: ConfigFacts["error"] = null) → MagentoFacts <!-- internal -->
+    - fn [type](../../src/frameworks/magento.ts#L152) (name: string) → TypeName <!-- internal -->
       - calls base.magento.className
-    - type [XmlElement](../../src/frameworks/magento.ts#L148)
-    - fn [parseXml](../../src/frameworks/magento.ts#L158) (path: string, text: string) → { root: XmlElement | null; error: { line: number; reason: string } | null }
-    - fn [fromXml](../../src/frameworks/magento.ts#L193) (path: string, text: string, read: (root: XmlElement, facts: MagentoFacts) => void) → ConfigFacts <!-- internal -->
+    - type [XmlElement](../../src/frameworks/magento.ts#L157)
+    - fn [parseXml](../../src/frameworks/magento.ts#L167) (path: string, text: string) → { root: XmlElement | null; error: { line: number; reason: string } | null }
+    - fn [fromXml](../../src/frameworks/magento.ts#L202) (path: string, text: string, read: (root: XmlElement, facts: MagentoFacts) => void) → ConfigFacts <!-- internal -->
       - calls base.magento.noFacts, base.magento.scopeOf, base.magento.parseXml
-    - fn [childrenNamed](../../src/frameworks/magento.ts#L201) (element: XmlElement, name: string) → XmlElement[] <!-- internal -->
-    - fn [flag](../../src/frameworks/magento.ts#L206) (value: string | undefined) → boolean <!-- internal -->
-    - fn [parseDi](../../src/frameworks/magento.ts#L211) (path: string, text: string) → ConfigFacts
+    - fn [childrenNamed](../../src/frameworks/magento.ts#L210) (element: XmlElement, name: string) → XmlElement[] <!-- internal -->
+    - fn [flag](../../src/frameworks/magento.ts#L215) (value: string | undefined) → boolean <!-- internal -->
+    - fn [parseDi](../../src/frameworks/magento.ts#L220) (path: string, text: string) → ConfigFacts
       - calls base.magento.fromXml, base.magento.type, base.magento.className, base.magento.childrenNamed, base.magento.flag
-    - fn [parseEvents](../../src/frameworks/magento.ts#L252) (path: string, text: string) → ConfigFacts
+    - fn [parseEvents](../../src/frameworks/magento.ts#L261) (path: string, text: string) → ConfigFacts
       - calls base.magento.fromXml, base.magento.childrenNamed, base.magento.type, base.magento.flag
-    - fn [parseRoutes](../../src/frameworks/magento.ts#L269) (path: string, text: string) → ConfigFacts
+    - fn [parseRoutes](../../src/frameworks/magento.ts#L278) (path: string, text: string) → ConfigFacts
       - calls base.magento.fromXml, base.magento.childrenNamed
-    - fn [parseWebapi](../../src/frameworks/magento.ts#L284) (path: string, text: string) → ConfigFacts
+    - fn [parseWebapi](../../src/frameworks/magento.ts#L293) (path: string, text: string) → ConfigFacts
       - calls base.magento.fromXml, base.magento.childrenNamed, base.magento.type
-    - fn [parseCrontab](../../src/frameworks/magento.ts#L306) (path: string, text: string) → ConfigFacts
+    - fn [parseCrontab](../../src/frameworks/magento.ts#L315) (path: string, text: string) → ConfigFacts
       - calls base.magento.fromXml, base.magento.childrenNamed, base.magento.type
-    - fn [parseConsumers](../../src/frameworks/magento.ts#L326) (path: string, text: string) → ConfigFacts
+    - fn [parseConsumers](../../src/frameworks/magento.ts#L335) (path: string, text: string) → ConfigFacts
       - calls base.magento.fromXml, base.magento.childrenNamed, base.magento.type
-    - fn [parseGraphql](../../src/frameworks/magento.ts#L350) (path: string, text: string) → ConfigFacts
+    - fn [parseGraphql](../../src/frameworks/magento.ts#L359) (path: string, text: string) → ConfigFacts
       - calls base.magento.noFacts, base.magento.scopeOf, base.magento.type
   - module [nestjs](../../src/frameworks/nestjs.ts#L1)
     - node external.node

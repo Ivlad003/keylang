@@ -23,32 +23,38 @@
   - module [facts](../../src/extract/facts.ts#L1)
     - adapter base.adapter
     - type [FileFacts](../../src/extract/facts.ts#L9)
-    - type [WebFacts](../../src/extract/facts.ts#L103)
-    - type [WebCallFact](../../src/extract/facts.ts#L117)
-    - type [LiteralValue](../../src/extract/facts.ts#L141)
-    - type [Kwarg](../../src/extract/facts.ts#L152)
-    - type [DecoratorFact](../../src/extract/facts.ts#L158)
-    - type [StatementFact](../../src/extract/facts.ts#L171)
-    - type [ParamCallFact](../../src/extract/facts.ts#L181)
-    - type [EntryFact](../../src/extract/facts.ts#L200)
-    - type [QualifiedSymbol](../../src/extract/facts.ts#L214)
-    - type [ImportFact](../../src/extract/facts.ts#L223)
-    - type [ImportBinding](../../src/extract/facts.ts#L264)
-    - type [DeclKind](../../src/extract/facts.ts#L278) = "fn" | "class" | "type"
-    - type [DeclFact](../../src/extract/facts.ts#L280)
-    - type [LiteralFact](../../src/extract/facts.ts#L361)
-    - type [ArgFact](../../src/extract/facts.ts#L371)
-    - type [AttributeFact](../../src/extract/facts.ts#L377)
-    - type [PropertyFact](../../src/extract/facts.ts#L385)
-    - type [ParamFact](../../src/extract/facts.ts#L393)
-    - type [ChainLinkFact](../../src/extract/facts.ts#L399)
-    - type [CallFact](../../src/extract/facts.ts#L405)
-    - type [HookFact](../../src/extract/facts.ts#L485)
-    - type [PassFact](../../src/extract/facts.ts#L504)
-    - type [ValueRefFact](../../src/extract/facts.ts#L519)
-    - type [TypeRefFact](../../src/extract/facts.ts#L529)
-    - type [ExportRow](../../src/extract/facts.ts#L543)
-    - type [UnsupportedFact](../../src/extract/facts.ts#L573)
+    - type [WebFacts](../../src/extract/facts.ts#L109)
+    - type [WebCallFact](../../src/extract/facts.ts#L123)
+    - type [LiteralValue](../../src/extract/facts.ts#L147)
+    - type [Kwarg](../../src/extract/facts.ts#L158)
+    - type [DecoratorFact](../../src/extract/facts.ts#L164)
+    - type [StatementFact](../../src/extract/facts.ts#L177)
+    - type [ParamCallFact](../../src/extract/facts.ts#L187)
+    - type [EntryFact](../../src/extract/facts.ts#L206)
+    - type [QualifiedSymbol](../../src/extract/facts.ts#L220)
+    - type [ImportFact](../../src/extract/facts.ts#L229)
+    - type [ImportBinding](../../src/extract/facts.ts#L270)
+    - type [DeclKind](../../src/extract/facts.ts#L284) = "fn" | "class" | "type"
+    - type [DeclFact](../../src/extract/facts.ts#L286)
+    - type [ResultTypeFact](../../src/extract/facts.ts#L371)
+    - type [MethodSigFact](../../src/extract/facts.ts#L382)
+    - type [FieldFact](../../src/extract/facts.ts#L389)
+    - type [OutsideDeclFact](../../src/extract/facts.ts#L400)
+    - type [ValueOfFact](../../src/extract/facts.ts#L417)
+    - type [ResultCallFact](../../src/extract/facts.ts#L423)
+    - type [LiteralFact](../../src/extract/facts.ts#L442)
+    - type [ArgFact](../../src/extract/facts.ts#L452)
+    - type [AttributeFact](../../src/extract/facts.ts#L458)
+    - type [PropertyFact](../../src/extract/facts.ts#L466)
+    - type [ParamFact](../../src/extract/facts.ts#L474)
+    - type [ChainLinkFact](../../src/extract/facts.ts#L480)
+    - type [CallFact](../../src/extract/facts.ts#L486)
+    - type [HookFact](../../src/extract/facts.ts#L575)
+    - type [PassFact](../../src/extract/facts.ts#L594)
+    - type [ValueRefFact](../../src/extract/facts.ts#L609)
+    - type [TypeRefFact](../../src/extract/facts.ts#L619)
+    - type [ExportRow](../../src/extract/facts.ts#L633)
+    - type [UnsupportedFact](../../src/extract/facts.ts#L663)
   - module [grammars](../../src/extract/grammars.ts#L1)
     - type [Grammar](../../src/extract/grammars.ts#L8) = (typeof GRAMMARS)[number]
     - fn [wasmFile](../../src/extract/grammars.ts#L11) (g: Grammar) → string
@@ -59,116 +65,140 @@
     - treesitter extract.treesitter
     - fn [extractPhp](../../src/extract/php.ts#L38) (path: string, src: string) → Promise<FileFacts>
       - calls extract.treesitter.withTree, extract.php.extractTree
-    - type [Names](../../src/extract/php.ts#L43) <!-- internal -->
-    - type [Alias](../../src/extract/php.ts#L51) <!-- internal -->
-    - type [ClassContext](../../src/extract/php.ts#L58) <!-- internal -->
-    - type [FieldType](../../src/extract/php.ts#L72) <!-- internal -->
-    - type [At](../../src/extract/php.ts#L79) <!-- internal -->
-    - type [DocType](../../src/extract/php.ts#L88) <!-- internal -->
-    - type [TypeSource](../../src/extract/php.ts#L94) <!-- internal -->
-    - module [Collector](../../src/extract/php.ts#L103) <!-- internal -->
-      - fn [constructor](../../src/extract/php.ts#L104)
-      - fn [klass](../../src/extract/php.ts#L111) (written: string, node: Node, names: Names) → string
+    - fn [declarationsOnly](../../src/extract/php.ts#L48) (facts: FileFacts) → FileFacts
+      - calls extract.php.qualifiedBy
+    - fn [qualifiedBy](../../src/extract/php.ts#L74) (facts: FileFacts, written: string) → string <!-- internal -->
+    - type [Names](../../src/extract/php.ts#L85) <!-- internal -->
+    - type [Alias](../../src/extract/php.ts#L93) <!-- internal -->
+    - type [ClassContext](../../src/extract/php.ts#L100) <!-- internal -->
+    - type [FieldType](../../src/extract/php.ts#L114) <!-- internal -->
+    - type [At](../../src/extract/php.ts#L125) <!-- internal -->
+    - type [DocType](../../src/extract/php.ts#L134) <!-- internal -->
+    - type [TypeSource](../../src/extract/php.ts#L140) <!-- internal -->
+    - module [Collector](../../src/extract/php.ts#L151) <!-- internal -->
+      - fn [constructor](../../src/extract/php.ts#L152)
+      - fn [klass](../../src/extract/php.ts#L159) (written: string, node: Node, names: Names) → string
         - calls extract.php.Collector.klassAt, extract.treesitter.located
-      - fn [klassAt](../../src/extract/php.ts#L116) (written: string, at: At, names: Names, docblock: boolean) → string
+      - fn [klassAt](../../src/extract/php.ts#L164) (written: string, at: At, names: Names, docblock: boolean) → string
         - calls extract.php.canonicalClass, extract.php.Collector.implicit
-      - fn [fn](../../src/extract/php.ts#L123) (written: string, node: Node, names: Names) → string
+      - fn [fn](../../src/extract/php.ts#L171) (written: string, node: Node, names: Names) → string
         - calls extract.php.canonicalFunction, extract.php.Collector.implicit, extract.treesitter.located
-      - fn [implicit](../../src/extract/php.ts#L130) (local: string, spec: string, at: At, docblock: boolean) → void <!-- internal -->
+      - fn [implicit](../../src/extract/php.ts#L178) (local: string, spec: string, at: At, docblock: boolean) → void <!-- internal -->
         - calls extract.php.firstLine, extract.php.lastSegment
-      - fn [value](../../src/extract/php.ts#L138) (name: string, node: Node, member: boolean) → void
-      - fn [hole](../../src/extract/php.ts#L143) (node: Node, reason: string, symbol: string | null) → void
+      - fn [value](../../src/extract/php.ts#L186) (name: string, node: Node, member: boolean) → void
+      - fn [hole](../../src/extract/php.ts#L194) (node: Node, reason: string, symbol: string | null) → void
         - calls extract.php.unsupported
-    - fn [extractTree](../../src/extract/php.ts#L148) (path: string, root: Node) → FileFacts <!-- internal -->
+    - fn [extractTree](../../src/extract/php.ts#L202) (path: string, root: Node) → FileFacts <!-- internal -->
       - calls extract.php.Collector, extract.php.fileDoc, extract.php.regionsOf, extract.php.collectTopLevel, extract.php.usesOf, extract.php.declarationOf, extract.php.qualify, extract.php.exportRow, extract.php.callsIn, extract.php.includesIn, extract.treesitter.valuesFingerprint, extract.treesitter.located, extract.treesitter.errorLine
-    - fn [regionsOf](../../src/extract/php.ts#L204) (root: Node) → { ns: string; statements: Node[] }[] <!-- internal -->
-    - fn [collectTopLevel](../../src/extract/php.ts#L225) (node: Node, out: Node[]) → void <!-- internal -->
-    - fn [qualify](../../src/extract/php.ts#L233) (ns: string, name: string) → string <!-- internal -->
-    - fn [lastSegment](../../src/extract/php.ts#L237) (name: string) → string <!-- internal -->
-    - fn [firstLine](../../src/extract/php.ts#L241) (text: string) → string <!-- internal -->
-    - fn [useKind](../../src/extract/php.ts#L246) (node: Node) → "function" | "const" | null <!-- internal -->
-    - fn [usesOf](../../src/extract/php.ts#L256) (decl: Node, names: Names) → ImportFact[] <!-- internal -->
+    - fn [regionsOf](../../src/extract/php.ts#L258) (root: Node) → { ns: string; statements: Node[] }[] <!-- internal -->
+    - fn [collectTopLevel](../../src/extract/php.ts#L279) (node: Node, out: Node[]) → void <!-- internal -->
+    - fn [qualify](../../src/extract/php.ts#L287) (ns: string, name: string) → string <!-- internal -->
+    - fn [lastSegment](../../src/extract/php.ts#L291) (name: string) → string <!-- internal -->
+    - fn [firstLine](../../src/extract/php.ts#L295) (text: string) → string <!-- internal -->
+    - fn [useKind](../../src/extract/php.ts#L300) (node: Node) → "function" | "const" | null <!-- internal -->
+    - fn [usesOf](../../src/extract/php.ts#L310) (decl: Node, names: Names) → ImportFact[] <!-- internal -->
       - calls extract.treesitter.located, extract.php.useKind, extract.php.lastSegment, base.languages.asciiLowerCase, extract.php.firstLine
-    - fn [canonicalClass](../../src/extract/php.ts#L284) (written: string, names: Names) → { local: string; qualified: string | null; explicit: boolean } <!-- internal -->
+    - fn [canonicalClass](../../src/extract/php.ts#L338) (written: string, names: Names) → { local: string; qualified: string | null; explicit: boolean } <!-- internal -->
       - calls base.languages.asciiLowerCase, extract.php.qualify
-    - fn [canonicalFunction](../../src/extract/php.ts#L300) (written: string, names: Names) → { local: string; spec: string; explicit: boolean } <!-- internal -->
+    - fn [canonicalFunction](../../src/extract/php.ts#L354) (written: string, names: Names) → { local: string; spec: string; explicit: boolean } <!-- internal -->
       - calls extract.php.canonicalClass, base.languages.asciiLowerCase
-    - fn [exportRow](../../src/extract/php.ts#L311) (facts: FileFacts, name: string, kind: ExportRow["kind"]) → void <!-- internal -->
-    - fn [classNameOf](../../src/extract/php.ts#L318) (node: Node | null) → string | null <!-- internal -->
-    - fn [declarationOf](../../src/extract/php.ts#L323) (node: Node, names: Names, collector: Collector) → DeclFact | null <!-- internal -->
-      - calls extract.php.fnDecl, extract.treesitter.located, extract.php.classNameOf, extract.php.Collector.klass, extract.php.typeRef, extract.php.docOf, extract.treesitter.fingerprintFacts, extract.php.singleClass, extract.php.docTag, extract.php.namedTypes, base.languages.asciiLowerCase, extract.php.constructorFields, extract.php.docSource, extract.php.qualify, extract.php.literalOf, extract.php.informative, extract.php.attributesOf, extract.treesitter.valuesFingerprint
-    - fn [constructorFields](../../src/extract/php.ts#L477) (method: Node, className: string, names: Names, collector: Collector, fields: Map<string, FieldType>, untyped: ReadonlyMap<string, { node: Node; doc: DocType | null }>, filledBy: Map<string, string | null>) → Set<string> <!-- internal -->
-      - calls extract.php.docTags, extract.php.singleClass, extract.php.classKey, extract.php.Collector.klass, extract.php.docSource, extract.php.walkScope, extract.php.unparenthesized, extract.php.Collector.hole
-    - fn [classKey](../../src/extract/php.ts#L544) (written: string, names: Names) → string <!-- internal -->
+    - fn [exportRow](../../src/extract/php.ts#L365) (facts: FileFacts, name: string, kind: ExportRow["kind"]) → void <!-- internal -->
+    - fn [classNameOf](../../src/extract/php.ts#L372) (node: Node | null) → string | null <!-- internal -->
+    - fn [declarationOf](../../src/extract/php.ts#L377) (node: Node, names: Names, collector: Collector) → DeclFact | null <!-- internal -->
+      - calls extract.php.fnDecl, extract.treesitter.located, extract.php.classNameOf, extract.php.Collector.klass, extract.php.typeRef, extract.php.docOf, extract.php.interfaceMethods, extract.treesitter.fingerprintFacts, extract.php.singleClass, extract.php.classQualified, extract.php.docTag, base.languages.asciiLowerCase, extract.php.docSource, extract.php.namedTypes, extract.php.constructorFields, extract.php.qualify, extract.php.literalOf, extract.php.informative, extract.php.attributesOf, extract.treesitter.valuesFingerprint
+    - fn [interfaceMethods](../../src/extract/php.ts#L531) (node: Node, names: Names, collector: Collector) → MethodSigFact[] <!-- internal -->
+      - calls extract.php.resultOf
+    - fn [constructorFields](../../src/extract/php.ts#L553) (method: Node, className: string, names: Names, collector: Collector, fields: Map<string, FieldType>, untyped: ReadonlyMap<string, { node: Node; doc: DocType | null }>, filledBy: Map<string, string | null>) → Set<string> <!-- internal -->
+      - calls extract.php.docTags, extract.php.singleClass, extract.php.classKey, extract.php.Collector.klass, extract.php.classQualified, extract.php.docSource, extract.php.walkScope, extract.php.unparenthesized, extract.php.Collector.hole
+    - fn [classKey](../../src/extract/php.ts#L620) (written: string, names: Names) → string <!-- internal -->
       - calls base.languages.asciiLowerCase, extract.php.canonicalClass
-    - fn [docSource](../../src/extract/php.ts#L549) (doc: DocType, names: Names, collector: Collector) → TypeSource | null <!-- internal -->
-      - calls extract.php.singleDocClass, extract.php.classKey, extract.php.Collector.klassAt
-    - fn [singleDocClass](../../src/extract/php.ts#L560) (written: string) → string | null <!-- internal -->
+    - fn [classQualified](../../src/extract/php.ts#L625) (written: string, names: Names) → string <!-- internal -->
+      - calls extract.php.canonicalClass
+    - fn [docSource](../../src/extract/php.ts#L633) (doc: DocType, names: Names, collector: Collector, arrays = false) → TypeSource | null <!-- internal -->
+      - calls extract.php.docType, extract.php.singleDocClass, extract.php.classKey, extract.php.Collector.klassAt, extract.php.classQualified
+    - fn [singleDocClass](../../src/extract/php.ts#L646) (written: string) → string | null <!-- internal -->
       - calls base.languages.asciiLowerCase
-    - fn [singleClass](../../src/extract/php.ts#L573) (type: Node | null) → string | null <!-- internal -->
+    - fn [docType](../../src/extract/php.ts#L667) (written: string) → { cls: string; element?: true } | { self: "self" | "static" } | null <!-- internal -->
+      - calls base.languages.asciiLowerCase
+    - fn [resultOf](../../src/extract/php.ts#L690) (node: Node, names: Names, collector: Collector) → ResultTypeFact | undefined <!-- internal -->
+      - calls base.languages.asciiLowerCase, extract.php.canonicalClass, extract.php.docTag, extract.php.docType
+    - fn [singleClass](../../src/extract/php.ts#L719) (type: Node | null) → string | null <!-- internal -->
       - calls extract.php.classNameOf, base.languages.asciiLowerCase
-    - fn [namedTypes](../../src/extract/php.ts#L582) (type: Node | null) → { text: string; node: Node }[] <!-- internal -->
+    - fn [namedTypes](../../src/extract/php.ts#L728) (type: Node | null) → { text: string; node: Node }[] <!-- internal -->
       - calls extract.php.classNameOf, base.languages.asciiLowerCase
-    - fn [typeRef](../../src/extract/php.ts#L597) (name: string, node: Node) → TypeRefFact <!-- internal -->
+    - fn [typeRef](../../src/extract/php.ts#L743) (name: string, node: Node) → TypeRefFact <!-- internal -->
       - calls extract.treesitter.located, extract.php.firstLine
-    - type [Scope](../../src/extract/php.ts#L603) <!-- internal -->
-    - fn [fnDecl](../../src/extract/php.ts#L615) (node: Node, name: string, names: Names, ctx: ClassContext | null, collector: Collector, symbol: string) → DeclFact <!-- internal -->
-      - calls extract.treesitter.located, extract.php.qualify, extract.php.singleClass, base.languages.asciiLowerCase, extract.php.canonicalClass, extract.php.Collector.klass, extract.php.namedTypes, extract.php.typeRef, extract.php.walkScope, extract.php.classNameOf, extract.php.callsIn, extract.php.docOf, extract.php.literalOf, extract.php.attributesOf, extract.treesitter.fingerprintFacts, extract.php.informative
-    - fn [walkScope](../../src/extract/php.ts#L712) (node: Node, visit: (n: Node) => void) → void <!-- internal -->
-    - fn [callsIn](../../src/extract/php.ts#L725) (node: Node, scope: Scope, collector: Collector, closure: boolean) → CallFact[] <!-- internal -->
-      - calls extract.php.qualify, extract.php.callOf, extract.treesitter.located, extract.php.passesOf, extract.php.nameArgOf, extract.php.argsOf, extract.php.chainOf, extract.php.informative, extract.php.classNameOf, base.languages.asciiLowerCase, extract.php.Collector.value, extract.php.Collector.klass, extract.php.arrayCallable, extract.php.closureState, extract.treesitter.startCol
-    - fn [informative](../../src/extract/php.ts#L781) (value: LiteralFact) → boolean <!-- internal -->
-    - fn [literalClass](../../src/extract/php.ts#L787) (scopeNode: Node | null, names: Names, self: string | null) → string | null <!-- internal -->
+    - type [VarType](../../src/extract/php.ts#L753) <!-- internal -->
+    - type [Binding](../../src/extract/php.ts#L756) <!-- internal -->
+    - fn [sameType](../../src/extract/php.ts#L759) (a: VarType, b: VarType) → boolean <!-- internal -->
+      - calls base.languages.asciiLowerCase
+    - fn [elementType](../../src/extract/php.ts#L765) (type: VarType | null) → VarType | null <!-- internal -->
+    - fn [valueType](../../src/extract/php.ts#L776) (expr: Node, scope: Scope, collector: Collector) → VarType | null <!-- internal -->
+      - calls extract.php.unparenthesized, extract.php.classNameOf, base.languages.asciiLowerCase, extract.php.qualify, extract.php.Collector.klass, extract.php.classQualified, extract.php.firstClassCallable, extract.php.resultCall
+    - fn [resultCall](../../src/extract/php.ts#L805) (n: Node, scope: Scope, collector: Collector) → ResultCallFact | null <!-- internal -->
+      - calls extract.php.calleeOf
+    - fn [inlineVars](../../src/extract/php.ts#L826) (comment: Node, names: Names, collector: Collector) → { variable: string; type: VarType }[] <!-- internal -->
+      - calls extract.php.docSource
+    - type [Scope](../../src/extract/php.ts#L850) <!-- internal -->
+    - fn [fnDecl](../../src/extract/php.ts#L862) (node: Node, name: string, names: Names, ctx: ClassContext | null, collector: Collector, symbol: string) → DeclFact <!-- internal -->
+      - calls extract.treesitter.located, extract.php.qualify, extract.php.docTags, extract.php.singleClass, base.languages.asciiLowerCase, extract.php.canonicalClass, extract.php.docSource, extract.php.Collector.klass, extract.php.classQualified, extract.php.namedTypes, extract.php.typeRef, extract.php.walkScope, extract.php.inlineVars, extract.php.sameType, extract.php.classNameOf, extract.php.valueType, extract.php.elementType, extract.php.callsIn, extract.php.docOf, extract.php.literalOf, extract.php.attributesOf, extract.php.resultOf, extract.treesitter.fingerprintFacts, extract.php.informative
+    - fn [walkScope](../../src/extract/php.ts#L1009) (node: Node, visit: (n: Node) => void) → void <!-- internal -->
+    - fn [callsIn](../../src/extract/php.ts#L1022) (node: Node, scope: Scope, collector: Collector, closure: boolean) → CallFact[] <!-- internal -->
+      - calls extract.php.qualify, extract.php.callOf, extract.treesitter.located, extract.php.passesOf, extract.php.nameArgOf, extract.php.argsOf, extract.php.chainOf, extract.php.informative, extract.php.classNameOf, base.languages.asciiLowerCase, extract.php.Collector.value, extract.php.Collector.klass, extract.php.arrayCallable, extract.php.closureState, extract.treesitter.startCol, extract.php.narrowing
+    - fn [narrowing](../../src/extract/php.ts#L1077) (n: Node, scope: Scope, collector: Collector) → Scope | null <!-- internal -->
+      - calls extract.php.unparenthesized, base.languages.asciiLowerCase, extract.php.classNameOf, extract.php.Collector.klass, extract.php.classQualified
+    - fn [informative](../../src/extract/php.ts#L1107) (value: LiteralFact) → boolean <!-- internal -->
+    - fn [literalClass](../../src/extract/php.ts#L1113) (scopeNode: Node | null, names: Names, self: string | null) → string | null <!-- internal -->
       - calls base.languages.asciiLowerCase, extract.php.classNameOf, extract.php.canonicalClass
-    - fn [literalOf](../../src/extract/php.ts#L795) (node: Node, names: Names, self: string | null, depth = 0) → LiteralFact <!-- internal -->
+    - fn [literalOf](../../src/extract/php.ts#L1121) (node: Node, names: Names, self: string | null, depth = 0) → LiteralFact <!-- internal -->
       - calls extract.php.unparenthesized, extract.php.stringValue, extract.php.literalClass, base.languages.asciiLowerCase, extract.treesitter.startCol
-    - fn [argList](../../src/extract/php.ts#L825) (args: Node | null | undefined, names: Names, self: string | null) → ArgFact[] <!-- internal -->
+    - fn [argList](../../src/extract/php.ts#L1151) (args: Node | null | undefined, names: Names, self: string | null) → ArgFact[] <!-- internal -->
       - calls extract.php.literalOf
-    - fn [argsOf](../../src/extract/php.ts#L836) (call: Node, names: Names, self: string | null) → ArgFact[] <!-- internal -->
+    - fn [argsOf](../../src/extract/php.ts#L1162) (call: Node, names: Names, self: string | null) → ArgFact[] <!-- internal -->
       - calls extract.php.argList
-    - fn [chainOf](../../src/extract/php.ts#L841) (n: Node, names: Names, self: string | null) → ChainLinkFact[] | null <!-- internal -->
+    - fn [chainOf](../../src/extract/php.ts#L1167) (n: Node, names: Names, self: string | null) → ChainLinkFact[] | null <!-- internal -->
       - calls extract.php.argsOf, extract.php.unparenthesized, extract.php.literalClass
-    - fn [attributesOf](../../src/extract/php.ts#L865) (decl: Node, names: Names, self: string | null) → AttributeFact[] <!-- internal -->
+    - fn [attributesOf](../../src/extract/php.ts#L1191) (decl: Node, names: Names, self: string | null) → AttributeFact[] <!-- internal -->
       - calls extract.php.classNameOf, extract.php.canonicalClass, extract.php.argList, extract.treesitter.startCol
-    - type [ClosureState](../../src/extract/php.ts#L889) = null | "stored" | { line: number; col: number } <!-- internal -->
-    - fn [closureState](../../src/extract/php.ts#L891) (closure: Node, inner: ClosureState) → ClosureState <!-- internal -->
+    - type [ClosureState](../../src/extract/php.ts#L1215) = null | "stored" | { line: number; col: number } <!-- internal -->
+    - fn [closureState](../../src/extract/php.ts#L1217) (closure: Node, inner: ClosureState) → ClosureState <!-- internal -->
       - calls extract.treesitter.located
-    - fn [passesOf](../../src/extract/php.ts#L910) (call: Node, scope: Scope, collector: Collector) → PassFact[] <!-- internal -->
+    - fn [passesOf](../../src/extract/php.ts#L1236) (call: Node, scope: Scope, collector: Collector) → PassFact[] <!-- internal -->
       - calls base.languages.asciiLowerCase, extract.php.lastSegment, extract.php.callableOf, extract.treesitter.located, extract.php.firstLine
-    - fn [callableOf](../../src/extract/php.ts#L942) (value: Node, scope: Scope, collector: Collector, plainStrings: boolean) → { callee: string; bound?: "parameter" | "local"; receiver?: string; docblock?: { line: number; col: number }; node: Node } | null <!-- internal -->
+    - fn [callableOf](../../src/extract/php.ts#L1268) (value: Node, scope: Scope, collector: Collector, plainStrings: boolean) → { callee: string; bound?: "parameter" | "local"; receiver?: string; docblock?: { line: number; col: number }; node: Node } | null <!-- internal -->
       - calls extract.php.unparenthesized, extract.php.stringValue, base.languages.asciiLowerCase, extract.php.classHolder, extract.php.Collector.klass, extract.php.qualifiedString, extract.php.Collector.fn, extract.php.firstClassCallable, extract.php.calleeOf
-    - fn [qualifiedString](../../src/extract/php.ts#L1000) (name: string) → string <!-- internal -->
-    - fn [classHolder](../../src/extract/php.ts#L1005) (scopeNode: Node, member: string, scope: Scope, collector: Collector) → string | null <!-- internal -->
+    - fn [qualifiedString](../../src/extract/php.ts#L1326) (name: string) → string <!-- internal -->
+    - fn [classHolder](../../src/extract/php.ts#L1331) (scopeNode: Node, member: string, scope: Scope, collector: Collector) → string | null <!-- internal -->
       - calls extract.php.classNameOf, base.languages.asciiLowerCase, extract.php.Collector.klass
-    - fn [arrayCallable](../../src/extract/php.ts#L1016) (n: Node, scope: Scope, collector: Collector) → void <!-- internal -->
+    - fn [arrayCallable](../../src/extract/php.ts#L1342) (n: Node, scope: Scope, collector: Collector) → void <!-- internal -->
       - calls extract.php.stringValue, extract.php.Collector.value
-    - fn [nameArgOf](../../src/extract/php.ts#L1036) (n: Node, callee: string) → CallFact["nameArg"] | undefined <!-- internal -->
+    - fn [nameArgOf](../../src/extract/php.ts#L1362) (n: Node, callee: string) → CallFact["nameArg"] | undefined <!-- internal -->
       - calls base.languages.asciiLowerCase, extract.php.unparenthesized, extract.php.stringValue
-    - fn [stringValue](../../src/extract/php.ts#L1048) (node: Node) → string | null <!-- internal -->
-    - fn [firstClassCallable](../../src/extract/php.ts#L1055) (n: Node) → boolean <!-- internal -->
-    - fn [callOf](../../src/extract/php.ts#L1071) (n: Node, scope: Scope, collector: Collector) → Pick<CallFact, "callee" | "bound" | "receiver" | "opaque" | "docblock" | "param"> | null <!-- internal -->
+    - fn [stringValue](../../src/extract/php.ts#L1374) (node: Node) → string | null <!-- internal -->
+    - fn [firstClassCallable](../../src/extract/php.ts#L1381) (n: Node) → boolean <!-- internal -->
+    - fn [callOf](../../src/extract/php.ts#L1397) (n: Node, scope: Scope, collector: Collector) → Pick<CallFact, "callee" | "bound" | "receiver" | "opaque" | "docblock" | "param" | "on" | "member"> | null <!-- internal -->
       - calls extract.php.firstClassCallable, extract.php.callableValue, extract.php.calleeOf
-    - fn [calleeOf](../../src/extract/php.ts#L1080) (n: Node, scope: Scope, collector: Collector) → Pick<CallFact, "callee" | "bound" | "receiver" | "opaque" | "docblock" | "param"> | null <!-- internal -->
-      - calls extract.php.classNameOf, base.languages.asciiLowerCase, extract.php.Collector.klass, extract.php.variableCall, extract.php.lastSegment, extract.php.Collector.hole, extract.php.Collector.fn, extract.php.unparenthesized
-    - fn [unparenthesized](../../src/extract/php.ts#L1157) (node: Node) → Node <!-- internal -->
-    - fn [variableCall](../../src/extract/php.ts#L1164) (callee: string, scope: Scope) → Pick<CallFact, "callee" | "bound"> <!-- internal -->
-    - fn [callableValue](../../src/extract/php.ts#L1170) (n: Node, scope: Scope, collector: Collector) → void <!-- internal -->
+    - fn [calleeOf](../../src/extract/php.ts#L1406) (n: Node, scope: Scope, collector: Collector) → Pick<CallFact, "callee" | "bound" | "receiver" | "opaque" | "docblock" | "param" | "on" | "member"> | null <!-- internal -->
+      - calls extract.php.classNameOf, base.languages.asciiLowerCase, extract.php.Collector.klass, extract.php.variableCall, extract.php.lastSegment, extract.php.Collector.hole, extract.php.Collector.fn, extract.php.unparenthesized, extract.php.firstClassCallable, extract.php.resultCall
+    - fn [unparenthesized](../../src/extract/php.ts#L1490) (node: Node) → Node <!-- internal -->
+    - fn [variableCall](../../src/extract/php.ts#L1497) (callee: string, scope: Scope) → Pick<CallFact, "callee" | "bound"> <!-- internal -->
+    - fn [callableValue](../../src/extract/php.ts#L1503) (n: Node, scope: Scope, collector: Collector) → void <!-- internal -->
       - calls extract.php.Collector.value, extract.php.Collector.fn
-    - fn [includesIn](../../src/extract/php.ts#L1186) (root: Node, path: string, collector: Collector) → ImportFact[] <!-- internal -->
+    - fn [includesIn](../../src/extract/php.ts#L1519) (root: Node, path: string, collector: Collector) → ImportFact[] <!-- internal -->
       - calls extract.php.includedPath, extract.treesitter.located, extract.php.Collector.hole, extract.php.firstLine
-    - fn [includedPath](../../src/extract/php.ts#L1207) (expr: Node | null, file: string) → string | null <!-- internal -->
+    - fn [includedPath](../../src/extract/php.ts#L1540) (expr: Node | null, file: string) → string | null <!-- internal -->
       - calls extract.php.stringValue, base.languages.asciiLowerCase, extract.php.normalize
-    - fn [normalize](../../src/extract/php.ts#L1240) (path: string) → string <!-- internal -->
-    - fn [docOf](../../src/extract/php.ts#L1255) (node: Node, header: number | null) → string | undefined <!-- internal -->
+    - fn [normalize](../../src/extract/php.ts#L1573) (path: string) → string <!-- internal -->
+    - fn [docOf](../../src/extract/php.ts#L1588) (node: Node, header: number | null) → string | undefined <!-- internal -->
       - calls extract.php.docComment, extract.doc-comments.jsdocDescription, extract.doc-comments.blockCommentBody, extract.doc-comments.isLicense, extract.doc-comments.nonEmpty
-    - fn [docComment](../../src/extract/php.ts#L1263) (node: Node, header: number | null) → Node | null <!-- internal -->
-    - fn [docTags](../../src/extract/php.ts#L1274) (node: Node, header: number | null, tag: RegExp) → (DocType & { name?: string })[] <!-- internal -->
+    - fn [docComment](../../src/extract/php.ts#L1596) (node: Node, header: number | null) → Node | null <!-- internal -->
+    - fn [docTags](../../src/extract/php.ts#L1607) (node: Node, header: number | null, tag: RegExp) → (DocType & { name?: string })[] <!-- internal -->
       - calls extract.php.docComment
-    - fn [docTag](../../src/extract/php.ts#L1289) (node: Node, header: number | null, tag: RegExp) → DocType | null <!-- internal -->
+    - fn [docTag](../../src/extract/php.ts#L1622) (node: Node, header: number | null, tag: RegExp) → DocType | null <!-- internal -->
       - calls extract.php.docTags
-    - fn [fileDoc](../../src/extract/php.ts#L1298) (root: Node) → { doc: string; id: number } | null <!-- internal -->
+    - fn [fileDoc](../../src/extract/php.ts#L1631) (root: Node) → { doc: string; id: number } | null <!-- internal -->
       - calls extract.doc-comments.jsdocDescription, extract.doc-comments.blockCommentBody, extract.doc-comments.isLicense, extract.doc-comments.nonEmpty
-    - fn [unsupported](../../src/extract/php.ts#L1308) (node: Node, reason: string) → UnsupportedFact <!-- internal -->
+    - fn [unsupported](../../src/extract/php.ts#L1641) (node: Node, reason: string) → UnsupportedFact <!-- internal -->
       - calls extract.treesitter.located, extract.php.firstLine
   - module [python](../../src/extract/python.ts#L1)
     - facts extract.facts
