@@ -863,6 +863,32 @@ test("tui: Enter on a finding lands on the right cluster after Unicode character
   assert.equal(s.app.state.results.open, false);
 });
 
+test("tui: a bracketed paste while editing a finding's target goes into it, as typed keys do (review 2026-10-06, ticket 65)", async (t) => {
+  const root = checkoutRepo(t, { [FLOW_PATH]: CHECKOUT_FLOW.replace("- step application.purchase.buy", "- step application.purchase.nope") });
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send(KEY.f6);
+  assert.match(s.text(), /K001 keylang\/flows\/checkout\.md:6:8/, s.text());
+  s.send(KEY.enter);
+  assert.equal(s.app.state.results.viewing, true);
+  s.send("i");
+  assert.equal(s.app.state.mode, "edit");
+  s.send("\x1b[200~PASTED\x1b[201~");
+  assert.equal(s.app.state.results.viewing, true, "the target stays shown");
+  assert.match(s.app.state.buffers.get(FLOW_PATH)!.text.split("\n")[5]!, /^- step PASTEDapplication\.purchase\.nope$/);
+  // While the list itself is shown, a paste still reaches nothing under it.
+  s.send("\x1b");
+  await sleep(40);
+  s.send("\x1b");
+  await sleep(40);
+  assert.equal(s.app.state.results.viewing, false);
+  assert.equal(s.app.state.results.open, true);
+  const before = s.app.state.buffers.get(FLOW_PATH)!.text;
+  s.send("\x1b[200~MORE\x1b[201~");
+  assert.equal(s.app.state.buffers.get(FLOW_PATH)!.text, before);
+});
+
 test("tui: the findings panel names unsaved inputs and a failed analysis", async (t) => {
   const root = checkoutRepo(t);
   let calls = 0;

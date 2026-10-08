@@ -420,7 +420,7 @@ export class App {
     const events = this.decoder.feed(chunk);
     for (let i = 0; i < events.length; ) {
       const run = typedRun(events, i);
-      if (run.length > 1 && !this.state.prompt && !this.state.completion && !this.state.help && !this.state.results.open && pastedRun(run, this.state.mode === "edit" || chatTakesKeys(this.state))) {
+      if (run.length > 1 && !this.state.prompt && !this.state.completion && !this.state.help && !(this.state.results.open && !this.state.results.viewing) && pastedRun(run, this.state.mode === "edit" || chatTakesKeys(this.state))) {
         this.safely({ type: "paste", text: run.map((key) => (key.name === "enter" ? "\n" : key.name === "tab" ? "  " : key.text!)).join("") });
         i += run.length;
         continue;
@@ -1286,7 +1286,8 @@ export class App {
       return;
     }
     if (event.type === "paste") {
-      if (this.state.results.open || this.state.barrier || this.state.quit) return;
+      // While a finding's target is shown (viewing) the panel is hidden and text goes to the target, as keys do.
+      if ((this.state.results.open && !this.state.results.viewing) || this.state.barrier || this.state.quit) return;
       // The help is modal: text pasted over it would go into the hidden buffer, which it covers.
       if (this.state.help) return;
       if (this.state.prompt) this.promptType(event.text.replace(/\n/g, " "));
