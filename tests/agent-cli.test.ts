@@ -44,8 +44,11 @@ function keylang(dir: string, args: string[], fake: FakeAgents | null, env: Reco
     });
     let stdout = "";
     let stderr = "";
-    child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
-    child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+    // Decoded as streams: a character split between two reads of a long answer stays whole here too.
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => (stdout += chunk));
+    child.stderr.on("data", (chunk: string) => (stderr += chunk));
     child.on("close", (status) => resolve({ status, stdout, stderr }));
   });
 }
@@ -155,6 +158,35 @@ test("explain --llm through codex, opencode, cursor and a custom CLI: each gets 
     assert.match(call!.promptFile!, /Answer with text only[\s\S]*export function checkout/);
     assert.equal(call!.stdin, "");
     assert.ok(!existsSync(call!.args[2]!), "the prompt file is removed after the call");
+  });
+});
+
+test("agent CLI output over 64 KiB: a multibyte character split between two reads is decoded whole, as text and as a result line", async (t) => {
+  // One write of more than a pipe's 64 KiB: the first read ends inside an "я" (2 bytes) after the odd-length prefix.
+  const reply = `a${"я".repeat(40000)}`;
+  const count = (text: string, char: string): number => text.split(char).length - 1;
+  await t.test("custom CLI, plain stdout", async (t) => {
+    const dir = copy(t);
+    const fake = fakeAgents(t, ["bigcli"], { reply });
+    agentsJson(dir, { clis: { bigcli: { command: ["bigcli"] } } });
+    const o = await keylang(dir, ["explain", NODE, "--llm"], fake, { KEYLANG_AGENT: "cli:bigcli" });
+    assert.equal(o.status, 0, o.stderr);
+    const file = readFileSync(join(dir, `keylang/explain/${NODE}.md`), "utf8");
+    assert.equal(count(file, "\uFFFD"), 0, "no replacement character");
+    assert.equal(count(file, "я"), 40000);
+    assert.equal(count(o.stdout, "\uFFFD"), 0);
+  });
+  await t.test("cli:claude, the result line", async (t) => {
+    // The JSON around the answer shifts it: one of two prefixes an odd byte apart puts the read's end inside an "я".
+    for (const prefix of ["a", ""]) {
+      const dir = copy(t);
+      const fake = fakeAgents(t, ["claude"], { reply: `${prefix}${"я".repeat(40000)}` });
+      const o = await keylang(dir, ["explain", NODE, "--llm"], fake, { KEYLANG_AGENT: "cli:claude" });
+      assert.equal(o.status, 0, o.stderr);
+      const file = readFileSync(join(dir, `keylang/explain/${NODE}.md`), "utf8");
+      assert.equal(count(file, "\uFFFD"), 0, `no replacement character (prefix "${prefix}")`);
+      assert.equal(count(file, "я"), 40000);
+    }
   });
 });
 

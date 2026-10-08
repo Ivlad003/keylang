@@ -526,7 +526,7 @@ async function prepareClone(sourceText: string | undefined, opts: { dir: string 
   if ("error" in source) throw new Error(source.error);
   const dir = opts.dir !== undefined ? resolve(process.cwd(), opts.dir) : join(cloneCacheRoot(process.env, homedir()), ...source.key);
   const synced = syncClone(source, dir);
-  process.stdout.write(`${synced.dir}: ${synced.action} from ${source.url}\n`);
+  process.stdout.write(`${synced.dir}: ${synced.action} from ${source.displayUrl}\n`);
   const initialized = await cmdInit(dir, { agents: "none", check: false });
   if (initialized !== 0) return { code: initialized, root: null };
   if (mode === "map-only") return { code: 0, root: dir };
@@ -547,7 +547,7 @@ async function prepareClone(sourceText: string | undefined, opts: { dir: string 
     // A clone whose keylang.json keylang may not write is no place for --explain; it is keylang's own
     // (fresh or marked), so it goes the way a clone with an unwritable marker does.
     rmSync(dir, { recursive: true, force: true });
-    process.stderr.write(`keylang: clone: ${problem}; the clone of ${source.url} was removed\n`);
+    process.stderr.write(`keylang: clone: ${problem}; the clone of ${source.displayUrl} was removed\n`);
     return { code: 2, root: null };
   }
   let code = await cmdExplainBatch(dir, "missing", { llm: true, dryRun: false, limit: undefined, jobs: undefined });
@@ -1240,8 +1240,8 @@ function printMap(result: OperationEnvelope<"map">, root: string): number {
 
 /**
  * A printer over the shared parse operation: the tree or the JSON to stdout
- * and nothing else; the notes on skipped explanations and the diagnostics to
- * stderr.
+ * and nothing else; the notes on skipped explanations, each file it could not
+ * read (code 2) and the diagnostics to stderr.
  */
 async function cmdParse(paths: string[], json: boolean): Promise<number> {
   const cwd = process.cwd();
@@ -1249,6 +1249,10 @@ async function cmdParse(paths: string[], json: boolean): Promise<number> {
   if (result.payload === null) throw new Error(result.messages[0]?.text ?? "parse failed");
   const { payload } = result;
   for (const file of payload.skipped) process.stderr.write(`keylang: note: ${file}: a saved explanation, not keylang Markdown; skipped\n`);
+  for (const file of payload.unreadable) {
+    const why = result.messages.find((message) => message.level === "error" && message.text.startsWith(`${file}: cannot read: `));
+    process.stderr.write(`keylang: ${why?.text ?? `${file}: cannot read`}\n`);
+  }
   process.stdout.write(payload.text);
   for (const d of payload.diagnostics) process.stderr.write(`${formatDiagnostic(d)}\n`);
   return result.exitCode ?? 2;

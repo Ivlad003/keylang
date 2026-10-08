@@ -14,6 +14,7 @@ import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { accessSync, constants, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, isAbsolute, join } from "node:path";
+import { StringDecoder } from "node:string_decoder";
 import { AGENT_CLI_PRESETS, AGENT_FORMS, isAgent } from "./config.ts";
 
 type Env = Readonly<Record<string, string | undefined>>;
@@ -254,14 +255,17 @@ export function cliVersion(bin: string, env: Env = process.env): Promise<string 
   return new Promise((resolve) => {
     const child = spawn(bin, ["--version"], { env: { ...env, NO_COLOR: "1" }, stdio: ["ignore", "pipe", "ignore"] });
     let out = "";
+    // One decoder for the whole stream: a character split between two reads stays whole.
+    const decoder = new StringDecoder("utf8");
     const timer = setTimeout(() => child.kill("SIGKILL"), VERSION_TIMEOUT_MS);
-    child.stdout.on("data", (chunk: Buffer) => (out += chunk.toString()));
+    child.stdout.on("data", (chunk: Buffer) => (out += decoder.write(chunk)));
     child.on("error", () => {
       clearTimeout(timer);
       resolve(null);
     });
     child.on("close", (code) => {
       clearTimeout(timer);
+      out += decoder.end();
       const line = out.trim().split("\n")[0]?.trim() ?? "";
       resolve(code === 0 && line !== "" ? shortVersion(line) : null);
     });
@@ -584,6 +588,9 @@ function runInvocation(agent: string, inv: Invocation, root: string, call: CliCa
     let stdoutBytes = 0;
     let stderr = "";
     let pending = "";
+    // A pipe is read 64 KiB at a time: one decoder per stream keeps a multibyte character split between reads whole.
+    const stdoutDecoder = new StringDecoder("utf8");
+    const stderrDecoder = new StringDecoder("utf8");
     let killTimer: NodeJS.Timeout | null = null;
     const stopGroup = (): void => {
       if (pid === undefined) return;
@@ -625,7 +632,7 @@ function runInvocation(agent: string, inv: Invocation, root: string, call: CliCa
         finish({ error: new Error(`${agent}: more than ${OUTPUT_LIMIT} bytes of output`) });
         return;
       }
-      const text = chunk.toString();
+      const text = stdoutDecoder.write(chunk);
       stdout += text;
       if (inv.answer !== "result-json") return;
       // The result line ends the call: a CLI that lingers after it (Cursor) is killed.
@@ -641,7 +648,7 @@ function runInvocation(agent: string, inv: Invocation, root: string, call: CliCa
       }
     });
     child.stderr!.on("data", (chunk: Buffer) => {
-      stderr = (stderr + chunk.toString()).slice(-STDERR_TAIL);
+      stderr = (stderr + stderrDecoder.write(chunk)).slice(-STDERR_TAIL);
     });
     child.on("error", (error: NodeJS.ErrnoException) => {
       if (pid !== undefined) liveGroups.delete(pid);
@@ -654,6 +661,8 @@ function runInvocation(agent: string, inv: Invocation, root: string, call: CliCa
         if (killTimer === null) liveGroups.delete(pid);
       }
       if (settled) return;
+      stdout += stdoutDecoder.end();
+      stderr += stderrDecoder.end();
       if (code === 0) {
         finish({ ok: { stdout, result: null } });
         return;
