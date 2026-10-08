@@ -117,12 +117,14 @@ test("static: a removed step is K001 without a second static failure", (t) => {
   assert.match(o.stderr, /^1 fail,/m);
 });
 
-test("static: a step reached only through a callback is unverified with the call's position", (t) => {
+test("static: a step reached through a callback passed as an argument is ok in `behavior`, naming the callable; in `shape` it is unverified with the callable's position", (t) => {
   const dir = repo(t, CHECKOUT, { "flows/cb.md": "# flow cb\n\n- trigger application.purchase.viaCallback\n- step infrastructure.store.save\n" });
   const o = keylang(dir, ["check"]);
   assert.equal(o.status, 0, o.stdout);
-  assert.match(o.stdout, /static unverified infrastructure\.store\.save: no resolved path from application\.purchase\.viaCallback; call through a local value `cb` at src\/application\/purchase\.ts:10:3 may reach it/);
-  const strict = keylang(dir, ["check", "--strict"]);
+  assert.match(o.stdout, /static ok infrastructure\.store\.save: called from application\.purchase\.viaCallback through the callable `save` passed at src\/application\/purchase\.ts:13:9/);
+  const shape = keylang(dir, ["check", "--static", "shape"]);
+  assert.match(shape.stdout, /static unverified infrastructure\.store\.save: no resolved path from application\.purchase\.viaCallback; the callable `save` passed as an argument \(not followed in static mode shape, set by --static\) at src\/application\/purchase\.ts:13:9 may reach it/);
+  const strict = keylang(dir, ["check", "--strict", "--static", "shape"]);
   assert.equal(strict.status, 1);
 });
 
@@ -900,7 +902,8 @@ test("trace adapter: an empty function body is instrumented and still loads", (t
 
 test("check formats: every result has specHash and provenance; an unverified flow result is the rule `unverified`", (t) => {
   const specs = { "rules.md": "# rules\n\n- deny application infrastructure\n", "flows/cb.md": "# flow cb\n\n- trigger application.purchase.viaCallback\n- step infrastructure.store.save\n- step infrastructure.store.gone\n" };
-  const dir = repo(t, CHECKOUT, specs, { tests: ".keylang/reports/*.json" });
+  // `shape` keeps the callback step unverified: `behavior` would follow the callable `save` passed.
+  const dir = repo(t, CHECKOUT, specs, { tests: ".keylang/reports/*.json", static: "shape" });
   const json = keylang(dir, ["check", "--format", "json"]);
   assert.equal(json.status, 1, json.stderr);
   const rows = (JSON.parse(json.stdout) as { results: (JsonResult & { specHash?: string })[] }).results;

@@ -6,7 +6,7 @@
 // Every call expression is an edge or a hole: a callee keylang cannot name
 // is a call through a value, never dropped.
 
-import type { CallFact, DeclFact, ExportRow, FileFacts, ImportFact, UnsupportedFact, ValueRefFact } from "./facts.ts";
+import type { CallFact, DeclFact, ExportRow, FileFacts, ImportFact, PassFact, UnsupportedFact, ValueRefFact } from "./facts.ts";
 import { isLicense, nonEmpty } from "./doc-comments.ts";
 import { errorLine, fingerprint, located, withTree, type Node } from "./treesitter.ts";
 
@@ -387,18 +387,78 @@ function constructedClass(value: Node | null): string | null {
   return fn?.type === "identifier" ? fn.text : null;
 }
 
+/**
+ * Where a call sits with respect to closures: null outside them; `stored`
+ * under a nested `def` or a lambda some value holds (`g = lambda: …`);
+ * otherwise the position of the outermost lambda, every lambda between being
+ * an argument of a call (`run(lambda: self.m())`, `sorted(xs, key=lambda x: …)`).
+ */
+type ClosureState = null | "stored" | { line: number; col: number };
+
 function bodyCalls(body: Node, scope: CallScope): CallFact[] {
   const out: CallFact[] = [];
-  const walk = (node: Node, closure: boolean): void => {
+  const walk = (node: Node, closure: ClosureState): void => {
     if (node.type === "call") {
       const at = located(node);
-      out.push({ ...callOf(node.childForFieldName("function"), scope), line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, ...(closure ? { closure: true as const } : {}) });
+      const passes = passesOf(node, scope);
+      out.push({
+        ...callOf(node.childForFieldName("function"), scope),
+        ...(passes.length > 0 ? { passes } : {}),
+        line: at.line,
+        col: at.col,
+        endLine: at.endLine,
+        endCol: at.endCol,
+        ...(closure ? { closure: true as const } : {}),
+        ...(closure && closure !== "stored" ? { closureArg: closure } : {}),
+      });
     }
-    const inner = closure || node.type === "lambda" || node.type === "function_definition";
+    let inner = closure;
+    if (node.type === "function_definition") inner = "stored";
+    else if (node.type === "lambda") {
+      const parent = node.parent;
+      const argument = parent?.type === "argument_list" || (parent?.type === "keyword_argument" && parent.parent?.type === "argument_list");
+      inner = closure === "stored" || !argument ? "stored" : (closure ?? { line: located(node).line, col: located(node).col });
+    }
     for (const c of node.namedChildren) walk(c, inner);
   };
-  walk(body, false);
+  walk(body, null);
   return out;
+}
+
+/**
+ * Callable references among the arguments: `run(self.m)`, `run(Order.m)`,
+ * `run(obj.m)` with the class of `obj` known, `run(callback=self.m)`,
+ * `functools.partial(self.m, …)`. A lambda is not a pass: its calls carry
+ * `closureArg`.
+ */
+function passesOf(call: Node, scope: CallScope): PassFact[] {
+  const args = call.childForFieldName("arguments");
+  if (args?.type !== "argument_list") return [];
+  const out: PassFact[] = [];
+  args.namedChildren
+    .filter((arg) => arg.type !== "comment")
+    .forEach((arg, index) => {
+      const value = arg.type === "keyword_argument" ? arg.childForFieldName("value") : arg;
+      const node = value ? callableOf(value) : null;
+      if (!node) return;
+      const fact = callOf(node, scope);
+      // A value keylang cannot name, or a local of unknown class, resolves to nothing.
+      if (fact.callee === "?" || (fact.bound && !fact.receiver)) return;
+      const at = located(node);
+      out.push({ arg: index, path: "", callee: fact.callee, ...(fact.bound ? { bound: fact.bound } : {}), ...(fact.receiver ? { receiver: fact.receiver } : {}), text: at.text.replace(/\s+/g, " "), line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol });
+    });
+  return out;
+}
+
+/** The expression that names the callable an argument passes: a name, an attribute, or the first argument of `functools.partial(…)`. */
+function callableOf(value: Node): Node | null {
+  if (value.type === "identifier" || value.type === "attribute") return value;
+  if (value.type !== "call") return null;
+  const fn = value.childForFieldName("function");
+  const name = fn?.type === "identifier" ? fn.text : fn?.type === "attribute" ? fn.childForFieldName("attribute")?.text : undefined;
+  if (name !== "partial") return null;
+  const first = value.childForFieldName("arguments")?.namedChildren.find((c) => c.type !== "comment");
+  return first ? callableOf(first) : null;
 }
 
 /**

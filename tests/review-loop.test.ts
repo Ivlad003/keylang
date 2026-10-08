@@ -139,6 +139,37 @@ test("proposals: list, show, accept and reject without the TUI; the spec changes
   assert.match(keylang(dir, ["--help"]).stdout, /proposals accept <target>/);
 });
 
+// Review 2026-10-06 §2.2 item 18: a CRLF target and an LF proposal (an agent through MCP, autocrlf on Windows)
+// differ by what changed, not by every line: the diff, the counts and the stats agree with MERGE's hunks.
+test("proposals: a CRLF target and an LF proposal show the real hunks in the list, show, accept and apply_diff; the write keeps CRLF", async (t) => {
+  const dir = repoCopy(t);
+  const crlf = CHECKOUT.replace(/\n/g, "\r\n");
+  const refund = "# flow refund\r\n\r\n<!-- keylang:llm status=draft -->\r\n- trigger app.checkout.checkout\r\n";
+  writeTree(dir, { "keylang/flows/checkout.md": crlf, "keylang/flows/refund.md": refund });
+  const call = await mcpClient(t, dir);
+  const r = await call("apply_diff", { path: "keylang/flows/checkout.md", text: `${CHECKOUT}  - invariant an order is saved once\n` });
+  assert.equal(r.isError, false, r.text);
+  assert.equal((JSON.parse(r.text) as { diff: string }).diff, "@@ line 6 @@\n+  - invariant an order is saved once");
+  propose(dir, "keylang/flows/refund.md", `${refund.replace(/\r\n/g, "\n")}  - step domain.order.createOrder\n`);
+
+  const listed = keylang(dir, ["proposals"]);
+  assert.equal(listed.status, 0, listed.stderr);
+  assert.equal(listed.stdout, "keylang/flows/checkout.md: +1 -0\nkeylang/flows/refund.md: +1 -0\n");
+  const shown = keylang(dir, ["proposals", "show", "keylang/flows/checkout.md"]);
+  assert.equal(shown.status, 0, shown.stderr);
+  assert.equal(shown.stdout, "keylang/flows/checkout.md\n@@ line 6 @@\n+  - invariant an order is saved once\n");
+
+  const accepted = keylang(dir, ["proposals", "accept", "keylang/flows/checkout.md"]);
+  assert.equal(accepted.status, 0, accepted.stderr);
+  assert.equal(accepted.stdout, "keylang/flows/checkout.md: written from .keylang/proposals/keylang/flows/checkout.md (+1 -0); the proposal is removed\n");
+  assert.equal(readFileSync(join(dir, "keylang/flows/checkout.md"), "utf8"), `${crlf}  - invariant an order is saved once\r\n`, "the target keeps its CRLF");
+
+  // The model line of the target is not a line the proposal added: rejecting it counts nothing, as MERGE would.
+  const rejected = keylang(dir, ["proposals", "reject", "keylang/flows/refund.md"]);
+  assert.equal(rejected.status, 0, rejected.stderr);
+  assert.equal(existsSync(join(dir, ".keylang/stats.json")), false, "no model line was accepted or rejected");
+});
+
 test("proposals: accept refuses what MERGE refuses — an explanation, a link out, a read-only file — and writes nothing", (t) => {
   const dir = repoCopy(t);
   const outside = tempDir(t, "keylang-loop-outside-");

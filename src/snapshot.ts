@@ -11,7 +11,7 @@ import type { Config } from "./config.ts";
 import type { ExportEntry } from "./exports.ts";
 import { briefOf } from "./brief.ts";
 import { globDirectory } from "./glob.ts";
-import type { Gap, Graph, Module } from "./graph.ts";
+import type { Gap, Graph, Module, Via } from "./graph.ts";
 import { constructorName, LANGUAGES, languageOf } from "./languages.ts";
 import { components } from "./scc.ts";
 
@@ -50,15 +50,19 @@ export interface SnapshotEdge {
   provenance: Provenance;
   reason?: string;
   /**
-   * A call edge that is not a call written in the code: `default` — the default
-   * of a hook (`request.generate ?? generateMap`); `injected` — a value a
-   * resolved caller passes for that hook, at `site`. `keylang check
-   * --static=shape` does not follow them; rules do not see `injected`.
+   * A call edge that is not a plain call written in the code: `default` — the
+   * default of a hook (`request.generate ?? generateMap`); `injected` — a value
+   * a resolved caller passes for that hook, at `site`; `callable-arg` — a
+   * callable reference the source passes as an argument (`[$this, 'm']`,
+   * `this.m.bind(this)`, `self.m`, `Self::m`), the edge at the argument;
+   * `closure-arg` — a call in a closure literal the source passes as an
+   * argument, the closure at `site`. `keylang check --static=shape` follows
+   * none of them; rules do not see `injected`.
    */
-  via?: "default" | "injected";
+  via?: Via;
   /** The local, parameter or field the hook call goes through. */
   hook?: string;
-  /** `file:line:col` of the call that passes the injected value. */
+  /** `file:line:col` of the call that passes the injected value, or of the closure passed as an argument. */
   site?: string;
   /** The call sits in a closure of `source`: whoever holds that function value may run it. */
   closure?: true;

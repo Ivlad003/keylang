@@ -5,7 +5,7 @@
 // expression is an edge or a hole: a callee keylang cannot name is a call
 // through a value, never dropped.
 
-import type { CallFact, DeclFact, ExportRow, FileFacts, ImportFact, UnsupportedFact, ValueRefFact } from "./facts.ts";
+import type { CallFact, DeclFact, ExportRow, FileFacts, ImportFact, PassFact, UnsupportedFact, ValueRefFact } from "./facts.ts";
 import { blockCommentBody, isLicense, lineCommentsBody, nonEmpty } from "./doc-comments.ts";
 import { errorLine, fingerprint, located, withTree, type Node } from "./treesitter.ts";
 
@@ -346,14 +346,32 @@ interface CallScope {
   imports: boolean;
 }
 
+/**
+ * Where a call sits with respect to closures: null outside them; `stored`
+ * under a nested `fn`, an `async` block or a closure some value holds
+ * (`let g = |x| …`); otherwise the position of the outermost closure, every
+ * closure between being an argument of a call (`items.iter().map(|x| self.m(x))`).
+ */
+type ClosureState = null | "stored" | { line: number; col: number };
+
 function bodyCalls(body: Node, scope: CallScope, facts: FileFacts): CallFact[] {
   const out: CallFact[] = [];
-  const walk = (node: Node, closure: boolean): void => {
+  const walk = (node: Node, closure: ClosureState): void => {
     if (node.type === "call_expression") {
       const fact = callOf(node.childForFieldName("function"), scope, facts);
       if (fact) {
         const at = located(node);
-        out.push({ ...fact, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, ...(closure ? { closure: true as const } : {}) });
+        const passes = passesOf(node, scope, facts);
+        out.push({
+          ...fact,
+          ...(passes.length > 0 ? { passes } : {}),
+          line: at.line,
+          col: at.col,
+          endLine: at.endLine,
+          endCol: at.endCol,
+          ...(closure ? { closure: true as const } : {}),
+          ...(closure && closure !== "stored" ? { closureArg: closure } : {}),
+        });
       }
     } else if (node.type === "macro_invocation") {
       const name = macroName(node);
@@ -362,10 +380,34 @@ function bodyCalls(body: Node, scope: CallScope, facts: FileFacts): CallFact[] {
       if (!KNOWN_MACROS.has(name) && !foreign) facts.unsupported.push(unsupported(node, `macro \`${name}!\` is not expanded`));
     }
     // A nested `fn` runs only when something calls it, like a closure.
-    const inner = closure || node.type === "closure_expression" || node.type === "async_block" || node.type === "function_item";
+    let inner = closure;
+    if (node.type === "async_block" || node.type === "function_item") inner = "stored";
+    else if (node.type === "closure_expression") inner = closure === "stored" || node.parent?.type !== "arguments" ? "stored" : (closure ?? { line: located(node).line, col: located(node).col });
     for (const c of node.namedChildren) walk(c, inner);
   };
-  walk(body, false);
+  walk(body, null);
+  return out;
+}
+
+/**
+ * Function paths among the arguments: `run(Self::m)`, `run(m)`,
+ * `run(crate::util::helper)`, `.map(Order::total)`. A closure is not a pass:
+ * its calls carry `closureArg`.
+ */
+function passesOf(call: Node, scope: CallScope, facts: FileFacts): PassFact[] {
+  const args = call.childForFieldName("arguments");
+  if (args?.type !== "arguments") return [];
+  const out: PassFact[] = [];
+  args.namedChildren
+    .filter((arg) => arg.type !== "line_comment" && arg.type !== "block_comment")
+    .forEach((arg, index) => {
+      if (arg.type !== "identifier" && arg.type !== "scoped_identifier") return;
+      const fact = callOf(arg, scope, facts);
+      // A local of unknown kind, a variant or a value keylang cannot name resolves to nothing.
+      if (!fact || fact.bound) return;
+      const at = located(arg);
+      out.push({ arg: index, path: "", callee: fact.callee, text: compact(at.text), line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol });
+    });
   return out;
 }
 
