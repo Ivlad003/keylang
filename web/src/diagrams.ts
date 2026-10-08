@@ -20,7 +20,9 @@ import { Canvas, VERDICT_COLOUR, VERDICT_GLYPH } from "./canvas.ts";
 import { codeLink, element, make } from "./dom.ts";
 import { Editor } from "./editor.ts";
 import { Explorer } from "./explorer.ts";
+import { mountExport } from "./export.ts";
 import { VirtualList, type ListItem } from "./list.ts";
+import { mountTour } from "./tour.ts";
 import "./diagrams.css";
 
 /** How often the page asks again, ms; a request that takes longer delays the next one. */
@@ -207,6 +209,7 @@ class Page {
     element<HTMLButtonElement>("zoom-in").addEventListener("click", () => this.canvas.zoomAt(1.25));
     element<HTMLButtonElement>("zoom-out").addEventListener("click", () => this.canvas.zoomAt(1 / 1.25));
     element<HTMLButtonElement>("zoom-fit").addEventListener("click", () => this.canvas.fit());
+    mountExport(element("toolbar"), () => (this.active === null || this.active.view === "explore" || this.active.view === "blind" ? null : this.active.view === "editor" ? this.active.of : this.active), (text) => (this.status.textContent = text));
     window.addEventListener("hashchange", () => {
       const wanted = readHash();
       if (wanted && (this.active === null || keyOf(wanted.query) !== keyOf(this.active))) void this.open(wanted.query, wanted.node);
@@ -493,3 +496,5 @@ class Page {
 }
 
 void new Page().start();
+// «Огляд»: the project tour over the canvas (business-flows/15).
+mountTour();

@@ -29,7 +29,9 @@ keylang checks only what has an id. A phrase in the spec without one ("once a da
 
 ## Rules
 
-Change `<dir>/rules.md` and `<dir>/rules.baseline.md` only by proposing the full new text through `apply_diff`. That tool writes a proposal a person merges. It does not edit the spec. The person accepts it in the TUI (`m`) or with `proposals accept <path>`. Never run `proposals accept` or `proposals reject` yourself, not even to finish a feature: you may list what waits (`proposals`) and print one (`proposals show <path>`), and then tell the person. A new dependency the baseline does not allow is a K102 from `<dir>/rules.baseline.md`. To ask for a new edge between layers, propose `- allow <from-layer> <to-layer>` in `<dir>/rules.md`: a manual rule over the same layers overrides the baseline line. After the code has the edge, `npx -y keylang@<version> baseline` regenerates the baseline from the graph; a person runs it.
+Change `<dir>/rules.md` and `<dir>/rules.baseline.md` only by proposing the full new text through `apply_diff`. That tool writes a proposal a person merges. It does not edit the spec. The person accepts it in the TUI (`m`) or with `proposals accept <path>`. Never run `proposals accept` or `proposals reject` yourself, not even to finish a feature: you may list what waits (`proposals`) and print one (`proposals show <path>`), and then tell the person. A new dependency the baseline does not allow is a K102 from `<dir>/rules.baseline.md`. To ask for a new edge between layers, propose `- allow <from-layer> <to-layer>` in `<dir>/rules.md`: a manual rule over the same layers overrides the baseline line. Never run `baseline` yourself: a person regenerates the baseline once the edge is accepted.
+
+Change `keylang.json` and `<dir>/rules*.md` only as a proposal to a person. Its `layers`, `exclude`, `assume`, `outside` and `frameworks` decide what the rules see: when one should change (a new layer, a generated file), say what and why, and stop. Do not write rules in a `# rules` section outside `<dir>/rules.md`. `hook stop`, `check --changed` and `feature` compare the spec with the base commit and report every weakening as K108 (`spec weakened: …` with the old and the new text): a glob that leaves a file a rule reaches unread, a layer moved off it, a framework turned off, a removed `deny` or `step`, a new `allow`, a wider baseline. Restore the spec and fix the code. `check --changed --accept-weakening` is a person's override, never yours.
 
 ## CLI fallback
 
@@ -38,4 +40,3 @@ When MCP is not available, run the CLI the MCP server runs, pinned to the same v
 - `npx -y keylang@<version> feature <slug> --format json`
 - `npx -y keylang@<version> check` and `npx -y keylang@<version> check --changed`
 - `npx -y keylang@<version> spec-to-code <id> --print`
-- `npx -y keylang@<version> baseline`

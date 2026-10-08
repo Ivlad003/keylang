@@ -78,6 +78,11 @@ export const EXPLANATIONS: Record<Code, { cause: string; example: string; fix: s
     example: "`src/cli.ts` imports `scripts/release.ts` while keylang.json has `\"outside\": [\"scripts/**\"]`.",
     fix: "Move the shared code into a layer and import it from both sides, or take the file out of `outside`. Code outside the architecture may import the architecture, not the other way round.",
   },
+  K108: {
+    cause: "Since the base commit (HEAD for `hook stop` and `check --changed`, `--since` if given; the merge-base with the main branch for `feature`) the spec got weaker without the code changing: keylang.json leaves a file a rule reaches unread (`exclude`, `assume`, `outside`), a `layers` glob moves it out of its layer, or `frameworks` turns a framework off; or a `deny` (any rule line but `allow`) or a flow `step`/`trigger` was removed, an `allow` was added, a rule was written in a `# rules` section outside `<dir>/rules.md`, or `rules.baseline.md` was regenerated wider. A plain `check` has no base and never reports it.",
+    example: "After K102 for `deny domain app`, an agent adds `\"assume\": [\"src/app/**\"]` to keylang.json: K108 names `assume` [] → [\"src/app/**\"] and the rule that reaches the files.",
+    fix: "Restore the spec and fix the code. Rules and keylang.json change only as a proposal to a person; a person who accepts the change runs `keylang check --changed --accept-weakening` (never an agent) and commits it.",
+  },
   K201: {
     cause: "A `planned` declaration names a symbol that now exists with another kind or signature.",
     example: "`planned fn app.refund (order: Order) → Refund` while the code declares `type Refund` under that id.",

@@ -18,6 +18,7 @@ import { parseReportText } from "../parse-format.ts";
 import { allCrlf, isGeneratedText, landing, writeAtomic } from "../safe-write.ts";
 import { compareText } from "../span.ts";
 import { changedPathSet, deletedModuleIds, gitChangedFiles, type ChangedFiles } from "../git-changes.ts";
+import { readWeakenings, weakeningDiagnostic } from "../weakening.ts";
 import { entryTracePlan, tracePlan, tracePlanText } from "../trace-plan.ts";
 import type { ChangedSlice, CheckPayload, CheckRequest, ExplainEdgePayload, ExplainEdgeRequest, FmtFile, FmtPayload, FmtRequest, OperationContext, OperationEnvelope, OperationMessage, OperationStatus, ParsePayload, ParseRequest, TracePlanPayload, TracePlanRequest } from "./types.ts";
 import { empty } from "./shared.ts";
@@ -201,6 +202,7 @@ export async function runCheck(request: CheckRequest, context: OperationContext)
   const specs = request.paths.length > 0 ? request.paths.map((path) => resolve(base, path)) : [specDir];
   for (const spec of specs) if (!existsSync(spec)) return empty("check", "failed", 2, `${relative(base, spec) || spec}: not found`);
   if (request.since !== undefined && request.changed !== true) return empty("check", "failed", 2, "check: --since requires --changed");
+  if (request.acceptWeakening === true && request.changed !== true) return empty("check", "failed", 2, "check: --accept-weakening requires --changed");
   // The git slice is read before the analysis: without git or with an unknown ref the check fails, it never falls back to a full one.
   const since = request.since ?? "HEAD";
   let git: ChangedFiles | null = null;
@@ -243,8 +245,21 @@ export async function runCheck(request: CheckRequest, context: OperationContext)
       changedPathSet(request.root, git.paths, base),
       deleted,
     );
-    report = checkReport(filtered.verdicts, snapshotId, filtered.diagnostics);
-    changed = { since, unborn: git.unborn, files: [...git.paths].sort(compareText), deleted, shown: report.results.length, hidden: full.results.length - report.results.length };
+    // The spec weakened since the same ref (K108): a finding of the slice, unless a person accepts it.
+    const weakening = readWeakenings(analyzed.config, since, "check --changed");
+    const weakened = weakening.weakenings.map((item) => weakeningDiagnostic(item, (path) => display(join(request.root, path))));
+    const accept = request.acceptWeakening === true;
+    const sliced = checkReport(filtered.verdicts, snapshotId, filtered.diagnostics);
+    report = accept || weakened.length === 0 ? sliced : checkReport(filtered.verdicts, snapshotId, [...weakened, ...filtered.diagnostics]);
+    changed = {
+      since,
+      unborn: git.unborn,
+      files: [...git.paths].sort(compareText),
+      deleted,
+      shown: report.results.length,
+      hidden: full.results.length - sliced.results.length,
+      weakening: { accepted: accept ? weakened.map(formatDiagnostic) : [], note: weakening.note },
+    };
   }
   const mode = resolveStatic(request.static, analyzed.config.check.static);
   const payload: CheckPayload = {

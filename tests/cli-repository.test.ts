@@ -47,7 +47,7 @@ function packSource(): string {
     // Regular files only: a worktree may have node_modules as an untracked link.
     if (file === "" || lstatSync(join(root, file), { throwIfNoEntry: false })?.isFile() !== true) continue;
     const top = file.includes("/") ? file.slice(0, file.indexOf("/")) : "";
-    if (top !== "" && !["bin", "src", "scripts", "adapters", "resources"].includes(top)) continue;
+    if (top !== "" && !["bin", "src", "scripts", "adapters", "resources", "web"].includes(top)) continue;
     mkdirSync(dirname(join(dir, file)), { recursive: true });
     cpSync(join(root, file), join(dir, file));
   }

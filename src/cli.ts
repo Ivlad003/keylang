@@ -13,6 +13,7 @@ import { safeWrite, writeAtomic } from "./safe-write.ts";
 import { harnessChoice, type HarnessChoice } from "./harness.ts";
 import { CLONE_EXPLAIN_MODES, cloneCacheRoot, enableExplainedMap, isCloneExplain, parseRepoSource, syncClone, type CloneExplain } from "./clone.ts";
 import { filterChanged, hookDecision, hookFails, parseHookEvent, uncheckedTurn } from "./changed.ts";
+import { readWeakenings } from "./weakening.ts";
 import { parseArgs, type ParseArgsOptionsConfig } from "node:util";
 import { CONFIG_FILE, STATIC_MODES, loadConfig, toPosix, type StaticMode } from "./config.ts";
 import { formatDiagnostic } from "./diag.ts";
@@ -84,7 +85,8 @@ Commands:
                             1 gaps, 2 missing file, unreadable --since ref, or bad
                             invocation. Writes only the fact cache .keylang/cache/
   hook stop                 Read a harness Stop event (JSON) from stdin, run
-                            check --changed, and print a JSON decision; writes
+                            check --changed (K108 included: a spec weakened since
+                            HEAD blocks), and print a JSON decision; writes
                             only the fact cache .keylang/cache/. Exit 0 once
                             started: a turn it cannot check (stdin not JSON, no
                             git, a broken keylang.json) prints {"systemMessage":
@@ -170,7 +172,7 @@ Commands:
   mcp                       Serve MCP over stdio for agents: search, node, code, flows,
                             check, explain, context, validate_spec, scaffold,
                             feature_status, list_entries, discover_flows, coverage_report,
-                            list_integrations, apply_diff
+                            list_integrations, project_tour, apply_diff
                             (proposals only; no spec is written, the fact cache
                             .keylang/cache/ is kept current)
   wire [--check] [--out f]  Generate keylang.gen.ts (or f: a .ts/.mts/.cts path relative to
@@ -205,6 +207,15 @@ Commands:
                             notify or ipn, integrations.webhooks globs of keylang.json);
                             queue publishers, consumers and pairs. --json: as JSON.
                             Exit 0; writes only the fact cache
+  tour [--out f] [--json]   One page for a newcomer, a view (check does not read it), no
+                            model: what the system is (README, manifest, layer READMEs),
+                            layers and modules with size and coupling, business
+                            processes → flows with descriptions and /diagrams links,
+                            entry points by kind and events, integrations, blind spots
+                            and logic in data, and the fns to read first. Markdown on
+                            stdout; --out f: write it as a generated file (keylang/tour.md;
+                            never a place check reads); --json: the same data as JSON.
+                            Exit 0; 1 when f is a file someone wrote
   flows discover [--kind k] [--layer l] [--limit n] [--depth d] [--print] [--check]
                             A flow draft for every entry point (draft flow from its fn)
                             as the generated view <dir>/flows-discovered/<layer>.md,
@@ -224,6 +235,23 @@ Commands:
                             Propose one discovered flow as a spec, with a provenance
                             comment, as .keylang/proposals/<dir>/flows/<name>.md (or the
                             --into target); merge it with m in the TUI
+  flow export <name>… [--with-callees N] [--out <file.md>]
+                            A portable bundle of business flows (hand-written, else
+                            discovered) as one Markdown file: provenance (repo,
+                            commit, snapshotId, keylang version), each node with its
+                            kind, signature, doc and file:line, tests, events and
+                            integrations, and an empty keylang-layout block; parse
+                            reads it without a diagnostic. --with-callees: their
+                            callees to depth N. Stdout, or --out (a new file or a
+                            bundle, never under <dir>/)
+  flow import <bundle.md> [--into <spec.md>] [--layer-map old=new,…] [--mode algo|llm|hybrid] [--print]
+                            Propose a feature (<dir>/features/<first flow>.md) whose
+                            flows step on planned nodes re-homed into this
+                            repository's layers, with the original signatures, tests
+                            and provenance, and the rows of <dir>/migration.md
+                            (# migration <slug>). Layers: --layer-map, else algo (same
+                            name, else the first layer), llm|hybrid: the model's map,
+                            checked. --print: stdout only
   export c4 [--format plantuml|mermaid] [--level component|container] [--layer <name>] [--out f]
                             Print a C4 diagram of the map, no model: layers as boundaries,
                             their modules as components, packages as external systems
@@ -231,14 +259,34 @@ Commands:
                             --layer: one layer's components and what they touch;
                             --out: write f, relative to the root, only when it is new or
                             a diagram this command wrote; stdout stays empty)
-  check [paths…] [--changed] [--since <ref>]
+  export bpmn <flow|process:<domain>|discovered:<name>> [--out f.bpmn]
+                            BPMN 2.0 XML of the diagram /diagrams draws, with its BPMNDI:
+                            lanes per layer, start events by trigger kind, tasks,
+                            gateways, timers, packages as collapsed pools; keylang:id
+                            and keylang:verdict on every element. --out: as export c4
+  export drawio <view> [--out f.drawio]
+                            The same diagram as a draw.io file (uncompressed mxGraph);
+                            view: <flow>, discovered:<name>, process:<domain>,
+                            entry:<id> or layers; cells carry keylang_id/keylang_kind
+  import drawio <file> [--into <spec.md>] [--print]
+                            A flow's draw.io drawing back as ONE proposal for its spec:
+                            a changed ID or label rewrites its line, a new shape becomes
+                            a step after the shape its edge leaves, an unknown shape a
+                            note comment; an unchanged drawing proposes nothing.
+                            --print: the change on stdout, nothing written
+  check [paths…] [--changed] [--since <ref>] [--accept-weakening]
                             Resolve IDs and check rules (default: ./keylang)
                             Given files, it prints verdicts and the summary for those
                             files only (e.g. check keylang/flows/buy.md)
                             Rebuilds the analysis in memory; does not write the map
                             (only the fact cache .keylang/cache/, for the next run).
                             --changed reports only findings that touch files changed
-                            since <ref> (default HEAD) plus untracked files
+                            since <ref> (default HEAD) plus untracked files, and K108
+                            for the spec weakened since <ref> (keylang.json exclude,
+                            assume, outside, layers, frameworks; a removed deny or
+                            step, a new allow, rules outside rules.md, a wider
+                            baseline). --accept-weakening: for a person, never an
+                            agent: K108 is accepted, listed on stderr, exit not 1
   check --stale [paths…] [--accept | --strict]
                             Prose whose code changed since it was accepted: node
                             descriptions and flow when/then/invariant, against the
@@ -320,10 +368,13 @@ const OPTIONS = {
   since: { type: "string" },
   agents: { type: "string" },
   changed: { type: "boolean" },
+  "accept-weakening": { type: "boolean" },
   layer: { type: "string" },
   level: { type: "string" },
   kind: { type: "string" },
   depth: { type: "string" },
+  "with-callees": { type: "string" },
+  "layer-map": { type: "string" },
   entry: { type: "string" },
   "from-trace": { type: "string" },
   run: { type: "string" },
@@ -392,6 +443,7 @@ async function run(argv: readonly string[]): Promise<number> {
         since: values.since,
         stale: values.stale === true,
         accept: values.accept === true,
+        acceptWeakening: values["accept-weakening"] === true,
       });
     case "explain":
       return cmdExplain(paths[0], {
@@ -434,10 +486,16 @@ async function run(argv: readonly string[]): Promise<number> {
       return cmdCoverage(values.json === true);
     case "integrations":
       return cmdIntegrations(values.json === true);
+    case "tour":
+      return cmdTour(values.out, values.json === true);
     case "flows":
       return cmdFlows(paths, { kind: values.kind, layer: values.layer, limit: values.limit, depth: values.depth, into: values.into, print: values.print === true, check: values.check === true, names: values.names === true, mode: values.mode, dryRun: values["dry-run"] === true, jobs: values.jobs, stale: values.stale === true });
+    case "flow":
+      return cmdFlow(paths, { withCallees: values["with-callees"], out: values.out, into: values.into, layerMap: values["layer-map"], mode: values.mode, print: values.print === true });
     case "export":
       return cmdExport(paths, { format: values.format, level: values.level, layer: values.layer, out: values.out });
+    case "import":
+      return cmdImport(paths, { into: values.into, print: values.print === true });
     case "clone":
       return (await prepareClone(paths[0], { dir: values.dir, explain: values.explain, dryRun: values["dry-run"] === true })).code;
     case "web": {
@@ -862,7 +920,16 @@ async function draftRulesPrinter(root: string, mode: "algo" | "llm" | "hybrid", 
  */
 async function cmdExport(args: readonly string[], options: { format: string | undefined; level: string | undefined; layer: string | undefined; out: string | undefined }): Promise<number> {
   const [what, ...rest] = args;
-  if (what !== "c4") throw new Error("export: expected `c4`; see --help");
+  if (what === "bpmn" || what === "drawio") {
+    if (rest.length !== 1) throw new Error(`export ${what}: ${rest.length === 0 ? "a view is required: a flow name, discovered:<name> or process:<domain>" : `unexpected argument \`${rest[1]}\``}`);
+    const { runDiagramExport } = await import("./operations/diagram-export.ts");
+    const result = await runDiagramExport({ root: findRoot(process.cwd()), format: what, view: rest[0]!, ...(options.out !== undefined ? { out: toPosix(options.out) } : {}) });
+    if (result.error !== null) process.stderr.write(`keylang: ${result.error}\n`);
+    else if (result.out !== null) process.stderr.write(`${result.out}: written\n`);
+    else if (result.text !== null) process.stdout.write(result.text);
+    return result.exitCode;
+  }
+  if (what !== "c4") throw new Error("export: expected `c4`, `bpmn` or `drawio`; see --help");
   if (rest.length > 0) throw new Error(`export c4: unexpected argument \`${rest[0]}\``);
   const result = await runOperation({
     kind: "export-c4",
@@ -875,6 +942,24 @@ async function cmdExport(args: readonly string[], options: { format: string | un
   for (const message of result.messages) process.stderr.write(message.level === "error" ? `keylang: ${message.text}\n` : `${message.text}\n`);
   if (result.exitCode === 0 && result.payload !== null && result.payload.out === null) process.stdout.write(result.payload.text);
   return result.exitCode ?? 2;
+}
+
+/**
+ * `keylang import drawio <file>` (business-flows/28): one proposal for the
+ * flow the drawing draws; `--print` puts the change on stdout. Notes and
+ * refusals to stderr. 0 proposed or nothing to propose, 1 a proposal already
+ * waiting or a refused write, 2 a bad invocation, file or target.
+ */
+async function cmdImport(args: readonly string[], options: { into: string | undefined; print: boolean }): Promise<number> {
+  const [what, file, ...rest] = args;
+  if (what !== "drawio") throw new Error("import: expected `drawio`; see --help");
+  if (file === undefined) throw new Error("import drawio: a .drawio file is required");
+  if (rest.length > 0) throw new Error(`import drawio: unexpected argument \`${rest[0]}\``);
+  const { runImportDrawio } = await import("./operations/diagram-export.ts");
+  const result = await runImportDrawio({ root: findRoot(process.cwd()), file: resolve(process.cwd(), file), ...(options.into !== undefined ? { into: toPosix(options.into) } : {}), print: options.print });
+  if (options.print && result.diff !== null) process.stdout.write(`${result.diff}\n`);
+  for (const message of result.messages) process.stderr.write(message.level === "error" ? `keylang: ${message.text}\n` : `${message.text}\n`);
+  return result.exitCode;
 }
 
 /**
@@ -1004,6 +1089,17 @@ async function cmdIntegrations(json: boolean): Promise<number> {
   return 0;
 }
 
+/** `tour [--out f] [--json]`: the page on stdout, its data as JSON, or the page written to `f` (named on stderr). */
+async function cmdTour(out: string | undefined, json: boolean): Promise<number> {
+  const result = await runOperation({ kind: "tour", root: findRoot(process.cwd()), ...(out !== undefined ? { out } : {}) });
+  if (result.payload === null) throw new Error(result.messages[0]?.text ?? "tour failed");
+  const { text, out: _written, ...tour } = result.payload;
+  if (out !== undefined) for (const m of result.messages) process.stderr.write(`keylang: ${m.text}\n`);
+  if (json) process.stdout.write(`${JSON.stringify(tour, null, 2)}\n`);
+  else if (out === undefined) process.stdout.write(text);
+  return result.exitCode ?? 2;
+}
+
 /**
  * `flows discover|adopt`: the shared operations. Discover prints the view
  * (`--print`) or what it wrote, the skipped triggers and the summary on
@@ -1073,6 +1169,50 @@ async function cmdFlowsNames(root: string, opts: { kind: string | undefined; lay
   );
   if (opts.dryRun && result.payload?.names) process.stdout.write(result.payload.names.text);
   for (const m of result.messages) process.stderr.write(`keylang: ${m.text}\n`);
+  return result.exitCode ?? 2;
+}
+
+/**
+ * `flow export <name>… [--with-callees N] [--out f]` and `flow import
+ * <bundle.md> [--into] [--layer-map] [--mode] [--print]`: the shared
+ * operations. Export prints the bundle (or names the file written on
+ * stderr); import prints the proposed texts with `--print`, else names the
+ * proposals; notes on stderr.
+ */
+async function cmdFlow(args: readonly string[], opts: { withCallees: string | undefined; out: string | undefined; into: string | undefined; layerMap: string | undefined; mode: string | undefined; print: boolean }): Promise<number> {
+  const [action, ...rest] = args;
+  if (action !== "export" && action !== "import") throw new Error(`flow: expected export or import${action === undefined ? "" : `, got \`${action}\``}`);
+  const root = findRoot(process.cwd());
+  const report = (messages: readonly { level: string; text: string }[]): void => {
+    for (const m of messages) process.stderr.write(`keylang: ${m.text}\n`);
+  };
+  if (action === "export") {
+    if (rest.length === 0) throw new Error("flow export: at least one flow name is required");
+    if (opts.into !== undefined || opts.layerMap !== undefined || opts.mode !== undefined || opts.print) throw new Error("flow export: --into, --layer-map, --mode and --print belong to flow import");
+    const withCallees = opts.withCallees === undefined ? undefined : wholeNumber("--with-callees", opts.withCallees, 0);
+    const pkg = createRequire(import.meta.url)("../package.json") as { version: string };
+    const result = await runOperation({ kind: "flow-export", root, names: rest, version: pkg.version, ...(withCallees !== undefined ? { withCallees } : {}), ...(opts.out !== undefined ? { out: resolve(process.cwd(), opts.out) } : {}) });
+    if (result.payload !== null && opts.out === undefined) process.stdout.write(result.payload.text);
+    report(result.messages);
+    return result.exitCode ?? 2;
+  }
+  const [bundle, extra] = rest;
+  if (bundle === undefined) throw new Error("flow import: a bundle file is required");
+  if (extra !== undefined) throw new Error(`flow import: unexpected \`${extra}\`; one bundle at a time`);
+  if (opts.withCallees !== undefined || opts.out !== undefined) throw new Error("flow import: --with-callees and --out belong to flow export");
+  const mode = opts.mode ?? "algo";
+  if (mode !== "algo" && mode !== "llm" && mode !== "hybrid") throw new Error(`flow import: --mode must be algo, llm or hybrid, got \`${mode}\``);
+  const result = await runOperation({
+    kind: "flow-import",
+    root,
+    bundle: resolve(process.cwd(), bundle),
+    mode,
+    output: opts.print ? "preview" : "proposal",
+    ...(opts.into !== undefined ? { into: toPosix(opts.into) } : {}),
+    ...(opts.layerMap !== undefined ? { layerMap: opts.layerMap } : {}),
+  });
+  if (opts.print && result.payload !== null) process.stdout.write(`${result.payload.feature}\n<!-- ${result.payload.migrationTarget} -->\n\n${result.payload.migration}`);
+  report(result.messages);
   return result.exitCode ?? 2;
 }
 
@@ -1249,7 +1389,9 @@ async function stopDecision(input: string, cwd: string): Promise<string> {
     changed,
     deletedModuleIds(analyzed.config, gitChanged.deleted),
   );
-  return hookDecision(event, hookFails(filtered));
+  // A spec weakened in this turn blocks like a rule fail: the rule an agent switched off is still the person's.
+  const weakened = readWeakenings(analyzed.config, "HEAD", "hook stop").weakenings.map((item) => ({ file: item.file, line: item.line, text: `K108 ${item.message}` }));
+  return hookDecision(event, [...weakened, ...hookFails(filtered)]);
 }
 
 /**
@@ -1429,7 +1571,7 @@ async function cmdParse(paths: string[], json: boolean): Promise<number> {
   return result.exitCode ?? 2;
 }
 
-async function cmdCheck(paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined; stale: boolean; accept: boolean }): Promise<number> {
+async function cmdCheck(paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined; stale: boolean; accept: boolean; acceptWeakening?: boolean }): Promise<number> {
   if (opts.accept && !opts.stale) throw new Error("check: --accept requires --stale");
   if (opts.stale) {
     const other = opts.explain ? "--explain-edge" : opts.changed ? "--changed" : opts.static !== undefined ? "--static" : opts.format !== "human" ? "--format" : null;
@@ -1445,6 +1587,7 @@ async function cmdCheck(paths: string[], opts: { strict: boolean; format: string
     if (!staticMode) throw new Error(`unknown --static \`${opts.static}\`; expected ${STATIC_MODES.join(", ")}`);
   }
   if (opts.since !== undefined && !opts.changed) throw new Error("check: --since requires --changed");
+  if (opts.acceptWeakening === true && !opts.changed) throw new Error("check: --accept-weakening requires --changed");
   if (opts.changed && opts.explain) throw new Error("check: --changed cannot be combined with --explain-edge");
   const cwd = process.cwd();
   if (opts.explain) {
@@ -1470,10 +1613,13 @@ async function cmdCheck(paths: string[], opts: { strict: boolean; format: string
     ...(staticMode ? { static: staticMode } : {}),
     ...(opts.changed ? { changed: true } : {}),
     ...(opts.since !== undefined ? { since: opts.since } : {}),
+    ...(opts.acceptWeakening === true ? { acceptWeakening: true } : {}),
   });
   if (result.payload === null) throw new Error(result.messages[0]?.text ?? "check failed");
   const { payload } = result;
   for (const path of payload.notSpecs) process.stderr.write(`keylang: ${checkSkipNote(path)}\n`);
+  if (payload.changed?.weakening.note) process.stderr.write(`keylang: note: ${payload.changed.weakening.note}\n`);
+  for (const line of payload.changed?.weakening.accepted ?? []) process.stderr.write(`keylang: accepted (--accept-weakening): ${line}\n`);
   // The format only shows the report: the verdicts and the code do not depend on it.
   process.stdout.write(checkReportText(format, payload));
   process.stderr.write(`${checkSummary(payload.counts)}\n`);

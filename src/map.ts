@@ -17,7 +17,8 @@ import { buildGraph, directoryModule, placeFile, type Graph } from "./graph.ts";
 import { activeAdapters, FRAMEWORK_ADAPTERS, FRAMEWORK_CONFIG, type FrameworkAdapter, type FrameworkContext, type FrameworkInput } from "./frameworks/adapter.ts";
 import { FACT_CACHE_FILE, FactCache } from "./fact-cache.ts";
 import { landing, writeAtomic, writeProblem } from "./safe-write.ts";
-import { collectEntries, ENTRY_MANIFESTS, type EntryManifests } from "./entries.ts";
+import { collectEntries, compareEntries, ENTRY_MANIFESTS, type EntryManifests } from "./entries.ts";
+import { frameworkEntries } from "./framework-entries.ts";
 import { buildSnapshot, EXTRACTOR_VERSION, grammarVersions, sha256, type AnalysisSnapshot, type FrameworkManifest, type RepositoryDocs, type SystemDoc } from "./snapshot.ts";
 
 export interface MapResult {
@@ -119,6 +120,12 @@ export async function generateMap(config: Config, options: { persist?: boolean |
   const manifests: EntryManifests = { "package.json": null, "pyproject.toml": null, "Cargo.toml": null };
   for (const name of ENTRY_MANIFESTS) manifests[name] = readSource(join(config.root, name));
   const entries = collectEntries({ graph, facts, manifests, exists: (path) => existsSync(join(config.root, path)) });
+  // The active adapters' entry points (hooks, jobs, SFRA controllers) and the holes of placing them (ADR 0022 п. 5).
+  const fromFrameworks = frameworkEntries({ config, graph, facts, frameworks: frameworks.inputs });
+  entries.push(...fromFrameworks.entries);
+  entries.sort(compareEntries);
+  graph.gaps.push(...fromFrameworks.holes);
+  graph.warnings.push(...fromFrameworks.warnings);
   const index = buildSnapshot(graph, config, indexed, [
     ...skipped.map((file) => ({ file, reason: "outside guessed layers" })),
     ...excluded.map((file) => ({ file, reason: "excluded by keylang.json" })),
@@ -280,6 +287,9 @@ export const EXPLAINED_MAP_DIR = "map-explained";
 
 /** The directory of discovered flows under the spec directory: a view `keylang flows discover` writes, never read as specs. */
 export const DISCOVERED_FLOWS_DIR = "flows-discovered";
+
+/** The project tour `keylang tour --out` writes by default, under the spec directory: a view, never read as a spec. */
+export const TOUR_FILE = "tour.md";
 
 /** A file name to place an unreadable directory in the layers, as any of its source files would be. */
 const UNREADABLE_PROBE = "keylang-unreadable.ts";

@@ -223,6 +223,14 @@ export const ACTIONS: readonly Action[] = [
     when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
   },
   {
+    id: "tour",
+    label: "Project tour: what the system is, processes, entry points, integrations, blind spots, where to start reading",
+    group: "Map",
+    aliases: ["tour", "keylang tour", "project tour", "onboarding", "overview", "newcomer", "огляд", "онбординг"],
+    // Reads the saved code, keylang.json, the specs and the discovered view in a worker; writes nothing but the fact cache.
+    when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
+  },
+  {
     id: "export",
     label: "Export the report to a file",
     group: "Check",

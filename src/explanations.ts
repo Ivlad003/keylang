@@ -121,11 +121,13 @@ const sortedIds = new WeakMap<AnalysisSnapshot, string[]>();
 /**
  * The baseline an explanation of `id` is compared with: the closure
  * fingerprint of a fn or type; for a module, class or layer, which has no
- * closure of its own, a hash of its dependencies and of the closures of every
- * node under it, so a change inside makes its explanation stale (a module
- * constant or class field counts through the fingerprints of the fns that read
- * it; one no fn reads is in no hash). "" when there
- * is nothing to hash, null when the snapshot has no such node.
+ * closure of its own, a hash of its dependencies, of its own value code
+ * (`values`: top-level constants, assignments, object tables, a class's
+ * fields) and of the closures and value code of every node under it, so a
+ * change inside makes its explanation stale — a constant no fn reads too. A
+ * node without value code hashes as before `values` existed, so its saved
+ * baseline stays fresh. "" when there is nothing to hash, null when the
+ * snapshot has no such node.
  */
 export function snapshotBaseline(snapshot: AnalysisSnapshot, id: string): string | null {
   const node = snapshot.nodes[id];
@@ -143,7 +145,9 @@ export function snapshotBaseline(snapshot: AnalysisSnapshot, id: string): string
     const n = snapshot.nodes[other];
     const print = n?.closure?.fingerprint ?? n?.fingerprint;
     if (print !== undefined) parts.push(`${other} ${print}`);
+    if (n?.values !== undefined) parts.push(`${other} values ${n.values}`);
   }
+  if (node.values !== undefined) parts.push(`values ${node.values}`);
   parts.sort();
   if (parts.length === 0 && (node.deps ?? []).length === 0) return "";
   return createHash("sha256").update([`deps ${(node.deps ?? []).join(",")}`, ...parts].join("\n")).digest("hex");

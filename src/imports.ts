@@ -19,6 +19,10 @@
 // Files of the analysis (including unsaved or proposed ones, not yet on disk)
 // exist for the resolver whatever the disk says, so one snapshot resolves the
 // same way before and after a candidate is written.
+// In a Salesforce Commerce Cloud repository (cartridges, `dw.json`) the
+// cartridge path answers first: `*/cartridge/…`, `~/cartridge/…`,
+// `<cartridge>/cartridge/…`, `module.superModule`, `dw/…` and the `modules`
+// folder (`src/frameworks/cartridges.ts`).
 
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
@@ -28,6 +32,7 @@ import { isNodeBuiltin } from "./extract/ts.ts";
 import { languageOf } from "./languages.ts";
 import { exactExistence, nodeFs, type ExactFs } from "./exact-path.ts";
 import { globToRegExp } from "./glob.ts";
+import { cartridgeAnswers, cartridgeLayout, SUPER_MODULE, type CartridgeLayout } from "./frameworks/cartridges.ts";
 
 export type Resolution =
   /** `workspace`: the package that names the file, when a workspace package resolved it. */
@@ -114,10 +119,18 @@ export class ImportResolver {
   private readonly verbatim = new Map<string, boolean>();
   /** Config files read, with their text (null: absent); edges depend on them, so the snapshot id does too. */
   readonly inputs = new Map<string, string | null>();
+  /** `sfcc.cartridgePath` of keylang.json; null: a hint of `dw.json`/`package.json`, else guessed. */
+  private readonly cartridgePath: readonly string[] | null;
+  /** The SFCC cartridges and their order, read on the first resolution; null without SFCC. */
+  private layout: CartridgeLayout | null | undefined = undefined;
 
-  constructor(root: string, sources: ReadonlySet<string> = new Set(), fs: ExactFs = nodeFs) {
+  constructor(root: string, sources: ReadonlySet<string> = new Set(), fs: ExactFs = nodeFs, options: { cartridgePath?: readonly string[] | null; sfcc?: boolean } = {}) {
     this.root = root;
     this.sources = sources;
+    this.cartridgePath = options.cartridgePath ?? null;
+    if (options.sfcc === false) this.layout = null;
+    // The cartridge path is an input of the snapshot id whether or not a require asks for it.
+    else this.cartridges();
     this.onDisk = exactExistence(root, fs);
     // One read per file: the text hashed into the snapshot id is the text parsed.
     const text = (file: string): string | null => {
@@ -370,6 +383,18 @@ export class ImportResolver {
     return r;
   }
 
+  /**
+   * The SFCC cartridges of the analysis, once: their order joins the snapshot
+   * id as an input, so a changed cartridge path changes edges on the next run.
+   */
+  cartridges(): CartridgeLayout | null {
+    if (this.layout === undefined) {
+      this.layout = cartridgeLayout(this.root, this.sources, this.cartridgePath);
+      if (this.layout !== null) this.inputs.set("sfcc:cartridge-path", JSON.stringify({ source: this.layout.source, path: this.layout.path.map((c) => c.name) }));
+    }
+    return this.layout;
+  }
+
   private resolveUncached(fromFile: string, spec: string): Resolution {
     // Framework-generated type modules (React Router `./+types/route`).
     if (spec.includes("+types/")) return { kind: "generated" };
@@ -377,6 +402,12 @@ export class ImportResolver {
       const f = this.probe(posix.join(posix.dirname(fromFile), spec));
       return f ? { kind: "internal", file: f } : { kind: "unresolved" };
     }
+    const layout = this.cartridges();
+    const answers = layout === null ? null : cartridgeAnswers(layout, fromFile, spec, (candidate) => this.probe(candidate));
+    if (answers === "external") return { kind: "external", pkg: "dw" };
+    if (answers !== null) return answers.length > 0 ? { kind: "internal", file: answers[0]! } : { kind: "unresolved" };
+    // `module.superModule` outside SFCC names nothing keylang knows.
+    if (spec === SUPER_MODULE) return { kind: "unresolved" };
     if (spec.startsWith("#")) return this.resolveSubpathImport(fromFile, spec);
     // `tsc` tries only the most specific `paths` pattern, then `baseUrl`, then built-ins and packages.
     const ts = this.optionsFor(fromFile);
@@ -559,7 +590,7 @@ export class ImportResolver {
  * `.jsx`; `./x.jsx` for `./x.tsx`), with each extension, then its index
  * file. None for a path that leaves the root.
  */
-function probeCandidates(candidate: string): string[] {
+export function probeCandidates(candidate: string): string[] {
   const c = posix.normalize(candidate);
   if (c.startsWith("../")) return [];
   const swapped = /\.[cm]?js$/.test(c) ? [c.replace(/\.js$/, ".ts").replace(/\.mjs$/, ".mts").replace(/\.cjs$/, ".cts"), c.replace(/\.js$/, ".tsx"), c.replace(/\.js$/, ".jsx")] : /\.jsx$/.test(c) ? [c.replace(/\.jsx$/, ".tsx")] : [];

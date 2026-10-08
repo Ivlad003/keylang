@@ -42,4 +42,6 @@ Once K202 appears, `feature` can already say done. At that point delete the `pla
 
 The spec file is what you hand to the agent. The agent generates the functions, and keylang does not start it. While it works, `check --changed` blocks a turn only on a new fail. An `unverified` line does not block, so read those lines yourself. If a change to `rules.md` is needed, it should arrive as a proposal under `.keylang/proposals/`, and you decide whether to merge it.
 
+When the feature already exists in an older stack (another repository, maybe another language), carry its flows over instead of retyping them. In the old repository `npx keylang flow export checkout --out checkout.bundle.md` writes one Markdown file: the flows, every id with its kind, signature, doc and `file:line`, the tests, the events and integrations, and where it came from (repo, commit, snapshot). In this repository `npx keylang flow import checkout.bundle.md --layer-map app=application` proposes `keylang/features/checkout.md` — the same steps on `planned` ids in your layers, with the original signatures and tests — and the rows of `keylang/migration.md` that map each old id to its new one. Accept both with `keylang proposals accept`, and `feature checkout` and `spec-to-code` work on it as on a file you wrote.
+
 Next: [an integration](03-an-integration.md).
