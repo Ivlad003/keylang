@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -305,4 +305,83 @@ test("voice: local whisper.cpp transcribes a recording", { skip: !process.env.KE
   const pcm = new Int16Array(wav.buffer.slice(wav.byteOffset + 44, wav.byteOffset + wav.length));
   const text = await transcribeLocal(process.env.KEYLANG_TEST_WHISPER_MODEL!, pcm, []);
   assert.ok(text.split(/\s+/).length >= 3, text);
+});
+
+const CASE_TWINS: Record<string, string> = {
+  "keylang.json": JSON.stringify({ languages: ["typescript"], layers: { domain: "src/domain/**" }, agent: "anthropic:claude-opus-5" }),
+  "src/domain/order.ts": "export interface Order {\n  id: string;\n}\n\nexport function order(id: string): Order {\n  return { id };\n}\n",
+};
+
+/** A Messages API stand-in whose n-th answer is `replies[n]`. */
+async function mockReplies(t: TestContext, replies: string[]): Promise<string> {
+  let n = 0;
+  const server = createServer((req, res) => {
+    req.resume();
+    req.on("end", () => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ id: "msg_1", type: "message", role: "assistant", model: "claude-opus-5", content: [{ type: "text", text: replies[n++] ?? "?" }], stop_reason: "end_turn", stop_details: null, usage: { input_tokens: 10, output_tokens: 10 } }));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => server.close());
+  return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+}
+
+test("explain --llm: IDs that differ only in letter case get files whose names differ in more than case", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "keylang-explain-case-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  for (const [path, text] of Object.entries(CASE_TWINS)) {
+    mkdirSync(dirname(join(dir, path)), { recursive: true });
+    writeFileSync(join(dir, path), text);
+  }
+  const env = { ANTHROPIC_BASE_URL: await mockReplies(t, ["The function order builds an order.", "The interface Order is a purchase."]), ANTHROPIC_API_KEY: "k", ANTHROPIC_AUTH_TOKEN: undefined, HOME: dir };
+  assert.equal((await keylangAsync(dir, ["explain", "domain.order.order", "--llm"], env)).status, 0);
+  assert.equal((await keylangAsync(dir, ["explain", "domain.order.Order", "--llm"], env)).status, 0);
+  const files = readdirSync(join(dir, "keylang/explain")).filter((name) => name.endsWith(".md"));
+  assert.equal(files.length, 2, files.join(", "));
+  assert.equal(new Set(files.map((name) => name.toLowerCase())).size, 2, `one file on APFS and NTFS: ${files.join(", ")}`);
+  const offline = { ANTHROPIC_BASE_URL: "http://127.0.0.1:9", HOME: dir };
+  assert.match(keylang(dir, ["explain", "domain.order.order"], offline).stdout, /The function order builds an order\.\n+.* · fresh/);
+  assert.match(keylang(dir, ["explain", "domain.order.Order"], offline).stdout, /The interface Order is a purchase\.\n+.* · fresh/);
+  assert.equal(keylang(dir, ["explain", "--stale"]).stdout, "", "both saved answers are found under their own ID");
+});
+
+test("explain --llm on a case-insensitive file system (casefold tmpfs): a type and a fn whose IDs differ in case keep their own answers", { skip: process.platform !== "linux" }, async (t) => {
+  if (spawnSync("unshare", ["-rm", "true"]).status !== 0) return t.skip("unshare -rm is not available here");
+  const fixture = mkdtempSync(join(tmpdir(), "keylang-casefold-src-"));
+  const mount = mkdtempSync(join(tmpdir(), "keylang-casefold-"));
+  t.after(() => {
+    rmSync(fixture, { recursive: true, force: true });
+    rmSync(mount, { recursive: true, force: true });
+  });
+  for (const [path, text] of Object.entries(CASE_TWINS)) {
+    mkdirSync(dirname(join(fixture, path)), { recursive: true });
+    writeFileSync(join(fixture, path), text);
+  }
+  const url = await mockReplies(t, ["The function order builds an order.", "The interface Order is a purchase."]);
+  const script = [
+    'mount -t tmpfs -o casefold tmpfs "$1" 2>/dev/null || { echo SKIP:mount; exit 0; }',
+    'mkdir "$1/repo" && chattr +F "$1/repo" 2>/dev/null || { echo SKIP:chattr; exit 0; }',
+    'cp -r "$2/." "$1/repo/" && cd "$1/repo" || exit 1',
+    'export HOME="$1/repo" ANTHROPIC_API_KEY=k ANTHROPIC_BASE_URL="$5"',
+    '"$3" "$4" explain domain.order.order --llm >/dev/null && "$3" "$4" explain domain.order.Order --llm >/dev/null || exit 1',
+    "export ANTHROPIC_BASE_URL=http://127.0.0.1:9",
+    'echo "=== fn"; "$3" "$4" explain domain.order.order',
+    'echo "=== type"; "$3" "$4" explain domain.order.Order',
+  ].join("\n");
+  const run = await new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve) => {
+    const env: Record<string, string | undefined> = { ...process.env };
+    delete env.ANTHROPIC_AUTH_TOKEN;
+    const child = spawn("unshare", ["-rm", "sh", "-c", script, "sh", mount, fixture, process.execPath, bin, url], { env });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
+    child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+    child.on("close", (status) => resolve({ status, stdout, stderr }));
+  });
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  if (/^SKIP:/m.test(run.stdout)) return t.skip("casefold tmpfs is not available here");
+  const [fn, type] = run.stdout.split(/^=== type$/m);
+  assert.match(fn!, /The function order builds an order\.\n+.* · fresh/, run.stdout);
+  assert.match(type!, /The interface Order is a purchase\.\n+.* · fresh/, run.stdout);
 });

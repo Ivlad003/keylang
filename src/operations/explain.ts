@@ -315,7 +315,8 @@ export async function runExplainBatch(request: ExplainBatchRequest, context: Ope
       return [`the sources could not be read again: ${errorText(error)}`];
     }
   };
-  const files = new Map(plan.map((entry) => [entry.id, explanationPath(config, entry.id, "brief")]));
+  const planned = plan.map((entry) => entry.id);
+  const files = new Map(planned.map((id) => [id, explanationPath(config, id, "brief", planned)]));
   const expected = new Map([...files.values()].map((file) => [file, readTextOrNull(resolve(root, file))]));
   const briefs = loadBriefs(config);
   // Stops the requests in flight when the batch stops for a change or a refusal; Cancel is the caller's signal.

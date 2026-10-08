@@ -2177,7 +2177,7 @@ export class App {
       case "explain-batch":
         return naming(specs, [`${explainDir({ dir: this.specDir() })}/brief/<id>.md of each planned node`]);
       case "explain-llm":
-        return naming(specs, [explanationPath({ dir: this.specDir() }, request.id, request.detail ?? "short")]);
+        return naming(specs, [explanationPath({ dir: this.specDir(), root: this.state.root }, request.id, request.detail ?? "short")]);
       // The diagram reads the code, keylang.json and the saved briefs.
       case "export-c4":
         return naming(specs, request.out === undefined ? null : [request.out]);
