@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [analyze](#map.analyze) · [bpmn-export](#map.bpmn-export) · [c4-export](#map.c4-export) · [declared-packages](#map.declared-packages) · [diagram](#map.diagram) · [drawio](#map.drawio) · [emit](#map.emit) · [entries](#map.entries) · [exact-path](#map.exact-path) · [explanations](#map.explanations) · [exports](#map.exports) · [fact-cache](#map.fact-cache) · [framework-entries](#map.framework-entries) · [frontends](#map.frontends) · [graph](#map.graph) · [imports](#map.imports) · [map](#map.map) · [php-imports](#map.php-imports) · [python-imports](#map.python-imports) · [python-stdlib](#map.python-stdlib) · [rust-imports](#map.rust-imports) · [snapshot](#map.snapshot) · [trace-plan](#map.trace-plan) · [wire-gen](#map.wire-gen)
+[README](README.md) · modules: [analyze](#map.analyze) · [bpmn-export](#map.bpmn-export) · [c4-export](#map.c4-export) · [declared-packages](#map.declared-packages) · [diagram](#map.diagram) · [drawio](#map.drawio) · [emit](#map.emit) · [entries](#map.entries) · [exact-path](#map.exact-path) · [explanations](#map.explanations) · [exports](#map.exports) · [fact-cache](#map.fact-cache) · [index](#map.index) · [laravel](#map.laravel) · [php](#map.php) · [symfony](#map.symfony) · [framework-entries](#map.framework-entries) · [frontends](#map.frontends) · [graph](#map.graph) · [imports](#map.imports) · [map](#map.map) · [php-imports](#map.php-imports) · [python-imports](#map.python-imports) · [python-stdlib](#map.python-stdlib) · [rust-imports](#map.rust-imports) · [snapshot](#map.snapshot) · [trace-plan](#map.trace-plan) · [wire-gen](#map.wire-gen)
 
 # map
 
@@ -645,6 +645,167 @@
     - fn [saveFactCache](../../src/fact-cache.ts#L315) (root: string, text: string) → boolean
       <a id="map.fact-cache.saveFactCache"></a><br>Writes the fact cache for the next process, best-effort: the cache only saves time, so a write the protocol refuses (a link out of `.keylang/`) or the file system refuses (read-only, a sandbox, EACCES) leaves the old cache, or none, and is no error. The generator's bytes, as…
       - calls [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic), [base.safe-write.landing](base.md#base.safe-write.landing)
+  - module [index](../../src/framework-code/index.ts#L1)
+    <a id="map.index"></a><br>Facts the framework adapters take from code rather than config files (ADR 0022): Laravel's service providers and route files, Symfony's attributes. They read the PHP extractor's facts, so they live beside the graph (layer `map`) while the adapters themselves (`src/frameworks/`)…
+    - facts [extract.facts](extract.md#extract.facts)
+    - adapter [base.adapter](base.md#base.adapter)
+    - laravel [map.laravel](map.md#map.laravel)
+    - symfony [map.symfony](map.md#map.symfony)
+    - type [CodeReader](../../src/framework-code/index.ts#L14)
+      <a id="map.index.CodeReader"></a><br>What an adapter reads from code: one config per source file that says anything, given the adapter's parsed config files.
+  - module [laravel](../../src/framework-code/laravel.ts#L1)
+    <a id="map.laravel"></a><br>What Laravel wires in code (ADR 0022; business-flows 35), for the adapter `src/frameworks/laravel.ts`. Laravel writes its wiring in PHP, not in config files: service providers bind interfaces (`$this->app->bind(I::class, C::class)`, `$bindings`, `$singletons`)…
+    - node [external.node](external.md#external.node)
+    - facts [extract.facts](extract.md#extract.facts)
+    - adapter [base.adapter](base.md#base.adapter)
+    - php [map.php](map.md#map.php)
+    - fn [isOneOf](../../src/framework-code/laravel.ts#L50) (name: string | null | undefined, names: readonly string[]) → boolean <!-- internal -->
+      <a id="map.laravel.isOneOf"></a>
+      - calls [map.php.key](map.md#map.php.key)
+    - fn [laravelFacts](../../src/framework-code/laravel.ts#L55) (files: readonly FileFacts[]) → FrameworkConfig[]
+      <a id="map.laravel.laravelFacts"></a><br>What a Laravel repository's code wires, one `ConfigFacts` per file that says anything.
+      - calls [map.php.PhpCode](map.md#map.php.PhpCode), [map.php.codeFacts](map.md#map.php.codeFacts), [map.php.PhpCode.extends](map.md#map.php.PhpCode.extends), [map.laravel.readProvider](map.md#map.laravel.readProvider), [map.laravel.readFacade](map.md#map.laravel.readFacade), [map.php.key](map.md#map.php.key), [map.laravel.readCommand](map.md#map.laravel.readCommand), [map.php.PhpCode.implements](map.md#map.php.PhpCode.implements), [map.php.PhpCode.method](map.md#map.php.PhpCode.method), [map.php.type](map.md#map.php.type), [map.laravel.commandNames](map.md#map.laravel.commandNames), [map.laravel.readRoutes](map.md#map.laravel.readRoutes), [map.laravel.readConsole](map.md#map.laravel.readConsole), [map.laravel.readKernel](map.md#map.laravel.readKernel), [map.php.dispatchesIn](map.md#map.php.dispatchesIn), [map.php.hasFacts](map.md#map.php.hasFacts)
+    - fn [readProvider](../../src/framework-code/laravel.ts#L92) (code: PhpCode, provider: PhpClass, facts: ConfigFacts, keyed: Map<string, string>) → void <!-- internal -->
+      <a id="map.laravel.readProvider"></a><br>A service provider: its `$bindings`, `$singletons`, `$listen`, `$subscribe` and the container calls of its methods.
+      - calls [map.laravel.bind](map.md#map.laravel.bind), [map.php.eventName](map.md#map.php.eventName), [map.laravel.listen](map.md#map.laravel.listen), [map.php.cls](map.md#map.php.cls), [map.laravel.subscribe](map.md#map.laravel.subscribe), [map.php.arg](map.md#map.php.arg), [map.laravel.isOneOf](map.md#map.laravel.isOneOf), [map.php.PhpCode.calleeClass](map.md#map.php.PhpCode.calleeClass)
+    - fn [bind](../../src/framework-code/laravel.ts#L127) (facts: ConfigFacts, keyed: Map<string, string>, abstract: LiteralFact | null, concrete: LiteralFact | null, at: { line: number; col: number }, written: string) → void <!-- internal -->
+      <a id="map.laravel.bind"></a><br>One binding of a provider: `I::class => C::class`, `bind(I::class, C::class)`; a string key is the container's name for the class.
+      - calls [map.php.cls](map.md#map.php.cls), [map.php.str](map.md#map.php.str), [map.php.key](map.md#map.php.key), [map.php.type](map.md#map.php.type)
+    - fn [listen](../../src/framework-code/laravel.ts#L143) (code: PhpCode, file: string, facts: ConfigFacts, event: string, listener: LiteralFact, at: { line: number; col: number }) → void <!-- internal -->
+      <a id="map.laravel.listen"></a><br>A listener of `$listen` or `Event::listen`: `L::class` (its `handle`), `[L::class, 'm']`, `'L@m'`.
+      - calls [map.php.type](map.md#map.php.type), [map.php.key](map.md#map.php.key), [map.php.PhpCode.method](map.md#map.php.PhpCode.method)
+    - fn [subscribe](../../src/framework-code/laravel.ts#L158) (code: PhpCode, subscriber: string, facts: ConfigFacts, at: { line: number; col: number }) → void <!-- internal -->
+      <a id="map.laravel.subscribe"></a><br>A subscriber of `$subscribe`: the array its `subscribe()` returns (`[OrderPlaced::class => 'handleOrder']`); otherwise a hole.
+      - calls [map.php.PhpCode.method](map.md#map.php.PhpCode.method), [map.php.eventName](map.md#map.php.eventName), [map.php.str](map.md#map.php.str), [map.php.type](map.md#map.php.type)
+    - fn [readFacade](../../src/framework-code/laravel.ts#L173) (code: PhpCode, facade: PhpClass, facts: ConfigFacts, keyed: Map<string, string>) → void <!-- internal -->
+      <a id="map.laravel.readFacade"></a><br>A facade of the repository: `getFacadeAccessor()` returns the class it stands for, or the container key a provider binds.
+      - calls [map.php.PhpCode.method](map.md#map.php.PhpCode.method), [map.php.cls](map.md#map.php.cls), [map.php.str](map.md#map.php.str), [map.php.type](map.md#map.php.type)
+    - fn [readCommand](../../src/framework-code/laravel.ts#L187) (command: PhpClass, facts: ConfigFacts) → void <!-- internal -->
+      <a id="map.laravel.readCommand"></a><br>An Artisan command class: its `$signature` (or `$name`, `#[AsCommand]`) names it; `handle` runs.
+      - calls [map.laravel.commandName](map.md#map.laravel.commandName), [map.php.key](map.md#map.php.key), [map.php.type](map.md#map.php.type)
+    - fn [commandName](../../src/framework-code/laravel.ts#L194) (command: PhpClass) → string | null <!-- internal -->
+      <a id="map.laravel.commandName"></a>
+      - calls [map.php.str](map.md#map.php.str), [map.php.key](map.md#map.php.key), [map.php.arg](map.md#map.php.arg)
+    - fn [commandNames](../../src/framework-code/laravel.ts#L204) (code: PhpCode, classes: readonly PhpClass[]) → Map<string, PhpClass> <!-- internal -->
+      <a id="map.laravel.commandNames"></a><br>Command name → its class, for the schedule.
+      - calls [map.php.PhpCode.extends](map.md#map.php.PhpCode.extends), [map.laravel.commandName](map.md#map.laravel.commandName)
+    - type [Group](../../src/framework-code/laravel.ts#L214) <!-- internal -->
+      <a id="map.laravel.Group"></a>
+    - fn [readRoutes](../../src/framework-code/laravel.ts#L225) (code: PhpCode, file: FileFacts, facts: ConfigFacts) → void <!-- internal -->
+      <a id="map.laravel.readRoutes"></a><br>The routes of `routes/web.php`, `routes/api.php` (under `/api`) and the other route files: `Route::get|post|put|patch|delete|options|any|match`, `Route::resource`/`apiResource`, inside `Route::prefix(…)->group(fn)`, `Route::group(['prefix' => …], fn)` and…
+      - calls [map.laravel.isOneOf](map.md#map.laravel.isOneOf), [map.php.PhpCode.calleeClass](map.md#map.php.PhpCode.calleeClass), [map.php.str](map.md#map.php.str), [map.php.cls](map.md#map.php.cls), [map.laravel.resource](map.md#map.laravel.resource), [map.php.strings](map.md#map.php.strings), [map.php.arg](map.md#map.php.arg), [map.laravel.joinPath](map.md#map.laravel.joinPath), [map.laravel.routeAction](map.md#map.laravel.routeAction), [map.php.type](map.md#map.php.type)
+    - fn [routeAction](../../src/framework-code/laravel.ts#L286) (action: LiteralFact | null, controller: string | null) → { type: string | null; fn: string | null; note?: string } | { reason: string } <!-- internal -->
+      <a id="map.laravel.routeAction"></a><br>The controller method a route action names; a closure is the route file's own code.
+    - fn [resource](../../src/framework-code/laravel.ts#L297) (code: PhpCode, facts: ConfigFacts, call: CallFact, prefix: string[], args: CallFact["args"] & {}, api: boolean, chain: { name: string; args: NonNullable<CallFact["args"]> }[]) → void <!-- internal -->
+      <a id="map.laravel.resource"></a><br>`Route::resource('photos', C::class)`: one route per action the controller declares, `->only([…])`/`->except([…])` applied.
+      - calls [map.php.str](map.md#map.php.str), [map.php.arg](map.md#map.php.arg), [map.php.cls](map.md#map.php.cls), [map.php.strings](map.md#map.php.strings), [map.laravel.singular](map.md#map.laravel.singular), [map.php.PhpCode.method](map.md#map.php.PhpCode.method), [map.laravel.joinPath](map.md#map.laravel.joinPath), [map.php.type](map.md#map.php.type)
+    - fn [singular](../../src/framework-code/laravel.ts#L320) (word: string) → string <!-- internal -->
+      <a id="map.laravel.singular"></a><br>The singular Laravel's `Str::singular` gives the regular plurals of a resource name.
+    - fn [joinPath](../../src/framework-code/laravel.ts#L328) (parts: readonly string[]) → string <!-- internal -->
+      <a id="map.laravel.joinPath"></a>
+    - fn [readConsole](../../src/framework-code/laravel.ts#L334) (code: PhpCode, file: FileFacts, facts: ConfigFacts, commands: ReadonlyMap<string, PhpClass>) → void <!-- internal -->
+      <a id="map.laravel.readConsole"></a><br>`routes/console.php`: `Artisan::command('name', fn)` is a command; `Schedule::command|job|call(…)` the schedule.
+      - calls [map.php.PhpCode.calleeClass](map.md#map.php.PhpCode.calleeClass), [map.laravel.isOneOf](map.md#map.laravel.isOneOf), [map.php.str](map.md#map.php.str), [map.php.arg](map.md#map.php.arg), [map.laravel.schedule](map.md#map.laravel.schedule)
+    - fn [readKernel](../../src/framework-code/laravel.ts#L347) (code: PhpCode, file: FileFacts, facts: ConfigFacts, commands: ReadonlyMap<string, PhpClass>) → void <!-- internal -->
+      <a id="map.laravel.readKernel"></a><br>`Kernel::schedule(Schedule $schedule)`: `$schedule->command|job|call(…)`.
+      - calls [map.php.callsOf](map.md#map.php.callsOf), [map.php.key](map.md#map.php.key), [map.php.PhpCode.qualified](map.md#map.php.PhpCode.qualified), [map.laravel.schedule](map.md#map.laravel.schedule)
+    - fn [schedule](../../src/framework-code/laravel.ts#L354) (facts: ConfigFacts, file: string, call: CallFact, method: string, commands: ReadonlyMap<string, PhpClass>) → void <!-- internal -->
+      <a id="map.laravel.schedule"></a>
+      - calls [map.php.arg](map.md#map.php.arg), [map.php.key](map.md#map.php.key), [map.php.str](map.md#map.php.str), [map.php.type](map.md#map.php.type)
+  - module [php](../../src/framework-code/php.ts#L1)
+    <a id="map.php"></a><br>What the PHP framework readers (Laravel, Symfony) take from the code the PHP extractor recorded: classes by their qualified names with their bases and interfaces, the names a file's `use` statements bind, and the literals of attributes, properties and call arguments…
+    - facts [extract.facts](extract.md#extract.facts)
+    - adapter [base.adapter](base.md#base.adapter)
+    - type [PhpClass](../../src/framework-code/php.ts#L11)
+      <a id="map.php.PhpClass"></a><br>A class (or interface) of the repository by its qualified name.
+    - module [PhpCode](../../src/framework-code/php.ts#L24)
+      <a id="map.php.PhpCode"></a><br>The repository's PHP classes, interfaces and traits by their qualified names in ASCII lower case.
+      - fn [constructor](../../src/framework-code/php.ts#L29) (files: readonly FileFacts[])
+        <a id="map.php.PhpCode.constructor"></a>
+        - calls [map.php.localNames](map.md#map.php.localNames), [map.php.PhpCode.qualified](map.md#map.php.PhpCode.qualified), [map.php.key](map.md#map.php.key)
+      - fn [qualified](../../src/framework-code/php.ts#L46) (file: string, written: string) → string
+        <a id="map.php.PhpCode.qualified"></a><br>The qualified name a class name written in `file` stands for (its `use`, else its namespace as the extractor recorded it).
+        - calls [map.php.key](map.md#map.php.key)
+      - fn [get](../../src/framework-code/php.ts#L51) (qualified: string) → PhpClass | undefined
+        <a id="map.php.PhpCode.get"></a>
+        - calls [map.php.key](map.md#map.php.key)
+      - fn [lineage](../../src/framework-code/php.ts#L56) (qualified: string) → PhpClass[]
+        <a id="map.php.PhpCode.lineage"></a><br>The class and its bases keylang has read, the class first.
+        - calls [map.php.PhpCode.get](map.md#map.php.PhpCode.get)
+      - fn [extends](../../src/framework-code/php.ts#L67) (cls: PhpClass, base: string) → boolean
+        <a id="map.php.PhpCode.extends"></a><br>The class extends `base` (qualified), directly or through bases keylang has read.
+        - calls [map.php.PhpCode.lineage](map.md#map.php.PhpCode.lineage), [map.php.key](map.md#map.php.key)
+      - fn [implements](../../src/framework-code/php.ts#L72) (cls: PhpClass, iface: string) → boolean
+        <a id="map.php.PhpCode.implements"></a><br>The class or a base implements `iface` (qualified), directly or through interfaces keylang has read.
+        - calls [map.php.PhpCode.lineage](map.md#map.php.PhpCode.lineage), [map.php.key](map.md#map.php.key), [map.php.PhpCode.get](map.md#map.php.PhpCode.get)
+      - fn [method](../../src/framework-code/php.ts#L86) (qualified: string, name: string) → { cls: PhpClass; decl: DeclFact } | null
+        <a id="map.php.PhpCode.method"></a><br>A public method of the class or a base keylang has read; null when none declares it.
+        - calls [map.php.PhpCode.lineage](map.md#map.php.PhpCode.lineage), [map.php.key](map.md#map.php.key)
+      - fn [calleeClass](../../src/framework-code/php.ts#L95) (file: string, callee: string) → string | null
+        <a id="map.php.PhpCode.calleeClass"></a><br>The qualified class the head of a callee written in `file` names (`Route.get` → `Illuminate\Support\Facades\Route`).
+        - calls [map.php.PhpCode.qualified](map.md#map.php.PhpCode.qualified)
+    - fn [localNames](../../src/framework-code/php.ts#L103) (file: FileFacts) → Map<string, string> <!-- internal -->
+      <a id="map.php.localNames"></a><br>Local class names of a file's imports (in ASCII lower case) → the qualified names they bind.
+      - calls [map.php.key](map.md#map.php.key)
+    - fn [key](../../src/framework-code/php.ts#L113) (name: string) → string
+      <a id="map.php.key"></a><br>PHP class names compare without ASCII case.
+    - fn [sameClass](../../src/framework-code/php.ts#L117) (a: string, b: string) → boolean
+      <a id="map.php.sameClass"></a>
+      - calls [map.php.key](map.md#map.php.key)
+    - fn [arg](../../src/framework-code/php.ts#L122) (args: readonly ArgFact[] | undefined, name: string | null, position: number | null) → LiteralFact | null
+      <a id="map.php.arg"></a><br>An argument by its name, else by its position.
+    - fn [str](../../src/framework-code/php.ts#L133) (value: LiteralFact | null | undefined) → string | null
+      <a id="map.php.str"></a>
+    - fn [cls](../../src/framework-code/php.ts#L137) (value: LiteralFact | null | undefined) → string | null
+      <a id="map.php.cls"></a>
+    - fn [strings](../../src/framework-code/php.ts#L142) (value: LiteralFact | null | undefined) → string[]
+      <a id="map.php.strings"></a><br>The strings of a string or an array of strings.
+    - fn [eventName](../../src/framework-code/php.ts#L150) (value: LiteralFact | null | undefined) → string | null
+      <a id="map.php.eventName"></a><br>An event a listener or a dispatch names: a class by its qualified name, a string as written, a class constant as `X::NAME`.
+    - fn [type](../../src/framework-code/php.ts#L158) (name: string) → TypeName
+      <a id="map.php.type"></a>
+    - fn [callsOf](../../src/framework-code/php.ts#L163) (file: FileFacts) → Generator<{ call: CallFact; symbol: string | null; decl: DeclFact | null; cls: DeclFact | null }>
+      <a id="map.php.callsOf"></a><br>Every call of a file with the declaration it sits in (`Class.method`, a function's name) or null at the module level.
+    - fn [codeFacts](../../src/framework-code/php.ts#L172) (path: string) → ConfigFacts
+      <a id="map.php.codeFacts"></a><br>Facts of one source file a framework reads, empty to start with.
+    - fn [hasFacts](../../src/framework-code/php.ts#L177) (facts: ConfigFacts) → boolean
+      <a id="map.php.hasFacts"></a><br>Whether a code configuration says anything.
+    - fn [dispatchesIn](../../src/framework-code/php.ts#L196) (code: PhpCode, file: FileFacts) → { symbol: string; call: CallFact; event: string }[]
+      <a id="map.php.dispatchesIn"></a><br>Calls that dispatch an event or a message object, in a declaration of the file: `event(new X)`, `dispatch(new J)`, `Event::dispatch(new X)`, `Bus::dispatch(new J)`, `$dispatcher->dispatch(new X)` (a string second argument names the event: Symfony `dispatch($e…
+      - calls [map.php.callsOf](map.md#map.php.callsOf), [map.php.arg](map.md#map.php.arg), [map.php.PhpCode.get](map.md#map.php.PhpCode.get), [map.php.PhpCode.qualified](map.md#map.php.PhpCode.qualified), [map.php.str](map.md#map.php.str)
+  - module [symfony](../../src/framework-code/symfony.ts#L1)
+    <a id="map.symfony"></a><br>What Symfony wires in code (ADR 0022; business-flows 36), for the adapter `src/frameworks/symfony.ts`: the PHP attributes the extractor records (`#[Route]`, `#[AsEventListener]`, `#[AsMessageHandler]`, `#[AsCommand]`, `#[AsCronTask]`, `#[AsPeriodicTask]`, `#[AsAlias]`), a…
+    - facts [extract.facts](extract.md#extract.facts)
+    - adapter [base.adapter](base.md#base.adapter)
+    - php [map.php](map.md#map.php)
+    - fn [className](../../src/framework-code/symfony.ts#L24) (written: string) → string <!-- internal -->
+      <a id="map.symfony.className"></a>
+    - fn [symfonyFacts](../../src/framework-code/symfony.ts#L29) (files: readonly FileFacts[], configs: readonly ConfigFacts[]) → FrameworkConfig[]
+      <a id="map.symfony.symfonyFacts"></a><br>What a Symfony repository's code wires: attributes, subscribers, dispatches; the route prefixes of `configs` apply to attribute routes.
+      - calls [map.php.PhpCode](map.md#map.php.PhpCode), [map.php.codeFacts](map.md#map.php.codeFacts), [map.symfony.routes](map.md#map.symfony.routes), [map.symfony.listeners](map.md#map.symfony.listeners), [map.symfony.handlers](map.md#map.symfony.handlers), [map.symfony.commands](map.md#map.symfony.commands), [map.symfony.tasks](map.md#map.symfony.tasks), [map.symfony.aliases](map.md#map.symfony.aliases), [map.php.dispatchesIn](map.md#map.php.dispatchesIn), [map.php.hasFacts](map.md#map.php.hasFacts)
+    - fn [attributes](../../src/framework-code/symfony.ts#L54) (decl: { attributes?: { name: string; args: { name?: string; value: LiteralFact }[]; line: number; col: number }[] }, names: readonly string[]) <!-- internal -->
+      <a id="map.symfony.attributes"></a>
+      - calls [map.php.key](map.md#map.php.key)
+    - fn [routes](../../src/framework-code/symfony.ts#L59) (c: PhpClass, facts: ConfigFacts, prefixes: readonly RoutePrefixFact[]) → void <!-- internal -->
+      <a id="map.symfony.routes"></a><br>`#[Route]` on the class (a prefix) and on its public methods; `__invoke` for one on an invokable class.
+      - calls [map.symfony.attributes](map.md#map.symfony.attributes), [map.php.str](map.md#map.php.str), [map.php.arg](map.md#map.php.arg), [map.symfony.joinPath](map.md#map.symfony.joinPath), [map.php.strings](map.md#map.php.strings), [map.php.type](map.md#map.php.type)
+    - fn [joinPath](../../src/framework-code/symfony.ts#L81) (parts: readonly string[]) → string <!-- internal -->
+      <a id="map.symfony.joinPath"></a>
+    - fn [listeners](../../src/framework-code/symfony.ts#L87) (code: PhpCode, c: PhpClass, facts: ConfigFacts) → void <!-- internal -->
+      <a id="map.symfony.listeners"></a><br>`#[AsEventListener]` on the class or a method, and `getSubscribedEvents()` of an `EventSubscriberInterface`: observers.
+      - calls [map.php.type](map.md#map.php.type), [map.symfony.attributes](map.md#map.symfony.attributes), [map.php.str](map.md#map.php.str), [map.php.arg](map.md#map.php.arg), [map.php.eventName](map.md#map.php.eventName), [map.php.PhpCode.implements](map.md#map.php.PhpCode.implements)
+    - fn [handlers](../../src/framework-code/symfony.ts#L125) (c: PhpClass, facts: ConfigFacts) → void <!-- internal -->
+      <a id="map.symfony.handlers"></a><br>`#[AsMessageHandler]` on the class (`__invoke`, or `method:`) or a method: a consumer of the message its `handles:` or first parameter names.
+      - calls [map.php.cls](map.md#map.php.cls), [map.php.type](map.md#map.php.type), [map.symfony.attributes](map.md#map.symfony.attributes), [map.php.str](map.md#map.php.str), [map.php.arg](map.md#map.php.arg)
+    - fn [commands](../../src/framework-code/symfony.ts#L136) (code: PhpCode, c: PhpClass, facts: ConfigFacts) → void <!-- internal -->
+      <a id="map.symfony.commands"></a><br>`#[AsCommand('app:x')]` (or `$defaultName`) on a command: `execute`, or `__invoke` of an invokable command.
+      - calls [map.symfony.attributes](map.md#map.symfony.attributes), [map.php.str](map.md#map.php.str), [map.php.arg](map.md#map.php.arg), [map.php.PhpCode.extends](map.md#map.php.PhpCode.extends), [map.php.PhpCode.method](map.md#map.php.PhpCode.method), [map.php.type](map.md#map.php.type)
+    - fn [tasks](../../src/framework-code/symfony.ts#L150) (c: PhpClass, facts: ConfigFacts) → void <!-- internal -->
+      <a id="map.symfony.tasks"></a><br>`#[AsCronTask('0 3 * * *')]`, `#[AsPeriodicTask('1 hour')]` on the class (`__invoke`, or `method:`) or a method: cron.
+      - calls [map.php.key](map.md#map.php.key), [map.php.type](map.md#map.php.type), [map.symfony.attributes](map.md#map.symfony.attributes), [map.php.str](map.md#map.php.str), [map.php.arg](map.md#map.php.arg)
+    - fn [aliases](../../src/framework-code/symfony.ts#L160) (c: PhpClass, facts: ConfigFacts) → void <!-- internal -->
+      <a id="map.symfony.aliases"></a><br>`#[AsAlias(I::class)]` on a class: a binding `I → class`; without an id, the one interface the class implements.
+      - calls [map.symfony.attributes](map.md#map.symfony.attributes), [map.php.cls](map.md#map.php.cls), [map.php.arg](map.md#map.php.arg), [map.php.str](map.md#map.php.str), [map.symfony.className](map.md#map.symfony.className), [map.php.type](map.md#map.php.type)
   - module [framework-entries](../../src/framework-entries.ts#L1)
     <a id="map.framework-entries"></a><br>Entry points and holes the framework adapters add to a snapshot (ADR 0022 п. 5), placed on the graph: an entry a config file names (SFCC `hooks.json`, `steptypes.json`) becomes the fn or module of its script, and SFCC adds the controllers the TypeScript extractor records…
     - config [base.config](base.md#base.config)
@@ -981,95 +1142,96 @@
     - emit [map.emit](map.md#map.emit)
     - explanations [map.explanations](map.md#map.explanations)
     - graph [map.graph](map.md#map.graph)
+    - index [map.index](map.md#map.index)
     - adapter [base.adapter](base.md#base.adapter)
     - fact-cache [map.fact-cache](map.md#map.fact-cache)
     - safe-write [base.safe-write](base.md#base.safe-write)
     - entries [map.entries](map.md#map.entries)
     - framework-entries [map.framework-entries](map.md#map.framework-entries)
     - snapshot [map.snapshot](map.md#map.snapshot)
-    - type [MapResult](../../src/map.ts#L24)
+    - type [MapResult](../../src/map.ts#L25)
       <a id="map.map.MapResult"></a><br>Bundles everything one map run produces: the `Graph`, generated map files and optional explanations keyed by file name, the `AnalysisSnapshot`, skip and fact-cache reuse counts, and the serialized fact cache text for the next run. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [generateMap](../../src/map.ts#L46) (config: Config, options: { persist?: boolean | "changed"; overlay?: ReadonlyMap<string, string>; adapters?: readonly FrameworkAdapter[] } = {}) → Promise<MapResult>
+    - fn [generateMap](../../src/map.ts#L47) (config: Config, options: { persist?: boolean | "changed"; overlay?: ReadonlyMap<string, string>; adapters?: readonly FrameworkAdapter[] } = {}) → Promise<MapResult>
       <a id="map.map.generateMap"></a><br>`persist` prepares the fact cache for the next process: `true` always (`keylang map`, whose commit step writes it), `"changed"` only when the facts of this run differ from the cache on disk (an analysis that saves it best-effort); generation writes nothing. `overlay` gives…
       - calls [base.config.classifySources](base.md#base.config.classifySources), [base.config.toPosix](base.md#base.config.toPosix), [base.languages.languageOf](base.md#base.languages.languageOf), [base.config.isAnalysed](base.md#base.config.isAnalysed), [base.span.compareText](base.md#base.span.compareText), [map.map.readAnalysedSource](map.md#map.map.readAnalysedSource), [map.graph.placeFile](map.md#map.graph.placeFile), [map.snapshot.sha256](map.md#map.snapshot.sha256), [map.fact-cache.FactCache.open](map.md#map.fact-cache.FactCache.open), [map.map.extractorCode](map.md#map.map.extractorCode), [map.snapshot.grammarVersions](map.md#map.snapshot.grammarVersions), [map.frontends.frontendFor](map.md#map.frontends.frontendFor), [map.map.extractGuarded](map.md#map.map.extractGuarded), [map.map.readFrameworks](map.md#map.map.readFrameworks), [map.map.opaqueFacts](map.md#map.map.opaqueFacts), [map.graph.buildGraph](map.md#map.graph.buildGraph), [base.config.layerGlobWarnings](base.md#base.config.layerGlobWarnings), [map.map.readSource](map.md#map.map.readSource), [map.entries.collectEntries](map.md#map.entries.collectEntries), [map.framework-entries.frameworkEntries](map.md#map.framework-entries.frameworkEntries), [map.entries.compareEntries](map.md#map.entries.compareEntries), [map.snapshot.buildSnapshot](map.md#map.snapshot.buildSnapshot), [map.map.ownerSource](map.md#map.map.ownerSource), [map.map.readRepositoryDocs](map.md#map.map.readRepositoryDocs), [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs), [map.emit.renderExplainedMap](map.md#map.emit.renderExplainedMap), [map.explanations.explanationOf](map.md#map.explanations.explanationOf), [map.emit.renderMap](map.md#map.emit.renderMap)
-    - fn [readFrameworks](../../src/map.ts#L152) ( config: Config, sources: readonly string[], read: ReadonlyMap<string, { text: string; sha256: string }>, overlay: ReadonlyMap<string, string> | undefined, cache: FactCache, available: readonly FrameworkAdapter[] | undefined, /** The facts of the analysed sources, for an adapter that reads the framework's wiring from code. */ code: readonly FileFacts[], ) → { inputs: FrameworkInput[]; manifest: FrameworkManifest[]; unread: { path: string; owner: string | null; reason: string; framework: string }[] } <!-- internal -->
+    - fn [readFrameworks](../../src/map.ts#L153) ( config: Config, sources: readonly string[], read: ReadonlyMap<string, { text: string; sha256: string }>, overlay: ReadonlyMap<string, string> | undefined, cache: FactCache, available: readonly FrameworkAdapter[] | undefined, /** The facts of the analysed sources, for an adapter that reads the framework's wiring from code. */ code: readonly FileFacts[], ) → { inputs: FrameworkInput[]; manifest: FrameworkManifest[]; unread: { path: string; owner: string | null; reason: string; framework: string }[] } <!-- internal -->
       <a id="map.map.readFrameworks"></a><br>The config files of the framework adapters the repository uses, parsed (or reused from the fact cache by content), and what the manifest lists of them.
       - calls [map.map.readSource](map.md#map.map.readSource), [base.span.compareText](base.md#base.span.compareText), [base.config.isAnalysed](base.md#base.config.isAnalysed), [base.adapter.activeAdapters](base.md#base.adapter.activeAdapters), [map.snapshot.sha256](map.md#map.snapshot.sha256), [map.fact-cache.FactCache.config](map.md#map.fact-cache.FactCache.config)
-    - fn [ownerSource](../../src/map.ts#L206) (config: Config, graph: Graph, owner: string | null) → { source?: string } <!-- internal -->
+    - fn [ownerSource](../../src/map.ts#L208) (config: Config, graph: Graph, owner: string | null) → { source?: string } <!-- internal -->
       <a id="map.map.ownerSource"></a><br>The module a config file of `owner`'s directory belongs to, for a hole of its own: the directory's module, or the module of a file in it when the directory is a whole layer (a rule's area holds that module, not the layer node).
       - calls [map.graph.directoryModule](map.md#map.graph.directoryModule), [base.span.compareText](base.md#base.span.compareText)
-    - fn [readRepositoryDocs](../../src/map.ts#L222) (config: Config) → RepositoryDocs <!-- internal -->
+    - fn [readRepositoryDocs](../../src/map.ts#L224) (config: Config) → RepositoryDocs <!-- internal -->
       <a id="map.map.readRepositoryDocs"></a><br>What the repository writes about itself (ADR 0014, the system and container levels of C4): the root README or a root manifest, and the README in each layer's own directory. Read on every analysis, so an edit shows in the next map without touching `snapshotId`.
       - calls [base.glob.globDirectory](base.md#base.glob.globDirectory), [map.map.readReadme](map.md#map.map.readReadme), [base.brief.readmeBrief](base.md#base.brief.readmeBrief), [map.map.readSystemDoc](map.md#map.map.readSystemDoc)
-    - fn [readSystemDoc](../../src/map.ts#L233) (root: string) → SystemDoc <!-- internal -->
+    - fn [readSystemDoc](../../src/map.ts#L235) (root: string) → SystemDoc <!-- internal -->
       <a id="map.map.readSystemDoc"></a>
       - calls [map.map.manifestAbout](map.md#map.map.manifestAbout), [map.map.readSource](map.md#map.map.readSource), [map.map.readReadme](map.md#map.map.readReadme), [base.brief.readmeBrief](base.md#base.brief.readmeBrief), [base.brief.briefOf](base.md#base.brief.briefOf)
-    - fn [readReadme](../../src/map.ts#L247) (root: string, dir: string) → { path: string; text: string } | null <!-- internal -->
+    - fn [readReadme](../../src/map.ts#L249) (root: string, dir: string) → { path: string; text: string } | null <!-- internal -->
       <a id="map.map.readReadme"></a><br>`README.md` in `dir` (relative, POSIX; "" for the root), its name in any case; null without one.
       - calls [base.span.compareText](base.md#base.span.compareText), [map.map.readSource](map.md#map.map.readSource)
-    - fn [manifestAbout](../../src/map.ts#L269) (file: (typeof ROOT_MANIFESTS)[number], text: string | null) → { name: string | null; description: string | null } <!-- internal -->
+    - fn [manifestAbout](../../src/map.ts#L271) (file: (typeof ROOT_MANIFESTS)[number], text: string | null) → { name: string | null; description: string | null } <!-- internal -->
       <a id="map.map.manifestAbout"></a><br>`name` and `description` of a root manifest: `package.json` and `composer.json` at the top, `[package]` (or `[workspace.package]`) of `Cargo.toml`, `[project]` of `pyproject.toml`. A manifest that does not parse gives neither: the analysis reports it where it reads the…
-    - fn [opaqueFacts](../../src/map.ts#L301) (path: string) → FileFacts <!-- internal -->
+    - fn [opaqueFacts](../../src/map.ts#L303) (path: string) → FileFacts <!-- internal -->
       <a id="map.map.opaqueFacts"></a><br>Builds an empty `FileFacts` record for a path with completeness set to "opaque": no imports, declarations, exports, or references, and no parse error. [`map.map.extractGuarded`](map.md#map.map.extractGuarded) and [`map.map.generateMap`](map.md#map.map.generateMap) use it as the placeholder when a file cannot or should not be analyzed. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [readSource](../../src/map.ts#L306) (abs: string) → string | null <!-- internal -->
+    - fn [readSource](../../src/map.ts#L308) (abs: string) → string | null <!-- internal -->
       <a id="map.map.readSource"></a><br>A file's text; null when it no longer exists.
-    - fn [readAnalysedSource](../../src/map.ts#L316) (abs: string) → string | null | { unreadable: string } <!-- internal -->
+    - fn [readAnalysedSource](../../src/map.ts#L318) (abs: string) → string | null | { unreadable: string } <!-- internal -->
       <a id="map.map.readAnalysedSource"></a><br>A source file's text as readSource, or the reason when keylang may not read it (EACCES/EPERM): a hole, not an I/O error.
       - calls [map.map.readSource](map.md#map.map.readSource)
-    - fn [extractGuarded](../../src/map.ts#L331) (extract: (path: string, src: string) => Promise<FileFacts>, path: string, src: string) → Promise<FileFacts> <!-- internal -->
+    - fn [extractGuarded](../../src/map.ts#L333) (extract: (path: string, src: string) => Promise<FileFacts>, path: string, src: string) → Promise<FileFacts> <!-- internal -->
       <a id="map.map.extractGuarded"></a><br>Facts of one file; a file whose syntax nests deeper than the extractor's stack (thousands of `+` terms or parentheses) is opaque with a parse error, so one pathological file does not stop the whole analysis.
       - calls [map.map.opaqueFacts](map.md#map.map.opaqueFacts)
-    - type [MapDiff](../../src/map.ts#L342)
+    - type [MapDiff](../../src/map.ts#L344)
       <a id="map.map.MapDiff"></a><br>Describes the result of comparing generated output against the target directory: paths of existing files the generator does not own, and paths of generated files that are missing, changed, or extra. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [targets](../../src/map.ts#L353) (config: Config, r: MapResult) → { dir: string; files: ReadonlyMap<string, string>; artifact: "map" | "explained" }[] <!-- internal -->
+    - fn [targets](../../src/map.ts#L355) (config: Config, r: MapResult) → { dir: string; files: ReadonlyMap<string, string>; artifact: "map" | "explained" }[] <!-- internal -->
       <a id="map.map.targets"></a><br>Directories the generator owns and what they should hold: the map, and the explained map (empty when `explain.map` is off, so its generated files go).
-    - type [ExtraGenerated](../../src/map.ts#L361) <!-- internal -->
+    - type [ExtraGenerated](../../src/map.ts#L363) <!-- internal -->
       <a id="map.map.ExtraGenerated"></a><br>A generated file in a map directory that is not listed under its name.
-    - fn [extraGenerated](../../src/map.ts#L374) (dir: string, files: ReadonlyMap<string, string>) → ExtraGenerated[] <!-- internal -->
+    - fn [extraGenerated](../../src/map.ts#L376) (dir: string, files: ReadonlyMap<string, string>) → ExtraGenerated[] <!-- internal -->
       <a id="map.map.extraGenerated"></a><br>Generated files in `dir` that should not be there under their names.
       - calls [map.map.readOrNull](map.md#map.map.readOrNull), [map.emit.isGeneratedMap](map.md#map.emit.isGeneratedMap)
-    - fn [mapConflicts](../../src/map.ts#L399) (config: Config, r: MapResult) → string[]
+    - fn [mapConflicts](../../src/map.ts#L401) (config: Config, r: MapResult) → string[]
       <a id="map.map.mapConflicts"></a><br>Target files of both maps that exist and are not generated. Sorted.
       - calls [map.map.targets](map.md#map.map.targets), [map.emit.isGeneratedMap](map.md#map.emit.isGeneratedMap)
-    - type [MapArtifact](../../src/map.ts#L411) = "map" | "explained" | "index" | "facts"
+    - type [MapArtifact](../../src/map.ts#L413) = "map" | "explained" | "index" | "facts"
       <a id="map.map.MapArtifact"></a><br>What a step of the map's commit touches.
-    - type [MapStep](../../src/map.ts#L414)
+    - type [MapStep](../../src/map.ts#L416)
       <a id="map.map.MapStep"></a><br>One file step of `keylang map`: a path relative to the root, POSIX.
-    - type [PlannedStep](../../src/map.ts#L420) extends MapStep <!-- internal -->
+    - type [PlannedStep](../../src/map.ts#L422) extends MapStep <!-- internal -->
       <a id="map.map.PlannedStep"></a><br>Extends `MapStep` with the bytes a write step should produce and a precondition snapshot: the file's expected current content, null for absent, or undefined when no check applies. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [MapPlan](../../src/map.ts#L436)
+    - type [MapPlan](../../src/map.ts#L438)
       <a id="map.map.MapPlan"></a><br>What `keylang map` will do, computed before anything is written: the expected bytes of every target, the removals, and what the render was made from. Internal to one operation — not a stored format.
-    - type [SourceInputs](../../src/map.ts#L448)
+    - type [SourceInputs](../../src/map.ts#L450)
       <a id="map.map.SourceInputs"></a><br>What a snapshot was computed from: `keylang.json` and the source files. A change in either makes a plan built on it unfit.
-    - type [MapInputs](../../src/map.ts#L456) extends SourceInputs <!-- internal -->
+    - type [MapInputs](../../src/map.ts#L458) extends SourceInputs <!-- internal -->
       <a id="map.map.MapInputs"></a><br>The inputs of the render: a change in any makes the plan unfit.
-    - fn [sourceInputs](../../src/map.ts#L466) (config: Config, sources: readonly { path: string; sha256: string }[]) → SourceInputs
+    - fn [sourceInputs](../../src/map.ts#L468) (config: Config, sources: readonly { path: string; sha256: string }[]) → SourceInputs
       <a id="map.map.sourceInputs"></a><br>The inputs of a snapshot: the `keylang.json` text the analysis parsed (not the disk now — a save made during the analysis must be caught at the commit, not become the base) and the snapshot's manifest.
-    - fn [sourceInputProblems](../../src/map.ts#L475) (config: Config, inputs: SourceInputs, subject: string) → string[]
+    - fn [sourceInputProblems](../../src/map.ts#L477) (config: Config, inputs: SourceInputs, subject: string) → string[]
       <a id="map.map.sourceInputProblems"></a><br>How `keylang.json` and the source files differ from the ones `subject` was computed from (`path: reason` lines, empty when none does): a changed config, a source added, changed or removed since.
       - calls [map.map.readOrNull](map.md#map.map.readOrNull), [base.config.sourceTree](base.md#base.config.sourceTree), [map.snapshot.sha256](map.md#map.snapshot.sha256)
-    - type [CommittedStep](../../src/map.ts#L494) extends MapStep
+    - type [CommittedStep](../../src/map.ts#L496) extends MapStep
       <a id="map.map.CommittedStep"></a><br>A step after the commit: done, failed with the reason, or never tried.
-    - type [MapCommit](../../src/map.ts#L499)
+    - type [MapCommit](../../src/map.ts#L501)
       <a id="map.map.MapCommit"></a><br>Result record of a map commit, holding the list of steps that were actually written plus a flag saying whether the run finished, failed, or was cancelled by a signal between steps. Cancelled runs keep whatever steps already landed. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [planMap](../../src/map.ts#L510) (config: Config, r: MapResult) → MapPlan
+    - fn [planMap](../../src/map.ts#L512) (config: Config, r: MapResult) → MapPlan
       <a id="map.map.planMap"></a><br>Plans both maps, the index and the fact cache: a write for every missing or changed generated file, a removal for every generated file of a layer that is gone (or of a map turned off). Reads the disk, writes nothing.
       - calls [base.config.toPosix](base.md#base.config.toPosix), [map.map.targets](map.md#map.map.targets), [map.map.extraGenerated](map.md#map.map.extraGenerated), [map.map.readOrNull](map.md#map.map.readOrNull), [map.map.mapConflicts](map.md#map.map.mapConflicts), [map.map.sourceInputs](map.md#map.map.sourceInputs), [map.map.briefsKey](map.md#map.map.briefsKey)
-    - fn [mapPlanProblems](../../src/map.ts#L551) (plan: MapPlan) → string[]
+    - fn [mapPlanProblems](../../src/map.ts#L553) (plan: MapPlan) → string[]
       <a id="map.map.mapPlanProblems"></a><br>Why the plan may not be committed now, as `path: reason` lines; empty when it may. Every target must pass the repository's write rules (a plain path that stays inside the repository through links) and still hold the bytes the plan saw — a manual file created meanwhile included…
       - calls [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [map.map.sourceInputProblems](map.md#map.map.sourceInputProblems), [map.map.briefsKey](map.md#map.map.briefsKey)
-    - fn [commitMap](../../src/map.ts#L570) (plan: MapPlan, options: { signal?: AbortSignal; onStep?: (step: MapStep) => void } = {}) → Promise<MapCommit>
+    - fn [commitMap](../../src/map.ts#L572) (plan: MapPlan, options: { signal?: AbortSignal; onStep?: (step: MapStep) => void } = {}) → Promise<MapCommit>
       <a id="map.map.commitMap"></a><br>Runs the plan's steps in order, each an atomic write (the generator's exact bytes, the permissions of the file it replaces, links followed inside the repository) or a removal. The signal is checked between steps: the step under way finishes. `onStep` is told before each step…
       - calls [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic), [base.safe-write.landing](base.md#base.safe-write.landing)
-    - fn [briefsKey](../../src/map.ts#L599) (config: Config) → string <!-- internal -->
+    - fn [briefsKey](../../src/map.ts#L601) (config: Config) → string <!-- internal -->
       <a id="map.map.briefsKey"></a><br>A hash of the briefs the explained map reads.
       - calls [map.snapshot.sha256](map.md#map.snapshot.sha256), [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs)
-    - fn [readOrNull](../../src/map.ts#L604) (abs: string) → string | null <!-- internal -->
+    - fn [readOrNull](../../src/map.ts#L606) (abs: string) → string | null <!-- internal -->
       <a id="map.map.readOrNull"></a><br>A file's text, or null when there is none.
-    - fn [diffMap](../../src/map.ts#L613) (config: Config, r: MapResult) → MapDiff
+    - fn [diffMap](../../src/map.ts#L615) (config: Config, r: MapResult) → MapDiff
       <a id="map.map.diffMap"></a><br>Compare both generated maps with the files on disk (`map --check`).
       - calls [map.map.mapConflicts](map.md#map.map.mapConflicts), [map.map.targets](map.md#map.map.targets), [map.map.readOrNull](map.md#map.map.readOrNull), [map.map.extraGenerated](map.md#map.map.extraGenerated)
-    - fn [extractorCode](../../src/map.ts#L638) () → string <!-- internal -->
+    - fn [extractorCode](../../src/map.ts#L640) () → string <!-- internal -->
       <a id="map.map.extractorCode"></a><br>A hash of the extractor's own code. Facts cached by a changed extractor are stale even when nobody bumped `EXTRACTOR_VERSION`; in the package the same files are the built `.js`.
       - calls [map.snapshot.sha256](map.md#map.snapshot.sha256)
   - module [php-imports](../../src/php-imports.ts#L1)

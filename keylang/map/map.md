@@ -404,6 +404,110 @@
     - fn [keepsFactCache](../../src/fact-cache.ts#L304) (root: string) → boolean
     - fn [saveFactCache](../../src/fact-cache.ts#L315) (root: string, text: string) → boolean
       - calls base.safe-write.writeProblem, base.safe-write.writeAtomic, base.safe-write.landing
+  - module [index](../../src/framework-code/index.ts#L1)
+    - facts extract.facts
+    - adapter base.adapter
+    - laravel map.laravel
+    - symfony map.symfony
+    - type [CodeReader](../../src/framework-code/index.ts#L14)
+  - module [laravel](../../src/framework-code/laravel.ts#L1)
+    - node external.node
+    - facts extract.facts
+    - adapter base.adapter
+    - php map.php
+    - fn [isOneOf](../../src/framework-code/laravel.ts#L50) (name: string | null | undefined, names: readonly string[]) → boolean <!-- internal -->
+      - calls map.php.key
+    - fn [laravelFacts](../../src/framework-code/laravel.ts#L55) (files: readonly FileFacts[]) → FrameworkConfig[]
+      - calls map.php.PhpCode, map.php.codeFacts, map.php.PhpCode.extends, map.laravel.readProvider, map.laravel.readFacade, map.php.key, map.laravel.readCommand, map.php.PhpCode.implements, map.php.PhpCode.method, map.php.type, map.laravel.commandNames, map.laravel.readRoutes, map.laravel.readConsole, map.laravel.readKernel, map.php.dispatchesIn, map.php.hasFacts
+    - fn [readProvider](../../src/framework-code/laravel.ts#L92) (code: PhpCode, provider: PhpClass, facts: ConfigFacts, keyed: Map<string, string>) → void <!-- internal -->
+      - calls map.laravel.bind, map.php.eventName, map.laravel.listen, map.php.cls, map.laravel.subscribe, map.php.arg, map.laravel.isOneOf, map.php.PhpCode.calleeClass
+    - fn [bind](../../src/framework-code/laravel.ts#L127) (facts: ConfigFacts, keyed: Map<string, string>, abstract: LiteralFact | null, concrete: LiteralFact | null, at: { line: number; col: number }, written: string) → void <!-- internal -->
+      - calls map.php.cls, map.php.str, map.php.key, map.php.type
+    - fn [listen](../../src/framework-code/laravel.ts#L143) (code: PhpCode, file: string, facts: ConfigFacts, event: string, listener: LiteralFact, at: { line: number; col: number }) → void <!-- internal -->
+      - calls map.php.type, map.php.key, map.php.PhpCode.method
+    - fn [subscribe](../../src/framework-code/laravel.ts#L158) (code: PhpCode, subscriber: string, facts: ConfigFacts, at: { line: number; col: number }) → void <!-- internal -->
+      - calls map.php.PhpCode.method, map.php.eventName, map.php.str, map.php.type
+    - fn [readFacade](../../src/framework-code/laravel.ts#L173) (code: PhpCode, facade: PhpClass, facts: ConfigFacts, keyed: Map<string, string>) → void <!-- internal -->
+      - calls map.php.PhpCode.method, map.php.cls, map.php.str, map.php.type
+    - fn [readCommand](../../src/framework-code/laravel.ts#L187) (command: PhpClass, facts: ConfigFacts) → void <!-- internal -->
+      - calls map.laravel.commandName, map.php.key, map.php.type
+    - fn [commandName](../../src/framework-code/laravel.ts#L194) (command: PhpClass) → string | null <!-- internal -->
+      - calls map.php.str, map.php.key, map.php.arg
+    - fn [commandNames](../../src/framework-code/laravel.ts#L204) (code: PhpCode, classes: readonly PhpClass[]) → Map<string, PhpClass> <!-- internal -->
+      - calls map.php.PhpCode.extends, map.laravel.commandName
+    - type [Group](../../src/framework-code/laravel.ts#L214) <!-- internal -->
+    - fn [readRoutes](../../src/framework-code/laravel.ts#L225) (code: PhpCode, file: FileFacts, facts: ConfigFacts) → void <!-- internal -->
+      - calls map.laravel.isOneOf, map.php.PhpCode.calleeClass, map.php.str, map.php.cls, map.laravel.resource, map.php.strings, map.php.arg, map.laravel.joinPath, map.laravel.routeAction, map.php.type
+    - fn [routeAction](../../src/framework-code/laravel.ts#L286) (action: LiteralFact | null, controller: string | null) → { type: string | null; fn: string | null; note?: string } | { reason: string } <!-- internal -->
+    - fn [resource](../../src/framework-code/laravel.ts#L297) (code: PhpCode, facts: ConfigFacts, call: CallFact, prefix: string[], args: CallFact["args"] & {}, api: boolean, chain: { name: string; args: NonNullable<CallFact["args"]> }[]) → void <!-- internal -->
+      - calls map.php.str, map.php.arg, map.php.cls, map.php.strings, map.laravel.singular, map.php.PhpCode.method, map.laravel.joinPath, map.php.type
+    - fn [singular](../../src/framework-code/laravel.ts#L320) (word: string) → string <!-- internal -->
+    - fn [joinPath](../../src/framework-code/laravel.ts#L328) (parts: readonly string[]) → string <!-- internal -->
+    - fn [readConsole](../../src/framework-code/laravel.ts#L334) (code: PhpCode, file: FileFacts, facts: ConfigFacts, commands: ReadonlyMap<string, PhpClass>) → void <!-- internal -->
+      - calls map.php.PhpCode.calleeClass, map.laravel.isOneOf, map.php.str, map.php.arg, map.laravel.schedule
+    - fn [readKernel](../../src/framework-code/laravel.ts#L347) (code: PhpCode, file: FileFacts, facts: ConfigFacts, commands: ReadonlyMap<string, PhpClass>) → void <!-- internal -->
+      - calls map.php.callsOf, map.php.key, map.php.PhpCode.qualified, map.laravel.schedule
+    - fn [schedule](../../src/framework-code/laravel.ts#L354) (facts: ConfigFacts, file: string, call: CallFact, method: string, commands: ReadonlyMap<string, PhpClass>) → void <!-- internal -->
+      - calls map.php.arg, map.php.key, map.php.str, map.php.type
+  - module [php](../../src/framework-code/php.ts#L1)
+    - facts extract.facts
+    - adapter base.adapter
+    - type [PhpClass](../../src/framework-code/php.ts#L11)
+    - module [PhpCode](../../src/framework-code/php.ts#L24)
+      - fn [constructor](../../src/framework-code/php.ts#L29) (files: readonly FileFacts[])
+        - calls map.php.localNames, map.php.PhpCode.qualified, map.php.key
+      - fn [qualified](../../src/framework-code/php.ts#L46) (file: string, written: string) → string
+        - calls map.php.key
+      - fn [get](../../src/framework-code/php.ts#L51) (qualified: string) → PhpClass | undefined
+        - calls map.php.key
+      - fn [lineage](../../src/framework-code/php.ts#L56) (qualified: string) → PhpClass[]
+        - calls map.php.PhpCode.get
+      - fn [extends](../../src/framework-code/php.ts#L67) (cls: PhpClass, base: string) → boolean
+        - calls map.php.PhpCode.lineage, map.php.key
+      - fn [implements](../../src/framework-code/php.ts#L72) (cls: PhpClass, iface: string) → boolean
+        - calls map.php.PhpCode.lineage, map.php.key, map.php.PhpCode.get
+      - fn [method](../../src/framework-code/php.ts#L86) (qualified: string, name: string) → { cls: PhpClass; decl: DeclFact } | null
+        - calls map.php.PhpCode.lineage, map.php.key
+      - fn [calleeClass](../../src/framework-code/php.ts#L95) (file: string, callee: string) → string | null
+        - calls map.php.PhpCode.qualified
+    - fn [localNames](../../src/framework-code/php.ts#L103) (file: FileFacts) → Map<string, string> <!-- internal -->
+      - calls map.php.key
+    - fn [key](../../src/framework-code/php.ts#L113) (name: string) → string
+    - fn [sameClass](../../src/framework-code/php.ts#L117) (a: string, b: string) → boolean
+      - calls map.php.key
+    - fn [arg](../../src/framework-code/php.ts#L122) (args: readonly ArgFact[] | undefined, name: string | null, position: number | null) → LiteralFact | null
+    - fn [str](../../src/framework-code/php.ts#L133) (value: LiteralFact | null | undefined) → string | null
+    - fn [cls](../../src/framework-code/php.ts#L137) (value: LiteralFact | null | undefined) → string | null
+    - fn [strings](../../src/framework-code/php.ts#L142) (value: LiteralFact | null | undefined) → string[]
+    - fn [eventName](../../src/framework-code/php.ts#L150) (value: LiteralFact | null | undefined) → string | null
+    - fn [type](../../src/framework-code/php.ts#L158) (name: string) → TypeName
+    - fn [callsOf](../../src/framework-code/php.ts#L163) (file: FileFacts) → Generator<{ call: CallFact; symbol: string | null; decl: DeclFact | null; cls: DeclFact | null }>
+    - fn [codeFacts](../../src/framework-code/php.ts#L172) (path: string) → ConfigFacts
+    - fn [hasFacts](../../src/framework-code/php.ts#L177) (facts: ConfigFacts) → boolean
+    - fn [dispatchesIn](../../src/framework-code/php.ts#L196) (code: PhpCode, file: FileFacts) → { symbol: string; call: CallFact; event: string }[]
+      - calls map.php.callsOf, map.php.arg, map.php.PhpCode.get, map.php.PhpCode.qualified, map.php.str
+  - module [symfony](../../src/framework-code/symfony.ts#L1)
+    - facts extract.facts
+    - adapter base.adapter
+    - php map.php
+    - fn [className](../../src/framework-code/symfony.ts#L24) (written: string) → string <!-- internal -->
+    - fn [symfonyFacts](../../src/framework-code/symfony.ts#L29) (files: readonly FileFacts[], configs: readonly ConfigFacts[]) → FrameworkConfig[]
+      - calls map.php.PhpCode, map.php.codeFacts, map.symfony.routes, map.symfony.listeners, map.symfony.handlers, map.symfony.commands, map.symfony.tasks, map.symfony.aliases, map.php.dispatchesIn, map.php.hasFacts
+    - fn [attributes](../../src/framework-code/symfony.ts#L54) (decl: { attributes?: { name: string; args: { name?: string; value: LiteralFact }[]; line: number; col: number }[] }, names: readonly string[]) <!-- internal -->
+      - calls map.php.key
+    - fn [routes](../../src/framework-code/symfony.ts#L59) (c: PhpClass, facts: ConfigFacts, prefixes: readonly RoutePrefixFact[]) → void <!-- internal -->
+      - calls map.symfony.attributes, map.php.str, map.php.arg, map.symfony.joinPath, map.php.strings, map.php.type
+    - fn [joinPath](../../src/framework-code/symfony.ts#L81) (parts: readonly string[]) → string <!-- internal -->
+    - fn [listeners](../../src/framework-code/symfony.ts#L87) (code: PhpCode, c: PhpClass, facts: ConfigFacts) → void <!-- internal -->
+      - calls map.php.type, map.symfony.attributes, map.php.str, map.php.arg, map.php.eventName, map.php.PhpCode.implements
+    - fn [handlers](../../src/framework-code/symfony.ts#L125) (c: PhpClass, facts: ConfigFacts) → void <!-- internal -->
+      - calls map.php.cls, map.php.type, map.symfony.attributes, map.php.str, map.php.arg
+    - fn [commands](../../src/framework-code/symfony.ts#L136) (code: PhpCode, c: PhpClass, facts: ConfigFacts) → void <!-- internal -->
+      - calls map.symfony.attributes, map.php.str, map.php.arg, map.php.PhpCode.extends, map.php.PhpCode.method, map.php.type
+    - fn [tasks](../../src/framework-code/symfony.ts#L150) (c: PhpClass, facts: ConfigFacts) → void <!-- internal -->
+      - calls map.php.key, map.php.type, map.symfony.attributes, map.php.str, map.php.arg
+    - fn [aliases](../../src/framework-code/symfony.ts#L160) (c: PhpClass, facts: ConfigFacts) → void <!-- internal -->
+      - calls map.symfony.attributes, map.php.cls, map.php.arg, map.php.str, map.symfony.className, map.php.type
   - module [framework-entries](../../src/framework-entries.ts#L1)
     - config base.config
     - entries map.entries
@@ -628,62 +732,63 @@
     - emit map.emit
     - explanations map.explanations
     - graph map.graph
+    - index map.index
     - adapter base.adapter
     - fact-cache map.fact-cache
     - safe-write base.safe-write
     - entries map.entries
     - framework-entries map.framework-entries
     - snapshot map.snapshot
-    - type [MapResult](../../src/map.ts#L24)
-    - fn [generateMap](../../src/map.ts#L46) (config: Config, options: { persist?: boolean | "changed"; overlay?: ReadonlyMap<string, string>; adapters?: readonly FrameworkAdapter[] } = {}) → Promise<MapResult>
+    - type [MapResult](../../src/map.ts#L25)
+    - fn [generateMap](../../src/map.ts#L47) (config: Config, options: { persist?: boolean | "changed"; overlay?: ReadonlyMap<string, string>; adapters?: readonly FrameworkAdapter[] } = {}) → Promise<MapResult>
       - calls base.config.classifySources, base.config.toPosix, base.languages.languageOf, base.config.isAnalysed, base.span.compareText, map.map.readAnalysedSource, map.graph.placeFile, map.snapshot.sha256, map.fact-cache.FactCache.open, map.map.extractorCode, map.snapshot.grammarVersions, map.frontends.frontendFor, map.map.extractGuarded, map.map.readFrameworks, map.map.opaqueFacts, map.graph.buildGraph, base.config.layerGlobWarnings, map.map.readSource, map.entries.collectEntries, map.framework-entries.frameworkEntries, map.entries.compareEntries, map.snapshot.buildSnapshot, map.map.ownerSource, map.map.readRepositoryDocs, map.explanations.loadBriefs, map.emit.renderExplainedMap, map.explanations.explanationOf, map.emit.renderMap
-    - fn [readFrameworks](../../src/map.ts#L152) ( config: Config, sources: readonly string[], read: ReadonlyMap<string, { text: string; sha256: string }>, overlay: ReadonlyMap<string, string> | undefined, cache: FactCache, available: readonly FrameworkAdapter[] | undefined, /** The facts of the analysed sources, for an adapter that reads the framework's wiring from code. */ code: readonly FileFacts[], ) → { inputs: FrameworkInput[]; manifest: FrameworkManifest[]; unread: { path: string; owner: string | null; reason: string; framework: string }[] } <!-- internal -->
+    - fn [readFrameworks](../../src/map.ts#L153) ( config: Config, sources: readonly string[], read: ReadonlyMap<string, { text: string; sha256: string }>, overlay: ReadonlyMap<string, string> | undefined, cache: FactCache, available: readonly FrameworkAdapter[] | undefined, /** The facts of the analysed sources, for an adapter that reads the framework's wiring from code. */ code: readonly FileFacts[], ) → { inputs: FrameworkInput[]; manifest: FrameworkManifest[]; unread: { path: string; owner: string | null; reason: string; framework: string }[] } <!-- internal -->
       - calls map.map.readSource, base.span.compareText, base.config.isAnalysed, base.adapter.activeAdapters, map.snapshot.sha256, map.fact-cache.FactCache.config
-    - fn [ownerSource](../../src/map.ts#L206) (config: Config, graph: Graph, owner: string | null) → { source?: string } <!-- internal -->
+    - fn [ownerSource](../../src/map.ts#L208) (config: Config, graph: Graph, owner: string | null) → { source?: string } <!-- internal -->
       - calls map.graph.directoryModule, base.span.compareText
-    - fn [readRepositoryDocs](../../src/map.ts#L222) (config: Config) → RepositoryDocs <!-- internal -->
+    - fn [readRepositoryDocs](../../src/map.ts#L224) (config: Config) → RepositoryDocs <!-- internal -->
       - calls base.glob.globDirectory, map.map.readReadme, base.brief.readmeBrief, map.map.readSystemDoc
-    - fn [readSystemDoc](../../src/map.ts#L233) (root: string) → SystemDoc <!-- internal -->
+    - fn [readSystemDoc](../../src/map.ts#L235) (root: string) → SystemDoc <!-- internal -->
       - calls map.map.manifestAbout, map.map.readSource, map.map.readReadme, base.brief.readmeBrief, base.brief.briefOf
-    - fn [readReadme](../../src/map.ts#L247) (root: string, dir: string) → { path: string; text: string } | null <!-- internal -->
+    - fn [readReadme](../../src/map.ts#L249) (root: string, dir: string) → { path: string; text: string } | null <!-- internal -->
       - calls base.span.compareText, map.map.readSource
-    - fn [manifestAbout](../../src/map.ts#L269) (file: (typeof ROOT_MANIFESTS)[number], text: string | null) → { name: string | null; description: string | null } <!-- internal -->
-    - fn [opaqueFacts](../../src/map.ts#L301) (path: string) → FileFacts <!-- internal -->
-    - fn [readSource](../../src/map.ts#L306) (abs: string) → string | null <!-- internal -->
-    - fn [readAnalysedSource](../../src/map.ts#L316) (abs: string) → string | null | { unreadable: string } <!-- internal -->
+    - fn [manifestAbout](../../src/map.ts#L271) (file: (typeof ROOT_MANIFESTS)[number], text: string | null) → { name: string | null; description: string | null } <!-- internal -->
+    - fn [opaqueFacts](../../src/map.ts#L303) (path: string) → FileFacts <!-- internal -->
+    - fn [readSource](../../src/map.ts#L308) (abs: string) → string | null <!-- internal -->
+    - fn [readAnalysedSource](../../src/map.ts#L318) (abs: string) → string | null | { unreadable: string } <!-- internal -->
       - calls map.map.readSource
-    - fn [extractGuarded](../../src/map.ts#L331) (extract: (path: string, src: string) => Promise<FileFacts>, path: string, src: string) → Promise<FileFacts> <!-- internal -->
+    - fn [extractGuarded](../../src/map.ts#L333) (extract: (path: string, src: string) => Promise<FileFacts>, path: string, src: string) → Promise<FileFacts> <!-- internal -->
       - calls map.map.opaqueFacts
-    - type [MapDiff](../../src/map.ts#L342)
-    - fn [targets](../../src/map.ts#L353) (config: Config, r: MapResult) → { dir: string; files: ReadonlyMap<string, string>; artifact: "map" | "explained" }[] <!-- internal -->
-    - type [ExtraGenerated](../../src/map.ts#L361) <!-- internal -->
-    - fn [extraGenerated](../../src/map.ts#L374) (dir: string, files: ReadonlyMap<string, string>) → ExtraGenerated[] <!-- internal -->
+    - type [MapDiff](../../src/map.ts#L344)
+    - fn [targets](../../src/map.ts#L355) (config: Config, r: MapResult) → { dir: string; files: ReadonlyMap<string, string>; artifact: "map" | "explained" }[] <!-- internal -->
+    - type [ExtraGenerated](../../src/map.ts#L363) <!-- internal -->
+    - fn [extraGenerated](../../src/map.ts#L376) (dir: string, files: ReadonlyMap<string, string>) → ExtraGenerated[] <!-- internal -->
       - calls map.map.readOrNull, map.emit.isGeneratedMap
-    - fn [mapConflicts](../../src/map.ts#L399) (config: Config, r: MapResult) → string[]
+    - fn [mapConflicts](../../src/map.ts#L401) (config: Config, r: MapResult) → string[]
       - calls map.map.targets, map.emit.isGeneratedMap
-    - type [MapArtifact](../../src/map.ts#L411) = "map" | "explained" | "index" | "facts"
-    - type [MapStep](../../src/map.ts#L414)
-    - type [PlannedStep](../../src/map.ts#L420) extends MapStep <!-- internal -->
-    - type [MapPlan](../../src/map.ts#L436)
-    - type [SourceInputs](../../src/map.ts#L448)
-    - type [MapInputs](../../src/map.ts#L456) extends SourceInputs <!-- internal -->
-    - fn [sourceInputs](../../src/map.ts#L466) (config: Config, sources: readonly { path: string; sha256: string }[]) → SourceInputs
-    - fn [sourceInputProblems](../../src/map.ts#L475) (config: Config, inputs: SourceInputs, subject: string) → string[]
+    - type [MapArtifact](../../src/map.ts#L413) = "map" | "explained" | "index" | "facts"
+    - type [MapStep](../../src/map.ts#L416)
+    - type [PlannedStep](../../src/map.ts#L422) extends MapStep <!-- internal -->
+    - type [MapPlan](../../src/map.ts#L438)
+    - type [SourceInputs](../../src/map.ts#L450)
+    - type [MapInputs](../../src/map.ts#L458) extends SourceInputs <!-- internal -->
+    - fn [sourceInputs](../../src/map.ts#L468) (config: Config, sources: readonly { path: string; sha256: string }[]) → SourceInputs
+    - fn [sourceInputProblems](../../src/map.ts#L477) (config: Config, inputs: SourceInputs, subject: string) → string[]
       - calls map.map.readOrNull, base.config.sourceTree, map.snapshot.sha256
-    - type [CommittedStep](../../src/map.ts#L494) extends MapStep
-    - type [MapCommit](../../src/map.ts#L499)
-    - fn [planMap](../../src/map.ts#L510) (config: Config, r: MapResult) → MapPlan
+    - type [CommittedStep](../../src/map.ts#L496) extends MapStep
+    - type [MapCommit](../../src/map.ts#L501)
+    - fn [planMap](../../src/map.ts#L512) (config: Config, r: MapResult) → MapPlan
       - calls base.config.toPosix, map.map.targets, map.map.extraGenerated, map.map.readOrNull, map.map.mapConflicts, map.map.sourceInputs, map.map.briefsKey
-    - fn [mapPlanProblems](../../src/map.ts#L551) (plan: MapPlan) → string[]
+    - fn [mapPlanProblems](../../src/map.ts#L553) (plan: MapPlan) → string[]
       - calls base.safe-write.writeProblem, map.map.sourceInputProblems, map.map.briefsKey
-    - fn [commitMap](../../src/map.ts#L570) (plan: MapPlan, options: { signal?: AbortSignal; onStep?: (step: MapStep) => void } = {}) → Promise<MapCommit>
+    - fn [commitMap](../../src/map.ts#L572) (plan: MapPlan, options: { signal?: AbortSignal; onStep?: (step: MapStep) => void } = {}) → Promise<MapCommit>
       - calls base.safe-write.writeAtomic, base.safe-write.landing
-    - fn [briefsKey](../../src/map.ts#L599) (config: Config) → string <!-- internal -->
+    - fn [briefsKey](../../src/map.ts#L601) (config: Config) → string <!-- internal -->
       - calls map.snapshot.sha256, map.explanations.loadBriefs
-    - fn [readOrNull](../../src/map.ts#L604) (abs: string) → string | null <!-- internal -->
-    - fn [diffMap](../../src/map.ts#L613) (config: Config, r: MapResult) → MapDiff
+    - fn [readOrNull](../../src/map.ts#L606) (abs: string) → string | null <!-- internal -->
+    - fn [diffMap](../../src/map.ts#L615) (config: Config, r: MapResult) → MapDiff
       - calls map.map.mapConflicts, map.map.targets, map.map.readOrNull, map.map.extraGenerated
-    - fn [extractorCode](../../src/map.ts#L638) () → string <!-- internal -->
+    - fn [extractorCode](../../src/map.ts#L640) () → string <!-- internal -->
       - calls map.snapshot.sha256
   - module [php-imports](../../src/php-imports.ts#L1)
     - node external.node

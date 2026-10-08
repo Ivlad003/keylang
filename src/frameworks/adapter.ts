@@ -8,8 +8,9 @@
 // `keylang.json` (`[]` turns every adapter off). Its config files are inputs
 // of the snapshot: listed in `manifest.frameworks`, part of `snapshotId` and
 // cached by content in the fact cache, so a changed `di.xml` is a new snapshot.
+// A framework that wires in code (Laravel, Symfony attributes) also has a
+// reader of the extractor's facts in `src/framework-code/`, beside the graph.
 
-import type { FileFacts } from "../extract/facts.ts";
 import { laravel } from "./laravel.ts";
 import { magento } from "./magento.ts";
 import { sfcc } from "./sfcc.ts";
@@ -194,14 +195,6 @@ export interface FrameworkAdapter {
   files(context: FrameworkContext): { path: string; owner: string | null }[];
   /** The facts of one config file. */
   parse(path: string, text: string): ConfigFacts;
-  /**
-   * Facts the framework takes from code the language extractor read (PHP
-   * attributes, `$this->app->bind(I::class, C::class)` in a service
-   * provider, route files), given the parsed config files: one entry per
-   * source file that gives any. Such a file is a source of the snapshot
-   * already, so it is no config file of `manifest.frameworks`.
-   */
-  code?(facts: readonly FileFacts[], configs: readonly ConfigFacts[]): FrameworkConfig[];
 }
 
 /** The type name of an argument fact that applies to the constructor of every class. */

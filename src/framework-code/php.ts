@@ -1,11 +1,11 @@
-// What the PHP framework adapters (Laravel, Symfony) read from the code the
+// What the PHP framework readers (Laravel, Symfony) take from the code the
 // PHP extractor recorded: classes by their qualified names with their bases
 // and interfaces, the names a file's `use` statements bind, and the literals
 // of attributes, properties and call arguments (`LiteralFact`). Everything is
 // a fact of the syntax; a name keylang cannot qualify is no class.
 
 import type { ArgFact, CallFact, DeclFact, FileFacts, LiteralFact } from "../extract/facts.ts";
-import type { ConfigFacts, TypeName } from "./adapter.ts";
+import type { ConfigFacts, TypeName } from "../frameworks/adapter.ts";
 
 /** A class (or interface) of the repository by its qualified name. */
 export interface PhpClass {

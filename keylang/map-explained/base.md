@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [brief](#base.brief) · [config](#base.config) · [diag](#base.diag) · [external-ids](#base.external-ids) · [adapter](#base.adapter) · [bindings](#base.bindings) · [cartridges](#base.cartridges) · [laravel](#base.laravel) · [magento](#base.magento) · [php-code](#base.php-code) · [sfcc](#base.sfcc) · [symfony](#base.symfony) · [glob](#base.glob) · [languages](#base.languages) · [safe-write](#base.safe-write) · [span](#base.span)
+[README](README.md) · modules: [brief](#base.brief) · [config](#base.config) · [diag](#base.diag) · [external-ids](#base.external-ids) · [adapter](#base.adapter) · [bindings](#base.bindings) · [cartridges](#base.cartridges) · [laravel](#base.laravel) · [magento](#base.magento) · [sfcc](#base.sfcc) · [symfony](#base.symfony) · [glob](#base.glob) · [languages](#base.languages) · [safe-write](#base.safe-write) · [span](#base.span)
 
 # map
 
@@ -192,62 +192,61 @@
       <a id="base.external-ids.externalPackageId"></a><br>The package part of an external ID (`external.pg.Pool` → `external.pg`); null for any other ID.
   - module [adapter](../../src/frameworks/adapter.ts#L1)
     <a id="base.adapter"></a><br>Framework adapters (ADR 0022): beside the language frontends, an adapter reads the configuration a framework executes (`etc/di.xml` of Magento) and gives the graph facts the code does not write — bindings of an interface to a class, constructor arguments, interceptors. The…
-    - facts [extract.facts](extract.md#extract.facts)
     - laravel [base.laravel](base.md#base.laravel)
     - magento [base.magento](base.md#base.magento)
     - sfcc [base.sfcc](base.md#base.sfcc)
     - symfony [base.symfony](base.md#base.symfony)
-    - type [TypeName](../../src/frameworks/adapter.ts#L23)
+    - type [TypeName](../../src/frameworks/adapter.ts#L24)
       <a id="base.adapter.TypeName"></a><br>A type the configuration names: a qualified name of a language whose declarations have one (PHP `Magento\Sales\Api\OrderManagementInterface`, without the leading `\`), or a name declared at the top of `file`.
-    - type [ConfigAt](../../src/frameworks/adapter.ts#L29)
+    - type [ConfigAt](../../src/frameworks/adapter.ts#L30)
       <a id="base.adapter.ConfigAt"></a><br>Where in the config file a fact is written: 1-based.
-    - type [BindingFact](../../src/frameworks/adapter.ts#L35) extends ConfigAt
+    - type [BindingFact](../../src/frameworks/adapter.ts#L36) extends ConfigAt
       <a id="base.adapter.BindingFact"></a><br>`I → C`: a value typed `from` is an instance of `to` (Magento `<preference>`).
-    - type [ArgumentFact](../../src/frameworks/adapter.ts#L45) extends ConfigAt
+    - type [ArgumentFact](../../src/frameworks/adapter.ts#L46) extends ConfigAt
       <a id="base.adapter.ArgumentFact"></a><br>The constructor parameter `param` of `type` receives an instance of `value` (Magento `<argument xsi:type="object">`). A `type` named `*` (`EVERY_CLASS`) is every class: Symfony `_defaults: bind: $p: '@C'`.
-    - type [AliasFact](../../src/frameworks/adapter.ts#L52) extends ConfigAt
+    - type [AliasFact](../../src/frameworks/adapter.ts#L53) extends ConfigAt
       <a id="base.adapter.AliasFact"></a><br>`name` stands for the class `type` with arguments of its own (Magento `<virtualType>`).
-    - type [InterceptFact](../../src/frameworks/adapter.ts#L58) extends ConfigAt
+    - type [InterceptFact](../../src/frameworks/adapter.ts#L59) extends ConfigAt
       <a id="base.adapter.InterceptFact"></a><br>A plugin `name` of the class `plugin` wraps the public methods of `target` (Magento `<plugin>`).
-    - type [EntryConfigFact](../../src/frameworks/adapter.ts#L79) extends ConfigAt
+    - type [EntryConfigFact](../../src/frameworks/adapter.ts#L80) extends ConfigAt
       <a id="base.adapter.EntryConfigFact"></a><br>An entry point a config file names (SFCC `hooks.json` → `observer`, `steptypes.json` → `cron`): the script it runs, as the paths the framework would try in order (each probed with the usual extensions and `index`), and the fn in it, if the config names one. A PHP framework…
-    - type [ListenFact](../../src/frameworks/adapter.ts#L97) extends ConfigAt
+    - type [ListenFact](../../src/frameworks/adapter.ts#L98) extends ConfigAt
       <a id="base.adapter.ListenFact"></a><br>`listener::method` runs when code dispatches `event` (Laravel `$listen`, Symfony `getSubscribedEvents()`, `#[AsEventListener]`). An event is named by its class (qualified) or by the string the code writes.
-    - type [HandlerFact](../../src/frameworks/adapter.ts#L108) extends ConfigAt
+    - type [HandlerFact](../../src/frameworks/adapter.ts#L109) extends ConfigAt
       <a id="base.adapter.HandlerFact"></a><br>`handler::method` handles an object of the class `message` that code dispatches: a Laravel queued job (`J::dispatch()` runs `J::handle` on a worker), a Symfony Messenger handler (`#[AsMessageHandler]`).
-    - type [DispatchFact](../../src/frameworks/adapter.ts#L116) extends ConfigAt
+    - type [DispatchFact](../../src/frameworks/adapter.ts#L117) extends ConfigAt
       <a id="base.adapter.DispatchFact"></a><br>A call in the code that dispatches an event or a message (`event(new X)`, `$bus->dispatch(new X)`), in the declaration `symbol` of the file.
-    - type [ConfigHole](../../src/frameworks/adapter.ts#L125) extends ConfigAt
+    - type [ConfigHole](../../src/frameworks/adapter.ts#L126) extends ConfigAt
       <a id="base.adapter.ConfigHole"></a><br>Something the config writes that keylang does not read (a binding to a closure, an expression): a hole of the file with the reason.
-    - type [RoutePrefixFact](../../src/frameworks/adapter.ts#L131) extends ConfigAt
+    - type [RoutePrefixFact](../../src/frameworks/adapter.ts#L132) extends ConfigAt
       <a id="base.adapter.RoutePrefixFact"></a><br>Symfony `config/routes.yaml`: the routes of the attributes of classes under `dir` have `prefix` before their path.
-    - type [ConfigFacts](../../src/frameworks/adapter.ts#L137)
+    - type [ConfigFacts](../../src/frameworks/adapter.ts#L138)
       <a id="base.adapter.ConfigFacts"></a><br>The facts of one config file. Depends only on its path and text, so the fact cache keeps it.
-    - type [FrameworkConfig](../../src/frameworks/adapter.ts#L162)
+    - type [FrameworkConfig](../../src/frameworks/adapter.ts#L163)
       <a id="base.adapter.FrameworkConfig"></a><br>One config file of an active adapter, with the directory of the module that declares it.
-    - type [FrameworkInput](../../src/frameworks/adapter.ts#L169)
+    - type [FrameworkInput](../../src/frameworks/adapter.ts#L170)
       <a id="base.adapter.FrameworkInput"></a><br>What the graph receives from one active adapter.
-    - type [FrameworkContext](../../src/frameworks/adapter.ts#L175)
+    - type [FrameworkContext](../../src/frameworks/adapter.ts#L176)
       <a id="base.adapter.FrameworkContext"></a><br>What an adapter sees of the repository: the analysed source files and a reader.
-    - type [FrameworkAdapter](../../src/frameworks/adapter.ts#L186)
+    - type [FrameworkAdapter](../../src/frameworks/adapter.ts#L187)
       <a id="base.adapter.FrameworkAdapter"></a>
-    - fn [activeAdapters](../../src/frameworks/adapter.ts#L222) (frameworks: readonly string[] | null, context: FrameworkContext, available: readonly FrameworkAdapter[] = FRAMEWORK_ADAPTERS) → FrameworkAdapter[]
+    - fn [activeAdapters](../../src/frameworks/adapter.ts#L215) (frameworks: readonly string[] | null, context: FrameworkContext, available: readonly FrameworkAdapter[] = FRAMEWORK_ADAPTERS) → FrameworkAdapter[]
       <a id="base.adapter.activeAdapters"></a><br>The adapters of a repository: those `frameworks` names, or with the field absent those detected. `available` lets a test add an adapter of its own.
-    - fn [typeLabel](../../src/frameworks/adapter.ts#L228) (t: TypeName) → string
+    - fn [typeLabel](../../src/frameworks/adapter.ts#L221) (t: TypeName) → string
       <a id="base.adapter.typeLabel"></a><br>A label for a type the configuration names: its qualified name, or `file#name`.
-    - fn [isConfigFacts](../../src/frameworks/adapter.ts#L233) (value: unknown) → value is ConfigFacts
+    - fn [isConfigFacts](../../src/frameworks/adapter.ts#L226) (value: unknown) → value is ConfigFacts
       <a id="base.adapter.isConfigFacts"></a><br>Whether a cached value has the shape of `ConfigFacts`; a cache entry of another shape is parsed again.
       - calls [base.adapter.isRecord](base.md#base.adapter.isRecord), [base.adapter.every](base.md#base.adapter.every), [base.adapter.isAt](base.md#base.adapter.isAt), [base.adapter.isTypeName](base.md#base.adapter.isTypeName)
-    - fn [isAt](../../src/frameworks/adapter.ts#L252) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isAt](../../src/frameworks/adapter.ts#L245) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       <a id="base.adapter.isAt"></a>
       - calls [base.adapter.isRecord](base.md#base.adapter.isRecord)
-    - fn [isTypeName](../../src/frameworks/adapter.ts#L256) (value: unknown) → boolean <!-- internal -->
+    - fn [isTypeName](../../src/frameworks/adapter.ts#L249) (value: unknown) → boolean <!-- internal -->
       <a id="base.adapter.isTypeName"></a>
       - calls [base.adapter.isRecord](base.md#base.adapter.isRecord)
-    - fn [every](../../src/frameworks/adapter.ts#L260) (value: unknown, check: (item: Record<string, unknown>) => boolean) → boolean <!-- internal -->
+    - fn [every](../../src/frameworks/adapter.ts#L253) (value: unknown, check: (item: Record<string, unknown>) => boolean) → boolean <!-- internal -->
       <a id="base.adapter.every"></a>
       - calls [base.adapter.isRecord](base.md#base.adapter.isRecord)
-    - fn [isRecord](../../src/frameworks/adapter.ts#L264) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isRecord](../../src/frameworks/adapter.ts#L257) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       <a id="base.adapter.isRecord"></a>
   - module [bindings](../../src/frameworks/bindings.ts#L1)
     <a id="base.bindings"></a><br>What the graph does with framework facts (ADR 0022), the same for every language: a call through a type the config binds (an interface, or a class with a preference of its own) becomes a `call` edge to the bound class's member, `via: "preference"`; a call through a property the…
@@ -351,66 +350,10 @@
       <a id="base.cartridges.cartridgeAnswers"></a><br>What an SFCC specifier names from `fromFile`: `external` for the platform API (`dw/…`); otherwise every file that answers, in the order the platform tries them — the first one wins, a second one says the order decided — where an empty list is a specifier keylang knows and no…
       - calls [base.cartridges.cartridgeOf](base.md#base.cartridges.cartridgeOf)
   - module [laravel](../../src/frameworks/laravel.ts#L1)
-    <a id="base.laravel"></a><br>The Laravel adapter (ADR 0022; business-flows 35). Laravel writes its wiring in PHP, not in config files: service providers bind interfaces (`$this->app->bind(I::class, C::class)`, `$bindings`, `$singletons`), `EventServiceProvider::$listen` subscribes listeners, `routes/*.php`…
-    - node [external.node](external.md#external.node)
-    - facts [extract.facts](extract.md#extract.facts)
+    <a id="base.laravel"></a><br>The Laravel adapter (ADR 0022; business-flows 35). Laravel writes its wiring in PHP, not in config files: service providers, `routes/*.php`, `routes/console.php` and the console kernel.
     - adapter [base.adapter](base.md#base.adapter)
-    - php-code [base.php-code](base.md#base.php-code)
-    - fn [parseJson](../../src/frameworks/laravel.ts#L74) (text: string | null) → unknown <!-- internal -->
+    - fn [parseJson](../../src/frameworks/laravel.ts#L36) (text: string | null) → unknown <!-- internal -->
       <a id="base.laravel.parseJson"></a>
-    - fn [isOneOf](../../src/frameworks/laravel.ts#L83) (name: string | null | undefined, names: readonly string[]) → boolean <!-- internal -->
-      <a id="base.laravel.isOneOf"></a>
-      - calls [base.php-code.key](base.md#base.php-code.key)
-    - fn [laravelFacts](../../src/frameworks/laravel.ts#L88) (files: readonly FileFacts[]) → FrameworkConfig[]
-      <a id="base.laravel.laravelFacts"></a><br>What a Laravel repository's code wires, one `ConfigFacts` per file that says anything.
-      - calls [base.php-code.PhpCode](base.md#base.php-code.PhpCode), [base.php-code.codeFacts](base.md#base.php-code.codeFacts), [base.php-code.PhpCode.extends](base.md#base.php-code.PhpCode.extends), [base.laravel.readProvider](base.md#base.laravel.readProvider), [base.laravel.readFacade](base.md#base.laravel.readFacade), [base.php-code.key](base.md#base.php-code.key), [base.laravel.readCommand](base.md#base.laravel.readCommand), [base.php-code.PhpCode.implements](base.md#base.php-code.PhpCode.implements), [base.php-code.PhpCode.method](base.md#base.php-code.PhpCode.method), [base.php-code.type](base.md#base.php-code.type), [base.laravel.commandNames](base.md#base.laravel.commandNames), [base.laravel.readRoutes](base.md#base.laravel.readRoutes), [base.laravel.readConsole](base.md#base.laravel.readConsole), [base.laravel.readKernel](base.md#base.laravel.readKernel), [base.php-code.dispatchesIn](base.md#base.php-code.dispatchesIn), [base.php-code.hasFacts](base.md#base.php-code.hasFacts)
-    - fn [readProvider](../../src/frameworks/laravel.ts#L125) (code: PhpCode, provider: PhpClass, facts: ConfigFacts, keyed: Map<string, string>) → void <!-- internal -->
-      <a id="base.laravel.readProvider"></a><br>A service provider: its `$bindings`, `$singletons`, `$listen`, `$subscribe` and the container calls of its methods.
-      - calls [base.laravel.bind](base.md#base.laravel.bind), [base.php-code.eventName](base.md#base.php-code.eventName), [base.laravel.listen](base.md#base.laravel.listen), [base.php-code.cls](base.md#base.php-code.cls), [base.laravel.subscribe](base.md#base.laravel.subscribe), [base.php-code.arg](base.md#base.php-code.arg), [base.laravel.isOneOf](base.md#base.laravel.isOneOf), [base.php-code.PhpCode.calleeClass](base.md#base.php-code.PhpCode.calleeClass)
-    - fn [bind](../../src/frameworks/laravel.ts#L160) (facts: ConfigFacts, keyed: Map<string, string>, abstract: LiteralFact | null, concrete: LiteralFact | null, at: { line: number; col: number }, written: string) → void <!-- internal -->
-      <a id="base.laravel.bind"></a><br>One binding of a provider: `I::class => C::class`, `bind(I::class, C::class)`; a string key is the container's name for the class.
-      - calls [base.php-code.cls](base.md#base.php-code.cls), [base.php-code.str](base.md#base.php-code.str), [base.php-code.key](base.md#base.php-code.key), [base.php-code.type](base.md#base.php-code.type)
-    - fn [listen](../../src/frameworks/laravel.ts#L176) (code: PhpCode, file: string, facts: ConfigFacts, event: string, listener: LiteralFact, at: { line: number; col: number }) → void <!-- internal -->
-      <a id="base.laravel.listen"></a><br>A listener of `$listen` or `Event::listen`: `L::class` (its `handle`), `[L::class, 'm']`, `'L@m'`.
-      - calls [base.php-code.type](base.md#base.php-code.type), [base.php-code.key](base.md#base.php-code.key), [base.php-code.PhpCode.method](base.md#base.php-code.PhpCode.method)
-    - fn [subscribe](../../src/frameworks/laravel.ts#L191) (code: PhpCode, subscriber: string, facts: ConfigFacts, at: { line: number; col: number }) → void <!-- internal -->
-      <a id="base.laravel.subscribe"></a><br>A subscriber of `$subscribe`: the array its `subscribe()` returns (`[OrderPlaced::class => 'handleOrder']`); otherwise a hole.
-      - calls [base.php-code.PhpCode.method](base.md#base.php-code.PhpCode.method), [base.php-code.eventName](base.md#base.php-code.eventName), [base.php-code.str](base.md#base.php-code.str), [base.php-code.type](base.md#base.php-code.type)
-    - fn [readFacade](../../src/frameworks/laravel.ts#L206) (code: PhpCode, facade: PhpClass, facts: ConfigFacts, keyed: Map<string, string>) → void <!-- internal -->
-      <a id="base.laravel.readFacade"></a><br>A facade of the repository: `getFacadeAccessor()` returns the class it stands for, or the container key a provider binds.
-      - calls [base.php-code.PhpCode.method](base.md#base.php-code.PhpCode.method), [base.php-code.cls](base.md#base.php-code.cls), [base.php-code.str](base.md#base.php-code.str), [base.php-code.type](base.md#base.php-code.type)
-    - fn [readCommand](../../src/frameworks/laravel.ts#L220) (command: PhpClass, facts: ConfigFacts) → void <!-- internal -->
-      <a id="base.laravel.readCommand"></a><br>An Artisan command class: its `$signature` (or `$name`, `#[AsCommand]`) names it; `handle` runs.
-      - calls [base.laravel.commandName](base.md#base.laravel.commandName), [base.php-code.key](base.md#base.php-code.key), [base.php-code.type](base.md#base.php-code.type)
-    - fn [commandName](../../src/frameworks/laravel.ts#L227) (command: PhpClass) → string | null <!-- internal -->
-      <a id="base.laravel.commandName"></a>
-      - calls [base.php-code.str](base.md#base.php-code.str), [base.php-code.key](base.md#base.php-code.key), [base.php-code.arg](base.md#base.php-code.arg)
-    - fn [commandNames](../../src/frameworks/laravel.ts#L237) (code: PhpCode, classes: readonly PhpClass[]) → Map<string, PhpClass> <!-- internal -->
-      <a id="base.laravel.commandNames"></a><br>Command name → its class, for the schedule.
-      - calls [base.php-code.PhpCode.extends](base.md#base.php-code.PhpCode.extends), [base.laravel.commandName](base.md#base.laravel.commandName)
-    - type [Group](../../src/frameworks/laravel.ts#L247) <!-- internal -->
-      <a id="base.laravel.Group"></a>
-    - fn [readRoutes](../../src/frameworks/laravel.ts#L258) (code: PhpCode, file: FileFacts, facts: ConfigFacts) → void <!-- internal -->
-      <a id="base.laravel.readRoutes"></a><br>The routes of `routes/web.php`, `routes/api.php` (under `/api`) and the other route files: `Route::get|post|put|patch|delete|options|any|match`, `Route::resource`/`apiResource`, inside `Route::prefix(…)->group(fn)`, `Route::group(['prefix' => …], fn)` and…
-      - calls [base.laravel.isOneOf](base.md#base.laravel.isOneOf), [base.php-code.PhpCode.calleeClass](base.md#base.php-code.PhpCode.calleeClass), [base.php-code.str](base.md#base.php-code.str), [base.php-code.cls](base.md#base.php-code.cls), [base.laravel.resource](base.md#base.laravel.resource), [base.php-code.strings](base.md#base.php-code.strings), [base.php-code.arg](base.md#base.php-code.arg), [base.laravel.joinPath](base.md#base.laravel.joinPath), [base.laravel.routeAction](base.md#base.laravel.routeAction), [base.php-code.type](base.md#base.php-code.type)
-    - fn [routeAction](../../src/frameworks/laravel.ts#L319) (action: LiteralFact | null, controller: string | null) → { type: string | null; fn: string | null; note?: string } | { reason: string } <!-- internal -->
-      <a id="base.laravel.routeAction"></a><br>The controller method a route action names; a closure is the route file's own code.
-    - fn [resource](../../src/frameworks/laravel.ts#L330) (code: PhpCode, facts: ConfigFacts, call: CallFact, prefix: string[], args: CallFact["args"] & {}, api: boolean, chain: { name: string; args: NonNullable<CallFact["args"]> }[]) → void <!-- internal -->
-      <a id="base.laravel.resource"></a><br>`Route::resource('photos', C::class)`: one route per action the controller declares, `->only([…])`/`->except([…])` applied.
-      - calls [base.php-code.str](base.md#base.php-code.str), [base.php-code.arg](base.md#base.php-code.arg), [base.php-code.cls](base.md#base.php-code.cls), [base.php-code.strings](base.md#base.php-code.strings), [base.laravel.singular](base.md#base.laravel.singular), [base.php-code.PhpCode.method](base.md#base.php-code.PhpCode.method), [base.laravel.joinPath](base.md#base.laravel.joinPath), [base.php-code.type](base.md#base.php-code.type)
-    - fn [singular](../../src/frameworks/laravel.ts#L353) (word: string) → string <!-- internal -->
-      <a id="base.laravel.singular"></a><br>The singular Laravel's `Str::singular` gives the regular plurals of a resource name.
-    - fn [joinPath](../../src/frameworks/laravel.ts#L361) (parts: readonly string[]) → string <!-- internal -->
-      <a id="base.laravel.joinPath"></a>
-    - fn [readConsole](../../src/frameworks/laravel.ts#L367) (code: PhpCode, file: FileFacts, facts: ConfigFacts, commands: ReadonlyMap<string, PhpClass>) → void <!-- internal -->
-      <a id="base.laravel.readConsole"></a><br>`routes/console.php`: `Artisan::command('name', fn)` is a command; `Schedule::command|job|call(…)` the schedule.
-      - calls [base.php-code.PhpCode.calleeClass](base.md#base.php-code.PhpCode.calleeClass), [base.laravel.isOneOf](base.md#base.laravel.isOneOf), [base.php-code.str](base.md#base.php-code.str), [base.php-code.arg](base.md#base.php-code.arg), [base.laravel.schedule](base.md#base.laravel.schedule)
-    - fn [readKernel](../../src/frameworks/laravel.ts#L380) (code: PhpCode, file: FileFacts, facts: ConfigFacts, commands: ReadonlyMap<string, PhpClass>) → void <!-- internal -->
-      <a id="base.laravel.readKernel"></a><br>`Kernel::schedule(Schedule $schedule)`: `$schedule->command|job|call(…)`.
-      - calls [base.php-code.callsOf](base.md#base.php-code.callsOf), [base.php-code.key](base.md#base.php-code.key), [base.php-code.PhpCode.qualified](base.md#base.php-code.PhpCode.qualified), [base.laravel.schedule](base.md#base.laravel.schedule)
-    - fn [schedule](../../src/frameworks/laravel.ts#L387) (facts: ConfigFacts, file: string, call: CallFact, method: string, commands: ReadonlyMap<string, PhpClass>) → void <!-- internal -->
-      <a id="base.laravel.schedule"></a>
-      - calls [base.php-code.arg](base.md#base.php-code.arg), [base.php-code.key](base.md#base.php-code.key), [base.php-code.str](base.md#base.php-code.str), [base.php-code.type](base.md#base.php-code.type)
   - module [magento](../../src/frameworks/magento.ts#L1)
     <a id="base.magento"></a><br>The Magento adapter: `etc/di.xml` of every module, in every area. A module is a directory whose `registration.php` registers a `ComponentRegistrar::MODULE`; its `etc/di.xml` applies everywhere (`global`), `etc/<area>/di.xml` in one area (`frontend`, `adminhtml`, `webapi_rest`…).
     - node [external.node](external.md#external.node)
@@ -427,67 +370,6 @@
     - fn [parseDi](../../src/frameworks/magento.ts#L83) (path: string, text: string) → ConfigFacts
       <a id="base.magento.parseDi"></a><br>The facts of one `di.xml`. A file that does not parse gives none, only the reason.
       - calls [base.magento.scopeOf](base.md#base.magento.scopeOf), [base.magento.className](base.md#base.magento.className)
-  - module [php-code](../../src/frameworks/php-code.ts#L1)
-    <a id="base.php-code"></a><br>What the PHP framework adapters (Laravel, Symfony) read from the code the PHP extractor recorded: classes by their qualified names with their bases and interfaces, the names a file's `use` statements bind, and the literals of attributes, properties and call arguments…
-    - facts [extract.facts](extract.md#extract.facts)
-    - adapter [base.adapter](base.md#base.adapter)
-    - type [PhpClass](../../src/frameworks/php-code.ts#L11)
-      <a id="base.php-code.PhpClass"></a><br>A class (or interface) of the repository by its qualified name.
-    - module [PhpCode](../../src/frameworks/php-code.ts#L24)
-      <a id="base.php-code.PhpCode"></a><br>The repository's PHP classes, interfaces and traits by their qualified names in ASCII lower case.
-      - fn [constructor](../../src/frameworks/php-code.ts#L29) (files: readonly FileFacts[])
-        <a id="base.php-code.PhpCode.constructor"></a>
-        - calls [base.php-code.localNames](base.md#base.php-code.localNames), [base.php-code.PhpCode.qualified](base.md#base.php-code.PhpCode.qualified), [base.php-code.key](base.md#base.php-code.key)
-      - fn [qualified](../../src/frameworks/php-code.ts#L46) (file: string, written: string) → string
-        <a id="base.php-code.PhpCode.qualified"></a><br>The qualified name a class name written in `file` stands for (its `use`, else its namespace as the extractor recorded it).
-        - calls [base.php-code.key](base.md#base.php-code.key)
-      - fn [get](../../src/frameworks/php-code.ts#L51) (qualified: string) → PhpClass | undefined
-        <a id="base.php-code.PhpCode.get"></a>
-        - calls [base.php-code.key](base.md#base.php-code.key)
-      - fn [lineage](../../src/frameworks/php-code.ts#L56) (qualified: string) → PhpClass[]
-        <a id="base.php-code.PhpCode.lineage"></a><br>The class and its bases keylang has read, the class first.
-        - calls [base.php-code.PhpCode.get](base.md#base.php-code.PhpCode.get)
-      - fn [extends](../../src/frameworks/php-code.ts#L67) (cls: PhpClass, base: string) → boolean
-        <a id="base.php-code.PhpCode.extends"></a><br>The class extends `base` (qualified), directly or through bases keylang has read.
-        - calls [base.php-code.PhpCode.lineage](base.md#base.php-code.PhpCode.lineage), [base.php-code.key](base.md#base.php-code.key)
-      - fn [implements](../../src/frameworks/php-code.ts#L72) (cls: PhpClass, iface: string) → boolean
-        <a id="base.php-code.PhpCode.implements"></a><br>The class or a base implements `iface` (qualified), directly or through interfaces keylang has read.
-        - calls [base.php-code.PhpCode.lineage](base.md#base.php-code.PhpCode.lineage), [base.php-code.key](base.md#base.php-code.key), [base.php-code.PhpCode.get](base.md#base.php-code.PhpCode.get)
-      - fn [method](../../src/frameworks/php-code.ts#L86) (qualified: string, name: string) → { cls: PhpClass; decl: DeclFact } | null
-        <a id="base.php-code.PhpCode.method"></a><br>A public method of the class or a base keylang has read; null when none declares it.
-        - calls [base.php-code.PhpCode.lineage](base.md#base.php-code.PhpCode.lineage), [base.php-code.key](base.md#base.php-code.key)
-      - fn [calleeClass](../../src/frameworks/php-code.ts#L95) (file: string, callee: string) → string | null
-        <a id="base.php-code.PhpCode.calleeClass"></a><br>The qualified class the head of a callee written in `file` names (`Route.get` → `Illuminate\Support\Facades\Route`).
-        - calls [base.php-code.PhpCode.qualified](base.md#base.php-code.PhpCode.qualified)
-    - fn [localNames](../../src/frameworks/php-code.ts#L103) (file: FileFacts) → Map<string, string> <!-- internal -->
-      <a id="base.php-code.localNames"></a><br>Local class names of a file's imports (in ASCII lower case) → the qualified names they bind.
-      - calls [base.php-code.key](base.md#base.php-code.key)
-    - fn [key](../../src/frameworks/php-code.ts#L113) (name: string) → string
-      <a id="base.php-code.key"></a><br>PHP class names compare without ASCII case.
-    - fn [sameClass](../../src/frameworks/php-code.ts#L117) (a: string, b: string) → boolean
-      <a id="base.php-code.sameClass"></a>
-      - calls [base.php-code.key](base.md#base.php-code.key)
-    - fn [arg](../../src/frameworks/php-code.ts#L122) (args: readonly ArgFact[] | undefined, name: string | null, position: number | null) → LiteralFact | null
-      <a id="base.php-code.arg"></a><br>An argument by its name, else by its position.
-    - fn [str](../../src/frameworks/php-code.ts#L133) (value: LiteralFact | null | undefined) → string | null
-      <a id="base.php-code.str"></a>
-    - fn [cls](../../src/frameworks/php-code.ts#L137) (value: LiteralFact | null | undefined) → string | null
-      <a id="base.php-code.cls"></a>
-    - fn [strings](../../src/frameworks/php-code.ts#L142) (value: LiteralFact | null | undefined) → string[]
-      <a id="base.php-code.strings"></a><br>The strings of a string or an array of strings.
-    - fn [eventName](../../src/frameworks/php-code.ts#L150) (value: LiteralFact | null | undefined) → string | null
-      <a id="base.php-code.eventName"></a><br>An event a listener or a dispatch names: a class by its qualified name, a string as written, a class constant as `X::NAME`.
-    - fn [type](../../src/frameworks/php-code.ts#L158) (name: string) → TypeName
-      <a id="base.php-code.type"></a>
-    - fn [callsOf](../../src/frameworks/php-code.ts#L163) (file: FileFacts) → Generator<{ call: CallFact; symbol: string | null; decl: DeclFact | null; cls: DeclFact | null }>
-      <a id="base.php-code.callsOf"></a><br>Every call of a file with the declaration it sits in (`Class.method`, a function's name) or null at the module level.
-    - fn [codeFacts](../../src/frameworks/php-code.ts#L172) (path: string) → ConfigFacts
-      <a id="base.php-code.codeFacts"></a><br>Facts of one source file a framework reads, empty to start with.
-    - fn [hasFacts](../../src/frameworks/php-code.ts#L177) (facts: ConfigFacts) → boolean
-      <a id="base.php-code.hasFacts"></a><br>Whether a code configuration says anything.
-    - fn [dispatchesIn](../../src/frameworks/php-code.ts#L196) (code: PhpCode, file: FileFacts) → { symbol: string; call: CallFact; event: string }[]
-      <a id="base.php-code.dispatchesIn"></a><br>Calls that dispatch an event or a message object, in a declaration of the file: `event(new X)`, `dispatch(new J)`, `Event::dispatch(new X)`, `Bus::dispatch(new J)`, `$dispatcher->dispatch(new X)` (a string second argument names the event: Symfony `dispatch($e…
-      - calls [base.php-code.callsOf](base.md#base.php-code.callsOf), [base.php-code.arg](base.md#base.php-code.arg), [base.php-code.PhpCode.get](base.md#base.php-code.PhpCode.get), [base.php-code.PhpCode.qualified](base.md#base.php-code.PhpCode.qualified), [base.php-code.str](base.md#base.php-code.str)
   - module [sfcc](../../src/frameworks/sfcc.ts#L1)
     <a id="base.sfcc"></a><br>The Salesforce Commerce Cloud adapter (SFRA cartridges; ADR 0022 п. 2, 5). Detected from a cartridge among the analysed files (`…/cartridges/<c>/cartridge/…`) or a `dw.json`.
     - node [external.node](external.md#external.node)
@@ -507,48 +389,24 @@
     <a id="base.symfony"></a><br>The Symfony adapter (ADR 0022; business-flows 36). The container is written in `config/services.yaml` (and `services_<env>.yaml`): an alias `I: '@C'` or `I: { alias: C }` binds an interface, `arguments: { $p: '@C' }` sets a constructor argument of one service, `bind: { $p: '@C'…
     - node [external.node](external.md#external.node)
     - yaml [external.yaml](external.md#external.yaml)
-    - facts [extract.facts](extract.md#extract.facts)
     - adapter [base.adapter](base.md#base.adapter)
-    - php-code [base.php-code](base.md#base.php-code)
-    - fn [parseJson](../../src/frameworks/symfony.ts#L63) (text: string | null) → unknown <!-- internal -->
+    - fn [type](../../src/frameworks/symfony.ts#L26) (name: string) → TypeName <!-- internal -->
+      <a id="base.symfony.type"></a>
+    - fn [key](../../src/frameworks/symfony.ts#L28) (name: string) → string <!-- internal -->
+      <a id="base.symfony.key"></a><br>PHP class names compare without ASCII case.
+    - fn [parseJson](../../src/frameworks/symfony.ts#L54) (text: string | null) → unknown <!-- internal -->
       <a id="base.symfony.parseJson"></a>
-    - fn [className](../../src/frameworks/symfony.ts#L73) (written: string) → string <!-- internal -->
+    - fn [className](../../src/frameworks/symfony.ts#L64) (written: string) → string <!-- internal -->
       <a id="base.symfony.className"></a><br>A class name as a Symfony config writes it: no leading `\`, single separators.
-    - fn [parseSymfonyConfig](../../src/frameworks/symfony.ts#L86) (path: string, text: string) → ConfigFacts
+    - fn [parseSymfonyConfig](../../src/frameworks/symfony.ts#L77) (path: string, text: string) → ConfigFacts
       <a id="base.symfony.parseSymfonyConfig"></a><br>The facts of one Symfony config file. `services*.yaml`: aliases (bindings), `arguments` and `bind` (constructor arguments; under `_defaults` for every class); `routes*.yaml`: routes with `path` and `controller`, and the `prefix` of an attribute import of a directory. XML and…
-      - calls [base.symfony.argument](base.md#base.symfony.argument), [base.symfony.serviceRef](base.md#base.symfony.serviceRef), [base.php-code.type](base.md#base.php-code.type), [base.symfony.className](base.md#base.symfony.className), [base.php-code.key](base.md#base.php-code.key)
-    - fn [serviceRef](../../src/frameworks/symfony.ts#L175) (value: string) → string | null <!-- internal -->
+      - calls [base.symfony.argument](base.md#base.symfony.argument), [base.symfony.serviceRef](base.md#base.symfony.serviceRef), [base.symfony.type](base.md#base.symfony.type), [base.symfony.className](base.md#base.symfony.className), [base.symfony.key](base.md#base.symfony.key)
+    - fn [serviceRef](../../src/frameworks/symfony.ts#L166) (value: string) → string | null <!-- internal -->
       <a id="base.symfony.serviceRef"></a><br>`'@App\Infra\Mailer'` → the class; `@?x`, `@=expr`, a service id that is no class → null.
       - calls [base.symfony.className](base.md#base.symfony.className)
-    - fn [argument](../../src/frameworks/symfony.ts#L182) (facts: ConfigFacts, owner: string, pair: Pair, at: (node: YamlNode | Pair | null | undefined) => { line: number; col: number }, hole: (node: YamlNode | Pair | null | undefined, text: string, reason: string) => void) → void <!-- internal -->
+    - fn [argument](../../src/frameworks/symfony.ts#L173) (facts: ConfigFacts, owner: string, pair: Pair, at: (node: YamlNode | Pair | null | undefined) => { line: number; col: number }, hole: (node: YamlNode | Pair | null | undefined, text: string, reason: string) => void) → void <!-- internal -->
       <a id="base.symfony.argument"></a><br>`$param: '@C'` (or `I $param: '@C'`) of `arguments` or `bind`: the constructor argument `param` of `owner` is a `C`.
-      - calls [base.symfony.serviceRef](base.md#base.symfony.serviceRef), [base.php-code.type](base.md#base.php-code.type)
-    - fn [symfonyFacts](../../src/frameworks/symfony.ts#L197) (files: readonly FileFacts[], configs: readonly ConfigFacts[]) → FrameworkConfig[]
-      <a id="base.symfony.symfonyFacts"></a><br>What a Symfony repository's code wires: attributes, subscribers, dispatches; the route prefixes of `configs` apply to attribute routes.
-      - calls [base.php-code.PhpCode](base.md#base.php-code.PhpCode), [base.php-code.codeFacts](base.md#base.php-code.codeFacts), [base.symfony.routes](base.md#base.symfony.routes), [base.symfony.listeners](base.md#base.symfony.listeners), [base.symfony.handlers](base.md#base.symfony.handlers), [base.symfony.commands](base.md#base.symfony.commands), [base.symfony.tasks](base.md#base.symfony.tasks), [base.symfony.aliases](base.md#base.symfony.aliases), [base.php-code.dispatchesIn](base.md#base.php-code.dispatchesIn), [base.php-code.hasFacts](base.md#base.php-code.hasFacts)
-    - fn [attributes](../../src/frameworks/symfony.ts#L222) (decl: { attributes?: { name: string; args: { name?: string; value: LiteralFact }[]; line: number; col: number }[] }, names: readonly string[]) <!-- internal -->
-      <a id="base.symfony.attributes"></a>
-      - calls [base.php-code.key](base.md#base.php-code.key)
-    - fn [routes](../../src/frameworks/symfony.ts#L227) (c: PhpClass, facts: ConfigFacts, prefixes: readonly RoutePrefixFact[]) → void <!-- internal -->
-      <a id="base.symfony.routes"></a><br>`#[Route]` on the class (a prefix) and on its public methods; `__invoke` for one on an invokable class.
-      - calls [base.symfony.attributes](base.md#base.symfony.attributes), [base.php-code.str](base.md#base.php-code.str), [base.php-code.arg](base.md#base.php-code.arg), [base.symfony.joinPath](base.md#base.symfony.joinPath), [base.php-code.strings](base.md#base.php-code.strings), [base.php-code.type](base.md#base.php-code.type)
-    - fn [joinPath](../../src/frameworks/symfony.ts#L249) (parts: readonly string[]) → string <!-- internal -->
-      <a id="base.symfony.joinPath"></a>
-    - fn [listeners](../../src/frameworks/symfony.ts#L255) (code: PhpCode, c: PhpClass, facts: ConfigFacts) → void <!-- internal -->
-      <a id="base.symfony.listeners"></a><br>`#[AsEventListener]` on the class or a method, and `getSubscribedEvents()` of an `EventSubscriberInterface`: observers.
-      - calls [base.php-code.type](base.md#base.php-code.type), [base.symfony.attributes](base.md#base.symfony.attributes), [base.php-code.str](base.md#base.php-code.str), [base.php-code.arg](base.md#base.php-code.arg), [base.php-code.eventName](base.md#base.php-code.eventName), [base.php-code.PhpCode.implements](base.md#base.php-code.PhpCode.implements)
-    - fn [handlers](../../src/frameworks/symfony.ts#L293) (c: PhpClass, facts: ConfigFacts) → void <!-- internal -->
-      <a id="base.symfony.handlers"></a><br>`#[AsMessageHandler]` on the class (`__invoke`, or `method:`) or a method: a consumer of the message its `handles:` or first parameter names.
-      - calls [base.php-code.cls](base.md#base.php-code.cls), [base.php-code.type](base.md#base.php-code.type), [base.symfony.attributes](base.md#base.symfony.attributes), [base.php-code.str](base.md#base.php-code.str), [base.php-code.arg](base.md#base.php-code.arg)
-    - fn [commands](../../src/frameworks/symfony.ts#L304) (code: PhpCode, c: PhpClass, facts: ConfigFacts) → void <!-- internal -->
-      <a id="base.symfony.commands"></a><br>`#[AsCommand('app:x')]` (or `$defaultName`) on a command: `execute`, or `__invoke` of an invokable command.
-      - calls [base.symfony.attributes](base.md#base.symfony.attributes), [base.php-code.str](base.md#base.php-code.str), [base.php-code.arg](base.md#base.php-code.arg), [base.php-code.PhpCode.extends](base.md#base.php-code.PhpCode.extends), [base.php-code.PhpCode.method](base.md#base.php-code.PhpCode.method), [base.php-code.type](base.md#base.php-code.type)
-    - fn [tasks](../../src/frameworks/symfony.ts#L318) (c: PhpClass, facts: ConfigFacts) → void <!-- internal -->
-      <a id="base.symfony.tasks"></a><br>`#[AsCronTask('0 3 * * *')]`, `#[AsPeriodicTask('1 hour')]` on the class (`__invoke`, or `method:`) or a method: cron.
-      - calls [base.php-code.key](base.md#base.php-code.key), [base.php-code.type](base.md#base.php-code.type), [base.symfony.attributes](base.md#base.symfony.attributes), [base.php-code.str](base.md#base.php-code.str), [base.php-code.arg](base.md#base.php-code.arg)
-    - fn [aliases](../../src/frameworks/symfony.ts#L328) (c: PhpClass, facts: ConfigFacts) → void <!-- internal -->
-      <a id="base.symfony.aliases"></a><br>`#[AsAlias(I::class)]` on a class: a binding `I → class`; without an id, the one interface the class implements.
-      - calls [base.symfony.attributes](base.md#base.symfony.attributes), [base.php-code.cls](base.md#base.php-code.cls), [base.php-code.arg](base.md#base.php-code.arg), [base.php-code.str](base.md#base.php-code.str), [base.symfony.className](base.md#base.symfony.className), [base.php-code.type](base.md#base.php-code.type)
+      - calls [base.symfony.serviceRef](base.md#base.symfony.serviceRef), [base.symfony.type](base.md#base.symfony.type)
   - module [glob](../../src/glob.ts#L1)
     <a id="base.glob"></a><br>Minimal glob matching for `keylang.json` (no dependency, no experimental Node API). Supports `**`, `*`, `?` and `{a,b}`; `[` is a literal (Next.js `app/[id]/page.tsx`).
     - fn [globToRegExp](../../src/glob.ts#L11) (glob: string) → RegExp

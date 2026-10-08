@@ -14,6 +14,7 @@ import { frontendFor } from "./frontends.ts";
 import { isGeneratedMap, renderExplainedMap, renderMap } from "./emit.ts";
 import { explanationOf, loadBriefs } from "./explanations.ts";
 import { buildGraph, directoryModule, placeFile, type Graph } from "./graph.ts";
+import { FRAMEWORK_CODE } from "./framework-code/index.ts";
 import { activeAdapters, FRAMEWORK_ADAPTERS, FRAMEWORK_CONFIG, type FrameworkAdapter, type FrameworkContext, type FrameworkInput } from "./frameworks/adapter.ts";
 import { FACT_CACHE_FILE, FactCache } from "./fact-cache.ts";
 import { landing, writeAtomic, writeProblem } from "./safe-write.ts";
@@ -191,7 +192,8 @@ function readFrameworks(
       configs.push({ facts: cache.config(path, hash, `${adapter.name}@${adapter.version}`, () => adapter.parse(path, body)), owner });
     }
     // Wiring the framework reads from code (attributes, service providers): from the sources' facts, which the snapshot covers already.
-    if (adapter.code) configs.push(...adapter.code(code, configs.map((c) => c.facts)));
+    const reader = FRAMEWORK_CODE.get(adapter.name);
+    if (reader) configs.push(...reader(code, configs.map((c) => c.facts)));
     inputs.push({ name: adapter.name, configs });
     manifest.push({ name: adapter.name, version: adapter.version, files });
   }
