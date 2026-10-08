@@ -11,7 +11,7 @@
 // it, else a package: Python has no path aliases, so a name that is not in the
 // repository comes from the environment.
 
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync, type Dirent } from "node:fs";
 import { join, posix } from "node:path";
 import type { Resolution, SourceResolver } from "./imports.ts";
 import { exactExistence, nodeFs, type ExactFs } from "./exact-path.ts";
@@ -25,6 +25,8 @@ export class PythonResolver implements SourceResolver {
   /** Files of the analysis (unsaved buffers included) and their directories: they exist for resolution, on disk or not. */
   private readonly sources: ReadonlySet<string>;
   private readonly sourceDirs: ReadonlySet<string>;
+  /** Directories above a `.py` source. */
+  private readonly pythonDirs: ReadonlySet<string>;
   /** The resolver reads no configuration files: edges depend only on the indexed sources. */
   readonly inputs = new Map<string, string | null>();
   /** A file on disk, spelled exactly so: `existsSync` alone finds `User.py` through `user.py` on APFS and NTFS. */
@@ -35,6 +37,7 @@ export class PythonResolver implements SourceResolver {
     this.sources = sources;
     this.onDisk = exactExistence(root, fs);
     this.sourceDirs = directoriesOf(sources);
+    this.pythonDirs = directoriesOf(new Set([...sources].filter((file) => file.endsWith(".py"))));
     this.roots = ROOTS.filter((dir) => dir === "" || this.isDir(dir));
   }
 
@@ -55,9 +58,16 @@ export class PythonResolver implements SourceResolver {
     }
     for (const root of this.roots) {
       const head = posix.join(root, segments[0]!);
-      if (!this.moduleFile(head) && !this.isDir(head)) continue;
+      // A directory is a package only with Python code in it (a PEP 420 namespace package
+      // without `__init__.py` too); `redis/` with a Dockerfile hides neither pip's `redis` nor `src/redis`.
+      const isModule = this.moduleFile(head) !== null;
+      if (!isModule && !this.hasPython(head)) continue;
       // A source root is no module of an absolute import.
-      return this.longest(root, segments, fromFile, glob ? segments.length : Math.max(1, segments.length - 1)) ?? { kind: "unresolved" };
+      const found = this.longest(root, segments, fromFile, glob ? segments.length : Math.max(1, segments.length - 1));
+      if (found) return found;
+      // `import nsp` binding the namespace package of `import nsp.inner.mod`: no module, so no edge, but no hole either.
+      if (!isModule && !glob && segments.length === 1) return { kind: "generated" };
+      return { kind: "unresolved" };
     }
     return isPythonStdlib(segments[0]!) ? { kind: "stdlib" } : { kind: "external", pkg: segments[0]! };
   }
@@ -78,6 +88,26 @@ export class PythonResolver implements SourceResolver {
   private moduleFile(path: string): string | null {
     for (const file of [`${path}.py`, posix.join(path, "__init__.py")]) if (this.sources.has(file) || this.onDisk(file)) return file;
     return null;
+  }
+
+  /** A directory with a `.py` file in it or below: among the sources, or on disk (an excluded package). */
+  private hasPython(path: string): boolean {
+    if (this.pythonDirs.has(path)) return true;
+    if (!this.isDir(path)) return false;
+    const pending = [join(this.root, path)];
+    for (let seen = 0; pending.length > 0 && seen < 2000; seen++) {
+      let entries: Dirent[];
+      try {
+        entries = readdirSync(pending.pop()!, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      for (const e of entries) {
+        if (e.isFile() && e.name.endsWith(".py")) return true;
+        if (e.isDirectory() && !e.name.startsWith(".") && e.name !== "node_modules" && e.name !== "__pycache__") pending.push(join(e.parentPath, e.name));
+      }
+    }
+    return false;
   }
 
   private isDir(path: string): boolean {

@@ -4,6 +4,7 @@
 
 import { existsSync, readdirSync, readFileSync, statSync, type Dirent } from "node:fs";
 import { join, posix, relative } from "node:path";
+import { FRAMEWORK_NAMES } from "./frameworks/adapter.ts";
 import { firstMatchingGlob, globPrefix, globToRegExp, matchesGlob } from "./glob.ts";
 import { isLanguage, LANGUAGE_NAMES, LANGUAGES, languageOf, type Language } from "./languages.ts";
 
@@ -62,6 +63,12 @@ export interface Config {
    * when present; an import of one is no edge and no hole (`assumed-import`).
    */
   assume: string[];
+  /**
+   * Framework adapters (ADR 0022) by name: `[]` turns every one off, a list
+   * turns those on; null (the field absent) uses every adapter the analysed
+   * files show the framework of.
+   */
+  frameworks: string[] | null;
   check: { tests?: string; trace?: string; static?: StaticMode };
   /** `anthropic:<model>`, `openrouter:<model>` or `cli:<name>[:<model>]` (an agent CLI); null: no model is configured. */
   agent: string | null;
@@ -78,6 +85,14 @@ export interface Config {
   explain: { lang: string; detail: "short" | "full"; map: boolean };
   /** `integrations.webhooks`: globs of files (or route paths) whose handlers are incoming webhooks (`keylang integrations`). Not part of the snapshot. */
   integrations: { webhooks: string[] };
+  /**
+   * Salesforce Commerce Cloud: the cartridge path, first cartridge first, as
+   * Business Manager sets it for the site (`app_custom`, `app_storefront_base`).
+   * `*\/cartridge/…` and `module.superModule` resolve along it; null: taken from
+   * `dw.json` or `package.json`, else guessed (`src/frameworks/sfcc.ts`).
+   * Enters `snapshotId` through import resolution.
+   */
+  sfcc: { cartridgePath: string[] | null };
   /** True when the layout was guessed (no `layers` in the file). */
   guessed: boolean;
   /**
@@ -143,6 +158,8 @@ const SKIP_DIRS = new Set(["node_modules", "dist", "build", "out", "coverage", "
 /** Test and tooling files: kept out of the map (flows reference tests by path, §3.4). */
 const DEFAULT_EXCLUDE = [
   "**/*.d.ts",
+  "**/*.d.mts",
+  "**/*.d.cts",
   "**/*.test.*",
   "**/*.spec.*",
   "**/*.stories.*",
@@ -179,6 +196,7 @@ export interface RawConfig {
   exclude?: string[];
   outside?: string[];
   assume?: string[];
+  frameworks?: string[];
   check?: { tests?: string; trace?: string; static?: StaticMode };
   agent?: string;
   ghost?: { delay?: number | null };
@@ -186,6 +204,7 @@ export interface RawConfig {
   voice?: { engine?: "local" | "openrouter" | "auto"; model?: string };
   explain?: { lang?: string; detail?: "short" | "full"; map?: boolean };
   integrations?: { webhooks?: string[] };
+  sfcc?: { cartridgePath?: string[] };
 }
 
 /** Load `<root>/keylang.json`, or guess a config for `root`. */
@@ -216,6 +235,7 @@ export function loadConfig(root: string): Config {
     exclude,
     outside,
     assume,
+    frameworks: raw.frameworks ?? null,
     check: raw.check ?? {},
     agent: raw.agent ?? null,
     ghost: { delay: raw.ghost?.delay ?? null },
@@ -223,6 +243,7 @@ export function loadConfig(root: string): Config {
     voice: { engine: raw.voice?.engine ?? "auto", model: raw.voice?.model ?? null },
     explain: { lang: raw.explain?.lang ?? "en", detail: raw.explain?.detail ?? "short", map: raw.explain?.map ?? false },
     integrations: { webhooks: raw.integrations?.webhooks ?? [] },
+    sfcc: { cartridgePath: raw.sfcc?.cartridgePath ?? null },
     guessed,
     text,
   };
@@ -264,7 +285,7 @@ export function parseConfig(file: string, text: string): RawConfig {
     return glob;
   };
   if (!isObject(value)) return fail("(root)", "an object", value);
-  const known = new Set(["$schema", "format", "dir", "languages", "module", "layers", "exclude", "outside", "assume", "check", "agent", "explain", "ghost", "assistant", "voice", "integrations"]);
+  const known = new Set(["$schema", "format", "dir", "languages", "module", "layers", "exclude", "outside", "assume", "frameworks", "check", "agent", "explain", "ghost", "assistant", "voice", "integrations", "sfcc"]);
   for (const key of Object.keys(value)) if (!known.has(key)) throw new Error(`${file}: unknown field \`${key}\``);
   const raw: RawConfig = {};
   if (value.format !== undefined) raw.format = acceptFormat(file, value.format);
@@ -315,6 +336,14 @@ export function parseConfig(file: string, text: string): RawConfig {
   if (value.assume !== undefined) {
     if (!Array.isArray(value.assume) || !value.assume.every((glob) => typeof glob === "string")) return fail("assume", "an array of globs", value.assume);
     raw.assume = (value.assume as string[]).map((glob, i) => validGlob(`assume[${i}]`, glob));
+  }
+  if (value.frameworks !== undefined) {
+    const list = value.frameworks;
+    if (!Array.isArray(list)) return fail("frameworks", `an array of framework names (${FRAMEWORK_NAMES.map((name) => JSON.stringify(name)).join(", ")})`, list);
+    list.forEach((item, i) => {
+      if (typeof item !== "string" || !FRAMEWORK_NAMES.includes(item)) fail(`frameworks[${i}]`, `one of ${FRAMEWORK_NAMES.map((name) => JSON.stringify(name)).join(", ")}`, item);
+    });
+    raw.frameworks = [...new Set(list as string[])];
   }
   if (value.check !== undefined) {
     if (!isObject(value.check)) return fail("check", "an object", value.check);
@@ -381,6 +410,17 @@ export function parseConfig(file: string, text: string): RawConfig {
       integrations.webhooks = (v as string[]).map((glob, i) => validGlob(`integrations.webhooks[${i}]`, glob));
     }
     raw.integrations = integrations;
+  }
+  if (value.sfcc !== undefined) {
+    if (!isObject(value.sfcc)) return fail("sfcc", "an object", value.sfcc);
+    const sfcc: NonNullable<RawConfig["sfcc"]> = {};
+    for (const [key, v] of Object.entries(value.sfcc)) {
+      if (key !== "cartridgePath") throw new Error(`${file}: unknown field \`sfcc.${key}\``);
+      // Business Manager writes the path as `a:b:c`; keylang.json keeps it a list, first cartridge first.
+      if (!Array.isArray(v) || !v.every((name) => typeof name === "string" && /^[A-Za-z0-9_.-]+$/.test(name))) return fail("sfcc.cartridgePath", "an array of cartridge names", v);
+      sfcc.cartridgePath = v as string[];
+    }
+    raw.sfcc = sfcc;
   }
   return raw;
 }

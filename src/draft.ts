@@ -10,6 +10,7 @@ import { sectionNodes } from "./ir.ts";
 import { parse, renderMeaning } from "./parser.ts";
 import { keepLineEndings } from "./safe-write.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
+import type { TraceRun, TraceSpan } from "./trace-evidence.ts";
 
 export interface FlowDraft {
   name: string;
@@ -26,7 +27,7 @@ export function draftFlow(snapshot: AnalysisSnapshot, trigger: string, options: 
   const depth = options.depth ?? 4;
   const holes = new Map<string, string[]>();
   for (const c of snapshot.coverage) {
-    if ((c.kind !== "dynamic-call" && c.kind !== "unresolved-call") || c.source === null) continue;
+    if ((c.kind !== "dynamic-call" && c.kind !== "unresolved-call" && c.kind !== "ambiguous-binding") || c.source === null) continue;
     const list = holes.get(c.source) ?? [];
     list.push(`${c.text || c.reason} (${c.file}:${c.line})`);
     holes.set(c.source, list);
@@ -36,7 +37,10 @@ export function draftFlow(snapshot: AnalysisSnapshot, trigger: string, options: 
   for (const e of snapshot.edges) {
     if (e.kind !== "call" || e.resolution !== "resolved" || e.target === null) continue;
     const key = `${e.source}\u0000${e.target}`;
-    if (!via.has(key)) via.set(key, e.via === "callable-arg" ? " <!-- keylang:algo via callable -->" : e.via === "closure-arg" ? " <!-- keylang:algo via closure -->" : "");
+    if (via.has(key)) continue;
+    // A call the framework makes by its config (ADR 0022): a preference, a constructor argument, a plugin around the call.
+    const config = e.via === "preference" || e.via === "argument" || e.via?.startsWith("plugin:") ? ` <!-- keylang:algo via ${e.via} ${e.site ?? "?"}${e.scope && e.scope !== "global" ? ` scope ${e.scope}` : ""} -->` : null;
+    via.set(key, config ?? (e.via === "callable-arg" ? " <!-- keylang:algo via callable -->" : e.via === "closure-arg" ? " <!-- keylang:algo via closure -->" : ""));
   }
   const listed = new Set<string>();
   const lines = [`# flow ${name}`, ""];
@@ -58,6 +62,60 @@ export function draftFlow(snapshot: AnalysisSnapshot, trigger: string, options: 
   };
   visit(trigger, 0, "");
   return { name, text: `${lines.join("\n")}\n`, steps };
+}
+
+/**
+ * `draft flow --from-trace`: a flow from what one trace run observed. The
+ * first root span (in start order) is the trigger; nesting is the span tree,
+ * order among siblings is start order (`seq` on one clock, else `ts`). A fn
+ * already listed is not listed again, as in `draftFlow`, so a loop or a
+ * recursion is one step. A step the static graph does not show — no path of
+ * resolved calls from its parent — is marked `<!-- keylang:trace via
+ * observed -->`. `rest` names the root spans left out: they ran outside the
+ * trigger's call tree.
+ */
+export function draftFlowFromTrace(snapshot: AnalysisSnapshot, run: TraceRun, options: { name?: string } = {}): FlowDraft & { rest: string[] } {
+  const known = new Set(run.spans.map((span) => span.spanId));
+  const children = new Map<string | null, TraceSpan[]>();
+  for (const span of run.spans) {
+    const parent = span.parentSpanId !== null && known.has(span.parentSpanId) ? span.parentSpanId : null;
+    children.set(parent, [...(children.get(parent) ?? []), span]);
+  }
+  const order = (a: TraceSpan, b: TraceSpan): number => (a.start.clockId === b.start.clockId ? a.start.seq - b.start.seq : a.start.ts - b.start.ts);
+  for (const list of children.values()) list.sort(order);
+  const roots = children.get(null) ?? [];
+  const trigger = roots[0];
+  if (trigger === undefined) throw new Error(`run \`${run.runId}\` has no span`);
+  const name = options.name ?? (run.flow || trigger.symbolId.slice(trigger.symbolId.lastIndexOf(".") + 1));
+  const listed = new Set<string>();
+  const lines = [`# flow ${name}`, ""];
+  const steps: string[] = [];
+  const visit = (span: TraceSpan, level: number, parent: string | null): void => {
+    listed.add(span.symbolId);
+    steps.push(span.symbolId);
+    const seen = parent === null || reachesByCalls(snapshot, parent, span.symbolId);
+    lines.push(`${"  ".repeat(level)}- ${level === 0 ? "trigger" : "step"} ${span.symbolId}${seen ? "" : " <!-- keylang:trace via observed -->"}`);
+    for (const child of children.get(span.spanId) ?? []) if (!listed.has(child.symbolId)) visit(child, level + 1, span.symbolId);
+  };
+  visit(trigger, 0, null);
+  const rest = roots.slice(1).map((span) => span.symbolId).filter((id) => !listed.has(id));
+  return { name, text: `${lines.join("\n")}\n`, steps, rest: [...new Set(rest)] };
+}
+
+/** A path of resolved calls (the snapshot's `calls`) from `from` to `to`. */
+function reachesByCalls(snapshot: AnalysisSnapshot, from: string, to: string): boolean {
+  const seen = new Set([from]);
+  const queue = [from];
+  while (queue.length > 0) {
+    for (const callee of snapshot.nodes[queue.pop()!]?.calls ?? []) {
+      if (callee === to) return true;
+      if (!seen.has(callee)) {
+        seen.add(callee);
+        queue.push(callee);
+      }
+    }
+  }
+  return false;
 }
 
 /**

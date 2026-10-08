@@ -428,3 +428,40 @@ test("--static shape only weakens a step through a callable or a closure passed 
   assert.equal(before.get("flow:static:domain.Store.Store.save:keylang/flows.md:4")?.verdict, "ok");
   assert.equal(before.get("flow:static:domain.Store.Store.later:keylang/flows.md:7")?.verdict, "unverified");
 });
+
+test("a framework's config left unread (`frameworks: []`) or unparsed moves a verdict only to unverified", (t) => {
+  const shop = copyFixture(t, "magento-shop");
+  write(shop, "keylang/rules.md", "# rules\n\n- deny checkout sales.Model\n- deny promo sales\n");
+  const read = aggregate(results(shop), []);
+  assert.equal(read.get("rule:deny checkout sales.Model")?.verdict, "fail");
+  assert.equal(read.get("flow:static:sales.Model.OrderService.OrderService.place:keylang/flows.md:6")?.verdict, "ok");
+  // Left unread, the config still runs: each file is a hole of its module, so the rules over it are unverified.
+  const unread = mkdtempSync(join(tmpdir(), "keylang-meta-magento-"));
+  t.after(() => rmSync(unread, { recursive: true, force: true }));
+  cpSync(shop, unread, { recursive: true });
+  const raw = JSON.parse(readFileSync(join(unread, "keylang.json"), "utf8")) as Record<string, unknown>;
+  write(unread, "keylang.json", `${JSON.stringify({ ...raw, frameworks: [] }, null, 2)}\n`);
+  const without = aggregate(results(unread), []);
+  monotonic("magento-shop", "frameworks: []", read, without);
+  const moved = [...read]
+    .filter(([key, left]) => left.verdict !== (without.get(key)?.verdict ?? "unverified"))
+    .map(([key, left]) => `${key} ${left.verdict} → ${without.get(key)?.verdict ?? "unverified"}`)
+    .sort();
+  assert.deepEqual(moved, [
+    "flow:static:checkout.Model.Logger.Logger.log:keylang/flows.md:8 ok → unverified",
+    "flow:static:promo.Plugin.CouponPlugin.CouponPlugin.aroundSubmit:keylang/flows.md:4 ok → unverified",
+    "flow:static:sales.Model.OrderService.OrderService.place:keylang/flows.md:6 ok → unverified",
+    "flow:static:sales.Model.Totals.Totals.collect:keylang/flows.md:7 ok → unverified",
+    "rule:deny checkout sales.Model fail → unverified",
+    "rule:deny promo sales ok → unverified",
+  ]);
+  // A config keylang cannot parse is lost the same way: its file stays, its facts are a hole. (Deleting the
+  // file is no loss of information but another program: a plugin no config registers is not called.)
+  const broken = mkdtempSync(join(tmpdir(), "keylang-meta-magento-"));
+  t.after(() => rmSync(broken, { recursive: true, force: true }));
+  cpSync(shop, broken, { recursive: true });
+  for (const file of ["app/code/Shop/Checkout/etc/di.xml", "app/code/Shop/Checkout/etc/adminhtml/di.xml", "app/code/Shop/Promo/etc/di.xml", "app/code/Shop/Promo/etc/frontend/di.xml"]) {
+    write(broken, file, `${readFileSync(join(broken, file), "utf8")}<unclosed>\n`);
+  }
+  monotonic("magento-shop", "di.xml that does not parse", read, aggregate(results(broken), []));
+});

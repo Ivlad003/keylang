@@ -309,8 +309,13 @@ export interface TracePlanRequest {
   kind: "trace-plan";
   /** Repository root (absolute). */
   root: string;
-  /** The flow's name, as its `# flow <name>` heading declares it. */
+  /**
+   * The flow's name, as its `# flow <name>` heading declares it. With
+   * `entry`: the name the plan gives its runs (empty: the entry's last segment).
+   */
   flow: string;
+  /** `trace-plan --entry <id>`: the fns reachable from this fn instead of a flow's trigger and steps. */
+  entry?: string;
 }
 
 /**
@@ -503,10 +508,16 @@ export interface DraftFlowRequest {
   kind: "draft-flow";
   /** Repository root (absolute). */
   root: string;
-  /** A fn of the snapshot. */
+  /** A fn of the snapshot; ignored with `fromTrace`, whose first root span is the trigger. */
   trigger: string;
-  /** The flow's name; default the trigger's last segment. */
+  /** The flow's name; default the trigger's last segment (with `fromTrace`: the run's flow). */
   name?: string;
+  /**
+   * `draft flow --from-trace <file> [--run <runId>]`: the steps one recorded
+   * run observed (`draftFlowFromTrace`), never a model's. `file` is relative to
+   * the root; without `run` the file must hold one run with spans.
+   */
+  fromTrace?: { file: string; run?: string };
   /** The target spec, relative to the root, POSIX; default `<dir>/flows/<name>.md`. */
   into?: string;
   output: "preview" | "proposal";

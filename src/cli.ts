@@ -131,6 +131,11 @@ Commands:
                             (--mode algo|llm|hybrid, default hybrid: the model's steps
                             reconciled with the snapshot; hybrid without a model is algo;
                             --name n; --into <spec.md>; --print: stdout only)
+  draft flow --from-trace <file.jsonl> [--run <runId>]
+                            The same proposal from what one trace run observed: nesting
+                            from the spans, order from their starts; a step static does
+                            not see is marked <!-- keylang:trace via observed -->
+                            (--name, --into, --print as above; no --mode)
   code-to-spec <path[:line]> Propose flows for the fn at the line (or every exported fn
                             of the file) as .keylang/proposals/<dir>/flows/<name>.md
                             (--print; --into <spec.md>); --since <git-ref> instead of a
@@ -174,6 +179,8 @@ Commands:
                             (--check: fail if the file is stale; writes nothing)
   trace-plan <flow>         Print JSON: the flow's functions a trace adapter instruments
                             (Python, Rust), with the snapshot id and file hashes
+  trace-plan --entry <id>   The same JSON for the fns an entry point reaches, to trace a
+                            scenario before its flow exists (--name n: the runs' flow)
   entries [--kind k] [--json]
                             Where execution starts, from what the code and its manifests
                             write: kind · label · id · file:line (route, cli, main; a
@@ -336,6 +343,9 @@ const OPTIONS = {
   depth: { type: "string" },
   "with-callees": { type: "string" },
   "layer-map": { type: "string" },
+  entry: { type: "string" },
+  "from-trace": { type: "string" },
+  run: { type: "string" },
 } as const satisfies ParseArgsOptionsConfig;
 
 /** Runs the CLI and returns the exit code: 0 ok, 1 findings, 2 usage or I/O error. */
@@ -426,7 +436,7 @@ async function run(argv: readonly string[]): Promise<number> {
       return serveMcp(findRoot(process.cwd()), pkg.version);
     }
     case "draft":
-      return cmdDraft(paths, { mode: values.mode ?? "hybrid", name: values.name, into: values.into, print: values.print === true });
+      return cmdDraft(paths, { mode: values.mode ?? "hybrid", modeGiven: values.mode !== undefined, name: values.name, into: values.into, print: values.print === true, fromTrace: values["from-trace"], run: values.run });
     case "proposals":
       return cmdProposals(paths);
     case "spec-to-code":
@@ -436,7 +446,7 @@ async function run(argv: readonly string[]): Promise<number> {
     case "wire":
       return cmdWire(values.out ?? "keylang.gen.ts", values.check === true);
     case "trace-plan":
-      return cmdTracePlan(paths[0]);
+      return cmdTracePlan(paths[0], values.entry, values.name);
     case "entries":
       return cmdEntries(values.kind, values.json === true);
     case "coverage":
@@ -638,27 +648,39 @@ function positiveInteger(flag: string, text: string): number {
   return Number(text);
 }
 
-async function cmdDraft(args: string[], opts: { mode: string; name: string | undefined; into: string | undefined; print: boolean }): Promise<number> {
+async function cmdDraft(args: string[], opts: { mode: string; modeGiven: boolean; name: string | undefined; into: string | undefined; print: boolean; fromTrace: string | undefined; run: string | undefined }): Promise<number> {
   const [what, trigger] = args;
+  if ((opts.fromTrace !== undefined || opts.run !== undefined) && what !== "flow") throw new Error("draft: --from-trace and --run go with `draft flow`");
   if (what === "rules" || what === "map") return cmdDraftLayout(what, opts);
   if (what !== "flow") throw new Error("draft: expected `draft flow <trigger>`, `draft rules` or `draft map`");
+  if (opts.run !== undefined && opts.fromTrace === undefined) throw new Error("draft flow: --run goes with --from-trace <file.jsonl>");
+  if (opts.fromTrace !== undefined) {
+    // The steps are what the run observed: a trigger or a model would draft something else.
+    if (trigger) throw new Error("draft flow: give a trigger or --from-trace <file.jsonl>, not both");
+    if (opts.modeGiven) throw new Error("draft flow: --from-trace drafts what the run observed; --mode does not apply");
+    if (opts.fromTrace === "") throw new Error("draft flow: --from-trace needs a JSONL file");
+    const root = findRoot(process.cwd());
+    const file = toPosix(relative(root, resolve(process.cwd(), opts.fromTrace)));
+    return draftFlowPrinter(root, "", "algo", { ...opts, fromTrace: { file, ...(opts.run !== undefined ? { run: opts.run } : {}) } });
+  }
   if (!trigger) throw new Error("draft flow: a trigger id is required");
   if (opts.mode !== "algo" && opts.mode !== "llm" && opts.mode !== "hybrid") throw new Error(`draft: --mode must be algo, llm or hybrid, got \`${opts.mode}\``);
-  return draftFlowPrinter(findRoot(process.cwd()), trigger, opts.mode, opts);
+  return draftFlowPrinter(findRoot(process.cwd()), trigger, opts.mode, { ...opts, fromTrace: undefined });
 }
 
 /**
- * `draft flow <trigger> --mode algo|llm|hybrid`: a printer over the shared
- * `draft-flow` operation. The proposal replaces one already waiting, as the
+ * `draft flow <trigger> --mode algo|llm|hybrid` and `draft flow --from-trace
+ * <file> [--run <id>]`: a printer over the shared `draft-flow` operation. The proposal replaces one already waiting, as the
  * CLI always did. On stderr: the fallback of a hybrid without a model, IDs
  * the model left unknown, lines it dropped, a stats file not updated.
  */
-async function draftFlowPrinter(root: string, trigger: string, mode: "algo" | "llm" | "hybrid", opts: { name: string | undefined; into: string | undefined; print: boolean }): Promise<number> {
+async function draftFlowPrinter(root: string, trigger: string, mode: "algo" | "llm" | "hybrid", opts: { name: string | undefined; into: string | undefined; print: boolean; fromTrace: { file: string; run?: string } | undefined }): Promise<number> {
   const result = await runOperation({
     kind: "draft-flow",
     root,
     trigger,
     mode,
+    ...(opts.fromTrace !== undefined ? { fromTrace: opts.fromTrace } : {}),
     ...(opts.name !== undefined ? { name: opts.name } : {}),
     ...(opts.into !== undefined ? { into: opts.into } : {}),
     output: opts.print ? "preview" : "proposal",
@@ -966,9 +988,11 @@ async function cmdDoctor(): Promise<number> {
 }
 
 /** A printer over the shared trace-plan operation: the plan's JSON to stdout and nothing else. */
-async function cmdTracePlan(flow: string | undefined): Promise<number> {
-  if (!flow) throw new Error("trace-plan: a flow name is required");
-  const result = await runOperation({ kind: "trace-plan", root: findRoot(process.cwd()), flow });
+async function cmdTracePlan(flow: string | undefined, entry: string | undefined, name: string | undefined): Promise<number> {
+  if (entry !== undefined && flow !== undefined) throw new Error("trace-plan: give a flow or --entry <id>, not both");
+  if (entry === undefined && name !== undefined) throw new Error("trace-plan: --name goes with --entry");
+  if (entry === undefined && !flow) throw new Error("trace-plan: a flow name is required");
+  const result = await runOperation({ kind: "trace-plan", root: findRoot(process.cwd()), flow: entry === undefined ? flow! : (name ?? ""), ...(entry !== undefined ? { entry } : {}) });
   if (result.payload === null) throw new Error(result.messages[0]?.text ?? "trace-plan failed");
   process.stdout.write(result.payload.text);
   return result.exitCode ?? 2;

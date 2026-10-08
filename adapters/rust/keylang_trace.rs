@@ -25,10 +25,17 @@
 //!
 //! Environment (nothing is recorded without `KEYLANG_TRACE`):
 //!   KEYLANG_TRACE        JSONL file to append to
-//!   KEYLANG_TRACE_PLAN   plan from `keylang trace-plan <flow>` (snapshot id, the flow's functions)
-//!   KEYLANG_TRACE_TEST   test id
+//!   KEYLANG_TRACE_PLAN   plan from `keylang trace-plan <flow>` or `--entry <id>` (snapshot id, functions)
+//!   KEYLANG_TRACE_TEST   test id (default: the command line)
 //!   KEYLANG_TRACE_RUN    run id shared by the tests of one run (default: time and pid)
 //!   KEYLANG_TRACE_ROOT   repository root the plan's paths are relative to (default: cwd)
+//!   KEYLANG_FLOW         the flow of the process's run (default: the plan's)
+//!
+//! A server names the flow of each request: `keylang_trace::flow("<flow>", || …)`
+//! for synchronous code, `keylang_trace::in_flow("<flow>", future).await` for
+//! async handlers (an axum layer). The spans inside are a run of their own
+//! (a run id and a clock of their own), written with its `run` record when the
+//! closure returns or the future completes; an empty name only runs the code.
 //!
 //! Relative paths are the directory the process started in: a constructor
 //! that runs before `main` (`.init_array` on ELF targets, `__mod_init_func` on
@@ -64,27 +71,45 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::task::{Context, Poll};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 struct Tracer {
     file: String,
     snapshot: String,
-    flow: String,
-    test: String,
-    run: String,
-    clock: String,
     instrumented: Vec<String>,
     /// Plan IDs whose marks are recorded: a guard in synchronous code, or `instrument`.
     recorded: BTreeSet<String>,
     start: Instant,
+    lines: Mutex<Vec<String>>,
+    /// The process's own run; a `flow()` scope is a run of its own.
+    process: Arc<Scope>,
+    requests: AtomicU64,
+}
+
+/// One run being recorded: the process's, or one request's (`flow`, `in_flow`).
+struct Scope {
+    run: String,
+    test: String,
+    flow: String,
+    clock: String,
     seq: AtomicU64,
     spans: AtomicU64,
-    lines: Mutex<Vec<String>>,
     open: Mutex<BTreeSet<String>>,
     /// A span ended while a span begun after it on the same thread was still open: nesting is unknown.
     interleaved: AtomicBool,
+}
+
+impl Scope {
+    fn new(run: String, test: String, flow: String, clock: String) -> Scope {
+        Scope { run, test, flow, clock, seq: AtomicU64::new(0), spans: AtomicU64::new(0), open: Mutex::new(BTreeSet::new()), interleaved: AtomicBool::new(false) }
+    }
+
+    /// The span is this run's: span ids start with the clock of their run.
+    fn owns(&self, span_id: &str) -> bool {
+        span_id.len() > self.clock.len() && span_id.starts_with(&self.clock) && span_id.as_bytes()[self.clock.len()] == b':'
+    }
 }
 
 static TRACER: OnceLock<Option<Tracer>> = OnceLock::new();
@@ -124,41 +149,58 @@ fn absolute(path: &str) -> String {
 
 thread_local! {
     static STACK: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    /// The `flow` scope this thread runs in; None: the process's run.
+    static CURRENT: RefCell<Option<Arc<Scope>>> = const { RefCell::new(None) };
+}
+
+/// The run spans begun now on this thread belong to.
+fn current(tracer: &Tracer) -> Arc<Scope> {
+    CURRENT.with(|c| c.borrow().clone()).unwrap_or_else(|| tracer.process.clone())
+}
+
+/// The innermost span of this thread when it is `scope`'s: a span of another run is no parent.
+fn parent_in(scope: &Scope) -> Option<String> {
+    STACK.with(|s| s.borrow().last().filter(|p| scope.owns(p)).cloned())
 }
 
 /// A span of `id` until the guard is dropped. Without `KEYLANG_TRACE`, or for an ID the plan does not record, it records nothing.
 pub fn span(id: &'static str) -> Span {
-    let Some(tracer) = tracer().filter(|t| t.recorded.contains(id)) else { return Span { id: None } };
-    let parent = STACK.with(|s| s.borrow().last().cloned());
-    let span_id = tracer.begin(id, parent.as_deref());
+    let Some(tracer) = tracer().filter(|t| t.recorded.contains(id)) else { return Span { id: None, scope: None } };
+    let scope = current(tracer);
+    let parent = parent_in(&scope);
+    let span_id = tracer.begin(&scope, id, parent.as_deref());
     STACK.with(|s| s.borrow_mut().push(span_id.clone()));
-    Span { id: Some(span_id) }
+    Span { id: Some(span_id), scope: Some(scope) }
 }
 
 pub struct Span {
     id: Option<String>,
+    scope: Option<Arc<Scope>>,
 }
 
 impl Drop for Span {
     fn drop(&mut self) {
-        let (Some(tracer), Some(span_id)) = (tracer(), self.id.take()) else { return };
+        let (Some(tracer), Some(span_id), Some(scope)) = (tracer(), self.id.take(), self.scope.take()) else { return };
         // A panic unwinding through the span ends it with an error.
         let outcome = if std::thread::panicking() { "error" } else { "ok" };
-        leave(tracer, &span_id);
-        tracer.end(&span_id, outcome);
+        leave(&scope, &span_id);
+        tracer.end(&scope, &span_id, outcome);
     }
 }
 
 /// `future` inside a span of `id`: the span begins at the first poll and ends when the future completes.
 pub fn instrument<F: Future>(id: &'static str, future: F) -> Instrumented<F> {
     let recorded = tracer().is_some_and(|t| t.recorded.contains(id));
-    let parent = if recorded { STACK.with(|s| s.borrow().last().cloned()) } else { None };
-    Instrumented { id, recorded, parent, span: None, future: Box::pin(future) }
+    let scope = tracer().filter(|_| recorded).map(current);
+    let parent = scope.as_deref().and_then(parent_in);
+    Instrumented { id, recorded, scope, parent, span: None, future: Box::pin(future) }
 }
 
 pub struct Instrumented<F> {
     id: &'static str,
     recorded: bool,
+    /// The run the future was created in: its span is that run's, whichever thread polls it.
+    scope: Option<Arc<Scope>>,
     parent: Option<String>,
     span: Option<String>,
     future: Pin<Box<F>>,
@@ -169,17 +211,17 @@ impl<F: Future> Future for Instrumented<F> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<F::Output> {
         let this = self.get_mut();
-        let Some(tracer) = tracer().filter(|_| this.recorded) else { return this.future.as_mut().poll(cx) };
+        let (Some(tracer), Some(scope)) = (tracer().filter(|_| this.recorded), this.scope.clone()) else { return this.future.as_mut().poll(cx) };
         if this.span.is_none() {
-            this.span = Some(tracer.begin(this.id, this.parent.as_deref()));
+            this.span = Some(tracer.begin(&scope, this.id, this.parent.as_deref()));
         }
         let span_id = this.span.clone().unwrap_or_default();
         STACK.with(|s| s.borrow_mut().push(span_id.clone()));
-        let result = this.future.as_mut().poll(cx);
-        leave(tracer, &span_id);
+        let result = within(Some(scope.clone()), || this.future.as_mut().poll(cx));
+        leave(&scope, &span_id);
         if result.is_ready() {
             this.span = None;
-            tracer.end(&span_id, "ok");
+            tracer.end(&scope, &span_id, "ok");
         }
         result
     }
@@ -188,96 +230,194 @@ impl<F: Future> Future for Instrumented<F> {
 impl<F> Drop for Instrumented<F> {
     fn drop(&mut self) {
         // Dropped before it completed: cancelled, or unwound by a panic.
-        if let (Some(tracer), Some(span_id)) = (tracer(), self.span.take()) {
-            tracer.end(&span_id, "error");
+        if let (Some(tracer), Some(span_id), Some(scope)) = (tracer(), self.span.take(), self.scope.as_ref()) {
+            tracer.end(scope, &span_id, "error");
+        }
+    }
+}
+
+/// `f` with `scope` as this thread's run (None: the process's), the previous one restored after it, also on a panic.
+fn within<T>(scope: Option<Arc<Scope>>, f: impl FnOnce() -> T) -> T {
+    struct Restore(Option<Arc<Scope>>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let previous = self.0.take();
+            CURRENT.with(|c| *c.borrow_mut() = previous);
+        }
+    }
+    let previous = CURRENT.with(|c| std::mem::replace(&mut *c.borrow_mut(), scope));
+    let _restore = Restore(previous);
+    f()
+}
+
+/// A run of flow `name` of its own (a run id and a clock of its own); None without a tracer or a name.
+fn new_scope(name: &str) -> Option<(&'static Tracer, Arc<Scope>)> {
+    let tracer = tracer()?;
+    if name.is_empty() {
+        return None;
+    }
+    let n = tracer.requests.fetch_add(1, Ordering::SeqCst) + 1;
+    let process = &tracer.process;
+    Some((tracer, Arc::new(Scope::new(format!("{}.r{n}", process.run), process.test.clone(), name.to_string(), format!("{}.r{n}", process.clock)))))
+}
+
+/// Runs `f` as a run of flow `name`: the spans it begins on this thread are that run's, and its `run`
+/// record is written when `f` returns (incomplete when it panics). A request handler takes the name
+/// from `X-Keylang-Flow`; an empty name, or no `KEYLANG_TRACE`, only runs `f`.
+pub fn flow<T>(name: &str, f: impl FnOnce() -> T) -> T {
+    let Some((tracer, scope)) = new_scope(name) else { return f() };
+    struct Close(&'static Tracer, Arc<Scope>);
+    impl Drop for Close {
+        fn drop(&mut self) {
+            self.0.record(&self.1, std::thread::panicking());
+        }
+    }
+    let _close = Close(tracer, scope.clone());
+    within(Some(scope), f)
+}
+
+/// `future` as a run of flow `name`, for async handlers (an axum or tower layer): the scope is the
+/// thread's run while the future is polled; the `run` record is written when it completes, or as
+/// incomplete when it is dropped before.
+pub fn in_flow<F: Future>(name: &str, future: F) -> InFlow<F> {
+    InFlow { scope: new_scope(name), future: Box::pin(future) }
+}
+
+pub struct InFlow<F> {
+    scope: Option<(&'static Tracer, Arc<Scope>)>,
+    future: Pin<Box<F>>,
+}
+
+impl<F: Future> Future for InFlow<F> {
+    type Output = F::Output;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<F::Output> {
+        let this = self.get_mut();
+        let Some((tracer, scope)) = this.scope.clone() else { return this.future.as_mut().poll(cx) };
+        let result = within(Some(scope.clone()), || this.future.as_mut().poll(cx));
+        if result.is_ready() {
+            this.scope = None;
+            tracer.record(&scope, false);
+        }
+        result
+    }
+}
+
+impl<F> Drop for InFlow<F> {
+    fn drop(&mut self) {
+        if let Some((tracer, scope)) = self.scope.take() {
+            tracer.record(&scope, true);
         }
     }
 }
 
 /// Take `span_id` off this thread's stack; a span above it means spans interleaved.
-fn leave(tracer: &Tracer, span_id: &str) {
+fn leave(scope: &Scope, span_id: &str) {
     STACK.with(|s| {
         let mut stack = s.borrow_mut();
         if let Some(at) = stack.iter().rposition(|x| x == span_id) {
             if at + 1 != stack.len() {
-                tracer.interleaved.store(true, Ordering::SeqCst);
+                scope.interleaved.store(true, Ordering::SeqCst);
             }
             stack.remove(at);
         }
     });
 }
 
-/// Write the trace with its `run` record. Call once, at the end of `main`.
+/// Write the trace with the process's `run` record. Call once, at the end of `main`.
 pub fn finish() {
     let Some(tracer) = tracer() else { return };
-    let open: Vec<String> = tracer.open.lock().unwrap().iter().cloned().collect();
-    let list = |items: &[String]| items.iter().map(|x| json_string(x)).collect::<Vec<_>>().join(",");
-    tracer.write(&format!(
-        "\"event\":\"run\",\"clockId\":{},\"complete\":{},\"dropped\":0,\"instrumented\":[{}],\"open\":[{}]",
-        json_string(&tracer.clock),
-        open.is_empty() && !tracer.interleaved.load(Ordering::SeqCst),
-        list(&tracer.instrumented),
-        list(&open)
-    ));
-    let lines = std::mem::take(&mut *tracer.lines.lock().unwrap());
-    if let Some(dir) = Path::new(&tracer.file).parent() {
-        let _ = fs::create_dir_all(dir);
+    // A server whose every span was a request's has no run of its own to report.
+    if tracer.requests.load(Ordering::SeqCst) > 0 && tracer.process.spans.load(Ordering::SeqCst) == 0 {
+        tracer.flush();
+        return;
     }
-    let mut out = OpenOptions::new().create(true).append(true).open(&tracer.file).expect("keylang trace: cannot open KEYLANG_TRACE");
-    out.write_all(format!("{}\n", lines.join("\n")).as_bytes()).expect("keylang trace: cannot write KEYLANG_TRACE");
+    tracer.record(&tracer.process, false);
 }
 
 impl Tracer {
     /// Record the start of a span of `id` under `parent`; a parent that has already ended is a link, as for an async continuation.
-    fn begin(&self, id: &str, parent: Option<&str>) -> String {
-        let n = self.spans.fetch_add(1, Ordering::SeqCst) + 1;
-        let span_id = format!("{}:s{}", self.clock, n);
-        let ended = parent.is_some_and(|p| !self.open.lock().unwrap().contains(p));
+    fn begin(&self, scope: &Scope, id: &str, parent: Option<&str>) -> String {
+        let n = scope.spans.fetch_add(1, Ordering::SeqCst) + 1;
+        let span_id = format!("{}:s{}", scope.clock, n);
+        let ended = parent.is_some_and(|p| !scope.open.lock().unwrap().contains(p));
         let links = match parent {
             Some(p) if ended => format!(",\"links\":[{}]", json_string(p)),
             _ => String::new(),
         };
-        self.write(&format!(
-            "\"event\":\"start\",\"spanId\":{},\"parentSpanId\":{},\"symbolId\":{},\"clockId\":{},\"seq\":{},\"ts\":{}{}",
-            json_string(&span_id),
-            parent.map(json_string).unwrap_or_else(|| "null".to_string()),
-            json_string(id),
-            json_string(&self.clock),
-            self.next_seq(),
-            self.ts(),
-            links
-        ));
-        self.open.lock().unwrap().insert(span_id.clone());
+        self.write(
+            scope,
+            &format!(
+                "\"event\":\"start\",\"spanId\":{},\"parentSpanId\":{},\"symbolId\":{},\"clockId\":{},\"seq\":{},\"ts\":{}{}",
+                json_string(&span_id),
+                parent.map(json_string).unwrap_or_else(|| "null".to_string()),
+                json_string(id),
+                json_string(&scope.clock),
+                scope.seq.fetch_add(1, Ordering::SeqCst) + 1,
+                self.ts(),
+                links
+            ),
+        );
+        scope.open.lock().unwrap().insert(span_id.clone());
         span_id
     }
 
-    fn end(&self, span_id: &str, outcome: &str) {
-        self.open.lock().unwrap().remove(span_id);
-        self.write(&format!(
-            "\"event\":\"end\",\"spanId\":{},\"outcome\":\"{}\",\"clockId\":{},\"seq\":{},\"ts\":{}",
-            json_string(span_id),
-            outcome,
-            json_string(&self.clock),
-            self.next_seq(),
-            self.ts()
-        ));
+    fn end(&self, scope: &Scope, span_id: &str, outcome: &str) {
+        scope.open.lock().unwrap().remove(span_id);
+        self.write(
+            scope,
+            &format!(
+                "\"event\":\"end\",\"spanId\":{},\"outcome\":\"{}\",\"clockId\":{},\"seq\":{},\"ts\":{}",
+                json_string(span_id),
+                outcome,
+                json_string(&scope.clock),
+                scope.seq.fetch_add(1, Ordering::SeqCst) + 1,
+                self.ts()
+            ),
+        );
     }
 
-    fn write(&self, event: &str) {
+    /// The `run` record of `scope`, then everything not yet in the file.
+    fn record(&self, scope: &Scope, failed: bool) {
+        let open: Vec<String> = scope.open.lock().unwrap().iter().cloned().collect();
+        let list = |items: &[String]| items.iter().map(|x| json_string(x)).collect::<Vec<_>>().join(",");
+        self.write(
+            scope,
+            &format!(
+                "\"event\":\"run\",\"clockId\":{},\"complete\":{},\"dropped\":0,\"instrumented\":[{}],\"open\":[{}]",
+                json_string(&scope.clock),
+                !failed && open.is_empty() && !scope.interleaved.load(Ordering::SeqCst),
+                list(&self.instrumented),
+                list(&open)
+            ),
+        );
+        self.flush();
+    }
+
+    /// Append the events the file does not have yet.
+    fn flush(&self) {
+        let lines = std::mem::take(&mut *self.lines.lock().unwrap());
+        if lines.is_empty() {
+            return;
+        }
+        if let Some(dir) = Path::new(&self.file).parent() {
+            let _ = fs::create_dir_all(dir);
+        }
+        let mut out = OpenOptions::new().create(true).append(true).open(&self.file).expect("keylang trace: cannot open KEYLANG_TRACE");
+        out.write_all(format!("{}\n", lines.join("\n")).as_bytes()).expect("keylang trace: cannot write KEYLANG_TRACE");
+    }
+
+    fn write(&self, scope: &Scope, event: &str) {
         let line = format!(
             "{{\"schemaVersion\":1,\"snapshotId\":{},\"runId\":{},\"testId\":{},\"flow\":{},\"traceId\":{},{}}}",
             json_string(&self.snapshot),
-            json_string(&self.run),
-            json_string(&self.test),
-            json_string(&self.flow),
-            json_string(&format!("{}:{}", self.run, self.test)),
+            json_string(&scope.run),
+            json_string(&scope.test),
+            json_string(&scope.flow),
+            json_string(&format!("{}:{}", scope.run, scope.test)),
             event
         );
         self.lines.lock().unwrap().push(line);
-    }
-
-    fn next_seq(&self) -> u64 {
-        self.seq.fetch_add(1, Ordering::SeqCst) + 1
     }
 
     fn ts(&self) -> f64 {
@@ -293,7 +433,8 @@ fn init() -> Option<Tracer> {
     let file = absolute(&std::env::var("KEYLANG_TRACE").ok()?);
     let fail = |m: String| -> ! { panic!("keylang trace: {m}") };
     let plan_path = absolute(&std::env::var("KEYLANG_TRACE_PLAN").unwrap_or_else(|_| fail("KEYLANG_TRACE_PLAN is required".into())));
-    let test = std::env::var("KEYLANG_TRACE_TEST").unwrap_or_else(|_| fail("KEYLANG_TRACE_TEST is required".into()));
+    // Without a test id the run is named by the command line.
+    let test = std::env::var("KEYLANG_TRACE_TEST").ok().filter(|t| !t.is_empty()).unwrap_or_else(|| std::env::args().collect::<Vec<_>>().join(" "));
     let text = fs::read_to_string(&plan_path).unwrap_or_else(|e| fail(format!("{plan_path}: {e}")));
     let plan = Json::parse(&text).unwrap_or_else(|| fail(format!("{plan_path}: invalid JSON")));
     if plan.get("schemaVersion").and_then(Json::number) != Some(1.0) {
@@ -312,21 +453,18 @@ fn init() -> Option<Tracer> {
     let instrumented: Vec<String> = recorded.iter().cloned().collect();
     let now = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
     let pid = std::process::id();
+    // `KEYLANG_FLOW` names the flow of the process's run; the plan's flow otherwise.
+    let flow = std::env::var("KEYLANG_FLOW").ok().filter(|f| !f.is_empty()).unwrap_or_else(|| plan.get("flow").and_then(Json::string).unwrap_or_default().to_string());
+    let run = std::env::var("KEYLANG_TRACE_RUN").unwrap_or_else(|_| format!("{now:x}-{pid}"));
     Some(Tracer {
         file,
         snapshot: plan.get("snapshotId").and_then(Json::string).unwrap_or_default().to_string(),
-        flow: plan.get("flow").and_then(Json::string).unwrap_or_default().to_string(),
-        test,
-        run: std::env::var("KEYLANG_TRACE_RUN").unwrap_or_else(|_| format!("{now:x}-{pid}")),
-        clock: format!("rs-{pid}-{:x}", now & 0xffff_ffff),
         instrumented,
         recorded,
         start: Instant::now(),
-        seq: AtomicU64::new(0),
-        spans: AtomicU64::new(0),
         lines: Mutex::new(Vec::new()),
-        open: Mutex::new(BTreeSet::new()),
-        interleaved: AtomicBool::new(false),
+        process: Arc::new(Scope::new(run, test, flow, format!("rs-{pid}-{:x}", now & 0xffff_ffff))),
+        requests: AtomicU64::new(0),
     })
 }
 

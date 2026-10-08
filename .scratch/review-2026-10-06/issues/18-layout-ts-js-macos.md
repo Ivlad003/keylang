@@ -1,6 +1,6 @@
 # 18: Вгаданий layout: TS/JS-імпорт теки в іншому регістрі на macOS чи Windows мовчки зникає, і deny дає хибний ok
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -49,11 +49,15 @@
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/imports.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/imports.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+- 2026-10-08: Регресійний тест `tests/analyzer.test.ts` «guessed layout: an import of a directory in another letter case is a hole on a case-insensitive file system, not silently dropped» — справжній CLI на casefold tmpfs (`unshare -rm`, `mount -o casefold`, `chattr +F`; skip, коли недоступно), без keylang.json, `deny ui db`, `import … from "../DB/conn"` при `src/db/conn.ts`: очікує `unverified unresolved import \`../DB/conn\``, `0 fail, 1 unverified, 0 ok`. Новий хелпер `onCasefold` у тому ж файлі.
+- 2026-10-08: Сам дефект уже закрито комітом 24d7a3c (тікет 04): `probe` бере кандидата поза `sources` лише через `exactExistence` (`src/exact-path.ts`), який звіряє кожен сегмент шляху з переліком теки, тож `src/DB/conn.ts` при `src/db/conn.ts` не існує, імпорт лишається нерозв'язаним і дає дірку, а не доходить до `notIndexed`/`placeFile` (graph.ts). Перевірено, що тест ловить дефект: з тимчасово поверненим `existsSync` у `probe` тест падає (`0 fail, 0 unverified, 1 ok`), з `exactExistence` — зелений. Код не змінено; контракт (docs/snapshot.md, абзац «Мови») уже описує точне написання.
+- 2026-10-08: Перевірки: `node --test tests/analyzer.test.ts`, `npm run typecheck` — див. коміт.

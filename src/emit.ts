@@ -329,6 +329,10 @@ function renderDecl(r: Render, id: string, node: SnapshotNode, depth: number): s
     // An injected value is the caller's choice, not this function's code; a self-call is not a dependency.
     .filter((e) => e.source === id && e.kind === "call" && e.resolution === "resolved" && e.target && e.target !== id && e.via !== "injected")
     .sort((a, b) => a.line - b.line);
-  if (calls.length > 0) s += `${pad}  - calls ${[...new Set(calls.map((c) => c.target!))].map((target) => ref(r, target)).join(", ")}\n`;
+  // A call the framework makes by its config (ADR 0022) is a call like any other, marked with its `via` and config line.
+  const configured = calls.filter((c) => c.via === "preference" || c.via === "argument" || c.via?.startsWith("plugin:"));
+  const marks = [...new Map(configured.map((c) => [c.target!, `${nameOf(c.target!)} ${c.via} ${c.site ?? "?"}`])).values()];
+  const note = marks.length > 0 ? ` <!-- via: ${marks.join("; ").replace(/-->/g, "-- >")} -->` : "";
+  if (calls.length > 0) s += `${pad}  - calls ${[...new Set(calls.map((c) => c.target!))].map((target) => ref(r, target)).join(", ")}${note}\n`;
   return s;
 }

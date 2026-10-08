@@ -15,6 +15,8 @@ import { compareText } from "./span.ts";
 export const BASELINE_MARK = "<!-- keylang:generated — не редагувати, `keylang baseline` -->";
 
 const EDGE_KINDS = new Set(["import", "call", "type", "reexport"]);
+/** Calls a framework makes by its config (ADR 0022): a dependency of the module whose config declares them. */
+const CONFIG_VIA = new Set(["preference", "argument", "plugin:before", "plugin:around", "plugin:after"]);
 
 /**
  * Baseline rules for one snapshot. Layers come from `keylang.json`, in code-unit
@@ -32,12 +34,19 @@ export function baselineText(snapshot: AnalysisSnapshot): string {
 
   const depends = new Map<string, Set<string>>(sources.map((layer) => [layer, new Set()]));
   const packages = new Map<string, Set<string>>(sources.map((layer) => [layer, new Set()]));
+  /** Layer pairs the code depends on, and those only a framework's config makes: with the first config line of each. */
+  const inCode = new Set<string>();
+  const byConfig = new Map<string, string>();
   for (const edge of snapshot.edges) {
     if (!EDGE_KINDS.has(edge.kind) || edge.resolution !== "resolved" || edge.target === null) continue;
-    const from = layerOf.get(edge.source);
+    const configured = edge.via !== undefined && CONFIG_VIA.has(edge.via);
+    const from = layerOf.get(configured && edge.owner !== undefined ? edge.owner : edge.source);
     const to = layerOf.get(edge.target);
     if (from === undefined || to === undefined || from === to || !depends.has(from)) continue;
     depends.get(from)!.add(to);
+    const pair = `${from} → ${to}`;
+    if (!configured) inCode.add(pair);
+    else if (!byConfig.has(pair)) byConfig.set(pair, `${edge.via} ${edge.site ?? "?"}`);
     if (to === "external") {
       const pkg = externalModule(snapshot, edge.target);
       if (pkg !== null) packages.get(from)!.add(pkg);
@@ -55,6 +64,9 @@ export function baselineText(snapshot: AnalysisSnapshot): string {
       for (const pkg of pkgs) lines.push(`- allow ${source} ${pkg}`);
     }
   }
+  // Dependencies only a framework's config makes stay allowed; the baseline names where each comes from, so it is not read as code.
+  const provenance = [...byConfig].filter(([pair]) => !inCode.has(pair)).sort(([a], [b]) => compareText(a, b));
+  if (provenance.length > 0) lines.push("", ...provenance.map(([pair, at]) => `<!-- keylang:baseline ${pair} only through the framework config: ${at} -->`));
   return `${lines.join("\n")}\n`;
 }
 

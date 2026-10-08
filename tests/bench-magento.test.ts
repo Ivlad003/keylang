@@ -51,7 +51,7 @@ test("bench-magento: metrics of the fixture snapshot", () => {
   assert.deepEqual(m.drafts.map((d) => d.steps.length), [1, 2]);
   assert.ok(m.golden);
   assert.equal(m.golden.found, 0);
-  assert.equal(m.golden.total, 5);
+  assert.equal(m.golden.total, 6);
   const validate = m.golden.ids.find((g) => g.id.endsWith("validateQuote"));
   assert.deepEqual(validate, { id: "quote.Model.SubmitQuoteValidator.SubmitQuoteValidator.validateQuote", inMap: true, inFlow: false, inDrafts: ["quote.Model.QuoteManagement.QuoteManagement.submitQuote"] });
   assert.equal(m.golden.ids.find((g) => g.id.endsWith("validateOrder"))?.inMap, false);
@@ -59,7 +59,7 @@ test("bench-magento: metrics of the fixture snapshot", () => {
     { name: "checkout_submit_before", id: null, inFlow: false },
     { name: "checkout_submit_all_after", id: null, inFlow: false },
   ]);
-  assert.equal(summaryLine(m), "resolved 28.6 % (2/7) | holes 5 | entries n/a | drafts 1/2 | golden 0/5");
+  assert.equal(summaryLine(m), "resolved 28.6 % (2/7) | holes 5 | entries n/a | drafts 1/2 | golden 0/6");
 });
 
 test("bench-magento: golden IDs found when the flow lists them; entries and events counted when present", () => {
@@ -74,7 +74,7 @@ test("bench-magento: golden IDs found when the flow lists them; entries and even
   assert.deepEqual(m.golden?.events[0], { name: "checkout_submit_before", id: "event.checkout_submit_before", inFlow: true });
   const md = formatReport(m);
   assert.match(md, /\| `webapi` \| 2 \|/);
-  assert.match(md, /found \*\*2\/5\*\* у чернетці; бракує: `quote\.Model\.SubmitQuoteValidator/);
+  assert.match(md, /found \*\*2\/6\*\* у чернетці; бракує: `quote\.Model\.SubmitQuoteValidator/);
   assert.match(md, /\| `checkout_submit_before` \| `event\.checkout_submit_before` \| так \|/);
 });
 

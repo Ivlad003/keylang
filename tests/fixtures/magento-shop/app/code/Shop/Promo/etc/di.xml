@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <preference for="Shop\Checkout\Api\NotifierInterface" type="Shop\Promo\Model\SmsNotifier"/>
+    <type name="Shop\Checkout\Model\QuoteManagement">
+        <plugin name="coupon" type="Shop\Promo\Plugin\CouponPlugin" sortOrder="20"/>
+        <plugin name="audit" type="Shop\Promo\Plugin\AuditPlugin" sortOrder="10"/>
+        <plugin name="legacy" type="Shop\Promo\Plugin\LegacyPlugin" sortOrder="5" disabled="true"/>
+    </type>
+</config>

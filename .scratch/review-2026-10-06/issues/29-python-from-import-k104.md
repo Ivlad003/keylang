@@ -1,6 +1,6 @@
 # 29: Python: два `from .x import *` з однаковим ім'ям дають хибний K104 absence у `__init__`
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -61,11 +61,15 @@ scratchpad/review/rule-flow-semantics/f7: `node bin/keylang.js check` дає `ke
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/exports.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/exports.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+- 2026-10-08: Регресійний тест `tests/languages.test.ts` «python: two `from .x import *` in `__init__.py` with one name export the last one…» — справжній CLI: `a.py` і `b.py` з `def V`, `__init__.py` = `from .a import *` / `from .b import *`; `exports V, f, g` → `1 ok` (було K104 absence «does not export `V`»), `exports f, g` → K104 «exports `V` (fn, re-exported from `app.b`)» (було хибне ok).
+- 2026-10-08: Виправлення: `ModuleExportsInput.lastStarWins` (`src/exports.ts`) — для Python `pickStar` при різних походженнях бере останнє за порядком stars джерело, а не відкидає ім'я; ESM-правило лишається для TS/JS (і Rust). `src/graph.ts`: прапорець ставиться для модулів Python при побудові `exportInputs` (три рядки, лише там). Зовнішній glob (`from numpy import *`) і далі дає рядок `*`, тож правило — `unverified`, не `ok`.
+- 2026-10-08: Контракт: `docs/semantics.md` (рядок про `exports`). Перевірки: `node --test tests/languages.test.ts tests/analyzer.test.ts tests/cli-rules.test.ts tests/metamorphic.test.ts` — 90/90, `npm run typecheck` — ок.
