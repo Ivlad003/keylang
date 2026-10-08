@@ -38,6 +38,11 @@
       - module [demo](../../examples/wiring-lifecycle/demo.ts#L1) <!-- outside -->
       - module [plan](../../examples/wiring-lifecycle/plan.ts#L1) <!-- outside -->
   - module scripts
+    - module [build-web](../../scripts/build-web.mjs#L1) <!-- outside -->
     - module [copy-wasm](../../scripts/copy-wasm.mjs#L1) <!-- outside -->
     - module [copy-web](../../scripts/copy-web.mjs#L1) <!-- outside -->
     - module [pack-entry](../../scripts/pack-entry.mjs#L1) <!-- outside -->
+  - module web
+    - module src
+      - module [api](../../web/src/api.ts#L1) <!-- outside -->
+      - module [diagrams](../../web/src/diagrams.ts#L1) <!-- outside -->

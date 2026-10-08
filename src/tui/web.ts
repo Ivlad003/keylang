@@ -15,7 +15,8 @@
 // other server on localhost would receive it.
 
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { createRequire } from "node:module";
 import type { AddressInfo } from "node:net";
@@ -47,6 +48,53 @@ const ASSETS = {
 } as const;
 
 type AssetName = keyof typeof ASSETS;
+
+/** The diagram client, bundled by scripts/build-web.mjs (ADR 0024): it exists only as built files, never in a package. */
+const BUILT = {
+  "diagrams.js": "text/javascript",
+  "diagrams.css": "text/css",
+} as const;
+
+type BuiltName = keyof typeof BUILT;
+
+// Literal directory URLs: `dist/tui/web.js` and `src/tui/web.ts` both sit two levels below the package root.
+const PACKAGE_ROOT = fileURLToPath(new URL("../../", import.meta.url));
+const BUILT_DIR = join(PACKAGE_ROOT, "dist", "web");
+/** Only a checkout has the client's sources; the published package has the built files alone. */
+const CLIENT_SOURCES = join(PACKAGE_ROOT, "web", "src");
+
+/** The newest modification time under a directory, in ms. */
+function newestUnder(dir: string): number {
+  let newest = 0;
+  for (const entry of readdirSync(dir, { withFileTypes: true, recursive: true })) {
+    if (entry.isFile()) newest = Math.max(newest, statSync(join(entry.parentPath, entry.name)).mtimeMs);
+  }
+  return newest;
+}
+
+/** Whether the bundle is missing or older than the client's sources or its build script. */
+function clientStale(): boolean {
+  if (!existsSync(CLIENT_SOURCES)) return false;
+  const bundle = join(BUILT_DIR, "diagrams.js");
+  if (!existsSync(bundle)) return true;
+  const script = join(PACKAGE_ROOT, "scripts", "build-web.mjs");
+  return statSync(bundle).mtimeMs < Math.max(newestUnder(CLIENT_SOURCES), existsSync(script) ? statSync(script).mtimeMs : 0);
+}
+
+let building: Promise<void> | null = null;
+
+/** In a checkout, builds the diagram client when it is missing or stale (esbuild takes about a second); concurrent requests share one build. */
+function ensureClient(): Promise<void> {
+  if (building) return building;
+  if (!clientStale()) return Promise.resolve();
+  building = new Promise<void>((done, fail) => {
+    execFile(process.execPath, [join(PACKAGE_ROOT, "scripts", "build-web.mjs")], { cwd: PACKAGE_ROOT }, (error, _stdout, stderr) => {
+      if (error) fail(new Error(`cannot build the diagram client (npm run web:build): ${stderr.trim() || error.message}`));
+      else done();
+    });
+  }).finally(() => (building = null));
+  return building;
+}
 
 /** The published package carries the assets in `dist/web/`; a checkout reads them from `node_modules`. */
 export function assetPath(name: AssetName): string | null {
@@ -231,11 +279,30 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
       });
       return;
     }
+    if (path.startsWith("/assets/") && Object.hasOwn(BUILT, path.slice("/assets/".length))) {
+      const name = path.slice("/assets/".length) as BuiltName;
+      ensureClient()
+        .then(() => {
+          const file = join(BUILT_DIR, name);
+          if (!existsSync(file)) return reply(response, 404, "text/plain", "not built: run `npm run web:build`\n");
+          reply(response, 200, BUILT[name], readFileSync(file));
+        })
+        .catch((error: unknown) => {
+          process.stderr.write(`keylang web: ${error instanceof Error ? error.message : String(error)}\n`);
+          if (!response.headersSent) reply(response, 500, "text/plain", "server error\n");
+        });
+      return;
+    }
     if (path.startsWith("/assets/")) {
       const name = path.slice("/assets/".length) as AssetName;
       const file = Object.hasOwn(ASSETS, name) ? assetPath(name) : null;
       if (!file) return reply(response, 404, "text/plain", "not found\n");
       return reply(response, 200, ASSETS[name].type, readFileSync(file));
+    }
+    if (path === "/diagrams") {
+      // Static like `/`: the token stays in the fragment and the data comes from `/api/`, which needs it. No inline script.
+      response.setHeader("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:");
+      return reply(response, 200, "text/html; charset=utf-8", diagramsPage());
     }
     if (path !== "/") return reply(response, 404, "text/plain", "not found\n");
     // The page is static and holds no data; everything goes through the socket, which needs the token.
@@ -449,6 +516,32 @@ function reply(response: ServerResponse, status: number, type: string, body: str
   response.end(body);
 }
 
+/** The diagram page: markup only; `/assets/diagrams.js` takes the token from the fragment and fills it from `/api/`. */
+function diagramsPage(): string {
+  return `<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>keylang · діаграми</title>
+<link rel="stylesheet" href="/assets/diagrams.css">
+<script src="/assets/diagrams.js" defer></script>
+</head>
+<body>
+<aside id="list">
+<header><span>Діаграми</span><a href="/">термінал</a></header>
+<input id="search" type="search" placeholder="Пошук: флоу, точка входу, шар" aria-label="Пошук">
+<ul id="views"></ul>
+</aside>
+<main>
+<div id="status">loading…</div>
+<div id="graph"></div>
+</main>
+</body>
+</html>
+`;
+}
+
 /** The page: xterm.js from `/assets/`, a WebSocket back to this server, reconnect with the same session. */
 function page(): string {
   return `<!doctype html>
@@ -462,10 +555,13 @@ function page(): string {
   html, body { margin: 0; height: 100%; background: #1c1c1c; }
   #term { position: absolute; inset: 0; padding: 4px; }
   #state { position: fixed; right: 8px; bottom: 8px; font: 12px system-ui, sans-serif; color: #ddd; background: #5f3a00; padding: 4px 8px; border-radius: 4px; display: none; }
+  #diagrams { position: fixed; right: 8px; top: 6px; z-index: 10; font: 12px system-ui, sans-serif; color: #9cc4ff; background: #262b33; padding: 2px 8px; border-radius: 4px; opacity: 0.6; text-decoration: none; }
+  #diagrams:hover, #diagrams:focus { opacity: 1; }
 </style>
 </head>
 <body>
 <div id="term"></div>
+<a id="diagrams" href="/diagrams" target="_blank" rel="noopener">Діаграми</a>
 <div id="state">reconnecting…</div>
 <script src="/assets/xterm.js"></script>
 <script src="/assets/addon-fit.js"></script>
@@ -478,6 +574,8 @@ function page(): string {
     history.replaceState(null, "", "/");
   }
   const token = sessionStorage.getItem("keylang-token") || "";
+  // The diagram page opens in a new tab, which has its own sessionStorage: the token goes along in the fragment.
+  if (token) document.getElementById("diagrams").href = "/diagrams#t=" + encodeURIComponent(token);
   let session = sessionStorage.getItem("keylang-session");
   if (!session) {
     session = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, "0")).join("");
