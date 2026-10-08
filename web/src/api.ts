@@ -38,6 +38,9 @@ export interface Views {
   flows: string[];
   entries: { id: string; kind: string; label: string }[];
   layers: string[];
+  /** Domains of the business processes `flows discover --names` saved, and the processes with their flows. */
+  domains?: string[];
+  processes?: { name: string; domain: string; flows: string[] }[];
   /** The repository root, absolute: `vscode://file/<root>/<file>:<line>`. */
   root?: string;
   flowList?: FlowListing[];
@@ -98,7 +101,7 @@ export interface Usages {
 }
 
 /** A view as the query of `GET /api/diagram` names it. */
-export type ViewQuery = { view: "flow"; name: string } | { view: "discovered"; name: string } | { view: "entry"; id: string } | { view: "layers" };
+export type ViewQuery = { view: "flow"; name: string } | { view: "discovered"; name: string } | { view: "entry"; id: string } | { view: "layers" } | { view: "process"; domain: string };
 
 /** A refused or failed request, with the status the page explains. */
 export class ApiError extends Error {

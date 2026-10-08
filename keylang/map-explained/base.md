@@ -11,18 +11,21 @@
     - fn [briefOf](../../src/brief.ts#L16) (text: string) → string | null
       <a id="base.brief.briefOf"></a><br>The first paragraph of `text` with whitespace collapsed, cut to its first two sentences and to about `BRIEF_MAX` characters; null when nothing is left. A sentence ends at `.`, `!` or `?` (closing quotes and brackets after it included) before whitespace and an uppercase letter…
       - calls [base.brief.capText](base.md#base.brief.capText), [base.brief.firstSentences](base.md#base.brief.firstSentences)
-    - fn [firstSentences](../../src/brief.ts#L27) (text: string, count: number) → string <!-- internal -->
+    - fn [firstSentence](../../src/brief.ts#L26) (text: string) → string | null
+      <a id="base.brief.firstSentence"></a><br>The first sentence of the first paragraph of `text`, by the rule of `briefOf`; null when nothing is left.
+      - calls [base.brief.briefOf](base.md#base.brief.briefOf), [base.brief.firstSentences](base.md#base.brief.firstSentences)
+    - fn [firstSentences](../../src/brief.ts#L33) (text: string, count: number) → string <!-- internal -->
       <a id="base.brief.firstSentences"></a><br>Scans the input with the `SENTENCE_END` regex and returns the prefix of the text ending at the `count`-th sentence terminator, or the whole text unchanged if fewer terminators are found; it is used only by [`base.brief.briefOf`](base.md#base.brief.briefOf) to trim a description down to its opening… _(llm · claude · 2026-10-04 · stale)_
-    - fn [readmeBrief](../../src/brief.ts#L45) (markdown: string) → string | null
+    - fn [readmeBrief](../../src/brief.ts#L51) (markdown: string) → string | null
       <a id="base.brief.readmeBrief"></a><br>The brief of a README: its first paragraph of prose that reads as a sentence, through `briefOf`. Headings, fenced and indented code, HTML, lists, quotes and tables are passed over; images and badges are dropped, links keep their text, emphasis its words.
       - calls [base.brief.proseParagraphs](base.md#base.brief.proseParagraphs), [base.brief.plainInline](base.md#base.brief.plainInline), [base.brief.words](base.md#base.brief.words), [base.brief.briefOf](base.md#base.brief.briefOf)
-    - fn [proseParagraphs](../../src/brief.ts#L54) (markdown: string) → string[] <!-- internal -->
+    - fn [proseParagraphs](../../src/brief.ts#L60) (markdown: string) → string[] <!-- internal -->
       <a id="base.brief.proseParagraphs"></a><br>Paragraphs of plain text, in order: blocks of non-blank lines that are not another kind of Markdown block.
-    - fn [plainInline](../../src/brief.ts#L106) (text: string) → string <!-- internal -->
+    - fn [plainInline](../../src/brief.ts#L112) (text: string) → string <!-- internal -->
       <a id="base.brief.plainInline"></a><br>The words of an inline Markdown text: images and badges dropped, links as their text, no tags or emphasis marks.
-    - fn [words](../../src/brief.ts#L118) (text: string) → number <!-- internal -->
+    - fn [words](../../src/brief.ts#L124) (text: string) → number <!-- internal -->
       <a id="base.brief.words"></a>
-    - fn [capText](../../src/brief.ts#L123) (text: string, max: number) → string
+    - fn [capText](../../src/brief.ts#L129) (text: string, max: number) → string
       <a id="base.brief.capText"></a><br>At most `max` code points: cut at the last space before the limit, then `…`.
   - module [config](../../src/config.ts#L1)
     <a id="base.config"></a><br>`keylang.json`: what to index, how files map to layers, where specs live. Without a config file the layout is guessed from the directory tree (`keylang init` writes that guess down so it can be edited).
