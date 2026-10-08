@@ -4,10 +4,10 @@
 
 Як відтворити: `node bench/magento/run.mjs [--repo <клон>]` — див. [README](README.md). Цей файл пише бенч; змінюється тільки блок «Цього запуску».
 
-`check --format json`: 0 fail, 0 unverified, 0 ok, 0 warning; записів coverage 22996. `map`: 2327 попереджень.
+`check --format json`: 0 fail, 0 unverified, 0 ok, 0 warning; записів coverage 21949. `map`: 2327 попереджень.
 
-`draft flow quote.Model.QuoteManagement.QuoteManagement.placeOrder --mode algo --print`: кроків 1 (разом із тригером).
-`draft flow quote.Model.QuoteManagement.QuoteManagement.submitQuote --mode algo --print`: кроків 68 (разом із тригером).
+`draft flow quote.Model.QuoteManagement.QuoteManagement.placeOrder --mode algo --print`: кроків 45 (разом із тригером).
+`draft flow quote.Model.QuoteManagement.QuoteManagement.submitQuote --mode algo --print`: кроків 119 (разом із тригером).
 
 ## Розмір
 
@@ -17,44 +17,46 @@
 
 ## Виклики
 
-Розв'язано **17.7 %** (4892 з 27703; ціль spec §6 — ≥ 60 %).
+Розв'язано **21.5 %** (5962 з 27703; ціль spec §6 — ≥ 60 %).
 
 | resolved | external | dynamic | unresolved |
 |---:|---:|---:|---:|
-| 4892 | 2707 | 14417 | 5687 |
+| 5962 | 2706 | 13352 | 5683 |
 
 ## Дірки за видами
 
 | Вид | Кількість |
 |---|---:|
-| `dynamic-call` | 14417 |
-| `unresolved-call` | 5687 |
+| `dynamic-call` | 13348 |
+| `unresolved-call` | 5683 |
 | `unresolved-import` | 2327 |
 | `outside-file` | 508 |
 | `skipped-file` | 42 |
+| `unresolved-binding` | 22 |
 | `unsupported` | 12 |
+| `ambiguous-binding` | 4 |
 | `unassigned-file` | 3 |
 
-## Дірки за причинами (top-10 з 22443)
+## Дірки за причинами (top-10 з 21370)
 
 Імена в зворотних лапках зведено до `X`.
 
 | # | Причина | Кількість |
 |---:|---|---:|
 | 1 | dynamic-call: call through a local value `X` | 7625 |
-| 2 | unresolved-call: unresolved call `X` | 5687 |
+| 2 | unresolved-call: unresolved call `X` | 5674 |
 | 3 | dynamic-call: call through an expression `X` | 4066 |
 | 4 | unresolved-import: unresolved import `X` | 2327 |
-| 5 | dynamic-call: call through an interface `X` | 1323 |
-| 6 | dynamic-call: call through `X` of a function value `X` | 950 |
-| 7 | dynamic-call: call through `X` of `X` | 453 |
-| 8 | unsupported: ambiguous property type `X`: `X`, assigned `X` in the constructor | 9 |
-| 9 | unsupported: an include of a path computed at run time | 2 |
-| 10 | unsupported: `X` calls a callable chosen at run time | 1 |
+| 5 | dynamic-call: call through `X` of a function value `X` | 950 |
+| 6 | dynamic-call: call through `X` of `X` | 453 |
+| 7 | dynamic-call: call through an interface `X` | 82 |
+| 8 | dynamic-call: bound to opaque `X` by `X` (app/code/Magento/Quote/etc/di.xml:18:5): `X` may be declared by a base keylang has not read | 35 |
+| 9 | dynamic-call: bound to opaque `X` by `X` (app/code/Magento/Quote/etc/di.xml:16:5): `X` may be declared by a base keylang has not read | 31 |
+| 10 | dynamic-call: bound to opaque `X` by `X` (app/code/Magento/Sales/etc/di.xml:23:5): `X` may be declared by a base keylang has not read | 21 |
 
 ## Точки входу за видами
 
-n/a — у знімку немає `entries` (тікет 09).
+`entries` порожній.
 
 ## Події
 
@@ -64,20 +66,21 @@ n/a — у знімку немає вузлів `event.*` (тікет 08).
 
 | Тригер | Кроків (разом із тригером) |
 |---|---:|
-| `quote.Model.QuoteManagement.QuoteManagement.placeOrder` | 1 |
-| `quote.Model.QuoteManagement.QuoteManagement.submitQuote` | 68 |
+| `quote.Model.QuoteManagement.QuoteManagement.placeOrder` | 45 |
+| `quote.Model.QuoteManagement.QuoteManagement.submitQuote` | 119 |
 
 ## Золотий список для `quote.Model.QuoteManagement.QuoteManagement.placeOrder`
 
-found **0/5** у чернетці; бракує: `quote.Model.QuoteManagement.QuoteManagement.placeOrderRun`, `quote.Model.QuoteManagement.QuoteManagement.submitQuote`, `quote.Model.SubmitQuoteValidator.SubmitQuoteValidator.validateQuote`, `quote.Model.SubmitQuoteValidator.SubmitQuoteValidator.validateOrder`, `sales.Model.Service.OrderService.OrderService.place`.
+found **6/6** у чернетці; бракує: нічого.
 
 | ID | У карті | У цій чернетці | В інших чернетках |
 |---|---|---|---|
-| `quote.Model.QuoteManagement.QuoteManagement.placeOrderRun` | так | — | — |
-| `quote.Model.QuoteManagement.QuoteManagement.submitQuote` | так | — | `quote.Model.QuoteManagement.QuoteManagement.submitQuote` |
-| `quote.Model.SubmitQuoteValidator.SubmitQuoteValidator.validateQuote` | так | — | `quote.Model.QuoteManagement.QuoteManagement.submitQuote` |
-| `quote.Model.SubmitQuoteValidator.SubmitQuoteValidator.validateOrder` | так | — | `quote.Model.QuoteManagement.QuoteManagement.submitQuote` |
-| `sales.Model.Service.OrderService.OrderService.place` | так | — | — |
+| `quote.Model.QuoteManagement.QuoteManagement.placeOrderRun` | так | так | — |
+| `quote.Model.QuoteManagement.QuoteManagement.submitQuote` | так | так | `quote.Model.QuoteManagement.QuoteManagement.submitQuote` |
+| `quote.Model.SubmitQuoteValidator.SubmitQuoteValidator.validateQuote` | так | так | `quote.Model.QuoteManagement.QuoteManagement.submitQuote` |
+| `quote.Model.SubmitQuoteValidator.SubmitQuoteValidator.validateOrder` | так | так | `quote.Model.QuoteManagement.QuoteManagement.submitQuote` |
+| `sales.Model.Service.OrderService.OrderService.place` | так | так | `quote.Model.QuoteManagement.QuoteManagement.submitQuote` |
+| `salesrule.Plugin.CouponUsagesIncrement.CouponUsagesIncrement.aroundSubmit` | так | так | — |
 
 | Подія | ID у знімку | У чернетці |
 |---|---|---|
@@ -90,11 +93,11 @@ found **0/5** у чернетці; бракує: `quote.Model.QuoteManagement.Qu
 
 | Що | Значення |
 |---|---|
-| Дата | 2026-10-07 |
-| keylang | `661886b` |
+| Дата | 2026-10-08 |
+| keylang | `c4e2a8f` |
 | Node | v24.20.0 |
 | Клон | `/home/kosmodev/.cache/keylang/bench/magento2` (`git describe`: `2.4.9`) |
-| `map` без кешу фактів (`node --max-old-space-size=4096`) | 5.8 с, maxRSS 705 МБ |
-| `check --format json` | 1.8 с, maxRSS 444 МБ |
-| Підсумок `map` | 2141 file(s), 2656 module(s), 7099 fn, 276 type(s), 3241 dep(s); calls 4892 resolved, 2707 external, 14417 dynamic, 5687 unresolved; 2327 unresolved import(s); 3 file(s) outside any layer |
-| snapshotId | `94e6c11c8fcd42b62e808d08e14a34c90c415fe6ea6d1ccc03ef10a81574eab1` |
+| `map` без кешу фактів (`node --max-old-space-size=4096`) | 15.3 с, maxRSS 695 МБ |
+| `check --format json` | 4.5 с, maxRSS 461 МБ |
+| Підсумок `map` | 2141 file(s), 2656 module(s), 7099 fn, 276 type(s), 3241 dep(s); calls 5962 resolved, 2706 external, 13352 dynamic, 5683 unresolved; 2327 unresolved import(s); 3 file(s) outside any layer |
+| snapshotId | `c0943fb4508dc85f9544148043ab7f77f7baef2f2c5bfe3acb94037542679084` |
