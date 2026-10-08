@@ -75,6 +75,47 @@
     - fn [runCoverage](../../src/operations/coverage.ts#L21) (request: CoverageRequest, context: OperationContext) → Promise<OperationEnvelope<"coverage">>
       - calls operations.shared.empty, base.diag.errorText, features.coverage-report.loadDataLogic, features.coverage-report.findDataLogic, operations.shared.rootRelative, features.coverage-report.coverageReport, features.discover.specifiedTriggers, operations.coverage.readOrNull, features.coverage-report.coverageText
     - fn [readOrNull](../../src/operations/coverage.ts#L50) (abs: string) → string | null <!-- internal -->
+  - module [diagram-export](../../src/operations/diagram-export.ts#L1)
+    - node external.node
+    - analyze map.analyze
+    - bpmn-export map.bpmn-export
+    - check-results features.check-results
+    - config base.config
+    - diag base.diag
+    - diagram map.diagram
+    - discover-names features.discover-names
+    - draft features.draft
+    - drawio map.drawio
+    - files lang.files
+    - map map.map
+    - parser lang.parser
+    - proposals features.proposals
+    - safe-write base.safe-write
+    - spec-ir lang.spec-ir
+    - shared operations.shared
+    - types operations.types
+    - type [DiagramFormat](../../src/operations/diagram-export.ts#L28) = (typeof DIAGRAM_FORMATS)[number]
+    - type [ExportView](../../src/operations/diagram-export.ts#L31)
+    - fn [parseExportView](../../src/operations/diagram-export.ts#L41) (text: string) → ExportView | string
+    - fn [exportViewOfQuery](../../src/operations/diagram-export.ts#L63) (query: URLSearchParams) → ExportView | string
+      - calls operations.diagram-export.parseExportView
+    - fn [discoveredSpecOf](../../src/operations/diagram-export.ts#L77) (root: string, specDir: string) → SpecIR | null
+      - calls lang.spec-ir.compileSpec, lang.parser.parse, base.config.toPosix
+    - type [ExportSources](../../src/operations/diagram-export.ts#L88)
+    - fn [exportSourcesOf](../../src/operations/diagram-export.ts#L97) (analysis: Analysis, discovered: SpecIR | null) → ExportSources
+      - calls features.check-results.checkResults, features.discover-names.processViews, features.discover-names.readProcesses
+    - fn [diagramExportText](../../src/operations/diagram-export.ts#L104) (format: DiagramFormat, view: ExportView, sources: ExportSources) → string
+      - calls map.drawio.renderDrawio, map.bpmn-export.renderBpmn
+    - fn [isDiagramExport](../../src/operations/diagram-export.ts#L115) (text: string) → boolean
+    - type [DiagramExportRequest](../../src/operations/diagram-export.ts#L120)
+    - type [DiagramExportResult](../../src/operations/diagram-export.ts#L128)
+    - fn [failed](../../src/operations/diagram-export.ts#L135) (error: string) → DiagramExportResult <!-- internal -->
+    - fn [runDiagramExport](../../src/operations/diagram-export.ts#L144) (request: DiagramExportRequest, context: OperationContext = {}) → Promise<DiagramExportResult>
+      - calls operations.diagram-export.failed, operations.diagram-export.parseExportView, base.safe-write.writeProblem, base.diag.errorText, operations.diagram-export.discoveredSpecOf, operations.shared.rootRelative, operations.diagram-export.diagramExportText, operations.diagram-export.exportSourcesOf, lang.files.existingText, operations.diagram-export.isDiagramExport, base.safe-write.safeWrite
+    - type [ImportDrawioRequest](../../src/operations/diagram-export.ts#L195)
+    - type [ImportDrawioResult](../../src/operations/diagram-export.ts#L205)
+    - fn [runImportDrawio](../../src/operations/diagram-export.ts#L225) (request: ImportDrawioRequest, context: OperationContext = {}) → Promise<ImportDrawioResult>
+      - calls map.drawio.parseDrawio, base.diag.errorText, map.drawio.drawioFlowName, operations.shared.rootRelative, lang.files.existingText, map.drawio.flowSection, map.drawio.flowFromDrawio, features.draft.withFlow, features.proposals.lineDiff, operations.shared.generatedIn, features.proposals.proposalProblem, base.safe-write.writeProblem, operations.shared.proposalRefusal, operations.shared.commitProposal, map.map.sourceInputs, base.config.toPosix
   - module [discover-names](../../src/operations/discover-names.ts#L1)
     - analyze map.analyze
     - diag base.diag

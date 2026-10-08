@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [analyze](#map.analyze) · [c4-export](#map.c4-export) · [declared-packages](#map.declared-packages) · [diagram](#map.diagram) · [emit](#map.emit) · [entries](#map.entries) · [exact-path](#map.exact-path) · [explanations](#map.explanations) · [exports](#map.exports) · [fact-cache](#map.fact-cache) · [frontends](#map.frontends) · [graph](#map.graph) · [imports](#map.imports) · [map](#map.map) · [php-imports](#map.php-imports) · [python-imports](#map.python-imports) · [python-stdlib](#map.python-stdlib) · [rust-imports](#map.rust-imports) · [snapshot](#map.snapshot) · [trace-plan](#map.trace-plan) · [wire-gen](#map.wire-gen)
+[README](README.md) · modules: [analyze](#map.analyze) · [bpmn-export](#map.bpmn-export) · [c4-export](#map.c4-export) · [declared-packages](#map.declared-packages) · [diagram](#map.diagram) · [drawio](#map.drawio) · [emit](#map.emit) · [entries](#map.entries) · [exact-path](#map.exact-path) · [explanations](#map.explanations) · [exports](#map.exports) · [fact-cache](#map.fact-cache) · [frontends](#map.frontends) · [graph](#map.graph) · [imports](#map.imports) · [map](#map.map) · [php-imports](#map.php-imports) · [python-imports](#map.python-imports) · [python-stdlib](#map.python-stdlib) · [rust-imports](#map.rust-imports) · [snapshot](#map.snapshot) · [trace-plan](#map.trace-plan) · [wire-gen](#map.wire-gen)
 
 # map
 
@@ -44,6 +44,35 @@
       - calls [map.analyze.within](map.md#map.analyze.within), [lang.files.walkReaches](lang.md#lang.files.walkReaches), [map.analyze.readingAid](map.md#map.analyze.readingAid)
     - fn [within](../../src/analyze.ts#L185) (abs: string, dir: string) → boolean
       <a id="map.analyze.within"></a><br>Reports whether an absolute path lies inside a directory by taking the relative path and rejecting results that climb out via `..` or resolve to a different root. Used as the boundary check by callers like [`map.analyze.repositoryFile`](map.md#map.analyze.repositoryFile) and [`tui.disk.leavesBoundary`](tui.md#tui.disk.leavesBoundary). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+  - module [bpmn-export](../../src/bpmn-export.ts#L1)
+    <a id="map.bpmn-export"></a><br>BPMN 2.0 of a diagram (business-flows/28): the picture `/diagrams` draws (`diagramOf` + `layout`), as XML with its BPMNDI so Camunda Modeler or bpmn.io opens it as drawn. The mapping is the table «Відображення в BPMN» of ADR 0023: a layer is a lane of the one pool, a trigger a…
+    - diagram [map.diagram](map.md#map.diagram)
+    - external-ids [base.external-ids](base.md#base.external-ids)
+    - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
+    - fn [xmlEscape](../../src/bpmn-export.ts#L29) (text: string) → string
+      <a id="map.bpmn-export.xmlEscape"></a><br>Text in an XML attribute or element.
+    - fn [ids](../../src/bpmn-export.ts#L34) () → (key: string) => string <!-- internal -->
+      <a id="map.bpmn-export.ids"></a><br>NCName ids for the document: distinct even where two keys map to one.
+    - type [StartKind](../../src/bpmn-export.ts#L49) = "message" | "timer" | "signal" | null <!-- internal -->
+      <a id="map.bpmn-export.StartKind"></a>
+    - fn [startKindOf](../../src/bpmn-export.ts#L52) (kind: string | null | undefined) → StartKind
+      <a id="map.bpmn-export.startKindOf"></a><br>The start event of an entry point's kind (ADR 0023): a request or a message waits for a message, cron for a timer, an observer for a signal.
+    - fn [flowFacts](../../src/bpmn-export.ts#L60) (input: DiagramInput) → { triggers: Map<string, string | null>; continues: string[]; flow: Flow | null } <!-- internal -->
+      <a id="map.bpmn-export.flowFacts"></a><br>What the diagram does not keep of a flow: the kind of each trigger (by node id) and the flows it continues.
+      - calls [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow)
+    - type [Box](../../src/bpmn-export.ts#L76) <!-- internal -->
+      <a id="map.bpmn-export.Box"></a>
+    - fn [route](../../src/bpmn-export.ts#L84) (from: Box, to: Box) → [number, number][] <!-- internal -->
+      <a id="map.bpmn-export.route"></a><br>Waypoints from one box to another: out of the right side, across, into the left side; down or up when the target is not to the right.
+    - fn [renderBpmn](../../src/bpmn-export.ts#L106) (input: DiagramInput, name: string) → string
+      <a id="map.bpmn-export.renderBpmn"></a><br>The BPMN of a view: `flow` (and a discovered flow, drawn as a flow), `process` and `entry`. Throws on `layers` (no process to show) and on an empty diagram, with the reason the diagram gives.
+      - calls [map.diagram.diagramOf](map.md#map.diagram.diagramOf), [map.bpmn-export.bpmnOf](map.md#map.bpmn-export.bpmnOf)
+    - fn [bpmnOf](../../src/bpmn-export.ts#L113) (diagram: Diagram, input: DiagramInput, name: string) → string <!-- internal -->
+      <a id="map.bpmn-export.bpmnOf"></a>
+      - calls [map.bpmn-export.ids](map.md#map.bpmn-export.ids), [map.bpmn-export.flowFacts](map.md#map.bpmn-export.flowFacts), [map.bpmn-export.xmlEscape](map.md#map.bpmn-export.xmlEscape), [map.bpmn-export.flowNode](map.md#map.bpmn-export.flowNode), [map.bpmn-export.route](map.md#map.bpmn-export.route)
+    - fn [flowNode](../../src/bpmn-export.ts#L259) (node: DiagramNode, element: string, attrs: string, entryKind: string | null, signals: ReadonlyMap<string, string>, diagram: Diagram, id: (key: string) => string) → string[] <!-- internal -->
+      <a id="map.bpmn-export.flowNode"></a><br>The semantic element of one shape in the pool.
+      - calls [map.bpmn-export.xmlEscape](map.md#map.bpmn-export.xmlEscape), [map.bpmn-export.startKindOf](map.md#map.bpmn-export.startKindOf)
   - module [c4-export](../../src/c4-export.ts#L1)
     <a id="map.c4-export"></a><br>C4 diagrams of the snapshot (.scratch/c4-zoom/issues/12): a view of the map for the tools that draw C4 (ADR 0014), in C4-PlantUML or Mermaid. A layer is a boundary, not a container: in C4 a container is an application or a store that runs on its own, and a layer of one program…
     - explanations [map.explanations](map.md#map.explanations)
@@ -230,6 +259,68 @@
       - calls [map.diagram.layerOrder](map.md#map.diagram.layerOrder), [map.diagram.byArea](map.md#map.diagram.byArea), [map.diagram.layerOf](map.md#map.diagram.layerOf), [map.diagram.worst](map.md#map.diagram.worst)
     - fn [layout](../../src/diagram.ts#L668) (diagram: Diagram, positions: Positions = {}) → Diagram
       <a id="map.diagram.layout"></a><br>Places the shapes: the rank of a node is its longest path from a node without predecessors (back edges of a cycle ignored), its column; within a lane and a rank, nodes go by spec line, then by their order in the diagram. Lanes are horizontal bands as tall as their fullest rank.…
+  - module [drawio](../../src/drawio.ts#L1)
+    <a id="map.drawio"></a><br>draw.io (diagrams.net) of a diagram, and a flow from a draw.io file (business-flows/28). The export is the picture `/diagrams` draws (`diagramOf` + `layout`) as an uncompressed `<mxfile>`: lanes as swimlanes, shapes styled as the web canvas styles them, every shape and edge an…
+    - node [external.node](external.md#external.node)
+    - bpmn-export [map.bpmn-export](map.md#map.bpmn-export)
+    - diagram [map.diagram](map.md#map.diagram)
+    - parser [lang.parser](lang.md#lang.parser)
+    - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
+    - fn [style](../../src/drawio.ts#L30) (parts: Record<string, string | number>) → string <!-- internal -->
+      <a id="map.drawio.style"></a>
+    - fn [nodeStyle](../../src/drawio.ts#L37) (node: Pick<DiagramNode, "kind" | "verdict">) → string
+      <a id="map.drawio.nodeStyle"></a><br>The style of a shape: the canvas's shape, colours and dashes, in draw.io's names.
+      - calls [map.drawio.style](map.md#map.drawio.style)
+    - fn [edgeStyle](../../src/drawio.ts#L63) (edge: DiagramEdge) → string <!-- internal -->
+      <a id="map.drawio.edgeStyle"></a>
+      - calls [map.drawio.style](map.md#map.drawio.style)
+    - fn [htmlText](../../src/drawio.ts#L72) (text: string) → string <!-- internal -->
+      <a id="map.drawio.htmlText"></a><br>Text as draw.io reads an `html=1` label: `&`, `<` and `>` escaped, so a condition `a < b` is no tag.
+    - fn [labelOf](../../src/drawio.ts#L77) (node: DiagramNode) → string <!-- internal -->
+      <a id="map.drawio.labelOf"></a><br>The label of a shape: a hole shows `?`, every other shape its label (a gateway's condition, a timer's `after 5m`).
+      - calls [map.drawio.htmlText](map.md#map.drawio.htmlText)
+    - fn [renderDrawio](../../src/drawio.ts#L86) (input: DiagramInput, view: string) → string
+      <a id="map.drawio.renderDrawio"></a><br>The `.drawio` of a view: `view` names it (`flow:<name>`, `discovered:<name>`, `process:<domain>`, `entry:<id>`, `layers`) on the root cell and the page. Throws on an empty diagram, with its reason.
+      - calls [map.diagram.diagramOf](map.md#map.diagram.diagramOf), [map.bpmn-export.xmlEscape](map.md#map.bpmn-export.xmlEscape), [map.drawio.htmlText](map.md#map.drawio.htmlText), [map.drawio.labelOf](map.md#map.drawio.labelOf), [map.drawio.nodeStyle](map.md#map.drawio.nodeStyle), [map.drawio.edgeStyle](map.md#map.drawio.edgeStyle)
+    - type [XmlElement](../../src/drawio.ts#L118)
+      <a id="map.drawio.XmlElement"></a>
+    - fn [decode](../../src/drawio.ts#L127) (text: string) → string <!-- internal -->
+      <a id="map.drawio.decode"></a>
+    - fn [parseXml](../../src/drawio.ts#L141) (text: string) → XmlElement
+      <a id="map.drawio.parseXml"></a><br>The element tree of an XML document — what a `.drawio` file needs: tags, attributes, text, entities, comments, CDATA, processing instructions and a doctype skipped. Throws on a document that is not well formed enough to read (an unclosed or mismatched tag), naming the offset.
+      - calls [map.drawio.decode](map.md#map.drawio.decode)
+    - type [DrawioCell](../../src/drawio.ts#L197)
+      <a id="map.drawio.DrawioCell"></a>
+    - type [DrawioModel](../../src/drawio.ts#L209)
+      <a id="map.drawio.DrawioModel"></a>
+    - fn [plain](../../src/drawio.ts#L216) (label: string) → string <!-- internal -->
+      <a id="map.drawio.plain"></a><br>HTML of a label as plain text: tags out, `<br>` and `<div>` as spaces, entities decoded, spaces collapsed.
+      - calls [map.drawio.decode](map.md#map.drawio.decode)
+    - fn [find](../../src/drawio.ts#L223) (element: XmlElement, name: string) → XmlElement | null <!-- internal -->
+      <a id="map.drawio.find"></a>
+    - fn [parseDrawio](../../src/drawio.ts#L237) (text: string) → DrawioModel
+      <a id="map.drawio.parseDrawio"></a><br>The cells of the first page of a `.drawio` file: plain, or compressed as draw.io once saved by default (base64 of raw deflate of the URI-encoded model). Cells wrapped in `<object>`/`<UserObject>` carry their attributes.
+      - calls [map.drawio.parseXml](map.md#map.drawio.parseXml), [map.drawio.find](map.md#map.drawio.find), [map.drawio.plain](map.md#map.drawio.plain)
+    - type [Entry](../../src/drawio.ts#L282) <!-- internal -->
+      <a id="map.drawio.Entry"></a>
+    - fn [indentOf](../../src/drawio.ts#L289) (line: string) → number <!-- internal -->
+      <a id="map.drawio.indentOf"></a>
+    - fn [listLine](../../src/drawio.ts#L294) (indent: number, body: string) → string <!-- internal -->
+      <a id="map.drawio.listLine"></a><br>`- step a.b` and its kin: a list line with its keyword.
+    - fn [commentSafe](../../src/drawio.ts#L299) (text: string) → string <!-- internal -->
+      <a id="map.drawio.commentSafe"></a><br>Text that cannot end an HTML comment.
+    - fn [lineOf](../../src/drawio.ts#L304) (cell: DrawioCell) → string | null <!-- internal -->
+      <a id="map.drawio.lineOf"></a><br>A flow line of a new shape, or null when it has nothing to say (no ID, no label).
+    - fn [rewritten](../../src/drawio.ts#L328) (line: string, item: Trigger | FlowItem, cell: DrawioCell) → string | null <!-- internal -->
+      <a id="map.drawio.rewritten"></a><br>The line of an existing item rewritten for the shape's new ID or label, or null when nothing on it changed.
+    - fn [flowFromDrawio](../../src/drawio.ts#L367) (model: DrawioModel, name: string, current: { text: string; flow: Flow; firstLine: number } | null) → string
+      <a id="map.drawio.flowFromDrawio"></a><br>The section of flow `name` as the drawing says it: `current` is the flow's section as it is (lines from its heading to the next heading) and `flow` its IR with lines counted from `firstLine` (the heading's line in the file); both null for a flow the specs do not have yet, which…
+      - calls [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow), [map.drawio.indentOf](map.md#map.drawio.indentOf), [map.drawio.rewritten](map.md#map.drawio.rewritten), [map.drawio.lineOf](map.md#map.drawio.lineOf), [map.drawio.listLine](map.md#map.drawio.listLine), [map.drawio.commentSafe](map.md#map.drawio.commentSafe)
+    - fn [drawioFlowName](../../src/drawio.ts#L481) (model: DrawioModel) → string | null
+      <a id="map.drawio.drawioFlowName"></a><br>The flow a `.drawio` file draws: `flow:<name>` or `discovered:<name>` of its view, or null for any other view.
+    - fn [flowSection](../../src/drawio.ts#L490) (text: string, name: string) → { text: string; firstLine: number } | null
+      <a id="map.drawio.flowSection"></a><br>The section of flow `name` in a spec's text: its lines from the heading to the next heading (LF), and the heading's line; null when the text has none.
+      - calls [lang.parser.parse](lang.md#lang.parser.parse)
   - module [emit](../../src/emit.ts#L1)
     <a id="map.emit"></a><br>Snapshot → generated `map/<layer>.md` files, and the explained map: the same tree with an explanation under every node (ADR 0004).
     - node [external.node](external.md#external.node)

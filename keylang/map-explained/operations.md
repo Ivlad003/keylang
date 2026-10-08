@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [operations](#operations.operations) · [assistant](#operations.assistant) · [code](#operations.code) · [coverage](#operations.coverage) · [discover-names](#operations.discover-names) · [discover](#operations.discover) · [doctor](#operations.doctor) · [draft](#operations.draft) · [entries](#operations.entries) · [explain](#operations.explain) · [export](#operations.export) · [feature](#operations.feature) · [generate](#operations.generate) · [integrations](#operations.integrations) · [shared](#operations.shared) · [spec](#operations.spec) · [types](#operations.types)
+[README](README.md) · modules: [operations](#operations.operations) · [assistant](#operations.assistant) · [code](#operations.code) · [coverage](#operations.coverage) · [diagram-export](#operations.diagram-export) · [discover-names](#operations.discover-names) · [discover](#operations.discover) · [doctor](#operations.doctor) · [draft](#operations.draft) · [entries](#operations.entries) · [explain](#operations.explain) · [export](#operations.export) · [feature](#operations.feature) · [generate](#operations.generate) · [integrations](#operations.integrations) · [shared](#operations.shared) · [spec](#operations.spec) · [types](#operations.types)
 
 # map
 
@@ -100,6 +100,64 @@
       - calls [operations.shared.empty](operations.md#operations.shared.empty), [base.diag.errorText](base.md#base.diag.errorText), [features.coverage-report.loadDataLogic](features.md#features.coverage-report.loadDataLogic), [features.coverage-report.findDataLogic](features.md#features.coverage-report.findDataLogic), [operations.shared.rootRelative](operations.md#operations.shared.rootRelative), [features.coverage-report.coverageReport](features.md#features.coverage-report.coverageReport), [features.discover.specifiedTriggers](features.md#features.discover.specifiedTriggers), [operations.coverage.readOrNull](operations.md#operations.coverage.readOrNull), [features.coverage-report.coverageText](features.md#features.coverage-report.coverageText)
     - fn [readOrNull](../../src/operations/coverage.ts#L50) (abs: string) → string | null <!-- internal -->
       <a id="operations.coverage.readOrNull"></a>
+  - module [diagram-export](../../src/operations/diagram-export.ts#L1)
+    <a id="operations.diagram-export"></a><br>`keylang export bpmn|drawio` and `keylang import drawio` (business-flows/28): the picture `/diagrams` draws, written for other tools, and a draw.io drawing read back as one proposal for one flow. The renderers are pure (`src/bpmn-export.ts`, `src/drawio.ts`); here are the…
+    - node [external.node](external.md#external.node)
+    - analyze [map.analyze](map.md#map.analyze)
+    - bpmn-export [map.bpmn-export](map.md#map.bpmn-export)
+    - check-results [features.check-results](features.md#features.check-results)
+    - config [base.config](base.md#base.config)
+    - diag [base.diag](base.md#base.diag)
+    - diagram [map.diagram](map.md#map.diagram)
+    - discover-names [features.discover-names](features.md#features.discover-names)
+    - draft [features.draft](features.md#features.draft)
+    - drawio [map.drawio](map.md#map.drawio)
+    - files [lang.files](lang.md#lang.files)
+    - map [map.map](map.md#map.map)
+    - parser [lang.parser](lang.md#lang.parser)
+    - proposals [features.proposals](features.md#features.proposals)
+    - safe-write [base.safe-write](base.md#base.safe-write)
+    - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
+    - shared [operations.shared](operations.md#operations.shared)
+    - types [operations.types](operations.md#operations.types)
+    - type [DiagramFormat](../../src/operations/diagram-export.ts#L28) = (typeof DIAGRAM_FORMATS)[number]
+      <a id="operations.diagram-export.DiagramFormat"></a>
+    - type [ExportView](../../src/operations/diagram-export.ts#L31)
+      <a id="operations.diagram-export.ExportView"></a><br>A view to export: what `diagramOf` draws, whether it comes from the discovered view, and its name (`flow:checkout`).
+    - fn [parseExportView](../../src/operations/diagram-export.ts#L41) (text: string) → ExportView | string
+      <a id="operations.diagram-export.parseExportView"></a><br>A view as the CLI names it: `<flow>` or `flow:<name>`, `discovered:<name>`, `process:<domain>`, `entry:<id>`, `layers`; or why it names none.
+    - fn [exportViewOfQuery](../../src/operations/diagram-export.ts#L63) (query: URLSearchParams) → ExportView | string
+      <a id="operations.diagram-export.exportViewOfQuery"></a><br>A view from the query of `GET /api/export` — the query `/api/diagram` takes (`view=flow&name=…`, `view=discovered&name=…`, `view=process&domain=…`, `view=entry&id=…`, `view=layers`) — or why it names none.
+      - calls [operations.diagram-export.parseExportView](operations.md#operations.diagram-export.parseExportView)
+    - fn [discoveredSpecOf](../../src/operations/diagram-export.ts#L77) (root: string, specDir: string) → SpecIR | null
+      <a id="operations.diagram-export.discoveredSpecOf"></a><br>The discovered view (`<dir>/flows-discovered/*.md`, the README of the processes aside) parsed as specs, or null without it.
+      - calls [lang.spec-ir.compileSpec](lang.md#lang.spec-ir.compileSpec), [lang.parser.parse](lang.md#lang.parser.parse), [base.config.toPosix](base.md#base.config.toPosix)
+    - type [ExportSources](../../src/operations/diagram-export.ts#L88)
+      <a id="operations.diagram-export.ExportSources"></a><br>What a diagram is drawn from, as the API and the CLI read it.
+    - fn [exportSourcesOf](../../src/operations/diagram-export.ts#L97) (analysis: Analysis, discovered: SpecIR | null) → ExportSources
+      <a id="operations.diagram-export.exportSourcesOf"></a><br>The sources of an analysis: check results as verdicts, the saved business processes found again in its snapshot.
+      - calls [features.check-results.checkResults](features.md#features.check-results.checkResults), [features.discover-names.processViews](features.md#features.discover-names.processViews), [features.discover-names.readProcesses](features.md#features.discover-names.readProcesses)
+    - fn [diagramExportText](../../src/operations/diagram-export.ts#L104) (format: DiagramFormat, view: ExportView, sources: ExportSources) → string
+      <a id="operations.diagram-export.diagramExportText"></a><br>The bytes of one export. A discovered flow is drawn from the discovered view, without verdicts (`check` does not judge it).
+      - calls [map.drawio.renderDrawio](map.md#map.drawio.renderDrawio), [map.bpmn-export.renderBpmn](map.md#map.bpmn-export.renderBpmn)
+    - fn [isDiagramExport](../../src/operations/diagram-export.ts#L115) (text: string) → boolean
+      <a id="operations.diagram-export.isDiagramExport"></a><br>A file one of these exports wrote: `exporter="keylang"` (BPMN) or `<mxfile host="keylang"` (draw.io) near its start.
+    - type [DiagramExportRequest](../../src/operations/diagram-export.ts#L120)
+      <a id="operations.diagram-export.DiagramExportRequest"></a>
+    - type [DiagramExportResult](../../src/operations/diagram-export.ts#L128)
+      <a id="operations.diagram-export.DiagramExportResult"></a>
+    - fn [failed](../../src/operations/diagram-export.ts#L135) (error: string) → DiagramExportResult <!-- internal -->
+      <a id="operations.diagram-export.failed"></a>
+    - fn [runDiagramExport](../../src/operations/diagram-export.ts#L144) (request: DiagramExportRequest, context: OperationContext = {}) → Promise<DiagramExportResult>
+      <a id="operations.diagram-export.runDiagramExport"></a><br>`keylang export bpmn|drawio <view> [--out f]`: the diagram of the saved code and specs, no model. `--out` must pass the write policy and be new or a file one of these exports wrote; otherwise 2 with nothing written.
+      - calls [operations.diagram-export.failed](operations.md#operations.diagram-export.failed), [operations.diagram-export.parseExportView](operations.md#operations.diagram-export.parseExportView), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [base.diag.errorText](base.md#base.diag.errorText), [operations.diagram-export.discoveredSpecOf](operations.md#operations.diagram-export.discoveredSpecOf), [operations.shared.rootRelative](operations.md#operations.shared.rootRelative), [operations.diagram-export.diagramExportText](operations.md#operations.diagram-export.diagramExportText), [operations.diagram-export.exportSourcesOf](operations.md#operations.diagram-export.exportSourcesOf), [lang.files.existingText](lang.md#lang.files.existingText), [operations.diagram-export.isDiagramExport](operations.md#operations.diagram-export.isDiagramExport), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite)
+    - type [ImportDrawioRequest](../../src/operations/diagram-export.ts#L195)
+      <a id="operations.diagram-export.ImportDrawioRequest"></a>
+    - type [ImportDrawioResult](../../src/operations/diagram-export.ts#L205)
+      <a id="operations.diagram-export.ImportDrawioResult"></a>
+    - fn [runImportDrawio](../../src/operations/diagram-export.ts#L225) (request: ImportDrawioRequest, context: OperationContext = {}) → Promise<ImportDrawioResult>
+      <a id="operations.diagram-export.runImportDrawio"></a><br>`keylang import drawio <file> [--into spec.md] [--print]`: the drawing as ONE proposal for the flow it draws (`keylang_view` `flow:<name>` or `discovered:<name>`). The flow's section is edited as the drawing asks (`flowFromDrawio`) and compared with the section as it is: no…
+      - calls [map.drawio.parseDrawio](map.md#map.drawio.parseDrawio), [base.diag.errorText](base.md#base.diag.errorText), [map.drawio.drawioFlowName](map.md#map.drawio.drawioFlowName), [operations.shared.rootRelative](operations.md#operations.shared.rootRelative), [lang.files.existingText](lang.md#lang.files.existingText), [map.drawio.flowSection](map.md#map.drawio.flowSection), [map.drawio.flowFromDrawio](map.md#map.drawio.flowFromDrawio), [features.draft.withFlow](features.md#features.draft.withFlow), [features.proposals.lineDiff](features.md#features.proposals.lineDiff), [operations.shared.generatedIn](operations.md#operations.shared.generatedIn), [features.proposals.proposalProblem](features.md#features.proposals.proposalProblem), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [operations.shared.proposalRefusal](operations.md#operations.shared.proposalRefusal), [operations.shared.commitProposal](operations.md#operations.shared.commitProposal), [map.map.sourceInputs](map.md#map.map.sourceInputs), [base.config.toPosix](base.md#base.config.toPosix)
   - module [discover-names](../../src/operations/discover-names.ts#L1)
     <a id="operations.discover-names"></a><br>`keylang flows discover --names` (business-flows/12): the model's part of the discovery. One request per layer group (`planNames`), at most `jobs` at a time; each answer is checked (`parseNamesAnswer`) and the processes of the groups that answered replace their saved ones, the…
     - analyze [map.analyze](map.md#map.analyze)

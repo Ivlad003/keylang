@@ -49,4 +49,5 @@
       - module [diagrams](../../web/src/diagrams.ts#L1) <!-- outside -->
       - module [dom](../../web/src/dom.ts#L1) <!-- outside -->
       - module [explorer](../../web/src/explorer.ts#L1) <!-- outside -->
+      - module [export](../../web/src/export.ts#L1) <!-- outside -->
       - module [list](../../web/src/list.ts#L1) <!-- outside -->
