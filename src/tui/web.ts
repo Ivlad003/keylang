@@ -29,6 +29,7 @@ import { checkResults, type CheckResult } from "../check-results.ts";
 import { toPosix } from "../config.ts";
 import { diagramOf, flowListing, parseView, usagesOf, viewsOf, type Diagram, type DiagramNode } from "../diagram.ts";
 import { PROCESSES_FILE, processViews, readProcesses } from "../discover-names.ts";
+import { DIAGRAM_FORMATS, diagramExportText, exportSourcesOf, exportViewOfQuery } from "../operations/diagram-export.ts";
 import { DISCOVERED_FLOWS_DIR } from "../map.ts";
 import { parse } from "../parser.ts";
 import { compileSpec, type SpecIR } from "../spec-ir.ts";
@@ -281,10 +282,10 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
     return discoveredCache.spec;
   };
 
-  /** `GET /api/views`, `GET /api/diagram?view=…`, `GET /api/usages?id=…`: JSON for the diagram client, with the socket's token as a Bearer. */
+  /** `GET /api/views`, `GET /api/diagram?view=…`, `GET /api/usages?id=…`: JSON (`GET /api/export?format=bpmn|drawio&view=…`: the file) for the diagram client, with the socket's token as a Bearer. */
   const api = async (request: IncomingMessage, response: ServerResponse, path: string, query: URLSearchParams): Promise<void> => {
     // These paths are public (docs/tui.md); any other is the 404 of every unknown path, token or not.
-    if (path !== "/api/views" && path !== "/api/diagram" && path !== "/api/usages") return reply(response, 404, "text/plain", "not found\n");
+    if (path !== "/api/views" && path !== "/api/diagram" && path !== "/api/usages" && path !== "/api/export") return reply(response, 404, "text/plain", "not found\n");
     if (!sameOrigin(request) || !sameSecret(bearerToken(request), token)) return reply(response, 403, "text/plain", "forbidden\n");
     if (request.method !== "GET") return reply(response, 405, "text/plain", "method not allowed\n");
     const json = (status: number, body: unknown): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
@@ -293,6 +294,23 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
       if (id === "") return json(400, { error: "usages needs id=" });
       const done = await analysis();
       return json(200, usagesOf(done.snapshot, done.spec, discoveredSpec(done), id));
+    }
+    if (path === "/api/export") {
+      // The diagram as a file for other tools (business-flows/28): the view as `/api/diagram` names it, the bytes `keylang export` writes.
+      const format = DIAGRAM_FORMATS.find((item) => item === query.get("format"));
+      if (format === undefined) return json(400, { error: `export needs format=${DIAGRAM_FORMATS.join("|")}` });
+      const wanted = exportViewOfQuery(query);
+      if (typeof wanted === "string") return json(400, { error: wanted });
+      const done = await analysis();
+      let text: string;
+      try {
+        text = diagramExportText(format, wanted, exportSourcesOf(done, wanted.discovered ? discoveredSpec(done) : null));
+      } catch (error) {
+        return json(400, { error: error instanceof Error ? error.message : String(error) });
+      }
+      const file = `${wanted.name.replace(/[^A-Za-z0-9._-]+/g, "_")}.${format}`;
+      response.setHeader("Content-Disposition", `attachment; filename="${file}"`);
+      return reply(response, 200, "application/xml; charset=utf-8", text);
     }
     // A discovered flow is drawn like a flow, from the discovered view and without verdicts: `check` does not judge it.
     const discovered = path === "/api/diagram" && query.get("view") === "discovered";

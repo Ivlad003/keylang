@@ -12,6 +12,7 @@
 
 import { Api, ApiError, type Diagram, type DiagramNode, type Usages, type ViewQuery, type Views, takeToken } from "./api.ts";
 import { Canvas, VERDICT_COLOUR, VERDICT_GLYPH } from "./canvas.ts";
+import { mountExport } from "./export.ts";
 import { VirtualList, type ListItem } from "./list.ts";
 import "./diagrams.css";
 
@@ -145,6 +146,7 @@ class Page {
     element<HTMLButtonElement>("zoom-in").addEventListener("click", () => this.canvas.zoomAt(1.25));
     element<HTMLButtonElement>("zoom-out").addEventListener("click", () => this.canvas.zoomAt(1 / 1.25));
     element<HTMLButtonElement>("zoom-fit").addEventListener("click", () => this.canvas.fit());
+    mountExport(element("toolbar"), () => this.active, (text) => (this.status.textContent = text));
     window.addEventListener("hashchange", () => {
       const wanted = readHash();
       if (wanted && (this.active === null || keyOf(wanted.query) !== keyOf(this.active))) void this.open(wanted.query, wanted.node);
