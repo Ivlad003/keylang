@@ -51,3 +51,4 @@
       - module [explorer](../../web/src/explorer.ts#L1) <!-- outside -->
       - module [export](../../web/src/export.ts#L1) <!-- outside -->
       - module [list](../../web/src/list.ts#L1) <!-- outside -->
+      - module [tour](../../web/src/tour.ts#L1) <!-- outside -->

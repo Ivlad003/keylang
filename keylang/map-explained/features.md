@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [agent-cli](#features.agent-cli) · [agent-context](#features.agent-context) · [baseline](#features.baseline) · [call-sites](#features.call-sites) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [clone](#features.clone) · [coverage-report](#features.coverage-report) · [discover-names](#features.discover-names) · [discover](#features.discover) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [explorer](#features.explorer) · [feature-status](#features.feature-status) · [flow-bundle](#features.flow-bundle) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [harness](#features.harness) · [integrations](#features.integrations) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stale](#features.stale) · [stats](#features.stats) · [voice-local](#features.voice-local) · [voice](#features.voice)
+[README](README.md) · modules: [agent-cli](#features.agent-cli) · [agent-context](#features.agent-context) · [baseline](#features.baseline) · [call-sites](#features.call-sites) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [clone](#features.clone) · [coverage-report](#features.coverage-report) · [discover-names](#features.discover-names) · [discover](#features.discover) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [explorer](#features.explorer) · [feature-status](#features.feature-status) · [flow-bundle](#features.flow-bundle) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [harness](#features.harness) · [integrations](#features.integrations) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stale](#features.stale) · [stats](#features.stats) · [tour](#features.tour) · [voice-local](#features.voice-local) · [voice](#features.voice) · [weakening](#features.weakening)
 
 # map
 
@@ -894,7 +894,7 @@
   - module [explain](../../src/explain.ts#L1)
     <a id="features.explain"></a><br>Short explanations for diagnostic codes. Every code in `diag.ts` has an entry.
     - diag [base.diag](base.md#base.diag)
-    - fn [explainCode](../../src/explain.ts#L130) (code: string) → string | null
+    - fn [explainCode](../../src/explain.ts#L135) (code: string) → string | null
       <a id="features.explain.explainCode"></a><br>Looks up a diagnostic code (case-insensitively) in the `EXPLANATIONS` table and formats its cause, example, and fix as a multi-line string, returning null for unknown codes. For `K005` it appends extra reason lines from `K005_REASON_LINES`. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
   - module [explorer](../../src/explorer.ts#L1)
     <a id="features.explorer"></a><br>The entry explorer of `keylang web` (business-flows/22): one level of the call graph around an ID at a time, for a person reading old code before any flow is written. `callsOf` gives the direct callees of a fn (with the edge's `via` and `site`), the calls keylang did not…
@@ -957,63 +957,64 @@
     - span [base.span](base.md#base.span)
     - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
     - verdict [check.verdict](check.md#check.verdict)
-    - type [Stage](../../src/feature-status.ts#L34) = "idea" | "behavior" | "structure" | "ready" | "done"
+    - weakening [features.weakening](features.md#features.weakening)
+    - type [Stage](../../src/feature-status.ts#L35) = "idea" | "behavior" | "structure" | "ready" | "done"
       <a id="features.feature-status.Stage"></a><br>How far a feature file got, the first that holds: `done` (no gaps), `idea` (no `# flow` yet), `behavior` (a flow without a trigger or steps), `structure` (the spec itself has gaps: errors, open questions, a predicted deny, a planned id outside the layers, a planned fn without a…
-    - type [Gap](../../src/feature-status.ts#L40)
+    - type [Gap](../../src/feature-status.ts#L41)
       <a id="features.feature-status.Gap"></a><br>What keeps a feature from done. Every gap blocks it; `stage` is where it is fixed.
-    - type [Hint](../../src/feature-status.ts#L54)
+    - type [Hint](../../src/feature-status.ts#L55)
       <a id="features.feature-status.Hint"></a><br>What does not keep the feature from done: the next step of a stage the spec still lacks, or a rule fail elsewhere that is not this change's (`rule`).
-    - type [FeatureInfo](../../src/feature-status.ts#L64)
+    - type [FeatureInfo](../../src/feature-status.ts#L65)
       <a id="features.feature-status.FeatureInfo"></a><br>A record describing a single feature's status entry: an identifier, the source location (file, line, column) where it is declared, and a verdict string paired with a free-text reason explaining it. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [BaseChanges](../../src/feature-status.ts#L78)
+    - type [BaseChanges](../../src/feature-status.ts#L79)
       <a id="features.feature-status.BaseChanges"></a><br>What git reports changed in the working tree since the base ref, as `check --changed` reads it: changed, added, deleted and untracked files, and the deleted ones. POSIX, relative to the root, sorted.
-    - type [BaseSource](../../src/feature-status.ts#L88) = "since" | "merge-base" | "HEAD"
+    - type [BaseSource](../../src/feature-status.ts#L89) = "since" | "merge-base" | "HEAD"
       <a id="features.feature-status.BaseSource"></a><br>How the base commit was chosen: `since` — given (`--since`, MCP `since`); `merge-base` — where HEAD left the main branch, so the branch's own commits are the change; `HEAD` — no main branch, no merge-base, or HEAD itself.
-    - type [BaseOrigin](../../src/feature-status.ts#L91)
+    - type [BaseOrigin](../../src/feature-status.ts#L92)
       <a id="features.feature-status.BaseOrigin"></a><br>The commit a feature is judged against, and how a sentence names it.
-    - type [FeatureBase](../../src/feature-status.ts#L112)
+    - type [FeatureBase](../../src/feature-status.ts#L113)
       <a id="features.feature-status.FeatureBase"></a><br>The feature file at its base commit and what changed since. `compared`: the file is there; `absent`: it is not (a new feature, or no commit yet: then every file is changed); `unavailable`: the history could not be read, so the plan is not compared and every rule fail blocks.…
-    - type [FeatureBaseInfo](../../src/feature-status.ts#L120)
+    - type [FeatureBaseInfo](../../src/feature-status.ts#L121)
       <a id="features.feature-status.FeatureBaseInfo"></a><br>`FeatureBase` as the report shows it: the commit, its state, and how it was chosen.
-    - type [FeatureReport](../../src/feature-status.ts#L122)
+    - type [FeatureReport](../../src/feature-status.ts#L123)
       <a id="features.feature-status.FeatureReport"></a><br>Result of checking a feature: whether it is done, its current stage, blocking gaps and hints, plus test, trace and base details and inherited rule failures that do not block (null without git, making every rule failure a gap). _(llm · claude:claude-opus-5-5 · 2026-10-05)_
-    - type [FeatureInput](../../src/feature-status.ts#L140)
+    - type [FeatureInput](../../src/feature-status.ts#L141)
       <a id="features.feature-status.FeatureInput"></a><br>Input bundle for computing a feature's status: parsed docs, spec, diagnostics and verdicts, plus optional snapshot nodes/edges, base plan, changed files, resolver index and layers that refine planned-edge and rule-fail checks. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
-    - fn [idsIn](../../src/feature-status.ts#L174) (doc: Document) → string[]
+    - fn [idsIn](../../src/feature-status.ts#L177) (doc: Document) → string[]
       <a id="features.feature-status.idsIn"></a><br>Ids declared or named in one spec, in first-seen order.
       - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)
-    - fn [featureStatus](../../src/feature-status.ts#L191) (input: FeatureInput, slug: string) → FeatureReport | null
+    - fn [featureStatus](../../src/feature-status.ts#L194) (input: FeatureInput, slug: string) → FeatureReport | null
       <a id="features.feature-status.featureStatus"></a><br>The feature report, or null when `keylang/<dir>/features/<slug>.md` is not one of the specs. Gaps are ordered by kind, then file, line, column, id.
       - calls [base.config.specPath](base.md#base.config.specPath), [base.diag.isError](base.md#base.diag.isError), [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow), [features.feature-status.denyGaps](features.md#features.feature-status.denyGaps), [features.feature-status.finding](features.md#features.feature-status.finding), [features.feature-status.claimsOf](features.md#features.feature-status.claimsOf), [features.feature-status.thisChange](features.md#features.feature-status.thisChange), [features.feature-status.idsIn](features.md#features.feature-status.idsIn), [features.feature-status.ruleFails](features.md#features.feature-status.ruleFails), [features.feature-status.weakenedPlan](features.md#features.feature-status.weakenedPlan), [base.span.compareText](base.md#base.span.compareText), [features.feature-status.stageOf](features.md#features.feature-status.stageOf), [features.feature-status.baseInfo](features.md#features.feature-status.baseInfo)
-    - fn [baseInfo](../../src/feature-status.ts#L301) (base: FeatureBase) → FeatureBaseInfo <!-- internal -->
+    - fn [baseInfo](../../src/feature-status.ts#L308) (base: FeatureBase) → FeatureBaseInfo <!-- internal -->
       <a id="features.feature-status.baseInfo"></a><br>The base as the report names it: the commit and its state first, as they always came, then how it was chosen.
-    - type [RuleFail](../../src/feature-status.ts#L307) <!-- internal -->
+    - type [RuleFail](../../src/feature-status.ts#L314) <!-- internal -->
       <a id="features.feature-status.RuleFail"></a><br>A rule fail: an error diagnostic of a rule (K101, K102, K104, K105, K107), or a failed rule verdict that repeats none.
-    - fn [ruleFails](../../src/feature-status.ts#L318) (input: FeatureInput) → RuleFail[] <!-- internal -->
+    - fn [ruleFails](../../src/feature-status.ts#L325) (input: FeatureInput) → RuleFail[] <!-- internal -->
       <a id="features.feature-status.ruleFails"></a><br>Every rule fail of the analysis, in the order of its diagnostics, then its verdicts.
       - calls [base.diag.isError](base.md#base.diag.isError), [check.assess.sameFinding](check.md#check.assess.sameFinding)
-    - fn [thisChange](../../src/feature-status.ts#L340) (input: FeatureInput, path: string, named: readonly string[]) → (fail: RuleFail) => boolean <!-- internal -->
+    - fn [thisChange](../../src/feature-status.ts#L347) (input: FeatureInput, path: string, named: readonly string[]) → (fail: RuleFail) => boolean <!-- internal -->
       <a id="features.feature-status.thisChange"></a><br>Whether a rule fail is this change's. Without what changed since the base, every one is.
       - calls [features.changed.filterChanged](features.md#features.changed.filterChanged)
-    - fn [stageOf](../../src/feature-status.ts#L368) (hasFlow: boolean, gaps: readonly Gap[], hints: readonly Hint[]) → Stage <!-- internal -->
+    - fn [stageOf](../../src/feature-status.ts#L375) (hasFlow: boolean, gaps: readonly Gap[], hints: readonly Hint[]) → Stage <!-- internal -->
       <a id="features.feature-status.stageOf"></a><br>The first stage that holds, from `done` down: see `Stage`.
-    - fn [denyGaps](../../src/feature-status.ts#L388) (input: FeatureInput, path: string, flows: readonly Flow[]) → Gap[] <!-- internal -->
+    - fn [denyGaps](../../src/feature-status.ts#L395) (input: FeatureInput, path: string, flows: readonly Flow[]) → Gap[] <!-- internal -->
       <a id="features.feature-status.denyGaps"></a><br>Edges a flow of the feature asks for that a rule would deny once they are code: a `step` or `calls` target under its parent `trigger` or `step` (a top-level one under the first trigger), while one end is still `planned` and not implemented. Once both ends are code, `check`…
       - calls [check.rules.dependencyKindOf](check.md#check.rules.dependencyKindOf), [check.rules.denyingRule](check.md#check.rules.denyingRule)
-    - fn [claimsOf](../../src/feature-status.ts#L430) (flow: Flow) → { id: string; span: Span }[] <!-- internal -->
+    - fn [claimsOf](../../src/feature-status.ts#L437) (flow: Flow) → { id: string; span: Span }[] <!-- internal -->
       <a id="features.feature-status.claimsOf"></a><br>The static claims of a flow, in order: every `step`, and every target of a `calls` line.
       - calls [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow)
-    - fn [weakenedPlan](../../src/feature-status.ts#L445) (input: FeatureInput, path: string, base: Extract<FeatureBase, { state: "compared" | "absent" }>) → Gap[] <!-- internal -->
+    - fn [weakenedPlan](../../src/feature-status.ts#L452) (input: FeatureInput, path: string, base: Extract<FeatureBase, { state: "compared" | "absent" }>) → Gap[] <!-- internal -->
       <a id="features.feature-status.weakenedPlan"></a><br>Where the plan was weakened: against the base, then — with a merge-base — against HEAD as well, so a file new on the branch keeps its committed plan. A removal both find is the base's gap alone.
       - calls [features.feature-status.planGaps](features.md#features.feature-status.planGaps)
-    - fn [planGaps](../../src/feature-status.ts#L462) (input: FeatureInput, path: string, at: string, baseDoc: Document) → { key: string; gap: Gap }[] <!-- internal -->
+    - fn [planGaps](../../src/feature-status.ts#L469) (input: FeatureInput, path: string, at: string, baseDoc: Document) → { key: string; gap: Gap }[] <!-- internal -->
       <a id="features.feature-status.planGaps"></a><br>Where the feature file weakened its plan since `at` (how a sentence names the commit): a `planned` removed while the code does not implement it (no K202), and a `trigger`, `step` or open question that is no longer there under the same flow and parents: a question is answered in…
       - calls [lang.spec-ir.compileSpec](lang.md#lang.spec-ir.compileSpec), [check.flows.plannedMismatch](check.md#check.flows.plannedMismatch), [features.feature-status.planItems](features.md#features.feature-status.planItems)
-    - type [PlanItem](../../src/feature-status.ts#L498) = Trigger | FlowStep | QuestionItem <!-- internal -->
+    - type [PlanItem](../../src/feature-status.ts#L505) = Trigger | FlowStep | QuestionItem
       <a id="features.feature-status.PlanItem"></a><br>Internal union type for a single feature-plan entry, which can be a trigger, a flow step, or a question item, so code in feature status handling can treat all three kinds of plan entry uniformly. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
-    - fn [planItems](../../src/feature-status.ts#L501) (flow: Flow) → { key: string; item: PlanItem }[] <!-- internal -->
+    - fn [planItems](../../src/feature-status.ts#L508) (flow: Flow) → { key: string; item: PlanItem }[]
       <a id="features.feature-status.planItems"></a><br>Every `trigger`, `step` and open question of a flow with a key: the flow, its parents, and itself.
-    - fn [finding](../../src/feature-status.ts#L515) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
+    - fn [finding](../../src/feature-status.ts#L522) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
       <a id="features.feature-status.finding"></a><br>Returns the first diagnostic whose file, starting line, and code all match the given values, or undefined when none does. Used by [`features.feature-status.featureStatus`](features.md#features.feature-status.featureStatus) to look up a specific expected finding. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [flow-bundle](../../src/flow-bundle.ts#L1)
     <a id="features.flow-bundle"></a><br>`keylang flow export|import` (business-flows/26): the portable bundle of business flows. Export writes one self-contained Markdown file — a header comment with its provenance, tables of the layers, nodes, tests, events and integrations the flows reach, the flows themselves, and…
@@ -1185,13 +1186,16 @@
     - fn [gitFileAt](../../src/git-changes.ts#L157) (root: string, ref: string, path: string, label: string) → string | null
       <a id="features.git-changes.gitFileAt"></a><br>The text of `path` (POSIX, relative to `root`) at `ref`, or null when the file is not in that commit or `HEAD` has no commit yet. An unknown ref, no git, or no repository is an error naming the caller.
       - calls [features.git-changes.assertRef](features.md#features.git-changes.assertRef), [features.git-changes.gitIn](features.md#features.git-changes.gitIn)
-    - fn [readFeatureBase](../../src/git-changes.ts#L179) (root: string, path: string, since: string | undefined, label: string) → FeatureBase
+    - fn [gitSpecFilesAt](../../src/git-changes.ts#L177) (root: string, ref: string, dir: string, label: string, skip: (path: string) => boolean = () => false) → Map<string, string>
+      <a id="features.git-changes.gitSpecFilesAt"></a><br>The `.md` files under `dir` (POSIX, relative to `root`) at `ref` and their text; empty when `HEAD` has no commit yet. An unknown ref, no git, or no repository is an error naming the caller. `skip` leaves a path out before it is read (the generated map, reading aids).
+      - calls [features.git-changes.assertRef](features.md#features.git-changes.assertRef), [features.git-changes.gitIn](features.md#features.git-changes.gitIn), [base.span.compareText](base.md#base.span.compareText)
+    - fn [readFeatureBase](../../src/git-changes.ts#L203) (root: string, path: string, since: string | undefined, label: string) → FeatureBase
       <a id="features.git-changes.readFeatureBase"></a><br>The feature file at its base commit, and the files changed since that commit as `check --changed --since <base>` reads them: a rule fail of this change is one that touches them. The base is `since`, else `featureBaseOrigin`.
       - calls [features.git-changes.featureBaseOrigin](features.md#features.git-changes.featureBaseOrigin), [features.git-changes.gitFileAt](features.md#features.git-changes.gitFileAt), [features.git-changes.gitChangedFiles](features.md#features.git-changes.gitChangedFiles), [base.span.compareText](base.md#base.span.compareText), [lang.parser.parse](lang.md#lang.parser.parse)
-    - fn [featureBaseOrigin](../../src/git-changes.ts#L218) (root: string, label: string) → BaseOrigin
+    - fn [featureBaseOrigin](../../src/git-changes.ts#L242) (root: string, label: string) → BaseOrigin
       <a id="features.git-changes.featureBaseOrigin"></a><br>The base `feature` judges a change against when no `since` is given: the merge-base of HEAD with the main branch, so a fail committed on a feature branch is still the change's own. The main branch is the one `refs/remotes/origin/HEAD` points at, else a local `main`, `master`…
       - calls [features.git-changes.gitIn](features.md#features.git-changes.gitIn)
-    - fn [deletedModuleIds](../../src/git-changes.ts#L241) (config: Config, files: readonly string[]) → string[]
+    - fn [deletedModuleIds](../../src/git-changes.ts#L265) (config: Config, files: readonly string[]) → string[]
       <a id="features.git-changes.deletedModuleIds"></a><br>Module id a deleted source file had, so a flow step that named it is still "changed".
       - calls [map.graph.placeFile](map.md#map.graph.placeFile)
   - module [git-hook](../../src/git-hook.ts#L1)
@@ -1226,140 +1230,140 @@
       <a id="features.harness.skillFile"></a><br>The skill shipped in the package. The same relative path works from `src` and from `dist`.
     - type [HarnessName](../../src/harness.ts#L41) = (typeof HARNESS_NAMES)[number]
       <a id="features.harness.HarnessName"></a><br>A string union type derived from the entries of the `HARNESS_NAMES` array, so values are constrained to the harness identifiers listed there. Used to type-check which harness a feature refers to without duplicating the list. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-    - fn [denyRules](../../src/harness.ts#L60) (dir: string) → string[] <!-- internal -->
-      <a id="features.harness.denyRules"></a><br>Claude's deny entries that keep an agent from editing the rules of the spec directory `dir`, or deciding a proposal.
-    - fn [specDir](../../src/harness.ts#L65) (root: string) → string <!-- internal -->
+    - fn [denyRules](../../src/harness.ts#L66) (dir: string) → string[] <!-- internal -->
+      <a id="features.harness.denyRules"></a><br>Claude's deny entries that keep an agent from editing the rules of the spec directory `dir` (every `rules*.md`), `keylang.json` — its `exclude`, `assume`, `outside`, `layers` and `frameworks` decide what the rules see (ticket 49) — or deciding a proposal. `hook stop` blocks a…
+    - fn [specDir](../../src/harness.ts#L81) (root: string) → string <!-- internal -->
       <a id="features.harness.specDir"></a><br>The spec directory of `keylang.json` under `root` (`dir`, normalized), or `keylang` without the file. A broken file throws, naming the file and the field.
       - calls [base.config.parseConfig](base.md#base.config.parseConfig)
-    - type [HarnessSelection](../../src/harness.ts#L74)
+    - type [HarnessSelection](../../src/harness.ts#L90)
       <a id="features.harness.HarnessSelection"></a><br>Carries the resolved set of agent harnesses chosen by the user as `HarnessName` values, plus a flag that disables the instruction block and adapter file emission when `--agents=none` is given. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [HarnessFile](../../src/harness.ts#L80)
+    - type [HarnessFile](../../src/harness.ts#L96)
       <a id="features.harness.HarnessFile"></a><br>Describes one file in a test harness as a path plus its full contents, where a null `text` marks a file that must not exist. Used to declare or verify the expected state of files on disk. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [HarnessPlan](../../src/harness.ts#L86)
+    - type [HarnessPlan](../../src/harness.ts#L102)
       <a id="features.harness.HarnessPlan"></a><br>Describes the outcome of assembling a harness: the list of `HarnessFile` entries to write, plus either `null` or a single failure record naming the offending file and the reason it could not be prepared. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [parseAgents](../../src/harness.ts#L92) (value: string) → HarnessSelection
+    - fn [parseAgents](../../src/harness.ts#L108) (value: string) → HarnessSelection
       <a id="features.harness.parseAgents"></a><br>`--agents=<list>`. `none` is the empty selection. An unknown name throws and lists the allowed names.
-    - type [HarnessProbe](../../src/harness.ts#L106)
+    - type [HarnessProbe](../../src/harness.ts#L122)
       <a id="features.harness.HarnessProbe"></a><br>What is on disk for harness detection. `list` returns child names, or null when the path is not a directory.
-    - fn [detectHarnesses](../../src/harness.ts#L116) (probe: HarnessProbe) → HarnessName[]
+    - fn [detectHarnesses](../../src/harness.ts#L132) (probe: HarnessProbe) → HarnessName[]
       <a id="features.harness.detectHarnesses"></a><br>Directories and files that mean a harness is already in use. Order matches `HARNESS_NAMES`. `.claude/skills/keylang-feature` is the copy `agents` writes for every harness, so that tree alone is not Claude.
       - calls [features.harness.claudePresent](features.md#features.harness.claudePresent)
-    - fn [claudePresent](../../src/harness.ts#L127) (probe: HarnessProbe) → boolean <!-- internal -->
+    - fn [claudePresent](../../src/harness.ts#L143) (probe: HarnessProbe) → boolean <!-- internal -->
       <a id="features.harness.claudePresent"></a><br>Decides whether the Claude harness is in use by listing the `.claude` directory via the probe: missing means no, empty means yes, otherwise it defers to [`features.harness.claudeHasUserFile`](features.md#features.harness.claudeHasUserFile) to check for user-authored files. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.harness.claudeHasUserFile](features.md#features.harness.claudeHasUserFile)
-    - fn [claudeHasUserFile](../../src/harness.ts#L135) (probe: HarnessProbe, dir: string) → boolean <!-- internal -->
+    - fn [claudeHasUserFile](../../src/harness.ts#L151) (probe: HarnessProbe, dir: string) → boolean <!-- internal -->
       <a id="features.harness.claudeHasUserFile"></a><br>A file under `.claude` that is not the keylang skill copy.
-    - fn [agentsBody](../../src/harness.ts#L149) (version: string, dir: string) → string
+    - fn [agentsBody](../../src/harness.ts#L165) (version: string, dir: string) → string
       <a id="features.harness.agentsBody"></a><br>The instruction body between the markers, without a trailing newline. The CLI fallback pins `version`; paths are under the spec directory `dir`.
       - calls [features.harness.cliCommand](features.md#features.harness.cliCommand)
-    - fn [mcpCommand](../../src/harness.ts#L185) (version: string) → { command: string; args: string[] }
+    - fn [mcpCommand](../../src/harness.ts#L201) (version: string) → { command: string; args: string[] }
       <a id="features.harness.mcpCommand"></a><br>`npx -y keylang@<version> mcp`, split the way MCP configs store a command.
-    - fn [cliCommand](../../src/harness.ts#L190) (version: string) → string
+    - fn [cliCommand](../../src/harness.ts#L206) (version: string) → string
       <a id="features.harness.cliCommand"></a><br>The pinned CLI the fallback names: the same package and version as the MCP server, so it needs no global `keylang`.
-    - fn [pinSkill](../../src/harness.ts#L199) (skill: string, version: string, dir: string) → string
+    - fn [pinSkill](../../src/harness.ts#L215) (skill: string, version: string, dir: string) → string
       <a id="features.harness.pinSkill"></a><br>The skill resource names the CLI as `npx -y keylang@<version>` and the spec directory as `<dir>/`; the copy a harness gets pins the running version and the repository's `dir`.
-    - fn [hookCommand](../../src/harness.ts#L204) (version: string) → string
+    - fn [hookCommand](../../src/harness.ts#L220) (version: string) → string
       <a id="features.harness.hookCommand"></a><br>What the Stop hook runs.
       - calls [features.harness.cliCommand](features.md#features.harness.cliCommand)
-    - fn [planHarness](../../src/harness.ts#L214) (input: { selection: HarnessSelection; version: string; dir: string; skill: string; files: ReadonlyMap<string, string | null> }) → HarnessPlan
+    - fn [planHarness](../../src/harness.ts#L230) (input: { selection: HarnessSelection; version: string; dir: string; skill: string; files: ReadonlyMap<string, string | null> }) → HarnessPlan
       <a id="features.harness.planHarness"></a><br>Desired text of every harness file this selection owns. `files` holds the current text, null when the file is absent; `dir` is the spec directory the instructions, the skill and the deny rules name. The first broken marker or invalid JSON/TOML is `error` and `files` is empty…
       - calls [features.harness.agentsBody](features.md#features.harness.agentsBody), [features.harness.mergeMarked](features.md#features.harness.mergeMarked), [features.harness.mergeClaude](features.md#features.harness.mergeClaude), [features.harness.mergeMcpJson](features.md#features.harness.mergeMcpJson), [features.harness.mergeCodexToml](features.md#features.harness.mergeCodexToml), [features.harness.opencodeFile](features.md#features.harness.opencodeFile), [features.harness.mergeOpencode](features.md#features.harness.mergeOpencode), [features.harness.pinSkill](features.md#features.harness.pinSkill), [features.harness.mergeSettings](features.md#features.harness.mergeSettings), [features.harness.mergeHooksFile](features.md#features.harness.mergeHooksFile)
-    - fn [mergeMarked](../../src/harness.ts#L298) (existing: string | null, body: string | null) → { text: string | null } | { error: string }
+    - fn [mergeMarked](../../src/harness.ts#L314) (existing: string | null, body: string | null) → { text: string | null } | { error: string }
       <a id="features.harness.mergeMarked"></a><br>Splice `body` between the markers. Text outside them is copied byte for byte. `body` null removes the block.
       - calls [base.safe-write.allCrlf](base.md#base.safe-write.allCrlf), [features.harness.marked](features.md#features.harness.marked)
-    - fn [marked](../../src/harness.ts#L324) (body: string, nl: "\n" | "\r\n") → string <!-- internal -->
+    - fn [marked](../../src/harness.ts#L340) (body: string, nl: "\n" | "\r\n") → string <!-- internal -->
       <a id="features.harness.marked"></a><br>Normalizes every line break in the body to the requested newline style, then wraps the result between the begin and end marker constants on their own lines, so [`features.harness.mergeMarked`](features.md#features.harness.mergeMarked) can splice a consistently delimited block into existing text. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-    - fn [mergeClaude](../../src/harness.ts#L333) (existing: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeClaude](../../src/harness.ts#L349) (existing: string | null) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeClaude"></a><br>`@AGENTS.md` lives in the managed block. A file that already says it outside the block is left without a second copy (the block is removed).
       - calls [features.harness.outsideMarkers](features.md#features.harness.outsideMarkers), [features.harness.mergeMarked](features.md#features.harness.mergeMarked)
-    - fn [outsideMarkers](../../src/harness.ts#L340) (existing: string | null) → string | { error: string } <!-- internal -->
+    - fn [outsideMarkers](../../src/harness.ts#L356) (existing: string | null) → string | { error: string } <!-- internal -->
       <a id="features.harness.outsideMarkers"></a><br>Strips the block between the begin/end marker constants out of an existing file's text, returning the surrounding content (or an empty string for null input). Reports an error object when only one marker is present or the end precedes the begin, so… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-    - fn [mergeMcpJson](../../src/harness.ts#L350) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeMcpJson](../../src/harness.ts#L366) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeMcpJson"></a><br>Rewrites an `.mcp.json` document so its `mcpServers` key holds the launch entry built by [`features.harness.mcpCommand`](features.md#features.harness.mcpCommand) for the given version, or removes it when the version is null, via [`features.harness.mergeJsonKey`](features.md#features.harness.mergeJsonKey). Returns the updated text or a parse error for… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.harness.mergeJsonKey](features.md#features.harness.mergeJsonKey), [features.harness.mcpCommand](features.md#features.harness.mcpCommand)
-    - fn [mergeOpencode](../../src/harness.ts#L355) (existing: string | null, version: string | null, jsonc: boolean) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeOpencode](../../src/harness.ts#L371) (existing: string | null, version: string | null, jsonc: boolean) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeOpencode"></a><br>`jsonc`: the file is `opencode.jsonc`, so comments and trailing commas parse; a rewrite is still plain JSON.
       - calls [features.harness.mergeJsonKey](features.md#features.harness.mergeJsonKey)
-    - fn [mergeCodexToml](../../src/harness.ts#L381) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeCodexToml](../../src/harness.ts#L397) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeCodexToml"></a><br>The whole file is parsed (invalid TOML is an error, and the entry's own keys come from the parse), but only the lines of the `[mcp_servers.keylang]` table — header to the next header, its sub-tables included — are replaced, removed or appended, so the person's comments and…
       - calls [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.codexTableRegion](features.md#features.harness.codexTableRegion), [features.harness.rewriteCodexToml](features.md#features.harness.rewriteCodexToml), [features.harness.withoutLines](features.md#features.harness.withoutLines), [features.harness.codexEntryIs](features.md#features.harness.codexEntryIs), [features.harness.mcpCommand](features.md#features.harness.mcpCommand)
-    - fn [codexTableRegion](../../src/harness.ts#L419) (lines: readonly string[]) → { start: number; end: number } | null <!-- internal -->
+    - fn [codexTableRegion](../../src/harness.ts#L435) (lines: readonly string[]) → { start: number; end: number } | null <!-- internal -->
       <a id="features.harness.codexTableRegion"></a><br>Lines `[start, end)` of the `[mcp_servers.keylang]` table and its sub-tables, or null without the header.
-    - fn [withoutLines](../../src/harness.ts#L428) (lines: readonly string[], region: { start: number; end: number }) → string[] <!-- internal -->
+    - fn [withoutLines](../../src/harness.ts#L444) (lines: readonly string[], region: { start: number; end: number }) → string[] <!-- internal -->
       <a id="features.harness.withoutLines"></a><br>The lines without `[start, end)`; a blank line the removal left doubled (or last) goes with them.
-    - fn [codexEntryIs](../../src/harness.ts#L439) (text: string, entry: Record<string, unknown> | undefined) → boolean <!-- internal -->
+    - fn [codexEntryIs](../../src/harness.ts#L455) (text: string, entry: Record<string, unknown> | undefined) → boolean <!-- internal -->
       <a id="features.harness.codexEntryIs"></a><br>Whether `text` parses and its `mcp_servers.keylang` is exactly `entry` (undefined: absent).
       - calls [features.harness.isRecord](features.md#features.harness.isRecord)
-    - fn [rewriteCodexToml](../../src/harness.ts#L451) (data: Record<string, unknown>, entry: Record<string, unknown> | null) → { text: string | null } <!-- internal -->
+    - fn [rewriteCodexToml](../../src/harness.ts#L467) (data: Record<string, unknown>, entry: Record<string, unknown> | null) → { text: string | null } <!-- internal -->
       <a id="features.harness.rewriteCodexToml"></a><br>The whole file re-serialized with `entry` as the keylang server (null: without one); empty data is no file.
-    - fn [mergeSettings](../../src/harness.ts#L462) (existing: string | null, version: string | null, dir: string) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeSettings](../../src/harness.ts#L478) (existing: string | null, version: string | null, dir: string) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeSettings"></a><br>Parses an existing settings JSON via [`features.harness.parseObject`](features.md#features.harness.parseObject), updates its permission deny list ([`features.harness.mergeDeny`](features.md#features.harness.mergeDeny)) and hooks ([`features.harness.mergeHooksValue`](features.md#features.harness.mergeHooksValue)), dropping emptied keys, and serializes via [`features.harness.finishJson`](features.md#features.harness.finishJson); any error short-circuits. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [features.harness.parseObject](features.md#features.harness.parseObject), [features.harness.holdsKeylangSettings](features.md#features.harness.holdsKeylangSettings), [features.harness.mergeDeny](features.md#features.harness.mergeDeny), [features.harness.mergeHooksValue](features.md#features.harness.mergeHooksValue), [features.harness.finishJson](features.md#features.harness.finishJson)
-    - fn [mergeHooksFile](../../src/harness.ts#L478) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeHooksFile](../../src/harness.ts#L494) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeHooksFile"></a><br>Parses existing JSON text via [`features.harness.parseObject`](features.md#features.harness.parseObject), merges its `hooks` key using [`features.harness.mergeHooksValue`](features.md#features.harness.mergeHooksValue) (removing it when undefined), and serializes via [`features.harness.finishJson`](features.md#features.harness.finishJson), passing errors through. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [features.harness.parseObject](features.md#features.harness.parseObject), [features.harness.holdsOurHook](features.md#features.harness.holdsOurHook), [features.harness.mergeHooksValue](features.md#features.harness.mergeHooksValue), [features.harness.finishJson](features.md#features.harness.finishJson)
-    - fn [mergeDeny](../../src/harness.ts#L495) (permissions: unknown, install: boolean, dir: string) → { value: unknown } | { error: string } <!-- internal -->
+    - fn [mergeDeny](../../src/harness.ts#L511) (permissions: unknown, install: boolean, dir: string) → { value: unknown } | { error: string } <!-- internal -->
       <a id="features.harness.mergeDeny"></a><br>keylang's deny entries for the spec directory `dir` are added (`install`) or removed. Its entries for the default directory are keylang's too: they go once `dir` is another one, so a changed `dir` leaves no stale entry behind.
       - calls [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.denyRules](features.md#features.harness.denyRules)
-    - fn [mergeHooksValue](../../src/harness.ts#L511) (hooks: unknown, version: string | null) → { value: unknown } | { error: string } <!-- internal -->
+    - fn [mergeHooksValue](../../src/harness.ts#L527) (hooks: unknown, version: string | null) → { value: unknown } | { error: string } <!-- internal -->
       <a id="features.harness.mergeHooksValue"></a><br>Validates a hooks object and rewrites its Stop groups via [`features.harness.rewriteGroup`](features.md#features.harness.rewriteGroup), appending the versioned [`features.harness.hookCommand`](features.md#features.harness.hookCommand) if missing and pruning empty groups, returning undefined when nothing remains. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
       - calls [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.rewriteGroup](features.md#features.harness.rewriteGroup), [features.harness.hookCommand](features.md#features.harness.hookCommand), [features.harness.emptyGroup](features.md#features.harness.emptyGroup)
-    - fn [rewriteGroup](../../src/harness.ts#L530) (group: unknown, version: string | null) → Record<string, unknown> | { error: string } <!-- internal -->
+    - fn [rewriteGroup](../../src/harness.ts#L546) (group: unknown, version: string | null) → Record<string, unknown> | { error: string } <!-- internal -->
       <a id="features.harness.rewriteGroup"></a><br>Validates one hooks.Stop group and rebuilds its hook list, replacing commands matched by [`features.harness.isOurHook`](features.md#features.harness.isOurHook) with [`features.harness.hookCommand`](features.md#features.harness.hookCommand) output, or dropping them when version is null. Returns an error object for malformed entries. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
       - calls [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.isOurHook](features.md#features.harness.isOurHook), [features.harness.hookCommand](features.md#features.harness.hookCommand)
-    - fn [emptyGroup](../../src/harness.ts#L546) (group: Record<string, unknown>) → boolean <!-- internal -->
+    - fn [emptyGroup](../../src/harness.ts#L562) (group: Record<string, unknown>) → boolean <!-- internal -->
       <a id="features.harness.emptyGroup"></a><br>Returns true when the object's `hooks` is an empty array and it has no keys besides `hooks` and `matcher`. [`features.harness.mergeHooksValue`](features.md#features.harness.mergeHooksValue) uses it to detect hook groups that carry no handlers. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [isOurHook](../../src/harness.ts#L550) (command: string) → boolean <!-- internal -->
+    - fn [isOurHook](../../src/harness.ts#L566) (command: string) → boolean <!-- internal -->
       <a id="features.harness.isOurHook"></a><br>Tests a hook command string against a regex matching `keylang hook stop` with an optional `@version` suffix, returning whether it is one of our own stop hooks; [`features.harness.rewriteGroup`](features.md#features.harness.rewriteGroup) uses it to filter hook entries. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [holdsKeylangSettings](../../src/harness.ts#L555) (data: Record<string, unknown>, dir: string) → boolean <!-- internal -->
+    - fn [holdsKeylangSettings](../../src/harness.ts#L571) (data: Record<string, unknown>, dir: string) → boolean <!-- internal -->
       <a id="features.harness.holdsKeylangSettings"></a><br>Whether Claude's settings hold anything of keylang's: a deny rule of the spec directory `dir` (or of the default one), or the Stop hook.
       - calls [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.denyRules](features.md#features.harness.denyRules), [features.harness.holdsOurHook](features.md#features.harness.holdsOurHook)
-    - fn [holdsOurHook](../../src/harness.ts#L562) (hooks: unknown) → boolean <!-- internal -->
+    - fn [holdsOurHook](../../src/harness.ts#L578) (hooks: unknown) → boolean <!-- internal -->
       <a id="features.harness.holdsOurHook"></a>
       - calls [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.isOurHook](features.md#features.harness.isOurHook)
-    - fn [mergeJsonKey](../../src/harness.ts#L567) (existing: string | null, path: readonly string[], server: unknown, jsonc = false) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeJsonKey](../../src/harness.ts#L583) (existing: string | null, path: readonly string[], server: unknown, jsonc = false) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeJsonKey"></a><br>Parses the config text via [`features.harness.parseObject`](features.md#features.harness.parseObject), then sets or removes the `keylang` entry inside the nested object at the first path key, dropping that key when it becomes empty. Rejects a non-object value there and re-serializes with [`features.harness.finishJson`](features.md#features.harness.finishJson). _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.harness.parseObject](features.md#features.harness.parseObject), [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.finishJson](features.md#features.harness.finishJson)
-    - fn [parseObject](../../src/harness.ts#L584) (existing: string | null, jsonc = false) → { value: Record<string, unknown> } | { error: string } <!-- internal -->
+    - fn [parseObject](../../src/harness.ts#L600) (existing: string | null, jsonc = false) → { value: Record<string, unknown> } | { error: string } <!-- internal -->
       <a id="features.harness.parseObject"></a><br>The object in a JSON file; with `jsonc`, comments and trailing commas are allowed (`opencode.jsonc`).
       - calls [map.imports.parseJsoncStrict](map.md#map.imports.parseJsoncStrict), [features.harness.isRecord](features.md#features.harness.isRecord)
-    - fn [finishJson](../../src/harness.ts#L595) (data: Record<string, unknown>) → { text: string | null } <!-- internal -->
+    - fn [finishJson](../../src/harness.ts#L611) (data: Record<string, unknown>) → { text: string | null } <!-- internal -->
       <a id="features.harness.finishJson"></a><br>Serializes a merged config object into pretty-printed JSON with a trailing newline, or yields `null` when the object is empty so callers like [`features.harness.mergeSettings`](features.md#features.harness.mergeSettings) can skip writing the file. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [opencodeFile](../../src/harness.ts#L600) (files: ReadonlyMap<string, string | null>) → string <!-- internal -->
+    - fn [opencodeFile](../../src/harness.ts#L616) (files: ReadonlyMap<string, string | null>) → string <!-- internal -->
       <a id="features.harness.opencodeFile"></a><br>Picks which OpenCode config filename to target: returns `opencode.json` if that entry exists with non-null content in the map, else `opencode.jsonc` if that one does, otherwise defaults to `opencode.json`. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [isRecord](../../src/harness.ts#L606) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isRecord](../../src/harness.ts#L622) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       <a id="features.harness.isRecord"></a><br>Type guard that returns true only for non-null objects that are not arrays, narrowing the value to a string-keyed record. Used by [`features.harness.parseObject`](features.md#features.harness.parseObject), [`features.harness.mergeDeny`](features.md#features.harness.mergeDeny) and the other merge helpers to validate parsed config shapes. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [HarnessChoice](../../src/harness.ts#L613) = "auto" | "none" | readonly HarnessName[]
+    - type [HarnessChoice](../../src/harness.ts#L629) = "auto" | "none" | readonly HarnessName[]
       <a id="features.harness.HarnessChoice"></a><br>Which harnesses: detected from the disk, none (strip keylang's files), or a named, non-empty list.
-    - fn [harnessChoice](../../src/harness.ts#L616) (flag: string | undefined) → HarnessChoice
+    - fn [harnessChoice](../../src/harness.ts#L632) (flag: string | undefined) → HarnessChoice
       <a id="features.harness.harnessChoice"></a><br>`--agents=<list>` as a choice; left out, the harnesses are detected. Throws as `parseAgents` does.
       - calls [features.harness.parseAgents](features.md#features.harness.parseAgents)
-    - fn [keylangVersion](../../src/harness.ts#L623) () → string
+    - fn [keylangVersion](../../src/harness.ts#L639) () → string
       <a id="features.harness.keylangVersion"></a><br>The version the MCP command and the Stop hook pin: the running keylang's `package.json`, from `src` and from `dist`.
-    - type [HarnessCategory](../../src/harness.ts#L628) = "instructions" | "mcp" | "skill" | "settings" | "hooks"
+    - type [HarnessCategory](../../src/harness.ts#L644) = "instructions" | "mcp" | "skill" | "settings" | "hooks"
       <a id="features.harness.HarnessCategory"></a><br>What a harness file is for, as a step before the write names it.
-    - fn [harnessCategory](../../src/harness.ts#L630) (path: string) → HarnessCategory
+    - fn [harnessCategory](../../src/harness.ts#L646) (path: string) → HarnessCategory
       <a id="features.harness.harnessCategory"></a><br>Maps a harness file path to its category: root `AGENTS.md`/`CLAUDE.md` become instructions, the skill constants map to skill, specific `.claude`/`.codex` files map to settings or hooks, and anything else falls back to mcp. Used by [`features.harness.planAgents`](features.md#features.harness.planAgents) to group planned… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-    - fn [diskProbe](../../src/harness.ts#L639) (root: string) → HarnessProbe
+    - fn [diskProbe](../../src/harness.ts#L655) (root: string) → HarnessProbe
       <a id="features.harness.diskProbe"></a><br>The probe of the real disk: `.claude` and the other harness directories are directories; opencode is a file.
-    - fn [resolveChoice](../../src/harness.ts#L660) (choice: HarnessChoice, probe: HarnessProbe) → HarnessSelection
+    - fn [resolveChoice](../../src/harness.ts#L676) (choice: HarnessChoice, probe: HarnessProbe) → HarnessSelection
       <a id="features.harness.resolveChoice"></a><br>The selection a choice resolves to on this disk: `auto` keeps the instruction block even when nothing is detected; `none` has none.
       - calls [features.harness.detectHarnesses](features.md#features.harness.detectHarnesses)
-    - type [HarnessTarget](../../src/harness.ts#L670)
+    - type [HarnessTarget](../../src/harness.ts#L686)
       <a id="features.harness.HarnessTarget"></a><br>One file of the plan: the text it should hold (null: absent) against what is there now.
-    - type [AgentsPlan](../../src/harness.ts#L682)
+    - type [AgentsPlan](../../src/harness.ts#L698)
       <a id="features.harness.AgentsPlan"></a><br>What `keylang agents` would do, computed before anything is written. Internal to one operation — not a stored format.
-    - fn [planAgents](../../src/harness.ts#L698) (root: string, choice: HarnessChoice) → AgentsPlan
+    - fn [planAgents](../../src/harness.ts#L714) (root: string, choice: HarnessChoice) → AgentsPlan
       <a id="features.harness.planAgents"></a><br>Plans the harness files of `choice` against the disk under `root`. Reads, writes nothing; throws on a read error or a broken keylang.json.
       - calls [features.harness.resolveChoice](features.md#features.harness.resolveChoice), [features.harness.diskProbe](features.md#features.harness.diskProbe), [features.harness.specDir](features.md#features.harness.specDir), [features.harness.readInputs](features.md#features.harness.readInputs), [features.harness.skillFile](features.md#features.harness.skillFile), [features.harness.keylangVersion](features.md#features.harness.keylangVersion), [features.harness.planHarness](features.md#features.harness.planHarness), [features.harness.harnessCategory](features.md#features.harness.harnessCategory)
-    - fn [readInputs](../../src/harness.ts#L714) (root: string) → Map<string, string | null> <!-- internal -->
+    - fn [readInputs](../../src/harness.ts#L730) (root: string) → Map<string, string | null> <!-- internal -->
       <a id="features.harness.readInputs"></a><br>Reads every file listed in `HARNESS_PATHS` relative to the given root, mapping each path to its UTF-8 contents or null when the file is absent. Used by [`features.harness.planAgents`](features.md#features.harness.planAgents) and [`features.harness.agentsPlanProblems`](features.md#features.harness.agentsPlanProblems) to inspect existing harness files. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-    - fn [agentsPlanProblems](../../src/harness.ts#L726) (plan: AgentsPlan) → string[]
+    - fn [agentsPlanProblems](../../src/harness.ts#L742) (plan: AgentsPlan) → string[]
       <a id="features.harness.agentsPlanProblems"></a><br>Why the plan may not be committed now (`path: reason` lines; empty when it may): every harness path must still hold the bytes the plan read, keylang.json must still name the same spec directory, a target must pass the repository's write rules (a removal too: the entry must be…
       - calls [features.harness.readInputs](features.md#features.harness.readInputs), [features.harness.specDir](features.md#features.harness.specDir), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [base.safe-write.targetProblem](base.md#base.safe-write.targetProblem), [features.harness.detectHarnesses](features.md#features.harness.detectHarnesses), [features.harness.diskProbe](features.md#features.harness.diskProbe)
-    - type [HarnessStep](../../src/harness.ts#L753)
+    - type [HarnessStep](../../src/harness.ts#L769)
       <a id="features.harness.HarnessStep"></a><br>One file step of a commit, with what became of it.
-    - fn [commitAgents](../../src/harness.ts#L770) ( plan: AgentsPlan, options: { signal?: AbortSignal; onStep?: (step: { path: string; action: "write" | "remove" }) => void } = {}, ) → Promise<{ steps: HarnessStep[]; outcome: "completed" | "failed" | "cancelled" }>
+    - fn [commitAgents](../../src/harness.ts#L786) ( plan: AgentsPlan, options: { signal?: AbortSignal; onStep?: (step: { path: string; action: "write" | "remove" }) => void } = {}, ) → Promise<{ steps: HarnessStep[]; outcome: "completed" | "failed" | "cancelled" }>
       <a id="features.harness.commitAgents"></a><br>Writes and removes the changed targets one by one, in plan order. A write is atomic at the target (a link inside the repository is followed; CRLF of the old file kept); a removal removes the entry itself, and only when the entry is inside the repository with links followed — a…
       - calls [base.safe-write.targetProblem](base.md#base.safe-write.targetProblem), [base.safe-write.landing](base.md#base.safe-write.landing), [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic)
   - module [integrations](../../src/integrations.ts#L1)
@@ -1931,6 +1935,68 @@
       <a id="features.stats.statusesIn"></a><br>`status=` of every `keylang:llm` / `keylang:algo` provenance comment in the lines.
     - fn [addDrafts](../../src/stats.ts#L77) (stats: Stats, counts: Record<string, number>, field: keyof Tally) → void
       <a id="features.stats.addDrafts"></a><br>Adds each per-status count into the matching tally of `stats.drafts`, creating a zeroed tally for statuses not yet present and incrementing only the given field. Used by `operations.operations.countProposed` and [`tui.merge-session.MergeSession.write`](tui.md#tui.merge-session.MergeSession.write) to accumulate draft totals. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+  - module [tour](../../src/tour.ts#L1)
+    <a id="features.tour"></a><br>`keylang tour` (business-flows/15): one page for a newcomer and for an agent — what the system is, its layers and modules, the business processes with their diagrams, entry points and events, integrations, blind spots and «logic in data», and where to start reading. A view over…
+    - node [external.node](external.md#external.node)
+    - call-sites [features.call-sites](features.md#features.call-sites)
+    - config [base.config](base.md#base.config)
+    - coverage-report [features.coverage-report](features.md#features.coverage-report)
+    - diagram [map.diagram](map.md#map.diagram)
+    - discover [features.discover](features.md#features.discover)
+    - discover-names [features.discover-names](features.md#features.discover-names)
+    - external-ids [base.external-ids](base.md#base.external-ids)
+    - integrations [features.integrations](features.md#features.integrations)
+    - snapshot [map.snapshot](map.md#map.snapshot)
+    - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
+    - span [base.span](base.md#base.span)
+    - type [TourFlow](../../src/tour.ts#L39)
+      <a id="features.tour.TourFlow"></a>
+    - type [TourProcess](../../src/tour.ts#L56)
+      <a id="features.tour.TourProcess"></a>
+    - type [Tour](../../src/tour.ts#L64)
+      <a id="features.tour.Tour"></a>
+    - type [TourInputs](../../src/tour.ts#L121)
+      <a id="features.tour.TourInputs"></a><br>What the tour reads besides the snapshot: the config, the hand-written specs.
+    - fn [diagramLink](../../src/tour.ts#L128) (view: "flow" | "discovered", name: string) → string <!-- internal -->
+      <a id="features.tour.diagramLink"></a><br>The diagram of a view on the `keylang web` page.
+    - fn [readOrNull](../../src/tour.ts#L132) (abs: string) → string | null <!-- internal -->
+      <a id="features.tour.readOrNull"></a>
+    - fn [moduleOf](../../src/tour.ts#L141) (snapshot: AnalysisSnapshot, id: string) → string | null <!-- internal -->
+      <a id="features.tour.moduleOf"></a><br>The file module a node counts under: itself or its nearest ancestor that is a module and no class.
+    - fn [layerOrder](../../src/tour.ts#L153) (snapshot: AnalysisSnapshot) → string[] <!-- internal -->
+      <a id="features.tour.layerOrder"></a><br>The repository's layers in `keylang.json` order, then the others by name; packages left out.
+      - calls [base.span.compareText](base.md#base.span.compareText)
+    - fn [layersOf](../../src/tour.ts#L162) (snapshot: AnalysisSnapshot) → Tour["layers"] <!-- internal -->
+      <a id="features.tour.layersOf"></a>
+      - calls [features.tour.layerOrder](features.md#features.tour.layerOrder), [features.tour.moduleOf](features.md#features.tour.moduleOf), [base.span.compareText](base.md#base.span.compareText)
+    - fn [processesOf](../../src/tour.ts#L201) (inputs: TourInputs, flows: readonly DiscoveredFlow[], specDir: string) → Tour["processes"] <!-- internal -->
+      <a id="features.tour.processesOf"></a>
+      - calls [features.tour.readOrNull](features.md#features.tour.readOrNull), [base.config.specPath](base.md#base.config.specPath), [features.tour.diagramLink](features.md#features.tour.diagramLink), [base.span.compareText](base.md#base.span.compareText), [features.discover-names.readProcesses](features.md#features.discover-names.readProcesses)
+    - fn [entriesOf](../../src/tour.ts#L263) (snapshot: AnalysisSnapshot) → Tour["entries"] <!-- internal -->
+      <a id="features.tour.entriesOf"></a>
+    - fn [eventsOf](../../src/tour.ts#L278) (snapshot: AnalysisSnapshot) → Tour["events"] <!-- internal -->
+      <a id="features.tour.eventsOf"></a><br>Event nodes, should the snapshot hold them (a framework adapter's events): who dispatches each, and who listens.
+      - calls [base.span.compareText](base.md#base.span.compareText)
+    - fn [integrationsOf](../../src/tour.ts#L286) (report: IntegrationsReport) → Tour["integrations"] <!-- internal -->
+      <a id="features.tour.integrationsOf"></a>
+      - calls [base.span.compareText](base.md#base.span.compareText)
+    - fn [blindSpotsOf](../../src/tour.ts#L307) (report: CoverageReport) → Tour["blindSpots"] <!-- internal -->
+      <a id="features.tour.blindSpotsOf"></a>
+    - fn [startHereOf](../../src/tour.ts#L331) (snapshot: AnalysisSnapshot, spec: SpecIR, flows: readonly DiscoveredFlow[]) → Tour["startHere"] <!-- internal -->
+      <a id="features.tour.startHereOf"></a><br>The fns to read first: by the flows (hand-written and discovered) that name them, then by their callers, then by ID; packages and test files left out.
+      - calls [map.diagram.flowIds](map.md#map.diagram.flowIds), [features.call-sites.isTestFile](features.md#features.call-sites.isTestFile), [base.span.compareText](base.md#base.span.compareText)
+    - fn [buildTour](../../src/tour.ts#L352) (inputs: TourInputs) → Promise<Tour>
+      <a id="features.tour.buildTour"></a><br>The tour over a snapshot, the hand-written specs and the saved files beside them (the discovered view and its names README). Reads the analysed files' facts, as `coverage` and `integrations` do; writes nothing.
+      - calls [features.discover.specifiedTriggers](features.md#features.discover.specifiedTriggers), [features.discover.discoverFlows](features.md#features.discover.discoverFlows), [features.coverage-report.loadDataLogic](features.md#features.coverage-report.loadDataLogic), [features.coverage-report.findDataLogic](features.md#features.coverage-report.findDataLogic), [features.coverage-report.coverageReport](features.md#features.coverage-report.coverageReport), [features.tour.readOrNull](features.md#features.tour.readOrNull), [features.integrations.findIntegrations](features.md#features.integrations.findIntegrations), [features.integrations.loadIntegrations](features.md#features.integrations.loadIntegrations), [features.tour.layersOf](features.md#features.tour.layersOf), [features.tour.processesOf](features.md#features.tour.processesOf), [features.tour.entriesOf](features.md#features.tour.entriesOf), [features.tour.eventsOf](features.md#features.tour.eventsOf), [features.tour.integrationsOf](features.md#features.tour.integrationsOf), [features.tour.blindSpotsOf](features.md#features.tour.blindSpotsOf), [features.tour.startHereOf](features.md#features.tour.startHereOf)
+    - fn [percent](../../src/tour.ts#L384) (share: number) → string <!-- internal -->
+      <a id="features.tour.percent"></a>
+    - fn [code](../../src/tour.ts#L385) (text: string) → string <!-- internal -->
+      <a id="features.tour.code"></a>
+    - fn [cell](../../src/tour.ts#L387) (text: string) → string <!-- internal -->
+      <a id="features.tour.cell"></a><br>One table cell: no pipe or line break.
+    - fn [tourMarkdown](../../src/tour.ts#L390) (tour: Tour) → string
+      <a id="features.tour.tourMarkdown"></a><br>The tour as one Markdown page, the seven sections in order. Ends with a newline.
+      - calls [features.discover.proseLine](features.md#features.discover.proseLine), [features.tour.code](features.md#features.tour.code), [features.tour.cell](features.md#features.tour.cell), [features.tour.percent](features.md#features.tour.percent)
   - module [voice-local](../../src/voice-local.ts#L1)
     <a id="features.voice-local"></a><br>The optional native parts of voice (design §7.4): `decibri` for the microphone and `@fugood/whisper.node` (whisper.cpp) for local recognition. Both ship prebuilt binaries and are optional peer dependencies: npm installs them only when the user adds them next to keylang, and…
     - node [external.node](external.md#external.node)
@@ -2021,3 +2087,59 @@
     - fn [transcribeOpenRouter](../../src/voice.ts#L219) (engine: Extract<VoiceEngine, { kind: "openrouter" }>, pcm: Int16Array, terms: readonly string[]) → Promise<string>
       <a id="features.voice.transcribeOpenRouter"></a><br>One OpenRouter chat completion per window, with the glossary as the prompt; an empty recording sends nothing.
       - calls [features.voice.windows](features.md#features.voice.windows), [features.voice.wav](features.md#features.voice.wav), [features.voice.transcriptOf](features.md#features.voice.transcriptOf), [features.voice.joinWindows](features.md#features.voice.joinWindows)
+  - module [weakening](../../src/weakening.ts#L1)
+    <a id="features.weakening"></a><br>Weakening of the spec since a base commit (K108, ticket 49): what an agent could change to switch a rule off without touching the code. In keylang.json: a file a rule reaches that `exclude`, `assume` or `outside` now leave unread, a `layers` glob that moves such a file out of…
+    - node [external.node](external.md#external.node)
+    - analyze [map.analyze](map.md#map.analyze)
+    - config [base.config](base.md#base.config)
+    - diag [base.diag](base.md#base.diag)
+    - feature-status [features.feature-status](features.md#features.feature-status)
+    - files [lang.files](lang.md#lang.files)
+    - git-changes [features.git-changes](features.md#features.git-changes)
+    - graph [map.graph](map.md#map.graph)
+    - ir [lang.ir](lang.md#lang.ir)
+    - parser [lang.parser](lang.md#lang.parser)
+    - span [base.span](base.md#base.span)
+    - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
+    - type [Weakening](../../src/weakening.ts#L27)
+      <a id="features.weakening.Weakening"></a><br>One way the spec got weaker. `file` is POSIX, relative to the root; the line is the current file's, or the base's for a removed line.
+    - type [WeakeningReport](../../src/weakening.ts#L37)
+      <a id="features.weakening.WeakeningReport"></a><br>The weakenings since a base, or why they were not compared (no git, no keylang.json at the base).
+    - type [ScopeFields](../../src/weakening.ts#L43) <!-- internal -->
+      <a id="features.weakening.ScopeFields"></a><br>The fields of keylang.json that decide what the rules see, read leniently: a field of the wrong shape is absent.
+    - type [ClassField](../../src/weakening.ts#L54) = "exclude" | "outside" | "assume" <!-- internal -->
+      <a id="features.weakening.ClassField"></a>
+    - fn [strings](../../src/weakening.ts#L56) (value: unknown) → string[] | undefined <!-- internal -->
+      <a id="features.weakening.strings"></a>
+    - fn [scopeFields](../../src/weakening.ts#L58) (text: string) → ScopeFields <!-- internal -->
+      <a id="features.weakening.scopeFields"></a>
+      - calls [base.config.withoutBom](base.md#base.config.withoutBom), [features.weakening.strings](features.md#features.weakening.strings)
+    - fn [fieldLine](../../src/weakening.ts#L89) (text: string, field: string) → number <!-- internal -->
+      <a id="features.weakening.fieldLine"></a><br>The 1-based line of `"field"` in the JSON text, else 1.
+    - fn [listText](../../src/weakening.ts#L94) (list: readonly string[] | undefined) → string <!-- internal -->
+      <a id="features.weakening.listText"></a>
+    - fn [someFiles](../../src/weakening.ts#L96) (files: readonly string[]) → string <!-- internal -->
+      <a id="features.weakening.someFiles"></a>
+    - fn [configWeakenings](../../src/weakening.ts#L107) (input: { base: string; now: string; files?: readonly string[]; place?: (file: string, fields: ScopeFields) => string; reached: (layer: string) => string | null; }) → Weakening[]
+      <a id="features.weakening.configWeakenings"></a><br>keylang.json weakened from `base` to `now`. `files` are the source files of the configured languages (POSIX, relative to the root), `place` the layer a file is in under given fields (`outside`, or `unassigned` for none), and `reached` the text of a rule whose scope holds a…
+      - calls [features.weakening.scopeFields](features.md#features.weakening.scopeFields), [features.weakening.fieldLine](features.md#features.weakening.fieldLine), [base.config.sourceClass](base.md#base.config.sourceClass), [features.weakening.listText](features.md#features.weakening.listText), [features.weakening.someFiles](features.md#features.weakening.someFiles)
+    - type [Atom](../../src/weakening.ts#L156) <!-- internal -->
+      <a id="features.weakening.Atom"></a><br>A rule line as the comparison counts it: a dependency rule once per target, so a baseline line that lost one target lost a deny.
+    - fn [atoms](../../src/weakening.ts#L164) (spec: SpecIR) → Atom[] <!-- internal -->
+      <a id="features.weakening.atoms"></a>
+    - fn [counts](../../src/weakening.ts#L174) (items: readonly T[], key: (item: T) => string) → Map<string, number> <!-- internal -->
+      <a id="features.weakening.counts"></a>
+    - fn [ruleLayers](../../src/weakening.ts#L181) (rule: RuleAssertion) → string[] <!-- internal -->
+      <a id="features.weakening.ruleLayers"></a><br>Each layer a rule's scope holds, with the rule's text; `*` for a rule over every module (`no-cycles *`).
+    - fn [reachingRule](../../src/weakening.ts#L191) (specs: readonly SpecIR[]) → (layer: string) => string | null
+      <a id="features.weakening.reachingRule"></a><br>The text of the first rule whose scope holds `layer`, over the specs given.
+      - calls [features.weakening.ruleLayers](features.md#features.weakening.ruleLayers)
+    - fn [specWeakenings](../../src/weakening.ts#L200) (baseDocs: readonly Document[], nowDocs: readonly Document[], dir: string, at: string) → Weakening[]
+      <a id="features.weakening.specWeakenings"></a><br>The specs weakened from `baseDocs` to `nowDocs` (both POSIX, relative to the root; `dir` is the spec directory, `at` how a sentence names the base).
+      - calls [lang.spec-ir.compileSpec](lang.md#lang.spec-ir.compileSpec), [base.config.specPath](base.md#base.config.specPath), [features.weakening.atoms](features.md#features.weakening.atoms), [features.weakening.counts](features.md#features.weakening.counts), [features.feature-status.planItems](features.md#features.feature-status.planItems), [base.span.compareText](base.md#base.span.compareText)
+    - fn [weakeningDiagnostic](../../src/weakening.ts#L253) (weakening: Weakening, display: (path: string) => string = (path) => path) → Diagnostic
+      <a id="features.weakening.weakeningDiagnostic"></a><br>K108 at a weakening's position, `display` turning its root-relative path into the report's.
+      - calls [base.diag.diagnostic](base.md#base.diag.diagnostic)
+    - fn [readWeakenings](../../src/weakening.ts#L265) (config: Config, ref: string, label: string, at: string = ref) → WeakeningReport
+      <a id="features.weakening.readWeakenings"></a><br>The spec at `ref` against the working tree: keylang.json and the `.md` files of the spec directory (the generated map and reading aids left out). Without git, or without keylang.json at `ref` (a first commit, an unborn HEAD), nothing is compared and `note` says why: that is not…
+      - calls [base.config.specPath](base.md#base.config.specPath), [map.analyze.readingAid](map.md#map.analyze.readingAid), [features.git-changes.gitFileAt](features.md#features.git-changes.gitFileAt), [features.weakening.scopeFields](features.md#features.weakening.scopeFields), [features.git-changes.gitSpecFilesAt](features.md#features.git-changes.gitSpecFilesAt), [lang.files.collectMdFiles](lang.md#lang.files.collectMdFiles), [base.config.toPosix](base.md#base.config.toPosix), [base.span.compareText](base.md#base.span.compareText), [lang.parser.parse](lang.md#lang.parser.parse), [features.weakening.reachingRule](features.md#features.weakening.reachingRule), [lang.spec-ir.compileSpec](lang.md#lang.spec-ir.compileSpec), [base.config.guessLayers](base.md#base.config.guessLayers), [map.graph.placeFile](map.md#map.graph.placeFile), [base.config.classifySources](base.md#base.config.classifySources), [features.weakening.configWeakenings](features.md#features.weakening.configWeakenings), [features.weakening.specWeakenings](features.md#features.weakening.specWeakenings)

@@ -8,7 +8,7 @@
 
 import type { CallFact, DeclFact, ExportRow, FileFacts, ImportFact, Kwarg, LiteralValue, PassFact, StatementFact, UnsupportedFact, ValueRefFact } from "./facts.ts";
 import { isLicense, nonEmpty } from "./doc-comments.ts";
-import { errorLine, fingerprint, located, withTree, type Node } from "./treesitter.ts";
+import { errorLine, fingerprintFacts, located, valuesFingerprint, withTree, type Node } from "./treesitter.ts";
 
 /** Decorators that keep the function a plain function (or method) of that name. */
 const KEEPING_DECORATORS = new Set(
@@ -84,6 +84,8 @@ function extractTree(path: string, root: Node): FileFacts {
   collectDynamic(root, facts);
   const doc = docstring(root);
   if (doc !== undefined) facts.doc = doc;
+  const valueCode = valuesFingerprint(root.namedChildren, facts.decls);
+  if (valueCode !== undefined) facts.values = valueCode;
   const end = located(root);
   facts.endLine = end.endLine;
   facts.endCol = end.endCol;
@@ -218,7 +220,8 @@ function classDecl(def: Node, name: string, symbol: string, topLevel: boolean, f
   }
   const base = def.childForFieldName("superclasses")?.namedChildren[0]?.text;
   const doc = docstring(def.childForFieldName("body"));
-  return { kind: "class", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature: null, exported: false, calls: [], types: [], members, fingerprint: fingerprint(def), ...(base ? { base } : {}), ...(doc !== undefined ? { doc } : {}) };
+  const values = valuesFingerprint(items.map(({ item }) => item), members);
+  return { kind: "class", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature: null, exported: false, calls: [], types: [], members, ...fingerprintFacts(def), ...(values !== undefined ? { values } : {}), ...(base ? { base } : {}), ...(doc !== undefined ? { doc } : {}) };
 }
 
 /** The class a method belongs to: its name, its static and class methods (for a top-level class), and whether the first parameter is the receiver. */
@@ -240,7 +243,7 @@ function fnDecl(node: Node, name: string, owner: Owner | null): DeclFact {
   const body = node.childForFieldName("body");
   const calls = body ? bodyCalls(body, { receiver, owner, bound: boundNames(node), classes: typedValues(node) }) : [];
   const doc = docstring(body);
-  return { kind: "fn", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature, exported: false, calls, types: [], members: [], fingerprint: fingerprint(node), ...(doc !== undefined ? { doc } : {}) };
+  return { kind: "fn", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature, exported: false, calls, types: [], members: [], ...fingerprintFacts(node), ...(doc !== undefined ? { doc } : {}) };
 }
 
 /**

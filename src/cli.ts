@@ -13,6 +13,7 @@ import { safeWrite, writeAtomic } from "./safe-write.ts";
 import { harnessChoice, type HarnessChoice } from "./harness.ts";
 import { CLONE_EXPLAIN_MODES, cloneCacheRoot, enableExplainedMap, isCloneExplain, parseRepoSource, syncClone, type CloneExplain } from "./clone.ts";
 import { filterChanged, hookDecision, hookFails, parseHookEvent, uncheckedTurn } from "./changed.ts";
+import { readWeakenings } from "./weakening.ts";
 import { parseArgs, type ParseArgsOptionsConfig } from "node:util";
 import { CONFIG_FILE, STATIC_MODES, loadConfig, toPosix, type StaticMode } from "./config.ts";
 import { formatDiagnostic } from "./diag.ts";
@@ -84,7 +85,8 @@ Commands:
                             1 gaps, 2 missing file, unreadable --since ref, or bad
                             invocation. Writes only the fact cache .keylang/cache/
   hook stop                 Read a harness Stop event (JSON) from stdin, run
-                            check --changed, and print a JSON decision; writes
+                            check --changed (K108 included: a spec weakened since
+                            HEAD blocks), and print a JSON decision; writes
                             only the fact cache .keylang/cache/. Exit 0 once
                             started: a turn it cannot check (stdin not JSON, no
                             git, a broken keylang.json) prints {"systemMessage":
@@ -170,7 +172,7 @@ Commands:
   mcp                       Serve MCP over stdio for agents: search, node, code, flows,
                             check, explain, context, validate_spec, scaffold,
                             feature_status, list_entries, discover_flows, coverage_report,
-                            list_integrations, apply_diff
+                            list_integrations, project_tour, apply_diff
                             (proposals only; no spec is written, the fact cache
                             .keylang/cache/ is kept current)
   wire [--check] [--out f]  Generate keylang.gen.ts (or f: a .ts/.mts/.cts path relative to
@@ -205,6 +207,15 @@ Commands:
                             notify or ipn, integrations.webhooks globs of keylang.json);
                             queue publishers, consumers and pairs. --json: as JSON.
                             Exit 0; writes only the fact cache
+  tour [--out f] [--json]   One page for a newcomer, a view (check does not read it), no
+                            model: what the system is (README, manifest, layer READMEs),
+                            layers and modules with size and coupling, business
+                            processes → flows with descriptions and /diagrams links,
+                            entry points by kind and events, integrations, blind spots
+                            and logic in data, and the fns to read first. Markdown on
+                            stdout; --out f: write it as a generated file (keylang/tour.md;
+                            never a place check reads); --json: the same data as JSON.
+                            Exit 0; 1 when f is a file someone wrote
   flows discover [--kind k] [--layer l] [--limit n] [--depth d] [--print] [--check]
                             A flow draft for every entry point (draft flow from its fn)
                             as the generated view <dir>/flows-discovered/<layer>.md,
@@ -263,14 +274,19 @@ Commands:
                             a step after the shape its edge leaves, an unknown shape a
                             note comment; an unchanged drawing proposes nothing.
                             --print: the change on stdout, nothing written
-  check [paths…] [--changed] [--since <ref>]
+  check [paths…] [--changed] [--since <ref>] [--accept-weakening]
                             Resolve IDs and check rules (default: ./keylang)
                             Given files, it prints verdicts and the summary for those
                             files only (e.g. check keylang/flows/buy.md)
                             Rebuilds the analysis in memory; does not write the map
                             (only the fact cache .keylang/cache/, for the next run).
                             --changed reports only findings that touch files changed
-                            since <ref> (default HEAD) plus untracked files
+                            since <ref> (default HEAD) plus untracked files, and K108
+                            for the spec weakened since <ref> (keylang.json exclude,
+                            assume, outside, layers, frameworks; a removed deny or
+                            step, a new allow, rules outside rules.md, a wider
+                            baseline). --accept-weakening: for a person, never an
+                            agent: K108 is accepted, listed on stderr, exit not 1
   check --stale [paths…] [--accept | --strict]
                             Prose whose code changed since it was accepted: node
                             descriptions and flow when/then/invariant, against the
@@ -352,6 +368,7 @@ const OPTIONS = {
   since: { type: "string" },
   agents: { type: "string" },
   changed: { type: "boolean" },
+  "accept-weakening": { type: "boolean" },
   layer: { type: "string" },
   level: { type: "string" },
   kind: { type: "string" },
@@ -426,6 +443,7 @@ async function run(argv: readonly string[]): Promise<number> {
         since: values.since,
         stale: values.stale === true,
         accept: values.accept === true,
+        acceptWeakening: values["accept-weakening"] === true,
       });
     case "explain":
       return cmdExplain(paths[0], {
@@ -468,6 +486,8 @@ async function run(argv: readonly string[]): Promise<number> {
       return cmdCoverage(values.json === true);
     case "integrations":
       return cmdIntegrations(values.json === true);
+    case "tour":
+      return cmdTour(values.out, values.json === true);
     case "flows":
       return cmdFlows(paths, { kind: values.kind, layer: values.layer, limit: values.limit, depth: values.depth, into: values.into, print: values.print === true, check: values.check === true, names: values.names === true, mode: values.mode, dryRun: values["dry-run"] === true, jobs: values.jobs, stale: values.stale === true });
     case "flow":
@@ -1069,6 +1089,17 @@ async function cmdIntegrations(json: boolean): Promise<number> {
   return 0;
 }
 
+/** `tour [--out f] [--json]`: the page on stdout, its data as JSON, or the page written to `f` (named on stderr). */
+async function cmdTour(out: string | undefined, json: boolean): Promise<number> {
+  const result = await runOperation({ kind: "tour", root: findRoot(process.cwd()), ...(out !== undefined ? { out } : {}) });
+  if (result.payload === null) throw new Error(result.messages[0]?.text ?? "tour failed");
+  const { text, out: _written, ...tour } = result.payload;
+  if (out !== undefined) for (const m of result.messages) process.stderr.write(`keylang: ${m.text}\n`);
+  if (json) process.stdout.write(`${JSON.stringify(tour, null, 2)}\n`);
+  else if (out === undefined) process.stdout.write(text);
+  return result.exitCode ?? 2;
+}
+
 /**
  * `flows discover|adopt`: the shared operations. Discover prints the view
  * (`--print`) or what it wrote, the skipped triggers and the summary on
@@ -1358,7 +1389,9 @@ async function stopDecision(input: string, cwd: string): Promise<string> {
     changed,
     deletedModuleIds(analyzed.config, gitChanged.deleted),
   );
-  return hookDecision(event, hookFails(filtered));
+  // A spec weakened in this turn blocks like a rule fail: the rule an agent switched off is still the person's.
+  const weakened = readWeakenings(analyzed.config, "HEAD", "hook stop").weakenings.map((item) => ({ file: item.file, line: item.line, text: `K108 ${item.message}` }));
+  return hookDecision(event, [...weakened, ...hookFails(filtered)]);
 }
 
 /**
@@ -1538,7 +1571,7 @@ async function cmdParse(paths: string[], json: boolean): Promise<number> {
   return result.exitCode ?? 2;
 }
 
-async function cmdCheck(paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined; stale: boolean; accept: boolean }): Promise<number> {
+async function cmdCheck(paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined; stale: boolean; accept: boolean; acceptWeakening?: boolean }): Promise<number> {
   if (opts.accept && !opts.stale) throw new Error("check: --accept requires --stale");
   if (opts.stale) {
     const other = opts.explain ? "--explain-edge" : opts.changed ? "--changed" : opts.static !== undefined ? "--static" : opts.format !== "human" ? "--format" : null;
@@ -1554,6 +1587,7 @@ async function cmdCheck(paths: string[], opts: { strict: boolean; format: string
     if (!staticMode) throw new Error(`unknown --static \`${opts.static}\`; expected ${STATIC_MODES.join(", ")}`);
   }
   if (opts.since !== undefined && !opts.changed) throw new Error("check: --since requires --changed");
+  if (opts.acceptWeakening === true && !opts.changed) throw new Error("check: --accept-weakening requires --changed");
   if (opts.changed && opts.explain) throw new Error("check: --changed cannot be combined with --explain-edge");
   const cwd = process.cwd();
   if (opts.explain) {
@@ -1579,10 +1613,13 @@ async function cmdCheck(paths: string[], opts: { strict: boolean; format: string
     ...(staticMode ? { static: staticMode } : {}),
     ...(opts.changed ? { changed: true } : {}),
     ...(opts.since !== undefined ? { since: opts.since } : {}),
+    ...(opts.acceptWeakening === true ? { acceptWeakening: true } : {}),
   });
   if (result.payload === null) throw new Error(result.messages[0]?.text ?? "check failed");
   const { payload } = result;
   for (const path of payload.notSpecs) process.stderr.write(`keylang: ${checkSkipNote(path)}\n`);
+  if (payload.changed?.weakening.note) process.stderr.write(`keylang: note: ${payload.changed.weakening.note}\n`);
+  for (const line of payload.changed?.weakening.accepted ?? []) process.stderr.write(`keylang: accepted (--accept-weakening): ${line}\n`);
   // The format only shows the report: the verdicts and the code do not depend on it.
   process.stdout.write(checkReportText(format, payload));
   process.stderr.write(`${checkSummary(payload.counts)}\n`);

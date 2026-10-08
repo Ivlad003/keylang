@@ -1,6 +1,6 @@
 # 15: `keylang tour`: онбординг-бриф проєкту за 10 хвилин
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -30,10 +30,19 @@
 
 ## Критерії готовності
 
-- [ ] e2e на фікстурі: усі 7 розділів, детермінований вивід
-- [ ] на Magento-бенчі тур будується < 30 с
-- [ ] docs/cli.md, README («Як зануритися в чужий проєкт»), курс `docs/course/existing/`
+- [x] e2e на фікстурі: усі 7 розділів, детермінований вивід
+- [x] на Magento-бенчі тур будується < 30 с
+- [x] docs/cli.md, README («Як зануритися в чужий проєкт»), курс `docs/course/existing/`
 
 **Межі:** без нових фактів — лише збірка наявних.
 
 ## Comments
+
+### 2026-10-08 — реалізовано
+
+- `keylang tour [--out <file>] [--json]` (`src/tour.ts`, операція `src/operations/tour.ts`): сім розділів у сталому порядку — система (бриф README/маніфесту з джерелом, мови, розміри, брифи шарів); шари з файлами, fn і зв'язністю імпортів (in/out/packages) і до 8 модулів з найбільшою кількістю fn; бізнес-процеси з `flows-discovered/README.md` (з походженням моделі), інакше знайдені флоу за шарами з офлайн-описом, кожен з `/diagrams#view=discovered&name=…` і файлом представлення, плюс написані флоу; точки входу за видами з першими мітками й події (вузлів подій у знімку поки немає — примітка про адаптер, тікет 08); інтеграції; топ-5 модулів за дірками й топ-5 читачів конфігурації з тим, що дочитати; 5–10 fn за (флоу через fn) → (викликачі) → ID. Без моделі, лише збірка наявних звітів (`discoverFlows`, `coverageReport`, `findIntegrations`) — нових фактів немає.
+- `--out keylang/tour.md` пише файл з маркером `keylang:generated`. Перевірено: `check` читає **всі** `.md` під `keylang/`, а не лише `flows/` — без зміни `tour.md` давав 13 K005/K006. Тому `tour.md` додано до «reading aids» (`analyze.ts`, поруч із `map-explained/`, `explain/`, `flows-discovered/`); `--out` у місце, яке `check` прочитав би як специфікацію, — код 2; ручний файл — код 1.
+- MCP `project_tour {format?: json|markdown}`, дія TUI «Project tour» (F6: fn «з чого почати» й модулі з дірками відкриваються в коді, далі вся сторінка), `GET /api/tour` (той самий Bearer) і вкладка «Огляд» на `/diagrams` (`web/src/tour.ts`, один гачок у `web/src/diagrams.ts`; `#tour` відкриває її, посилання «diagram» відкриває вид).
+- **Мови:** код мовно-незалежний (лише знімок); e2e — суміш TypeScript + Python (`tests/tour.test.ts`), Magento — PHP.
+- Тести: `tests/tour.test.ts` (5: усі розділи й детермінованість, `--json`, README назв, `--out` + `check`, TUI), `tests/mcp.test.ts` (`project_tour`), `tests/web.test.ts` (`/api/tour`).
+- **Magento-бенч** (копія `~/.cache/keylang/bench/magento2`: Checkout, Quote, Sales, SalesRule, Payment; 2656 файлів, 7099 fn; без адаптера — 0 точок входу): `keylang tour` — 9,9 с перший запуск (холодний кеш фактів), 4,2–6,4 с далі, maxRSS ≈ 510–580 МБ, при load average 13–15; два запуски дають ті самі байти. Ціль < 30 с виконано.

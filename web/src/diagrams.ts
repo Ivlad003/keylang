@@ -20,6 +20,7 @@ import { codeLink, element, make } from "./dom.ts";
 import { Explorer } from "./explorer.ts";
 import { mountExport } from "./export.ts";
 import { VirtualList, type ListItem } from "./list.ts";
+import { mountTour } from "./tour.ts";
 import "./diagrams.css";
 
 /** How often the page asks again, ms; a request that takes longer delays the next one. */
@@ -454,3 +455,5 @@ class Page {
 }
 
 void new Page().start();
+// «Огляд»: the project tour over the canvas (business-flows/15).
+mountTour();

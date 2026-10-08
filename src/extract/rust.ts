@@ -7,7 +7,7 @@
 
 import type { CallFact, DeclFact, ExportRow, FileFacts, ImportFact, PassFact, UnsupportedFact, ValueRefFact } from "./facts.ts";
 import { blockCommentBody, isLicense, lineCommentsBody, nonEmpty } from "./doc-comments.ts";
-import { errorLine, fingerprint, located, withTree, type Node } from "./treesitter.ts";
+import { errorLine, fingerprintFacts, located, valuesFingerprint, withTree, type Node } from "./treesitter.ts";
 
 /** Macros of `std` and common logging: they expand to calls keylang need not follow. */
 const KNOWN_MACROS = new Set(
@@ -78,7 +78,7 @@ function extractTree(path: string, root: Node): FileFacts {
         const kind = TYPE_ITEMS[node.type]!;
         const at = located(node);
         const doc = itemDoc(node);
-        facts.decls.push({ kind, name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature: null, exported: exported(node), calls: [], types: [], members: [], fingerprint: fingerprint(node), ...(doc !== undefined ? { doc } : {}) });
+        facts.decls.push({ kind, name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature: null, exported: exported(node), calls: [], types: [], members: [], ...fingerprintFacts(node), ...(doc !== undefined ? { doc } : {}) });
         if (exported(node)) exportRow(facts, name, kind === "class" ? "class" : "type");
         // A trait's default methods are not indexed; any impl may run them.
         if (node.type === "trait_item") for (const item of members(node)) if (item.type === "function_item") detached(item.childForFieldName("body"), null);
@@ -135,6 +135,8 @@ function extractTree(path: string, root: Node): FileFacts {
   facts.valueRefs = [...facts.valueRefs, ...valueRefs(items, names, facts)].sort((a, b) => a.line - b.line || a.col - b.col);
   const doc = moduleDoc(root);
   if (doc !== undefined) facts.doc = doc;
+  const values = valuesFingerprint(root.namedChildren, facts.decls);
+  if (values !== undefined) facts.values = values;
   const end = located(root);
   facts.endLine = end.endLine;
   facts.endCol = end.endCol;
@@ -293,7 +295,7 @@ function fnDecl(node: Node, name: string, exported: boolean, owner: string | nul
   const body = node.childForFieldName("body");
   const calls = body ? bodyCalls(body, { owner, self, bound: boundNames(node), names, imports: true }, facts) : [];
   const doc = itemDoc(node);
-  const decl: DeclFact = { kind: "fn", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature, exported, calls, types: [], members: [], fingerprint: fingerprint(node), ...(doc !== undefined ? { doc } : {}) };
+  const decl: DeclFact = { kind: "fn", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature, exported, calls, types: [], members: [], ...fingerprintFacts(node), ...(doc !== undefined ? { doc } : {}) };
   // An associated function without `self` is called on the type: `S::new()`.
   if (owner !== null && !self) decl.static = true;
   return decl;

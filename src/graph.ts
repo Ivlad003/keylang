@@ -106,6 +106,12 @@ export interface Module {
   members: "complete" | "opaque";
   /** `export * from` sources: an indexed module, or null with the reason its names are unknown. */
   starSources: { target: string | null; reason: string }[];
+  /**
+   * Fingerprint of the value code outside every fn and type: a file's top-level
+   * constants, assignments and calls (`<file> <hash>` per file of the module,
+   * one per line), a class body's fields and constants. Absent when there is none.
+   */
+  values?: string;
 }
 
 export interface Dep {
@@ -370,6 +376,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
     const scope = new Map<string, string>();
     fileDecls.set(facts.path, scope);
     const names = declModule.get(module.id)!;
+    if (facts.values !== undefined) module.values = `${module.values === undefined ? "" : `${module.values}\n`}${facts.path} ${facts.values}`;
     for (const d of facts.decls) {
       const key = layerName(d.name);
       const segment = segments.get(d) ?? key;
@@ -565,6 +572,22 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
     // A table that may miss a public name: a glob import of this file brings names keylang cannot list,
     // so a call through such a name is a hole, not a package's call, whatever other globs the file has.
     if (facts.exportsIncomplete !== undefined) starFrom({ target: null, reason: facts.exportsIncomplete });
+  }
+
+  // A value read through an import whose syntax did not tell where it leads (Python `from app.limits
+  // import MAX`, PHP `use App\Limits`): once the import resolves to another file of the repository,
+  // the fn's fingerprint cannot cover it, and it is marked as one that reads an imported value
+  // (`+`, `READS_IMPORTED_VALUE` of `extract/treesitter.ts`), which leaves its closure incomplete.
+  for (const { facts } of byFile.values()) {
+    const locals = importTargets.get(facts.path)!;
+    const own = unitOf(facts.path);
+    const fromRepository = (name: string): boolean => (locals.get(name.normalize("NFC")) ?? []).some((t) => t.module.layer !== EXTERNAL && t.unit !== own);
+    const mark = (d: DeclFact): void => {
+      const fn = d.readsImports?.some(fromRepository) ? decls.fns.get(decls.ids.get(d) ?? "") : undefined;
+      if (fn?.fingerprint !== undefined && !fn.fingerprint.includes("+")) fn.fingerprint += "+";
+      for (const m of d.members) mark(m);
+    };
+    for (const d of facts.decls) mark(d);
   }
 
   // 3b. Export tables: what each public name stands for, through aliases, re-exports and `export *`.
@@ -1692,7 +1715,7 @@ function addDecl(module: Module, d: DeclFact, names: Map<string, string>, declMo
   }
   if (d.kind === "class") {
     const id = `${module.id}.${name}`;
-    const cls: Module = { id, layer: module.layer, name, path: file, line: d.line, col: d.col, endLine: d.endLine, endCol: d.endCol, synthetic: false, class: true, comment: d.exported ? null : "internal", doc: d.doc ?? null, deps: [], fns: [], types: [], children: [], members: "complete", starSources: [] };
+    const cls: Module = { id, layer: module.layer, name, path: file, line: d.line, col: d.col, endLine: d.endLine, endCol: d.endCol, synthetic: false, class: true, comment: d.exported ? null : "internal", doc: d.doc ?? null, deps: [], fns: [], types: [], children: [], members: "complete", starSources: [], ...(d.values !== undefined ? { values: d.values } : {}) };
     module.children.push(cls);
     names.set(key, id);
     decls.ids.set(d, id);

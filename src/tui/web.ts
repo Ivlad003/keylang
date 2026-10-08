@@ -35,6 +35,7 @@ import { runCoverage } from "../operations/coverage.ts";
 import { DIAGRAM_FORMATS, diagramExportText, exportSourcesOf, exportViewOfQuery } from "../operations/diagram-export.ts";
 import { flowCandidate } from "../operations/draft.ts";
 import { commitProposal, generatedIn, proposalRefusal, rootRelative } from "../operations/shared.ts";
+import { buildTour, tourMarkdown } from "../tour.ts";
 import { parse } from "../parser.ts";
 import { compileSpec, type SpecIR } from "../spec-ir.ts";
 import { App, MAX_COLS, MAX_ROWS, type Analyzer, type OperationRunner } from "./app.ts";
@@ -340,7 +341,7 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
     });
   };
 
-  /** `GET /api/views`, `/api/diagram?view=…`, `/api/usages?id=…`, `/api/calls?id=…`, `/api/coverage`; `POST /api/flow-proposal`: JSON for the diagram client (`GET /api/export?format=bpmn|drawio&view=…`: the file), with the socket's token as a Bearer. */
+  /** `GET /api/views`, `/api/diagram?view=…`, `/api/usages?id=…`, `/api/calls?id=…`, `/api/coverage`, `/api/tour`; `POST /api/flow-proposal`: JSON for the diagram client (`GET /api/export?format=bpmn|drawio&view=…`: the file), with the socket's token as a Bearer. */
   const api = async (request: IncomingMessage, response: ServerResponse, path: string, query: URLSearchParams): Promise<void> => {
     // These paths are public (docs/tui.md); any other is the 404 of every unknown path, token or not.
     if (!API_PATHS.has(path)) return reply(response, 404, "text/plain", "not found\n");
@@ -353,6 +354,13 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
     }
     if (request.method !== "GET") return reply(response, 405, "text/plain", "method not allowed\n");
     const json = (status: number, body: unknown): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
+    // The project tour (business-flows/15): the data of `keylang tour --json` and its Markdown, for the «Огляд» tab.
+    if (path === "/api/tour") {
+      const done = await analysis();
+      if (done.snapshot === null) return json(200, { reason: "no code to read: `languages` in keylang.json is empty" });
+      const tour = await buildTour({ config: done.config, snapshot: done.snapshot, spec: done.spec });
+      return json(200, { ...tour, markdown: tourMarkdown(tour) });
+    }
     if (path === "/api/usages") {
       const id = query.get("id")?.trim() ?? "";
       if (id === "") return json(400, { error: "usages needs id=" });
@@ -652,7 +660,7 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
 }
 
 /** The paths of the diagram API; any other under `/api/` is 404. */
-const API_PATHS: ReadonlySet<string> = new Set(["/api/views", "/api/diagram", "/api/usages", "/api/calls", "/api/coverage", "/api/flow-proposal", "/api/export"]);
+const API_PATHS: ReadonlySet<string> = new Set(["/api/views", "/api/diagram", "/api/usages", "/api/calls", "/api/coverage", "/api/tour", "/api/flow-proposal", "/api/export"]);
 
 /** The largest body `POST /api/flow-proposal` reads. */
 const MAX_BODY = 64 * 1024;
