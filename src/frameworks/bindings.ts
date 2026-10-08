@@ -37,14 +37,6 @@ export interface BindingDeps {
   token(ref: TokenRef): string | null;
 }
 
-/** A method that runs when an event is emitted, with the config line that subscribes it. */
-export interface ListenerEdge {
-  target: string;
-  site: string;
-  owner: string | null;
-  binding: string;
-}
-
 export type ConfigVia = "preference" | "argument" | "plugin:before" | "plugin:around" | "plugin:after";
 
 /** One edge a binding makes, before the graph places it at a call. */
@@ -143,10 +135,10 @@ export class FrameworkBindings {
   /** Holes of facts that name a class the snapshot does not have. */
   readonly holes: BindingHole[] = [];
   private readonly interceptorCache = new Map<string, PluginEdge[]>();
-  /** Event name → the methods subscribed to it, in config order. */
-  private readonly listenersOf = new Map<string, ListenerEdge[]>();
   private active: Plugin[] | null = null;
   readonly any: boolean;
+  /** The class a name of the config stands for in an area: a `virtualType` is the class it names. */
+  readonly unalias: (type: TypeName, scope: string) => TypeName;
 
   constructor(inputs: readonly FrameworkInput[], deps: BindingDeps) {
     this.deps = deps;
@@ -167,6 +159,7 @@ export class FrameworkBindings {
         cur = hit.type;
       }
     };
+    this.unalias = (t, scope) => unalias(t, scope).type;
     const declared = (written: TypeName, scope: string, file: string, at: { line: number; col: number }, owner: string | null, from: string | null = null): Declared => {
       const { type, aliases: through } = unalias(written, scope);
       return { name: type.name, written: type, resolved: deps.resolve(type), scope, site: `${file}:${at.line}:${at.col}`, file, line: at.line, col: at.col, owner, aliases: through, from };
@@ -199,17 +192,6 @@ export class FrameworkBindings {
       }
     }
     this.linkTokens(configs, declared);
-    for (const { facts, owner: dir } of configs) {
-      const owner = deps.owner(dir);
-      for (const l of facts.listeners ?? []) {
-        const cls = deps.resolve(l.type);
-        const target = cls.kind === "node" && deps.isClass(cls.id) ? deps.member(cls.id, l.method) : null;
-        if (target === null) continue;
-        const list = this.listenersOf.get(l.event) ?? [];
-        if (!list.some((e) => e.target === target)) list.push({ target, site: `${facts.path}:${l.line}:${l.col}`, owner, binding: `listener \`${l.type.name}.${l.method}\` of the event \`${l.event}\`` });
-        this.listenersOf.set(l.event, list);
-      }
-    }
     // A plugin of a class keylang does not have wraps methods nobody can name: a hole of its declaration.
     for (const plugin of this.activePlugins()) {
       if (plugin.plugin && deps.resolve(plugin.plugin).kind === "missing") this.hole(plugin.file, plugin, `<plugin name="${plugin.name}" type="${plugin.pluginWritten}">`, `the plugin \`${plugin.name}\` names \`${plugin.pluginWritten}\`, which no analysed file declares`, plugin.owner);
@@ -265,16 +247,6 @@ export class FrameworkBindings {
         }
       }
     }
-  }
-
-  /** The methods subscribed to an event; none when no config subscribes one. */
-  listeners(event: string): ListenerEdge[] {
-    return this.listenersOf.get(event) ?? [];
-  }
-
-  /** Some config subscribes a method to an event: an emitted name keylang cannot read may run it. */
-  get hasListeners(): boolean {
-    return this.listenersOf.size > 0;
   }
 
   private hole(file: string, at: { line: number; col: number }, text: string, reason: string, source: string | null): void {

@@ -16,17 +16,7 @@ export const BASELINE_MARK = "<!-- keylang:generated — не редагуват
 
 const EDGE_KINDS = new Set(["import", "call", "type", "reexport"]);
 /** Calls a framework makes by its config (ADR 0022): a dependency of the module whose config declares them. */
-const CONFIG_VIA = new Set(["preference", "argument", "plugin:before", "plugin:around", "plugin:after"]);
-
-/**
- * A dependency the framework's config declares, of `owner`: a binding or a plugin; an event
- * subscription (`observer`, `dispatch`) only when its config names an owner (NestJS `@OnEvent`) —
- * a signal or a task the code dispatches (Django, Celery) stays the caller's dependency.
- */
-function configEdge(edge: { via?: string; owner?: string }): boolean {
-  if (edge.via === undefined) return false;
-  return CONFIG_VIA.has(edge.via) || ((edge.via === "observer" || edge.via === "dispatch") && edge.owner !== undefined);
-}
+const CONFIG_VIA = new Set(["preference", "argument", "plugin:before", "plugin:around", "plugin:after", "observer"]);
 
 /**
  * Baseline rules for one snapshot. Layers come from `keylang.json`, in code-unit
@@ -49,7 +39,7 @@ export function baselineText(snapshot: AnalysisSnapshot): string {
   const byConfig = new Map<string, string>();
   for (const edge of snapshot.edges) {
     if (!EDGE_KINDS.has(edge.kind) || edge.resolution !== "resolved" || edge.target === null) continue;
-    const configured = configEdge(edge);
+    const configured = edge.via !== undefined && CONFIG_VIA.has(edge.via);
     const from = layerOf.get(configured && edge.owner !== undefined ? edge.owner : edge.source);
     const to = layerOf.get(edge.target);
     if (from === undefined || to === undefined || from === to || !depends.has(from)) continue;

@@ -141,9 +141,10 @@ const NEST_GRAPHQL = new Set(["Query", "Mutation", "Subscription"]);
  * `route` `GET /api/orders/:id` (with the global prefix of
  * `setGlobalPrefix('api')` when it is one literal); `@Cron('0 * * * *')`,
  * `@Interval(ms)`, `@Timeout(ms)` → `cron` labelled `Class.method <schedule>`;
- * `@OnEvent('e')` → `observer` `e`; `@MessagePattern(p)`, `@EventPattern(p)`
+ * `@MessagePattern(p)`, `@EventPattern(p)`
  * → `consumer`; `@Resolver()` + `@Query`/`@Mutation`/`@Subscription` →
- * `graphql` `Query.name`. Each is the decorated method's fn.
+ * `graphql` `Query.name`. Each is the decorated method's fn; an `@OnEvent`
+ * observer is an entry of the events (`src/frameworks/entries.ts`).
  */
 function nestEntries(facts: readonly FileFacts[], scope: EntryScope, files: ReadonlySet<string>): EntryPoint[] {
   const prefixes = new Set<string>();
@@ -183,10 +184,6 @@ function nestEntries(facts: readonly FileFacts[], scope: EntryScope, files: Read
           } else if (d.name === "Cron" || d.name === "Interval" || d.name === "Timeout") {
             const schedule = d.name === "Cron" ? argText(d.args[0]) : `${d.name === "Interval" ? "every" : "after"} ${argText(d.args.at(-1))}ms`;
             add("cron", `${cls.name}.${member.name} ${schedule}`);
-          } else if (d.name === "OnEvent") {
-            const first = d.args[0];
-            const events = first?.kind === "array" ? first.items.map(argText) : [argText(first)];
-            for (const event of events) add("observer", event, first?.kind === "string" || first?.kind === "array" ? {} : { note: "the event name is no literal" });
           } else if (d.name === "MessagePattern" || d.name === "EventPattern") {
             add("consumer", argText(d.args[0]));
           } else if (resolver && NEST_GRAPHQL.has(d.name)) {

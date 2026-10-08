@@ -31,8 +31,10 @@ const REQUIRE_QUERY = `
 /** A callee longer than this is not a name keylang resolves; it stays a hole with a shortened text. */
 const MAX_CALLEE = 80;
 
-/** Members whose first string argument framework adapters read (`CallFact.literal`): NestJS events and the global route prefix. */
-const LITERAL_CALLS = new Set(["emit", "emitAsync", "setGlobalPrefix"]);
+/** Members whose first string argument framework adapters read: the global route prefix (`CallFact.literal`). */
+const LITERAL_CALLS = new Set(["setGlobalPrefix"]);
+/** Members whose first argument names an event (`CallFact.nameArg`): NestJS `EventEmitter2.emit('order.created')`. */
+const NAME_ARG_CALLS = new Set(["emit", "emitAsync"]);
 
 export function extractTs(path: string, src: string): Promise<FileFacts> {
   const g = grammarFor(path);
@@ -217,9 +219,12 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
       const fact = calleeOfCall(c.node, body, cls);
       if (!fact) continue;
       const call = parentOf(c.node);
-      if (call?.type === "call_expression" && !fact.opaque && LITERAL_CALLS.has(fact.callee.slice(fact.callee.lastIndexOf(".") + 1))) {
-        const first = call.childForFieldName("arguments")?.namedChildren.find((a) => a.type !== "comment");
-        if (first) fact.literal = stringValue(unwrapValue(first)) ?? templateValue(unwrapValue(first));
+      const member = fact.callee.slice(fact.callee.lastIndexOf(".") + 1);
+      const first = call?.type === "call_expression" && !fact.opaque && (LITERAL_CALLS.has(member) || NAME_ARG_CALLS.has(member)) ? call.childForFieldName("arguments")?.namedChildren.find((a) => a.type !== "comment") : undefined;
+      if (first) {
+        const value = stringValue(unwrapValue(first)) ?? templateValue(unwrapValue(first));
+        if (LITERAL_CALLS.has(member)) fact.literal = value;
+        else fact.nameArg = { literal: value, text: collapse(first.text).slice(0, MAX_CALLEE) };
       }
       const passes = call ? passesOf(call, body, cls) : [];
       if (passes.length > 0) fact.passes = passes;

@@ -119,8 +119,9 @@ export async function generateMap(config: Config, options: { persist?: boolean |
   // Entry points: what the code and the root manifests write (ADR 0022 п. 5); the manifests join `snapshotId`.
   const manifests: EntryManifests = { "package.json": null, "pyproject.toml": null, "Cargo.toml": null };
   for (const name of ENTRY_MANIFESTS) manifests[name] = readSource(join(config.root, name));
-  const entries = collectEntries({ graph, facts, manifests, exists: (path) => existsSync(join(config.root, path)) });
-  // The active adapters' entry points (hooks, jobs, SFRA controllers) and the holes of placing them (ADR 0022 п. 5).
+  // The active adapters' entry points: Magento's from the graph (config classes and methods, controllers,
+  // observers), SFCC's (hooks, jobs, SFRA controllers) placed here, with the holes of placing them (ADR 0022 п. 5).
+  const entries = [...collectEntries({ graph, facts, manifests, exists: (path) => existsSync(join(config.root, path)) }), ...graph.frameworkEntries];
   const fromFrameworks = frameworkEntries({ config, graph, facts, frameworks: frameworks.inputs });
   entries.push(...fromFrameworks.entries);
   entries.sort(compareEntries);
@@ -192,7 +193,13 @@ function readFrameworks(
       const code = adapter.code === undefined ? undefined : byPath.get(path);
       configs.push({ facts: code !== undefined ? adapter.code!(path, code) : cache.config(path, hash, `${adapter.name}@${adapter.version}`, () => adapter.parse(path, body)), owner });
     }
-    inputs.push({ name: adapter.name, configs });
+    inputs.push({
+      name: adapter.name,
+      configs,
+      ...(adapter.modules ? { modules: adapter.modules(context) } : {}),
+      ...(adapter.dispatchers ? { dispatchers: [...adapter.dispatchers] } : {}),
+      ...(adapter.controllers ? { controllers: adapter.controllers } : {}),
+    });
     manifest.push({ name: adapter.name, version: adapter.version, files });
   }
   return { inputs, manifest, unread };

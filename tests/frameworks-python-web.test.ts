@@ -79,7 +79,7 @@ test("python web: `.delay()` dispatches to the task, `signal.send()` reaches its
   const behavior = keylang(dir, ["check"]);
   assert.equal(behavior.status, 0, behavior.stdout);
   assert.match(behavior.stdout, /flows\.md:4:3: static ok orders\.tasks\.send_receipt: called from orders\.services\.place_order through the Celery task `orders\.tasks\.send_receipt` \(dispatch\) in `orders\/tasks\.py:6`\n/);
-  assert.match(behavior.stdout, /flows\.md:5:3: static ok notify\.handlers\.email_customer: called from orders\.services\.place_order through the receiver of the signal `order_placed` \(observer\) in `notify\/handlers\.py:15`\n/);
+  assert.match(behavior.stdout, /flows\.md:5:3: static ok notify\.handlers\.email_customer: called from orders\.services\.place_order through the receiver of the signal `order_placed` in `notify\/handlers\.py:15`\n/);
   const shape = keylang(dir, ["check", "--static", "shape"]);
   assert.match(shape.stdout, /flows\.md:4:3: static unverified orders\.tasks\.send_receipt: no resolved path from orders\.services\.place_order; the Celery task [^\n]*\(not followed in static mode shape/);
   assert.match(shape.stdout, /flows\.md:5:3: static unverified notify\.handlers\.email_customer/);
@@ -89,7 +89,8 @@ test("python web: `deny` sees a signal's receiver; `frameworks: []` turns fail a
   const dir = repo(t, DJANGO, { "keylang/rules.md": "# rules\n\n- deny orders notify\n" });
   const on = keylang(dir, ["check"]);
   assert.equal(on.status, 1, on.stdout);
-  assert.match(on.stdout, /orders\/services\.py:7:5: K102 divergence: `orders\.services` depends on `notify\.handlers`, which is denied by `deny orders notify`/);
+  // A receiver is a config edge (ADR 0022 п. 4): K102 stands on its registration and names it.
+  assert.match(on.stdout, /notify\/handlers\.py:15:1: K102 divergence: `orders\.services` depends on `notify\.handlers` through the receiver of the signal `order_placed` \(notify\/handlers\.py:15\), which is denied by `deny orders notify`/);
   assert.match(on.stdout, /flows\.md:4:3: static ok orders\.tasks\.send_receipt/);
 
   setFrameworks(dir, []);

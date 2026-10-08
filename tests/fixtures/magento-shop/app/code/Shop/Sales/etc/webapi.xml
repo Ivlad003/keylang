@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <route url="/V1/orders/:id/place" method="POST">
+        <service class="Shop\Sales\Api\OrderManagementInterface" method="place"/>
+        <resources>
+            <resource ref="Shop_Sales::place"/>
+            <resource ref="self"/>
+        </resources>
+    </route>
+    <route url="/V1/orders/:id/refund" method="post">
+        <service class="Shop\Sales\Api\RefundInterface" method="refund"/>
+        <resources>
+            <resource ref="anonymous"/>
+        </resources>
+    </route>
+</routes>

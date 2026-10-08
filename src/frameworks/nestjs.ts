@@ -10,11 +10,13 @@
 // - `constructor(@Inject(T) private readonly x: I)`: the parameter `x` gets
 //   what `T` provides; the graph matches the token to the providers
 //   (`src/frameworks/bindings.ts`) and gives `this.x.m()` an edge `via: "argument"`.
-// - `@OnEvent('order.created')`: the method runs when the event is emitted;
-//   `emit('order.created')` gets an edge `via: "observer"` to it (`src/graph.ts`).
+// - `@OnEvent('order.created')`: an observer of the event, as Magento's
+//   `events.xml` writes one; `EventEmitter2.emit('order.created')` dispatches it
+//   (`dispatchers`), so the graph has the event node `events.order_created`
+//   between the emitter and the method (`src/graph.ts`, `./entries.ts`).
 //
-// Entry points (controllers, cron, message patterns, GraphQL resolvers,
-// listeners) need the graph and the global prefix of `main.ts`: they are
+// The other entry points (controllers, cron, message patterns, GraphQL
+// resolvers) need the graph and the global prefix of `main.ts`: they are
 // placed in `src/framework-entries.ts`. Detected from `@nestjs/core` or
 // `@nestjs/common` in the root `package.json`, or a `nest-cli.json`. Its
 // config files are the analysed sources that import `@nestjs/…`.
@@ -47,6 +49,7 @@ export const nestjs: FrameworkAdapter = {
     return emptyFacts(path);
   },
   code: nestFacts,
+  dispatchers: ["@nestjs/event-emitter\\EventEmitter2"],
 };
 
 function ownerOf(path: string): string | null {
@@ -55,10 +58,10 @@ function ownerOf(path: string): string | null {
 }
 
 function emptyFacts(path: string): ConfigFacts {
-  return { path, scope: "global", bindings: [], arguments: [], aliases: [], intercepts: [], providers: [], injections: [], listeners: [], error: null };
+  return { path, scope: "global", bindings: [], arguments: [], aliases: [], intercepts: [], providers: [], injections: [], observers: [], error: null };
 }
 
-/** The providers, injections and listeners the decorators of one source file declare. */
+/** The providers, injections and event observers the decorators of one source file declare. */
 export function nestFacts(path: string, file: CodeFacts): ConfigFacts {
   const facts = emptyFacts(path);
   const token = (arg: DecoratorArg): TokenRef | null => (arg.kind === "string" ? { kind: "string", value: arg.value } : arg.kind === "name" ? { kind: "name", name: arg.name, file: path } : null);
@@ -104,7 +107,7 @@ export function nestFacts(path: string, file: CodeFacts): ConfigFacts {
         if (decorator.name === "OnEvent" && decorator.param === undefined) {
           const first = decorator.args[0];
           const events = first?.kind === "string" ? [first.value] : first?.kind === "array" ? first.items.flatMap((i) => (i.kind === "string" ? [i.value] : [])) : [];
-          for (const event of events) facts.listeners!.push({ event, type, method: member.name, line: decorator.line, col: decorator.col });
+          for (const event of events) facts.observers!.push({ event, name: `${cls.name}.${member.name}`, instance: type, method: member.name, disabled: false, line: decorator.line, col: decorator.col });
         }
       }
     }

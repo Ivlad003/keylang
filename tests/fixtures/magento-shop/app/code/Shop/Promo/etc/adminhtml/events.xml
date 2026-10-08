@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <event name="checkout_submit_before">
+        <observer name="promo_audit" instance="Shop\Promo\Observer\AuditSubmit"/>
+    </event>
+    <event name="sales.order.place_after">
+        <observer name="ghost" instance="Shop\Promo\Observer\Missing"/>
+    </event>
+</config>

@@ -27,72 +27,72 @@
     - type [Config](../../src/config.ts#L37)
     - fn [isAgent](../../src/config.ts#L128) (value: string) → boolean
     - fn [isCliAgent](../../src/config.ts#L133) (agent: string | null) → boolean
-    - fn [isReservedLayerName](../../src/config.ts#L160) (name: string) → boolean
-    - fn [skipDir](../../src/config.ts#L194) (abs: string, name: string) → boolean <!-- internal -->
-    - type [RawConfig](../../src/config.ts#L198)
-    - fn [loadConfig](../../src/config.ts#L220) (root: string) → Config
+    - fn [isReservedLayerName](../../src/config.ts#L161) (name: string) → boolean
+    - fn [skipDir](../../src/config.ts#L195) (abs: string, name: string) → boolean <!-- internal -->
+    - type [RawConfig](../../src/config.ts#L199)
+    - fn [loadConfig](../../src/config.ts#L221) (root: string) → Config
       - calls base.config.parseConfig, base.config.detectLanguages, base.config.guessLayers, base.config.defaultModule
-    - fn [defaultModule](../../src/config.ts#L263) (languages: readonly Language[]) → Config["module"] <!-- internal -->
-    - fn [withoutBom](../../src/config.ts#L274) (text: string) → string
-    - fn [parseConfig](../../src/config.ts#L279) (file: string, text: string) → RawConfig
+    - fn [defaultModule](../../src/config.ts#L264) (languages: readonly Language[]) → Config["module"] <!-- internal -->
+    - fn [withoutBom](../../src/config.ts#L275) (text: string) → string
+    - fn [parseConfig](../../src/config.ts#L280) (file: string, text: string) → RawConfig
       - calls base.config.withoutBom, base.glob.globToRegExp, base.config.isObject, base.config.acceptFormat, base.languages.isLanguage, base.config.layerName, base.config.isReservedLayerName, base.config.reservedReason, base.config.isAgent
-    - fn [isObject](../../src/config.ts#L448) (value: unknown) → value is Record<string, unknown> <!-- internal -->
-    - fn [acceptFormat](../../src/config.ts#L453) (file: string, got: unknown) → RuleFormat
-    - fn [assertFormatOnly](../../src/config.ts#L467) (file: string, text: string) → void
+    - fn [isObject](../../src/config.ts#L449) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [acceptFormat](../../src/config.ts#L454) (file: string, got: unknown) → RuleFormat
+    - fn [assertFormatOnly](../../src/config.ts#L468) (file: string, text: string) → void
       - calls base.config.withoutBom, base.config.isObject, base.config.acceptFormat
-    - fn [configToJson](../../src/config.ts#L479) (c: Config) → string
-    - fn [withLayers](../../src/config.ts#L500) (file: string, text: string, layers: Readonly<Record<string, readonly string[]>>) → { text: string } | { error: string }
+    - fn [configToJson](../../src/config.ts#L480) (c: Config) → string
+    - fn [withLayers](../../src/config.ts#L501) (file: string, text: string, layers: Readonly<Record<string, readonly string[]>>) → { text: string } | { error: string }
       - calls base.config.withoutBom, base.config.isObject
-    - fn [sourceFiles](../../src/config.ts#L514) (c: Config) → string[]
+    - fn [sourceFiles](../../src/config.ts#L515) (c: Config) → string[]
       - calls base.config.classifySources
-    - fn [sourceTree](../../src/config.ts#L522) (c: Config) → { files: string[]; unreadable: { dir: string; reason: string }[] }
+    - fn [sourceTree](../../src/config.ts#L523) (c: Config) → { files: string[]; unreadable: { dir: string; reason: string }[] }
       - calls base.config.classifySources
-    - type [SourceClasses](../../src/config.ts#L528)
-    - fn [classifySources](../../src/config.ts#L542) (c: Config) → SourceClasses
+    - type [SourceClasses](../../src/config.ts#L529)
+    - fn [classifySources](../../src/config.ts#L543) (c: Config) → SourceClasses
       - calls base.config.walkSources, base.config.sourceClass
-    - fn [sourceClass](../../src/config.ts#L556) (rel: string, c: Pick<Config, "exclude" | "outside" | "assume">) → "analysed" | "excluded" | "outside" | "assumed" | null
+    - fn [sourceClass](../../src/config.ts#L557) (rel: string, c: Pick<Config, "exclude" | "outside" | "assume">) → "analysed" | "excluded" | "outside" | "assumed" | null
       - calls base.config.matchesAny
-    - fn [isAnalysed](../../src/config.ts#L564) (rel: string, c: Pick<Config, "exclude" | "outside" | "assume">) → boolean
+    - fn [isAnalysed](../../src/config.ts#L565) (rel: string, c: Pick<Config, "exclude" | "outside" | "assume">) → boolean
       - calls base.config.sourceClass
-    - fn [isAssumed](../../src/config.ts#L569) (rel: string, c: Pick<Config, "assume">) → boolean
+    - fn [isAssumed](../../src/config.ts#L570) (rel: string, c: Pick<Config, "assume">) → boolean
       - calls base.config.matchesAny
-    - fn [isOutside](../../src/config.ts#L573) (rel: string, outside: readonly string[]) → boolean
+    - fn [isOutside](../../src/config.ts#L574) (rel: string, outside: readonly string[]) → boolean
       - calls base.config.matchesAny
-    - fn [matchesAny](../../src/config.ts#L577) (rel: string, globs: readonly string[]) → boolean <!-- internal -->
+    - fn [matchesAny](../../src/config.ts#L578) (rel: string, globs: readonly string[]) → boolean <!-- internal -->
       - calls base.glob.firstMatchingGlob
-    - fn [layerGlobWarnings](../../src/config.ts#L589) (c: Pick<Config, "layers">, files: readonly string[]) → string[]
+    - fn [layerGlobWarnings](../../src/config.ts#L590) (c: Pick<Config, "layers">, files: readonly string[]) → string[]
       - calls base.glob.matchesGlob
-    - fn [walkSources](../../src/config.ts#L634) (c: Config, unreadable: { dir: string; reason: string }[]) → string[] <!-- internal -->
+    - fn [walkSources](../../src/config.ts#L635) (c: Config, unreadable: { dir: string; reason: string }[]) → string[] <!-- internal -->
       - calls base.config.skipDir, base.languages.languageOf
-    - fn [evidenceFiles](../../src/config.ts#L668) (c: Config, field: "tests" | "trace") → string[] | null
+    - fn [evidenceFiles](../../src/config.ts#L669) (c: Config, field: "tests" | "trace") → string[] | null
       - calls base.glob.globPrefix, base.config.toPosix, base.glob.matchesGlob
-    - fn [isExcluded](../../src/config.ts#L690) (rel: string, extra: readonly string[]) → boolean
+    - fn [isExcluded](../../src/config.ts#L691) (rel: string, extra: readonly string[]) → boolean
       - calls base.config.matchesAny
-    - fn [toPosix](../../src/config.ts#L694) (p: string) → string
-    - fn [specPath](../../src/config.ts#L705) (dir: string, rest: string) → string
-    - fn [detectLanguages](../../src/config.ts#L709) (root: string) → Language[] <!-- internal -->
+    - fn [toPosix](../../src/config.ts#L695) (p: string) → string
+    - fn [specPath](../../src/config.ts#L706) (dir: string, rest: string) → string
+    - fn [detectLanguages](../../src/config.ts#L710) (root: string) → Language[] <!-- internal -->
       - calls base.config.skipDir, base.languages.languageOf
-    - fn [guessLayers](../../src/config.ts#L736) (root: string, exclude: readonly string[]) → Map<string, string[]>
+    - fn [guessLayers](../../src/config.ts#L737) (root: string, exclude: readonly string[]) → Map<string, string[]>
       - calls base.config.guessLayout
-    - fn [guessLayout](../../src/config.ts#L745) (root: string, exclude: readonly string[]) → { layers: Map<string, string[]>; notes: string[] }
+    - fn [guessLayout](../../src/config.ts#L746) (root: string, exclude: readonly string[]) → { layers: Map<string, string[]>; notes: string[] }
       - calls base.config.sourceRoot, base.config.freeLayerName, base.config.isReservedLayerName, base.config.reservedReason, base.config.hasRootFiles, base.config.hasSource, base.config.layerDirs, base.config.layerName
-    - fn [sourceRoot](../../src/config.ts#L776) (root: string, exclude: readonly string[]) → string <!-- internal -->
+    - fn [sourceRoot](../../src/config.ts#L777) (root: string, exclude: readonly string[]) → string <!-- internal -->
       - calls base.config.composerSourceRoot, base.config.layerDirs
-    - fn [composerSourceRoot](../../src/config.ts#L788) (root: string) → string | null <!-- internal -->
+    - fn [composerSourceRoot](../../src/config.ts#L789) (root: string) → string | null <!-- internal -->
       - calls base.config.withoutBom, base.config.toPosix
-    - fn [layerDirs](../../src/config.ts#L811) (root: string, dir: string, exclude: readonly string[]) → { name: string; rel: string }[] <!-- internal -->
+    - fn [layerDirs](../../src/config.ts#L812) (root: string, dir: string, exclude: readonly string[]) → { name: string; rel: string }[] <!-- internal -->
       - calls base.config.skipDir, base.glob.matchesGlob, base.config.hasSource
-    - fn [freeLayerName](../../src/config.ts#L826) (wanted: string, taken: ReadonlyMap<string, unknown>) → string <!-- internal -->
+    - fn [freeLayerName](../../src/config.ts#L827) (wanted: string, taken: ReadonlyMap<string, unknown>) → string <!-- internal -->
       - calls base.config.isReservedLayerName
-    - fn [reservedReason](../../src/config.ts#L835) (name: string) → string <!-- internal -->
-    - fn [hasRootFiles](../../src/config.ts#L843) (root: string, dir: string, exclude: readonly string[]) → boolean <!-- internal -->
+    - fn [reservedReason](../../src/config.ts#L836) (name: string) → string <!-- internal -->
+    - fn [hasRootFiles](../../src/config.ts#L845) (root: string, dir: string, exclude: readonly string[]) → boolean <!-- internal -->
       - calls base.languages.languageOf, base.config.isExcluded
-    - fn [hasSource](../../src/config.ts#L847) (absDir: string, rel: string, exclude: readonly string[]) → boolean <!-- internal -->
+    - fn [hasSource](../../src/config.ts#L849) (absDir: string, rel: string, exclude: readonly string[]) → boolean <!-- internal -->
       - calls base.config.skipDir, base.languages.languageOf, base.config.isExcluded
-    - fn [isIdSegment](../../src/config.ts#L860) (s: string) → boolean <!-- internal -->
-    - fn [encodeBracketSegment](../../src/config.ts#L888) (name: string) → string <!-- internal -->
-    - fn [decodeLayerName](../../src/config.ts#L909) (segment: string) → string
-    - fn [layerName](../../src/config.ts#L933) (written: string) → string
+    - fn [isIdSegment](../../src/config.ts#L862) (s: string) → boolean <!-- internal -->
+    - fn [encodeBracketSegment](../../src/config.ts#L890) (name: string) → string <!-- internal -->
+    - fn [decodeLayerName](../../src/config.ts#L911) (segment: string) → string
+    - fn [layerName](../../src/config.ts#L935) (written: string) → string
       - calls base.config.isIdSegment, base.config.encodeBracketSegment
   - module [diag](../../src/diag.ts#L1)
     - span base.span
@@ -126,81 +126,83 @@
     - type [ArgumentFact](../../src/frameworks/adapter.ts#L43) extends ConfigAt
     - type [AliasFact](../../src/frameworks/adapter.ts#L50) extends ConfigAt
     - type [InterceptFact](../../src/frameworks/adapter.ts#L56) extends ConfigAt
-    - type [EntryConfigFact](../../src/frameworks/adapter.ts#L72) extends ConfigAt
-    - type [TokenRef](../../src/frameworks/adapter.ts#L80)
-    - type [ProviderFact](../../src/frameworks/adapter.ts#L87) extends ConfigAt
-    - type [InjectionFact](../../src/frameworks/adapter.ts#L93) extends ConfigAt
-    - type [ListenerFact](../../src/frameworks/adapter.ts#L100) extends ConfigAt
-    - type [CodeDecorator](../../src/frameworks/adapter.ts#L112)
-    - type [DecoratorArg](../../src/frameworks/adapter.ts#L126)
-    - type [CodeDecl](../../src/frameworks/adapter.ts#L136)
-    - type [CodeFacts](../../src/frameworks/adapter.ts#L144)
-    - type [ConfigFacts](../../src/frameworks/adapter.ts#L149)
-    - type [FrameworkConfig](../../src/frameworks/adapter.ts#L170)
-    - type [FrameworkInput](../../src/frameworks/adapter.ts#L177)
-    - type [FrameworkContext](../../src/frameworks/adapter.ts#L183)
-    - type [FrameworkAdapter](../../src/frameworks/adapter.ts#L194)
-    - fn [activeAdapters](../../src/frameworks/adapter.ts#L226) (frameworks: readonly string[] | null, context: FrameworkContext, available: readonly FrameworkAdapter[] = FRAMEWORK_ADAPTERS) → FrameworkAdapter[]
-    - fn [typeLabel](../../src/frameworks/adapter.ts#L232) (t: TypeName) → string
-    - fn [isConfigFacts](../../src/frameworks/adapter.ts#L237) (value: unknown) → value is ConfigFacts
+    - type [ObserverFact](../../src/frameworks/adapter.ts#L70) extends ConfigAt
+    - type [ConfigEntryKind](../../src/frameworks/adapter.ts#L81) = "rest" | "graphql" | "cron" | "consumer" | "cli"
+    - type [EntryFact](../../src/frameworks/adapter.ts#L88) extends ConfigAt
+    - type [RouteFact](../../src/frameworks/adapter.ts#L100) extends ConfigAt
+    - type [EntryConfigFact](../../src/frameworks/adapter.ts#L115) extends ConfigAt
+    - type [TokenRef](../../src/frameworks/adapter.ts#L123)
+    - type [ProviderFact](../../src/frameworks/adapter.ts#L130) extends ConfigAt
+    - type [InjectionFact](../../src/frameworks/adapter.ts#L136) extends ConfigAt
+    - type [CodeDecorator](../../src/frameworks/adapter.ts#L148)
+    - type [DecoratorArg](../../src/frameworks/adapter.ts#L162)
+    - type [CodeDecl](../../src/frameworks/adapter.ts#L172)
+    - type [CodeFacts](../../src/frameworks/adapter.ts#L180)
+    - type [ConfigFacts](../../src/frameworks/adapter.ts#L185)
+    - type [FrameworkConfig](../../src/frameworks/adapter.ts#L210)
+    - type [FrameworkModule](../../src/frameworks/adapter.ts#L217)
+    - type [FrameworkInput](../../src/frameworks/adapter.ts#L223)
+    - type [FrameworkContext](../../src/frameworks/adapter.ts#L239)
+    - type [FrameworkAdapter](../../src/frameworks/adapter.ts#L250)
+    - type [ControllerConvention](../../src/frameworks/adapter.ts#L281)
+    - fn [activeAdapters](../../src/frameworks/adapter.ts#L303) (frameworks: readonly string[] | null, context: FrameworkContext, available: readonly FrameworkAdapter[] = FRAMEWORK_ADAPTERS) → FrameworkAdapter[]
+    - fn [typeLabel](../../src/frameworks/adapter.ts#L309) (t: TypeName) → string
+    - fn [isConfigFacts](../../src/frameworks/adapter.ts#L314) (value: unknown) → value is ConfigFacts
       - calls base.adapter.isRecord, base.adapter.every, base.adapter.isAt, base.adapter.isTypeName, base.adapter.isToken
-    - fn [isAt](../../src/frameworks/adapter.ts#L254) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isAt](../../src/frameworks/adapter.ts#L333) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       - calls base.adapter.isRecord
-    - fn [isToken](../../src/frameworks/adapter.ts#L258) (value: unknown) → boolean <!-- internal -->
+    - fn [isToken](../../src/frameworks/adapter.ts#L337) (value: unknown) → boolean <!-- internal -->
       - calls base.adapter.isRecord
-    - fn [isTypeName](../../src/frameworks/adapter.ts#L262) (value: unknown) → boolean <!-- internal -->
+    - fn [isTypeName](../../src/frameworks/adapter.ts#L341) (value: unknown) → boolean <!-- internal -->
       - calls base.adapter.isRecord
-    - fn [every](../../src/frameworks/adapter.ts#L266) (value: unknown, check: (item: Record<string, unknown>) => boolean) → boolean <!-- internal -->
+    - fn [every](../../src/frameworks/adapter.ts#L345) (value: unknown, check: (item: Record<string, unknown>) => boolean) → boolean <!-- internal -->
       - calls base.adapter.isRecord
-    - fn [isRecord](../../src/frameworks/adapter.ts#L270) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isRecord](../../src/frameworks/adapter.ts#L349) (value: unknown) → value is Record<string, unknown> <!-- internal -->
   - module [bindings](../../src/frameworks/bindings.ts#L1)
     - adapter base.adapter
     - type [ResolvedType](../../src/frameworks/bindings.ts#L16)
     - type [BindingDeps](../../src/frameworks/bindings.ts#L19)
-    - type [ListenerEdge](../../src/frameworks/bindings.ts#L41)
-    - type [ConfigVia](../../src/frameworks/bindings.ts#L48)
-    - type [BoundEdge](../../src/frameworks/bindings.ts#L51)
-    - type [BoundCall](../../src/frameworks/bindings.ts#L63)
-    - type [BindingHole](../../src/frameworks/bindings.ts#L76)
-    - type [PluginEdge](../../src/frameworks/bindings.ts#L85)
-    - type [Declared](../../src/frameworks/bindings.ts#L95) <!-- internal -->
-    - type [Plugin](../../src/frameworks/bindings.ts#L111) <!-- internal -->
-    - module [FrameworkBindings](../../src/frameworks/bindings.ts#L135)
-      - fn [constructor](../../src/frameworks/bindings.ts#L151) (inputs: readonly FrameworkInput[], deps: BindingDeps)
+    - type [ConfigVia](../../src/frameworks/bindings.ts#L40)
+    - type [BoundEdge](../../src/frameworks/bindings.ts#L43)
+    - type [BoundCall](../../src/frameworks/bindings.ts#L55)
+    - type [BindingHole](../../src/frameworks/bindings.ts#L68)
+    - type [PluginEdge](../../src/frameworks/bindings.ts#L77)
+    - type [Declared](../../src/frameworks/bindings.ts#L87) <!-- internal -->
+    - type [Plugin](../../src/frameworks/bindings.ts#L103) <!-- internal -->
+    - module [FrameworkBindings](../../src/frameworks/bindings.ts#L127)
+      - fn [constructor](../../src/frameworks/bindings.ts#L143) (inputs: readonly FrameworkInput[], deps: BindingDeps)
         - calls base.bindings.key, base.bindings.FrameworkBindings.hole, base.adapter.typeLabel, base.bindings.asciiLower, base.bindings.FrameworkBindings.linkTokens, base.bindings.FrameworkBindings.activePlugins
-      - fn [linkTokens](../../src/frameworks/bindings.ts#L226) (configs: readonly FrameworkInput["configs"][number][], declared: (written: TypeName, scope: string, file: string, at: { line: number; col: number }, owner: string | null, from?: string | null) => Declared) → void <!-- internal -->
+      - fn [linkTokens](../../src/frameworks/bindings.ts#L208) (configs: readonly FrameworkInput["configs"][number][], declared: (written: TypeName, scope: string, file: string, at: { line: number; col: number }, owner: string | null, from?: string | null) => Declared) → void <!-- internal -->
         - calls base.bindings.FrameworkBindings.hole, base.bindings.tokenLabel, base.adapter.typeLabel, base.bindings.asciiLower
-      - fn [listeners](../../src/frameworks/bindings.ts#L271) (event: string) → ListenerEdge[]
-      - fn [hasListeners](../../src/frameworks/bindings.ts#L276) () → boolean
-      - fn [hole](../../src/frameworks/bindings.ts#L280) (file: string, at: { line: number; col: number }, text: string, reason: string, source: string | null) → void <!-- internal -->
-      - fn [binds](../../src/frameworks/bindings.ts#L285) (type: string) → boolean
-      - fn [argumentFor](../../src/frameworks/bindings.ts#L290) (classId: string, param: string) → boolean
+      - fn [hole](../../src/frameworks/bindings.ts#L252) (file: string, at: { line: number; col: number }, text: string, reason: string, source: string | null) → void <!-- internal -->
+      - fn [binds](../../src/frameworks/bindings.ts#L257) (type: string) → boolean
+      - fn [argumentFor](../../src/frameworks/bindings.ts#L262) (classId: string, param: string) → boolean
         - calls base.bindings.asciiLower
-      - fn [callThroughType](../../src/frameworks/bindings.ts#L295) (type: string, member: string) → BoundCall
+      - fn [callThroughType](../../src/frameworks/bindings.ts#L267) (type: string, member: string) → BoundCall
         - calls base.bindings.emptyCall, base.bindings.FrameworkBindings.effective, base.bindings.FrameworkBindings.place, base.bindings.finish
-      - fn [callThroughArgument](../../src/frameworks/bindings.ts#L302) (classId: string, param: string, member: string) → BoundCall
+      - fn [callThroughArgument](../../src/frameworks/bindings.ts#L274) (classId: string, param: string, member: string) → BoundCall
         - calls base.bindings.emptyCall, base.bindings.asciiLower, base.bindings.groupBy, base.bindings.distinctTargets, base.bindings.describe, base.bindings.FrameworkBindings.effective, base.bindings.FrameworkBindings.place, base.bindings.finish
-      - fn [effective](../../src/frameworks/bindings.ts#L329) (type: string, out: BoundCall) → Map<string, Declared[]> <!-- internal -->
+      - fn [effective](../../src/frameworks/bindings.ts#L301) (type: string, out: BoundCall) → Map<string, Declared[]> <!-- internal -->
         - calls base.bindings.distinctTargets, base.bindings.describe
-      - fn [place](../../src/frameworks/bindings.ts#L359) (out: BoundCall, chain: readonly Declared[], member: string, via: "preference" | "argument", scope: string, lead = "") → void <!-- internal -->
+      - fn [place](../../src/frameworks/bindings.ts#L331) (out: BoundCall, chain: readonly Declared[], member: string, via: "preference" | "argument", scope: string, lead = "") → void <!-- internal -->
         - calls base.bindings.scopeOrder
-      - fn [activePlugins](../../src/frameworks/bindings.ts#L395) () → Plugin[] <!-- internal -->
+      - fn [activePlugins](../../src/frameworks/bindings.ts#L367) () → Plugin[] <!-- internal -->
         - calls base.bindings.groupBy, base.bindings.merge
-      - fn [interceptors](../../src/frameworks/bindings.ts#L421) (types: readonly string[], member: string) → PluginEdge[]
+      - fn [interceptors](../../src/frameworks/bindings.ts#L393) (types: readonly string[], member: string) → PluginEdge[]
         - calls base.bindings.asciiLower, base.bindings.FrameworkBindings.activePlugins
-    - fn [tokenLabel](../../src/frameworks/bindings.ts#L443) (t: TokenRef) → string <!-- internal -->
-    - fn [emptyCall](../../src/frameworks/bindings.ts#L447) () → BoundCall <!-- internal -->
-    - fn [finish](../../src/frameworks/bindings.ts#L451) (out: BoundCall) → BoundCall <!-- internal -->
+    - fn [tokenLabel](../../src/frameworks/bindings.ts#L415) (t: TokenRef) → string <!-- internal -->
+    - fn [emptyCall](../../src/frameworks/bindings.ts#L419) () → BoundCall <!-- internal -->
+    - fn [finish](../../src/frameworks/bindings.ts#L423) (out: BoundCall) → BoundCall <!-- internal -->
       - calls base.bindings.scopeOrder
-    - fn [distinctTargets](../../src/frameworks/bindings.ts#L457) (list: readonly T[]) → T[] <!-- internal -->
+    - fn [distinctTargets](../../src/frameworks/bindings.ts#L429) (list: readonly T[]) → T[] <!-- internal -->
       - calls base.bindings.key
-    - fn [describe](../../src/frameworks/bindings.ts#L466) (d: Declared) → string <!-- internal -->
-    - fn [merge](../../src/frameworks/bindings.ts#L471) (decls: readonly Plugin[]) → Plugin | null <!-- internal -->
-    - fn [groupBy](../../src/frameworks/bindings.ts#L485) (list: readonly T[], keyOf: (item: T) => string) → Map<string, T[]> <!-- internal -->
-    - fn [scopeOrder](../../src/frameworks/bindings.ts#L491) (a: string, b: string) → number <!-- internal -->
-    - fn [key](../../src/frameworks/bindings.ts#L495) (name: string) → string <!-- internal -->
+    - fn [describe](../../src/frameworks/bindings.ts#L438) (d: Declared) → string <!-- internal -->
+    - fn [merge](../../src/frameworks/bindings.ts#L443) (decls: readonly Plugin[]) → Plugin | null <!-- internal -->
+    - fn [groupBy](../../src/frameworks/bindings.ts#L457) (list: readonly T[], keyOf: (item: T) => string) → Map<string, T[]> <!-- internal -->
+    - fn [scopeOrder](../../src/frameworks/bindings.ts#L463) (a: string, b: string) → number <!-- internal -->
+    - fn [key](../../src/frameworks/bindings.ts#L467) (name: string) → string <!-- internal -->
       - calls base.bindings.asciiLower
-    - fn [asciiLower](../../src/frameworks/bindings.ts#L499) (name: string) → string <!-- internal -->
+    - fn [asciiLower](../../src/frameworks/bindings.ts#L471) (name: string) → string <!-- internal -->
   - module [cartridges](../../src/frameworks/cartridges.ts#L1)
     - node external.node
     - type [Cartridge](../../src/frameworks/cartridges.ts#L18)
@@ -216,26 +218,69 @@
     - fn [cartridgeOf](../../src/frameworks/cartridges.ts#L123) (layout: CartridgeLayout, file: string) → Cartridge | null
     - fn [cartridgeAnswers](../../src/frameworks/cartridges.ts#L138) (layout: CartridgeLayout, fromFile: string, spec: string, probe: (candidate: string) => string | null) → string[] | "external" | null
       - calls base.cartridges.cartridgeOf
+  - module [entries](../../src/frameworks/entries.ts#L1)
+    - adapter base.adapter
+    - bindings base.bindings
+    - type [EntryDeps](../../src/frameworks/entries.ts#L14)
+    - type [ConfigEntry](../../src/frameworks/entries.ts#L36)
+    - type [ObserverEdge](../../src/frameworks/entries.ts#L48)
+    - type [FrameworkEntries](../../src/frameworks/entries.ts#L63)
+    - type [Declared](../../src/frameworks/entries.ts#L76) <!-- internal -->
+    - fn [frameworkEntries](../../src/frameworks/entries.ts#L85) (inputs: readonly FrameworkInput[], deps: EntryDeps) → FrameworkEntries
+      - calls base.entries.target, base.entries.entryOf, base.entries.effectiveObservers, base.adapter.typeLabel, base.entries.controllerEntries
+    - fn [target](../../src/frameworks/entries.ts#L126) (deps: EntryDeps, type: TypeName, method: string, area: string) → { id: string; unresolved: string | null } <!-- internal -->
+      - calls base.adapter.typeLabel
+    - fn [entryOf](../../src/frameworks/entries.ts#L145) (deps: EntryDeps, framework: string, kind: ConfigEntry["kind"], found: { id: string; unresolved: string | null }, label: string, at: { file: string; line: number }) → ConfigEntry <!-- internal -->
+    - fn [effectiveObservers](../../src/frameworks/entries.ts#L156) (declared: readonly Declared[]) → Declared[] <!-- internal -->
+      - calls base.adapter.typeLabel
+    - fn [controllerEntries](../../src/frameworks/entries.ts#L199) (input: FrameworkInput, deps: EntryDeps) → ConfigEntry[] <!-- internal -->
+      - calls base.entries.asciiLower
+    - fn [asciiLower](../../src/frameworks/entries.ts#L236) (name: string) → string <!-- internal -->
+  - module [events](../../src/frameworks/events.ts#L1)
+    - fn [eventSegment](../../src/frameworks/events.ts#L21) (name: string) → string
+    - fn [eventIds](../../src/frameworks/events.ts#L31) (names: Iterable<string>) → Map<string, string>
+      - calls base.events.eventSegment
   - module [magento](../../src/frameworks/magento.ts#L1)
     - node external.node
     - saxes external.saxes
     - adapter base.adapter
-    - fn [componentRoots](../../src/frameworks/magento.ts#L52) (context: FrameworkContext, pattern: RegExp) → string[] <!-- internal -->
-    - fn [scopeOf](../../src/frameworks/magento.ts#L63) (path: string) → string <!-- internal -->
-    - fn [className](../../src/frameworks/magento.ts#L70) (written: string) → string
-    - type [Open](../../src/frameworks/magento.ts#L74) <!-- internal -->
-    - fn [parseDi](../../src/frameworks/magento.ts#L83) (path: string, text: string) → ConfigFacts
-      - calls base.magento.scopeOf, base.magento.className
+    - fn [componentRoots](../../src/frameworks/magento.ts#L113) (context: FrameworkContext, pattern: RegExp) → string[] <!-- internal -->
+    - fn [scopeOf](../../src/frameworks/magento.ts#L124) (path: string) → string <!-- internal -->
+    - fn [className](../../src/frameworks/magento.ts#L131) (written: string) → string
+    - type [MagentoFacts](../../src/frameworks/magento.ts#L136) <!-- internal -->
+    - fn [noFacts](../../src/frameworks/magento.ts#L139) (path: string, scope: string, error: ConfigFacts["error"] = null) → MagentoFacts <!-- internal -->
+    - fn [type](../../src/frameworks/magento.ts#L143) (name: string) → TypeName <!-- internal -->
+      - calls base.magento.className
+    - type [XmlElement](../../src/frameworks/magento.ts#L148)
+    - fn [parseXml](../../src/frameworks/magento.ts#L158) (path: string, text: string) → { root: XmlElement | null; error: { line: number; reason: string } | null }
+    - fn [fromXml](../../src/frameworks/magento.ts#L193) (path: string, text: string, read: (root: XmlElement, facts: MagentoFacts) => void) → ConfigFacts <!-- internal -->
+      - calls base.magento.noFacts, base.magento.scopeOf, base.magento.parseXml
+    - fn [childrenNamed](../../src/frameworks/magento.ts#L201) (element: XmlElement, name: string) → XmlElement[] <!-- internal -->
+    - fn [flag](../../src/frameworks/magento.ts#L206) (value: string | undefined) → boolean <!-- internal -->
+    - fn [parseDi](../../src/frameworks/magento.ts#L211) (path: string, text: string) → ConfigFacts
+      - calls base.magento.fromXml, base.magento.type, base.magento.className, base.magento.childrenNamed, base.magento.flag
+    - fn [parseEvents](../../src/frameworks/magento.ts#L252) (path: string, text: string) → ConfigFacts
+      - calls base.magento.fromXml, base.magento.childrenNamed, base.magento.type, base.magento.flag
+    - fn [parseRoutes](../../src/frameworks/magento.ts#L269) (path: string, text: string) → ConfigFacts
+      - calls base.magento.fromXml, base.magento.childrenNamed
+    - fn [parseWebapi](../../src/frameworks/magento.ts#L284) (path: string, text: string) → ConfigFacts
+      - calls base.magento.fromXml, base.magento.childrenNamed, base.magento.type
+    - fn [parseCrontab](../../src/frameworks/magento.ts#L306) (path: string, text: string) → ConfigFacts
+      - calls base.magento.fromXml, base.magento.childrenNamed, base.magento.type
+    - fn [parseConsumers](../../src/frameworks/magento.ts#L326) (path: string, text: string) → ConfigFacts
+      - calls base.magento.fromXml, base.magento.childrenNamed, base.magento.type
+    - fn [parseGraphql](../../src/frameworks/magento.ts#L350) (path: string, text: string) → ConfigFacts
+      - calls base.magento.noFacts, base.magento.scopeOf, base.magento.type
   - module [nestjs](../../src/frameworks/nestjs.ts#L1)
     - node external.node
     - adapter base.adapter
-    - fn [ownerOf](../../src/frameworks/nestjs.ts#L52) (path: string) → string | null <!-- internal -->
-    - fn [emptyFacts](../../src/frameworks/nestjs.ts#L57) (path: string) → ConfigFacts <!-- internal -->
-    - fn [nestFacts](../../src/frameworks/nestjs.ts#L62) (path: string, file: CodeFacts) → ConfigFacts
+    - fn [ownerOf](../../src/frameworks/nestjs.ts#L55) (path: string) → string | null <!-- internal -->
+    - fn [emptyFacts](../../src/frameworks/nestjs.ts#L60) (path: string) → ConfigFacts <!-- internal -->
+    - fn [nestFacts](../../src/frameworks/nestjs.ts#L65) (path: string, file: CodeFacts) → ConfigFacts
       - calls base.nestjs.emptyFacts, base.nestjs.classes
-    - fn [classes](../../src/frameworks/nestjs.ts#L116) (decls: readonly CodeDecl[]) → CodeDecl[] <!-- internal -->
-    - fn [parseJson](../../src/frameworks/nestjs.ts#L120) (text: string | null) → unknown <!-- internal -->
-    - fn [isRecord](../../src/frameworks/nestjs.ts#L129) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [classes](../../src/frameworks/nestjs.ts#L119) (decls: readonly CodeDecl[]) → CodeDecl[] <!-- internal -->
+    - fn [parseJson](../../src/frameworks/nestjs.ts#L123) (text: string | null) → unknown <!-- internal -->
+    - fn [isRecord](../../src/frameworks/nestjs.ts#L132) (value: unknown) → value is Record<string, unknown> <!-- internal -->
   - module [pwa-kit](../../src/frameworks/pwa-kit.ts#L1)
     - node external.node
     - adapter base.adapter

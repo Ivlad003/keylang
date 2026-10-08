@@ -29,6 +29,9 @@ const adapter: FrameworkAdapter = {
       arguments: [],
       aliases: [],
       intercepts: [],
+      observers: [],
+      entries: [],
+      routes: [],
       error: null,
     };
   },

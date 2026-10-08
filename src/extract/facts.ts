@@ -342,6 +342,14 @@ export interface CallFact {
    * `$this->m(...)`; TS `this.m.bind(this)`; Python `functools.partial(self.m)`; Rust `Self::m`.
    */
   passes?: PassFact[];
+  /**
+   * The first argument of a call a framework reads as a name (Magento
+   * `$eventManager->dispatch('checkout_submit_all_after', …)`): `literal` is its
+   * value when it is a string literal without interpolation, else null, and
+   * `text` is its source (at most 80 characters). Recorded only for the members
+   * `NAME_ARG_MEMBERS` lists.
+   */
+  nameArg?: { literal: string | null; text: string };
   /** The call sits in a function nested in the declaration: it runs when that value is called. */
   closure?: true;
   /**
@@ -352,9 +360,9 @@ export interface CallFact {
    */
   closureArg?: { line: number; col: number };
   /**
-   * `emit('order.created')`, `setGlobalPrefix('api')`: the first argument of a call of a member
-   * named `emit`, `emitAsync` or `setGlobalPrefix` when it is a string literal; null when it is
-   * another expression. Framework adapters read it (NestJS events, the global route prefix).
+   * `setGlobalPrefix('api')`: the first argument of a call of a member named `setGlobalPrefix`
+   * when it is a string literal; null when it is another expression. The NestJS adapter reads it
+   * (the global route prefix).
    */
   literal?: string | null;
   line: number;

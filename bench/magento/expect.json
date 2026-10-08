@@ -8,5 +8,5 @@
     "sales.Model.Service.OrderService.OrderService.place",
     "salesrule.Plugin.CouponUsagesIncrement.CouponUsagesIncrement.aroundSubmit"
   ],
-  "events": ["checkout_submit_before", "checkout_submit_all_after"]
+  "events": ["events.checkout_submit_before", "events.checkout_submit_all_after"]
 }

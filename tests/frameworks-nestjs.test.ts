@@ -19,6 +19,7 @@ const PLACE = "orders.orders_service.OrdersService.place";
 const ON_CREATED = "notify.notify_listener.NotifyListener.onCreated";
 const SAVE = "infra.sql-order_repo.SqlOrderRepo.save";
 const MODULE = "src/orders/orders.module.ts";
+const EVENT = "events.order-created";
 
 const CONFIG = {
   languages: ["typescript"],
@@ -257,10 +258,13 @@ test("nestjs: a token provider gives `@Inject` an argument edge, useExisting fol
   assert.ok(snapshot.manifest.frameworks?.[0]?.files.some((f) => f.path === MODULE));
   const via = snapshot.edges.filter((e) => e.kind === "call" && e.via !== undefined).map((e) => [e.source, e.target, e.via, e.site, e.owner, e.binding].join(" | "));
   assert.deepEqual(via.sort(), [
+    // `@OnEvent('order.created')` observes the event node; `emit` of `EventEmitter2` dispatches to it.
+    `${EVENT} | ${ON_CREATED} | observer | src/notify/notify.listener.ts:7:3 | notify | observer \`NotifyListener.onCreated\` (\`src/notify/notify.listener.ts#NotifyListener::onCreated\`) of the event \`order.created\``,
     `orders.orders_service.OrdersService.archive | ${SAVE} | argument | ${MODULE}:15:5 | orders | the argument \`legacy\` → \`'LEGACY_REPO' → ORDER_REPO → SqlOrderRepo\``,
+    `${PLACE} | ${EVENT} | dispatch |  |  | `,
     `${PLACE} | ${SAVE} | argument | ${MODULE}:13:5 | orders | the argument \`repo\` → \`ORDER_REPO → SqlOrderRepo\``,
-    `${PLACE} | ${ON_CREATED} | observer | src/notify/notify.listener.ts:7:3 | notify | listener \`NotifyListener.onCreated\` of the event \`order.created\``,
   ]);
+  assert.equal(snapshot.nodes[EVENT]?.kind, "event");
   // The interface-typed parameter's call is resolved by the provider, not left a hole.
   assert.ok(!snapshot.coverage.some((c) => c.text === "this.repo.save" || c.text === "this.legacy.save"));
   // `useFactory` names no class: a hole of the provider, and the call through it stays unresolved.
@@ -269,7 +273,7 @@ test("nestjs: a token provider gives `@Inject` an argument edge, useExisting fol
   assert.match(factory?.reason ?? "", /^`useFactory` provides 'CLOCK': the value is made at run time/);
   assert.ok(snapshot.coverage.some((c) => c.kind === "unresolved-call" && c.text === "this.clock.now"));
   // The map shows the config edges in `calls`, marked with their `via`.
-  assert.match(readFileSync(join(dir, "keylang/map/orders.md"), "utf8"), /- calls infra\.sql-order_repo\.SqlOrderRepo\.save, notify\.notify_listener\.NotifyListener\.onCreated <!-- via: save argument src\/orders\/orders\.module\.ts:13:5; onCreated observer src\/notify\/notify\.listener\.ts:7:3 -->/);
+  assert.match(readFileSync(join(dir, "keylang/map/orders.md"), "utf8"), /- calls infra\.sql-order_repo\.SqlOrderRepo\.save, events\.order-created <!-- via: save argument src\/orders\/orders\.module\.ts:13:5[^\n]*-->/);
 });
 
 test("nestjs: an event name that is no literal is a hole; a global prefix that is no literal is a note on the routes", (t) => {
@@ -279,8 +283,8 @@ test("nestjs: an event name that is no literal is a hole; a global prefix that i
   });
   const snapshot = snapshotOf(dir);
   const hole = snapshot.coverage.find((c) => c.file === "src/orders/events.ts");
-  assert.equal(hole?.kind, "dynamic-call");
-  assert.match(hole?.reason ?? "", /^the event `events\.emit` emits is no literal: the listeners it runs are unknown$/);
+  assert.equal(hole?.kind, "dynamic-event");
+  assert.match(hole?.reason ?? "", /^dispatch of an event whose name is computed at run time: `name`$/);
   const route = snapshot.entries.find((e) => e.label === "GET /orders/:id");
   assert.equal(route?.note, "the global prefix at src/main.ts:6 is no literal: the path is without it");
 });
@@ -295,7 +299,7 @@ test("nestjs: controllers, cron, intervals, listeners, message patterns and reso
     "cron | NotifyListener.poll every 5000ms | notify.notify_listener.NotifyListener.poll | src/notify/notify.listener.ts:22 | nestjs |  | src/notify/notify.listener.ts:21",
     "graphql | Mutation.placeOrder | orders.orders_resolver.OrdersResolver.place | src/orders/orders.resolver.ts:14 | nestjs |  | src/orders/orders.resolver.ts:13",
     "graphql | Query.order | orders.orders_resolver.OrdersResolver.order | src/orders/orders.resolver.ts:9 | nestjs |  | src/orders/orders.resolver.ts:8",
-    `observer | order.created | ${ON_CREATED} | src/notify/notify.listener.ts:8 | nestjs |  | src/notify/notify.listener.ts:7`,
+    `observer | order.created (NotifyListener.onCreated) | ${ON_CREATED} | src/notify/notify.listener.ts:8 | nestjs |  | src/notify/notify.listener.ts:7`,
     "route | GET /api/orders/:id | orders.orders_controller.OrdersController.find | src/orders/orders.controller.ts:10 | nestjs | GET | src/orders/orders.controller.ts:9",
     "route | POST /api/orders | orders.orders_controller.OrdersController.create | src/orders/orders.controller.ts:15 | nestjs | POST | src/orders/orders.controller.ts:14",
   ]);
@@ -309,10 +313,10 @@ test("nestjs: a flow step reached through @OnEvent is `static ok` in behavior (r
   assert.equal(keylang(dir, ["map"]).status, 0);
   const behavior = keylang(dir, ["check"]);
   assert.equal(behavior.status, 0, behavior.stdout);
-  assert.match(behavior.stdout, new RegExp(`flows\\.md:6:5: static ok ${ON_CREATED.replaceAll(".", "\\.")}: called from ${PLACE.replaceAll(".", "\\.")} through the listener \`NotifyListener\\.onCreated\` of the event \`order\\.created\` \\(observer\\) in \`src/notify/notify\\.listener\\.ts:7\`\\n`));
+  assert.match(behavior.stdout, /flows\.md:6:5: static ok notify\.notify_listener\.NotifyListener\.onCreated: reachable from orders\.orders_service\.OrdersService\.place via events\.order-created \([^\n]*the dispatch `this\.events\.emit` at src\/orders\/orders\.service\.ts:16:5; [^\n]*the observer `NotifyListener\.onCreated` [^\n]*of the event `order\.created` in `src\/notify\/notify\.listener\.ts:7`\)\n/);
   assert.match(behavior.stdout, /flows\.md:5:5: static ok infra\.sql-order_repo\.SqlOrderRepo\.save: called from [^\n]* through the argument `repo` → `ORDER_REPO → SqlOrderRepo` in `src\/orders\/orders\.module\.ts:13`\n/);
   const shape = keylang(dir, ["check", "--static", "shape"]);
-  assert.match(shape.stdout, /flows\.md:6:5: static unverified notify\.notify_listener\.NotifyListener\.onCreated: no resolved path from [^\n]*the listener `NotifyListener\.onCreated` of the event `order\.created` \(observer\) [^\n]*\(not followed in static mode shape, set by --static\)/);
+  assert.match(shape.stdout, /flows\.md:6:5: static unverified notify\.notify_listener\.NotifyListener\.onCreated: no resolved path from [^\n]*\(not followed in static mode shape, set by --static\)/);
   assert.match(shape.stdout, /flows\.md:7:7: static ok notify\.notify_listener\.NotifyListener\.send: called from/);
 });
 
@@ -357,7 +361,7 @@ test("nestjs: `flows discover` gives a flow per entry point; `coverage` names wh
   assert.equal(discover.status, 0, discover.stderr);
   assert.match(discover.stderr, /discovered 7 flows \(1 already specified\)/);
   const notify = readFileSync(join(dir, "keylang/flows-discovered/notify.md"), "utf8");
-  assert.match(notify, /entry=observer label="order\.created"[^\n]*\n\n- trigger notify\.notify_listener\.NotifyListener\.onCreated\n {2}- step notify\.notify_listener\.NotifyListener\.send\n/);
+  assert.match(notify, /entry=observer label="order\.created \(NotifyListener\.onCreated\)"[^\n]*\n\n- trigger notify\.notify_listener\.NotifyListener\.onCreated\n {2}- step notify\.notify_listener\.NotifyListener\.send\n/);
   assert.match(notify, /\n- trigger cron notify\.notify_listener\.NotifyListener\.digest\n {2}- step notify\.notify_listener\.NotifyListener\.send\n/);
   const coverage = keylang(dir, ["coverage"]);
   assert.equal(coverage.status, 0, coverage.stderr);

@@ -15,7 +15,9 @@ import { asciiLowerCase, caselessNames, constructorName, implicitMember, interfa
 import { compareText } from "./span.ts";
 import type { FrameworkInput, TypeName } from "./frameworks/adapter.ts";
 import { FrameworkBindings, type BoundCall, type ResolvedType } from "./frameworks/bindings.ts";
-import type { Interception } from "./snapshot.ts";
+import { frameworkEntries, type ObserverEdge } from "./frameworks/entries.ts";
+import { eventIds, EVENTS_LAYER } from "./frameworks/events.ts";
+import type { EntryPoint, Interception } from "./snapshot.ts";
 
 export { EXTERNAL };
 
@@ -38,14 +40,35 @@ export interface Graph {
   exports: ExportEntry[];
   /** Packages the manifests at the root and on the ancestors of analysed files declare, sorted by id. */
   packages: DeclaredPackage[];
+  /** Events a framework's code dispatches or its config observes (ADR 0022 п. 6), by ID. */
+  events: EventNode[];
+  /** Entry points a framework's config names (ADR 0022 п. 5): observers, routes, REST, GraphQL, cron, consumers, commands. */
+  frameworkEntries: EntryPoint[];
+}
+
+/**
+ * An event (ADR 0022 п. 6): a node of the generated group `events`, named by
+ * the literal code dispatches it with. Its calls are the observers the
+ * framework runs when it is dispatched, each at its config line.
+ */
+export interface EventNode {
+  id: string;
+  /** The literal as written. */
+  name: string;
+  /** The first place it is written: a dispatch, else an observer's config line. */
+  file: string | null;
+  line: number;
+  col: number;
+  calls: (Call & { file: string })[];
 }
 
 export interface Gap {
   /**
    * `ambiguous-binding`: a call through a type a framework's config binds to two classes in one
-   * area; `unresolved-binding`: a config fact names a class the snapshot does not have (ADR 0022).
+   * area; `unresolved-binding`: a config fact names a class the snapshot does not have (ADR 0022);
+   * `dynamic-event`: a framework's dispatch whose event name is not a literal.
    */
-  kind: "unresolved-import" | "dynamic-call" | "unresolved-call" | "parse-error" | "unassigned-file" | "unsupported" | "ambiguous-binding" | "unresolved-binding";
+  kind: "unresolved-import" | "dynamic-call" | "unresolved-call" | "parse-error" | "unassigned-file" | "unsupported" | "ambiguous-binding" | "unresolved-binding" | "dynamic-event";
   file: string;
   line: number;
   col: number;
@@ -190,10 +213,12 @@ export interface Call {
    * behavior` follows all four; `shape` none. A call the framework makes by
    * its config (ADR 0022): `preference`, `argument`, `plugin:before|around|after`,
    * at `site` in the config; `behavior` follows them, `shape` does not.
-   * `dispatch`: a job the fn hands to a queue (Celery `task.delay()`), at
-   * `site` of the task's registration; `observer`: a receiver of a signal
-   * the fn sends (Django `signal.send()`) or a method subscribed to the event
-   * the fn emits (NestJS `@OnEvent`), at `site` of its registration.
+   * `dispatch`: a call of the framework's dispatcher with a literal event
+   * name, to the event's node (Magento `dispatch`, NestJS `emit`), or a job
+   * the fn hands to a queue (Celery `task.delay()`), at `site` of the task's
+   * registration; `observer`: from an event to the fn an observer runs
+   * (Magento `events.xml`, NestJS `@OnEvent`), at its config line, or to a
+   * receiver of a signal the fn sends (Django `signal.send()`).
    */
   via?: Via;
   /** Config edges: the area the fact applies in. */
@@ -631,6 +656,8 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
   const classTraitRules = new Map<string, { trait: string | null; method: string; insteadof?: string[]; alias?: string }[]>();
   /** Class → the interfaces it implements; interface → those it extends: resolved in its file. */
   const implemented = new Map<string, string[]>();
+  /** Class or interface → the qualified names of its base and interfaces as its file writes them, lower case (PHP): a package's interface too. */
+  const writtenSupers = new Map<string, string[]>();
   /**
    * A member of a class by name: its own, then a used trait's (PHP), then its
    * bases' — as the language looks a method up. `staticToo`: an instance may
@@ -899,6 +926,10 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
           const { typeNamed } = scopes.get(facts.path)!;
           if (owner) implemented.set(owner, d.implements.map((name) => typeNamed(name) ?? classNamed(name)).filter((t): t is string => t !== null));
         }
+        if ((d.implements || d.base) && d.kind !== "fn") {
+          const owner = decls.ids.get(d);
+          if (owner) writtenSupers.set(owner, [...(d.implements ?? []), ...(d.base ? [d.base] : [])].map((name) => asciiLowerCase(qualifiedIn(facts, name))));
+        }
         const id = d.kind === "class" ? decls.ids.get(d) : undefined;
         if (!id) continue;
         if (d.traits) classTraits.set(id, d.traits.map(classNamed).filter((t): t is string => t !== null));
@@ -927,46 +958,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
   };
   /** What the graph lends the framework facts: its declarations, by the names a config writes. */
   function frameworkBindings(inputs: readonly FrameworkInput[]): FrameworkBindings {
-    // PHP names a class by its qualified name (`FileFacts.symbols`), in any ASCII case.
-    const qualified = new Map<string, string>();
-    for (const f of [...files].sort((a, b) => compareText(a.path, b.path))) {
-      for (const symbol of f.symbols ?? []) {
-        if (symbol.table !== "class") continue;
-        const id = fileDecls.get(f.path)?.get(layerName(symbol.name));
-        const key = asciiLowerCase(symbol.qualified);
-        if (id !== undefined && !qualified.has(key)) qualified.set(key, id);
-      }
-    }
-    const resolve = (type: TypeName): ResolvedType => {
-      if (type.file !== undefined) {
-        const id = fileDecls.get(type.file)?.get(layerName(type.name));
-        if (id !== undefined) return decls.classes.has(id) || decls.types.has(id) ? { kind: "node", id } : { kind: "missing" };
-        // A name the file imports (NestJS `useClass: SqlOrderRepo` in a module file): what the import binds.
-        const scope = scopes.get(type.file);
-        const imported = scope?.classNamed(type.name) ?? scope?.typeNamed(type.name) ?? null;
-        if (imported !== null) return { kind: "node", id: imported };
-        if (scope?.external(type.name)) return { kind: "external" };
-        return { kind: "missing" };
-      }
-      const id = qualified.get(asciiLowerCase(type.name));
-      if (id !== undefined) return { kind: "node", id };
-      // A class no analysed file declares: a package's (composer's autoload) or PHP's own is outside the graph, not missing.
-      const r = resolverFor("keylang.php")?.resolve("", type.name);
-      return r?.kind === "external" || r?.kind === "stdlib" ? { kind: "external" } : { kind: "missing" };
-    };
-    const supertypes = (id: string): string[] => {
-      const out = new Set<string>();
-      const stack = [id];
-      while (stack.length > 0) {
-        const at = stack.pop()!;
-        if (out.has(at)) continue;
-        out.add(at);
-        const base = classBase.get(at)?.internal;
-        if (base) stack.push(base);
-        stack.push(...(implemented.get(at) ?? []), ...(classTraits.get(at) ?? []));
-      }
-      return [...out];
-    };
+    const { resolve, supertypes } = frameworkLookups();
     return new FrameworkBindings(inputs, {
       resolve,
       isClass: (id) => decls.classes.has(id),
@@ -1001,6 +993,68 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
       },
     });
   }
+
+  /** A config's class names resolved to the graph's declarations, and the supertypes of a class: built once. */
+  let lookups: { resolve: (type: TypeName) => ResolvedType; supertypes: (id: string) => string[]; qualifiedOf: (id: string) => string | null } | null = null;
+  function frameworkLookups(): NonNullable<typeof lookups> {
+    if (lookups) return lookups;
+    // PHP names a class by its qualified name (`FileFacts.symbols`), in any ASCII case.
+    const qualified = new Map<string, string>();
+    const names = new Map<string, string>();
+    for (const f of [...files].sort((a, b) => compareText(a.path, b.path))) {
+      for (const symbol of f.symbols ?? []) {
+        if (symbol.table !== "class") continue;
+        const id = fileDecls.get(f.path)?.get(layerName(symbol.name));
+        const key = asciiLowerCase(symbol.qualified);
+        if (id !== undefined && !qualified.has(key)) qualified.set(key, id);
+        if (id !== undefined && !names.has(id)) names.set(id, key);
+      }
+    }
+    const resolve = (type: TypeName): ResolvedType => {
+      if (type.file !== undefined) {
+        const id = fileDecls.get(type.file)?.get(layerName(type.name));
+        if (id !== undefined) return decls.classes.has(id) || decls.types.has(id) ? { kind: "node", id } : { kind: "missing" };
+        // A name the file imports (NestJS `useClass: SqlOrderRepo` in a module file): what the import binds.
+        const scope = scopes.get(type.file);
+        const imported = scope?.classNamed(type.name) ?? scope?.typeNamed(type.name) ?? null;
+        if (imported !== null) return { kind: "node", id: imported };
+        if (scope?.external(type.name)) return { kind: "external" };
+        return { kind: "missing" };
+      }
+      const id = qualified.get(asciiLowerCase(type.name));
+      if (id !== undefined) return { kind: "node", id };
+      // A class no analysed file declares: a package's (composer's autoload) or PHP's own is outside the graph, not missing.
+      const r = resolverFor("keylang.php")?.resolve("", type.name);
+      return r?.kind === "external" || r?.kind === "stdlib" ? { kind: "external" } : { kind: "missing" };
+    };
+    const supertypes = (id: string): string[] => {
+      const out = new Set<string>();
+      const stack = [id];
+      while (stack.length > 0) {
+        const at = stack.pop()!;
+        if (out.has(at)) continue;
+        out.add(at);
+        const base = classBase.get(at)?.internal;
+        if (base) stack.push(base);
+        stack.push(...(implemented.get(at) ?? []), ...(classTraits.get(at) ?? []));
+      }
+      return [...out];
+    };
+    lookups = { resolve, supertypes, qualifiedOf: (id) => names.get(id) ?? null };
+    return lookups;
+  }
+
+  /** Qualified names (lower case) of a class, its bases and interfaces, as their files write them: a package's interface too. */
+  const supertypeNames = (classId: string): Set<string> => {
+    const { supertypes, qualifiedOf } = frameworkLookups();
+    const out = new Set<string>();
+    for (const id of supertypes(classId)) {
+      const own = qualifiedOf(id);
+      if (own !== null) out.add(own);
+      for (const name of writtenSupers.get(id) ?? []) out.add(name);
+    }
+    return out;
+  };
 
   /**
    * Plugin edges (ADR 0022): every call of a public method a plugin wraps gets
@@ -1051,6 +1105,34 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
   /** The receiver's class of a call edge (and the interface a binding went through): what a plugin wraps. */
   const receiverOf = new WeakMap<Call, string[]>();
   for (const hole of bindings?.holes ?? []) gaps.push({ kind: "unresolved-binding", file: hole.file, line: hole.line, col: hole.col, endLine: hole.line, endCol: hole.col + 1, text: hole.text, reason: hole.reason, source: hole.source });
+  // 4b. What the framework calls from outside (ADR 0022 п. 5–6): observers of events and the entry points its config names.
+  const called = frameworks.length === 0 ? null : frameworkEntries(frameworks, {
+    resolve: (type) => frameworkLookups().resolve(type),
+    unalias: (type, scope) => bindings?.unalias(type, scope) ?? type,
+    isClass: (id) => decls.classes.has(id),
+    member: (classId, name) => findMember(classId, name, false, staticThroughInstance(decls.classes.get(classId)?.path ?? "")).target,
+    bound: (typeId, member) => {
+      if (!bindings?.binds(typeId)) return null;
+      const b = bindings.callThroughType(typeId, member);
+      const reason = b.ambiguous ?? (b.edges.length === 0 ? (b.missing ?? b.opaque ?? (b.external ? `bound to a class of a package keylang does not read` : null)) : null);
+      return { targets: b.edges.map((e) => ({ target: e.target, scope: e.scope })), reason };
+    },
+    owner: (dir) => (dir === null ? null : directoryModuleIn(config, dir, modules, layers)),
+    supertypeNames,
+    classesIn: (file) => [...decls.classes.values()].filter((c) => c.path === file).sort((a, b) => (a.line ?? 0) - (b.line ?? 0)).map((c) => c.id),
+    place: (id) => {
+      const fn = decls.fns.get(id);
+      if (fn) return { file: fn.file ?? decls.classes.get(id.slice(0, id.lastIndexOf(".")))?.path ?? "", line: fn.line };
+      const cls = decls.classes.get(id);
+      return cls?.path ? { file: cls.path, line: cls.line ?? 1 } : null;
+    },
+    sources: [...byFile.keys()].sort(compareText),
+  });
+  for (const hole of called?.holes ?? []) gaps.push({ kind: "unresolved-binding", file: hole.file, line: hole.line, col: hole.col, endLine: hole.line, endCol: hole.col + 1, text: hole.text, reason: hole.reason, source: hole.source });
+  /** Qualified names (lower case) of the types whose `dispatch(name)` publishes an event. */
+  const dispatchers = new Set(frameworks.flatMap((f) => f.dispatchers ?? []).map(asciiLowerCase));
+  /** Calls that dispatch an event by a literal: their target is the event's ID, set once every name is known. */
+  const dispatches: { call: Call; name: string; file: string }[] = [];
   for (const { facts, module } of byFile.values()) {
     const { locals, localDecls, importedSymbol, classNamed, typeNamed, resolveCallees, receiverTarget, single, external, globOrigin } = scopes.get(facts.path)!;
     const attach = (factDecls: DeclFact[], cls: Module | null): void => {
@@ -1146,30 +1228,31 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
             });
           }
         };
-        /**
-         * `emit('order.created')` (ADR 0022 п. 6): an edge to each method a config subscribes to the
-         * event (`via: "observer"`, at the subscription); a name that is no literal may run any of them.
-         */
-        const emitted = (c: CallFact): void => {
-          if (c.literal === undefined || !bindings || !bindings.hasListeners) return;
-          const member = c.callee.slice(c.callee.lastIndexOf(".") + 1);
-          if (member !== "emit" && member !== "emitAsync") return;
-          if (c.literal === null) {
-            gaps.push({ kind: "dynamic-call", file: facts.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, reason: `the event \`${c.callee}\` emits is no literal: the listeners it runs are unknown`, source: fn.id });
-            return;
-          }
-          for (const l of bindings.listeners(c.literal)) {
-            addCall(fn, { target: l.target, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, via: "observer", site: l.site, scope: "global", binding: l.binding, ...(l.owner !== null ? { owner: l.owner } : {}), ...(c.closure && !c.closureArg ? { closure: true as const } : {}) });
-          }
-        };
         const dynamic = (c: CallFact, reason: string): void => {
           stats.callsDynamic++;
           gaps.push({ kind: "dynamic-call", file: facts.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, reason, source: fn.id });
         };
+        /**
+         * A call of a framework's dispatcher (`$this->eventManager->dispatch('e', …)`): the receiver
+         * is typed as one, as a class implementing one, or as a type the config binds to such a class.
+         */
+        const dispatching = (receiver: string): boolean => {
+          const ids = [classNamed(receiver), typeNamed(receiver)].filter((id): id is string => id !== null);
+          if (ids.length === 0) return dispatchers.has(asciiLowerCase(qualifiedIn(facts, receiver)));
+          return ids.some((id) => [id, ...(bindings?.binds(id) ? bindings.callThroughType(id, "dispatch").edges.map((e) => e.impl) : [])].some((t) => [...supertypeNames(t)].some((name) => dispatchers.has(name))));
+        };
         for (const c of d.calls) {
           // Whatever the call itself resolves to, the callables it passes are edges of their own.
           passCallables(c);
-          if (bindings) emitted(c);
+          if (c.nameArg && c.receiver && dispatchers.size > 0 && dispatching(c.receiver)) {
+            if (c.nameArg.literal !== null) {
+              const call: Call = { target: "", line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, via: "dispatch", ...(c.closure ? { closure: true as const } : {}), ...(c.closureArg ? { site: `${facts.path}:${c.closureArg.line}:${c.closureArg.col}` } : {}) };
+              fn.calls.push(call);
+              dispatches.push({ call, name: c.nameArg.literal, file: facts.path });
+            } else {
+              gaps.push({ kind: "dynamic-event", file: facts.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, reason: `dispatch of an event whose name is computed at run time: \`${c.nameArg.text}\``, source: fn.id });
+            }
+          }
           // An expression keylang does not name is a hole, never an edge.
           if (c.opaque) {
             dynamic(c, `call through an expression \`${c.callee}\``);
@@ -1401,6 +1484,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
   }
   if (bindings) intercept(bindings);
   markEscapes(modules, readIds, readMembers, calledNames, decls.members);
+  const events = eventNodes(dispatches, called?.observers ?? [], called?.events ?? []);
 
   stats.modules = [...modules.values()].filter((m) => m.layer !== EXTERNAL).length;
   const orderedLayers = [...layers.values()].filter((l) => l.modules.length > 0);
@@ -1423,7 +1507,62 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
       .filter((e) => !e.module.startsWith(FILE_UNIT))
       .map((e) => ({ ...e, symbol: e.symbol === null ? null : moduleOfUnit(e.symbol), ...(e.from !== undefined ? { from: moduleOfUnit(e.from) } : {}) })),
     packages,
+    events,
+    frameworkEntries: called?.entries ?? [],
   };
+}
+
+/**
+ * Event nodes (ADR 0022 п. 6): every name a literal dispatch or an observer's
+ * config writes, with an ID of the group `events`. A dispatch call gets the
+ * event's ID as its target; an observer is a call of the event, at its
+ * config line. An event is placed at its first dispatch in the code, else at
+ * its first observer declaration.
+ */
+function eventNodes(dispatches: readonly { call: Call; name: string; file: string }[], observers: readonly ObserverEdge[], declared: readonly { name: string; file: string; line: number; col: number }[]): EventNode[] {
+  const ids = eventIds([...dispatches.map((d) => d.name), ...declared.map((d) => d.name)]);
+  const nodes = new Map<string, EventNode>();
+  for (const [name, id] of ids) nodes.set(id, { id, name, file: null, line: 1, col: 1, calls: [] });
+  const places: { id: string; code: boolean; file: string; line: number; col: number }[] = [];
+  for (const d of dispatches) {
+    d.call.target = ids.get(d.name)!;
+    places.push({ id: d.call.target, code: true, file: d.file, line: d.call.line, col: d.call.col });
+  }
+  for (const o of [...observers].sort((a, b) => compareText(a.file, b.file) || a.line - b.line || a.col - b.col)) {
+    const id = ids.get(o.event)!;
+    nodes.get(id)!.calls.push({ target: o.target, line: o.line, col: o.col, endLine: o.line, endCol: o.col + 1, text: o.text, via: "observer", site: o.site, scope: o.scope, binding: o.binding, file: o.file, ...(o.owner !== null ? { owner: o.owner } : {}) });
+  }
+  // An event no code keylang read dispatches stands at its first observer declaration.
+  for (const d of declared) places.push({ id: ids.get(d.name)!, code: false, file: d.file, line: d.line, col: d.col });
+  places.sort((a, b) => Number(b.code) - Number(a.code) || compareText(a.file, b.file) || a.line - b.line || a.col - b.col);
+  for (const p of places) {
+    const n = nodes.get(p.id)!;
+    if (n.file === null) Object.assign(n, { file: p.file, line: p.line, col: p.col });
+  }
+  return [...nodes.values()].sort((a, b) => compareText(a.id, b.id));
+}
+
+/**
+ * A class name as a file writes it, qualified through the file's imports: PHP `Foo` with `use A\Foo` → `A\Foo`,
+ * `\A\Foo` → `A\Foo`; TS/JS `EventEmitter2` with `import { EventEmitter2 } from "@nestjs/event-emitter"` →
+ * `@nestjs/event-emitter\EventEmitter2` (the package, `\`, the exported name).
+ */
+function qualifiedIn(facts: FileFacts, written: string): string {
+  const language = languageOf(facts.path);
+  if (language === "typescript" || language === "javascript") {
+    for (const imp of facts.imports) {
+      const binding = imp.bindings.find((b) => b.local === written);
+      if (binding !== undefined) return binding.kind === "named" ? `${imp.source}\\${binding.imported}` : imp.source;
+    }
+    return written;
+  }
+  if (written.startsWith("\\")) return written.replace(/^\\+/, "");
+  const [head, ...rest] = written.split("\\");
+  for (const imp of facts.imports) {
+    if (/^(?:function|const) /.test(imp.source)) continue;
+    if (imp.bindings.some((b) => b.kind === "named" && b.local === head)) return [imp.source.replace(/^\\+/, ""), ...rest].join("\\");
+  }
+  return written;
 }
 
 /** A file name no language claims: placing it in a directory gives the directory's module. */
