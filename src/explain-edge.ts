@@ -4,6 +4,7 @@
 // snapshot's own edges and coverage count; nothing is inferred from the map text.
 
 import { leavesUnresolved, type AnalysisSnapshot, type CoverageItem, type SnapshotEdge } from "./snapshot.ts";
+import { describeConfig } from "./flows.ts";
 import { compareText } from "./span.ts";
 
 /** One edge between the two ids: `forward` is `from → to`, `backward` is `to → from`. */
@@ -63,6 +64,7 @@ export function edgeLine(edge: SnapshotEdge): string {
     : edge.via === "injected" ? ` (injected as \`${edge.hook ?? ""}\` at ${edge.site ?? "?"})`
     : edge.via === "callable-arg" ? " (a callable passed as an argument)"
     : edge.via === "closure-arg" ? ` (in a closure passed as an argument at ${edge.site ?? "?"})`
+    : edge.via !== undefined ? ` (through ${describeConfig(edge)})`
     : "";
   const fragment = edge.text ? ` \`${edge.text.replace(/\s+/g, " ")}\`` : "";
   const docblock = edge.provenance === "docblock" && edge.docblock ? ` (typed by a docblock at ${edge.docblock})` : "";

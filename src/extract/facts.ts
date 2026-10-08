@@ -177,6 +177,12 @@ export interface DeclFact {
    * `trait` null when not named).
    */
   traitRules?: { trait: string | null; method: string; insteadof?: string[]; alias?: string }[];
+  /**
+   * Classes: the interfaces the class implements; interfaces: those it extends — as written
+   * (PHP `implements A, B`, `interface I extends J`). A framework's interceptor on an
+   * interface wraps the classes that implement it.
+   */
+  implements?: string[];
   /** The declaration's documentation comment without comment syntax, lines kept; absent when it has none. */
   doc?: string;
 }
@@ -202,6 +208,11 @@ export interface CallFact {
    * with `const worker = new SnapshotWorker()` or a parameter `worker: SnapshotWorker`.
    */
   receiver?: string;
+  /**
+   * The receiver is a property the constructor fills from its parameter `param` (PHP
+   * `$this->x = $x`, a promoted `private X $x`): a framework's config may set that argument.
+   */
+  param?: string;
   /**
    * The receiver's class is written in a docblock the language does not check (PHP `@var Foo`
    * above the property, `@param Foo $x` of the constructor parameter assigned to it), at this

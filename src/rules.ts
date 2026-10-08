@@ -16,7 +16,7 @@ import type { Verdict } from "./verdict.ts";
 interface SnapshotView {
   snapshotId: string;
   nodes: Record<string, { kind: string; file: string | null; line: number | null; col?: number | null; members?: string; class?: true }>;
-  edges: { kind: string; source: string; target: string | null; file: string | null; line: number; col: number; resolution: string; reason?: string; via?: string; typeOnly?: true; provenance?: string; docblock?: string }[];
+  edges: { kind: string; source: string; target: string | null; file: string | null; line: number; col: number; resolution: string; reason?: string; via?: string; typeOnly?: true; provenance?: string; docblock?: string; site?: string; owner?: string; binding?: string; scope?: string }[];
   coverage: { kind: string; file: string; line: number; col: number; reason: string; source: string | null }[];
   exports: { module: string; name: string; kind: string; form?: string; from?: string; reason?: string }[];
 }
@@ -55,11 +55,30 @@ interface UseEdge {
   resolution: string;
   /** `file:line:col` of the docblock the edge rests on (PHP `@var`, `@param`): the verdict names it, since PHP does not check it. */
   docblock?: string;
+  /** A call the framework makes by its config (ADR 0022): the fact in words, with its config line. */
+  config?: string;
 }
 
-/** The note a verdict adds to a dependency that exists only thanks to a docblock. */
-function docblockNote(edge: Pick<UseEdge, "docblock">): string {
-  return edge.docblock ? ` (typed by a docblock at ${edge.docblock})` : "";
+/** The note a verdict adds to a dependency that exists only thanks to a docblock, or only in a framework's config. */
+function docblockNote(edge: Pick<UseEdge, "docblock" | "config">): string {
+  return edge.config ? ` through ${edge.config}` : edge.docblock ? ` (typed by a docblock at ${edge.docblock})` : "";
+}
+
+/** Via values of the calls a framework makes by its config: the module whose config declares one depends on its target. */
+const CONFIG_VIA = new Set(["preference", "argument", "plugin:before", "plugin:around", "plugin:after"]);
+
+/** A config edge in words for a K102: `the preference `I → C` (app/etc/di.xml:12)`. */
+function configNote(edge: { via?: string; binding?: string; site?: string; scope?: string }): string {
+  const at = edge.site ? edge.site.replace(/:\d+$/, "") : "?";
+  const scope = edge.scope && edge.scope !== "global" ? `, scope ${edge.scope}` : "";
+  const what = edge.via === "preference" ? `the preference ${edge.binding ?? ""}` : edge.via === "argument" ? (edge.binding ?? "a constructor argument") : `the ${edge.binding ?? "plugin"} (${edge.via})`;
+  return `${what} (${at}${scope})`;
+}
+
+/** `file:line:col` → its parts; null for another shape. */
+function siteAt(site: string | undefined): { file: string; line: number; col: number } | null {
+  const m = site === undefined ? null : /^(.*):(\d+):(\d+)$/.exec(site);
+  return m ? { file: m[1]!, line: Number(m[2]), col: Number(m[3]) } : null;
 }
 
 export const UNORDERED_LAYERS: ReadonlySet<string> = new Set(SYNTHETIC_LAYERS);
@@ -185,7 +204,9 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
     if (!edge.target || !edge.file) continue;
     // An injected hook value is the injector's dependency, which has its own edge to it.
     if (edge.via === "injected") continue;
-    const from = scopeOf(edge.source);
+    // A call the framework makes by its config belongs to the module whose config declares it (ADR 0022), at that config line.
+    const configured = edge.via !== undefined && CONFIG_VIA.has(edge.via) ? siteAt(edge.site) : null;
+    const from = configured && edge.owner !== undefined ? edge.owner : scopeOf(edge.source);
     const to = scopeOf(edge.target);
     if (!from || !to) continue;
     const fromUnit = unitOf(from);
@@ -194,7 +215,20 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
       if (edge.kind !== "call" && edge.kind !== "type" && edge.resolution === "resolved" && !edge.typeOnly) selfLoops.add(fromUnit);
       continue;
     }
-    edges.push({ from, to, fromUnit, toUnit, kind: edge.kind, typeOnly: edge.typeOnly === true, file: edge.file, line: edge.line, col: edge.col, resolution: edge.resolution, ...(edge.provenance === "docblock" ? { docblock: edge.docblock ?? `${edge.file}:${edge.line}:${edge.col}` } : {}) });
+    edges.push({
+      from,
+      to,
+      fromUnit,
+      toUnit,
+      kind: edge.kind,
+      typeOnly: edge.typeOnly === true,
+      file: configured?.file ?? edge.file,
+      line: configured?.line ?? edge.line,
+      col: configured?.col ?? edge.col,
+      resolution: edge.resolution,
+      ...(edge.provenance === "docblock" ? { docblock: edge.docblock ?? `${edge.file}:${edge.line}:${edge.col}` } : {}),
+      ...(configured ? { config: configNote(edge) } : {}),
+    });
   }
   /** Every module node, classes included: the area of a scope. */
   const modules = new Set<string>();
@@ -572,7 +606,7 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
   return { diagnostics, verdicts };
 }
 
-const DEPENDENCY_HOLES = new Set(["unresolved-import", "parse-error", "unsupported", "unassigned-file", "skipped-file"]);
+const DEPENDENCY_HOLES = new Set(["unresolved-import", "parse-error", "unsupported", "unassigned-file", "skipped-file", "unresolved-binding"]);
 
 /** A coverage entry of the snapshot: a hole when its kind is one of `DEPENDENCY_HOLES`. */
 type Hole = SnapshotView["coverage"][number];

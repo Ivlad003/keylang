@@ -27,7 +27,7 @@ export function draftFlow(snapshot: AnalysisSnapshot, trigger: string, options: 
   const depth = options.depth ?? 4;
   const holes = new Map<string, string[]>();
   for (const c of snapshot.coverage) {
-    if ((c.kind !== "dynamic-call" && c.kind !== "unresolved-call") || c.source === null) continue;
+    if ((c.kind !== "dynamic-call" && c.kind !== "unresolved-call" && c.kind !== "ambiguous-binding") || c.source === null) continue;
     const list = holes.get(c.source) ?? [];
     list.push(`${c.text || c.reason} (${c.file}:${c.line})`);
     holes.set(c.source, list);
@@ -37,7 +37,10 @@ export function draftFlow(snapshot: AnalysisSnapshot, trigger: string, options: 
   for (const e of snapshot.edges) {
     if (e.kind !== "call" || e.resolution !== "resolved" || e.target === null) continue;
     const key = `${e.source}\u0000${e.target}`;
-    if (!via.has(key)) via.set(key, e.via === "callable-arg" ? " <!-- keylang:algo via callable -->" : e.via === "closure-arg" ? " <!-- keylang:algo via closure -->" : "");
+    if (via.has(key)) continue;
+    // A call the framework makes by its config (ADR 0022): a preference, a constructor argument, a plugin around the call.
+    const config = e.via === "preference" || e.via === "argument" || e.via?.startsWith("plugin:") ? ` <!-- keylang:algo via ${e.via} ${e.site ?? "?"}${e.scope && e.scope !== "global" ? ` scope ${e.scope}` : ""} -->` : null;
+    via.set(key, config ?? (e.via === "callable-arg" ? " <!-- keylang:algo via callable -->" : e.via === "closure-arg" ? " <!-- keylang:algo via closure -->" : ""));
   }
   const listed = new Set<string>();
   const lines = [`# flow ${name}`, ""];

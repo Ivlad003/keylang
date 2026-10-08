@@ -14,6 +14,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { CONFIG_FILE } from "./config.ts";
 import type { FileFacts } from "./extract/facts.ts";
+import { isConfigFacts, type ConfigFacts } from "./frameworks/adapter.ts";
 import { landing, writeAtomic, writeProblem } from "./safe-write.ts";
 import { compareText } from "./span.ts";
 
@@ -27,6 +28,19 @@ interface Stored {
   schema: number;
   version: string;
   files: Record<string, { sha256: string; facts: StoredFacts }>;
+  /** Framework config files (`etc/di.xml`) by path: what their adapter parsed from that content (ADR 0022). */
+  configs?: Record<string, { sha256: string; facts: ConfigFacts }>;
+}
+
+/** Config entries of a cache of this schema and version; one of the wrong shape is parsed again. */
+function storedConfigs(value: unknown, version: string): NonNullable<Stored["configs"]> {
+  if (!isRecord(value) || value.schema !== CACHE_SCHEMA || value.version !== version || !isRecord(value.configs)) return {};
+  const configs: NonNullable<Stored["configs"]> = {};
+  for (const [path, entry] of Object.entries(value.configs)) {
+    if (!isRecord(entry) || typeof entry.sha256 !== "string" || !isConfigFacts(entry.facts) || entry.facts.path !== path) continue;
+    configs[path] = { sha256: entry.sha256, facts: entry.facts };
+  }
+  return configs;
 }
 
 /**
@@ -98,6 +112,7 @@ function isDecl(value: unknown): boolean {
     optionalTrue(value.implicit) &&
     optional(value.base, isString) &&
     optional(value.traits, (traits) => every(traits, isString)) &&
+    optional(value.implements, (names) => every(names, isString)) &&
     optional(value.doc, isString)
   );
 }
@@ -110,6 +125,7 @@ function isCall(value: unknown): boolean {
     optionalTrue(value.opaque) &&
     optional(value.bound, isBound) &&
     optional(value.receiver, isString) &&
+    optional(value.param, isString) &&
     optional(value.hook, isHook) &&
     optional(value.passes, (p) => every(p, isPass)) &&
     optionalTrue(value.closure)
@@ -176,34 +192,41 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 const memory = new Map<string, { hash: string; facts: FileFacts }>();
+const configMemory = new Map<string, { hash: string; facts: ConfigFacts }>();
 
 export class FactCache {
   private readonly root: string;
   private readonly version: string;
   private readonly disk: Stored["files"];
+  private readonly diskConfigs: NonNullable<Stored["configs"]>;
   private readonly used = new Map<string, { sha256: string; facts: FileFacts }>();
+  private readonly usedConfigs = new Map<string, { sha256: string; facts: ConfigFacts }>();
   /** Files whose facts came from memory or disk, and files extracted in this run. */
   reused = 0;
   extracted = 0;
 
-  private constructor(root: string, version: string, disk: Stored["files"]) {
+  private constructor(root: string, version: string, disk: Stored["files"], configs: NonNullable<Stored["configs"]>) {
     this.root = root;
     this.version = version;
     this.disk = disk;
+    this.diskConfigs = configs;
   }
 
   /** `version` names the extractor and grammars; any other stored version is ignored. */
   static open(root: string, version: string): FactCache {
     const file = join(root, FACT_CACHE_FILE);
     let disk: Stored["files"] = {};
+    let configs: NonNullable<Stored["configs"]> = {};
     if (existsSync(file)) {
       try {
-        disk = storedFiles(JSON.parse(readFileSync(file, "utf8")), version);
+        const value: unknown = JSON.parse(readFileSync(file, "utf8"));
+        disk = storedFiles(value, version);
+        configs = storedConfigs(value, version);
       } catch {
         // A damaged cache is rebuilt, never an error.
       }
     }
-    return new FactCache(root, version, disk);
+    return new FactCache(root, version, disk, configs);
   }
 
   async facts(path: string, sha256: string, extract: () => Promise<FileFacts>): Promise<FileFacts> {
@@ -225,6 +248,30 @@ export class FactCache {
   }
 
   /**
+   * The facts of a framework config file (ADR 0022), by its content: a config
+   * whose text changed is parsed again, as a source file is. `adapter` names
+   * the adapter and its version, part of the key.
+   */
+  config(path: string, sha256: string, adapter: string, parse: () => ConfigFacts): ConfigFacts {
+    const hash = `${adapter}\0${sha256}`;
+    const key = `${this.root}\0${this.version}\0${path}`;
+    const hot = configMemory.get(key);
+    let facts: ConfigFacts | undefined = hot && hot.hash === hash ? hot.facts : undefined;
+    if (!facts) {
+      const cold = this.diskConfigs[path];
+      if (cold && cold.sha256 === hash) facts = cold.facts;
+    }
+    if (facts) this.reused++;
+    else {
+      this.extracted++;
+      facts = parse();
+    }
+    configMemory.set(key, { hash, facts });
+    this.usedConfigs.set(path, { sha256: hash, facts });
+    return facts;
+  }
+
+  /**
    * Whether the facts of this run differ from the cache on disk: a file the
    * disk has no entry for or holds for other content, or an entry of a file
    * this run did not read. Unchanged, a write would put back the same facts.
@@ -232,6 +279,8 @@ export class FactCache {
   changed(): boolean {
     if (Object.keys(this.disk).length !== this.used.size) return true;
     for (const [path, entry] of this.used) if (this.disk[path]?.sha256 !== entry.sha256) return true;
+    if (Object.keys(this.diskConfigs).length !== this.usedConfigs.size) return true;
+    for (const [path, entry] of this.usedConfigs) if (this.diskConfigs[path]?.sha256 !== entry.sha256) return true;
     return false;
   }
 
@@ -241,7 +290,10 @@ export class FactCache {
     for (const [path, entry] of [...this.used].sort(([a], [b]) => compareText(a, b))) {
       files[path] = { sha256: entry.sha256, facts: { ...entry.facts, exports: [...entry.facts.exports].sort() } };
     }
-    return `${JSON.stringify({ schema: CACHE_SCHEMA, version: this.version, files } satisfies Stored)}\n`;
+    const configs: NonNullable<Stored["configs"]> = {};
+    for (const [path, entry] of [...this.usedConfigs].sort(([a], [b]) => compareText(a, b))) configs[path] = entry;
+    const stored: Stored = { schema: CACHE_SCHEMA, version: this.version, files, ...(this.usedConfigs.size > 0 ? { configs } : {}) };
+    return `${JSON.stringify(stored)}\n`;
   }
 }
 
