@@ -15,6 +15,7 @@ import { codeProposalProblem, PROPOSALS_DIR, proposalProblem } from "../proposal
 import { compareText } from "../span.ts";
 import { addDrafts, statusesIn, updateStats } from "../stats.ts";
 import { isDirty, setText } from "./buffer.ts";
+import { keepLineEndings } from "../safe-write.ts";
 import { lf, readText, removeInside, splitEol, withEol, writeInside } from "./disk.ts";
 import type { KeyEvent } from "./input.ts";
 import { applyHunks, diffLines, type Decision } from "./merge.ts";
@@ -110,7 +111,7 @@ export class MergeSession {
     const disk = readText(resolve(this.state.root, path));
     const newFile = disk === null;
     if (proposal === null) return { path, kind, newFile, hunks: null, problem: `${PROPOSALS_DIR}/${path} cannot be read` };
-    const hunks = diffLines(splitEol(disk ?? "").text.split("\n"), lf(proposal).split("\n")).length;
+    const hunks = diffLines(lf(disk ?? "").split("\n"), lf(proposal).split("\n")).length;
     const buffer = kind === "spec" ? this.state.buffers.get(path) : undefined;
     const dirty = buffer !== undefined && isDirty(buffer) ? "unsaved changes: save (Ctrl+S) or undo them before merging" : null;
     return { path, kind, newFile, hunks, problem: dirty };
@@ -185,7 +186,7 @@ export class MergeSession {
       // Code is never a buffer here: the merge compares the proposal with the file on disk.
       const disk = readText(resolve(state.root, path));
       if (state.mode === "code") state.mode = "view";
-      this.start(path, "code", splitEol(disk ?? "").text.split("\n"), lf(proposal).split("\n"), disk, proposal);
+      this.start(path, "code", lf(disk ?? "").split("\n"), lf(proposal).split("\n"), disk, proposal);
       return;
     }
     const buffer = this.host.load(path);
@@ -196,7 +197,7 @@ export class MergeSession {
       return;
     }
     const disk = readText(resolve(state.root, path));
-    this.start(path, "proposal", splitEol(disk ?? "").text.split("\n"), lf(proposal).split("\n"), disk, proposal);
+    this.start(path, "proposal", lf(disk ?? "").split("\n"), lf(proposal).split("\n"), disk, proposal);
   }
 
   /** A merge of `proposed` into `base`; `proposal` is the proposal file's text (null for `Ctrl+G`). */
@@ -323,19 +324,21 @@ export class MergeSession {
     const proposalAbs = this.proposalAbs(merge.path);
     if (readText(proposalAbs) !== merge.proposal) return this.leave(merge, `the proposal for ${merge.path} changed during the merge; nothing written — press m to see the new one`);
     const result = applyHunks(merge.base, merge.hunks, merge.decisions).join("\n");
-    const before = buffer ? (accepted > 0 ? merge.base.join("\n") : buffer.text) : "";
+    // The base is the file without `\r`; a buffer holds it as `splitEol` reads it (mixed endings kept).
+    const before = buffer ? (accepted > 0 ? splitEol(merge.disk ?? "").text : buffer.text) : "";
 
     // 1. The file. A write that fails (no permission, a link out of bounds) throws here, and nothing has changed.
     let disk: { before: string | null; after: string } | null = null;
     if (accepted > 0) {
-      const eol = buffer ? buffer.eol : merge.disk === null ? "\n" : splitEol(merge.disk).eol;
-      const after = withEol(result, eol);
+      // Every line the merge kept keeps its ending, in a file of mixed endings too.
+      const after = merge.disk === null ? withEol(result, buffer ? buffer.eol : "\n") : keepLineEndings(merge.disk, result);
       writeInside(this.boundary(code), abs, after);
       disk = { before: merge.disk, after };
       if (buffer) {
+        const text = splitEol(after).text;
         buffer.undo.push({ text: buffer.text, cursor: { ...state.cursor } });
-        setText(buffer, result);
-        buffer.saved = result;
+        setText(buffer, text);
+        buffer.saved = text;
         buffer.disk = after;
       }
     }

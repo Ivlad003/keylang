@@ -22,6 +22,12 @@ export function briefOf(text: string): string | null {
   return capText(firstSentences(paragraph, 2), BRIEF_MAX);
 }
 
+/** The first sentence of the first paragraph of `text`, by the rule of `briefOf`; null when nothing is left. */
+export function firstSentence(text: string): string | null {
+  const brief = briefOf(text);
+  return brief === null ? null : firstSentences(brief, 1);
+}
+
 const SENTENCE_END = /[.!?]["'»”’)\]]*(?=\s+\p{Lu})/gu;
 
 function firstSentences(text: string, count: number): string {

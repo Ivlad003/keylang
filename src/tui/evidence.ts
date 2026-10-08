@@ -22,6 +22,8 @@ export interface LineEvidence {
   planned: boolean;
   /** The line is an open question (`- ? …`): no claim, a person answers it. */
   question?: true;
+  /** A `parallel` line: no verdict of its own, the mark is the worst of its steps' lines; not counted in the totals. */
+  group?: true;
 }
 
 const RANK: Record<Mark, number> = { fail: 4, unverified: 3, warning: 2, question: 1, planned: 1, ok: 0 };
@@ -108,8 +110,32 @@ function allEvidence(analysis: Analysis): Map<string, Map<number, LineEvidence>>
       item.mark = mark ?? "ok";
     }
   }
+  groupMarks(analysis, byPath);
   cache.set(analysis, byPath);
   return byPath;
+}
+
+/** A `parallel` group (ADR 0023) shows the worst mark of the lines under it, so the gutter reads the group at a glance. */
+function groupMarks(analysis: Analysis, byPath: Map<string, Map<number, LineEvidence>>): void {
+  for (const doc of analysis.docs) {
+    const lines = byPath.get(doc.path);
+    if (!lines) continue;
+    for (const section of doc.sections) {
+      for (const top of sectionNodes(section)) {
+        walk(top, (node) => {
+          const line = node.span.start.line;
+          if (node.kind !== "parallel" || lines.has(line)) return;
+          let mark: Mark | null = null;
+          for (const child of node.children) {
+            walk(child, (inner) => {
+              mark = worse(mark, lines.get(inner.span.start.line)?.mark ?? null);
+            });
+          }
+          if (mark !== null) lines.set(line, { mark, criteria: [], diagnostics: [], planned: false, group: true });
+        });
+      }
+    }
+  }
 }
 
 const EMPTY = new Map<number, LineEvidence>();
@@ -126,6 +152,7 @@ export function totals(analysis: Analysis): { fail: number; unverified: number; 
   const counts = { fail: 0, unverified: 0, ok: 0 };
   for (const lines of allEvidence(analysis).values()) {
     for (const item of lines.values()) {
+      if (item.group) continue;
       if (item.mark === "fail") counts.fail++;
       else if (item.mark === "unverified") counts.unverified++;
       else if (item.mark === "ok") counts.ok++;

@@ -28,6 +28,7 @@ import { analyze, type Analysis } from "../analyze.ts";
 import { checkResults, type CheckResult } from "../check-results.ts";
 import { toPosix } from "../config.ts";
 import { diagramOf, flowListing, parseView, usagesOf, viewsOf, type Diagram, type DiagramNode } from "../diagram.ts";
+import { PROCESSES_FILE, processViews, readProcesses } from "../discover-names.ts";
 import { callsOf, eventsOf, explorerFlow, parseExplorerFlow } from "../explorer.ts";
 import { DISCOVERED_FLOWS_DIR, sourceInputs } from "../map.ts";
 import { runCoverage } from "../operations/coverage.ts";
@@ -267,7 +268,8 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
     const dir = join(options.root, done.config.dir, DISCOVERED_FLOWS_DIR);
     if (!existsSync(dir)) return null;
     const files = readdirSync(dir)
-      .filter((name) => name.endsWith(".md"))
+      // The README of the business processes (`flows discover --names`) is no flow.
+      .filter((name) => name.endsWith(".md") && name !== PROCESSES_FILE)
       .sort()
       .map((name) => join(dir, name));
     const key = files
@@ -375,12 +377,14 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
     const view = path !== "/api/diagram" ? null : parseView(discovered ? new URLSearchParams({ view: "flow", name: query.get("name") ?? "" }) : query);
     if (typeof view === "string") return json(400, { error: discovered ? "view=discovered needs name=" : view });
     const done = await analysis();
+    // The business processes `flows discover --names` saved, with their flows found again in this snapshot.
+    const processes = done.snapshot ? processViews(done.snapshot, done.spec, readProcesses(done.config.root, done.config.dir)) : [];
     if (view === null) {
       const found = discoveredSpec(done);
       const entries = new Map((done.snapshot?.entries ?? []).map((entry) => [entry.id, entry]));
       const events = eventsOf(done.snapshot);
       return json(200, {
-        ...viewsOf(done.snapshot, done.spec),
+        ...viewsOf(done.snapshot, done.spec, processes),
         root: options.root,
         events: events.events,
         ...(events.reason ? { eventsReason: events.reason } : {}),
@@ -396,7 +400,7 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
       return json(200, found ? diagramOf({ snapshot: done.snapshot, spec: found, results: [], view }) : { nodes: [], edges: [], groups: [], reason: "no discovered flows: run `keylang flows discover`" });
     }
     const results = checkResults(done.verdicts, done.snapshot?.snapshotId ?? null, done.diagnostics);
-    return json(200, withResults(diagramOf({ snapshot: done.snapshot, spec: done.spec, results, view }), results));
+    return json(200, withResults(diagramOf({ snapshot: done.snapshot, spec: done.spec, results, view, processes }), results));
   };
 
   const serve = (request: IncomingMessage, response: ServerResponse): void => {

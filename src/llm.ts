@@ -137,11 +137,16 @@ export function answeringAgent(client: LlmClient, reported: string | null): stri
   return client.model === "" && reported !== null ? `${client.agent}:${reported}` : client.agent;
 }
 
-/** `KEYLANG_LLM_TIMEOUT_MS`, a positive whole number of milliseconds; the reason when it is not one. */
+/** The longest delay a Node timer holds; above it `setTimeout` fires after 1 ms. */
+const MAX_TIMEOUT_MS = 2 ** 31 - 1;
+
+/** `KEYLANG_LLM_TIMEOUT_MS`, a positive whole number of milliseconds a timer can hold; the reason when it is not one. */
 function timeoutMs(env: Env): number | string {
   const raw = env.KEYLANG_LLM_TIMEOUT_MS;
   if (raw === undefined || raw === "") return DEFAULT_TIMEOUT_MS;
-  return /^[1-9]\d*$/.test(raw) ? Number(raw) : `KEYLANG_LLM_TIMEOUT_MS must be a positive number of milliseconds, got \`${raw}\``;
+  if (!/^[1-9]\d*$/.test(raw)) return `KEYLANG_LLM_TIMEOUT_MS must be a positive number of milliseconds, got \`${raw}\``;
+  const ms = Number(raw);
+  return ms <= MAX_TIMEOUT_MS ? ms : `KEYLANG_LLM_TIMEOUT_MS must be at most ${MAX_TIMEOUT_MS} milliseconds (about 24 days), got \`${raw}\``;
 }
 
 /** A call's bound: the variable's, or the call's own when that is tighter; `fromVariable` decides whether the timeout message cites the variable. */

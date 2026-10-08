@@ -235,29 +235,30 @@
     - fn [checkExitCode](../../src/check-results.ts#L116) (counts: CheckCounts, strict: boolean) → 0 | 1
   - module [clone](../../src/clone.ts#L1)
     - node external.node
+    - config base.config
     - git-changes features.git-changes
     - safe-write base.safe-write
-    - type [RepoSource](../../src/clone.ts#L15)
-    - type [CloneExplain](../../src/clone.ts#L25) = "map-only" | "map-and-ai" | "all"
-    - fn [isCloneExplain](../../src/clone.ts#L29) (text: string) → text is CloneExplain
-    - fn [redactUrl](../../src/clone.ts#L41) (text: string) → string
-    - fn [parseRepoSource](../../src/clone.ts#L53) (text: string, cwd: string) → RepoSource | { error: string }
+    - type [RepoSource](../../src/clone.ts#L16)
+    - type [CloneExplain](../../src/clone.ts#L26) = "map-only" | "map-and-ai" | "all"
+    - fn [isCloneExplain](../../src/clone.ts#L30) (text: string) → text is CloneExplain
+    - fn [redactUrl](../../src/clone.ts#L42) (text: string) → string
+    - fn [parseRepoSource](../../src/clone.ts#L54) (text: string, cwd: string) → RepoSource | { error: string }
       - calls features.clone.redactUrl, features.clone.fromUrl, features.clone.placeable, features.clone.keyed
-    - fn [fromUrl](../../src/clone.ts#L69) (source: string) → RepoSource | { error: string } <!-- internal -->
+    - fn [fromUrl](../../src/clone.ts#L70) (source: string) → RepoSource | { error: string } <!-- internal -->
       - calls features.clone.redactUrl, features.clone.parseRepoSource, features.clone.keyed
-    - fn [keyed](../../src/clone.ts#L83) (url: string, host: string, path: string) → RepoSource | { error: string } <!-- internal -->
+    - fn [keyed](../../src/clone.ts#L84) (url: string, host: string, path: string) → RepoSource | { error: string } <!-- internal -->
       - calls features.clone.redactUrl, features.clone.placeable
-    - fn [placeable](../../src/clone.ts#L94) (segment: string) → string | undefined <!-- internal -->
-    - fn [cloneCacheRoot](../../src/clone.ts#L99) (env: Readonly<Record<string, string | undefined>>, home: string) → string
-    - type [CloneSync](../../src/clone.ts#L104)
-    - fn [syncClone](../../src/clone.ts#L117) (source: RepoSource, dir: string) → CloneSync
+    - fn [placeable](../../src/clone.ts#L95) (segment: string) → string | undefined <!-- internal -->
+    - fn [cloneCacheRoot](../../src/clone.ts#L100) (env: Readonly<Record<string, string | undefined>>, home: string) → string
+    - type [CloneSync](../../src/clone.ts#L105)
+    - fn [syncClone](../../src/clone.ts#L118) (source: RepoSource, dir: string) → CloneSync
       - calls features.clone.git, base.safe-write.safeWrite, features.clone.readMarker, features.clone.redactUrl
-    - fn [readMarker](../../src/clone.ts#L142) (dir: string) → { url: string; key: string[] } | undefined <!-- internal -->
-      - calls base.safe-write.targetProblem
-    - fn [git](../../src/clone.ts#L157) (cwd: string, args: string[]) → void <!-- internal -->
+    - fn [readMarker](../../src/clone.ts#L143) (dir: string) → { url: string; key: string[] } | undefined <!-- internal -->
+      - calls base.safe-write.targetProblem, base.config.withoutBom
+    - fn [git](../../src/clone.ts#L158) (cwd: string, args: string[]) → void <!-- internal -->
       - calls features.git-changes.gitUnavailable
-    - fn [enableExplainedMap](../../src/clone.ts#L176) (root: string) → string | null
-      - calls base.safe-write.targetProblem, base.safe-write.safeWrite
+    - fn [enableExplainedMap](../../src/clone.ts#L177) (root: string) → string | null
+      - calls base.safe-write.targetProblem, base.config.withoutBom, base.safe-write.safeWrite
   - module [coverage-report](../../src/coverage-report.ts#L1)
     - node external.node
     - config base.config
@@ -282,24 +283,82 @@
     - fn [percent](../../src/coverage-report.ts#L215) (share: number) → string <!-- internal -->
     - fn [coverageText](../../src/coverage-report.ts#L218) (report: CoverageReport, specDir = "keylang") → string
       - calls features.coverage-report.percent
+  - module [discover-names](../../src/discover-names.ts#L1)
+    - node external.node
+    - config base.config
+    - diagram map.diagram
+    - discover features.discover
+    - explanations map.explanations
+    - graph map.graph
+    - llm features.llm
+    - snapshot map.snapshot
+    - spec-ir lang.spec-ir
+    - span base.span
+    - type [NameMode](../../src/discover-names.ts#L30) = (typeof NAME_MODES)[number]
+    - fn [isNameMode](../../src/discover-names.ts#L32) (value: string) → value is NameMode
+    - type [BusinessProcess](../../src/discover-names.ts#L44)
+    - type [NameGroup](../../src/discover-names.ts#L62)
+    - fn [nameGroups](../../src/discover-names.ts#L68) (flows: readonly DiscoveredFlow[]) → NameGroup[]
+      - calls base.span.compareText
+    - fn [processBaseline](../../src/discover-names.ts#L80) (snapshot: AnalysisSnapshot, flows: readonly Pick<DiscoveredFlow, "name" | "steps">[]) → string
+      - calls base.span.compareText, map.explanations.snapshotBaseline
+    - fn [isStaleProcess](../../src/discover-names.ts#L87) (snapshot: AnalysisSnapshot, byName: ReadonlyMap<string, DiscoveredFlow>, process: BusinessProcess) → boolean
+      - calls features.discover-names.processBaseline
+    - type [NamesPlan](../../src/discover-names.ts#L94)
+    - fn [planNames](../../src/discover-names.ts#L104) (snapshot: AnalysisSnapshot, flows: readonly DiscoveredFlow[], saved: readonly BusinessProcess[], options: { stale: boolean; layer?: string; limit?: number }) → NamesPlan
+      - calls features.discover-names.isStaleProcess, features.discover-names.nameGroups
+    - fn [namesRequest](../../src/discover-names.ts#L123) (snapshot: AnalysisSnapshot, group: NameGroup, options: { lang: string; briefs: ReadonlyMap<string, StoredExplanation> }) → LlmRequest
+      - calls map.explanations.explanationOf
+    - fn [estimateNameTokens](../../src/discover-names.ts#L153) (requests: readonly LlmRequest[]) → { input: number; output: number }
+    - type [AnsweredProcess](../../src/discover-names.ts#L159)
+    - fn [parseNamesAnswer](../../src/discover-names.ts#L168) (snapshot: AnalysisSnapshot, group: NameGroup, answer: string) → { processes: AnsweredProcess[]; dropped: string[]; unknownIds: string[] } | { error: string }
+      - calls features.discover-names.jsonOf, features.discover-names.isRecord, features.discover-names.oneLine, features.discover-names.entities, base.span.compareText, features.discover-names.unknownIdsIn
+    - fn [unknownIdsIn](../../src/discover-names.ts#L207) (snapshot: AnalysisSnapshot, text: string) → string[] <!-- internal -->
+      - calls base.span.compareText
+    - fn [jsonOf](../../src/discover-names.ts#L217) (answer: string) → unknown <!-- internal -->
+    - fn [isRecord](../../src/discover-names.ts#L229) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [oneLine](../../src/discover-names.ts#L234) (value: unknown) → string <!-- internal -->
+    - fn [entities](../../src/discover-names.ts#L239) (value: unknown) → string[] <!-- internal -->
+      - calls features.discover-names.oneLine
+    - fn [flowAnchor](../../src/discover-names.ts#L246) (name: string) → string
+    - fn [domainOrder](../../src/discover-names.ts#L256) (a: string, b: string) → number <!-- internal -->
+      - calls base.span.compareText
+    - fn [renderProcesses](../../src/discover-names.ts#L266) (processes: readonly BusinessProcess[], fileOf: (flow: string) => string | null) → string
+      - calls features.discover-names.domainOrder, base.span.compareText, features.discover.proseLine, features.discover-names.flowAnchor
+    - fn [parseProcesses](../../src/discover-names.ts#L287) (text: string) → BusinessProcess[]
+      - calls features.discover.unproseLine
+    - fn [processesPath](../../src/discover-names.ts#L318) (specDir: string) → string
+      - calls base.config.specPath
+    - fn [readProcesses](../../src/discover-names.ts#L323) (root: string, specDir: string) → BusinessProcess[]
+      - calls features.discover-names.processesPath, features.discover-names.parseProcesses
+    - fn [processViews](../../src/discover-names.ts#L333) (snapshot: AnalysisSnapshot, spec: SpecIR, processes: readonly BusinessProcess[]) → DiagramProcess[]
+      - calls features.discover.discoverFlows, features.discover.specifiedTriggers, features.discover.firstLevelSteps
   - module [discover](../../src/discover.ts#L1)
+    - brief base.brief
     - draft features.draft
     - map map.map
+    - parser lang.parser
     - spec-ir lang.spec-ir
     - snapshot map.snapshot
     - span base.span
-    - type [DiscoverOptions](../../src/discover.ts#L21)
-    - type [DiscoveredFlow](../../src/discover.ts#L33)
-    - type [Discovery](../../src/discover.ts#L49)
-    - fn [specifiedTriggers](../../src/discover.ts#L60) (flows: readonly Flow[]) → Map<string, { file: string; flow: string }>
+    - type [DiscoverOptions](../../src/discover.ts#L23)
+    - type [DiscoveredFlow](../../src/discover.ts#L35)
+    - type [Discovery](../../src/discover.ts#L53)
+    - fn [specifiedTriggers](../../src/discover.ts#L64) (flows: readonly Flow[]) → Map<string, { file: string; flow: string }>
       - calls base.span.compareText
-    - fn [discoverFlows](../../src/discover.ts#L73) (snapshot: AnalysisSnapshot, specified: ReadonlyMap<string, { file: string; flow: string }>, options: DiscoverOptions = {}) → Discovery
-      - calls features.draft.distinctNames, features.draft.draftFlow, features.discover.holesBySource, features.discover.withComment, features.discover.quoted, base.span.compareText
-    - fn [adoptedFlow](../../src/discover.ts#L120) (flow: DiscoveredFlow, specDir: string) → FlowDraft
-    - fn [discoverySummary](../../src/discover.ts#L127) (discovery: Pick<Discovery, "flows" | "specified">) → string
-    - fn [holesBySource](../../src/discover.ts#L133) (snapshot: AnalysisSnapshot) → Map<string, number> <!-- internal -->
-    - fn [withComment](../../src/discover.ts#L143) (text: string, comment: string) → string <!-- internal -->
-    - fn [quoted](../../src/discover.ts#L149) (label: string) → string <!-- internal -->
+    - fn [discoverFlows](../../src/discover.ts#L77) (snapshot: AnalysisSnapshot, specified: ReadonlyMap<string, { file: string; flow: string }>, options: DiscoverOptions = {}) → Discovery
+      - calls features.draft.distinctNames, features.draft.draftFlow, lang.parser.isTriggerKind, features.discover.holesBySource, features.discover.offlineDescription, features.discover.firstLevelSteps, features.discover.withComment, features.discover.quoted, base.span.compareText
+    - fn [adoptedFlow](../../src/discover.ts#L126) (flow: DiscoveredFlow, specDir: string) → FlowDraft
+    - fn [discoverySummary](../../src/discover.ts#L133) (discovery: Pick<Discovery, "flows" | "specified">) → string
+    - fn [holesBySource](../../src/discover.ts#L139) (snapshot: AnalysisSnapshot) → Map<string, number> <!-- internal -->
+    - fn [withComment](../../src/discover.ts#L149) (text: string, comment: string, described: { text: string; ids: string[] } | null = null) → string <!-- internal -->
+      - calls features.discover.proseLine
+    - fn [firstLevelSteps](../../src/discover.ts#L156) (draftText: string) → string[]
+    - fn [offlineDescription](../../src/discover.ts#L170) (snapshot: AnalysisSnapshot, trigger: string, steps: readonly string[]) → { text: string; ids: string[] } | null
+      - calls base.brief.firstSentence
+    - fn [proseLine](../../src/discover.ts#L195) (text: string) → string
+    - fn [unproseLine](../../src/discover.ts#L208) (line: string) → string
+    - fn [quoted](../../src/discover.ts#L218) (label: string) → string <!-- internal -->
   - module [draft-llm](../../src/draft-llm.ts#L1)
     - analyze map.analyze
     - assess check.assess
@@ -347,26 +406,26 @@
     - safe-write base.safe-write
     - snapshot map.snapshot
     - type [FlowDraft](../../src/draft.ts#L14)
-    - fn [draftFlow](../../src/draft.ts#L22) (snapshot: AnalysisSnapshot, trigger: string, options: { name?: string; depth?: number } = {}) → FlowDraft
-    - fn [withFlow](../../src/draft.ts#L67) (existing: string | null, draft: Pick<FlowDraft, "name" | "text">) → string
-      - calls lang.parser.parse, features.draft.nextHeading, base.safe-write.allCrlf
-    - fn [withRules](../../src/draft.ts#L91) (existing: string | null, draftText: string) → string
-      - calls lang.parser.parse, lang.ir.sectionNodes, lang.parser.renderMeaning, features.draft.nextHeading, base.safe-write.allCrlf
-    - fn [nextHeading](../../src/draft.ts#L121) (sections: readonly { heading: { span: { start: { line: number } } } | null }[], index: number) → number | null <!-- internal -->
-    - fn [distinctNames](../../src/draft.ts#L131) (drafts: readonly FlowDraft[]) → FlowDraft[]
-    - fn [draftRules](../../src/draft.ts#L161) (snapshot: AnalysisSnapshot, cyclic: boolean) → string
+    - fn [draftFlow](../../src/draft.ts#L22) (snapshot: AnalysisSnapshot, trigger: string, options: { name?: string; depth?: number; entry?: string } = {}) → FlowDraft
+    - fn [withFlow](../../src/draft.ts#L69) (existing: string | null, draft: Pick<FlowDraft, "name" | "text">) → string
+      - calls lang.parser.parse, features.draft.nextHeading, base.safe-write.keepLineEndings
+    - fn [withRules](../../src/draft.ts#L93) (existing: string | null, draftText: string) → string
+      - calls lang.parser.parse, lang.ir.sectionNodes, lang.parser.renderMeaning, features.draft.nextHeading, base.safe-write.keepLineEndings
+    - fn [nextHeading](../../src/draft.ts#L123) (sections: readonly { heading: { span: { start: { line: number } } } | null }[], index: number) → number | null <!-- internal -->
+    - fn [distinctNames](../../src/draft.ts#L133) (drafts: readonly FlowDraft[]) → FlowDraft[]
+    - fn [draftRules](../../src/draft.ts#L163) (snapshot: AnalysisSnapshot, cyclic: boolean) → string
       - calls features.draft.layerOrder
-    - fn [layerOrder](../../src/draft.ts#L186) (layers: readonly string[], uses: ReadonlyMap<string, ReadonlySet<string>>) → string[] | null <!-- internal -->
-    - fn [codeToSpecTriggers](../../src/draft.ts#L205) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; triggers: string[] }
-    - fn [codeToSpec](../../src/draft.ts#L228) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; drafts: FlowDraft[] }
+    - fn [layerOrder](../../src/draft.ts#L188) (layers: readonly string[], uses: ReadonlyMap<string, ReadonlySet<string>>) → string[] | null <!-- internal -->
+    - fn [codeToSpecTriggers](../../src/draft.ts#L207) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; triggers: string[] }
+    - fn [codeToSpec](../../src/draft.ts#L230) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; drafts: FlowDraft[] }
       - calls features.draft.codeToSpecTriggers, features.draft.draftFlow, features.draft.distinctNames
-    - type [ChangedLines](../../src/draft.ts#L235)
-    - fn [diffHunks](../../src/draft.ts#L241) (diff: string) → Map<string, [number, number][]>
+    - type [ChangedLines](../../src/draft.ts#L237)
+    - fn [diffHunks](../../src/draft.ts#L243) (diff: string) → Map<string, [number, number][]>
       - calls features.draft.gitPath
-    - fn [deletedDiffPaths](../../src/draft.ts#L264) (diff: string) → string[]
+    - fn [deletedDiffPaths](../../src/draft.ts#L266) (diff: string) → string[]
       - calls features.draft.gitPath
-    - fn [gitPath](../../src/draft.ts#L278) (text: string) → string <!-- internal -->
-    - fn [changedFlows](../../src/draft.ts#L306) (snapshot: AnalysisSnapshot, changed: ChangedLines, named: ReadonlySet<string>) → { drafts: FlowDraft[]; named: string[] }
+    - fn [gitPath](../../src/draft.ts#L280) (text: string) → string <!-- internal -->
+    - fn [changedFlows](../../src/draft.ts#L308) (snapshot: AnalysisSnapshot, changed: ChangedLines, named: ReadonlySet<string>) → { drafts: FlowDraft[]; named: string[] }
       - calls features.draft.draftFlow, features.draft.distinctNames
   - module [explain-edge](../../src/explain-edge.ts#L1)
     - snapshot map.snapshot
@@ -436,28 +495,28 @@
     - fn [briefText](../../src/explain-llm.ts#L60) (answer: string) → string
       - calls features.explain-llm.answerText, base.brief.briefOf
     - fn [answerText](../../src/explain-llm.ts#L74) (answer: string) → string
-      - calls features.explain-llm.withoutRemark, features.explain-llm.unfenced
-    - fn [unfenced](../../src/explain-llm.ts#L84) (text: string) → string <!-- internal -->
-    - fn [withoutRemark](../../src/explain-llm.ts#L96) (text: string) → string <!-- internal -->
-    - fn [unknownIds](../../src/explain-llm.ts#L110) (analysis: Analysis, text: string) → string[]
+      - calls features.explain-llm.unfenced, features.explain-llm.withoutRemark
+    - fn [unfenced](../../src/explain-llm.ts#L80) (text: string) → string <!-- internal -->
+    - fn [withoutRemark](../../src/explain-llm.ts#L92) (text: string) → string <!-- internal -->
+    - fn [unknownIds](../../src/explain-llm.ts#L106) (analysis: Analysis, text: string) → string[]
       - calls lang.spec-ir.plannedDeclaration
-    - fn [explanationRequest](../../src/explain-llm.ts#L125) (analysis: Analysis, summary: NodeSummary, options: { lang: string; detail: ExplanationDetail; briefs: ReadonlyMap<string, StoredExplanation> }) → LlmRequest
+    - fn [explanationRequest](../../src/explain-llm.ts#L121) (analysis: Analysis, summary: NodeSummary, options: { lang: string; detail: ExplanationDetail; briefs: ReadonlyMap<string, StoredExplanation> }) → LlmRequest
       - calls features.agent-context.snapshotSource, features.explain-llm.sourceLines, features.explain-node.formatSummary, features.explain-llm.members, features.explain-llm.unresolved
-    - fn [unresolved](../../src/explain-llm.ts#L179) (analysis: Analysis, id: string) → string[] <!-- internal -->
+    - fn [unresolved](../../src/explain-llm.ts#L175) (analysis: Analysis, id: string) → string[] <!-- internal -->
       - calls map.snapshot.leavesUnresolved
-    - fn [members](../../src/explain-llm.ts#L198) (analysis: Analysis, id: string, briefs: ReadonlyMap<string, StoredExplanation>) → string[] <!-- internal -->
+    - fn [members](../../src/explain-llm.ts#L194) (analysis: Analysis, id: string, briefs: ReadonlyMap<string, StoredExplanation>) → string[] <!-- internal -->
       - calls map.explanations.explanationOf
-    - fn [sourceLines](../../src/explain-llm.ts#L214) (text: string, from: number, to: number) → string <!-- internal -->
-    - type [BriefBatch](../../src/explain-llm.ts#L221) = "missing" | "stale"
-    - type [BriefLevel](../../src/explain-llm.ts#L224) = "fn/type" | "class/module" | "layer" | "system"
-    - type [PlannedBrief](../../src/explain-llm.ts#L226)
-    - fn [planBriefs](../../src/explain-llm.ts#L240) (analysis: Analysis, batch: BriefBatch, briefs: ReadonlyMap<string, StoredExplanation>) → PlannedBrief[]
+    - fn [sourceLines](../../src/explain-llm.ts#L210) (text: string, from: number, to: number) → string <!-- internal -->
+    - type [BriefBatch](../../src/explain-llm.ts#L217) = "missing" | "stale"
+    - type [BriefLevel](../../src/explain-llm.ts#L220) = "fn/type" | "class/module" | "layer" | "system"
+    - type [PlannedBrief](../../src/explain-llm.ts#L222)
+    - fn [planBriefs](../../src/explain-llm.ts#L236) (analysis: Analysis, batch: BriefBatch, briefs: ReadonlyMap<string, StoredExplanation>) → PlannedBrief[]
       - calls map.explanations.snapshotBaseline, map.explanations.systemBaseline, base.span.compareText
-    - fn [systemRequest](../../src/explain-llm.ts#L270) (analysis: Analysis, options: { lang: string; briefs: ReadonlyMap<string, StoredExplanation> }) → LlmRequest
+    - fn [systemRequest](../../src/explain-llm.ts#L266) (analysis: Analysis, options: { lang: string; briefs: ReadonlyMap<string, StoredExplanation> }) → LlmRequest
       - calls map.explanations.ownLayers, map.explanations.explanationOf
-    - fn [estimateTokens](../../src/explain-llm.ts#L295) (analysis: Analysis, plan: readonly PlannedBrief[], briefs: ReadonlyMap<string, StoredExplanation>) → { input: number; output: number }
+    - fn [estimateTokens](../../src/explain-llm.ts#L291) (analysis: Analysis, plan: readonly PlannedBrief[], briefs: ReadonlyMap<string, StoredExplanation>) → { input: number; output: number }
       - calls features.explain-llm.briefRequest
-    - fn [briefRequest](../../src/explain-llm.ts#L305) (analysis: Analysis, id: string, lang: string, briefs: ReadonlyMap<string, StoredExplanation>) → LlmRequest | null
+    - fn [briefRequest](../../src/explain-llm.ts#L301) (analysis: Analysis, id: string, lang: string, briefs: ReadonlyMap<string, StoredExplanation>) → LlmRequest | null
       - calls features.explain-llm.systemRequest, features.explain-node.summarizeNode, features.explain-llm.explanationRequest
   - module [explain-node](../../src/explain-node.ts#L1)
     - analyze map.analyze
@@ -505,7 +564,7 @@
       - calls lang.spec-ir.plannedDeclaration
   - module [explain](../../src/explain.ts#L1)
     - diag base.diag
-    - fn [explainCode](../../src/explain.ts#L115) (code: string) → string | null
+    - fn [explainCode](../../src/explain.ts#L130) (code: string) → string | null
   - module [feature-status](../../src/feature-status.ts#L1)
     - assess check.assess
     - changed features.changed
@@ -739,17 +798,17 @@
     - fn [llmClient](../../src/llm.ts#L87) (configAgent: string | null, options: LlmClientOptions) → LlmSetup
       - calls features.agent-cli.resolveAgent, features.llm.timeoutMs, base.config.isCliAgent, features.agent-cli.cliClient, features.llm.deadline, features.llm.LlmCancelled, features.keys.readKey, features.llm.anthropicComplete, features.llm.openrouterComplete
     - fn [answeringAgent](../../src/llm.ts#L136) (client: LlmClient, reported: string | null) → string
-    - fn [timeoutMs](../../src/llm.ts#L141) (env: Env) → number | string <!-- internal -->
-    - type [Deadline](../../src/llm.ts#L148) <!-- internal -->
-    - fn [deadline](../../src/llm.ts#L153) (variable: number, own: number | undefined) → Deadline <!-- internal -->
-    - fn [timeoutMessage](../../src/llm.ts#L157) (provider: string, bound: Deadline) → string <!-- internal -->
-    - fn [truncatedMessage](../../src/llm.ts#L162) (model: string, reason: "max_tokens" | "length") → string <!-- internal -->
-    - fn [callSignal](../../src/llm.ts#L171) (timeout: number, outer: AbortSignal | undefined) → { signal: AbortSignal; timedOut: () => boolean; cancelled: () => boolean; dispose: () => void } <!-- internal -->
-    - fn [anthropicComplete](../../src/llm.ts#L195) (client: Anthropic, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal) → Promise<string> <!-- internal -->
+    - fn [timeoutMs](../../src/llm.ts#L144) (env: Env) → number | string <!-- internal -->
+    - type [Deadline](../../src/llm.ts#L153) <!-- internal -->
+    - fn [deadline](../../src/llm.ts#L158) (variable: number, own: number | undefined) → Deadline <!-- internal -->
+    - fn [timeoutMessage](../../src/llm.ts#L162) (provider: string, bound: Deadline) → string <!-- internal -->
+    - fn [truncatedMessage](../../src/llm.ts#L167) (model: string, reason: "max_tokens" | "length") → string <!-- internal -->
+    - fn [callSignal](../../src/llm.ts#L176) (timeout: number, outer: AbortSignal | undefined) → { signal: AbortSignal; timedOut: () => boolean; cancelled: () => boolean; dispose: () => void } <!-- internal -->
+    - fn [anthropicComplete](../../src/llm.ts#L200) (client: Anthropic, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal) → Promise<string> <!-- internal -->
       - calls features.llm.callSignal, features.llm.LlmCancelled, features.llm.timeoutMessage, features.llm.truncatedMessage
-    - fn [openrouterComplete](../../src/llm.ts#L231) (base: string, key: string, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal) → Promise<string> <!-- internal -->
+    - fn [openrouterComplete](../../src/llm.ts#L236) (base: string, key: string, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal) → Promise<string> <!-- internal -->
       - calls features.llm.callSignal, features.llm.parseJson, features.llm.truncatedMessage, features.llm.LlmCancelled, features.llm.timeoutMessage
-    - fn [parseJson](../../src/llm.ts#L293) (text: string) → unknown <!-- internal -->
+    - fn [parseJson](../../src/llm.ts#L298) (text: string) → unknown <!-- internal -->
   - module [lsp-features](../../src/lsp-features.ts#L1)
     - node external.node
     - analyze map.analyze
@@ -838,16 +897,16 @@
       - calls features.lsp-features.docOf, features.lsp-features.flowPhrases, lang.ir.walk, features.lsp-features.statusOf, lang.ir.sectionNodes, features.lsp-features.fromPos, features.lsp-features.fromSpan
     - type [CompletionItem](../../src/lsp-features.ts#L598)
     - fn [completions](../../src/lsp-features.ts#L625) (ws: Workspace, path: string, position: LspPosition) → CompletionItem[]
-      - calls features.lsp-features.docOf, features.lsp-features.enclosing, features.lsp-features.sectionAt, lang.parser.keywordsAt, features.lsp-features.moduleAround, check.rules.dependencyKindOf, check.rules.blocksDependency
-    - fn [sectionAt](../../src/lsp-features.ts#L673) (doc: Document, line: number) → Section | undefined <!-- internal -->
-    - fn [enclosing](../../src/lsp-features.ts#L683) (doc: Document, line: number, col: number) → Node | undefined <!-- internal -->
+      - calls features.lsp-features.docOf, features.lsp-features.enclosing, features.lsp-features.sectionAt, lang.parser.keywordsAt, lang.parser.isTriggerKind, features.lsp-features.moduleAround, check.rules.dependencyKindOf, check.rules.blocksDependency
+    - fn [sectionAt](../../src/lsp-features.ts#L695) (doc: Document, line: number) → Section | undefined <!-- internal -->
+    - fn [enclosing](../../src/lsp-features.ts#L705) (doc: Document, line: number, col: number) → Node | undefined <!-- internal -->
       - calls features.lsp-features.nodesOf
-    - fn [ancestors](../../src/lsp-features.ts#L692) (doc: Document, node: Node) → Node[] <!-- internal -->
+    - fn [ancestors](../../src/lsp-features.ts#L714) (doc: Document, node: Node) → Node[] <!-- internal -->
       - calls features.lsp-features.nodesOf
-    - fn [moduleAround](../../src/lsp-features.ts#L705) (ws: Workspace, doc: Document, parent: Node | undefined) → string | null <!-- internal -->
+    - fn [moduleAround](../../src/lsp-features.ts#L727) (ws: Workspace, doc: Document, parent: Node | undefined) → string | null <!-- internal -->
       - calls features.lsp-features.ancestors
-    - type [CodeLens](../../src/lsp-features.ts#L720) <!-- internal -->
-    - fn [codeLenses](../../src/lsp-features.ts#L726) (ws: Workspace, path: string) → CodeLens[]
+    - type [CodeLens](../../src/lsp-features.ts#L742) <!-- internal -->
+    - fn [codeLenses](../../src/lsp-features.ts#L748) (ws: Workspace, path: string) → CodeLens[]
       - calls lang.spec-ir.flowsUsing, features.lsp-features.lspPoint
   - module [node-search](../../src/node-search.ts#L1)
     - analyze map.analyze
@@ -950,7 +1009,7 @@
     - type [FileCandidate](../../src/spec-to-code.ts#L27)
     - type [CodeCandidate](../../src/spec-to-code.ts#L35) extends FileCandidate
     - fn [specToCode](../../src/spec-to-code.ts#L55) (analysis: Analysis, id: string, into?: string, model?: LlmClient, options: LlmCallOptions = {}) → Promise<CodeCandidate>
-      - calls features.spec-to-code.plannedCodeTarget, lang.files.existingText, features.spec-to-code.modelBody, features.spec-to-code.stubFor, features.spec-to-code.placeStub, features.spec-to-code.phpFileHead, base.safe-write.allCrlf, map.analyze.analyze, features.spec-to-code.introduced, features.spec-to-code.testCandidates
+      - calls features.spec-to-code.plannedCodeTarget, lang.files.existingText, features.spec-to-code.modelBody, features.spec-to-code.stubFor, features.spec-to-code.placeStub, features.spec-to-code.phpFileHead, base.safe-write.keepLineEndings, map.analyze.analyze, features.spec-to-code.introduced, features.spec-to-code.testCandidates
     - type [CodeTarget](../../src/spec-to-code.ts#L74)
     - fn [plannedCodeTarget](../../src/spec-to-code.ts#L98) (analysis: Analysis, id: string, into?: string) → CodeTarget | { error: string; field: "id" | "into" }
       - calls lang.spec-ir.plannedDeclaration, features.spec-to-code.callersInFlows, check.rules.blocksDependency, check.rules.dependencyKindOf, features.spec-to-code.placeCode, features.spec-to-code.parentId, base.diag.errorText, map.graph.placeFile, features.proposals.codeProposalProblem

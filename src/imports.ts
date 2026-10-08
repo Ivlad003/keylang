@@ -23,10 +23,11 @@
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { posix } from "node:path";
-import { toPosix } from "./config.ts";
+import { toPosix, withoutBom } from "./config.ts";
 import { isNodeBuiltin } from "./extract/ts.ts";
 import { languageOf } from "./languages.ts";
 import { exactExistence, nodeFs, type ExactFs } from "./exact-path.ts";
+import { globToRegExp } from "./glob.ts";
 
 export type Resolution =
   /** `workspace`: the package that names the file, when a workspace package resolved it. */
@@ -303,24 +304,25 @@ export class ImportResolver {
     return found;
   }
 
-  /** Directories the workspace globs name (`packages/*`, `apps/web`): root `workspaces` and pnpm `packages`. */
+  /**
+   * Directories the workspace globs name (`packages/*`, `packages/**`,
+   * `apps/web`): root `workspaces` and pnpm `packages`, less what a
+   * `!pattern` takes out. Each listing is an input of the snapshot id.
+   */
   private workspaceDirs(): string[] {
     const dirs: string[] = [];
     for (const pattern of this.workspaces) {
-      const clean = posix.normalize(toPosix(pattern)).replace(/\/$/, "");
-      if (clean.startsWith("../") || clean.startsWith("/")) continue;
-      if (!clean.endsWith("/*")) {
-        if (!clean.includes("*")) dirs.push(clean);
+      const glob = pattern.startsWith("!") ? null : workspaceGlob(pattern);
+      if (glob === null) continue;
+      if (!isGlob(glob)) {
+        dirs.push(glob);
         continue;
       }
-      const base = clean.slice(0, -2);
-      if (base.includes("*")) continue;
-      const abs = join(this.root, base);
-      const entries = existsSync(abs) ? readdirSync(abs, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => `${base}/${e.name}`).sort() : [];
-      this.inputs.set(`${base}/*`, entries.join("\n"));
-      dirs.push(...entries);
+      const listing = listWorkspaceGlob(this.root, glob);
+      this.inputs.set(glob, listing);
+      if (listing !== "") dirs.push(...listing.split("\n"));
     }
-    return dirs;
+    return withoutNegated(dirs, this.workspaces);
   }
 
   /**
@@ -563,7 +565,7 @@ function probeCandidates(candidate: string): string[] {
 type Located = { kind: "workspace"; dir: string } | { kind: "installed" } | null;
 
 /** `abs` (after links) as a POSIX path under `root`, outside any `node_modules`; null otherwise. */
-function inside(root: string, abs: string): string | null {
+export function inside(root: string, abs: string): string | null {
   let real: string;
   let base: string;
   try {
@@ -594,6 +596,62 @@ function dependencies(manifest: unknown): Map<string, string | null> {
     for (const [name, range] of Object.entries(deps)) if (!out.has(name)) out.set(name, typeof range === "string" ? range : null);
   }
   return out;
+}
+
+/** A workspace pattern (`packages/*`, `./apps/web/`) as a root-relative POSIX glob; null when it leaves the root. */
+export function workspaceGlob(pattern: string): string | null {
+  const clean = posix.normalize(toPosix(pattern)).replace(/\/$/, "");
+  return clean === ".." || clean.startsWith("../") || clean.startsWith("/") ? null : clean;
+}
+
+/** Whether a workspace glob has a wildcard, so names its directories through a listing. */
+export function isGlob(glob: string): boolean {
+  return /[*?{]/.test(glob);
+}
+
+/**
+ * The directories a workspace glob names, root-relative, sorted and joined by
+ * newlines: `base/*` lists every subdirectory of `base`, as before; any other
+ * glob (`packages/**`, `packages/{libs,tools}/*`) walks the directories under
+ * its fixed prefix, never into `node_modules` or a dot directory. The text is
+ * the input the snapshot id covers, under the glob as its key.
+ */
+export function listWorkspaceGlob(root: string, glob: string): string {
+  const segments = glob.split("/");
+  const fixed = segments.findIndex((segment) => isGlob(segment));
+  const base = segments.slice(0, fixed).join("/");
+  const subdirs = (rel: string): string[] => {
+    const abs = join(root, rel);
+    try {
+      return readdirSync(abs, { withFileTypes: true })
+        .filter((e) => e.isDirectory() && e.name !== "node_modules" && !e.name.startsWith("."))
+        .map((e) => (rel === "" ? e.name : `${rel}/${e.name}`));
+    } catch {
+      return [];
+    }
+  };
+  if (fixed === segments.length - 1 && segments[fixed] === "*") return subdirs(base).sort().join("\n");
+  const pattern = globToRegExp(glob);
+  const out: string[] = [];
+  const deep = segments.slice(fixed).includes("**") || glob.includes("{");
+  const depth = segments.length - fixed;
+  const walk = (rel: string, level: number): void => {
+    for (const dir of subdirs(rel)) {
+      if (pattern.test(dir)) out.push(dir);
+      if (deep || level + 1 < depth) walk(dir, level + 1);
+    }
+  };
+  walk(base, 0);
+  return out.sort().join("\n");
+}
+
+/** `dirs` without those a `!pattern` of `patterns` names (npm `workspaces` negation). */
+export function withoutNegated(dirs: readonly string[], patterns: readonly unknown[]): string[] {
+  const negated = patterns.flatMap((pattern) => {
+    const glob = typeof pattern === "string" && pattern.startsWith("!") ? workspaceGlob(pattern.slice(1)) : null;
+    return glob === null ? [] : [globToRegExp(glob)];
+  });
+  return negated.length === 0 ? [...dirs] : dirs.filter((dir) => !negated.some((re) => re.test(dir)));
 }
 
 /**
@@ -699,8 +757,9 @@ function readText(path: string): string | null {
   }
 }
 
-/** Remove comments and trailing commas outside of strings. */
-function stripJsonc(text: string): string {
+/** Remove a leading BOM, and comments and trailing commas outside of strings. */
+function stripJsonc(source: string): string {
+  const text = withoutBom(source);
   let out = "";
   for (let i = 0; i < text.length; i++) {
     const c = text[i]!;

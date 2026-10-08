@@ -206,7 +206,7 @@ function k106(world: World, format: 1 | 2): string[] {
       }
       if (best === null) continue;
       const { src, tgt, allowScore, denyScore } = best;
-      if (ruleset.some((rule) => rule.a === src && rule.b.length === 1 && rule.b[0] === tgt)) continue;
+      if (ruleset.some((rule) => rule.a === src && rule.b.includes(tgt))) continue;
       const where = `${deny.file}:${deny.line}`;
       const add = `add \`allow ${src} ${tgt}\` or \`deny ${src} ${tgt}\``;
       const message =

@@ -19,6 +19,8 @@ export type SnapshotInput = NonNullable<Parameters<typeof evaluateRules>[2]> & {
   nodes: FlowInput["nodes"];
   edges: FlowInput["edges"];
   exports: WiringView["exports"];
+  /** Entry points (`keylang entries`); absent from a snapshot written before them. */
+  entries?: FlowInput["entries"];
   /** The configured layers, which exist before any module is in them. */
   manifest?: { config: { layers: Record<string, unknown> } };
 };
@@ -66,6 +68,7 @@ export function assess(
           nodes: snapshot.nodes,
           edges: snapshot.edges,
           coverage: snapshot.coverage,
+          ...(snapshot.entries ? { entries: snapshot.entries } : {}),
           tests: evidence.tests,
           traces: evidence.traces,
           ...(evidence.static ? { static: evidence.static } : {}),

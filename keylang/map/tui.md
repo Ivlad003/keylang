@@ -802,16 +802,18 @@
     - ir lang.ir
     - type [Mark](../../src/tui/evidence.ts#L11)
     - type [LineEvidence](../../src/tui/evidence.ts#L16)
-    - fn [worse](../../src/tui/evidence.ts#L29) (a: Mark | null, b: Mark | null) → Mark | null
-    - fn [linesOf](../../src/tui/evidence.ts#L35) (doc: Document, kind: "planned" | "question") → Set<number> <!-- internal -->
+    - fn [worse](../../src/tui/evidence.ts#L31) (a: Mark | null, b: Mark | null) → Mark | null
+    - fn [linesOf](../../src/tui/evidence.ts#L37) (doc: Document, kind: "planned" | "question") → Set<number> <!-- internal -->
       - calls lang.ir.sectionNodes, lang.ir.walk
-    - fn [pendingPlanned](../../src/tui/evidence.ts#L48) (analysis: Analysis) → Set<string> <!-- internal -->
+    - fn [pendingPlanned](../../src/tui/evidence.ts#L50) (analysis: Analysis) → Set<string> <!-- internal -->
       - calls lang.ir.sectionNodes, lang.ir.walk
-    - fn [allEvidence](../../src/tui/evidence.ts#L66) (analysis: Analysis) → Map<string, Map<number, LineEvidence>> <!-- internal -->
-      - calls tui.evidence.pendingPlanned, tui.evidence.linesOf, tui.evidence.worse
-    - fn [evidenceOf](../../src/tui/evidence.ts#L118) (analysis: Analysis, path: string) → Map<number, LineEvidence>
+    - fn [allEvidence](../../src/tui/evidence.ts#L68) (analysis: Analysis) → Map<string, Map<number, LineEvidence>> <!-- internal -->
+      - calls tui.evidence.pendingPlanned, tui.evidence.linesOf, tui.evidence.worse, tui.evidence.groupMarks
+    - fn [groupMarks](../../src/tui/evidence.ts#L119) (analysis: Analysis, byPath: Map<string, Map<number, LineEvidence>>) → void <!-- internal -->
+      - calls lang.ir.sectionNodes, lang.ir.walk, tui.evidence.worse
+    - fn [evidenceOf](../../src/tui/evidence.ts#L144) (analysis: Analysis, path: string) → Map<number, LineEvidence>
       - calls tui.evidence.allEvidence
-    - fn [totals](../../src/tui/evidence.ts#L125) (analysis: Analysis) → { fail: number; unverified: number; ok: number }
+    - fn [totals](../../src/tui/evidence.ts#L151) (analysis: Analysis) → { fail: number; unverified: number; ok: number }
       - calls tui.evidence.allEvidence
   - module [findings](../../src/tui/findings.ts#L1)
     - analyze map.analyze
@@ -1172,48 +1174,49 @@
     - span base.span
     - stats features.stats
     - buffer tui.buffer
+    - safe-write base.safe-write
     - disk tui.disk
     - input tui.input
     - merge tui.merge
     - state tui.state
-    - type [MergeHost](../../src/tui/merge-session.ts#L24)
-    - type [ProposalEntry](../../src/tui/merge-session.ts#L39)
-    - module [MergeSession](../../src/tui/merge-session.ts#L52)
-      - fn [constructor](../../src/tui/merge-session.ts#L55) (host: MergeHost)
-      - fn [state](../../src/tui/merge-session.ts#L59) () → State <!-- internal -->
-      - fn [scan](../../src/tui/merge-session.ts#L66) () → string[]
+    - type [MergeHost](../../src/tui/merge-session.ts#L25)
+    - type [ProposalEntry](../../src/tui/merge-session.ts#L40)
+    - module [MergeSession](../../src/tui/merge-session.ts#L53)
+      - fn [constructor](../../src/tui/merge-session.ts#L56) (host: MergeHost)
+      - fn [state](../../src/tui/merge-session.ts#L60) () → State <!-- internal -->
+      - fn [scan](../../src/tui/merge-session.ts#L67) () → string[]
         - calls tui.merge-session.MergeSession.files, tui.merge-session.MergeSession.problem
-      - fn [files](../../src/tui/merge-session.ts#L70) () → string[] <!-- internal -->
+      - fn [files](../../src/tui/merge-session.ts#L71) () → string[] <!-- internal -->
         - calls base.config.toPosix, base.span.compareText
-      - fn [entries](../../src/tui/merge-session.ts#L89) () → ProposalEntry[]
+      - fn [entries](../../src/tui/merge-session.ts#L90) () → ProposalEntry[]
         - calls base.config.toPosix, tui.merge-session.proposalKind, tui.merge-session.MergeSession.files, tui.merge-session.MergeSession.entry, base.span.compareText
-      - fn [entry](../../src/tui/merge-session.ts#L105) (path: string) → ProposalEntry <!-- internal -->
-        - calls tui.merge-session.proposalKind, tui.merge-session.MergeSession.problem, tui.disk.readText, tui.merge-session.MergeSession.proposalAbs, tui.merge.diffLines, tui.disk.splitEol, tui.disk.lf, tui.buffer.isDirty
-      - fn [specDir](../../src/tui/merge-session.ts#L120) () → string
+      - fn [entry](../../src/tui/merge-session.ts#L106) (path: string) → ProposalEntry <!-- internal -->
+        - calls tui.merge-session.proposalKind, tui.merge-session.MergeSession.problem, tui.disk.readText, tui.merge-session.MergeSession.proposalAbs, tui.merge.diffLines, tui.disk.lf, tui.buffer.isDirty
+      - fn [specDir](../../src/tui/merge-session.ts#L121) () → string
         - calls base.config.loadConfig, base.config.toPosix
-      - fn [problem](../../src/tui/merge-session.ts#L136) (path: string) → string | null
+      - fn [problem](../../src/tui/merge-session.ts#L137) (path: string) → string | null
         - calls features.proposals.codeProposalProblem, features.proposals.proposalProblem, tui.merge-session.MergeSession.specDir, tui.merge-session.errorText
-      - fn [boundary](../../src/tui/merge-session.ts#L146) (code: boolean) → string <!-- internal -->
+      - fn [boundary](../../src/tui/merge-session.ts#L147) (code: boolean) → string <!-- internal -->
         - calls tui.merge-session.MergeSession.specDir
-      - fn [proposalAbs](../../src/tui/merge-session.ts#L150) (path: string) → string <!-- internal -->
-      - fn [open](../../src/tui/merge-session.ts#L161) (wanted?: string) → void
-        - calls tui.merge-session.MergeSession.scan, tui.merge-session.MergeSession.files, tui.merge-session.MergeSession.problem, tui.disk.readText, tui.merge-session.MergeSession.proposalAbs, tui.merge-session.MergeSession.start, tui.disk.splitEol, tui.disk.lf, tui.buffer.isDirty
-      - fn [start](../../src/tui/merge-session.ts#L203) (path: string, origin: MergeState["origin"], base: string[], proposed: string[], disk: string | null, proposal: string | null) → void
+      - fn [proposalAbs](../../src/tui/merge-session.ts#L151) (path: string) → string <!-- internal -->
+      - fn [open](../../src/tui/merge-session.ts#L162) (wanted?: string) → void
+        - calls tui.merge-session.MergeSession.scan, tui.merge-session.MergeSession.files, tui.merge-session.MergeSession.problem, tui.disk.readText, tui.merge-session.MergeSession.proposalAbs, tui.merge-session.MergeSession.start, tui.disk.lf, tui.buffer.isDirty
+      - fn [start](../../src/tui/merge-session.ts#L204) (path: string, origin: MergeState["origin"], base: string[], proposed: string[], disk: string | null, proposal: string | null) → void
         - calls tui.merge.diffLines, tui.merge-session.MergeSession.dropProposal, tui.merge-session.MergeSession.scan
-      - fn [dropProposal](../../src/tui/merge-session.ts#L222) (path: string, text: string) → void <!-- internal -->
+      - fn [dropProposal](../../src/tui/merge-session.ts#L223) (path: string, text: string) → void <!-- internal -->
         - calls tui.merge-session.MergeSession.proposalAbs, tui.disk.readText, tui.disk.removeInside
-      - fn [key](../../src/tui/merge-session.ts#L233) (event: KeyEvent) → void
+      - fn [key](../../src/tui/merge-session.ts#L234) (event: KeyEvent) → void
         - calls tui.merge-session.MergeSession.write, tui.merge-session.MergeSession.leave
-      - fn [leave](../../src/tui/merge-session.ts#L288) (merge: MergeState, message: string) → void <!-- internal -->
+      - fn [leave](../../src/tui/merge-session.ts#L289) (merge: MergeState, message: string) → void <!-- internal -->
         - calls tui.merge-session.MergeSession.scan
-      - fn [write](../../src/tui/merge-session.ts#L307) () → void <!-- internal -->
-        - calls tui.merge-session.MergeSession.writeBuffer, tui.disk.readText, tui.merge-session.MergeSession.leave, tui.buffer.isDirty, tui.merge-session.MergeSession.proposalAbs, tui.merge.applyHunks, tui.disk.splitEol, tui.disk.withEol, tui.disk.writeInside, tui.merge-session.MergeSession.boundary, tui.buffer.setText, tui.disk.removeInside, tui.merge-session.errorText, tui.merge-session.MergeSession.scan, features.stats.updateStats, features.stats.addDrafts, features.stats.statusesIn
-      - fn [writeBuffer](../../src/tui/merge-session.ts#L377) (merge: MergeState) → void <!-- internal -->
+      - fn [write](../../src/tui/merge-session.ts#L308) () → void <!-- internal -->
+        - calls tui.merge-session.MergeSession.writeBuffer, tui.disk.readText, tui.merge-session.MergeSession.leave, tui.buffer.isDirty, tui.merge-session.MergeSession.proposalAbs, tui.merge.applyHunks, tui.disk.splitEol, tui.disk.withEol, base.safe-write.keepLineEndings, tui.disk.writeInside, tui.merge-session.MergeSession.boundary, tui.buffer.setText, tui.disk.removeInside, tui.merge-session.errorText, tui.merge-session.MergeSession.scan, features.stats.updateStats, features.stats.addDrafts, features.stats.statusesIn
+      - fn [writeBuffer](../../src/tui/merge-session.ts#L380) (merge: MergeState) → void <!-- internal -->
         - calls tui.merge-session.MergeSession.leave, tui.merge.applyHunks, tui.buffer.setText
-      - fn [undo](../../src/tui/merge-session.ts#L396) () → void
+      - fn [undo](../../src/tui/merge-session.ts#L399) () → void
         - calls tui.disk.readText, tui.merge-session.MergeSession.boundary, tui.disk.removeInside, tui.disk.writeInside, tui.buffer.setText, tui.merge-session.MergeSession.scan
-    - fn [proposalKind](../../src/tui/merge-session.ts#L436) (path: string) → ProposalEntry["kind"] <!-- internal -->
-    - fn [errorText](../../src/tui/merge-session.ts#L440) (error: unknown) → string
+    - fn [proposalKind](../../src/tui/merge-session.ts#L439) (path: string) → ProposalEntry["kind"] <!-- internal -->
+    - fn [errorText](../../src/tui/merge-session.ts#L443) (error: unknown) → string
   - module [merge](../../src/tui/merge.ts#L1)
     - type [Hunk](../../src/tui/merge.ts#L5)
     - type [Decision](../../src/tui/merge.ts#L13) = "pending" | "accepted" | "rejected"
@@ -1735,44 +1738,45 @@
     - check-results features.check-results
     - config base.config
     - diagram map.diagram
+    - discover-names features.discover-names
     - map map.map
     - parser lang.parser
     - spec-ir lang.spec-ir
     - app tui.app
     - background tui.background
     - screen tui.screen
-    - type [AssetName](../../src/tui/web.ts#L54) = keyof typeof ASSETS <!-- internal -->
-    - type [BuiltName](../../src/tui/web.ts#L62) = keyof typeof BUILT <!-- internal -->
-    - fn [newestUnder](../../src/tui/web.ts#L71) (dir: string) → number <!-- internal -->
-    - fn [clientStale](../../src/tui/web.ts#L80) () → boolean <!-- internal -->
+    - type [AssetName](../../src/tui/web.ts#L55) = keyof typeof ASSETS <!-- internal -->
+    - type [BuiltName](../../src/tui/web.ts#L63) = keyof typeof BUILT <!-- internal -->
+    - fn [newestUnder](../../src/tui/web.ts#L72) (dir: string) → number <!-- internal -->
+    - fn [clientStale](../../src/tui/web.ts#L81) () → boolean <!-- internal -->
       - calls tui.web.newestUnder
-    - fn [ensureClient](../../src/tui/web.ts#L91) () → Promise<void> <!-- internal -->
+    - fn [ensureClient](../../src/tui/web.ts#L92) () → Promise<void> <!-- internal -->
       - calls tui.web.clientStale
-    - fn [assetPath](../../src/tui/web.ts#L104) (name: AssetName) → string | null
-    - type [WebServer](../../src/tui/web.ts#L118)
-    - type [Session](../../src/tui/web.ts#L130) <!-- internal -->
-    - fn [control](../../src/tui/web.ts#L139) (message: object) → string <!-- internal -->
-    - module [AudioQueue](../../src/tui/web.ts#L147) <!-- internal -->
-      - fn [push](../../src/tui/web.ts#L154) (chunk: Int16Array) → void
+    - fn [assetPath](../../src/tui/web.ts#L105) (name: AssetName) → string | null
+    - type [WebServer](../../src/tui/web.ts#L119)
+    - type [Session](../../src/tui/web.ts#L131) <!-- internal -->
+    - fn [control](../../src/tui/web.ts#L140) (message: object) → string <!-- internal -->
+    - module [AudioQueue](../../src/tui/web.ts#L148) <!-- internal -->
+      - fn [push](../../src/tui/web.ts#L155) (chunk: Int16Array) → void
         - calls tui.web.AudioQueue.wake
-      - fn [end](../../src/tui/web.ts#L161) (failure: Error | null = null) → void
+      - fn [end](../../src/tui/web.ts#L162) (failure: Error | null = null) → void
         - calls tui.web.AudioQueue.wake
-      - fn [wake](../../src/tui/web.ts#L167) () → void <!-- internal -->
-      - fn [chunks](../../src/tui/web.ts#L174) () → AsyncGenerator<Int16Array>
-    - fn [pcmOf](../../src/tui/web.ts#L189) (data: unknown) → Int16Array | null <!-- internal -->
-    - fn [clampSize](../../src/tui/web.ts#L199) (value: unknown, fallback: number, max: number) → number
-    - fn [sameSecret](../../src/tui/web.ts#L204) (given: string | null | undefined, token: string) → boolean <!-- internal -->
-    - fn [offeredToken](../../src/tui/web.ts#L212) (request: IncomingMessage) → string | null <!-- internal -->
-    - type [WebOptions](../../src/tui/web.ts#L220)
-    - fn [serveWeb](../../src/tui/web.ts#L231) (options: WebOptions) → Promise<WebServer>
-      - calls tui.background.SnapshotWorker, map.analyze.analyze, tui.web.sameSecret, tui.web.offeredToken, lang.parser.parse, base.config.toPosix, lang.spec-ir.compileSpec, tui.web.bearerToken, map.diagram.usagesOf, map.diagram.parseView, map.diagram.viewsOf, map.diagram.flowListing, map.diagram.diagramOf, features.check-results.checkResults, tui.web.withResults, tui.web.ensureClient, tui.web.assetPath, tui.web.diagramsPage, tui.web.page, tui.web.reply, tui.web.pathOf, tui.web.clampSize, tui.web.pcmOf, tui.app.App, tui.web.AudioQueue, tui.web.control, tui.web.AudioQueue.chunks, tui.web.AudioQueue.end, tui.background.SnapshotWorker.close
-    - type [NodeResult](../../src/tui/web.ts#L554) = { verdict: string; criterion: string; message: string } <!-- internal -->
-    - fn [withResults](../../src/tui/web.ts#L561) (diagram: Diagram, results: readonly CheckResult[]) → Omit<Diagram, "nodes"> & { nodes: (DiagramNode & { results?: NodeResult[] })[] } <!-- internal -->
-    - fn [bearerToken](../../src/tui/web.ts#L583) (request: IncomingMessage) → string | null <!-- internal -->
-    - fn [pathOf](../../src/tui/web.ts#L589) (target: string | undefined) → string | null <!-- internal -->
-    - fn [reply](../../src/tui/web.ts#L597) (response: ServerResponse, status: number, type: string, body: string | Buffer) → void <!-- internal -->
-    - fn [diagramsPage](../../src/tui/web.ts#L603) () → string <!-- internal -->
-    - fn [page](../../src/tui/web.ts#L638) () → string <!-- internal -->
+      - fn [wake](../../src/tui/web.ts#L168) () → void <!-- internal -->
+      - fn [chunks](../../src/tui/web.ts#L175) () → AsyncGenerator<Int16Array>
+    - fn [pcmOf](../../src/tui/web.ts#L190) (data: unknown) → Int16Array | null <!-- internal -->
+    - fn [clampSize](../../src/tui/web.ts#L200) (value: unknown, fallback: number, max: number) → number
+    - fn [sameSecret](../../src/tui/web.ts#L205) (given: string | null | undefined, token: string) → boolean <!-- internal -->
+    - fn [offeredToken](../../src/tui/web.ts#L213) (request: IncomingMessage) → string | null <!-- internal -->
+    - type [WebOptions](../../src/tui/web.ts#L221)
+    - fn [serveWeb](../../src/tui/web.ts#L232) (options: WebOptions) → Promise<WebServer>
+      - calls tui.background.SnapshotWorker, map.analyze.analyze, tui.web.sameSecret, tui.web.offeredToken, lang.parser.parse, base.config.toPosix, lang.spec-ir.compileSpec, tui.web.bearerToken, map.diagram.usagesOf, map.diagram.parseView, features.discover-names.processViews, features.discover-names.readProcesses, map.diagram.viewsOf, map.diagram.flowListing, map.diagram.diagramOf, features.check-results.checkResults, tui.web.withResults, tui.web.ensureClient, tui.web.assetPath, tui.web.diagramsPage, tui.web.page, tui.web.reply, tui.web.pathOf, tui.web.clampSize, tui.web.pcmOf, tui.app.App, tui.web.AudioQueue, tui.web.control, tui.web.AudioQueue.chunks, tui.web.AudioQueue.end, tui.background.SnapshotWorker.close
+    - type [NodeResult](../../src/tui/web.ts#L558) = { verdict: string; criterion: string; message: string } <!-- internal -->
+    - fn [withResults](../../src/tui/web.ts#L565) (diagram: Diagram, results: readonly CheckResult[]) → Omit<Diagram, "nodes"> & { nodes: (DiagramNode & { results?: NodeResult[] })[] } <!-- internal -->
+    - fn [bearerToken](../../src/tui/web.ts#L587) (request: IncomingMessage) → string | null <!-- internal -->
+    - fn [pathOf](../../src/tui/web.ts#L593) (target: string | undefined) → string | null <!-- internal -->
+    - fn [reply](../../src/tui/web.ts#L601) (response: ServerResponse, status: number, type: string, body: string | Buffer) → void <!-- internal -->
+    - fn [diagramsPage](../../src/tui/web.ts#L607) () → string <!-- internal -->
+    - fn [page](../../src/tui/web.ts#L642) () → string <!-- internal -->
   - module [width](../../src/tui/width.ts#L1)
     - fn [graphemes](../../src/tui/width.ts#L13) (text: string) → string[]
     - fn [clusters](../../src/tui/width.ts#L20) (text: string) → Generator<string>
