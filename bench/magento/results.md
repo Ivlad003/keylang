@@ -101,10 +101,10 @@ found **6/6** у чернетці; бракує: нічого.
 | Що | Значення |
 |---|---|
 | Дата | 2026-10-08 |
-| keylang | `0b69554` |
+| keylang | `187abc1` |
 | Node | v24.20.0 |
 | Клон | `/home/kosmodev/.cache/keylang/bench/magento2` (`git describe`: `2.4.9`) |
-| `map` без кешу фактів (`node --max-old-space-size=4096`) | 25.3 с, maxRSS 700 МБ |
-| `check --format json` | 9.3 с, maxRSS 462 МБ |
+| `map` без кешу фактів (`node --max-old-space-size=4096`) | 8.6 с, maxRSS 722 МБ |
+| `check --format json` | 2.4 с, maxRSS 499 МБ |
 | Підсумок `map` | 2141 file(s), 2656 module(s), 7099 fn, 276 type(s), 3241 dep(s); calls 5962 resolved, 2706 external, 13352 dynamic, 5683 unresolved; 2327 unresolved import(s); 3 file(s) outside any layer |
-| snapshotId | `3fbdb19d7d4bd2af1212fb741b1c28d1b5d3e64a230c550a73c57ba44d6c70e9` |
+| snapshotId | `bec69564d1ef1b719873164460597ca0dea43acd21fcbe99bf1d80149e40f5b7` |
