@@ -19,7 +19,7 @@ export interface FlowDraft {
   steps: string[];
 }
 
-export function draftFlow(snapshot: AnalysisSnapshot, trigger: string, options: { name?: string; depth?: number } = {}): FlowDraft {
+export function draftFlow(snapshot: AnalysisSnapshot, trigger: string, options: { name?: string; depth?: number; entry?: string } = {}): FlowDraft {
   const node = snapshot.nodes[trigger];
   if (node?.kind !== "fn") throw new Error(`\`${trigger}\` is not a fn of the snapshot`);
   const name = options.name ?? trigger.slice(trigger.lastIndexOf(".") + 1);
@@ -47,7 +47,9 @@ export function draftFlow(snapshot: AnalysisSnapshot, trigger: string, options: 
     const open = holes.get(id) ?? [];
     // Closing `-->` inside a comment would end it early.
     const comment = open.length > 0 ? ` <!-- keylang:algo unresolved: ${open.join("; ").replace(/-->/g, "-- >")} -->` : "";
-    lines.push(`${"  ".repeat(level)}- ${level === 0 ? "trigger" : "step"} ${id}${how}${comment}`);
+    // `entry`: the kind of entry point the trigger is (`trigger route <id>`, ADR 0023 п. 3).
+    const keyword = level === 0 ? (options.entry === undefined ? "trigger" : `trigger ${options.entry}`) : "step";
+    lines.push(`${"  ".repeat(level)}- ${keyword} ${id}${how}${comment}`);
     if (level >= depth) return;
     for (const callee of snapshot.nodes[id]?.calls ?? []) {
       if (listed.has(callee) || snapshot.nodes[callee]?.kind !== "fn" || snapshot.nodes[callee]?.layer === "external") continue;

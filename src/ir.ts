@@ -70,6 +70,13 @@ export type NodeKind =
   | "test"
   /** `? <text>`: an open question of a flow; a person answers it (c4-zoom/04). Spelled `?`. */
   | "question"
+  /** `parallel`: nested steps run in any order; the group is one sibling (ADR 0023 п. 2). */
+  | "parallel"
+  /** `continues <flow>`: this flow continues another in a later request (ADR 0023 п. 4). */
+  | "continues"
+  /** `after <duration>` and `every <schedule>`: timers a nested `test` checks (ADR 0023 п. 5). */
+  | "after"
+  | "every"
   // wiring
   | "wire"
   /** `planned <kind> <id> <signature>` — an intention, not an implementation. */

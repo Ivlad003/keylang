@@ -299,16 +299,17 @@ Alias залежності не збігається з контекстним �
 |---|---|---|
 | верх секції map | `layer`, `layers`, `allow`, `deny`, `entry`, `module`, `no-cycles` | `<name>` — шар (сумісність зі слайдами) |
 | верх секції rules | `layers`, `allow`, `deny`, `entry`, `module`, `no-cycles` | K004 |
-| верх секції flow | `kind`, `trigger`, `step`, `reads`, `emits`, `calls`, `invariant`, `when`, `test`, `planned`, `?` | K004 |
+| верх секції flow | `kind`, `trigger`, `continues`, `step`, `parallel`, `reads`, `emits`, `calls`, `invariant`, `when`, `after`, `every`, `test`, `planned`, `?` | K004 |
 | верх секції wiring | `wire` | K004 |
 | під `layer` | `module` | `<name>` — модуль |
 | під `module` (map) | `module`, `fn`, `type`, `event` | `<alias> <id>` — залежність |
 | під `fn` | `calls` | K004 |
 | під `layers`, `entry` | — | `<id>` — посилання |
 | під `module` (rules) | `exports`, `no-cycles` | K004 |
-| під `step` / `trigger` | `step`, `reads`, `emits`, `calls`, `when`, `test`, `invariant`, `?` | K004 |
-| під `when` (flow) | `then`, `step`, `test`, `?` | K004 |
-| під `invariant`, `then` | `test` | K004 |
+| під `step` / `trigger` | `step`, `parallel`, `reads`, `emits`, `calls`, `when`, `after`, `every`, `test`, `invariant`, `?` | K004 |
+| під `when` (flow) | `then`, `step`, `parallel`, `test`, `?` | K004 |
+| під `parallel` | `step` | K004 |
+| під `invariant`, `then`, `after`, `every` | `test` | K004 |
 | під `wire` | — | `<alias> <id>` — перевизначення залежності |
 | під залежністю в `wire` | `when`, `compose` | K004 |
 | під будь-чим іншим | — | K004 «не може мати вкладених елементів» |
@@ -345,6 +346,11 @@ Alias залежності не збігається з контекстним �
 | `no-cycles` | нічого | — |
 | `kind business\|technical` | одне з двох слів | `text` |
 | `trigger\|step <id>` | одне ID | посилання |
+| `trigger route\|cron\|consumer\|webhook <id>` | вид точки входу, ID її fn | посилання; вид — `label`. Інше перше слово без крапки — K005 «unknown trigger kind» |
+| `parallel` | нічого; кроки — вкладеними `step` | група; без жодного `step` — K009 |
+| `continues <flow>` | ім'я потоку | `text`; потік, якого немає, — K206 |
+| `after <тривалість>` | число й одиниця `ms`, `s`, `m`, `min`, `h`, `d`, `w` (`30m`) | `text` |
+| `every <розклад>` | тривалість, cron-макрос (`@hourly`, `@daily`, `@midnight`, `@weekly`, `@monthly`, `@yearly`, `@annually`) або п'ять-шість полів cron, голих чи в лапках | `text`; у SpecIR — без лапок |
 | `planned fn\|module\|type\|event <id> [signature]` | вид, ID, довільний підпис | намір; не оголошення в індексі і не ребро знімка |
 | `emits [event] <name>` | ім'я події | `text`; не резолвиться |
 | `invariant <текст>` | довільний текст | `text` |
@@ -454,6 +460,101 @@ keylang/flows/refund.md:2:1: K005 `?` needs a description
 keylang/flows/refund.md:5:5: K004 `?` cannot have nested items
 ```
 
+**Р17. Асинхронні форми потоку** ([ADR 0023](adr/0023-async-flows.md)). Чотири форми — контекстні слова лише всередині `# flow`; до них такий рядок давав K004, тож зміна додавальна й нової редакції немає ([ADR 0007](adr/0007-format-editions.md)). Поза потоком слова лишаються звичайними (Р7): `- every app.handlers` під модулем карти — залежність з аліасом `every`.
+
+- `- trigger route|cron|consumer|webhook <id>` — потік починається з точки входу цього виду. `<id>` — ID fn точки входу зі списку `keylang entries`, а не шлях маршруту: шлях змінюється частіше за fn і не є ID. Мітку (`POST /V1/carts/mine/order`, розклад cron) показує вердикт ([semantics.md](semantics.md), «Асинхронні форми»).
+- `- parallel` з вкладеними `step` — паралельна група: кожен крок має відбутися, порядок між ними не перевіряється, а наступний сусід іде після всієї групи. Стоїть на верху потоку, під `step`/`trigger` і під `when`.
+- `- continues <flow>` на верху потоку — цей потік продовжує інший в іншому запиті (вебхук оплати продовжує оформлення замовлення). Форми `wait` усередині одного потоку немає: кожна точка входу — свій потік.
+- `- after <тривалість>` і `- every <розклад>` — таймери під кроком чи на верху потоку; їх перевіряє вкладений `test`.
+
+Оплата з вебхуком: замовлення оформлює маршрут, після оплати паралельно йдуть резерв, лист і вивантаження в ERP, підтвердження приходить вебхуком, а неоплачене замовлення щогодини скасовує cron.
+
+```keylang Р17 path=keylang/flows/place-order.md
+# flow place-order
+
+- trigger route shop.checkout.placeOrder
+- step shop.payment.charge
+- parallel
+  - step shop.stock.reserve
+  - step shop.mail.confirmation
+  - step shop.erp.export
+- step shop.checkout.respond
+```
+
+```keylang path=keylang/flows/payment.md
+# flow payment-confirmed
+
+- continues place-order
+- trigger webhook shop.payment.confirmed
+- step shop.payment.capture
+
+# flow cancel-unpaid
+
+- continues place-order
+- trigger cron shop.orders.cancelUnpaid
+- every 0 * * * *
+  - test tests/cancel.test.ts "runs every hour"
+- step shop.orders.cancel
+  - after 1h
+    - test tests/cancel.test.ts "cancels an order unpaid for an hour"
+```
+
+```keylang path=keylang/map.md
+- layer shop
+  - module checkout
+    - fn placeOrder
+    - fn respond
+  - module payment
+    - fn charge
+    - fn confirmed
+    - fn capture
+  - module stock
+    - fn reserve
+  - module mail
+    - fn confirmation
+  - module erp
+    - fn export
+  - module orders
+    - fn cancelUnpaid
+    - fn cancel
+```
+
+```diagnostics
+```
+
+Невідомий вид тригера й аргументи таймерів — K005 парсера; `parallel` без кроків — K009, а `continues` на потік, якого немає, — K206 (обидва дає `check`, не `parse`). Вид, що не збігається з точкою входу знімка, — K205 ([semantics.md](semantics.md)).
+
+```keylang path=keylang/flows/broken.md
+# flow broken
+
+- trigger queue shop.orders.cancel
+- continues place-ordr
+- parallel
+- step shop.orders.cancel
+  - after soon
+  - every day
+```
+
+```keylang path=keylang/flows/place-order.md
+# flow place-order
+
+- step shop.orders.cancel
+```
+
+```keylang path=keylang/map.md
+- layer shop
+  - module orders
+    - fn cancel
+```
+
+```diagnostics
+keylang/flows/broken.md:3:11: K005 unknown trigger kind `queue`; expected one of: route, cron, consumer, webhook
+keylang/flows/broken.md:4:13: K206 `continues` names flow `place-ordr`, which no `# flow` declares (did you mean `place-order`?)
+keylang/flows/broken.md:5:3: K009 `parallel` has no steps; nest the steps that run in any order under it
+keylang/flows/broken.md:7:11: K005 expected `after <duration>`: a number and a unit (ms, s, m, min, h, d, w), such as `after 30m`
+keylang/flows/broken.md:8:11: K005 expected `every <schedule>`: a duration (`every 15m`), a cron macro (`every @daily`) or five cron fields (`every 0 * * * *` or `every "0 * * * *"`)
+```
+
 ## 8. Канонічна форма (`keylang fmt`)
 
 `fmt` рендерить файл з IR, тож `fmt(fmt(x)) == fmt(x)`:
@@ -527,18 +628,21 @@ comment = "<!--" { rest of line } ;
 (* Позиції §5. Слово в лапках — ключове. `-> kind` — kind в IR, коли він не збігається зі словом. *)
 map-top = "layer" | "layers" | "allow" | "deny" | "entry" | "module" -> rule-module | "no-cycles" ;
 rules-top = "layers" | "allow" | "deny" | "entry" | "module" -> rule-module | "no-cycles" ;
-flow-top = "kind" | "trigger" | "step" | "reads" | "emits" | "calls" | "invariant" | "when" | "test" | "planned" | "?" -> question ;
+flow-top = "kind" | "trigger" | "continues" | "step" | "parallel" | "reads" | "emits" | "calls" | "invariant" | "when" | "after" | "every" | "test" | "planned" | "?" -> question ;
 wiring-top = "wire" ;
 under-layer = "module" ;
 under-module = "module" | "fn" | "type" | "event" ;
 under-fn = "calls" ;
 under-ref = (* під layers і під entry: голе id, без ключових слів *) ;
 under-rule-module = "exports" | "no-cycles" ;
-under-step = "step" | "reads" | "emits" | "calls" | "when" | "test" | "invariant" | "?" -> question ;
+under-step = "step" | "parallel" | "reads" | "emits" | "calls" | "when" | "after" | "every" | "test" | "invariant" | "?" -> question ;
 (* under-step також під trigger *)
-under-when = "then" | "step" | "test" | "?" -> question ;
+under-when = "then" | "step" | "parallel" | "test" | "?" -> question ;
+under-parallel = "step" ;
 under-invariant = "test" ;
 (* under-invariant також під then *)
+under-timer = "test" ;
+(* under-timer — під after і під every *)
 under-wire = (* гола залежність alias id, без ключових слів *) ;
 under-wire-dep = "when" | "compose" ;
 under-other = (* K004: батько не може мати вкладених елементів *) ;
@@ -557,6 +661,15 @@ exports-args = "exports" segment ( "," segment )* ;
 no-cycles-args = "no-cycles" ;
 kind-args = "kind" ( "business" | "technical" ) ;
 step-args = ( "trigger" | "step" ) id ;
+trigger-kind-args = "trigger" ( "route" | "cron" | "consumer" | "webhook" ) id ;
+parallel-args = "parallel" ;
+continues-args = "continues" segment ;
+after-args = "after" duration ;
+every-args = "every" ( duration | cron-macro | cron-fields | '"' cron-fields '"' ) ;
+duration = digit { digit } ( "ms" | "s" | "m" | "min" | "h" | "d" | "w" ) ;
+cron-macro = "@yearly" | "@annually" | "@monthly" | "@weekly" | "@daily" | "@midnight" | "@hourly" ;
+cron-fields = cron-field cron-field cron-field cron-field cron-field [ cron-field ] ;
+cron-field = { letter | digit | "*" | "/" | "," | "-" | "?" | "#" } ;
 planned-args = "planned" ( "fn" | "module" | "type" | "event" ) id [ signature ] ;
 emits-args = "emits" [ "event" ] segment ;
 invariant-args = "invariant" text ;
@@ -573,4 +686,5 @@ when-wiring-args = "when" condition "→" id ;
 - Глибина = відступ / 2 (§3). Відступ — лише пробіли.
 - Ключові слова контекстні (Р7): те саме слово в іншій позиції — не ключове.
 - `then` вгадує форму (Р10): один токен-ID з крапкою — посилання, інакше текст.
+- `trigger` з двома аргументами, перший без крапки, — `trigger-kind-args` (Р17); тривалість починається з ненульової цифри.
 - Під будь-чим іншим — K004 «не може мати вкладених елементів» (`under-other`).

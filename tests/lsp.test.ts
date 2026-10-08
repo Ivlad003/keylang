@@ -660,7 +660,40 @@ test("lsp: completion under a module leaves out what deny forbids; after step on
   const keywordText = `${FLOW}- `;
   s.notify("textDocument/didChange", { textDocument: { uri: flowUri, version: 3 }, contentChanges: [{ text: keywordText }] });
   const keywords = await s.request<Completion>("textDocument/completion", { textDocument: { uri: flowUri }, position: { line: keywordText.split("\n").length - 1, character: 2 } });
-  assert.deepEqual(keywords.items.map((item) => item.label).sort(), ["?", "calls", "emits", "invariant", "kind", "planned", "reads", "step", "test", "trigger", "when"]);
+  assert.deepEqual(keywords.items.map((item) => item.label).sort(), ["?", "after", "calls", "continues", "emits", "every", "invariant", "kind", "parallel", "planned", "reads", "step", "test", "trigger", "when"]);
+});
+
+test("lsp: completion of the async flow forms — words by position, trigger kinds, entry IDs of a kind, flow names after continues", async (t) => {
+  // `POST /checkout` runs `app.checkout.checkout`: an Express literal route (business-flows/09).
+  const server = 'import { checkout } from "./checkout.ts";\nconst app = { post: (_p: string, ..._h: unknown[]) => 0 };\napp.post("/checkout", checkout);\n';
+  const dir = fixture(t, { "src/app/server.ts": server, "keylang/flows/buy.md": FLOW, "keylang/flows/pay.md": "# flow pay\n\n- trigger app.checkout.checkout\n" });
+  const s = await open(t, dir);
+  type Completion = { items: { label: string; kind: number; detail?: string; labelDetails?: { description: string } }[] };
+  const flowUri = uri(dir, "keylang/flows/pay.md");
+  const ask = async (text: string, version: number): Promise<string[]> => {
+    s.notify(version === 1 ? "textDocument/didOpen" : "textDocument/didChange", version === 1 ? { textDocument: { uri: flowUri, languageId: "markdown", version, text } } : { textDocument: { uri: flowUri, version }, contentChanges: [{ text }] });
+    const lines = text.split("\n");
+    const list = await s.request<Completion>("textDocument/completion", { textDocument: { uri: flowUri }, position: { line: lines.length - 1, character: lines.at(-1)!.length } });
+    return list.items.map((item) => item.label);
+  };
+  const base = "# flow pay\n\n- trigger app.checkout.checkout\n";
+  // Under a step: the group and the timers; under `parallel` only `step`.
+  const underStep = await ask(`${base}- step app.checkout.checkout\n  - `, 1);
+  for (const word of ["parallel", "after", "every"]) assert.ok(underStep.includes(word), underStep.join(" "));
+  assert.equal(underStep.includes("continues"), false);
+  assert.deepEqual(await ask(`${base}- parallel\n  - `, 2), ["step"]);
+  assert.deepEqual(await ask(`${base}- every 15m\n  - `, 3), ["test"]);
+  // `trigger ` offers the kinds before the fns; `trigger route ` the route entry points.
+  const afterTrigger = await ask("# flow pay\n\n- trigger ", 4);
+  assert.deepEqual(afterTrigger.slice(0, 4).sort(), ["consumer", "cron", "route", "webhook"]);
+  assert.ok(afterTrigger.includes("app.checkout.checkout"), afterTrigger.join(" "));
+  s.notify("textDocument/didChange", { textDocument: { uri: flowUri, version: 5 }, contentChanges: [{ text: "# flow pay\n\n- trigger route " }] });
+  const routes = await s.request<Completion>("textDocument/completion", { textDocument: { uri: flowUri }, position: { line: 2, character: "- trigger route ".length } });
+  assert.deepEqual(routes.items.map((item) => item.label), ["app.checkout.checkout"]);
+  assert.equal(routes.items[0]?.labelDetails?.description, "POST /checkout");
+  assert.deepEqual(await ask("# flow pay\n\n- trigger cron ", 6), []);
+  // `continues ` names the other flows.
+  assert.deepEqual(await ask(`${base}- continues `, 7), ["buy"]);
 });
 
 test("lsp: a completion replaces the whole dotted prefix, which editors split at dots", async (t) => {

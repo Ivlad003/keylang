@@ -6,7 +6,7 @@
 import { SYNTHETIC_LAYERS } from "./config.ts";
 import { diagnostic, type Diagnostic } from "./diag.ts";
 import { sectionNodes, type Document, type Node, type Ref, type Section } from "./ir.ts";
-import { renderMeaning } from "./parser.ts";
+import { isTriggerKind, renderMeaning, scheduleText, type TriggerKind } from "./parser.ts";
 import type { Span } from "./span.ts";
 
 /** Configured names that are layers even when `keylang.json` does not list them. Assertion checks use this later; compilation does not reject them. */
@@ -87,6 +87,32 @@ export interface FlowStep extends Located {
 export interface Trigger extends Located {
   kind: "trigger";
   target: Ref;
+  /** `trigger <kind> <id>`: the kind of entry point the fn must be (ADR 0023 п. 3); null for a plain `trigger <id>`. */
+  entry: { kind: TriggerKind; span: Span } | null;
+  children: readonly FlowItem[];
+}
+
+/** `parallel`: every nested step must run, in any order; siblings are ordered against the whole group (ADR 0023 п. 2). */
+export interface ParallelItem extends Located {
+  kind: "parallel";
+  /** Steps (and only steps) of the group. */
+  children: readonly FlowItem[];
+}
+
+/** `continues <flow>` at the top of a flow: it continues another flow in a later request (ADR 0023 п. 4). */
+export interface ContinuesItem extends Located {
+  kind: "continues";
+  flow: string;
+  flowSpan: Span;
+  /** Always empty: `continues` has no nested items. */
+  children: readonly FlowItem[];
+}
+
+/** `after <duration>` / `every <schedule>`: a timer only a nested `test` checks; `every` also against a cron entry point (ADR 0023 п. 5). */
+export interface TimerItem extends Located {
+  kind: "after" | "every";
+  /** The duration or the schedule, canonical: words joined by one space, quotes dropped. */
+  value: string;
   children: readonly FlowItem[];
 }
 
@@ -128,7 +154,7 @@ export interface TestItem extends Located {
   name: string | null;
 }
 
-export type FlowItem = FlowStep | WhenItem | ThenItem | ClaimItem | CallsItem | TestItem | QuestionItem;
+export type FlowItem = FlowStep | WhenItem | ThenItem | ClaimItem | CallsItem | TestItem | QuestionItem | ParallelItem | ContinuesItem | TimerItem;
 
 export interface Flow {
   file: string;
@@ -226,7 +252,7 @@ export function compileSpec(docs: readonly Document[]): { spec: SpecIR; diagnost
   for (const doc of docs) {
     for (const section of doc.sections) {
       if (section.kind === "rules" || section.kind === "map") compileRules(doc.path, doc.generated !== null, section, placed, candidates, modules, diagnostics, nextSeq);
-      else if (section.kind === "flow" && section.name) flows.push(compileFlow(doc.path, section, planned));
+      else if (section.kind === "flow" && section.name) flows.push(compileFlow(doc.path, section, planned, diagnostics));
       else if (section.kind === "wiring") compileWires(doc.path, section, wires, diagnostics);
     }
   }
@@ -402,7 +428,7 @@ function exportsRule(file: string, node: Node, module: Ref): ExportsRule | null 
   return { kind: "exports", module, names: [first, ...rest], ...at(file, node, `exports ${module.target}: ${names}`) };
 }
 
-function compileFlow(file: string, section: Section, planned: Planned[]): Flow {
+function compileFlow(file: string, section: Section, planned: Planned[], diagnostics: Diagnostic[]): Flow {
   const name = section.name!.value;
   const triggers: Trigger[] = [];
   const items: FlowItem[] = [];
@@ -435,7 +461,16 @@ function compileFlow(file: string, section: Section, planned: Planned[]): Flow {
     items.push(...compiled);
     top.push(...compiled);
   }
+  for (const node of sectionNodes(section)) emptyParallel(file, node, diagnostics);
   return { file, span: section.name!.span, name, kind, triggers, items, top };
+}
+
+/** K009: a `parallel` with no nested `step`, at any depth. */
+function emptyParallel(file: string, node: Node, diagnostics: Diagnostic[]): void {
+  if (node.kind === "parallel" && !node.children.some((child) => child.kind === "step")) {
+    diagnostics.push(diagnostic("K009", file, node.keyword ?? node.span, "`parallel` has no steps; nest the steps that run in any order under it"));
+  }
+  for (const child of node.children) emptyParallel(file, child, diagnostics);
 }
 
 function flowNode(file: string, flow: string, node: Node): FlowItem[] {
@@ -443,6 +478,20 @@ function flowNode(file: string, flow: string, node: Node): FlowItem[] {
     const target = node.refs[0];
     if (!target) return flowItems(file, flow, node.children);
     return [{ kind: "step", target, children: flowItems(file, flow, node.children), ...flowAt(file, flow, node) }];
+  }
+  if (node.kind === "parallel") {
+    return [{ kind: "parallel", children: flowItems(file, flow, node.children), ...flowAt(file, flow, node) }];
+  }
+  if (node.kind === "continues") {
+    const text = node.text;
+    if (text === null) return [];
+    return [{ kind: "continues", flow: text.value, flowSpan: text.span, children: [], ...flowAt(file, flow, node) }];
+  }
+  if (node.kind === "after" || node.kind === "every") {
+    const words = node.tokens.slice(1).map((token) => token.text);
+    const value = node.text === null ? null : node.kind === "after" ? node.text.value : scheduleText(words);
+    if (value === null) return flowItems(file, flow, node.children);
+    return [{ kind: node.kind, value, children: flowItems(file, flow, node.children), ...flowAt(file, flow, node) }];
   }
   if (node.kind === "when") {
     const condition = node.text?.value;
@@ -489,7 +538,9 @@ function flowItems(file: string, flow: string, nodes: readonly Node[]): FlowItem
 function triggerItem(file: string, flow: string, node: Node): Trigger | null {
   const target = node.refs[0];
   if (!target) return null;
-  return { kind: "trigger", target, children: flowItems(file, flow, node.children), ...flowAt(file, flow, node) };
+  const label = node.label;
+  const entry = label !== null && isTriggerKind(label.value) ? { kind: label.value, span: label.span } : null;
+  return { kind: "trigger", target, entry, children: flowItems(file, flow, node.children), ...flowAt(file, flow, node) };
 }
 
 function plannedDeclKind(value: string): Planned["decl"] | null {

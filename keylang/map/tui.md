@@ -802,16 +802,18 @@
     - ir lang.ir
     - type [Mark](../../src/tui/evidence.ts#L11)
     - type [LineEvidence](../../src/tui/evidence.ts#L16)
-    - fn [worse](../../src/tui/evidence.ts#L29) (a: Mark | null, b: Mark | null) → Mark | null
-    - fn [linesOf](../../src/tui/evidence.ts#L35) (doc: Document, kind: "planned" | "question") → Set<number> <!-- internal -->
+    - fn [worse](../../src/tui/evidence.ts#L31) (a: Mark | null, b: Mark | null) → Mark | null
+    - fn [linesOf](../../src/tui/evidence.ts#L37) (doc: Document, kind: "planned" | "question") → Set<number> <!-- internal -->
       - calls lang.ir.sectionNodes, lang.ir.walk
-    - fn [pendingPlanned](../../src/tui/evidence.ts#L48) (analysis: Analysis) → Set<string> <!-- internal -->
+    - fn [pendingPlanned](../../src/tui/evidence.ts#L50) (analysis: Analysis) → Set<string> <!-- internal -->
       - calls lang.ir.sectionNodes, lang.ir.walk
-    - fn [allEvidence](../../src/tui/evidence.ts#L66) (analysis: Analysis) → Map<string, Map<number, LineEvidence>> <!-- internal -->
-      - calls tui.evidence.pendingPlanned, tui.evidence.linesOf, tui.evidence.worse
-    - fn [evidenceOf](../../src/tui/evidence.ts#L118) (analysis: Analysis, path: string) → Map<number, LineEvidence>
+    - fn [allEvidence](../../src/tui/evidence.ts#L68) (analysis: Analysis) → Map<string, Map<number, LineEvidence>> <!-- internal -->
+      - calls tui.evidence.pendingPlanned, tui.evidence.linesOf, tui.evidence.worse, tui.evidence.groupMarks
+    - fn [groupMarks](../../src/tui/evidence.ts#L119) (analysis: Analysis, byPath: Map<string, Map<number, LineEvidence>>) → void <!-- internal -->
+      - calls lang.ir.sectionNodes, lang.ir.walk, tui.evidence.worse
+    - fn [evidenceOf](../../src/tui/evidence.ts#L144) (analysis: Analysis, path: string) → Map<number, LineEvidence>
       - calls tui.evidence.allEvidence
-    - fn [totals](../../src/tui/evidence.ts#L125) (analysis: Analysis) → { fail: number; unverified: number; ok: number }
+    - fn [totals](../../src/tui/evidence.ts#L151) (analysis: Analysis) → { fail: number; unverified: number; ok: number }
       - calls tui.evidence.allEvidence
   - module [findings](../../src/tui/findings.ts#L1)
     - analyze map.analyze

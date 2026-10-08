@@ -286,21 +286,22 @@
   - module [discover](../../src/discover.ts#L1)
     - draft features.draft
     - map map.map
+    - parser lang.parser
     - spec-ir lang.spec-ir
     - snapshot map.snapshot
     - span base.span
-    - type [DiscoverOptions](../../src/discover.ts#L21)
-    - type [DiscoveredFlow](../../src/discover.ts#L33)
-    - type [Discovery](../../src/discover.ts#L49)
-    - fn [specifiedTriggers](../../src/discover.ts#L60) (flows: readonly Flow[]) → Map<string, { file: string; flow: string }>
+    - type [DiscoverOptions](../../src/discover.ts#L22)
+    - type [DiscoveredFlow](../../src/discover.ts#L34)
+    - type [Discovery](../../src/discover.ts#L50)
+    - fn [specifiedTriggers](../../src/discover.ts#L61) (flows: readonly Flow[]) → Map<string, { file: string; flow: string }>
       - calls base.span.compareText
-    - fn [discoverFlows](../../src/discover.ts#L73) (snapshot: AnalysisSnapshot, specified: ReadonlyMap<string, { file: string; flow: string }>, options: DiscoverOptions = {}) → Discovery
-      - calls features.draft.distinctNames, features.draft.draftFlow, features.discover.holesBySource, features.discover.withComment, features.discover.quoted, base.span.compareText
-    - fn [adoptedFlow](../../src/discover.ts#L120) (flow: DiscoveredFlow, specDir: string) → FlowDraft
-    - fn [discoverySummary](../../src/discover.ts#L127) (discovery: Pick<Discovery, "flows" | "specified">) → string
-    - fn [holesBySource](../../src/discover.ts#L133) (snapshot: AnalysisSnapshot) → Map<string, number> <!-- internal -->
-    - fn [withComment](../../src/discover.ts#L143) (text: string, comment: string) → string <!-- internal -->
-    - fn [quoted](../../src/discover.ts#L149) (label: string) → string <!-- internal -->
+    - fn [discoverFlows](../../src/discover.ts#L74) (snapshot: AnalysisSnapshot, specified: ReadonlyMap<string, { file: string; flow: string }>, options: DiscoverOptions = {}) → Discovery
+      - calls features.draft.distinctNames, features.draft.draftFlow, lang.parser.isTriggerKind, features.discover.holesBySource, features.discover.withComment, features.discover.quoted, base.span.compareText
+    - fn [adoptedFlow](../../src/discover.ts#L122) (flow: DiscoveredFlow, specDir: string) → FlowDraft
+    - fn [discoverySummary](../../src/discover.ts#L129) (discovery: Pick<Discovery, "flows" | "specified">) → string
+    - fn [holesBySource](../../src/discover.ts#L135) (snapshot: AnalysisSnapshot) → Map<string, number> <!-- internal -->
+    - fn [withComment](../../src/discover.ts#L145) (text: string, comment: string) → string <!-- internal -->
+    - fn [quoted](../../src/discover.ts#L151) (label: string) → string <!-- internal -->
   - module [draft-llm](../../src/draft-llm.ts#L1)
     - analyze map.analyze
     - assess check.assess
@@ -348,26 +349,26 @@
     - safe-write base.safe-write
     - snapshot map.snapshot
     - type [FlowDraft](../../src/draft.ts#L14)
-    - fn [draftFlow](../../src/draft.ts#L22) (snapshot: AnalysisSnapshot, trigger: string, options: { name?: string; depth?: number } = {}) → FlowDraft
-    - fn [withFlow](../../src/draft.ts#L67) (existing: string | null, draft: Pick<FlowDraft, "name" | "text">) → string
+    - fn [draftFlow](../../src/draft.ts#L22) (snapshot: AnalysisSnapshot, trigger: string, options: { name?: string; depth?: number; entry?: string } = {}) → FlowDraft
+    - fn [withFlow](../../src/draft.ts#L69) (existing: string | null, draft: Pick<FlowDraft, "name" | "text">) → string
       - calls lang.parser.parse, features.draft.nextHeading, base.safe-write.allCrlf
-    - fn [withRules](../../src/draft.ts#L91) (existing: string | null, draftText: string) → string
+    - fn [withRules](../../src/draft.ts#L93) (existing: string | null, draftText: string) → string
       - calls lang.parser.parse, lang.ir.sectionNodes, lang.parser.renderMeaning, features.draft.nextHeading, base.safe-write.allCrlf
-    - fn [nextHeading](../../src/draft.ts#L121) (sections: readonly { heading: { span: { start: { line: number } } } | null }[], index: number) → number | null <!-- internal -->
-    - fn [distinctNames](../../src/draft.ts#L131) (drafts: readonly FlowDraft[]) → FlowDraft[]
-    - fn [draftRules](../../src/draft.ts#L161) (snapshot: AnalysisSnapshot, cyclic: boolean) → string
+    - fn [nextHeading](../../src/draft.ts#L123) (sections: readonly { heading: { span: { start: { line: number } } } | null }[], index: number) → number | null <!-- internal -->
+    - fn [distinctNames](../../src/draft.ts#L133) (drafts: readonly FlowDraft[]) → FlowDraft[]
+    - fn [draftRules](../../src/draft.ts#L163) (snapshot: AnalysisSnapshot, cyclic: boolean) → string
       - calls features.draft.layerOrder
-    - fn [layerOrder](../../src/draft.ts#L186) (layers: readonly string[], uses: ReadonlyMap<string, ReadonlySet<string>>) → string[] | null <!-- internal -->
-    - fn [codeToSpecTriggers](../../src/draft.ts#L205) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; triggers: string[] }
-    - fn [codeToSpec](../../src/draft.ts#L228) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; drafts: FlowDraft[] }
+    - fn [layerOrder](../../src/draft.ts#L188) (layers: readonly string[], uses: ReadonlyMap<string, ReadonlySet<string>>) → string[] | null <!-- internal -->
+    - fn [codeToSpecTriggers](../../src/draft.ts#L207) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; triggers: string[] }
+    - fn [codeToSpec](../../src/draft.ts#L230) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; drafts: FlowDraft[] }
       - calls features.draft.codeToSpecTriggers, features.draft.draftFlow, features.draft.distinctNames
-    - type [ChangedLines](../../src/draft.ts#L235)
-    - fn [diffHunks](../../src/draft.ts#L241) (diff: string) → Map<string, [number, number][]>
+    - type [ChangedLines](../../src/draft.ts#L237)
+    - fn [diffHunks](../../src/draft.ts#L243) (diff: string) → Map<string, [number, number][]>
       - calls features.draft.gitPath
-    - fn [deletedDiffPaths](../../src/draft.ts#L264) (diff: string) → string[]
+    - fn [deletedDiffPaths](../../src/draft.ts#L266) (diff: string) → string[]
       - calls features.draft.gitPath
-    - fn [gitPath](../../src/draft.ts#L278) (text: string) → string <!-- internal -->
-    - fn [changedFlows](../../src/draft.ts#L306) (snapshot: AnalysisSnapshot, changed: ChangedLines, named: ReadonlySet<string>) → { drafts: FlowDraft[]; named: string[] }
+    - fn [gitPath](../../src/draft.ts#L280) (text: string) → string <!-- internal -->
+    - fn [changedFlows](../../src/draft.ts#L308) (snapshot: AnalysisSnapshot, changed: ChangedLines, named: ReadonlySet<string>) → { drafts: FlowDraft[]; named: string[] }
       - calls features.draft.draftFlow, features.draft.distinctNames
   - module [explain-edge](../../src/explain-edge.ts#L1)
     - snapshot map.snapshot
@@ -506,7 +507,7 @@
       - calls lang.spec-ir.plannedDeclaration
   - module [explain](../../src/explain.ts#L1)
     - diag base.diag
-    - fn [explainCode](../../src/explain.ts#L115) (code: string) → string | null
+    - fn [explainCode](../../src/explain.ts#L130) (code: string) → string | null
   - module [feature-status](../../src/feature-status.ts#L1)
     - assess check.assess
     - changed features.changed
@@ -839,16 +840,16 @@
       - calls features.lsp-features.docOf, features.lsp-features.flowPhrases, lang.ir.walk, features.lsp-features.statusOf, lang.ir.sectionNodes, features.lsp-features.fromPos, features.lsp-features.fromSpan
     - type [CompletionItem](../../src/lsp-features.ts#L598)
     - fn [completions](../../src/lsp-features.ts#L625) (ws: Workspace, path: string, position: LspPosition) → CompletionItem[]
-      - calls features.lsp-features.docOf, features.lsp-features.enclosing, features.lsp-features.sectionAt, lang.parser.keywordsAt, features.lsp-features.moduleAround, check.rules.dependencyKindOf, check.rules.blocksDependency
-    - fn [sectionAt](../../src/lsp-features.ts#L673) (doc: Document, line: number) → Section | undefined <!-- internal -->
-    - fn [enclosing](../../src/lsp-features.ts#L683) (doc: Document, line: number, col: number) → Node | undefined <!-- internal -->
+      - calls features.lsp-features.docOf, features.lsp-features.enclosing, features.lsp-features.sectionAt, lang.parser.keywordsAt, lang.parser.isTriggerKind, features.lsp-features.moduleAround, check.rules.dependencyKindOf, check.rules.blocksDependency
+    - fn [sectionAt](../../src/lsp-features.ts#L695) (doc: Document, line: number) → Section | undefined <!-- internal -->
+    - fn [enclosing](../../src/lsp-features.ts#L705) (doc: Document, line: number, col: number) → Node | undefined <!-- internal -->
       - calls features.lsp-features.nodesOf
-    - fn [ancestors](../../src/lsp-features.ts#L692) (doc: Document, node: Node) → Node[] <!-- internal -->
+    - fn [ancestors](../../src/lsp-features.ts#L714) (doc: Document, node: Node) → Node[] <!-- internal -->
       - calls features.lsp-features.nodesOf
-    - fn [moduleAround](../../src/lsp-features.ts#L705) (ws: Workspace, doc: Document, parent: Node | undefined) → string | null <!-- internal -->
+    - fn [moduleAround](../../src/lsp-features.ts#L727) (ws: Workspace, doc: Document, parent: Node | undefined) → string | null <!-- internal -->
       - calls features.lsp-features.ancestors
-    - type [CodeLens](../../src/lsp-features.ts#L720) <!-- internal -->
-    - fn [codeLenses](../../src/lsp-features.ts#L726) (ws: Workspace, path: string) → CodeLens[]
+    - type [CodeLens](../../src/lsp-features.ts#L742) <!-- internal -->
+    - fn [codeLenses](../../src/lsp-features.ts#L748) (ws: Workspace, path: string) → CodeLens[]
       - calls lang.spec-ir.flowsUsing, features.lsp-features.lspPoint
   - module [node-search](../../src/node-search.ts#L1)
     - analyze map.analyze
