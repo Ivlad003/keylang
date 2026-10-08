@@ -288,6 +288,8 @@ export function buildSnapshot(
       grammars,
       config: manifestConfig,
       files: manifestFiles,
+      // An excluded or outside file is a module whatever it holds, and a skipped one a target left out on purpose.
+      skipped: skipped.map(({ file, kind }) => `${kind ?? "skipped-file"} ${file}`).sort(),
       // `paths`, `references` and declared packages decide edges as much as the sources do.
       resolution: [...graph.resolverInputs].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([path, text]) => [path, text === null ? null : sha256(text)]),
       // The manifests entry points come from (`bin`, `[project.scripts]`, `[[bin]]`) decide them as the sources do.

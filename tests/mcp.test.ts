@@ -378,3 +378,34 @@ test("mcp: discover_flows drafts a flow per entry point and writes nothing; appl
   assert.equal(refused.isError, true);
   assert.match(refused.text, /flows discover/);
 });
+
+test("mcp: an excluded or outside file that appears or goes changes snapshotId, so check is not served from the old analysis", async (t) => {
+  const mcp = await connect(t);
+  writeFileSync(join(mcp.dir, "keylang.json"), JSON.stringify({ languages: ["typescript"], layers: { app: ["src/app/**"], domain: ["src/domain/**"], infra: ["src/infra/**"], gen: ["src/gen/**"] }, exclude: ["src/gen/**"], outside: ["scripts/**"] }));
+  writeFileSync(join(mcp.dir, "keylang/rules.md"), "# rules\n\n- deny app gen\n");
+  writeFileSync(join(mcp.dir, "src/app/generated.ts"), 'import { api } from "../gen/api";\nimport { tool } from "../../scripts/tool";\nexport function run(): void {\n  api();\n  tool();\n}\n');
+  type Report = { snapshotId: string; results: { verdict: string; code?: string; evidence: string }[] };
+  const check = async (): Promise<Report> => JSON.parse((await mcp.call("check")).text) as Report;
+  const verdicts = (report: Report): string[] => report.results.map((row) => `${row.verdict}${row.code ? ` ${row.code}` : ""}: ${row.evidence}`).filter((row) => /gen|scripts/.test(row));
+
+  const before = await check();
+  assert.deepEqual(verdicts(before), ["unverified: unresolved import `../gen/api` (src/app/generated.ts:1:1)"]);
+  mkdirSync(join(mcp.dir, "src/gen"));
+  writeFileSync(join(mcp.dir, "src/gen/api.ts"), "export function api(): void {}\n");
+  const excluded = await check();
+  assert.notEqual(excluded.snapshotId, before.snapshotId, "a new excluded file is a new module");
+  assert.ok(excluded.results.some((row) => row.verdict === "fail" && row.code === "K102"), JSON.stringify(excluded.results));
+  const cli = JSON.parse(spawnSync(process.execPath, [bin, "check", "--format", "json"], { cwd: mcp.dir, encoding: "utf8" }).stdout) as Report;
+  assert.equal(cli.snapshotId, excluded.snapshotId);
+
+  mkdirSync(join(mcp.dir, "scripts"));
+  writeFileSync(join(mcp.dir, "scripts/tool.ts"), "export function tool(): void {}\n");
+  const outside = await check();
+  assert.notEqual(outside.snapshotId, excluded.snapshotId, "a new outside file is a new module");
+  assert.ok(outside.results.some((row) => row.verdict === "fail" && row.code === "K107"), JSON.stringify(outside.results));
+
+  rmSync(join(mcp.dir, "src/gen/api.ts"));
+  const gone = await check();
+  assert.notEqual(gone.snapshotId, outside.snapshotId, "a removed excluded file is no module any more");
+  assert.ok(!gone.results.some((row) => row.code === "K102"), JSON.stringify(gone.results));
+});

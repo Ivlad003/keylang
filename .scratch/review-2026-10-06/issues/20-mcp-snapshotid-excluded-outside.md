@@ -1,6 +1,6 @@
 # 20: MCP віддає застарілий вердикт: snapshotId не змінюється, коли з'являється чи зникає excluded/outside-файл
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -63,11 +63,15 @@ fx/t7: snapshotId before/after creating src/gen/api.ts both 767270d39a85…, cov
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/snapshot.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/snapshot.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+- 2026-10-08: Регресійний тест `tests/mcp.test.ts` «mcp: an excluded or outside file that appears or goes changes snapshotId…» — справжня MCP-сесія через stdio: `exclude: ["src/gen/**"]`, `outside: ["scripts/**"]`, `deny app gen`, `src/app/generated.ts` імпортує `../gen/api` і `../../scripts/tool`. До виправлення після появи `src/gen/api.ts` `snapshotId` не змінювався, і MCP `check` віддавав старе `unverified`; тепер id новий, є K102, id збігається з CLI `check --format json`; поява `scripts/tool.ts` дає новий id і K107; видалення `src/gen/api.ts` — новий id без K102.
+- 2026-10-08: Виправлення: `src/snapshot.ts` — до хешу `snapshotId` додано відсортований перелік пропущених файлів (`skipped`: excluded, outside, поза вгаданими шарами) як `<kind> <path>` (вміст не потрібен: такий файл — opaque-модуль чи навмисно пропущена ціль, хоч би що в ньому). `src/imports.ts` `probe`: файл поза аналізом, знайдений на диску (`.d.ts`, тест, JSON), читається через `text()` і стає входом резолвера (`resolverInputs`), тож його поява чи зникнення теж змінює id. Зміна в `snapshot.ts` — один рядок у JSON хешу, маніфест не чіпав.
+- 2026-10-08: Контракт: `docs/snapshot.md` — формула `snapshotId` (перелік пропущених файлів і входи резолвера). Перевірки: `node --test tests/mcp.test.ts tests/cli-map.test.ts tests/core.test.ts tests/fingerprint.test.ts tests/analyze.test.ts tests/cli-check.test.ts tests/metamorphic.test.ts` — 98/98, `npm run typecheck` — ок.

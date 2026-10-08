@@ -508,7 +508,11 @@ export class ImportResolver {
     for (const p of probeCandidates(candidate)) {
       if (this.sources.has(p)) return p;
       const abs = join(this.root, p);
-      if (this.onDisk(p) && statSync(abs).isFile()) return p;
+      if (this.onDisk(p) && statSync(abs).isFile()) {
+        // A file the analysis does not read (a `.d.ts`, a test, JSON) still decides the edge: an input of the snapshot id.
+        this.text(p);
+        return p;
+      }
     }
     return null;
   }
