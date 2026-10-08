@@ -76,6 +76,8 @@ export interface Config {
    * `map`: `keylang map` also writes the explained map, `<dir>/map-explained/`.
    */
   explain: { lang: string; detail: "short" | "full"; map: boolean };
+  /** `integrations.webhooks`: globs of files (or route paths) whose handlers are incoming webhooks (`keylang integrations`). Not part of the snapshot. */
+  integrations: { webhooks: string[] };
   /** True when the layout was guessed (no `layers` in the file). */
   guessed: boolean;
   /**
@@ -174,6 +176,7 @@ export interface RawConfig {
   assistant?: { clip?: boolean };
   voice?: { engine?: "local" | "openrouter" | "auto"; model?: string };
   explain?: { lang?: string; detail?: "short" | "full"; map?: boolean };
+  integrations?: { webhooks?: string[] };
 }
 
 /** Load `<root>/keylang.json`, or guess a config for `root`. */
@@ -210,6 +213,7 @@ export function loadConfig(root: string): Config {
     assistant: { clip: raw.assistant?.clip ?? true },
     voice: { engine: raw.voice?.engine ?? "auto", model: raw.voice?.model ?? null },
     explain: { lang: raw.explain?.lang ?? "en", detail: raw.explain?.detail ?? "short", map: raw.explain?.map ?? false },
+    integrations: { webhooks: raw.integrations?.webhooks ?? [] },
     guessed,
     text,
   };
@@ -250,7 +254,7 @@ export function parseConfig(file: string, text: string): RawConfig {
     return glob;
   };
   if (!isObject(value)) return fail("(root)", "an object", value);
-  const known = new Set(["$schema", "format", "dir", "languages", "module", "layers", "exclude", "outside", "assume", "check", "agent", "explain", "ghost", "assistant", "voice"]);
+  const known = new Set(["$schema", "format", "dir", "languages", "module", "layers", "exclude", "outside", "assume", "check", "agent", "explain", "ghost", "assistant", "voice", "integrations"]);
   for (const key of Object.keys(value)) if (!known.has(key)) throw new Error(`${file}: unknown field \`${key}\``);
   const raw: RawConfig = {};
   if (value.format !== undefined) raw.format = acceptFormat(file, value.format);
@@ -357,6 +361,16 @@ export function parseConfig(file: string, text: string): RawConfig {
       else throw new Error(`${file}: unknown field \`explain.${key}\``);
     }
     raw.explain = explain;
+  }
+  if (value.integrations !== undefined) {
+    if (!isObject(value.integrations)) return fail("integrations", "an object", value.integrations);
+    const integrations: NonNullable<RawConfig["integrations"]> = {};
+    for (const [key, v] of Object.entries(value.integrations)) {
+      if (key !== "webhooks") throw new Error(`${file}: unknown field \`integrations.${key}\``);
+      if (!Array.isArray(v) || !v.every((glob) => typeof glob === "string")) return fail("integrations.webhooks", "an array of globs", v);
+      integrations.webhooks = (v as string[]).map((glob, i) => validGlob(`integrations.webhooks[${i}]`, glob));
+    }
+    raw.integrations = integrations;
   }
   return raw;
 }
