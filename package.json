@@ -37,21 +37,26 @@
     "node": ">=22.18"
   },
   "scripts": {
-    "prepack": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json && node scripts/copy-wasm.mjs && node scripts/copy-web.mjs && node scripts/pack-entry.mjs publish",
+    "prepack": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json && node scripts/copy-wasm.mjs && node scripts/copy-web.mjs && node scripts/build-web.mjs && node scripts/pack-entry.mjs publish",
     "postpack": "node scripts/pack-entry.mjs restore",
     "test": "node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=./src/adapters/node-test.ts --test-reporter-destination=stdout tests/*.test.ts",
-    "typecheck": "tsc --noEmit",
+    "test:web": "node --test tests/web-e2e/*.test.ts",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p web/tsconfig.json",
+    "web:build": "node scripts/build-web.mjs",
     "keylang": "node bin/keylang.js"
   },
   "devDependencies": {
+    "@maxgraph/core": "^0.25.0",
     "@types/node": "^24.0.0",
     "@types/ws": "^8.18.1",
     "@vscode/tree-sitter-wasm": "^0.3.1",
     "@xterm/addon-fit": "0.11.0",
     "@xterm/headless": "^6.0.0",
     "@xterm/xterm": "6.0.0",
+    "esbuild": "^0.28.2",
     "fast-check": "^4.10.2",
     "mdast-util-from-markdown": "^2.0.3",
+    "playwright-core": "^1.64.0",
     "typescript": "^5.9.0"
   },
   "dependencies": {

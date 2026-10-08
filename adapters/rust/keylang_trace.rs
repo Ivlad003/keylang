@@ -30,6 +30,14 @@
 //!   KEYLANG_TRACE_RUN    run id shared by the tests of one run (default: time and pid)
 //!   KEYLANG_TRACE_ROOT   repository root the plan's paths are relative to (default: cwd)
 //!
+//! Relative paths are the directory the process started in: a constructor
+//! that runs before `main` (`.init_array` on ELF targets, `__mod_init_func` on
+//! Apple, `.CRT$XCU` on Windows) takes the working directory and writes the
+//! three variables back as absolute paths, so a program that changes its
+//! directory before its first span or before `finish()` (and a child it starts)
+//! reads the plan and writes the trace where the variables meant. On any other
+//! target the directory is the one at the first span.
+//!
 //! Only the plan's functions are recorded. `instrumented` lists those whose
 //! body calls `span("<id>")` or `instrument("<id>", …)` in code (not in a
 //! comment): a step without one is unobserved, not missing. Spans nest by the
@@ -53,7 +61,7 @@ use std::collections::BTreeSet;
 use std::fs::{self, OpenOptions};
 use std::future::Future;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
@@ -80,6 +88,39 @@ struct Tracer {
 }
 
 static TRACER: OnceLock<Option<Tracer>> = OnceLock::new();
+
+/// The working directory the process started in, taken before `main`.
+static STARTUP_DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
+
+#[used]
+#[cfg_attr(any(target_os = "linux", target_os = "android", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd", target_os = "dragonfly", target_os = "illumos", target_os = "solaris"), unsafe(link_section = ".init_array"))]
+#[cfg_attr(any(target_os = "macos", target_os = "ios"), unsafe(link_section = "__DATA,__mod_init_func"))]
+#[cfg_attr(windows, unsafe(link_section = ".CRT$XCU"))]
+static STARTUP: extern "C" fn() = startup;
+
+/// Before `main`: relative `KEYLANG_TRACE`, `KEYLANG_TRACE_PLAN` and `KEYLANG_TRACE_ROOT` become absolute in the startup directory.
+extern "C" fn startup() {
+    let dir = STARTUP_DIR.get_or_init(|| std::env::current_dir().ok()).clone();
+    let Some(dir) = dir else { return };
+    for name in ["KEYLANG_TRACE", "KEYLANG_TRACE_PLAN", "KEYLANG_TRACE_ROOT"] {
+        let Some(value) = std::env::var_os(name).filter(|v| !v.is_empty()) else { continue };
+        if Path::new(&value).is_relative() {
+            // Single-threaded: nothing else runs before `main`. (`set_var` is `unsafe` from edition 2024.)
+            #[allow(unused_unsafe)]
+            unsafe {
+                std::env::set_var(name, dir.join(&value));
+            }
+        }
+    }
+}
+
+/// `path` in the startup directory when it is relative.
+fn absolute(path: &str) -> String {
+    match STARTUP_DIR.get_or_init(|| std::env::current_dir().ok()) {
+        Some(dir) if Path::new(path).is_relative() => dir.join(path).to_string_lossy().into_owned(),
+        _ => path.to_string(),
+    }
+}
 
 thread_local! {
     static STACK: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
@@ -249,16 +290,16 @@ fn tracer() -> Option<&'static Tracer> {
 }
 
 fn init() -> Option<Tracer> {
-    let file = std::env::var("KEYLANG_TRACE").ok()?;
+    let file = absolute(&std::env::var("KEYLANG_TRACE").ok()?);
     let fail = |m: String| -> ! { panic!("keylang trace: {m}") };
-    let plan_path = std::env::var("KEYLANG_TRACE_PLAN").unwrap_or_else(|_| fail("KEYLANG_TRACE_PLAN is required".into()));
+    let plan_path = absolute(&std::env::var("KEYLANG_TRACE_PLAN").unwrap_or_else(|_| fail("KEYLANG_TRACE_PLAN is required".into())));
     let test = std::env::var("KEYLANG_TRACE_TEST").unwrap_or_else(|_| fail("KEYLANG_TRACE_TEST is required".into()));
     let text = fs::read_to_string(&plan_path).unwrap_or_else(|e| fail(format!("{plan_path}: {e}")));
     let plan = Json::parse(&text).unwrap_or_else(|| fail(format!("{plan_path}: invalid JSON")));
     if plan.get("schemaVersion").and_then(Json::number) != Some(1.0) {
         fail(format!("{plan_path}: not a plan of schema 1 from `keylang trace-plan`"));
     }
-    let root = std::env::var("KEYLANG_TRACE_ROOT").unwrap_or_else(|_| ".".into());
+    let root = absolute(&std::env::var("KEYLANG_TRACE_ROOT").unwrap_or_else(|_| ".".into()));
     let mut recorded = BTreeSet::new();
     for symbol in plan.get("symbols").and_then(Json::array).unwrap_or(&[]) {
         let (Some(id), Some(path), Some(line)) = (symbol.get("id").and_then(Json::string), symbol.get("file").and_then(Json::string), symbol.get("line").and_then(Json::number)) else { continue };
@@ -309,8 +350,23 @@ fn marks(source: &str, line: usize, id: &str) -> Mark {
     for _ in 1..line {
         start = s[start..].iter().position(|&b| b == b'\n').map_or(s.len(), |p| start + p + 1);
     }
-    // The body is the first `{` after the signature; a `;` first means the fn has none.
-    let Some(open) = (start..s.len()).find(|&i| class[i] == CODE && (s[i] == b'{' || s[i] == b';')).filter(|&i| s[i] == b'{') else { return Mark::None };
+    // The body is the first `{` after the signature; a `;` first means the fn has none. Only a `;` outside
+    // brackets counts: the one in an array type (`[u8; 32]`, `-> [u8; N]`, `Fn(&[u8; 4])`) is part of the signature.
+    let mut nested = 0usize;
+    let body = (start..s.len()).find(|&i| {
+        if class[i] != CODE {
+            return false;
+        }
+        match s[i] {
+            b'(' | b'[' => nested += 1,
+            b')' | b']' => nested = nested.saturating_sub(1),
+            b'{' => return nested == 0,
+            b';' => return nested == 0,
+            _ => {}
+        }
+        false
+    });
+    let Some(open) = body.filter(|&i| s[i] == b'{') else { return Mark::None };
     // The `}` that closes the `{` at `from`, in code; the end of the source when there is none.
     let closing = |from: usize| {
         let mut depth = 0usize;

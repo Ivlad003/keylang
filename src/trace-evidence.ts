@@ -46,6 +46,8 @@ export interface TraceRun {
   open: Set<string>;
   /** Symbols every `run` event reported instrumented; null when one did not say. */
   instrumented: Set<string> | null;
+  /** Why an adapter left a symbol uninstrumented (`uninstrumented` of a `run` event), when one said. */
+  uninstrumented: Map<string, string>;
 }
 
 /**
@@ -65,6 +67,7 @@ interface RunDraft {
   dropped: number | null;
   open: Set<string>;
   instrumented: Set<string> | null;
+  uninstrumented: Map<string, string>;
   runEvents: number;
   /** Clocks of `start` and `end` events. */
   clocks: Set<string>;
@@ -143,7 +146,7 @@ function readEvent(runs: Map<string, RunDraft>, file: string, line: number, text
   const key = JSON.stringify([str("runId"), str("testId"), str("flow")]);
   let run = runs.get(key);
   if (!run) {
-    run = { files: [], runId: str("runId"), testId: str("testId"), flow: str("flow"), snapshots: new Set(), spans: new Map(), pendingEnds: [], complete: true, dropped: 0, open: new Set(), instrumented: null, runEvents: 0, clocks: new Set(), finished: new Set(), anonymous: 0 };
+    run = { files: [], runId: str("runId"), testId: str("testId"), flow: str("flow"), snapshots: new Set(), spans: new Map(), pendingEnds: [], complete: true, dropped: 0, open: new Set(), instrumented: null, uninstrumented: new Map(), runEvents: 0, clocks: new Set(), finished: new Set(), anonymous: 0 };
     runs.set(key, run);
   }
   if (!run.files.includes(file)) run.files.push(file);
@@ -178,6 +181,9 @@ function readEvent(runs: Map<string, RunDraft>, file: string, line: number, text
     const dropped = event.dropped;
     if (dropped !== undefined && (typeof dropped !== "number" || !Number.isInteger(dropped) || dropped < 0)) throw new Error(`${at}: \`dropped\` must be a non-negative integer`);
     const instrumented = ids("instrumented", "symbol ids");
+    const reasons = event.uninstrumented;
+    if (reasons !== undefined && (typeof reasons !== "object" || reasons === null || Array.isArray(reasons) || Object.values(reasons).some((r) => typeof r !== "string"))) throw new Error(`${at}: \`uninstrumented\` must be an object of strings`);
+    for (const [id, reason] of Object.entries((reasons ?? {}) as Record<string, string>)) if (!run.uninstrumented.has(id)) run.uninstrumented.set(id, reason);
     const open = ids("open", "span ids") ?? [];
     run.complete &&= event.complete === true;
     run.dropped = run.dropped === null || dropped === undefined ? null : run.dropped + dropped;
@@ -219,6 +225,7 @@ function finishRun(draft: RunDraft): TraceRun {
     dropped: draft.runEvents > 0 ? draft.dropped : null,
     open: draft.open,
     instrumented: draft.instrumented,
+    uninstrumented: draft.uninstrumented,
   };
 }
 
@@ -402,7 +409,10 @@ class Matcher {
     const doubt = this.incompleteness();
     if (doubt !== null) return doubt;
     if (this.run.instrumented === null) return "incomplete trace (instrumented symbols unknown)";
-    if (!this.run.instrumented.has(id)) return `\`${id}\` is not instrumented`;
+    if (!this.run.instrumented.has(id)) {
+      const reason = this.run.uninstrumented.get(id);
+      return `\`${id}\` is not instrumented${reason ? ` (${reason})` : ""}`;
+    }
     return null;
   }
 
