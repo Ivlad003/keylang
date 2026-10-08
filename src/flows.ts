@@ -14,6 +14,9 @@ import { matchTest, type TestCase } from "./test-report.ts";
 import { traceFlow, type ShapeNode, type TraceEvidence, type TraceRun } from "./trace-evidence.ts";
 import type { Verdict } from "./verdict.ts";
 
+/** How a call edge came about when it is not a plain call of the code (`Via` of the graph): a hook, an argument, a framework's config. */
+type Via = "default" | "injected" | "callable-arg" | "closure-arg" | "preference" | "argument" | "plugin:before" | "plugin:around" | "plugin:after";
+
 interface SnapshotEdge {
   kind: string;
   source: string;
@@ -25,9 +28,13 @@ interface SnapshotEdge {
   col: number;
   reason?: string;
   text?: string;
-  via?: "default" | "injected" | "callable-arg" | "closure-arg";
+  via?: Via;
   hook?: string;
   site?: string;
+  /** Config edges (ADR 0022): the area, the module whose config declares it, the fact in words. */
+  scope?: string;
+  owner?: string;
+  binding?: string;
   closure?: true;
   /** An `import` or `reexport` of types only (`import type`, `export type … from`): erased from the code that runs. */
   typeOnly?: true;
@@ -285,6 +292,8 @@ interface CallGraph {
    * Not one `outside` the architecture: architecture code cannot reach it without a K107.
    */
   opaque: string | null;
+  /** A framework config keylang did not read, which may call any fn (ADR 0022). */
+  unreadConfig: NonNullable<FlowInput["coverage"]>[number] | null;
   /** Fns a call of whose name may not run the body keylang read (a decorator that may replace it). */
   replaced: Map<string, string>;
   /** Fns in a file that does not parse: the module does not load, and its code is not what keylang read. */
@@ -326,7 +335,9 @@ function callGraph(input: FlowInput): CallGraph {
   const unsupported = new Map<string, NonNullable<FlowInput["coverage"]>>();
   for (const item of input.coverage ?? []) if (item.kind === "unsupported") add(unsupported, item.file, item);
   const opaque = Object.entries(input.nodes).find(([, node]) => node.kind === "module" && node.members === "opaque" && node.layer !== "external" && node.layer !== OUTSIDE_LAYER)?.[0] ?? null;
-  return { resolved, open, callers, byName, byCaselessName, unsupported, opaque, callable, ...doubtfulBodies(input) };
+  // A framework's config keylang did not read (`frameworks` leaves it out, it does not parse): the framework may call any fn by it.
+  const unreadConfig = (input.coverage ?? []).find((item) => item.kind === "skipped-file" && item.text?.startsWith("framework:")) ?? null;
+  return { resolved, open, callers, byName, byCaselessName, unsupported, opaque, unreadConfig, callable, ...doubtfulBodies(input) };
 }
 
 /**
@@ -382,10 +393,24 @@ function namedLike(graph: CallGraph, name: string): string[] {
 
 /** A `via` edge in words. `where`: with the position of a passed callable (a hole's message adds the edge's position itself). */
 function describeVia(edge: SnapshotEdge, where = true): string {
+  if (edge.via === "preference" || edge.via === "argument" || edge.via?.startsWith("plugin:")) return describeConfig(edge);
   if (edge.via === "injected") return `\`${edge.hook ?? edge.text ?? ""}\` injected at ${edge.site ?? "?"}`;
   if (edge.via === "callable-arg") return `the callable \`${edge.text ?? ""}\` passed${where ? ` at ${at(edge)}` : " as an argument"}`;
   if (edge.via === "closure-arg") return `the closure passed at ${edge.site ?? at(edge)}`;
   return `the default of the hook \`${edge.hook ?? edge.text ?? ""}\``;
+}
+
+/**
+ * A call the framework makes by its config, as the verdict names it: `the
+ * preference `I → C` in `etc/di.xml:12``, `the plugin `p` (`P`) on `X`
+ * (plugin:around) in `etc/di.xml:30``, with the area when it is not global.
+ */
+export function describeConfig(edge: Pick<SnapshotEdge, "via" | "binding" | "site" | "scope">): string {
+  const where = edge.site ? ` in \`${edge.site.replace(/:\d+$/, "")}\`` : "";
+  const scope = edge.scope && edge.scope !== "global" ? ` (scope ${edge.scope})` : "";
+  if (edge.via === "preference") return `the preference ${edge.binding ?? ""}${where}${scope}`;
+  if (edge.via === "argument") return `${edge.binding ?? "a constructor argument"}${where}${scope}`;
+  return `the ${edge.binding ?? "plugin"} (${edge.via})${where}${scope}`;
 }
 
 /**
@@ -721,6 +746,8 @@ function escapeOf(graph: CallGraph, input: FlowInput, routes: Set<string>, reach
       if (inReachable || mentions) return { reason: `${item.reason} at ${file}:${item.line}:${item.col} may call it`, from: null };
     }
   }
+  const config = graph.unreadConfig;
+  if (config) return { reason: `${config.reason}, and the framework may call \`${[...routes].sort()[0] ?? ""}\` by it`, from: null };
   return null;
 }
 

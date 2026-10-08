@@ -13,11 +13,12 @@ import type { FileFacts } from "./extract/facts.ts";
 import { frontendFor } from "./frontends.ts";
 import { isGeneratedMap, renderExplainedMap, renderMap } from "./emit.ts";
 import { explanationOf, loadBriefs } from "./explanations.ts";
-import { buildGraph, placeFile, type Graph } from "./graph.ts";
+import { buildGraph, directoryModule, placeFile, type Graph } from "./graph.ts";
+import { activeAdapters, FRAMEWORK_ADAPTERS, FRAMEWORK_CONFIG, type FrameworkAdapter, type FrameworkContext, type FrameworkInput } from "./frameworks/adapter.ts";
 import { FACT_CACHE_FILE, FactCache } from "./fact-cache.ts";
 import { landing, writeAtomic, writeProblem } from "./safe-write.ts";
 import { collectEntries, ENTRY_MANIFESTS, type EntryManifests } from "./entries.ts";
-import { buildSnapshot, EXTRACTOR_VERSION, grammarVersions, sha256, type AnalysisSnapshot, type RepositoryDocs, type SystemDoc } from "./snapshot.ts";
+import { buildSnapshot, EXTRACTOR_VERSION, grammarVersions, sha256, type AnalysisSnapshot, type FrameworkManifest, type RepositoryDocs, type SystemDoc } from "./snapshot.ts";
 
 export interface MapResult {
   graph: Graph;
@@ -41,7 +42,7 @@ export interface MapResult {
  * best-effort); generation writes nothing.
  * `overlay` gives unsaved text of source files by absolute path (the language server).
  */
-export async function generateMap(config: Config, options: { persist?: boolean | "changed"; overlay?: ReadonlyMap<string, string> } = {}): Promise<MapResult> {
+export async function generateMap(config: Config, options: { persist?: boolean | "changed"; overlay?: ReadonlyMap<string, string>; adapters?: readonly FrameworkAdapter[] } = {}): Promise<MapResult> {
   // With an explicit config a file outside every layer is a finding
   // (`unassigned`); with guessed layers it is most likely not product code.
   // One walk sorts every source file into what is read, excluded and outside.
@@ -86,6 +87,8 @@ export async function generateMap(config: Config, options: { persist?: boolean |
     if (!frontend) continue;
     facts.push(await cache.facts(p, src.sha256, () => extractGuarded(frontend.extract, p, src.text)));
   }
+  // Framework config files (ADR 0022): read by the adapters the repository uses, cached by content like the sources.
+  const frameworks = readFrameworks(config, all, sources, options.overlay, cache, options.adapters);
   const factCache = options.persist === true || (options.persist === "changed" && cache.changed()) ? cache.serialize() : null;
   // An explicitly excluded file is a module with unknown contents: in its layer, or in `unassigned`
   // under an explicit config. A guessed layout keeps a file outside its guessed layers out of the graph.
@@ -95,7 +98,7 @@ export async function generateMap(config: Config, options: { persist?: boolean |
   const outside = tree.outside;
   for (const p of outside) facts.push(opaqueFacts(p));
   for (const { file } of unreadableFiles) facts.push(opaqueFacts(file));
-  const graph = buildGraph(config, facts);
+  const graph = buildGraph(config, facts, frameworks.inputs);
   // Layers written in keylang.json that overlap or match nothing: the layout still works, so a warning, first.
   if (!config.guessed) graph.warnings.unshift(...layerGlobWarnings(config, [...all, ...excluded, ...unreadableFiles.map((u) => u.file)].sort(compareText)));
   for (const [files, comment] of [[excluded, "excluded"], [outside, "outside"]] as const) {
@@ -122,13 +125,78 @@ export async function generateMap(config: Config, options: { persist?: boolean |
     ...outside.map((file) => ({ file, reason: "outside the architecture (`outside` in keylang.json)", kind: "outside-file" as const })),
     ...unreadable,
     ...unreadableFiles,
-  ], readRepositoryDocs(config), { list: entries, inputs: ENTRY_MANIFESTS.map((name) => [name, manifests[name]] as const) });
+    // A config file that does not parse: its facts are missing, so what it would bind is unknown.
+    // `text` says it is a framework's config: the framework may call any fn by it (`src/flows.ts`).
+    ...frameworks.inputs.flatMap((input) => input.configs.filter((c) => c.facts.error !== null).map((c) => ({ file: c.facts.path, reason: c.facts.error!.reason, text: `${FRAMEWORK_CONFIG}${input.name}`, ...ownerSource(config, graph, c.owner) }))),
+    ...frameworks.unread.map((c) => ({ file: c.path, reason: c.reason, text: `${FRAMEWORK_CONFIG}${c.framework}`, ...ownerSource(config, graph, c.owner) })),
+  ], readRepositoryDocs(config), { list: entries, inputs: ENTRY_MANIFESTS.map((name) => [name, manifests[name]] as const) }, frameworks.manifest);
   let explained: Map<string, string> | null = null;
   if (config.explain.map) {
     const briefs = loadBriefs(config);
     explained = renderExplainedMap(index, `${config.dir}/${EXPLAINED_MAP_DIR}`, (id) => explanationOf(index, briefs, id));
   }
   return { graph, files: renderMap(index, mapDir), explained, index, skipped: skipped.length, facts: { reused: cache.reused, extracted: cache.extracted }, factCache };
+}
+
+/**
+ * The config files of the framework adapters the repository uses, parsed (or
+ * reused from the fact cache by content), and what the manifest lists of them.
+ */
+function readFrameworks(
+  config: Config,
+  sources: readonly string[],
+  read: ReadonlyMap<string, { text: string; sha256: string }>,
+  overlay: ReadonlyMap<string, string> | undefined,
+  cache: FactCache,
+  available: readonly FrameworkAdapter[] | undefined,
+): { inputs: FrameworkInput[]; manifest: FrameworkManifest[]; unread: { path: string; owner: string | null; reason: string; framework: string }[] } {
+  const text = (path: string): string | null => read.get(path)?.text ?? overlay?.get(join(config.root, path)) ?? readSource(join(config.root, path));
+  const context: FrameworkContext = {
+    sources,
+    read: text,
+    dirs: (path) => {
+      try {
+        return readdirSync(join(config.root, path), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort(compareText);
+      } catch {
+        return [];
+      }
+    },
+    analysed: (path) => isAnalysed(path, config),
+  };
+  const inputs: FrameworkInput[] = [];
+  const manifest: FrameworkManifest[] = [];
+  const active = activeAdapters(config.frameworks, context, available);
+  // A framework the repository uses that `frameworks` leaves out: its config still runs, so what it
+  // binds is unknown to the snapshot — a hole of each config file, never an absence.
+  const unread = (available ?? FRAMEWORK_ADAPTERS)
+    .filter((adapter) => !active.includes(adapter) && adapter.detect(context))
+    .flatMap((adapter) => adapter.files(context).map(({ path, owner }) => ({ path, owner, framework: adapter.name, reason: `\`${path}\` is \`${adapter.name}\` config keylang does not read: \`frameworks\` in keylang.json leaves the adapter out` })));
+  for (const adapter of active) {
+    const configs: FrameworkInput["configs"] = [];
+    const files: { path: string; sha256: string }[] = [];
+    for (const { path, owner } of adapter.files(context)) {
+      const body = text(path);
+      if (body === null) continue;
+      const hash = sha256(body);
+      files.push({ path, sha256: hash });
+      configs.push({ facts: cache.config(path, hash, `${adapter.name}@${adapter.version}`, () => adapter.parse(path, body)), owner });
+    }
+    inputs.push({ name: adapter.name, configs });
+    manifest.push({ name: adapter.name, version: adapter.version, files });
+  }
+  return { inputs, manifest, unread };
+}
+
+/**
+ * The module a config file of `owner`'s directory belongs to, for a hole of its own: the
+ * directory's module, or the module of a file in it when the directory is a whole layer (a rule's
+ * area holds that module, not the layer node).
+ */
+function ownerSource(config: Config, graph: Graph, owner: string | null): { source?: string } {
+  const id = owner === null ? null : directoryModule(config, owner, graph);
+  if (id === null || graph.modules.has(id)) return id === null ? {} : { source: id };
+  const inside = [...graph.byPath].filter(([path]) => path.startsWith(`${owner}/`) && !path.slice(owner!.length + 1).includes("/")).sort(([a], [b]) => compareText(a, b))[0];
+  return { source: inside?.[1].id ?? id };
 }
 
 /** Root manifests a repository names and describes itself in, in the order they are asked. */

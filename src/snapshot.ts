@@ -17,7 +17,7 @@ import { components } from "./scc.ts";
 
 export const SNAPSHOT_SCHEMA = 8;
 /** Bump when extraction or resolution changes the facts that `snapshotId` covers. */
-export const EXTRACTOR_VERSION = "m1.14";
+export const EXTRACTOR_VERSION = "m1.15";
 
 export type Resolution = "resolved" | "ambiguous" | "unresolved";
 /**
@@ -56,13 +56,27 @@ export interface SnapshotEdge {
    * callable reference the source passes as an argument (`[$this, 'm']`,
    * `this.m.bind(this)`, `self.m`, `Self::m`), the edge at the argument;
    * `closure-arg` — a call in a closure literal the source passes as an
-   * argument, the closure at `site`. `keylang check --static=shape` follows
-   * none of them; rules do not see `injected`.
+   * argument, the closure at `site`. A call the framework makes by its
+   * configuration (ADR 0022), at `site` in the config: `preference` — a call
+   * through an interface (or a class) the config binds to a class;
+   * `argument` — a call through a constructor argument the config sets
+   * (Magento `<argument xsi:type="object">`); `plugin:before`, `plugin:around`,
+   * `plugin:after` — a plugin method that wraps the call. `keylang check
+   * --static=shape` follows none of them; rules do not see `injected`, and see
+   * a config edge as a dependency of `owner`.
    */
   via?: Via;
+  /** Config edges: where the framework applies the fact (`global`, `frontend`, `adminhtml`…). */
+  scope?: string;
+  /** Config edges: the module whose config declares the edge, which `deny` sees as its source; absent when no module owns the config. */
+  owner?: string;
+  /** Config edges: the fact in words, as the verdict names it — `` `I → C` ``, `` plugin `p` (`P`) on `X` ``. */
+  binding?: string;
+  /** Plugin edges: the fn the plugin wraps at this call. */
+  intercepts?: string;
   /** The local, parameter or field the hook call goes through. */
   hook?: string;
-  /** `file:line:col` of the call that passes the injected value, or of the closure passed as an argument. */
+  /** `file:line:col` of the call that passes the injected value, of the closure passed as an argument, or of the config line a config edge rests on. */
   site?: string;
   /** The call sits in a closure of `source`: whoever holds that function value may run it. */
   closure?: true;
@@ -171,6 +185,27 @@ export interface SnapshotNode {
    * reaches has a call keylang did not resolve, or has no fingerprint.
    */
   closure?: { fingerprint: string; complete: boolean };
+  /** fn: the plugins the framework's config wraps it in (ADR 0022), in the order they run. */
+  interceptedBy?: Interception[];
+}
+
+/** A plugin method that wraps a fn, from a framework config. */
+export interface Interception {
+  /** The plugin method: `P.beforePlace`, `P.aroundPlace`, `P.afterPlace`. */
+  plugin: string;
+  via: "plugin:before" | "plugin:around" | "plugin:after";
+  /** The plugin's name in the config. */
+  name: string;
+  /** `file:line:col` of the declaration in the config. */
+  site: string;
+  scope: string;
+}
+
+/** A framework adapter that read the repository, with the config files it read: inputs of `snapshotId`. */
+export interface FrameworkManifest {
+  name: string;
+  version: string;
+  files: { path: string; sha256: string }[];
 }
 
 /**
@@ -242,9 +277,13 @@ export interface AnalysisSnapshot {
       exclude: string[];
       outside: string[];
       assume: string[];
+      /** As `keylang.json` writes it; absent when it does not. */
+      frameworks?: string[];
       guessed: boolean;
     };
     files: { path: string; sha256: string }[];
+    /** Framework adapters in use and the config files they read (ADR 0022); absent when none is. */
+    frameworks?: FrameworkManifest[];
   };
   nodes: Record<string, SnapshotNode>;
   edges: SnapshotEdge[];
@@ -264,10 +303,12 @@ export function buildSnapshot(
   config: Config,
   files: readonly { path: string; sha256: string }[],
   /** Files (or an unreadable directory) left out; `source`: the ID scope they belong to when no module has the file. */
-  skipped: readonly { file: string; reason: string; source?: string; kind?: "skipped-file" | "outside-file" }[],
+  skipped: readonly { file: string; reason: string; source?: string; kind?: "skipped-file" | "outside-file"; text?: string }[],
   docs: RepositoryDocs = { system: { name: null, brief: null, source: null }, layers: new Map() },
   /** The entry points and the manifests they were read from (path → text or null), which `snapshotId` covers like the sources. */
   entries: { list: readonly EntryPoint[]; inputs: readonly (readonly [string, string | null])[] } = { list: [], inputs: [] },
+  /** Framework adapters in use and their config files, which `snapshotId` covers like the sources. */
+  frameworks: readonly FrameworkManifest[] = [],
 ): AnalysisSnapshot {
   const manifestFiles = [...files].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   const grammars = grammarVersions();
@@ -279,8 +320,10 @@ export function buildSnapshot(
     exclude: [...config.exclude],
     outside: [...config.outside],
     assume: [...config.assume],
+    ...(config.frameworks !== null ? { frameworks: [...config.frameworks] } : {}),
     guessed: config.guessed,
   };
+  const frameworkFiles = frameworks.map((f) => ({ name: f.name, version: f.version, files: [...f.files].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)) }));
   const snapshotId = sha256(
     JSON.stringify({
       schema: SNAPSHOT_SCHEMA,
@@ -292,6 +335,8 @@ export function buildSnapshot(
       resolution: [...graph.resolverInputs].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([path, text]) => [path, text === null ? null : sha256(text)]),
       // The manifests entry points come from (`bin`, `[project.scripts]`, `[[bin]]`) decide them as the sources do.
       entries: [...entries.inputs].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([path, text]) => [path, text === null ? null : sha256(text)]),
+      // A framework's config (`etc/di.xml`) decides edges as the code does (ADR 0022).
+      ...(frameworkFiles.length > 0 ? { frameworks: frameworkFiles } : {}),
     }),
   );
 
@@ -331,6 +376,7 @@ export function buildSnapshot(
         callers: [],
       };
       if (f.escapes) fn.escapes = f.escapes;
+      if (f.interceptedBy && f.interceptedBy.length > 0) fn.interceptedBy = f.interceptedBy;
       if (f.fingerprint !== undefined) fn.fingerprint = sha256(`${f.signature ?? ""}\u0000${f.fingerprint}`);
       nodes[f.id] = fn;
     }
@@ -408,6 +454,10 @@ export function buildSnapshot(
           ...(c.via ? { via: c.via } : {}),
           ...(c.hook ? { hook: c.hook } : {}),
           ...(c.site ? { site: c.site } : {}),
+          ...(c.scope ? { scope: c.scope } : {}),
+          ...(c.owner ? { owner: c.owner } : {}),
+          ...(c.binding ? { binding: c.binding } : {}),
+          ...(c.intercepts ? { intercepts: c.intercepts } : {}),
           ...(c.closure ? { closure: true as const } : {}),
         });
       }
@@ -436,7 +486,7 @@ export function buildSnapshot(
   const coverage: CoverageItem[] = [];
   for (const gap of graph.gaps) {
     coverage.push({ kind: gap.kind, file: gap.file, line: gap.line, col: gap.col, endLine: gap.endLine, endCol: gap.endCol, text: gap.text, reason: gap.reason, source: gap.source });
-    if (gap.kind === "unresolved-import" || gap.kind === "dynamic-call" || gap.kind === "unresolved-call") {
+    if (gap.kind === "unresolved-import" || gap.kind === "dynamic-call" || gap.kind === "unresolved-call" || gap.kind === "ambiguous-binding") {
       edges.push({
         kind: gap.kind === "unresolved-import" ? "import" : "call",
         source: gap.source ?? gap.file,
@@ -453,8 +503,8 @@ export function buildSnapshot(
       });
     }
   }
-  for (const { file, reason, source, kind } of skipped) {
-    coverage.push({ kind: kind ?? "skipped-file", file, line: 1, col: 1, endLine: 1, endCol: 1, text: "", reason, source: source ?? graph.byPath.get(file)?.id ?? null });
+  for (const { file, reason, source, kind, text } of skipped) {
+    coverage.push({ kind: kind ?? "skipped-file", file, line: 1, col: 1, endLine: 1, endCol: 1, text: text ?? "", reason, source: source ?? graph.byPath.get(file)?.id ?? null });
   }
   for (const item of graph.assumed) coverage.push({ kind: "assumed-import", ...item });
   coverage.sort(compareCoverage);
@@ -465,7 +515,7 @@ export function buildSnapshot(
     snapshotId,
     generated: new Date().toISOString(),
     system: docs.system,
-    manifest: { extractor: EXTRACTOR_VERSION, grammars, config: manifestConfig, files: manifestFiles },
+    manifest: { extractor: EXTRACTOR_VERSION, grammars, config: manifestConfig, files: manifestFiles, ...(frameworkFiles.length > 0 ? { frameworks: frameworkFiles } : {}) },
     nodes: ordered,
     edges,
     exports: graph.exports.map(exportRow),
@@ -482,7 +532,7 @@ export function buildSnapshot(
  * terminates and every member of it changes together.
  */
 function closures(nodes: Record<string, SnapshotNode>, coverage: readonly CoverageItem[]): void {
-  const holes = new Set(coverage.filter((c) => c.kind === "dynamic-call" || c.kind === "unresolved-call").map((c) => c.source));
+  const holes = new Set(coverage.filter((c) => c.kind === "dynamic-call" || c.kind === "unresolved-call" || c.kind === "ambiguous-binding").map((c) => c.source));
   // A hole in a declaration itself (a decorator or attribute macro that may replace it): what a call of
   // it runs is not the body keylang read. For a class it is every member, the constructor included.
   for (const c of coverage) {

@@ -4,6 +4,7 @@
 
 import { existsSync, readdirSync, readFileSync, statSync, type Dirent } from "node:fs";
 import { join, posix, relative } from "node:path";
+import { FRAMEWORK_NAMES } from "./frameworks/adapter.ts";
 import { firstMatchingGlob, globPrefix, globToRegExp, matchesGlob } from "./glob.ts";
 import { isLanguage, LANGUAGE_NAMES, LANGUAGES, languageOf, type Language } from "./languages.ts";
 
@@ -62,6 +63,12 @@ export interface Config {
    * when present; an import of one is no edge and no hole (`assumed-import`).
    */
   assume: string[];
+  /**
+   * Framework adapters (ADR 0022) by name: `[]` turns every one off, a list
+   * turns those on; null (the field absent) uses every adapter the analysed
+   * files show the framework of.
+   */
+  frameworks: string[] | null;
   check: { tests?: string; trace?: string; static?: StaticMode };
   /** `anthropic:<model>`, `openrouter:<model>` or `cli:<name>[:<model>]` (an agent CLI); null: no model is configured. */
   agent: string | null;
@@ -168,6 +175,7 @@ export interface RawConfig {
   exclude?: string[];
   outside?: string[];
   assume?: string[];
+  frameworks?: string[];
   check?: { tests?: string; trace?: string; static?: StaticMode };
   agent?: string;
   ghost?: { delay?: number | null };
@@ -204,6 +212,7 @@ export function loadConfig(root: string): Config {
     exclude,
     outside,
     assume,
+    frameworks: raw.frameworks ?? null,
     check: raw.check ?? {},
     agent: raw.agent ?? null,
     ghost: { delay: raw.ghost?.delay ?? null },
@@ -250,7 +259,7 @@ export function parseConfig(file: string, text: string): RawConfig {
     return glob;
   };
   if (!isObject(value)) return fail("(root)", "an object", value);
-  const known = new Set(["$schema", "format", "dir", "languages", "module", "layers", "exclude", "outside", "assume", "check", "agent", "explain", "ghost", "assistant", "voice"]);
+  const known = new Set(["$schema", "format", "dir", "languages", "module", "layers", "exclude", "outside", "assume", "frameworks", "check", "agent", "explain", "ghost", "assistant", "voice"]);
   for (const key of Object.keys(value)) if (!known.has(key)) throw new Error(`${file}: unknown field \`${key}\``);
   const raw: RawConfig = {};
   if (value.format !== undefined) raw.format = acceptFormat(file, value.format);
@@ -301,6 +310,14 @@ export function parseConfig(file: string, text: string): RawConfig {
   if (value.assume !== undefined) {
     if (!Array.isArray(value.assume) || !value.assume.every((glob) => typeof glob === "string")) return fail("assume", "an array of globs", value.assume);
     raw.assume = (value.assume as string[]).map((glob, i) => validGlob(`assume[${i}]`, glob));
+  }
+  if (value.frameworks !== undefined) {
+    const list = value.frameworks;
+    if (!Array.isArray(list)) return fail("frameworks", `an array of framework names (${FRAMEWORK_NAMES.map((name) => JSON.stringify(name)).join(", ")})`, list);
+    list.forEach((item, i) => {
+      if (typeof item !== "string" || !FRAMEWORK_NAMES.includes(item)) fail(`frameworks[${i}]`, `one of ${FRAMEWORK_NAMES.map((name) => JSON.stringify(name)).join(", ")}`, item);
+    });
+    raw.frameworks = [...new Set(list as string[])];
   }
   if (value.check !== undefined) {
     if (!isObject(value.check)) return fail("check", "an object", value.check);
