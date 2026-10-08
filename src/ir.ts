@@ -16,7 +16,7 @@ export interface Document {
   diagnostics: Diagnostic[];
 }
 
-export type SectionKind = "map" | "rules" | "flow" | "wiring";
+export type SectionKind = "map" | "rules" | "flow" | "wiring" | "migration";
 
 /** Content under one `# …` heading (or before the first heading). */
 export interface Section {
@@ -84,6 +84,11 @@ export type NodeKind =
   /** `alias path` under `wire`. */
   | "wire-dep"
   | "compose"
+  // migration (business-flows/26; ticket 27 checks them)
+  /** `map <old> → [planned] <new>`: an ID of the old stack and its counterpart here. Spelled `map`. */
+  | "migrate"
+  /** `dropped <id> <reason>`: an ID of the old stack that is not carried over. */
+  | "dropped"
   /** Item that could not be interpreted (a diagnostic was reported). */
   | "unknown";
 
@@ -101,7 +106,7 @@ export function isDecl(kind: NodeKind): boolean {
 
 /** The keyword as written in the language (`rule-module` is spelled `module`). */
 export function kindLabel(kind: NodeKind): string {
-  return kind === "rule-module" ? "module" : kind === "question" ? "?" : kind;
+  return kind === "rule-module" ? "module" : kind === "question" ? "?" : kind === "migrate" ? "map" : kind;
 }
 
 /** One list item `- <kind>? <name> <args…>` and everything nested under it. */

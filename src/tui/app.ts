@@ -2180,6 +2180,7 @@ export class App {
       // The blind spots read the code, keylang.json and the hand-written flows (a trigger they name has a flow).
       case "coverage":
       case "integrations":
+      case "tour":
         return { inputs: specs };
       // A code's help reads nothing. A node's summary, the inventory and a trace plan read the specs and
       // the saved explanations under the spec directory, keylang.json and the code.
@@ -2211,6 +2212,11 @@ export class App {
         return naming(specs, request.output === "write" ? [`${dir}flows-discovered/<layer>.md`] : null);
       case "flows-adopt":
         return naming(specs, [`${PROPOSALS_DIR}/${request.into ?? `${dir}flows/${request.name}.md`}`]);
+      // The bundle reads the code, keylang.json and the specs; the import writes two proposals.
+      case "flow-export":
+        return naming(specs, request.out === undefined ? null : [request.out]);
+      case "flow-import":
+        return naming(specs, [`${PROPOSALS_DIR}/${request.into ?? `${dir}features/<first flow>.md`}`, `${PROPOSALS_DIR}/${dir}migration.md`]);
       // The candidate reads the specs (the planned signature, the flows' tests), keylang.json and the code.
       case "spec-to-code": {
         const placed = specCodePlace(this.state.analysis, { id: request.id, into: request.into ?? "", mode: request.mode ?? "algo", output: request.output });
@@ -3289,6 +3295,8 @@ export class App {
         return this.requestOperation("coverage", { kind: "coverage", root: this.state.root });
       case "integrations":
         return this.requestOperation("integrations", { kind: "integrations", root: this.state.root });
+      case "tour":
+        return this.requestOperation("tour", { kind: "tour", root: this.state.root });
       case "feature":
         return this.runs.openFeaturePrompt();
       case "export-c4":

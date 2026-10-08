@@ -51,6 +51,8 @@ npx keylang web https://github.com/owner/repo
 
 The first line of the output is where the clone lives; open its `keylang/map` like your own. Run the same command again to pick up new commits. `--explain map-and-ai` also asks the model for a short note on every node and writes `keylang/map-explained/`; `--explain all` adds a longer explanation of every layer. Both need a model in the environment, for example `KEYLANG_AGENT=cli:claude`, because the clone's `keylang.json` belongs to keylang. `--dry-run` prints the token estimate first and asks nothing. `web` with a URL does the clone and then opens the browser UI on it.
 
+Inside the clone, `keylang tour` prints one page for a newcomer, with no model: what the system says it is, the layers with their size and coupling, the business processes and their flows (run `keylang flows discover` first, so each flow has its file and its diagram link), the entry points, the integrations, the blind spots that you have to read by hand, and the ten functions to start reading with. `keylang tour --out keylang/tour.md` keeps it as a generated file that `check` does not read, and the «Огляд» tab of `keylang web` shows the same page.
+
 If a fence around the code was all you wanted, you can stop here. The next part is for a change that does not exist in the code yet.
 
 Next: [a new feature](02-a-feature.md).

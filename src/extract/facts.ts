@@ -72,10 +72,15 @@ export interface FileFacts {
  * `label` is `GET /x`, `callee` is `h` as written. `main`: a Python
  * `if __name__ == "__main__":` block — `callee` is the fn it calls, or null
  * when it names none directly (the module's top level is the entry then).
+ * `sfra`: `server.get('Show', …, h)` in an SFRA controller — `callee` is the
+ * last argument when it is a name, null for a handler written in place.
  */
 export interface EntryFact {
-  kind: "route" | "main";
+  kind: "route" | "main" | "sfra";
+  /** `sfra`: the action name, `Show`; the SFCC adapter adds the controller's. */
   label: string;
+  /** `sfra`: the `server` method that registers it (`get`, `post`, `use`, `append`, `prepend`, `replace`). */
+  method?: string;
   callee: string | null;
   line: number;
   col: number;
