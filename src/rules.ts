@@ -498,6 +498,8 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
     }
     if (failed) continue;
     if (unknown) pushUnverified(...at, criterion, rule.module, unknown.reason ?? "re-export from an opaque module", spec);
+    // The table of an opaque module may lack an export, which would be a K104: the match is no convergence.
+    else if (opaque) pushUnverified(...at, criterion, rule.module, `opaque module \`${rule.module}\` may export more than its table shows`, spec);
     else pushOk(rule.file, rule.span, criterion, rule.module, `convergence: the export table is exactly ${[...rule.names].sort().join(", ")}`, spec);
   }
 

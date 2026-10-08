@@ -1,6 +1,6 @@
 # 27: `exports` на непрозорому модулі (помилка розбору) дає ok «the export table is exactly …»
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -56,11 +56,15 @@ scratchpad/review/rule-flow-semantics/f6: `node bin/keylang.js check --format js
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/rules.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/rules.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+- 2026-10-08: Регресійний тест `tests/rules-area.test.ts` «exports on an opaque module (a parse error) whose partial table matches the list is unverified, not ok» — справжній CLI: `src/app/m.ts` з `export function a`, рядком, який граматика не розбирає, і `export function hidden`; `- module app.m` / `  - exports a`. `check` і `check --strict` — `0 fail, 1 unverified, 0 ok`, JSON-вердикт `unverified` з «opaque module `app.m` may export more than its table shows». Перевірено, що на коді до виправлення тест падає (`0 fail, 0 unverified, 1 ok`).
+- 2026-10-08: Виправлення в `src/rules.ts` (правило `exports`): для `members: opaque` без K104 вердикт `unverified` і тоді, коли таблиця збігається зі списком; `pushOk` лише для `complete`. Зайве ім'я в таблиці непрозорого модуля й далі K104 (fail певний).
+- 2026-10-08: Контракт: `docs/semantics.md` (рядок про `exports`). Перевірки: `node --test tests/rules-area.test.ts tests/cli-rules.test.ts tests/analyzer.test.ts` — 69/69, `npm run typecheck` — ок.
