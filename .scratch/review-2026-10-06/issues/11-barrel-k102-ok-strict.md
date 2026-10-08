@@ -1,6 +1,6 @@
 # 11: Виключений або нерозібраний barrel в іншому шарі перетворює K102 на ok, навіть із --strict
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -55,11 +55,15 @@ scratchpad/review/rule-flow-semantics/f8: `node bin/keylang.js check` дає `sr
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/rules.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/rules.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+- 2026-10-07: Регресійні тести в `tests/metamorphic.test.ts` («09: …», три тести, через справжній CLI на тимчасовій фікстурі app/shared/infra з `- deny app infra`): exclude barrel з `export { save } from`, exclude barrel з `export * from`, barrel із синтаксичною помилкою плюс `check --strict`. На поточному коді падали: `monotonic` ловив `deny app infra: fail → ok`, а для parse-error вердикт був `ok` і strict давав код 0.
+- 2026-10-07: Виправлення в `src/rules.ts`: область `deny` тепер містить і модулі, з яких модулі джерела імпортують розв'язаним ребром `import`/`re-export`, далі ланцюжком реекспортів (`importedBy(scope)`); дірка в них (`holeAmong(imported, UNASSIGNED_FILE)`) робить вердикт `unverified` з причиною самої дірки (`excluded by keylang.json (src/shared/barrel.ts:1:1)` / parse-error). Окремого виду дірки для unresolved-call не додано: імпорт із opaque-модуля вже в області, і це покриває і виклик, і сам імпорт імені. Звичайний імпорт імпорту (не реекспорт) областю не є — це залежність того модуля.
+- 2026-10-07: Контракт: `docs/semantics.md` — речення про область `deny` в описі `allow`/`deny` і предикат `area(deny, U)` у нормативній моделі; `llm.txt` не змінено (область правил там не описана). `docs/review-2026-10-06.md` п. 9 позначено ✔. Карту `keylang/map*` перегенеровано (`map --check` був stale ще до зміни через зсув рядків `src/safe-write.ts`; зміна `src/rules.ts` теж зсуває `#L`). Перевірки: `node --test tests/metamorphic.test.ts tests/cli-rules.test.ts tests/review-core.test.ts` — 36/36, `npm run typecheck` — ок, `node bin/keylang.js map --check` — ок після перегенерації, `node bin/keylang.js check` — `0 fail, 24 unverified, 47 ok`, ті самі не-`ok` вердикти, що й на master.

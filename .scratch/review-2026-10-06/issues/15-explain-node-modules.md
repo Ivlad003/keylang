@@ -1,6 +1,6 @@
 # 15: Брама пропозицій перевіряє зарезервовані теки за рядком шляху, а не за місцем запису: регістр і посилання обходять заборону explain/ і node_modules
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -56,11 +56,15 @@ macOS: агент викликає MCP `apply_diff {path:"keylang/Explain/brief/
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/proposals.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/proposals.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+- 2026-10-07: Регресійний тест у `tests/review-loop.test.ts` («a reserved directory reached through a link or another case is still refused…»; там живуть інші тести брами пропозицій, тож не в `mcp.test.ts`/`review-ops.test.ts`): копія `tests/fixtures/repo` з `keylang/explain/brief/app.checkout.checkout.md` (`closure=abc`), `node_modules/lib/index.ts`, посиланнями `keylang/notes -> explain` і `src/vendor -> ../node_modules/lib`. Через MCP `apply_diff`, `draft flow --into`, `keylang proposals` і `proposals accept`, плюс брама напряму (`proposalProblem`/`codeProposalProblem`) і чиста функція порівняння місць запису `landsIn`. На поточному коді (bin з master на тій самій фікстурі) `keylang proposals` показував `keylang/notes/brief/…: +1 -1` і `src/vendor/index.ts: +1 -1`, тобто обидва приймалися.
+- 2026-10-07: Виправлення в `src/proposals.ts`: текстова перевірка лишилася швидким шляхом, але без урахування регістру (`Explain/`, `Node_Modules/`); після `writeProblem` місце запису `landing(resolve(root, path))` перевіряється за диском: `landsIn(lands, <specRoot>/{map,map-explained,explain})` — предок із тим самим dev+ino, що й зарезервована тека; `landsUnread(root, lands)` — предок із прихованим ім'ям, `node_modules`/`target` (ще не створені сегменти — за текстом) або з тим самим dev+ino, що й сусідня `node_modules`/`target`. Те саме для коду в `codeProposalProblem`. Регістр на ФС без розрізнення регістру юніт-тестом на Linux не відтворити: dev+ino-порівняння перевірено посиланням (`landsIn` на `notes -> explain`), регістр — текстовим швидким шляхом; `realpathSync.native` не використано, бо на casefold tmpfs він регістр не нормалізує, а inode — єдина ознака, спільна для APFS/NTFS/casefold.
+- 2026-10-07: Контракт: `docs/cli.md` «Правила цілі пропозиції» (перевірка за місцем запису, приклади з посиланнями й регістром) і `docs/mcp-lsp.md` (`apply_diff`); `llm.txt` не змінено (брама там не описана). `docs/review-2026-10-06.md` п. 14 позначено ✔ (тікет 15 відповідає п. 14 рев'ю). Карту перегенеровано (нові fn у `src/proposals.ts`). Перевірки: `node --test tests/review-loop.test.ts tests/mcp.test.ts tests/review-ops.test.ts` — 33/33, `npm run typecheck` — ок, `node bin/keylang.js map --check` — ок, `node bin/keylang.js check` — `0 fail, 24 unverified, 47 ok`.

@@ -8,7 +8,7 @@
 // `apply_diff`, `keylang proposals` — and start from the write protocol of
 // `safe-write.ts`, so a path gets one reason wherever it comes from.
 
-import { accessSync, constants, existsSync, lstatSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { accessSync, constants, existsSync, lstatSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, type Stats } from "node:fs";
 import { basename, dirname, join, posix, relative, resolve, win32 } from "node:path";
 import { within } from "./analyze.ts";
 import { toPosix } from "./config.ts";
@@ -31,7 +31,83 @@ function notPlain(path: string): boolean {
 
 /** A directory below the spec directory, or the root for code, that `check` and the map do not read: hidden, `node_modules`, `target`. */
 function unreadDirectory(dirs: readonly string[]): boolean {
-  return dirs.some((part) => part.startsWith(".") || part === "node_modules" || part === "target");
+  return dirs.some(unreadName);
+}
+
+/** Case does not tell the directories apart: on a case-insensitive file system `Node_Modules` is `node_modules`. */
+function unreadName(name: string): boolean {
+  const lower = name.toLowerCase();
+  return name.startsWith(".") || lower === "node_modules" || lower === "target";
+}
+
+function statOrNull(abs: string): Stats | null {
+  try {
+    return statSync(abs);
+  } catch {
+    return null;
+  }
+}
+
+/** The same directory on disk: by device and inode, which a link or another letter case of the name does not change. */
+function sameEntry(a: Stats, b: Stats | null): boolean {
+  return b !== null && a.dev === b.dev && a.ino === b.ino;
+}
+
+/**
+ * Whether a write to `abs` lands inside the directory `dir` on disk: `dir`
+ * itself or one of the existing ancestors of `abs` is `dir` by device and
+ * inode. Links are followed, so `notes/brief/x.md` with `notes -> explain`
+ * lands in `explain/`, and on a case-insensitive file system so does
+ * `Explain/brief/x.md`; the text of the path is not consulted. A `dir` that
+ * is not on disk holds nothing.
+ */
+export function landsIn(abs: string, dir: string): boolean {
+  const target = statOrNull(dir);
+  if (target === null || !target.isDirectory()) return false;
+  for (let entry = abs; ; entry = dirname(entry)) {
+    const stat = statOrNull(entry);
+    if (stat !== null && sameEntry(target, stat)) return true;
+    if (dirname(entry) === entry) return false;
+  }
+}
+
+/**
+ * Whether the landing place `lands` (below `root`, links resolved) is in a
+ * directory `check` does not read: an ancestor below `root` whose name is
+ * hidden, `node_modules` or `target` (the segments not on disk yet by their
+ * text), or whose entry on disk is the `node_modules` or `target` next to
+ * it, so a link into `node_modules/` or another letter case cannot alias it.
+ */
+function landsUnread(root: string, lands: string): boolean {
+  const base = statOrNull(root);
+  for (let dir = dirname(lands); dir !== dirname(dir) && within(dir, root); dir = dirname(dir)) {
+    const stat = statOrNull(dir);
+    if (base !== null && sameEntry(base, stat)) return false;
+    if (unreadName(basename(dir))) return true;
+    if (stat !== null && ["node_modules", "target"].some((name) => sameEntry(stat, statOrNull(join(dirname(dir), name))))) return true;
+  }
+  return false;
+}
+
+/** The directories under the spec directory keylang generates, each with the refusal a proposal into it gets. */
+const GENERATED_SPEC_DIRS: readonly [string, string][] = [
+  ["map", "a generated map file: change the code or the rules, then run `keylang map`"],
+  [EXPLAINED_MAP_DIR, "the explained map is generated: `keylang map` writes it"],
+  ["explain", "saved explanations: only `keylang explain` writes them"],
+];
+
+/** Why the spec path `inside` the spec directory is in a reserved directory by its text alone (case aside), or null: the fast path. */
+function reservedSpecText(inside: string): string | null {
+  const dirs = inside.split("/").slice(0, -1);
+  if (unreadDirectory(dirs)) return "in a directory specs are not read from";
+  const first = dirs[0]?.toLowerCase();
+  return GENERATED_SPEC_DIRS.find(([name]) => name.toLowerCase() === first)?.[1] ?? null;
+}
+
+/** Why the landing place `lands` of a spec is in a reserved directory of `specRoot` (the spec directory on disk), or null. */
+function reservedSpecLanding(specRoot: string, lands: string): string | null {
+  if (landsUnread(specRoot, lands)) return "in a directory specs are not read from";
+  return GENERATED_SPEC_DIRS.find(([name]) => landsIn(lands, join(specRoot, name)))?.[1] ?? null;
 }
 
 /**
@@ -51,16 +127,18 @@ export function proposalProblem(root: string, specDir: string, path: string, gen
   if (!path.startsWith(prefix)) return `outside ${specDir}/: a proposal changes specs only`;
   const inside = path.slice(prefix.length);
   // The same files `check` reads as specs: the spec directory itself may be hidden, a directory below it may not.
-  if (unreadDirectory(inside.split("/").slice(0, -1))) return "in a directory specs are not read from";
-  if (inside.startsWith("map/")) return "a generated map file: change the code or the rules, then run `keylang map`";
-  if (inside.startsWith(`${EXPLAINED_MAP_DIR}/`)) return "the explained map is generated: `keylang map` writes it";
-  if (inside.startsWith("explain/")) return "saved explanations: only `keylang explain` writes them";
+  // The text of the path is the fast path; the landing place decides below, since a link or another letter
+  // case of a reserved directory's name lands in it too.
+  const byText = reservedSpecText(inside);
+  if (byText !== null) return byText;
   // Links first: nothing outside the spec directory is read, not even to see whether it is generated.
   const specRoot = landing(resolve(root, specDir));
   if (specRoot === null || !within(specRoot, realpathSync(root))) return "the spec directory leads out of the repository through a link";
   const problem = writeProblem(root, path, { ...(specDir === "" ? {} : { under: specDir }), generated: true });
   if (problem !== null) return problem.startsWith("leads out of") ? `leads out of ${specDir || "."}/ through a link` : problem;
   const lands = landing(resolve(root, path))!;
+  const byLanding = reservedSpecLanding(specRoot, lands);
+  if (byLanding !== null) return byLanding;
   const text = existingText(lands);
   const marker = text === null ? null : parse(path, text).generated;
   if (marker !== null || (text !== null && isGeneratedText(text)) || generated(path)) return generatedSpecProblem(marker, specDir);
@@ -92,6 +170,8 @@ export function codeProposalProblem(root: string, path: string): string | null {
   const problem = writeProblem(root, path, { generated: true });
   if (problem !== null) return problem;
   const lands = landing(resolve(root, path))!;
+  // The text was the fast path: a link such as `src/vendor -> ../node_modules/lib` lands in `node_modules/` too.
+  if (landsUnread(realpathSync(root), lands)) return "in a directory sources are not read from";
   const text = existingText(lands);
   if (text?.startsWith(WIRE_MARKER)) return "a generated file: it is written by `keylang wire` only";
   if (text !== null && isGeneratedText(text)) return "a generated file: only its generator writes it";

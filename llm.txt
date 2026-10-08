@@ -204,6 +204,7 @@ Server name: `keylang`. Only `apply_diff` writes to the repository, and only a p
 | `validate_spec` | Parse text as the file at `path`. Nothing is written |
 | `scaffold` | Stub and failing tests for one `planned fn`. Nothing is written |
 | `feature_status` | `{slug}`. Done or the gaps |
+| `list_entries` | Where execution starts: routes, `bin`, scripts, `main`. Same list as `keylang entries --json` |
 | `apply_diff` | Propose the full new text of one hand-written spec |
 
 CLI when MCP is off:

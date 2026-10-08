@@ -191,6 +191,14 @@ export const ACTIONS: readonly Action[] = [
     when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
   },
   {
+    id: "entries",
+    label: "Entry points: where execution starts, from the code and its manifests",
+    group: "Map",
+    aliases: ["entries", "entry points", "keylang entries", "routes", "main", "bin", "scripts", "where does it start"],
+    // Reads the saved code and keylang.json in a worker; writes nothing but the fact cache; no form: every kind is listed.
+    when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
+  },
+  {
     id: "export",
     label: "Export the report to a file",
     group: "Check",
