@@ -422,8 +422,12 @@ export class App {
     this.escTimer = null;
     const events = this.decoder.feed(chunk);
     for (let i = 0; i < events.length; ) {
-      const run = typedRun(events, i);
-      if (run.length > 1 && !this.state.prompt && !this.state.completion && !this.state.help && !(this.state.results.open && !this.state.results.viewing) && pastedRun(run, this.state.mode === "edit" || chatTakesKeys(this.state))) {
+      const typed = typedRun(events, i);
+      // In the clip's chat a pasted line break is a space but Enter sends: an Enter that ends the chunk
+      // (typed keys coalesced with it) is left out of the paste and sends the line after it.
+      const chat = chatTakesKeys(this.state);
+      const run = chat && typed.length > 1 && typed.at(-1)!.name === "enter" ? typed.slice(0, -1) : typed;
+      if (run.length > 1 && !this.state.prompt && !this.state.completion && !this.state.help && !(this.state.results.open && !this.state.results.viewing) && pastedRun(run, this.state.mode === "edit" || chat)) {
         this.safely({ type: "paste", text: run.map((key) => (key.name === "enter" ? "\n" : key.name === "tab" ? "  " : key.text!)).join("") });
         i += run.length;
         continue;
