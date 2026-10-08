@@ -35,7 +35,7 @@
     - snapshot [map.snapshot](map.md#map.snapshot)
     - trace-plan [map.trace-plan](map.md#map.trace-plan)
     - type [TraceHooksData](../../src/adapters/trace-hooks.ts#L16)
-      <a id="cli.trace-hooks.TraceHooksData"></a><br>Describes the payload handed to the trace-hooks worker thread: the repository root path, the flow identifier being traced, and a `MessagePort` over which the worker reports hook events back to the parent. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="cli.trace-hooks.TraceHooksData"></a><br>Describes the payload handed to the trace-hooks worker thread: the repository root path, the flow identifier being traced, and a `MessagePort` over which the worker reports hook events back to the parent. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
     - type [TracePlanMessage](../../src/adapters/trace-hooks.ts#L32)
       <a id="cli.trace-hooks.TracePlanMessage"></a><br>Hooks → adapter. `plan` once from `initialize`: the flow's functions a wrapper was planned for, and the real path of each file that holds them. `loaded` from `load` for each file the plan was applied to (`commonjs` when Node compiles it as CommonJS); `skipped` for a planned…
     - type [FilePlan](../../src/adapters/trace-hooks.ts#L37) <!-- internal -->
@@ -52,7 +52,7 @@
     - type [LoadResult](../../src/adapters/trace-hooks.ts#L126) <!-- internal -->
       <a id="cli.trace-hooks.LoadResult"></a><br>Shape of the value a module-load hook returns: an optional module `format`, the loaded `source` as string or binary buffer, and a `shortCircuit` flag telling the loader chain to stop at this result. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [load](../../src/adapters/trace-hooks.ts#L128) (url: string, context: unknown, nextLoad: (url: string, context: unknown) => Promise<LoadResult>) → Promise<LoadResult>
-      <a id="cli.trace-hooks.load"></a><br>Node module loader hook that swaps in instrumented trace source for planned files whose [`map.snapshot.sha256`](map.md#map.snapshot.sha256) hash matches the snapshot, reporting loaded or skipped, and tags CommonJS modules for the adapter. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
+      <a id="cli.trace-hooks.load"></a><br>Node module loader hook that swaps in instrumented trace source for planned files whose [`map.snapshot.sha256`](map.md#map.snapshot.sha256) hash matches the snapshot, reporting loaded or skipped, and tags CommonJS modules for the adapter. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [map.snapshot.sha256](map.md#map.snapshot.sha256)
   - module [trace](../../src/adapters/trace.ts#L1)
     <a id="cli.trace"></a><br>Trace adapter for TS/JS `@flow` tests: `node --import keylang/trace …` (in this repository: `--import ./src/adapters/trace.ts`). Environment: KEYLANG_TRACE JSONL file to append to; without it the adapter does nothing (a relative path, like the root, is resolved once against the…
@@ -248,9 +248,9 @@
   - module [completions](../../src/completions.ts#L1)
     <a id="cli.completions"></a><br>`keylang completions <shell>`: a completion script for bash, zsh or fish. The words come from the help text (commands and their subcommands) and the option table of the argument parser, so a new command or flag is completed as soon as `--help` and the parser know it.
     - type [Shell](../../src/completions.ts#L7) = (typeof SHELLS)[number]
-      <a id="cli.completions.Shell"></a><br>Union type of the shell names listed in the `SHELLS` array, derived by indexing its element type so the two can't drift apart. Used to constrain which shell a completion script is generated for. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="cli.completions.Shell"></a><br>Union type of the shell names listed in the `SHELLS` array, derived by indexing its element type so the two can't drift apart. Used to constrain which shell a completion script is generated for. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
     - fn [isShell](../../src/completions.ts#L9) (name: string) → name is Shell
-      <a id="cli.completions.isShell"></a><br>Type guard that checks whether a string is one of the names in the `SHELLS` list, narrowing it to `Shell` when it matches. Used by [`cli.cli.cmdCompletions`](cli.md#cli.cli.cmdCompletions) to validate the user-supplied shell argument. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="cli.completions.isShell"></a><br>Type guard that checks whether a string is one of the names in the `SHELLS` list, narrowing it to `Shell` when it matches. Used by [`cli.cli.cmdCompletions`](cli.md#cli.cli.cmdCompletions) to validate the user-supplied shell argument. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
     - type [CompletionWords](../../src/completions.ts#L14)
       <a id="cli.completions.CompletionWords"></a><br>What the script completes: commands in help order, each with its subcommands; long flags with an optional short one.
     - fn [helpCommands](../../src/completions.ts#L27) (usage: string) → Map<string, string[]>
@@ -297,14 +297,14 @@
     - module [Server](../../src/lsp.ts#L83) <!-- internal -->
       <a id="cli.lsp.Server"></a><br>Language server session state that keeps open-document buffers, answers or cancels JSON-RPC requests via [`cli.lsp.Server.receive`](cli.md#cli.lsp.Server.receive), and debounces re-analysis through [`cli.lsp.Server.changed`](cli.md#cli.lsp.Server.changed) to publish diagnostics. _(llm · claude:claude-opus-5-5 · 2026-10-06 · stale)_
       - fn [constructor](../../src/lsp.ts#L110) (send: (message: Rpc) => void)
-        <a id="cli.lsp.Server.constructor"></a><br>Stores the injected callback for emitting outgoing JSON-RPC messages so the server can later push responses and notifications without owning the transport itself. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+        <a id="cli.lsp.Server.constructor"></a><br>Stores the injected callback for emitting outgoing JSON-RPC messages so the server can later push responses and notifications without owning the transport itself. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - fn [reject](../../src/lsp.ts#L114) (id: number | string | null, code: number, message: string) → void
-        <a id="cli.lsp.Server.reject"></a><br>Builds a JSON-RPC 2.0 error response with the given id, error code and message, and sends it to the client. [`cli.lsp.serveLsp`](cli.md#cli.lsp.serveLsp) uses it, with a null id, to answer a message it cannot parse or that is not a JSON object; a failed request is answered elsewhere. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+        <a id="cli.lsp.Server.reject"></a><br>Builds a JSON-RPC 2.0 error response with the given id, error code and message, and sends it to the client. [`cli.lsp.serveLsp`](cli.md#cli.lsp.serveLsp) uses it, with a null id, to answer a message it cannot parse or that is not a JSON object; a failed request is answered elsewhere. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - fn [receive](../../src/lsp.ts#L118) (message: Rpc) → void
         <a id="cli.lsp.Server.receive"></a><br>Dispatches one incoming JSON-RPC message: invalid ids or methods go to [`cli.lsp.Server.reject`](cli.md#cli.lsp.Server.reject), and notifications go to [`cli.lsp.Server.notify`](cli.md#cli.lsp.Server.notify), with failures logged to stderr. Requests go to [`cli.lsp.Server.request`](cli.md#cli.lsp.Server.request); each reply is sent unless the request was cancelled. _(llm · claude:claude-opus-5-5 · 2026-10-06 · stale)_
         - calls [cli.lsp.Server.reject](cli.md#cli.lsp.Server.reject), [cli.lsp.Server.notify](cli.md#cli.lsp.Server.notify), [cli.lsp.Server.request](cli.md#cli.lsp.Server.request)
       - fn [drain](../../src/lsp.ts#L162) () → Promise<void>
-        <a id="cli.lsp.Server.drain"></a><br>Repeatedly awaits every in-flight request promise until the pending set is empty, then cancels any scheduled timer so the server can shut down cleanly; [`cli.lsp.serveLsp`](cli.md#cli.lsp.serveLsp) calls it at the end of a session. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+        <a id="cli.lsp.Server.drain"></a><br>Repeatedly awaits every in-flight request promise until the pending set is empty, then cancels any scheduled timer so the server can shut down cleanly; [`cli.lsp.serveLsp`](cli.md#cli.lsp.serveLsp) calls it at the end of a session. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - fn [notify](../../src/lsp.ts#L167) (method: string, params: Record<string, unknown>) → void <!-- internal -->
         <a id="cli.lsp.Server.notify"></a><br>Handles LSP notifications: sets the exit code, drops anything before initialization, syncs open-document buffers via [`cli.lsp.Server.edited`](cli.md#cli.lsp.Server.edited) and calls [`cli.lsp.Server.changed`](cli.md#cli.lsp.Server.changed), and errors out cancelled pending requests. _(llm · claude:claude-opus-5-5 · 2026-10-06 · stale)_
         - calls [cli.lsp.filePath](cli.md#cli.lsp.filePath), [cli.lsp.Server.changed](cli.md#cli.lsp.Server.changed), [cli.lsp.Server.edited](cli.md#cli.lsp.Server.edited)
@@ -324,7 +324,7 @@
         <a id="cli.lsp.Server.publish"></a><br>Once the latest workspace is built via [`cli.lsp.Server.current`](cli.md#cli.lsp.Server.current) (stale generations are dropped), asks pull-mode clients to refresh diagnostics. Otherwise it pushes [`features.lsp-features.diagnosticsFor`](features.md#features.lsp-features.diagnosticsFor) results per open buffer and clears closed files. _(llm · claude:claude-opus-5-5 · 2026-10-06 · stale)_
         - calls [cli.lsp.Server.current](cli.md#cli.lsp.Server.current), [features.lsp-features.diagnosticsFor](features.md#features.lsp-features.diagnosticsFor), [cli.lsp.Server.relative](cli.md#cli.lsp.Server.relative)
       - fn [relative](../../src/lsp.ts#L307) (abs: string) → string <!-- internal -->
-        <a id="cli.lsp.Server.relative"></a><br>Converts an absolute file path into a POSIX-style path relative to the server root when [`map.analyze.within`](map.md#map.analyze.within) confirms it lies under that root, otherwise returns the path unchanged through [`base.config.toPosix`](base.md#base.config.toPosix). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+        <a id="cli.lsp.Server.relative"></a><br>Converts an absolute file path into a POSIX-style path relative to the server root when [`map.analyze.within`](map.md#map.analyze.within) confirms it lies under that root, otherwise returns the path unchanged through [`base.config.toPosix`](base.md#base.config.toPosix). _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
         - calls [base.config.toPosix](base.md#base.config.toPosix), [map.analyze.within](map.md#map.analyze.within)
       - fn [report](../../src/lsp.ts#L312) (message: string) → void <!-- internal -->
         <a id="cli.lsp.Server.report"></a><br>In stderr (the client's log) and as a message the editor shows, once while the same failure lasts.
@@ -335,9 +335,9 @@
         <a id="cli.lsp.Server.initialize"></a><br>The capabilities; the server's state changes only once everything else succeeded.
         - calls [cli.lsp.filePath](cli.md#cli.lsp.filePath), [map.analyze.findRoot](map.md#map.analyze.findRoot)
     - module [LspError](../../src/lsp.ts#L409) <!-- internal -->
-      <a id="cli.lsp.LspError"></a><br>Error subclass carrying a numeric JSON-RPC-style code alongside the message, so callers catching failures from the language server can branch on the code rather than parsing text. Construction via [`cli.lsp.LspError.constructor`](cli.md#cli.lsp.LspError.constructor) just forwards the message and stores the code. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="cli.lsp.LspError"></a><br>Error subclass carrying a numeric JSON-RPC-style code alongside the message, so callers catching failures from the language server can branch on the code rather than parsing text. Construction via [`cli.lsp.LspError.constructor`](cli.md#cli.lsp.LspError.constructor) just forwards the message and stores the code. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - fn [constructor](../../src/lsp.ts#L411) (code: number, message: string)
-        <a id="cli.lsp.LspError.constructor"></a><br>Builds a JSON-RPC style error by passing the message to the base `Error` constructor and storing the numeric code on the instance for callers to inspect. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+        <a id="cli.lsp.LspError.constructor"></a><br>Builds a JSON-RPC style error by passing the message to the base `Error` constructor and storing the numeric code on the instance for callers to inspect. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
     - fn [filePath](../../src/lsp.ts#L417) (uri: string) → string <!-- internal -->
       <a id="cli.lsp.filePath"></a><br>Converts an LSP document URI into an absolute filesystem path: `file:` URIs are decoded via `fileURLToPath`, anything else is resolved relative to the current working directory. Used by [`cli.lsp.Server.initialize`](cli.md#cli.lsp.Server.initialize), [`cli.lsp.Server.notify`](cli.md#cli.lsp.Server.notify), and [`cli.lsp.Server.request`](cli.md#cli.lsp.Server.request) to map… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - type [LspRange](../../src/lsp.ts#L421) <!-- internal -->

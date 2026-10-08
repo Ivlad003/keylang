@@ -39,7 +39,7 @@
       <a id="features.agent-cli.parseAgentSettings"></a><br>The settings of an agents.json already parsed as JSON.
       - calls [features.agent-cli.isObject](features.md#features.agent-cli.isObject), [base.config.isAgent](base.md#base.config.isAgent), [features.agent-cli.cliDefinition](features.md#features.agent-cli.cliDefinition)
     - fn [cliDefinition](../../src/agent-cli.ts#L110) (file: string, name: string, def: unknown) → CliDefinition <!-- internal -->
-      <a id="features.agent-cli.cliDefinition"></a><br>Validates one `clis.<name>` entry from a settings file, checking the name format, allowed fields, and either a non-empty `bin` string or a `command` array whose placeholders are known, throwing descriptive errors on any violation. Preset names may only override `bin`; it uses… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="features.agent-cli.cliDefinition"></a><br>Validates one `clis.<name>` entry from a settings file, checking the name format, allowed fields, and either a non-empty `bin` string or a `command` array whose placeholders are known, throwing descriptive errors on any violation. Preset names may only override `bin`; it uses… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.agent-cli.isObject](features.md#features.agent-cli.isObject)
     - fn [resolveAgent](../../src/agent-cli.ts#L145) (configAgent: string | null, env: Env, home: string) → { agent: string | null; source: AgentSource | null }
       <a id="features.agent-cli.resolveAgent"></a><br>The agent in effect and where it came from: `KEYLANG_AGENT` (an empty variable is unset), else agents.json "use", else keylang.json `agent`. An invalid variable or agents.json throws, naming it.
@@ -329,11 +329,11 @@
     - explain [features.explain](features.md#features.explain)
     - snapshot [map.snapshot](map.md#map.snapshot)
     - type [CheckFormat](../../src/check-format.ts#L11) = (typeof CHECK_FORMATS)[number]
-      <a id="features.check-format.CheckFormat"></a><br>A string literal union derived from the entries of `CHECK_FORMATS`, so the set of accepted output formats is defined once in the runtime array and the type follows it automatically. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="features.check-format.CheckFormat"></a><br>A string literal union derived from the entries of `CHECK_FORMATS`, so the set of accepted output formats is defined once in the runtime array and the type follows it automatically. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
     - type [CheckReportData](../../src/check-format.ts#L14)
       <a id="features.check-format.CheckReportData"></a><br>What a format shows: the `--format json` data and the human lines of the same report.
     - fn [isCheckFormat](../../src/check-format.ts#L21) (name: string) → name is CheckFormat
-      <a id="features.check-format.isCheckFormat"></a><br>Type guard that returns true when the given string is one of the names listed in the `CHECK_FORMATS` constant. Used by [`cli.cli.cmdCheck`](cli.md#cli.cli.cmdCheck) and `tui.app.exportSourceOf` to validate user-supplied format options before narrowing them. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="features.check-format.isCheckFormat"></a><br>Type guard that returns true when the given string is one of the names listed in the `CHECK_FORMATS` constant. Used by [`cli.cli.cmdCheck`](cli.md#cli.cli.cmdCheck) and `tui.app.exportSourceOf` to validate user-supplied format options before narrowing them. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
     - fn [checkReportText](../../src/check-format.ts#L26) (format: CheckFormat, report: CheckReportData) → string
       <a id="features.check-format.checkReportText"></a><br>The stdout of `keylang check --format <format>` for `report`, every line ending with `\n`.
       - calls [features.check-format.githubText](features.md#features.check-format.githubText), [features.check-format.sarifLog](features.md#features.check-format.sarifLog)
@@ -341,12 +341,12 @@
       <a id="features.check-format.githubText"></a><br>Renders non-ok check results as GitHub Actions workflow commands, mapping fail/warning/other verdicts to error/warning/notice lines with file, line, col and title properties. Property values and message data are escaped via [`features.check-format.githubProperty`](features.md#features.check-format.githubProperty) and… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.check-format.githubProperty](features.md#features.check-format.githubProperty), [features.check-format.ruleOf](features.md#features.check-format.ruleOf), [features.check-format.githubData](features.md#features.check-format.githubData)
     - fn [sarifLog](../../src/check-format.ts#L43) (report: CheckReportData) → unknown <!-- internal -->
-      <a id="features.check-format.sarifLog"></a><br>Builds a SARIF 2.1 log object from a check report, keeping only non-"ok" results and mapping each to a result with rule id, level, message, file/line/column location and verdict metadata. Rule ids come from [`features.check-format.ruleOf`](features.md#features.check-format.ruleOf), their descriptions from… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="features.check-format.sarifLog"></a><br>Builds a SARIF 2.1 log object from a check report, keeping only non-"ok" results and mapping each to a result with rule id, level, message, file/line/column location and verdict metadata. Rule ids come from [`features.check-format.ruleOf`](features.md#features.check-format.ruleOf), their descriptions from… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.check-format.ruleOf](features.md#features.check-format.ruleOf), [features.check-format.ruleText](features.md#features.check-format.ruleText)
     - fn [ruleOf](../../src/check-format.ts#L78) (result: CheckResult) → string <!-- internal -->
       <a id="features.check-format.ruleOf"></a><br>The SARIF rule and GitHub title: every unverified result is `unverified`, a finding its K-code or evidence kind.
     - fn [ruleText](../../src/check-format.ts#L90) (id: string) → string <!-- internal -->
-      <a id="features.check-format.ruleText"></a><br>Maps a diagnostic rule ID to a one-line human-readable description for the SARIF output built by [`features.check-format.sarifLog`](features.md#features.check-format.sarifLog). It special-cases "unverified", then looks up the evidence-rule table, falls back to the first line of [`features.explain.explainCode`](features.md#features.explain.explainCode), and finally… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="features.check-format.ruleText"></a><br>Maps a diagnostic rule ID to a one-line human-readable description for the SARIF output built by [`features.check-format.sarifLog`](features.md#features.check-format.sarifLog). It special-cases "unverified", then looks up the evidence-rule table, falls back to the first line of [`features.explain.explainCode`](features.md#features.explain.explainCode), and finally… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.explain.explainCode](features.md#features.explain.explainCode)
     - fn [githubData](../../src/check-format.ts#L96) (text: string) → string <!-- internal -->
       <a id="features.check-format.githubData"></a><br>Percent-encodes `%`, carriage returns, and newlines in a string so it is safe as a GitHub Actions workflow command payload. Used by [`features.check-format.githubProperty`](features.md#features.check-format.githubProperty) and [`features.check-format.githubText`](features.md#features.check-format.githubText) to escape annotation messages. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
@@ -378,43 +378,44 @@
   - module [clone](../../src/clone.ts#L1)
     <a id="features.clone"></a><br>`keylang clone <source>`: a repository someone names by URL (or a local path) becomes a shallow clone in keylang's cache, which `init`, `map` and `explain` then work on like any checkout. Git runs as an argument array, never through a shell, with its credential prompt off so a…
     - node [external.node](external.md#external.node)
+    - config [base.config](base.md#base.config)
     - git-changes [features.git-changes](features.md#features.git-changes)
     - safe-write [base.safe-write](base.md#base.safe-write)
-    - type [RepoSource](../../src/clone.ts#L15)
+    - type [RepoSource](../../src/clone.ts#L16)
       <a id="features.clone.RepoSource"></a><br>What to clone and where it sits under the cache root.
-    - type [CloneExplain](../../src/clone.ts#L25) = "map-only" | "map-and-ai" | "all"
+    - type [CloneExplain](../../src/clone.ts#L26) = "map-only" | "map-and-ai" | "all"
       <a id="features.clone.CloneExplain"></a><br>How far `clone --explain` goes past the map.
-    - fn [isCloneExplain](../../src/clone.ts#L29) (text: string) → text is CloneExplain
+    - fn [isCloneExplain](../../src/clone.ts#L30) (text: string) → text is CloneExplain
       <a id="features.clone.isCloneExplain"></a>
-    - fn [redactUrl](../../src/clone.ts#L41) (text: string) → string
+    - fn [redactUrl](../../src/clone.ts#L42) (text: string) → string
       <a id="features.clone.redactUrl"></a><br>A URL with its userinfo (`user:token@`) cut, as git does in its own messages; anything else is returned as is. A token passed in the URL goes to git and nowhere else: not to stdout (a CI log), stderr or the marker.
-    - fn [parseRepoSource](../../src/clone.ts#L53) (text: string, cwd: string) → RepoSource | { error: string }
+    - fn [parseRepoSource](../../src/clone.ts#L54) (text: string, cwd: string) → RepoSource | { error: string }
       <a id="features.clone.parseRepoSource"></a><br>Reads a clone source: an `http(s)://`, `ssh://`, `git://` or `file://` URL, the scp form `git@host:owner/repo.git`, or a path to a local repository. The key never holds credentials, `..` or characters a file name cannot carry.
       - calls [features.clone.redactUrl](features.md#features.clone.redactUrl), [features.clone.fromUrl](features.md#features.clone.fromUrl), [features.clone.placeable](features.md#features.clone.placeable), [features.clone.keyed](features.md#features.clone.keyed)
-    - fn [fromUrl](../../src/clone.ts#L69) (source: string) → RepoSource | { error: string } <!-- internal -->
+    - fn [fromUrl](../../src/clone.ts#L70) (source: string) → RepoSource | { error: string } <!-- internal -->
       <a id="features.clone.fromUrl"></a>
       - calls [features.clone.redactUrl](features.md#features.clone.redactUrl), [features.clone.parseRepoSource](features.md#features.clone.parseRepoSource), [features.clone.keyed](features.md#features.clone.keyed)
-    - fn [keyed](../../src/clone.ts#L83) (url: string, host: string, path: string) → RepoSource | { error: string } <!-- internal -->
+    - fn [keyed](../../src/clone.ts#L84) (url: string, host: string, path: string) → RepoSource | { error: string } <!-- internal -->
       <a id="features.clone.keyed"></a>
       - calls [features.clone.redactUrl](features.md#features.clone.redactUrl), [features.clone.placeable](features.md#features.clone.placeable)
-    - fn [placeable](../../src/clone.ts#L94) (segment: string) → string | undefined <!-- internal -->
+    - fn [placeable](../../src/clone.ts#L95) (segment: string) → string | undefined <!-- internal -->
       <a id="features.clone.placeable"></a>
-    - fn [cloneCacheRoot](../../src/clone.ts#L99) (env: Readonly<Record<string, string | undefined>>, home: string) → string
+    - fn [cloneCacheRoot](../../src/clone.ts#L100) (env: Readonly<Record<string, string | undefined>>, home: string) → string
       <a id="features.clone.cloneCacheRoot"></a><br>`$XDG_CACHE_HOME/keylang/repos`, else `~/.cache/keylang/repos`.
-    - type [CloneSync](../../src/clone.ts#L104)
+    - type [CloneSync](../../src/clone.ts#L105)
       <a id="features.clone.CloneSync"></a>
-    - fn [syncClone](../../src/clone.ts#L117) (source: RepoSource, dir: string) → CloneSync
+    - fn [syncClone](../../src/clone.ts#L118) (source: RepoSource, dir: string) → CloneSync
       <a id="features.clone.syncClone"></a><br>Clones `source` into `dir`, or brings a clone keylang made there up to the remote's default branch. A directory keylang did not clone is never touched: the reset would drop its work.
       - calls [features.clone.git](features.md#features.clone.git), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite), [features.clone.readMarker](features.md#features.clone.readMarker), [features.clone.redactUrl](features.md#features.clone.redactUrl)
-    - fn [readMarker](../../src/clone.ts#L142) (dir: string) → { url: string; key: string[] } | undefined <!-- internal -->
+    - fn [readMarker](../../src/clone.ts#L143) (dir: string) → { url: string; key: string[] } | undefined <!-- internal -->
       <a id="features.clone.readMarker"></a><br>The marker of `dir`, or undefined: absent, unreadable, or behind a link out of the directory — a file elsewhere is no proof keylang cloned `dir`.
-      - calls [base.safe-write.targetProblem](base.md#base.safe-write.targetProblem)
-    - fn [git](../../src/clone.ts#L157) (cwd: string, args: string[]) → void <!-- internal -->
+      - calls [base.safe-write.targetProblem](base.md#base.safe-write.targetProblem), [base.config.withoutBom](base.md#base.config.withoutBom)
+    - fn [git](../../src/clone.ts#L158) (cwd: string, args: string[]) → void <!-- internal -->
       <a id="features.clone.git"></a>
       - calls [features.git-changes.gitUnavailable](features.md#features.git-changes.gitUnavailable)
-    - fn [enableExplainedMap](../../src/clone.ts#L176) (root: string) → string | null
+    - fn [enableExplainedMap](../../src/clone.ts#L177) (root: string) → string | null
       <a id="features.clone.enableExplainedMap"></a><br>Turns on the explained map (`"explain": {"map": true}`) in the clone's keylang.json; the rest of the file stays. Returns an error to name, or null.
-      - calls [base.safe-write.targetProblem](base.md#base.safe-write.targetProblem), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite)
+      - calls [base.safe-write.targetProblem](base.md#base.safe-write.targetProblem), [base.config.withoutBom](base.md#base.config.withoutBom), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite)
   - module [coverage-report](../../src/coverage-report.ts#L1)
     <a id="features.coverage-report"></a><br>`keylang coverage` (business-flows/13): where keylang does not see, so a person does not take the map for the whole program. A view over the snapshot (ADR 0014), never a verdict: (1) the share of fns reachable from at least one entry point over resolved call edges, (2) fns no…
     - node [external.node](external.md#external.node)
@@ -798,7 +799,7 @@
     <a id="features.explain"></a><br>Short explanations for diagnostic codes. Every code in `diag.ts` has an entry.
     - diag [base.diag](base.md#base.diag)
     - fn [explainCode](../../src/explain.ts#L115) (code: string) → string | null
-      <a id="features.explain.explainCode"></a><br>Looks up a diagnostic code (case-insensitively) in the `EXPLANATIONS` table and formats its cause, example, and fix as a multi-line string, returning null for unknown codes. For `K005` it appends extra reason lines from `K005_REASON_LINES`. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="features.explain.explainCode"></a><br>Looks up a diagnostic code (case-insensitively) in the `EXPLANATIONS` table and formats its cause, example, and fix as a multi-line string, returning null for unknown codes. For `K005` it appends extra reason lines from `K005_REASON_LINES`. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
   - module [feature-status](../../src/feature-status.ts#L1)
     <a id="features.feature-status"></a><br>Whether a feature file is done: it declares something to check, keylang reads it without errors, every `planned` in it is implemented (K202, not K201), every flow step and `calls` in it is static ok, no rule fail of this change remains (ADR 0005 §2: no new violations), and the…
     - assess [check.assess](check.md#check.assess)
@@ -961,7 +962,7 @@
     - fn [skillFile](../../src/harness.ts#L36) () → string
       <a id="features.harness.skillFile"></a><br>The skill shipped in the package. The same relative path works from `src` and from `dist`.
     - type [HarnessName](../../src/harness.ts#L41) = (typeof HARNESS_NAMES)[number]
-      <a id="features.harness.HarnessName"></a><br>A string union type derived from the entries of the `HARNESS_NAMES` array, so values are constrained to the harness identifiers listed there. Used to type-check which harness a feature refers to without duplicating the list. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="features.harness.HarnessName"></a><br>A string union type derived from the entries of the `HARNESS_NAMES` array, so values are constrained to the harness identifiers listed there. Used to type-check which harness a feature refers to without duplicating the list. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
     - fn [denyRules](../../src/harness.ts#L60) (dir: string) → string[] <!-- internal -->
       <a id="features.harness.denyRules"></a><br>Claude's deny entries that keep an agent from editing the rules of the spec directory `dir`, or deciding a proposal.
     - fn [specDir](../../src/harness.ts#L65) (root: string) → string <!-- internal -->
@@ -981,7 +982,7 @@
       <a id="features.harness.detectHarnesses"></a><br>Directories and files that mean a harness is already in use. Order matches `HARNESS_NAMES`. `.claude/skills/keylang-feature` is the copy `agents` writes for every harness, so that tree alone is not Claude.
       - calls [features.harness.claudePresent](features.md#features.harness.claudePresent)
     - fn [claudePresent](../../src/harness.ts#L127) (probe: HarnessProbe) → boolean <!-- internal -->
-      <a id="features.harness.claudePresent"></a><br>Decides whether the Claude harness is in use by listing the `.claude` directory via the probe: missing means no, empty means yes, otherwise it defers to [`features.harness.claudeHasUserFile`](features.md#features.harness.claudeHasUserFile) to check for user-authored files. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="features.harness.claudePresent"></a><br>Decides whether the Claude harness is in use by listing the `.claude` directory via the probe: missing means no, empty means yes, otherwise it defers to [`features.harness.claudeHasUserFile`](features.md#features.harness.claudeHasUserFile) to check for user-authored files. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.harness.claudeHasUserFile](features.md#features.harness.claudeHasUserFile)
     - fn [claudeHasUserFile](../../src/harness.ts#L135) (probe: HarnessProbe, dir: string) → boolean <!-- internal -->
       <a id="features.harness.claudeHasUserFile"></a><br>A file under `.claude` that is not the keylang skill copy.
@@ -1004,12 +1005,12 @@
       <a id="features.harness.mergeMarked"></a><br>Splice `body` between the markers. Text outside them is copied byte for byte. `body` null removes the block.
       - calls [base.safe-write.allCrlf](base.md#base.safe-write.allCrlf), [features.harness.marked](features.md#features.harness.marked)
     - fn [marked](../../src/harness.ts#L324) (body: string, nl: "\n" | "\r\n") → string <!-- internal -->
-      <a id="features.harness.marked"></a><br>Normalizes every line break in the body to the requested newline style, then wraps the result between the begin and end marker constants on their own lines, so [`features.harness.mergeMarked`](features.md#features.harness.mergeMarked) can splice a consistently delimited block into existing text. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="features.harness.marked"></a><br>Normalizes every line break in the body to the requested newline style, then wraps the result between the begin and end marker constants on their own lines, so [`features.harness.mergeMarked`](features.md#features.harness.mergeMarked) can splice a consistently delimited block into existing text. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
     - fn [mergeClaude](../../src/harness.ts#L333) (existing: string | null) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeClaude"></a><br>`@AGENTS.md` lives in the managed block. A file that already says it outside the block is left without a second copy (the block is removed).
       - calls [features.harness.outsideMarkers](features.md#features.harness.outsideMarkers), [features.harness.mergeMarked](features.md#features.harness.mergeMarked)
     - fn [outsideMarkers](../../src/harness.ts#L340) (existing: string | null) → string | { error: string } <!-- internal -->
-      <a id="features.harness.outsideMarkers"></a><br>Strips the block between the begin/end marker constants out of an existing file's text, returning the surrounding content (or an empty string for null input). Reports an error object when only one marker is present or the end precedes the begin, so… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="features.harness.outsideMarkers"></a><br>Strips the block between the begin/end marker constants out of an existing file's text, returning the surrounding content (or an empty string for null input). Reports an error object when only one marker is present or the end precedes the begin, so… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
     - fn [mergeMcpJson](../../src/harness.ts#L350) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeMcpJson"></a><br>Rewrites an `.mcp.json` document so its `mcpServers` key holds the launch entry built by [`features.harness.mcpCommand`](features.md#features.harness.mcpCommand) for the given version, or removes it when the version is null, via [`features.harness.mergeJsonKey`](features.md#features.harness.mergeJsonKey). Returns the updated text or a parse error for… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.harness.mergeJsonKey](features.md#features.harness.mergeJsonKey), [features.harness.mcpCommand](features.md#features.harness.mcpCommand)
@@ -1075,7 +1076,7 @@
     - type [HarnessCategory](../../src/harness.ts#L628) = "instructions" | "mcp" | "skill" | "settings" | "hooks"
       <a id="features.harness.HarnessCategory"></a><br>What a harness file is for, as a step before the write names it.
     - fn [harnessCategory](../../src/harness.ts#L630) (path: string) → HarnessCategory
-      <a id="features.harness.harnessCategory"></a><br>Maps a harness file path to its category: root `AGENTS.md`/`CLAUDE.md` become instructions, the skill constants map to skill, specific `.claude`/`.codex` files map to settings or hooks, and anything else falls back to mcp. Used by [`features.harness.planAgents`](features.md#features.harness.planAgents) to group planned… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="features.harness.harnessCategory"></a><br>Maps a harness file path to its category: root `AGENTS.md`/`CLAUDE.md` become instructions, the skill constants map to skill, specific `.claude`/`.codex` files map to settings or hooks, and anything else falls back to mcp. Used by [`features.harness.planAgents`](features.md#features.harness.planAgents) to group planned… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
     - fn [diskProbe](../../src/harness.ts#L639) (root: string) → HarnessProbe
       <a id="features.harness.diskProbe"></a><br>The probe of the real disk: `.claude` and the other harness directories are directories; opencode is a file.
     - fn [resolveChoice](../../src/harness.ts#L660) (choice: HarnessChoice, probe: HarnessProbe) → HarnessSelection
@@ -1089,7 +1090,7 @@
       <a id="features.harness.planAgents"></a><br>Plans the harness files of `choice` against the disk under `root`. Reads, writes nothing; throws on a read error or a broken keylang.json.
       - calls [features.harness.resolveChoice](features.md#features.harness.resolveChoice), [features.harness.diskProbe](features.md#features.harness.diskProbe), [features.harness.specDir](features.md#features.harness.specDir), [features.harness.readInputs](features.md#features.harness.readInputs), [features.harness.skillFile](features.md#features.harness.skillFile), [features.harness.keylangVersion](features.md#features.harness.keylangVersion), [features.harness.planHarness](features.md#features.harness.planHarness), [features.harness.harnessCategory](features.md#features.harness.harnessCategory)
     - fn [readInputs](../../src/harness.ts#L714) (root: string) → Map<string, string | null> <!-- internal -->
-      <a id="features.harness.readInputs"></a><br>Reads every file listed in `HARNESS_PATHS` relative to the given root, mapping each path to its UTF-8 contents or null when the file is absent. Used by [`features.harness.planAgents`](features.md#features.harness.planAgents) and [`features.harness.agentsPlanProblems`](features.md#features.harness.agentsPlanProblems) to inspect existing harness files. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="features.harness.readInputs"></a><br>Reads every file listed in `HARNESS_PATHS` relative to the given root, mapping each path to its UTF-8 contents or null when the file is absent. Used by [`features.harness.planAgents`](features.md#features.harness.planAgents) and [`features.harness.agentsPlanProblems`](features.md#features.harness.agentsPlanProblems) to inspect existing harness files. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
     - fn [agentsPlanProblems](../../src/harness.ts#L726) (plan: AgentsPlan) → string[]
       <a id="features.harness.agentsPlanProblems"></a><br>Why the plan may not be committed now (`path: reason` lines; empty when it may): every harness path must still hold the bytes the plan read, keylang.json must still name the same spec directory, a target must pass the repository's write rules (a removal too: the entry must be…
       - calls [features.harness.readInputs](features.md#features.harness.readInputs), [features.harness.specDir](features.md#features.harness.specDir), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [base.safe-write.targetProblem](base.md#base.safe-write.targetProblem), [features.harness.detectHarnesses](features.md#features.harness.detectHarnesses), [features.harness.diskProbe](features.md#features.harness.diskProbe)
@@ -1305,9 +1306,9 @@
       <a id="features.lsp-features.workspaceSymbols"></a><br>Nodes of the snapshot and planned intentions matching `query` (`searchNodes`, fuzzy): by name and ID first, then by the text of their explanation. Each points at its code, a planned one at its declaration in the spec, a layer at its line in `keylang.json`; `containerName` is…
       - calls [features.node-search.searchNodes](features.md#features.node-search.searchNodes), [features.lsp-features.symbolLocation](features.md#features.lsp-features.symbolLocation), [base.brief.capText](base.md#base.brief.capText), [features.lsp-features.symbolKind](features.md#features.lsp-features.symbolKind)
     - fn [symbolKind](../../src/lsp-features.ts#L441) (kind: string) → number <!-- internal -->
-      <a id="features.lsp-features.symbolKind"></a><br>Maps a keylang node kind string (after stripping a leading "planned " prefix) to an LSP SymbolKind number: class, fn, type, and event get their own codes, anything else falls back to module. Used by [`features.lsp-features.workspaceSymbols`](features.md#features.lsp-features.workspaceSymbols) to tag workspace symbol results. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="features.lsp-features.symbolKind"></a><br>Maps a keylang node kind string (after stripping a leading "planned " prefix) to an LSP SymbolKind number: class, fn, type, and event get their own codes, anything else falls back to module. Used by [`features.lsp-features.workspaceSymbols`](features.md#features.lsp-features.workspaceSymbols) to tag workspace symbol results. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
     - fn [symbolLocation](../../src/lsp-features.ts#L450) (ws: Workspace, hit: NodeHit) → Location | null <!-- internal -->
-      <a id="features.lsp-features.symbolLocation"></a><br>Builds an LSP location for a workspace symbol: layers point to their key line in the config file via [`features.lsp-features.lineRange`](features.md#features.lsp-features.lineRange), other nodes to their file, line and column via [`features.lsp-features.lspPoint`](features.md#features.lsp-features.lspPoint). _(llm · claude:claude-opus-5-5 · 2026-10-05)_
+      <a id="features.lsp-features.symbolLocation"></a><br>Builds an LSP location for a workspace symbol: layers point to their key line in the config file via [`features.lsp-features.lineRange`](features.md#features.lsp-features.lineRange), other nodes to their file, line and column via [`features.lsp-features.lspPoint`](features.md#features.lsp-features.lspPoint). _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [features.lsp-features.uriOf](features.md#features.lsp-features.uriOf), [features.lsp-features.lineRange](features.md#features.lsp-features.lineRange), [lang.spec-ir.plannedDeclaration](lang.md#lang.spec-ir.plannedDeclaration), [features.lsp-features.lspPoint](features.md#features.lsp-features.lspPoint)
     - type [DocumentSymbol](../../src/lsp-features.ts#L470)
       <a id="features.lsp-features.DocumentSymbol"></a><br>Describes a hierarchical outline entry in the LSP document-symbol shape: a name, optional detail, numeric kind, full and selection `LspRange`s, and nested children of the same shape. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
@@ -1356,7 +1357,7 @@
       <a id="features.node-search.searchNodes"></a><br>Nodes of the snapshot and `planned` intentions of the specs matching the query, case-insensitive: first those whose ID or name matches (for `fuzzy`, the exact name, then a name prefix, a name part, an ID part, then a subsequence of the name and of the ID; shorter IDs first…
       - calls [features.node-search.candidates](features.md#features.node-search.candidates), [features.node-search.idRank](features.md#features.node-search.idRank), [base.span.compareText](base.md#base.span.compareText)
     - fn [candidates](../../src/node-search.ts#L55) (analysis: Analysis, briefs: ReadonlyMap<string, StoredExplanation>) → NodeHit[] <!-- internal -->
-      <a id="features.node-search.candidates"></a><br>Builds the full search pool for [`features.node-search.searchNodes`](features.md#features.node-search.searchNodes): every snapshot node with its explanation via [`map.explanations.explanationOf`](map.md#map.explanations.explanationOf), plus `planned` spec declarations not yet in code, found by [`lang.ir.walk`](lang.md#lang.ir.walk). _(llm · claude:claude-opus-5-5 · 2026-10-05)_
+      <a id="features.node-search.candidates"></a><br>Builds the full search pool for [`features.node-search.searchNodes`](features.md#features.node-search.searchNodes): every snapshot node with its explanation via [`map.explanations.explanationOf`](map.md#map.explanations.explanationOf), plus `planned` spec declarations not yet in code, found by [`lang.ir.walk`](lang.md#lang.ir.walk). _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [map.explanations.explanationOf](map.md#map.explanations.explanationOf), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)
     - fn [idRank](../../src/node-search.ts#L77) (query: string, id: string, fuzzy: boolean) → number | null <!-- internal -->
       <a id="features.node-search.idRank"></a><br>How well the ID or its last segment matches, lower is better; null when it does not.
@@ -1656,7 +1657,7 @@
     - type [Stats](../../src/stats.ts#L15)
       <a id="features.stats.Stats"></a><br>Shape of the persisted usage counters: tallies of draft lines keyed by agreement status between LLM and algorithm, plus tallies of editor suggestions keyed by source with accumulated decision latency in ms. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [readStats](../../src/stats.ts#L25) (root: string) → Stats
-      <a id="features.stats.readStats"></a><br>Returns the parsed stats for a repository root by delegating to [`features.stats.readStatsFile`](features.md#features.stats.readStatsFile) and discarding the raw file text it also yields. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
+      <a id="features.stats.readStats"></a><br>Returns the parsed stats for a repository root by delegating to [`features.stats.readStatsFile`](features.md#features.stats.readStatsFile) and discarding the raw file text it also yields. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [features.stats.readStatsFile](features.md#features.stats.readStatsFile)
     - fn [readStatsFile](../../src/stats.ts#L30) (root: string) → { text: string | null; stats: Stats } <!-- internal -->
       <a id="features.stats.readStatsFile"></a><br>The file as read — its text, null when there is none (or it cannot be read) — and the counts it holds.
@@ -1693,7 +1694,7 @@
       <a id="features.voice-local.localAvailable"></a><br>Whether `@fugood/whisper.node` and its binary load on this machine.
       - calls [features.voice-local.localStatus](features.md#features.voice-local.localStatus)
     - fn [loadDecibri](../../src/voice-local.ts#L68) () → { module: { Microphone: MicrophoneClass } } | Exclude<ModuleStatus, { status: "ok" }> <!-- internal -->
-      <a id="features.voice-local.loadDecibri"></a><br>Loads the `decibri` package through [`features.voice-local.optional`](features.md#features.voice-local.optional) and checks that it exports a `Microphone` function. Returns the typed module on success, otherwise the load failure or an "unavailable" status. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="features.voice-local.loadDecibri"></a><br>Loads the `decibri` package through [`features.voice-local.optional`](features.md#features.voice-local.optional) and checks that it exports a `Microphone` function. Returns the typed module on success, otherwise the load failure or an "unavailable" status. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.voice-local.optional](features.md#features.voice-local.optional)
     - fn [microphoneStatus](../../src/voice-local.ts#L77) () → Promise<ModuleStatus>
       <a id="features.voice-local.microphoneStatus"></a><br>What `decibri` can do on this machine.

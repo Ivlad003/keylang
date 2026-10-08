@@ -235,29 +235,30 @@
     - fn [checkExitCode](../../src/check-results.ts#L116) (counts: CheckCounts, strict: boolean) → 0 | 1
   - module [clone](../../src/clone.ts#L1)
     - node external.node
+    - config base.config
     - git-changes features.git-changes
     - safe-write base.safe-write
-    - type [RepoSource](../../src/clone.ts#L15)
-    - type [CloneExplain](../../src/clone.ts#L25) = "map-only" | "map-and-ai" | "all"
-    - fn [isCloneExplain](../../src/clone.ts#L29) (text: string) → text is CloneExplain
-    - fn [redactUrl](../../src/clone.ts#L41) (text: string) → string
-    - fn [parseRepoSource](../../src/clone.ts#L53) (text: string, cwd: string) → RepoSource | { error: string }
+    - type [RepoSource](../../src/clone.ts#L16)
+    - type [CloneExplain](../../src/clone.ts#L26) = "map-only" | "map-and-ai" | "all"
+    - fn [isCloneExplain](../../src/clone.ts#L30) (text: string) → text is CloneExplain
+    - fn [redactUrl](../../src/clone.ts#L42) (text: string) → string
+    - fn [parseRepoSource](../../src/clone.ts#L54) (text: string, cwd: string) → RepoSource | { error: string }
       - calls features.clone.redactUrl, features.clone.fromUrl, features.clone.placeable, features.clone.keyed
-    - fn [fromUrl](../../src/clone.ts#L69) (source: string) → RepoSource | { error: string } <!-- internal -->
+    - fn [fromUrl](../../src/clone.ts#L70) (source: string) → RepoSource | { error: string } <!-- internal -->
       - calls features.clone.redactUrl, features.clone.parseRepoSource, features.clone.keyed
-    - fn [keyed](../../src/clone.ts#L83) (url: string, host: string, path: string) → RepoSource | { error: string } <!-- internal -->
+    - fn [keyed](../../src/clone.ts#L84) (url: string, host: string, path: string) → RepoSource | { error: string } <!-- internal -->
       - calls features.clone.redactUrl, features.clone.placeable
-    - fn [placeable](../../src/clone.ts#L94) (segment: string) → string | undefined <!-- internal -->
-    - fn [cloneCacheRoot](../../src/clone.ts#L99) (env: Readonly<Record<string, string | undefined>>, home: string) → string
-    - type [CloneSync](../../src/clone.ts#L104)
-    - fn [syncClone](../../src/clone.ts#L117) (source: RepoSource, dir: string) → CloneSync
+    - fn [placeable](../../src/clone.ts#L95) (segment: string) → string | undefined <!-- internal -->
+    - fn [cloneCacheRoot](../../src/clone.ts#L100) (env: Readonly<Record<string, string | undefined>>, home: string) → string
+    - type [CloneSync](../../src/clone.ts#L105)
+    - fn [syncClone](../../src/clone.ts#L118) (source: RepoSource, dir: string) → CloneSync
       - calls features.clone.git, base.safe-write.safeWrite, features.clone.readMarker, features.clone.redactUrl
-    - fn [readMarker](../../src/clone.ts#L142) (dir: string) → { url: string; key: string[] } | undefined <!-- internal -->
-      - calls base.safe-write.targetProblem
-    - fn [git](../../src/clone.ts#L157) (cwd: string, args: string[]) → void <!-- internal -->
+    - fn [readMarker](../../src/clone.ts#L143) (dir: string) → { url: string; key: string[] } | undefined <!-- internal -->
+      - calls base.safe-write.targetProblem, base.config.withoutBom
+    - fn [git](../../src/clone.ts#L158) (cwd: string, args: string[]) → void <!-- internal -->
       - calls features.git-changes.gitUnavailable
-    - fn [enableExplainedMap](../../src/clone.ts#L176) (root: string) → string | null
-      - calls base.safe-write.targetProblem, base.safe-write.safeWrite
+    - fn [enableExplainedMap](../../src/clone.ts#L177) (root: string) → string | null
+      - calls base.safe-write.targetProblem, base.config.withoutBom, base.safe-write.safeWrite
   - module [coverage-report](../../src/coverage-report.ts#L1)
     - node external.node
     - config base.config

@@ -365,3 +365,21 @@ test("keylang.json with a UTF-8 BOM reads as the same JSON: check, fmt --check a
   assert.ok("text" in edited, JSON.stringify(edited));
   assert.deepEqual(JSON.parse(edited.text), { ...config, layers: { app: ["src/app/**"] } });
 });
+
+test("package.json and composer.json with a UTF-8 BOM read as Node and npm read them: their packages and workspaces count", (t) => {
+  // Ticket review-2026-10-06/32.
+  const dir = repo(t, {
+    "keylang.json": json({ languages: ["typescript", "php"], layers: { app: ["src/**"], ui: ["packages/**"] } }),
+    "package.json": `\uFEFF${json({ name: "app", workspaces: ["packages/*"], dependencies: { "left-pad": "^1.0.0" } })}`,
+    "packages/ui/package.json": `\uFEFF${json({ name: "@acme/ui", dependencies: { "is-odd": "^3.0.0" } })}`,
+    "packages/ui/index.ts": "export const ui = 1;\n",
+    "composer.json": `\uFEFF${json({ require: { "monolog/monolog": "^3.0" } })}`,
+    "src/a.ts": "export function a(): number {\n  return 1;\n}\n",
+    "keylang/rules.md": "# rules\n\n- deny app external.left-pad\n- deny app external.is-odd\n- deny app external.monolog-monolog\n- deny app external.acme-ui\n",
+  });
+  const check = keylang(dir, ["check"]);
+  assert.doesNotMatch(check.stderr, /invalid JSON/);
+  assert.doesNotMatch(check.stdout, /external\.(left-pad|is-odd|monolog-monolog)`/, "declared packages are known IDs");
+  assert.match(check.stdout, /K001 dangling reference `external\.acme-ui`/, "the workspace member is this repository's code");
+  assert.equal(keylang(dir, ["map", "--check"]).stderr.includes("invalid JSON"), false);
+});
