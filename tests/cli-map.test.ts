@@ -4,7 +4,7 @@
 // fact cache, a manual map file, and module ID collisions.
 
 import assert from "node:assert/strict";
-import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -644,6 +644,44 @@ test("map after a case-only layer rename on a case-insensitive file system keeps
   assert.match(run.stdout, /^MAP2:0$/m, out);
   assert.match(run.stdout, /^LS2:domain\.md$/m, out);
   assert.match(run.stdout, /^CHECK:0$/m, out);
+});
+
+// A directory or a dangling symlink named `*.md` in the map directory is no generated file: map and map --check pass it by instead of failing with EISDIR/ENOENT.
+test("a directory or a dangling symlink named *.md in keylang/map is neither read nor removed", (t) => {
+  const dir = tempDir(t, "keylang-map-odd-");
+  writeTree(dir, {
+    "keylang.json": `${JSON.stringify({ languages: ["typescript"], layers: { app: ["src/app/**"] } })}\n`,
+    "src/app/a.ts": "export function a(): number {\n  return 1;\n}\n",
+  });
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  mkdirSync(join(dir, "keylang/map/notes.md"));
+  for (const [args, code] of [[["map", "--check"], 0], [["map"], 0]] as const) {
+    const run = keylang(dir, [...args]);
+    assert.equal(run.status, code, `${args.join(" ")}: ${run.stdout}${run.stderr}`);
+  }
+  assert.ok(statSync(join(dir, "keylang/map/notes.md")).isDirectory());
+  rmSync(join(dir, "keylang/map/notes.md"), { recursive: true });
+  symlinkSync("../../docs/old-notes.md", join(dir, "keylang/map/notes.md"));
+  for (const args of [["map", "--check"], ["map"]]) {
+    const run = keylang(dir, args);
+    assert.equal(run.status, 0, `${args.join(" ")}: ${run.stdout}${run.stderr}`);
+  }
+  assert.ok(lstatSync(join(dir, "keylang/map/notes.md")).isSymbolicLink());
+});
+
+// A failure while planning the map (an unlistable map directory) is printed, not a silent exit 2.
+test("map names the error when the map directory cannot be listed", { skip: process.platform === "win32" || process.getuid?.() === 0 }, (t) => {
+  const dir = tempDir(t, "keylang-map-unlistable-");
+  writeTree(dir, {
+    "keylang.json": `${JSON.stringify({ languages: ["typescript"], layers: { app: ["src/app/**"] } })}\n`,
+    "src/app/a.ts": "export function a(): number {\n  return 1;\n}\n",
+  });
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  chmodSync(join(dir, "keylang/map"), 0o300);
+  const run = keylang(dir, ["map"]);
+  chmodSync(join(dir, "keylang/map"), 0o755);
+  assert.equal(run.status, 2, run.stdout + run.stderr);
+  assert.match(run.stderr, /^keylang: .*EACCES/m, run.stderr);
 });
 
 // The same rename on a case-sensitive file system: the old file goes, the new one stays.

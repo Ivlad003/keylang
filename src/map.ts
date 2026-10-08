@@ -304,8 +304,9 @@ function extraGenerated(dir: string, files: ReadonlyMap<string, string>): ExtraG
   for (const e of readdirSync(dir)) {
     if (!e.endsWith(".md") || files.has(e)) continue;
     const p = join(dir, e);
-    const text = readFileSync(p, "utf8");
-    if (!isGeneratedMap(text)) continue;
+    // A directory or a dangling link named `*.md` is no file of the generator: not read, not removed.
+    const text = readOrNull(p);
+    if (text === null || !isGeneratedMap(text)) continue;
     const id = identity(p);
     extra.push({ path: p, text, alias: id === null ? null : (listed.get(id) ?? null) });
   }
