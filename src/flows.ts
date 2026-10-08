@@ -16,7 +16,7 @@ import { traceFlow, type ShapeNode, type TraceEvidence, type TraceRun } from "./
 import type { Verdict } from "./verdict.ts";
 
 /** How a call edge came about when it is not a plain call of the code (`Via` of the graph): a hook, an argument, a framework's config. */
-type Via = "default" | "injected" | "callable-arg" | "closure-arg" | "preference" | "argument" | "plugin:before" | "plugin:around" | "plugin:after";
+type Via = "default" | "injected" | "callable-arg" | "closure-arg" | "preference" | "argument" | "plugin:before" | "plugin:around" | "plugin:after" | "observer" | "dispatch";
 
 interface SnapshotEdge {
   kind: string;
@@ -510,7 +510,7 @@ function namedLike(graph: CallGraph, name: string): string[] {
 
 /** A `via` edge in words. `where`: with the position of a passed callable (a hole's message adds the edge's position itself). */
 function describeVia(edge: SnapshotEdge, where = true): string {
-  if (edge.via === "preference" || edge.via === "argument" || edge.via?.startsWith("plugin:")) return describeConfig(edge);
+  if (edge.via === "preference" || edge.via === "argument" || edge.via === "observer" || edge.via === "dispatch" || edge.via?.startsWith("plugin:")) return describeConfig(edge);
   if (edge.via === "injected") return `\`${edge.hook ?? edge.text ?? ""}\` injected at ${edge.site ?? "?"}`;
   if (edge.via === "callable-arg") return `the callable \`${edge.text ?? ""}\` passed${where ? ` at ${at(edge)}` : " as an argument"}`;
   if (edge.via === "closure-arg") return `the closure passed at ${edge.site ?? at(edge)}`;
@@ -527,6 +527,7 @@ export function describeConfig(edge: Pick<SnapshotEdge, "via" | "binding" | "sit
   const scope = edge.scope && edge.scope !== "global" ? ` (scope ${edge.scope})` : "";
   if (edge.via === "preference") return `the preference ${edge.binding ?? ""}${where}${scope}`;
   if (edge.via === "argument") return `${edge.binding ?? "a constructor argument"}${where}${scope}`;
+  if (edge.via === "observer" || edge.via === "dispatch") return `${edge.binding ?? `the ${edge.via}`}${where}${scope}`;
   return `the ${edge.binding ?? "plugin"} (${edge.via})${where}${scope}`;
 }
 

@@ -190,7 +190,42 @@ export interface DeclFact {
   implements?: string[];
   /** The declaration's documentation comment without comment syntax, lines kept; absent when it has none. */
   doc?: string;
+  /**
+   * TypeScript decorators of a class or a member, in source order (`@Controller('orders')`,
+   * `@Get(':id')`), and on a constructor those of its parameters (`@Inject(TOKEN)`, with
+   * `param`). A framework adapter reads them as its configuration (ADR 0022); absent without any.
+   */
+  decorators?: DecoratorFact[];
 }
+
+/**
+ * A decorator as written: its name (`Get`, `Nest.Get`) and its arguments as
+ * values keylang reads without running code. `param`: a decorator of a
+ * constructor parameter — the parameter's position, its name (the field a
+ * parameter property declares) and its type as written.
+ */
+export interface DecoratorFact {
+  name: string;
+  args: DecoratorArg[];
+  param?: { index: number; name: string | null; type: string | null };
+  line: number;
+  col: number;
+}
+
+/**
+ * A decorator argument: a string literal (a template without substitutions
+ * too), a number, a name (`ORDER_REPO`, `CronExpression.EVERY_HOUR`), an
+ * object or an array literal of those, a function (`() => String`), else
+ * `other` with the text.
+ */
+export type DecoratorArg =
+  | { kind: "string"; value: string }
+  | { kind: "number"; value: number }
+  | { kind: "name"; name: string }
+  | { kind: "object"; props: { key: string; value: DecoratorArg; line: number; col: number }[] }
+  | { kind: "array"; items: (DecoratorArg & { line: number; col: number })[] }
+  | { kind: "function" }
+  | { kind: "other"; text: string };
 
 export interface CallFact {
   /**
@@ -241,6 +276,12 @@ export interface CallFact {
    * closure. Absent when some enclosing closure is stored in a value (`const f = () => hit()`).
    */
   closureArg?: { line: number; col: number };
+  /**
+   * `emit('order.created')`, `setGlobalPrefix('api')`: the first argument of a call of a member
+   * named `emit`, `emitAsync` or `setGlobalPrefix` when it is a string literal; null when it is
+   * another expression. Framework adapters read it (NestJS events, the global route prefix).
+   */
+  literal?: string | null;
   line: number;
   col: number;
   endLine: number;

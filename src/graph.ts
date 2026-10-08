@@ -163,7 +163,7 @@ export interface Escape {
 }
 
 /** How a call edge that is not a plain call of the code came about; see `Call.via`. */
-export type Via = "default" | "injected" | "callable-arg" | "closure-arg" | "preference" | "argument" | "plugin:before" | "plugin:around" | "plugin:after";
+export type Via = "default" | "injected" | "callable-arg" | "closure-arg" | "preference" | "argument" | "plugin:before" | "plugin:around" | "plugin:after" | "observer" | "dispatch";
 
 export interface Call {
   target: string;
@@ -183,7 +183,9 @@ export interface Call {
    * m())`), at `site`, so the enclosing call's callee may run it. `--static
    * behavior` follows all four; `shape` none. A call the framework makes by
    * its config (ADR 0022): `preference`, `argument`, `plugin:before|around|after`,
-   * at `site` in the config; `behavior` follows them, `shape` does not.
+   * `observer` (a method subscribed to the event the call emits, NestJS
+   * `@OnEvent`), at `site` in the config; `behavior` follows them, `shape`
+   * does not. `dispatch` is reserved for an edge to an event node.
    */
   via?: Via;
   /** Config edges: the area the fact applies in. */
@@ -913,7 +915,13 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
     const resolve = (type: TypeName): ResolvedType => {
       if (type.file !== undefined) {
         const id = fileDecls.get(type.file)?.get(layerName(type.name));
-        return id !== undefined && (decls.classes.has(id) || decls.types.has(id)) ? { kind: "node", id } : { kind: "missing" };
+        if (id !== undefined) return decls.classes.has(id) || decls.types.has(id) ? { kind: "node", id } : { kind: "missing" };
+        // A name the file imports (NestJS `useClass: SqlOrderRepo` in a module file): what the import binds.
+        const scope = scopes.get(type.file);
+        const imported = scope?.classNamed(type.name) ?? scope?.typeNamed(type.name) ?? null;
+        if (imported !== null) return { kind: "node", id: imported };
+        if (scope?.external(type.name)) return { kind: "external" };
+        return { kind: "missing" };
       }
       const id = qualified.get(asciiLowerCase(type.name));
       if (id !== undefined) return { kind: "node", id };
@@ -941,6 +949,31 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
       opaqueBase: (classId) => unreadBase(classId) !== null || decls.classes.get(classId)?.members === "opaque",
       supertypes,
       owner: (dir) => (dir === null ? null : directoryModuleIn(config, dir, modules, layers)),
+      token: (ref) => {
+        if (ref.kind === "string") return `string:${ref.value}`;
+        // The export a name stands for, through the file's import and any re-exports, as `unit#name`.
+        const scope = scopes.get(ref.file);
+        if (!scope) return null;
+        let unit: string;
+        let name: string;
+        const imported = scope.locals.get(ref.name)?.[0];
+        if (imported) {
+          if (imported.module.layer === EXTERNAL) return `external:${imported.module.id}#${imported.imported ?? ref.name}`;
+          if (imported.imported === null) return null;
+          unit = imported.unit;
+          name = imported.imported;
+        } else {
+          unit = unitOf(ref.file);
+          name = ref.name;
+        }
+        for (let hop = 0; hop < 8; hop++) {
+          const row = exportTables.lookup(unit, name);
+          if (row?.from === undefined || row.local === undefined) break;
+          unit = row.from;
+          name = row.local;
+        }
+        return `name:${unit}#${name}`;
+      },
     });
   }
 
@@ -1088,6 +1121,22 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
             });
           }
         };
+        /**
+         * `emit('order.created')` (ADR 0022 п. 6): an edge to each method a config subscribes to the
+         * event (`via: "observer"`, at the subscription); a name that is no literal may run any of them.
+         */
+        const emitted = (c: CallFact): void => {
+          if (c.literal === undefined || !bindings || !bindings.hasListeners) return;
+          const member = c.callee.slice(c.callee.lastIndexOf(".") + 1);
+          if (member !== "emit" && member !== "emitAsync") return;
+          if (c.literal === null) {
+            gaps.push({ kind: "dynamic-call", file: facts.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, reason: `the event \`${c.callee}\` emits is no literal: the listeners it runs are unknown`, source: fn.id });
+            return;
+          }
+          for (const l of bindings.listeners(c.literal)) {
+            addCall(fn, { target: l.target, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, via: "observer", site: l.site, scope: "global", binding: l.binding, ...(l.owner !== null ? { owner: l.owner } : {}), ...(c.closure && !c.closureArg ? { closure: true as const } : {}) });
+          }
+        };
         const dynamic = (c: CallFact, reason: string): void => {
           stats.callsDynamic++;
           gaps.push({ kind: "dynamic-call", file: facts.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, reason, source: fn.id });
@@ -1095,6 +1144,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
         for (const c of d.calls) {
           // Whatever the call itself resolves to, the callables it passes are edges of their own.
           passCallables(c);
+          if (bindings) emitted(c);
           // An expression keylang does not name is a hole, never an edge.
           if (c.opaque) {
             dynamic(c, `call through an expression \`${c.callee}\``);

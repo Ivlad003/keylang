@@ -8,8 +8,12 @@
 // `keylang.json` (`[]` turns every adapter off). Its config files are inputs
 // of the snapshot: listed in `manifest.frameworks`, part of `snapshotId` and
 // cached by content in the fact cache, so a changed `di.xml` is a new snapshot.
+// A framework that writes its configuration in the code (NestJS decorators)
+// reads it from the extractor's facts of those files (`code`) instead.
 
+import type { FileFacts } from "../extract/facts.ts";
 import { magento } from "./magento.ts";
+import { nestjs } from "./nestjs.ts";
 import { sfcc } from "./sfcc.ts";
 
 /**
@@ -71,6 +75,33 @@ export interface EntryConfigFact extends ConfigAt {
   fn: string | null;
 }
 
+/** A provider token as the code writes it: a string, or a name (a const, a class) written in `file`. */
+export type TokenRef = { kind: "string"; value: string } | { kind: "name"; name: string; file: string };
+
+/**
+ * A module provides `token` (NestJS `providers`): a class (`useClass`, a
+ * class provider `[C]`), what another token provides (`useExisting`), or a
+ * value keylang cannot name (`useFactory`, `useValue`).
+ */
+export interface ProviderFact extends ConfigAt {
+  token: TokenRef;
+  use: { kind: "class"; type: TypeName } | { kind: "existing"; token: TokenRef } | { kind: "factory" } | { kind: "value" };
+}
+
+/** The constructor parameter `param` of `type` receives what `token` provides (NestJS `@Inject(T)`). */
+export interface InjectionFact extends ConfigAt {
+  type: TypeName;
+  param: string;
+  token: TokenRef;
+}
+
+/** The method `method` of `type` runs when the event `event` is emitted (NestJS `@OnEvent('e')`). */
+export interface ListenerFact extends ConfigAt {
+  event: string;
+  type: TypeName;
+  method: string;
+}
+
 /** The facts of one config file. Depends only on its path and text, so the fact cache keeps it. */
 export interface ConfigFacts {
   path: string;
@@ -82,6 +113,12 @@ export interface ConfigFacts {
   intercepts: InterceptFact[];
   /** Entry points the file names; absent for a framework whose configs name none. */
   entries?: EntryConfigFact[];
+  /** Tokens the file's modules provide; absent for a framework without tokens. */
+  providers?: ProviderFact[];
+  /** Constructor parameters that receive a token's value. */
+  injections?: InjectionFact[];
+  /** Methods that run when an event is emitted. */
+  listeners?: ListenerFact[];
   /** Why the file gave no facts: it does not parse. */
   error: { line: number; reason: string } | null;
 }
@@ -122,13 +159,20 @@ export interface FrameworkAdapter {
   files(context: FrameworkContext): { path: string; owner: string | null }[];
   /** The facts of one config file. */
   parse(path: string, text: string): ConfigFacts;
+  /**
+   * For a framework whose configuration is written in the code (NestJS
+   * decorators): the facts of a config file that is an analysed source,
+   * from what the extractor recorded of it (`DeclFact.decorators`). Such a
+   * file is not parsed again; its facts are cached with the file's.
+   */
+  code?(path: string, file: FileFacts): ConfigFacts;
 }
 
 /** `text` of a coverage entry for a framework's config keylang did not read (`framework:magento`): the framework may call any fn by it. */
 export const FRAMEWORK_CONFIG = "framework:";
 
 /** Adapters keylang has, by name. */
-export const FRAMEWORK_ADAPTERS: readonly FrameworkAdapter[] = [magento, sfcc];
+export const FRAMEWORK_ADAPTERS: readonly FrameworkAdapter[] = [magento, nestjs, sfcc];
 
 export const FRAMEWORK_NAMES: readonly string[] = FRAMEWORK_ADAPTERS.map((a) => a.name).sort();
 
@@ -157,12 +201,19 @@ export function isConfigFacts(value: unknown): value is ConfigFacts {
     every(value.aliases, (a) => isAt(a) && typeof a.name === "string" && isTypeName(a.type)) &&
     every(value.intercepts, (i) => isAt(i) && isTypeName(i.target) && typeof i.name === "string" && (i.plugin === null || isTypeName(i.plugin)) && (i.sortOrder === null || typeof i.sortOrder === "number") && typeof i.disabled === "boolean") &&
     (value.entries === undefined || every(value.entries, (e) => isAt(e) && (e.kind === "observer" || e.kind === "cron") && typeof e.label === "string" && Array.isArray(e.files) && e.files.every((f) => typeof f === "string") && (e.fn === null || typeof e.fn === "string"))) &&
+    (value.providers === undefined || every(value.providers, (p) => isAt(p) && isToken(p.token) && isRecord(p.use) && typeof p.use.kind === "string")) &&
+    (value.injections === undefined || every(value.injections, (i) => isAt(i) && isTypeName(i.type) && typeof i.param === "string" && isToken(i.token))) &&
+    (value.listeners === undefined || every(value.listeners, (l) => isAt(l) && typeof l.event === "string" && isTypeName(l.type) && typeof l.method === "string")) &&
     (value.error === null || (isRecord(value.error) && typeof value.error.line === "number" && typeof value.error.reason === "string"))
   );
 }
 
 function isAt(value: unknown): value is Record<string, unknown> {
   return isRecord(value) && Number.isInteger(value.line) && Number.isInteger(value.col);
+}
+
+function isToken(value: unknown): boolean {
+  return isRecord(value) && ((value.kind === "string" && typeof value.value === "string") || (value.kind === "name" && typeof value.name === "string" && typeof value.file === "string"));
 }
 
 function isTypeName(value: unknown): boolean {
