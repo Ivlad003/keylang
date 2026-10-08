@@ -41,6 +41,27 @@ function writeAtomic(file, contents) {
   renameSync(temporary, file);
 }
 
+/**
+ * maxGraph's `Outline` (the minimap) builds its own graph with every default
+ * plugin — editing, connecting, popup menus — which it never uses (its source
+ * says so in a TODO), and that import alone puts about 150 KiB of plugins into
+ * a bundle that otherwise takes `BaseGraph` with panning only. This drops it:
+ * the outline's graph gets no plugins. A changed source fails the build
+ * instead of being bundled unpatched.
+ */
+const leanOutline = {
+  name: "lean-outline",
+  setup(builder) {
+    builder.onLoad({ filter: /[\\/]@maxgraph[\\/]core[\\/]lib[\\/]esm[\\/]view[\\/]other[\\/]Outline\.js$/ }, (args) => {
+      const source = readFileSync(args.path, "utf8");
+      const imported = "import { getDefaultPlugins } from '../plugin/index.js';";
+      const used = "plugins: getDefaultPlugins(),";
+      if (!source.includes(imported) || !source.includes(used)) throw new Error(`build-web: ${args.path} changed; review the lean-outline patch`);
+      return { contents: source.replace(imported, "").replace(used, "plugins: [],"), loader: "js" };
+    });
+  },
+};
+
 const outdir = parseOutdir(process.argv.slice(2));
 mkdirSync(outdir, { recursive: true });
 const result = await build({
@@ -56,6 +77,7 @@ const result = await build({
   write: false,
   outdir,
   logLevel: "warning",
+  plugins: [leanOutline],
 });
 
 for (const file of result.outputFiles) writeAtomic(file.path, file.contents);
