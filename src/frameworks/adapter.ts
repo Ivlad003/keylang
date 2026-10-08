@@ -287,6 +287,21 @@ export interface FrameworkInput {
   dispatchers?: string[];
   /** Where the framework keeps the controllers of a route. */
   controllers?: ControllerConvention;
+  /** Classes the framework generates by a naming convention; see `GeneratedClass`. */
+  generated?: GeneratedClass[];
+}
+
+/**
+ * A class the framework generates instead of the code declaring it, by a convention of names
+ * (Magento's ObjectManager: `XFactory` with `create(): X`, business-flows 40). keylang applies it
+ * only to a class no file it reads declares, whose stem (`X`) is a class or an interface it reads:
+ * calling `method` on it gives a value of the stem's class.
+ */
+export interface GeneratedClass {
+  /** The suffix of the generated class's name after the stem's (`Factory`). */
+  suffix: string;
+  /** The member that gives a value of the stem's class (`create`). */
+  method: string;
 }
 
 /** What an adapter sees of the repository: the analysed source files and a reader. */

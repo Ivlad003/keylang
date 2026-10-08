@@ -770,3 +770,115 @@ test("php: `insteadof` and `as` in a trait `use` block decide which method `$thi
   assert.deepEqual(calls, ["this.hello -> app.A.Loud.hello", "this.whisper -> app.B.Quiet.hello", "this.SHOUT -> app.A.Loud.hello"]);
   assert.ok(!index.coverage.some((c) => c.kind === "unresolved-call"), JSON.stringify(index.coverage));
 });
+
+/** Values whose class the declarations give (business-flows 40): `new`, result types, `@return`, inline `@var`, `foreach`, `instanceof`, chains. */
+const LOCAL_FILES: Record<string, string> = {
+  "keylang.json": JSON.stringify({ languages: ["php"], layers: { app: ["src/App/**"], domain: ["src/Domain/**"] } }),
+  "src/Domain/Money.php": "<?php\nnamespace Shop\\Domain;\n\nclass Money\n{\n    public function round(): void {}\n}\n",
+  "src/Domain/Line.php": "<?php\nnamespace Shop\\Domain;\n\nclass Line\n{\n    public function price(): void {}\n    public function discount(): void {}\n}\n",
+  "src/Domain/Order.php": [
+    "<?php",
+    "namespace Shop\\Domain;",
+    "",
+    "class Order",
+    "{",
+    "    public function pay(): void {}",
+    "    public function ship(): void {}",
+    "    public function cancel(): void {}",
+    "    public function refund(): void {}",
+    "    public function settle(): void {}",
+    "    public function archive(): void {}",
+    "    public function total(): Money { return new Money(); }",
+    "    /** @return Line[] */",
+    "    public function lines(): array { return []; }",
+    "    /** @return $this */",
+    "    public function touch() { return $this; }",
+    "    public function me(): static { return $this; }",
+    "}",
+    "",
+  ].join("\n"),
+  "src/Domain/Special.php": "<?php\nnamespace Shop\\Domain;\n\nclass Special extends Order\n{\n    public function special(): void {}\n}\n",
+  "src/Domain/OrderRepository.php": "<?php\nnamespace Shop\\Domain;\n\ninterface OrderRepository\n{\n    /**\n     * @return \\Shop\\Domain\\Order\n     */\n    public function get(int $id);\n}\n",
+  "src/Domain/Repo.php": "<?php\nnamespace Shop\\Domain;\n\nclass Repo implements OrderRepository\n{\n    /** {@inheritdoc} */\n    public function get(int $id) { return new Order(); }\n\n    public function find(): Order { return new Order(); }\n}\n",
+  "src/App/Checkout.php": [
+    "<?php",
+    "namespace Shop\\App;",
+    "",
+    "use Shop\\Domain\\Order;",
+    "use Shop\\Domain\\OrderRepository;",
+    "use Shop\\Domain\\Repo;",
+    "",
+    "class Checkout",
+    "{",
+    "    public function __construct(private Repo $repo, private OrderRepository $orders) {}",
+    "",
+    "    /** @param \\Shop\\Domain\\Line[] $lines */",
+    "    public function buy($lines, $any): void",
+    "    {",
+    "        $order = new Order();",
+    "        $order->pay();",
+    "        $found = $this->repo->find();",
+    "        $found->ship();",
+    "        $found->touch()->me()->total()->round();",
+    "        foreach ($found->lines() as $line) {",
+    "            $line->price();",
+    "        }",
+    "        foreach ($lines as $l) {",
+    "            $l->discount();",
+    "        }",
+    "        /** @var \\Shop\\Domain\\Special $special */",
+    "        $special = $this->make();",
+    "        $special->special();",
+    "        if ($any instanceof Order) {",
+    "            $any->cancel();",
+    "        }",
+    "        $any->refund();",
+    "        $this->orders->get(1)->settle();",
+    "        $this->repo->get(2)->archive();",
+    "        $mixed = new Order();",
+    "        $mixed = $this->repo;",
+    "        $mixed->find();",
+    "    }",
+    "",
+    "    public function make() { return null; }",
+    "}",
+    "",
+  ].join("\n"),
+};
+
+test("php: a local value has the class its declarations give — `new`, a declared or `@return` result type (`static`, `$this`, `{@inheritdoc}` of an interface), inline `@var`, `foreach` over `Foo[]`, `instanceof`, a chain; conflicting assignments stay a hole", (t) => {
+  const dir = repo(t, LOCAL_FILES);
+  const mapped = keylang(dir, ["map"]);
+  assert.equal(mapped.status, 0, mapped.stderr);
+  const index = snapshot(dir);
+  const calls = index.edges
+    .filter((e) => e.kind === "call" && e.source === "app.Checkout.Checkout.buy" && e.resolution === "resolved")
+    .map((e) => `${e.line} ${e.target} ${e.provenance}${e.docblock ? ` ${e.docblock}` : ""}${(e as { indirect?: true }).indirect ? " indirect" : ""}`)
+    .sort((a, b) => Number(a.split(" ")[0]) - Number(b.split(" ")[0]) || (a < b ? -1 : 1));
+  assert.deepEqual(calls, [
+    // `new Order()`: a fact of the syntax, as before.
+    "15 domain.Order.Order syntactic",
+    "16 domain.Order.Order.pay syntactic",
+    "17 domain.Repo.Repo.find syntactic",
+    // `find(): Order` types `$found`: the class is written in `Repo.php`, so the edge is indirect.
+    "18 domain.Order.Order.ship syntactic indirect",
+    "19 domain.Order.Order.touch syntactic indirect",
+    "20 domain.Order.Order.lines syntactic indirect",
+    // `foreach` over `lines()` with `@return Line[]`, and over a parameter with `@param Line[]`.
+    "21 domain.Line.Line.price docblock src/Domain/Order.php:13:9 indirect",
+    "24 domain.Line.Line.discount docblock src/App/Checkout.php:12:9",
+    "27 app.Checkout.Checkout.make syntactic",
+    // Inline `@var` above the assignment.
+    "28 domain.Special.Special.special docblock src/App/Checkout.php:26:13",
+    // `instanceof` in the condition: the branch knows the class.
+    "30 domain.Order.Order.cancel syntactic",
+    "34 domain.Repo.Repo.get syntactic",
+  ]);
+  const hole = (line: number): string | undefined => index.coverage.find((c) => c.source === "app.Checkout.Checkout.buy" && c.line === line)?.reason;
+  // Outside the `instanceof` branch the parameter has no class; two assignments of different classes give none.
+  assert.equal(hole(32), "call through a local value `any.refund`");
+  assert.equal(hole(37), "call through a local value `mixed.find`");
+  // The call through the interface stays a hole; only its result is typed.
+  assert.ok(index.coverage.some((c) => c.source === "app.Checkout.Checkout.buy" && c.line === 33 && c.reason === "call through an interface `OrderRepository`"), JSON.stringify(index.coverage));
+  assert.equal(keylang(dir, ["map", "--check"]).status, 0);
+});

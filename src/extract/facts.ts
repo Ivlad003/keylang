@@ -64,6 +64,12 @@ export interface FileFacts {
    */
   symbols?: QualifiedSymbol[];
   /**
+   * PHP, a file `outside` the architecture (ADR 0011): its classes and interfaces read as
+   * declarations only — no node, no edge, no hole — so a class of the architecture that
+   * extends one, or a value typed with one, finds its members (`AbstractModel::getData`).
+   */
+  declarations?: OutsideDeclFact[];
+  /**
    * Places where execution starts, as the code writes them (ADR 0022 п. 5):
    * a handler registered on a literal path, a script block that calls a fn.
    * The snapshot resolves each to a fn of the graph (`entries` of the index).
@@ -349,6 +355,81 @@ export interface DeclFact {
   params?: ParamFact[];
   /** PHP functions and methods: the literal a body of one `return <literal>;` gives (`getSubscribedEvents`, `getFacadeAccessor`). */
   returns?: LiteralFact;
+  /** PHP functions and methods: the class of the result as the declaration writes it (`: Order`, `: static`, `@return Item[]`). */
+  result?: ResultTypeFact;
+  /** PHP interfaces: their methods' result types (an interface's methods are no nodes). */
+  methods?: MethodSigFact[];
+  /** PHP classes: the properties whose class the class body names (typed, from the constructor, or by `@var`): a subclass's `$this->x` reads them. */
+  fields?: FieldFact[];
+}
+
+/**
+ * PHP: the class a function returns, or of the elements of the array it returns, as its
+ * declaration writes it. A declared return type is a fact PHP checks; `@return` is a docblock
+ * (`docblock`, the tag's position) and is read only where the declared type names no class.
+ */
+export interface ResultTypeFact {
+  /** The qualified class, without the leading `\`; absent for `self` and `static`. */
+  class?: string;
+  /** `self`: the declaring class; `static` (and `$this`): the class of the value the method is called on. */
+  self?: "self" | "static";
+  /** The result is an array of `class` values (`Foo[]`, `array<Foo>`, `iterable<Foo>`, `list<Foo>`). */
+  element?: true;
+  docblock?: { line: number; col: number };
+}
+
+/** PHP: one method of an interface (or of an `outside` class): its name and result type. */
+export interface MethodSigFact {
+  name: string;
+  static?: true;
+  result?: ResultTypeFact;
+}
+
+/** PHP: a property and the qualified class of its value (`element`: an array of them). */
+export interface FieldFact {
+  name: string;
+  class: string;
+  element?: true;
+  docblock?: { line: number; col: number };
+}
+
+/**
+ * PHP: a class, interface or trait of a file `outside` the architecture, as declarations only.
+ * Names are qualified, without the leading `\`.
+ */
+export interface OutsideDeclFact {
+  kind: "class" | "interface" | "trait";
+  /** The qualified name. */
+  name: string;
+  line: number;
+  col: number;
+  base?: string;
+  implements?: string[];
+  traits?: string[];
+  methods: MethodSigFact[];
+  fields: FieldFact[];
+}
+
+/**
+ * PHP: a value whose class the graph reads from another declaration — the result of a call
+ * (its declared result type) or, with `element`, an element of the array it returns.
+ */
+export interface ValueOfFact {
+  call: ResultCallFact;
+  element?: true;
+}
+
+/** The call whose result a `ValueOfFact` is, written as `CallFact` writes a call. */
+export interface ResultCallFact {
+  callee: string;
+  /** The member called: what the graph looks up in the receiver's class. */
+  member: string;
+  bound?: "parameter" | "local";
+  receiver?: string;
+  docblock?: { line: number; col: number };
+  /** The receiver is itself the result of a call. */
+  on?: ValueOfFact;
+  opaque?: true;
 }
 
 /**
@@ -471,6 +552,15 @@ export interface CallFact {
    * (the global route prefix).
    */
   literal?: string | null;
+  /**
+   * PHP: the receiver is a value whose class the code does not write here — the result of
+   * another call (`$this->repo()->save()`, `$x = $this->repo->get(); $x->save()`), or an element
+   * of the array it returns (`foreach ($order->getItems() as $item)`). The graph reads the class
+   * from the declared result type of that call's target.
+   */
+  on?: ValueOfFact;
+  /** With `on`: the member called (an opaque `callee` does not end in it). */
+  member?: string;
   line: number;
   col: number;
   endLine: number;

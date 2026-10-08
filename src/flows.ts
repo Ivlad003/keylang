@@ -16,7 +16,7 @@ import { traceFlow, type ShapeNode, type TraceEvidence, type TraceRun } from "./
 import type { Verdict } from "./verdict.ts";
 
 /** How a call edge came about when it is not a plain call of the code (`Via` of the graph): a hook, an argument, a framework's config. */
-type Via = "default" | "injected" | "callable-arg" | "closure-arg" | "preference" | "argument" | "plugin:before" | "plugin:around" | "plugin:after" | "dispatch" | "observer";
+type Via = "default" | "injected" | "callable-arg" | "closure-arg" | "preference" | "argument" | "plugin:before" | "plugin:around" | "plugin:after" | "dispatch" | "observer" | "generated-factory";
 
 interface SnapshotEdge {
   kind: string;
@@ -42,6 +42,8 @@ interface SnapshotEdge {
   /** `docblock`: the edge rests on a docblock the language does not check (PHP `@var`, `@param`), at `docblock`; the verdict names it. */
   provenance?: string;
   docblock?: string;
+  /** An unresolved call through an expression: the member it calls, when `text` does not end in it (PHP `$this->repo()->ship()`). */
+  name?: string;
 }
 
 interface SnapshotNodeView {
@@ -598,6 +600,7 @@ function describeVia(edge: SnapshotEdge, where = true): string {
   if (edge.via === "injected") return `\`${edge.hook ?? edge.text ?? ""}\` injected at ${edge.site ?? "?"}`;
   if (edge.via === "callable-arg") return `the callable \`${edge.text ?? ""}\` passed${where ? ` at ${at(edge)}` : " as an argument"}`;
   if (edge.via === "closure-arg") return `the closure passed at ${edge.site ?? at(edge)}`;
+  if (edge.via === "generated-factory") return `the generated factory (${edge.binding ?? edge.text ?? ""})${where ? ` at ${at(edge)}` : ""}`;
   return `the default of the hook \`${edge.hook ?? edge.text ?? ""}\``;
 }
 
@@ -767,7 +770,7 @@ function directCall(graph: CallGraph, input: FlowInput, parent: string | null, t
   if (unread) return { verdict: "unverified", message: `${lead}; ${unread}` };
   // A call keylang cannot pin to one target may be the target itself.
   for (const edge of graph.open.get(parent) ?? []) {
-    const names = edge.resolution === "ambiguous" ? (edge.candidates ?? []).map(graph.callable) : namedLike(graph, lastSegment(edge.text ?? ""));
+    const names = edge.resolution === "ambiguous" ? (edge.candidates ?? []).map(graph.callable) : namedLike(graph, edge.name ?? lastSegment(edge.text ?? ""));
     if (names.includes(target)) return { verdict: "unverified", message: `${lead}; ${describeHole(edge, target, input)} at ${at(edge)} may be it` };
   }
   // An override has the name of the method the call resolved to; in PHP, in any ASCII case.
@@ -891,7 +894,7 @@ function possibleRoute(graph: CallGraph, input: FlowInput, parent: string, targe
       if (step.edge.text?.includes(".") && !step.edge.via) for (const other of namedLike(graph, callName(step.to))) if (other !== step.to) next.push({ to: other, edge: step.edge });
     }
     for (const edge of graph.open.get(id) ?? []) {
-      const names = edge.resolution === "ambiguous" ? (edge.candidates ?? []) : namedLike(graph, lastSegment(edge.text ?? ""));
+      const names = edge.resolution === "ambiguous" ? (edge.candidates ?? []) : namedLike(graph, edge.name ?? lastSegment(edge.text ?? ""));
       for (const other of names) next.push({ to: input.nodes[other]?.kind === "fn" ? other : graph.callable(other), edge });
     }
     for (const item of next) {

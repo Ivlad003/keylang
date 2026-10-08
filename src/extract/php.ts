@@ -16,7 +16,7 @@
 // writes, which PHP does not check: provenance `docblock`.
 
 import { asciiLowerCase } from "../languages.ts";
-import type { ArgFact, AttributeFact, CallFact, ChainLinkFact, DeclFact, ExportRow, FileFacts, ImportFact, LiteralFact, ParamFact, PassFact, PropertyFact, TypeRefFact, UnsupportedFact, ValueRefFact } from "./facts.ts";
+import type { ArgFact, AttributeFact, CallFact, ChainLinkFact, DeclFact, ExportRow, FieldFact, FileFacts, ImportFact, LiteralFact, MethodSigFact, OutsideDeclFact, ParamFact, PassFact, PropertyFact, ResultCallFact, ResultTypeFact, TypeRefFact, UnsupportedFact, ValueOfFact, ValueRefFact } from "./facts.ts";
 import { blockCommentBody, isLicense, jsdocDescription, nonEmpty } from "./doc-comments.ts";
 import { errorLine, fingerprintFacts, located, startCol, valuesFingerprint, withTree, type Node } from "./treesitter.ts";
 
@@ -72,6 +72,10 @@ interface ClassContext {
 interface FieldType {
   /** The class's binding in the file, as `Collector.klass` gives it. */
   cls: string;
+  /** The class as PHP qualifies it: what a subclass in another file reads (`DeclFact.fields`). */
+  qualified: string;
+  /** The property holds an array of the class's values (`@var Item[]`): no receiver, but `foreach` gives one. */
+  element?: true;
   docblock?: { line: number; col: number };
 }
 
@@ -96,6 +100,8 @@ interface TypeSource {
   /** The qualified name PHP gives it, in ASCII lower case: two spellings of one class compare equal. */
   key: string;
   local: string;
+  qualified: string;
+  element?: true;
   docblock?: { line: number; col: number };
 }
 
@@ -140,7 +146,13 @@ class Collector {
     if (!this.values.has(key)) this.values.set(key, { name, ...(member ? { member: true as const } : {}), line: node.startPosition.row + 1, col: node.startPosition.column + 1 });
   }
 
+  /** Holes already recorded, by position and reason: typing a variable reads a call once more. */
+  private readonly holes = new Set<string>();
+
   hole(node: Node, reason: string, symbol: string | null): void {
+    const key = `${node.startIndex}:${node.endIndex}:${reason}`;
+    if (this.holes.has(key)) return;
+    this.holes.add(key);
     this.unsupported.push({ ...unsupported(node, reason), ...(symbol ? { symbol } : {}) });
   }
 }
@@ -177,7 +189,7 @@ function extractTree(path: string, root: Node): FileFacts {
         }
       }
       // Code outside declarations runs when the file is included.
-      facts.moduleCalls.push(...callsIn(node, { names, ctx: null, bound: new Map(), classes: new Map(), symbol: null }, collector, false));
+      facts.moduleCalls.push(...callsIn(node, { names, ctx: null, bound: new Map(), vars: () => null, symbol: null }, collector, false));
     }
   }
   facts.imports = [...explicit, ...includesIn(root, path, collector), ...collector.imports.values()].sort((a, b) => a.line - b.line || a.col - b.col);
@@ -355,7 +367,9 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
   const doc = docOf(node, collector.header);
   if (node.type === "interface_declaration") {
     // An interface is a type: a call through a value typed with it stays a hole, as in TypeScript.
-    return { kind: "type", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature: null, exported: true, calls: [], types, members: [], ...fingerprintFacts(node), ...(supers.length > 0 ? { implements: supers } : {}), ...(doc !== undefined ? { doc } : {}) };
+    // What its methods return is a fact every class implementing it keeps (PHP checks it).
+    const methods = interfaceMethods(node, names, collector);
+    return { kind: "type", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature: null, exported: true, calls: [], types, members: [], ...fingerprintFacts(node), ...(supers.length > 0 ? { implements: supers } : {}), ...(doc !== undefined ? { doc } : {}), ...(methods.length > 0 ? { methods } : {}) };
   }
   const body = node.childForFieldName("body");
   const items = body?.namedChildren ?? [];
@@ -376,8 +390,14 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
       for (const element of item.namedChildren.filter((c) => c.type === "property_element")) {
         const prop = element.childForFieldName("name")?.text.replace(/^\$/, "");
         if (!prop) continue;
-        if (type) fields.set(prop, { cls: collector.klass(type, item, names) });
+        if (type) fields.set(prop, { cls: collector.klass(type, item, names), qualified: classQualified(type, names) });
         else if (!item.childForFieldName("type")) untyped.set(prop, { node: item, doc: docTag(item, collector.header, /@var\s+(\S+)/) });
+        else if (["array", "iterable", "?array", "?iterable"].includes(asciiLowerCase(item.childForFieldName("type")!.text.replace(/\s+/g, "")))) {
+          // `private array $items` with `@var Item[]`: what `foreach` over it gives.
+          const doc = docTag(item, collector.header, /@var\s+(\S+)/);
+          const source = doc ? docSource(doc, names, collector, true) : null;
+          if (source?.element) fields.set(prop, { cls: source.local, qualified: source.qualified, element: true, docblock: source.docblock! });
+        }
       }
       for (const named of namedTypes(item.childForFieldName("type"))) types.push(typeRef(collector.klass(named.text, named.node, names), named.node));
     } else if (item.type === "use_declaration") {
@@ -421,15 +441,15 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
       const type = singleClass(typeNode);
       const prop = param.childForFieldName("name")?.text.replace(/^\$/, "");
       if (prop) params.set(prop, prop);
-      if (prop && type && typeNode) fields.set(prop, { cls: collector.klass(type, typeNode, names) });
+      if (prop && type && typeNode) fields.set(prop, { cls: collector.klass(type, typeNode, names), qualified: classQualified(type, names) });
     }
     for (const prop of constructorFields(method, name, names, collector, fields, untyped, params)) decided.add(prop);
   }
   // A property the constructor neither types nor contradicts: its `@var`.
   for (const [prop, { doc }] of untyped) {
     if (fields.has(prop) || decided.has(prop) || !doc) continue;
-    const source = docSource(doc, names, collector);
-    if (source) fields.set(prop, { cls: source.local, docblock: source.docblock! });
+    const source = docSource(doc, names, collector, true);
+    if (source) fields.set(prop, { cls: source.local, qualified: source.qualified, ...(source.element ? { element: true as const } : {}), docblock: source.docblock! });
   }
   const filled = new Map<string, string>();
   for (const [prop, param] of params) if (param !== null) filled.set(prop, param);
@@ -461,7 +481,21 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
     members.push(decl);
   }
   const values = valuesFingerprint(items, members);
-  return { kind: "class", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature: null, exported: true, calls: [], types, members, ...fingerprintFacts(node), ...(values !== undefined ? { values } : {}), ...(base !== undefined ? { base } : {}), ...(traits.length > 0 ? { traits } : {}), ...(traitRules.length > 0 ? { traitRules } : {}), ...(supers.length > 0 ? { implements: supers } : {}), ...(doc !== undefined ? { doc } : {}), ...(attributes.length > 0 ? { attributes } : {}), ...(properties.length > 0 ? { properties } : {}) };
+  const fieldFacts: FieldFact[] = [...fields].map(([prop, f]) => ({ name: prop, class: f.qualified, ...(f.element ? { element: true as const } : {}), ...(f.docblock ? { docblock: f.docblock } : {}) }));
+  return { kind: "class", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature: null, exported: true, calls: [], types, members, ...fingerprintFacts(node), ...(values !== undefined ? { values } : {}), ...(base !== undefined ? { base } : {}), ...(traits.length > 0 ? { traits } : {}), ...(traitRules.length > 0 ? { traitRules } : {}), ...(supers.length > 0 ? { implements: supers } : {}), ...(doc !== undefined ? { doc } : {}), ...(attributes.length > 0 ? { attributes } : {}), ...(properties.length > 0 ? { properties } : {}), ...(fieldFacts.length > 0 ? { fields: fieldFacts } : {}) };
+}
+
+/** The methods of an interface with their result types. */
+function interfaceMethods(node: Node, names: Names, collector: Collector): MethodSigFact[] {
+  const out: MethodSigFact[] = [];
+  for (const item of node.childForFieldName("body")?.namedChildren ?? []) {
+    if (item.type !== "method_declaration") continue;
+    const name = item.childForFieldName("name")?.text;
+    if (!name) continue;
+    const result = resultOf(item, names, collector);
+    out.push({ name, ...(item.namedChildren.some((c) => c.type === "static_modifier") ? { static: true as const } : {}), ...(result ? { result } : {}) });
+  }
+  return out;
 }
 
 /**
@@ -486,7 +520,7 @@ function constructorFields(method: Node, className: string, names: Names, collec
     const typeNode = param.childForFieldName("type");
     if (typeNode) {
       const written = singleClass(typeNode);
-      params.set(variable, written ? { written, key: classKey(written, names), local: collector.klass(written, typeNode, names) } : null);
+      params.set(variable, written ? { written, key: classKey(written, names), local: collector.klass(written, typeNode, names), qualified: classQualified(written, names) } : null);
       continue;
     }
     const doc = paramDocs.get(variable);
@@ -535,7 +569,7 @@ function constructorFields(method: Node, className: string, names: Names, collec
     }
     // One class from every assignment: a fact of the syntax when any parameter is typed.
     const syntactic = known.find((source) => !source.docblock);
-    fields.set(prop, syntactic ? { cls: syntactic.local } : { cls: first.local, docblock: first.docblock! });
+    fields.set(prop, syntactic ? { cls: syntactic.local, qualified: syntactic.qualified } : { cls: first.local, qualified: first.qualified, docblock: first.docblock! });
   }
   return decided;
 }
@@ -545,11 +579,21 @@ function classKey(written: string, names: Names): string {
   return asciiLowerCase(canonicalClass(written, names).qualified ?? written);
 }
 
-/** The class a docblock type names, registered as a docblock import; null when it names no single class. */
-function docSource(doc: DocType, names: Names, collector: Collector): TypeSource | null {
-  const written = singleDocClass(doc.written);
+/** The qualified name of a class as written (the enclosing class for `self`/`static` is not known here: the name as written). */
+function classQualified(written: string, names: Names): string {
+  return canonicalClass(written, names).qualified ?? written;
+}
+
+/**
+ * The class a docblock type names, registered as a docblock import; null when it names no
+ * single class. `arrays`: an array of one class (`Item[]`) counts too, with `element`.
+ */
+function docSource(doc: DocType, names: Names, collector: Collector, arrays = false): TypeSource | null {
+  const type = arrays ? docType(doc.written) : null;
+  const array = type && "cls" in type && type.element ? type.cls : null;
+  const written = array ?? singleDocClass(doc.written);
   if (!written) return null;
-  return { written, key: classKey(written, names), local: collector.klassAt(written, doc.at, names, true), docblock: { line: doc.at.line, col: doc.at.col } };
+  return { written, key: classKey(written, names), local: collector.klassAt(written, doc.at, names, true), qualified: classQualified(written, names), ...(array ? { element: true as const } : {}), docblock: { line: doc.at.line, col: doc.at.col } };
 }
 
 /**
@@ -567,6 +611,66 @@ function singleDocClass(written: string): string | null {
   const name = parts[0]!;
   if (!/^\\?[A-Za-z_\x80-\uffff][A-Za-z0-9_\x80-\uffff]*(\\[A-Za-z_\x80-\uffff][A-Za-z0-9_\x80-\uffff]*)*$/.test(name)) return null;
   return BUILTIN_TYPES.has(asciiLowerCase(name)) ? null : name;
+}
+
+/** A class name as PHPDoc writes one: `Foo`, `\App\Foo`. */
+const DOC_CLASS = /^\\?[A-Za-z_\x80-￿][A-Za-z0-9_\x80-￿]*(\\[A-Za-z_\x80-￿][A-Za-z0-9_\x80-￿]*)*$/;
+
+/**
+ * What a docblock type says of a value: one class (`Foo`, `?Foo`, `Foo|null`), an array of one
+ * class (`Foo[]`, `array<Foo>`, `array<int, Foo>`, `iterable<Foo>`, `list<Foo>`), or the class
+ * itself (`$this`, `static`, `self`). Null for a union of classes, a built-in type, generics of
+ * a class (`Collection<Foo>`: what it yields is the class's business) and anything else.
+ */
+function docType(written: string): { cls: string; element?: true } | { self: "self" | "static" } | null {
+  const parts = written
+    .replace(/^\?/, "")
+    .split("|")
+    .map((part) => part.trim())
+    .filter((part) => part !== "" && asciiLowerCase(part) !== "null");
+  if (parts.length !== 1) return null;
+  const part = parts[0]!;
+  const lower = asciiLowerCase(part);
+  if (lower === "$this" || lower === "static") return { self: "static" };
+  if (lower === "self") return { self: "self" };
+  const array = /^(.+)\[\]$/.exec(part) ?? /^(?:array|iterable|list|non-empty-array|non-empty-list)<(?:[^,<>]+,\s*)?([^,<>]+)>$/i.exec(part);
+  const name = array ? array[1]!.trim() : part;
+  if (!DOC_CLASS.test(name) || BUILTIN_TYPES.has(asciiLowerCase(name))) return null;
+  return array ? { cls: name, element: true } : { cls: name };
+}
+
+/**
+ * The result type of a function or method: the declared return type when it names one class
+ * (`: Order`, `: ?Order`, `: Order|null`, `: static`, `: self`), else its `@return` when the
+ * declared type leaves room for it (none, `mixed`, `object`, or `array`/`iterable` for an array
+ * of a class). The class is qualified as PHP resolves it.
+ */
+function resultOf(node: Node, names: Names, collector: Collector): ResultTypeFact | undefined {
+  const returns = node.childForFieldName("return_type");
+  const declared = returns ? returns.text.replace(/\s+/g, "") : null;
+  if (declared !== null) {
+    const parts = declared.replace(/^\?/, "").split("|").filter((part) => asciiLowerCase(part) !== "null");
+    if (parts.length === 1) {
+      const lower = asciiLowerCase(parts[0]!);
+      if (lower === "static") return { self: "static" };
+      if (lower === "self") return { self: "self" };
+      if (!BUILTIN_TYPES.has(lower) && DOC_CLASS.test(parts[0]!)) {
+        const qualified = canonicalClass(parts[0]!, names).qualified;
+        return qualified ? { class: qualified } : undefined;
+      }
+    }
+  }
+  const room = declared === null ? "any" : ["mixed", "object"].includes(asciiLowerCase(declared.replace(/^\?/, ""))) ? "any" : ["array", "iterable"].includes(asciiLowerCase(declared.replace(/^\?/, ""))) ? "array" : null;
+  if (room === null) return undefined;
+  const tag = docTag(node, collector.header, /@return\s+(\S+)/);
+  const type = tag ? docType(tag.written) : null;
+  if (!tag || !type) return undefined;
+  const docblock = { line: tag.at.line, col: tag.at.col };
+  if ("self" in type) return room === "any" ? { self: type.self, docblock } : undefined;
+  if (room === "array" && !type.element) return undefined;
+  const qualified = canonicalClass(type.cls, names).qualified;
+  if (!qualified) return undefined;
+  return { class: qualified, ...(type.element ? { element: true as const } : {}), docblock };
 }
 
 /** The one class a type names: `Store`, `?Store`; null for a union, an intersection, a built-in type or none. */
@@ -599,14 +703,115 @@ function typeRef(name: string, node: Node): TypeRefFact {
   return { name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, text: firstLine(at.text) };
 }
 
+/**
+ * What the code says of a variable's value: a class (`cls` its binding in the file, as
+ * `Collector.klass` gives it; `element`: an array of that class's values), or the result of a
+ * call whose declared result type the graph reads (`of`).
+ */
+type VarType = { cls: string; qualified: string; element?: true; docblock?: { line: number; col: number } } | { of: ValueOfFact };
+
+/** One way a function binds a variable: a type known as written, an assigned expression, or the element of what `foreach` iterates. */
+type Binding = { type: VarType | null } | { value: Node } | { elementOf: Node };
+
+/** Two bindings agree: the same class (by qualified name) both ways, or both arrays of it; a call's result agrees with nothing else. */
+function sameType(a: VarType, b: VarType): boolean {
+  if ("of" in a || "of" in b) return a === b;
+  return asciiLowerCase(a.qualified) === asciiLowerCase(b.qualified) && a.element === b.element;
+}
+
+/** What `foreach` over a value gives: an element of an array of a class, or of the array a call returns. */
+function elementType(type: VarType | null): VarType | null {
+  if (type === null) return null;
+  if ("of" in type) return type.of.element ? null : { of: { ...type.of, element: true } };
+  return type.element ? { cls: type.cls, qualified: type.qualified, ...(type.docblock ? { docblock: type.docblock } : {}) } : null;
+}
+
+/**
+ * The class of an expression's value as the syntax tells it: `new X(…)`, a variable, `$this->x`
+ * of a property the class types, `clone`, or a call (`of`: its declared result type, read by the
+ * graph). Null for anything else.
+ */
+function valueType(expr: Node, scope: Scope, collector: Collector): VarType | null {
+  const n = unparenthesized(expr);
+  if (n.type === "object_creation_expression") {
+    const target = n.namedChildren[0] ?? null;
+    const written = target && target.type !== "anonymous_class" ? classNameOf(target) : null;
+    if (!written) return null;
+    const lower = asciiLowerCase(written);
+    if (lower === "parent") return null;
+    if (lower === "self" || lower === "static") return scope.ctx ? { cls: scope.ctx.name, qualified: qualify(scope.names.ns, scope.ctx.name) } : null;
+    return { cls: collector.klass(written, target!, scope.names), qualified: classQualified(written, scope.names) };
+  }
+  if (n.type === "variable_name") {
+    const variable = n.text.replace(/^\$/, "");
+    return variable === "this" ? null : scope.vars(variable);
+  }
+  if (n.type === "clone_expression") return n.namedChildren[0] ? valueType(n.namedChildren[0], scope, collector) : null;
+  if (n.type === "member_access_expression" && n.childForFieldName("object")?.text === "$this") {
+    const prop = n.childForFieldName("name");
+    const field = prop?.type === "name" ? scope.ctx?.fields.get(prop.text) : undefined;
+    return field ? { cls: field.cls, qualified: field.qualified, ...(field.element ? { element: true as const } : {}), ...(field.docblock ? { docblock: field.docblock } : {}) } : null;
+  }
+  if (CALL_NODES.has(n.type) && n.type !== "object_creation_expression" && !firstClassCallable(n)) {
+    const call = resultCall(n, scope, collector);
+    return call ? { of: { call } } : null;
+  }
+  return null;
+}
+
+/** A call as the receiver of another: its callee as `calleeOf` reads it, and the member it calls; null when the graph could not look it up. */
+function resultCall(n: Node, scope: Scope, collector: Collector): ResultCallFact | null {
+  const fact = calleeOf(n, scope, collector);
+  if (!fact || (fact.opaque && !fact.on)) return null;
+  const nameNode = n.type === "function_call_expression" ? n.childForFieldName("function") : n.childForFieldName("name");
+  if (nameNode?.type !== "name" && nameNode?.type !== "qualified_name") return null;
+  const member = n.type === "function_call_expression" ? fact.callee : nameNode.text;
+  return {
+    callee: fact.callee,
+    member,
+    ...(fact.bound ? { bound: fact.bound } : {}),
+    ...(fact.receiver ? { receiver: fact.receiver } : {}),
+    ...(fact.docblock ? { docblock: fact.docblock } : {}),
+    ...(fact.on ? { on: fact.on } : {}),
+    ...(fact.opaque ? { opaque: true as const } : {}),
+  };
+}
+
+/**
+ * The `@var` tags of a comment in a function body: `@var Foo $x`, `@var $x Foo`, or a bare
+ * `@var Foo` right above `$x = …`. A class or an array of one.
+ */
+function inlineVars(comment: Node, names: Names, collector: Collector): { variable: string; type: VarType }[] {
+  if (!comment.text.startsWith("/*")) return [];
+  const out: { variable: string; type: VarType }[] = [];
+  const next = comment.nextNamedSibling;
+  const assigned = next?.type === "expression_statement" && next.namedChildren[0]?.type === "assignment_expression" ? next.namedChildren[0].childForFieldName("left") : null;
+  const following = assigned?.type === "variable_name" ? assigned.text.replace(/^\$/, "") : null;
+  comment.text.split("\n").forEach((text, i) => {
+    const named = /@var\s+([^\s$][^\s]*)\s+\$([A-Za-z_\x80-￿][A-Za-z0-9_\x80-￿]*)/.exec(text);
+    const reversed = named ? null : /@var\s+\$([A-Za-z_\x80-￿][A-Za-z0-9_\x80-￿]*)\s+([^\s*]+)/.exec(text);
+    const bare = named || reversed ? null : /@var\s+([^\s*$][^\s*]*)/.exec(text);
+    const match = named ?? reversed ?? bare;
+    if (!match) return;
+    const written = named ? named[1]! : reversed ? reversed[2]! : bare![1]!;
+    const variable = named ? named[2]! : reversed ? reversed[1]! : following;
+    if (!variable) return;
+    const line = comment.startPosition.row + 1 + i;
+    const col = (i === 0 ? comment.startPosition.column : 0) + match.index + match[0].indexOf("@") + 1;
+    const source = docSource({ written, at: { line, col, endLine: line, endCol: col + match[0].length, text: text.trim() } }, names, collector, true);
+    if (source) out.push({ variable, type: { cls: source.local, qualified: source.qualified, ...(source.element ? { element: true as const } : {}), docblock: source.docblock! } });
+  });
+  return out;
+}
+
 /** What a call in a function sees: the namespace's names, the class, the function's variables and their classes. */
 interface Scope {
   names: Names;
   ctx: ClassContext | null;
   /** Variables of the function, without `$`: parameters, then any other assigned name. */
   bound: ReadonlyMap<string, "parameter" | "local">;
-  /** Variables whose class the syntax names: a parameter typed with one class, a variable whose only assignment is `new X(…)`. */
-  classes: ReadonlyMap<string, string>;
+  /** The class of a variable's value, when its bindings name one (`scope.vars` of `fnDecl`); null otherwise. */
+  vars: (variable: string) => VarType | null;
   /** The declaration as a dotted path in the file (`Order.place`), for a hole of its own behaviour. */
   symbol: string | null;
 }
@@ -619,9 +824,15 @@ function fnDecl(node: Node, name: string, names: Names, ctx: ClassContext | null
   const signature = params ? `${params.text.replace(/\s+/g, " ")}${returns ? ` → ${returns.text.replace(/\s+/g, " ")}` : ""}` : null;
   const types: TypeRefFact[] = [];
   const bound = new Map<string, "parameter" | "local">();
-  const evidence = new Map<string, string | null>();
+  /** Each way the function binds a variable, in order: what keylang can type it from, or `other`. */
+  const bindings = new Map<string, Binding[]>();
+  const bindAs = (variable: string, binding: Binding): void => {
+    bindings.set(variable, [...(bindings.get(variable) ?? []), binding]);
+  };
   const self = ctx ? qualify(names.ns, ctx.name) : null;
   const paramFacts: ParamFact[] = [];
+  const paramDocs = new Map<string, DocType>();
+  for (const doc of docTags(node, collector.header, /@param\s+(\S+)\s+(?:\.\.\.)?&?\$([A-Za-z_\x80-\uffff][A-Za-z0-9_\x80-\uffff]*)/)) if (doc.name && !paramDocs.has(doc.name)) paramDocs.set(doc.name, doc);
   for (const param of params?.namedChildren ?? []) {
     const variable = param.childForFieldName("name")?.text.replace(/^\$/, "");
     if (!variable) continue;
@@ -630,47 +841,67 @@ function fnDecl(node: Node, name: string, names: Names, ctx: ClassContext | null
     const single = singleClass(type);
     const qualified = single === null ? null : SPECIAL_CLASSES.has(asciiLowerCase(single)) ? (asciiLowerCase(single) === "parent" ? null : self) : canonicalClass(single, names).qualified;
     paramFacts.push({ name: variable, ...(qualified ? { type: qualified } : {}) });
-    evidence.set(variable, single ? collector.klass(single, type!, names) : null);
+    // A class PHP checks; else the `@param` where the declared type leaves room for one (none, `mixed`, `object`, an array of a class).
+    const declared = type ? asciiLowerCase(type.text.replace(/\s+/g, "").replace(/^\?/, "")) : null;
+    const doc = paramDocs.get(variable);
+    const room = declared === null || declared === "mixed" || declared === "object" ? "any" : declared === "array" || declared === "iterable" ? "array" : null;
+    const fromDoc = !single && room && doc ? docSource(doc, names, collector, true) : null;
+    const typed: VarType | null = single && !SPECIAL_CLASSES.has(asciiLowerCase(single)) ? { cls: collector.klass(single, type!, names), qualified: classQualified(single, names) } : fromDoc && (room === "any" || fromDoc.element) ? { cls: fromDoc.local, qualified: fromDoc.qualified, ...(fromDoc.element ? { element: true as const } : {}), docblock: fromDoc.docblock! } : null;
+    bindAs(variable, { type: typed });
     for (const named of namedTypes(type)) types.push(typeRef(collector.klass(named.text, named.node, names), named.node));
   }
   for (const named of namedTypes(returns)) types.push(typeRef(collector.klass(named.text, named.node, names), named.node));
   const body = node.childForFieldName("body");
-  /** A variable bound some other way than `$x = new X(…)`: its class is not known. */
+  /** Variables bound some other way than one keylang types (`list()`, `global`, `static`, `&=`): their class is not known. */
   const bindAll = (target: Node | null): void => {
     if (!target) return;
     const walk = (n: Node): void => {
       if (n.type === "variable_name") {
         const variable = n.text.replace(/^\$/, "");
         if (!bound.has(variable)) bound.set(variable, "local");
-        evidence.set(variable, null);
+        bindAs(variable, { type: null });
         return;
       }
       if (!CLOSURE_NODES.has(n.type)) for (const child of n.namedChildren) walk(child);
     };
     walk(target);
   };
+  /** `/** @var Foo $x *\/` in the body: the class the author gives the variable, whatever it is assigned. */
+  const inline = new Map<string, VarType | null>();
   if (body) {
     walkScope(body, (n) => {
-      if (n.type === "assignment_expression" || n.type === "augmented_assignment_expression" || n.type === "reference_assignment_expression") {
+      if (n.type === "comment") {
+        for (const tag of inlineVars(n, names, collector)) {
+          const before = inline.get(tag.variable);
+          inline.set(tag.variable, before === undefined || (before !== null && sameType(before, tag.type)) ? (before ?? tag.type) : null);
+        }
+      } else if (n.type === "assignment_expression" || n.type === "augmented_assignment_expression" || n.type === "reference_assignment_expression") {
         const left = n.childForFieldName("left");
         if (left?.type === "list_literal" || left?.type === "array_creation_expression") return bindAll(left);
         if (left?.type !== "variable_name") return;
         const variable = left.text.replace(/^\$/, "");
         if (!bound.has(variable)) bound.set(variable, "local");
         const right = n.childForFieldName("right");
-        const created = n.type === "assignment_expression" && right?.type === "object_creation_expression" ? classNameOf(right.namedChildren[0] ?? null) : null;
-        const cls = created && !SPECIAL_CLASSES.has(asciiLowerCase(created)) ? collector.klass(created, right!, names) : null;
-        evidence.set(variable, evidence.has(variable) ? null : cls);
+        bindAs(variable, n.type === "assignment_expression" && right ? { value: right } : { type: null });
       } else if (n.type === "foreach_statement") {
         // `foreach ($items as $k => $v)`: what follows `as` is bound; the iterated expression is only read.
-        bindAll(n.namedChildren.filter((c) => c.id !== n.childForFieldName("body")?.id)[1] ?? null);
+        const [iterated, target] = n.namedChildren.filter((c) => c.id !== n.childForFieldName("body")?.id && c.type !== "comment");
+        const value = target?.type === "pair" ? target.namedChildren[1] : target;
+        if (iterated && value?.type === "variable_name") {
+          const variable = value.text.replace(/^\$/, "");
+          if (!bound.has(variable)) bound.set(variable, "local");
+          bindAs(variable, { elementOf: iterated });
+          if (target?.type === "pair") bindAll(target.namedChildren[0] ?? null);
+        } else bindAll(target ?? null);
       } else if (n.type === "global_declaration" || n.type === "function_static_declaration") {
         bindAll(n);
       } else if (n.type === "catch_clause") {
         const variable = n.childForFieldName("name")?.text.replace(/^\$/, "");
+        const typeNode = n.childForFieldName("type");
+        const caught = singleClass(typeNode) ?? (typeNode?.type === "type_list" && typeNode.namedChildren.length === 1 ? singleClass(typeNode.namedChildren[0]!) : null);
         if (variable && !bound.has(variable)) bound.set(variable, "local");
-        if (variable) evidence.set(variable, null);
-        for (const named of namedTypes(n.childForFieldName("type"))) types.push(typeRef(collector.klass(named.text, named.node, names), named.node));
+        if (variable) bindAs(variable, { type: caught && !SPECIAL_CLASSES.has(asciiLowerCase(caught)) ? { cls: collector.klass(caught, typeNode!, names), qualified: classQualified(caught, names) } : null });
+        for (const named of namedTypes(typeNode)) types.push(typeRef(collector.klass(named.text, named.node, names), named.node));
       } else if (n.type === "binary_expression" && n.childForFieldName("operator")?.text === "instanceof") {
         const right = n.childForFieldName("right");
         const written = classNameOf(right);
@@ -678,9 +909,31 @@ function fnDecl(node: Node, name: string, names: Names, ctx: ClassContext | null
       }
     });
   }
-  const classes = new Map<string, string>();
-  for (const [variable, cls] of evidence) if (cls) classes.set(variable, cls);
-  const scope: Scope = { names, ctx, bound, classes, symbol };
+  const scope: Scope = { names, ctx, bound, vars: () => null, symbol };
+  const memo = new Map<string, VarType | null>();
+  const visiting = new Set<string>();
+  /**
+   * The class of a variable: its inline `@var`, else what every binding of it gives when they
+   * agree on one class (a parameter's type, `new X`, a call's declared result, `foreach` over an
+   * array of a class, `catch (X $e)`). Bindings of different or unknown classes: none.
+   */
+  scope.vars = (variable: string): VarType | null => {
+    const known = memo.get(variable);
+    if (known !== undefined) return known;
+    if (visiting.has(variable)) return null;
+    visiting.add(variable);
+    const written = inline.get(variable);
+    let type: VarType | null = null;
+    if (written !== undefined) type = written;
+    else {
+      const each = (bindings.get(variable) ?? []).map((b) => ("type" in b ? b.type : "value" in b ? valueType(b.value, scope, collector) : elementType(valueType(b.elementOf, scope, collector))));
+      const first = each[0] ?? null;
+      type = first !== null && each.every((t) => t !== null && sameType(t, first)) ? first : null;
+    }
+    visiting.delete(variable);
+    memo.set(variable, type);
+    return type;
+  };
   const calls = body ? callsIn(body, scope, collector, false) : [];
   const doc = docOf(node, collector.header);
   // `return [Event::class => 'on'];` as the whole body: a literal a framework reads.
@@ -688,6 +941,7 @@ function fnDecl(node: Node, name: string, names: Names, ctx: ClassContext | null
   const returned = statements.length === 1 && statements[0]!.type === "return_statement" && statements[0]!.namedChildren[0] ? literalOf(statements[0]!.namedChildren[0], names, self) : OTHER;
   const typed = paramFacts.some((p) => p.type !== undefined);
   const attributes = node.type === "function_definition" ? attributesOf(node, names, null) : [];
+  const result = resultOf(node, names, collector);
   return {
     kind: "fn",
     name,
@@ -705,6 +959,7 @@ function fnDecl(node: Node, name: string, names: Names, ctx: ClassContext | null
     ...(typed ? { params: paramFacts } : {}),
     ...(informative(returned) ? { returns: returned } : {}),
     ...(attributes.length > 0 ? { attributes } : {}),
+    ...(result ? { result } : {}),
   };
 }
 
@@ -726,13 +981,13 @@ function callsIn(node: Node, scope: Scope, collector: Collector, closure: boolea
   const out: CallFact[] = [];
   const self = scope.ctx ? qualify(scope.names.ns, scope.ctx.name) : null;
   /** `nested`: the closure literals passed as arguments the walk is in, outermost first. */
-  const walk = (n: Node, inner: ClosureState, nested: readonly { line: number; col: number }[]): void => {
+  const walk = (n: Node, inner: ClosureState, nested: readonly { line: number; col: number }[], sc: Scope): void => {
     if (DECLARATION_NODES.has(n.type) && n.id !== node.id) return;
     if (CALL_NODES.has(n.type)) {
-      const fact = callOf(n, scope, collector);
+      const fact = callOf(n, sc, collector);
       if (fact) {
         const at = located(n);
-        const passes = passesOf(n, scope, collector);
+        const passes = passesOf(n, sc, collector);
         const nameArg = nameArgOf(n, fact.callee);
         const args = argsOf(n, scope.names, self);
         const chain = chainOf(n, scope.names, self);
@@ -760,17 +1015,46 @@ function callsIn(node: Node, scope: Scope, collector: Collector, closure: boolea
     } else if (n.type === "scoped_property_access_expression") {
       const written = classNameOf(n.childForFieldName("scope"));
       if (written && !SPECIAL_CLASSES.has(asciiLowerCase(written))) collector.klass(written, n.childForFieldName("scope")!, scope.names);
-    } else if (n.type === "array_creation_expression") arrayCallable(n, scope, collector);
+    } else if (n.type === "array_creation_expression") arrayCallable(n, sc, collector);
     if (CLOSURE_NODES.has(n.type)) {
       const state = closureState(n, inner);
       const here = state === null || state === "stored" ? [] : [...nested, { line: n.startPosition.row + 1, col: startCol(n) }];
-      for (const child of n.namedChildren) walk(child, state, here);
+      for (const child of n.namedChildren) walk(child, state, here, sc);
       return;
     }
-    for (const child of n.namedChildren) walk(child, inner, nested);
+    // `if ($x instanceof Foo) { … }`: in the branch, `$x` is a `Foo` — PHP checked it.
+    const narrowed = n.type === "if_statement" ? narrowing(n, sc, collector) : null;
+    const branch = narrowed ? n.childForFieldName("body") : null;
+    for (const child of n.namedChildren) walk(child, inner, nested, branch && child.id === branch.id ? narrowed! : sc);
   };
-  walk(node, closure ? "stored" : null, []);
+  walk(node, closure ? "stored" : null, [], scope);
   return out;
+}
+
+/** The scope of the branch of `if (… $x instanceof Foo …)` (a conjunction may hold several): those variables are of those classes. Null when the condition narrows none. */
+function narrowing(n: Node, scope: Scope, collector: Collector): Scope | null {
+  const condition = n.childForFieldName("condition");
+  const narrowed = new Map<string, VarType>();
+  const visit = (e: Node | null): void => {
+    if (!e) return;
+    const inner = unparenthesized(e);
+    if (inner.type !== "binary_expression") return;
+    const operator = asciiLowerCase(inner.childForFieldName("operator")?.text ?? "");
+    if (operator === "&&" || operator === "and") {
+      visit(inner.childForFieldName("left"));
+      visit(inner.childForFieldName("right"));
+      return;
+    }
+    if (operator !== "instanceof") return;
+    const left = inner.childForFieldName("left");
+    const right = inner.childForFieldName("right");
+    const written = classNameOf(right);
+    if (left?.type !== "variable_name" || !written || !right || SPECIAL_CLASSES.has(asciiLowerCase(written))) return;
+    narrowed.set(left.text.replace(/^\$/, ""), { cls: collector.klass(written, right, scope.names), qualified: classQualified(written, scope.names) });
+  };
+  visit(condition);
+  if (narrowed.size === 0) return null;
+  return { ...scope, vars: (variable) => narrowed.get(variable) ?? scope.vars(variable) };
 }
 
 const OTHER: LiteralFact = { kind: "other" };
@@ -951,14 +1235,14 @@ function callableOf(value: Node, scope: Scope, collector: Collector, plainString
     if (target.type === "variable_name") {
       const variable = target.text.replace(/^\$/, "");
       if (variable === "this") return scope.ctx ? { callee: `this.${name}`, node } : null;
-      const receiver = scope.classes.get(variable);
-      return receiver ? { callee: `${variable}.${name}`, bound: scope.bound.get(variable) ?? "local", receiver, node } : null;
+      const type = scope.vars(variable);
+      return type && "cls" in type && !type.element ? { callee: `${variable}.${name}`, bound: scope.bound.get(variable) ?? "local", receiver: type.cls, ...(type.docblock ? { docblock: type.docblock } : {}), node } : null;
     }
     // `[$this->store, 'flush']`: a property whose class the class body names (or its docblock does).
     if ((target.type === "member_access_expression" || target.type === "nullsafe_member_access_expression") && target.childForFieldName("object")?.text === "$this") {
       const prop = target.childForFieldName("name");
       const field = prop?.type === "name" ? scope.ctx?.fields.get(prop.text) : undefined;
-      if (!prop || !field) return null;
+      if (!prop || !field || field.element) return null;
       return { callee: `this.${prop.text}.${name}`, receiver: field.cls, ...(field.docblock ? { docblock: field.docblock } : {}), node };
     }
     if (target.type === "class_constant_access_expression") {
@@ -1068,7 +1352,7 @@ function firstClassCallable(n: Node): boolean {
  * an opaque expression. Null for a first-class callable (`f(...)`), which is a
  * value.
  */
-function callOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "callee" | "bound" | "receiver" | "opaque" | "docblock" | "param"> | null {
+function callOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "callee" | "bound" | "receiver" | "opaque" | "docblock" | "param" | "on" | "member"> | null {
   if (n.type !== "object_creation_expression" && firstClassCallable(n)) {
     callableValue(n, scope, collector);
     return null;
@@ -1077,7 +1361,7 @@ function callOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "ca
 }
 
 /** The callee of a call node as `callOf` reads it, whether or not the arguments are `(...)`. */
-function calleeOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "callee" | "bound" | "receiver" | "opaque" | "docblock" | "param"> | null {
+function calleeOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "callee" | "bound" | "receiver" | "opaque" | "docblock" | "param" | "on" | "member"> | null {
   const opaque = (): Pick<CallFact, "callee" | "opaque"> => ({ callee: n.text.replace(/\s+/g, " ").slice(0, MAX_CALLEE), opaque: true });
   if (n.type === "object_creation_expression") {
     const target = n.namedChildren[0];
@@ -1127,8 +1411,10 @@ function calleeOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "
     const variable = object.text.replace(/^\$/, "");
     if (variable === "this") return scope.ctx ? { callee: `this.${member}` } : { callee: `this.${member}`, bound: "local" };
     const fact = variableCall(`${variable}.${member}`, scope);
-    const receiver = scope.classes.get(variable);
-    return receiver ? { ...fact, receiver } : fact;
+    const type = scope.vars(variable);
+    // `$x = $this->repo->get(); $x->save()`: the class of the result `get` declares, which the graph reads.
+    if (type && "of" in type) return { ...fact, on: type.of, member };
+    return type && !type.element ? { ...fact, receiver: type.cls, ...(type.docblock ? { docblock: type.docblock } : {}) } : fact;
   }
   if ((object?.type === "member_access_expression" || object?.type === "nullsafe_member_access_expression") && object.childForFieldName("object")?.text === "$this") {
     const prop = object.childForFieldName("name");
@@ -1137,13 +1423,12 @@ function calleeOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "
       const param = scope.ctx?.params.get(prop.text);
       const filled = param !== undefined ? { param } : {};
       // A property of unknown class: a call through a value, as `self.queue.put()` in Python.
-      if (!field) return { callee: `this.${prop.text}.${member}`, bound: "local", ...filled };
+      if (!field || field.element) return { callee: `this.${prop.text}.${member}`, bound: "local", ...filled };
       return { callee: `this.${prop.text}.${member}`, receiver: field.cls, ...(field.docblock ? { docblock: field.docblock } : {}), ...filled };
     }
   }
   // `(new Order())->total()` and `new Order()->total()`: a method of the class `new` names. The
-  // callee ends in `.total`, the member the graph looks up in that class. What `total()` returns
-  // has no class the syntax names, so `->total()->tax()` stays a call through an expression.
+  // callee ends in `.total`, the member the graph looks up in that class.
   const creation = object ? unparenthesized(object) : null;
   const created = creation?.type === "object_creation_expression" ? classNameOf(creation.namedChildren[0] ?? null) : null;
   if (object && creation && created && !SPECIAL_CLASSES.has(asciiLowerCase(created))) {

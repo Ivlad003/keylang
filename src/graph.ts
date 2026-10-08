@@ -6,7 +6,7 @@ import { posix } from "node:path";
 import { isAssumed, isExcluded, isOutside, layerName, OUTSIDE_LAYER, type Config } from "./config.ts";
 import { readManifests, type DeclaredPackage } from "./declared-packages.ts";
 import { resolveExports, UNKNOWN_EXPORT, type ExportEntry, type ExportForm, type ExportKind, type ExportRowInput, type ExportTarget, type ModuleExportsInput } from "./exports.ts";
-import type { CallFact, DeclFact, ExportRow, FileFacts, HookFact, ImportBinding, TypeRefFact } from "./extract/facts.ts";
+import type { CallFact, DeclFact, ExportRow, FileFacts, HookFact, ImportBinding, MethodSigFact, OutsideDeclFact, ResultCallFact, ResultTypeFact, TypeRefFact, ValueOfFact } from "./extract/facts.ts";
 import { assignExternalIds, EXTERNAL, externalSegment } from "./external-ids.ts";
 import { globPrefix, matchesGlob } from "./glob.ts";
 import { frontendFor, frontendOf, type Frontend, type SourceResolver } from "./frontends.ts";
@@ -78,6 +78,8 @@ export interface Gap {
   reason: string;
   /** Module or function that contains the gap, when there is one. */
   source: string | null;
+  /** A call through an expression whose text does not end in the member it calls (PHP `$this->repo()->ship()`): that member, which a flow matches by name. */
+  name?: string;
 }
 
 /** An import of a file `assume` lists: the architecture imports it, and keylang neither reads nor requires it. */
@@ -192,7 +194,7 @@ export interface Escape {
 }
 
 /** How a call edge that is not a plain call of the code came about; see `Call.via`. */
-export type Via = "default" | "injected" | "callable-arg" | "closure-arg" | "preference" | "argument" | "plugin:before" | "plugin:around" | "plugin:after" | "dispatch" | "observer";
+export type Via = "default" | "injected" | "callable-arg" | "closure-arg" | "preference" | "argument" | "plugin:before" | "plugin:around" | "plugin:after" | "dispatch" | "observer" | "generated-factory";
 
 export interface Call {
   target: string;
@@ -237,8 +239,19 @@ export interface Call {
   site?: string;
   /** The call sits in a closure of the function: whoever holds that value may run it. */
   closure?: true;
-  /** `file:line:col` of the docblock that types the receiver (PHP `@var`, `@param`): the edge's provenance is `docblock`. */
+  /** `file:line:col` of the docblock that types the receiver (PHP `@var`, `@param`, `@return`): the edge's provenance is `docblock`. */
   docblock?: string;
+  /**
+   * The target is a module `outside` the architecture, whose members are no nodes (ADR 0011):
+   * the member the call runs, as declared there (`Magento\Framework\DataObject::getData`).
+   */
+  member?: string;
+  /**
+   * The receiver's class is written in another declaration than the call's file: the result type
+   * of the call that returned the value, or a base's property (PHP, business-flows 40). The
+   * dependency rules see is on that declaration, not this edge.
+   */
+  indirect?: true;
 }
 
 export interface TypeNode {
@@ -916,6 +929,29 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
     const external = (head: string): boolean => globalsOf(facts.path).values.has(head) || (locals.get(head) ?? []).some((imp) => imp.module.layer === EXTERNAL);
     return { locals, localDecls, importedSymbol, classNamed, typeNamed, resolveCallees, receiverTarget, single, external, globOrigin };
   };
+  /**
+   * PHP classes and interfaces by qualified name (ASCII lower case): those of the analysed files,
+   * and those of files `outside` the architecture read as declarations only (ADR 0011, business-flows 40).
+   * A name two files declare is the first file's, by path, as the resolver takes it.
+   */
+  const phpTypes = new Map<string, Ty>();
+  const outsideByName = new Map<string, OutsideEntry>();
+  for (const { facts, module } of [...byFile.values()].sort((a, b) => compareText(a.facts.path, b.facts.path))) {
+    if (languageOf(facts.path) !== "php") continue;
+    for (const decl of facts.declarations ?? []) {
+      const key = asciiLowerCase(decl.name);
+      if (!outsideByName.has(key)) outsideByName.set(key, { decl, file: facts.path, module: module.id });
+    }
+    const declared = fileDecls.get(facts.path);
+    for (const symbol of facts.symbols ?? []) {
+      if (symbol.table !== "class") continue;
+      const id = declared?.get(layerName(symbol.name));
+      const key = asciiLowerCase(symbol.qualified);
+      if (id === undefined || phpTypes.has(key)) continue;
+      if (decls.classes.has(id)) phpTypes.set(key, { kind: "class", id });
+      else if (decls.types.has(id)) phpTypes.set(key, { kind: "type", id });
+    }
+  }
   const scopes = new Map<string, ReturnType<typeof scopeOf>>();
   for (const { facts } of byFile.values()) scopes.set(facts.path, scopeOf(facts));
   // Every class's base and traits first: `super()` in one file may run the constructor of a base in another.
@@ -942,7 +978,9 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
         if (!d.base) continue;
         const internal = d.base.includes(".") ? resolveCallees(d.base, null, false).filter((t) => decls.classes.has(t)) : [classNamed(d.base)].filter((t): t is string => t !== null);
         // Whether an unread base is a package's or the language's is known in the class's own file.
-        classBase.set(id, internal.length === 1 ? { internal: internal[0]!, text: d.base, external: false } : { internal: null, text: d.base, external: external(d.base.split(".")[0]!) });
+        // A base in a file `outside` the architecture: keylang reads its declarations, not its code.
+        const outside = internal.length !== 1 && languageOf(facts.path) === "php" ? asciiLowerCase(qualifiedIn(facts, d.base)) : null;
+        classBase.set(id, internal.length === 1 ? { internal: internal[0]!, text: d.base, external: false } : { internal: null, text: d.base, external: external(d.base.split(".")[0]!), ...(outside !== null && outsideByName.has(outside) ? { outside } : {}) });
       }
     };
     visit(facts.decls);
@@ -958,6 +996,233 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
     const found = findMember(base.internal, member, isStatic, staticToo);
     return { target: found.target, last: found.last ?? base };
   };
+
+  // 3c. PHP: the class of a value from declarations (business-flows 40) — a call's declared
+  // result type, a base's property, a class or interface of a file `outside` the architecture,
+  // a class a framework generates. Only what a declaration writes: nothing is guessed from names.
+  /** fn and type IDs → the declaration and its file. */
+  const declById = new Map<string, { decl: DeclFact; file: string }>();
+  for (const { facts } of byFile.values()) {
+    const visitDecl = (list: readonly DeclFact[]): void => {
+      for (const d of list) {
+        const id = decls.ids.get(d);
+        if (id !== undefined && !declById.has(id)) declById.set(id, { decl: d, file: facts.path });
+        visitDecl(d.members);
+      }
+    };
+    visitDecl(facts.decls);
+  }
+  const generated = frameworks.flatMap((f) => f.generated ?? []);
+  /** A PHP class or interface by its qualified name: the graph's, one `outside` the architecture, or one a framework generates. */
+  const tyOfQualified = (qualified: string, generatedToo = true): Ty | null => {
+    const name = qualified.replace(/^\\+/, "");
+    const key = asciiLowerCase(name);
+    const known = phpTypes.get(key);
+    if (known) return known;
+    const outside = outsideByName.get(key);
+    if (outside) return { kind: "outside", entry: outside };
+    if (!generatedToo) return null;
+    // A class no file declares whose name is the framework's convention for one it generates (ADR 0022, business-flows 40).
+    for (const g of generated) {
+      if (name.length <= g.suffix.length || !name.endsWith(g.suffix)) continue;
+      const of = tyOfQualified(name.slice(0, -g.suffix.length), false);
+      if (of) return { kind: "factory", name, of, method: g.method };
+    }
+    return null;
+  };
+  /** A class name as a file writes it: the graph's class or interface it binds, else (PHP) what its qualified name names. */
+  const tyNamed = (facts: FileFacts, written: string): Ty | null => {
+    const scope = scopes.get(facts.path);
+    const cls = scope?.classNamed(written) ?? null;
+    if (cls) return { kind: "class", id: cls };
+    const type = scope?.typeNamed(written) ?? null;
+    if (type) return { kind: "type", id: type };
+    return languageOf(facts.path) === "php" ? tyOfQualified(qualifiedIn(facts, written)) : null;
+  };
+  /**
+   * A member of an `outside` class or interface: its own, a trait's, a base's and — with
+   * `interfaces` — an interface's (a signature, which runs nothing). `want` picks the first
+   * declaration that tells what is needed (a result type).
+   */
+  const outsideMember = (entry: OutsideEntry, member: string, interfaces: boolean, want: (sig: MethodSigFact) => boolean = () => true, seen = new Set<string>()): { entry: OutsideEntry; sig: MethodSigFact } | null => {
+    const key = asciiLowerCase(entry.decl.name);
+    if (seen.has(key)) return null;
+    seen.add(key);
+    if (interfaces || entry.decl.kind !== "interface") {
+      const lower = asciiLowerCase(member);
+      const sig = entry.decl.methods.find((m) => asciiLowerCase(m.name) === lower);
+      if (sig && want(sig)) return { entry, sig };
+    }
+    const next = [...(entry.decl.traits ?? []), ...(entry.decl.base ? [entry.decl.base] : []), ...(interfaces ? (entry.decl.implements ?? []) : [])];
+    for (const name of next) {
+      const found = outsideByName.get(asciiLowerCase(name));
+      const hit = found ? outsideMember(found, member, interfaces, want, seen) : null;
+      if (hit) return hit;
+    }
+    return null;
+  };
+  const hasResult = (sig: MethodSigFact): boolean => sig.result !== undefined;
+  /** What an interface of the graph declares a member to return: its own signature, else an interface it extends. */
+  const typeSig = (typeId: string, member: string, seen = new Set<string>()): MemberHit | null => {
+    if (seen.has(typeId)) return null;
+    seen.add(typeId);
+    const own = declById.get(typeId);
+    const lower = asciiLowerCase(member);
+    const sig = own?.decl.methods?.find((m) => asciiLowerCase(m.name) === lower && m.result !== undefined);
+    if (sig && own) return { result: sig.result!, file: own.file, owner: { kind: "type", id: typeId } };
+    for (const parent of implemented.get(typeId) ?? []) {
+      const hit = typeSig(parent, member, seen);
+      if (hit) return hit;
+    }
+    for (const written of writtenSupers.get(typeId) ?? []) {
+      const entry = outsideByName.get(written);
+      const hit = entry ? outsideMember(entry, member, true, hasResult) : null;
+      if (hit) return { result: hit.sig.result!, file: hit.entry.file, owner: { kind: "outside", entry: hit.entry } };
+    }
+    return null;
+  };
+  /**
+   * What a class's member returns when its own declaration writes no type (`{@inheritdoc}`): what
+   * an interface of the class, or a base's declaration of the member, declares — PHP checks an
+   * implementation against both.
+   */
+  const inheritedResult = (classId: string, member: string, seen = new Set<string>()): MemberHit | null => {
+    if (seen.has(classId)) return null;
+    seen.add(classId);
+    for (const iface of implemented.get(classId) ?? []) {
+      const hit = decls.types.has(iface) ? typeSig(iface, member) : null;
+      if (hit) return hit;
+    }
+    for (const written of writtenSupers.get(classId) ?? []) {
+      const entry = outsideByName.get(written);
+      const hit = entry ? outsideMember(entry, member, true, hasResult) : null;
+      if (hit) return { result: hit.sig.result!, file: hit.entry.file, owner: { kind: "outside", entry: hit.entry } };
+    }
+    const base = classBase.get(classId);
+    if (base?.internal) {
+      const found = findMember(base.internal, member, false, true).target;
+      const own = found ? declById.get(found) : undefined;
+      if (own?.decl.result) return { result: own.decl.result, file: own.file, owner: { kind: "class", id: found!.slice(0, found!.lastIndexOf(".")) } };
+      return inheritedResult(base.internal, member, seen);
+    }
+    const entry = base?.outside ? outsideByName.get(base.outside) : undefined;
+    const hit = entry ? outsideMember(entry, member, true, hasResult) : null;
+    return hit ? { result: hit.sig.result!, file: hit.entry.file, owner: { kind: "outside", entry: hit.entry } } : null;
+  };
+  /** The member a value of class `ty` has: what a call of it runs and what it returns. Null when no declaration keylang read has it. */
+  const memberHit = (ty: Ty, member: string): MemberHit | null => {
+    if (ty.kind === "factory") return asciiLowerCase(member) === asciiLowerCase(ty.method) ? { gives: ty.of } : null;
+    if (ty.kind === "type") return typeSig(ty.id, member);
+    if (ty.kind === "outside") {
+      const interfaceOnly = ty.entry.decl.kind === "interface";
+      const runs = interfaceOnly ? null : outsideMember(ty.entry, member, false);
+      const typed = runs?.sig.result !== undefined ? runs : outsideMember(ty.entry, member, true, hasResult);
+      if (!runs && !typed) return null;
+      return {
+        ...(runs ? { outside: { entry: runs.entry, name: runs.sig.name } } : {}),
+        ...(typed ? { result: typed.sig.result!, file: typed.entry.file, owner: { kind: "outside" as const, entry: typed.entry } } : {}),
+      };
+    }
+    const found = findMember(ty.id, member, false, true);
+    if (found.target) {
+      const own = declById.get(found.target);
+      const owner = found.target.slice(0, found.target.lastIndexOf("."));
+      if (own?.decl.result) return { target: found.target, result: own.decl.result, file: own.file, owner: decls.classes.has(owner) ? { kind: "class", id: owner } : ty };
+      return { target: found.target, ...(inheritedResult(ty.id, member) ?? {}) };
+    }
+    // The chain of bases ends at a class `outside` the architecture: its member, read as a declaration.
+    const entry = found.last?.outside ? outsideByName.get(found.last.outside) : undefined;
+    return entry ? memberHit({ kind: "outside", entry }, member) : null;
+  };
+  /** The class a member's result has, given the class of the value it is called on; `element`: of an element of the array it returns. */
+  const resultTy = (hit: MemberHit, recv: Ty | null, element: boolean): Typed | null => {
+    if (hit.gives) return element ? null : { ty: hit.gives, indirect: true };
+    const r = hit.result;
+    if (!r || (r.element === true) !== element) return null;
+    const ty = r.self === "static" ? recv : r.self === "self" ? (hit.owner ?? recv) : r.class ? tyOfQualified(r.class) : null;
+    if (!ty) return null;
+    return { ty, indirect: true, ...(r.docblock && hit.file ? { doc: `${hit.file}:${r.docblock.line}:${r.docblock.col}` } : {}) };
+  };
+  /** The class of a property of a class or one of its bases (`$this->_eventManager` a base declares with `@var`), by the declaring class's facts. */
+  const fieldTy = (classId: string, prop: string): Typed | null => {
+    const withDoc = (cls: string, element: boolean | undefined, docblock: { line: number; col: number } | undefined, file: string): Typed | null => {
+      const ty = element ? null : tyOfQualified(cls);
+      return ty ? { ty, indirect: true, ...(docblock ? { doc: `${file}:${docblock.line}:${docblock.col}` } : {}) } : null;
+    };
+    const seen = new Set<string>();
+    let at: string | null = classId;
+    while (at !== null && !seen.has(at)) {
+      seen.add(at);
+      const own = declById.get(at);
+      const field = own?.decl.fields?.find((f) => f.name === prop);
+      if (field && own) return withDoc(field.class, field.element, field.docblock, own.file);
+      const base = classBase.get(at);
+      if (!base) return null;
+      if (base.internal) {
+        at = base.internal;
+        continue;
+      }
+      let entry = base.outside ? outsideByName.get(base.outside) : undefined;
+      const visited = new Set<string>();
+      while (entry && !visited.has(entry.decl.name)) {
+        visited.add(entry.decl.name);
+        const f = entry.decl.fields.find((x) => x.name === prop);
+        if (f) return withDoc(f.class, f.element, f.docblock, entry.file);
+        entry = entry.decl.base ? outsideByName.get(asciiLowerCase(entry.decl.base)) : undefined;
+      }
+      return null;
+    }
+    return null;
+  };
+  /**
+   * The class of a call's receiver from declarations (PHP): a value another call returned (`on`),
+   * a class the file names (`receiver`), `$this`, a property a base declares (`this.x.m`), the
+   * base (`parent::m()`), or a class named statically (`X::m()`).
+   */
+  const receiverTy = (c: Pick<ResultCallFact, "callee" | "receiver" | "on" | "bound" | "docblock" | "opaque">, ctx: CallCtx, depth: number): Typed | null => {
+    if (depth > 16) return null;
+    if (c.on) return valueTy(c.on, ctx, depth + 1);
+    if (c.receiver) {
+      const ty = tyNamed(ctx.facts, c.receiver);
+      return ty ? { ty, ...(c.docblock ? { doc: `${ctx.facts.path}:${c.docblock.line}:${c.docblock.col}` } : {}) } : null;
+    }
+    if (c.opaque || languageOf(ctx.facts.path) !== "php") return null;
+    const parts = c.callee.split(".");
+    if (parts[0] === "this" && ctx.cls) {
+      if (parts.length === 2) return { ty: { kind: "class", id: ctx.cls.id } };
+      return parts.length === 3 ? fieldTy(ctx.cls.id, parts[1]!) : null;
+    }
+    if (parts[0] === "super" && ctx.cls && parts.length === 2) {
+      const base = classBase.get(ctx.cls.id);
+      if (base?.internal) return { ty: { kind: "class", id: base.internal } };
+      const entry = base?.outside ? outsideByName.get(base.outside) : undefined;
+      return entry ? { ty: { kind: "outside", entry } } : null;
+    }
+    if (c.bound || parts.length !== 2) return null;
+    const ty = tyNamed(ctx.facts, parts[0]!);
+    return ty && ty.kind !== "type" ? { ty } : null;
+  };
+  /** The class of a value a call returns (or of an element of it), from the declared result type of what the call runs. */
+  const valueTy = (v: ValueOfFact, ctx: CallCtx, depth: number): Typed | null => {
+    const call = v.call;
+    let recv: Typed | null = null;
+    let hit: MemberHit | null = null;
+    if (!call.on && !call.receiver && !call.bound && !call.opaque && !call.callee.includes(".")) {
+      // `helper()`: a function's declared result.
+      const targets = scopes.get(ctx.facts.path)?.resolveCallees(call.callee, null, false).filter((id) => decls.fns.has(id)) ?? [];
+      const own = targets.length === 1 ? declById.get(targets[0]!) : undefined;
+      hit = own?.decl.result ? { target: targets[0]!, result: own.decl.result, file: own.file } : null;
+    } else {
+      recv = receiverTy(call, ctx, depth);
+      hit = recv ? memberHit(recv.ty, call.member) : null;
+    }
+    const out = hit ? resultTy(hit, recv?.ty ?? null, v.element === true) : null;
+    if (!out) return null;
+    const doc = recv?.doc ?? out.doc;
+    return { ty: out.ty, indirect: true, ...(doc ? { doc } : {}) };
+  };
+  /** The name of a class for a hole's reason. */
+  const tyName = (ty: Ty): string => (ty.kind === "outside" ? lastSegmentOf(ty.entry.decl.name) : ty.kind === "factory" ? lastSegmentOf(ty.name) : ty.id.slice(ty.id.lastIndexOf(".") + 1));
   /** The ID of a declaration of a file by its dotted path there (`Class.method`, a function's name). */
   const declIdIn = (path: string, symbol: string): string | null => {
     const [head, member] = symbol.split(".");
@@ -1174,11 +1439,11 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
          * constructor argument the receiver holds, else the class a binding gives the receiver's
          * type (an interface, or a class with a preference of its own). Null when it says nothing.
          */
-        const configured = (c: CallFact, typedClass: string | null): { bound: BoundCall; through: string | null } | null => {
+        const configured = (c: CallFact, typedClass: string | null, typedType: string | null = null): { bound: BoundCall; through: string | null } | null => {
           if (!bindings) return null;
-          const member = c.callee.slice(c.callee.lastIndexOf(".") + 1);
+          const member = c.member ?? c.callee.slice(c.callee.lastIndexOf(".") + 1);
           if (c.param !== undefined && cls && bindings.argumentFor(cls.id, c.param)) return { bound: bindings.callThroughArgument(cls.id, c.param, member), through: null };
-          const type = typedClass ?? (c.receiver ? typeNamed(c.receiver) : null);
+          const type = typedClass ?? typedType ?? (c.receiver ? typeNamed(c.receiver) : null);
           if (type !== null) return bindings.binds(type) ? { bound: bindings.callThroughType(type, member), through: type } : null;
           // `Payment::charge()` on a class the config binds that declares no `charge` (a Laravel facade): the bound class's member.
           const parts = c.callee.split(".");
@@ -1244,7 +1509,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
         };
         const dynamic = (c: CallFact, reason: string): void => {
           stats.callsDynamic++;
-          gaps.push({ kind: "dynamic-call", file: facts.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, reason, source: fn.id });
+          gaps.push({ kind: "dynamic-call", file: facts.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, reason, source: fn.id, ...(c.opaque && c.member ? { name: c.member } : {}) });
         };
         /**
          * A call of a framework's dispatcher (`$this->eventManager->dispatch('e', …)`): the receiver
@@ -1253,12 +1518,40 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
         const dispatching = (receiver: string): boolean => {
           const ids = [classNamed(receiver), typeNamed(receiver)].filter((id): id is string => id !== null);
           if (ids.length === 0) return dispatchers.has(asciiLowerCase(qualifiedIn(facts, receiver)));
-          return ids.some((id) => [id, ...(bindings?.binds(id) ? bindings.callThroughType(id, "dispatch").edges.map((e) => e.impl) : [])].some((t) => [...supertypeNames(t)].some((name) => dispatchers.has(name))));
+          return dispatchingIds(ids);
+        };
+        const dispatchingIds = (ids: readonly string[]): boolean => ids.some((id) => [id, ...(bindings?.binds(id) ? bindings.callThroughType(id, "dispatch").edges.map((e) => e.impl) : [])].some((t) => [...supertypeNames(t)].some((name) => dispatchers.has(name))));
+        /** The same for a class from declarations: an `outside` one is a dispatcher by its name or a supertype's. */
+        const dispatchingTy = (ty: Ty): boolean => {
+          if (ty.kind === "class" || ty.kind === "type") return dispatchingIds([ty.id]);
+          if (ty.kind !== "outside") return false;
+          const seen = new Set<string>();
+          const queue = [ty.entry.decl.name];
+          while (queue.length > 0) {
+            const name = asciiLowerCase(queue.shift()!);
+            if (seen.has(name)) continue;
+            seen.add(name);
+            if (dispatchers.has(name)) return true;
+            const entry = outsideByName.get(name);
+            if (entry) queue.push(...(entry.decl.base ? [entry.decl.base] : []), ...(entry.decl.implements ?? []));
+          }
+          return false;
+        };
+        const ctx: CallCtx = { facts, cls };
+        const php = languageOf(facts.path) === "php";
+        /** A call that runs a member of a class `outside` the architecture: an edge to its module, which has no member nodes. */
+        const pushOutside = (hit: { entry: OutsideEntry; name: string }, c: CallFact, extra: Partial<Call>): void => {
+          push(hit.entry.module, c, { ...extra, member: `${hit.entry.decl.name}::${hit.name}` });
         };
         for (const c of d.calls) {
           // Whatever the call itself resolves to, the callables it passes are edges of their own.
           passCallables(c);
-          if (c.nameArg && c.receiver && dispatchers.size > 0 && dispatching(c.receiver)) {
+          const parts = c.callee.split(".");
+          // PHP: the receiver's class from declarations — a call's result, a base's property, a class outside the architecture.
+          const recv = php && (c.on || c.receiver || (parts[0] === "this" && parts.length === 3)) ? receiverTy(c, ctx, 0) : null;
+          const recvExtra: Partial<Call> = recv ? { ...(recv.doc ? { docblock: recv.doc } : {}), ...(recv.indirect ? { indirect: true as const } : {}) } : c.docblock ? { docblock: `${facts.path}:${c.docblock.line}:${c.docblock.col}` } : {};
+          const dispatcher = c.nameArg && dispatchers.size > 0 && (c.receiver ? dispatching(c.receiver) || (recv !== null && dispatchingTy(recv.ty)) : recv !== null && dispatchingTy(recv.ty));
+          if (c.nameArg && dispatcher) {
             if (c.nameArg.literal !== null) {
               const call: Call = { target: "", line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, via: "dispatch", ...(c.closure ? { closure: true as const } : {}), ...(c.closureArg ? { site: `${facts.path}:${c.closureArg.line}:${c.closureArg.col}` } : {}) };
               fn.calls.push(call);
@@ -1267,8 +1560,8 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
               gaps.push({ kind: "dynamic-event", file: facts.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, reason: `dispatch of an event whose name is computed at run time: \`${c.nameArg.text}\``, source: fn.id });
             }
           }
-          // An expression keylang does not name is a hole, never an edge.
-          if (c.opaque) {
+          // An expression keylang does not name is a hole, never an edge — unless declarations give the class of its value.
+          if (c.opaque && !recv) {
             dynamic(c, `call through an expression \`${c.callee}\``);
             continue;
           }
@@ -1277,9 +1570,13 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
             // `super()` runs the base constructor; `super.m()` the base's `m`.
             const member = c.callee === "super" ? "constructor" : c.callee.slice("super.".length);
             const { target, last } = superTarget(cls, member, isStatic, staticThroughInstance(facts.path));
+            const outsideBase = !target && last?.outside ? outsideByName.get(last.outside) : undefined;
+            const inOutside = outsideBase ? outsideMember(outsideBase, member, false) : null;
             if (target) push(target, c);
             // Bases of this repository without a constructor of their own: the implicit ones run nothing keylang indexes.
             else if (last?.internal && member === "constructor") continue;
+            // `parent::__construct()` of a base outside the architecture: its member, read as a declaration.
+            else if (inOutside) pushOutside({ entry: inOutside.entry, name: inOutside.sig.name }, c, {});
             else if (last && !last.internal && last.external) stats.callsExternal++;
             else dynamic(c, `call through \`super\` of ${last ? `\`${last.text}\`` : "a class without a base keylang resolved"}`);
             continue;
@@ -1305,17 +1602,51 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
             const owner = c.hook.owner === "self" ? fn.id : cls ? constructorOf(cls.id) : null;
             if (owner && c.hook.param !== null) hookCalls.push({ fn, hook: c.hook, owner, call: c });
           }
-          const typed = receiverTarget(c.callee, c.receiver);
-          const typedClass = typed && c.receiver ? classNamed(c.receiver) : null;
-          const framework = configured(c, typedClass);
+          const member = c.member ?? c.callee.slice(c.callee.lastIndexOf(".") + 1);
+          const recvClass = recv?.ty.kind === "class" ? recv.ty.id : null;
+          const typed = recv ? (recvClass ? findMember(recvClass, member, false, staticThroughInstance(facts.path)).target : null) : receiverTarget(c.callee, c.receiver);
+          const typedClass = recv ? (typed ? recvClass : null) : typed && c.receiver ? classNamed(c.receiver) : null;
+          const framework = configured(c, typedClass, recv?.ty.kind === "type" ? recv.ty.id : recvClass);
           if (typed) {
-            push(typed, c, c.docblock ? { docblock: `${facts.path}:${c.docblock.line}:${c.docblock.col}` } : {}, typedClass);
+            push(typed, c, recvExtra, typedClass);
             // A preference of the class itself, or an argument the config sets: the class that runs may be another one.
             if (framework) placeConfigured(c, framework, false);
             continue;
           }
           if (framework) {
             placeConfigured(c, framework, true);
+            continue;
+          }
+          if (recv) {
+            // A member of a class outside the architecture (a base's, or the receiver's own class there).
+            const hit = recv.ty.kind === "class" || recv.ty.kind === "outside" ? memberHit(recv.ty, member) : null;
+            if (hit?.outside) {
+              pushOutside(hit.outside, c, recvExtra);
+              continue;
+            }
+            // `$this->quoteFactory->create()`: the class the framework generates makes a `Quote` (ADR 0022, business-flows 40).
+            if (recv.ty.kind === "factory" && asciiLowerCase(member) === asciiLowerCase(recv.ty.method)) {
+              const made = recv.ty.of;
+              const extra: Partial<Call> = { ...recvExtra, via: "generated-factory", binding: `\`${recv.ty.name}\` is generated: \`${member}()\` makes a \`${tyName(made)}\`` };
+              if (made.kind === "class") {
+                push(made.id, c, extra);
+                stats.callsResolved++;
+                continue;
+              }
+              if (made.kind === "outside" && made.entry.decl.kind !== "interface") {
+                pushOutside({ entry: made.entry, name: "__construct" }, c, extra);
+                stats.callsResolved++;
+                continue;
+              }
+            }
+            // `$this->repo->find()` with `Repo` an interface: PHP dispatches to a class the code does not name; a binding may.
+            if (recv.ty.kind === "type" || (recv.ty.kind === "outside" && recv.ty.entry.decl.kind === "interface")) {
+              dynamic(c, `call through an interface \`${c.receiver ?? tyName(recv.ty)}\``);
+              continue;
+            }
+          }
+          if (c.opaque) {
+            dynamic(c, `call through an expression \`${c.callee}\``);
             continue;
           }
           // `this.waiting.get()` with `waiting = new Map()`: a method of a global or package class.
@@ -1349,6 +1680,15 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
           if (target && head === "this" && cls) {
             push(target, c, {}, cls.id);
             continue;
+          }
+          if (!target && php && !c.bound) {
+            // `$this->getData()` of a base outside the architecture, `Registry::m()` and `new X()` of a class there.
+            const holder: Ty | null = head === "this" ? (cls && parts.length === 2 ? { kind: "class", id: cls.id } : null) : head !== "super" && parts.length <= 2 ? tyNamed(facts, head) : null;
+            const hit = holder && (holder.kind === "class" || (holder.kind === "outside" && holder.entry.decl.kind !== "interface")) ? (parts.length === 2 ? memberHit(holder, parts[1]!)?.outside : holder.kind === "outside" ? { entry: holder.entry, name: "__construct" } : undefined) : undefined;
+            if (hit) {
+              pushOutside(hit, c, {});
+              continue;
+            }
           }
           if (!target) {
             const imported = (locals.get(head) ?? [])[0];
@@ -1629,6 +1969,52 @@ interface BaseLink {
   internal: string | null;
   text: string;
   external: boolean;
+  /** PHP: the unread base is a class of a file `outside` the architecture, read as declarations (its qualified name, ASCII lower case). */
+  outside?: string;
+}
+
+/** A class or interface of a file `outside` the architecture, read as declarations only. */
+interface OutsideEntry {
+  decl: OutsideDeclFact;
+  file: string;
+  /** The opaque module of the file: the target of a call that runs one of its members. */
+  module: string;
+}
+
+/**
+ * The class of a value, as far as declarations tell it (PHP, business-flows 40): a class or an
+ * interface of the graph, one of a file `outside` the architecture, or a class a framework
+ * generates (`factory`: Magento's `XFactory`, whose `create()` gives an `X`).
+ */
+type Ty = { kind: "class"; id: string } | { kind: "type"; id: string } | { kind: "outside"; entry: OutsideEntry } | { kind: "factory"; name: string; of: Ty; method: string };
+
+/** Where a call runs, as `receiverTy` reads a call fact: the file and the class of the fn. */
+interface CallCtx {
+  facts: FileFacts;
+  cls: Module | null;
+}
+
+/** A class a value has, and the docblock it rests on (`file:line:col`) when one does. */
+interface Typed {
+  ty: Ty;
+  doc?: string;
+  /** The class is written in another declaration than the call's file: a method's result type, a base's property. */
+  indirect?: true;
+}
+
+/** A member a value's class has: the fn it runs (`target`) or the `outside` member, and its declared result type. */
+interface MemberHit {
+  /** An fn of the graph the call runs. */
+  target?: string;
+  /** A member of a class `outside` the architecture: its entry and name as declared. */
+  outside?: { entry: OutsideEntry; name: string };
+  /** The declared result type and the file that writes it (for a docblock's position). */
+  result?: ResultTypeFact;
+  file?: string;
+  /** The class that declares the member: what `self` names. */
+  owner?: Ty;
+  /** A generated class's member: the class of its result as the framework generates it. */
+  gives?: Ty;
 }
 
 /** Python and PHP reach a static member through an instance (`s.make()`, `$this->make()`); JavaScript does not. */
@@ -2003,4 +2389,9 @@ export function placeFile(config: Config, file: string): { layer: string; segmen
     }
   }
   return null;
+}
+
+/** The last segment of a qualified PHP name. */
+function lastSegmentOf(name: string): string {
+  return name.slice(name.lastIndexOf("\\") + 1);
 }

@@ -203,6 +203,40 @@ const PHP_DOCBLOCK: Record<string, string> = {
   "keylang/flows.md": "# flow buy\n\n- trigger app.Checkout.Checkout.buy\n  - step domain.Store.Store.save\n  - step domain.Mailer.Mailer.send\n",
 };
 
+/**
+ * PHP: receivers typed by declarations (business-flows 40) — a `@return` in another file, an inline
+ * `@var`. Removing either may move a verdict only to `unverified`.
+ */
+const PHP_RESULTS: Record<string, string> = {
+  "keylang.json": `${JSON.stringify({ languages: ["php"], layers: { app: ["src/App/**"], domain: ["src/Domain/**"] } })}\n`,
+  "src/Domain/Order.php": "<?php\nnamespace Shop\\Domain;\n\nclass Order\n{\n    public function ship(): void {}\n    public function pay(): void {}\n}\n",
+  "src/Domain/Repo.php": "<?php\nnamespace Shop\\Domain;\n\nclass Repo\n{\n    /** @return Order */\n    public function find() { return new Order(); }\n\n    public function make() { return null; }\n}\n",
+  "src/App/Checkout.php":
+    "<?php\nnamespace Shop\\App;\n\nuse Shop\\Domain\\Order;\nuse Shop\\Domain\\Repo;\n\nclass Checkout\n{\n    public function __construct(private Repo $repo) {}\n\n    public function buy(): void\n    {\n        $found = $this->repo->find();\n        $found->ship();\n        /** @var Order $order */\n        $order = $this->repo->make();\n        $order->pay();\n    }\n}\n",
+  "keylang/flows.md": "# flow buy\n\n- trigger app.Checkout.Checkout.buy\n  - step domain.Order.Order.ship\n  - step domain.Order.Order.pay\n",
+  "keylang/rules.md": "# rules\n\n- deny app domain.Order\n",
+};
+
+test("php: removing a `@return` or an inline `@var` that types a receiver moves a verdict only to unverified", (t) => {
+  const php = mkdtempSync(join(tmpdir(), "keylang-meta-php-results-"));
+  t.after(() => rmSync(php, { recursive: true, force: true }));
+  for (const [path, text] of Object.entries(PHP_RESULTS)) write(php, path, text);
+  const before = aggregate(results(php), []);
+  assert.equal(before.get("rule:deny app domain.Order")?.verdict, "fail");
+  const moves = (operator: string, path: string, from: string): string[] => {
+    write(php, path, PHP_RESULTS[path]!.replace(from, ""));
+    const after = aggregate(results(php), []);
+    write(php, path, PHP_RESULTS[path]!);
+    monotonic("php-results", operator, before, after);
+    return [...before]
+      .filter(([key, left]) => left.verdict !== (after.get(key)?.verdict ?? "unverified"))
+      .map(([key, left]) => `${key.split(":")[2]} ${left.verdict} → ${after.get(key)?.verdict ?? "unverified"}`)
+      .sort();
+  };
+  assert.deepEqual(moves("remove @return", "src/Domain/Repo.php", "    /** @return Order */\n"), ["domain.Order.Order.ship ok → unverified"]);
+  assert.deepEqual(moves("remove inline @var", "src/App/Checkout.php", "        /** @var Order $order */\n"), ["domain.Order.Order.pay ok → unverified"]);
+});
+
 test("exclude and --static shape never switch ok and fail", (t) => {
   const repo = copyFixture(t, "repo");
   const original = readFileSync(join(repo, "keylang/rules.md"), "utf8");

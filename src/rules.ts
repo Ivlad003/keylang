@@ -16,7 +16,7 @@ import type { Verdict } from "./verdict.ts";
 interface SnapshotView {
   snapshotId: string;
   nodes: Record<string, { kind: string; file: string | null; line: number | null; col?: number | null; members?: string; class?: true }>;
-  edges: { kind: string; source: string; target: string | null; file: string | null; line: number; col: number; resolution: string; reason?: string; via?: string; typeOnly?: true; provenance?: string; docblock?: string; site?: string; owner?: string; binding?: string; scope?: string }[];
+  edges: { kind: string; source: string; target: string | null; file: string | null; line: number; col: number; resolution: string; reason?: string; via?: string; typeOnly?: true; provenance?: string; docblock?: string; site?: string; owner?: string; binding?: string; scope?: string; indirect?: true }[];
   coverage: { kind: string; file: string; line: number; col: number; reason: string; source: string | null }[];
   exports: { module: string; name: string; kind: string; form?: string; from?: string; reason?: string }[];
 }
@@ -204,6 +204,8 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
     if (!edge.target || !edge.file) continue;
     // An injected hook value is the injector's dependency, which has its own edge to it.
     if (edge.via === "injected") continue;
+    // A receiver typed by another declaration (a result type, a base's property): the dependency is on that declaration.
+    if (edge.indirect === true) continue;
     // A call the framework makes by its config belongs to the module whose config declares it (ADR 0022), at that config line.
     const configured = edge.via !== undefined && CONFIG_VIA.has(edge.via) ? siteAt(edge.site) : null;
     const from = configured && edge.owner !== undefined ? edge.owner : scopeOf(edge.source);

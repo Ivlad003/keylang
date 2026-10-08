@@ -18,7 +18,7 @@ import { components } from "./scc.ts";
 
 export const SNAPSHOT_SCHEMA = 9;
 /** Bump when extraction or resolution changes the facts that `snapshotId` covers. */
-export const EXTRACTOR_VERSION = "m1.23";
+export const EXTRACTOR_VERSION = "m1.24";
 
 export type Resolution = "resolved" | "ambiguous" | "unresolved";
 /**
@@ -66,7 +66,10 @@ export interface SnapshotEdge {
    * call of the framework's event dispatcher with a literal name, from the fn
    * to the event's node; `observer` — from an event to the fn an observer
    * runs, `file` and `site` at the config line (Magento `events.xml`, Laravel
-   * `$listen`, Symfony listeners, queued jobs and Messenger handlers). `keylang check
+   * `$listen`, Symfony listeners, queued jobs and Messenger handlers);
+   * `generated-factory` — a call of the member a framework's generated class
+   * makes its stem's object with (Magento `XFactory::create()` → `X`, ADR 0022,
+   * business-flows 40), to that class (`binding` says so). `keylang check
    * --static=shape` follows none of them; rules do not see `injected`, and see
    * a config edge as a dependency of `owner`.
    */
@@ -85,8 +88,23 @@ export interface SnapshotEdge {
   site?: string;
   /** The call sits in a closure of `source`: whoever holds that function value may run it. */
   closure?: true;
-  /** `file:line:col` of the docblock a `docblock` edge rests on: the `@var` or `@param` that types the receiver, or the import's own position. */
+  /** `file:line:col` of the docblock a `docblock` edge rests on: the `@var`, `@param` or `@return` that types the receiver, or the import's own position. */
   docblock?: string;
+  /** An unresolved call through an expression whose `text` does not end in the member it calls: that member (PHP `ship` of `$this->repo()->ship()`). */
+  name?: string;
+  /**
+   * The target is a module `outside` the architecture (ADR 0011), whose members are no nodes:
+   * the member the call runs as its file declares it (`Magento\Framework\DataObject::getData`,
+   * business-flows 40).
+   */
+  member?: string;
+  /**
+   * PHP: the receiver's class is written in another declaration than the call's file — the result
+   * type of the call that returned the value (`$this->repo->get()->save()`), or a property of a
+   * base. Flows follow the edge; rules do not see it as a dependency: the module depends on the
+   * declaration that hands the value over, which has its own edges.
+   */
+  indirect?: true;
   /**
    * An import or re-export of types only (TypeScript `import type`, `export type … from`,
    * `export type * from`; `import { type A }` and `export { type A } from` with every name `type`
@@ -502,6 +520,8 @@ export function buildSnapshot(
           resolution: "resolved",
           provenance: c.docblock ? "docblock" : "syntactic",
           ...(c.docblock ? { docblock: c.docblock } : {}),
+          ...(c.member ? { member: c.member } : {}),
+          ...(c.indirect ? { indirect: true as const } : {}),
           ...(c.via ? { via: c.via } : {}),
           ...(c.hook ? { hook: c.hook } : {}),
           ...(c.site ? { site: c.site } : {}),
@@ -573,6 +593,7 @@ export function buildSnapshot(
         resolution: "unresolved",
         provenance: "syntactic",
         reason: gap.reason,
+        ...(gap.name ? { name: gap.name } : {}),
       });
     }
   }
