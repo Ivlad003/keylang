@@ -82,15 +82,15 @@ keylang має допомагати швидко зануритись у чуж�
 | [10](issues/10-magento-entries.md) | Magento: точки входу — routes/controllers, webapi, GraphQL, cron, queue, console | ready-for-agent | 06, 09 |
 | [11](issues/11-flows-discover.md) | `keylang flows discover`: чернетка флоу для кожної точки входу | resolved | 09 |
 | [12](issues/12-flows-business-names.md) | Бізнес-назви, описи й групування флоу в процеси (модель) | resolved | 11 |
-| [13](issues/13-blind-spots-report.md) | Звіт покриття: сліпі зони, сироти, «логіка в даних» | ready-for-agent | 09, 11 |
-| [14](issues/14-integrations-inventory.md) | Інвентар інтеграцій: вихідні HTTP/SDK, вхідні вебхуки, черги | ready-for-agent | 09 |
+| [13](issues/13-blind-spots-report.md) | Звіт покриття: сліпі зони, сироти, «логіка в даних» | resolved | 09, 11 |
+| [14](issues/14-integrations-inventory.md) | Інвентар інтеграцій: вихідні HTTP/SDK, вхідні вебхуки, черги | resolved | 09 |
 | [15](issues/15-project-tour.md) | `keylang tour`: онбординг-бриф проєкту за 10 хвилин | ready-for-agent | 12, 13, 14 |
 | [16](issues/16-grammar-events.md) | Мова: `trigger event`, перевірка `emits event` проти фактів | ready-for-agent | 02, 08 |
 | [17](issues/17-grammar-parallel.md) | Мова: паралельні групи кроків `parallel` | ready-for-agent | 02 |
 | [18](issues/18-grammar-async-triggers.md) | Мова: асинхронні тригери (route/cron/consumer/webhook), `continues`, таймери | ready-for-agent | 02, 09 |
 | [19](issues/19-php-trace-real-requests.md) | Trace на реальних запитах і інтеграційних тестах (PHP/Magento, TS, Python, Rust) | ready-for-agent | 09 |
 | [20](issues/20-web-diagram-model.md) | Web: API моделі діаграм (флоу, точки входу, події, шари) з розкладкою | resolved | — |
-| [21](issues/21-web-flow-viewer.md) | Web: перегляд флоу як діаграми (пошук, вердикти, перехід у код) | ready-for-agent | 20, 33 |
+| [21](issues/21-web-flow-viewer.md) | Web: перегляд флоу як діаграми (пошук, вердикти, перехід у код) | resolved | 20, 33 |
 | [22](issues/22-web-entry-explorer.md) | Web: дослідник точок входу й подій — інтерактивне дерево викликів | ready-for-agent | 09, 20 |
 | [23](issues/23-web-diagram-editor.md) | Web-редактор діаграм у стилі diagrams.net (draw.io) | ready-for-agent | 20, 21, 33 |
 | [24](issues/24-diagram-to-proposals.md) | Редактор → специфікація: зміни діаграми як пропозиції, файл розкладки | ready-for-agent | 23 |

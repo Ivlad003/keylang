@@ -164,7 +164,8 @@ Commands:
                             on PATH, voice (engine, local model, microphone); changes nothing
   mcp                       Serve MCP over stdio for agents: search, node, code, flows,
                             check, explain, context, validate_spec, scaffold,
-                            feature_status, list_entries, discover_flows, apply_diff
+                            feature_status, list_entries, discover_flows, coverage_report,
+                            list_integrations, apply_diff
                             (proposals only; no spec is written, the fact cache
                             .keylang/cache/ is kept current)
   wire [--check] [--out f]  Generate keylang.gen.ts (or f: a .ts/.mts/.cts path relative to
@@ -180,6 +181,23 @@ Commands:
                             controller need its adapter). --kind: one kind. --json: the
                             list as JSON. Exit 0, also with nothing found; writes only
                             the fact cache .keylang/cache/
+  coverage [--json]         Where keylang does not see, a view (check does not read it):
+                            fns reachable from entry points over resolved calls, orphan
+                            fns (no entry point reaches them; test files left out), the
+                            modules with most holes by reason, entry points without a
+                            hand-written flow (and their discovered flow), and «logic in
+                            data»: calls into configuration readers listed in
+                            resources/data-logic.json, to check by hand. --json: the
+                            report as JSON. Exit 0; writes only the fact cache
+  integrations [--json]     What the code talks to, a view (nothing is contacted):
+                            calls into HTTP, SOAP, SDK and queue clients listed in
+                            resources/integrations.json, by integration → call site
+                            (file:line, fn, host of a literal URL) → the entry points
+                            and flows that reach it; incoming webhooks (entries of
+                            kind webhook, routes whose path names a webhook, callback,
+                            notify or ipn, integrations.webhooks globs of keylang.json);
+                            queue publishers, consumers and pairs. --json: as JSON.
+                            Exit 0; writes only the fact cache
   flows discover [--kind k] [--layer l] [--limit n] [--depth d] [--print] [--check]
                             A flow draft for every entry point (draft flow from its fn)
                             as the generated view <dir>/flows-discovered/<layer>.md,
@@ -402,6 +420,10 @@ async function run(argv: readonly string[]): Promise<number> {
       return cmdTracePlan(paths[0]);
     case "entries":
       return cmdEntries(values.kind, values.json === true);
+    case "coverage":
+      return cmdCoverage(values.json === true);
+    case "integrations":
+      return cmdIntegrations(values.json === true);
     case "flows":
       return cmdFlows(paths, { kind: values.kind, layer: values.layer, limit: values.limit, depth: values.depth, into: values.into, print: values.print === true, check: values.check === true, names: values.names === true, mode: values.mode, dryRun: values["dry-run"] === true, jobs: values.jobs, stale: values.stale === true });
     case "export":
@@ -938,6 +960,24 @@ async function cmdEntries(kind: string | undefined, json: boolean): Promise<numb
   if (result.payload === null) throw new Error(result.messages[0]?.text ?? "entries failed");
   process.stdout.write(json ? `${JSON.stringify({ snapshotId: result.payload.snapshotId, kind: result.payload.kind, entries: result.payload.entries }, null, 2)}\n` : result.payload.text);
   return result.exitCode ?? 2;
+}
+
+/** `coverage [--json]`: the report of the shared operation, or its payload without the text as JSON; exit 0 with holes and orphans too. */
+async function cmdCoverage(json: boolean): Promise<number> {
+  const result = await runOperation({ kind: "coverage", root: findRoot(process.cwd()) });
+  if (result.payload === null) throw new Error(result.messages[0]?.text ?? "coverage failed");
+  const { text, ...report } = result.payload;
+  process.stdout.write(json ? `${JSON.stringify(report, null, 2)}\n` : text);
+  return 0;
+}
+
+/** `integrations [--json]`: the inventory of the shared operation, or its payload without the text as JSON; exit 0. */
+async function cmdIntegrations(json: boolean): Promise<number> {
+  const result = await runOperation({ kind: "integrations", root: findRoot(process.cwd()) });
+  if (result.payload === null) throw new Error(result.messages[0]?.text ?? "integrations failed");
+  const { text, ...report } = result.payload;
+  process.stdout.write(json ? `${JSON.stringify(report, null, 2)}\n` : text);
+  return 0;
 }
 
 /**

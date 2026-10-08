@@ -22,6 +22,7 @@ import { serveWeb } from "../src/tui/web.ts";
 import { checkoutRepo, CHECKOUT_FILES, click, drag, KEY, locate, mouseMove, tempHome } from "./tui-fixture.ts";
 import { HOOK_FLOW, HOOKS } from "./hooks-fixture.ts";
 import { CYCLE_AUTHOR_CODE, CYCLE_FILES, refundCycle, type CycleStage } from "./cycle-fixture.ts";
+import { diagramsRepo } from "./diagrams-fixture.ts";
 import { VirtualTerminal } from "./vt.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -1118,5 +1119,57 @@ test("web: scripts/build-web.mjs bundles the client offline: one script, its CSS
     assert.match(readFileSync(join(out, "maxgraph-core.LICENSE"), "utf8"), /Apache License/);
   } finally {
     rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test("web: /api/views lists the discovered flows; /api/diagram draws one; /api/usages says where an ID is used, behind the same token (business-flows/21)", async (t) => {
+  const repo = diagramsRepo(t);
+  const server = await serveWeb({ root: repo, port: 0 });
+  t.after(() => server.close());
+  const url = new URL(server.url);
+  const bearer = { Authorization: `Bearer ${tokenOf(url)}` };
+  const views = JSON.parse((await status(url, "/api/views", bearer)).body) as { flows: string[]; root: string; flowList: { name: string; file: string; layer: string; ids: string[] }[]; discovered: { name: string; file: string; trigger: string; kind: string; label: string }[] };
+  assert.deepEqual(views.flows, ["checkout"]);
+  assert.equal(views.root, repo);
+  assert.deepEqual(views.flowList.map((f) => [f.name, f.file, f.layer, f.ids.length]), [["checkout", "keylang/flows/checkout.md", "presentation", 4]]);
+  assert.deepEqual(
+    views.discovered.map((f) => [f.name, f.file, f.trigger, f.kind, f.label]),
+    [["listOrders", "keylang/flows-discovered/presentation.md", "presentation.orders.listOrders", "route", "GET /orders"]],
+  );
+  // A discovered flow is drawn from the view, without verdicts: `check` does not read it.
+  const drawn = JSON.parse((await status(url, "/api/diagram?view=discovered&name=listOrders", bearer)).body) as { nodes: { kind: string; label: string; verdict: string | null; ref: { file?: string; line?: number } }[] };
+  assert.deepEqual(
+    drawn.nodes.map((n) => [n.kind, n.label, n.verdict, n.ref.file, n.ref.line]),
+    [
+      ["start", "presentation.orders.listOrders", null, "src/presentation/orders.ts", 2],
+      ["task", "domain.order.create", null, "src/domain/order.ts", 1],
+    ],
+  );
+  assert.equal((await status(url, "/api/diagram?view=discovered", bearer)).status, 400);
+  // A flow's shapes carry the check results behind their verdicts.
+  const flow = JSON.parse((await status(url, "/api/diagram?view=flow&name=checkout", bearer)).body) as { nodes: { label: string; results?: { verdict: string; criterion: string; message: string }[] }[] };
+  const buy = flow.nodes.find((n) => n.label === "application.purchase.buy");
+  assert.ok(buy?.results?.some((r) => r.criterion === "static" && r.verdict === "ok" && /called from presentation\.terminal\.checkout/.test(r.message)), JSON.stringify(buy));
+  // Where an ID is used: the flow and the discovered flow that name it, and the entry points on their routes; an ID covers those under it.
+  const usages = await status(url, "/api/usages?id=domain.order.create", bearer);
+  assert.equal(usages.status, 200, usages.body);
+  assert.deepEqual(JSON.parse(usages.body), {
+    id: "domain.order.create",
+    flows: [{ name: "checkout", file: "keylang/flows/checkout.md", line: 7 }],
+    discovered: [{ name: "listOrders", file: "keylang/flows-discovered/presentation.md", line: 8 }],
+    entries: [
+      { id: "presentation.orders.listOrders", kind: "route", label: "GET /orders" },
+      { id: "presentation.terminal.checkout", kind: "route", label: "POST /checkout" },
+    ],
+  });
+  const layer = JSON.parse((await status(url, "/api/usages?id=presentation", bearer)).body) as { flows: unknown[]; discovered: unknown[]; entries: unknown[] };
+  assert.deepEqual([layer.flows.length, layer.discovered.length, layer.entries.length], [1, 1, 2]);
+  assert.deepEqual(JSON.parse((await status(url, "/api/usages?id=nowhere.at.all", bearer)).body), { id: "nowhere.at.all", flows: [], discovered: [], entries: [] });
+  assert.equal((await status(url, "/api/usages", bearer)).status, 400);
+  assert.equal((await status(url, "/api/usages?id=", bearer)).status, 400);
+  for (const headers of [{}, { Authorization: "Bearer wrong" }, { ...bearer, Origin: "http://evil.example" }]) {
+    const refused = await status(url, "/api/usages?id=domain.order.create", headers);
+    assert.equal(refused.status, 403, JSON.stringify(headers));
+    assert.doesNotMatch(refused.body, /checkout/);
   }
 });

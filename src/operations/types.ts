@@ -30,6 +30,8 @@ import type { TracePlan } from "../trace-plan.ts";
 import type { EntryKind, EntryPoint } from "../snapshot.ts";
 import type { DiscoveredFlow } from "../discover.ts";
 import type { BusinessProcess, NameMode } from "../discover-names.ts";
+import type { CoverageReport } from "../coverage-report.ts";
+import type { IntegrationsReport } from "../integrations.ts";
 
 /** The known operations. `doctor` is the first; new kinds arrive with their feature. */
 export interface DoctorRequest {
@@ -321,6 +323,31 @@ export interface EntriesRequest {
   root: string;
   /** Only entry points of this kind; absent: every kind. */
   only?: EntryKind;
+}
+
+/**
+ * What keylang does not see (`keylang coverage`, MCP `coverage_report`,
+ * «Blind spots» in the TUI): reach from entry points, orphan fns, holes by
+ * module and reason, entry points without a hand-written flow, and «logic in
+ * data». Read-only: writes only the fact cache, best-effort, like `check`.
+ */
+export interface CoverageRequest {
+  kind: "coverage";
+  /** Repository root (absolute). */
+  root: string;
+}
+
+/**
+ * The integrations inventory (`keylang integrations`, MCP
+ * `list_integrations`, «Integrations» in the TUI): outgoing HTTP/SOAP/SDK
+ * and queue clients with their call sites and the entry points that reach
+ * them, incoming webhooks, queue publishers and consumers. Read-only:
+ * writes only the fact cache; nothing is contacted.
+ */
+export interface IntegrationsRequest {
+  kind: "integrations";
+  /** Repository root (absolute). */
+  root: string;
 }
 
 /**
@@ -663,7 +690,7 @@ export interface AssistantReplyRequest {
 }
 
 /** Every request `runOperation` takes: its `kind` names the operation and the payload of its result. */
-export type OperationRequest = DoctorRequest | FeatureRequest | FeatureQuestionsRequest | ExportC4Request | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | ExplainRequest | ExplainLlmRequest | ExplainPlanRequest | ExplainBatchRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | EntriesRequest | FlowsDiscoverRequest | FlowsAdoptRequest | DraftFlowRequest | DraftRulesRequest | DraftLayoutRequest | CodeToSpecRequest | SpecToCodeRequest | ApplyCodeRequest | AssistantReplyRequest;
+export type OperationRequest = DoctorRequest | FeatureRequest | FeatureQuestionsRequest | ExportC4Request | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | ExplainRequest | ExplainLlmRequest | ExplainPlanRequest | ExplainBatchRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | EntriesRequest | CoverageRequest | IntegrationsRequest | FlowsDiscoverRequest | FlowsAdoptRequest | DraftFlowRequest | DraftRulesRequest | DraftLayoutRequest | CodeToSpecRequest | SpecToCodeRequest | ApplyCodeRequest | AssistantReplyRequest;
 
 /** The operation kinds that write files: they compute first and commit after `beforeCommit` (a check mode never calls it). */
 export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["feature-questions", "export-c4", "map", "baseline", "agents", "fmt", "wire", "init", "export", "flows-discover", "flows-adopt", "draft-flow", "draft-rules", "code-to-spec", "spec-to-code", "apply-code", "explain-llm", "explain-batch"]);
@@ -987,6 +1014,18 @@ export interface EntriesPayload {
   /** Sorted by kind, label, id (`entries` of the snapshot). */
   entries: EntryPoint[];
   /** The CLI's stdout: the table, or the note and the hint when there is nothing. */
+  text: string;
+}
+
+/** The coverage report (`keylang coverage --json` is it without `text`). */
+export interface CoveragePayload extends CoverageReport {
+  /** The CLI's stdout. */
+  text: string;
+}
+
+/** The integrations inventory (`keylang integrations --json` is it without `text`). */
+export interface IntegrationsPayload extends IntegrationsReport {
+  /** The CLI's stdout. */
   text: string;
 }
 
@@ -1532,6 +1571,8 @@ export interface OperationPayloads {
   parse: ParsePayload;
   "trace-plan": TracePlanPayload;
   entries: EntriesPayload;
+  coverage: CoveragePayload;
+  integrations: IntegrationsPayload;
   "flows-discover": FlowsDiscoverPayload;
   "flows-adopt": FlowsAdoptPayload;
   "draft-flow": DraftFlowPayload;

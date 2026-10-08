@@ -20,14 +20,18 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { createRequire } from "node:module";
 import type { AddressInfo } from "node:net";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import type { Duplex } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
 import { analyze, type Analysis } from "../analyze.ts";
-import { checkResults } from "../check-results.ts";
-import { diagramOf, parseView, viewsOf } from "../diagram.ts";
-import { processViews, readProcesses } from "../discover-names.ts";
+import { checkResults, type CheckResult } from "../check-results.ts";
+import { toPosix } from "../config.ts";
+import { diagramOf, flowListing, parseView, usagesOf, viewsOf, type Diagram, type DiagramNode } from "../diagram.ts";
+import { PROCESSES_FILE, processViews, readProcesses } from "../discover-names.ts";
+import { DISCOVERED_FLOWS_DIR } from "../map.ts";
+import { parse } from "../parser.ts";
+import { compileSpec, type SpecIR } from "../spec-ir.ts";
 import { App, MAX_COLS, MAX_ROWS, type Analyzer, type OperationRunner } from "./app.ts";
 import { SnapshotWorker } from "./background.ts";
 import { ENTER } from "./screen.ts";
@@ -254,19 +258,68 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
     return pending;
   };
 
-  /** `GET /api/views`, `GET /api/diagram?view=…`: JSON for the diagram client, with the socket's token as a Bearer. */
+  // The discovered view (`<dir>/flows-discovered/*.md`) parsed as specs, kept while its files are the same: `check` never reads it (ADR 0014).
+  let discoveredCache: { key: string; spec: SpecIR } | null = null;
+  const discoveredSpec = (done: Analysis): SpecIR | null => {
+    const dir = join(options.root, done.config.dir, DISCOVERED_FLOWS_DIR);
+    if (!existsSync(dir)) return null;
+    const files = readdirSync(dir)
+      // The README of the business processes (`flows discover --names`) is no flow.
+      .filter((name) => name.endsWith(".md") && name !== PROCESSES_FILE)
+      .sort()
+      .map((name) => join(dir, name));
+    const key = files
+      .map((file) => {
+        const stat = statSync(file);
+        return `${file}:${stat.mtimeMs}:${stat.size}`;
+      })
+      .join("\n");
+    if (discoveredCache?.key !== key) {
+      const docs = files.map((file) => parse(toPosix(relative(options.root, file)), readFileSync(file, "utf8")));
+      discoveredCache = { key, spec: compileSpec(docs).spec };
+    }
+    return discoveredCache.spec;
+  };
+
+  /** `GET /api/views`, `GET /api/diagram?view=…`, `GET /api/usages?id=…`: JSON for the diagram client, with the socket's token as a Bearer. */
   const api = async (request: IncomingMessage, response: ServerResponse, path: string, query: URLSearchParams): Promise<void> => {
-    // The two paths are public (docs/tui.md); any other is the 404 of every unknown path, token or not.
-    if (path !== "/api/views" && path !== "/api/diagram") return reply(response, 404, "text/plain", "not found\n");
+    // These paths are public (docs/tui.md); any other is the 404 of every unknown path, token or not.
+    if (path !== "/api/views" && path !== "/api/diagram" && path !== "/api/usages") return reply(response, 404, "text/plain", "not found\n");
     if (!sameOrigin(request) || !sameSecret(bearerToken(request), token)) return reply(response, 403, "text/plain", "forbidden\n");
     if (request.method !== "GET") return reply(response, 405, "text/plain", "method not allowed\n");
-    const view = path === "/api/diagram" ? parseView(query) : null;
-    if (typeof view === "string") return reply(response, 400, "application/json", `${JSON.stringify({ error: view })}\n`);
+    const json = (status: number, body: unknown): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
+    if (path === "/api/usages") {
+      const id = query.get("id")?.trim() ?? "";
+      if (id === "") return json(400, { error: "usages needs id=" });
+      const done = await analysis();
+      return json(200, usagesOf(done.snapshot, done.spec, discoveredSpec(done), id));
+    }
+    // A discovered flow is drawn like a flow, from the discovered view and without verdicts: `check` does not judge it.
+    const discovered = path === "/api/diagram" && query.get("view") === "discovered";
+    const view = path !== "/api/diagram" ? null : parseView(discovered ? new URLSearchParams({ view: "flow", name: query.get("name") ?? "" }) : query);
+    if (typeof view === "string") return json(400, { error: discovered ? "view=discovered needs name=" : view });
     const done = await analysis();
     // The business processes `flows discover --names` saved, with their flows found again in this snapshot.
     const processes = done.snapshot ? processViews(done.snapshot, done.spec, readProcesses(done.config.root, done.config.dir)) : [];
-    const body = view === null ? viewsOf(done.snapshot, done.spec, processes) : diagramOf({ snapshot: done.snapshot, spec: done.spec, results: checkResults(done.verdicts, done.snapshot?.snapshotId ?? null, done.diagnostics), view, processes });
-    return reply(response, 200, "application/json", `${JSON.stringify(body)}\n`);
+    if (view === null) {
+      const found = discoveredSpec(done);
+      const entries = new Map((done.snapshot?.entries ?? []).map((entry) => [entry.id, entry]));
+      return json(200, {
+        ...viewsOf(done.snapshot, done.spec, processes),
+        root: options.root,
+        flowList: flowListing(done.snapshot, done.spec),
+        discovered: (found ? flowListing(done.snapshot, found) : []).map(({ ids: _ids, ...flow }) => {
+          const entry = flow.trigger === null ? undefined : entries.get(flow.trigger);
+          return { ...flow, ...(entry ? { kind: entry.kind, label: entry.label } : {}) };
+        }),
+      });
+    }
+    if (discovered) {
+      const found = discoveredSpec(done);
+      return json(200, found ? diagramOf({ snapshot: done.snapshot, spec: found, results: [], view }) : { nodes: [], edges: [], groups: [], reason: "no discovered flows: run `keylang flows discover`" });
+    }
+    const results = checkResults(done.verdicts, done.snapshot?.snapshotId ?? null, done.diagnostics);
+    return json(200, withResults(diagramOf({ snapshot: done.snapshot, spec: done.spec, results, view, processes }), results));
   };
 
   const serve = (request: IncomingMessage, response: ServerResponse): void => {
@@ -499,6 +552,37 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
   };
 }
 
+/** At most this many check results ride on one shape. */
+const MAX_NODE_RESULTS = 20;
+
+type NodeResult = { verdict: string; criterion: string; message: string };
+
+/**
+ * Each shape with the check results behind its verdict, for the side panel of
+ * the diagram page: those on its spec line, or, for a shape of code alone
+ * (an entry's call tree), those about its ID.
+ */
+function withResults(diagram: Diagram, results: readonly CheckResult[]): Omit<Diagram, "nodes"> & { nodes: (DiagramNode & { results?: NodeResult[] })[] } {
+  const byLine = new Map<string, CheckResult[]>();
+  const byArea = new Map<string, CheckResult[]>();
+  const push = (map: Map<string, CheckResult[]>, key: string, result: CheckResult): void => {
+    const list = map.get(key);
+    if (list) list.push(result);
+    else map.set(key, [result]);
+  };
+  for (const result of results) {
+    push(byLine, `${result.file}:${result.line}`, result);
+    push(byArea, result.area, result);
+  }
+  const nodes = diagram.nodes.map((node) => {
+    const ref = node.ref;
+    const found = ref?.specFile !== undefined && ref.specLine !== undefined ? byLine.get(`${ref.specFile}:${ref.specLine}`) : ref?.id !== undefined ? byArea.get(ref.id) : undefined;
+    if (!found || found.length === 0) return node;
+    return { ...node, results: found.slice(0, MAX_NODE_RESULTS).map((result): NodeResult => ({ verdict: result.verdict, criterion: result.criterion, message: result.evidence })) };
+  });
+  return { ...diagram, nodes };
+}
+
 /** The token of an `Authorization: Bearer <token>` header. */
 function bearerToken(request: IncomingMessage): string | null {
   const match = /^Bearer ([^\s]+)$/.exec(String(request.headers.authorization ?? ""));
@@ -527,19 +611,28 @@ function diagramsPage(): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>keylang · діаграми</title>
+<link rel="icon" href="data:,">
 <link rel="stylesheet" href="/assets/diagrams.css">
 <script src="/assets/diagrams.js" defer></script>
 </head>
 <body>
 <aside id="list">
 <header><span>Діаграми</span><a href="/">термінал</a></header>
-<input id="search" type="search" placeholder="Пошук: флоу, точка входу, шар" aria-label="Пошук">
-<ul id="views"></ul>
+<div id="find">
+<input id="search" type="search" placeholder="Пошук: флоу, точка входу, ID" aria-label="Пошук">
+<button id="find-usages" type="button" title="Де використовується цей ID">де ID?</button>
+</div>
+<div id="views" role="list"></div>
 </aside>
 <main>
-<div id="status">loading…</div>
+<div id="toolbar"><div id="status">loading…</div><button id="zoom-out" type="button" title="Зменшити">−</button><button id="zoom-in" type="button" title="Збільшити">+</button><button id="zoom-fit" type="button" title="Вмістити">вмістити</button></div>
+<div id="stage">
 <div id="graph"></div>
+<div id="legend" aria-label="Легенда"></div>
+<div id="minimap" aria-label="Мінікарта"></div>
+</div>
 </main>
+<aside id="details"></aside>
 </body>
 </html>
 `;

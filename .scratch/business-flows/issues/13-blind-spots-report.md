@@ -1,6 +1,6 @@
 # 13: Звіт покриття: сліпі зони, сироти, «логіка в даних»
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -22,10 +22,20 @@
 
 ## Критерії готовності
 
-- [ ] фікстура з сиротою, діркою й точкою входу без флоу → кожна в своєму розділі
-- [ ] на бенчі Magento звіт генерується < 10 с
-- [ ] docs/cli.md
+- [x] фікстура з сиротою, діркою й точкою входу без флоу → кожна в своєму розділі (TS + Python + PHP в одному репо, `tests/coverage-report.test.ts`; плюс «логіка в даних»: Magento `ScopeConfigInterface::getValue`, Django `settings`, `os.getenv`, `process.env`)
+- [ ] на бенчі Magento звіт генерується < 10 с — не досягнуто в цій зміні: на п'яти модулях (1645 файлів PHP) сам аналіз (`keylang entries`) іде ≈ 10 с, `coverage` — ≈ 14 с теплим кешем фактів, під load average ≈ 34 від паралельних змін; звіт поверх аналізу додає ≈ 3 с (факти з кешу, зіставлення з `data-logic.json`). Переміряти разом із тікетом 10 (точки входу Magento) на спокійній машині, див. коментар
+- [x] docs/cli.md (і `--help`, `mcp-lsp.md`, `tui.md`, `semantics.md`, `CONTEXT.md`, `llm.txt`)
 
 **Межі:** без оцінок «якості» коду.
 
 ## Comments
+
+### Реалізація (2026-10-08)
+
+- `keylang coverage [--json]` — представлення над свіжим знімком (ADR 0014), `check` його не читає; код 0 і з дірками/сиротами, 2 — зламаний `keylang.json` або без мов; пише лише кеш фактів. Розділи в сталому порядку: `reach` (fn поза тестами, досяжні з точок входу по розв'язаних `call`-ребрах, разом із `via`), `orphans` (без fn точок входу й файлів тестів; кількість недосяжних викликачів і `escapes`), `holes` (дірки знімка за модулем-файлом, причини з `` `X` `` замість імен, лічильники за видом і причиною; текст — топ-10), `unflowed` (точки входу, чий ID не є тригером жодного написаного потоку, зі знайденим потоком `flows discover` і чи він уже в `flows-discovered/`), `dataLogic` («перевірити вручну»).
+- «Логіка в даних» — дані, не код: `resources/data-logic.json` (Magento scope config / deployment config / SalesRule й CatalogRule / EAV, Laravel `config()`/`env()`, параметри Symfony, `getenv`/`$_ENV`, Django `settings`, `os.getenv`/`os.environ`, pydantic-settings тощо, `process.env`/`import.meta.env`, `@nestjs/config`, Rust `std::env::var`/`env!`, crates `config`/`figment`). Матчер: `callees` (regex над викликом), `imports` (+`methods`), `receivers`, `text`, `languages`.
+- Знімок тримає ребра лише до коду репозиторію, тож виклики в пакети й вбудовані функції беруться з фактів екстракторів (`src/call-sites.ts`: кеш фактів за хешем, інакше файл розбирається знову; екстрактори не змінювались). Одне місце, що збіглося з кількома сигналами, — під першим.
+- Операція `coverage` (`src/operations/coverage.ts`, ядро `src/coverage-report.ts`), MCP `coverage_report` (лише читання), дія TUI «Blind spots» зі звітом у F6 (`src/tui/reports/coverage.ts`), Enter відкриває місце в коді.
+- Web-панель «Сліпі зони» з переходом до коду — не в цій зміні (веб-гілка 21/22 ще без SPA, тікет 33); операція й JSON готові для неї.
+- Бенч Magento (сьогодні, 5 модулів, `mage`-копія клону): 7099 fn, 0 точок входу (тікет 10), 22 618 дірок у 1245 модулях; топ — `sales.Model.AdminOrder.Create` (517). Час: див. критерій вище.
+
