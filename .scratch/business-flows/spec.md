@@ -103,7 +103,7 @@ keylang має допомагати швидко зануритись у чуж�
 | [31](issues/31-more-framework-adapters.md) | Наступні адаптери фреймворків: Laravel, Symfony, NestJS, Express/Next, Django/FastAPI | resolved | 01, 04, 09 |
 | [32](issues/32-php-property-types.md) | PHP: тип властивості з присвоєння в конструкторі та з docblock `@var` | resolved | — |
 | [33](issues/33-web-client-build.md) | Веб-клієнт діаграм: збірка (esbuild), каркас SPA, автентифікація API | resolved | 20 |
-| [34](issues/34-nestjs-adapter.md) | NestJS: providers, контролери, події, cron, мікросервіси | ready-for-agent | — |
+| [34](issues/34-nestjs-adapter.md) | NestJS: providers, контролери, події, cron, мікросервіси | resolved | — |
 | [35](issues/35-laravel-adapter.md) | Laravel: container, фасади, маршрути, події, черги, scheduler | resolved | — |
 | [36](issues/36-symfony-adapter.md) | Symfony: services.yaml, маршрути, підписники, Messenger, команди | resolved | — |
 | [37](issues/37-express-next-adapter.md) | Express/Fastify/Next.js: маршрути, middleware, server actions | ready-for-agent | — |

@@ -10,7 +10,7 @@
 // one type in one area are an `ambiguous-binding` hole; a class the snapshot
 // does not have is a hole with the reason. Nothing is guessed from names.
 
-import { EVERY_CLASS, typeLabel, type FrameworkInput, type TypeName } from "./adapter.ts";
+import { EVERY_CLASS, typeLabel, type FrameworkInput, type ProviderFact, type TokenRef, type TypeName } from "./adapter.ts";
 
 /** What a name of the config stands for in the snapshot. */
 export type ResolvedType = { kind: "node"; id: string } | { kind: "external" } | { kind: "missing" };
@@ -28,6 +28,13 @@ export interface BindingDeps {
   supertypes(id: string): string[];
   /** The module of a framework module's directory; null when the snapshot has none. */
   owner(dir: string | null): string | null;
+  /**
+   * A provider token's identity: a string by its value, a name by the
+   * declaration it stands for (through the file's imports), so a token
+   * declared in one file and imported in two others is one token. Null for a
+   * name keylang does not resolve.
+   */
+  token(ref: TokenRef): string | null;
 }
 
 export type ConfigVia = "preference" | "argument" | "plugin:before" | "plugin:around" | "plugin:after";
@@ -192,9 +199,61 @@ export class FrameworkBindings {
         this.plugins.set(target.id, list);
       }
     }
+    this.linkTokens(configs, declared);
     // A plugin of a class keylang does not have wraps methods nobody can name: a hole of its declaration.
     for (const plugin of this.activePlugins()) {
       if (plugin.plugin && deps.resolve(plugin.plugin).kind === "missing") this.hole(plugin.file, plugin, `<plugin name="${plugin.name}" type="${plugin.pluginWritten}">`, `the plugin \`${plugin.name}\` names \`${plugin.pluginWritten}\`, which no analysed file declares`, plugin.owner);
+    }
+  }
+
+  /**
+   * Tokens (NestJS): an injection `@Inject(T)` of a constructor parameter gets
+   * what the providers of `T` give — the class of `useClass` (or of a class
+   * provider), through `useExisting` to another token's — as a constructor
+   * argument the config sets, so `this.x.m()` goes to that class's `m`. A
+   * factory or a value provider names no class: a hole of its declaration.
+   */
+  private linkTokens(configs: readonly FrameworkInput["configs"][number][], declared: (written: TypeName, scope: string, file: string, at: { line: number; col: number }, owner: string | null, from?: string | null) => Declared): void {
+    const providers = new Map<string, { fact: ProviderFact; file: string; scope: string; owner: string | null }[]>();
+    for (const { facts, owner: dir } of configs) {
+      const owner = this.deps.owner(dir);
+      for (const p of facts.providers ?? []) {
+        const k = this.deps.token(p.token);
+        if (k === null) continue;
+        providers.set(k, [...(providers.get(k) ?? []), { fact: p, file: facts.path, scope: facts.scope, owner }]);
+        if (p.use.kind === "factory" || p.use.kind === "value") {
+          const how = p.use.kind === "factory" ? "useFactory" : "useValue";
+          this.hole(facts.path, p, `{ provide: ${tokenLabel(p.token)}, ${how} }`, `\`${how}\` provides ${tokenLabel(p.token)}: the value is made at run time, so calls through an injection of it are not followed`, owner);
+        }
+      }
+    }
+    /** The classes a token's providers give, following `useExisting`. */
+    const classesOf = (k: string, seen: Set<string>): { type: TypeName; file: string; scope: string; owner: string | null; at: ProviderFact; via: string }[] => {
+      if (seen.has(k)) return [];
+      seen.add(k);
+      return (providers.get(k) ?? []).flatMap(({ fact, file, scope, owner }) => {
+        if (fact.use.kind === "class") return [{ type: fact.use.type, file, scope, owner, at: fact, via: tokenLabel(fact.token) }];
+        if (fact.use.kind !== "existing") return [];
+        const next = this.deps.token(fact.use.token);
+        // The alias is the fact the injection rests on: its line, its module.
+        return next === null ? [] : classesOf(next, seen).map((c) => ({ ...c, file, scope, owner, at: fact, via: `${tokenLabel(fact.token)} → ${c.via}` }));
+      });
+    };
+    for (const { facts } of configs) {
+      for (const inj of facts.injections ?? []) {
+        const holder = this.deps.resolve(inj.type);
+        const k = this.deps.token(inj.token);
+        if (holder.kind !== "node" || !this.deps.isClass(holder.id) || k === null) continue;
+        for (const c of classesOf(k, new Set())) {
+          const value = { ...declared(c.type, c.scope, c.file, c.at, c.owner, c.via), param: inj.param };
+          if (value.resolved.kind === "missing" && c.at.use.kind === "class" && !this.holes.some((h) => h.file === c.file && h.line === c.at.line && h.col === c.at.col)) {
+            this.hole(c.file, c.at, `{ provide: ${tokenLabel(c.at.token)}, useClass: ${typeLabel(c.type)} }`, `the provider of ${tokenLabel(c.at.token)} names \`${c.type.name}\`, which no analysed file declares`, c.owner);
+          }
+          const params = this.argumentsOf.get(holder.id) ?? new Map<string, (Declared & { param: string })[]>();
+          params.set(asciiLower(inj.param), [...(params.get(asciiLower(inj.param)) ?? []), value]);
+          this.argumentsOf.set(holder.id, params);
+        }
+      }
     }
   }
 
@@ -364,6 +423,11 @@ export class FrameworkBindings {
     this.interceptorCache.set(cacheKey, out);
     return out;
   }
+}
+
+/** A token as the code writes it: `ORDER_REPO`, `'CLOCK'`. */
+function tokenLabel(t: TokenRef): string {
+  return t.kind === "string" ? `'${t.value}'` : t.name;
 }
 
 function emptyCall(): BoundCall {

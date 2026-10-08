@@ -1,6 +1,11 @@
 // Language-independent facts extracted from one source file. Everything the
 // map and the index need; nothing about layers or IDs yet.
 
+import type { CodeDecorator } from "../frameworks/adapter.ts";
+
+// Decorators are what a framework adapter reads of the code: their shape is the adapters' (`base`).
+export type { CodeDecorator, DecoratorArg } from "../frameworks/adapter.ts";
+
 export interface FileFacts {
   /** POSIX path relative to the repository root. */
   path: string;
@@ -146,14 +151,20 @@ export interface ParamCallFact {
  * when it names none directly (the module's top level is the entry then).
  * `sfra`: `server.get('Show', …, h)` in an SFRA controller — `callee` is the
  * last argument when it is a name, null for a handler written in place.
+ * `page`: an element `{ path: '/cart', component: Cart }` of an array in a
+ * `routes.{js,jsx,ts,tsx}` file (React Router, PWA Kit) — `label` is the
+ * path, `callee` the component's name, `source` the module a lazy component
+ * loads (`const Cart = loadable(() => import('./pages/cart'))`).
  */
 export interface EntryFact {
-  kind: "route" | "main" | "sfra";
+  kind: "route" | "main" | "sfra" | "page";
   /** `sfra`: the action name, `Show`; the SFCC adapter adds the controller's. */
   label: string;
   /** `sfra`: the `server` method that registers it (`get`, `post`, `use`, `append`, `prepend`, `replace`). */
   method?: string;
   callee: string | null;
+  /** `page`: the specifier the component's `import()` names, when it is loaded lazily. */
+  source?: string;
   line: number;
   col: number;
 }
@@ -283,6 +294,12 @@ export interface DeclFact {
   implements?: string[];
   /** The declaration's documentation comment without comment syntax, lines kept; absent when it has none. */
   doc?: string;
+  /**
+   * TypeScript decorators of a class or a member, in source order (`@Controller('orders')`,
+   * `@Get(':id')`), and on a constructor those of its parameters (`@Inject(TOKEN)`, with
+   * `param`). A framework adapter reads them as its configuration (ADR 0022); absent without any.
+   */
+  decorators?: CodeDecorator[];
   /** PHP: the attributes written on the class or the method (`#[Route('/x', methods: ['POST'])]`), in order. A framework adapter reads them (ADR 0022). */
   attributes?: AttributeFact[];
   /** PHP classes: the properties whose default value is a literal a framework reads (`protected $listen = [OrderPlaced::class => [...]]`). */
@@ -407,6 +424,12 @@ export interface CallFact {
   args?: ArgFact[];
   /** PHP: a call on the result of other calls (`Route::prefix('admin')->group(…)`): the calls of the chain, root first, this one last. */
   chain?: ChainLinkFact[];
+  /**
+   * `setGlobalPrefix('api')`: the first argument of a call of a member named `setGlobalPrefix`
+   * when it is a string literal; null when it is another expression. The NestJS adapter reads it
+   * (the global route prefix).
+   */
+  literal?: string | null;
   line: number;
   col: number;
   endLine: number;

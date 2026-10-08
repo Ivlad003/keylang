@@ -214,10 +214,11 @@ export interface Call {
    * its config (ADR 0022): `preference`, `argument`, `plugin:before|around|after`,
    * at `site` in the config; `behavior` follows them, `shape` does not.
    * `dispatch`: a call of the framework's dispatcher with a literal event
-   * name, to the event's node (Magento), or a job the fn hands to a queue
-   * (Celery `task.delay()`), at `site` of the task's registration;
-   * `observer`: from an event to the fn an observer runs, at its config
-   * line, or to a receiver of a signal the fn sends (Django `signal.send()`).
+   * name, to the event's node (Magento `dispatch`, NestJS `emit`), or a job
+   * the fn hands to a queue (Celery `task.delay()`), at `site` of the task's
+   * registration; `observer`: from an event to the fn an observer runs
+   * (Magento `events.xml`, NestJS `@OnEvent`), at its config line, or to a
+   * receiver of a signal the fn sends (Django `signal.send()`).
    * PHP frameworks: Laravel `$listen` and Symfony listeners, queued jobs and
    * Messenger handlers are observers of an event named by its class.
    */
@@ -974,6 +975,31 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
       opaqueBase: (classId) => unreadBase(classId) !== null || decls.classes.get(classId)?.members === "opaque",
       supertypes,
       owner: (dir) => (dir === null ? null : (byFile.get(dir)?.module.id ?? directoryModuleIn(config, dir, modules, layers))),
+      token: (ref) => {
+        if (ref.kind === "string") return `string:${ref.value}`;
+        // The export a name stands for, through the file's import and any re-exports, as `unit#name`.
+        const scope = scopes.get(ref.file);
+        if (!scope) return null;
+        let unit: string;
+        let name: string;
+        const imported = scope.locals.get(ref.name)?.[0];
+        if (imported) {
+          if (imported.module.layer === EXTERNAL) return `external:${imported.module.id}#${imported.imported ?? ref.name}`;
+          if (imported.imported === null) return null;
+          unit = imported.unit;
+          name = imported.imported;
+        } else {
+          unit = unitOf(ref.file);
+          name = ref.name;
+        }
+        for (let hop = 0; hop < 8; hop++) {
+          const row = exportTables.lookup(unit, name);
+          if (row?.from === undefined || row.local === undefined) break;
+          unit = row.from;
+          name = row.local;
+        }
+        return `name:${unit}#${name}`;
+      },
     });
   }
 
@@ -996,7 +1022,13 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
     const resolve = (type: TypeName): ResolvedType => {
       if (type.file !== undefined) {
         const id = fileDecls.get(type.file)?.get(layerName(type.name));
-        return id !== undefined && (decls.classes.has(id) || decls.types.has(id)) ? { kind: "node", id } : { kind: "missing" };
+        if (id !== undefined) return decls.classes.has(id) || decls.types.has(id) ? { kind: "node", id } : { kind: "missing" };
+        // A name the file imports (NestJS `useClass: SqlOrderRepo` in a module file): what the import binds.
+        const scope = scopes.get(type.file);
+        const imported = scope?.classNamed(type.name) ?? scope?.typeNamed(type.name) ?? null;
+        if (imported !== null) return { kind: "node", id: imported };
+        if (scope?.external(type.name)) return { kind: "external" };
+        return { kind: "missing" };
       }
       const id = qualified.get(asciiLowerCase(type.name));
       if (id !== undefined) return { kind: "node", id };
@@ -1536,8 +1568,20 @@ function eventNodes(dispatches: readonly { call: Call; name: string; file: strin
   return [...nodes.values()].sort((a, b) => compareText(a.id, b.id));
 }
 
-/** A class name as a PHP file writes it, qualified through the file's imports: `Foo` with `use A\Foo` → `A\Foo`; `\A\Foo` → `A\Foo`. */
+/**
+ * A class name as a file writes it, qualified through the file's imports: PHP `Foo` with `use A\Foo` → `A\Foo`,
+ * `\A\Foo` → `A\Foo`; TS/JS `EventEmitter2` with `import { EventEmitter2 } from "@nestjs/event-emitter"` →
+ * `@nestjs/event-emitter\EventEmitter2` (the package, `\`, the exported name).
+ */
 function qualifiedIn(facts: FileFacts, written: string): string {
+  const language = languageOf(facts.path);
+  if (language === "typescript" || language === "javascript") {
+    for (const imp of facts.imports) {
+      const binding = imp.bindings.find((b) => b.local === written);
+      if (binding !== undefined) return binding.kind === "named" ? `${imp.source}\\${binding.imported}` : imp.source;
+    }
+    return written;
+  }
   if (written.startsWith("\\")) return written.replace(/^\\+/, "");
   const [head, ...rest] = written.split("\\");
   for (const imp of facts.imports) {

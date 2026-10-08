@@ -158,8 +158,7 @@ function readFrameworks(
   overlay: ReadonlyMap<string, string> | undefined,
   cache: FactCache,
   available: readonly FrameworkAdapter[] | undefined,
-  /** The facts of the analysed sources, for an adapter that reads the framework's wiring from code. */
-  code: readonly FileFacts[],
+  facts: readonly FileFacts[],
 ): { inputs: FrameworkInput[]; manifest: FrameworkManifest[]; unread: { path: string; owner: string | null; reason: string; framework: string }[] } {
   const text = (path: string): string | null => read.get(path)?.text ?? overlay?.get(join(config.root, path)) ?? readSource(join(config.root, path));
   const context: FrameworkContext = {
@@ -174,6 +173,7 @@ function readFrameworks(
     },
     analysed: (path) => isAnalysed(path, config),
   };
+  const byPath = new Map(facts.map((f) => [f.path, f]));
   const inputs: FrameworkInput[] = [];
   const manifest: FrameworkManifest[] = [];
   const active = activeAdapters(config.frameworks, context, available);
@@ -190,11 +190,13 @@ function readFrameworks(
       if (body === null) continue;
       const hash = sha256(body);
       files.push({ path, sha256: hash });
-      configs.push({ facts: cache.config(path, hash, `${adapter.name}@${adapter.version}`, () => adapter.parse(path, body)), owner });
+      // A config written in the code (decorators) is read from the source's facts, cached with them.
+      const code = adapter.code === undefined ? undefined : byPath.get(path);
+      configs.push({ facts: code !== undefined ? adapter.code!(path, code) : cache.config(path, hash, `${adapter.name}@${adapter.version}`, () => adapter.parse(path, body)), owner });
     }
     // Wiring the framework reads from code (attributes, service providers): from the sources' facts, which the snapshot covers already.
     const reader = FRAMEWORK_CODE.get(adapter.name);
-    if (reader) configs.push(...reader(code, configs.map((c) => c.facts)));
+    if (reader) configs.push(...reader(facts, configs.map((c) => c.facts)));
     inputs.push({
       name: adapter.name,
       configs,

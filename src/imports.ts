@@ -22,7 +22,11 @@
 // In a Salesforce Commerce Cloud repository (cartridges, `dw.json`) the
 // cartridge path answers first: `*/cartridge/…`, `~/cartridge/…`,
 // `<cartridge>/cartridge/…`, `module.superModule`, `dw/…` and the `modules`
-// folder (`src/frameworks/cartridges.ts`).
+// folder (`src/frameworks/cartridges.ts`). In a PWA Kit project (template
+// extensibility: `ccExtensibility` in its `package.json`) an import of the base
+// template, `@salesforce/retail-react-app/app/x`, is the project's
+// `overrides/app/x` when that file exists, else the base package; `^` before
+// it names the base package always (`src/frameworks/pwa-kit.ts`).
 
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
@@ -33,6 +37,7 @@ import { languageOf } from "./languages.ts";
 import { exactExistence, nodeFs, type ExactFs } from "./exact-path.ts";
 import { globToRegExp } from "./glob.ts";
 import { cartridgeAnswers, cartridgeLayout, SUPER_MODULE, type CartridgeLayout } from "./frameworks/cartridges.ts";
+import { extensibilityOf, type Extensibility } from "./frameworks/pwa-kit.ts";
 
 export type Resolution =
   /** `workspace`: the package that names the file, when a workspace package resolved it. */
@@ -123,10 +128,15 @@ export class ImportResolver {
   private readonly cartridgePath: readonly string[] | null;
   /** The SFCC cartridges and their order, read on the first resolution; null without SFCC. */
   private layout: CartridgeLayout | null | undefined = undefined;
+  /** PWA Kit template extensibility is read (`frameworks` may leave the adapter out). */
+  private readonly pwaKit: boolean;
+  /** Per directory under the root: the PWA Kit extensibility of the nearest `package.json` at or above it, null without one. */
+  private readonly extensibility = new Map<string, { dir: string; cc: Extensibility } | null>();
 
-  constructor(root: string, sources: ReadonlySet<string> = new Set(), fs: ExactFs = nodeFs, options: { cartridgePath?: readonly string[] | null; sfcc?: boolean } = {}) {
+  constructor(root: string, sources: ReadonlySet<string> = new Set(), fs: ExactFs = nodeFs, options: { cartridgePath?: readonly string[] | null; sfcc?: boolean; pwaKit?: boolean } = {}) {
     this.root = root;
     this.sources = sources;
+    this.pwaKit = options.pwaKit !== false;
     this.cartridgePath = options.cartridgePath ?? null;
     if (options.sfcc === false) this.layout = null;
     // The cartridge path is an input of the snapshot id whether or not a require asks for it.
@@ -408,6 +418,8 @@ export class ImportResolver {
     if (answers !== null) return answers.length > 0 ? { kind: "internal", file: answers[0]! } : { kind: "unresolved" };
     // `module.superModule` outside SFCC names nothing keylang knows.
     if (spec === SUPER_MODULE) return { kind: "unresolved" };
+    const template = this.pwaKit && (spec.startsWith("@") || spec.startsWith("^")) ? this.templateImport(fromFile, spec) : null;
+    if (template !== null) return template;
     if (spec.startsWith("#")) return this.resolveSubpathImport(fromFile, spec);
     // `tsc` tries only the most specific `paths` pattern, then `baseUrl`, then built-ins and packages.
     const ts = this.optionsFor(fromFile);
@@ -424,6 +436,41 @@ export class ImportResolver {
     }
     if (isNodeBuiltin(spec)) return { kind: "builtin" };
     return this.resolvePackage(fromFile, spec);
+  }
+
+  /**
+   * PWA Kit template extensibility: `<base>/x` (the `extends` of
+   * `ccExtensibility` in the nearest `package.json`) is `<overridesDir>/x` of
+   * that project when the file exists — an override replaces the base
+   * template's file — else the base package; `^<base>/x` is the base package
+   * always. Null for a specifier of another package, or outside a project.
+   */
+  private templateImport(fromFile: string, spec: string): Resolution | null {
+    const project = this.extensibilityAt(posix.dirname(fromFile));
+    if (project === null) return null;
+    const { dir, cc } = project;
+    const caret = spec.startsWith("^");
+    const bare = caret ? spec.slice(1) : spec;
+    if (bare !== cc.base && !bare.startsWith(`${cc.base}/`)) return null;
+    if (caret || bare === cc.base || cc.overridesDir === "") return { kind: "external", pkg: cc.base };
+    const overridden = this.probe(posix.join(dir === "" ? "." : dir, cc.overridesDir, bare.slice(cc.base.length + 1)));
+    // An override that imports its own base path means the base file: the platform does not loop.
+    return overridden !== null && overridden !== fromFile ? { kind: "internal", file: overridden } : { kind: "external", pkg: cc.base };
+  }
+
+  /** The PWA Kit project of a directory: the nearest `package.json` at or above it, when it writes `ccExtensibility`. */
+  private extensibilityAt(dir: string): { dir: string; cc: Extensibility } | null {
+    const key = dir === "." ? "" : dir;
+    const known = this.extensibility.get(key);
+    if (known !== undefined) return known;
+    const manifest = this.text(key === "" ? "package.json" : `${key}/package.json`);
+    let found: { dir: string; cc: Extensibility } | null;
+    if (manifest !== null) {
+      const cc = extensibilityOf(parseJsonc(manifest));
+      found = cc === null ? null : { dir: key, cc };
+    } else found = key === "" || key.startsWith("..") ? null : this.extensibilityAt(posix.dirname(key));
+    this.extensibility.set(key, found);
+    return found;
   }
 
   /**
