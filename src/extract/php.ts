@@ -1435,6 +1435,12 @@ function calleeOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "
     const callee = `${object.text.replace(/\s+/g, " ")}.${member}`;
     if (callee.length <= MAX_CALLEE) return { callee, receiver: collector.klass(created, creation, scope.names) };
   }
+  // `$this->repo()->save()`, `->total()->tax()`: an expression keylang does not name, whose class is
+  // the declared result type of the call it is — the graph reads it (`on`).
+  if (creation && CALL_NODES.has(creation.type) && creation.type !== "object_creation_expression" && !firstClassCallable(creation)) {
+    const inner = resultCall(creation, scope, collector);
+    if (inner) return { ...opaque(), on: { call: inner }, member };
+  }
   return opaque();
 }
 

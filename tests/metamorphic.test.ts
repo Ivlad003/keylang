@@ -204,16 +204,17 @@ const PHP_DOCBLOCK: Record<string, string> = {
 };
 
 /**
- * PHP: receivers typed by declarations (business-flows 40) — a `@return` in another file, an inline
- * `@var`. Removing either may move a verdict only to `unverified`.
+ * PHP: receivers typed by declarations (business-flows 40) — a `@return` in another file (of a
+ * variable's value and of a chain's link), an inline `@var`. Removing either may move a verdict only
+ * to `unverified`: the hole of a chain names the member it calls, so a flow still sees it may reach it.
  */
 const PHP_RESULTS: Record<string, string> = {
   "keylang.json": `${JSON.stringify({ languages: ["php"], layers: { app: ["src/App/**"], domain: ["src/Domain/**"] } })}\n`,
-  "src/Domain/Order.php": "<?php\nnamespace Shop\\Domain;\n\nclass Order\n{\n    public function ship(): void {}\n    public function pay(): void {}\n}\n",
+  "src/Domain/Order.php": "<?php\nnamespace Shop\\Domain;\n\nclass Order\n{\n    public function ship(): void {}\n    public function pay(): void {}\n    public function cancel(): void {}\n}\n",
   "src/Domain/Repo.php": "<?php\nnamespace Shop\\Domain;\n\nclass Repo\n{\n    /** @return Order */\n    public function find() { return new Order(); }\n\n    public function make() { return null; }\n}\n",
   "src/App/Checkout.php":
-    "<?php\nnamespace Shop\\App;\n\nuse Shop\\Domain\\Order;\nuse Shop\\Domain\\Repo;\n\nclass Checkout\n{\n    public function __construct(private Repo $repo) {}\n\n    public function buy(): void\n    {\n        $found = $this->repo->find();\n        $found->ship();\n        /** @var Order $order */\n        $order = $this->repo->make();\n        $order->pay();\n    }\n}\n",
-  "keylang/flows.md": "# flow buy\n\n- trigger app.Checkout.Checkout.buy\n  - step domain.Order.Order.ship\n  - step domain.Order.Order.pay\n",
+    "<?php\nnamespace Shop\\App;\n\nuse Shop\\Domain\\Order;\nuse Shop\\Domain\\Repo;\n\nclass Checkout\n{\n    public function __construct(private Repo $repo) {}\n\n    public function buy(): void\n    {\n        $found = $this->repo->find();\n        $found->ship();\n        $this->repo->find()->cancel();\n        /** @var Order $order */\n        $order = $this->repo->make();\n        $order->pay();\n    }\n}\n",
+  "keylang/flows.md": "# flow buy\n\n- trigger app.Checkout.Checkout.buy\n  - step domain.Order.Order.ship\n  - step domain.Order.Order.pay\n  - step domain.Order.Order.cancel\n",
   "keylang/rules.md": "# rules\n\n- deny app domain.Order\n",
 };
 
@@ -233,7 +234,7 @@ test("php: removing a `@return` or an inline `@var` that types a receiver moves 
       .map(([key, left]) => `${key.split(":")[2]} ${left.verdict} → ${after.get(key)?.verdict ?? "unverified"}`)
       .sort();
   };
-  assert.deepEqual(moves("remove @return", "src/Domain/Repo.php", "    /** @return Order */\n"), ["domain.Order.Order.ship ok → unverified"]);
+  assert.deepEqual(moves("remove @return", "src/Domain/Repo.php", "    /** @return Order */\n"), ["domain.Order.Order.cancel ok → unverified", "domain.Order.Order.ship ok → unverified"]);
   assert.deepEqual(moves("remove inline @var", "src/App/Checkout.php", "        /** @var Order $order */\n"), ["domain.Order.Order.pay ok → unverified"]);
 });
 

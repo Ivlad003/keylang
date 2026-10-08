@@ -862,6 +862,10 @@ test("php: a local value has the class its declarations give — `new`, a declar
     "17 domain.Repo.Repo.find syntactic",
     // `find(): Order` types `$found`: the class is written in `Repo.php`, so the edge is indirect.
     "18 domain.Order.Order.ship syntactic indirect",
+    // A chain: `touch()` returns `$this` by its `@return`, `me(): static` the same class, `total(): Money` a `Money`.
+    "19 domain.Money.Money.round docblock src/Domain/Order.php:15:9 indirect",
+    "19 domain.Order.Order.me docblock src/Domain/Order.php:15:9 indirect",
+    "19 domain.Order.Order.total docblock src/Domain/Order.php:15:9 indirect",
     "19 domain.Order.Order.touch syntactic indirect",
     "20 domain.Order.Order.lines syntactic indirect",
     // `foreach` over `lines()` with `@return Line[]`, and over a parameter with `@param Line[]`.
@@ -872,6 +876,9 @@ test("php: a local value has the class its declarations give — `new`, a declar
     "28 domain.Special.Special.special docblock src/App/Checkout.php:26:13",
     // `instanceof` in the condition: the branch knows the class.
     "30 domain.Order.Order.cancel syntactic",
+    // The interface's `@return`: through the interface itself, and through a class that inherits it (`{@inheritdoc}`).
+    "33 domain.Order.Order.settle docblock src/Domain/OrderRepository.php:7:8 indirect",
+    "34 domain.Order.Order.archive docblock src/Domain/OrderRepository.php:7:8 indirect",
     "34 domain.Repo.Repo.get syntactic",
   ]);
   const hole = (line: number): string | undefined => index.coverage.find((c) => c.source === "app.Checkout.Checkout.buy" && c.line === line)?.reason;

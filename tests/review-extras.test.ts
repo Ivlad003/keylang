@@ -105,7 +105,7 @@ test("php: class, function and method names compare in ASCII case only, as PHP c
   assert.match(lines[0]!, /keylang\/flows\/size\.md:4:3: static fail app\.Order\.Order\.größe: absence: no call path from app\.Use\.useIt/);
 });
 
-test("php: a method called on a new object, `(new X())->m()` or PHP 8.4's `new X()->m()`, is an edge to `X.m` beside the class's; a call on what it returns stays a hole", (t) => {
+test("php: a method called on a new object, `(new X())->m()` or PHP 8.4's `new X()->m()`, is an edge to `X.m` beside the class's; a call on what it returns follows its declared result type", (t) => {
   const dir = repo(t, {
     "keylang.json": JSON.stringify(PHP),
     "src/Cart.php": [
@@ -130,14 +130,15 @@ test("php: a method called on a new object, `(new X())->m()` or PHP 8.4's `new X
   const snapshot = map(dir);
   assert.deepEqual(calls(snapshot, "app.Cart."), [
     "app.Cart.chain → app.Cart.Cart",
+    "app.Cart.chain → app.Cart.Cart.tax",
     "app.Cart.chain → app.Cart.Cart.total",
     "app.Cart.checkout → app.Cart.Cart",
     "app.Cart.checkout → app.Cart.Cart.total",
     "app.Cart.modern → app.Cart.Cart",
     "app.Cart.modern → app.Cart.Cart.tax",
   ]);
-  // The syntax names no class for what `total()` returns: `->tax()` on it is not guessed.
-  assert.deepEqual(holes(snapshot, "app.Cart."), ["app.Cart.chain: dynamic-call call through an expression `(new Cart())->total()->tax()`"]);
+  // `total(): self` declares what it returns: `->tax()` on it is a method of `Cart` (business-flows 40).
+  assert.deepEqual(holes(snapshot, "app.Cart."), []);
   assert.deepEqual(statics(dir, "app.Cart.Cart.total"), ["keylang/flows/checkout.md:4:3: static ok app.Cart.Cart.total: called from app.Cart.checkout"]);
 });
 
