@@ -879,7 +879,7 @@ function baseClass(heritage: Node): string | null {
 }
 
 /** `(f)`, `f as T`, `f satisfies T`, `f!`: the expression they wrap. */
-function unwrapValue(node: Node): Node {
+export function unwrapValue(node: Node): Node {
   let at = node;
   while ((at.type === "parenthesized_expression" || at.type === "as_expression" || at.type === "satisfies_expression" || at.type === "non_null_expression") && at.namedChildren[0]) at = at.namedChildren[0];
   return at;

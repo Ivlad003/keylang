@@ -19,8 +19,10 @@
       <a id="extract.bodies.parsesCleanly"></a><br>The source parses without a syntax error: an instrumented copy is checked before it replaces the original. `export type * from`, which the bundled grammar does not know, is no error here either.
       - calls [extract.ts.withTsTree](extract.md#extract.ts.withTsTree)
     - fn [bodiesOf](../../src/extract/bodies.ts#L34) (root: Node) → Map<string, FunctionBody> <!-- internal -->
-      <a id="extract.bodies.bodiesOf"></a><br>Walks a tree-sitter syntax tree and records, for each function node (including arrow functions assigned in declarators or class fields), the body's index span plus expression/generator/async flags. Keys are `row:col` of the declaring node, computed via… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - calls [extract.treesitter.startCol](extract.md#extract.treesitter.startCol)
+      <a id="extract.bodies.bodiesOf"></a><br>Walks a tree-sitter syntax tree and records, for each function node (including arrow functions assigned in declarators or class fields), the body's index span plus expression/generator/async flags. Keys are `row:col` of the declaring node, computed via… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+      - calls [extract.treesitter.startCol](extract.md#extract.treesitter.startCol), [extract.ts.unwrapValue](extract.md#extract.ts.unwrapValue), [extract.bodies.implementationOf](extract.md#extract.bodies.implementationOf)
+    - fn [implementationOf](../../src/extract/bodies.ts#L96) (signature: Node) → Node | null <!-- internal -->
+      <a id="extract.bodies.implementationOf"></a><br>The implementation an overload signature belongs to: the next function declaration (or method) of the same name, past the other signatures and comments between them. `export function f(…);` is a signature in an `export_statement`, so siblings are compared through that wrapper.
   - module [doc-comments](../../src/extract/doc-comments.ts#L1)
     <a id="extract.doc-comments"></a><br>Documentation comments without their syntax. Frontends decide which comment documents what; this module only turns comment source into text, lines kept, so the brief rule (`src/brief.ts`) can find the first paragraph.
     - fn [isLicense](../../src/extract/doc-comments.ts#L10) (text: string) → boolean
@@ -576,7 +578,7 @@
     - fn [baseClass](../../src/extract/ts.ts#L875) (heritage: Node) → string | null <!-- internal -->
       <a id="extract.ts.baseClass"></a><br>The `extends` expression: `(extends_clause value: …)` in TypeScript, the bare expression in JavaScript.
       - calls [extract.ts.collapse](extract.md#extract.ts.collapse)
-    - fn [unwrapValue](../../src/extract/ts.ts#L882) (node: Node) → Node <!-- internal -->
+    - fn [unwrapValue](../../src/extract/ts.ts#L882) (node: Node) → Node
       <a id="extract.ts.unwrapValue"></a><br>`(f)`, `f as T`, `f satisfies T`, `f!`: the expression they wrap.
     - fn [reactWrapperFn](../../src/extract/ts.ts#L902) (value: Node, react: ReactBindings) → Node | null <!-- internal -->
       <a id="extract.ts.reactWrapperFn"></a><br>The function a React wrapper call hides: `memo(() => …)` is the function it wraps when — and only when — the callee is bound by an import from `react` (the `names` / `objects` such an import binds; `React.memo` through a default or namespace import counts). By name alone a…

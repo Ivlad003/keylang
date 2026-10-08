@@ -1,6 +1,6 @@
 # 40: Відносні KEYLANG_TRACE / KEYLANG_TRACE_PLAN розв'язуються пізно: trace пишеться в чужу теку, а Rust-програма падає
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -54,11 +54,13 @@ TS: тригер робить `process.chdir("work")`. Trace опиняєтьс�
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/adapters/trace.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/adapters/trace.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+- 2026-10-08: Відносні `KEYLANG_TRACE`, `KEYLANG_TRACE_PLAN` і `KEYLANG_TRACE_ROOT` розв'язуються один раз від теки запуску й записуються назад у середовище абсолютними. TS (src/adapters/trace.ts): у `record()` при імпорті адаптера; запис іде за цим шляхом, а не `resolve(file)` у момент flush. Rust (adapters/rust/keylang_trace.rs): статичний конструктор до `main` (`.init_array` на ELF, `__mod_init_func` на Apple, `.CRT$XCU` на Windows, через `#[unsafe(link_section)]`, компілюється з `-D warnings` у редакціях 2021 і 2024) запам'ятовує теку запуску й переписує змінні; `init()` теж бере шляхи через неї, тож `set_current_dir` до першого span більше не дає panic, а після — не переносить trace; на інших цілях — тека першого span. PHP (adapters/php/keylang_trace.php): в `install()` (prepend, до скрипта) через `getcwd()` і `putenv`. Той самий дефект був і в Python-адаптері (`open(self.path)` при flush) — виправлено так само через `os.path.abspath` у `main()`. Регресійні тести в tests/trace-adapter.test.ts («… relative KEYLANG_TRACE is the startup directory's …» для TS, Rust, Python, PHP): TS, Rust і Python падали на HEAD (TS писав у `work/.keylang`, Rust завершувався з кодом 101, Python лишав відносний шлях), зелені після правки; PHP-тест пропускається, бо `php` не встановлено, — PHP-правку перевірено лише читанням коду. Документація: docs/cli.md (адаптери TS/JS і Python, на який посилаються Rust і PHP).

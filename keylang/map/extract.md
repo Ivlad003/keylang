@@ -12,7 +12,8 @@
     - fn [parsesCleanly](../../src/extract/bodies.ts#L30) (path: string, src: string) → Promise<boolean>
       - calls extract.ts.withTsTree
     - fn [bodiesOf](../../src/extract/bodies.ts#L34) (root: Node) → Map<string, FunctionBody> <!-- internal -->
-      - calls extract.treesitter.startCol
+      - calls extract.treesitter.startCol, extract.ts.unwrapValue, extract.bodies.implementationOf
+    - fn [implementationOf](../../src/extract/bodies.ts#L96) (signature: Node) → Node | null <!-- internal -->
   - module [doc-comments](../../src/extract/doc-comments.ts#L1)
     - fn [isLicense](../../src/extract/doc-comments.ts#L10) (text: string) → boolean
     - fn [blockCommentBody](../../src/extract/doc-comments.ts#L16) (text: string) → string
@@ -352,7 +353,7 @@
       - calls extract.ts.classScope, extract.ts.typeNamesBound, extract.ts.collectTypeRefs, extract.ts.unsupported, extract.ts.memberName, extract.ts.decl, extract.ts.signature, extract.ts.unwrapValue, extract.ts.initializer, extract.ts.heritage, extract.ts.baseClass
     - fn [baseClass](../../src/extract/ts.ts#L875) (heritage: Node) → string | null <!-- internal -->
       - calls extract.ts.collapse
-    - fn [unwrapValue](../../src/extract/ts.ts#L882) (node: Node) → Node <!-- internal -->
+    - fn [unwrapValue](../../src/extract/ts.ts#L882) (node: Node) → Node
     - fn [reactWrapperFn](../../src/extract/ts.ts#L902) (value: Node, react: ReactBindings) → Node | null <!-- internal -->
       - calls extract.ts.reactExportOf, extract.ts.unwrapValue
     - fn [initializer](../../src/extract/ts.ts#L913) (name: "constructor" | "static", items: { node: Node; calls: CallFact[] }[]) → DeclFact <!-- internal -->

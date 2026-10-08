@@ -25,9 +25,12 @@ export interface TraceHooksData {
  * `loaded` from `load` for each file the plan was applied to (`commonjs` when
  * Node compiles it as CommonJS); `skipped` for a planned file that loaded with
  * other content than the snapshot saw: its functions ran without spans.
+ * `unplanned` names each function of the flow no wrapper was planned for, with
+ * the reason (no body at the snapshot's position, a generator, a wrapped file
+ * that does not parse), so the run record can say why it is not instrumented.
  */
 export type TracePlanMessage =
-  | { kind: "plan"; snapshotId: string; planned: string[]; files: { path: string; ids: string[] }[]; error?: string }
+  | { kind: "plan"; snapshotId: string; planned: string[]; files: { path: string; ids: string[] }[]; unplanned: Record<string, string>; error?: string }
   | { kind: "loaded"; ids: string[]; commonjs: boolean }
   | { kind: "skipped"; ids: string[] };
 
@@ -56,6 +59,7 @@ export async function initialize(data: TraceHooksData): Promise<void> {
       byFile.set(node.file, list);
     }
     const instrumented: string[] = [];
+    const unplanned: Record<string, string> = {};
     const files: { path: string; ids: string[] }[] = [];
     for (const [file, fns] of byFile) {
       const src = readFileSync(join(data.root, file), "utf8");
@@ -64,22 +68,28 @@ export async function initialize(data: TraceHooksData): Promise<void> {
       const ids: string[] = [];
       for (const fn of fns) {
         const body = bodies.get(`${fn.line}:${fn.col}`);
+        if (!body) unplanned[fn.id] = `no function body at ${file}:${fn.line}:${fn.col}`;
+        else if (body.generator) unplanned[fn.id] = "a generator";
         if (!body || body.generator) continue;
         edits.push(...wrap(fn.id, body));
         ids.push(fn.id);
       }
       const source = applyEdits(src, edits);
       // A wrapper that breaks the file would break the test: the file is then left as it is, and not instrumented.
-      if (ids.length === 0 || !(await parsesCleanly(file, source))) continue;
+      if (ids.length === 0) continue;
+      if (!(await parsesCleanly(file, source))) {
+        for (const id of ids) unplanned[id] = `the wrapped ${file} does not parse`;
+        continue;
+      }
       instrumented.push(...ids);
       // Node loads a module by its real path; a root reached through a link must match that URL.
       const path = realpathSync(join(data.root, file));
       plans.set(pathToFileURL(path).href, { sha256: sha256(src), source, ids });
       files.push({ path, ids });
     }
-    data.port.postMessage({ kind: "plan", snapshotId: index.snapshotId, planned: instrumented.sort(), files } satisfies TracePlanMessage);
+    data.port.postMessage({ kind: "plan", snapshotId: index.snapshotId, planned: instrumented.sort(), files, unplanned } satisfies TracePlanMessage);
   } catch (e) {
-    data.port.postMessage({ kind: "plan", snapshotId: "", planned: [], files: [], error: e instanceof Error ? e.message : String(e) } satisfies TracePlanMessage);
+    data.port.postMessage({ kind: "plan", snapshotId: "", planned: [], files: [], unplanned: {}, error: e instanceof Error ? e.message : String(e) } satisfies TracePlanMessage);
   }
 }
 
