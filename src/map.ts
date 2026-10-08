@@ -536,7 +536,9 @@ export function diffMap(config: Config, r: MapResult): MapDiff {
     for (const [name, text] of files) {
       const p = join(dir, name);
       if (conflicted.has(p)) continue;
-      if (!existsSync(p) || readFileSync(p, "utf8") !== text) stale.push(p);
+      // A file that differs only by CRLF (a Windows checkout with core.autocrlf) is current, as for baseline and wire; `map` writes LF.
+      const current = readOrNull(p);
+      if (current === null || current.replace(/\r\n/g, "\n") !== text) stale.push(p);
     }
     // A misspelled alias of a listed file is stale too: `map` renames it.
     stale.push(...extraGenerated(dir, files).map((e) => e.path));

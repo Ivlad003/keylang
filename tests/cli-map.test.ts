@@ -669,6 +669,26 @@ test("a directory or a dangling symlink named *.md in keylang/map is neither rea
   assert.ok(lstatSync(join(dir, "keylang/map/notes.md")).isSymbolicLink());
 });
 
+// A Windows checkout with core.autocrlf=true turns the map into CRLF: map --check reads it as current, as baseline --check and wire --check do; map itself writes LF.
+test("map --check accepts a map that differs only by CRLF; map rewrites it as LF", (t) => {
+  const dir = tempDir(t, "keylang-map-crlf-");
+  writeTree(dir, {
+    "keylang.json": `${JSON.stringify({ languages: ["typescript"], layers: { app: ["src/app/**"] } })}\n`,
+    "src/app/a.ts": "export function a(): number {\n  return 1;\n}\n",
+  });
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const file = join(dir, "keylang/map/app.md");
+  const lf = readFileSync(file, "utf8");
+  writeFileSync(file, lf.replace(/\n/g, "\r\n"));
+  const check = keylang(dir, ["map", "--check"]);
+  assert.equal(check.status, 0, check.stdout + check.stderr);
+  // A real change under the CRLF is still stale.
+  writeFileSync(file, lf.replace(/\n/g, "\r\n").replace("app", "ap"));
+  assert.equal(keylang(dir, ["map", "--check"]).status, 1);
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  assert.equal(readFileSync(file, "utf8"), lf);
+});
+
 // A failure while planning the map (an unlistable map directory) is printed, not a silent exit 2.
 test("map names the error when the map directory cannot be listed", { skip: process.platform === "win32" || process.getuid?.() === 0 }, (t) => {
   const dir = tempDir(t, "keylang-map-unlistable-");
