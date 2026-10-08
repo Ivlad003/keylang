@@ -397,87 +397,87 @@
       <a id="check.trace-evidence.TraceSpan"></a><br>Shape of one recorded execution span in a trace: its own id, optional parent id, the symbol it covers, linked span ids, a start `Mark`, and an end `Mark` carrying an `outcome` string, or null while the span is still open. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - type [TraceRun](../../src/trace-evidence.ts#L28)
       <a id="check.trace-evidence.TraceRun"></a><br>Describes one test run reconstructed from trace files: its identifiers, snapshot, spans, and whether the run finished. Also records dropped events, spans left open, and the set of instrumented symbols when known. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-    - type [RunDraft](../../src/trace-evidence.ts#L56) <!-- internal -->
+    - type [RunDraft](../../src/trace-evidence.ts#L58) <!-- internal -->
       <a id="check.trace-evidence.RunDraft"></a><br>A run as it is read. Spans are keyed by id, so a start and the end that closes it are found without a scan; an end whose start is in a file not read yet waits for the last file. `run` events accumulate until every file is read.
-    - fn [loadTraces](../../src/trace-evidence.ts#L82) (root: string, files: readonly string[]) → TraceRun[]
+    - fn [loadTraces](../../src/trace-evidence.ts#L85) (root: string, files: readonly string[]) → TraceRun[]
       <a id="check.trace-evidence.loadTraces"></a><br>Read and validate trace files. A malformed line is an error naming file and line.
       - calls [check.trace-evidence.eachLine](check.md#check.trace-evidence.eachLine), [check.trace-evidence.readEvent](check.md#check.trace-evidence.readEvent), [check.trace-evidence.finishRun](check.md#check.trace-evidence.finishRun)
-    - fn [eachLine](../../src/trace-evidence.ts#L95) (path: string, visit: (text: string, line: number) => void) → void <!-- internal -->
+    - fn [eachLine](../../src/trace-evidence.ts#L98) (path: string, visit: (text: string, line: number) => void) → void <!-- internal -->
       <a id="check.trace-evidence.eachLine"></a><br>Each line of a file (1-based), read in chunks: a trace of millions of events may not fit in one string.
-    - fn [readEvent](../../src/trace-evidence.ts#L113) (runs: Map<string, RunDraft>, file: string, line: number, text: string) → void <!-- internal -->
+    - fn [readEvent](../../src/trace-evidence.ts#L116) (runs: Map<string, RunDraft>, file: string, line: number, text: string) → void <!-- internal -->
       <a id="check.trace-evidence.readEvent"></a>
-    - fn [finishRun](../../src/trace-evidence.ts#L197) (draft: RunDraft) → TraceRun <!-- internal -->
+    - fn [finishRun](../../src/trace-evidence.ts#L203) (draft: RunDraft) → TraceRun <!-- internal -->
       <a id="check.trace-evidence.finishRun"></a><br>The run once every file is read: each end closes its start, wherever the two were.
-    - type [ShapeNode](../../src/trace-evidence.ts#L226)
+    - type [ShapeNode](../../src/trace-evidence.ts#L233)
       <a id="check.trace-evidence.ShapeNode"></a><br>A flow as trace matching sees it. `key` identifies the spec node across runs.
-    - type [TraceEvidence](../../src/trace-evidence.ts#L228)
+    - type [TraceEvidence](../../src/trace-evidence.ts#L235)
       <a id="check.trace-evidence.TraceEvidence"></a><br>Describes the outcome of verifying a trace: a three-state verdict (`ok`, `fail`, or `unverified`) with a human-readable message, plus optional run and test identifiers that are null when no linked run or test was found. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Outcome](../../src/trace-evidence.ts#L235) = TraceEvidence <!-- internal -->
+    - type [Outcome](../../src/trace-evidence.ts#L242) = TraceEvidence <!-- internal -->
       <a id="check.trace-evidence.Outcome"></a><br>A local type alias that names the result of a trace-evidence check as the same shape as `TraceEvidence`, so the check's output type reads as an outcome without adding any new fields or behavior. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [traceFlow](../../src/trace-evidence.ts#L243) (runs: readonly TraceRun[], flow: string, trigger: { key: number; id: string } | null, shape: readonly ShapeNode[], snapshotId: string | null) → Map<number, TraceEvidence>
+    - fn [traceFlow](../../src/trace-evidence.ts#L250) (runs: readonly TraceRun[], flow: string, trigger: { key: number; id: string } | null, shape: readonly ShapeNode[], snapshotId: string | null) → Map<number, TraceEvidence>
       <a id="check.trace-evidence.traceFlow"></a><br>Trace verdicts for every step and `when` of one flow, keyed by `ShapeNode.key`. The trigger (if any) must be observed; its steps are matched inside it.
       - calls [check.trace-evidence.keysOf](check.md#check.trace-evidence.keysOf), [check.trace-evidence.Matcher.match](check.md#check.trace-evidence.Matcher.match), [check.trace-evidence.Matcher](check.md#check.trace-evidence.Matcher)
-    - fn [keysOf](../../src/trace-evidence.ts#L286) (nodes: readonly ShapeNode[]) → number[] <!-- internal -->
+    - fn [keysOf](../../src/trace-evidence.ts#L293) (nodes: readonly ShapeNode[]) → number[] <!-- internal -->
       <a id="check.trace-evidence.keysOf"></a><br>Flattens a tree of shape nodes into a pre-order list of their numeric keys, recursing into each node's `children`. Used by [`check.trace-evidence.traceFlow`](check.md#check.trace-evidence.traceFlow) and the `Matcher` methods to enumerate every key a shape covers. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - module [OverBudget](../../src/trace-evidence.ts#L293) <!-- internal -->
+    - module [OverBudget](../../src/trace-evidence.ts#L300) <!-- internal -->
       <a id="check.trace-evidence.OverBudget"></a><br>An empty `Error` subclass with no extra fields or behavior, used as a distinct throwable type that callers can catch to recognize this specific failure when a limit is exceeded during trace-evidence checking. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Assignment](../../src/trace-evidence.ts#L296) <!-- internal -->
+    - type [Assignment](../../src/trace-evidence.ts#L303) <!-- internal -->
       <a id="check.trace-evidence.Assignment"></a><br>Spans assigned to flow nodes: an outcome per node and the spans it took.
-    - fn [assignment](../../src/trace-evidence.ts#L305) (outcomes: [number, Outcome][], spans: string[] = []) → Assignment <!-- internal -->
+    - fn [assignment](../../src/trace-evidence.ts#L312) (outcomes: [number, Outcome][], spans: string[] = []) → Assignment <!-- internal -->
       <a id="check.trace-evidence.assignment"></a><br>Builds the result record the matcher returns from [`check.trace-evidence.Matcher.branch`](check.md#check.trace-evidence.Matcher.branch), [`check.trace-evidence.Matcher.solve`](check.md#check.trace-evidence.Matcher.solve) and [`check.trace-evidence.Matcher.take`](check.md#check.trace-evidence.Matcher.take), bundling the index–outcome pairs and span IDs. It also precomputes counts of outcomes whose verdict is "ok"… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [combine](../../src/trace-evidence.ts#L309) (...parts: Assignment[]) → Assignment <!-- internal -->
+    - fn [combine](../../src/trace-evidence.ts#L316) (...parts: Assignment[]) → Assignment <!-- internal -->
       <a id="check.trace-evidence.combine"></a><br>Merges several `Assignment` values into one by concatenating their outcomes and spans and summing their `ok` and `fail` counts. Used by [`check.trace-evidence.Matcher.branch`](check.md#check.trace-evidence.Matcher.branch), [`check.trace-evidence.Matcher.solve`](check.md#check.trace-evidence.Matcher.solve), and [`check.trace-evidence.Matcher.take`](check.md#check.trace-evidence.Matcher.take) to fold sub-results… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [better](../../src/trace-evidence.ts#L314) (a: Assignment, b: Assignment) → boolean <!-- internal -->
+    - fn [better](../../src/trace-evidence.ts#L321) (a: Assignment, b: Assignment) → boolean <!-- internal -->
       <a id="check.trace-evidence.better"></a><br>More steps observed wins, then fewer failures; an earlier candidate keeps a tie.
-    - module [Matcher](../../src/trace-evidence.ts#L324) <!-- internal -->
+    - module [Matcher](../../src/trace-evidence.ts#L331) <!-- internal -->
       <a id="check.trace-evidence.Matcher"></a><br>Matches one run against a flow. A test may call the trigger or a step more than once (an early `return` first, the real call later), so every span of a symbol is a candidate: the search keeps the assignment with the most observed steps, and a step fails only when no assignment…
-      - fn [constructor](../../src/trace-evidence.ts#L337) (run: TraceRun)
+      - fn [constructor](../../src/trace-evidence.ts#L344) (run: TraceRun)
         <a id="check.trace-evidence.Matcher.constructor"></a><br>Stores the given trace run and indexes every span by its own ID and under its parent's ID, so later lookups can find a span directly or list the children of any span. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - fn [match](../../src/trace-evidence.ts#L348) (nodes: readonly ShapeNode[], trigger: boolean) → [number, Outcome][]
+      - fn [match](../../src/trace-evidence.ts#L355) (nodes: readonly ShapeNode[], trigger: boolean) → [number, Outcome][]
         <a id="check.trace-evidence.Matcher.match"></a><br>Outcomes for `nodes` (the trigger with the steps inside it when `trigger`).
         - calls [check.trace-evidence.Matcher.list](check.md#check.trace-evidence.Matcher.list), [check.trace-evidence.keysOf](check.md#check.trace-evidence.keysOf), [check.trace-evidence.Matcher.base](check.md#check.trace-evidence.Matcher.base), [check.trace-evidence.Matcher.incompleteness](check.md#check.trace-evidence.Matcher.incompleteness)
-      - fn [base](../../src/trace-evidence.ts#L362) () → { runId: string; testId: string } <!-- internal -->
+      - fn [base](../../src/trace-evidence.ts#L369) () → { runId: string; testId: string } <!-- internal -->
         <a id="check.trace-evidence.Matcher.base"></a><br>Builds the shared `{ runId, testId }` fields that identify the current run, which [`check.trace-evidence.Matcher.branch`](check.md#check.trace-evidence.Matcher.branch), [`check.trace-evidence.Matcher.match`](check.md#check.trace-evidence.Matcher.match), [`check.trace-evidence.Matcher.orderOutcome`](check.md#check.trace-evidence.Matcher.orderOutcome), and [`check.trace-evidence.Matcher.solve`](check.md#check.trace-evidence.Matcher.solve) stamp onto the outcomes they… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - fn [descendants](../../src/trace-evidence.ts#L367) (parent: TraceSpan | null) → TraceSpan[] <!-- internal -->
+      - fn [descendants](../../src/trace-evidence.ts#L374) (parent: TraceSpan | null) → TraceSpan[] <!-- internal -->
         <a id="check.trace-evidence.Matcher.descendants"></a><br>Spans under `parent` (all spans for null), depth-first in start order.
-      - fn [candidates](../../src/trace-evidence.ts#L386) (parent: TraceSpan | null, id: string) → TraceSpan[] <!-- internal -->
+      - fn [candidates](../../src/trace-evidence.ts#L393) (parent: TraceSpan | null, id: string) → TraceSpan[] <!-- internal -->
         <a id="check.trace-evidence.Matcher.candidates"></a><br>Collects the spans under `parent` via [`check.trace-evidence.Matcher.descendants`](check.md#check.trace-evidence.Matcher.descendants), keeping only those whose symbol matches `id` and that are not yet marked used. Feeds candidate spans to [`check.trace-evidence.Matcher.branch`](check.md#check.trace-evidence.Matcher.branch) and [`check.trace-evidence.Matcher.solve`](check.md#check.trace-evidence.Matcher.solve). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
         - calls [check.trace-evidence.Matcher.descendants](check.md#check.trace-evidence.Matcher.descendants)
-      - fn [incompleteness](../../src/trace-evidence.ts#L391) () → string | null <!-- internal -->
+      - fn [incompleteness](../../src/trace-evidence.ts#L398) () → string | null <!-- internal -->
         <a id="check.trace-evidence.Matcher.incompleteness"></a><br>Why the run cannot confirm or refute what it shows, or null for a finished run.
-      - fn [absenceDoubt](../../src/trace-evidence.ts#L401) (id: string) → string | null <!-- internal -->
+      - fn [absenceDoubt](../../src/trace-evidence.ts#L408) (id: string) → string | null <!-- internal -->
         <a id="check.trace-evidence.Matcher.absenceDoubt"></a><br>Why an unobserved step is not a proven absence, or null when it is.
         - calls [check.trace-evidence.Matcher.incompleteness](check.md#check.trace-evidence.Matcher.incompleteness)
-      - fn [bound](../../src/trace-evidence.ts#L410) (parent: TraceSpan | null, node: ShapeNode) → number <!-- internal -->
+      - fn [bound](../../src/trace-evidence.ts#L420) (parent: TraceSpan | null, node: ShapeNode) → number <!-- internal -->
         <a id="check.trace-evidence.Matcher.bound"></a><br>The most steps of `node` and below that any assignment under `parent` could observe.
         - calls [check.trace-evidence.Matcher.descendants](check.md#check.trace-evidence.Matcher.descendants)
-      - fn [symbolsFrom](../../src/trace-evidence.ts#L422) (nodes: readonly ShapeNode[], i: number) → Set<string> <!-- internal -->
+      - fn [symbolsFrom](../../src/trace-evidence.ts#L432) (nodes: readonly ShapeNode[], i: number) → Set<string> <!-- internal -->
         <a id="check.trace-evidence.Matcher.symbolsFrom"></a><br>Symbols of `nodes[i..]` and everything under them.
-      - fn [list](../../src/trace-evidence.ts#L446) (parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, previous: TraceSpan | null, trigger: boolean) → Assignment <!-- internal -->
+      - fn [list](../../src/trace-evidence.ts#L456) (parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, previous: TraceSpan | null, trigger: boolean) → Assignment <!-- internal -->
         <a id="check.trace-evidence.Matcher.list"></a><br>The best assignment for `nodes[i..]` under `parent`, the sibling before them matched to `previous`. Memoized: the answer depends on the spans taken so far only through those it could take itself, so the search stays polynomial in the spans of a symbol.
         - calls [check.trace-evidence.Matcher.symbolsFrom](check.md#check.trace-evidence.Matcher.symbolsFrom), [check.trace-evidence.Matcher.descendants](check.md#check.trace-evidence.Matcher.descendants), [check.trace-evidence.Matcher.solve](check.md#check.trace-evidence.Matcher.solve)
-      - fn [solve](../../src/trace-evidence.ts#L470) (parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, previous: TraceSpan | null, trigger: boolean) → Assignment <!-- internal -->
+      - fn [solve](../../src/trace-evidence.ts#L480) (parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, previous: TraceSpan | null, trigger: boolean) → Assignment <!-- internal -->
         <a id="check.trace-evidence.Matcher.solve"></a><br>Matches one shape step against trace spans under a parent, delegating `when` nodes to [`check.trace-evidence.Matcher.branch`](check.md#check.trace-evidence.Matcher.branch), trying each in-order candidate via [`check.trace-evidence.Matcher.take`](check.md#check.trace-evidence.Matcher.take) and keeping the best by [`check.trace-evidence.better`](check.md#check.trace-evidence.better). When no span fits it emits… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
         - calls [check.trace-evidence.Matcher.branch](check.md#check.trace-evidence.Matcher.branch), [check.trace-evidence.Matcher.candidates](check.md#check.trace-evidence.Matcher.candidates), [check.trace-evidence.startsBefore](check.md#check.trace-evidence.startsBefore), [check.trace-evidence.Matcher.bound](check.md#check.trace-evidence.Matcher.bound), [check.trace-evidence.Matcher.take](check.md#check.trace-evidence.Matcher.take), [check.trace-evidence.Matcher.orderOutcome](check.md#check.trace-evidence.Matcher.orderOutcome), [check.trace-evidence.better](check.md#check.trace-evidence.better), [check.trace-evidence.Matcher.base](check.md#check.trace-evidence.Matcher.base), [check.trace-evidence.Matcher.absenceDoubt](check.md#check.trace-evidence.Matcher.absenceDoubt), [check.trace-evidence.Matcher.outsideRoot](check.md#check.trace-evidence.Matcher.outsideRoot), [check.trace-evidence.combine](check.md#check.trace-evidence.combine), [check.trace-evidence.assignment](check.md#check.trace-evidence.assignment), [check.trace-evidence.keysOf](check.md#check.trace-evidence.keysOf), [check.trace-evidence.Matcher.list](check.md#check.trace-evidence.Matcher.list)
-      - fn [take](../../src/trace-evidence.ts#L501) (parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, node: ShapeNode, span: TraceSpan, outcome: Outcome, trigger: boolean) → Assignment <!-- internal -->
+      - fn [take](../../src/trace-evidence.ts#L511) (parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, node: ShapeNode, span: TraceSpan, outcome: Outcome, trigger: boolean) → Assignment <!-- internal -->
         <a id="check.trace-evidence.Matcher.take"></a><br>`span` as `node`: its children are matched inside it, the siblings after it.
         - calls [check.trace-evidence.OverBudget](check.md#check.trace-evidence.OverBudget), [check.trace-evidence.Matcher.list](check.md#check.trace-evidence.Matcher.list), [check.trace-evidence.combine](check.md#check.trace-evidence.combine), [check.trace-evidence.assignment](check.md#check.trace-evidence.assignment)
-      - fn [branch](../../src/trace-evidence.ts#L513) (parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, node: ShapeNode, previous: TraceSpan | null, trigger: boolean) → Assignment <!-- internal -->
+      - fn [branch](../../src/trace-evidence.ts#L523) (parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, node: ShapeNode, previous: TraceSpan | null, trigger: boolean) → Assignment <!-- internal -->
         <a id="check.trace-evidence.Matcher.branch"></a><br>A `when` is exercised in this test when its first step is observed; its steps are not ordered after the siblings before it.
         - calls [check.trace-evidence.Matcher.candidates](check.md#check.trace-evidence.Matcher.candidates), [check.trace-evidence.Matcher.base](check.md#check.trace-evidence.Matcher.base), [check.trace-evidence.combine](check.md#check.trace-evidence.combine), [check.trace-evidence.assignment](check.md#check.trace-evidence.assignment), [check.trace-evidence.keysOf](check.md#check.trace-evidence.keysOf), [check.trace-evidence.Matcher.list](check.md#check.trace-evidence.Matcher.list)
-      - fn [rootSpan](../../src/trace-evidence.ts#L527) (span: TraceSpan) → TraceSpan <!-- internal -->
+      - fn [rootSpan](../../src/trace-evidence.ts#L537) (span: TraceSpan) → TraceSpan <!-- internal -->
         <a id="check.trace-evidence.Matcher.rootSpan"></a><br>Root of the `parentSpanId` chain. A span whose parent is missing is its own root.
-      - fn [outsideRoot](../../src/trace-evidence.ts#L544) (parent: TraceSpan, id: string) → TraceSpan | null <!-- internal -->
+      - fn [outsideRoot](../../src/trace-evidence.ts#L554) (parent: TraceSpan, id: string) → TraceSpan | null <!-- internal -->
         <a id="check.trace-evidence.Matcher.outsideRoot"></a><br>A span of `id` whose call tree is not the parent's, and which did not start before the parent image on the same clock. Spans that did start earlier, and spans in the parent's own tree, stay a confirmed absence.
         - calls [check.trace-evidence.Matcher.rootSpan](check.md#check.trace-evidence.Matcher.rootSpan), [check.trace-evidence.startsBefore](check.md#check.trace-evidence.startsBefore)
-      - fn [nestedIn](../../src/trace-evidence.ts#L556) (span: TraceSpan, ancestor: TraceSpan) → boolean <!-- internal -->
+      - fn [nestedIn](../../src/trace-evidence.ts#L566) (span: TraceSpan, ancestor: TraceSpan) → boolean <!-- internal -->
         <a id="check.trace-evidence.Matcher.nestedIn"></a><br>`span`'s parent chain passes through `ancestor` (the image of the previous sibling).
-      - fn [orderOutcome](../../src/trace-evidence.ts#L567) (parent: TraceSpan | null, span: TraceSpan, after: TraceSpan | null) → Outcome <!-- internal -->
+      - fn [orderOutcome](../../src/trace-evidence.ts#L577) (parent: TraceSpan | null, span: TraceSpan, after: TraceSpan | null) → Outcome <!-- internal -->
         <a id="check.trace-evidence.Matcher.orderOutcome"></a><br>Decides whether a matched span is validly ordered against its parent and the preceding sibling, using [`check.trace-evidence.Matcher.nestedIn`](check.md#check.trace-evidence.Matcher.nestedIn) and [`check.trace-evidence.sameClock`](check.md#check.trace-evidence.sameClock). Returns fail when nested in the predecessor, unverified for async children or cross-clock/parallel… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
         - calls [check.trace-evidence.Matcher.nestedIn](check.md#check.trace-evidence.Matcher.nestedIn), [check.trace-evidence.Matcher.base](check.md#check.trace-evidence.Matcher.base), [check.trace-evidence.sameClock](check.md#check.trace-evidence.sameClock)
-    - fn [sameClock](../../src/trace-evidence.ts#L587) (a: Mark, b: Mark) → boolean <!-- internal -->
+    - fn [sameClock](../../src/trace-evidence.ts#L597) (a: Mark, b: Mark) → boolean <!-- internal -->
       <a id="check.trace-evidence.sameClock"></a><br>Reports whether two marks carry the same `clockId`, so callers like [`check.trace-evidence.startsBefore`](check.md#check.trace-evidence.startsBefore) and [`check.trace-evidence.Matcher.orderOutcome`](check.md#check.trace-evidence.Matcher.orderOutcome) only compare timestamps that share a clock. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [startsBefore](../../src/trace-evidence.ts#L591) (span: TraceSpan, other: TraceSpan) → boolean <!-- internal -->
+    - fn [startsBefore](../../src/trace-evidence.ts#L601) (span: TraceSpan, other: TraceSpan) → boolean <!-- internal -->
       <a id="check.trace-evidence.startsBefore"></a><br>Returns true when both spans' start marks share a clock per [`check.trace-evidence.sameClock`](check.md#check.trace-evidence.sameClock) and the first span's start sequence number is strictly lower. Used by [`check.trace-evidence.Matcher.solve`](check.md#check.trace-evidence.Matcher.solve) and [`check.trace-evidence.Matcher.outsideRoot`](check.md#check.trace-evidence.Matcher.outsideRoot) to order spans. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [check.trace-evidence.sameClock](check.md#check.trace-evidence.sameClock)
   - module [verdict](../../src/verdict.ts#L1)

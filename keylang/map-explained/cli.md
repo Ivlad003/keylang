@@ -36,40 +36,40 @@
     - trace-plan [map.trace-plan](map.md#map.trace-plan)
     - type [TraceHooksData](../../src/adapters/trace-hooks.ts#L16)
       <a id="cli.trace-hooks.TraceHooksData"></a><br>Describes the payload handed to the trace-hooks worker thread: the repository root path, the flow identifier being traced, and a `MessagePort` over which the worker reports hook events back to the parent. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [TracePlanMessage](../../src/adapters/trace-hooks.ts#L29)
+    - type [TracePlanMessage](../../src/adapters/trace-hooks.ts#L32)
       <a id="cli.trace-hooks.TracePlanMessage"></a><br>Hooks → adapter. `plan` once from `initialize`: the flow's functions a wrapper was planned for, and the real path of each file that holds them. `loaded` from `load` for each file the plan was applied to (`commonjs` when Node compiles it as CommonJS); `skipped` for a planned…
-    - type [FilePlan](../../src/adapters/trace-hooks.ts#L34) <!-- internal -->
+    - type [FilePlan](../../src/adapters/trace-hooks.ts#L37) <!-- internal -->
       <a id="cli.trace-hooks.FilePlan"></a><br>Holds the per-file record used when wrapping a source file for tracing: the `sha256` of the file as the snapshot saw it, the `source` text with wrappers inserted, and the `ids` of the nodes instrumented in it. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [initialize](../../src/adapters/trace-hooks.ts#L44) (data: TraceHooksData) → Promise<void>
+    - fn [initialize](../../src/adapters/trace-hooks.ts#L47) (data: TraceHooksData) → Promise<void>
       <a id="cli.trace-hooks.initialize"></a><br>Builds the map, picks the flow's functions via [`map.trace-plan.flowSymbols`](map.md#map.trace-plan.flowSymbols), and wraps each with [`cli.trace-hooks.wrap`](cli.md#cli.trace-hooks.wrap), skipping files that no longer parse cleanly. It stores instrumented sources by file URL and posts the plan or error to the port. _(llm · claude:claude-opus-5-5 · 2026-10-06 · stale)_
       - calls [base.config.loadConfig](base.md#base.config.loadConfig), [map.map.generateMap](map.md#map.map.generateMap), [map.trace-plan.flowSymbols](map.md#map.trace-plan.flowSymbols), [extract.bodies.functionBodies](extract.md#extract.bodies.functionBodies), [cli.trace-hooks.wrap](cli.md#cli.trace-hooks.wrap), [cli.trace-hooks.applyEdits](cli.md#cli.trace-hooks.applyEdits), [extract.bodies.parsesCleanly](extract.md#extract.bodies.parsesCleanly), [map.snapshot.sha256](map.md#map.snapshot.sha256)
-    - type [Edit](../../src/adapters/trace-hooks.ts#L87) <!-- internal -->
+    - type [Edit](../../src/adapters/trace-hooks.ts#L97) <!-- internal -->
       <a id="cli.trace-hooks.Edit"></a><br>Text inserted at an offset of the original source.
-    - fn [wrap](../../src/adapters/trace-hooks.ts#L93) (id: string, body: FunctionBody) → Edit[] <!-- internal -->
+    - fn [wrap](../../src/adapters/trace-hooks.ts#L103) (id: string, body: FunctionBody) → Edit[] <!-- internal -->
       <a id="cli.trace-hooks.wrap"></a><br>`{ BODY }` → `{ return __keylangTrace.run(id, () => { BODY }); }`; an arrow keeps `this` and `arguments`.
-    - fn [applyEdits](../../src/adapters/trace-hooks.ts#L109) (src: string, edits: readonly Edit[]) → string <!-- internal -->
+    - fn [applyEdits](../../src/adapters/trace-hooks.ts#L119) (src: string, edits: readonly Edit[]) → string <!-- internal -->
       <a id="cli.trace-hooks.applyEdits"></a><br>Insert every edit; edits at one offset keep the order they were made in.
-    - type [LoadResult](../../src/adapters/trace-hooks.ts#L116) <!-- internal -->
+    - type [LoadResult](../../src/adapters/trace-hooks.ts#L126) <!-- internal -->
       <a id="cli.trace-hooks.LoadResult"></a><br>Shape of the value a module-load hook returns: an optional module `format`, the loaded `source` as string or binary buffer, and a `shortCircuit` flag telling the loader chain to stop at this result. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [load](../../src/adapters/trace-hooks.ts#L118) (url: string, context: unknown, nextLoad: (url: string, context: unknown) => Promise<LoadResult>) → Promise<LoadResult>
+    - fn [load](../../src/adapters/trace-hooks.ts#L128) (url: string, context: unknown, nextLoad: (url: string, context: unknown) => Promise<LoadResult>) → Promise<LoadResult>
       <a id="cli.trace-hooks.load"></a><br>Node module loader hook that swaps in instrumented trace source for planned files whose [`map.snapshot.sha256`](map.md#map.snapshot.sha256) hash matches the snapshot, reporting loaded or skipped, and tags CommonJS modules for the adapter. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
       - calls [map.snapshot.sha256](map.md#map.snapshot.sha256)
   - module [trace](../../src/adapters/trace.ts#L1)
-    <a id="cli.trace"></a><br>Trace adapter for TS/JS `@flow` tests: `node --import keylang/trace …` (in this repository: `--import ./src/adapters/trace.ts`). Environment: KEYLANG_TRACE JSONL file to append to; without it the adapter does nothing KEYLANG_TRACE_FLOW flow name whose trigger and steps are…
+    <a id="cli.trace"></a><br>Trace adapter for TS/JS `@flow` tests: `node --import keylang/trace …` (in this repository: `--import ./src/adapters/trace.ts`). Environment: KEYLANG_TRACE JSONL file to append to; without it the adapter does nothing (a relative path, like the root, is resolved once against the…
     - node [external.node](external.md#external.node)
     - trace-evidence [check.trace-evidence](check.md#check.trace-evidence)
     - run-id [cli.run-id](cli.md#cli.run-id)
     - trace-hooks [cli.trace-hooks](cli.md#cli.trace-hooks)
-    - type [Span](../../src/adapters/trace.ts#L26) <!-- internal -->
+    - type [Span](../../src/adapters/trace.ts#L27) <!-- internal -->
       <a id="cli.trace.Span"></a><br>Describes the shape of a tracing span record held by [`cli.trace`](cli.md#cli.trace): a string identifier for the span plus a boolean flag marking whether the span has already been closed. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Plan](../../src/adapters/trace.ts#L31) = Extract<TracePlanMessage, { kind: "plan" }> <!-- internal -->
+    - type [Plan](../../src/adapters/trace.ts#L32) = Extract<TracePlanMessage, { kind: "plan" }> <!-- internal -->
       <a id="cli.trace.Plan"></a>
-    - fn [record](../../src/adapters/trace.ts#L37) (file: string) → void <!-- internal -->
+    - fn [record](../../src/adapters/trace.ts#L38) (given: string) → void <!-- internal -->
       <a id="cli.trace.record"></a>
       - calls [cli.run-id.runId](cli.md#cli.run-id.runId), [cli.trace.instrumented](cli.md#cli.trace.instrumented)
-    - type [Loads](../../src/adapters/trace.ts#L183) <!-- internal -->
+    - type [Loads](../../src/adapters/trace.ts#L191) <!-- internal -->
       <a id="cli.trace.Loads"></a><br>What the hooks did with the planned files in this process.
-    - fn [instrumented](../../src/adapters/trace.ts#L201) (plan: Plan, loads: Loads) → string[] <!-- internal -->
+    - fn [instrumented](../../src/adapters/trace.ts#L209) (plan: Plan, loads: Loads) → { ids: string[]; reasons: Record<string, string> } <!-- internal -->
       <a id="cli.trace.instrumented"></a><br>The plan's functions this process would have recorded had it called them: every function a wrapper was planned for, whether or not the process loaded its file (code it never loaded never ran here). Left out: a file that loaded with other content than the snapshot saw, and a…
   - module [cli](../../src/cli.ts#L1)
     <a id="cli.cli"></a><br>`keylang` command line: the TUI (no command), web, clone, init, map, check, parse, fmt.

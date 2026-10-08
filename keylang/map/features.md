@@ -796,33 +796,34 @@
       - calls lang.files.existingText, base.safe-write.writeProblem
     - fn [writeProposal](../../src/proposals.ts#L218) (root: string, path: string, text: string, basis?: ProposalBasis) → string
       - calls features.proposals.proposalWriteProblem, base.safe-write.safeWrite
-    - fn [lineDiff](../../src/proposals.ts#L227) (before: string, after: string) → string
-    - type [PendingProposal](../../src/proposals.ts#L244)
-    - fn [proposalTarget](../../src/proposals.ts#L261) (name: string) → string | null
+    - fn [lineDiff](../../src/proposals.ts#L234) (before: string, after: string) → string
+      - calls base.safe-write.allCrlf
+    - type [PendingProposal](../../src/proposals.ts#L251)
+    - fn [proposalTarget](../../src/proposals.ts#L268) (name: string) → string | null
       - calls base.config.toPosix, features.proposals.notPlain
-    - fn [pendingTargets](../../src/proposals.ts#L272) (root: string) → string[]
+    - fn [pendingTargets](../../src/proposals.ts#L279) (root: string) → string[]
       - calls base.safe-write.landing, map.analyze.within, base.config.toPosix, base.span.compareText
-    - fn [storeEntry](../../src/proposals.ts#L287) (root: string, target: string) → { abs: string; link: boolean } | { problem: string } | null <!-- internal -->
+    - fn [storeEntry](../../src/proposals.ts#L294) (root: string, target: string) → { abs: string; link: boolean } | { problem: string } | null <!-- internal -->
       - calls base.safe-write.landing, map.analyze.within
-    - type [ReadProposal](../../src/proposals.ts#L301) <!-- internal -->
-    - fn [readProposal](../../src/proposals.ts#L311) (root: string, specDir: string, target: string) → ReadProposal | { problem: string } | null <!-- internal -->
+    - type [ReadProposal](../../src/proposals.ts#L308) <!-- internal -->
+    - fn [readProposal](../../src/proposals.ts#L318) (root: string, specDir: string, target: string) → ReadProposal | { problem: string } | null <!-- internal -->
       - calls features.proposals.storeEntry, features.proposals.targetProblem, base.safe-write.landing, lang.files.existingText
-    - fn [lineCounts](../../src/proposals.ts#L322) (before: string, after: string) → { added: number; removed: number } <!-- internal -->
+    - fn [lineCounts](../../src/proposals.ts#L329) (before: string, after: string) → { added: number; removed: number } <!-- internal -->
       - calls features.proposals.lineDiff
-    - fn [listProposals](../../src/proposals.ts#L328) (root: string, specDir: string) → PendingProposal[]
+    - fn [listProposals](../../src/proposals.ts#L335) (root: string, specDir: string) → PendingProposal[]
       - calls features.proposals.pendingTargets, features.proposals.readProposal, features.proposals.lineCounts
-    - type [ProposalDiff](../../src/proposals.ts#L337)
-    - fn [proposalDiff](../../src/proposals.ts#L339) (root: string, specDir: string, target: string) → ProposalDiff
+    - type [ProposalDiff](../../src/proposals.ts#L344)
+    - fn [proposalDiff](../../src/proposals.ts#L346) (root: string, specDir: string, target: string) → ProposalDiff
       - calls features.proposals.readProposal, features.proposals.lineDiff
-    - type [AcceptResult](../../src/proposals.ts#L346)
-    - fn [acceptProposal](../../src/proposals.ts#L364) (root: string, specDir: string, target: string) → AcceptResult
+    - type [AcceptResult](../../src/proposals.ts#L353)
+    - fn [acceptProposal](../../src/proposals.ts#L371) (root: string, specDir: string, target: string) → AcceptResult
       - calls features.proposals.readProposal, base.safe-write.landing, features.proposals.dropProposal, base.safe-write.writeProblem, base.safe-write.safeWrite, features.proposals.countDecision, features.proposals.lineCounts
-    - type [RejectResult](../../src/proposals.ts#L387)
-    - fn [rejectProposal](../../src/proposals.ts#L394) (root: string, specDir: string, target: string) → RejectResult
+    - type [RejectResult](../../src/proposals.ts#L394)
+    - fn [rejectProposal](../../src/proposals.ts#L401) (root: string, specDir: string, target: string) → RejectResult
       - calls features.proposals.storeEntry, features.proposals.targetProblem, base.safe-write.landing, features.proposals.countDecision, lang.files.existingText
-    - fn [dropProposal](../../src/proposals.ts#L407) (root: string, target: string, text: string) → string | null <!-- internal -->
+    - fn [dropProposal](../../src/proposals.ts#L414) (root: string, target: string, text: string) → string | null <!-- internal -->
       - calls features.proposals.storeEntry, base.diag.errorText
-    - fn [countDecision](../../src/proposals.ts#L419) (root: string, before: string, after: string, decision: "accepted" | "rejected") → void <!-- internal -->
+    - fn [countDecision](../../src/proposals.ts#L426) (root: string, before: string, after: string, decision: "accepted" | "rejected") → void <!-- internal -->
       - calls features.proposals.lineDiff, features.stats.statusesIn, features.stats.updateStats, features.stats.addDrafts
   - module [spec-to-code](../../src/spec-to-code.ts#L1)
     - node external.node

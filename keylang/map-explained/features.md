@@ -1251,49 +1251,50 @@
     - fn [writeProposal](../../src/proposals.ts#L218) (root: string, path: string, text: string, basis?: ProposalBasis) → string
       <a id="features.proposals.writeProposal"></a><br>Writes the proposal for `path` (relative, POSIX) atomically and returns its file; `.keylang/proposals/` is keylang's own store, so a link there that leads elsewhere is refused like any other. With `basis` nothing is written unless the target and the waiting proposal are still…
       - calls [features.proposals.proposalWriteProblem](features.md#features.proposals.proposalWriteProblem), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite)
-    - fn [lineDiff](../../src/proposals.ts#L227) (before: string, after: string) → string
-      <a id="features.proposals.lineDiff"></a><br>`-`/`+` lines between a common prefix and suffix: enough to see what a proposal changes.
-    - type [PendingProposal](../../src/proposals.ts#L244)
+    - fn [lineDiff](../../src/proposals.ts#L234) (before: string, after: string) → string
+      <a id="features.proposals.lineDiff"></a><br>`-`/`+` lines between a common prefix and suffix: enough to see what a proposal changes. Line endings are compared as MERGE compares them: a target that is CRLF throughout is read as LF (mixed endings stay), and the proposal (an agent writes LF) is read as LF, so a CRLF file…
+      - calls [base.safe-write.allCrlf](base.md#base.safe-write.allCrlf)
+    - type [PendingProposal](../../src/proposals.ts#L251)
       <a id="features.proposals.PendingProposal"></a><br>One pending proposal as `keylang proposals` lists it.
-    - fn [proposalTarget](../../src/proposals.ts#L261) (name: string) → string | null
+    - fn [proposalTarget](../../src/proposals.ts#L268) (name: string) → string | null
       <a id="features.proposals.proposalTarget"></a><br>The target of a proposal as a person names it: as `keylang proposals` lists it, or as its store path `.keylang/proposals/<target>`; POSIX. Null when it is no plain relative path.
       - calls [base.config.toPosix](base.md#base.config.toPosix), [features.proposals.notPlain](features.md#features.proposals.notPlain)
-    - fn [pendingTargets](../../src/proposals.ts#L272) (root: string) → string[]
+    - fn [pendingTargets](../../src/proposals.ts#L279) (root: string) → string[]
       <a id="features.proposals.pendingTargets"></a><br>Every target with a file or a link under `.keylang/proposals/`, sorted. The store is listed only while it stays inside the repository; a link in it is listed, never followed.
       - calls [base.safe-write.landing](base.md#base.safe-write.landing), [map.analyze.within](map.md#map.analyze.within), [base.config.toPosix](base.md#base.config.toPosix), [base.span.compareText](base.md#base.span.compareText)
-    - fn [storeEntry](../../src/proposals.ts#L287) (root: string, target: string) → { abs: string; link: boolean } | { problem: string } | null <!-- internal -->
+    - fn [storeEntry](../../src/proposals.ts#L294) (root: string, target: string) → { abs: string; link: boolean } | { problem: string } | null <!-- internal -->
       <a id="features.proposals.storeEntry"></a><br>The store entry of `target` where its directory lands: null when there is none, else the entry and whether it is a link. A store whose directory leads out of the repository is a problem, and nothing there is looked at.
       - calls [base.safe-write.landing](base.md#base.safe-write.landing), [map.analyze.within](map.md#map.analyze.within)
-    - type [ReadProposal](../../src/proposals.ts#L301) <!-- internal -->
+    - type [ReadProposal](../../src/proposals.ts#L308) <!-- internal -->
       <a id="features.proposals.ReadProposal"></a><br>A proposal that may be accepted: its text and the target's (null: no file).
-    - fn [readProposal](../../src/proposals.ts#L311) (root: string, specDir: string, target: string) → ReadProposal | { problem: string } | null <!-- internal -->
+    - fn [readProposal](../../src/proposals.ts#L318) (root: string, specDir: string, target: string) → ReadProposal | { problem: string } | null <!-- internal -->
       <a id="features.proposals.readProposal"></a><br>The proposal of `target` read after both gates — a plain file in the store, a target a proposal may change — or why it cannot be accepted; null when none is pending.
       - calls [features.proposals.storeEntry](features.md#features.proposals.storeEntry), [features.proposals.targetProblem](features.md#features.proposals.targetProblem), [base.safe-write.landing](base.md#base.safe-write.landing), [lang.files.existingText](lang.md#lang.files.existingText)
-    - fn [lineCounts](../../src/proposals.ts#L322) (before: string, after: string) → { added: number; removed: number } <!-- internal -->
+    - fn [lineCounts](../../src/proposals.ts#L329) (before: string, after: string) → { added: number; removed: number } <!-- internal -->
       <a id="features.proposals.lineCounts"></a><br>`+` and `-` lines `lineDiff` prints.
       - calls [features.proposals.lineDiff](features.md#features.proposals.lineDiff)
-    - fn [listProposals](../../src/proposals.ts#L328) (root: string, specDir: string) → PendingProposal[]
+    - fn [listProposals](../../src/proposals.ts#L335) (root: string, specDir: string) → PendingProposal[]
       <a id="features.proposals.listProposals"></a><br>Every pending proposal with its target, line counts and why it cannot be accepted. Reads only.
       - calls [features.proposals.pendingTargets](features.md#features.proposals.pendingTargets), [features.proposals.readProposal](features.md#features.proposals.readProposal), [features.proposals.lineCounts](features.md#features.proposals.lineCounts)
-    - type [ProposalDiff](../../src/proposals.ts#L337)
+    - type [ProposalDiff](../../src/proposals.ts#L344)
       <a id="features.proposals.ProposalDiff"></a><br>What `keylang proposals show <target>` prints, or why not. Reads only.
-    - fn [proposalDiff](../../src/proposals.ts#L339) (root: string, specDir: string, target: string) → ProposalDiff
+    - fn [proposalDiff](../../src/proposals.ts#L346) (root: string, specDir: string, target: string) → ProposalDiff
       <a id="features.proposals.proposalDiff"></a>
       - calls [features.proposals.readProposal](features.md#features.proposals.readProposal), [features.proposals.lineDiff](features.md#features.proposals.lineDiff)
-    - type [AcceptResult](../../src/proposals.ts#L346)
+    - type [AcceptResult](../../src/proposals.ts#L353)
       <a id="features.proposals.AcceptResult"></a>
-    - fn [acceptProposal](../../src/proposals.ts#L364) (root: string, specDir: string, target: string) → AcceptResult
+    - fn [acceptProposal](../../src/proposals.ts#L371) (root: string, specDir: string, target: string) → AcceptResult
       <a id="features.proposals.acceptProposal"></a><br>`keylang proposals accept <target>`: the proposal's full text replaces the target, as MERGE does with every hunk accepted. The same gates as MERGE (the target's, a plain file in the store), a target that is not writable (a person's `chmod a-w`) is refused, and the write follows…
       - calls [features.proposals.readProposal](features.md#features.proposals.readProposal), [base.safe-write.landing](base.md#base.safe-write.landing), [features.proposals.dropProposal](features.md#features.proposals.dropProposal), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite), [features.proposals.countDecision](features.md#features.proposals.countDecision), [features.proposals.lineCounts](features.md#features.proposals.lineCounts)
-    - type [RejectResult](../../src/proposals.ts#L387)
+    - type [RejectResult](../../src/proposals.ts#L394)
       <a id="features.proposals.RejectResult"></a>
-    - fn [rejectProposal](../../src/proposals.ts#L394) (root: string, specDir: string, target: string) → RejectResult
+    - fn [rejectProposal](../../src/proposals.ts#L401) (root: string, specDir: string, target: string) → RejectResult
       <a id="features.proposals.rejectProposal"></a><br>`keylang proposals reject <target>`: the proposal is removed and the target stays as it is. A proposal no gate admits is still the person's to drop; a link in the store is removed itself, never followed.
       - calls [features.proposals.storeEntry](features.md#features.proposals.storeEntry), [features.proposals.targetProblem](features.md#features.proposals.targetProblem), [base.safe-write.landing](base.md#base.safe-write.landing), [features.proposals.countDecision](features.md#features.proposals.countDecision), [lang.files.existingText](lang.md#lang.files.existingText)
-    - fn [dropProposal](../../src/proposals.ts#L407) (root: string, target: string, text: string) → string | null <!-- internal -->
+    - fn [dropProposal](../../src/proposals.ts#L414) (root: string, target: string, text: string) → string | null <!-- internal -->
       <a id="features.proposals.dropProposal"></a><br>Removes the proposal while it still holds `text`: null, or why it stays.
       - calls [features.proposals.storeEntry](features.md#features.proposals.storeEntry), [base.diag.errorText](base.md#base.diag.errorText)
-    - fn [countDecision](../../src/proposals.ts#L419) (root: string, before: string, after: string, decision: "accepted" | "rejected") → void <!-- internal -->
+    - fn [countDecision](../../src/proposals.ts#L426) (root: string, before: string, after: string, decision: "accepted" | "rejected") → void <!-- internal -->
       <a id="features.proposals.countDecision"></a><br>The model lines a decision took or dropped, as MERGE counts them (design §5.1 p.7); a count that cannot be written is lost, never the decision.
       - calls [features.proposals.lineDiff](features.md#features.proposals.lineDiff), [features.stats.statusesIn](features.md#features.stats.statusesIn), [features.stats.updateStats](features.md#features.stats.updateStats), [features.stats.addDrafts](features.md#features.stats.addDrafts)
   - module [spec-to-code](../../src/spec-to-code.ts#L1)
