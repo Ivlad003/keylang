@@ -579,6 +579,8 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
   const classBase = new Map<string, BaseLink>();
   /** Class → the traits it uses (PHP `use Logs;`), resolved in its file. */
   const classTraits = new Map<string, string[]>();
+  /** Class → the `insteadof` and `as` rules of its trait `use` block (PHP), traits resolved. */
+  const classTraitRules = new Map<string, { trait: string | null; method: string; insteadof?: string[]; alias?: string }[]>();
   /**
    * A member of a class by name: its own, then a used trait's (PHP), then its
    * bases' — as the language looks a method up. `staticToo`: an instance may
@@ -588,19 +590,32 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
   const findMember = (start: string, member: string, isStatic: boolean, staticToo: boolean): { target: string | null; last: BaseLink | null } => {
     // PHP finds `total()` for `$o->TOTAL()`; its bases and traits are PHP too.
     const caseless = caselessNames(decls.classes.get(start)?.path);
-    const keys = [member === "constructor" ? "constructor" : memberKey(member, isStatic, caseless), ...(staticToo && !isStatic ? [memberKey(member, true, caseless)] : [])];
+    const keysOf = (name: string): string[] => [name === "constructor" ? "constructor" : memberKey(name, isStatic, caseless), ...(staticToo && !isStatic ? [memberKey(name, true, caseless)] : [])];
+    const same = (a: string, b: string): boolean => (caseless ? asciiLowerCase(a) === asciiLowerCase(b) : a === b);
     const seen = new Set<string>();
-    const inClass = (id: string): string | null => {
-      if (seen.has(id)) return null;
-      seen.add(id);
+    const inClass = (id: string, name = member, visited = seen): string | null => {
+      if (visited.has(id)) return null;
+      visited.add(id);
       const members = declModule.get(id);
-      for (const key of keys) {
+      for (const key of keysOf(name)) {
         const hit = members?.get(key);
         if (hit) return hit;
       }
+      const rules = classTraitRules.get(id) ?? [];
+      // `Loud::hello insteadof Quiet`: Quiet's `hello` is not the class's.
+      const excluded = (trait: string, method: string): boolean => rules.some((r) => r.insteadof?.includes(trait) === true && same(r.method, method));
       for (const trait of classTraits.get(id) ?? []) {
-        const hit = inClass(trait);
+        if (excluded(trait, name)) continue;
+        const hit = inClass(trait, name, visited);
         if (hit) return hit;
+      }
+      // `Quiet::hello as whisper`, `hello as shout`: the alias is that trait's method.
+      for (const rule of rules) {
+        if (rule.alias === undefined || !same(rule.alias, name)) continue;
+        for (const trait of rule.trait !== null ? [rule.trait] : (classTraits.get(id) ?? []).filter((t) => !excluded(t, rule.method))) {
+          const hit = inClass(trait, rule.method, new Set());
+          if (hit) return hit;
+        }
       }
       return null;
     };
@@ -832,6 +847,10 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
         const id = d.kind === "class" ? decls.ids.get(d) : undefined;
         if (!id) continue;
         if (d.traits) classTraits.set(id, d.traits.map(classNamed).filter((t): t is string => t !== null));
+        if (d.traitRules) {
+          const named = (written: string | null): string | null => (written === null ? null : classNamed(written));
+          classTraitRules.set(id, d.traitRules.map((r) => ({ ...r, trait: named(r.trait), ...(r.insteadof ? { insteadof: r.insteadof.map(named).filter((t): t is string => t !== null) } : {}) })));
+        }
         if (!d.base) continue;
         const internal = d.base.includes(".") ? resolveCallees(d.base, null, false).filter((t) => decls.classes.has(t)) : [classNamed(d.base)].filter((t): t is string => t !== null);
         // Whether an unread base is a package's or the language's is known in the class's own file.
