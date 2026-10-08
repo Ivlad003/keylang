@@ -1134,6 +1134,50 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
     const entry = found.last?.outside ? outsideByName.get(found.last.outside) : undefined;
     return entry ? memberHit({ kind: "outside", entry }, member) : null;
   };
+  /** Every base and trait of an `outside` class is read too: a member none of them declares is declared nowhere. */
+  const outsideChainRead = (entry: OutsideEntry, seen = new Set<string>()): boolean => {
+    const key = asciiLowerCase(entry.decl.name);
+    if (seen.has(key)) return true;
+    seen.add(key);
+    for (const name of [...(entry.decl.traits ?? []), ...(entry.decl.base ? [entry.decl.base] : [])]) {
+      const next = outsideByName.get(asciiLowerCase(name));
+      if (!next || !outsideChainRead(next, seen)) return false;
+    }
+    return true;
+  };
+  /** Every base and trait of a class is read — in the graph or `outside` — so what none of them declares, no class of the chain declares. */
+  const chainRead = (ty: Ty): boolean => {
+    if (ty.kind === "outside") return ty.entry.decl.kind !== "interface" && outsideChainRead(ty.entry);
+    if (ty.kind !== "class") return false;
+    const seen = new Set<string>();
+    let at: string | null = ty.id;
+    while (at !== null && !seen.has(at)) {
+      seen.add(at);
+      // A trait the class's file does not resolve is dropped from `classTraits`: then the chain is not all read.
+      if ((declById.get(at)?.decl.traits?.length ?? 0) !== (classTraits.get(at)?.length ?? 0)) return false;
+      const base = classBase.get(at);
+      if (!base) return true;
+      if (base.internal) {
+        at = base.internal;
+        continue;
+      }
+      const entry = base.outside ? outsideByName.get(base.outside) : undefined;
+      return entry !== undefined && outsideChainRead(entry);
+    }
+    return true;
+  };
+  /**
+   * PHP runs `__call` for a method no class of the value's chain declares (`$quote->getCouponCode()`
+   * on a `DataObject`): a fact of the language, not of the name, when every class of the chain is
+   * read. Null when the chain declares the member, declares no `__call`, or is not all read.
+   */
+  const magicHit = (ty: Ty, member: string): MemberHit | null => {
+    if (asciiLowerCase(member) === "__call" || !chainRead(ty)) return null;
+    const own = memberHit(ty, member);
+    if (own?.target || own?.outside) return null;
+    const hit = memberHit(ty, "__call");
+    return hit?.target || hit?.outside ? hit : null;
+  };
   /** The class a member's result has, given the class of the value it is called on; `element`: of an element of the array it returns. */
   const resultTy = (hit: MemberHit, recv: Ty | null, element: boolean): Typed | null => {
     if (hit.gives) return element ? null : { ty: hit.gives, indirect: true };
@@ -1543,6 +1587,11 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
         const pushOutside = (hit: { entry: OutsideEntry; name: string }, c: CallFact, extra: Partial<Call>): void => {
           push(hit.entry.module, c, { ...extra, member: `${hit.entry.decl.name}::${hit.name}` });
         };
+        /** A call PHP sends to `__call` (a method no class of the chain declares). */
+        const pushMagic = (hit: MemberHit, c: CallFact, extra: Partial<Call>): void => {
+          if (hit.target) push(hit.target, c, extra);
+          else if (hit.outside) pushOutside(hit.outside, c, extra);
+        };
         for (const c of d.calls) {
           // Whatever the call itself resolves to, the callables it passes are edges of their own.
           passCallables(c);
@@ -1624,6 +1673,12 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
               pushOutside(hit.outside, c, recvExtra);
               continue;
             }
+            // A method no class of the value's chain declares: PHP runs the chain's `__call`.
+            const magic = recv.ty.kind === "class" || recv.ty.kind === "outside" ? magicHit(recv.ty, member) : null;
+            if (magic) {
+              pushMagic(magic, c, recvExtra);
+              continue;
+            }
             // `$this->quoteFactory->create()`: the class the framework generates makes a `Quote` (ADR 0022, business-flows 40).
             if (recv.ty.kind === "factory" && asciiLowerCase(member) === asciiLowerCase(recv.ty.method)) {
               const made = recv.ty.of;
@@ -1687,6 +1742,12 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
             const hit = holder && (holder.kind === "class" || (holder.kind === "outside" && holder.entry.decl.kind !== "interface")) ? (parts.length === 2 ? memberHit(holder, parts[1]!)?.outside : holder.kind === "outside" ? { entry: holder.entry, name: "__construct" } : undefined) : undefined;
             if (hit) {
               pushOutside(hit, c, {});
+              continue;
+            }
+            // `$this->getCouponCode()` that no class of the chain declares: its `__call`.
+            const magic = head === "this" && holder ? magicHit(holder, parts[1]!) : null;
+            if (magic) {
+              pushMagic(magic, c, {});
               continue;
             }
           }

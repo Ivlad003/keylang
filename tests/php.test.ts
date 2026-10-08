@@ -47,7 +47,7 @@ interface Snapshot {
   manifest: { files: { path: string }[] };
   nodes: Record<string, { kind: string; doc: string | null; escapes?: { reason: string } }>;
   edges: { kind: string; source: string; target: string | null; resolution: string; text: string; provenance: string; docblock?: string; via?: string; closure?: true; site?: string; line: number; col: number }[];
-  coverage: { kind: string; file: string; line: number; reason: string; source: string | null }[];
+  coverage: { kind: string; file: string; line: number; reason: string; source: string | null; text?: string }[];
 }
 
 function snapshot(dir: string): Snapshot {
@@ -895,7 +895,7 @@ test("php: a local value has the class its declarations give — `new`, a declar
 /** A framework `outside` the architecture (ADR 0011) whose classes the architecture extends and calls. */
 const OUTSIDE_FILES: Record<string, string> = {
   "keylang.json": JSON.stringify({ languages: ["php"], layers: { app: ["src/App/**"], domain: ["src/Domain/**"] }, outside: ["lib/**"] }),
-  "lib/Fw/DataObject.php": "<?php\nnamespace Fw;\n\nclass DataObject\n{\n    public function __construct(array $data = []) {}\n\n    public function getData(string $key = '') { return null; }\n}\n",
+  "lib/Fw/DataObject.php": "<?php\nnamespace Fw;\n\nclass DataObject\n{\n    public function __construct(array $data = []) {}\n\n    public function getData(string $key = '') { return null; }\n\n    public function __call($method, $args) { return null; }\n}\n",
   "lib/Fw/AbstractModel.php": [
     "<?php",
     "namespace Fw;",
@@ -938,8 +938,9 @@ const OUTSIDE_FILES: Record<string, string> = {
     "        $this->save()->getRepo()->store();",
     "        $this->registry->registry('k');",
     "        $this->_eventManager->dispatch('order_placed');",
-    "        $this->missing();",
+    "        $this->registry->missing();",
     "        new Registry();",
+    "        $this->getCustomerId();",
     "    }",
     "}",
     "",
@@ -968,12 +969,14 @@ test("php: a file `outside` the architecture is read as declarations only — me
     // A property typed with an outside class, and `new` of one.
     "place 18 outside.lib.Fw.Registry Fw\\Registry::registry syntactic",
     "place 21 outside.lib.Fw.Registry Fw\\Registry::__construct syntactic",
+    // No class of the chain declares `getCustomerId`, and every one is read: PHP runs `__call`.
+    "place 22 outside.lib.Fw.DataObject Fw\\DataObject::__call syntactic",
   ]);
   const hole = (line: number): string | undefined => index.coverage.find((c) => c.source === "app.Order.Order.place" && c.line === line)?.reason;
   // A property the outside base types with an interface by `@var`: a call through an interface.
   assert.equal(hole(19), "call through an interface `ManagerInterface`");
-  // No declaration keylang read has it: still a hole.
-  assert.equal(hole(20), "unresolved call `this.missing`");
+  // No declaration keylang read has it, and its class has no `__call`: still a hole.
+  assert.equal(hole(20), "unresolved call `this.registry.missing`");
   // The outside files stay opaque modules: no fn nodes, no edges of their own, no holes but `outside-file`.
   assert.ok(Object.entries(index.nodes).every(([id, node]) => !id.startsWith("outside.") || node.kind === "module" || node.kind === "layer"));
   assert.ok(!index.edges.some((e) => e.source.startsWith("outside.")));
@@ -991,4 +994,22 @@ test("php: a file `outside` the architecture is read as declarations only — me
   const after = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as Snapshot & { snapshotId: string };
   assert.notEqual(after.snapshotId, id);
   assert.ok(after.coverage.some((c) => c.source === "app.Order.Order.place" && c.line === 18 && c.reason === "unresolved call `this.registry.registry`"), JSON.stringify(after.coverage));
+});
+
+test("php: a method no class of a fully read chain declares runs the chain's `__call`; with a base or trait keylang has not read it stays a hole", (t) => {
+  const dir = repo(t, {
+    "keylang.json": JSON.stringify({ languages: ["php"], layers: { app: ["src/**"] } }),
+    "src/Magic.php": "<?php\nnamespace App;\n\nclass Magic\n{\n    public function __call($method, $args) { return null; }\n}\n",
+    "src/Model.php": "<?php\nnamespace App;\n\nclass Model extends Magic\n{\n    public function save(): void\n    {\n        $this->getTitle();\n    }\n}\n",
+    "src/Partial.php": "<?php\nnamespace App;\n\nclass Partial extends \\Vendor\\Base\n{\n    public function __call($method, $args) { return null; }\n\n    public function save(): void\n    {\n        $this->getTitle();\n    }\n}\n",
+    "src/Helped.php": "<?php\nnamespace App;\n\nclass Helped extends Magic\n{\n    use \\Vendor\\Helpers;\n\n    public function save(): void\n    {\n        $this->getTitle();\n    }\n}\n",
+    "src/User.php": "<?php\nnamespace App;\n\nclass User\n{\n    public function run(Model $model): void\n    {\n        $model->getName();\n        $model->save();\n    }\n}\n",
+  });
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const index = snapshot(dir);
+  const calls = index.edges.filter((e) => e.kind === "call" && e.resolution === "resolved").map((e) => `${e.source} ${e.text} -> ${e.target}`).sort();
+  assert.deepEqual(calls, ["app.Model.Model.save this.getTitle -> app.Magic.Magic.__call", "app.User.User.run model.getName -> app.Magic.Magic.__call", "app.User.User.run model.save -> app.Model.Model.save"]);
+  // A base or a trait keylang has not read may declare the method: no `__call` is claimed.
+  assert.ok(index.coverage.some((c) => c.source === "app.Partial.Partial.save" && c.text === "this.getTitle"), JSON.stringify(index.coverage));
+  assert.ok(index.coverage.some((c) => c.source === "app.Helped.Helped.save" && c.text === "this.getTitle"), JSON.stringify(index.coverage));
 });
