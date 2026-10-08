@@ -30,12 +30,13 @@ function element<T extends HTMLElement>(id: string): T {
   return found as T;
 }
 
-/** Every view `/api/views` offers, in its order: flows, entry points, then the one layers view. */
+/** Every view `/api/views` offers, in its order: flows, entry points, the one layers view, then a view per process domain. */
 function itemsOf(views: Views): Item[] {
   return [
     ...views.flows.map((name): Item => ({ label: name, hint: "flow", query: { view: "flow", name } })),
     ...views.entries.map((entry): Item => ({ label: entry.label, hint: entry.kind, query: { view: "entry", id: entry.id } })),
     ...(views.layers.length > 0 ? [{ label: views.layers.join(" · "), hint: "layers", query: { view: "layers" } } satisfies Item] : []),
+    ...(views.domains ?? []).map((domain): Item => ({ label: domain, hint: "process", query: { view: "process", domain } })),
   ];
 }
 

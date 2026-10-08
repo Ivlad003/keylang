@@ -29,6 +29,7 @@ import type { ModuleStatus } from "../voice-local.ts";
 import type { TracePlan } from "../trace-plan.ts";
 import type { EntryKind, EntryPoint } from "../snapshot.ts";
 import type { DiscoveredFlow } from "../discover.ts";
+import type { BusinessProcess, NameMode } from "../discover-names.ts";
 
 /** The known operations. `doctor` is the first; new kinds arrive with their feature. */
 export interface DoctorRequest {
@@ -343,6 +344,29 @@ export interface FlowsDiscoverRequest {
   limit?: number;
   /** The depth of each draft; default 4. */
   depth?: number;
+  /**
+   * `--names` (business-flows/12): group the flows into business processes
+   * with a model, one request per layer group, into `<dir>/flows-discovered/README.md`.
+   * Only with `output: "write"`. `dryRun` asks and writes nothing; `stale`
+   * asks only for the layers of stale processes; `layer` (above) narrows the
+   * groups; `limit` and `jobs` bound the requests (not the flows).
+   */
+  names?: { mode: NameMode; dryRun: boolean; stale: boolean; limit?: number; jobs?: number };
+}
+
+/** What `--names` did: the groups asked for, the estimate, the stale processes, the processes now saved. */
+export interface FlowsNamesPayload {
+  mode: NameMode;
+  /** The agent asked; null when no model was asked (algo, a dry run, hybrid without a model). */
+  agent: string | null;
+  requests: { layer: string; flows: string[] }[];
+  estimate: { input: number; output: number };
+  stale: { name: string; layer: string }[];
+  /** Layers whose request failed, with the reason; their saved processes stay. */
+  failed: { layer: string; reason: string }[];
+  processes: BusinessProcess[];
+  /** `--dry-run`: the plan as the CLI prints it. */
+  text: string;
 }
 
 /**
@@ -943,6 +967,8 @@ export interface FlowsDiscoverPayload {
   conflicts: string[];
   /** `discovered N flows (M already specified), K with blind spots`. */
   summary: string;
+  /** `--names` only. */
+  names?: FlowsNamesPayload;
 }
 
 /** The discovered flow adopted, and the proposal written. */

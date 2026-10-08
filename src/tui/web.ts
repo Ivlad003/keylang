@@ -27,6 +27,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import { analyze, type Analysis } from "../analyze.ts";
 import { checkResults } from "../check-results.ts";
 import { diagramOf, parseView, viewsOf } from "../diagram.ts";
+import { processViews, readProcesses } from "../discover-names.ts";
 import { App, MAX_COLS, MAX_ROWS, type Analyzer, type OperationRunner } from "./app.ts";
 import { SnapshotWorker } from "./background.ts";
 import { ENTER } from "./screen.ts";
@@ -262,7 +263,9 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
     const view = path === "/api/diagram" ? parseView(query) : null;
     if (typeof view === "string") return reply(response, 400, "application/json", `${JSON.stringify({ error: view })}\n`);
     const done = await analysis();
-    const body = view === null ? viewsOf(done.snapshot, done.spec) : diagramOf({ snapshot: done.snapshot, spec: done.spec, results: checkResults(done.verdicts, done.snapshot?.snapshotId ?? null, done.diagnostics), view });
+    // The business processes `flows discover --names` saved, with their flows found again in this snapshot.
+    const processes = done.snapshot ? processViews(done.snapshot, done.spec, readProcesses(done.config.root, done.config.dir)) : [];
+    const body = view === null ? viewsOf(done.snapshot, done.spec, processes) : diagramOf({ snapshot: done.snapshot, spec: done.spec, results: checkResults(done.verdicts, done.snapshot?.snapshotId ?? null, done.diagnostics), view, processes });
     return reply(response, 200, "application/json", `${JSON.stringify(body)}\n`);
   };
 

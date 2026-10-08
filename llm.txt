@@ -256,6 +256,8 @@ Only if the person wants keylang itself to draft or explain:
 
 or `"openrouter:<model>"`. The key is `ANTHROPIC_API_KEY` or `OPENROUTER_API_KEY`, otherwise `~/.config/keylang/<provider>.key`. A key file that other users can read is rejected. This setting does not install you and does not replace the steps above.
 
+`keylang flows discover --names` groups the discovered flows into business processes (one model request per layer, `--dry-run` for the token estimate) in the generated `keylang/flows-discovered/README.md`; it is a view for people, never a verdict.
+
 ## Where to read the rest
 
 The course is the guide. This file is the install and the working cycle.

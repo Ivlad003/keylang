@@ -221,12 +221,14 @@ test("diagram: the same inputs give the same diagram; layout is pure and manual 
   for (const n of moved.nodes) if (n.id !== start.id) assert.deepEqual([n.x, n.y], [d.nodes.find((m) => m.id === n.id)!.x, d.nodes.find((m) => m.id === n.id)!.y]);
 });
 
-test("diagram: views list the flows, entries and layers; a query names one view or is refused", async (t) => {
+test("diagram: views list the flows, entries, layers and processes; a query names one view or is refused", async (t) => {
   const analysis = await analyzed(t, TS_SHOP);
   assert.deepEqual(viewsOf(analysis.snapshot, analysis.spec), {
     flows: ["checkout"],
     entries: [{ id: "presentation.cli", kind: "cli", label: "shop" }],
     layers: ["domain", "infrastructure", "application", "presentation", "external"],
+    domains: [],
+    processes: [],
   });
   const q = (text: string) => parseView(new URLSearchParams(text));
   assert.deepEqual(q("view=flow&name=checkout"), { kind: "flow", name: "checkout" });
