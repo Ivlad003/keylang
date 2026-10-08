@@ -1,0 +1,29 @@
+{
+  "schema": 7,
+  "snapshotId": "fixture",
+  "nodes": {
+    "quote": { "kind": "layer" },
+    "quote.Model.QuoteManagement": { "kind": "module", "layer": "quote", "file": "app/code/Magento/Quote/Model/QuoteManagement.php" },
+    "quote.Model.QuoteManagement.QuoteManagement.placeOrder": { "kind": "fn", "layer": "quote", "calls": [] },
+    "quote.Model.QuoteManagement.QuoteManagement.placeOrderRun": { "kind": "fn", "layer": "quote", "calls": ["quote.Model.QuoteManagement.QuoteManagement.submitQuote"] },
+    "quote.Model.QuoteManagement.QuoteManagement.submitQuote": { "kind": "fn", "layer": "quote", "calls": ["quote.Model.SubmitQuoteValidator.SubmitQuoteValidator.validateQuote"] },
+    "quote.Model.SubmitQuoteValidator.SubmitQuoteValidator.validateQuote": { "kind": "fn", "layer": "quote", "calls": [] },
+    "sales.Model.Service.OrderService.OrderService.place": { "kind": "fn", "layer": "sales", "calls": [] },
+    "external": { "kind": "layer" },
+    "external.psr-log": { "kind": "module", "layer": "external" }
+  },
+  "edges": [
+    { "kind": "call", "source": "quote.Model.QuoteManagement.QuoteManagement.placeOrderRun", "target": "quote.Model.QuoteManagement.QuoteManagement.submitQuote", "file": "app/code/Magento/Quote/Model/QuoteManagement.php", "line": 420, "col": 9, "text": "this.submitQuote", "resolution": "resolved", "provenance": "syntactic" },
+    { "kind": "call", "source": "quote.Model.QuoteManagement.QuoteManagement.submitQuote", "target": "quote.Model.SubmitQuoteValidator.SubmitQuoteValidator.validateQuote", "file": "app/code/Magento/Quote/Model/QuoteManagement.php", "line": 470, "col": 9, "text": "this.submitQuoteValidator.validateQuote", "resolution": "resolved", "provenance": "syntactic" },
+    { "kind": "call", "source": "quote.Model.QuoteManagement.QuoteManagement.placeOrder", "target": null, "file": "app/code/Magento/Quote/Model/QuoteManagement.php", "line": 402, "col": 16, "text": "this.cartMutex.execute", "resolution": "unresolved", "provenance": "syntactic" }
+  ],
+  "coverage": [
+    { "kind": "unresolved-call", "file": "app/code/Magento/Quote/Model/QuoteManagement.php", "line": 402, "col": 16, "text": "this.cartMutex.execute", "reason": "unresolved call `this.cartMutex.execute`", "source": "quote.Model.QuoteManagement.QuoteManagement.placeOrder" },
+    { "kind": "dynamic-call", "file": "app/code/Magento/Quote/Model/QuoteManagement.php", "line": 474, "col": 9, "text": "this.eventManager.dispatch", "reason": "call through an interface `ManagerInterface`", "source": "quote.Model.QuoteManagement.QuoteManagement.submitQuote" },
+    { "kind": "dynamic-call", "file": "app/code/Magento/Quote/Model/QuoteManagement.php", "line": 490, "col": 9, "text": "this.eventManager.dispatch", "reason": "call through an interface `ManagerInterface`", "source": "quote.Model.QuoteManagement.QuoteManagement.submitQuote" },
+    { "kind": "dynamic-call", "file": "app/code/Magento/Quote/Model/QuoteManagement.php", "line": 500, "col": 9, "text": "super.__construct", "reason": "call through `super` of `AbstractModel`", "source": "quote.Model.QuoteManagement.QuoteManagement.__construct" },
+    { "kind": "unresolved-import", "file": "app/code/Magento/Quote/Model/QuoteManagement.php", "line": 10, "col": 1, "text": "Magento\\Framework\\Event\\ManagerInterface", "reason": "unresolved import `Magento\\Framework\\Event\\ManagerInterface`", "source": "quote.Model.QuoteManagement" },
+    { "kind": "outside-file", "file": "lib/internal/Magento/Framework/Event/Manager.php", "line": 1, "col": 1, "text": "", "reason": "outside the architecture (`outside` in keylang.json)", "source": "outside.lib.internal.Magento.Framework.Event.Manager" }
+  ],
+  "stats": { "files": 4, "modules": 3, "fns": 5, "types": 0, "deps": 1, "callsResolved": 2, "callsUnresolved": 1, "callsExternal": 1, "callsDynamic": 3, "importsUnresolved": 1, "unassignedFiles": 0 }
+}

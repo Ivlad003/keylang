@@ -540,6 +540,9 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
       module.deps.push({ alias, target: target.id, ...at, reexport: imp.reexport, ...typeOnly, ...docblock });
       stats.deps++;
     }
+    // A table that may miss a public name: a glob import of this file brings names keylang cannot list,
+    // so a call through such a name is a hole, not a package's call, whatever other globs the file has.
+    if (facts.exportsIncomplete !== undefined) starFrom({ target: null, reason: facts.exportsIncomplete });
   }
 
   // 3b. Export tables: what each public name stands for, through aliases, re-exports and `export *`.

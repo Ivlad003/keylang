@@ -255,86 +255,86 @@
       <a id="check.rules.plannedDecl"></a><br>Looks up the planned entry in the spec whose `id` matches and returns its `decl` field, defaulting to `"fn"` when no match exists; used by [`check.rules.dependencyKindOf`](check.md#check.rules.dependencyKindOf) and [`check.rules.evaluateRules`](check.md#check.rules.evaluateRules) to classify declarations. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [evaluateOnSnapshot](../../src/rules.ts#L162) (rules: EvaluatedRules, index: Index, snapshot: SnapshotView, planned: readonly string[], format: RuleFormat) → RuleReport <!-- internal -->
       <a id="check.rules.evaluateOnSnapshot"></a><br>Checks a snapshot's module dependency edges against deny/allow/layer rules, emitting K101/K102/K107 failures and ok or unverified verdicts that account for coverage holes, using [`check.scc.stronglyConnected`](check.md#check.scc.stronglyConnected) for cycles. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
-      - calls [check.rules.listAt](check.md#check.rules.listAt), [check.rules.base](check.md#check.rules.base), [check.rules.holeAt](check.md#check.rules.holeAt), [check.rules.docblockNote](check.md#check.rules.docblockNote), [check.rules.ruleHits](check.md#check.rules.ruleHits), [check.rules.decide](check.md#check.rules.decide), [check.rules.crossRules](check.md#check.rules.crossRules), [check.rules.sameAreas](check.md#check.rules.sameAreas), [check.rules.layerViolation](check.md#check.rules.layerViolation), [check.rules.incomparableAside](check.md#check.rules.incomparableAside), [check.rules.componentSpec](check.md#check.rules.componentSpec), [check.rules.layerComponent](check.md#check.rules.layerComponent), [check.rules.holeText](check.md#check.rules.holeText), [check.rules.overrideEvidence](check.md#check.rules.overrideEvidence), [base.diag.diagnostic](base.md#base.diag.diagnostic), [check.rules.pointAt](check.md#check.rules.pointAt), [check.rules.hashText](check.md#check.rules.hashText), [check.resolve.Index.lookup](check.md#check.resolve.Index.lookup), [check.scc.stronglyConnected](check.md#check.scc.stronglyConnected), [check.scc.cycleThrough](check.md#check.scc.cycleThrough)
-    - type [Hole](../../src/rules.ts#L545) = SnapshotView["coverage"][number] <!-- internal -->
+      - calls [check.rules.base](check.md#check.rules.base), [check.rules.holeAt](check.md#check.rules.holeAt), [check.rules.docblockNote](check.md#check.rules.docblockNote), [check.rules.ruleHits](check.md#check.rules.ruleHits), [check.rules.decide](check.md#check.rules.decide), [check.rules.crossRules](check.md#check.rules.crossRules), [check.rules.sameAreas](check.md#check.rules.sameAreas), [check.rules.layerViolation](check.md#check.rules.layerViolation), [check.rules.incomparableAside](check.md#check.rules.incomparableAside), [check.rules.componentSpec](check.md#check.rules.componentSpec), [check.rules.layerComponent](check.md#check.rules.layerComponent), [check.rules.holeText](check.md#check.rules.holeText), [check.rules.listAt](check.md#check.rules.listAt), [check.rules.overrideEvidence](check.md#check.rules.overrideEvidence), [base.diag.diagnostic](base.md#base.diag.diagnostic), [check.rules.pointAt](check.md#check.rules.pointAt), [check.rules.hashText](check.md#check.rules.hashText), [check.resolve.Index.lookup](check.md#check.resolve.Index.lookup), [check.scc.stronglyConnected](check.md#check.scc.stronglyConnected), [check.scc.cycleThrough](check.md#check.scc.cycleThrough)
+    - type [Hole](../../src/rules.ts#L570) = SnapshotView["coverage"][number] <!-- internal -->
       <a id="check.rules.Hole"></a><br>A coverage entry of the snapshot: a hole when its kind is one of `DEPENDENCY_HOLES`.
-    - type [IndexedHole](../../src/rules.ts#L548) <!-- internal -->
+    - type [IndexedHole](../../src/rules.ts#L573) <!-- internal -->
       <a id="check.rules.IndexedHole"></a><br>A hole and its place in the coverage list, which decides between two holes of one module.
-    - fn [listAt](../../src/rules.ts#L553) (map: Map<string, T[]>, key: string) → T[] <!-- internal -->
+    - fn [listAt](../../src/rules.ts#L578) (map: Map<string, T[]>, key: string) → T[] <!-- internal -->
       <a id="check.rules.listAt"></a>
-    - fn [holeText](../../src/rules.ts#L562) (hole: Hole) → string <!-- internal -->
+    - fn [holeText](../../src/rules.ts#L587) (hole: Hole) → string <!-- internal -->
       <a id="check.rules.holeText"></a><br>`unresolved import (src/a.ts:1:19)`: the hole in a verdict's reason.
       - calls [check.rules.holeAt](check.md#check.rules.holeAt)
-    - fn [holeAt](../../src/rules.ts#L567) (hole: Hole) → string <!-- internal -->
+    - fn [holeAt](../../src/rules.ts#L592) (hole: Hole) → string <!-- internal -->
       <a id="check.rules.holeAt"></a><br>`src/a.ts:1:19`: where the hole is, the `hole` field of a verdict.
-    - fn [layerViolation](../../src/rules.ts#L574) (rules: EvaluatedRules, fromLayer: string, toLayer: string) → string | null <!-- internal -->
+    - fn [layerViolation](../../src/rules.ts#L599) (rules: EvaluatedRules, fromLayer: string, toLayer: string) → string | null <!-- internal -->
       <a id="check.rules.layerViolation"></a><br>Why a dependency between two layers breaks the layer orders, or null.
-    - fn [layerComponent](../../src/rules.ts#L583) (rules: EvaluatedRules, layer: string) → Set<string> <!-- internal -->
+    - fn [layerComponent](../../src/rules.ts#L608) (rules: EvaluatedRules, layer: string) → Set<string> <!-- internal -->
       <a id="check.rules.layerComponent"></a><br>Layers joined to `layer` by the undirected partial order, including `layer` itself.
-    - fn [componentSpec](../../src/rules.ts#L597) (rules: EvaluatedRules, layer: string) → string <!-- internal -->
+    - fn [componentSpec](../../src/rules.ts#L622) (rules: EvaluatedRules, layer: string) → string <!-- internal -->
       <a id="check.rules.componentSpec"></a><br>Canonical texts of the `layers` lines in `layer`'s connected order, one hash input.
       - calls [check.rules.layerComponent](check.md#check.rules.layerComponent)
-    - type [RuleHit](../../src/rules.ts#L606) <!-- internal -->
+    - type [RuleHit](../../src/rules.ts#L631) <!-- internal -->
       <a id="check.rules.RuleHit"></a><br>Records a single rule match against a dependency edge: whether the matched `Rule` allows or denies it, a specificity score used to rank competing hits, and the deepest target path of that rule covering the edge. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [OverrideNote](../../src/rules.ts#L614) <!-- internal -->
+    - type [OverrideNote](../../src/rules.ts#L639) <!-- internal -->
       <a id="check.rules.OverrideNote"></a><br>Record describing why one deny rule was overridden: the overriding rule's text and source location, whether the two rules' areas could not be compared, whether the deny was a baseline rule, and the specificity scores of winner and loser. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [ruleHits](../../src/rules.ts#L626) (rules: EvaluatedRules, from: string, to: string, within: (id: string, scope: string) => boolean) → RuleHit[] <!-- internal -->
+    - fn [ruleHits](../../src/rules.ts#L651) (rules: EvaluatedRules, from: string, to: string, within: (id: string, scope: string) => boolean) → RuleHit[] <!-- internal -->
       <a id="check.rules.ruleHits"></a><br>Every allow or deny that matches the edge, scored by the deepest target it names.
       - calls [check.rules.scopeDepth](check.md#check.rules.scopeDepth)
-    - fn [byHit](../../src/rules.ts#L649) (a: RuleHit, b: RuleHit) → number <!-- internal -->
+    - fn [byHit](../../src/rules.ts#L674) (a: RuleHit, b: RuleHit) → number <!-- internal -->
       <a id="check.rules.byHit"></a><br>Comparator that orders two rule hits by the file path of the rule that produced them, falling back to the rule's starting line number when the files match. Used to give rule hits a stable, source-ordered sort. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [dominates](../../src/rules.ts#L655) (a: RuleHit, b: RuleHit) → boolean <!-- internal -->
+    - fn [dominates](../../src/rules.ts#L680) (a: RuleHit, b: RuleHit) → boolean <!-- internal -->
       <a id="check.rules.dominates"></a><br>`a` is strictly more specific than `b`: neither of its areas is wider, and one is narrower.
       - calls [check.rules.areaWithin](check.md#check.rules.areaWithin)
-    - fn [crossRules](../../src/rules.ts#L662) (a: RuleHit, b: RuleHit) → boolean <!-- internal -->
+    - fn [crossRules](../../src/rules.ts#L687) (a: RuleHit, b: RuleHit) → boolean <!-- internal -->
       <a id="check.rules.crossRules"></a><br>One rule is narrower on the source and the other on the target.
       - calls [check.rules.areaWithin](check.md#check.rules.areaWithin)
-    - fn [sameAreas](../../src/rules.ts#L670) (a: RuleHit, b: RuleHit) → boolean <!-- internal -->
+    - fn [sameAreas](../../src/rules.ts#L695) (a: RuleHit, b: RuleHit) → boolean <!-- internal -->
       <a id="check.rules.sameAreas"></a><br>Compares two rule hits by their rule's source area and their target, returning true when both match. Used by [`check.rules.overManualRules`](check.md#check.rules.overManualRules) and [`check.rules.evaluateOnSnapshot`](check.md#check.rules.evaluateOnSnapshot) to group or deduplicate hits covering the same area pair. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [overManualRules](../../src/rules.ts#L675) (hits: readonly RuleHit[]) → RuleHit[] <!-- internal -->
+    - fn [overManualRules](../../src/rules.ts#L700) (hits: readonly RuleHit[]) → RuleHit[] <!-- internal -->
       <a id="check.rules.overManualRules"></a><br>The baseline is a lower rule layer: a manual hit over the same areas drops a generated one.
       - calls [check.rules.sameAreas](check.md#check.rules.sameAreas)
-    - fn [areaWithin](../../src/rules.ts#L679) (id: string, scope: string) → boolean <!-- internal -->
+    - fn [areaWithin](../../src/rules.ts#L704) (id: string, scope: string) → boolean <!-- internal -->
       <a id="check.rules.areaWithin"></a><br>Tests whether a dotted node ID equals a scope or sits beneath it as a dot-separated descendant, so [`check.rules.dominates`](check.md#check.rules.dominates), [`check.rules.crossRules`](check.md#check.rules.crossRules) and [`check.rules.incomparableWarnings`](check.md#check.rules.incomparableWarnings) can compare rule reach by area. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [decide](../../src/rules.ts#L688) (all: readonly RuleHit[], format: RuleFormat) → { winners: RuleHit[]; denyWins: boolean } <!-- internal -->
+    - fn [decide](../../src/rules.ts#L713) (all: readonly RuleHit[], format: RuleFormat) → { winners: RuleHit[]; denyWins: boolean } <!-- internal -->
       <a id="check.rules.decide"></a><br>First a manual hit drops a baseline hit over the same areas (both formats). Format 1: the greatest depth sum, and every `deny` on that sum.
       - calls [check.rules.overManualRules](check.md#check.rules.overManualRules), [check.rules.dominates](check.md#check.rules.dominates)
-    - fn [incomparableAside](../../src/rules.ts#L702) (deny: RuleHit, hits: readonly RuleHit[], format: RuleFormat) → string <!-- internal -->
+    - fn [incomparableAside](../../src/rules.ts#L727) (deny: RuleHit, hits: readonly RuleHit[], format: RuleFormat) → string <!-- internal -->
       <a id="check.rules.incomparableAside"></a><br>Builds the explanatory suffix listing allow rules that [`check.rules.crossRules`](check.md#check.rules.crossRules) deems incomparable with the winning deny, deduplicated per rule and sorted, saying why each lost (deny-overrides mode, depth-sum tie, or lower depth sum). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [check.rules.crossRules](check.md#check.rules.crossRules)
-    - fn [overrideEvidence](../../src/rules.ts#L719) (deny: Rule, targets: string, notes: readonly OverrideNote[]) → string <!-- internal -->
+    - fn [overrideEvidence](../../src/rules.ts#L744) (deny: Rule, targets: string, notes: readonly OverrideNote[]) → string <!-- internal -->
       <a id="check.rules.overrideEvidence"></a><br>Builds the explanatory sentence a rule report shows when a deny rule is overridden, sorting override notes into incomparable, more-specific, and manual-over-baseline groups and listing them with their winning scores or quoted rule texts; used by [`check.rules.evaluateOnSnapshot`](check.md#check.rules.evaluateOnSnapshot). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [incomparableWarnings](../../src/rules.ts#L735) (rules: EvaluatedRules, format: RuleFormat) → Diagnostic[] <!-- internal -->
+    - fn [incomparableWarnings](../../src/rules.ts#L760) (rules: EvaluatedRules, format: RuleFormat) → Diagnostic[] <!-- internal -->
       <a id="check.rules.incomparableWarnings"></a><br>One K106 per incomparable allow/deny line pair, on the allow line. Static: no snapshot required.
       - calls [check.rules.areaWithin](check.md#check.rules.areaWithin), [check.rules.scopeDepth](check.md#check.rules.scopeDepth), [base.diag.diagnostic](base.md#base.diag.diagnostic), [check.rules.hashText](check.md#check.rules.hashText)
-    - fn [canonicalRuleSpec](../../src/rules.ts#L779) (spec: SpecIR, file: string, line: number) → string | null
+    - fn [canonicalRuleSpec](../../src/rules.ts#L804) (spec: SpecIR, file: string, line: number) → string | null
       <a id="check.rules.canonicalRuleSpec"></a><br>Canonical text of the rule line at `file:line`, or null when that line is not a rule. K101, K103, and an unreachable module's entry verdict hash several lines themselves.
       - calls [check.rules.collectRules](check.md#check.rules.collectRules)
-    - fn [noSnapshotSpec](../../src/rules.ts#L796) (spec: SpecIR) → string
+    - fn [noSnapshotSpec](../../src/rules.ts#L821) (spec: SpecIR) → string
       <a id="check.rules.noSnapshotSpec"></a><br>Every rule line of the specs, valid or not, joined in file and line order. The hash of `no snapshot`.
-    - fn [firstRuleLine](../../src/rules.ts#L806) (spec: SpecIR) → { file: string; span: Span } | null <!-- internal -->
+    - fn [firstRuleLine](../../src/rules.ts#L831) (spec: SpecIR) → { file: string; span: Span } | null <!-- internal -->
       <a id="check.rules.firstRuleLine"></a><br>The first rule line in file, line and column order, a rejected `layers` line included; null without one.
-    - fn [scopeDepth](../../src/rules.ts#L815) (id: string) → number
+    - fn [scopeDepth](../../src/rules.ts#L840) (id: string) → number
       <a id="check.rules.scopeDepth"></a><br>How specific a scope is: its depth in segments (`app.purchase` is 2), not its length in characters.
-    - fn [specific](../../src/rules.ts#L826) (rules: EvaluatedRules, from: string, to: string, within: (id: string, scope: string) => boolean) → { kind: "allow" | "deny"; rule: Rule } | null <!-- internal -->
+    - fn [specific](../../src/rules.ts#L851) (rules: EvaluatedRules, from: string, to: string, within: (id: string, scope: string) => boolean) → { kind: "allow" | "deny"; rule: Rule } | null <!-- internal -->
       <a id="check.rules.specific"></a><br>The rule that decides `from → to` in format 1: the one whose scopes are deepest in total (`deny app.purchase domain` and `allow app domain.store` both 3), a `deny` on a tie. Format 2 keeps every undominated rule and lets any undominated `deny` win (deny-overrides), so an…
       - calls [check.rules.decide](check.md#check.rules.decide), [check.rules.ruleHits](check.md#check.rules.ruleHits)
-    - type [EvaluatedRules](../../src/rules.ts#L832) <!-- internal -->
+    - type [EvaluatedRules](../../src/rules.ts#L857) <!-- internal -->
       <a id="check.rules.EvaluatedRules"></a><br>Holds the parsed, validated result of the rules file: layer orders merged into one "above" partial order, allow/deny rules, entry points, no-cycle and exports constraints, plus diagnostics for rules dropped as unevaluable. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [collectRules](../../src/rules.ts#L853) (spec: SpecIR, kindOf: (id: string) => string | undefined) → EvaluatedRules <!-- internal -->
+    - fn [collectRules](../../src/rules.ts#L878) (spec: SpecIR, kindOf: (id: string) => string | undefined) → EvaluatedRules <!-- internal -->
       <a id="check.rules.collectRules"></a><br>Sorts spec rules into allow/deny, entry, no-cycles and exports lists, flagging K005 via [`base.diag.diagnostic`](base.md#base.diag.diagnostic) when a dependency rule names a function or member, and merges layer chains through [`check.rules.combineOrders`](check.md#check.rules.combineOrders). _(llm · claude:claude-opus-5-5 · 2026-10-05)_
       - calls [base.diag.diagnostic](base.md#base.diag.diagnostic), [check.rules.combineOrders](check.md#check.rules.combineOrders)
-    - fn [combineOrders](../../src/rules.ts#L911) (chains: readonly LayerOrder[], diagnostics: Diagnostic[]) → { orders: LayerOrder[]; above: Map<string, Set<string>> } <!-- internal -->
+    - fn [combineOrders](../../src/rules.ts#L936) (chains: readonly LayerOrder[], diagnostics: Diagnostic[]) → { orders: LayerOrder[]; above: Map<string, Set<string>> } <!-- internal -->
       <a id="check.rules.combineOrders"></a><br>All `layers` lines as one partial order: `a < b` and `b < c` put `c` above `a`, while `a < b` and `c < d` say nothing about `a` and `d`. A line that contradicts the lines before it is K005 and left out.
       - calls [base.diag.diagnostic](base.md#base.diag.diagnostic), [check.rules.transitive](check.md#check.rules.transitive)
-    - fn [transitive](../../src/rules.ts#L941) (direct: ReadonlyMap<string, ReadonlySet<string>>) → Map<string, Set<string>> <!-- internal -->
+    - fn [transitive](../../src/rules.ts#L966) (direct: ReadonlyMap<string, ReadonlySet<string>>) → Map<string, Set<string>> <!-- internal -->
       <a id="check.rules.transitive"></a><br>Computes the transitive closure of a directed graph given as adjacency sets, using an iterative depth-first walk from every key. [`check.rules.combineOrders`](check.md#check.rules.combineOrders) uses it to derive which layers sit above which others. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [pointAt](../../src/rules.ts#L958) (line: number, col: number) → Span <!-- internal -->
+    - fn [pointAt](../../src/rules.ts#L983) (line: number, col: number) → Span <!-- internal -->
       <a id="check.rules.pointAt"></a><br>A one-column span at a code position (a rule finding has no source offset).
-    - fn [base](../../src/rules.ts#L963) (snapshot: SnapshotView, criterion: string, area: string, verdict: Verdict["verdict"], file: string, line: number, col: number, code: string | null, message: string, spec = criterion) → Verdict <!-- internal -->
+    - fn [base](../../src/rules.ts#L988) (snapshot: SnapshotView, criterion: string, area: string, verdict: Verdict["verdict"], file: string, line: number, col: number, code: string | null, message: string, spec = criterion) → Verdict <!-- internal -->
       <a id="check.rules.base"></a><br>`spec` is the rule as written; its hash changes when the rule does.
       - calls [check.rules.hashText](check.md#check.rules.hashText)
-    - fn [hashText](../../src/rules.ts#L967) (text: string) → string <!-- internal -->
+    - fn [hashText](../../src/rules.ts#L992) (text: string) → string <!-- internal -->
       <a id="check.rules.hashText"></a><br>Computes the SHA-256 digest of a string and returns it as a hex string. Used by [`check.rules.base`](check.md#check.rules.base) and the other callers to fingerprint message or code text for stable verdict identity. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [scc](../../src/scc.ts#L1)
     <a id="check.scc"></a><br>Strongly connected components of a directed module graph. A component is cyclic when it has two or more modules, or a self-loop.
@@ -390,88 +390,88 @@
     - type [TraceSpan](../../src/trace-evidence.ts#L19)
       <a id="check.trace-evidence.TraceSpan"></a><br>Shape of one recorded execution span in a trace: its own id, optional parent id, the symbol it covers, linked span ids, a start `Mark`, and an end `Mark` carrying an `outcome` string, or null while the span is still open. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - type [TraceRun](../../src/trace-evidence.ts#L28)
-      <a id="check.trace-evidence.TraceRun"></a><br>Describes one test run reconstructed from trace files: its identifiers, snapshot, spans, and whether the run finished. Also records dropped events, spans left open, and the set of instrumented symbols when known. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [RunDraft](../../src/trace-evidence.ts#L51) <!-- internal -->
+      <a id="check.trace-evidence.TraceRun"></a><br>Describes one test run reconstructed from trace files: its identifiers, snapshot, spans, and whether the run finished. Also records dropped events, spans left open, and the set of instrumented symbols when known. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+    - type [RunDraft](../../src/trace-evidence.ts#L56) <!-- internal -->
       <a id="check.trace-evidence.RunDraft"></a><br>A run as it is read. Spans are keyed by id, so a start and the end that closes it are found without a scan; an end whose start is in a file not read yet waits for the last file. `run` events accumulate until every file is read.
-    - fn [loadTraces](../../src/trace-evidence.ts#L71) (root: string, files: readonly string[]) → TraceRun[]
+    - fn [loadTraces](../../src/trace-evidence.ts#L82) (root: string, files: readonly string[]) → TraceRun[]
       <a id="check.trace-evidence.loadTraces"></a><br>Read and validate trace files. A malformed line is an error naming file and line.
       - calls [check.trace-evidence.eachLine](check.md#check.trace-evidence.eachLine), [check.trace-evidence.readEvent](check.md#check.trace-evidence.readEvent)
-    - fn [eachLine](../../src/trace-evidence.ts#L84) (path: string, visit: (text: string, line: number) => void) → void <!-- internal -->
+    - fn [eachLine](../../src/trace-evidence.ts#L95) (path: string, visit: (text: string, line: number) => void) → void <!-- internal -->
       <a id="check.trace-evidence.eachLine"></a><br>Each line of a file (1-based), read in chunks: a trace of millions of events may not fit in one string.
-    - fn [readEvent](../../src/trace-evidence.ts#L102) (runs: Map<string, RunDraft>, file: string, line: number, text: string) → void <!-- internal -->
+    - fn [readEvent](../../src/trace-evidence.ts#L113) (runs: Map<string, RunDraft>, file: string, line: number, text: string) → void <!-- internal -->
       <a id="check.trace-evidence.readEvent"></a>
-    - fn [finishRun](../../src/trace-evidence.ts#L179) (draft: RunDraft) → TraceRun <!-- internal -->
+    - fn [finishRun](../../src/trace-evidence.ts#L197) (draft: RunDraft) → TraceRun <!-- internal -->
       <a id="check.trace-evidence.finishRun"></a><br>The run once every file is read: each end closes its start, wherever the two were.
-    - type [ShapeNode](../../src/trace-evidence.ts#L204)
+    - type [ShapeNode](../../src/trace-evidence.ts#L226)
       <a id="check.trace-evidence.ShapeNode"></a><br>A flow as trace matching sees it. `key` identifies the spec node across runs.
-    - type [TraceEvidence](../../src/trace-evidence.ts#L206)
+    - type [TraceEvidence](../../src/trace-evidence.ts#L228)
       <a id="check.trace-evidence.TraceEvidence"></a><br>Describes the outcome of verifying a trace: a three-state verdict (`ok`, `fail`, or `unverified`) with a human-readable message, plus optional run and test identifiers that are null when no linked run or test was found. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Outcome](../../src/trace-evidence.ts#L213) = TraceEvidence <!-- internal -->
+    - type [Outcome](../../src/trace-evidence.ts#L235) = TraceEvidence <!-- internal -->
       <a id="check.trace-evidence.Outcome"></a><br>A local type alias that names the result of a trace-evidence check as the same shape as `TraceEvidence`, so the check's output type reads as an outcome without adding any new fields or behavior. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [traceFlow](../../src/trace-evidence.ts#L221) (runs: readonly TraceRun[], flow: string, trigger: { key: number; id: string } | null, shape: readonly ShapeNode[], snapshotId: string | null) → Map<number, TraceEvidence>
+    - fn [traceFlow](../../src/trace-evidence.ts#L243) (runs: readonly TraceRun[], flow: string, trigger: { key: number; id: string } | null, shape: readonly ShapeNode[], snapshotId: string | null) → Map<number, TraceEvidence>
       <a id="check.trace-evidence.traceFlow"></a><br>Trace verdicts for every step and `when` of one flow, keyed by `ShapeNode.key`. The trigger (if any) must be observed; its steps are matched inside it.
       - calls [check.trace-evidence.keysOf](check.md#check.trace-evidence.keysOf), [check.trace-evidence.Matcher.match](check.md#check.trace-evidence.Matcher.match), [check.trace-evidence.Matcher](check.md#check.trace-evidence.Matcher)
-    - fn [keysOf](../../src/trace-evidence.ts#L264) (nodes: readonly ShapeNode[]) → number[] <!-- internal -->
+    - fn [keysOf](../../src/trace-evidence.ts#L286) (nodes: readonly ShapeNode[]) → number[] <!-- internal -->
       <a id="check.trace-evidence.keysOf"></a><br>Flattens a tree of shape nodes into a pre-order list of their numeric keys, recursing into each node's `children`. Used by [`check.trace-evidence.traceFlow`](check.md#check.trace-evidence.traceFlow) and the `Matcher` methods to enumerate every key a shape covers. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - module [OverBudget](../../src/trace-evidence.ts#L271) <!-- internal -->
+    - module [OverBudget](../../src/trace-evidence.ts#L293) <!-- internal -->
       <a id="check.trace-evidence.OverBudget"></a><br>An empty `Error` subclass with no extra fields or behavior, used as a distinct throwable type that callers can catch to recognize this specific failure when a limit is exceeded during trace-evidence checking. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Assignment](../../src/trace-evidence.ts#L274) <!-- internal -->
+    - type [Assignment](../../src/trace-evidence.ts#L296) <!-- internal -->
       <a id="check.trace-evidence.Assignment"></a><br>Spans assigned to flow nodes: an outcome per node and the spans it took.
-    - fn [assignment](../../src/trace-evidence.ts#L283) (outcomes: [number, Outcome][], spans: string[] = []) → Assignment <!-- internal -->
+    - fn [assignment](../../src/trace-evidence.ts#L305) (outcomes: [number, Outcome][], spans: string[] = []) → Assignment <!-- internal -->
       <a id="check.trace-evidence.assignment"></a><br>Builds the result record the matcher returns from [`check.trace-evidence.Matcher.branch`](check.md#check.trace-evidence.Matcher.branch), [`check.trace-evidence.Matcher.solve`](check.md#check.trace-evidence.Matcher.solve) and [`check.trace-evidence.Matcher.take`](check.md#check.trace-evidence.Matcher.take), bundling the index–outcome pairs and span IDs. It also precomputes counts of outcomes whose verdict is "ok"… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [combine](../../src/trace-evidence.ts#L287) (...parts: Assignment[]) → Assignment <!-- internal -->
+    - fn [combine](../../src/trace-evidence.ts#L309) (...parts: Assignment[]) → Assignment <!-- internal -->
       <a id="check.trace-evidence.combine"></a><br>Merges several `Assignment` values into one by concatenating their outcomes and spans and summing their `ok` and `fail` counts. Used by [`check.trace-evidence.Matcher.branch`](check.md#check.trace-evidence.Matcher.branch), [`check.trace-evidence.Matcher.solve`](check.md#check.trace-evidence.Matcher.solve), and [`check.trace-evidence.Matcher.take`](check.md#check.trace-evidence.Matcher.take) to fold sub-results… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [better](../../src/trace-evidence.ts#L292) (a: Assignment, b: Assignment) → boolean <!-- internal -->
+    - fn [better](../../src/trace-evidence.ts#L314) (a: Assignment, b: Assignment) → boolean <!-- internal -->
       <a id="check.trace-evidence.better"></a><br>More steps observed wins, then fewer failures; an earlier candidate keeps a tie.
-    - module [Matcher](../../src/trace-evidence.ts#L302) <!-- internal -->
+    - module [Matcher](../../src/trace-evidence.ts#L324) <!-- internal -->
       <a id="check.trace-evidence.Matcher"></a><br>Matches one run against a flow. A test may call the trigger or a step more than once (an early `return` first, the real call later), so every span of a symbol is a candidate: the search keeps the assignment with the most observed steps, and a step fails only when no assignment…
-      - fn [constructor](../../src/trace-evidence.ts#L315) (run: TraceRun)
+      - fn [constructor](../../src/trace-evidence.ts#L337) (run: TraceRun)
         <a id="check.trace-evidence.Matcher.constructor"></a><br>Stores the given trace run and indexes every span by its own ID and under its parent's ID, so later lookups can find a span directly or list the children of any span. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - fn [match](../../src/trace-evidence.ts#L326) (nodes: readonly ShapeNode[], trigger: boolean) → [number, Outcome][]
+      - fn [match](../../src/trace-evidence.ts#L348) (nodes: readonly ShapeNode[], trigger: boolean) → [number, Outcome][]
         <a id="check.trace-evidence.Matcher.match"></a><br>Outcomes for `nodes` (the trigger with the steps inside it when `trigger`).
         - calls [check.trace-evidence.Matcher.list](check.md#check.trace-evidence.Matcher.list), [check.trace-evidence.keysOf](check.md#check.trace-evidence.keysOf), [check.trace-evidence.Matcher.base](check.md#check.trace-evidence.Matcher.base), [check.trace-evidence.Matcher.incompleteness](check.md#check.trace-evidence.Matcher.incompleteness)
-      - fn [base](../../src/trace-evidence.ts#L340) () → { runId: string; testId: string } <!-- internal -->
+      - fn [base](../../src/trace-evidence.ts#L362) () → { runId: string; testId: string } <!-- internal -->
         <a id="check.trace-evidence.Matcher.base"></a><br>Builds the shared `{ runId, testId }` fields that identify the current run, which [`check.trace-evidence.Matcher.branch`](check.md#check.trace-evidence.Matcher.branch), [`check.trace-evidence.Matcher.match`](check.md#check.trace-evidence.Matcher.match), [`check.trace-evidence.Matcher.orderOutcome`](check.md#check.trace-evidence.Matcher.orderOutcome), and [`check.trace-evidence.Matcher.solve`](check.md#check.trace-evidence.Matcher.solve) stamp onto the outcomes they… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - fn [descendants](../../src/trace-evidence.ts#L345) (parent: TraceSpan | null) → TraceSpan[] <!-- internal -->
+      - fn [descendants](../../src/trace-evidence.ts#L367) (parent: TraceSpan | null) → TraceSpan[] <!-- internal -->
         <a id="check.trace-evidence.Matcher.descendants"></a><br>Spans under `parent` (all spans for null), depth-first in start order.
-      - fn [candidates](../../src/trace-evidence.ts#L364) (parent: TraceSpan | null, id: string) → TraceSpan[] <!-- internal -->
+      - fn [candidates](../../src/trace-evidence.ts#L386) (parent: TraceSpan | null, id: string) → TraceSpan[] <!-- internal -->
         <a id="check.trace-evidence.Matcher.candidates"></a><br>Collects the spans under `parent` via [`check.trace-evidence.Matcher.descendants`](check.md#check.trace-evidence.Matcher.descendants), keeping only those whose symbol matches `id` and that are not yet marked used. Feeds candidate spans to [`check.trace-evidence.Matcher.branch`](check.md#check.trace-evidence.Matcher.branch) and [`check.trace-evidence.Matcher.solve`](check.md#check.trace-evidence.Matcher.solve). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
         - calls [check.trace-evidence.Matcher.descendants](check.md#check.trace-evidence.Matcher.descendants)
-      - fn [incompleteness](../../src/trace-evidence.ts#L369) () → string | null <!-- internal -->
+      - fn [incompleteness](../../src/trace-evidence.ts#L391) () → string | null <!-- internal -->
         <a id="check.trace-evidence.Matcher.incompleteness"></a><br>Why the run cannot confirm or refute what it shows, or null for a finished run.
-      - fn [absenceDoubt](../../src/trace-evidence.ts#L378) (id: string) → string | null <!-- internal -->
+      - fn [absenceDoubt](../../src/trace-evidence.ts#L401) (id: string) → string | null <!-- internal -->
         <a id="check.trace-evidence.Matcher.absenceDoubt"></a><br>Why an unobserved step is not a proven absence, or null when it is.
         - calls [check.trace-evidence.Matcher.incompleteness](check.md#check.trace-evidence.Matcher.incompleteness)
-      - fn [bound](../../src/trace-evidence.ts#L387) (parent: TraceSpan | null, node: ShapeNode) → number <!-- internal -->
+      - fn [bound](../../src/trace-evidence.ts#L410) (parent: TraceSpan | null, node: ShapeNode) → number <!-- internal -->
         <a id="check.trace-evidence.Matcher.bound"></a><br>The most steps of `node` and below that any assignment under `parent` could observe.
         - calls [check.trace-evidence.Matcher.descendants](check.md#check.trace-evidence.Matcher.descendants)
-      - fn [symbolsFrom](../../src/trace-evidence.ts#L399) (nodes: readonly ShapeNode[], i: number) → Set<string> <!-- internal -->
+      - fn [symbolsFrom](../../src/trace-evidence.ts#L422) (nodes: readonly ShapeNode[], i: number) → Set<string> <!-- internal -->
         <a id="check.trace-evidence.Matcher.symbolsFrom"></a><br>Symbols of `nodes[i..]` and everything under them.
-      - fn [list](../../src/trace-evidence.ts#L423) (parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, previous: TraceSpan | null, trigger: boolean) → Assignment <!-- internal -->
+      - fn [list](../../src/trace-evidence.ts#L446) (parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, previous: TraceSpan | null, trigger: boolean) → Assignment <!-- internal -->
         <a id="check.trace-evidence.Matcher.list"></a><br>The best assignment for `nodes[i..]` under `parent`, the sibling before them matched to `previous`. Memoized: the answer depends on the spans taken so far only through those it could take itself, so the search stays polynomial in the spans of a symbol.
         - calls [check.trace-evidence.Matcher.symbolsFrom](check.md#check.trace-evidence.Matcher.symbolsFrom), [check.trace-evidence.Matcher.descendants](check.md#check.trace-evidence.Matcher.descendants), [check.trace-evidence.Matcher.solve](check.md#check.trace-evidence.Matcher.solve)
-      - fn [solve](../../src/trace-evidence.ts#L447) (parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, previous: TraceSpan | null, trigger: boolean) → Assignment <!-- internal -->
-        <a id="check.trace-evidence.Matcher.solve"></a><br>Matches one shape step against trace spans under a parent, delegating `when` nodes to [`check.trace-evidence.Matcher.branch`](check.md#check.trace-evidence.Matcher.branch), trying each in-order candidate via [`check.trace-evidence.Matcher.take`](check.md#check.trace-evidence.Matcher.take) and keeping the best by [`check.trace-evidence.better`](check.md#check.trace-evidence.better). When no span fits it emits… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      - fn [solve](../../src/trace-evidence.ts#L470) (parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, previous: TraceSpan | null, trigger: boolean) → Assignment <!-- internal -->
+        <a id="check.trace-evidence.Matcher.solve"></a><br>Matches one shape step against trace spans under a parent, delegating `when` nodes to [`check.trace-evidence.Matcher.branch`](check.md#check.trace-evidence.Matcher.branch), trying each in-order candidate via [`check.trace-evidence.Matcher.take`](check.md#check.trace-evidence.Matcher.take) and keeping the best by [`check.trace-evidence.better`](check.md#check.trace-evidence.better). When no span fits it emits… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
         - calls [check.trace-evidence.Matcher.branch](check.md#check.trace-evidence.Matcher.branch), [check.trace-evidence.Matcher.candidates](check.md#check.trace-evidence.Matcher.candidates), [check.trace-evidence.startsBefore](check.md#check.trace-evidence.startsBefore), [check.trace-evidence.Matcher.bound](check.md#check.trace-evidence.Matcher.bound), [check.trace-evidence.Matcher.take](check.md#check.trace-evidence.Matcher.take), [check.trace-evidence.Matcher.orderOutcome](check.md#check.trace-evidence.Matcher.orderOutcome), [check.trace-evidence.better](check.md#check.trace-evidence.better), [check.trace-evidence.Matcher.base](check.md#check.trace-evidence.Matcher.base), [check.trace-evidence.Matcher.absenceDoubt](check.md#check.trace-evidence.Matcher.absenceDoubt), [check.trace-evidence.Matcher.outsideRoot](check.md#check.trace-evidence.Matcher.outsideRoot), [check.trace-evidence.combine](check.md#check.trace-evidence.combine), [check.trace-evidence.assignment](check.md#check.trace-evidence.assignment), [check.trace-evidence.keysOf](check.md#check.trace-evidence.keysOf), [check.trace-evidence.Matcher.list](check.md#check.trace-evidence.Matcher.list)
-      - fn [take](../../src/trace-evidence.ts#L478) (parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, node: ShapeNode, span: TraceSpan, outcome: Outcome, trigger: boolean) → Assignment <!-- internal -->
+      - fn [take](../../src/trace-evidence.ts#L501) (parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, node: ShapeNode, span: TraceSpan, outcome: Outcome, trigger: boolean) → Assignment <!-- internal -->
         <a id="check.trace-evidence.Matcher.take"></a><br>`span` as `node`: its children are matched inside it, the siblings after it.
         - calls [check.trace-evidence.OverBudget](check.md#check.trace-evidence.OverBudget), [check.trace-evidence.Matcher.list](check.md#check.trace-evidence.Matcher.list), [check.trace-evidence.combine](check.md#check.trace-evidence.combine), [check.trace-evidence.assignment](check.md#check.trace-evidence.assignment)
-      - fn [branch](../../src/trace-evidence.ts#L490) (parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, node: ShapeNode, previous: TraceSpan | null, trigger: boolean) → Assignment <!-- internal -->
+      - fn [branch](../../src/trace-evidence.ts#L513) (parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, node: ShapeNode, previous: TraceSpan | null, trigger: boolean) → Assignment <!-- internal -->
         <a id="check.trace-evidence.Matcher.branch"></a><br>A `when` is exercised in this test when its first step is observed; its steps are not ordered after the siblings before it.
         - calls [check.trace-evidence.Matcher.candidates](check.md#check.trace-evidence.Matcher.candidates), [check.trace-evidence.Matcher.base](check.md#check.trace-evidence.Matcher.base), [check.trace-evidence.combine](check.md#check.trace-evidence.combine), [check.trace-evidence.assignment](check.md#check.trace-evidence.assignment), [check.trace-evidence.keysOf](check.md#check.trace-evidence.keysOf), [check.trace-evidence.Matcher.list](check.md#check.trace-evidence.Matcher.list)
-      - fn [rootSpan](../../src/trace-evidence.ts#L504) (span: TraceSpan) → TraceSpan <!-- internal -->
+      - fn [rootSpan](../../src/trace-evidence.ts#L527) (span: TraceSpan) → TraceSpan <!-- internal -->
         <a id="check.trace-evidence.Matcher.rootSpan"></a><br>Root of the `parentSpanId` chain. A span whose parent is missing is its own root.
-      - fn [outsideRoot](../../src/trace-evidence.ts#L521) (parent: TraceSpan, id: string) → TraceSpan | null <!-- internal -->
+      - fn [outsideRoot](../../src/trace-evidence.ts#L544) (parent: TraceSpan, id: string) → TraceSpan | null <!-- internal -->
         <a id="check.trace-evidence.Matcher.outsideRoot"></a><br>A span of `id` whose call tree is not the parent's, and which did not start before the parent image on the same clock. Spans that did start earlier, and spans in the parent's own tree, stay a confirmed absence.
         - calls [check.trace-evidence.Matcher.rootSpan](check.md#check.trace-evidence.Matcher.rootSpan), [check.trace-evidence.startsBefore](check.md#check.trace-evidence.startsBefore)
-      - fn [nestedIn](../../src/trace-evidence.ts#L533) (span: TraceSpan, ancestor: TraceSpan) → boolean <!-- internal -->
+      - fn [nestedIn](../../src/trace-evidence.ts#L556) (span: TraceSpan, ancestor: TraceSpan) → boolean <!-- internal -->
         <a id="check.trace-evidence.Matcher.nestedIn"></a><br>`span`'s parent chain passes through `ancestor` (the image of the previous sibling).
-      - fn [orderOutcome](../../src/trace-evidence.ts#L544) (parent: TraceSpan | null, span: TraceSpan, after: TraceSpan | null) → Outcome <!-- internal -->
+      - fn [orderOutcome](../../src/trace-evidence.ts#L567) (parent: TraceSpan | null, span: TraceSpan, after: TraceSpan | null) → Outcome <!-- internal -->
         <a id="check.trace-evidence.Matcher.orderOutcome"></a><br>Decides whether a matched span is validly ordered against its parent and the preceding sibling, using [`check.trace-evidence.Matcher.nestedIn`](check.md#check.trace-evidence.Matcher.nestedIn) and [`check.trace-evidence.sameClock`](check.md#check.trace-evidence.sameClock). Returns fail when nested in the predecessor, unverified for async children or cross-clock/parallel… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
         - calls [check.trace-evidence.Matcher.nestedIn](check.md#check.trace-evidence.Matcher.nestedIn), [check.trace-evidence.Matcher.base](check.md#check.trace-evidence.Matcher.base), [check.trace-evidence.sameClock](check.md#check.trace-evidence.sameClock)
-    - fn [sameClock](../../src/trace-evidence.ts#L564) (a: Mark, b: Mark) → boolean <!-- internal -->
+    - fn [sameClock](../../src/trace-evidence.ts#L587) (a: Mark, b: Mark) → boolean <!-- internal -->
       <a id="check.trace-evidence.sameClock"></a><br>Reports whether two marks carry the same `clockId`, so callers like [`check.trace-evidence.startsBefore`](check.md#check.trace-evidence.startsBefore) and [`check.trace-evidence.Matcher.orderOutcome`](check.md#check.trace-evidence.Matcher.orderOutcome) only compare timestamps that share a clock. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [startsBefore](../../src/trace-evidence.ts#L568) (span: TraceSpan, other: TraceSpan) → boolean <!-- internal -->
+    - fn [startsBefore](../../src/trace-evidence.ts#L591) (span: TraceSpan, other: TraceSpan) → boolean <!-- internal -->
       <a id="check.trace-evidence.startsBefore"></a><br>Returns true when both spans' start marks share a clock per [`check.trace-evidence.sameClock`](check.md#check.trace-evidence.sameClock) and the first span's start sequence number is strictly lower. Used by [`check.trace-evidence.Matcher.solve`](check.md#check.trace-evidence.Matcher.solve) and [`check.trace-evidence.Matcher.outsideRoot`](check.md#check.trace-evidence.Matcher.outsideRoot) to order spans. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [check.trace-evidence.sameClock](check.md#check.trace-evidence.sameClock)
   - module [verdict](../../src/verdict.ts#L1)

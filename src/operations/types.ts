@@ -27,6 +27,7 @@ import type { CommittedStep, SourceInputs } from "../map.ts";
 import type { CoverageItem } from "../snapshot.ts";
 import type { ModuleStatus } from "../voice-local.ts";
 import type { TracePlan } from "../trace-plan.ts";
+import type { EntryKind, EntryPoint } from "../snapshot.ts";
 
 /** The known operations. `doctor` is the first; new kinds arrive with their feature. */
 export interface DoctorRequest {
@@ -308,6 +309,19 @@ export interface TracePlanRequest {
 }
 
 /**
+ * The entry points of a fresh snapshot of the saved code (`keylang entries
+ * [--kind k]`, MCP `list_entries`, «Entry points» in the TUI). Read-only:
+ * writes only the fact cache, best-effort, like `check`.
+ */
+export interface EntriesRequest {
+  kind: "entries";
+  /** Repository root (absolute). */
+  root: string;
+  /** Only entry points of this kind; absent: every kind. */
+  only?: EntryKind;
+}
+
+/**
  * A flow drafted for a trigger (`keylang draft flow <trigger> --mode
  * algo|llm|hybrid`): `algo` is only what the snapshot's call edges show;
  * `llm` and `hybrid` ask the configured model and judge its answer against
@@ -581,7 +595,7 @@ export interface AssistantReplyRequest {
 }
 
 /** Every request `runOperation` takes: its `kind` names the operation and the payload of its result. */
-export type OperationRequest = DoctorRequest | FeatureRequest | FeatureQuestionsRequest | ExportC4Request | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | ExplainRequest | ExplainLlmRequest | ExplainPlanRequest | ExplainBatchRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | DraftFlowRequest | DraftRulesRequest | DraftLayoutRequest | CodeToSpecRequest | SpecToCodeRequest | ApplyCodeRequest | AssistantReplyRequest;
+export type OperationRequest = DoctorRequest | FeatureRequest | FeatureQuestionsRequest | ExportC4Request | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | ExplainRequest | ExplainLlmRequest | ExplainPlanRequest | ExplainBatchRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | EntriesRequest | DraftFlowRequest | DraftRulesRequest | DraftLayoutRequest | CodeToSpecRequest | SpecToCodeRequest | ApplyCodeRequest | AssistantReplyRequest;
 
 /** The operation kinds that write files: they compute first and commit after `beforeCommit` (a check mode never calls it). */
 export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["feature-questions", "export-c4", "map", "baseline", "agents", "fmt", "wire", "init", "export", "draft-flow", "draft-rules", "code-to-spec", "spec-to-code", "apply-code", "explain-llm", "explain-batch"]);
@@ -863,6 +877,17 @@ export interface ParsePayload {
   /** The diagnostics of every document, in document order. */
   diagnostics: Diagnostic[];
   /** The CLI's stdout for `format`, byte for byte. */
+  text: string;
+}
+
+/** The entry points of the snapshot, as `keylang entries` lists them. */
+export interface EntriesPayload {
+  snapshotId: string;
+  /** The kind the list was narrowed to, or null for every kind. */
+  kind: EntryKind | null;
+  /** Sorted by kind, label, id (`entries` of the snapshot). */
+  entries: EntryPoint[];
+  /** The CLI's stdout: the table, or the note and the hint when there is nothing. */
   text: string;
 }
 
@@ -1407,6 +1432,7 @@ export interface OperationPayloads {
   export: ExportPayload;
   parse: ParsePayload;
   "trace-plan": TracePlanPayload;
+  entries: EntriesPayload;
   "draft-flow": DraftFlowPayload;
   "draft-rules": DraftRulesPayload;
   "draft-layout": DraftLayoutPayload;

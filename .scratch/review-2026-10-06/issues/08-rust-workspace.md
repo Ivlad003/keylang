@@ -1,6 +1,6 @@
 # 08: Rust: workspace не в корені репозиторію робить крейти репозиторію зовнішніми пакетами
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -61,11 +61,16 @@
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/rust-imports.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/rust-imports.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+- 2026-10-07 (agent): регресійний тест `tests/languages.test.ts` «rust: a workspace under a subdirectory and `path` dependencies resolve to the crate's library, so `deny app core` is K102» — чотири варіанти через справжній CLI на тимчасовій поліглотній фікстурі (workspace під `backend/` з глобом і з явними members, перейменована `package`-залежність, path-залежність без workspace); на коді до правки падав (`0 fail, 0 unverified, 1 ok`), тепер усі дають K102 і ребро `app.src.main.main -> core.src.lib.place`.
+- 2026-10-07 (agent): правка в `src/rust-imports.ts`: `membersOf(crate)` шукає найближчий `Cargo.toml` з `[workspace]` від теки крейта вгору до кореня аналізу (кеш за текою workspace) і розгортає `members` відносно теки цього маніфесту (`workspaceMembers(dir)`); крейт без такого маніфесту — workspace сам собі (кореневий пакет без `[workspace]` поводиться як раніше). `deps` тепер зберігають і теку `path`-залежності в межах репозиторію; `pathDependency(crate, name)` резолвить її (і перейменовану через `package`) у бібліотеку крейта, зовнішнім стає лише `path` поза репозиторієм чи без `Cargo.toml`. Маніфести читаються один раз (`manifestAt`), `inputs` для snapshot id — як і раніше. `moduleFile` не чіпав (тікет 04 править його паралельно).
+- 2026-10-07 (agent): `docs/snapshot.md` §Rust описує пошук workspace вгору й `path`-залежності; `docs/review-2026-10-06.md` §2.1 п.7 ✔. `src/declared-packages.ts` не змінював: `path`-залежність досі оголошує `external.shop-core` (тікет 33); ребро від коду при цьому йде у внутрішню бібліотеку, тож це не суперечить ADR 0010 п.2, а зайве оголошення прибере 33. Перевірки: `node --test tests/languages.test.ts tests/cli-language.test.ts` 40/40; `analyze`, `review-evidence`, `rules-area`, `repository-brief`, `review-graph`, `metamorphic` 80 pass/1 skip; `npm run typecheck` чисто; карту перегенеровано (`map --check` до правки був stale через інші зміни на master), `node bin/keylang.js check` — 0 fail.
+

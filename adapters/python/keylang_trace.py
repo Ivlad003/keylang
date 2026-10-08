@@ -22,9 +22,14 @@ source gives for that declaration. Generators and coroutines are not recorded
 and not `instrumented`: their frames suspend and resume, so a call stack does
 not give their nesting. Spans nest by the call stack of each thread. A process
 that ends with an uncaught exception or a non-zero `sys.exit` is `complete:
-false`. Needs no package beyond the standard library; Python 3.12+ uses
-`sys.monitoring`, older versions `sys.setprofile` (every span then ends with
-outcome `ok`).
+false`. Events reach the file as spans end (and in bounded batches before
+that); the `run` record of each process names its clock. A forked child (an
+`os.fork()` child, a `multiprocessing` worker under the fork start method)
+keeps recording on a clock of its own pid and writes its own `run` record,
+through `atexit` or, when it leaves by `os._exit` as a worker does, through
+a `multiprocessing.util` finalizer. Needs no package beyond the standard
+library; Python 3.12+ uses `sys.monitoring`, older versions `sys.setprofile`
+(every span then ends with outcome `ok`).
 """
 
 import ast
@@ -74,21 +79,20 @@ def yields(fn):
     return False
 
 
+# Events the file does not have yet are written on every `end` and once this many pile up: a process that
+# leaves through `os._exit` or a signal keeps its spans, and its missing `run` record tells `check` the run is incomplete.
+BUFFER = 64
+
+
 class Tracer:
-    def __init__(self, plan, root, test, run):
+    def __init__(self, plan, root, test, run, path):
         self.flow = plan["flow"]
         self.snapshot = plan["snapshotId"]
         self.test = test
         self.run = run
-        self.clock = f"py-{os.getpid()}-{secrets.token_hex(4)}"
-        self.lines = []
-        self.lock = threading.Lock()
-        self.local = threading.local()
-        self.open = set()
-        self.seq = 0
-        self.spans = 0
-        self.crashed = False
+        self.path = path
         self.suspending = set()
+        self.reset()
         # (real file, function name, first line of its code) → id; a decorated function's code starts at its first decorator.
         self.symbols = {}
         self.instrumented = []
@@ -110,6 +114,33 @@ class Tracer:
             self.instrumented.append(symbol["id"])
         self.codes = {}
 
+    def reset(self):
+        """The state of this process's recording: a clock of its own pid, no events, spans or stacks yet."""
+        self.pid = os.getpid()
+        self.clock = f"py-{self.pid}-{secrets.token_hex(4)}"
+        self.lines = []
+        self.lock = threading.Lock()
+        self.local = threading.local()
+        self.open = set()
+        self.seq = 0
+        self.spans = 0
+        self.crashed = False
+        self.written = False
+
+    def forked(self):
+        """In the child after `fork`: the inherited events, open spans, counters and stacks are the parent's.
+
+        The child records on a clock of its own, so its span ids never repeat the parent's, and its `end` of a frame
+        the parent started is dropped (the stack is empty). A `multiprocessing` worker leaves through `os._exit`,
+        past `atexit`, but runs `multiprocessing.util` finalizers first: the run record goes through one of them.
+        `Process._bootstrap` clears the finalizers the child inherited before it runs the after-fork hooks, so the
+        finalizer is registered from such a hook, not here.
+        """
+        self.reset()
+        util = sys.modules.get("multiprocessing.util")
+        if util is not None:
+            util.register_after_fork(self, lambda tracer: util.Finalize(None, tracer.finish, exitpriority=-1))
+
     def symbol_of(self, code):
         if code in self.codes:
             return self.codes[code]
@@ -122,6 +153,16 @@ class Tracer:
 
     def write(self, event):
         self.lines.append(json.dumps({"schemaVersion": SCHEMA, "snapshotId": self.snapshot, "runId": self.run, "testId": self.test, "flow": self.flow, "traceId": f"{self.run}:{self.test}", **event}, separators=(",", ":")))
+
+    def flush(self):
+        """Appends the events not yet in the file; the caller holds the lock."""
+        if not self.lines:
+            return
+        text = "\n".join(self.lines) + "\n"
+        self.lines = []
+        os.makedirs(os.path.dirname(os.path.abspath(self.path)), exist_ok=True)
+        with open(self.path, "a", encoding="utf-8") as out:
+            out.write(text)
 
     def stack(self):
         stack = getattr(self.local, "stack", None)
@@ -138,6 +179,8 @@ class Tracer:
             self.write({"event": "start", "spanId": span, "parentSpanId": stack[-1] if stack else None, "symbolId": symbol, "clockId": self.clock, "seq": self.seq, "ts": time.perf_counter() * 1000})
             self.open.add(span)
             stack.append(span)
+            if len(self.lines) >= BUFFER:
+                self.flush()
 
     def end(self, outcome):
         with self.lock:
@@ -148,13 +191,17 @@ class Tracer:
             self.seq += 1
             self.open.discard(span)
             self.write({"event": "end", "spanId": span, "outcome": outcome, "clockId": self.clock, "seq": self.seq, "ts": time.perf_counter() * 1000})
+            self.flush()
 
-    def finish(self, path):
-        instrumented = sorted(i for i in self.instrumented if i not in self.suspending)
-        self.write({"event": "run", "complete": not self.crashed and not self.open, "dropped": 0, "instrumented": instrumented, "open": sorted(self.open)})
-        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-        with open(path, "a", encoding="utf-8") as out:
-            out.write("\n".join(self.lines) + "\n")
+    def finish(self):
+        """The `run` record of this process, once, and everything not yet in the file."""
+        with self.lock:
+            if self.written:
+                return
+            self.written = True
+            instrumented = sorted(i for i in self.instrumented if i not in self.suspending)
+            self.write({"event": "run", "clockId": self.clock, "complete": not self.crashed and not self.open, "dropped": 0, "instrumented": instrumented, "open": sorted(self.open)})
+            self.flush()
 
 
 def install(tracer):
@@ -231,8 +278,10 @@ def main():
     run = os.environ.get("KEYLANG_TRACE_RUN") or f"{int(time.time() * 1000):x}-{os.getpid()}"
     # Child processes under the adapter inherit the id, so the processes of one test are one run.
     os.environ["KEYLANG_TRACE_RUN"] = run
-    tracer = Tracer(plan, root, test, run)
-    atexit.register(tracer.finish, path)
+    tracer = Tracer(plan, root, test, run, path)
+    atexit.register(tracer.finish)
+    # A forked child (`os.fork`, a `multiprocessing` worker on the fork start method) inherits the hooks and keeps recording, as its own process.
+    os.register_at_fork(after_in_child=tracer.forked)
     install(tracer)
     try:
         run_script(script)

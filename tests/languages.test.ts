@@ -38,8 +38,8 @@ function repo(t: TestContext, files: Record<string, string>): string {
 interface Snapshot {
   nodes: Record<string, { kind: string; escapes?: { reason: string } }>;
   edges: { kind: string; source: string; target: string | null; resolution: string; text: string }[];
-  coverage: { kind: string; file: string; line: number; reason: string; source: string | null }[];
-  exports: { module: string; name: string; symbol: string | null; kind: string; form?: string; from?: string }[];
+  coverage: { kind: string; file: string; line: number; text: string; reason: string; source: string | null }[];
+  exports: { module: string; name: string; symbol: string | null; kind: string; form?: string; from?: string; reason?: string }[];
 }
 
 function snapshot(dir: string): Snapshot {
@@ -125,6 +125,42 @@ test("rust: a workspace member's crate name resolves to its root; `crate::` in b
   const index = snapshot(dir);
   assert.ok(index.edges.some((e) => e.kind === "call" && e.source === "app.src.main.main" && e.target === "core.src.lib.place"), JSON.stringify(index.edges));
   assert.ok(index.coverage.some((c) => c.kind === "unresolved-import" && c.file === "crates/shop-app/build.rs"));
+});
+
+// Cargo finds the workspace root by walking up from the crate: a `[workspace]`
+// in `backend/` governs `backend/crates/*` as a root one does. A `path`
+// dependency on a crate of the repository, renamed through `package` or
+// without any workspace, is that crate's library too, not an external package.
+test("rust: a workspace under a subdirectory and `path` dependencies resolve to the crate's library, so `deny app core` is K102", (t) => {
+  const core = { "Cargo.toml": '[package]\nname = "shop-core"\nversion = "0.1.0"\n', "src/lib.rs": "pub fn place() {}\n" };
+  const app = (dep: string, call: string): Record<string, string> => ({
+    "Cargo.toml": `[package]\nname = "shop-app"\nversion = "0.1.0"\n\n[dependencies]\n${dep}\n`,
+    "src/main.rs": `fn main() {\n    ${call}::place();\n}\n`,
+  });
+  const under = (dir: string, files: Record<string, string>): Record<string, string> => Object.fromEntries(Object.entries(files).map(([f, text]) => [`${dir}/${f}`, text]));
+  const polyglot = {
+    "package.json": '{ "name": "shop", "private": true }\n',
+    "web/index.ts": "export const page = 1;\n",
+    "keylang.json": JSON.stringify({ languages: ["typescript", "rust"], layers: { web: ["web/**"], core: ["backend/crates/core/**"], app: ["backend/crates/app/**"] } }),
+    "keylang/rules.md": "# rules\n\n- deny app core\n",
+  };
+  const cases: Record<string, Record<string, string>> = {
+    "workspace under backend/ with a glob": { "backend/Cargo.toml": '[workspace]\nmembers = ["crates/*"]\n', ...under("backend/crates/app", app('shop-core = { path = "../core" }', "shop_core")) },
+    "workspace under backend/ with explicit members": { "backend/Cargo.toml": '[workspace]\nmembers = ["crates/core", "crates/app"]\n', ...under("backend/crates/app", app('shop-core = { path = "../core" }', "shop_core")) },
+    "path dependency renamed through `package`": { "backend/Cargo.toml": '[workspace]\nmembers = ["crates/*"]\n', ...under("backend/crates/app", app('domain = { package = "shop-core", path = "../core" }', "domain")) },
+    "path dependency without a workspace": under("backend/crates/app", app('shop-core = { path = "../core" }', "shop_core")),
+  };
+  for (const [name, files] of Object.entries(cases)) {
+    const dir = repo(t, { ...polyglot, ...under("backend/crates/core", core), ...files });
+    const o = keylang(dir, ["check"]);
+    assert.equal(o.status, 1, `${name}: ${o.stdout}${o.stderr}`);
+    assert.match(o.stdout, /backend\/crates\/app\/src\/main\.rs:2:5: K102 divergence: `app\.src\.main` depends on `core\.src\.lib`, which is denied by `deny app core`/, name);
+    assert.match(o.stderr, /1 fail, 0 unverified, 0 ok/, name);
+    assert.equal(keylang(dir, ["map"]).status, 0, name);
+    const index = snapshot(dir);
+    assert.ok(index.edges.some((e) => e.kind === "call" && e.source === "app.src.main.main" && e.target === "core.src.lib.place"), `${name}: ${JSON.stringify(index.edges)}`);
+    assert.ok(!index.edges.some((e) => e.target === "external.shop-core" || e.target === "external.domain"), `${name}: no external edge`);
+  }
 });
 
 const pyLayers = { languages: ["python"], layers: { domain: ["shop/domain/**"], infra: ["shop/infra/**"], app: ["shop/*"] } };
@@ -781,4 +817,91 @@ test("python: the standard library is no `external.*` node, edge or K102; anothe
   assert.equal(o.status, 1, o.stdout);
   assert.match(o.stdout, /K102 divergence: `app\.mail` depends on `external\.httpx`/);
   assert.doesNotMatch(o.stdout, /external\.(asyncio|email|typing|json|smtplib)/);
+});
+
+test("rust and python: `use crate::models::User` / `from app.models import User` through a `mod.rs` / `__init__.py` re-export is a dependency `deny` fails on, whatever the file system (the resolver never names a file by another spelling)", (t) => {
+  // `models/User.rs` does not exist; on APFS and NTFS `existsSync` says it does through `user.rs`. The exact
+  // check (tests/exact-path.test.ts) keeps the longest-prefix walk at `models/mod.rs`, so this is the verdict everywhere.
+  const rust = repo(t, {
+    "Cargo.toml": '[package]\nname = "shop"\nversion = "0.1.0"\n',
+    "src/lib.rs": "pub mod api;\npub mod models;\n",
+    "src/models/mod.rs": "mod user;\npub use user::User;\n",
+    "src/models/user.rs": "pub struct User;\n\nimpl User {\n    pub fn new() -> Self {\n        User\n    }\n}\n",
+    "src/api/mod.rs": "use crate::models::User;\n\npub fn handle() -> User {\n    User::new()\n}\n",
+    "keylang.json": JSON.stringify({ languages: ["rust"], layers: { api: ["src/api/**"], domain: ["src/models/**"] } }),
+    "keylang/rules.md": "# rules\n\n- deny api domain\n",
+  });
+  assert.equal(keylang(rust, ["map"]).status, 0);
+  const r = keylang(rust, ["check"]);
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.stdout, /src\/api\/mod\.rs:1:1: K102 divergence: `api\.mod` depends on `domain\.mod`/);
+  assert.match(r.stderr, /2 fail, 0 unverified/);
+  assert.doesNotMatch(r.stdout, /is not indexed/);
+  const rustIndex = snapshot(rust);
+  assert.ok(rustIndex.edges.some((e) => e.kind === "call" && e.source === "api.mod.handle" && e.target === "domain.user.User.new"), "`User::new()` through the re-export");
+
+  const py = repo(t, {
+    "app/__init__.py": "",
+    "app/models/__init__.py": "from .user import User\n",
+    "app/models/user.py": "class User:\n    def __init__(self):\n        pass\n",
+    "app/api/__init__.py": "",
+    "app/api/views.py": "from app.models import User\n\n\ndef handle():\n    return User()\n",
+    "keylang.json": JSON.stringify({ languages: ["python"], layers: { api: ["app/api/**"], domain: ["app/models/**"] } }),
+    "keylang/rules.md": "# rules\n\n- deny api domain\n",
+  });
+  assert.equal(keylang(py, ["map"]).status, 0);
+  const p = keylang(py, ["check"]);
+  assert.equal(p.status, 1, p.stdout + p.stderr);
+  assert.match(p.stdout, /app\/api\/views\.py:1:1: K102 divergence: `api\.views` depends on `domain\.__init__`/);
+  assert.match(p.stderr, /2 fail, 0 unverified/);
+  assert.doesNotMatch(p.stdout, /is not indexed/);
+  const pyIndex = snapshot(py);
+  assert.ok(pyIndex.edges.some((e) => e.kind === "call" && e.source === "api.views.handle" && e.target === "domain.user.User"), "`User()` through the re-export");
+});
+
+test("python: `from m import *` of a module without `__all__` brings the names m imports: a call through one is an edge, not a hole or a package's call; a module that binds names keylang does not list makes such a call a hole even beside a stdlib glob", (t) => {
+  const dir = repo(t, {
+    "keylang.json": JSON.stringify({ languages: ["python"], layers: { app: ["app/**"] } }),
+    "keylang/flows.md": "# flow run\n\n- trigger app.main.run\n  - step app.util.helper\n",
+    "app/__init__.py": "",
+    "app/util.py": "def helper():\n    return 1\n",
+    "app/base.py": "from .util import helper\n\n\ndef own():\n    return 2\n",
+    "app/main.py": "from math import *\nfrom .base import *\n\n\ndef run():\n    return helper() + own() + sqrt(4)\n",
+  });
+  const map = keylang(dir, ["map"]);
+  assert.equal(map.status, 0, map.stderr);
+  assert.match(map.stderr, /calls 2 resolved, 1 external, 0 dynamic/, "`sqrt` is math's; `helper` and `own` are the repository's");
+  const index = snapshot(dir);
+  assert.ok(index.edges.some((e) => e.kind === "call" && e.source === "app.main.run" && e.target === "app.util.helper"), "`helper()` through the glob of a module that imports it");
+  assert.ok(!index.edges.some((e) => e.kind === "reexport"), "a plain module re-exports nothing: the dependency is an import");
+  assert.deepEqual(index.exports.filter((e) => e.module === "app.base"), [
+    { module: "app.base", name: "helper", symbol: "app.util.helper", kind: "fn", from: "app.util" },
+    { module: "app.base", name: "own", symbol: "app.base.own", kind: "fn" },
+  ]);
+  const flow = keylang(dir, ["check"]);
+  assert.equal(flow.status, 0, flow.stdout + flow.stderr);
+  assert.match(flow.stdout, /static ok app\.util\.helper: called from app\.main\.run/);
+  // Without the stdlib glob the verdict is the same (before: a hole «call through a local value helper»).
+  writeFileSync(join(dir, "app/main.py"), "from .base import *\n\n\ndef run():\n    return helper() + own()\n");
+  assert.match(keylang(dir, ["map"]).stderr, /calls 2 resolved, 0 external, 0 dynamic/);
+  assert.match(keylang(dir, ["check"]).stdout, /static ok app\.util\.helper/);
+  // `exports` sees the imported name as a public one, and says where it is from.
+  writeFileSync(join(dir, "keylang/rules.md"), "# rules\n\n- module app.base\n  - exports own\n");
+  const rule = keylang(dir, ["check"]);
+  assert.equal(rule.status, 1, rule.stdout);
+  assert.match(rule.stdout, /K104 divergence: `app\.base` exports `helper` \(fn, imported from `app\.util`\), which is not listed in `exports`/);
+  writeFileSync(join(dir, "keylang/rules.md"), "# rules\n\n- module app.base\n  - exports own, helper\n");
+  assert.doesNotMatch(keylang(dir, ["check"]).stdout, /K104/);
+  // A module-level `for` binds names the table does not list: a name no table has is a hole, not math's —
+  // `sqrt` included, as beside an unresolved glob: either source may bind it.
+  writeFileSync(join(dir, "app/base.py"), "from .util import helper\n\nfor flag in (1,):\n    pass\n\n\ndef own():\n    return 2\n");
+  writeFileSync(join(dir, "app/main.py"), "from math import *\nfrom .base import *\n\n\ndef run():\n    return helper() + mystery() + sqrt(4)\n");
+  assert.match(keylang(dir, ["map"]).stderr, /calls 1 resolved, 0 external, 2 dynamic/);
+  const open = snapshot(dir);
+  assert.ok(open.coverage.some((c) => c.kind === "dynamic-call" && c.text === "mystery" && c.reason === "call through `mystery`, a name from a glob import keylang does not follow"), JSON.stringify(open.coverage));
+  assert.equal(open.exports.find((e) => e.module === "app.base" && e.name === "*")?.reason, "a module-level `for` binds names keylang does not list");
+  const unverified = keylang(dir, ["check"]);
+  assert.equal(unverified.status, 0, unverified.stdout);
+  assert.match(unverified.stdout, /unverified a module-level `for` binds names keylang does not list/);
+  assert.doesNotMatch(unverified.stdout, /K104/);
 });

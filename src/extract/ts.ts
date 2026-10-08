@@ -459,6 +459,7 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
   collectDynamicImports(root, facts);
   collectUnsupported(root, facts);
   collectValueRefs(root, facts);
+  collectRouteEntries(root, facts);
   if (root.hasError) {
     facts.completeness = "opaque";
     facts.parseError = { line: errorLine(root), reason: "syntax error" };
@@ -1712,6 +1713,36 @@ function commonJsExports(stmt: Node, facts: FileFacts, declCalls: (n: Node) => C
 function stringValue(n: Node): string | null {
   if (n.type !== "string") return null;
   return n.namedChildren.find((c) => c.type === "string_fragment")?.text ?? "";
+}
+
+/** HTTP verbs of a router's registration methods, as Express, Koa-router, Fastify and Hono write them. */
+const ROUTE_METHODS = new Set(["get", "post", "put", "patch", "delete", "all"]);
+
+/**
+ * `app.get('/x', h)`, `router.post('/x', auth, h)`: a handler registered on a
+ * literal path — a `route` entry labelled `GET /x` whose callee is the last
+ * argument when it is a name (`h`, `handlers.save`). A computed path, or a
+ * handler written in place, is not recorded: nothing in the code names it.
+ */
+function collectRouteEntries(root: Node, facts: FileFacts): void {
+  const entries: NonNullable<FileFacts["entries"]> = [];
+  const walk = (node: Node): void => {
+    if (node.type === "call_expression") {
+      const fn = node.childForFieldName("function");
+      const property = fn?.type === "member_expression" ? fn.childForFieldName("property") : null;
+      const method = property?.type === "property_identifier" ? property.text : null;
+      const args = node.childForFieldName("arguments")?.namedChildren.filter((arg) => arg.type !== "comment") ?? [];
+      const path = args[0] === undefined ? null : stringValue(args[0]);
+      const handler = args.length >= 2 ? args[args.length - 1] : undefined;
+      if (method !== null && ROUTE_METHODS.has(method) && path !== null && path.startsWith("/") && handler !== undefined && (handler.type === "identifier" || handler.type === "member_expression")) {
+        const at = located(node);
+        entries.push({ kind: "route", label: `${method.toUpperCase()} ${path}`, callee: collapse(handler.text), line: at.line, col: at.col });
+      }
+    }
+    for (const child of node.namedChildren) walk(child);
+  };
+  walk(root);
+  if (entries.length > 0) facts.entries = entries;
 }
 
 function signature(fn: Node): string {

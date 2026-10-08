@@ -248,6 +248,28 @@ test("wire: under nodenext a JS source keeps `.js` and `.mts` becomes `.mjs`; th
   assert.equal(loaded.stdout.trim(), "js+mts", loaded.stderr);
 });
 
+// `module` node18/node20 without `moduleResolution` resolves as node16 in tsc (TS 5.8+): imports need the runtime extension.
+for (const module of ["node18", "node20"]) {
+  test(`wire: \`module: ${module}\` without moduleResolution writes runtime extensions; tsc accepts the file`, (t) => {
+    const dir = mkdtempSync(join(tmpdir(), "keylang-wiring-"));
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    for (const sub of ["src/infra", "src/app", "keylang"]) mkdirSync(join(dir, sub), { recursive: true });
+    writeFileSync(join(dir, "package.json"), '{ "type": "module" }\n');
+    writeFileSync(join(dir, "keylang.json"), JSON.stringify({ languages: ["typescript"], layers: { infra: ["src/infra/**"], app: ["src/app/**"], wiring: ["keylang.gen.ts"] } }));
+    writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({ compilerOptions: { module, strict: true, noEmit: true, types: [] }, include: ["src", "keylang.gen.ts"] }));
+    writeFileSync(join(dir, "src/infra/db.ts"), 'export function db(): string {\n  return "db";\n}\n');
+    writeFileSync(join(dir, "src/app/main.ts"), "export function main(deps: { db: string }): string {\n  return deps.db;\n}\n");
+    writeFileSync(join(dir, "keylang/wiring.md"), "# wiring\n\n- wire app.main.main\n  - db infra.db.db\n");
+    const o = keylang(dir, ["wire"]);
+    assert.equal(o.status, 0, o.stdout + o.stderr);
+    const text = readFileSync(join(dir, "keylang.gen.ts"), "utf8");
+    assert.match(text, /from "\.\/src\/infra\/db\.js";/);
+    assert.match(text, /from "\.\/src\/app\/main\.js";/);
+    const types = run(dir, tsc, ["-p", "."]);
+    assert.equal(types.status, 0, types.stdout);
+  });
+}
+
 test("wiring: K302 for compose on a module, a type or a class, a method, an unexported fn and Python code; K002 for a dependency named twice; K102 names the deny rule; wire writes nothing", (t) => {
   const dir = copy(t);
   writeFileSync(join(dir, "src/infra/hidden.ts"), 'import type { Db } from "./db.ts";\n\nfunction hidden(): Db {\n  return { query: (sql) => sql, dispose: () => {} };\n}\n\nexport const used = hidden;\n');

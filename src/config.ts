@@ -78,6 +78,13 @@ export interface Config {
   explain: { lang: string; detail: "short" | "full"; map: boolean };
   /** True when the layout was guessed (no `layers` in the file). */
   guessed: boolean;
+  /**
+   * The text of `keylang.json` this config was parsed from, null without the
+   * file. A plan built on an analysis compares the disk with this text at its
+   * commit, so a save made while the analysis ran refuses the write instead
+   * of becoming the new base.
+   */
+  text: string | null;
 }
 
 /** The agent CLIs keylang knows how to run as a model (`cli:<name>`); other names are defined in `~/.config/keylang/agents.json`. */
@@ -173,7 +180,8 @@ export interface RawConfig {
 export function loadConfig(root: string): Config {
   const file = join(root, CONFIG_FILE);
   const fileExists = existsSync(file);
-  const raw: RawConfig = fileExists ? parseConfig(file, readFileSync(file, "utf8")) : {};
+  const text = fileExists ? readFileSync(file, "utf8") : null;
+  const raw: RawConfig = text !== null ? parseConfig(file, text) : {};
   const languages = raw.languages ?? detectLanguages(root);
   const exclude = raw.exclude ?? [];
   const outside = raw.outside ?? [];
@@ -203,6 +211,7 @@ export function loadConfig(root: string): Config {
     voice: { engine: raw.voice?.engine ?? "auto", model: raw.voice?.model ?? null },
     explain: { lang: raw.explain?.lang ?? "en", detail: raw.explain?.detail ?? "short", map: raw.explain?.map ?? false },
     guessed,
+    text,
   };
 }
 

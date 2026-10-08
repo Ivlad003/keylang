@@ -13,7 +13,7 @@ import { FINDING_GLYPH, findingRow } from "../findings.ts";
 import { THEME } from "../theme.ts";
 import { BOLD, codeOf, ERROR, messageRow, MUTED, outcomeRow, shortId, textRows, WARNING, type Report, type ReportRow } from "./rows.ts";
 
-type CheckKind = "feature" | "check" | "explain-edge" | "export" | "parse" | "trace-plan" | "export-c4";
+type CheckKind = "feature" | "check" | "explain-edge" | "export" | "parse" | "trace-plan" | "entries" | "export-c4";
 
 /** One gap or hint of a feature report, as the readiness screen lists it. */
 export interface FeatureItem {
@@ -258,6 +258,30 @@ export const CHECK_REPORTS: { [K in CheckKind]: Report<K> } = {
       noun: "symbol",
       // A symbol of a trace plan: its declaration in the code (1-based line and column, as the snapshot has them).
       of: (_state, result) => result.payload.plan.symbols.map((symbol) => ({ file: symbol.file, line: symbol.line, col: symbol.col, text: `${symbol.id} ${symbol.file}:${symbol.line}:${symbol.col}` })),
+    },
+  },
+  entries: {
+    label: (request) => `entries${request.only !== undefined ? ` --kind ${request.only}` : ""}`,
+    params: (request) => (request.only !== undefined ? request.only : "all kinds"),
+    summary: (_record, result) => `${result.payload.entries.length} entry point(s) · code ${result.exitCode}`,
+    rows(_state, _record, result, view) {
+      // The list as the CLI prints it: each entry (Tab, then Enter opens its fn in the code), then the stdout.
+      const { payload } = result;
+      const rows: ReportRow[] = [
+        { text: `Entry points · ${payload.kind ?? "every kind"} · read-only, nothing written · fresh snapshot ${shortId(payload.snapshotId)}`, style: BOLD },
+        outcomeRow(view.summary, true),
+        { text: "  what the code and its manifests write; a framework's routes, cron jobs and consumers need its adapter (ADR 0022)", style: MUTED },
+      ];
+      payload.entries.forEach((entry, index) => {
+        rows.push({ text: `  ${entry.kind}  ${entry.label}  ${entry.id}  ${entry.file}:${entry.line}`, style: index === view.selected ? THEME.selected : THEME.panel, gap: index });
+      });
+      if (payload.entries.length > 0) rows.push({ text: "  Tab, then ↑↓ select an entry and Enter opens it in the code", style: THEME.hint });
+      rows.push(...textRows(`keylang entries${payload.kind !== null ? ` --kind ${payload.kind}` : ""} · stdout`, payload.text));
+      return rows;
+    },
+    items: {
+      noun: "entry point",
+      of: (_state, result) => result.payload.entries.map((entry) => ({ file: entry.file, line: entry.line, col: 1, text: `${entry.kind} ${entry.label} ${entry.id} ${entry.file}:${entry.line}` })),
     },
   },
   "export-c4": {

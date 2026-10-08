@@ -314,9 +314,9 @@
     - fn [git](../../src/clone.ts#L144) (cwd: string, args: string[]) → void <!-- internal -->
       <a id="features.clone.git"></a>
       - calls [features.git-changes.gitUnavailable](features.md#features.git-changes.gitUnavailable)
-    - fn [enableExplainedMap](../../src/clone.ts#L160) (root: string) → string | null
+    - fn [enableExplainedMap](../../src/clone.ts#L163) (root: string) → string | null
       <a id="features.clone.enableExplainedMap"></a><br>Turns on the explained map (`"explain": {"map": true}`) in the clone's keylang.json; the rest of the file stays. Returns an error to name, or null.
-      - calls [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic)
+      - calls [base.safe-write.targetProblem](base.md#base.safe-write.targetProblem), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite)
   - module [draft-llm](../../src/draft-llm.ts#L1)
     <a id="features.draft-llm"></a><br>`draft flow --mode llm|hybrid` (design §5.1): the model proposes a flow from a compact map, the flow grammar and flows of this repository; an ID that is neither in the snapshot nor declared `planned` sends the draft back once with the nearest real IDs. The answer is reconciled…
     - analyze [map.analyze](map.md#map.analyze)
@@ -769,165 +769,169 @@
   - module [git-hook](../../src/git-hook.ts#L1)
     <a id="features.git-hook"></a><br>`keylang hook install`: the git pre-commit hook that runs `check --changed`. The hook file is keylang's as a whole, found by its marker; a hook without the marker belongs to someone else and is never rewritten.
     - node [external.node](external.md#external.node)
-    - fn [preCommitCommand](../../src/git-hook.ts#L11) (version: string) → string
+    - fn [preCommitCommand](../../src/git-hook.ts#L13) (version: string) → string
       <a id="features.git-hook.preCommitCommand"></a><br>What the hook runs: the published CLI of this version, as the harness hooks do.
-    - fn [preCommitText](../../src/git-hook.ts#L16) (version: string) → string
-      <a id="features.git-hook.preCommitText"></a><br>The whole hook file.
+    - fn [preCommitText](../../src/git-hook.ts#L22) (version: string, subdir = "") → string
+      <a id="features.git-hook.preCommitText"></a><br>The whole hook file. `subdir` is the keylang root relative to the top of the work tree, POSIX, "" when they are the same: the hook enters it before `check --changed`, since git starts every hook at the top level.
       - calls [features.git-hook.preCommitCommand](features.md#features.git-hook.preCommitCommand)
-    - type [PreCommitState](../../src/git-hook.ts#L27) = "missing" | "foreign" | "stale" | "current"
+    - type [PreCommitState](../../src/git-hook.ts#L34) = "missing" | "foreign" | "stale" | "current"
       <a id="features.git-hook.PreCommitState"></a><br>`missing`: no file; `foreign`: a hook without keylang's marker; `stale`: keylang's, but other text or not executable.
-    - fn [preCommitState](../../src/git-hook.ts#L29) (current: string | null, executable: boolean, version: string) → PreCommitState
-      <a id="features.git-hook.preCommitState"></a><br>Classifies an existing pre-commit hook as "missing" when absent, "foreign" when it lacks the keylang marker, "current" when it matches the output of [`features.git-hook.preCommitText`](features.md#features.git-hook.preCommitText) for the given version and is executable, otherwise "stale". _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+    - fn [preCommitState](../../src/git-hook.ts#L36) (current: string | null, executable: boolean, version: string, subdir = "") → PreCommitState
+      <a id="features.git-hook.preCommitState"></a><br>Classifies an existing pre-commit hook as "missing" when absent, "foreign" when it lacks the keylang marker, "current" when it matches the output of [`features.git-hook.preCommitText`](features.md#features.git-hook.preCommitText) for the given version and is executable, otherwise "stale". _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.git-hook.preCommitText](features.md#features.git-hook.preCommitText)
-    - fn [gitHooksDir](../../src/git-hook.ts#L41) (cwd: string) → string
+    - fn [gitHooksDir](../../src/git-hook.ts#L48) (cwd: string) → string
       <a id="features.git-hook.gitHooksDir"></a><br>The hooks directory git uses for the repository around `cwd`, absolute: `git rev-parse --git-path hooks` honours `core.hooksPath` and linked worktrees. It is asked from the top level, where a relative `core.hooksPath` is resolved.
+      - calls [features.git-hook.gitTopLevel](features.md#features.git-hook.gitTopLevel), [features.git-hook.git](features.md#features.git-hook.git)
+    - fn [gitTopLevel](../../src/git-hook.ts#L54) (cwd: string) → string
+      <a id="features.git-hook.gitTopLevel"></a><br>The top of the work tree around `cwd`, absolute. Throws outside a git work tree.
       - calls [features.git-hook.git](features.md#features.git-hook.git)
-    - fn [git](../../src/git-hook.ts#L46) (cwd: string, args: string[]) → string <!-- internal -->
+    - fn [git](../../src/git-hook.ts#L58) (cwd: string, args: string[]) → string <!-- internal -->
       <a id="features.git-hook.git"></a><br>Runs a git command synchronously in the given directory and returns its trimmed stdout, throwing a hook-install error if git can't launch or exits non-zero; used by [`features.git-hook.gitHooksDir`](features.md#features.git-hook.gitHooksDir). _(llm · claude:claude-opus-5-5 · 2026-10-05)_
   - module [harness](../../src/harness.ts#L1)
     <a id="features.harness"></a><br>Harness adapters: one pure merge from the files on disk and the selected harnesses to the next text. Markdown keeps a marked block; JSON replaces only the `keylang` key; TOML splices only the `[mcp_servers.keylang]` table, so comments and layout around it stay. `--agents=none`…
     - node [external.node](external.md#external.node)
     - smol-toml [external.smol-toml](external.md#external.smol-toml)
     - config [base.config](base.md#base.config)
+    - imports [map.imports](map.md#map.imports)
     - safe-write [base.safe-write](base.md#base.safe-write)
-    - fn [skillFile](../../src/harness.ts#L35) () → string
+    - fn [skillFile](../../src/harness.ts#L36) () → string
       <a id="features.harness.skillFile"></a><br>The skill shipped in the package. The same relative path works from `src` and from `dist`.
-    - type [HarnessName](../../src/harness.ts#L40) = (typeof HARNESS_NAMES)[number]
+    - type [HarnessName](../../src/harness.ts#L41) = (typeof HARNESS_NAMES)[number]
       <a id="features.harness.HarnessName"></a><br>A string union type derived from the entries of the `HARNESS_NAMES` array, so values are constrained to the harness identifiers listed there. Used to type-check which harness a feature refers to without duplicating the list. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [denyRules](../../src/harness.ts#L59) (dir: string) → string[] <!-- internal -->
+    - fn [denyRules](../../src/harness.ts#L60) (dir: string) → string[] <!-- internal -->
       <a id="features.harness.denyRules"></a><br>Claude's deny entries that keep an agent from editing the rules of the spec directory `dir`, or deciding a proposal.
-    - fn [specDir](../../src/harness.ts#L64) (root: string) → string <!-- internal -->
+    - fn [specDir](../../src/harness.ts#L65) (root: string) → string <!-- internal -->
       <a id="features.harness.specDir"></a><br>The spec directory of `keylang.json` under `root` (`dir`, normalized), or `keylang` without the file. A broken file throws, naming the file and the field.
       - calls [base.config.parseConfig](base.md#base.config.parseConfig)
-    - type [HarnessSelection](../../src/harness.ts#L73)
+    - type [HarnessSelection](../../src/harness.ts#L74)
       <a id="features.harness.HarnessSelection"></a><br>Carries the resolved set of agent harnesses chosen by the user as `HarnessName` values, plus a flag that disables the instruction block and adapter file emission when `--agents=none` is given. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [HarnessFile](../../src/harness.ts#L79)
+    - type [HarnessFile](../../src/harness.ts#L80)
       <a id="features.harness.HarnessFile"></a><br>Describes one file in a test harness as a path plus its full contents, where a null `text` marks a file that must not exist. Used to declare or verify the expected state of files on disk. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [HarnessPlan](../../src/harness.ts#L85)
+    - type [HarnessPlan](../../src/harness.ts#L86)
       <a id="features.harness.HarnessPlan"></a><br>Describes the outcome of assembling a harness: the list of `HarnessFile` entries to write, plus either `null` or a single failure record naming the offending file and the reason it could not be prepared. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [parseAgents](../../src/harness.ts#L91) (value: string) → HarnessSelection
+    - fn [parseAgents](../../src/harness.ts#L92) (value: string) → HarnessSelection
       <a id="features.harness.parseAgents"></a><br>`--agents=<list>`. `none` is the empty selection. An unknown name throws and lists the allowed names.
-    - type [HarnessProbe](../../src/harness.ts#L105)
+    - type [HarnessProbe](../../src/harness.ts#L106)
       <a id="features.harness.HarnessProbe"></a><br>What is on disk for harness detection. `list` returns child names, or null when the path is not a directory.
-    - fn [detectHarnesses](../../src/harness.ts#L115) (probe: HarnessProbe) → HarnessName[]
+    - fn [detectHarnesses](../../src/harness.ts#L116) (probe: HarnessProbe) → HarnessName[]
       <a id="features.harness.detectHarnesses"></a><br>Directories and files that mean a harness is already in use. Order matches `HARNESS_NAMES`. `.claude/skills/keylang-feature` is the copy `agents` writes for every harness, so that tree alone is not Claude.
       - calls [features.harness.claudePresent](features.md#features.harness.claudePresent)
-    - fn [claudePresent](../../src/harness.ts#L126) (probe: HarnessProbe) → boolean <!-- internal -->
+    - fn [claudePresent](../../src/harness.ts#L127) (probe: HarnessProbe) → boolean <!-- internal -->
       <a id="features.harness.claudePresent"></a><br>Decides whether the Claude harness is in use by listing the `.claude` directory via the probe: missing means no, empty means yes, otherwise it defers to [`features.harness.claudeHasUserFile`](features.md#features.harness.claudeHasUserFile) to check for user-authored files. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.harness.claudeHasUserFile](features.md#features.harness.claudeHasUserFile)
-    - fn [claudeHasUserFile](../../src/harness.ts#L134) (probe: HarnessProbe, dir: string) → boolean <!-- internal -->
+    - fn [claudeHasUserFile](../../src/harness.ts#L135) (probe: HarnessProbe, dir: string) → boolean <!-- internal -->
       <a id="features.harness.claudeHasUserFile"></a><br>A file under `.claude` that is not the keylang skill copy.
-    - fn [agentsBody](../../src/harness.ts#L148) (version: string, dir: string) → string
+    - fn [agentsBody](../../src/harness.ts#L149) (version: string, dir: string) → string
       <a id="features.harness.agentsBody"></a><br>The instruction body between the markers, without a trailing newline. The CLI fallback pins `version`; paths are under the spec directory `dir`.
       - calls [features.harness.cliCommand](features.md#features.harness.cliCommand)
-    - fn [mcpCommand](../../src/harness.ts#L184) (version: string) → { command: string; args: string[] }
+    - fn [mcpCommand](../../src/harness.ts#L185) (version: string) → { command: string; args: string[] }
       <a id="features.harness.mcpCommand"></a><br>`npx -y keylang@<version> mcp`, split the way MCP configs store a command.
-    - fn [cliCommand](../../src/harness.ts#L189) (version: string) → string
+    - fn [cliCommand](../../src/harness.ts#L190) (version: string) → string
       <a id="features.harness.cliCommand"></a><br>The pinned CLI the fallback names: the same package and version as the MCP server, so it needs no global `keylang`.
-    - fn [pinSkill](../../src/harness.ts#L198) (skill: string, version: string, dir: string) → string
+    - fn [pinSkill](../../src/harness.ts#L199) (skill: string, version: string, dir: string) → string
       <a id="features.harness.pinSkill"></a><br>The skill resource names the CLI as `npx -y keylang@<version>` and the spec directory as `<dir>/`; the copy a harness gets pins the running version and the repository's `dir`.
-    - fn [hookCommand](../../src/harness.ts#L203) (version: string) → string
+    - fn [hookCommand](../../src/harness.ts#L204) (version: string) → string
       <a id="features.harness.hookCommand"></a><br>What the Stop hook runs.
       - calls [features.harness.cliCommand](features.md#features.harness.cliCommand)
-    - fn [planHarness](../../src/harness.ts#L213) (input: { selection: HarnessSelection; version: string; dir: string; skill: string; files: ReadonlyMap<string, string | null> }) → HarnessPlan
+    - fn [planHarness](../../src/harness.ts#L214) (input: { selection: HarnessSelection; version: string; dir: string; skill: string; files: ReadonlyMap<string, string | null> }) → HarnessPlan
       <a id="features.harness.planHarness"></a><br>Desired text of every harness file this selection owns. `files` holds the current text, null when the file is absent; `dir` is the spec directory the instructions, the skill and the deny rules name. The first broken marker or invalid JSON/TOML is `error` and `files` is empty…
       - calls [features.harness.agentsBody](features.md#features.harness.agentsBody), [features.harness.mergeMarked](features.md#features.harness.mergeMarked), [features.harness.mergeClaude](features.md#features.harness.mergeClaude), [features.harness.mergeMcpJson](features.md#features.harness.mergeMcpJson), [features.harness.mergeCodexToml](features.md#features.harness.mergeCodexToml), [features.harness.opencodeFile](features.md#features.harness.opencodeFile), [features.harness.mergeOpencode](features.md#features.harness.mergeOpencode), [features.harness.pinSkill](features.md#features.harness.pinSkill), [features.harness.mergeSettings](features.md#features.harness.mergeSettings), [features.harness.mergeHooksFile](features.md#features.harness.mergeHooksFile)
-    - fn [mergeMarked](../../src/harness.ts#L297) (existing: string | null, body: string | null) → { text: string | null } | { error: string }
+    - fn [mergeMarked](../../src/harness.ts#L298) (existing: string | null, body: string | null) → { text: string | null } | { error: string }
       <a id="features.harness.mergeMarked"></a><br>Splice `body` between the markers. Text outside them is copied byte for byte. `body` null removes the block.
       - calls [base.safe-write.allCrlf](base.md#base.safe-write.allCrlf), [features.harness.marked](features.md#features.harness.marked)
-    - fn [marked](../../src/harness.ts#L323) (body: string, nl: "\n" | "\r\n") → string <!-- internal -->
+    - fn [marked](../../src/harness.ts#L324) (body: string, nl: "\n" | "\r\n") → string <!-- internal -->
       <a id="features.harness.marked"></a><br>Normalizes every line break in the body to the requested newline style, then wraps the result between the begin and end marker constants on their own lines, so [`features.harness.mergeMarked`](features.md#features.harness.mergeMarked) can splice a consistently delimited block into existing text. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [mergeClaude](../../src/harness.ts#L332) (existing: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeClaude](../../src/harness.ts#L333) (existing: string | null) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeClaude"></a><br>`@AGENTS.md` lives in the managed block. A file that already says it outside the block is left without a second copy (the block is removed).
       - calls [features.harness.outsideMarkers](features.md#features.harness.outsideMarkers), [features.harness.mergeMarked](features.md#features.harness.mergeMarked)
-    - fn [outsideMarkers](../../src/harness.ts#L339) (existing: string | null) → string | { error: string } <!-- internal -->
+    - fn [outsideMarkers](../../src/harness.ts#L340) (existing: string | null) → string | { error: string } <!-- internal -->
       <a id="features.harness.outsideMarkers"></a><br>Strips the block between the begin/end marker constants out of an existing file's text, returning the surrounding content (or an empty string for null input). Reports an error object when only one marker is present or the end precedes the begin, so… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [mergeMcpJson](../../src/harness.ts#L349) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeMcpJson](../../src/harness.ts#L350) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeMcpJson"></a><br>Rewrites an `.mcp.json` document so its `mcpServers` key holds the launch entry built by [`features.harness.mcpCommand`](features.md#features.harness.mcpCommand) for the given version, or removes it when the version is null, via [`features.harness.mergeJsonKey`](features.md#features.harness.mergeJsonKey). Returns the updated text or a parse error for… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.harness.mergeJsonKey](features.md#features.harness.mergeJsonKey), [features.harness.mcpCommand](features.md#features.harness.mcpCommand)
-    - fn [mergeOpencode](../../src/harness.ts#L353) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
-      <a id="features.harness.mergeOpencode"></a><br>Builds a local MCP server entry that runs `npx -y keylang@<version> mcp` (or null when no version is given) and delegates to [`features.harness.mergeJsonKey`](features.md#features.harness.mergeJsonKey) to write it under the `mcp` key of an opencode JSON config, returning the merged text or an error. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+    - fn [mergeOpencode](../../src/harness.ts#L355) (existing: string | null, version: string | null, jsonc: boolean) → { text: string | null } | { error: string } <!-- internal -->
+      <a id="features.harness.mergeOpencode"></a><br>`jsonc`: the file is `opencode.jsonc`, so comments and trailing commas parse; a rewrite is still plain JSON.
       - calls [features.harness.mergeJsonKey](features.md#features.harness.mergeJsonKey)
-    - fn [mergeCodexToml](../../src/harness.ts#L379) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeCodexToml](../../src/harness.ts#L381) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeCodexToml"></a><br>The whole file is parsed (invalid TOML is an error, and the entry's own keys come from the parse), but only the lines of the `[mcp_servers.keylang]` table — header to the next header, its sub-tables included — are replaced, removed or appended, so the person's comments and…
       - calls [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.codexTableRegion](features.md#features.harness.codexTableRegion), [features.harness.rewriteCodexToml](features.md#features.harness.rewriteCodexToml), [features.harness.withoutLines](features.md#features.harness.withoutLines), [features.harness.codexEntryIs](features.md#features.harness.codexEntryIs), [features.harness.mcpCommand](features.md#features.harness.mcpCommand)
-    - fn [codexTableRegion](../../src/harness.ts#L417) (lines: readonly string[]) → { start: number; end: number } | null <!-- internal -->
+    - fn [codexTableRegion](../../src/harness.ts#L419) (lines: readonly string[]) → { start: number; end: number } | null <!-- internal -->
       <a id="features.harness.codexTableRegion"></a><br>Lines `[start, end)` of the `[mcp_servers.keylang]` table and its sub-tables, or null without the header.
-    - fn [withoutLines](../../src/harness.ts#L426) (lines: readonly string[], region: { start: number; end: number }) → string[] <!-- internal -->
+    - fn [withoutLines](../../src/harness.ts#L428) (lines: readonly string[], region: { start: number; end: number }) → string[] <!-- internal -->
       <a id="features.harness.withoutLines"></a><br>The lines without `[start, end)`; a blank line the removal left doubled (or last) goes with them.
-    - fn [codexEntryIs](../../src/harness.ts#L437) (text: string, entry: Record<string, unknown> | undefined) → boolean <!-- internal -->
+    - fn [codexEntryIs](../../src/harness.ts#L439) (text: string, entry: Record<string, unknown> | undefined) → boolean <!-- internal -->
       <a id="features.harness.codexEntryIs"></a><br>Whether `text` parses and its `mcp_servers.keylang` is exactly `entry` (undefined: absent).
       - calls [features.harness.isRecord](features.md#features.harness.isRecord)
-    - fn [rewriteCodexToml](../../src/harness.ts#L449) (data: Record<string, unknown>, entry: Record<string, unknown> | null) → { text: string | null } <!-- internal -->
+    - fn [rewriteCodexToml](../../src/harness.ts#L451) (data: Record<string, unknown>, entry: Record<string, unknown> | null) → { text: string | null } <!-- internal -->
       <a id="features.harness.rewriteCodexToml"></a><br>The whole file re-serialized with `entry` as the keylang server (null: without one); empty data is no file.
-    - fn [mergeSettings](../../src/harness.ts#L460) (existing: string | null, version: string | null, dir: string) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeSettings](../../src/harness.ts#L462) (existing: string | null, version: string | null, dir: string) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeSettings"></a><br>Parses an existing settings JSON via [`features.harness.parseObject`](features.md#features.harness.parseObject), updates its permission deny list ([`features.harness.mergeDeny`](features.md#features.harness.mergeDeny)) and hooks ([`features.harness.mergeHooksValue`](features.md#features.harness.mergeHooksValue)), dropping emptied keys, and serializes via [`features.harness.finishJson`](features.md#features.harness.finishJson); any error short-circuits. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [features.harness.parseObject](features.md#features.harness.parseObject), [features.harness.holdsKeylangSettings](features.md#features.harness.holdsKeylangSettings), [features.harness.mergeDeny](features.md#features.harness.mergeDeny), [features.harness.mergeHooksValue](features.md#features.harness.mergeHooksValue), [features.harness.finishJson](features.md#features.harness.finishJson)
-    - fn [mergeHooksFile](../../src/harness.ts#L476) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeHooksFile](../../src/harness.ts#L478) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeHooksFile"></a><br>Parses existing JSON text via [`features.harness.parseObject`](features.md#features.harness.parseObject), merges its `hooks` key using [`features.harness.mergeHooksValue`](features.md#features.harness.mergeHooksValue) (removing it when undefined), and serializes via [`features.harness.finishJson`](features.md#features.harness.finishJson), passing errors through. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [features.harness.parseObject](features.md#features.harness.parseObject), [features.harness.holdsOurHook](features.md#features.harness.holdsOurHook), [features.harness.mergeHooksValue](features.md#features.harness.mergeHooksValue), [features.harness.finishJson](features.md#features.harness.finishJson)
-    - fn [mergeDeny](../../src/harness.ts#L493) (permissions: unknown, install: boolean, dir: string) → { value: unknown } | { error: string } <!-- internal -->
+    - fn [mergeDeny](../../src/harness.ts#L495) (permissions: unknown, install: boolean, dir: string) → { value: unknown } | { error: string } <!-- internal -->
       <a id="features.harness.mergeDeny"></a><br>keylang's deny entries for the spec directory `dir` are added (`install`) or removed. Its entries for the default directory are keylang's too: they go once `dir` is another one, so a changed `dir` leaves no stale entry behind.
       - calls [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.denyRules](features.md#features.harness.denyRules)
-    - fn [mergeHooksValue](../../src/harness.ts#L509) (hooks: unknown, version: string | null) → { value: unknown } | { error: string } <!-- internal -->
+    - fn [mergeHooksValue](../../src/harness.ts#L511) (hooks: unknown, version: string | null) → { value: unknown } | { error: string } <!-- internal -->
       <a id="features.harness.mergeHooksValue"></a><br>Validates a hooks object and rewrites its Stop groups via [`features.harness.rewriteGroup`](features.md#features.harness.rewriteGroup), appending the versioned [`features.harness.hookCommand`](features.md#features.harness.hookCommand) if missing and pruning empty groups, returning undefined when nothing remains. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
       - calls [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.rewriteGroup](features.md#features.harness.rewriteGroup), [features.harness.hookCommand](features.md#features.harness.hookCommand), [features.harness.emptyGroup](features.md#features.harness.emptyGroup)
-    - fn [rewriteGroup](../../src/harness.ts#L528) (group: unknown, version: string | null) → Record<string, unknown> | { error: string } <!-- internal -->
+    - fn [rewriteGroup](../../src/harness.ts#L530) (group: unknown, version: string | null) → Record<string, unknown> | { error: string } <!-- internal -->
       <a id="features.harness.rewriteGroup"></a><br>Validates one hooks.Stop group and rebuilds its hook list, replacing commands matched by [`features.harness.isOurHook`](features.md#features.harness.isOurHook) with [`features.harness.hookCommand`](features.md#features.harness.hookCommand) output, or dropping them when version is null. Returns an error object for malformed entries. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
       - calls [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.isOurHook](features.md#features.harness.isOurHook), [features.harness.hookCommand](features.md#features.harness.hookCommand)
-    - fn [emptyGroup](../../src/harness.ts#L544) (group: Record<string, unknown>) → boolean <!-- internal -->
+    - fn [emptyGroup](../../src/harness.ts#L546) (group: Record<string, unknown>) → boolean <!-- internal -->
       <a id="features.harness.emptyGroup"></a><br>Returns true when the object's `hooks` is an empty array and it has no keys besides `hooks` and `matcher`. [`features.harness.mergeHooksValue`](features.md#features.harness.mergeHooksValue) uses it to detect hook groups that carry no handlers. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [isOurHook](../../src/harness.ts#L548) (command: string) → boolean <!-- internal -->
+    - fn [isOurHook](../../src/harness.ts#L550) (command: string) → boolean <!-- internal -->
       <a id="features.harness.isOurHook"></a><br>Tests a hook command string against a regex matching `keylang hook stop` with an optional `@version` suffix, returning whether it is one of our own stop hooks; [`features.harness.rewriteGroup`](features.md#features.harness.rewriteGroup) uses it to filter hook entries. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [holdsKeylangSettings](../../src/harness.ts#L553) (data: Record<string, unknown>, dir: string) → boolean <!-- internal -->
+    - fn [holdsKeylangSettings](../../src/harness.ts#L555) (data: Record<string, unknown>, dir: string) → boolean <!-- internal -->
       <a id="features.harness.holdsKeylangSettings"></a><br>Whether Claude's settings hold anything of keylang's: a deny rule of the spec directory `dir` (or of the default one), or the Stop hook.
       - calls [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.denyRules](features.md#features.harness.denyRules), [features.harness.holdsOurHook](features.md#features.harness.holdsOurHook)
-    - fn [holdsOurHook](../../src/harness.ts#L560) (hooks: unknown) → boolean <!-- internal -->
+    - fn [holdsOurHook](../../src/harness.ts#L562) (hooks: unknown) → boolean <!-- internal -->
       <a id="features.harness.holdsOurHook"></a>
       - calls [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.isOurHook](features.md#features.harness.isOurHook)
-    - fn [mergeJsonKey](../../src/harness.ts#L565) (existing: string | null, path: readonly string[], server: unknown) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeJsonKey](../../src/harness.ts#L567) (existing: string | null, path: readonly string[], server: unknown, jsonc = false) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeJsonKey"></a><br>Parses the config text via [`features.harness.parseObject`](features.md#features.harness.parseObject), then sets or removes the `keylang` entry inside the nested object at the first path key, dropping that key when it becomes empty. Rejects a non-object value there and re-serializes with [`features.harness.finishJson`](features.md#features.harness.finishJson). _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.harness.parseObject](features.md#features.harness.parseObject), [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.finishJson](features.md#features.harness.finishJson)
-    - fn [parseObject](../../src/harness.ts#L581) (existing: string | null) → { value: Record<string, unknown> } | { error: string } <!-- internal -->
-      <a id="features.harness.parseObject"></a><br>Turns a possibly missing config file body into a shallow-copied object: null or blank input yields `{}`, otherwise it `JSON.parse`s and checks the result with [`features.harness.isRecord`](features.md#features.harness.isRecord). Non-object values or parse failures come back as an error string instead of throwing, so… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - calls [features.harness.isRecord](features.md#features.harness.isRecord)
-    - fn [finishJson](../../src/harness.ts#L592) (data: Record<string, unknown>) → { text: string | null } <!-- internal -->
+    - fn [parseObject](../../src/harness.ts#L584) (existing: string | null, jsonc = false) → { value: Record<string, unknown> } | { error: string } <!-- internal -->
+      <a id="features.harness.parseObject"></a><br>The object in a JSON file; with `jsonc`, comments and trailing commas are allowed (`opencode.jsonc`).
+      - calls [map.imports.parseJsoncStrict](map.md#map.imports.parseJsoncStrict), [features.harness.isRecord](features.md#features.harness.isRecord)
+    - fn [finishJson](../../src/harness.ts#L595) (data: Record<string, unknown>) → { text: string | null } <!-- internal -->
       <a id="features.harness.finishJson"></a><br>Serializes a merged config object into pretty-printed JSON with a trailing newline, or yields `null` when the object is empty so callers like [`features.harness.mergeSettings`](features.md#features.harness.mergeSettings) can skip writing the file. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [opencodeFile](../../src/harness.ts#L597) (files: ReadonlyMap<string, string | null>) → string <!-- internal -->
+    - fn [opencodeFile](../../src/harness.ts#L600) (files: ReadonlyMap<string, string | null>) → string <!-- internal -->
       <a id="features.harness.opencodeFile"></a><br>Picks which OpenCode config filename to target: returns `opencode.json` if that entry exists with non-null content in the map, else `opencode.jsonc` if that one does, otherwise defaults to `opencode.json`. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [isRecord](../../src/harness.ts#L603) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isRecord](../../src/harness.ts#L606) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       <a id="features.harness.isRecord"></a><br>Type guard that returns true only for non-null objects that are not arrays, narrowing the value to a string-keyed record. Used by [`features.harness.parseObject`](features.md#features.harness.parseObject), [`features.harness.mergeDeny`](features.md#features.harness.mergeDeny) and the other merge helpers to validate parsed config shapes. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [HarnessChoice](../../src/harness.ts#L610) = "auto" | "none" | readonly HarnessName[]
+    - type [HarnessChoice](../../src/harness.ts#L613) = "auto" | "none" | readonly HarnessName[]
       <a id="features.harness.HarnessChoice"></a><br>Which harnesses: detected from the disk, none (strip keylang's files), or a named, non-empty list.
-    - fn [harnessChoice](../../src/harness.ts#L613) (flag: string | undefined) → HarnessChoice
+    - fn [harnessChoice](../../src/harness.ts#L616) (flag: string | undefined) → HarnessChoice
       <a id="features.harness.harnessChoice"></a><br>`--agents=<list>` as a choice; left out, the harnesses are detected. Throws as `parseAgents` does.
       - calls [features.harness.parseAgents](features.md#features.harness.parseAgents)
-    - fn [keylangVersion](../../src/harness.ts#L620) () → string
+    - fn [keylangVersion](../../src/harness.ts#L623) () → string
       <a id="features.harness.keylangVersion"></a><br>The version the MCP command and the Stop hook pin: the running keylang's `package.json`, from `src` and from `dist`.
-    - type [HarnessCategory](../../src/harness.ts#L625) = "instructions" | "mcp" | "skill" | "settings" | "hooks"
+    - type [HarnessCategory](../../src/harness.ts#L628) = "instructions" | "mcp" | "skill" | "settings" | "hooks"
       <a id="features.harness.HarnessCategory"></a><br>What a harness file is for, as a step before the write names it.
-    - fn [harnessCategory](../../src/harness.ts#L627) (path: string) → HarnessCategory
+    - fn [harnessCategory](../../src/harness.ts#L630) (path: string) → HarnessCategory
       <a id="features.harness.harnessCategory"></a><br>Maps a harness file path to its category: root `AGENTS.md`/`CLAUDE.md` become instructions, the skill constants map to skill, specific `.claude`/`.codex` files map to settings or hooks, and anything else falls back to mcp. Used by [`features.harness.planAgents`](features.md#features.harness.planAgents) to group planned… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [diskProbe](../../src/harness.ts#L636) (root: string) → HarnessProbe
+    - fn [diskProbe](../../src/harness.ts#L639) (root: string) → HarnessProbe
       <a id="features.harness.diskProbe"></a><br>The probe of the real disk: `.claude` and the other harness directories are directories; opencode is a file.
-    - fn [resolveChoice](../../src/harness.ts#L657) (choice: HarnessChoice, probe: HarnessProbe) → HarnessSelection
+    - fn [resolveChoice](../../src/harness.ts#L660) (choice: HarnessChoice, probe: HarnessProbe) → HarnessSelection
       <a id="features.harness.resolveChoice"></a><br>The selection a choice resolves to on this disk: `auto` keeps the instruction block even when nothing is detected; `none` has none.
       - calls [features.harness.detectHarnesses](features.md#features.harness.detectHarnesses)
-    - type [HarnessTarget](../../src/harness.ts#L667)
+    - type [HarnessTarget](../../src/harness.ts#L670)
       <a id="features.harness.HarnessTarget"></a><br>One file of the plan: the text it should hold (null: absent) against what is there now.
-    - type [AgentsPlan](../../src/harness.ts#L679)
+    - type [AgentsPlan](../../src/harness.ts#L682)
       <a id="features.harness.AgentsPlan"></a><br>What `keylang agents` would do, computed before anything is written. Internal to one operation — not a stored format.
-    - fn [planAgents](../../src/harness.ts#L695) (root: string, choice: HarnessChoice) → AgentsPlan
+    - fn [planAgents](../../src/harness.ts#L698) (root: string, choice: HarnessChoice) → AgentsPlan
       <a id="features.harness.planAgents"></a><br>Plans the harness files of `choice` against the disk under `root`. Reads, writes nothing; throws on a read error or a broken keylang.json.
       - calls [features.harness.resolveChoice](features.md#features.harness.resolveChoice), [features.harness.diskProbe](features.md#features.harness.diskProbe), [features.harness.specDir](features.md#features.harness.specDir), [features.harness.readInputs](features.md#features.harness.readInputs), [features.harness.skillFile](features.md#features.harness.skillFile), [features.harness.keylangVersion](features.md#features.harness.keylangVersion), [features.harness.planHarness](features.md#features.harness.planHarness), [features.harness.harnessCategory](features.md#features.harness.harnessCategory)
-    - fn [readInputs](../../src/harness.ts#L711) (root: string) → Map<string, string | null> <!-- internal -->
+    - fn [readInputs](../../src/harness.ts#L714) (root: string) → Map<string, string | null> <!-- internal -->
       <a id="features.harness.readInputs"></a><br>Reads every file listed in `HARNESS_PATHS` relative to the given root, mapping each path to its UTF-8 contents or null when the file is absent. Used by [`features.harness.planAgents`](features.md#features.harness.planAgents) and [`features.harness.agentsPlanProblems`](features.md#features.harness.agentsPlanProblems) to inspect existing harness files. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [agentsPlanProblems](../../src/harness.ts#L723) (plan: AgentsPlan) → string[]
+    - fn [agentsPlanProblems](../../src/harness.ts#L726) (plan: AgentsPlan) → string[]
       <a id="features.harness.agentsPlanProblems"></a><br>Why the plan may not be committed now (`path: reason` lines; empty when it may): every harness path must still hold the bytes the plan read, keylang.json must still name the same spec directory, a target must pass the repository's write rules (a removal too: the entry must be…
       - calls [features.harness.readInputs](features.md#features.harness.readInputs), [features.harness.specDir](features.md#features.harness.specDir), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [base.safe-write.targetProblem](base.md#base.safe-write.targetProblem), [features.harness.detectHarnesses](features.md#features.harness.detectHarnesses), [features.harness.diskProbe](features.md#features.harness.diskProbe)
-    - type [HarnessStep](../../src/harness.ts#L750)
+    - type [HarnessStep](../../src/harness.ts#L753)
       <a id="features.harness.HarnessStep"></a><br>One file step of a commit, with what became of it.
-    - fn [commitAgents](../../src/harness.ts#L767) ( plan: AgentsPlan, options: { signal?: AbortSignal; onStep?: (step: { path: string; action: "write" | "remove" }) => void } = {}, ) → Promise<{ steps: HarnessStep[]; outcome: "completed" | "failed" | "cancelled" }>
+    - fn [commitAgents](../../src/harness.ts#L770) ( plan: AgentsPlan, options: { signal?: AbortSignal; onStep?: (step: { path: string; action: "write" | "remove" }) => void } = {}, ) → Promise<{ steps: HarnessStep[]; outcome: "completed" | "failed" | "cancelled" }>
       <a id="features.harness.commitAgents"></a><br>Writes and removes the changed targets one by one, in plan order. A write is atomic at the target (a link inside the repository is followed; CRLF of the old file kept); a removal removes the entry itself, and only when the entry is inside the repository with links followed — a…
       - calls [base.safe-write.targetProblem](base.md#base.safe-write.targetProblem), [base.safe-write.landing](base.md#base.safe-write.landing), [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic)
   - module [keys](../../src/keys.ts#L1)
@@ -974,15 +978,17 @@
       <a id="features.llm.deadline"></a><br>Picks the effective timeout by returning the caller-specific value when it is set and smaller than the environment-derived one, otherwise the environment value, tagging which source won. Used by [`features.llm.llmClient`](features.md#features.llm.llmClient) to build the request deadline. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [timeoutMessage](../../src/llm.ts#L157) (provider: string, bound: Deadline) → string <!-- internal -->
       <a id="features.llm.timeoutMessage"></a><br>Builds the error text used when an LLM call exceeds its deadline, naming the provider and the millisecond limit from `bound`. Appends a note that the limit came from the `KEYLANG_LLM_TIMEOUT_MS` environment variable when `bound.fromVariable` is set. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [callSignal](../../src/llm.ts#L166) (timeout: number, outer: AbortSignal | undefined) → { signal: AbortSignal; timedOut: () => boolean; cancelled: () => boolean; dispose: () => void } <!-- internal -->
+    - fn [truncatedMessage](../../src/llm.ts#L162) (model: string, reason: "max_tokens" | "length") → string <!-- internal -->
+      <a id="features.llm.truncatedMessage"></a><br>The provider stopped the answer at the token limit (`stop_reason: max_tokens`, `finish_reason: length`): what came is not an answer.
+    - fn [callSignal](../../src/llm.ts#L171) (timeout: number, outer: AbortSignal | undefined) → { signal: AbortSignal; timedOut: () => boolean; cancelled: () => boolean; dispose: () => void } <!-- internal -->
       <a id="features.llm.callSignal"></a><br>One signal for a whole call: aborted by the deadline or by the caller's signal, whichever comes first; `dispose` clears the timer and the listener on the caller's signal, so a long-lived signal does not collect them.
-    - fn [anthropicComplete](../../src/llm.ts#L190) (client: Anthropic, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal) → Promise<string> <!-- internal -->
-      <a id="features.llm.anthropicComplete"></a><br>Sends one user prompt to the Anthropic messages API under a deadline built by [`features.llm.callSignal`](features.md#features.llm.callSignal), enabling server-side fallbacks for matching models, and raises [`features.llm.LlmCancelled`](features.md#features.llm.LlmCancelled) or a timeout from [`features.llm.timeoutMessage`](features.md#features.llm.timeoutMessage) on abort. It then returns the… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - calls [features.llm.callSignal](features.md#features.llm.callSignal), [features.llm.LlmCancelled](features.md#features.llm.LlmCancelled), [features.llm.timeoutMessage](features.md#features.llm.timeoutMessage)
-    - fn [openrouterComplete](../../src/llm.ts#L224) (base: string, key: string, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal) → Promise<string> <!-- internal -->
-      <a id="features.llm.openrouterComplete"></a><br>Streams a chat completion from an OpenRouter-compatible endpoint under one deadline from [`features.llm.callSignal`](features.md#features.llm.callSignal), accumulating SSE deltas or reading a plain JSON reply via [`features.llm.parseJson`](features.md#features.llm.parseJson). Empty or erroring answers become errors; cancellation raises… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - calls [features.llm.callSignal](features.md#features.llm.callSignal), [features.llm.parseJson](features.md#features.llm.parseJson), [features.llm.LlmCancelled](features.md#features.llm.LlmCancelled), [features.llm.timeoutMessage](features.md#features.llm.timeoutMessage)
-    - fn [parseJson](../../src/llm.ts#L283) (text: string) → unknown <!-- internal -->
+    - fn [anthropicComplete](../../src/llm.ts#L195) (client: Anthropic, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal) → Promise<string> <!-- internal -->
+      <a id="features.llm.anthropicComplete"></a><br>Sends one user prompt to the Anthropic messages API under a deadline built by [`features.llm.callSignal`](features.md#features.llm.callSignal), enabling server-side fallbacks for matching models, and raises [`features.llm.LlmCancelled`](features.md#features.llm.LlmCancelled) or a timeout from [`features.llm.timeoutMessage`](features.md#features.llm.timeoutMessage) on abort. It then returns the… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+      - calls [features.llm.callSignal](features.md#features.llm.callSignal), [features.llm.LlmCancelled](features.md#features.llm.LlmCancelled), [features.llm.timeoutMessage](features.md#features.llm.timeoutMessage), [features.llm.truncatedMessage](features.md#features.llm.truncatedMessage)
+    - fn [openrouterComplete](../../src/llm.ts#L231) (base: string, key: string, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal) → Promise<string> <!-- internal -->
+      <a id="features.llm.openrouterComplete"></a><br>Streams a chat completion from an OpenRouter-compatible endpoint under one deadline from [`features.llm.callSignal`](features.md#features.llm.callSignal), accumulating SSE deltas or reading a plain JSON reply via [`features.llm.parseJson`](features.md#features.llm.parseJson). Empty or erroring answers become errors; cancellation raises… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+      - calls [features.llm.callSignal](features.md#features.llm.callSignal), [features.llm.parseJson](features.md#features.llm.parseJson), [features.llm.truncatedMessage](features.md#features.llm.truncatedMessage), [features.llm.LlmCancelled](features.md#features.llm.LlmCancelled), [features.llm.timeoutMessage](features.md#features.llm.timeoutMessage)
+    - fn [parseJson](../../src/llm.ts#L293) (text: string) → unknown <!-- internal -->
       <a id="features.llm.parseJson"></a><br>Wraps `JSON.parse` so malformed input yields `undefined` instead of throwing, letting [`features.llm.openrouterComplete`](features.md#features.llm.openrouterComplete) safely probe OpenRouter response bodies for JSON. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [lsp-features](../../src/lsp-features.ts#L1)
     <a id="features.lsp-features"></a><br>Language features over one analysis: pure functions from an `Analysis`, a document, and a position to LSP results. Positions are LSP's: 0-based line, UTF-16 character.
@@ -1175,68 +1181,86 @@
       <a id="features.proposals.notPlain"></a><br>The write protocol's first test (`writeProblem`): a plain relative POSIX path, before anything on disk is looked at.
     - fn [unreadDirectory](../../src/proposals.ts#L33) (dirs: readonly string[]) → boolean <!-- internal -->
       <a id="features.proposals.unreadDirectory"></a><br>A directory below the spec directory, or the root for code, that `check` and the map do not read: hidden, `node_modules`, `target`.
-    - fn [proposalProblem](../../src/proposals.ts#L46) (root: string, specDir: string, path: string, generated: (path: string) => boolean = () => false) → string | null
+    - fn [unreadName](../../src/proposals.ts#L38) (name: string) → boolean <!-- internal -->
+      <a id="features.proposals.unreadName"></a><br>Case does not tell the directories apart: on a case-insensitive file system `Node_Modules` is `node_modules`.
+    - fn [statOrNull](../../src/proposals.ts#L43) (abs: string) → Stats | null <!-- internal -->
+      <a id="features.proposals.statOrNull"></a>
+    - fn [sameEntry](../../src/proposals.ts#L52) (a: Stats, b: Stats | null) → boolean <!-- internal -->
+      <a id="features.proposals.sameEntry"></a><br>The same directory on disk: by device and inode, which a link or another letter case of the name does not change.
+    - fn [landsIn](../../src/proposals.ts#L64) (abs: string, dir: string) → boolean
+      <a id="features.proposals.landsIn"></a><br>Whether a write to `abs` lands inside the directory `dir` on disk: `dir` itself or one of the existing ancestors of `abs` is `dir` by device and inode. Links are followed, so `notes/brief/x.md` with `notes -> explain` lands in `explain/`, and on a case-insensitive file system…
+      - calls [features.proposals.statOrNull](features.md#features.proposals.statOrNull), [features.proposals.sameEntry](features.md#features.proposals.sameEntry)
+    - fn [landsUnread](../../src/proposals.ts#L81) (root: string, lands: string) → boolean <!-- internal -->
+      <a id="features.proposals.landsUnread"></a><br>Whether the landing place `lands` (below `root`, links resolved) is in a directory `check` does not read: an ancestor below `root` whose name is hidden, `node_modules` or `target` (the segments not on disk yet by their text), or whose entry on disk is the `node_modules` or…
+      - calls [features.proposals.statOrNull](features.md#features.proposals.statOrNull), [map.analyze.within](map.md#map.analyze.within), [features.proposals.sameEntry](features.md#features.proposals.sameEntry), [features.proposals.unreadName](features.md#features.proposals.unreadName)
+    - fn [reservedSpecText](../../src/proposals.ts#L100) (inside: string) → string | null <!-- internal -->
+      <a id="features.proposals.reservedSpecText"></a><br>Why the spec path `inside` the spec directory is in a reserved directory by its text alone (case aside), or null: the fast path.
+      - calls [features.proposals.unreadDirectory](features.md#features.proposals.unreadDirectory)
+    - fn [reservedSpecLanding](../../src/proposals.ts#L108) (specRoot: string, lands: string) → string | null <!-- internal -->
+      <a id="features.proposals.reservedSpecLanding"></a><br>Why the landing place `lands` of a spec is in a reserved directory of `specRoot` (the spec directory on disk), or null.
+      - calls [features.proposals.landsUnread](features.md#features.proposals.landsUnread), [features.proposals.landsIn](features.md#features.proposals.landsIn)
+    - fn [proposalProblem](../../src/proposals.ts#L122) (root: string, specDir: string, path: string, generated: (path: string) => boolean = () => false) → string | null
       <a id="features.proposals.proposalProblem"></a><br>Why `.keylang/proposals/<path>` may not be merged, or null. A proposal replaces one hand-written spec: a Markdown file under the spec directory, not one keylang generates (the map, the explained map, a saved model explanation, a file with the generated marker), and not reached…
-      - calls [features.proposals.notPlain](features.md#features.proposals.notPlain), [features.proposals.unreadDirectory](features.md#features.proposals.unreadDirectory), [base.safe-write.landing](base.md#base.safe-write.landing), [map.analyze.within](map.md#map.analyze.within), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [lang.files.existingText](lang.md#lang.files.existingText), [lang.parser.parse](lang.md#lang.parser.parse), [base.safe-write.isGeneratedText](base.md#base.safe-write.isGeneratedText), [features.proposals.generatedSpecProblem](features.md#features.proposals.generatedSpecProblem)
-    - fn [generatedSpecProblem](../../src/proposals.ts#L74) (marker: string | null, specDir: string) → string <!-- internal -->
+      - calls [features.proposals.notPlain](features.md#features.proposals.notPlain), [features.proposals.reservedSpecText](features.md#features.proposals.reservedSpecText), [base.safe-write.landing](base.md#base.safe-write.landing), [map.analyze.within](map.md#map.analyze.within), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [features.proposals.reservedSpecLanding](features.md#features.proposals.reservedSpecLanding), [lang.files.existingText](lang.md#lang.files.existingText), [lang.parser.parse](lang.md#lang.parser.parse), [base.safe-write.isGeneratedText](base.md#base.safe-write.isGeneratedText), [features.proposals.generatedSpecProblem](features.md#features.proposals.generatedSpecProblem)
+    - fn [generatedSpecProblem](../../src/proposals.ts#L152) (marker: string | null, specDir: string) → string <!-- internal -->
       <a id="features.proposals.generatedSpecProblem"></a><br>The refusal for a generated spec, naming the command its marker names (`keylang baseline` for the baseline; `keylang map` otherwise).
-    - fn [codeProposalProblem](../../src/proposals.ts#L88) (root: string, path: string) → string | null
+    - fn [codeProposalProblem](../../src/proposals.ts#L166) (root: string, path: string) → string | null
       <a id="features.proposals.codeProposalProblem"></a><br>Why a proposal for the source file `path` may not be merged, or null: a file of a language keylang reads, a plain relative path inside the repository (links included, one whose target does not exist yet too), outside the directories sources are not read from, and not one…
-      - calls [base.languages.languageOf](base.md#base.languages.languageOf), [features.proposals.notPlain](features.md#features.proposals.notPlain), [features.proposals.unreadDirectory](features.md#features.proposals.unreadDirectory), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [base.safe-write.landing](base.md#base.safe-write.landing), [lang.files.existingText](lang.md#lang.files.existingText), [base.safe-write.isGeneratedText](base.md#base.safe-write.isGeneratedText)
-    - fn [targetProblem](../../src/proposals.ts#L102) (root: string, specDir: string, path: string, generated?: (path: string) => boolean) → string | null
+      - calls [base.languages.languageOf](base.md#base.languages.languageOf), [features.proposals.notPlain](features.md#features.proposals.notPlain), [features.proposals.unreadDirectory](features.md#features.proposals.unreadDirectory), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [base.safe-write.landing](base.md#base.safe-write.landing), [features.proposals.landsUnread](features.md#features.proposals.landsUnread), [lang.files.existingText](lang.md#lang.files.existingText), [base.safe-write.isGeneratedText](base.md#base.safe-write.isGeneratedText)
+    - fn [targetProblem](../../src/proposals.ts#L182) (root: string, specDir: string, path: string, generated?: (path: string) => boolean) → string | null
       <a id="features.proposals.targetProblem"></a><br>The gate of a proposal's target: a Markdown file is a spec, any other a source file.
       - calls [features.proposals.proposalProblem](features.md#features.proposals.proposalProblem), [features.proposals.codeProposalProblem](features.md#features.proposals.codeProposalProblem)
-    - type [ProposalBasis](../../src/proposals.ts#L111)
+    - type [ProposalBasis](../../src/proposals.ts#L191)
       <a id="features.proposals.ProposalBasis"></a><br>What a proposal was built from: the target on disk and the proposal already waiting for it (null: no file). A write that carries it lands only while both are still so.
-    - fn [proposalWriteProblem](../../src/proposals.ts#L121) (root: string, path: string, basis: ProposalBasis) → string | null
+    - fn [proposalWriteProblem](../../src/proposals.ts#L201) (root: string, path: string, basis: ProposalBasis) → string | null
       <a id="features.proposals.proposalWriteProblem"></a><br>Why the proposal of `path` built from `basis` may not be written now, or null: the target or the waiting proposal changed, appeared or went away since, or the store breaks the write policy. Each reason names its file.
       - calls [lang.files.existingText](lang.md#lang.files.existingText), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem)
-    - fn [writeProposal](../../src/proposals.ts#L137) (root: string, path: string, text: string, basis?: ProposalBasis) → string
+    - fn [writeProposal](../../src/proposals.ts#L217) (root: string, path: string, text: string, basis?: ProposalBasis) → string
       <a id="features.proposals.writeProposal"></a><br>Writes the proposal for `path` (relative, POSIX) atomically and returns its file; `.keylang/proposals/` is keylang's own store, so a link there that leads elsewhere is refused like any other. With `basis` nothing is written unless the target and the waiting proposal are still…
       - calls [features.proposals.proposalWriteProblem](features.md#features.proposals.proposalWriteProblem), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite)
-    - fn [lineDiff](../../src/proposals.ts#L146) (before: string, after: string) → string
+    - fn [lineDiff](../../src/proposals.ts#L226) (before: string, after: string) → string
       <a id="features.proposals.lineDiff"></a><br>`-`/`+` lines between a common prefix and suffix: enough to see what a proposal changes.
-    - type [PendingProposal](../../src/proposals.ts#L163)
+    - type [PendingProposal](../../src/proposals.ts#L243)
       <a id="features.proposals.PendingProposal"></a><br>One pending proposal as `keylang proposals` lists it.
-    - fn [proposalTarget](../../src/proposals.ts#L180) (name: string) → string | null
+    - fn [proposalTarget](../../src/proposals.ts#L260) (name: string) → string | null
       <a id="features.proposals.proposalTarget"></a><br>The target of a proposal as a person names it: as `keylang proposals` lists it, or as its store path `.keylang/proposals/<target>`; POSIX. Null when it is no plain relative path.
       - calls [base.config.toPosix](base.md#base.config.toPosix), [features.proposals.notPlain](features.md#features.proposals.notPlain)
-    - fn [pendingTargets](../../src/proposals.ts#L191) (root: string) → string[]
+    - fn [pendingTargets](../../src/proposals.ts#L271) (root: string) → string[]
       <a id="features.proposals.pendingTargets"></a><br>Every target with a file or a link under `.keylang/proposals/`, sorted. The store is listed only while it stays inside the repository; a link in it is listed, never followed.
       - calls [base.safe-write.landing](base.md#base.safe-write.landing), [map.analyze.within](map.md#map.analyze.within), [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [storeEntry](../../src/proposals.ts#L206) (root: string, target: string) → { abs: string; link: boolean } | { problem: string } | null <!-- internal -->
+    - fn [storeEntry](../../src/proposals.ts#L286) (root: string, target: string) → { abs: string; link: boolean } | { problem: string } | null <!-- internal -->
       <a id="features.proposals.storeEntry"></a><br>The store entry of `target` where its directory lands: null when there is none, else the entry and whether it is a link. A store whose directory leads out of the repository is a problem, and nothing there is looked at.
       - calls [base.safe-write.landing](base.md#base.safe-write.landing), [map.analyze.within](map.md#map.analyze.within)
-    - type [ReadProposal](../../src/proposals.ts#L220) <!-- internal -->
+    - type [ReadProposal](../../src/proposals.ts#L300) <!-- internal -->
       <a id="features.proposals.ReadProposal"></a><br>A proposal that may be accepted: its text and the target's (null: no file).
-    - fn [readProposal](../../src/proposals.ts#L230) (root: string, specDir: string, target: string) → ReadProposal | { problem: string } | null <!-- internal -->
+    - fn [readProposal](../../src/proposals.ts#L310) (root: string, specDir: string, target: string) → ReadProposal | { problem: string } | null <!-- internal -->
       <a id="features.proposals.readProposal"></a><br>The proposal of `target` read after both gates — a plain file in the store, a target a proposal may change — or why it cannot be accepted; null when none is pending.
       - calls [features.proposals.storeEntry](features.md#features.proposals.storeEntry), [features.proposals.targetProblem](features.md#features.proposals.targetProblem), [base.safe-write.landing](base.md#base.safe-write.landing), [lang.files.existingText](lang.md#lang.files.existingText)
-    - fn [lineCounts](../../src/proposals.ts#L241) (before: string, after: string) → { added: number; removed: number } <!-- internal -->
+    - fn [lineCounts](../../src/proposals.ts#L321) (before: string, after: string) → { added: number; removed: number } <!-- internal -->
       <a id="features.proposals.lineCounts"></a><br>`+` and `-` lines `lineDiff` prints.
       - calls [features.proposals.lineDiff](features.md#features.proposals.lineDiff)
-    - fn [listProposals](../../src/proposals.ts#L247) (root: string, specDir: string) → PendingProposal[]
+    - fn [listProposals](../../src/proposals.ts#L327) (root: string, specDir: string) → PendingProposal[]
       <a id="features.proposals.listProposals"></a><br>Every pending proposal with its target, line counts and why it cannot be accepted. Reads only.
       - calls [features.proposals.pendingTargets](features.md#features.proposals.pendingTargets), [features.proposals.readProposal](features.md#features.proposals.readProposal), [features.proposals.lineCounts](features.md#features.proposals.lineCounts)
-    - type [ProposalDiff](../../src/proposals.ts#L256)
+    - type [ProposalDiff](../../src/proposals.ts#L336)
       <a id="features.proposals.ProposalDiff"></a><br>What `keylang proposals show <target>` prints, or why not. Reads only.
-    - fn [proposalDiff](../../src/proposals.ts#L258) (root: string, specDir: string, target: string) → ProposalDiff
+    - fn [proposalDiff](../../src/proposals.ts#L338) (root: string, specDir: string, target: string) → ProposalDiff
       <a id="features.proposals.proposalDiff"></a>
       - calls [features.proposals.readProposal](features.md#features.proposals.readProposal), [features.proposals.lineDiff](features.md#features.proposals.lineDiff)
-    - type [AcceptResult](../../src/proposals.ts#L265)
+    - type [AcceptResult](../../src/proposals.ts#L345)
       <a id="features.proposals.AcceptResult"></a>
-    - fn [acceptProposal](../../src/proposals.ts#L283) (root: string, specDir: string, target: string) → AcceptResult
+    - fn [acceptProposal](../../src/proposals.ts#L363) (root: string, specDir: string, target: string) → AcceptResult
       <a id="features.proposals.acceptProposal"></a><br>`keylang proposals accept <target>`: the proposal's full text replaces the target, as MERGE does with every hunk accepted. The same gates as MERGE (the target's, a plain file in the store), a target that is not writable (a person's `chmod a-w`) is refused, and the write follows…
       - calls [features.proposals.readProposal](features.md#features.proposals.readProposal), [base.safe-write.landing](base.md#base.safe-write.landing), [features.proposals.dropProposal](features.md#features.proposals.dropProposal), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite), [features.proposals.countDecision](features.md#features.proposals.countDecision), [features.proposals.lineCounts](features.md#features.proposals.lineCounts)
-    - type [RejectResult](../../src/proposals.ts#L306)
+    - type [RejectResult](../../src/proposals.ts#L386)
       <a id="features.proposals.RejectResult"></a>
-    - fn [rejectProposal](../../src/proposals.ts#L313) (root: string, specDir: string, target: string) → RejectResult
+    - fn [rejectProposal](../../src/proposals.ts#L393) (root: string, specDir: string, target: string) → RejectResult
       <a id="features.proposals.rejectProposal"></a><br>`keylang proposals reject <target>`: the proposal is removed and the target stays as it is. A proposal no gate admits is still the person's to drop; a link in the store is removed itself, never followed.
       - calls [features.proposals.storeEntry](features.md#features.proposals.storeEntry), [features.proposals.targetProblem](features.md#features.proposals.targetProblem), [base.safe-write.landing](base.md#base.safe-write.landing), [features.proposals.countDecision](features.md#features.proposals.countDecision), [lang.files.existingText](lang.md#lang.files.existingText)
-    - fn [dropProposal](../../src/proposals.ts#L326) (root: string, target: string, text: string) → string | null <!-- internal -->
+    - fn [dropProposal](../../src/proposals.ts#L406) (root: string, target: string, text: string) → string | null <!-- internal -->
       <a id="features.proposals.dropProposal"></a><br>Removes the proposal while it still holds `text`: null, or why it stays.
       - calls [features.proposals.storeEntry](features.md#features.proposals.storeEntry), [base.diag.errorText](base.md#base.diag.errorText)
-    - fn [countDecision](../../src/proposals.ts#L338) (root: string, before: string, after: string, decision: "accepted" | "rejected") → void <!-- internal -->
+    - fn [countDecision](../../src/proposals.ts#L418) (root: string, before: string, after: string, decision: "accepted" | "rejected") → void <!-- internal -->
       <a id="features.proposals.countDecision"></a><br>The model lines a decision took or dropped, as MERGE counts them (design §5.1 p.7); a count that cannot be written is lost, never the decision.
       - calls [features.proposals.lineDiff](features.md#features.proposals.lineDiff), [features.stats.statusesIn](features.md#features.stats.statusesIn), [features.stats.updateStats](features.md#features.stats.updateStats), [features.stats.addDrafts](features.md#features.stats.addDrafts)
   - module [spec-to-code](../../src/spec-to-code.ts#L1)

@@ -683,7 +683,7 @@ test("web: init → new feature → edit → read → map → feature over the r
   assert.match(inBrowser[2]!, /Feature readiness · refunds +completed · code 1/);
   assert.deepEqual(artifacts(webRoot), artifacts(terminalRoot), "the same files, byte for byte");
   assert.equal(existsSync(mark), false, "no editor ran on the server");
-  // Actions add no HTTP endpoint: only the page, its assets and the socket.
+  // Actions add no HTTP endpoint: only the page, its assets, the socket and the read-only diagram API.
   for (const path of ["/run", "/operations", "/api/map", "/ws/run"]) assert.equal((await status(url, path)).status, 404, path);
 });
 
@@ -1011,4 +1011,57 @@ test("web: the feature readiness screen over the real transport: the ladder and 
   screen.input(KEY.tab);
   screen.input(KEY.enter);
   await waitFor(() => /keylang\/features\/refund\.md/.test(screen.lines()[0] ?? "") && !/RESULTS · F6/.test(screen.text()), "the question's line");
+});
+
+test("web: /api/diagram and /api/views answer JSON with the socket's token as a Bearer, behind the same Host and Origin checks (business-flows/20)", async (t) => {
+  const repo = checkoutRepo(t);
+  const server = await serveWeb({ root: repo, port: 0 });
+  t.after(() => server.close());
+  const url = new URL(server.url);
+  const token = tokenOf(url);
+  const bearer = { Authorization: `Bearer ${token}` };
+  const views = await status(url, "/api/views", bearer);
+  assert.equal(views.status, 200, views.body);
+  assert.match(views.type, /^application\/json/);
+  assert.equal(views.headers["cache-control"], "no-store");
+  const listed = JSON.parse(views.body) as { flows: string[]; entries: unknown[]; layers: string[] };
+  assert.deepEqual(listed.flows, ["checkout"]);
+  assert.deepEqual(listed.layers.slice(0, 4), ["domain", "application", "infrastructure", "presentation"]);
+  const flow = await status(url, "/api/diagram?view=flow&name=checkout", bearer);
+  assert.equal(flow.status, 200, flow.body);
+  const diagram = JSON.parse(flow.body) as { nodes: { kind: string; label: string; verdict: string | null }[]; edges: { verdict?: string }[]; groups: unknown[]; reason?: string };
+  assert.deepEqual(
+    diagram.nodes.map((n) => `${n.kind}:${n.label}`),
+    ["start:presentation.terminal.checkout", "task:application.purchase.buy", "task:domain.order.create", "task:infrastructure.store.save"],
+  );
+  // The repository asks for traces and has none: every step is unverified, while the static route into it is proven.
+  assert.deepEqual(
+    diagram.nodes.map((n) => n.verdict),
+    ["unverified", "unverified", "unverified", "unverified"],
+  );
+  assert.deepEqual(
+    diagram.edges.map((e) => e.verdict),
+    ["ok", "ok", "ok"],
+  );
+  const unknown = JSON.parse((await status(url, "/api/diagram?view=flow&name=nope", bearer)).body) as { nodes: unknown[]; reason: string };
+  assert.deepEqual(unknown.nodes, []);
+  assert.match(unknown.reason, /no flow named `nope`/);
+  // Without the token, with another, or with it in the query: 403, and no data.
+  for (const [path, headers] of [
+    ["/api/diagram?view=layers", {}],
+    ["/api/views", {}],
+    ["/api/diagram?view=layers", { Authorization: "Bearer wrong" }],
+    ["/api/diagram?view=layers", { Authorization: token }],
+    [`/api/diagram?view=layers&t=${token}`, {}],
+    ["/api/diagram?view=layers", { ...bearer, Origin: "http://evil.example" }],
+  ] as const) {
+    const res = await status(url, path, headers);
+    assert.equal(res.status, 403, `${path} ${JSON.stringify(headers)}`);
+    assert.doesNotMatch(res.body, /checkout/);
+  }
+  assert.equal((await status(url, "/api/diagram?view=layers", { ...bearer, Origin: `http://${url.host}` })).status, 200);
+  assert.equal((await status(url, "/api/diagram?view=nope", bearer)).status, 400);
+  assert.equal((await status(url, "/api/diagram?view=flow", bearer)).status, 400);
+  assert.equal((await status(url, "/api/diagram?view=layers", { ...bearer, Host: `evil.example:${url.port}` })).status, 421);
+  assert.equal((await status(url, "/api/nope", bearer)).status, 404);
 });

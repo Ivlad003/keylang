@@ -350,6 +350,42 @@ test("07: excluding the far side of a cycle outside every layer is unverified, n
   assert.equal(excluded.find((item) => item.criterion === "no-cycles")?.verdict, "unverified", JSON.stringify(excluded));
 });
 
+const BARREL_CONFIG = `${JSON.stringify({ languages: ["typescript"], layers: { app: "src/app/**", shared: "src/shared/**", infra: "src/infra/**" } })}\n`;
+const BARREL_FILES = {
+  "keylang.json": BARREL_CONFIG,
+  "src/app/x.ts": 'import { save } from "../shared/barrel.ts";\nexport function run() {\n  return save();\n}\n',
+  "src/infra/db.ts": "export function save() {\n  return 1;\n}\n",
+  "keylang/rules.md": "# rules\n\n- deny app infra\n",
+};
+
+// Review 2026-10-06 §2.1 item 9: an opaque barrel another layer imports a name from is in the deny's area.
+test("09: excluding a barrel that re-exports the denied target is unverified, not ok", (t) => {
+  const { base, excluded, status } = excludeCase(t, "deny-barrel", { ...BARREL_FILES, "src/shared/barrel.ts": 'export { save } from "../infra/db.ts";\n' }, "src/shared/barrel.ts");
+  assert.equal(base.find((item) => item.criterion === "deny app infra")?.verdict, "fail", JSON.stringify(base));
+  const row = excluded.find((item) => item.criterion === "deny app infra");
+  assert.equal(row?.verdict, "unverified", JSON.stringify(excluded));
+  assert.match(row?.evidence ?? "", /excluded by keylang\.json \(src\/shared\/barrel\.ts:1:1\)/);
+  assert.equal(status, 0);
+});
+
+test("09: excluding a star-export barrel of the denied target is unverified, not ok", (t) => {
+  const { base, excluded } = excludeCase(t, "deny-star-barrel", { ...BARREL_FILES, "src/shared/barrel.ts": 'export * from "../infra/db.ts";\n' }, "src/shared/barrel.ts");
+  assert.equal(base.find((item) => item.criterion === "deny app infra")?.verdict, "fail", JSON.stringify(base));
+  assert.equal(excluded.find((item) => item.criterion === "deny app infra")?.verdict, "unverified", JSON.stringify(excluded));
+});
+
+test("09: a barrel with a parse error leaves the deny unverified, and --strict exits 1", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "keylang-meta-deny-broken-barrel-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const files = { ...BARREL_FILES, "src/shared/barrel.ts": 'const broken = ;;; ))) {{\nexport { save } from "../infra/db.ts";\n' };
+  for (const [path, text] of Object.entries(files)) write(dir, path, text);
+  const rows = results(dir);
+  const row = rows.find((item) => item.criterion === "deny app infra");
+  assert.equal(row?.verdict, "unverified", JSON.stringify(rows));
+  assert.match(row?.evidence ?? "", /src\/shared\/barrel\.ts:/);
+  assert.equal(keylang(dir, ["check", "--strict"]).status, 1);
+});
+
 test("08: excluding the only importer of an allowed package adds no K001", (t) => {
   const { excluded, status } = excludeCase(
     t,

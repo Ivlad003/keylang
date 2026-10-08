@@ -1,6 +1,6 @@
 # 34: `hook install` у монорепо ставить pre-commit, який блокує кожен коміт
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -54,11 +54,13 @@ scratchpad/review/cli/mono зі stub `npx` першим у PATH. Stub відки
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/git-hook.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/git-hook.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+- 2026-10-07: Регресійний тест `tests/cli-harness.test.ts` («hook install from a keylang root below the git top level…») — монорепо зі stub `npx` першим у PATH, справжній `git commit` з `packages/x` і з кореня; на старому коді падав (хук без `cd`). Виправлення: `preCommitText(version, subdir)` додає рядок `cd "$(git rev-parse --show-toplevel)/<subdir>" || exit 2` перед `exec`; `cmdHookInstall` бере `findRoot(cwd)` відносно `gitTopLevel(cwd)` (без `keylang.json` угорі — корінь робочого дерева; корінь keylang поза деревом — код 2); `preCommitState` порівнює з текстом разом зі шляхом, тож хук без `cd` — `stale`. Один корінь на встановлення (кілька коренів у одному репо не підтримуються — задокументовано). Оновлено `docs/cli.md` (hook install). `node --test tests/cli-harness.test.ts`: 11/11; `npm run typecheck` чистий.

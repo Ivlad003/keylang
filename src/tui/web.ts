@@ -23,7 +23,9 @@ import { dirname, join } from "node:path";
 import type { Duplex } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
-import { analyze } from "../analyze.ts";
+import { analyze, type Analysis } from "../analyze.ts";
+import { checkResults } from "../check-results.ts";
+import { diagramOf, parseView, viewsOf } from "../diagram.ts";
 import { App, MAX_COLS, MAX_ROWS, type Analyzer, type OperationRunner } from "./app.ts";
 import { SnapshotWorker } from "./background.ts";
 import { ENTER } from "./screen.ts";
@@ -191,12 +193,44 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
     return !loopback || [`localhost:${port}`, `127.0.0.1:${port}`, `[::1]:${port}`].includes(header);
   };
   const authorized = (request: IncomingMessage): boolean => sameSecret(offeredToken(request), token);
+  // A page of another origin may send a request but must not read the answer: the Origin a browser sets is checked as for the socket.
+  const sameOrigin = (request: IncomingMessage): boolean => request.headers.origin === undefined || request.headers.origin === `http://${request.headers.host}`;
+
+  // Concurrent API requests share one analysis; the next request after it ends analyses again (the code may have changed).
+  let pending: Promise<Analysis> | null = null;
+  const analysis = (): Promise<Analysis> => {
+    pending ??= Promise.resolve()
+      .then(() => analyzer({ root: options.root }))
+      .finally(() => (pending = null));
+    return pending;
+  };
+
+  /** `GET /api/views`, `GET /api/diagram?view=…`: JSON for the diagram client, with the socket's token as a Bearer. */
+  const api = async (request: IncomingMessage, response: ServerResponse, path: string, query: URLSearchParams): Promise<void> => {
+    // The two paths are public (docs/tui.md); any other is the 404 of every unknown path, token or not.
+    if (path !== "/api/views" && path !== "/api/diagram") return reply(response, 404, "text/plain", "not found\n");
+    if (!sameOrigin(request) || !sameSecret(bearerToken(request), token)) return reply(response, 403, "text/plain", "forbidden\n");
+    if (request.method !== "GET") return reply(response, 405, "text/plain", "method not allowed\n");
+    const view = path === "/api/diagram" ? parseView(query) : null;
+    if (typeof view === "string") return reply(response, 400, "application/json", `${JSON.stringify({ error: view })}\n`);
+    const done = await analysis();
+    const body = view === null ? viewsOf(done.snapshot, done.spec) : diagramOf({ snapshot: done.snapshot, spec: done.spec, results: checkResults(done.verdicts, done.snapshot?.snapshotId ?? null, done.diagnostics), view });
+    return reply(response, 200, "application/json", `${JSON.stringify(body)}\n`);
+  };
 
   const serve = (request: IncomingMessage, response: ServerResponse): void => {
     // A request line the socket accepts may still be no URL (`GET //[`): that is the client's error, not the server's end.
     const path = pathOf(request.url);
     if (path === null) return reply(response, 400, "text/plain", "bad request\n");
     if (!allowedHost(request.headers.host)) return reply(response, 421, "text/plain", "unknown host\n");
+    if (path === "/api" || path.startsWith("/api/")) {
+      api(request, response, path, new URL(request.url ?? "/", "http://localhost").searchParams).catch((error: unknown) => {
+        process.stderr.write(`keylang web: ${error instanceof Error ? error.message : String(error)}\n`);
+        if (!response.headersSent) reply(response, 500, "text/plain", "server error\n");
+        else response.destroy();
+      });
+      return;
+    }
     if (path.startsWith("/assets/")) {
       const name = path.slice("/assets/".length) as AssetName;
       const file = Object.hasOwn(ASSETS, name) ? assetPath(name) : null;
@@ -393,6 +427,12 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
       await closed;
     },
   };
+}
+
+/** The token of an `Authorization: Bearer <token>` header. */
+function bearerToken(request: IncomingMessage): string | null {
+  const match = /^Bearer ([^\s]+)$/.exec(String(request.headers.authorization ?? ""));
+  return match ? match[1]! : null;
 }
 
 /** The path of a request target, or null when it is not a URL at all. */

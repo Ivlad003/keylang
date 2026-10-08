@@ -158,6 +158,11 @@ function timeoutMessage(provider: string, bound: Deadline): string {
   return `${provider}: no answer within ${bound.ms} ms${bound.fromVariable ? " (KEYLANG_LLM_TIMEOUT_MS)" : ""}`;
 }
 
+/** The provider stopped the answer at the token limit (`stop_reason: max_tokens`, `finish_reason: length`): what came is not an answer. */
+function truncatedMessage(model: string, reason: "max_tokens" | "length"): string {
+  return `${model}: the answer was cut by the token limit (${reason})`;
+}
+
 /**
  * One signal for a whole call: aborted by the deadline or by the caller's
  * signal, whichever comes first; `dispose` clears the timer and the listener
@@ -213,6 +218,8 @@ async function anthropicComplete(client: Anthropic, model: string, request: LlmR
     call.dispose();
   }
   if (response.stop_reason === "refusal") throw new Error(`${model} declined the request${response.stop_details?.category ? ` (${response.stop_details.category})` : ""}`);
+  // A cut answer is not an answer: saved as fresh it would never be asked again, and cut code is not code.
+  if (response.stop_reason === "max_tokens") throw new Error(truncatedMessage(model, "max_tokens"));
   const text = response.content
     .flatMap((block) => (block.type === "text" ? [block.text] : []))
     .join("")
@@ -244,8 +251,9 @@ async function openrouterComplete(base: string, key: string, model: string, requ
     // An error can come back as plain JSON with status 200 instead of a stream.
     if (!/text\/event-stream/.test(response.headers.get("content-type") ?? "")) {
       const body = await response.text();
-      const parsed = parseJson(body) as { error?: { message?: string }; choices?: { message?: { content?: string } }[] } | undefined;
+      const parsed = parseJson(body) as { error?: { message?: string }; choices?: { message?: { content?: string }; finish_reason?: string | null }[] } | undefined;
       if (parsed?.error) throw new Error(`openrouter: ${parsed.error.message ?? "error without a message"}`);
+      if (parsed?.choices?.[0]?.finish_reason === "length") throw new Error(`openrouter: ${truncatedMessage(model, "length")}`);
       const text = parsed?.choices?.[0]?.message?.content?.trim() ?? "";
       if (text === "") throw new Error(`openrouter: ${model} answered without text: ${body.slice(0, 200)}`);
       return text;
@@ -255,12 +263,14 @@ async function openrouterComplete(base: string, key: string, model: string, requ
     const parser = createParser({
       onEvent(event) {
         if (event.data === "[DONE]" || failure !== null) return;
-        const chunk = parseJson(event.data) as { choices?: { delta?: { content?: string } }[]; error?: { message?: string } } | undefined;
+        const chunk = parseJson(event.data) as { choices?: { delta?: { content?: string }; finish_reason?: string | null }[]; error?: { message?: string } } | undefined;
         if (chunk === undefined) {
           failure = `invalid JSON in the stream: ${event.data.slice(0, 100)}`;
           return;
         }
         if (chunk.error) failure = chunk.error.message ?? "stream error";
+        // The last chunk says why the stream ended: `length` is the token limit, and the text so far is a cut answer.
+        if (chunk.choices?.[0]?.finish_reason === "length") failure = truncatedMessage(model, "length");
         text += chunk.choices?.[0]?.delta?.content ?? "";
       },
     });

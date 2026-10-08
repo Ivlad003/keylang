@@ -33,8 +33,13 @@ export interface TraceRun {
   flow: string;
   snapshotId: string | null;
   spans: TraceSpan[];
-  /** Every `run` event said the test finished; false without a `run` event. */
+  /**
+   * Every `run` event said the test finished, and every clock that wrote a span
+   * wrote one; false without a `run` event.
+   */
   complete: boolean;
+  /** Clocks (processes) with spans that no `run` event covers: they ended before writing their record. */
+  unfinished: number;
   /** Events the adapters dropped; null when a `run` event did not say. */
   dropped: number | null;
   /** Spans the adapters reported open and spans that started without an end. */
@@ -61,6 +66,12 @@ interface RunDraft {
   open: Set<string>;
   instrumented: Set<string> | null;
   runEvents: number;
+  /** Clocks of `start` and `end` events. */
+  clocks: Set<string>;
+  /** Clocks that wrote a `run` event naming them. */
+  finished: Set<string>;
+  /** `run` events without a `clockId` (an adapter before that field): with one, no clock is judged unfinished. */
+  anonymous: number;
 }
 
 /**
@@ -132,7 +143,7 @@ function readEvent(runs: Map<string, RunDraft>, file: string, line: number, text
   const key = JSON.stringify([str("runId"), str("testId"), str("flow")]);
   let run = runs.get(key);
   if (!run) {
-    run = { files: [], runId: str("runId"), testId: str("testId"), flow: str("flow"), snapshots: new Set(), spans: new Map(), pendingEnds: [], complete: true, dropped: 0, open: new Set(), instrumented: null, runEvents: 0 };
+    run = { files: [], runId: str("runId"), testId: str("testId"), flow: str("flow"), snapshots: new Set(), spans: new Map(), pendingEnds: [], complete: true, dropped: 0, open: new Set(), instrumented: null, runEvents: 0, clocks: new Set(), finished: new Set(), anonymous: 0 };
     runs.set(key, run);
   }
   if (!run.files.includes(file)) run.files.push(file);
@@ -147,9 +158,11 @@ function readEvent(runs: Map<string, RunDraft>, file: string, line: number, text
     // Two starts of one span id would let one process's steps nest under another's trigger.
     if (run.spans.has(spanId)) throw new Error(`${at}: span \`${spanId}\` started twice in run \`${run.runId}\``);
     run.spans.set(spanId, { spanId, parentSpanId: parent ?? null, symbolId: str("symbolId"), links, start: { clockId: str("clockId"), seq: num("seq"), ts: num("ts") }, end: null });
+    run.clocks.add(str("clockId"));
   } else if (kind === "end") {
     const spanId = str("spanId");
     const end = { clockId: str("clockId"), seq: num("seq"), ts: num("ts"), outcome: typeof event.outcome === "string" ? event.outcome : "ok" };
+    run.clocks.add(end.clockId);
     const span = run.spans.get(spanId);
     if (!span) run.pendingEnds.push({ spanId, end, at });
     else if (span.end !== null) throw new Error(`${at}: span \`${spanId}\` ended twice`);
@@ -157,6 +170,11 @@ function readEvent(runs: Map<string, RunDraft>, file: string, line: number, text
   } else if (kind === "run") {
     // Each process of a run writes its own `run` event: the run is complete only when all of them are.
     if (event.complete !== undefined && typeof event.complete !== "boolean") throw new Error(`${at}: \`complete\` must be a boolean`);
+    // The clock the record is for; a record without one (an adapter before the field) stands for one process.
+    const clock = event.clockId;
+    if (clock !== undefined && clock !== null && (typeof clock !== "string" || clock === "")) throw new Error(`${at}: \`clockId\` must be a non-empty string`);
+    if (typeof clock === "string") run.finished.add(clock);
+    else run.anonymous++;
     const dropped = event.dropped;
     if (dropped !== undefined && (typeof dropped !== "number" || !Number.isInteger(dropped) || dropped < 0)) throw new Error(`${at}: \`dropped\` must be a non-negative integer`);
     const instrumented = ids("instrumented", "symbol ids");
@@ -186,6 +204,9 @@ function finishRun(draft: RunDraft): TraceRun {
   const spans = [...draft.spans.values()];
   for (const span of spans) if (span.end === null) draft.open.add(span.spanId);
   const [snapshotId] = draft.snapshots;
+  // A process that wrote spans but no `run` record (killed, terminated, gone with its parent's exit) left the run
+  // short of its end. A record without a clock does not say whose it is, so with one the clocks are not judged.
+  const unfinished = draft.anonymous > 0 ? 0 : [...draft.clocks].filter((clock) => !draft.finished.has(clock)).length;
   return {
     files: draft.files,
     runId: draft.runId,
@@ -193,7 +214,8 @@ function finishRun(draft: RunDraft): TraceRun {
     flow: draft.flow,
     snapshotId: draft.snapshots.size === 1 ? (snapshotId ?? null) : null,
     spans,
-    complete: draft.complete && draft.runEvents > 0,
+    complete: draft.complete && draft.runEvents > 0 && unfinished === 0,
+    unfinished,
     dropped: draft.runEvents > 0 ? draft.dropped : null,
     open: draft.open,
     instrumented: draft.instrumented,
@@ -367,6 +389,7 @@ class Matcher {
 
   /** Why the run cannot confirm or refute what it shows, or null for a finished run. */
   private incompleteness(): string | null {
+    if (this.run.unfinished > 0) return `incomplete trace (${this.run.unfinished} process${this.run.unfinished === 1 ? "" : "es"} ended without its run record)`;
     if (!this.run.complete) return "incomplete trace";
     if (this.run.dropped === null) return "incomplete trace (dropped events unknown)";
     if (this.run.dropped > 0) return `incomplete trace (${this.run.dropped} dropped)`;

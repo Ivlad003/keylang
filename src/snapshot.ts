@@ -15,9 +15,9 @@ import type { Gap, Graph, Module, Via } from "./graph.ts";
 import { constructorName, LANGUAGES, languageOf } from "./languages.ts";
 import { components } from "./scc.ts";
 
-export const SNAPSHOT_SCHEMA = 7;
+export const SNAPSHOT_SCHEMA = 8;
 /** Bump when extraction or resolution changes the facts that `snapshotId` covers. */
-export const EXTRACTOR_VERSION = "m1.13";
+export const EXTRACTOR_VERSION = "m1.14";
 
 export type Resolution = "resolved" | "ambiguous" | "unresolved";
 /**
@@ -193,6 +193,34 @@ export interface RepositoryDocs {
   layers: ReadonlyMap<string, string>;
 }
 
+/** Where execution starts, by what starts it (ADR 0022 п. 5). Without a framework adapter only `route`, `cli` and `main` occur. */
+export const ENTRY_KINDS = ["route", "rest", "graphql", "cron", "consumer", "cli", "observer", "webhook", "controller", "main"] as const;
+export type EntryKind = (typeof ENTRY_KINDS)[number];
+
+export function isEntryKind(value: string): value is EntryKind {
+  return (ENTRY_KINDS as readonly string[]).includes(value);
+}
+
+/**
+ * An entry point: a fn (or a module's top level) execution starts from, as
+ * the code or a manifest writes it. A fact, not an edge: nothing calls it
+ * from inside the repository. Sorted by kind, label, id.
+ */
+export interface EntryPoint {
+  kind: EntryKind;
+  /** The fn that starts, or the module whose top level runs (a script, a `bin` without a `main`). */
+  id: string;
+  /** How the outside names it: `GET /orders`, the `bin` or script name, the script's path. */
+  label: string;
+  /** The framework whose adapter found it; null for one the language itself writes. */
+  framework: string | null;
+  /** Where the fn or module is declared. */
+  file: string;
+  line: number;
+  /** The file the fact is written in: a manifest (`package.json`, `pyproject.toml`), a framework config, or the code file itself. */
+  source: string;
+}
+
 export interface AnalysisSnapshot {
   schema: typeof SNAPSHOT_SCHEMA;
   snapshotId: string;
@@ -223,6 +251,8 @@ export interface AnalysisSnapshot {
   exports: SnapshotExport[];
   coverage: CoverageItem[];
   stats: Graph["stats"];
+  /** Where execution starts (`keylang entries`): facts of the code and its manifests, in a fixed order. */
+  entries: EntryPoint[];
 }
 
 export function sha256(text: string): string {
@@ -236,6 +266,8 @@ export function buildSnapshot(
   /** Files (or an unreadable directory) left out; `source`: the ID scope they belong to when no module has the file. */
   skipped: readonly { file: string; reason: string; source?: string; kind?: "skipped-file" | "outside-file" }[],
   docs: RepositoryDocs = { system: { name: null, brief: null, source: null }, layers: new Map() },
+  /** The entry points and the manifests they were read from (path → text or null), which `snapshotId` covers like the sources. */
+  entries: { list: readonly EntryPoint[]; inputs: readonly (readonly [string, string | null])[] } = { list: [], inputs: [] },
 ): AnalysisSnapshot {
   const manifestFiles = [...files].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   const grammars = grammarVersions();
@@ -258,6 +290,8 @@ export function buildSnapshot(
       files: manifestFiles,
       // `paths`, `references` and declared packages decide edges as much as the sources do.
       resolution: [...graph.resolverInputs].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([path, text]) => [path, text === null ? null : sha256(text)]),
+      // The manifests entry points come from (`bin`, `[project.scripts]`, `[[bin]]`) decide them as the sources do.
+      entries: [...entries.inputs].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([path, text]) => [path, text === null ? null : sha256(text)]),
     }),
   );
 
@@ -437,6 +471,7 @@ export function buildSnapshot(
     exports: graph.exports.map(exportRow),
     coverage,
     stats: graph.stats,
+    entries: [...entries.list],
   };
 }
 

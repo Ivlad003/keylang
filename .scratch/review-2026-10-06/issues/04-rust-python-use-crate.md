@@ -1,6 +1,6 @@
 # 04: Rust і Python: `use crate::models::User` / `from app.models import User` на нечутливій до регістру ФС стає діркою, і deny з fail переходить в unverified
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -47,11 +47,16 @@
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/rust-imports.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/rust-imports.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+- 2026-10-07: Регресійні тести. `tests/exact-path.test.ts` (новий): емуляція нечутливої до регістру ФС через інжекцію `ExactFs` (`existsSync` збігається без урахування регістру, `readdirSync` віддає справжнє написання) — `exactExistence` відкидає `src/models/User.rs` при `user.rs`, інший регістр сегмента теки й `..`, приймає NFD/NFC; `RustResolver` з такою ФС: `crate::models::User` → `{internal, src/models/mod.rs}` (до виправлення — фантомний `src/models/User.rs`, whole), `PythonResolver`: `app.models.User` → `app/models/__init__.py` (було `app/models/User.py`), `ImportResolver`: `../models/User` при `user.ts` → `unresolved`, як у tsc (було — виняток `statSync` на Linux або фантомний файл). `tests/languages.test.ts` «rust and python: `use crate::models::User` / `from app.models import User` through a `mod.rs` / `__init__.py` re-export…»: через справжній CLI фіксує контракт Linux для обох фікстур тікета — `map` ок, `check` з `deny api domain` → K102 ×2, `2 fail, 0 unverified`, без «is not indexed», ребро виклику через реекспорт є.
+- 2026-10-07: Виправлення. Новий `src/exact-path.ts`: `exactExistence(root, fs)` — предикат «файл є на диску саме в такому написанні»: `existsSync`, потім кожен сегмент шляху шукається в кешованому переліку його теки (NFC). `moduleFile` у `src/rust-imports.ts` і `src/python-imports.ts` та `probe` у `src/imports.ts` беруть кандидата поза `sources` лише через цей предикат; інакше перебір іде далі до коротшого префікса (`mod.rs` / `__init__.py`) або до `unresolved`. Конструктори трьох резолверів приймають необов\'язковий третій аргумент `fs: ExactFs` (типово `node:fs`) — точка інжекції для тестів; `frontends.ts` не змінено. Інші виклики `existsSync` (Cargo.toml, `src/bin`, `node_modules`, `isDir`) не чіпав — поза межами дефекту.
+- 2026-10-07: Контракт: `docs/snapshot.md` — абзац «Мови» (файл поза аналізом береться з диска лише в точному написанні; приклади Rust/Python/TS) і речення в абзацах Rust і Python; `llm.txt` без змін (резолвінг файлів з диска там не описано). `docs/review-2026-10-06.md` п. 10 позначено ✔. Перевірки: `node --test tests/languages.test.ts tests/exact-path.test.ts` — 29/29, `npm run typecheck` — ок, `node bin/keylang.js map --check`, `node bin/keylang.js check` — див. коміт.
+- 2026-10-07: `src/exact-path.ts` додано до шару `map` у `keylang.json` (поруч з `imports.ts`, `rust-imports.ts`, `python-imports.ts`). Карту перегенеровано (`keylang map`); diff карти містить і зміни `src/safe-write.ts` з коміту 917a356 (тікет 14), після якого карту не оновили — `map --check` на master уже був stale.
