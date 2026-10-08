@@ -13,6 +13,7 @@ import { safeWrite, writeAtomic } from "./safe-write.ts";
 import { harnessChoice, type HarnessChoice } from "./harness.ts";
 import { CLONE_EXPLAIN_MODES, cloneCacheRoot, enableExplainedMap, isCloneExplain, parseRepoSource, syncClone, type CloneExplain } from "./clone.ts";
 import { filterChanged, hookDecision, hookFails, parseHookEvent, uncheckedTurn } from "./changed.ts";
+import { readWeakenings } from "./weakening.ts";
 import { parseArgs, type ParseArgsOptionsConfig } from "node:util";
 import { CONFIG_FILE, STATIC_MODES, loadConfig, toPosix, type StaticMode } from "./config.ts";
 import { formatDiagnostic } from "./diag.ts";
@@ -84,7 +85,8 @@ Commands:
                             1 gaps, 2 missing file, unreadable --since ref, or bad
                             invocation. Writes only the fact cache .keylang/cache/
   hook stop                 Read a harness Stop event (JSON) from stdin, run
-                            check --changed, and print a JSON decision; writes
+                            check --changed (K108 included: a spec weakened since
+                            HEAD blocks), and print a JSON decision; writes
                             only the fact cache .keylang/cache/. Exit 0 once
                             started: a turn it cannot check (stdin not JSON, no
                             git, a broken keylang.json) prints {"systemMessage":
@@ -231,14 +233,19 @@ Commands:
                             --layer: one layer's components and what they touch;
                             --out: write f, relative to the root, only when it is new or
                             a diagram this command wrote; stdout stays empty)
-  check [paths…] [--changed] [--since <ref>]
+  check [paths…] [--changed] [--since <ref>] [--accept-weakening]
                             Resolve IDs and check rules (default: ./keylang)
                             Given files, it prints verdicts and the summary for those
                             files only (e.g. check keylang/flows/buy.md)
                             Rebuilds the analysis in memory; does not write the map
                             (only the fact cache .keylang/cache/, for the next run).
                             --changed reports only findings that touch files changed
-                            since <ref> (default HEAD) plus untracked files
+                            since <ref> (default HEAD) plus untracked files, and K108
+                            for the spec weakened since <ref> (keylang.json exclude,
+                            assume, outside, layers, frameworks; a removed deny or
+                            step, a new allow, rules outside rules.md, a wider
+                            baseline). --accept-weakening: for a person, never an
+                            agent: K108 is accepted, listed on stderr, exit not 1
   check --stale [paths…] [--accept | --strict]
                             Prose whose code changed since it was accepted: node
                             descriptions and flow when/then/invariant, against the
@@ -320,6 +327,7 @@ const OPTIONS = {
   since: { type: "string" },
   agents: { type: "string" },
   changed: { type: "boolean" },
+  "accept-weakening": { type: "boolean" },
   layer: { type: "string" },
   level: { type: "string" },
   kind: { type: "string" },
@@ -392,6 +400,7 @@ async function run(argv: readonly string[]): Promise<number> {
         since: values.since,
         stale: values.stale === true,
         accept: values.accept === true,
+        acceptWeakening: values["accept-weakening"] === true,
       });
     case "explain":
       return cmdExplain(paths[0], {
@@ -1249,7 +1258,9 @@ async function stopDecision(input: string, cwd: string): Promise<string> {
     changed,
     deletedModuleIds(analyzed.config, gitChanged.deleted),
   );
-  return hookDecision(event, hookFails(filtered));
+  // A spec weakened in this turn blocks like a rule fail: the rule an agent switched off is still the person's.
+  const weakened = readWeakenings(analyzed.config, "HEAD", "hook stop").weakenings.map((item) => ({ file: item.file, line: item.line, text: `K108 ${item.message}` }));
+  return hookDecision(event, [...weakened, ...hookFails(filtered)]);
 }
 
 /**
@@ -1429,7 +1440,7 @@ async function cmdParse(paths: string[], json: boolean): Promise<number> {
   return result.exitCode ?? 2;
 }
 
-async function cmdCheck(paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined; stale: boolean; accept: boolean }): Promise<number> {
+async function cmdCheck(paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined; stale: boolean; accept: boolean; acceptWeakening?: boolean }): Promise<number> {
   if (opts.accept && !opts.stale) throw new Error("check: --accept requires --stale");
   if (opts.stale) {
     const other = opts.explain ? "--explain-edge" : opts.changed ? "--changed" : opts.static !== undefined ? "--static" : opts.format !== "human" ? "--format" : null;
@@ -1445,6 +1456,7 @@ async function cmdCheck(paths: string[], opts: { strict: boolean; format: string
     if (!staticMode) throw new Error(`unknown --static \`${opts.static}\`; expected ${STATIC_MODES.join(", ")}`);
   }
   if (opts.since !== undefined && !opts.changed) throw new Error("check: --since requires --changed");
+  if (opts.acceptWeakening === true && !opts.changed) throw new Error("check: --accept-weakening requires --changed");
   if (opts.changed && opts.explain) throw new Error("check: --changed cannot be combined with --explain-edge");
   const cwd = process.cwd();
   if (opts.explain) {
@@ -1470,10 +1482,13 @@ async function cmdCheck(paths: string[], opts: { strict: boolean; format: string
     ...(staticMode ? { static: staticMode } : {}),
     ...(opts.changed ? { changed: true } : {}),
     ...(opts.since !== undefined ? { since: opts.since } : {}),
+    ...(opts.acceptWeakening === true ? { acceptWeakening: true } : {}),
   });
   if (result.payload === null) throw new Error(result.messages[0]?.text ?? "check failed");
   const { payload } = result;
   for (const path of payload.notSpecs) process.stderr.write(`keylang: ${checkSkipNote(path)}\n`);
+  if (payload.changed?.weakening.note) process.stderr.write(`keylang: note: ${payload.changed.weakening.note}\n`);
+  for (const line of payload.changed?.weakening.accepted ?? []) process.stderr.write(`keylang: accepted (--accept-weakening): ${line}\n`);
   // The format only shows the report: the verdicts and the code do not depend on it.
   process.stdout.write(checkReportText(format, payload));
   process.stderr.write(`${checkSummary(payload.counts)}\n`);

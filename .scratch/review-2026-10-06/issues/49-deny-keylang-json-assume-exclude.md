@@ -1,6 +1,6 @@
 # 49: Агент може вимкнути `deny` через `keylang.json` (`assume`/`exclude`): харнес цей файл не захищає
 
-**Status:** needs-triage
+**Status:** resolved
 
 **Type:** code
 
@@ -50,11 +50,15 @@
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/harness.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/harness.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+- 2026-10-08 — тріаж: рішення автора: закрити шлях послаблення (§3.4 п.1). Рев'ю 2026-10-06 §3, ризик 1 «Агент послаблює специфікацію в обхід deny»: не лише `systemMessage`, а блок; Edit-deny на `keylang.json` теж ставиться — новий шар агент пропонує людині.
+- 2026-10-08 — виправлено. Регресійні тести через справжній CLI на тимчасових git-репозиторіях — `tests/weakening.test.ts` (до виправлення сценарій тікета давав `hook stop` `{}`): `exclude`/`assume`/`outside` над файлом, до якого доходить `deny`, — `hook stop` блокує з K108, `check --changed` — код 1, звичайний `check` без змін, `check --changed --accept-weakening` проходить; глоб чи новий шар, що не доходить до правила, — не послаблення; `layers`, що виводить файл з шару; новий `allow`, знятий `deny`, знятий `step`, `# rules` поза `rules.md`; перегенерований ширший baseline (K108 до коміту людини); `feature` — прогалина `weakened`; `--accept-weakening` без `--changed` — код 2; `frameworks: []` — юніт-тест `configWeakenings` (поля `frameworks` у `keylang.json` ще немає: `parseConfig` його відкидає, тож через CLI це не відтворити). Оновлено `tests/cli-harness.test.ts` (нові deny, блок AGENTS і skill без `baseline`, «proposal to a person», K108) і `tests/review-harness.test.ts` (список deny).
+- Що зроблено: новий модуль `src/weakening.ts` (порівняння `keylang.json` і специфікацій на базі через `git show <base>:<path>` з робочим деревом), діагностика K108 `spec weakened: …` зі старим і новим текстом (`src/diag.ts`, `src/explain.ts`); `hook stop` (база `HEAD`), `check --changed` (база `--since`/`HEAD`, прапорець `--accept-weakening` «для людини, ніколи для агента») і `feature` (база фічі, прогалина `weakened`). Без `keylang.json` на базі — примітка, не помилка. Харнес: deny Claude `Edit`/`Write` на `keylang.json` і `<dir>/rules*.md`; блок AGENTS і skill більше не радять `baseline`, а кажуть «зміни правил і keylang.json — лише пропозицією людині». Для Codex, Cursor і opencode deny на рівні проєкту keylang не пише (див. cli.md): захист — інструкція й `hook stop`. Документація: `docs/cli.md`, `docs/semantics.md` (K108), ADR 0005 (поправка), `llm.txt`, `docs/review-2026-10-06.md` §2.3 ✔.

@@ -110,10 +110,13 @@ When the person asks you to add a feature, you may create `keylang/features/<slu
 Do not edit these by hand:
 
 - `keylang/map/` and any file whose first lines contain `keylang:generated`. Regenerate the map with `npx -y keylang map`.
-- `keylang/rules.md` and `keylang/rules.baseline.md`. Propose the full new text with MCP `apply_diff`. That writes `.keylang/proposals/<path>`. It does not change the spec. A person merges it in the terminal UI with `m`, or accepts it whole with `keylang proposals accept <path>` where there is no terminal UI. Never run `proposals accept` or `proposals reject` yourself. Where your tool can deny edits, deny `Edit` and `Write` on both rule files and Bash `* proposals accept *` / `* proposals reject *`; `keylang agents` writes those entries for Claude.
+- `keylang/rules.md` and `keylang/rules.baseline.md`. Propose the full new text with MCP `apply_diff`. That writes `.keylang/proposals/<path>`. It does not change the spec. A person merges it in the terminal UI with `m`, or accepts it whole with `keylang proposals accept <path>` where there is no terminal UI. Never run `proposals accept` or `proposals reject` yourself. Where your tool can deny edits, deny `Edit` and `Write` on `keylang/rules*.md` and `keylang.json`, and Bash `* proposals accept *` / `* proposals reject *`; `keylang agents` writes those entries for Claude.
+- `keylang.json`. Its `layers`, `exclude`, `assume`, `outside` and `frameworks` decide what the rules see, so a change there can switch a rule off. When one should change (a new layer, a generated file), tell the person what and why, and stop: changes to the rules and to `keylang.json` are only a proposal to a person.
 - `keylang.gen.ts` (the `keylang wire` output). You do not need `wire` to check a feature.
 
-A deny in the baseline that forbids a call the person still needs is a conversation. It is not a bug in the tool. Ask, then propose the rule change. After the new import is accepted, `npx -y keylang baseline` rewrites the baseline from the graph.
+A deny in the baseline that forbids a call the person still needs is a conversation. It is not a bug in the tool. Ask, then propose the rule change. After the new import is accepted, a person runs `npx -y keylang baseline` to rewrite the baseline from the graph; never run it yourself.
+
+`check --changed`, `hook stop` and `feature` compare the spec with the base commit and report each weakening as K108 `spec weakened: …`, with the old and the new text: a new or wider `exclude`/`assume`/`outside` glob over a file a rule reaches, a `layers` glob that moves such a file out of its layer, `frameworks` turned off, a removed `deny` (any rule line but `allow`), `step` or `trigger`, a new `allow`, a rule in a `# rules` section outside `keylang/rules.md`, a wider `rules.baseline.md`. It blocks the Stop hook and makes `check --changed` exit 1; a plain `check` has no base and never reports it. Restore the spec and fix the code. `keylang check --changed --accept-weakening` is for a person, never an agent, like `proposals accept`.
 
 Copy ids from `keylang map`. Do not invent a shorter id. The file name is not always the last segment.
 
@@ -218,12 +221,11 @@ npx -y keylang feature <slug> --format json
 npx -y keylang check
 npx -y keylang check --changed
 npx -y keylang spec-to-code <id> --print
-npx -y keylang baseline
 ```
 
 Proposals wait in `.keylang/proposals/`. `npx -y keylang proposals` lists them and `npx -y keylang proposals show <path>` prints one; both write nothing. Accepting or rejecting one is the person's decision.
 
-`check --changed` blocks a turn only on a new fail. An `unverified` line does not block. Read those yourself. Once started, the Stop hook prints one JSON object and exits 0: `{"decision":"block"}` on a new fail, otherwise `{}`. A turn it cannot check (no git, stdin that is not JSON, a broken `keylang.json`) gets `{"systemMessage":"keylang: this turn was not checked: <reason>"}`, with the same line on stderr: the harness shows the person that warning, and it does not block you. The hook is a safety net: run `check --changed` yourself before you say the work is done. Only a bad invocation (`keylang hook` with an unknown subcommand or an extra argument) exits 2.
+`check --changed` blocks a turn only on a new fail or a K108 (the spec weakened since `HEAD`). An `unverified` line does not block. Read those yourself. Once started, the Stop hook prints one JSON object and exits 0: `{"decision":"block"}` on a new fail or a K108, otherwise `{}`. A turn it cannot check (no git, stdin that is not JSON, a broken `keylang.json`) gets `{"systemMessage":"keylang: this turn was not checked: <reason>"}`, with the same line on stderr: the harness shows the person that warning, and it does not block you. The hook is a safety net: run `check --changed` yourself before you say the work is done. Only a bad invocation (`keylang hook` with an unknown subcommand or an extra argument) exits 2.
 
 ## Exit codes and answers
 
