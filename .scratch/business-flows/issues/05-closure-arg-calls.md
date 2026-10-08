@@ -54,3 +54,9 @@
 - **Draft.** `draftFlow` ставить `<!-- keylang:algo via callable -->` / `<!-- keylang:algo via closure -->` на крок за таким ребром.
 - **Тести.** `tests/php.test.ts` (фікстура за `QuoteManagement::placeOrder`: draft, behavior, shape, знімок, `callsResolved`), `tests/analyzer.test.ts` (TS; плюс оновлені очікування для `forEach`/`.map`-closure і JSX-фабрик — `Cart`, передане звичайному виклику, тепер `callable-arg`), `tests/languages.test.ts` (Python, Rust), `tests/flows.test.ts` (колбек у `behavior` — ok через callable; формати — на `shape`), `tests/metamorphic.test.ts` (`--static shape` лише послаблює).
 - **Поза обсягом / помічено.** Rust-шлях `crate::a::b::f` аргументом не розв'язується так само, як і прямий виклик `crate::a::b::f()` (імпорт `crate::a::b::f` нерозв'язаний — наявне обмеження резолвера, не цього тікета). Пункт «бенч 03 показує непорожній `placeOrder`» перевіряє тікет 03 на справжньому Magento.
+
+### Доведено (2026-10-08)
+
+- PHP: callable-масив з властивістю як отримувачем (`$cb = [$this->store, 'later']`), збережений у змінну, тепер теж «читання значення» (`valueRef`) — крок `later` лишається `unverified` у `shape` і `behavior`, а не `fail` (ловив `tests/metamorphic.test.ts`).
+- Тести: виправлено очікування — позиція `[$this, 'placeOrderRun']` (13:74), формулювання для збереженого callable («no call path … in the static graph; `later` is read as a value …»), і кількість дірок у TS-фікстурі (виклик `this.bound.bind` — сам нерозв'язаний виклик `Function.prototype.bind`, лишається діркою).
+- Злито `master`, карту перегенеровано. Прогін: `tests/{php,analyzer,languages,flows,metamorphic}.test.ts` — 134 тести, 131 pass, 0 fail, 3 skipped; `npm run typecheck`, `keylang map --check`, `keylang check` (0 fail) — чисто. Повний `npm test` — на review-зміні.

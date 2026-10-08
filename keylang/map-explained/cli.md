@@ -192,7 +192,7 @@
       <a id="cli.cli.printBaseline"></a><br>Writes the messages of a baseline operation envelope to stdout or stderr, routing them to stderr with a `keylang:` prefix when the payload is missing, errored, or lists refused entries, then returns the envelope's exit code (defaulting to 2). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [cmdFeature](../../src/cli.ts#L1027) (slug: string | undefined, format: string, since: string | undefined) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdFeature"></a><br>Whether a feature is done, on the saved files. The CLI is a printer over the shared feature operation.
-      - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [map.analyze.findRoot](map.md#map.analyze.findRoot), [operations.feature.featureSummary](operations.md#operations.feature.featureSummary)
+      - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [map.analyze.findRoot](map.md#map.analyze.findRoot), [operations.feature.gapLine](operations.md#operations.feature.gapLine), [operations.feature.hintLine](operations.md#operations.feature.hintLine), [operations.feature.featureSummary](operations.md#operations.feature.featureSummary)
     - fn [cmdHook](../../src/cli.ts#L1043) (args: readonly string[], checkOnly: boolean) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdHook"></a><br>`hook stop` and `hook install [--check]`. A missing or unknown subcommand and an extra argument are a bad invocation (2).
       - calls [cli.cli.cmdHookInstall](cli.md#cli.cli.cmdHookInstall), [cli.cli.cmdHookStop](cli.md#cli.cli.cmdHookStop)
