@@ -70,6 +70,33 @@ test("tui-clip-proposals: a block for the open flow is a proposal; m opens MERGE
   assert.equal(readFileSync(join(root, FLOW_PATH), "utf8"), PAID);
 });
 
+test("tui-clip-proposals: a flow with its own code block comes back whole, whether the model fences it with four backticks or three: the proposal is the full text and w writes it", async (t) => {
+  for (const fence of ["````", "```"]) {
+    await t.test(`${fence.length} backticks`, async (t) => {
+      const withCode = CHECKOUT_FLOW.replace("Checkout from the terminal.\n", "Checkout from the terminal.\n\n```ts\ncheckout();\n```\n");
+      const paid = withCode.replace("Checkout from the terminal.", "Checkout from the terminal, paid by card.");
+      const root = checkoutRepo(t, { [FLOW_PATH]: withCode });
+      withConfig(root, AGENT);
+      await mockModel(t, `Додав, як платять.\n\n${fence}keylang path=${FLOW_PATH}\n${paid}${fence}`);
+      const s = session(root);
+      t.after(() => s.app.close());
+      await s.app.idle();
+      s.send(KEY.f7);
+      say(s, "як платять за checkout?");
+      await s.app.idle();
+      assert.equal(lastAnswer(s), `Додав, як платять.\nпропозиція: ${FLOW_PATH} · m — MERGE`);
+      assert.equal(readFileSync(join(root, ".keylang/proposals", FLOW_PATH), "utf8"), paid);
+      s.send(KEY.f7);
+      s.send("m");
+      assert.equal(s.app.state.merge?.path, FLOW_PATH);
+      for (let i = 0; i < s.app.state.merge!.hunks.length; i++) s.send("a");
+      s.send("w");
+      await s.app.idle();
+      assert.equal(readFileSync(join(root, FLOW_PATH), "utf8"), paid);
+    });
+  }
+});
+
 test("tui-clip-proposals: a generated, unsaved, already proposed, code or outside target is refused with the reason in the chat, and nothing is written", async (t) => {
   const root = checkoutRepo(t);
   withConfig(root, AGENT);

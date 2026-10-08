@@ -33,7 +33,7 @@ export function assistantSystem(specDir: string): string {
     "Answer briefly, in the language the person writes in.",
     "Talk only about this repository: its specifications, its code snapshot and its code. Decline anything else in one sentence.",
     "Never invent a verdict, an edge or an id. What the context below does not show is unverified: say so, or say that you do not know.",
-    `To change a specification, give one fenced block opened with \`\`\`keylang path=<file>, where <file> is a hand-written spec under ${dir} as a path from the repository root, holding the full new text of that file, never a diff. Give at most one such block: it becomes a proposal the person reviews hunk by hunk in MERGE, and nothing is written before that.`,
+    `To change a specification, give one fenced block opened with \`\`\`\`keylang path=<file> (four backticks, or more: always longer than any run of backticks in the file, so the spec's own code blocks stay inside) and closed with the same fence, where <file> is a hand-written spec under ${dir} as a path from the repository root, holding the full new text of that file, never a diff. Give at most one such block: it becomes a proposal the person reviews hunk by hunk in MERGE, and nothing is written before that.`,
     "Do not write code: a coding agent (the harness) writes it from the specification.",
   ].join("\n");
 }
@@ -117,6 +117,10 @@ const CANDIDATE = /^\s*keylang\s+path=(?:"([^"]+)"|'([^']+)'|(\S+))\s*$/;
  * its lines the file's full text. The answer's other such blocks are left
  * out by path, and so is one it never closes: an answer cut at the token
  * limit holds no whole file. Any other fenced block stays in the reply.
+ * The prompt asks for a candidate fence longer than the file's own; for one
+ * that is not, a block the file opens inside it (a fence with an info string)
+ * takes the next closing fence (`candidateEnd`). The opening fence's indent
+ * leaves the body's lines, as CommonMark has it.
  */
 export function parseReply(answer: string): Pick<AssistantReplyPayload, "reply" | "proposal" | "dropped"> {
   const lines = answer.replace(/\r\n?/g, "\n").split("\n");
@@ -130,20 +134,45 @@ export function parseReply(answer: string): Pick<AssistantReplyPayload, "reply" 
       kept.push(lines[at]!);
       continue;
     }
-    let end = at + 1;
-    while (end < lines.length && !closes(lines[end]!, open[1]!)) end++;
     const candidate = CANDIDATE.exec(open[2]!);
+    let end = at + 1;
+    if (candidate !== null) end = candidateEnd(lines, at + 1, open[1]!);
+    else while (end < lines.length && !closes(lines[end]!, open[1]!)) end++;
     if (candidate === null) kept.push(...lines.slice(at, end + 1));
     else {
       const path = (candidate[1] ?? candidate[2] ?? candidate[3]!).replace(/^\.\//, "");
       if (end < lines.length && proposal === null) {
-        const body = lines.slice(at + 1, end);
+        const indent = /^ */.exec(lines[at]!)![0].length;
+        const body = lines.slice(at + 1, end).map((line) => line.replace(new RegExp(`^ {0,${indent}}`), ""));
         proposal = { path, text: body.length === 0 ? "" : `${body.join("\n")}\n` };
       } else dropped.push(path);
     }
     at = end;
   }
   return { reply: kept.join("\n").replace(/\n{3,}/g, "\n\n").trim(), proposal, dropped };
+}
+
+/**
+ * The line that closes a candidate opened by `fence`, from `from` on, or
+ * `lines.length`. A fence of the same character at least as long with an
+ * info string opens a block of the file's own (CommonMark would close the
+ * candidate at its end): the next fence that closes that block is its end,
+ * not the candidate's. Shorter or other fences cannot close the candidate
+ * and are text in it.
+ */
+function candidateEnd(lines: readonly string[], from: number, fence: string): number {
+  let inner: string | null = null;
+  for (let at = from; at < lines.length; at++) {
+    const line = lines[at]!;
+    if (inner !== null) {
+      if (closes(line, inner)) inner = null;
+      continue;
+    }
+    if (closes(line, fence)) return at;
+    const open = FENCE.exec(line);
+    if (open !== null && open[1]![0] === fence[0] && open[1]!.length >= fence.length && open[2]!.trim() !== "" && !(fence[0] === "`" && open[2]!.includes("`"))) inner = open[1]!;
+  }
+  return lines.length;
 }
 
 /** Whether `line` closes a block opened by `fence`: the same character, at least as many, nothing after. */
