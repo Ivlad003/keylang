@@ -4,7 +4,7 @@
 import { builtinModules } from "node:module";
 import type { CallFact, DeclFact, FileFacts, HookFact, ImportBinding, ImportFact, PassFact, TypeRefFact, UnsupportedFact, ValueRefFact } from "./facts.ts";
 import { blockCommentBody, isLicense, jsdocDescription, lineCommentsBody, nonEmpty } from "./doc-comments.ts";
-import { errorLine, fingerprint, grammarFor, located, query, startCol, withTree, type Grammar, type Language, type Node, type Tree } from "./treesitter.ts";
+import { errorLine, fingerprintFacts, grammarFor, located, query, startCol, valuesFingerprint, withTree, type Grammar, type Language, type Node, type Tree } from "./treesitter.ts";
 
 // Every call and `new`, whatever its callee: each becomes an edge or a hole, never nothing.
 const CALLS_QUERY = `
@@ -460,6 +460,8 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
   collectUnsupported(root, facts);
   collectValueRefs(root, facts);
   collectRouteEntries(root, facts);
+  const values = valuesFingerprint(root.namedChildren, facts.decls);
+  if (values !== undefined) facts.values = values;
   if (root.hasError) {
     facts.completeness = "opaque";
     facts.parseError = { line: errorLine(root), reason: "syntax error" };
@@ -551,7 +553,7 @@ function typeOnlySpecifier(stmt: Node, local: string): boolean {
 function decl(kind: DeclFact["kind"], name: string, node: Node, signature: string | null, exported: boolean, calls: CallFact[], types: TypeRefFact[], members: DeclFact[]): DeclFact {
   const at = located(node);
   const doc = docOf(node);
-  return { kind, name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature, exported, calls, types, members, fingerprint: fingerprint(node), ...(doc !== undefined ? { doc } : {}) };
+  return { kind, name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature, exported, calls, types, members, ...fingerprintFacts(node), ...(doc !== undefined ? { doc } : {}) };
 }
 
 function boundCall(call: CallFact, bound: "parameter" | "local" | null): CallFact {
@@ -866,6 +868,8 @@ function classDecl(name: string, cls: Node, at: Node, exported: boolean, declCal
   const typeParamsNode = cls.childForFieldName("type_parameters");
   const types = [...(typeParamsNode ? collectTypeRefs(typeParamsNode, typeParams) : []), ...(heritageNode ? collectTypeRefs(heritageNode, typeParams) : []), ...fieldTypes];
   const out = decl("class", name, at, heritage(cls), exported, [], types, members);
+  const values = valuesFingerprint(items, members);
+  if (values !== undefined) out.values = values;
   const base = heritageNode ? baseClass(heritageNode) : null;
   if (base) out.base = base;
   return out;
@@ -913,8 +917,9 @@ function reactWrapperFn(value: Node, react: ReactBindings): Node | null {
 function initializer(name: "constructor" | "static", items: { node: Node; calls: CallFact[] }[]): DeclFact {
   const first = located(items[0]!.node);
   const last = located(items[items.length - 1]!.node);
-  const print = items.map((item) => fingerprint(item.node)).join(":");
-  return { kind: "fn", name, line: first.line, col: first.col, endLine: last.endLine, endCol: last.endCol, signature: null, exported: true, calls: items.flatMap((item) => item.calls), types: [], members: [], fingerprint: print };
+  const prints = items.map((item) => fingerprintFacts(item.node));
+  const readsImports = [...new Set(prints.flatMap((p) => p.readsImports ?? []))].sort();
+  return { kind: "fn", name, line: first.line, col: first.col, endLine: last.endLine, endCol: last.endCol, signature: null, exported: true, calls: items.flatMap((item) => item.calls), types: [], members: [], fingerprint: prints.map((p) => p.fingerprint).join(":"), ...(readsImports.length > 0 ? { readsImports } : {}) };
 }
 
 function memberName(node: Node): string {

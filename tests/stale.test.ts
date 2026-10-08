@@ -266,3 +266,107 @@ test("check --stale: a fn that reads a value imported from another file of the r
   assert.match(out.stdout, /cap\.md:3:1: incomplete description of `main\.cap\.cap`: .*incomplete: `main\.cap\.cap` reaches calls or values keylang does not resolve/);
   assert.doesNotMatch(out.stdout, /main\.cap\.twice/);
 });
+
+/** `stale description of \`<id>\`` (or another state) as a pattern. */
+function described(state: string, id: string): RegExp {
+  return new RegExp(`${state} description of \`${id.replace(/\./g, "\\.")}\``);
+}
+
+function mentions(id: string): RegExp {
+  return new RegExp(`\`${id.replace(/\./g, "\\.")}\``);
+}
+
+test("check --stale --strict: a changed module constant or class field no fn reads makes the module's and class's prose stale; a comment or layout does not (TS, Python, PHP)", (t) => {
+  // Ticket review-2026-10-06/70: the baseline of a module or class saw only the fns and types under it.
+  const ts = "export const LIMIT = 100;\nconst rates = { eu: 0.2 };\n\nexport function twice(n: number): number {\n  return n * 2;\n}\n\nexport class Box {\n  size = 3;\n  area(): number {\n    return 1;\n  }\n}\n";
+  const py = '"""Limits."""\n\nMAX = 100\n\n\ndef twice(n):\n    return n * 2\n\n\nclass Box:\n    size = 3\n\n    def area(self):\n        return 1\n';
+  const php = "<?php\n\nconst MAX = 100;\n\nfunction twice($n) {\n    return $n * 2;\n}\n\nclass Box {\n    const K = 1;\n    public $size = 3;\n\n    public function area() {\n        return 1;\n    }\n}\n";
+  const plain = "export function once(n: number): number {\n  return n;\n}\n";
+  const r = repo(t, {
+    "keylang.json": JSON.stringify({ languages: ["typescript", "python", "php"], layers: { main: ["src/**"] } }),
+    "src/config.ts": ts,
+    "src/limits.py": py,
+    "src/box.php": php,
+    "src/plain.ts": plain,
+    "keylang/flows/mod.md":
+      "# map\n\n- layer main\n  - module config\n    Holds at most 100 items.\n    - module Box\n      A box of 3.\n  - module limits\n    At most 100.\n    - module Box\n      A box of 3.\n  - module box\n    At most 100.\n    - module Box\n      A box of 3.\n  - module plain\n    Returns its input.\n",
+  });
+  assert.equal(r.run("check", "--stale", "--accept").status, 0);
+  const fresh = r.run("check", "--stale", "--strict");
+  assert.equal(fresh.status, 0, fresh.stdout + fresh.stderr);
+
+  // Comments, a docstring and layout are no change.
+  r.write("src/config.ts", ts.replace("export const LIMIT = 100;", "// The cap.\nexport const LIMIT =\n  100;").replace("size = 3;", "size = 3; // cm"));
+  r.write("src/limits.py", py.replace("MAX = 100", "# The cap.\nMAX  =  100").replace('"""Limits."""', '"""Limits of a box."""'));
+  r.write("src/box.php", php.replace("const MAX = 100;", "// The cap.\nconst MAX = 100;").replace("public $size = 3;", "/** cm */\n    public $size   = 3;"));
+  const comments = r.run("check", "--stale", "--strict");
+  assert.equal(comments.status, 0, comments.stdout + comments.stderr);
+
+  r.write("src/config.ts", ts.replace("LIMIT = 100", "LIMIT = 5").replace("eu: 0.2", "eu: 0.5"));
+  r.write("src/limits.py", py.replace("MAX = 100", "MAX = 5"));
+  r.write("src/box.php", php.replace("MAX = 100", "MAX = 5"));
+  const modules = r.run("check", "--stale", "--strict");
+  assert.equal(modules.status, 1, modules.stdout + modules.stderr);
+  for (const id of ["main.config", "main.limits", "main.box"]) assert.match(modules.stdout, described("stale", id), id);
+  for (const id of ["main.config.Box", "main.limits.Box", "main.box.Box", "main.plain"]) assert.doesNotMatch(modules.stdout, mentions(id), id);
+  assert.match(modules.stderr, /3 stale, 0 new, 4 fresh, 0 incomplete/);
+
+  r.write("src/config.ts", ts.replace("size = 3", "size = 4"));
+  r.write("src/limits.py", py.replace("size = 3", "size = 4"));
+  r.write("src/box.php", php.replace("$size = 3", "$size = 4"));
+  const classes = r.run("check", "--stale", "--strict");
+  // A class field is part of its class and of the module that declares it.
+  for (const id of ["main.config.Box", "main.limits.Box", "main.box.Box", "main.config", "main.limits", "main.box"]) assert.match(classes.stdout, described("stale", id), id);
+  assert.doesNotMatch(classes.stdout, mentions("main.plain"));
+});
+
+test("check --stale --strict: a value the constructor assigns to a field makes the class's prose and the methods that read it stale (TS, Python, PHP)", (t) => {
+  // Ticket review-2026-10-06/31, leftover closed by 70: `self.mode = …` in `__init__`, TS parameter properties, PHP promoted properties.
+  const ts = 'export class Box {\n  mode: string;\n  constructor(private cap = 10) {\n    this.mode = "open";\n  }\n  kind(): string {\n    return this.mode;\n  }\n  limit(): number {\n    return this.cap;\n  }\n  other(): number {\n    return 1;\n  }\n}\n';
+  const py = 'class Box:\n    def __init__(self):\n        self.mode = "open"\n\n    def kind(self):\n        return self.mode\n\n    def other(self):\n        return 1\n';
+  const php = '<?php\n\nclass Box {\n    private $mode;\n\n    public function __construct(private int $cap = 10) {\n        $this->mode = "open";\n    }\n\n    public function kind() {\n        return $this->mode;\n    }\n\n    public function limit() {\n        return $this->cap;\n    }\n\n    public function other() {\n        return 1;\n    }\n}\n';
+  const r = repo(t, {
+    "keylang.json": JSON.stringify({ languages: ["typescript", "python", "php"], layers: { main: ["src/**"] } }),
+    "src/a.ts": ts,
+    "src/b.py": py,
+    "src/c.php": php,
+    "keylang/flows/cls.md":
+      "# flow cls\n\n- step main.a.Box.kind\n  Open.\n- step main.a.Box.limit\n  Ten.\n- step main.a.Box.other\n  One.\n- step main.b.Box.kind\n  Open.\n- step main.b.Box.other\n  One.\n- step main.c.Box.kind\n  Open.\n- step main.c.Box.limit\n  Ten.\n- step main.c.Box.other\n  One.\n",
+    "keylang/flows/mod.md": "# map\n\n- layer main\n  - module a\n    - module Box\n      An open box.\n  - module b\n    - module Box\n      An open box.\n  - module c\n    - module Box\n      An open box.\n",
+  });
+  assert.equal(r.run("check", "--stale", "--accept").status, 0);
+  const fresh = r.run("check", "--stale", "--strict");
+  assert.equal(fresh.status, 0, fresh.stdout + fresh.stderr);
+
+  r.write("src/a.ts", ts.replace('"open"', '"shut"').replace("cap = 10", "cap = 3"));
+  r.write("src/b.py", py.replace('"open"', '"shut"'));
+  r.write("src/c.php", php.replace('"open"', '"shut"').replace("$cap = 10", "$cap = 3"));
+  const changed = r.run("check", "--stale", "--strict");
+  assert.equal(changed.status, 1, changed.stdout + changed.stderr);
+  for (const id of ["main.a.Box", "main.b.Box", "main.c.Box", "main.a.Box.kind", "main.a.Box.limit", "main.b.Box.kind", "main.c.Box.kind", "main.c.Box.limit"]) {
+    assert.match(changed.stdout, described("stale", id), id);
+  }
+  for (const id of ["main.a.Box.other", "main.b.Box.other", "main.c.Box.other"]) assert.doesNotMatch(changed.stdout, mentions(id), id);
+});
+
+test("check --stale: a fn that reads a value through an absolute Python import or a PHP `use` of a repository module is incomplete; a package's value is not", (t) => {
+  // Ticket review-2026-10-06/31, leftover closed by 70.
+  const r = repo(t, {
+    "keylang.json": JSON.stringify({ languages: ["python", "php"], layers: { main: ["src/**"] } }),
+    "src/app/__init__.py": "",
+    "src/app/limits.py": "MAX = 100\n\n\ndef double(n):\n    return n * 2\n",
+    "src/app/cap.py":
+      "import os\nimport app.limits\nfrom app.limits import MAX, double\nfrom os import sep\n\n\ndef cap(n):\n    return min(n, MAX)\n\n\ndef cap2(n):\n    return min(n, app.limits.MAX)\n\n\ndef twice(n):\n    return double(n)\n\n\ndef path(a):\n    return a + sep + os.sep\n",
+    "src/Limits.php": "<?php\n\nnamespace App;\n\nclass Limits {\n    const MAX = 100;\n\n    public static function double($n) {\n        return $n * 2;\n    }\n}\n",
+    "src/Cap.php":
+      "<?php\n\nnamespace App\\Use;\n\nuse App\\Limits;\nuse Vendor\\Pkg\\Thing;\n\nclass Cap {\n    public function cap($n) {\n        return min($n, Limits::MAX);\n    }\n\n    public function twice($n) {\n        return Limits::double($n);\n    }\n\n    public function other($n) {\n        return $n + Thing::K;\n    }\n}\n",
+    "keylang/flows/cap.md":
+      "# flow cap\n\n- step main.app.cap.cap\n  Caps.\n- step main.app.cap.cap2\n  Caps.\n- step main.app.cap.twice\n  Doubles.\n- step main.app.cap.path\n  Joins.\n- step main.Cap.Cap.cap\n  Caps.\n- step main.Cap.Cap.twice\n  Doubles.\n- step main.Cap.Cap.other\n  Adds.\n",
+  });
+  assert.equal(r.run("check", "--stale", "--accept").status, 0);
+  const out = r.run("check", "--stale");
+  for (const id of ["main.app.cap.cap", "main.app.cap.cap2", "main.Cap.Cap.cap"]) {
+    assert.match(out.stdout, new RegExp(`${described("incomplete", id).source}: .*reaches calls or values keylang does not resolve`), `${id}\n${out.stdout}`);
+  }
+  for (const id of ["main.app.cap.twice", "main.app.cap.path", "main.Cap.Cap.twice", "main.Cap.Cap.other"]) assert.doesNotMatch(out.stdout, mentions(id), `${id}\n${out.stdout}`);
+});

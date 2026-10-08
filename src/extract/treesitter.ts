@@ -150,17 +150,110 @@ export function errorLine(node: Node): number {
  * the languages themselves read CRLF in such literals as LF.
  *
  * The values the node reads by name in its own file are part of it: a module
- * constant, a class field or property, an object table, a Rust `const` or
+ * constant, a class field or property, a field the class's constructor
+ * assigns (`this.x = …`, `self.x = …`, `$this->x = …`, a TS parameter
+ * property, a PHP promoted property), an object table, a Rust `const` or
  * `static` (and, transitively, the values those read). `LIMIT = 100` → `5`
  * changes every fn that reads `LIMIT`. A value imported from another file of
  * the repository is out of reach, so the fingerprint then ends with
  * {@link READS_IMPORTED_VALUE}: the snapshot marks its closure incomplete.
  */
 export function fingerprint(node: Node): string {
+  return fingerprintFacts(node).fingerprint;
+}
+
+/**
+ * `fingerprint` of the node, and `readsImports`: the names it reads as values
+ * that an import binds whose syntax does not tell whether its target is in the
+ * repository (a Python absolute import, a PHP `use`, a bare TS specifier, a
+ * Rust `use` of another crate). The graph, which resolves imports, marks the
+ * fingerprint like {@link READS_IMPORTED_VALUE} when one of them binds a
+ * module of the repository.
+ */
+export function fingerprintFacts(node: Node): { fingerprint: string; readsImports?: string[] } {
   const hash = createHash("sha256");
   const reads = hashSyntax(node, hash);
   for (const value of valuesRead(node, reads)) hash.update(`=${value.print}\u0002`);
-  return hash.digest("hex") + (readsImportedValue(node, reads) ? READS_IMPORTED_VALUE : "");
+  const imported = importedValueReads(node, reads);
+  return { fingerprint: hash.digest("hex") + (imported.relative ? READS_IMPORTED_VALUE : ""), ...(imported.other.length > 0 ? { readsImports: imported.other } : {}) };
+}
+
+/**
+ * SHA-256 of the value code among `statements` of a module or a class body:
+ * constants, assignments, object tables, fields, top-level calls — every
+ * statement but a declaration of `decls` (a fn, class or type, which has its
+ * own fingerprint), an import, a comment or a docstring. Syntax only, as in
+ * `fingerprint`: a comment or layout does not change it. Undefined when no
+ * such statement is there, so a module of declarations only has no value
+ * code to hash.
+ */
+export function valuesFingerprint(statements: readonly Node[], decls: readonly PlacedDecl[]): string | undefined {
+  const starts: PlacedDecl[] = [];
+  const place = (d: PlacedDecl): void => {
+    starts.push(d);
+    for (const m of d.members ?? []) place(m);
+  };
+  for (const d of decls) place(d);
+  const holds = (n: Node): boolean => {
+    const at = located(n);
+    return starts.some((s) => (s.line > at.line || (s.line === at.line && s.col >= at.col)) && (s.line < at.endLine || (s.line === at.endLine && s.col < at.endCol)));
+  };
+  const hash = createHash("sha256");
+  let any = false;
+  const add = (n: Node): void => {
+    hashSyntax(n, hash);
+    hash.update("\u0003");
+    any = true;
+  };
+  const visit = (statement: Node): void => {
+    if (NO_VALUE_CODE.has(statement.type) || statement.type.includes("comment") || isDocstring(statement)) return;
+    if (statement.type === "namespace_definition") {
+      // PHP `namespace App { … }`: its statements are the file's.
+      for (const child of statement.childForFieldName("body")?.namedChildren ?? []) visit(child);
+      return;
+    }
+    if (statement.type === "mod_item" && statement.childForFieldName("body") === null) return;
+    if (statement.type === "export_statement" && statement.childForFieldName("declaration") === null && (statement.childForFieldName("source") !== null || statement.namedChildren.some((c) => c.type === "export_clause"))) return;
+    if (!holds(statement)) {
+      add(statement);
+      return;
+    }
+    // `const a = 1, f = () => …`: the declarators that are no fn are values.
+    const declaration = statement.type === "export_statement" ? statement.childForFieldName("declaration") : statement;
+    if (declaration?.type === "lexical_declaration" || declaration?.type === "variable_declaration") {
+      for (const declarator of declaration.namedChildren) if (declarator.type === "variable_declarator" && !holds(declarator)) add(declarator);
+    }
+  };
+  for (const statement of statements) visit(statement);
+  return any ? hash.digest("hex") : undefined;
+}
+
+/** Where a declaration starts, with its members (a Rust `impl` puts methods under their type). */
+interface PlacedDecl {
+  line: number;
+  col: number;
+  members?: readonly PlacedDecl[];
+}
+
+/** Statements that are no value code of a module or class: imports and module syntax, `pass`, Rust attributes (which belong to the item after them). */
+const NO_VALUE_CODE = new Set([
+  "import_statement",
+  "import_from_statement",
+  "future_import_statement",
+  "namespace_use_declaration",
+  "use_declaration",
+  "extern_crate_declaration",
+  "php_tag",
+  "text_interpolation",
+  "pass_statement",
+  "attribute_item",
+  "inner_attribute_item",
+  "empty_statement",
+]);
+
+/** A string on its own: a Python docstring. */
+function isDocstring(statement: Node): boolean {
+  return statement.type === "expression_statement" && statement.namedChildCount === 1 && statement.namedChildren[0]?.type === "string" && statement.tree.rootNode.type === "module";
 }
 
 /**
@@ -213,7 +306,7 @@ interface ValueDecl {
 
 /** Value declarations per scope node (by `Node.id`), per tree: the fns of a file look into the same scopes. */
 const scopeValues = new WeakMap<Tree, Map<number, ValueDecl[]>>();
-const importedValues = new WeakMap<Tree, Set<string>>();
+const importedValues = new WeakMap<Tree, ImportedNames>();
 
 /**
  * The value declarations `node` reads by name, transitively, in every scope
@@ -229,7 +322,8 @@ function valuesRead(node: Node, reads: ReadonlySet<string>): ValueDecl[] {
     grew = false;
     for (const decls of scopes) {
       for (const decl of decls) {
-        if (found.has(decl) || (decl.start <= node.startIndex && decl.end >= node.endIndex)) continue;
+        // A declaration that holds the node (`const f = () => …`), or one inside it (a constructor's own `this.x = …`), is no value it reads.
+        if (found.has(decl) || (decl.start <= node.startIndex && decl.end >= node.endIndex) || (decl.start >= node.startIndex && decl.end <= node.endIndex)) continue;
         if (!decl.names.some((name) => names.has(name))) continue;
         found.add(decl);
         grew = true;
@@ -258,9 +352,65 @@ function valuesOf(scope: Node): ValueDecl[] {
     const decl = valueDeclaration(child);
     const names = decl ? declaredNames(decl) : [];
     if (names.length > 0) decls.push({ names, start: child.startIndex, end: child.endIndex, node: child });
+    for (const field of constructorFields(child)) decls.push({ names: [field.name], start: field.node.startIndex, end: field.node.endIndex, node: field.node });
   }
   byScope.set(scope.id, decls);
   return decls;
+}
+
+/**
+ * Fields a class member that is the constructor sets: `this.x = …` (TS/JS
+ * `constructor`), `self.x = …` (Python `__init__`), `$this->x = …` (PHP
+ * `__construct`), and the constructor's parameters that declare a property
+ * (TS `constructor(private x = 1)`, PHP `__construct(private int $x = 1)`).
+ * Each is the node a method reading `x` hashes. None for any other member.
+ */
+function constructorFields(member: Node): { name: string; node: Node }[] {
+  const fn = member.type === "decorated_definition" ? member.childForFieldName("definition") : member;
+  const name = fn?.childForFieldName("name")?.text;
+  const receiver = fn?.type === "method_definition" && name === "constructor" ? "this" : fn?.type === "function_definition" && name === "__init__" ? "self" : fn?.type === "method_declaration" && name?.toLowerCase() === "__construct" ? "$this" : null;
+  if (!fn || receiver === null) return [];
+  const out: { name: string; node: Node }[] = [];
+  for (const param of fn.childForFieldName("parameters")?.namedChildren ?? []) {
+    if (param.type === "property_promotion_parameter") {
+      const variable = param.childForFieldName("name");
+      const field = variable?.namedChildren.find((c) => c.type === "name");
+      if (field) out.push({ name: field.text, node: param });
+    } else if ((param.type === "required_parameter" || param.type === "optional_parameter") && param.children.some((c) => c.type === "accessibility_modifier" || c.type === "readonly" || c.type === "override_modifier")) {
+      const field = param.childForFieldName("pattern");
+      if (field?.type === "identifier") out.push({ name: field.text, node: param });
+    }
+  }
+  const body = fn.childForFieldName("body");
+  const stack: Node[] = body ? [...body.namedChildren] : [];
+  while (stack.length > 0) {
+    const n = stack.pop()!;
+    // A nested function or class sets fields of its own receiver, if any.
+    if (NESTED_SCOPES.has(n.type)) continue;
+    if (n.type === "assignment_expression" || n.type === "assignment") {
+      const field = receiverField(n.childForFieldName("left"), receiver);
+      if (field !== null) out.push({ name: field, node: n });
+    }
+    stack.push(...n.namedChildren);
+  }
+  return out.sort((a, b) => a.node.startIndex - b.node.startIndex);
+}
+
+const NESTED_SCOPES = new Set(["function_declaration", "function_expression", "function", "generator_function", "generator_function_declaration", "class_declaration", "class", "function_definition", "class_definition", "lambda", "anonymous_function", "anonymous_function_creation_expression", "method_declaration"]);
+
+/** `this.x`, `self.x`, `$this->x` as an assignment target: `x`. Arrow functions keep the receiver, so they are walked. */
+function receiverField(target: Node | null, receiver: string): string | null {
+  if (target === null) return null;
+  if (target.type === "member_expression" && target.childForFieldName("object")?.type === "this") {
+    const property = target.childForFieldName("property");
+    return property ? property.text : null;
+  }
+  if (target.type === "attribute" && target.childForFieldName("object")?.text === receiver) return target.childForFieldName("attribute")?.text ?? null;
+  if (target.type === "member_access_expression" && target.childForFieldName("object")?.text === receiver) {
+    const name = target.childForFieldName("name");
+    return name?.type === "name" ? name.text : null;
+  }
+  return null;
 }
 
 /** The value declaration a statement of a scope is, through `export` (TS) and an expression statement (Python). */
@@ -325,75 +475,121 @@ function patternNames(target: Node | null): string[] {
 /** Wrappers whose first child is the object read: `a.b`, `a::b`, `a[0]`. */
 const MEMBER_CHAINS = new Set(["member_expression", "attribute", "scoped_identifier", "field_expression", "subscript_expression", "subscript"]);
 /** Calls by their callee field: an imported fn that is called is the call graph's to follow, not a read. */
-const CALLEES: Record<string, string> = { call_expression: "function", call: "function", new_expression: "constructor", macro_invocation: "macro" };
+const CALLEES: Record<string, string> = { call_expression: "function", call: "function", new_expression: "constructor", macro_invocation: "macro", scoped_call_expression: "scope", function_call_expression: "function" };
 
-/** Whether `node` reads, as a value, a name imported from another file of the repository. */
-function readsImportedValue(node: Node, reads: ReadonlySet<string>): boolean {
+/**
+ * The names `node` reads as values that an import binds: `relative` when one
+ * of them is bound by an import whose syntax places it in another file of the
+ * repository, `other` those bound by an import whose syntax does not tell.
+ */
+function importedValueReads(node: Node, reads: ReadonlySet<string>): { relative: boolean; other: string[] } {
   const imported = importedValueNames(node.tree);
-  if (imported.size === 0 || ![...reads].some((name) => imported.has(name))) return false;
+  if (![...reads].some((name) => imported.relative.has(name) || imported.other.has(name))) return { relative: false, other: [] };
+  let relative = false;
+  const other = new Set<string>();
   const stack: Node[] = [node];
   while (stack.length > 0) {
     const n = stack.pop()!;
     // Types, decorators and JSX are no value reads a closure could follow.
     if (n.type.includes("comment") || n.type.includes("type") || n.type === "decorator" || n.type.startsWith("jsx_")) continue;
     if (n.childCount === 0) {
-      if (n.type === "identifier" && imported.has(n.text) && !isCallee(n)) return true;
+      // `name`: a PHP class or constant (`Limits::MAX`, `MAX`).
+      if ((n.type === "identifier" || n.type === "name") && !isCallee(n)) {
+        if (imported.relative.has(n.text)) relative = true;
+        else if (imported.other.has(n.text)) other.add(n.text);
+      }
       continue;
     }
     stack.push(...n.children);
   }
-  return false;
+  return { relative, other: [...other].sort() };
 }
 
 function isCallee(leaf: Node): boolean {
   let top = leaf;
   for (let parent = top.parent; parent !== null && MEMBER_CHAINS.has(parent.type) && parent.namedChildren[0]?.id === top.id; parent = top.parent) top = parent;
   const call = top.parent;
+  // PHP `new Limits()`: the class is named, not read.
+  if (call?.type === "object_creation_expression") return true;
   const field = call ? CALLEES[call.type] : undefined;
   return call !== null && field !== undefined && call.childForFieldName(field)?.id === top.id;
 }
 
+/** Local names a file binds to values of other files by its top-level imports; see `importedValueNames`. */
+interface ImportedNames {
+  relative: Set<string>;
+  other: Set<string>;
+}
+
 /**
- * Local names the file binds to values of other files of the repository, as
- * far as the import's syntax tells: a relative TS/JS specifier, a relative
- * Python `from . import`, a Rust `use crate::`/`super::`/`self::`. A
- * type-only import binds no value.
+ * Local names the file binds to values of other files by its top-level
+ * imports. `relative`: the import's syntax places them in the repository — a
+ * relative TS/JS specifier, a relative Python `from . import`, a Rust
+ * `use crate::`/`super::`/`self::`. `other`: it does not tell — a bare TS/JS
+ * specifier, a Python absolute import, a PHP `use` (not `use function`), a
+ * Rust `use` of another crate; the graph decides by what the import resolves
+ * to. A type-only import binds no value.
  */
-function importedValueNames(tree: Tree): Set<string> {
-  let names = importedValues.get(tree);
-  if (names) return names;
-  names = new Set();
-  for (const statement of tree.rootNode.namedChildren) {
-    const source = statement.type === "import_statement" ? statement.childForFieldName("source") : null;
-    if (source) {
-      // TS/JS; `import type` binds types only.
-      if (!/^["']\./.test(source.text) || statement.children.some((c) => !c.isNamed && c.type === "type")) continue;
-      const clause = statement.namedChildren.find((c) => c.type === "import_clause");
-      for (const part of clause?.namedChildren ?? []) {
-        if (part.type === "identifier") names.add(part.text);
-        else if (part.type === "namespace_import") for (const id of part.namedChildren) names.add(id.text);
-        else if (part.type === "named_imports") {
-          for (const spec of part.namedChildren) {
-            if (spec.type !== "import_specifier" || spec.children.some((c) => !c.isNamed && c.type === "type")) continue;
-            const local = spec.childForFieldName("alias") ?? spec.childForFieldName("name");
-            if (local) names.add(local.text);
-          }
-        }
-      }
-    } else if (statement.type === "import_from_statement" && statement.childForFieldName("module_name")?.type === "relative_import") {
-      // Python `from .limits import MAX as M`.
-      for (const name of statement.childrenForFieldName("name")) {
-        const local = name.type === "aliased_import" ? name.childForFieldName("alias") : (name.namedChildren[name.namedChildren.length - 1] ?? name);
-        if (local) names.add(local.text);
-      }
-    } else if (statement.type === "use_declaration") {
-      // Rust `use crate::limits::{MAX, MIN as LOW};`.
-      const argument = statement.childForFieldName("argument");
-      if (argument && /^(crate|super|self)::/.test(argument.text)) for (const name of useNames(argument)) names.add(name);
-    }
-  }
+function importedValueNames(tree: Tree): ImportedNames {
+  const cached = importedValues.get(tree);
+  if (cached) return cached;
+  const names: ImportedNames = { relative: new Set(), other: new Set() };
+  for (const statement of tree.rootNode.namedChildren) collectImportedNames(statement, names);
   importedValues.set(tree, names);
   return names;
+}
+
+function collectImportedNames(statement: Node, names: ImportedNames): void {
+  if (statement.type === "namespace_definition") {
+    // PHP `namespace App { use …; }`.
+    for (const child of statement.childForFieldName("body")?.namedChildren ?? []) collectImportedNames(child, names);
+    return;
+  }
+  const source = statement.type === "import_statement" ? statement.childForFieldName("source") : null;
+  if (source) {
+    // TS/JS; `import type` binds types only.
+    if (statement.children.some((c) => !c.isNamed && c.type === "type")) return;
+    const into = /^["']\./.test(source.text) ? names.relative : names.other;
+    const clause = statement.namedChildren.find((c) => c.type === "import_clause");
+    for (const part of clause?.namedChildren ?? []) {
+      if (part.type === "identifier") into.add(part.text);
+      else if (part.type === "namespace_import") for (const id of part.namedChildren) into.add(id.text);
+      else if (part.type === "named_imports") {
+        for (const spec of part.namedChildren) {
+          if (spec.type !== "import_specifier" || spec.children.some((c) => !c.isNamed && c.type === "type")) continue;
+          const local = spec.childForFieldName("alias") ?? spec.childForFieldName("name");
+          if (local) into.add(local.text);
+        }
+      }
+    }
+  } else if (statement.type === "import_from_statement") {
+    // Python `from .limits import MAX as M`, `from app.limits import MAX`.
+    const into = statement.childForFieldName("module_name")?.type === "relative_import" ? names.relative : names.other;
+    for (const name of statement.childrenForFieldName("name")) {
+      const local = name.type === "aliased_import" ? name.childForFieldName("alias") : (name.namedChildren[name.namedChildren.length - 1] ?? name);
+      if (local) into.add(local.text);
+    }
+  } else if (statement.type === "import_statement") {
+    // Python `import app.limits` binds `app`; `import app.limits as l` binds `l`.
+    for (const name of statement.childrenForFieldName("name")) {
+      const local = name.type === "aliased_import" ? name.childForFieldName("alias") : (name.namedChildren[0] ?? name);
+      if (local) names.other.add(local.text);
+    }
+  } else if (statement.type === "use_declaration") {
+    // Rust `use crate::limits::{MAX, MIN as LOW};`.
+    const argument = statement.childForFieldName("argument");
+    if (argument) for (const name of useNames(argument)) (/^(crate|super|self)::/.test(argument.text) ? names.relative : names.other).add(name);
+  } else if (statement.type === "namespace_use_declaration") {
+    // PHP `use App\Limits;`, `use App\{A, B as C};`, `use const App\MAX;`; `use function` names fns, which are called.
+    if (statement.children.some((c) => c.type === "function")) return;
+    const clauses = [...statement.namedChildren, ...(statement.childForFieldName("body")?.namedChildren ?? [])].filter((c) => c.type === "namespace_use_clause");
+    for (const clause of clauses) {
+      if (clause.childForFieldName("type")?.type === "function") continue;
+      const named = clause.namedChildren.find((c) => c.type === "qualified_name" || c.type === "name");
+      const local = clause.childForFieldName("alias") ?? (named?.type === "qualified_name" ? (named.childForFieldName("name") ?? named.lastNamedChild) : named);
+      if (local) names.other.add(local.text);
+    }
+  }
 }
 
 function useNames(clause: Node): string[] {
