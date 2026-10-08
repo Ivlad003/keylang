@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [agent-cli](#features.agent-cli) · [agent-context](#features.agent-context) · [baseline](#features.baseline) · [call-sites](#features.call-sites) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [clone](#features.clone) · [coverage-report](#features.coverage-report) · [diagram-proposal](#features.diagram-proposal) · [discover-names](#features.discover-names) · [discover](#features.discover) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [explorer](#features.explorer) · [feature-status](#features.feature-status) · [flow-bundle](#features.flow-bundle) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [greenfield](#features.greenfield) · [harness](#features.harness) · [integrations](#features.integrations) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [migration-stack](#features.migration-stack) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stale](#features.stale) · [stats](#features.stats) · [tour](#features.tour) · [voice-local](#features.voice-local) · [voice](#features.voice) · [weakening](#features.weakening)
+[README](README.md) · modules: [agent-cli](#features.agent-cli) · [agent-context](#features.agent-context) · [baseline](#features.baseline) · [call-sites](#features.call-sites) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [clone](#features.clone) · [coverage-report](#features.coverage-report) · [diagram-clip](#features.diagram-clip) · [diagram-proposal](#features.diagram-proposal) · [discover-names](#features.discover-names) · [discover](#features.discover) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [explorer](#features.explorer) · [feature-status](#features.feature-status) · [flow-bundle](#features.flow-bundle) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [greenfield](#features.greenfield) · [harness](#features.harness) · [integrations](#features.integrations) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [migration-stack](#features.migration-stack) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stale](#features.stale) · [stats](#features.stats) · [tour](#features.tour) · [voice-local](#features.voice-local) · [voice](#features.voice) · [weakening](#features.weakening)
 
 # map
 
@@ -453,6 +453,70 @@
     - fn [coverageText](../../src/coverage-report.ts#L218) (report: CoverageReport, specDir = "keylang") → string
       <a id="features.coverage-report.coverageText"></a><br>What `keylang coverage` prints: the five sections, each with what to do about it.
       - calls [features.coverage-report.percent](features.md#features.coverage-report.percent)
+  - module [diagram-clip](../../src/diagram-clip.ts#L1)
+    <a id="features.diagram-clip"></a><br>A fragment of a diagram carried between tabs and repositories (business-flows/25). The clipboard holds one `text/plain`: the portable bundle of business-flows/26 whose ```keylang-layout``` block holds the copied shapes — no custom MIME type, which browsers do not carry between…
+    - diagram-layout [map.diagram-layout](map.md#map.diagram-layout)
+    - flow-bundle [features.flow-bundle](features.md#features.flow-bundle)
+    - parser [lang.parser](lang.md#lang.parser)
+    - span [base.span](base.md#base.span)
+    - type [ClipShape](../../src/diagram-clip.ts#L24)
+      <a id="features.diagram-clip.ClipShape"></a><br>One copied shape as the editor (or the viewer) sends it: a key of its canvas and a box in model coordinates.
+    - type [ClipEdge](../../src/diagram-clip.ts#L45)
+      <a id="features.diagram-clip.ClipEdge"></a><br>One copied line: the canvas keys of its ends.
+    - type [ClipLayout](../../src/diagram-clip.ts#L54)
+      <a id="features.diagram-clip.ClipLayout"></a><br>The layout block: shapes by stable key, edges by the stable keys of their ends.
+    - type [PastedShape](../../src/diagram-clip.ts#L63) = ClipShape
+      <a id="features.diagram-clip.PastedShape"></a><br>A shape as the paste answers it: its stable key (what the edges name) and the rest.
+    - type [PastedEdge](../../src/diagram-clip.ts#L64)
+      <a id="features.diagram-clip.PastedEdge"></a>
+    - fn [round](../../src/diagram-clip.ts#L79) (value: number) → number <!-- internal -->
+      <a id="features.diagram-clip.round"></a>
+    - fn [finite](../../src/diagram-clip.ts#L80) (value: unknown) → value is number <!-- internal -->
+      <a id="features.diagram-clip.finite"></a>
+    - fn [isObject](../../src/diagram-clip.ts#L81) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+      <a id="features.diagram-clip.isObject"></a>
+    - fn [short](../../src/diagram-clip.ts#L82) (value: unknown) → string | undefined <!-- internal -->
+      <a id="features.diagram-clip.short"></a>
+    - fn [cleanId](../../src/diagram-clip.ts#L85) (value: unknown) → string <!-- internal -->
+      <a id="features.diagram-clip.cleanId"></a><br>An ID as a shape may carry it: a dotted ID, optionally `planned:`; anything else is none.
+      - calls [lang.parser.isId](lang.md#lang.parser.isId)
+    - fn [cleanShape](../../src/diagram-clip.ts#L92) (raw: unknown, key: string) → ClipShape | null <!-- internal -->
+      <a id="features.diagram-clip.cleanShape"></a><br>One shape from untrusted JSON, or null: a known kind, finite numbers, short strings.
+      - calls [features.diagram-clip.isObject](features.md#features.diagram-clip.isObject), [features.diagram-clip.finite](features.md#features.diagram-clip.finite), [features.diagram-clip.cleanId](features.md#features.diagram-clip.cleanId), [features.diagram-clip.short](features.md#features.diagram-clip.short), [lang.parser.isId](lang.md#lang.parser.isId), [features.diagram-clip.round](features.md#features.diagram-clip.round)
+    - fn [cleanPoints](../../src/diagram-clip.ts#L121) (raw: unknown) → { x: number; y: number }[] | undefined <!-- internal -->
+      <a id="features.diagram-clip.cleanPoints"></a>
+      - calls [features.diagram-clip.isObject](features.md#features.diagram-clip.isObject), [features.diagram-clip.finite](features.md#features.diagram-clip.finite), [features.diagram-clip.round](features.md#features.diagram-clip.round)
+    - fn [parseClipSelection](../../src/diagram-clip.ts#L128) (shapesRaw: unknown, edgesRaw: unknown) → { shapes: ClipShape[]; edges: ClipEdge[] } | string
+      <a id="features.diagram-clip.parseClipSelection"></a><br>The shapes and edges of a request body (`{shapes, edges}`), or what is wrong with them.
+      - calls [features.diagram-clip.isObject](features.md#features.diagram-clip.isObject), [features.diagram-clip.cleanShape](features.md#features.diagram-clip.cleanShape), [features.diagram-clip.short](features.md#features.diagram-clip.short), [features.diagram-clip.cleanPoints](features.md#features.diagram-clip.cleanPoints)
+    - fn [baseKey](../../src/diagram-clip.ts#L156) (shape: ClipShape) → string <!-- internal -->
+      <a id="features.diagram-clip.baseKey"></a><br>The stable key of a copied shape, as a layout file keys it: a note by its own key, the rest by what it says.
+      - calls [map.diagram-layout.shapeBase](map.md#map.diagram-layout.shapeBase)
+    - fn [clipLayout](../../src/diagram-clip.ts#L166) (view: string, shapes: readonly ClipShape[], edges: readonly ClipEdge[]) → ClipLayout
+      <a id="features.diagram-clip.clipLayout"></a><br>The layout block of a selection: shapes by stable key, places relative to the fragment's top-left, edges between copied shapes only, by the stable keys of their ends. Deterministic: the same selection gives the same text.
+      - calls [base.span.compareText](base.md#base.span.compareText), [map.diagram-layout.twinsApart](map.md#map.diagram-layout.twinsApart), [features.diagram-clip.baseKey](features.md#features.diagram-clip.baseKey), [features.diagram-clip.round](features.md#features.diagram-clip.round)
+    - fn [sorted](../../src/diagram-clip.ts#L194) (value: unknown) → unknown <!-- internal -->
+      <a id="features.diagram-clip.sorted"></a>
+      - calls [features.diagram-clip.isObject](features.md#features.diagram-clip.isObject), [base.span.compareText](base.md#base.span.compareText)
+    - fn [clipLayoutText](../../src/diagram-clip.ts#L201) (layout: ClipLayout) → string
+      <a id="features.diagram-clip.clipLayoutText"></a><br>The block's text: JSON with sorted keys, two-space indent, no fence it could close (`` ` `` never stays raw).
+      - calls [features.diagram-clip.sorted](features.md#features.diagram-clip.sorted)
+    - fn [parseClipLayout](../../src/diagram-clip.ts#L206) (text: string) → ClipLayout | null
+      <a id="features.diagram-clip.parseClipLayout"></a><br>The layout block of a bundle read leniently: null when it is empty or no layout; a shape or an edge of the wrong form is left out.
+      - calls [features.diagram-clip.isObject](features.md#features.diagram-clip.isObject), [features.diagram-clip.finite](features.md#features.diagram-clip.finite), [features.diagram-clip.cleanShape](features.md#features.diagram-clip.cleanShape), [features.diagram-clip.edgeEnds](features.md#features.diagram-clip.edgeEnds), [features.diagram-clip.short](features.md#features.diagram-clip.short), [features.diagram-clip.cleanPoints](features.md#features.diagram-clip.cleanPoints)
+    - fn [edgeEnds](../../src/diagram-clip.ts#L235) (key: string, shapes: Record<string, unknown>) → [string, string] | null <!-- internal -->
+      <a id="features.diagram-clip.edgeEnds"></a><br>The two ends of a layout edge key.
+    - fn [fragmentFlow](../../src/diagram-clip.ts#L251) (name: string, shapes: readonly ClipShape[]) → string | null
+      <a id="features.diagram-clip.fragmentFlow"></a><br>The flow of a selection that is no flow view: `# flow <name>` with the selection's trigger (a start shape) and its named shapes as steps, left to right; a drawn shape is declared `planned` with its kind and signature.
+      - calls [base.span.compareText](base.md#base.span.compareText)
+    - fn [fragmentName](../../src/diagram-clip.ts#L274) (shapes: readonly ClipShape[]) → string
+      <a id="features.diagram-clip.fragmentName"></a><br>A flow name from a selection: the first named shape's last segment and `-fragment`.
+    - fn [pastedShapes](../../src/diagram-clip.ts#L288) (bundle: Bundle, ids: readonly { from: string; to: string; planned: boolean }[], choices: readonly LayerChoice[]) → { shapes: PastedShape[]; edges: PastedEdge[]; laidOut: boolean }
+      <a id="features.diagram-clip.pastedShapes"></a><br>The shapes a paste draws, with IDs re-homed: an ID the import mapped takes its target (`planned:` when the target lacks it); any other ID takes the mapped layer as its first segment and is planned. `ids` and `choices` empty: the IDs as they are (a paste into the same repository…
+      - calls [features.diagram-clip.parseClipLayout](features.md#features.diagram-clip.parseClipLayout), [features.diagram-clip.edgeEnds](features.md#features.diagram-clip.edgeEnds), [features.diagram-clip.flowOrder](features.md#features.diagram-clip.flowOrder)
+    - fn [flowOrder](../../src/diagram-clip.ts#L367) (bundle: Bundle, flow: string, text: string) → string[] <!-- internal -->
+      <a id="features.diagram-clip.flowOrder"></a><br>The IDs a flow names, in order (`flowIds` of the bundle module would parse again; the nodes table keeps the order of first mention).
+      - calls [lang.parser.isId](lang.md#lang.parser.isId)
   - module [diagram-proposal](../../src/diagram-proposal.ts#L1)
     <a id="features.diagram-proposal"></a><br>What a drawing in the editor of `keylang web` asks of the specs (business-flows/24): the canvas (`window.keylangEditor.currentModel()`) compared with the diagram of the same view, as the text each spec would have. Pure: the files come in through `read`, the result is the full…
     - config [base.config](base.md#base.config)
@@ -1121,83 +1185,86 @@
     - fn [describe](../../src/flow-bundle.ts#L195) (snapshot: AnalysisSnapshot, id: string) → Omit<BundleNode, "role" | "flows"> <!-- internal -->
       <a id="features.flow-bundle.describe"></a>
       - calls [base.brief.firstSentence](base.md#base.brief.firstSentence)
-    - fn [bundleText](../../src/flow-bundle.ts#L209) (input: { header: BundleHeader; layers: readonly BundleLayer[]; nodes: readonly BundleNode[]; tests: readonly BundleTest[]; reached: readonly BundleReach[]; flows: readonly ExportFlow[] }) → string
+    - fn [bundleText](../../src/flow-bundle.ts#L209) (input: { header: BundleHeader; layers: readonly BundleLayer[]; nodes: readonly BundleNode[]; tests: readonly BundleTest[]; reached: readonly BundleReach[]; flows: readonly ExportFlow[]; layout?: string }) → string
       <a id="features.flow-bundle.bundleText"></a><br>The bundle as one Markdown file. The same input gives the same bytes.
       - calls [features.flow-bundle.word](features.md#features.flow-bundle.word), [features.flow-bundle.cell](features.md#features.flow-bundle.cell), [features.flow-bundle.row](features.md#features.flow-bundle.row), [features.flow-bundle.code](features.md#features.flow-bundle.code), [features.flow-bundle.text](features.md#features.flow-bundle.text), [features.flow-bundle.withBundleComment](features.md#features.flow-bundle.withBundleComment)
-    - fn [withBundleComment](../../src/flow-bundle.ts#L247) (flow: ExportFlow) → string <!-- internal -->
+    - fn [withBundleComment](../../src/flow-bundle.ts#L249) (flow: ExportFlow) → string <!-- internal -->
       <a id="features.flow-bundle.withBundleComment"></a><br>The flow's section with the bundle's comment (origin and source) under the heading, then its business process as a quote.
       - calls [features.flow-bundle.quoteLine](features.md#features.flow-bundle.quoteLine), [features.flow-bundle.word](features.md#features.flow-bundle.word)
-    - fn [quoteLine](../../src/flow-bundle.ts#L256) (text: string) → string <!-- internal -->
+    - fn [quoteLine](../../src/flow-bundle.ts#L258) (text: string) → string <!-- internal -->
       <a id="features.flow-bundle.quoteLine"></a><br>One line of a quote: no comment it could open, no `<` read as HTML.
-    - fn [word](../../src/flow-bundle.ts#L261) (value: string) → string <!-- internal -->
+    - fn [word](../../src/flow-bundle.ts#L263) (value: string) → string <!-- internal -->
       <a id="features.flow-bundle.word"></a><br>A header value: one word, no `-->`.
-    - fn [code](../../src/flow-bundle.ts#L265) (value: string) → string <!-- internal -->
+    - fn [code](../../src/flow-bundle.ts#L267) (value: string) → string <!-- internal -->
       <a id="features.flow-bundle.code"></a>
       - calls [features.flow-bundle.cell](features.md#features.flow-bundle.cell)
-    - fn [text](../../src/flow-bundle.ts#L270) (value: string) → string <!-- internal -->
+    - fn [text](../../src/flow-bundle.ts#L272) (value: string) → string <!-- internal -->
       <a id="features.flow-bundle.text"></a>
       - calls [features.flow-bundle.cell](features.md#features.flow-bundle.cell)
-    - fn [cell](../../src/flow-bundle.ts#L275) (value: string) → string <!-- internal -->
+    - fn [cell](../../src/flow-bundle.ts#L277) (value: string) → string <!-- internal -->
       <a id="features.flow-bundle.cell"></a><br>A table cell: one line, `|` escaped.
-    - fn [row](../../src/flow-bundle.ts#L279) (cells: readonly string[]) → string <!-- internal -->
+    - fn [row](../../src/flow-bundle.ts#L281) (cells: readonly string[]) → string <!-- internal -->
       <a id="features.flow-bundle.row"></a>
-    - fn [parseBundle](../../src/flow-bundle.ts#L286) (source: string) → Bundle | { error: string }
+    - fn [parseBundle](../../src/flow-bundle.ts#L288) (source: string) → Bundle | { error: string }
       <a id="features.flow-bundle.parseBundle"></a><br>The bundle a file holds, or why it is none.
       - calls [features.flow-bundle.cells](features.md#features.flow-bundle.cells), [features.flow-bundle.plain](features.md#features.flow-bundle.plain), [features.flow-bundle.unescapeText](features.md#features.flow-bundle.unescapeText), [lang.parser.parse](lang.md#lang.parser.parse)
-    - fn [cells](../../src/flow-bundle.ts#L352) (line: string) → string[] <!-- internal -->
+    - fn [cells](../../src/flow-bundle.ts#L354) (line: string) → string[] <!-- internal -->
       <a id="features.flow-bundle.cells"></a><br>The cells of a table row, `\|` kept inside a cell.
-    - fn [plain](../../src/flow-bundle.ts#L371) (value: string | undefined) → string <!-- internal -->
+    - fn [plain](../../src/flow-bundle.ts#L373) (value: string | undefined) → string <!-- internal -->
       <a id="features.flow-bundle.plain"></a><br>A cell without the backticks around it.
-    - fn [unescapeText](../../src/flow-bundle.ts#L376) (value: string) → string <!-- internal -->
+    - fn [unescapeText](../../src/flow-bundle.ts#L378) (value: string) → string <!-- internal -->
       <a id="features.flow-bundle.unescapeText"></a>
-    - type [TargetLayer](../../src/flow-bundle.ts#L383)
+    - type [TargetLayer](../../src/flow-bundle.ts#L385)
       <a id="features.flow-bundle.TargetLayer"></a><br>The layers of the repository a bundle is imported into.
-    - type [LayerChoice](../../src/flow-bundle.ts#L390)
+    - type [LayerChoice](../../src/flow-bundle.ts#L392)
       <a id="features.flow-bundle.LayerChoice"></a><br>How each source layer lands: the target layer and how that was decided.
-    - fn [parseLayerMap](../../src/flow-bundle.ts#L398) (text: string) → Map<string, string> | { error: string }
+    - fn [parseLayerMap](../../src/flow-bundle.ts#L400) (text: string) → Map<string, string> | { error: string }
       <a id="features.flow-bundle.parseLayerMap"></a><br>`old=new,old2=new2`, or why it is not one.
-    - fn [usedLayers](../../src/flow-bundle.ts#L410) (bundle: Bundle) → string[]
+    - fn [usedLayers](../../src/flow-bundle.ts#L412) (bundle: Bundle) → string[]
       <a id="features.flow-bundle.usedLayers"></a><br>The source layers an import must place: the first segment of every ID of its flows and nodes, and the layers of the test paths.
       - calls [features.flow-bundle.flowIds](features.md#features.flow-bundle.flowIds), [features.flow-bundle.layerOfPath](features.md#features.flow-bundle.layerOfPath), [base.span.compareText](base.md#base.span.compareText)
-    - fn [algoLayers](../../src/flow-bundle.ts#L426) (layers: readonly string[], target: readonly TargetLayer[], taken: ReadonlyMap<string, LayerChoice> = new Map()) → { choices: LayerChoice[]; notes: string[] }
+    - fn [algoLayers](../../src/flow-bundle.ts#L428) (layers: readonly string[], target: readonly TargetLayer[], taken: ReadonlyMap<string, LayerChoice> = new Map()) → { choices: LayerChoice[]; notes: string[] }
       <a id="features.flow-bundle.algoLayers"></a><br>The algorithm's choice for the layers the flag and the model left: the layer of the same name, else the first layer of the target (noted).
-    - fn [layerMapRequest](../../src/flow-bundle.ts#L442) (bundle: Bundle, layers: readonly string[], target: readonly TargetLayer[]) → LlmRequest
+    - fn [layerMapRequest](../../src/flow-bundle.ts#L444) (bundle: Bundle, layers: readonly string[], target: readonly TargetLayer[]) → LlmRequest
       <a id="features.flow-bundle.layerMapRequest"></a><br>The model's request: which target layer each source layer's code belongs in, by names, roots and descriptions.
-    - fn [parseLayerMapAnswer](../../src/flow-bundle.ts#L468) (answer: string, layers: readonly string[], target: readonly TargetLayer[]) → { choices: LayerChoice[]; notes: string[] }
+      - calls [features.flow-bundle.untrusted](features.md#features.flow-bundle.untrusted)
+    - fn [untrusted](../../src/flow-bundle.ts#L469) (text: string) → string
+      <a id="features.flow-bundle.untrusted"></a><br>Text of a bundle inside the `<untrusted-bundle>` fence: no tag of the fence (or any other) it could open or close.
+    - fn [parseLayerMapAnswer](../../src/flow-bundle.ts#L474) (answer: string, layers: readonly string[], target: readonly TargetLayer[]) → { choices: LayerChoice[]; notes: string[] }
       <a id="features.flow-bundle.parseLayerMapAnswer"></a><br>The model's answer checked: each value a target layer, each key a layer asked for; anything else is noted and left to the algorithm.
       - calls [features.flow-bundle.jsonOf](features.md#features.flow-bundle.jsonOf), [features.flow-bundle.isRecord](features.md#features.flow-bundle.isRecord)
-    - fn [jsonOf](../../src/flow-bundle.ts#L483) (answer: string) → unknown <!-- internal -->
+    - fn [jsonOf](../../src/flow-bundle.ts#L489) (answer: string) → unknown <!-- internal -->
       <a id="features.flow-bundle.jsonOf"></a>
-    - fn [isRecord](../../src/flow-bundle.ts#L495) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isRecord](../../src/flow-bundle.ts#L501) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       <a id="features.flow-bundle.isRecord"></a>
-    - fn [layerOfPath](../../src/flow-bundle.ts#L500) (layers: readonly { name: string; globs: string[] }[], path: string) → { name: string; root: string } | null <!-- internal -->
+    - fn [layerOfPath](../../src/flow-bundle.ts#L506) (layers: readonly { name: string; globs: string[] }[], path: string) → { name: string; root: string } | null <!-- internal -->
       <a id="features.flow-bundle.layerOfPath"></a><br>The layer whose root holds `path` (the longest root wins), with that root; null when none does.
       - calls [base.glob.globPrefix](base.md#base.glob.globPrefix)
-    - type [ImportPlan](../../src/flow-bundle.ts#L513)
+    - type [ImportPlan](../../src/flow-bundle.ts#L519)
       <a id="features.flow-bundle.ImportPlan"></a><br>What an import proposes: the feature spec and the migration section, and what the person should know.
-    - type [ImportTarget](../../src/flow-bundle.ts#L523)
+    - type [ImportTarget](../../src/flow-bundle.ts#L529)
       <a id="features.flow-bundle.ImportTarget"></a>
-    - fn [importPlan](../../src/flow-bundle.ts#L538) (bundle: Bundle, choices: readonly LayerChoice[], target: ImportTarget, options: { name: string; bundleFile: string; mode: string }) → ImportPlan
+    - fn [importPlan](../../src/flow-bundle.ts#L544) (bundle: Bundle, choices: readonly LayerChoice[], target: ImportTarget, options: { name: string; bundleFile: string; mode: string }) → ImportPlan
       <a id="features.flow-bundle.importPlan"></a><br>The import: each flow of the bundle with every ID re-homed (its layer by `choices`, the rest of the ID kept), `planned` declared for each ID the target lacks (with the kind and signature of the bundle's nodes, each ID once in the file), test paths re-homed by layer root, and a…
       - calls [base.glob.globPrefix](base.md#base.glob.globPrefix), [features.flow-bundle.layerOfPath](features.md#features.flow-bundle.layerOfPath), [features.flow-bundle.word](features.md#features.flow-bundle.word), [features.flow-bundle.flowIds](features.md#features.flow-bundle.flowIds), [features.flow-bundle.plannedIn](features.md#features.flow-bundle.plannedIn), [features.flow-bundle.plannedLine](features.md#features.flow-bundle.plannedLine), [features.flow-bundle.rehomedFlow](features.md#features.flow-bundle.rehomedFlow)
-    - fn [plannedLine](../../src/flow-bundle.ts#L599) (kind: string | undefined, id: string, signature: string | null, notes: string[]) → string <!-- internal -->
+    - fn [plannedLine](../../src/flow-bundle.ts#L605) (kind: string | undefined, id: string, signature: string | null, notes: string[]) → string <!-- internal -->
       <a id="features.flow-bundle.plannedLine"></a><br>`- planned <kind> <id> <signature>`; a signature the grammar would not read as one line of words is left out (noted).
       - calls [lang.parser.parse](lang.md#lang.parser.parse)
-    - fn [rehomedFlow](../../src/flow-bundle.ts#L613) (text: string, rehome: (id: string) => string, rehomePath: (path: string) => string, provenance: string, planned: readonly string[]) → string <!-- internal -->
+    - fn [rehomedFlow](../../src/flow-bundle.ts#L619) (text: string, rehome: (id: string) => string, rehomePath: (path: string) => string, provenance: string, planned: readonly string[]) → string <!-- internal -->
       <a id="features.flow-bundle.rehomedFlow"></a><br>The flow's text with IDs and test paths replaced, the bundle's comment turned into the import's provenance, and the planned lines before the first item.
       - calls [features.flow-bundle.idSpots](features.md#features.flow-bundle.idSpots), [features.flow-bundle.flowNodes](features.md#features.flow-bundle.flowNodes), [lang.ir.walk](lang.md#lang.ir.walk)
-    - fn [withMigration](../../src/flow-bundle.ts#L637) (existing: string | null, name: string, section: string) → string
+    - fn [withMigration](../../src/flow-bundle.ts#L643) (existing: string | null, name: string, section: string) → string
       <a id="features.flow-bundle.withMigration"></a><br>The text with the `# migration <name>` section replaced (or appended); a file without one starts with it.
       - calls [lang.parser.parse](lang.md#lang.parser.parse)
-    - type [IdSpot](../../src/flow-bundle.ts#L654) <!-- internal -->
+    - type [IdSpot](../../src/flow-bundle.ts#L660) <!-- internal -->
       <a id="features.flow-bundle.IdSpot"></a><br>Where a flow section names an ID: a reference (a link as a whole) or the ID of a `planned`. Offsets into `text`.
-    - fn [flowNodes](../../src/flow-bundle.ts#L660) (text: string) → Node[] <!-- internal -->
+    - fn [flowNodes](../../src/flow-bundle.ts#L666) (text: string) → Node[] <!-- internal -->
       <a id="features.flow-bundle.flowNodes"></a>
       - calls [lang.parser.parse](lang.md#lang.parser.parse)
-    - fn [idSpots](../../src/flow-bundle.ts#L665) (text: string) → IdSpot[] <!-- internal -->
+    - fn [idSpots](../../src/flow-bundle.ts#L671) (text: string) → IdSpot[] <!-- internal -->
       <a id="features.flow-bundle.idSpots"></a>
       - calls [features.flow-bundle.flowNodes](features.md#features.flow-bundle.flowNodes), [lang.ir.walk](lang.md#lang.ir.walk), [lang.parser.isId](lang.md#lang.parser.isId)
-    - fn [plannedIn](../../src/flow-bundle.ts#L681) (text: string) → Map<string, { kind: string; signature: string | null }> <!-- internal -->
+    - fn [plannedIn](../../src/flow-bundle.ts#L687) (text: string) → Map<string, { kind: string; signature: string | null }> <!-- internal -->
       <a id="features.flow-bundle.plannedIn"></a><br>The `planned` items of a flow section: ID → kind and signature.
       - calls [features.flow-bundle.flowNodes](features.md#features.flow-bundle.flowNodes), [lang.ir.walk](lang.md#lang.ir.walk)
   - module [ghost](../../src/ghost.ts#L1)
