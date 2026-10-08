@@ -8,6 +8,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { collectMetrics, draftSteps, formatReport, normaliseReason, summaryLine } from "../bench/lib/metrics.mjs";
+import { benchConfig, parseArgs, reportHeader, WIDE_SPARSE_PATTERNS } from "../bench/magento/run.mjs";
 
 const fixture = join(import.meta.dirname, "fixtures", "bench-magento");
 const expect = JSON.parse(readFileSync(join(import.meta.dirname, "..", "bench", "magento", "expect.json"), "utf8"));
@@ -115,4 +116,44 @@ test("bench-magento: the report is deterministic across coverage order and repea
   const render = (s: unknown): string => formatReport(collectMetrics(s, { drafts, expect }), { title: "t" });
   assert.equal(render(a), render(b));
   assert.equal(render(a), render(a));
+});
+
+test("bench-magento: `--wide` writes `results-wide.md`, keeps the five modules as layers and puts every other module and the Framework outside; the narrow run is the default", () => {
+  const narrow = parseArgs([]);
+  assert.equal(narrow.wide, false);
+  assert.match(narrow.out, /bench\/magento\/results\.md$/);
+  const wide = parseArgs(["--wide", "--repo", "/tmp/m2"]);
+  assert.equal(wide.wide, true);
+  assert.equal(wide.repo, "/tmp/m2");
+  assert.match(wide.out, /bench\/magento\/results-wide\.md$/);
+  assert.throws(() => parseArgs(["--deep"]), /unknown argument: --deep/);
+
+  assert.deepEqual(benchConfig().outside, ["lib/internal/Magento/Framework/**"]);
+  const config = benchConfig(["Store", "Checkout", "Backend", "Quote"]);
+  assert.deepEqual(Object.keys(config.layers), ["checkout", "quote", "sales", "salesrule", "payment"]);
+  // `outside` wins over a layer, so the five modules are never in it.
+  assert.deepEqual(config.outside, ["app/code/Magento/Backend/**", "app/code/Magento/Store/**", "lib/internal/Magento/Framework/**"]);
+  assert.deepEqual(config.exclude, ["**/Test/**"]);
+  // Tests of the modules outside are not checked out; those of the five modules are, as in the narrow bench.
+  assert.ok(WIDE_SPARSE_PATTERNS.includes("!/app/code/Magento/*/Test/"));
+  assert.ok(WIDE_SPARSE_PATTERNS.includes("/app/code/Magento/Quote/Test/"));
+  assert.ok(WIDE_SPARSE_PATTERNS.includes("/app/etc/di.xml"));
+
+  const header = (isWide: boolean): { title: string; intro: string[] } =>
+    reportHeader({ wide: isWide, sha: "755e34dd", outsideModules: 217, verdicts: { fail: 1, unverified: 0, ok: 2, warning: 0 }, coverage: 9, warnings: 3, drafts: [{ trigger: expect.flow, exit: 0, steps: 83 }] });
+  const w = header(true);
+  assert.equal(w.title, "Бенч Magento (широкий): business-flows");
+  assert.match(w.intro[0] ?? "", /sparse-checkout `--wide`: модулі `Checkout`, `Quote`, `Sales`, `SalesRule`, `Payment` як шари; решта 217 модулів/);
+  assert.match(w.intro[2] ?? "", /`node bench\/magento\/run\.mjs --wide \[--repo <клон>\]`.*\[results\.md\]\(results\.md\)/);
+  const n = header(false);
+  assert.equal(n.title, "Бенч Magento: базова лінія business-flows");
+  assert.match(n.intro[0] ?? "", /`lib\/internal\/Magento\/Framework\/\{App,Event,Model,Api\}` як `outside`/);
+  assert.doesNotMatch(n.intro[2] ?? "", /--wide/);
+  // The same deterministic report as the narrow one, under the wide title and intro.
+  const m = collectMetrics(loadSnapshot(), { drafts, expect });
+  const md = formatReport(m, { ...w, run: [["Дата", "2026-10-08"]] });
+  assert.ok(md.startsWith("# Бенч Magento (широкий): business-flows\n\n[magento/magento2]"));
+  assert.equal(md, formatReport(m, { ...header(true), run: [["Дата", "2026-10-08"]] }));
+  assert.match(md, /`check --format json`: 1 fail, 0 unverified, 2 ok, 0 warning; записів coverage 9\. `map`: 3 попереджень\./);
+  assert.match(md, /кроків 83 \(разом із тригером\)/);
 });
