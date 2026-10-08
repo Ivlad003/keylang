@@ -287,7 +287,7 @@
     - fn [runInit](../../src/operations/generate.ts#L451) (request: InitRequest, context: OperationContext) → Promise<OperationEnvelope<"init">>
       - calls operations.shared.empty, operations.generate.initSources, base.config.guessLayout, operations.generate.runAgents, operations.generate.runBaseline, operations.generate.planGitignore, operations.generate.gitignoreMessage, operations.generate.gitignoreCode, base.diag.errorText, base.safe-write.writeAtomic, base.config.configToJson, operations.generate.commitGitignore, operations.generate.runMap
     - fn [runWire](../../src/operations/generate.ts#L570) (request: WireRequest, context: OperationContext) → Promise<OperationEnvelope<"wire">>
-      - calls operations.shared.empty, operations.generate.wireOutProblem, operations.generate.wireSpecInputs, base.config.loadConfig, base.diag.errorText, operations.generate.wiringErrors, map.wire-gen.generateWire, base.safe-write.landing, lang.files.existingText, map.map.sourceInputs, base.safe-write.writeProblem, map.map.sourceInputProblems, operations.generate.wireSpecProblems, base.safe-write.writeAtomic
+      - calls operations.shared.empty, operations.generate.wireOutProblem, operations.generate.wireSpecInputs, base.config.loadConfig, base.diag.errorText, operations.generate.wiringErrors, base.diag.formatDiagnostic, map.wire-gen.generateWire, base.safe-write.landing, lang.files.existingText, map.map.sourceInputs, base.safe-write.writeProblem, map.map.sourceInputProblems, operations.generate.wireSpecProblems, base.safe-write.writeAtomic
     - fn [wireOutProblem](../../src/operations/generate.ts#L661) (root: string, out: string) → string | null
       - calls base.safe-write.writeProblem, base.diag.errorText
     - fn [wiringErrors](../../src/operations/generate.ts#L672) (analysis: Analysis) → Diagnostic[] <!-- internal -->
@@ -357,7 +357,7 @@
     - fn [fmtMessages](../../src/operations/spec.ts#L161) (payload: FmtPayload) → OperationMessage[]
       - calls base.diag.formatDiagnostic, operations.spec.fmtGeneratedNote
     - fn [runCheck](../../src/operations/spec.ts#L188) (request: CheckRequest, context: OperationContext) → Promise<OperationEnvelope<"check">>
-      - calls operations.shared.empty, base.config.loadConfig, base.diag.errorText, features.git-changes.gitChangedFiles, map.analyze.within, base.config.toPosix, map.analyze.analyze, features.check-results.checkReport, features.git-changes.deletedModuleIds, features.changed.filterChanged, features.git-changes.changedPathSet, base.config.resolveStatic, operations.spec.checkSkipNote, operations.spec.checkSummary, features.check-results.checkExitCode
+      - calls operations.shared.empty, base.config.loadConfig, base.diag.errorText, features.git-changes.gitChangedFiles, map.analyze.within, base.config.toPosix, map.analyze.analyze, features.check-results.checkReport, features.git-changes.deletedModuleIds, features.changed.filterChanged, features.git-changes.changedPathSet, base.span.compareText, base.config.resolveStatic, operations.spec.checkSkipNote, operations.spec.checkSummary, features.check-results.checkExitCode
     - fn [checkSkipNote](../../src/operations/spec.ts#L275) (path: string) → string
     - fn [checkSummary](../../src/operations/spec.ts#L285) (counts: CheckCounts) → string
     - fn [runExplainEdge](../../src/operations/spec.ts#L299) (request: ExplainEdgeRequest, context: OperationContext) → Promise<OperationEnvelope<"explain-edge">>

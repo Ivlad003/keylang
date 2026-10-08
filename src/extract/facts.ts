@@ -204,10 +204,21 @@ export interface CallFact {
   docblock?: { line: number; col: number };
   /** The callee is a hook with a default: `const generate = request.generate ?? generateMap; generate()`. */
   hook?: HookFact;
-  /** Function values the call passes: `analyze({ generate: worker.generate })`, `later(save)`. */
+  /**
+   * Function values the call passes: `analyze({ generate: worker.generate })`, `later(save)`,
+   * and callable references — PHP `[$this, 'm']`, `'Cls::m'`, `\Closure::fromCallable(…)`,
+   * `$this->m(...)`; TS `this.m.bind(this)`; Python `functools.partial(self.m)`; Rust `Self::m`.
+   */
   passes?: PassFact[];
   /** The call sits in a function nested in the declaration: it runs when that value is called. */
   closure?: true;
+  /**
+   * Every function the call is nested in is a closure literal written as an argument of a call
+   * (`run(() => hit())`, `items.map(fn($x) => $this->m($x))`): the enclosing call's callee holds
+   * them, so the call is a possible route from the declaration. Position of the outermost such
+   * closure. Absent when some enclosing closure is stored in a value (`const f = () => hit()`).
+   */
+  closureArg?: { line: number; col: number };
   line: number;
   col: number;
   endLine: number;
@@ -231,13 +242,26 @@ export interface HookFact {
   owner: "self" | "constructor";
 }
 
-/** A function value in the arguments of a call: argument index, property path ("" for the argument itself). */
+/**
+ * A function value in the arguments of a call: argument index, property path
+ * ("" for the argument itself). `callee` names it as a call would (`this.m`,
+ * `Cls.m`, `save`); `text` is the argument as written (`[$this, 'm']`), at the
+ * position. One passed as the argument itself is a `callable-arg` edge of the
+ * enclosing fn when it resolves.
+ */
 export interface PassFact {
   arg: number;
   path: string;
   callee: string;
   bound?: "parameter" | "local";
   receiver?: string;
+  /** The receiver's class is written only in a docblock (PHP `[$this->store, 'm']` with `@var Store`), at this position. */
+  docblock?: { line: number; col: number };
+  text: string;
+  line: number;
+  col: number;
+  endLine: number;
+  endCol: number;
 }
 
 export interface ValueRefFact {
