@@ -1023,11 +1023,17 @@ function importStatement(node: Node): ImportFact[] {
 
 /** Literal `import("…")` / `require("…")` anywhere in the file. A non-literal specifier is coverage, not an edge. */
 function collectDynamicImports(root: Node, facts: FileFacts): void {
-  const add = (node: Node, spec: string, optional: boolean): void => {
+  const add = (node: Node, spec: string, optional: boolean, typeOnly = false): void => {
     const line = node.startPosition.row + 1;
-    if (facts.imports.some((i) => i.source === spec && i.line === line)) return;
+    const same = facts.imports.find((i) => i.source === spec && i.line === line);
+    if (same) {
+      // One runtime `import()` on the line makes the dependency a runtime one.
+      if (same.typeOnly && !typeOnly) delete same.typeOnly;
+      return;
+    }
     const fact = importAt(node, spec, [], false);
     if (optional) fact.optional = true;
+    if (typeOnly) fact.typeOnly = true;
     facts.imports.push(fact);
   };
   walkNamed(root, (node) => {
@@ -1049,13 +1055,30 @@ function collectDynamicImports(root: Node, facts: FileFacts): void {
         const arg = node.childForFieldName("arguments")?.namedChildren[0];
         if (arg?.type === "string") {
           const spec = stringValue(arg);
-          if (spec) add(node, spec, false);
+          if (spec) add(node, spec, false, isImport && inTypePosition(node));
         } else if (arg) {
           facts.unsupported.push(unsupported(node, "computed specifier"));
         }
       }
     }
   });
+}
+
+/** Nodes whose whole subtree is a type: an `import("./a")` in one is erased by tsc. */
+const TYPE_CONTEXT = new Set(["type_annotation", "opting_type_annotation", "omitting_type_annotation", "asserts_annotation", "type_predicate_annotation", "type_query", "type_arguments", "type_parameters", "type_alias_declaration", "interface_declaration", "implements_clause"]);
+
+/**
+ * Whether an `import(…)` call is written where a type goes (`x: import("./a").A`,
+ * `typeof import("./a")`, `v as import("./a").T`): a type-only dependency, as `import type` is.
+ */
+function inTypePosition(node: Node): boolean {
+  for (let child = node, parent = node.parent; parent !== null; child = parent, parent = parent.parent) {
+    if (TYPE_CONTEXT.has(parent.type)) return true;
+    // `v as T`, `v satisfies T`: the operand after the value is the type.
+    if ((parent.type === "as_expression" || parent.type === "satisfies_expression") && parent.namedChildren[0]?.id !== child.id) return true;
+    if (parent.type === "statement_block" || parent.type === "program") return false;
+  }
+  return false;
 }
 
 /** Namespace, `eval`, `new Function`, and a call through `obj[expr]` are coverage, not edges. */

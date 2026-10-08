@@ -55,3 +55,60 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 #details .usages li button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 3px 0; cursor: pointer; color: #1565c0; }
 #details .usages li button:hover { text-decoration: underline; }
 #details .usages .clear { float: right; border: 0; background: none; cursor: pointer; color: #607d8b; }
+
+/* Modes (business-flows/22): the diagrams, the entry explorer, the blind spots. */
+#modes { display: flex; gap: 2px; margin: 0 10px 8px; }
+#modes button { flex: 1; border: 1px solid #b0bec5; background: #ffffff; padding: 4px 0; cursor: pointer; border-radius: 4px; color: #37474f; }
+#modes button[aria-pressed="true"] { background: #1565c0; border-color: #1565c0; color: #ffffff; }
+#explorer, #blind { display: none; flex: 1; overflow: auto; min-height: 0; padding: 10px 16px; background: #fbfcfc; }
+body[data-mode="explore"] #explorer, body[data-mode="blind"] #blind { display: block; }
+body[data-mode="explore"] #stage, body[data-mode="blind"] #stage, body[data-mode="explore"] #details, body[data-mode="blind"] #details { display: none; }
+body[data-mode="explore"] #toolbar button, body[data-mode="blind"] #toolbar button { display: none; }
+#explorer h2, #blind h2 { font-size: 15px; margin: 0 0 6px; word-break: break-all; }
+#explorer h3, #blind h3 { font-size: 12px; margin: 14px 0 4px; color: #455a64; text-transform: uppercase; letter-spacing: 0.04em; }
+#explorer dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 8px; margin: 0 0 6px; }
+#explorer dt { color: #607d8b; }
+#explorer dd { margin: 0; word-break: break-all; }
+#explorer code, #blind code { font: 12px ui-monospace, monospace; }
+#explorer .code-link, #blind .code-link { font: 12px ui-monospace, monospace; color: #1565c0; margin-left: 6px; }
+#explorer .empty, #blind .empty, #explorer .none, #blind .none { color: #78909c; }
+#explorer .events-reason { color: #6d4c00; }
+#explorer .reached { margin: 4px 0; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+#explorer .orphan { color: #b26a00; }
+#explorer button.link, #blind button.link { border: 0; background: none; padding: 0 2px; color: #1565c0; cursor: pointer; text-decoration: underline; }
+#explorer .save { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0; padding: 6px 8px; border: 1px solid #cfd8dc; border-radius: 4px; background: #ffffff; }
+#explorer .save input { width: 180px; padding: 3px 6px; border: 1px solid #b0bec5; border-radius: 4px; font: 12px ui-monospace, monospace; }
+#explorer #save-flow { border: 1px solid #2e7d32; border-radius: 4px; background: #e8f5e9; color: #1b5e20; cursor: pointer; padding: 3px 10px; }
+#explorer #save-flow:disabled { opacity: 0.5; cursor: default; }
+#explorer .save-result { flex-basis: 100%; color: #546e7a; word-break: break-word; }
+#explorer .save-result.ok { color: #1b5e20; }
+#explorer .save-result.error { color: #c62828; }
+#explorer .refresh, #blind .refresh { float: right; border: 1px solid #b0bec5; border-radius: 4px; background: #ffffff; cursor: pointer; }
+#explorer ul.tree, #explorer ul.children { list-style: none; margin: 0; padding: 0; }
+#explorer ul.children { padding-left: 20px; border-left: 1px dotted #cfd8dc; margin-left: 9px; }
+#explorer .row { display: flex; align-items: center; gap: 4px; min-height: 24px; flex-wrap: wrap; }
+#explorer .row:hover { background: #eef3f6; }
+#explorer .toggle { width: 20px; border: 0; background: none; cursor: pointer; color: #37474f; padding: 0; }
+#explorer .toggle:disabled { cursor: default; color: #b0bec5; }
+#explorer .name { font: 12px ui-monospace, monospace; cursor: pointer; word-break: break-all; }
+#explorer .external > .row .name { color: #78909c; }
+#explorer .badge { font-size: 10px; border-radius: 8px; padding: 0 6px; line-height: 16px; border: 1px solid; white-space: nowrap; }
+#explorer .badge.via { color: #6a1b9a; border-color: #ce93d8; background: #f3e5f5; }
+#explorer .badge.entry { color: #0d47a1; border-color: #90caf9; background: #e3f2fd; }
+#explorer .badge.external { color: #546e7a; border-color: #b0bec5; border-style: dashed; }
+#explorer .badge.event { color: #00695c; border-color: #80cbc4; background: #e0f2f1; }
+#explorer .count { color: #78909c; font-size: 11px; }
+#explorer .reroot { border: 0; background: none; color: #1565c0; cursor: pointer; padding: 0 2px; }
+#explorer li.hole { color: #6d4c00; background: #fff8e1; border: 1px dashed #b26a00; border-radius: 3px; margin: 2px 0; padding: 2px 6px; }
+#explorer li.hole .glyph { font-weight: 700; margin-right: 4px; }
+#explorer li.hole .blind { font-weight: 600; }
+#explorer li.error { color: #c62828; }
+#blind .blind-head { display: flex; justify-content: space-between; align-items: center; }
+#blind .note { color: #607d8b; margin: 0 0 4px; }
+#blind .big { font-size: 16px; margin: 4px 0; }
+#blind .error { color: #c62828; }
+#blind table { border-collapse: collapse; width: 100%; font-size: 12px; }
+#blind th { text-align: left; color: #607d8b; font-weight: 600; border-bottom: 1px solid #cfd8dc; padding: 2px 6px; }
+#blind td { border-bottom: 1px solid #eceff1; padding: 2px 6px; vertical-align: top; word-break: break-word; }
+#blind .reasons { margin: 0 0 6px; padding-left: 18px; }
+#blind .blind-section { margin-bottom: 12px; }

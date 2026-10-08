@@ -1,6 +1,6 @@
 # 19: Збережені пояснення вузлів, чиї ID відрізняються лише регістром, перезаписують одне одне на macOS і Windows
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -48,11 +48,15 @@
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/explanations.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/explanations.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+- 2026-10-08: Регресійні тести в `tests/explain.test.ts` (локальний мок Messages API, без мережі): «explain --llm: IDs that differ only in letter case get files whose names differ in more than case» — `explain domain.order.order --llm`, потім `domain.order.Order --llm`; у сховищі два файли, імена яких різні й без урахування регістру, обидва офлайн-пояснення свої й `fresh`, `explain --stale` порожній (до виправлення: `domain.order.Order.md` і `domain.order.order.md`). «explain --llm on a case-insensitive file system (casefold tmpfs)…» — той самий сценарій через справжній CLI на casefold tmpfs (skip без `unshare`/casefold); до виправлення fn показувала «The interface Order is a purchase.» і `stale`.
+- 2026-10-08: Виправлення в `src/explanations.ts`: `explanationPath(config, id, detail, also?)` дає `<id>.md`, а ID, що має «близнюка» за регістром — файл у сховищі (коли в config є `root`) або ID з `also` (ті, що пишуться разом, — батч brief-ів у `src/operations/explain.ts`), — `<id>~<8 hex sha256(id)>.md`. Файл, уже збережений під одним із двох імен, своє ім'я зберігає, тож 746 наявних brief-ів цього репозиторію не перейменовуються. Імена зіставляються з переліком теки (точне написання, NFC), а не через `existsSync`, який на APFS знайшов би чужий файл. `storedIds`/`loadBriefs` знімають суфікс `~hash`. TUI (`src/tui/app.ts`, naming для explain-llm) передає `root`, щоб назвати справжній файл.
+- 2026-10-08: Контракт: `docs/cli.md` (абзац `explain --llm`) — речення про `<id>~<hash>.md`. `llm.txt` шляхів сховища не описує. Перевірки: `node --test tests/explain.test.ts tests/explained-map.test.ts tests/tui-explain.test.ts tests/explain-full.test.ts` — 34 тести, 33 pass, 1 skip (whisper), `npm run typecheck` — ок.

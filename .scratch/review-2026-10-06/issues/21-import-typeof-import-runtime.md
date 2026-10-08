@@ -1,6 +1,6 @@
 # 21: `import("./a").T` і `typeof import("./a")` у типах дають runtime-ребро, і no-cycles бачить хибний цикл
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -68,11 +68,15 @@ fx/t9b variants: `EDGE import app.b -> app.a [resolved] :: import("./a")` (no ty
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/extract/ts.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/extract/ts.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+- 2026-10-08: Регресійний тест `tests/analyzer.test.ts` «no-cycles: `import("./a").A` and `typeof import("./a")` in a type are type-only dependencies…» — справжній CLI, `- no-cycles`, `a.ts` імпортує `./b`; чотири варіанти `b.ts` (параметр `import("./a").A`, `type B = import("./a").A`, `let x: typeof import("./a")`, `Array<import(...)>`/тип повернення/`as import(...)` у тілі): `0 fail, 0 unverified, 1 ok`, ребро `app.b → app.a` має `typeOnly: true`. Контроль: runtime `await import("./a")` і далі дає K105. До виправлення — K105 для всіх варіантів.
+- 2026-10-08: Виправлення в `src/extract/ts.ts`: `collectDynamicImports` позначає `import(…)` `typeOnly`, коли `inTypePosition` (предок — `type_annotation`, `type_query`, `type_arguments`, `type_alias_declaration`, `interface_declaration`, `implements_clause` тощо, або тип-операнд `as`/`satisfies`; пошук зупиняється на блоці інструкцій). Runtime `import()` у тому самому рядку знімає `typeOnly` з уже доданого факту. `EXTRACTOR_VERSION` m1.14 → m1.15.
+- 2026-10-08: Контракт: `docs/semantics.md` (абзац про цикли) і `docs/snapshot.md` (TypeScript, `typeOnly`) — `import("./a")` у позиції типу. Перевірки: `node --test tests/analyzer.test.ts tests/languages.test.ts tests/cli-rules.test.ts` — 75/75, `npm run typecheck` — ок.

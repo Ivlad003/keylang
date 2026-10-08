@@ -171,3 +171,16 @@ test("sfcc: keylang.json rejects a cartridge path that is no list of names", (t)
   assert.equal(run.status, 2);
   assert.match(run.stderr, /`sfcc\.cartridgePath` must be an array of cartridge names/);
 });
+
+test("sfcc: `frameworks` without sfcc turns off the cartridge path and the entries; the config files are in manifest.frameworks", (t) => {
+  const dir = tempDir(t, "keylang-sfcc-off-");
+  writeTree(dir, REPO);
+  const on = snapshotOf(dir);
+  assert.deepEqual(on.manifest.frameworks?.map((f) => [f.name, f.files.map((file) => file.path)]), [
+    ["sfcc", ["cartridges/app_custom/steptypes.json", "cartridges/app_storefront_base/cartridge/scripts/hooks.json", "cartridges/app_storefront_base/package.json"]],
+  ]);
+  writeTree(dir, { "keylang.json": JSON.stringify({ ...(JSON.parse(config({ cartridgePath: ["app_custom", "app_storefront_base"] })) as object), frameworks: [] }) });
+  const off = snapshotOf(dir);
+  assert.deepEqual(off.entries.filter((e) => e.framework === "sfcc"), []);
+  assert.ok(off.coverage.some((c) => c.kind === "unresolved-import" && c.text.includes("*/cartridge/scripts/helpers/cartHelpers")));
+});

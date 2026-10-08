@@ -37,78 +37,80 @@
     - test-report check.test-report
     - trace-evidence check.trace-evidence
     - verdict check.verdict
-    - type [SnapshotEdge](../../src/flows.ts#L18) <!-- internal -->
-    - type [SnapshotNodeView](../../src/flows.ts#L40) <!-- internal -->
-    - type [FlowInput](../../src/flows.ts#L53)
-    - type [EntryView](../../src/flows.ts#L83)
-    - type [Planned](../../src/flows.ts#L90) <!-- internal -->
-    - type [Channel](../../src/flows.ts#L99) = "ID" | "static" | "tests" | "trace" <!-- internal -->
-    - type [FlowNode](../../src/flows.ts#L101) = Trigger | FlowItem <!-- internal -->
-    - fn [evaluateFlows](../../src/flows.ts#L103) (compiled: SpecIR, index: Index, input: FlowInput) → { diagnostics: Diagnostic[]; verdicts: Verdict[] }
+    - type [Via](../../src/flows.ts#L19) <!-- internal -->
+    - type [SnapshotEdge](../../src/flows.ts#L21) <!-- internal -->
+    - type [SnapshotNodeView](../../src/flows.ts#L47) <!-- internal -->
+    - type [FlowInput](../../src/flows.ts#L60)
+    - type [EntryView](../../src/flows.ts#L90)
+    - type [Planned](../../src/flows.ts#L97) <!-- internal -->
+    - type [Channel](../../src/flows.ts#L106) = "ID" | "static" | "tests" | "trace" <!-- internal -->
+    - type [FlowNode](../../src/flows.ts#L108) = Trigger | FlowItem <!-- internal -->
+    - fn [evaluateFlows](../../src/flows.ts#L110) (compiled: SpecIR, index: Index, input: FlowInput) → { diagnostics: Diagnostic[]; verdicts: Verdict[] }
       - calls check.flows.collectPlanned, check.flows.callGraph, check.flows.specHash, check.trace-evidence.traceFlow, check.flows.idVerdict, check.flows.entryVerdict, base.diag.diagnostic, check.flows.reachability, check.flows.traceProvenance, check.flows.directCall, check.flows.claimArea, check.flows.scheduleVerdict, check.flows.quantitative, check.test-report.matchTest
-    - fn [claimArea](../../src/flows.ts#L274) (node: ClaimItem | ThenItem | WhenItem | TimerItem) → string <!-- internal -->
-    - fn [entryVerdict](../../src/flows.ts#L287) (kind: string, id: string, entries: readonly EntryView[] | undefined) → { verdict: Verdict["verdict"]; message: string; mismatch: boolean } <!-- internal -->
-    - fn [scheduleForm](../../src/flows.ts#L311) (text: string) → { form: "cron" | "duration"; value: string } <!-- internal -->
-    - fn [labelSchedule](../../src/flows.ts#L322) (label: string) → string | null <!-- internal -->
+    - fn [claimArea](../../src/flows.ts#L281) (node: ClaimItem | ThenItem | WhenItem | TimerItem) → string <!-- internal -->
+    - fn [entryVerdict](../../src/flows.ts#L294) (kind: string, id: string, entries: readonly EntryView[] | undefined) → { verdict: Verdict["verdict"]; message: string; mismatch: boolean } <!-- internal -->
+    - fn [scheduleForm](../../src/flows.ts#L318) (text: string) → { form: "cron" | "duration"; value: string } <!-- internal -->
+    - fn [labelSchedule](../../src/flows.ts#L329) (label: string) → string | null <!-- internal -->
       - calls lang.parser.scheduleText
-    - fn [scheduleVerdict](../../src/flows.ts#L334) (parent: string | null, written: string, entries: readonly EntryView[] | undefined) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
+    - fn [scheduleVerdict](../../src/flows.ts#L341) (parent: string | null, written: string, entries: readonly EntryView[] | undefined) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
       - calls check.flows.scheduleForm, check.flows.labelSchedule
-    - fn [traceProvenance](../../src/flows.ts#L353) (evidence: TraceEvidence) → Verdict["evidence"] <!-- internal -->
-    - fn [quantitative](../../src/flows.ts#L358) (text: string) → boolean <!-- internal -->
-    - fn [idVerdict](../../src/flows.ts#L362) ( id: string, plan: Planned | undefined, span: Span, file: string, index: Index, input: FlowInput, verdict: (channel: Channel, area: string, value: Verdict["verdict"], file: string, span: Span, message: string) => void, ) → Verdict["verdict"] <!-- internal -->
+    - fn [traceProvenance](../../src/flows.ts#L360) (evidence: TraceEvidence) → Verdict["evidence"] <!-- internal -->
+    - fn [quantitative](../../src/flows.ts#L365) (text: string) → boolean <!-- internal -->
+    - fn [idVerdict](../../src/flows.ts#L369) ( id: string, plan: Planned | undefined, span: Span, file: string, index: Index, input: FlowInput, verdict: (channel: Channel, area: string, value: Verdict["verdict"], file: string, span: Span, message: string) => void, ) → Verdict["verdict"] <!-- internal -->
       - calls check.resolve.Index.lookup, check.flows.moduleMembers
-    - type [Step](../../src/flows.ts#L381) <!-- internal -->
-    - type [CallGraph](../../src/flows.ts#L387) <!-- internal -->
-    - fn [callGraph](../../src/flows.ts#L413) (input: FlowInput) → CallGraph <!-- internal -->
+    - type [Step](../../src/flows.ts#L388) <!-- internal -->
+    - type [CallGraph](../../src/flows.ts#L394) <!-- internal -->
+    - fn [callGraph](../../src/flows.ts#L422) (input: FlowInput) → CallGraph <!-- internal -->
       - calls base.languages.constructorName, check.flows.callName, base.languages.caselessNames, base.languages.asciiLowerCase, check.flows.doubtfulBodies
-    - fn [doubtfulBodies](../../src/flows.ts#L455) (input: FlowInput) → { replaced: Map<string, string>; unreadable: Map<string, string> } <!-- internal -->
+    - fn [doubtfulBodies](../../src/flows.ts#L466) (input: FlowInput) → { replaced: Map<string, string>; unreadable: Map<string, string> } <!-- internal -->
       - calls base.span.compareText
-    - fn [lastSegment](../../src/flows.ts#L475) (text: string) → string <!-- internal -->
-    - fn [callName](../../src/flows.ts#L483) (id: string) → string <!-- internal -->
+    - fn [lastSegment](../../src/flows.ts#L486) (text: string) → string <!-- internal -->
+    - fn [callName](../../src/flows.ts#L494) (id: string) → string <!-- internal -->
       - calls check.flows.lastSegment
-    - fn [namedLike](../../src/flows.ts#L495) (graph: CallGraph, name: string) → string[] <!-- internal -->
+    - fn [namedLike](../../src/flows.ts#L506) (graph: CallGraph, name: string) → string[] <!-- internal -->
       - calls base.languages.asciiLowerCase
-    - fn [describeVia](../../src/flows.ts#L501) (edge: SnapshotEdge, where = true) → string <!-- internal -->
-      - calls check.flows.at
-    - fn [provesIn](../../src/flows.ts#L513) (behavior: boolean) → (step: Step) => boolean <!-- internal -->
-    - fn [closureOnly](../../src/flows.ts#L522) (edge: SnapshotEdge, behavior: boolean) → boolean <!-- internal -->
-    - fn [describeHole](../../src/flows.ts#L526) (edge: SnapshotEdge, target: string, input: FlowInput) → string <!-- internal -->
+    - fn [describeVia](../../src/flows.ts#L512) (edge: SnapshotEdge, where = true) → string <!-- internal -->
+      - calls check.flows.describeConfig, check.flows.at
+    - fn [describeConfig](../../src/flows.ts#L525) (edge: Pick<SnapshotEdge, "via" | "binding" | "site" | "scope">) → string
+    - fn [provesIn](../../src/flows.ts#L538) (behavior: boolean) → (step: Step) => boolean <!-- internal -->
+    - fn [closureOnly](../../src/flows.ts#L547) (edge: SnapshotEdge, behavior: boolean) → boolean <!-- internal -->
+    - fn [describeHole](../../src/flows.ts#L551) (edge: SnapshotEdge, target: string, input: FlowInput) → string <!-- internal -->
       - calls check.flows.describeVia, check.flows.lastSegment, check.flows.callName
-    - fn [at](../../src/flows.ts#L538) (edge: SnapshotEdge) → string <!-- internal -->
-    - fn [reachability](../../src/flows.ts#L565) (graph: CallGraph, input: FlowInput, parent: string | null, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
+    - fn [at](../../src/flows.ts#L563) (edge: SnapshotEdge) → string <!-- internal -->
+    - fn [reachability](../../src/flows.ts#L590) (graph: CallGraph, input: FlowInput, parent: string | null, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
       - calls check.flows.externalImport, check.flows.provesIn, check.flows.search, check.flows.routeMessage, check.flows.routeSteps, check.flows.possibleRoute, check.flows.closureOnly, check.flows.at, check.flows.describeHole, check.flows.callersOf, check.flows.escapeOf, check.flows.holeNear
-    - fn [directCall](../../src/flows.ts#L629) (graph: CallGraph, input: FlowInput, parent: string | null, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
+    - fn [directCall](../../src/flows.ts#L654) (graph: CallGraph, input: FlowInput, parent: string | null, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
       - calls check.flows.externalImport, check.flows.provesIn, check.flows.routeMessage, check.flows.closureOnly, check.flows.at, check.flows.describeHole, check.flows.namedLike, check.flows.lastSegment, base.languages.caselessNames, check.flows.callName, base.languages.asciiLowerCase, check.flows.escapeOf, check.flows.search, check.flows.routeSteps
-    - fn [search](../../src/flows.ts#L676) (graph: CallGraph, parent: string, target: string, follow: (step: Step) => boolean) → { route: Map<string, Step> | null; depth: Map<string, number> } <!-- internal -->
-    - fn [routeSteps](../../src/flows.ts#L699) (parent: string, target: string, previous: Map<string, Step>) → Step[] <!-- internal -->
-    - fn [fileModule](../../src/flows.ts#L712) (nodes: FlowInput["nodes"], id: string) → string | null <!-- internal -->
-    - fn [externalImport](../../src/flows.ts#L728) (input: FlowInput, parent: string, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
+    - fn [search](../../src/flows.ts#L701) (graph: CallGraph, parent: string, target: string, follow: (step: Step) => boolean) → { route: Map<string, Step> | null; depth: Map<string, number> } <!-- internal -->
+    - fn [routeSteps](../../src/flows.ts#L724) (parent: string, target: string, previous: Map<string, Step>) → Step[] <!-- internal -->
+    - fn [fileModule](../../src/flows.ts#L737) (nodes: FlowInput["nodes"], id: string) → string | null <!-- internal -->
+    - fn [externalImport](../../src/flows.ts#L753) (input: FlowInput, parent: string, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
       - calls check.flows.fileModule, check.flows.at
-    - fn [describeDocblock](../../src/flows.ts#L740) (edge: SnapshotEdge) → string <!-- internal -->
+    - fn [describeDocblock](../../src/flows.ts#L765) (edge: SnapshotEdge) → string <!-- internal -->
       - calls check.flows.at
-    - fn [routeMessage](../../src/flows.ts#L749) (parent: string, target: string, previous: Map<string, Step>) → string <!-- internal -->
+    - fn [routeMessage](../../src/flows.ts#L774) (parent: string, target: string, previous: Map<string, Step>) → string <!-- internal -->
       - calls check.flows.routeSteps, check.flows.describeVia, check.flows.describeDocblock
-    - fn [possibleRoute](../../src/flows.ts#L765) (graph: CallGraph, input: FlowInput, parent: string, target: string, proves: (step: Step) => boolean) → { edge: SnapshotEdge | null; seen: Set<string> } <!-- internal -->
+    - fn [possibleRoute](../../src/flows.ts#L790) (graph: CallGraph, input: FlowInput, parent: string, target: string, proves: (step: Step) => boolean) → { edge: SnapshotEdge | null; seen: Set<string> } <!-- internal -->
       - calls check.flows.namedLike, check.flows.callName, check.flows.lastSegment
-    - fn [callersOf](../../src/flows.ts#L793) (graph: CallGraph, target: string) → Set<string> <!-- internal -->
-    - fn [escapeOf](../../src/flows.ts#L811) (graph: CallGraph, input: FlowInput, routes: Set<string>, reachable: ReadonlySet<string>) → { reason: string; from: string | null } | null <!-- internal -->
+    - fn [callersOf](../../src/flows.ts#L818) (graph: CallGraph, target: string) → Set<string> <!-- internal -->
+    - fn [escapeOf](../../src/flows.ts#L836) (graph: CallGraph, input: FlowInput, routes: Set<string>, reachable: ReadonlySet<string>) → { reason: string; from: string | null } | null <!-- internal -->
       - calls check.flows.fnAt, check.flows.at, check.flows.callName, base.languages.caselessNames, check.flows.identifierPattern, base.span.compareText
-    - fn [identifierPattern](../../src/flows.ts#L849) (name: string, caseless = false) → RegExp <!-- internal -->
-    - fn [fnAt](../../src/flows.ts#L856) (input: FlowInput, file: string, line: number) → string | null <!-- internal -->
-    - fn [holeNear](../../src/flows.ts#L870) (graph: CallGraph, holes: { edge: SnapshotEdge }[], from: string) → SnapshotEdge | null <!-- internal -->
+    - fn [identifierPattern](../../src/flows.ts#L876) (name: string, caseless = false) → RegExp <!-- internal -->
+    - fn [fnAt](../../src/flows.ts#L883) (input: FlowInput, file: string, line: number) → string | null <!-- internal -->
+    - fn [holeNear](../../src/flows.ts#L897) (graph: CallGraph, holes: { edge: SnapshotEdge }[], from: string) → SnapshotEdge | null <!-- internal -->
       - calls base.span.compareText
-    - fn [moduleMembers](../../src/flows.ts#L886) (nodes: FlowInput["nodes"], id: string) → "complete" | "opaque" | null <!-- internal -->
-    - fn [collectPlanned](../../src/flows.ts#L902) (spec: SpecIR, input: FlowInput, diagnostics: Diagnostic[]) → Map<string, Planned> <!-- internal -->
+    - fn [moduleMembers](../../src/flows.ts#L913) (nodes: FlowInput["nodes"], id: string) → "complete" | "opaque" | null <!-- internal -->
+    - fn [collectPlanned](../../src/flows.ts#L929) (spec: SpecIR, input: FlowInput, diagnostics: Diagnostic[]) → Map<string, Planned> <!-- internal -->
       - calls check.flows.codeLocation, check.flows.plannedMismatch, base.diag.diagnostic
-    - fn [codeLocation](../../src/flows.ts#L931) (id: string, code: SnapshotNodeView, edges: readonly SnapshotEdge[]) → string <!-- internal -->
+    - fn [codeLocation](../../src/flows.ts#L958) (id: string, code: SnapshotNodeView, edges: readonly SnapshotEdge[]) → string <!-- internal -->
       - calls base.span.compareText
-    - fn [plannedMismatch](../../src/flows.ts#L942) (item: { decl: string; signature: string | null }, code: { kind: string; signature?: string | null; file?: string | null }) → "kind" | "signature" | null
+    - fn [plannedMismatch](../../src/flows.ts#L969) (item: { decl: string; signature: string | null }, code: { kind: string; signature?: string | null; file?: string | null }) → "kind" | "signature" | null
       - calls check.flows.sameSignature
-    - fn [sameSignature](../../src/flows.ts#L955) (planned: string, code: string, file: string | null) → boolean <!-- internal -->
+    - fn [sameSignature](../../src/flows.ts#L982) (planned: string, code: string, file: string | null) → boolean <!-- internal -->
       - calls check.flows.normalizeSignature, check.flows.parameterList
-    - fn [parameterList](../../src/flows.ts#L966) (signature: string) → string | null <!-- internal -->
-    - fn [normalizeSignature](../../src/flows.ts#L976) (text: string) → string <!-- internal -->
-    - fn [specHash](../../src/flows.ts#L980) (text: string) → string <!-- internal -->
+    - fn [parameterList](../../src/flows.ts#L993) (signature: string) → string | null <!-- internal -->
+    - fn [normalizeSignature](../../src/flows.ts#L1003) (text: string) → string <!-- internal -->
+    - fn [specHash](../../src/flows.ts#L1007) (text: string) → string <!-- internal -->
   - module [resolve](../../src/resolve.ts#L1)
     - config base.config
     - diag base.diag
@@ -161,70 +163,72 @@
     - type [Rule](../../src/rules.ts#L24) <!-- internal -->
     - type [LayerOrder](../../src/rules.ts#L35) <!-- internal -->
     - type [UseEdge](../../src/rules.ts#L42) <!-- internal -->
-    - fn [docblockNote](../../src/rules.ts#L61) (edge: Pick<UseEdge, "docblock">) → string <!-- internal -->
-    - type [RuleReport](../../src/rules.ts#L67)
-    - fn [checkRules](../../src/rules.ts#L72) (docs: readonly Document[], index: Index, snapshot: SnapshotView | null = null) → Diagnostic[]
+    - fn [docblockNote](../../src/rules.ts#L63) (edge: Pick<UseEdge, "docblock" | "config">) → string <!-- internal -->
+    - fn [configNote](../../src/rules.ts#L71) (edge: { via?: string; binding?: string; site?: string; scope?: string }) → string <!-- internal -->
+    - fn [siteAt](../../src/rules.ts#L79) (site: string | undefined) → { file: string; line: number; col: number } | null <!-- internal -->
+    - type [RuleReport](../../src/rules.ts#L86)
+    - fn [checkRules](../../src/rules.ts#L91) (docs: readonly Document[], index: Index, snapshot: SnapshotView | null = null) → Diagnostic[]
       - calls lang.spec-ir.compileSpec, check.rules.evaluateRules
-    - fn [dependencyKindOf](../../src/rules.ts#L78) ( source: readonly Document[] | SpecIR, index: Index, nodes: Readonly<Record<string, { kind: string }>> | undefined, ) → (id: string) => string | undefined
+    - fn [dependencyKindOf](../../src/rules.ts#L97) ( source: readonly Document[] | SpecIR, index: Index, nodes: Readonly<Record<string, { kind: string }>> | undefined, ) → (id: string) => string | undefined
       - calls check.rules.specOf, check.rules.plannedDecl
-    - fn [blocksDependency](../../src/rules.ts#L88) ( spec: SpecIR, from: string, to: string, kindOf: (id: string) => string | undefined = () => undefined, format: RuleFormat = 1, ) → boolean
+    - fn [blocksDependency](../../src/rules.ts#L107) ( spec: SpecIR, from: string, to: string, kindOf: (id: string) => string | undefined = () => undefined, format: RuleFormat = 1, ) → boolean
       - calls check.rules.denyingRule
-    - fn [denyingRule](../../src/rules.ts#L102) ( spec: SpecIR, from: string, to: string, kindOf: (id: string) => string | undefined = () => undefined, format: RuleFormat = 1, ) → { text: string; file: string; line: number; aside: string } | null
+    - fn [denyingRule](../../src/rules.ts#L121) ( spec: SpecIR, from: string, to: string, kindOf: (id: string) => string | undefined = () => undefined, format: RuleFormat = 1, ) → { text: string; file: string; line: number; aside: string } | null
       - calls check.rules.collectRules, check.rules.ruleHits, check.rules.specific, check.rules.incomparableAside, check.rules.decide, check.rules.byHit
-    - fn [evaluateRules](../../src/rules.ts#L126) (spec: SpecIR, index: Index, snapshot: SnapshotView | null, docs: readonly Document[] = [], format: RuleFormat = 1) → RuleReport
+    - fn [evaluateRules](../../src/rules.ts#L145) (spec: SpecIR, index: Index, snapshot: SnapshotView | null, docs: readonly Document[] = [], format: RuleFormat = 1) → RuleReport
       - calls check.rules.plannedDecl, check.rules.collectRules, check.rules.incomparableWarnings, check.rules.firstRuleLine, check.rules.hashText, check.rules.noSnapshotSpec, check.rules.evaluateOnSnapshot
-    - fn [specOf](../../src/rules.ts#L153) (source: readonly Document[] | SpecIR) → SpecIR <!-- internal -->
+    - fn [specOf](../../src/rules.ts#L172) (source: readonly Document[] | SpecIR) → SpecIR <!-- internal -->
       - calls lang.spec-ir.compileSpec
-    - fn [plannedDecl](../../src/rules.ts#L158) (spec: SpecIR, id: string) → string <!-- internal -->
-    - fn [evaluateOnSnapshot](../../src/rules.ts#L162) (rules: EvaluatedRules, index: Index, snapshot: SnapshotView, planned: readonly string[], format: RuleFormat) → RuleReport <!-- internal -->
-      - calls check.rules.base, check.rules.holeAt, check.rules.docblockNote, check.rules.ruleHits, check.rules.decide, check.rules.crossRules, check.rules.sameAreas, check.rules.layerViolation, check.rules.incomparableAside, check.rules.componentSpec, check.rules.layerComponent, check.rules.holeText, check.rules.listAt, check.rules.overrideEvidence, base.diag.diagnostic, check.rules.pointAt, check.rules.hashText, check.resolve.Index.lookup, check.scc.stronglyConnected, check.scc.cycleThrough
-    - type [Hole](../../src/rules.ts#L570) = SnapshotView["coverage"][number] <!-- internal -->
-    - type [IndexedHole](../../src/rules.ts#L573) <!-- internal -->
-    - fn [listAt](../../src/rules.ts#L578) (map: Map<string, T[]>, key: string) → T[] <!-- internal -->
-    - fn [holeText](../../src/rules.ts#L587) (hole: Hole) → string <!-- internal -->
+    - fn [plannedDecl](../../src/rules.ts#L177) (spec: SpecIR, id: string) → string <!-- internal -->
+    - fn [evaluateOnSnapshot](../../src/rules.ts#L181) (rules: EvaluatedRules, index: Index, snapshot: SnapshotView, planned: readonly string[], format: RuleFormat) → RuleReport <!-- internal -->
+      - calls check.rules.siteAt, check.rules.configNote, check.rules.base, check.rules.holeAt, check.rules.docblockNote, check.rules.ruleHits, check.rules.decide, check.rules.crossRules, check.rules.sameAreas, check.rules.layerViolation, check.rules.incomparableAside, check.rules.componentSpec, check.rules.layerComponent, check.rules.holeText, check.rules.listAt, check.rules.overrideEvidence, base.diag.diagnostic, check.rules.pointAt, check.rules.hashText, check.resolve.Index.lookup, check.scc.stronglyConnected, check.scc.cycleThrough
+    - type [Hole](../../src/rules.ts#L612) = SnapshotView["coverage"][number] <!-- internal -->
+    - type [IndexedHole](../../src/rules.ts#L615) <!-- internal -->
+    - fn [listAt](../../src/rules.ts#L620) (map: Map<string, T[]>, key: string) → T[] <!-- internal -->
+    - fn [holeText](../../src/rules.ts#L629) (hole: Hole) → string <!-- internal -->
       - calls check.rules.holeAt
-    - fn [holeAt](../../src/rules.ts#L592) (hole: Hole) → string <!-- internal -->
-    - fn [layerViolation](../../src/rules.ts#L599) (rules: EvaluatedRules, fromLayer: string, toLayer: string) → string | null <!-- internal -->
-    - fn [layerComponent](../../src/rules.ts#L608) (rules: EvaluatedRules, layer: string) → Set<string> <!-- internal -->
-    - fn [componentSpec](../../src/rules.ts#L622) (rules: EvaluatedRules, layer: string) → string <!-- internal -->
+    - fn [holeAt](../../src/rules.ts#L634) (hole: Hole) → string <!-- internal -->
+    - fn [layerViolation](../../src/rules.ts#L641) (rules: EvaluatedRules, fromLayer: string, toLayer: string) → string | null <!-- internal -->
+    - fn [layerComponent](../../src/rules.ts#L650) (rules: EvaluatedRules, layer: string) → Set<string> <!-- internal -->
+    - fn [componentSpec](../../src/rules.ts#L664) (rules: EvaluatedRules, layer: string) → string <!-- internal -->
       - calls check.rules.layerComponent
-    - type [RuleHit](../../src/rules.ts#L631) <!-- internal -->
-    - type [OverrideNote](../../src/rules.ts#L639) <!-- internal -->
-    - fn [ruleHits](../../src/rules.ts#L651) (rules: EvaluatedRules, from: string, to: string, within: (id: string, scope: string) => boolean) → RuleHit[] <!-- internal -->
+    - type [RuleHit](../../src/rules.ts#L673) <!-- internal -->
+    - type [OverrideNote](../../src/rules.ts#L681) <!-- internal -->
+    - fn [ruleHits](../../src/rules.ts#L693) (rules: EvaluatedRules, from: string, to: string, within: (id: string, scope: string) => boolean) → RuleHit[] <!-- internal -->
       - calls check.rules.scopeDepth
-    - fn [byHit](../../src/rules.ts#L674) (a: RuleHit, b: RuleHit) → number <!-- internal -->
-    - fn [dominates](../../src/rules.ts#L680) (a: RuleHit, b: RuleHit) → boolean <!-- internal -->
+    - fn [byHit](../../src/rules.ts#L716) (a: RuleHit, b: RuleHit) → number <!-- internal -->
+    - fn [dominates](../../src/rules.ts#L722) (a: RuleHit, b: RuleHit) → boolean <!-- internal -->
       - calls check.rules.areaWithin
-    - fn [crossRules](../../src/rules.ts#L687) (a: RuleHit, b: RuleHit) → boolean <!-- internal -->
+    - fn [crossRules](../../src/rules.ts#L729) (a: RuleHit, b: RuleHit) → boolean <!-- internal -->
       - calls check.rules.areaWithin
-    - fn [sameAreas](../../src/rules.ts#L695) (a: RuleHit, b: RuleHit) → boolean <!-- internal -->
-    - fn [overManualRules](../../src/rules.ts#L700) (hits: readonly RuleHit[]) → RuleHit[] <!-- internal -->
+    - fn [sameAreas](../../src/rules.ts#L737) (a: RuleHit, b: RuleHit) → boolean <!-- internal -->
+    - fn [overManualRules](../../src/rules.ts#L742) (hits: readonly RuleHit[]) → RuleHit[] <!-- internal -->
       - calls check.rules.sameAreas
-    - fn [areaWithin](../../src/rules.ts#L704) (id: string, scope: string) → boolean <!-- internal -->
-    - fn [decide](../../src/rules.ts#L713) (all: readonly RuleHit[], format: RuleFormat) → { winners: RuleHit[]; denyWins: boolean } <!-- internal -->
+    - fn [areaWithin](../../src/rules.ts#L746) (id: string, scope: string) → boolean <!-- internal -->
+    - fn [decide](../../src/rules.ts#L755) (all: readonly RuleHit[], format: RuleFormat) → { winners: RuleHit[]; denyWins: boolean } <!-- internal -->
       - calls check.rules.overManualRules, check.rules.dominates
-    - fn [incomparableAside](../../src/rules.ts#L727) (deny: RuleHit, hits: readonly RuleHit[], format: RuleFormat) → string <!-- internal -->
+    - fn [incomparableAside](../../src/rules.ts#L769) (deny: RuleHit, hits: readonly RuleHit[], format: RuleFormat) → string <!-- internal -->
       - calls check.rules.crossRules, check.rules.byHit
-    - fn [overrideEvidence](../../src/rules.ts#L744) (deny: Rule, targets: string, notes: readonly OverrideNote[]) → string <!-- internal -->
-    - fn [incomparableWarnings](../../src/rules.ts#L760) (rules: EvaluatedRules, format: RuleFormat) → Diagnostic[] <!-- internal -->
+    - fn [overrideEvidence](../../src/rules.ts#L786) (deny: Rule, targets: string, notes: readonly OverrideNote[]) → string <!-- internal -->
+    - fn [incomparableWarnings](../../src/rules.ts#L802) (rules: EvaluatedRules, format: RuleFormat) → Diagnostic[] <!-- internal -->
       - calls check.rules.areaWithin, check.rules.scopeDepth, base.diag.diagnostic, check.rules.hashText
-    - fn [canonicalRuleSpec](../../src/rules.ts#L804) (spec: SpecIR, file: string, line: number) → string | null
+    - fn [canonicalRuleSpec](../../src/rules.ts#L846) (spec: SpecIR, file: string, line: number) → string | null
       - calls check.rules.collectRules
-    - fn [noSnapshotSpec](../../src/rules.ts#L821) (spec: SpecIR) → string
-    - fn [firstRuleLine](../../src/rules.ts#L831) (spec: SpecIR) → { file: string; span: Span } | null <!-- internal -->
-    - fn [scopeDepth](../../src/rules.ts#L840) (id: string) → number
-    - fn [specific](../../src/rules.ts#L851) (rules: EvaluatedRules, from: string, to: string, within: (id: string, scope: string) => boolean) → { kind: "allow" | "deny"; rule: Rule } | null <!-- internal -->
+    - fn [noSnapshotSpec](../../src/rules.ts#L863) (spec: SpecIR) → string
+    - fn [firstRuleLine](../../src/rules.ts#L873) (spec: SpecIR) → { file: string; span: Span } | null <!-- internal -->
+    - fn [scopeDepth](../../src/rules.ts#L882) (id: string) → number
+    - fn [specific](../../src/rules.ts#L893) (rules: EvaluatedRules, from: string, to: string, within: (id: string, scope: string) => boolean) → { kind: "allow" | "deny"; rule: Rule } | null <!-- internal -->
       - calls check.rules.decide, check.rules.ruleHits, check.rules.byHit
-    - type [EvaluatedRules](../../src/rules.ts#L857) <!-- internal -->
-    - fn [collectRules](../../src/rules.ts#L878) (spec: SpecIR, kindOf: (id: string) => string | undefined) → EvaluatedRules <!-- internal -->
+    - type [EvaluatedRules](../../src/rules.ts#L899) <!-- internal -->
+    - fn [collectRules](../../src/rules.ts#L920) (spec: SpecIR, kindOf: (id: string) => string | undefined) → EvaluatedRules <!-- internal -->
       - calls base.diag.diagnostic, check.rules.combineOrders
-    - fn [combineOrders](../../src/rules.ts#L936) (chains: readonly LayerOrder[], diagnostics: Diagnostic[]) → { orders: LayerOrder[]; above: Map<string, Set<string>> } <!-- internal -->
+    - fn [combineOrders](../../src/rules.ts#L978) (chains: readonly LayerOrder[], diagnostics: Diagnostic[]) → { orders: LayerOrder[]; above: Map<string, Set<string>> } <!-- internal -->
       - calls base.diag.diagnostic, check.rules.transitive
-    - fn [transitive](../../src/rules.ts#L966) (direct: ReadonlyMap<string, ReadonlySet<string>>) → Map<string, Set<string>> <!-- internal -->
-    - fn [pointAt](../../src/rules.ts#L983) (line: number, col: number) → Span <!-- internal -->
-    - fn [base](../../src/rules.ts#L988) (snapshot: SnapshotView, criterion: string, area: string, verdict: Verdict["verdict"], file: string, line: number, col: number, code: string | null, message: string, spec = criterion) → Verdict <!-- internal -->
+    - fn [transitive](../../src/rules.ts#L1008) (direct: ReadonlyMap<string, ReadonlySet<string>>) → Map<string, Set<string>> <!-- internal -->
+    - fn [pointAt](../../src/rules.ts#L1025) (line: number, col: number) → Span <!-- internal -->
+    - fn [base](../../src/rules.ts#L1030) (snapshot: SnapshotView, criterion: string, area: string, verdict: Verdict["verdict"], file: string, line: number, col: number, code: string | null, message: string, spec = criterion) → Verdict <!-- internal -->
       - calls check.rules.hashText
-    - fn [hashText](../../src/rules.ts#L992) (text: string) → string <!-- internal -->
+    - fn [hashText](../../src/rules.ts#L1034) (text: string) → string <!-- internal -->
   - module [scc](../../src/scc.ts#L1)
     - fn [stronglyConnected](../../src/scc.ts#L4) (adj: ReadonlyMap<string, ReadonlySet<string>>) → string[][]
       - calls check.scc.components

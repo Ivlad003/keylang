@@ -36,6 +36,16 @@ export interface CartridgeLayout {
 const CARTRIDGE_FILE = /^((?:.*\/)?cartridges)\/([^/]+)\/cartridge\//;
 const MODULES_FILE = /^((?:.*\/)?cartridges)\/modules\//;
 
+/** The cartridges the analysed files are in, by name; a name met twice is the first directory's. */
+export function cartridgeDirs(sources: Iterable<string>): Cartridge[] {
+  const byName = new Map<string, Cartridge>();
+  for (const path of sources) {
+    const match = CARTRIDGE_FILE.exec(path);
+    if (match !== null && !byName.has(match[2]!)) byName.set(match[2]!, { name: match[2]!, dir: `${match[1]}/${match[2]}` });
+  }
+  return [...byName.values()].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+}
+
 /**
  * The cartridges of the analysed files and their search order; null when the
  * repository has no cartridge and no `dw.json` — no SFCC. `configured`: the
@@ -45,17 +55,16 @@ const MODULES_FILE = /^((?:.*\/)?cartridges)\/modules\//;
  * or `cartridgePath`), else every cartridge by name — a guess.
  */
 export function cartridgeLayout(root: string, sources: Iterable<string>, configured: readonly string[] | null): CartridgeLayout | null {
-  const byName = new Map<string, Cartridge>();
+  const files = [...sources];
+  const cartridges = cartridgeDirs(files);
+  const byName = new Map(cartridges.map((c) => [c.name, c]));
   const modules = new Set<string>();
-  for (const path of sources) {
-    const match = CARTRIDGE_FILE.exec(path);
-    if (match !== null && !byName.has(match[2]!)) byName.set(match[2]!, { name: match[2]!, dir: `${match[1]}/${match[2]}` });
+  for (const path of files) {
     const mod = MODULES_FILE.exec(path);
-    if (mod !== null && match === null) modules.add(`${mod[1]}/modules`);
+    if (mod !== null && !CARTRIDGE_FILE.test(path)) modules.add(`${mod[1]}/modules`);
   }
   const hint = cartridgePathHint(root);
-  if (byName.size === 0 && hint.dw === false) return null;
-  const cartridges = [...byName.values()].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  if (cartridges.length === 0 && hint.dw === false) return null;
   const order = (names: readonly string[]): Cartridge[] => names.flatMap((name) => byName.get(name) ?? []);
   let path: Cartridge[];
   let source: CartridgeLayout["source"];

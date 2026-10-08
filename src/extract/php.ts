@@ -64,6 +64,8 @@ interface ClassContext {
    * constructor parameter, the constructor parameter assigned to it, or its `@var`.
    */
   fields: ReadonlyMap<string, FieldType>;
+  /** Property → the constructor parameter that fills it: promoted, or `$this->x = $x` (every assignment of it). */
+  params: ReadonlyMap<string, string>;
 }
 
 /** The class of a property, and the docblock it comes from when no checked syntax names it. */
@@ -323,6 +325,8 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
   const at = located(node);
   const types: TypeRefFact[] = [];
   let base: string | undefined;
+  /** `implements A, B` of a class; `extends A, B` of an interface. */
+  const supers: string[] = [];
   for (const child of node.namedChildren) {
     if (child.type === "base_clause") {
       // A class has one parent; `extends` of an interface lists several, and those are types.
@@ -331,19 +335,25 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
         if (!written) continue;
         const local = collector.klass(written, parent, names);
         if (node.type === "class_declaration" && base === undefined) base = local;
-        else types.push(typeRef(local, parent));
+        else {
+          types.push(typeRef(local, parent));
+          if (node.type === "interface_declaration") supers.push(local);
+        }
       }
     } else if (child.type === "class_interface_clause") {
       for (const iface of child.namedChildren) {
         const written = classNameOf(iface);
-        if (written) types.push(typeRef(collector.klass(written, iface, names), iface));
+        if (!written) continue;
+        const local = collector.klass(written, iface, names);
+        types.push(typeRef(local, iface));
+        supers.push(local);
       }
     }
   }
   const doc = docOf(node, collector.header);
   if (node.type === "interface_declaration") {
     // An interface is a type: a call through a value typed with it stays a hole, as in TypeScript.
-    return { kind: "type", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature: null, exported: true, calls: [], types, members: [], fingerprint: fingerprint(node), ...(doc !== undefined ? { doc } : {}) };
+    return { kind: "type", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature: null, exported: true, calls: [], types, members: [], fingerprint: fingerprint(node), ...(supers.length > 0 ? { implements: supers } : {}), ...(doc !== undefined ? { doc } : {}) };
   }
   const body = node.childForFieldName("body");
   const items = body?.namedChildren ?? [];
@@ -355,6 +365,9 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
   /** Properties the constructor settled: typed, or a hole for conflicting classes. */
   const decided = new Set<string>();
   const traits: string[] = [];
+  const traitRules: NonNullable<DeclFact["traitRules"]> = [];
+  /** Property → the constructor parameter assigned to it; null when assignments disagree or are no parameter. */
+  const params = new Map<string, string | null>();
   for (const item of items) {
     if (item.type === "property_declaration") {
       const type = singleClass(item.childForFieldName("type"));
@@ -374,6 +387,28 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
         types.push(typeRef(local, traitNode));
         traits.push(local);
       }
+      // `{ Loud::hello insteadof Quiet; Quiet::hello as whisper; }`: which trait's method the class takes.
+      for (const clause of item.namedChildren.find((c) => c.type === "use_list")?.namedChildren ?? []) {
+        if (clause.type !== "use_instead_of_clause" && clause.type !== "use_as_clause") continue;
+        const [subject, ...rest] = clause.namedChildren;
+        if (!subject) continue;
+        const qualified = subject.type === "class_constant_access_expression" ? subject.namedChildren : null;
+        const traitName = qualified ? classNameOf(qualified[0] ?? null) : null;
+        const method = qualified ? qualified[1]?.text : subject.type === "name" ? subject.text : undefined;
+        if (!method) continue;
+        const trait = traitName ? collector.klass(traitName, qualified![0]!, names) : null;
+        if (clause.type === "use_instead_of_clause") {
+          const insteadof: string[] = [];
+          for (const other of rest) {
+            const written = classNameOf(other);
+            if (written) insteadof.push(collector.klass(written, other, names));
+          }
+          if (trait) traitRules.push({ trait, method, insteadof });
+        } else {
+          const alias = rest.filter((c) => c.type === "name").at(-1)?.text;
+          if (alias) traitRules.push({ trait, method, alias });
+        }
+      }
     }
   }
   for (const method of methods) {
@@ -383,9 +418,10 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
       const typeNode = param.childForFieldName("type");
       const type = singleClass(typeNode);
       const prop = param.childForFieldName("name")?.text.replace(/^\$/, "");
+      if (prop) params.set(prop, prop);
       if (prop && type && typeNode) fields.set(prop, { cls: collector.klass(type, typeNode, names) });
     }
-    for (const prop of constructorFields(method, name, names, collector, fields, untyped)) decided.add(prop);
+    for (const prop of constructorFields(method, name, names, collector, fields, untyped, params)) decided.add(prop);
   }
   // A property the constructor neither types nor contradicts: its `@var`.
   for (const [prop, { doc }] of untyped) {
@@ -393,7 +429,9 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
     const source = docSource(doc, names, collector);
     if (source) fields.set(prop, { cls: source.local, docblock: source.docblock! });
   }
-  const ctx: ClassContext = { name, statics, fields };
+  const filled = new Map<string, string>();
+  for (const [prop, param] of params) if (param !== null) filled.set(prop, param);
+  const ctx: ClassContext = { name, statics, fields, params: filled };
   const members: DeclFact[] = [];
   for (const method of methods) {
     const written = method.childForFieldName("name")?.text;
@@ -406,7 +444,7 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
     if (statics.has(asciiLowerCase(member))) decl.static = true;
     members.push(decl);
   }
-  return { kind: "class", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature: null, exported: true, calls: [], types, members, fingerprint: fingerprint(node), ...(base !== undefined ? { base } : {}), ...(traits.length > 0 ? { traits } : {}), ...(doc !== undefined ? { doc } : {}) };
+  return { kind: "class", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature: null, exported: true, calls: [], types, members, fingerprint: fingerprint(node), ...(base !== undefined ? { base } : {}), ...(traits.length > 0 ? { traits } : {}), ...(traitRules.length > 0 ? { traitRules } : {}), ...(supers.length > 0 ? { implements: supers } : {}), ...(doc !== undefined ? { doc } : {}) };
 }
 
 /**
@@ -419,7 +457,7 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
  * nothing: a hole `ambiguous property type` of the class. Returns the
  * properties settled either way; the rest may still have a `@var`.
  */
-function constructorFields(method: Node, className: string, names: Names, collector: Collector, fields: Map<string, FieldType>, untyped: ReadonlyMap<string, { node: Node; doc: DocType | null }>): Set<string> {
+function constructorFields(method: Node, className: string, names: Names, collector: Collector, fields: Map<string, FieldType>, untyped: ReadonlyMap<string, { node: Node; doc: DocType | null }>, filledBy: Map<string, string | null>): Set<string> {
   const decided = new Set<string>();
   const paramDocs = new Map<string, DocType>();
   for (const doc of docTags(method, collector.header, /@param\s+(\S+)\s+(?:\.\.\.)?&?\$([A-Za-z_\x80-\uffff][A-Za-z0-9_\x80-\uffff]*)/)) if (doc.name && !paramDocs.has(doc.name)) paramDocs.set(doc.name, doc);
@@ -446,9 +484,14 @@ function constructorFields(method: Node, className: string, names: Names, collec
       const left = n.childForFieldName("left");
       if (left?.type !== "member_access_expression" || left.childForFieldName("object")?.text !== "$this") return;
       const prop = left.childForFieldName("name");
-      if (prop?.type !== "name" || fields.has(prop.text)) return;
+      if (prop?.type !== "name") return;
       const right = n.childForFieldName("right");
       const value = right ? unparenthesized(right) : null;
+      // Which constructor argument the property holds, whatever its class: a framework may set that argument.
+      const param = value?.type === "variable_name" && params.has(value.text.replace(/^\$/, "")) ? value.text.replace(/^\$/, "") : null;
+      const before = filledBy.get(prop.text);
+      filledBy.set(prop.text, before === undefined || before === param ? param : null);
+      if (fields.has(prop.text)) return;
       const source = value?.type === "variable_name" ? (params.get(value.text.replace(/^\$/, "")) ?? null) : null;
       const entry = assigned.get(prop.text) ?? { node: n, sources: [] };
       entry.sources.push(source);
@@ -845,7 +888,7 @@ function firstClassCallable(n: Node): boolean {
  * an opaque expression. Null for a first-class callable (`f(...)`), which is a
  * value.
  */
-function callOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "callee" | "bound" | "receiver" | "opaque" | "docblock"> | null {
+function callOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "callee" | "bound" | "receiver" | "opaque" | "docblock" | "param"> | null {
   if (n.type !== "object_creation_expression" && firstClassCallable(n)) {
     callableValue(n, scope, collector);
     return null;
@@ -854,7 +897,7 @@ function callOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "ca
 }
 
 /** The callee of a call node as `callOf` reads it, whether or not the arguments are `(...)`. */
-function calleeOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "callee" | "bound" | "receiver" | "opaque" | "docblock"> | null {
+function calleeOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "callee" | "bound" | "receiver" | "opaque" | "docblock" | "param"> | null {
   const opaque = (): Pick<CallFact, "callee" | "opaque"> => ({ callee: n.text.replace(/\s+/g, " ").slice(0, MAX_CALLEE), opaque: true });
   if (n.type === "object_creation_expression") {
     const target = n.namedChildren[0];
@@ -911,9 +954,11 @@ function calleeOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "
     const prop = object.childForFieldName("name");
     if (prop?.type === "name") {
       const field = scope.ctx?.fields.get(prop.text);
+      const param = scope.ctx?.params.get(prop.text);
+      const filled = param !== undefined ? { param } : {};
       // A property of unknown class: a call through a value, as `self.queue.put()` in Python.
-      if (!field) return { callee: `this.${prop.text}.${member}`, bound: "local" };
-      return { callee: `this.${prop.text}.${member}`, receiver: field.cls, ...(field.docblock ? { docblock: field.docblock } : {}) };
+      if (!field) return { callee: `this.${prop.text}.${member}`, bound: "local", ...filled };
+      return { callee: `this.${prop.text}.${member}`, receiver: field.cls, ...(field.docblock ? { docblock: field.docblock } : {}), ...filled };
     }
   }
   // `(new Order())->total()` and `new Order()->total()`: a method of the class `new` names. The
