@@ -13,6 +13,7 @@ import { featureStatus, idsIn, type FeatureBase, type FeatureReport, type Gap, t
 import { sourceInputs } from "../map.ts";
 import { writeProblem } from "../safe-write.ts";
 import { deletedModuleIds, readFeatureBase } from "../git-changes.ts";
+import { readWeakenings } from "../weakening.ts";
 import type { FeatureQuestionsPayload, FeatureQuestionsRequest, FeatureRequest, OperationContext, OperationEnvelope, OperationMessage } from "./types.ts";
 import { commitProposal, empty, generatedIn, modelSetup, proposalRefusal, rootRelative } from "./shared.ts";
 
@@ -83,6 +84,8 @@ export async function runFeature(request: FeatureRequest, context: OperationCont
 export function featureReportOf(analyzed: Analysis, slug: string, base: FeatureBase): FeatureReport | null {
   const config = analyzed.config;
   const changed = base.state === "unavailable" ? undefined : { files: new Set(base.changes.files), deleted: deletedModuleIds(config, base.changes.deleted) };
+  // The spec weakened since the same base (K108): without git there is nothing to compare, and that is no gap.
+  const weakened = base.state === "unavailable" ? [] : readWeakenings(config, base.ref, "feature", base.label).weakenings;
   return featureStatus(
     {
       dir: config.dir,
@@ -97,6 +100,7 @@ export function featureReportOf(analyzed: Analysis, slug: string, base: FeatureB
       index: analyzed.index,
       format: config.format,
       layers: [...config.layers.keys()],
+      weakened,
     },
     slug,
   );

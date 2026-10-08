@@ -188,6 +188,12 @@ export interface CheckRequest {
   changed?: boolean;
   /** `--since <ref>`: the ref of `changed`; default `HEAD`. Only with `changed`. */
   since?: string;
+  /**
+   * `--accept-weakening`: a person accepts the spec weakened since `since`
+   * (K108): it leaves the report and is listed in `changed.weakening.accepted`.
+   * Only with `changed`; for a person, never an agent.
+   */
+  acceptWeakening?: boolean;
 }
 
 /**
@@ -1492,6 +1498,13 @@ export interface ChangedSlice {
   /** Results of the full report kept in the slice, and left out of it. */
   shown: number;
   hidden: number;
+  /**
+   * The spec weakened since `since` (K108): `accepted` holds the lines a
+   * person accepted with `acceptWeakening` (otherwise they are in the
+   * report); `note` says why the spec was not compared (no keylang.json at
+   * the ref), null when it was.
+   */
+  weakening: { accepted: string[]; note: string | null };
 }
 
 /** The evidence between two ids: the domain result of `--explain-edge`, and the CLI's lines of it. */

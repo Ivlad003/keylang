@@ -162,7 +162,7 @@ function repositoryFile(root: string, path: string): boolean {
 }
 
 /** A generated reading aid beside the specs (the explained map, explanations, discovered flows, the project tour): never a spec. */
-function readingAid(specDir: string, abs: string): boolean {
+export function readingAid(specDir: string, abs: string): boolean {
   return [EXPLAINED_MAP_DIR, "explain", DISCOVERED_FLOWS_DIR, TOUR_FILE].some((dir) => within(abs, join(specDir, dir)));
 }
 
