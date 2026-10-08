@@ -547,7 +547,7 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
       }
       // A connection whose session moved to another tab no longer drives it.
       if (!session || session.connection !== connection) return;
-      if (message.type === "input" && typeof message.data === "string") session.app.input(message.data);
+      if (message.type === "input" && typeof message.data === "string") session.app.input(message.data, true);
       else if (message.type === "resize") session.app.resize(cols, rows);
       else if (message.type === "audio") {
         const pcm = pcmOf(message.data);

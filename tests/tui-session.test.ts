@@ -1308,28 +1308,59 @@ test("tui: a click during MERGE keeps the merge; a click in FILES follows the sc
   assert.match(s.text(), /finish the merge first/);
 });
 
+// No wall clock (ticket 71): the F5 run is computed before `x` is typed and held at a gate, so
+// opening the gate adopts it in microtasks — before the 120 ms settle timer of `x` can fire, however
+// loaded the machine. The test resumes on the analyzer's own promise, after the app's handler on it.
 test("tui: typing while an analysis runs keeps the result outdated", async (t) => {
   const root = checkoutRepo(t);
   let release: () => void = () => {};
+  let computed: Promise<Analysis> | null = null;
+  let held: Promise<Analysis> | null = null;
   let calls = 0;
   const s = session(root, {
-    analyzer: async (request) => {
+    analyzer: (request) => {
       calls++;
-      if (calls === 2) await new Promise<void>((done) => (release = done));
-      return analyze(request);
+      if (calls !== 2) return analyze(request);
+      computed = analyze(request);
+      const gate = new Promise<void>((done) => (release = done));
+      held = gate.then(() => computed!);
+      return held;
     },
   });
   t.after(() => s.app.close());
   await s.app.idle();
   s.send(KEY.f5);
+  assert.ok(computed && held, "F5 started the second analysis");
+  const result = await computed!;
   s.send("i");
   s.send(KEY.end);
   s.send("x");
   release();
-  await sleep(20);
+  await held!;
+  assert.equal(s.app.state.analysis, result, "the F5 run arrived");
   assert.equal(s.app.state.outdated, true, "the result belongs to the text before `x`");
   await s.app.idle();
+  assert.equal(calls, 3, "the settled typing ran one more analysis");
   assert.equal(s.app.state.outdated, false);
+});
+
+// Ticket 71: `keylang web` reads each socket message as whole input. ESC and `v` that a loaded server
+// reads back to back are Escape, then `v` — not Alt+V; a terminal's lone ESC still waits for the rest.
+test("tui: a whole chunk ending in ESC is Escape at once; a terminal's ESC waits for the next chunk", async (t) => {
+  const s = session(checkoutRepo(t));
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send("i");
+  assert.equal(s.app.state.mode, "edit");
+  s.app.input("\x1b", true);
+  s.app.input("v", true);
+  assert.equal(s.app.state.mode, "read");
+  s.send("v");
+  s.send("i");
+  s.app.input("\x1b");
+  assert.equal(s.app.state.mode, "edit", "a terminal's lone ESC waits");
+  s.app.input("v");
+  assert.equal(s.app.state.mode, "edit", "ESC and `v` read together are Alt+V");
 });
 
 test("tui: a paste without bracketed paste is one edit", async (t) => {
