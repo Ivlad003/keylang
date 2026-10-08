@@ -696,6 +696,33 @@ test("lsp: completion of the async flow forms — words by position, trigger kin
   assert.deepEqual(await ask(`${base}- continues `, 7), ["buy"]);
 });
 
+test("lsp: `emits event ` and `trigger event ` complete the event IDs of the snapshot, with the literal and the subscribers (business-flows/16)", async (t) => {
+  const dir = fixture(t, { "keylang/flows/ev.md": "# flow ev\n\n- trigger event events.checkout_submit_before\n" }, "magento-shop");
+  const s = await open(t, dir);
+  type Completion = { items: { label: string; kind: number; detail?: string }[] };
+  const flowUri = uri(dir, "keylang/flows/ev.md");
+  let version = 0;
+  const ask = async (text: string): Promise<Completion["items"]> => {
+    version++;
+    s.notify(version === 1 ? "textDocument/didOpen" : "textDocument/didChange", version === 1 ? { textDocument: { uri: flowUri, languageId: "markdown", version, text } } : { textDocument: { uri: flowUri, version }, contentChanges: [{ text }] });
+    const lines = text.split("\n");
+    return (await s.request<Completion>("textDocument/completion", { textDocument: { uri: flowUri }, position: { line: lines.length - 1, character: lines.at(-1)!.length } })).items;
+  };
+  const events = ["events.checkout_submit_all_after", "events.checkout_submit_before", "events.sales-order-place_after"];
+  const base = "# flow ev\n\n- trigger checkout.Model.QuoteManagement.QuoteManagement.submit\n";
+  const emitted = await ask(`${base}  - emits event `);
+  assert.deepEqual(emitted.map((item) => item.label), events);
+  assert.equal(emitted[0]?.kind, 23);
+  assert.equal(emitted[0]?.detail, "event checkout_submit_all_after; subscribers: checkout.Observer.NotifyCustomer.NotifyCustomer.execute");
+  // A name an ID segment cannot hold shows its literal.
+  assert.match(emitted[2]?.detail ?? "", /^event sales\.order\.place_after/);
+  // `emits ` offers the word `event` first, then the IDs; `trigger ` offers `event` beside the entry kinds.
+  assert.deepEqual((await ask(`${base}  - emits `)).map((item) => item.label), ["event", ...events]);
+  assert.ok((await ask("# flow ev\n\n- trigger ")).some((item) => item.label === "event" && item.kind === 14));
+  assert.deepEqual((await ask("# flow ev\n\n- trigger event ")).map((item) => item.label), events);
+  assert.deepEqual((await ask("# flow ev\n\n- trigger event events.checkout_submit_b")).map((item) => item.label), events);
+});
+
 test("lsp: a completion replaces the whole dotted prefix, which editors split at dots", async (t) => {
   const dir = fixture(t, { "keylang/flows/buy.md": FLOW });
   const s = await open(t, dir);

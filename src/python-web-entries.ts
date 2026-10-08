@@ -23,7 +23,8 @@
 import type { Config } from "./config.ts";
 import { fnIn, frameworkEntry, type EntryScope } from "./entries.ts";
 import type { CallFact, DeclFact, FileFacts, Kwarg, LiteralValue } from "./extract/facts.ts";
-import type { Call, Fn, Gap, Graph, Module } from "./graph.ts";
+import { eventSegment, EVENTS_LAYER } from "./frameworks/events.ts";
+import type { Call, EventNode, Fn, Gap, Graph, Module } from "./graph.ts";
 import { PythonResolver } from "./python-imports.ts";
 import type { EntryPoint } from "./snapshot.ts";
 
@@ -100,6 +101,8 @@ class PythonWeb {
   private readonly tasks = new Map<string, { name: string; site: string }>();
   private readonly taskNames = new Map<string, string>();
   private readonly receivers = new Map<string, Receiver[]>();
+  /** `signal.send()` calls by signal key, in the order the files are read: each becomes a `dispatch` edge to the signal's event. */
+  private readonly sends = new Map<string, { caller: string; file: string; call: CallFact }[]>();
 
   private readonly graph: Graph;
   private readonly scope: EntryScope;
@@ -130,6 +133,7 @@ class PythonWeb {
     }
     if (this.active.has("celery")) for (const file of this.files.values()) this.beat(file);
     for (const file of this.files.values()) this.dispatches(file);
+    this.signalEvents();
     this.lift();
     return { entries: this.entries, holes: this.holes };
   }
@@ -565,9 +569,51 @@ class PythonWeb {
         const key = this.signalKey(file.path, send[1]!);
         const receivers = key === null ? [] : (this.receivers.get(key) ?? []);
         for (const r of receivers) this.edge(caller, { target: r.fn, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, via: "observer", site: r.site, binding: `receiver of the signal \`${r.signal}\``, ...(c.closure ? { closure: true as const } : {}) });
-        if (key !== null) this.answered.add(`${file.path}:${c.line}:${c.col}`);
+        if (key !== null) {
+          this.answered.add(`${file.path}:${c.line}:${c.col}`);
+          this.sends.set(key, [...(this.sends.get(key) ?? []), { caller, file: file.path, call: c }]);
+        }
       }
     });
+  }
+
+  /**
+   * Signals as events (ADR 0022 п. 6): each signal that is sent or received is
+   * a node of the group `events`, named by the signal (`events.order_placed`,
+   * `events.post_save`); `send()` is a `dispatch` edge to it and each receiver
+   * an `observer` edge from it, at the receiver's registration. The direct
+   * edges from the sender to the receivers stay: they are what `deny` and the
+   * steps of a flow follow. Two signals of one name keep their segments apart
+   * by a suffix, as `eventIds` does; IDs other adapters gave are not reused.
+   */
+  private signalEvents(): void {
+    const name = (key: string): string => key.slice(Math.max(key.lastIndexOf("."), key.lastIndexOf("#")) + 1);
+    const keys = [...new Set([...this.receivers.keys(), ...this.sends.keys()])].sort((a, b) => compare(name(a), name(b)) || compare(a, b));
+    if (keys.length === 0) return;
+    const events = this.graph.events;
+    const taken = new Set(events.map((e) => e.id));
+    for (const key of keys) {
+      const base = eventSegment(name(key));
+      let segment = base;
+      for (let n = 2; taken.has(`${EVENTS_LAYER}.${segment}`); n++) segment = `${base}-${n}`;
+      const id = `${EVENTS_LAYER}.${segment}`;
+      taken.add(id);
+      const sends = this.sends.get(key) ?? [];
+      const receivers = this.receivers.get(key) ?? [];
+      const calls: EventNode["calls"] = receivers.map((r) => {
+        const [file, line, col] = splitSite(r.site);
+        return { target: r.fn, line, col, endLine: line, endCol: col + 1, text: name(key), via: "observer" as const, site: r.site, binding: `receiver of the signal \`${r.signal}\``, file };
+      });
+      // An event stands at its first send in the code, else at its first receiver's registration.
+      const first = sends[0];
+      const place = first ? { file: first.file, line: first.call.line, col: first.call.col } : (() => {
+        const [file, line, col] = splitSite(receivers[0]!.site);
+        return { file, line, col };
+      })();
+      events.push({ id, name: name(key), ...place, calls });
+      for (const s of sends) this.edge(s.caller, { target: id, line: s.call.line, col: s.call.col, endLine: s.call.endLine, endCol: s.call.endCol, text: s.call.callee, via: "dispatch", ...(s.call.closure ? { closure: true as const } : {}) });
+    }
+    events.sort((a, b) => compare(a.id, b.id));
   }
 
   /** Every call written in a fn of the file (methods of top-level classes included), with the fn's id. */
@@ -702,3 +748,13 @@ function scheduleText(value: LiteralValue | undefined, qualified: (dotted: strin
   return text(value);
 }
 
+
+function compare(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/** `file:line:col` of a registration, split. */
+function splitSite(site: string): [string, number, number] {
+  const m = /^(.*):(\d+):(\d+)$/.exec(site);
+  return m === null ? [site, 1, 1] : [m[1]!, Number(m[2]), Number(m[3])];
+}

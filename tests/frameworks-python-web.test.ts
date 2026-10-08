@@ -72,6 +72,10 @@ test("python web: `.delay()` dispatches to the task, `signal.send()` reaches its
   assert.deepEqual(viaEdges(snapshot), [
     "orders.services.place_order -> orders.tasks.send_receipt dispatch orders/tasks.py:6:1 Celery task `orders.tasks.send_receipt`",
     "orders.services.place_order -> notify.handlers.email_customer observer notify/handlers.py:15:1 receiver of the signal `order_placed`",
+    // A signal is an event too (ADR 0022 п. 6, business-flows/16): `send()` dispatches it, its receivers observe it.
+    "orders.services.place_order -> events.order_placed dispatch",
+    "events.order_placed -> notify.handlers.email_customer observer notify/handlers.py:15:1 receiver of the signal `order_placed`",
+    "events.post_save -> notify.handlers.audit observer notify/handlers.py:12:1 receiver of the signal `post_save`",
   ]);
   // The calls themselves are no holes any more, and the decorators that registered the fns keep them.
   assert.equal(snapshot.stats.callsUnresolved, 0);
@@ -156,9 +160,10 @@ test("python web: `flows discover` drafts a flow for each entry, the dispatch na
   assert.equal(run.status, 0, run.stderr);
   assert.match(run.stderr, /discovered 9 flows/);
   const orders = readFileSync(join(dir, "keylang/flows-discovered/orders.md"), "utf8");
-  assert.match(orders, /<!-- keylang:discover entry=route label="\/orders\/" steps=4 holes=0 -->\n\n- trigger route orders\.views\.order_list\n {2}- step orders\.services\.place_order\n {4}- step orders\.tasks\.send_receipt <!-- keylang:algo via dispatch orders\/tasks\.py:6:1 -->\n {4}- step notify\.handlers\.email_customer <!-- keylang:algo via observer notify\/handlers\.py:15:1 -->\n/);
+  assert.match(orders, /<!-- keylang:discover entry=route label="\/orders\/" steps=5 holes=0 -->\n\n- trigger route orders\.views\.order_list\n {2}- step orders\.services\.place_order\n {4}- step orders\.tasks\.send_receipt <!-- keylang:algo via dispatch orders\/tasks\.py:6:1 -->\n {4}- step notify\.handlers\.email_customer <!-- keylang:algo via observer notify\/handlers\.py:15:1 -->\n {4}- step events\.order_placed <!-- keylang:algo via dispatch -->\n/);
   assert.match(orders, /entry=cron label="cleanup-stale \(0 \*\/3 \* \* \*\)"|entry=consumer label="orders\.tasks\.cleanup"/);
-  assert.match(readFileSync(join(dir, "keylang/flows-discovered/notify.md"), "utf8"), /entry=observer label="post_save \(sender=Order\)"/);
+  // A receiver whose signal the snapshot knows is the first step of the signal's event flow (ADR 0023 п. 1).
+  assert.match(readFileSync(join(dir, "keylang/flows-discovered/notify.md"), "utf8"), /entry=observer label="post_save \(sender=Order\)" steps=1 holes=0 -->\n\n- trigger event events\.post_save\n {2}- step notify\.handlers\.audit <!-- keylang:algo via observer notify\/handlers\.py:12:1 -->\n/);
   const coverage = keylang(dir, ["coverage"]);
   assert.equal(coverage.status, 0, coverage.stderr);
   assert.match(coverage.stdout, /unsupported: the view `X` of `X` is no fn keylang resolves/);

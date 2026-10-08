@@ -64,12 +64,13 @@ Keywords are contextual: under a map module, `- test foo.bar` is a dependency na
 | `kind business`, `kind technical` | one of the two words | a label |
 | `trigger <id>`, `step <id>` | one ID | the flow's entry function; a call from the parent step or the trigger |
 | `trigger route\|cron\|consumer\|webhook <id>` | a kind, the ID of the entry point's fn | the fn must be an entry point of that kind in `keylang entries` (K205 for another kind); the verdict shows its label |
+| `trigger event <id>` | an event ID, `events.<name>` | the flow of the event's subscribers: the verdict lists them with their config lines; each step right under it must be reached from one subscriber; an unknown event is K204, a fn K205 |
 | `parallel` | none; nested `step` lines | the steps run in any order, each reached from the group's parent; the next step comes after the whole group; none is K009 |
 | `continues <flow>` | a flow name | this flow continues that one in a later request; a missing flow is K206; trace is `unverified (crosses requests)` |
 | `after <duration>` | `30s`, `15m`, `2h`, `1d` (ms, s, m, min, h, d, w) | a timer; only a nested `test` checks it |
 | `every <schedule>` | a duration, `@daily` and the other cron macros, or five cron fields (bare or quoted) | a schedule; a nested `test` checks it, and the schedule of a cron entry point when the snapshot has one |
 | `planned fn`, `module`, `type`, `event` `<id> [signature]` | a kind, an ID, optional free text | an intention: code that does not exist yet; top of a flow only |
-| `emits [event] <name>` | an event name | text; not resolved |
+| `emits [event] <name>` | an event name | an event ID (`events.<name>`): the step's code must dispatch it (`ok`, `fail` absence, `unverified` for a computed name or a hole on the way; K204 for an unknown event); any other name: text, not resolved |
 | `invariant <text>` | free text | a claim keylang does not parse; a nested `test` proves it |
 | `? <text>` | free text, required | an open question for a person, not a claim |
 | `when <text>` (flow) | free text | a condition; its children are its branch |
@@ -252,7 +253,8 @@ Wiring: `wire` builds `app.orders.place` with a `db` from `infra.db.open`, or fr
 | K201 | error | a `planned` ID exists in the code with another kind or signature |
 | K202 | warning | a `planned` ID is implemented as declared: remove the `planned` line |
 | K203 | warning | a flow's `test` names a file the repository does not have |
-| K205 | error | `trigger <kind> <id>`: the snapshot records the fn as an entry point of another kind |
+| K204 | error | `trigger event <id>` or `emits event events.<name>` names an event no code dispatches and no config observes |
+| K205 | error | `trigger <kind> <id>`: the snapshot records the fn as an entry point of another kind; `trigger event` names a fn, type or module |
 | K206 | error | `continues <flow>` names a flow that does not exist |
 | K301 | error | a cycle between `wire` factories |
 | K302 | error | a `wire` target, dependency or `compose` the generated file cannot build |

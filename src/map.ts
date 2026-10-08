@@ -122,8 +122,10 @@ export async function generateMap(config: Config, options: { persist?: boolean |
   for (const name of ENTRY_MANIFESTS) manifests[name] = readSource(join(config.root, name));
   // The active adapters' entry points: Magento's from the graph (config classes and methods, controllers,
   // observers), SFCC's (hooks, jobs, SFRA controllers) placed here, with the holes of placing them (ADR 0022 п. 5).
-  const entries = [...collectEntries({ graph, facts, manifests, exists: (path) => existsSync(join(config.root, path)) }), ...graph.frameworkEntries];
   const fromFrameworks = frameworkEntries({ config, graph, facts, frameworks: frameworks.inputs });
+  // A route the Express or Fastify adapter placed (with its router's prefix) replaces the language-level one of the same call.
+  const language = collectEntries({ graph, facts, manifests, exists: (path) => existsSync(join(config.root, path)) }).filter((e) => !(e.kind === "route" && e.framework === null && fromFrameworks.supersedes.has(e.source)));
+  const entries = [...language, ...graph.frameworkEntries];
   entries.push(...fromFrameworks.entries);
   entries.sort(compareEntries);
   graph.gaps.push(...fromFrameworks.holes);

@@ -361,7 +361,8 @@ test("nestjs: `flows discover` gives a flow per entry point; `coverage` names wh
   assert.equal(discover.status, 0, discover.stderr);
   assert.match(discover.stderr, /discovered 7 flows \(1 already specified\)/);
   const notify = readFileSync(join(dir, "keylang/flows-discovered/notify.md"), "utf8");
-  assert.match(notify, /entry=observer label="order\.created \(NotifyListener\.onCreated\)"[^\n]*\n\n- trigger notify\.notify_listener\.NotifyListener\.onCreated\n {2}- step notify\.notify_listener\.NotifyListener\.send\n/);
+  // An observer of a known event is the first step of the event's flow (business-flows/16).
+  assert.match(notify, /entry=observer label="order\.created \(NotifyListener\.onCreated\)"[^\n]*\n\n- trigger event events\.order-created\n {2}- step notify\.notify_listener\.NotifyListener\.onCreated <!-- keylang:algo via observer src\/notify\/notify\.listener\.ts:7:3 -->\n {4}- step notify\.notify_listener\.NotifyListener\.send\n/);
   assert.match(notify, /\n- trigger cron notify\.notify_listener\.NotifyListener\.digest\n {2}- step notify\.notify_listener\.NotifyListener\.send\n/);
   const coverage = keylang(dir, ["coverage"]);
   assert.equal(coverage.status, 0, coverage.stderr);

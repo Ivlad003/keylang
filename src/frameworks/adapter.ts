@@ -20,6 +20,7 @@ import { pwaKit } from "./pwa-kit.ts";
 import { celery, django, fastapi, flask } from "./python-web.ts";
 import { sfcc } from "./sfcc.ts";
 import { symfony } from "./symfony.ts";
+import { express, fastify, next } from "./web.ts";
 
 /**
  * A type the configuration names: a qualified name of a language whose
@@ -348,7 +349,7 @@ export const EVERY_CLASS = "*";
 export const FRAMEWORK_CONFIG = "framework:";
 
 /** Adapters keylang has, by name. */
-export const FRAMEWORK_ADAPTERS: readonly FrameworkAdapter[] = [laravel, magento, nestjs, pwaKit, sfcc, symfony, django, fastapi, flask, celery];
+export const FRAMEWORK_ADAPTERS: readonly FrameworkAdapter[] = [laravel, magento, nestjs, pwaKit, sfcc, symfony, django, fastapi, flask, celery, express, fastify, next];
 
 export const FRAMEWORK_NAMES: readonly string[] = FRAMEWORK_ADAPTERS.map((a) => a.name).sort();
 

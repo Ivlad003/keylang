@@ -449,7 +449,9 @@ function flowDiagram(input: DiagramInput, name: string): Diagram {
       case "emits": {
         const line = at(item);
         const name = item.body.replace(/^event\s+/, "").trim();
-        const event = add({ id: `emits:${line}`, kind: "event", label: name, ref: { specFile: flow.file, specLine: line }, verdict: worst(resultsAt(item).map((r) => r.verdict)) });
+        // An event ID (ADR 0023 п. 1) points at the event node of the snapshot; prose names only the spec line.
+        const ref = item.target !== null ? refOf(item.target.target, line) : { specFile: flow.file, specLine: line };
+        const event = add({ id: `emits:${line}`, kind: "event", label: name, ref, verdict: worst(resultsAt(item).map((r) => r.verdict)) });
         link(from, event.id, "emits");
         return event.id;
       }
