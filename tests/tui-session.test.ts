@@ -2657,6 +2657,31 @@ test("tui: below 100 columns one side panel is shown — the focused one, else t
   assert.match(s.app.state.message ?? "", /side panels need 60 columns \(now 50\)/);
 });
 
+test("tui: a focused side panel hidden by a resize below 60 columns gives the focus back to the editor; the keys do not go to the hidden list (review 2026-10-06, ticket 66)", async (t) => {
+  const s = session(checkoutRepo(t), { cols: 120, rows: 30 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  assert.equal(s.app.state.current, FLOW_PATH);
+  // F2 focuses the files, Tab moves the focus on to the navigation, F4 opens the context panel focused.
+  for (const [key, focus] of [["\x1b[12~", "files"], [KEY.tab, "nav"], ["\x1bOS", "context"]] as const) {
+    s.vt.resize(120, 30);
+    s.app.resize(120, 30);
+    for (let i = 0; i < 3 && s.app.state.focus !== focus; i++) s.send(key);
+    assert.equal(s.app.state.focus, focus);
+    s.vt.resize(50, 30);
+    s.app.resize(50, 30);
+    assert.doesNotMatch(s.text(), /FILES|NAVIGATION/);
+    assert.equal(s.app.state.focus, "editor", `the hidden ${focus} panel keeps no focus`);
+    s.send("j");
+    s.send("j");
+    s.send(KEY.enter);
+    assert.equal(s.app.state.current, FLOW_PATH, "no file opened from a list nobody sees");
+    assert.equal(s.app.state.cursor.line, 2, "j moved the editor's cursor");
+    s.send("k");
+    s.send("k");
+  }
+});
+
 test("width: sliceCells keeps whole clusters, blanks a wide one cut by the edge and marks hidden text", () => {
   assert.equal(sliceCells("abcdef", 0, 6), "abcdef");
   assert.equal(sliceCells("abcdefgh", 0, 6), "abcde…");

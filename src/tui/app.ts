@@ -408,6 +408,9 @@ export class App {
     this.state.cols = Math.max(20, Math.min(MAX_COLS, cols));
     this.state.rows = Math.max(8, Math.min(MAX_ROWS, rows));
     this.state.hover = null;
+    // Below 60 columns no side panel is drawn: a focused one gives the focus back, so keys never go to a list nobody sees.
+    const focus = this.state.focus;
+    if ((focus === "files" || focus === "nav" || focus === "context") && !this.drawable(focus)) this.state.focus = "editor";
     this.keepVisible();
     this.draw();
   }
