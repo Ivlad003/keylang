@@ -9,6 +9,8 @@
 // of the snapshot: listed in `manifest.frameworks`, part of `snapshotId` and
 // cached by content in the fact cache, so a changed `di.xml` is a new snapshot.
 
+import { magento } from "./magento.ts";
+
 /**
  * A type the configuration names: a qualified name of a language whose
  * declarations have one (PHP `Magento\Sales\Api\OrderManagementInterface`,
@@ -109,7 +111,7 @@ export interface FrameworkAdapter {
 export const FRAMEWORK_CONFIG = "framework:";
 
 /** Adapters keylang has, by name. */
-export const FRAMEWORK_ADAPTERS: readonly FrameworkAdapter[] = [];
+export const FRAMEWORK_ADAPTERS: readonly FrameworkAdapter[] = [magento];
 
 export const FRAMEWORK_NAMES: readonly string[] = FRAMEWORK_ADAPTERS.map((a) => a.name).sort();
 

@@ -1,0 +1,16 @@
+{
+  "languages": [
+    "php"
+  ],
+  "layers": {
+    "checkout": [
+      "app/code/Shop/Checkout/**"
+    ],
+    "sales": [
+      "app/code/Shop/Sales/**"
+    ],
+    "promo": [
+      "app/code/Shop/Promo/**"
+    ]
+  }
+}
