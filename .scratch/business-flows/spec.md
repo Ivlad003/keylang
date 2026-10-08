@@ -77,9 +77,9 @@ keylang має допомагати швидко зануритись у чуж�
 | [05](issues/05-closure-arg-calls.md) | Граф і draft: callable-посилання й closure, передані аргументом (`cartMutex->execute(\Closure::fromCallable([$this, 'placeOrderRun']))`) | resolved | 01 |
 | [06](issues/06-magento-di-bindings.md) | Magento: `di.xml` (preference, type arguments, virtualType) → прив'язки | resolved | 04 |
 | [07](issues/07-magento-plugins.md) | Magento: plugins (before/around/after) як перехоплення викликів | resolved | 04 |
-| [08](issues/08-magento-events.md) | Magento: `events.xml` і `dispatch()` → події та підписники | ready-for-agent | 01, 09 |
+| [08](issues/08-magento-events.md) | Magento: `events.xml` і `dispatch()` → події та підписники | resolved | 01, 09 |
 | [09](issues/09-entries-snapshot.md) | Знімок: точки входу як факти й команда `keylang entries` | resolved | 01 |
-| [10](issues/10-magento-entries.md) | Magento: точки входу — routes/controllers, webapi, GraphQL, cron, queue, console | ready-for-agent | 06, 09 |
+| [10](issues/10-magento-entries.md) | Magento: точки входу — routes/controllers, webapi, GraphQL, cron, queue, console | resolved | 06, 09 |
 | [11](issues/11-flows-discover.md) | `keylang flows discover`: чернетка флоу для кожної точки входу | resolved | 09 |
 | [12](issues/12-flows-business-names.md) | Бізнес-назви, описи й групування флоу в процеси (модель) | resolved | 11 |
 | [13](issues/13-blind-spots-report.md) | Звіт покриття: сліпі зони, сироти, «логіка в даних» | resolved | 09, 11 |

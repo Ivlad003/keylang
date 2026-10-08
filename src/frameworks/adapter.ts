@@ -59,6 +59,49 @@ export interface InterceptFact extends ConfigAt {
 }
 
 /**
+ * An observer `name` of the event `event`: the framework calls `method` of
+ * `instance` when code dispatches the event (Magento `etc/events.xml`
+ * `<event name><observer name instance method? disabled?>`).
+ */
+export interface ObserverFact extends ConfigAt {
+  event: string;
+  name: string;
+  /** Null for a declaration that only disables an observer declared elsewhere. */
+  instance: TypeName | null;
+  /** Null: the framework's default (`execute`). */
+  method: string | null;
+  disabled: boolean;
+}
+
+/** Entry kinds an adapter writes straight from a config line (`route` needs the controllers, `observer` the events). */
+export type ConfigEntryKind = "rest" | "graphql" | "cron" | "consumer" | "cli";
+
+/**
+ * An entry point the config names: the framework calls `method` of `target`
+ * from outside (a REST route, a GraphQL resolver, a cron job, a queue
+ * consumer, a console command). `label` is how the outside names it.
+ */
+export interface EntryFact extends ConfigAt {
+  kind: ConfigEntryKind;
+  label: string;
+  target: TypeName;
+  method: string;
+}
+
+/**
+ * A router of the framework: URLs under `/<frontName>/` run the controllers
+ * of `modules` (Magento `etc/<area>/routes.xml`
+ * `<router id><route id frontName><module name/>`).
+ */
+export interface RouteFact extends ConfigAt {
+  router: string;
+  id: string;
+  frontName: string;
+  /** Module names as the framework registers them (`Magento_Checkout`), in config order. */
+  modules: string[];
+}
+
+/**
  * An entry point a config file names (SFCC `hooks.json` → `observer`,
  * `steptypes.json` → `cron`): the script it runs, as the paths the framework
  * would try in order (each probed with the usual extensions and `index`), and
@@ -81,6 +124,12 @@ export interface ConfigFacts {
   arguments: ArgumentFact[];
   aliases: AliasFact[];
   intercepts: InterceptFact[];
+  /** Observers of events (Magento `events.xml`); absent for a framework whose configs name none. */
+  observers?: ObserverFact[];
+  /** Entry points as a class and a method (Magento `webapi.xml`, `crontab.xml`, …); absent likewise. */
+  classEntries?: EntryFact[];
+  /** Routers whose controllers are entry points (Magento `routes.xml`); absent likewise. */
+  routes?: RouteFact[];
   /** Entry points the file names; absent for a framework whose configs name none. */
   entries?: EntryConfigFact[];
   /** Why the file gave no facts: it does not parse. */
@@ -94,10 +143,26 @@ export interface FrameworkConfig {
   owner: string | null;
 }
 
+/** A module of the framework, by the name its config uses (`Magento_Checkout`), and its directory. */
+export interface FrameworkModule {
+  name: string;
+  dir: string;
+}
+
 /** What the graph receives from one active adapter. */
 export interface FrameworkInput {
   name: string;
   configs: FrameworkConfig[];
+  /** The framework's modules: where a route's controllers are. */
+  modules?: FrameworkModule[];
+  /**
+   * Qualified names of the types whose `dispatch(name, …)` publishes the event
+   * `name` (Magento `Magento\Framework\Event\ManagerInterface` and its classes):
+   * a call of it through a value of one of them, or of a class implementing one, is an edge to the event.
+   */
+  dispatchers?: string[];
+  /** Where the framework keeps the controllers of a route. */
+  controllers?: ControllerConvention;
 }
 
 /** What an adapter sees of the repository: the analysed source files and a reader. */
@@ -123,6 +188,27 @@ export interface FrameworkAdapter {
   files(context: FrameworkContext): { path: string; owner: string | null }[];
   /** The facts of one config file. */
   parse(path: string, text: string): ConfigFacts;
+  /** The framework's modules by name, for the controllers of a route. */
+  modules?(context: FrameworkContext): FrameworkModule[];
+  /** Types whose `dispatch` publishes an event; see `FrameworkInput.dispatchers`. */
+  dispatchers?: readonly string[];
+  /** URL path of a controller for a route (`Controller/Cart/Add.php` of `checkout` → `/checkout/cart/add`), and the HTTP methods of interfaces it implements. */
+  controllers?: ControllerConvention;
+}
+
+/**
+ * Where a framework keeps the controllers of a route and how it names their
+ * URLs: a controller is a class in a file under `<module dir>/<dir>/`, whose
+ * `member` runs; the HTTP method comes from the interfaces it implements.
+ */
+export interface ControllerConvention {
+  /** The directory of controllers in a module, by area (`frontend` → `Controller`, `adminhtml` → `Controller/Adminhtml`). */
+  dir(area: string): string;
+  /** The URL prefix of an area (`adminhtml` → `/admin`), empty for none. */
+  prefix(area: string): string;
+  member: string;
+  /** Qualified interface name → HTTP method. */
+  methods: Readonly<Record<string, string>>;
 }
 
 /** `text` of a coverage entry for a framework's config keylang did not read (`framework:magento`): the framework may call any fn by it. */
@@ -157,6 +243,9 @@ export function isConfigFacts(value: unknown): value is ConfigFacts {
     every(value.arguments, (a) => isAt(a) && isTypeName(a.type) && typeof a.param === "string" && isTypeName(a.value)) &&
     every(value.aliases, (a) => isAt(a) && typeof a.name === "string" && isTypeName(a.type)) &&
     every(value.intercepts, (i) => isAt(i) && isTypeName(i.target) && typeof i.name === "string" && (i.plugin === null || isTypeName(i.plugin)) && (i.sortOrder === null || typeof i.sortOrder === "number") && typeof i.disabled === "boolean") &&
+    (value.observers === undefined || every(value.observers, (o) => isAt(o) && typeof o.event === "string" && typeof o.name === "string" && (o.instance === null || isTypeName(o.instance)) && (o.method === null || typeof o.method === "string") && typeof o.disabled === "boolean")) &&
+    (value.classEntries === undefined || every(value.classEntries, (e) => isAt(e) && typeof e.kind === "string" && typeof e.label === "string" && isTypeName(e.target) && typeof e.method === "string")) &&
+    (value.routes === undefined || every(value.routes, (r) => isAt(r) && typeof r.router === "string" && typeof r.id === "string" && typeof r.frontName === "string" && Array.isArray(r.modules) && r.modules.every((m) => typeof m === "string"))) &&
     (value.entries === undefined || every(value.entries, (e) => isAt(e) && (e.kind === "observer" || e.kind === "cron") && typeof e.label === "string" && Array.isArray(e.files) && e.files.every((f) => typeof f === "string") && (e.fn === null || typeof e.fn === "string"))) &&
     (value.error === null || (isRecord(value.error) && typeof value.error.line === "number" && typeof value.error.reason === "string"))
   );

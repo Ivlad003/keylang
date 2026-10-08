@@ -11,11 +11,12 @@ import type { Config } from "./config.ts";
 import type { ExportEntry } from "./exports.ts";
 import { briefOf } from "./brief.ts";
 import { globDirectory } from "./glob.ts";
+import { EVENTS_LAYER } from "./frameworks/events.ts";
 import type { Gap, Graph, Module, Via } from "./graph.ts";
 import { constructorName, LANGUAGES, languageOf } from "./languages.ts";
 import { components } from "./scc.ts";
 
-export const SNAPSHOT_SCHEMA = 8;
+export const SNAPSHOT_SCHEMA = 9;
 /** Bump when extraction or resolution changes the facts that `snapshotId` covers. */
 export const EXTRACTOR_VERSION = "m1.20";
 
@@ -61,7 +62,10 @@ export interface SnapshotEdge {
    * through an interface (or a class) the config binds to a class;
    * `argument` — a call through a constructor argument the config sets
    * (Magento `<argument xsi:type="object">`); `plugin:before`, `plugin:around`,
-   * `plugin:after` — a plugin method that wraps the call. `keylang check
+   * `plugin:after` — a plugin method that wraps the call; `dispatch` — a
+   * call of the framework's event dispatcher with a literal name, from the fn
+   * to the event's node; `observer` — from an event to the fn an observer
+   * runs, `file` and `site` at the config line. `keylang check
    * --static=shape` follows none of them; rules do not see `injected`, and see
    * a config edge as a dependency of `owner`.
    */
@@ -146,7 +150,12 @@ export function leavesUnresolved(item: Pick<CoverageItem, "kind">): boolean {
 }
 
 export interface SnapshotNode {
-  kind: "layer" | "module" | "fn" | "type";
+  /**
+   * `event` (ADR 0022 п. 6): an event a framework's code dispatches or its
+   * config observes, in the generated group `events`; its `calls` are the
+   * observers, its `callers` the fns that dispatch it.
+   */
+  kind: "layer" | "module" | "fn" | "type" | "event";
   /** A module node that is a class declared in its parent module: its children are members, `<id>.constructor` (Python `<id>.__init__`) its constructor. */
   class?: true;
   layer: string;
@@ -160,7 +169,7 @@ export interface SnapshotNode {
   exported?: boolean;
   /** fn: a `static` class member, called on the class (`X.m()`). */
   static?: true;
-  /** fn: the name as written, when the ID segment differs (`m` for `X.m-static`, `go` for `Y.go-private`). */
+  /** fn: the name as written, when the ID segment differs (`m` for `X.m-static`, `go` for `Y.go-private`); event: the literal, when its ID segment differs. */
   name?: string;
   members?: "complete" | "opaque";
   /** Generator comment, such as an external package name or `internal` on a class. */
@@ -262,6 +271,12 @@ export interface EntryPoint {
   line: number;
   /** The file the fact is written in: a manifest (`package.json`, `pyproject.toml`), a framework config, or the code file itself. */
   source: string;
+  /**
+   * Why the config's class or method is not a fn keylang read (the class is not
+   * in the snapshot, an interface no preference binds): `id` is then the best
+   * node known, or the written `Class::method`, and the config line is a hole.
+   */
+  unresolved?: string;
   /** The HTTP method a framework route answers (`GET`, `POST`); absent when the registration names none. */
   method?: string;
   /** What keylang could not name about it: a handler written in place, so `id` is the module that registers it. */
@@ -420,6 +435,22 @@ export function buildSnapshot(
     nodes[l.name] = { kind: "layer", layer: l.name, file: null, line: null, col: null, doc: docs.layers.get(l.name) ?? indexDoc(l.modules, globDirectory(config.layers.get(l.name) ?? [])) };
     for (const m of l.modules) visit(m);
   }
+  // Events (ADR 0022 п. 6): a generated group of its own, whoever dispatches them.
+  const events = graph.events ?? [];
+  if (events.length > 0) nodes[EVENTS_LAYER] = { kind: "layer", layer: EVENTS_LAYER, file: null, line: null, col: null, doc: null };
+  for (const e of events) {
+    nodes[e.id] = {
+      kind: "event",
+      layer: EVENTS_LAYER,
+      file: e.file,
+      line: e.file === null ? null : e.line,
+      col: e.file === null ? null : e.col,
+      ...(e.id.slice(EVENTS_LAYER.length + 1) !== e.name ? { name: e.name } : {}),
+      doc: null,
+      calls: [...new Set(e.calls.map((c) => c.target))],
+      callers: [],
+    };
+  }
   for (const [id, n] of Object.entries(nodes)) {
     for (const d of n.deps ?? []) nodes[d]?.dependents?.push(id);
     for (const c of n.calls ?? []) nodes[c]?.callers?.push(id);
@@ -484,6 +515,28 @@ export function buildSnapshot(
     for (const c of m.children) visitEdges(c);
   };
   for (const l of graph.layers) for (const m of l.modules) visitEdges(m);
+  for (const e of events) {
+    for (const c of e.calls) {
+      edges.push({
+        kind: "call",
+        source: e.id,
+        target: c.target,
+        file: c.file,
+        line: c.line,
+        col: c.col,
+        endLine: c.endLine,
+        endCol: c.endCol,
+        text: c.text,
+        resolution: "resolved",
+        provenance: "syntactic",
+        ...(c.via ? { via: c.via } : {}),
+        ...(c.site ? { site: c.site } : {}),
+        ...(c.scope ? { scope: c.scope } : {}),
+        ...(c.owner ? { owner: c.owner } : {}),
+        ...(c.binding ? { binding: c.binding } : {}),
+      });
+    }
+  }
   for (const open of graph.openEdges) {
     const edge: SnapshotEdge = {
       kind: open.kind,
@@ -563,13 +616,14 @@ function closures(nodes: Record<string, SnapshotNode>, coverage: readonly Covera
   }
   // `new C()` (Python `C()`) names the class; what runs is its constructor, named by the class's language.
   const runs = (target: string): string | null => {
-    if (nodes[target]?.kind === "fn") return target;
+    // A dispatched event runs its observers: it is a step of the closure, with no body of its own.
+    if (nodes[target]?.kind === "fn" || nodes[target]?.kind === "event") return target;
     const constructor = `${target}.${constructorName(nodes[target]?.file) ?? "constructor"}`;
     return nodes[target]?.class && nodes[constructor]?.kind === "fn" ? constructor : null;
   };
   const adj = new Map<string, Set<string>>();
   for (const [id, node] of Object.entries(nodes)) {
-    if (node.kind !== "fn" && node.kind !== "type") continue;
+    if (node.kind !== "fn" && node.kind !== "type" && node.kind !== "event") continue;
     adj.set(id, new Set((node.calls ?? []).map(runs).filter((target): target is string => target !== null)));
   }
   const done = new Map<string, { fingerprint: string; complete: boolean }>();
@@ -578,8 +632,9 @@ function closures(nodes: Record<string, SnapshotNode>, coverage: readonly Covera
     const members = [...component].sort();
     const inside = new Set(members);
     const outside = [...new Set(members.flatMap((id) => [...(adj.get(id) ?? [])]).filter((id) => !inside.has(id)))].sort();
-    let complete = members.every((id) => nodes[id]?.fingerprint !== undefined && !holes.has(id));
-    const parts = members.map((id) => `${id}=${nodes[id]?.fingerprint ?? "?"}`);
+    const own = (id: string): string | undefined => (nodes[id]?.kind === "event" ? `event ${nodes[id]?.name ?? id}` : nodes[id]?.fingerprint);
+    let complete = members.every((id) => own(id) !== undefined && !holes.has(id));
+    const parts = members.map((id) => `${id}=${own(id) ?? "?"}`);
     for (const id of outside) {
       const closure = done.get(id);
       if (!closure?.complete) complete = false;
@@ -589,7 +644,7 @@ function closures(nodes: Record<string, SnapshotNode>, coverage: readonly Covera
     for (const id of members) {
       done.set(id, closure);
       const node = nodes[id];
-      if (node) node.closure = closure;
+      if (node && node.kind !== "event") node.closure = closure;
     }
   }
 }

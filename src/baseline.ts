@@ -16,7 +16,7 @@ export const BASELINE_MARK = "<!-- keylang:generated — не редагуват
 
 const EDGE_KINDS = new Set(["import", "call", "type", "reexport"]);
 /** Calls a framework makes by its config (ADR 0022): a dependency of the module whose config declares them. */
-const CONFIG_VIA = new Set(["preference", "argument", "plugin:before", "plugin:around", "plugin:after"]);
+const CONFIG_VIA = new Set(["preference", "argument", "plugin:before", "plugin:around", "plugin:after", "observer"]);
 
 /**
  * Baseline rules for one snapshot. Layers come from `keylang.json`, in code-unit

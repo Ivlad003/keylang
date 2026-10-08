@@ -130,6 +130,8 @@ export class FrameworkBindings {
   private readonly interceptorCache = new Map<string, PluginEdge[]>();
   private active: Plugin[] | null = null;
   readonly any: boolean;
+  /** The class a name of the config stands for in an area: a `virtualType` is the class it names. */
+  readonly unalias: (type: TypeName, scope: string) => TypeName;
 
   constructor(inputs: readonly FrameworkInput[], deps: BindingDeps) {
     this.deps = deps;
@@ -150,6 +152,7 @@ export class FrameworkBindings {
         cur = hit.type;
       }
     };
+    this.unalias = (t, scope) => unalias(t, scope).type;
     const declared = (written: TypeName, scope: string, file: string, at: { line: number; col: number }, owner: string | null, from: string | null = null): Declared => {
       const { type, aliases: through } = unalias(written, scope);
       return { name: type.name, written: type, resolved: deps.resolve(type), scope, site: `${file}:${at.line}:${at.col}`, file, line: at.line, col: at.col, owner, aliases: through, from };

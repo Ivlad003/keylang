@@ -141,7 +141,7 @@ test("diagram: an unknown flow, an unknown entry, events and processes give an e
   for (const [view, reason] of [
     [{ kind: "flow", name: "nope" }, /no flow named `nope`/],
     [{ kind: "entry", id: "nope.nope" }, /no entry point or fn `nope\.nope`/],
-    [{ kind: "event", name: "order.placed" }, /no event nodes/],
+    [{ kind: "event", name: "order.placed" }, /no event `order\.placed` in the snapshot/],
     [{ kind: "process", domain: "sales" }, /processes/],
   ] as const) {
     const d = draw(analysis, view);

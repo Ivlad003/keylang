@@ -1,6 +1,6 @@
 # 10: Magento: точки входу — routes/controllers, webapi, GraphQL, cron, queue, console
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -22,10 +22,17 @@
 
 ## Критерії готовності
 
-- [ ] фікстура з кожним видом; бенч 03: ≥ 95 % маршрутів webapi.xml і всі cron/consumers знайдено
-- [ ] мітки детерміновані; невідомий клас у конфігу — точка входу з `unresolved` і дірка
-- [ ] документація розділу «Magento»
+- [x] фікстура з кожним видом; бенч 03: ≥ 95 % маршрутів webapi.xml і всі cron/consumers знайдено
+- [x] мітки детерміновані; невідомий клас у конфігу — точка входу з `unresolved` і дірка
+- [x] документація розділу «Magento»
 
 **Межі:** читання БД-конфігурації (налаштування адмінки) — поза обсягом.
 
 ## Comments
+
+### Реалізовано (2026-10-08)
+
+- Адаптер Magento (версія `2`) читає ще `etc/<area>/routes.xml`, `etc/webapi.xml`, `etc/crontab.xml`, `etc/queue_consumer.xml`, `etc/schema.graphqls` (невеликий сканер SDL), `events.xml` і `CommandList` у `di.xml`; усі — входи `snapshotId` і кешу фактів. Точки входу (`entries`, `framework: "magento"`, `source` — рядок конфігу): `route` — класи `Controller/<Path>/<Action>.php` (в `adminhtml` — `Controller/Adminhtml/…`, мітка з `/admin`) модуля, який називає `routes.xml` (теку дає `registration.php`), мітка `GET|POST /frontName/path/action` за `Http*ActionInterface` класу чи бази, `*` без них; `rest` — метод **реалізації** через preference `webapi_rest`/глобальний, мітка `POST /V1/… [ресурси ACL]`; `graphql` — `Type.field` → `C::resolve`; `cron` — `<job> <розклад>` (розклад останнім, як читає `every`) або `<job> (config_path …)`; `consumer` — `handler="C::m"` (без нього — `process` `consumerInstance`); `cli` — `<item>` `commands` → `C::execute`; `observer` — з 08. `virtualType` — його клас.
+- Невідомий клас, інтерфейс без preference, метод, якого немає, — точка входу з `unresolved` (причина) і дірка `unresolved-binding` на рядку конфігу; `keylang entries` дописує `unresolved: …` у рядок.
+- Тести: `tests/frameworks-magento.test.ts` (кожен вид, мітки, `unresolved`, детермінованість, `trigger cron` + `every` з розкладу), `tests/entries.test.ts` (`--json`, `--kind rest` з `unresolved`), `tests/web.test.ts` (види в `/api/views`).
+- Бенч: `rest` 133/133 (усі маршрути webapi.xml, жодного `unresolved`), `cron` 15/15, `consumer` 3/3, `route` 186, `observer` 58 (6 — `unresolved`: класи `lib/internal/Magento/Framework` поза аналізом і модуль `SalesSequence` поза sparse-checkout), `graphql` і `cli` — 0 (у п'яти модулях бенча немає `schema.graphqls` і команд).

@@ -408,28 +408,28 @@
     - trace-evidence check.trace-evidence
     - type [FlowDraft](../../src/draft.ts#L15)
     - fn [draftFlow](../../src/draft.ts#L23) (snapshot: AnalysisSnapshot, trigger: string, options: { name?: string; depth?: number; entry?: string } = {}) → FlowDraft
-    - fn [draftFlowFromTrace](../../src/draft.ts#L77) (snapshot: AnalysisSnapshot, run: TraceRun, options: { name?: string } = {}) → FlowDraft & { rest: string[] }
+    - fn [draftFlowFromTrace](../../src/draft.ts#L79) (snapshot: AnalysisSnapshot, run: TraceRun, options: { name?: string } = {}) → FlowDraft & { rest: string[] }
       - calls features.draft.reachesByCalls
-    - fn [reachesByCalls](../../src/draft.ts#L106) (snapshot: AnalysisSnapshot, from: string, to: string) → boolean <!-- internal -->
-    - fn [withFlow](../../src/draft.ts#L127) (existing: string | null, draft: Pick<FlowDraft, "name" | "text">) → string
+    - fn [reachesByCalls](../../src/draft.ts#L108) (snapshot: AnalysisSnapshot, from: string, to: string) → boolean <!-- internal -->
+    - fn [withFlow](../../src/draft.ts#L129) (existing: string | null, draft: Pick<FlowDraft, "name" | "text">) → string
       - calls lang.parser.parse, features.draft.nextHeading, base.safe-write.keepLineEndings
-    - fn [withRules](../../src/draft.ts#L151) (existing: string | null, draftText: string) → string
+    - fn [withRules](../../src/draft.ts#L153) (existing: string | null, draftText: string) → string
       - calls lang.parser.parse, lang.ir.sectionNodes, lang.parser.renderMeaning, features.draft.nextHeading, base.safe-write.keepLineEndings
-    - fn [nextHeading](../../src/draft.ts#L181) (sections: readonly { heading: { span: { start: { line: number } } } | null }[], index: number) → number | null <!-- internal -->
-    - fn [distinctNames](../../src/draft.ts#L191) (drafts: readonly FlowDraft[]) → FlowDraft[]
-    - fn [draftRules](../../src/draft.ts#L221) (snapshot: AnalysisSnapshot, cyclic: boolean) → string
+    - fn [nextHeading](../../src/draft.ts#L183) (sections: readonly { heading: { span: { start: { line: number } } } | null }[], index: number) → number | null <!-- internal -->
+    - fn [distinctNames](../../src/draft.ts#L193) (drafts: readonly FlowDraft[]) → FlowDraft[]
+    - fn [draftRules](../../src/draft.ts#L223) (snapshot: AnalysisSnapshot, cyclic: boolean) → string
       - calls features.draft.layerOrder
-    - fn [layerOrder](../../src/draft.ts#L246) (layers: readonly string[], uses: ReadonlyMap<string, ReadonlySet<string>>) → string[] | null <!-- internal -->
-    - fn [codeToSpecTriggers](../../src/draft.ts#L265) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; triggers: string[] }
-    - fn [codeToSpec](../../src/draft.ts#L288) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; drafts: FlowDraft[] }
+    - fn [layerOrder](../../src/draft.ts#L248) (layers: readonly string[], uses: ReadonlyMap<string, ReadonlySet<string>>) → string[] | null <!-- internal -->
+    - fn [codeToSpecTriggers](../../src/draft.ts#L267) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; triggers: string[] }
+    - fn [codeToSpec](../../src/draft.ts#L290) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; drafts: FlowDraft[] }
       - calls features.draft.codeToSpecTriggers, features.draft.draftFlow, features.draft.distinctNames
-    - type [ChangedLines](../../src/draft.ts#L295)
-    - fn [diffHunks](../../src/draft.ts#L301) (diff: string) → Map<string, [number, number][]>
+    - type [ChangedLines](../../src/draft.ts#L297)
+    - fn [diffHunks](../../src/draft.ts#L303) (diff: string) → Map<string, [number, number][]>
       - calls features.draft.gitPath
-    - fn [deletedDiffPaths](../../src/draft.ts#L324) (diff: string) → string[]
+    - fn [deletedDiffPaths](../../src/draft.ts#L326) (diff: string) → string[]
       - calls features.draft.gitPath
-    - fn [gitPath](../../src/draft.ts#L338) (text: string) → string <!-- internal -->
-    - fn [changedFlows](../../src/draft.ts#L366) (snapshot: AnalysisSnapshot, changed: ChangedLines, named: ReadonlySet<string>) → { drafts: FlowDraft[]; named: string[] }
+    - fn [gitPath](../../src/draft.ts#L340) (text: string) → string <!-- internal -->
+    - fn [changedFlows](../../src/draft.ts#L368) (snapshot: AnalysisSnapshot, changed: ChangedLines, named: ReadonlySet<string>) → { drafts: FlowDraft[]; named: string[] }
       - calls features.draft.draftFlow, features.draft.distinctNames
   - module [explain-edge](../../src/explain-edge.ts#L1)
     - snapshot map.snapshot
@@ -533,13 +533,14 @@
     - fn [nodeFacts](../../src/explain-node.ts#L34) (analysis: Analysis, id: string) → NodeFacts | null
       - calls lang.spec-ir.plannedDeclaration
     - type [NodeSummary](../../src/explain-node.ts#L47)
-    - type [ExplainResult](../../src/explain-node.ts#L72)
-    - fn [summarizeNode](../../src/explain-node.ts#L74) (analysis: Analysis, id: string) → ExplainResult
-      - calls features.explain-node.nodeFacts, features.explain-node.rulesNaming, lang.spec-ir.flowsUsing, map.snapshot.leavesUnresolved
-    - fn [rulesNaming](../../src/explain-node.ts#L112) (analysis: Analysis, id: string) → string[] <!-- internal -->
+    - type [ExplainResult](../../src/explain-node.ts#L74)
+    - fn [summarizeNode](../../src/explain-node.ts#L76) (analysis: Analysis, id: string) → ExplainResult
+      - calls features.explain-node.nodeFacts, features.explain-node.rulesNaming, lang.spec-ir.flowsUsing, map.snapshot.leavesUnresolved, features.explain-node.observersOf
+    - fn [observersOf](../../src/explain-node.ts#L115) (analysis: Analysis, id: string) → string[] <!-- internal -->
+    - fn [rulesNaming](../../src/explain-node.ts#L122) (analysis: Analysis, id: string) → string[] <!-- internal -->
       - calls features.explain-node.nodeHolding
-    - fn [nodeHolding](../../src/explain-node.ts#L141) (root: Node, ref: Ref) → Node | null <!-- internal -->
-    - fn [formatSummary](../../src/explain-node.ts#L151) (s: NodeSummary) → string
+    - fn [nodeHolding](../../src/explain-node.ts#L151) (root: Node, ref: Ref) → Node | null <!-- internal -->
+    - fn [formatSummary](../../src/explain-node.ts#L161) (s: NodeSummary) → string
   - module [explain-offline](../../src/explain-offline.ts#L1)
     - analyze map.analyze
     - explain features.explain
@@ -591,15 +592,15 @@
       - calls features.explorer.indexOf, features.explorer.byPosition, base.span.compareText, features.explorer.holesOf, features.explorer.reachedFrom
     - fn [holesOf](../../src/explorer.ts#L193) (index: Index, id: string) → CallHole[] <!-- internal -->
       - calls features.explorer.byPosition
-    - fn [reachedFrom](../../src/explorer.ts#L213) (snapshot: AnalysisSnapshot, index: Index, id: string) → Calls["reachedFrom"] <!-- internal -->
+    - fn [reachedFrom](../../src/explorer.ts#L214) (snapshot: AnalysisSnapshot, index: Index, id: string) → Calls["reachedFrom"] <!-- internal -->
       - calls base.span.compareText
-    - type [EventListing](../../src/explorer.ts#L236)
-    - fn [eventsOf](../../src/explorer.ts#L245) (snapshot: AnalysisSnapshot | null) → { events: EventListing[]; reason?: string }
+    - type [EventListing](../../src/explorer.ts#L237)
+    - fn [eventsOf](../../src/explorer.ts#L246) (snapshot: AnalysisSnapshot | null) → { events: EventListing[]; reason?: string }
       - calls features.explorer.indexOf, base.span.compareText
-    - type [ExplorerStep](../../src/explorer.ts#L259)
-    - type [ExplorerFlowRequest](../../src/explorer.ts#L264)
-    - fn [parseExplorerFlow](../../src/explorer.ts#L283) (body: unknown) → ExplorerFlowRequest | string
-    - fn [explorerFlow](../../src/explorer.ts#L323) (snapshot: AnalysisSnapshot, request: ExplorerFlowRequest) → FlowDraft | string
+    - type [ExplorerStep](../../src/explorer.ts#L260)
+    - type [ExplorerFlowRequest](../../src/explorer.ts#L265)
+    - fn [parseExplorerFlow](../../src/explorer.ts#L284) (body: unknown) → ExplorerFlowRequest | string
+    - fn [explorerFlow](../../src/explorer.ts#L324) (snapshot: AnalysisSnapshot, request: ExplorerFlowRequest) → FlowDraft | string
       - calls features.explorer.indexOf, features.explorer.byPosition, features.explorer.holesOf, lang.parser.isTriggerKind
   - module [feature-status](../../src/feature-status.ts#L1)
     - assess check.assess
@@ -1010,15 +1011,15 @@
     - type [CompletionItem](../../src/lsp-features.ts#L598)
     - fn [completions](../../src/lsp-features.ts#L625) (ws: Workspace, path: string, position: LspPosition) → CompletionItem[]
       - calls features.lsp-features.docOf, features.lsp-features.enclosing, features.lsp-features.sectionAt, lang.parser.keywordsAt, lang.parser.isTriggerKind, features.lsp-features.moduleAround, check.rules.dependencyKindOf, check.rules.blocksDependency
-    - fn [sectionAt](../../src/lsp-features.ts#L695) (doc: Document, line: number) → Section | undefined <!-- internal -->
-    - fn [enclosing](../../src/lsp-features.ts#L705) (doc: Document, line: number, col: number) → Node | undefined <!-- internal -->
+    - fn [sectionAt](../../src/lsp-features.ts#L696) (doc: Document, line: number) → Section | undefined <!-- internal -->
+    - fn [enclosing](../../src/lsp-features.ts#L706) (doc: Document, line: number, col: number) → Node | undefined <!-- internal -->
       - calls features.lsp-features.nodesOf
-    - fn [ancestors](../../src/lsp-features.ts#L714) (doc: Document, node: Node) → Node[] <!-- internal -->
+    - fn [ancestors](../../src/lsp-features.ts#L715) (doc: Document, node: Node) → Node[] <!-- internal -->
       - calls features.lsp-features.nodesOf
-    - fn [moduleAround](../../src/lsp-features.ts#L727) (ws: Workspace, doc: Document, parent: Node | undefined) → string | null <!-- internal -->
+    - fn [moduleAround](../../src/lsp-features.ts#L728) (ws: Workspace, doc: Document, parent: Node | undefined) → string | null <!-- internal -->
       - calls features.lsp-features.ancestors
-    - type [CodeLens](../../src/lsp-features.ts#L742) <!-- internal -->
-    - fn [codeLenses](../../src/lsp-features.ts#L748) (ws: Workspace, path: string) → CodeLens[]
+    - type [CodeLens](../../src/lsp-features.ts#L743) <!-- internal -->
+    - fn [codeLenses](../../src/lsp-features.ts#L749) (ws: Workspace, path: string) → CodeLens[]
       - calls lang.spec-ir.flowsUsing, features.lsp-features.lspPoint
   - module [migration-stack](../../src/migration-stack.ts#L1)
     - node external.node

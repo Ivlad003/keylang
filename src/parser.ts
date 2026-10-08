@@ -73,6 +73,7 @@ type Ctx =
   | "layer"
   | "module"
   | "fn"
+  | "event"
   | "ref-list"
   | "rule-module"
   | "step"
@@ -96,6 +97,8 @@ function ctxOf(section: SectionKind, parent: NodeKind | undefined): Ctx {
       return "module";
     case "fn":
       return "fn";
+    case "event":
+      return section === "map" ? "event" : `leaf:${parent}`;
     case "layers":
     case "entry":
       return "ref-list";
@@ -185,10 +188,11 @@ function keywordsOf(ctx: Ctx): readonly string[] {
     case "migration-top":
       return ["map", "dropped"];
     case "layer":
-      return ["module"];
+      return ["module", "event"];
     case "module":
       return ["module", "fn", "type", "event"];
     case "fn":
+    case "event":
       return ["calls"];
     case "rule-module":
       return ["exports", "no-cycles"];
@@ -301,7 +305,7 @@ const ROLES: { readonly [C in Ctx]?: Partial<Record<NodeKind, string>> } = {
     migrate: "an ID of the old stack and its counterpart in this repository (`planned` while it is not written yet)",
     dropped: "an ID of the old stack that is not carried over, with the reason",
   },
-  layer: { module: "a module declaration in this layer" },
+  layer: { module: "a module declaration in this layer", event: "an event of the generated group `events`: dispatched by code, observed by the framework's config" },
   module: {
     module: "a submodule declaration",
     fn: "a function declaration of this module",
@@ -310,6 +314,7 @@ const ROLES: { readonly [C in Ctx]?: Partial<Record<NodeKind, string>> } = {
     dep: "a dependency of this module: an alias and the ID it points at",
   },
   fn: { calls: "calls this function makes in code" },
+  event: { calls: "the observers the framework calls when the event is dispatched" },
   "rule-module": {
     exports: "the public names of this module, compared with the code both ways",
     "no-cycles": "a rule: no import cycle through this module or its submodules",
