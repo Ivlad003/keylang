@@ -1749,42 +1749,43 @@
     - tour features.tour
     - parser lang.parser
     - spec-ir lang.spec-ir
+    - span base.span
     - app tui.app
     - background tui.background
     - screen tui.screen
-    - type [AssetName](../../src/tui/web.ts#L61) = keyof typeof ASSETS <!-- internal -->
-    - type [BuiltName](../../src/tui/web.ts#L69) = keyof typeof BUILT <!-- internal -->
-    - fn [newestUnder](../../src/tui/web.ts#L78) (dir: string) → number <!-- internal -->
-    - fn [clientStale](../../src/tui/web.ts#L87) () → boolean <!-- internal -->
+    - type [AssetName](../../src/tui/web.ts#L62) = keyof typeof ASSETS <!-- internal -->
+    - type [BuiltName](../../src/tui/web.ts#L70) = keyof typeof BUILT <!-- internal -->
+    - fn [newestUnder](../../src/tui/web.ts#L79) (dir: string) → number <!-- internal -->
+    - fn [clientStale](../../src/tui/web.ts#L88) () → boolean <!-- internal -->
       - calls tui.web.newestUnder
-    - fn [ensureClient](../../src/tui/web.ts#L98) () → Promise<void> <!-- internal -->
+    - fn [ensureClient](../../src/tui/web.ts#L99) () → Promise<void> <!-- internal -->
       - calls tui.web.clientStale
-    - fn [assetPath](../../src/tui/web.ts#L111) (name: AssetName) → string | null
-    - type [WebServer](../../src/tui/web.ts#L125)
-    - type [Session](../../src/tui/web.ts#L137) <!-- internal -->
-    - fn [control](../../src/tui/web.ts#L146) (message: object) → string <!-- internal -->
-    - module [AudioQueue](../../src/tui/web.ts#L154) <!-- internal -->
-      - fn [push](../../src/tui/web.ts#L161) (chunk: Int16Array) → void
+    - fn [assetPath](../../src/tui/web.ts#L112) (name: AssetName) → string | null
+    - type [WebServer](../../src/tui/web.ts#L126)
+    - type [Session](../../src/tui/web.ts#L138) <!-- internal -->
+    - fn [control](../../src/tui/web.ts#L147) (message: object) → string <!-- internal -->
+    - module [AudioQueue](../../src/tui/web.ts#L155) <!-- internal -->
+      - fn [push](../../src/tui/web.ts#L162) (chunk: Int16Array) → void
         - calls tui.web.AudioQueue.wake
-      - fn [end](../../src/tui/web.ts#L168) (failure: Error | null = null) → void
+      - fn [end](../../src/tui/web.ts#L169) (failure: Error | null = null) → void
         - calls tui.web.AudioQueue.wake
-      - fn [wake](../../src/tui/web.ts#L174) () → void <!-- internal -->
-      - fn [chunks](../../src/tui/web.ts#L181) () → AsyncGenerator<Int16Array>
-    - fn [pcmOf](../../src/tui/web.ts#L196) (data: unknown) → Int16Array | null <!-- internal -->
-    - fn [clampSize](../../src/tui/web.ts#L206) (value: unknown, fallback: number, max: number) → number
-    - fn [sameSecret](../../src/tui/web.ts#L211) (given: string | null | undefined, token: string) → boolean <!-- internal -->
-    - fn [offeredToken](../../src/tui/web.ts#L219) (request: IncomingMessage) → string | null <!-- internal -->
-    - type [WebOptions](../../src/tui/web.ts#L227)
-    - fn [serveWeb](../../src/tui/web.ts#L238) (options: WebOptions) → Promise<WebServer>
-      - calls tui.background.SnapshotWorker, map.analyze.analyze, tui.web.sameSecret, tui.web.offeredToken, lang.parser.parse, base.config.toPosix, lang.spec-ir.compileSpec, tui.web.readBody, features.explorer.parseExplorerFlow, features.explorer.explorerFlow, operations.shared.rootRelative, operations.shared.generatedIn, operations.draft.flowCandidate, operations.shared.proposalRefusal, operations.shared.commitProposal, map.map.sourceInputs, tui.web.bearerToken, features.tour.buildTour, features.tour.tourMarkdown, map.diagram.usagesOf, features.explorer.callsOf, operations.diagram-export.exportViewOfQuery, operations.diagram-export.diagramExportText, operations.diagram-export.exportSourcesOf, operations.coverage.runCoverage, map.diagram.parseView, features.discover-names.processViews, features.discover-names.readProcesses, features.explorer.eventsOf, map.diagram.viewsOf, map.diagram.flowListing, map.diagram.diagramOf, features.check-results.checkResults, tui.web.withResults, tui.web.ensureClient, tui.web.assetPath, tui.web.diagramsPage, tui.web.page, tui.web.reply, tui.web.pathOf, tui.web.clampSize, tui.web.pcmOf, tui.app.App, tui.web.AudioQueue, tui.web.control, tui.web.AudioQueue.chunks, tui.web.AudioQueue.end, tui.background.SnapshotWorker.close
-    - fn [readBody](../../src/tui/web.ts#L669) (request: IncomingMessage, max: number) → Promise<string | null> <!-- internal -->
-    - type [NodeResult](../../src/tui/web.ts#L694) = { verdict: string; criterion: string; message: string } <!-- internal -->
-    - fn [withResults](../../src/tui/web.ts#L701) (diagram: Diagram, results: readonly CheckResult[]) → Omit<Diagram, "nodes"> & { nodes: (DiagramNode & { results?: NodeResult[] })[] } <!-- internal -->
-    - fn [bearerToken](../../src/tui/web.ts#L723) (request: IncomingMessage) → string | null <!-- internal -->
-    - fn [pathOf](../../src/tui/web.ts#L729) (target: string | undefined) → string | null <!-- internal -->
-    - fn [reply](../../src/tui/web.ts#L737) (response: ServerResponse, status: number, type: string, body: string | Buffer) → void <!-- internal -->
-    - fn [diagramsPage](../../src/tui/web.ts#L743) () → string <!-- internal -->
-    - fn [page](../../src/tui/web.ts#L781) () → string <!-- internal -->
+      - fn [wake](../../src/tui/web.ts#L175) () → void <!-- internal -->
+      - fn [chunks](../../src/tui/web.ts#L182) () → AsyncGenerator<Int16Array>
+    - fn [pcmOf](../../src/tui/web.ts#L197) (data: unknown) → Int16Array | null <!-- internal -->
+    - fn [clampSize](../../src/tui/web.ts#L207) (value: unknown, fallback: number, max: number) → number
+    - fn [sameSecret](../../src/tui/web.ts#L212) (given: string | null | undefined, token: string) → boolean <!-- internal -->
+    - fn [offeredToken](../../src/tui/web.ts#L220) (request: IncomingMessage) → string | null <!-- internal -->
+    - type [WebOptions](../../src/tui/web.ts#L228)
+    - fn [serveWeb](../../src/tui/web.ts#L239) (options: WebOptions) → Promise<WebServer>
+      - calls tui.background.SnapshotWorker, map.analyze.analyze, tui.web.sameSecret, tui.web.offeredToken, lang.parser.parse, base.config.toPosix, lang.spec-ir.compileSpec, tui.web.readBody, features.explorer.parseExplorerFlow, features.explorer.explorerFlow, operations.shared.rootRelative, operations.shared.generatedIn, operations.draft.flowCandidate, operations.shared.proposalRefusal, operations.shared.commitProposal, map.map.sourceInputs, tui.web.bearerToken, features.tour.buildTour, features.tour.tourMarkdown, map.diagram.usagesOf, features.explorer.callsOf, base.span.compareText, operations.diagram-export.exportViewOfQuery, operations.diagram-export.diagramExportText, operations.diagram-export.exportSourcesOf, operations.coverage.runCoverage, map.diagram.parseView, features.discover-names.processViews, features.discover-names.readProcesses, features.explorer.eventsOf, map.diagram.viewsOf, map.diagram.flowListing, map.diagram.diagramOf, features.check-results.checkResults, tui.web.withResults, tui.web.ensureClient, tui.web.assetPath, tui.web.diagramsPage, tui.web.page, tui.web.reply, tui.web.pathOf, tui.web.clampSize, tui.web.pcmOf, tui.app.App, tui.web.AudioQueue, tui.web.control, tui.web.AudioQueue.chunks, tui.web.AudioQueue.end, tui.background.SnapshotWorker.close
+    - fn [readBody](../../src/tui/web.ts#L684) (request: IncomingMessage, max: number) → Promise<string | null> <!-- internal -->
+    - type [NodeResult](../../src/tui/web.ts#L709) = { verdict: string; criterion: string; message: string } <!-- internal -->
+    - fn [withResults](../../src/tui/web.ts#L716) (diagram: Diagram, results: readonly CheckResult[]) → Omit<Diagram, "nodes"> & { nodes: (DiagramNode & { results?: NodeResult[] })[] } <!-- internal -->
+    - fn [bearerToken](../../src/tui/web.ts#L738) (request: IncomingMessage) → string | null <!-- internal -->
+    - fn [pathOf](../../src/tui/web.ts#L744) (target: string | undefined) → string | null <!-- internal -->
+    - fn [reply](../../src/tui/web.ts#L752) (response: ServerResponse, status: number, type: string, body: string | Buffer) → void <!-- internal -->
+    - fn [diagramsPage](../../src/tui/web.ts#L758) () → string <!-- internal -->
+    - fn [page](../../src/tui/web.ts#L797) () → string <!-- internal -->
   - module [width](../../src/tui/width.ts#L1)
     - fn [graphemes](../../src/tui/width.ts#L13) (text: string) → string[]
     - fn [clusters](../../src/tui/width.ts#L20) (text: string) → Generator<string>

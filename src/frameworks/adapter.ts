@@ -10,6 +10,7 @@
 // cached by content in the fact cache, so a changed `di.xml` is a new snapshot.
 
 import { magento } from "./magento.ts";
+import { celery, django, fastapi, flask } from "./python-web.ts";
 import { sfcc } from "./sfcc.ts";
 
 /**
@@ -128,7 +129,7 @@ export interface FrameworkAdapter {
 export const FRAMEWORK_CONFIG = "framework:";
 
 /** Adapters keylang has, by name. */
-export const FRAMEWORK_ADAPTERS: readonly FrameworkAdapter[] = [magento, sfcc];
+export const FRAMEWORK_ADAPTERS: readonly FrameworkAdapter[] = [magento, sfcc, django, fastapi, flask, celery];
 
 export const FRAMEWORK_NAMES: readonly string[] = FRAMEWORK_ADAPTERS.map((a) => a.name).sort();
 

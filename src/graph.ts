@@ -169,7 +169,7 @@ export interface Escape {
 }
 
 /** How a call edge that is not a plain call of the code came about; see `Call.via`. */
-export type Via = "default" | "injected" | "callable-arg" | "closure-arg" | "preference" | "argument" | "plugin:before" | "plugin:around" | "plugin:after";
+export type Via = "default" | "injected" | "callable-arg" | "closure-arg" | "preference" | "argument" | "plugin:before" | "plugin:around" | "plugin:after" | "dispatch" | "observer";
 
 export interface Call {
   target: string;
@@ -190,6 +190,9 @@ export interface Call {
    * behavior` follows all four; `shape` none. A call the framework makes by
    * its config (ADR 0022): `preference`, `argument`, `plugin:before|around|after`,
    * at `site` in the config; `behavior` follows them, `shape` does not.
+   * `dispatch`: a job the fn hands to a queue (Celery `task.delay()`), at
+   * `site` of the task's registration; `observer`: a receiver of a signal
+   * the fn sends (Django `signal.send()`), at `site` of its registration.
    */
   via?: Via;
   /** Config edges: the area the fact applies in. */

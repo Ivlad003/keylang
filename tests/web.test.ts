@@ -1226,6 +1226,39 @@ type CallsJson = {
   reason?: string;
 };
 
+test("web: /api/ids lists the snapshot's IDs under a prefix for the editor's ID field, in text order, behind the same token (business-flows/23)", async (t) => {
+  const repo = diagramsRepo(t);
+  const server = await serveWeb({ root: repo, port: 0 });
+  t.after(() => server.close());
+  const url = new URL(server.url);
+  const bearer = { Authorization: `Bearer ${tokenOf(url)}` };
+  const answer = await status(url, "/api/ids?prefix=application.purchase", bearer);
+  assert.equal(answer.status, 200, answer.body);
+  assert.match(answer.type, /^application\/json/);
+  assert.deepEqual(JSON.parse(answer.body), {
+    prefix: "application.purchase",
+    ids: [
+      { id: "application.purchase", kind: "module" },
+      { id: "application.purchase.buy", kind: "fn" },
+    ],
+    more: false,
+  });
+  const all = JSON.parse((await status(url, "/api/ids", bearer)).body) as { prefix: string; ids: { id: string; kind: string }[] };
+  assert.equal(all.prefix, "");
+  assert.ok(all.ids.some((i) => i.id === "domain" && i.kind === "layer"), JSON.stringify(all.ids));
+  assert.deepEqual(
+    all.ids.map((i) => i.id),
+    [...all.ids.map((i) => i.id)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
+  );
+  assert.deepEqual(JSON.parse((await status(url, "/api/ids?prefix=nowhere.", bearer)).body), { prefix: "nowhere.", ids: [], more: false });
+  for (const headers of [{}, { Authorization: "Bearer wrong" }, { ...bearer, Origin: "http://evil.example" }]) {
+    const refused = await status(url, "/api/ids?prefix=application", headers);
+    assert.equal(refused.status, 403, JSON.stringify(headers));
+    assert.doesNotMatch(refused.body, /purchase/);
+  }
+  assert.equal((await status(url, `/api/ids?prefix=application&t=${tokenOf(url)}`)).status, 403, "a token in the query is not accepted");
+});
+
 test("web: /api/calls opens one level of the call tree — callees with via and site, holes with reasons, callers and the entry points above — in TypeScript and Python, behind the token (business-flows/22)", async (t) => {
   const repo = explorerRepo(t);
   const server = await serveWeb({ root: repo, port: 0 });

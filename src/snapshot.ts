@@ -17,7 +17,7 @@ import { components } from "./scc.ts";
 
 export const SNAPSHOT_SCHEMA = 8;
 /** Bump when extraction or resolution changes the facts that `snapshotId` covers. */
-export const EXTRACTOR_VERSION = "m1.19";
+export const EXTRACTOR_VERSION = "m1.20";
 
 export type Resolution = "resolved" | "ambiguous" | "unresolved";
 /**
