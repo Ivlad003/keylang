@@ -57,6 +57,78 @@ export interface FileFacts {
    * The snapshot resolves each to a fn of the graph (`entries` of the index).
    */
   entries?: EntryFact[];
+  /**
+   * Python: the decorators of the file's declarations keylang does not know
+   * to keep the function, with their literal arguments. A framework adapter
+   * reads a registration in them (`@router.get("/x")`, `@shared_task`,
+   * `@receiver(post_save, sender=Order)`); the extractor still records each
+   * as a hole of the declaration, which the adapter lifts for a decorator it
+   * recognises.
+   */
+  decorators?: DecoratorFact[];
+  /**
+   * Python: module-level statements whose value has a call in it, with the
+   * value as written: `urlpatterns = [path("x/", views.f)]`,
+   * `router = APIRouter(prefix="/x")`, `post_save.connect(h, sender=M)`,
+   * `app.conf.beat_schedule = {…}`. What a framework executes as its config.
+   */
+  statements?: StatementFact[];
+  /**
+   * Python: calls written in a declaration's parameter list (a default or an
+   * annotation): `db = Depends(get_db)`, `Annotated[S, Depends(get_s)]`.
+   */
+  paramCalls?: ParamCallFact[];
+}
+
+/**
+ * A value as the code writes it, for an adapter to read: literals, dotted
+ * names and calls with their arguments; anything else is `other` with its
+ * text. Containers keep their items in order.
+ */
+export type LiteralValue =
+  | { kind: "string"; value: string }
+  | { kind: "number"; value: number }
+  /** A name or a dotted path: `views.detail`, `Order`, `True`. */
+  | { kind: "name"; value: string }
+  | { kind: "call"; callee: string; args: LiteralValue[]; kwargs: Kwarg[]; line: number; col: number }
+  /** A list, a tuple or a set. */
+  | { kind: "list"; items: LiteralValue[] }
+  | { kind: "dict"; entries: { key: LiteralValue; value: LiteralValue }[] }
+  | { kind: "other"; text: string };
+
+export interface Kwarg {
+  name: string;
+  value: LiteralValue;
+}
+
+/** A decorator of a declaration: `@x.get("/a", tags=["t"])` → `x.get` with its arguments; `call` null for `@x`. */
+export interface DecoratorFact {
+  name: string;
+  call: { args: LiteralValue[]; kwargs: Kwarg[] } | null;
+  /** The declaration as a dotted path in the file: `place`, `Order.save`. */
+  target: string;
+  line: number;
+  col: number;
+}
+
+/**
+ * A module-level statement: `target = value`, `target += value` (`augmented`),
+ * or a call standing alone (`target` null, `value` the call).
+ */
+export interface StatementFact {
+  /** The assigned name or dotted path (`urlpatterns`, `app.conf.beat_schedule`); null for a call statement. */
+  target: string | null;
+  augmented?: true;
+  value: LiteralValue;
+  line: number;
+  col: number;
+}
+
+/** A call in a parameter of a declaration: `symbol`'s parameter `param` is `Depends(get_db)`. */
+export interface ParamCallFact {
+  symbol: string;
+  param: string;
+  value: Extract<LiteralValue, { kind: "call" }>;
 }
 
 /**

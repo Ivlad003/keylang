@@ -6,7 +6,7 @@
 // Every call expression is an edge or a hole: a callee keylang cannot name
 // is a call through a value, never dropped.
 
-import type { CallFact, DeclFact, ExportRow, FileFacts, ImportFact, PassFact, UnsupportedFact, ValueRefFact } from "./facts.ts";
+import type { CallFact, DeclFact, ExportRow, FileFacts, ImportFact, Kwarg, LiteralValue, PassFact, StatementFact, UnsupportedFact, ValueRefFact } from "./facts.ts";
 import { isLicense, nonEmpty } from "./doc-comments.ts";
 import { errorLine, fingerprint, located, withTree, type Node } from "./treesitter.ts";
 
@@ -44,6 +44,7 @@ function extractTree(path: string, root: Node): FileFacts {
     if (def.type === "function_definition" && name) {
       facts.decls.push(fnDecl(def, name, null));
       noteDecorators(node, name, false, facts);
+      noteParamCalls(def, name, facts);
     } else if (def.type === "class_definition" && name) {
       facts.decls.push(classDecl(def, name, name, true, facts));
       noteDecorators(node, name, false, facts);
@@ -76,6 +77,8 @@ function extractTree(path: string, root: Node): FileFacts {
   }
   const names = new Set([...facts.decls.map((d) => d.name), ...facts.imports.flatMap((imp) => imp.bindings.map((b) => b.local))]);
   facts.moduleCalls = moduleCalls(root);
+  const statements = statementsOf(topLevel);
+  if (statements.length > 0) facts.statements = statements;
   collectMainEntries(root, names, facts);
   facts.valueRefs = [...facts.valueRefs, ...valueRefs(root, names, facts.imports.some((imp) => imp.glob))].sort((a, b) => a.line - b.line || a.col - b.col);
   collectDynamic(root, facts);
@@ -173,8 +176,10 @@ function isAccessor(name: string): boolean {
 function noteDecorators(node: Node, symbol: string, member: boolean, facts: FileFacts): void {
   for (const decorator of decorators(node)) {
     if (KEEPING_DECORATORS.has(decorator.name) || isAccessor(decorator.name)) continue;
-    facts.unsupported.push({ ...unsupported(decorator.node, `decorator \`${decorator.name}\` may replace \`${symbol}\``), symbol });
     const at = located(decorator.node);
+    const expr = decorator.node.namedChildren[0];
+    (facts.decorators ??= []).push({ name: decorator.name, call: expr?.type === "call" ? argumentsOf(expr, { left: LITERAL_BUDGET }) : null, target: symbol, line: at.line, col: at.col });
+    facts.unsupported.push({ ...unsupported(decorator.node, `decorator \`${decorator.name}\` may replace \`${symbol}\``), symbol });
     facts.valueRefs.push({ name: member ? symbol.slice(symbol.lastIndexOf(".") + 1) : symbol, ...(member ? { member: true as const } : {}), line: at.line, col: at.col });
   }
 }
@@ -204,6 +209,7 @@ function classDecl(def: Node, name: string, symbol: string, topLevel: boolean, f
     const names = decorators(item).map((d) => d.name);
     const isStatic = names.includes("staticmethod");
     const decl = fnDecl(inner, member, { name, statics: topLevel ? statics : new Set(), receiver: !isStatic });
+    noteParamCalls(inner, path, facts);
     decl.exported = exported;
     if (isStatic || names.includes("classmethod")) decl.static = true;
     if (names.some(isAccessor)) decl.accessor = true;
@@ -717,4 +723,138 @@ function importAt(node: Node, source: string, bindings: ImportFact["bindings"], 
 function unsupported(node: Node, reason: string): UnsupportedFact {
   const at = located(node);
   return { line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, text: at.text.split("\n")[0]!, reason };
+}
+
+/** How many value nodes one statement, decorator or parameter call records at most: a big data literal stays `other`. */
+const LITERAL_BUDGET = 2000;
+
+/**
+ * Module-level statements a framework may execute as its config: an
+ * assignment (`x = …`, `x += …`, `a.b = …`) or a call statement whose value
+ * has a call in it, the value as written (`LiteralValue`).
+ */
+function statementsOf(topLevel: readonly Node[]): StatementFact[] {
+  const out: StatementFact[] = [];
+  for (const node of topLevel) {
+    const expr = node.type === "expression_statement" ? node.namedChildren[0] : undefined;
+    if (!expr) continue;
+    const at = located(node);
+    if (expr.type === "call") {
+      out.push({ target: null, value: literalOf(expr, { left: LITERAL_BUDGET }), line: at.line, col: at.col });
+      continue;
+    }
+    if (expr.type !== "assignment" && expr.type !== "augmented_assignment") continue;
+    const left = expr.childForFieldName("left");
+    const right = expr.childForFieldName("right");
+    if (!left || !right || !dottedName(left) || !hasCall(right)) continue;
+    if (expr.type === "augmented_assignment" && expr.childForFieldName("operator")?.text !== "+=") continue;
+    out.push({ target: left.text.replace(/\s+/g, ""), ...(expr.type === "augmented_assignment" ? { augmented: true as const } : {}), value: literalOf(right, { left: LITERAL_BUDGET }), line: at.line, col: at.col });
+  }
+  return out;
+}
+
+/** Calls written in the parameters of a `def`, defaults and annotations: `db = Depends(get_db)`. */
+function noteParamCalls(def: Node, symbol: string, facts: FileFacts): void {
+  for (const param of def.childForFieldName("parameters")?.namedChildren ?? []) {
+    const name = param.type === "identifier" ? param.text : (param.childForFieldName("name") ?? param.namedChildren.find((c) => c.type === "identifier"))?.text;
+    if (!name) continue;
+    const walk = (node: Node): void => {
+      if (node.type === "call") {
+        const value = literalOf(node, { left: LITERAL_BUDGET });
+        if (value.kind === "call") (facts.paramCalls ??= []).push({ symbol, param: name, value });
+        return;
+      }
+      if (node.type === "lambda") return;
+      for (const c of node.namedChildren) walk(c);
+    };
+    for (const c of param.namedChildren) walk(c);
+  }
+}
+
+function hasCall(node: Node): boolean {
+  if (node.type === "call") return true;
+  if (node.type === "lambda") return false;
+  return node.namedChildren.some(hasCall);
+}
+
+/** `a`, `a.b.c`: a name or a chain of attributes on a name. */
+function dottedName(node: Node): boolean {
+  if (node.type === "identifier") return true;
+  if (node.type !== "attribute") return false;
+  const object = node.childForFieldName("object");
+  return object !== null && dottedName(object);
+}
+
+/** A value as written, within `budget` nodes; past it, `other`. */
+function literalOf(node: Node, budget: { left: number }): LiteralValue {
+  if (budget.left-- <= 0) return other(node);
+  switch (node.type) {
+    case "string": {
+      if (node.namedChildren.some((c) => c.type === "interpolation")) return other(node);
+      return { kind: "string", value: node.namedChildren.filter((c) => c.type === "string_content").map((c) => c.text).join("") };
+    }
+    case "concatenated_string": {
+      const parts = node.namedChildren.map((c) => literalOf(c, budget));
+      return parts.every((p) => p.kind === "string") ? { kind: "string", value: parts.map((p) => (p.kind === "string" ? p.value : "")).join("") } : other(node);
+    }
+    case "integer":
+    case "float": {
+      const value = Number(node.text.replace(/_/g, ""));
+      return Number.isFinite(value) ? { kind: "number", value } : other(node);
+    }
+    case "true":
+    case "false":
+    case "none":
+      return { kind: "name", value: node.text };
+    case "identifier":
+    case "attribute":
+      return dottedName(node) ? { kind: "name", value: node.text.replace(/\s+/g, "") } : other(node);
+    case "parenthesized_expression":
+      return node.namedChildren.length === 1 ? literalOf(node.namedChildren[0]!, budget) : other(node);
+    case "list":
+    case "tuple":
+    case "set":
+      return { kind: "list", items: node.namedChildren.filter((c) => c.type !== "comment").map((c) => literalOf(c, budget)) };
+    case "dictionary":
+      return {
+        kind: "dict",
+        entries: node.namedChildren.filter((c) => c.type === "pair").map((pair) => {
+          const key = pair.childForFieldName("key");
+          const value = pair.childForFieldName("value");
+          return { key: key ? literalOf(key, budget) : other(pair), value: value ? literalOf(value, budget) : other(pair) };
+        }),
+      };
+    case "call": {
+      const fn = node.childForFieldName("function");
+      const args = node.childForFieldName("arguments");
+      if (!fn || !dottedName(fn) || args?.type !== "argument_list") return other(node);
+      const at = located(node);
+      return { kind: "call", callee: fn.text.replace(/\s+/g, ""), ...argumentsOf(node, budget), line: at.line, col: at.col };
+    }
+    default:
+      return other(node);
+  }
+}
+
+/** The positional and keyword arguments of a call; a `*xs` or `**kw` is an `other` positional. */
+function argumentsOf(call: Node, budget: { left: number }): { args: LiteralValue[]; kwargs: Kwarg[] } {
+  const args: LiteralValue[] = [];
+  const kwargs: Kwarg[] = [];
+  const list = call.childForFieldName("arguments");
+  for (const arg of list?.type === "argument_list" ? list.namedChildren : []) {
+    if (arg.type === "comment") continue;
+    if (arg.type === "keyword_argument") {
+      const name = arg.childForFieldName("name")?.text;
+      const value = arg.childForFieldName("value");
+      if (name && value) kwargs.push({ name, value: literalOf(value, budget) });
+      continue;
+    }
+    args.push(literalOf(arg, budget));
+  }
+  return { args, kwargs };
+}
+
+function other(node: Node): LiteralValue {
+  const text = node.text.replace(/\s+/g, " ");
+  return { kind: "other", text: text.length > 80 ? `${text.slice(0, 79)}…` : text };
 }
