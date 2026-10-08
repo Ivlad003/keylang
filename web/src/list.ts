@@ -5,7 +5,7 @@
 // in the DOM, so the hundreds of entry points of a Magento repository scroll
 // and filter without a pause.
 
-import type { ViewQuery } from "./api.ts";
+import type { PageQuery } from "./api.ts";
 
 export interface ListItem {
   /** Stable across refreshes: the view's kind and name or ID. */
@@ -16,7 +16,7 @@ export interface ListItem {
   /** Lower-case text the search matches: name, label, IDs. */
   search: string;
   title: string;
-  query: ViewQuery;
+  query: PageQuery;
 }
 
 type Row = { type: "group"; group: string; count: number; open: boolean } | { type: "item"; item: ListItem };

@@ -571,6 +571,36 @@
   - module [explain](../../src/explain.ts#L1)
     - diag base.diag
     - fn [explainCode](../../src/explain.ts#L130) (code: string) → string | null
+  - module [explorer](../../src/explorer.ts#L1)
+    - external-ids base.external-ids
+    - draft features.draft
+    - parser lang.parser
+    - snapshot map.snapshot
+    - span base.span
+    - type [CallSite](../../src/explorer.ts#L20)
+    - type [CallRef](../../src/explorer.ts#L27)
+    - type [CallHole](../../src/explorer.ts#L60)
+    - type [Calls](../../src/explorer.ts#L69)
+    - fn [follows](../../src/explorer.ts#L92) (edge: SnapshotEdge) → boolean <!-- internal -->
+    - type [Index](../../src/explorer.ts#L97) <!-- internal -->
+    - fn [indexOf](../../src/explorer.ts#L107) (snapshot: AnalysisSnapshot) → Index <!-- internal -->
+      - calls features.explorer.follows
+    - fn [byPosition](../../src/explorer.ts#L138) (a: CallSite, b: CallSite) → number <!-- internal -->
+      - calls base.span.compareText
+    - fn [callsOf](../../src/explorer.ts#L144) (snapshot: AnalysisSnapshot, id: string) → Calls
+      - calls features.explorer.indexOf, features.explorer.byPosition, base.span.compareText, features.explorer.holesOf, features.explorer.reachedFrom
+    - fn [holesOf](../../src/explorer.ts#L193) (index: Index, id: string) → CallHole[] <!-- internal -->
+      - calls features.explorer.byPosition
+    - fn [reachedFrom](../../src/explorer.ts#L213) (snapshot: AnalysisSnapshot, index: Index, id: string) → Calls["reachedFrom"] <!-- internal -->
+      - calls base.span.compareText
+    - type [EventListing](../../src/explorer.ts#L236)
+    - fn [eventsOf](../../src/explorer.ts#L245) (snapshot: AnalysisSnapshot | null) → { events: EventListing[]; reason?: string }
+      - calls features.explorer.indexOf, base.span.compareText
+    - type [ExplorerStep](../../src/explorer.ts#L259)
+    - type [ExplorerFlowRequest](../../src/explorer.ts#L264)
+    - fn [parseExplorerFlow](../../src/explorer.ts#L283) (body: unknown) → ExplorerFlowRequest | string
+    - fn [explorerFlow](../../src/explorer.ts#L323) (snapshot: AnalysisSnapshot, request: ExplorerFlowRequest) → FlowDraft | string
+      - calls features.explorer.indexOf, features.explorer.byPosition, features.explorer.holesOf, lang.parser.isTriggerKind
   - module [feature-status](../../src/feature-status.ts#L1)
     - assess check.assess
     - changed features.changed

@@ -44,6 +44,9 @@
   - module web
     - module src
       - module [api](../../web/src/api.ts#L1) <!-- outside -->
+      - module [blind](../../web/src/blind.ts#L1) <!-- outside -->
       - module [canvas](../../web/src/canvas.ts#L1) <!-- outside -->
       - module [diagrams](../../web/src/diagrams.ts#L1) <!-- outside -->
+      - module [dom](../../web/src/dom.ts#L1) <!-- outside -->
+      - module [explorer](../../web/src/explorer.ts#L1) <!-- outside -->
       - module [list](../../web/src/list.ts#L1) <!-- outside -->

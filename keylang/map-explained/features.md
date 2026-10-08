@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [agent-cli](#features.agent-cli) · [agent-context](#features.agent-context) · [baseline](#features.baseline) · [call-sites](#features.call-sites) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [clone](#features.clone) · [coverage-report](#features.coverage-report) · [discover-names](#features.discover-names) · [discover](#features.discover) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [feature-status](#features.feature-status) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [harness](#features.harness) · [integrations](#features.integrations) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stale](#features.stale) · [stats](#features.stats) · [voice-local](#features.voice-local) · [voice](#features.voice)
+[README](README.md) · modules: [agent-cli](#features.agent-cli) · [agent-context](#features.agent-context) · [baseline](#features.baseline) · [call-sites](#features.call-sites) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [clone](#features.clone) · [coverage-report](#features.coverage-report) · [discover-names](#features.discover-names) · [discover](#features.discover) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [explorer](#features.explorer) · [feature-status](#features.feature-status) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [harness](#features.harness) · [integrations](#features.integrations) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stale](#features.stale) · [stats](#features.stats) · [voice-local](#features.voice-local) · [voice](#features.voice)
 
 # map
 
@@ -896,6 +896,54 @@
     - diag [base.diag](base.md#base.diag)
     - fn [explainCode](../../src/explain.ts#L130) (code: string) → string | null
       <a id="features.explain.explainCode"></a><br>Looks up a diagnostic code (case-insensitively) in the `EXPLANATIONS` table and formats its cause, example, and fix as a multi-line string, returning null for unknown codes. For `K005` it appends extra reason lines from `K005_REASON_LINES`. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+  - module [explorer](../../src/explorer.ts#L1)
+    <a id="features.explorer"></a><br>The entry explorer of `keylang web` (business-flows/22): one level of the call graph around an ID at a time, for a person reading old code before any flow is written. `callsOf` gives the direct callees of a fn (with the edge's `via` and `site`), the calls keylang did not…
+    - external-ids [base.external-ids](base.md#base.external-ids)
+    - draft [features.draft](features.md#features.draft)
+    - parser [lang.parser](lang.md#lang.parser)
+    - snapshot [map.snapshot](map.md#map.snapshot)
+    - span [base.span](base.md#base.span)
+    - type [CallSite](../../src/explorer.ts#L20)
+      <a id="features.explorer.CallSite"></a><br>Where a call is written.
+    - type [CallRef](../../src/explorer.ts#L27)
+      <a id="features.explorer.CallRef"></a><br>A callee or a caller: the other end of a resolved edge, with how the edge goes.
+    - type [CallHole](../../src/explorer.ts#L60)
+      <a id="features.explorer.CallHole"></a><br>A call keylang did not resolve: «тут keylang сліпий».
+    - type [Calls](../../src/explorer.ts#L69)
+      <a id="features.explorer.Calls"></a>
+    - fn [follows](../../src/explorer.ts#L92) (edge: SnapshotEdge) → boolean <!-- internal -->
+      <a id="features.explorer.follows"></a><br>The resolved edges a call tree follows: calls, and whatever an adapter adds between a fn and an event.
+    - type [Index](../../src/explorer.ts#L97) <!-- internal -->
+      <a id="features.explorer.Index"></a><br>Indexes of the snapshot's call edges, built once per snapshot.
+    - fn [indexOf](../../src/explorer.ts#L107) (snapshot: AnalysisSnapshot) → Index <!-- internal -->
+      <a id="features.explorer.indexOf"></a>
+      - calls [features.explorer.follows](features.md#features.explorer.follows)
+    - fn [byPosition](../../src/explorer.ts#L138) (a: CallSite, b: CallSite) → number <!-- internal -->
+      <a id="features.explorer.byPosition"></a>
+      - calls [base.span.compareText](base.md#base.span.compareText)
+    - fn [callsOf](../../src/explorer.ts#L144) (snapshot: AnalysisSnapshot, id: string) → Calls
+      <a id="features.explorer.callsOf"></a><br>One level around `id`: its callees and holes, its callers, and the entry points above it. An unknown ID gives empty lists and a `reason`.
+      - calls [features.explorer.indexOf](features.md#features.explorer.indexOf), [features.explorer.byPosition](features.md#features.explorer.byPosition), [base.span.compareText](base.md#base.span.compareText), [features.explorer.holesOf](features.md#features.explorer.holesOf), [features.explorer.reachedFrom](features.md#features.explorer.reachedFrom)
+    - fn [holesOf](../../src/explorer.ts#L193) (index: Index, id: string) → CallHole[] <!-- internal -->
+      <a id="features.explorer.holesOf"></a><br>The unresolved and ambiguous calls of `id`, and the coverage items of the snapshot about it at other places (a `dynamic-event`), by position.
+      - calls [features.explorer.byPosition](features.md#features.explorer.byPosition)
+    - fn [reachedFrom](../../src/explorer.ts#L213) (snapshot: AnalysisSnapshot, index: Index, id: string) → Calls["reachedFrom"] <!-- internal -->
+      <a id="features.explorer.reachedFrom"></a><br>Breadth first up the resolved edges: the entry points that reach `id`, nearest first, then by kind and label.
+      - calls [base.span.compareText](base.md#base.span.compareText)
+    - type [EventListing](../../src/explorer.ts#L236)
+      <a id="features.explorer.EventListing"></a><br>An event of the snapshot (business-flows/08): who publishes it and who subscribes.
+    - fn [eventsOf](../../src/explorer.ts#L245) (snapshot: AnalysisSnapshot | null) → { events: EventListing[]; reason?: string }
+      <a id="features.explorer.eventsOf"></a><br>The event nodes of the snapshot by ID, or why there are none.
+      - calls [features.explorer.indexOf](features.md#features.explorer.indexOf), [base.span.compareText](base.md#base.span.compareText)
+    - type [ExplorerStep](../../src/explorer.ts#L259)
+      <a id="features.explorer.ExplorerStep"></a><br>A branch a person ticked: a step and the steps under it.
+    - type [ExplorerFlowRequest](../../src/explorer.ts#L264)
+      <a id="features.explorer.ExplorerFlowRequest"></a>
+    - fn [parseExplorerFlow](../../src/explorer.ts#L283) (body: unknown) → ExplorerFlowRequest | string
+      <a id="features.explorer.parseExplorerFlow"></a><br>The request body of `POST /api/flow-proposal` as a request, or why not: `{name, trigger, steps}`, where a step is an ID or `{id, steps?}`.
+    - fn [explorerFlow](../../src/explorer.ts#L323) (snapshot: AnalysisSnapshot, request: ExplorerFlowRequest) → FlowDraft | string
+      <a id="features.explorer.explorerFlow"></a><br>The flow a person ticked in the explorer, as a draft: `trigger`, then each step nested under the step that calls it, in the order given. Every step must be a fn of the repository the step above it (the trigger at the top) calls by a resolved edge: the draft claims only what the…
+      - calls [features.explorer.indexOf](features.md#features.explorer.indexOf), [features.explorer.byPosition](features.md#features.explorer.byPosition), [features.explorer.holesOf](features.md#features.explorer.holesOf), [lang.parser.isTriggerKind](lang.md#lang.parser.isTriggerKind)
   - module [feature-status](../../src/feature-status.ts#L1)
     <a id="features.feature-status"></a><br>Whether a feature file is done: it declares something to check, keylang reads it without errors, every `planned` in it is implemented (K202, not K201), every flow step and `calls` in it is static ok, no rule fail of this change remains (ADR 0005 §2: no new violations), and the…
     - assess [check.assess](check.md#check.assess)
