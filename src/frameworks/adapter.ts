@@ -11,7 +11,6 @@
 // A framework that writes its configuration in the code (NestJS decorators)
 // reads it from the extractor's facts of those files (`code`) instead.
 
-import type { FileFacts } from "../extract/facts.ts";
 import { magento } from "./magento.ts";
 import { nestjs } from "./nestjs.ts";
 import { pwaKit } from "./pwa-kit.ts";
@@ -103,6 +102,48 @@ export interface ListenerFact extends ConfigAt {
   method: string;
 }
 
+/**
+ * A decorator as written: its name (`Get`, `Nest.Get`) and its arguments as
+ * values keylang reads without running code. `param`: a decorator of a
+ * constructor parameter — the parameter's position, its name (the field a
+ * parameter property declares) and its type as written.
+ */
+export interface DecoratorFact {
+  name: string;
+  args: DecoratorArg[];
+  param?: { index: number; name: string | null; type: string | null };
+  line: number;
+  col: number;
+}
+
+/**
+ * A decorator argument: a string literal (a template without substitutions
+ * too), a number, a name (`ORDER_REPO`, `CronExpression.EVERY_HOUR`), an
+ * object or an array literal of those, a function (`() => String`), else
+ * `other` with the text.
+ */
+export type DecoratorArg =
+  | { kind: "string"; value: string }
+  | { kind: "number"; value: number }
+  | { kind: "name"; name: string }
+  | { kind: "object"; props: { key: string; value: DecoratorArg; line: number; col: number }[] }
+  | { kind: "array"; items: (DecoratorArg & { line: number; col: number })[] }
+  | { kind: "function" }
+  | { kind: "other"; text: string };
+
+/** A declaration as `code` reads it: the extractor's `DeclFact`, of which a framework needs the decorators. */
+export interface CodeDecl {
+  kind: string;
+  name: string;
+  members: readonly CodeDecl[];
+  decorators?: readonly DecoratorFact[];
+}
+
+/** What `code` reads of a source file: the extractor's `FileFacts`, structurally. */
+export interface CodeFacts {
+  decls: readonly CodeDecl[];
+}
+
 /** The facts of one config file. Depends only on its path and text, so the fact cache keeps it. */
 export interface ConfigFacts {
   path: string;
@@ -166,7 +207,7 @@ export interface FrameworkAdapter {
    * from what the extractor recorded of it (`DeclFact.decorators`). Such a
    * file is not parsed again; its facts are cached with the file's.
    */
-  code?(path: string, file: FileFacts): ConfigFacts;
+  code?(path: string, file: CodeFacts): ConfigFacts;
 }
 
 /** `text` of a coverage entry for a framework's config keylang did not read (`framework:magento`): the framework may call any fn by it. */

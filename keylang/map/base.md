@@ -116,72 +116,90 @@
     - fn [externalPackageId](../../src/external-ids.ts#L44) (id: string) → string | null
   - module [adapter](../../src/frameworks/adapter.ts#L1)
     - magento base.magento
+    - nestjs base.nestjs
+    - pwa-kit base.pwa-kit
     - sfcc base.sfcc
-    - type [TypeName](../../src/frameworks/adapter.ts#L20)
-    - type [ConfigAt](../../src/frameworks/adapter.ts#L26)
-    - type [BindingFact](../../src/frameworks/adapter.ts#L32) extends ConfigAt
-    - type [ArgumentFact](../../src/frameworks/adapter.ts#L38) extends ConfigAt
-    - type [AliasFact](../../src/frameworks/adapter.ts#L45) extends ConfigAt
-    - type [InterceptFact](../../src/frameworks/adapter.ts#L51) extends ConfigAt
-    - type [EntryConfigFact](../../src/frameworks/adapter.ts#L67) extends ConfigAt
-    - type [ConfigFacts](../../src/frameworks/adapter.ts#L75)
-    - type [FrameworkConfig](../../src/frameworks/adapter.ts#L90)
-    - type [FrameworkInput](../../src/frameworks/adapter.ts#L97)
-    - type [FrameworkContext](../../src/frameworks/adapter.ts#L103)
-    - type [FrameworkAdapter](../../src/frameworks/adapter.ts#L114)
-    - fn [activeAdapters](../../src/frameworks/adapter.ts#L139) (frameworks: readonly string[] | null, context: FrameworkContext, available: readonly FrameworkAdapter[] = FRAMEWORK_ADAPTERS) → FrameworkAdapter[]
-    - fn [typeLabel](../../src/frameworks/adapter.ts#L145) (t: TypeName) → string
-    - fn [isConfigFacts](../../src/frameworks/adapter.ts#L150) (value: unknown) → value is ConfigFacts
-      - calls base.adapter.isRecord, base.adapter.every, base.adapter.isAt, base.adapter.isTypeName
-    - fn [isAt](../../src/frameworks/adapter.ts#L164) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - type [TypeName](../../src/frameworks/adapter.ts#L24)
+    - type [ConfigAt](../../src/frameworks/adapter.ts#L30)
+    - type [BindingFact](../../src/frameworks/adapter.ts#L36) extends ConfigAt
+    - type [ArgumentFact](../../src/frameworks/adapter.ts#L42) extends ConfigAt
+    - type [AliasFact](../../src/frameworks/adapter.ts#L49) extends ConfigAt
+    - type [InterceptFact](../../src/frameworks/adapter.ts#L55) extends ConfigAt
+    - type [EntryConfigFact](../../src/frameworks/adapter.ts#L71) extends ConfigAt
+    - type [TokenRef](../../src/frameworks/adapter.ts#L79)
+    - type [ProviderFact](../../src/frameworks/adapter.ts#L86) extends ConfigAt
+    - type [InjectionFact](../../src/frameworks/adapter.ts#L92) extends ConfigAt
+    - type [ListenerFact](../../src/frameworks/adapter.ts#L99) extends ConfigAt
+    - type [DecoratorFact](../../src/frameworks/adapter.ts#L111)
+    - type [DecoratorArg](../../src/frameworks/adapter.ts#L125)
+    - type [CodeDecl](../../src/frameworks/adapter.ts#L135)
+    - type [CodeFacts](../../src/frameworks/adapter.ts#L143)
+    - type [ConfigFacts](../../src/frameworks/adapter.ts#L148)
+    - type [FrameworkConfig](../../src/frameworks/adapter.ts#L169)
+    - type [FrameworkInput](../../src/frameworks/adapter.ts#L176)
+    - type [FrameworkContext](../../src/frameworks/adapter.ts#L182)
+    - type [FrameworkAdapter](../../src/frameworks/adapter.ts#L193)
+    - fn [activeAdapters](../../src/frameworks/adapter.ts#L225) (frameworks: readonly string[] | null, context: FrameworkContext, available: readonly FrameworkAdapter[] = FRAMEWORK_ADAPTERS) → FrameworkAdapter[]
+    - fn [typeLabel](../../src/frameworks/adapter.ts#L231) (t: TypeName) → string
+    - fn [isConfigFacts](../../src/frameworks/adapter.ts#L236) (value: unknown) → value is ConfigFacts
+      - calls base.adapter.isRecord, base.adapter.every, base.adapter.isAt, base.adapter.isTypeName, base.adapter.isToken
+    - fn [isAt](../../src/frameworks/adapter.ts#L253) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       - calls base.adapter.isRecord
-    - fn [isTypeName](../../src/frameworks/adapter.ts#L168) (value: unknown) → boolean <!-- internal -->
+    - fn [isToken](../../src/frameworks/adapter.ts#L257) (value: unknown) → boolean <!-- internal -->
       - calls base.adapter.isRecord
-    - fn [every](../../src/frameworks/adapter.ts#L172) (value: unknown, check: (item: Record<string, unknown>) => boolean) → boolean <!-- internal -->
+    - fn [isTypeName](../../src/frameworks/adapter.ts#L261) (value: unknown) → boolean <!-- internal -->
       - calls base.adapter.isRecord
-    - fn [isRecord](../../src/frameworks/adapter.ts#L176) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [every](../../src/frameworks/adapter.ts#L265) (value: unknown, check: (item: Record<string, unknown>) => boolean) → boolean <!-- internal -->
+      - calls base.adapter.isRecord
+    - fn [isRecord](../../src/frameworks/adapter.ts#L269) (value: unknown) → value is Record<string, unknown> <!-- internal -->
   - module [bindings](../../src/frameworks/bindings.ts#L1)
     - adapter base.adapter
     - type [ResolvedType](../../src/frameworks/bindings.ts#L16)
     - type [BindingDeps](../../src/frameworks/bindings.ts#L19)
-    - type [ConfigVia](../../src/frameworks/bindings.ts#L33)
-    - type [BoundEdge](../../src/frameworks/bindings.ts#L36)
-    - type [BoundCall](../../src/frameworks/bindings.ts#L48)
-    - type [BindingHole](../../src/frameworks/bindings.ts#L61)
-    - type [PluginEdge](../../src/frameworks/bindings.ts#L70)
-    - type [Declared](../../src/frameworks/bindings.ts#L80) <!-- internal -->
-    - type [Plugin](../../src/frameworks/bindings.ts#L96) <!-- internal -->
-    - module [FrameworkBindings](../../src/frameworks/bindings.ts#L120)
-      - fn [constructor](../../src/frameworks/bindings.ts#L134) (inputs: readonly FrameworkInput[], deps: BindingDeps)
-        - calls base.bindings.key, base.bindings.FrameworkBindings.hole, base.adapter.typeLabel, base.bindings.asciiLower, base.bindings.FrameworkBindings.activePlugins
-      - fn [hole](../../src/frameworks/bindings.ts#L190) (file: string, at: { line: number; col: number }, text: string, reason: string, source: string | null) → void <!-- internal -->
-      - fn [binds](../../src/frameworks/bindings.ts#L195) (type: string) → boolean
-      - fn [argumentFor](../../src/frameworks/bindings.ts#L200) (classId: string, param: string) → boolean
+    - type [ListenerEdge](../../src/frameworks/bindings.ts#L41)
+    - type [ConfigVia](../../src/frameworks/bindings.ts#L48)
+    - type [BoundEdge](../../src/frameworks/bindings.ts#L51)
+    - type [BoundCall](../../src/frameworks/bindings.ts#L63)
+    - type [BindingHole](../../src/frameworks/bindings.ts#L76)
+    - type [PluginEdge](../../src/frameworks/bindings.ts#L85)
+    - type [Declared](../../src/frameworks/bindings.ts#L95) <!-- internal -->
+    - type [Plugin](../../src/frameworks/bindings.ts#L111) <!-- internal -->
+    - module [FrameworkBindings](../../src/frameworks/bindings.ts#L135)
+      - fn [constructor](../../src/frameworks/bindings.ts#L151) (inputs: readonly FrameworkInput[], deps: BindingDeps)
+        - calls base.bindings.key, base.bindings.FrameworkBindings.hole, base.adapter.typeLabel, base.bindings.asciiLower, base.bindings.FrameworkBindings.linkTokens, base.bindings.FrameworkBindings.activePlugins
+      - fn [linkTokens](../../src/frameworks/bindings.ts#L226) (configs: readonly FrameworkInput["configs"][number][], declared: (written: TypeName, scope: string, file: string, at: { line: number; col: number }, owner: string | null, from?: string | null) => Declared) → void <!-- internal -->
+        - calls base.bindings.FrameworkBindings.hole, base.bindings.tokenLabel, base.adapter.typeLabel, base.bindings.asciiLower
+      - fn [listeners](../../src/frameworks/bindings.ts#L271) (event: string) → ListenerEdge[]
+      - fn [hasListeners](../../src/frameworks/bindings.ts#L276) () → boolean
+      - fn [hole](../../src/frameworks/bindings.ts#L280) (file: string, at: { line: number; col: number }, text: string, reason: string, source: string | null) → void <!-- internal -->
+      - fn [binds](../../src/frameworks/bindings.ts#L285) (type: string) → boolean
+      - fn [argumentFor](../../src/frameworks/bindings.ts#L290) (classId: string, param: string) → boolean
         - calls base.bindings.asciiLower
-      - fn [callThroughType](../../src/frameworks/bindings.ts#L205) (type: string, member: string) → BoundCall
+      - fn [callThroughType](../../src/frameworks/bindings.ts#L295) (type: string, member: string) → BoundCall
         - calls base.bindings.emptyCall, base.bindings.FrameworkBindings.effective, base.bindings.FrameworkBindings.place, base.bindings.finish
-      - fn [callThroughArgument](../../src/frameworks/bindings.ts#L212) (classId: string, param: string, member: string) → BoundCall
+      - fn [callThroughArgument](../../src/frameworks/bindings.ts#L302) (classId: string, param: string, member: string) → BoundCall
         - calls base.bindings.emptyCall, base.bindings.asciiLower, base.bindings.groupBy, base.bindings.distinctTargets, base.bindings.describe, base.bindings.FrameworkBindings.effective, base.bindings.FrameworkBindings.place, base.bindings.finish
-      - fn [effective](../../src/frameworks/bindings.ts#L239) (type: string, out: BoundCall) → Map<string, Declared[]> <!-- internal -->
+      - fn [effective](../../src/frameworks/bindings.ts#L329) (type: string, out: BoundCall) → Map<string, Declared[]> <!-- internal -->
         - calls base.bindings.distinctTargets, base.bindings.describe
-      - fn [place](../../src/frameworks/bindings.ts#L269) (out: BoundCall, chain: readonly Declared[], member: string, via: "preference" | "argument", scope: string, lead = "") → void <!-- internal -->
+      - fn [place](../../src/frameworks/bindings.ts#L359) (out: BoundCall, chain: readonly Declared[], member: string, via: "preference" | "argument", scope: string, lead = "") → void <!-- internal -->
         - calls base.bindings.scopeOrder
-      - fn [activePlugins](../../src/frameworks/bindings.ts#L305) () → Plugin[] <!-- internal -->
+      - fn [activePlugins](../../src/frameworks/bindings.ts#L395) () → Plugin[] <!-- internal -->
         - calls base.bindings.groupBy, base.bindings.merge
-      - fn [interceptors](../../src/frameworks/bindings.ts#L331) (types: readonly string[], member: string) → PluginEdge[]
+      - fn [interceptors](../../src/frameworks/bindings.ts#L421) (types: readonly string[], member: string) → PluginEdge[]
         - calls base.bindings.asciiLower, base.bindings.FrameworkBindings.activePlugins
-    - fn [emptyCall](../../src/frameworks/bindings.ts#L352) () → BoundCall <!-- internal -->
-    - fn [finish](../../src/frameworks/bindings.ts#L356) (out: BoundCall) → BoundCall <!-- internal -->
+    - fn [tokenLabel](../../src/frameworks/bindings.ts#L443) (t: TokenRef) → string <!-- internal -->
+    - fn [emptyCall](../../src/frameworks/bindings.ts#L447) () → BoundCall <!-- internal -->
+    - fn [finish](../../src/frameworks/bindings.ts#L451) (out: BoundCall) → BoundCall <!-- internal -->
       - calls base.bindings.scopeOrder
-    - fn [distinctTargets](../../src/frameworks/bindings.ts#L362) (list: readonly T[]) → T[] <!-- internal -->
+    - fn [distinctTargets](../../src/frameworks/bindings.ts#L457) (list: readonly T[]) → T[] <!-- internal -->
       - calls base.bindings.key
-    - fn [describe](../../src/frameworks/bindings.ts#L371) (d: Declared) → string <!-- internal -->
-    - fn [merge](../../src/frameworks/bindings.ts#L376) (decls: readonly Plugin[]) → Plugin | null <!-- internal -->
-    - fn [groupBy](../../src/frameworks/bindings.ts#L390) (list: readonly T[], keyOf: (item: T) => string) → Map<string, T[]> <!-- internal -->
-    - fn [scopeOrder](../../src/frameworks/bindings.ts#L396) (a: string, b: string) → number <!-- internal -->
-    - fn [key](../../src/frameworks/bindings.ts#L400) (name: string) → string <!-- internal -->
+    - fn [describe](../../src/frameworks/bindings.ts#L466) (d: Declared) → string <!-- internal -->
+    - fn [merge](../../src/frameworks/bindings.ts#L471) (decls: readonly Plugin[]) → Plugin | null <!-- internal -->
+    - fn [groupBy](../../src/frameworks/bindings.ts#L485) (list: readonly T[], keyOf: (item: T) => string) → Map<string, T[]> <!-- internal -->
+    - fn [scopeOrder](../../src/frameworks/bindings.ts#L491) (a: string, b: string) → number <!-- internal -->
+    - fn [key](../../src/frameworks/bindings.ts#L495) (name: string) → string <!-- internal -->
       - calls base.bindings.asciiLower
-    - fn [asciiLower](../../src/frameworks/bindings.ts#L404) (name: string) → string <!-- internal -->
+    - fn [asciiLower](../../src/frameworks/bindings.ts#L499) (name: string) → string <!-- internal -->
   - module [cartridges](../../src/frameworks/cartridges.ts#L1)
     - node external.node
     - type [Cartridge](../../src/frameworks/cartridges.ts#L18)
@@ -207,6 +225,26 @@
     - type [Open](../../src/frameworks/magento.ts#L74) <!-- internal -->
     - fn [parseDi](../../src/frameworks/magento.ts#L83) (path: string, text: string) → ConfigFacts
       - calls base.magento.scopeOf, base.magento.className
+  - module [nestjs](../../src/frameworks/nestjs.ts#L1)
+    - node external.node
+    - adapter base.adapter
+    - fn [ownerOf](../../src/frameworks/nestjs.ts#L52) (path: string) → string | null <!-- internal -->
+    - fn [emptyFacts](../../src/frameworks/nestjs.ts#L57) (path: string) → ConfigFacts <!-- internal -->
+    - fn [nestFacts](../../src/frameworks/nestjs.ts#L62) (path: string, file: CodeFacts) → ConfigFacts
+      - calls base.nestjs.emptyFacts, base.nestjs.classes
+    - fn [classes](../../src/frameworks/nestjs.ts#L116) (decls: readonly CodeDecl[]) → CodeDecl[] <!-- internal -->
+    - fn [parseJson](../../src/frameworks/nestjs.ts#L120) (text: string | null) → unknown <!-- internal -->
+    - fn [isRecord](../../src/frameworks/nestjs.ts#L129) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+  - module [pwa-kit](../../src/frameworks/pwa-kit.ts#L1)
+    - node external.node
+    - adapter base.adapter
+    - type [Extensibility](../../src/frameworks/pwa-kit.ts#L31)
+    - fn [extensibilityOf](../../src/frameworks/pwa-kit.ts#L37) (manifest: unknown) → Extensibility | null
+      - calls base.pwa-kit.isRecord
+    - fn [projects](../../src/frameworks/pwa-kit.ts#L80) (context: Pick<FrameworkContext, "sources" | "read">) → { dir: string; extensibility: Extensibility | null }[]
+      - calls base.pwa-kit.parseJson, base.pwa-kit.extensibilityOf, base.pwa-kit.isRecord
+    - fn [parseJson](../../src/frameworks/pwa-kit.ts#L103) (text: string | null) → unknown <!-- internal -->
+    - fn [isRecord](../../src/frameworks/pwa-kit.ts#L112) (value: unknown) → value is Record<string, unknown> <!-- internal -->
   - module [sfcc](../../src/frameworks/sfcc.ts#L1)
     - node external.node
     - adapter base.adapter

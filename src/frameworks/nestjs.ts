@@ -20,8 +20,7 @@
 // config files are the analysed sources that import `@nestjs/…`.
 
 import { posix } from "node:path";
-import type { DeclFact, DecoratorArg, FileFacts } from "../extract/facts.ts";
-import type { ConfigFacts, FrameworkAdapter, ProviderFact, TokenRef } from "./adapter.ts";
+import type { CodeDecl, CodeFacts, ConfigFacts, DecoratorArg, FrameworkAdapter, ProviderFact, TokenRef } from "./adapter.ts";
 
 const NEST_PACKAGES = ["@nestjs/core", "@nestjs/common"];
 const DEPENDENCY_FIELDS = ["dependencies", "devDependencies", "peerDependencies"];
@@ -60,7 +59,7 @@ function emptyFacts(path: string): ConfigFacts {
 }
 
 /** The providers, injections and listeners the decorators of one source file declare. */
-export function nestFacts(path: string, file: FileFacts): ConfigFacts {
+export function nestFacts(path: string, file: CodeFacts): ConfigFacts {
   const facts = emptyFacts(path);
   const token = (arg: DecoratorArg): TokenRef | null => (arg.kind === "string" ? { kind: "string", value: arg.value } : arg.kind === "name" ? { kind: "name", name: arg.name, file: path } : null);
   for (const cls of classes(file.decls)) {
@@ -114,7 +113,7 @@ export function nestFacts(path: string, file: FileFacts): ConfigFacts {
 }
 
 /** The top-level classes of a file. */
-function classes(decls: readonly DeclFact[]): DeclFact[] {
+function classes(decls: readonly CodeDecl[]): CodeDecl[] {
   return decls.flatMap((d) => (d.kind === "class" ? [d] : []));
 }
 

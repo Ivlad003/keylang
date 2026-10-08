@@ -1,6 +1,11 @@
 // Language-independent facts extracted from one source file. Everything the
 // map and the index need; nothing about layers or IDs yet.
 
+import type { DecoratorFact } from "../frameworks/adapter.ts";
+
+// Decorators are what a framework adapter reads of the code: their shape is the adapters' (`base`).
+export type { DecoratorArg, DecoratorFact } from "../frameworks/adapter.ts";
+
 export interface FileFacts {
   /** POSIX path relative to the repository root. */
   path: string;
@@ -224,35 +229,6 @@ export interface DeclFact {
    */
   decorators?: DecoratorFact[];
 }
-
-/**
- * A decorator as written: its name (`Get`, `Nest.Get`) and its arguments as
- * values keylang reads without running code. `param`: a decorator of a
- * constructor parameter — the parameter's position, its name (the field a
- * parameter property declares) and its type as written.
- */
-export interface DecoratorFact {
-  name: string;
-  args: DecoratorArg[];
-  param?: { index: number; name: string | null; type: string | null };
-  line: number;
-  col: number;
-}
-
-/**
- * A decorator argument: a string literal (a template without substitutions
- * too), a number, a name (`ORDER_REPO`, `CronExpression.EVERY_HOUR`), an
- * object or an array literal of those, a function (`() => String`), else
- * `other` with the text.
- */
-export type DecoratorArg =
-  | { kind: "string"; value: string }
-  | { kind: "number"; value: number }
-  | { kind: "name"; name: string }
-  | { kind: "object"; props: { key: string; value: DecoratorArg; line: number; col: number }[] }
-  | { kind: "array"; items: (DecoratorArg & { line: number; col: number })[] }
-  | { kind: "function" }
-  | { kind: "other"; text: string };
 
 export interface CallFact {
   /**
