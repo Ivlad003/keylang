@@ -1,6 +1,6 @@
 # 46: Enter у F6 під час MERGE обходить блокування MERGE: підміняє відкрите злиття, лишає «мертвий» режим MERGE і перезапускає записувальні операції
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -63,11 +63,13 @@
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/tui/results-panel.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/tui/results-panel.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+**2026-10-08:** `rerunRecord` (`src/tui/results-panel.ts`) now starts with the MERGE check: while `state.merge !== null` Enter shows `MERGE_REASON` (the palette's «finish the merge first (Esc cancels it)») and neither opens a MERGE nor reruns. `open()` remembers `view` for a MERGE or the code viewer, and `goBack` never restores either mode. `tests/tui-helpers.ts` `session().send` now checks after every key that `mode === "merge"` ⇔ `state.merge !== null` and that the back stack holds no `merge`/`code` place (`checkInvariants`); all 255 tests in `tests/tui-*.test.ts` pass with it. Regression: `tests/tui-drafts.test.ts` «Enter in F6 while a MERGE is open…» (fails on the old code with the back stack holding a `merge` place). docs/tui.md MERGE row updated; no change to `llm.txt` (it does not describe F6 in MERGE).

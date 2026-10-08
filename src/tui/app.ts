@@ -782,7 +782,9 @@ export class App {
   private open(path: string, cursor: Cursor, remember = true): void {
     // Opening a file leaves the start screen; the analysis still waits for Browse or F5.
     this.state.start = null;
-    if (remember && this.state.current) this.state.back.push({ path: this.state.current, cursor: { ...this.state.cursor }, mode: this.state.mode === "code" ? "view" : this.state.mode });
+    // The place remembered is one in the editor: the code viewer and MERGE show what `Ctrl+O` cannot bring back,
+    // and a `merge` mode without `state.merge` would take every key and answer none.
+    if (remember && this.state.current) this.state.back.push({ path: this.state.current, cursor: { ...this.state.cursor }, mode: this.state.mode === "code" || this.state.mode === "merge" ? "view" : this.state.mode });
     this.load(path);
     this.state.current = path;
     this.state.cursor = { ...cursor };
@@ -1263,7 +1265,8 @@ export class App {
     this.load(place.path);
     this.state.current = place.path;
     this.state.cursor = { ...place.cursor };
-    this.state.mode = place.mode;
+    // `open` remembers editor modes only; a MERGE or the code viewer is never restored without what it showed.
+    this.state.mode = place.mode === "merge" || place.mode === "code" ? "view" : place.mode;
     this.state.code = null;
     this.clampCursor();
     this.keepVisible();

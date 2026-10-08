@@ -9,9 +9,10 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync }
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { runOperation, type OperationContext, type OperationRequest, type OperationResult } from "../src/operations.ts";
+import { MERGE_REASON } from "../src/tui/actions.ts";
 import { App } from "../src/tui/app.ts";
 import { checkoutRepo, CHECKOUT_FILES, CHECKOUT_FLOW, click, KEY, locate } from "./tui-fixture.ts";
-import { answerAll, BIN, BUY_ANSWER, committedCheckout, draftField, draftForm, draftRow, esc, featureForm, FEATURES, FLOW_PATH, gitRun, heldModel, promptNote, REFUND, repoWith, session, sleep, submitSlug, treeBytes, withConfig, workTree } from "./tui-helpers.ts";
+import { answerAll, BIN, BUY_ANSWER, committedCheckout, draftField, draftForm, draftRow, esc, featureForm, FEATURES, FLOW_PATH, gitRun, heldModel, PAID, promptNote, propose, REFUND, repoWith, session, sleep, submitSlug, treeBytes, withConfig, workTree } from "./tui-helpers.ts";
 
 // ---------- algorithmic flow draft (ticket 22) ----------
 
@@ -29,6 +30,64 @@ function draftRecord(app: App): DraftResult {
 function cliDraft(root: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
   return spawnSync(process.execPath, [BIN, "draft", "flow", ...args], { cwd: root, encoding: "utf8" });
 }
+
+test("tui: Enter in F6 while a MERGE is open is refused as the palette refuses: the open merge keeps its decisions, no second MERGE or write starts, and Ctrl+O never comes back to a MERGE", async (t) => {
+  const root = checkoutRepo(t, { "keylang/flows/z.md": "# flow z\n\nZ.\n" });
+  const s = session(root);
+  t.after(() => s.app.close());
+  // A function, not the field: TypeScript would narrow `merge` to null after the first `assert.equal(…, null)`.
+  const merge = () => s.app.state.merge;
+  await s.app.idle();
+  // Two records in F6 whose Enter writes or opens a MERGE: a map write, and a draft flow proposed for b.md.
+  s.send(KEY.ctrlP);
+  for (const ch of "map write") s.send(ch);
+  s.send(KEY.enter);
+  s.send(KEY.enter);
+  await s.app.idle();
+  assert.equal(s.app.state.records.at(-1)?.result?.kind, "map");
+  draftForm(s, { trigger: "application.purchase.buy", into: "keylang/flows/z.md" });
+  await s.app.idle();
+  assert.equal(merge()?.path, "keylang/flows/z.md", s.app.state.message ?? "");
+  await esc(s.send);
+  assert.equal(merge(), null, "Esc cancels the merge; its proposal stays");
+  // MERGE of the other target with its first hunk accepted.
+  propose(root, FLOW_PATH, PAID);
+  s.send(KEY.ctrlO);
+  assert.equal(s.app.state.current, FLOW_PATH, "Ctrl+O comes back to the file the draft started from");
+  s.send("m");
+  assert.equal(merge()?.path, FLOW_PATH, s.app.state.message ?? "");
+  s.send("a");
+  assert.deepEqual(merge()!.decisions, ["accepted"]);
+  const before = treeBytes(root);
+  const records = s.app.state.records.length;
+  // Enter on the draft record (the newest one is selected): the reason the palette gives, and the open merge is untouched.
+  s.send(KEY.f6);
+  assert.equal(s.app.state.records[s.app.state.results.index]?.result?.kind, "draft-flow");
+  s.send(KEY.enter);
+  assert.equal(s.app.state.message, MERGE_REASON);
+  assert.deepEqual([s.app.state.mode, merge()?.path, merge()?.decisions], ["merge", FLOW_PATH, ["accepted"]]);
+  assert.equal(s.app.state.results.open, true, "the panel stays, as for a finding");
+  // Enter on the map record: no save step opens, nothing runs.
+  s.send(KEY.up);
+  assert.equal(s.app.state.records[s.app.state.results.index]?.result?.kind, "map");
+  s.send(KEY.enter);
+  assert.equal(s.app.state.message, MERGE_REASON);
+  assert.equal(s.app.state.barrier, null);
+  assert.equal(s.app.state.activeOperation, null);
+  assert.equal(s.app.state.records.length, records);
+  await esc(s.send);
+  assert.equal(s.app.state.results.open, false);
+  assert.deepEqual([s.app.state.mode, merge()?.path, merge()?.decisions], ["merge", FLOW_PATH, ["accepted"]]);
+  await s.app.idle();
+  assert.deepEqual(treeBytes(root), before, "nothing written");
+  // Esc cancels the merge; Ctrl+O comes back to a place in the editor, never to a MERGE without a merge.
+  await esc(s.send);
+  assert.deepEqual([s.app.state.mode, merge()], ["view", null]);
+  s.send(KEY.ctrlO);
+  assert.deepEqual([s.app.state.mode, merge()], ["view", null]);
+  s.send("i");
+  assert.equal(s.app.state.mode, "edit", "the keys reach the editor");
+});
 
 test("tui: draft flow (algo) of a callable with two calls: the preview is the CLI's --print and writes nothing; the proposal is the CLI's full target with another flow kept; the target stays until w", async (t) => {
   const specs = { "keylang/flows/buying.md": BUYING_SPEC };
