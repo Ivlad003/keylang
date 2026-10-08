@@ -941,3 +941,39 @@ test("python: a root directory without Python code does not hide a pip package o
   assert.ok(!snapshot(ns).coverage.some((c) => c.kind === "unresolved-import"), JSON.stringify(snapshot(ns).coverage));
   assert.ok(snapshot(ns).edges.some((e) => e.kind === "import" && e.source === "app.cache" && e.target === "nsp.inner.mod"));
 });
+
+test("rust: a fn declared inside a fn, or a parameter of one, shadows the module item of that name", (t) => {
+  const dir = repo(t, {
+    "Cargo.toml": '[package]\nname = "app"\nversion = "0.1.0"\n',
+    "keylang.json": JSON.stringify({ languages: ["rust"], layers: { app: ["src/**"] } }),
+    "keylang/flows/f.md": "# flow f\n\n- trigger app.main.run\n  - step app.main.helper\n",
+    "src/main.rs": [
+      "fn helper() {}",
+      "",
+      "pub fn run() {",
+      "    fn helper() {}",
+      "    helper();",
+      "}",
+      "",
+      "pub fn run_param() {",
+      "    fn inner(helper: fn()) {",
+      "        helper();",
+      "    }",
+      "    inner(other);",
+      "}",
+      "",
+      "fn other() {}",
+      "",
+      "fn main() {",
+      "    run();",
+      "    run_param();",
+      "    helper();",
+      "}",
+      "",
+    ].join("\n"),
+  });
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const toHelper = snapshot(dir).edges.filter((e) => e.kind === "call" && e.target === "app.main.helper").map((e) => e.source);
+  assert.deepEqual(toHelper, ["app.main.main"]);
+  assert.match(keylang(dir, ["check"]).stdout, /static unverified app\.main\.helper: .*shadowed by local `helper`/);
+});
