@@ -1,6 +1,6 @@
 # 44: `"dir": "."` ламає feature, explain --llm і baseline: шляхи `./…` не проходять власну політику запису
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -58,11 +58,13 @@ keylang.json `{"dir": ".", "layers": {...}, "agent": "cli:claude"}` і валі�
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/operations/feature.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/operations/feature.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+**2026-10-07.** Відтворено через справжній CLI (`tests/review-ops.test.ts`, розділ 8): копія `tests/fixtures/repo` з `"dir": "."`, `features/f1.md`, `rules.md`; `feature f1` давав код 2 «./features/f1.md: not a spec keylang read». Виправлення: один хелпер `specPath(dir, rest)` у `src/config.ts` (`dir === "."` → `rest`, інакше `${dir}/${rest}`), і ним побудовано всі шляхи під каталогом специфікацій: `feature.ts` (`runFeature`, `runFeatureQuestions`, `featureSlugOf`), `feature-status.ts`, `mcp.ts` (`context` за фічею), `explanations.ts` (`explainDir`), `baseline.ts` (`baselinePath`), `stale.ts` (`staleBaselinePath`), `lsp-features.ts` (карта й карта з поясненнями), TUI `app.ts` (`mapDirs`, `adopt`) і `clip-chat.ts` (`/feature` без аргументу). `map.ts` не чіпав: карту він пише через `join(config.root, config.dir, …)`, і на `dir: "."` вона й так працювала. Тест перевіряє `check`, `feature f1` (`done`, 0), `baseline` і `baseline --check` (0, файл `rules.baseline.md` у корені), `explain <id> --llm` з фейковим `claude` (0, `explain/<id>.md`), і `featureSlugOf` на `"."`. Контракт не змінився (документи не обмежували `dir`), у `llm.txt` додано речення, куди лягають файли при `"dir": "."`. Перевірено: `node --test` на review-ops, feature-*, cli-feature, explain*, stale, mcp, lsp, tui-clip-questions — 110 pass, 0 fail; `npm run typecheck`; `keylang map --check` (карту з поясненнями перегенеровано); `keylang check` — 0 fail.

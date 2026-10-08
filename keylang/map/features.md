@@ -109,6 +109,7 @@
       - calls features.baseline.externalModule
     - fn [externalModule](../../src/baseline.ts#L62) (snapshot: AnalysisSnapshot, id: string) → string | null <!-- internal -->
     - fn [baselinePath](../../src/baseline.ts#L74) (config: Pick<Config, "dir">) → string
+      - calls base.config.specPath
     - type [BaselinePlan](../../src/baseline.ts#L82)
     - fn [planBaseline](../../src/baseline.ts#L103) (config: Config, snapshot: AnalysisSnapshot) → BaselinePlan
       - calls features.baseline.baselinePath, features.baseline.baselineText, lang.files.readTextOrNull, base.safe-write.isGeneratedText, features.baseline.ruleLines, map.map.sourceInputs
@@ -429,7 +430,7 @@
     - fn [idsIn](../../src/feature-status.ts#L174) (doc: Document) → string[]
       - calls lang.ir.sectionNodes, lang.ir.walk
     - fn [featureStatus](../../src/feature-status.ts#L191) (input: FeatureInput, slug: string) → FeatureReport | null
-      - calls base.diag.isError, lang.spec-ir.walkFlow, features.feature-status.denyGaps, features.feature-status.finding, features.feature-status.claimsOf, features.feature-status.thisChange, features.feature-status.idsIn, features.feature-status.ruleFails, features.feature-status.weakenedPlan, base.span.compareText, features.feature-status.stageOf, features.feature-status.baseInfo
+      - calls base.config.specPath, base.diag.isError, lang.spec-ir.walkFlow, features.feature-status.denyGaps, features.feature-status.finding, features.feature-status.claimsOf, features.feature-status.thisChange, features.feature-status.idsIn, features.feature-status.ruleFails, features.feature-status.weakenedPlan, base.span.compareText, features.feature-status.stageOf, features.feature-status.baseInfo
     - fn [baseInfo](../../src/feature-status.ts#L301) (base: FeatureBase) → FeatureBaseInfo <!-- internal -->
     - type [RuleFail](../../src/feature-status.ts#L307) <!-- internal -->
     - fn [ruleFails](../../src/feature-status.ts#L318) (input: FeatureInput) → RuleFail[] <!-- internal -->
@@ -648,7 +649,7 @@
     - type [Location](../../src/lsp-features.ts#L35)
     - type [Workspace](../../src/lsp-features.ts#L41)
     - fn [workspace](../../src/lsp-features.ts#L48) (root: string, analysis: Analysis, buffers: ReadonlyMap<string, string>) → Workspace
-      - calls lang.parser.parse, lang.files.readTextOrNull, map.emit.isGeneratedMap
+      - calls base.config.specPath, lang.parser.parse, lang.files.readTextOrNull, map.emit.isGeneratedMap
     - fn [lineStarts](../../src/lsp-features.ts#L83) (text: string) → number[] <!-- internal -->
     - fn [lspPoint](../../src/lsp-features.ts#L93) (text: string | null, line: number, col: number) → LspPosition <!-- internal -->
     - fn [fromPos](../../src/lsp-features.ts#L99) (text: string | null, pos: Pos) → LspPosition <!-- internal -->
@@ -667,7 +668,7 @@
     - fn [docOf](../../src/lsp-features.ts#L154) (ws: Workspace, path: string) → Document | undefined <!-- internal -->
       - calls features.lsp-features.readingDoc
     - fn [readingDoc](../../src/lsp-features.ts#L166) (ws: Workspace, path: string) → Document | undefined <!-- internal -->
-      - calls lang.parser.parse
+      - calls base.config.specPath, lang.parser.parse
     - fn [at](../../src/lsp-features.ts#L177) (ws: Workspace, path: string, position: LspPosition) → Target | null <!-- internal -->
       - calls features.lsp-features.docOf, features.lsp-features.targetAt, features.lsp-features.toOffset
     - type [LspDiagnostic](../../src/lsp-features.ts#L186)
@@ -899,6 +900,7 @@
     - type [StaleFinding](../../src/stale.ts#L43) extends Statement
     - type [StaleReport](../../src/stale.ts#L55)
     - fn [staleBaselinePath](../../src/stale.ts#L63) (config: Pick<Config, "dir">) → string
+      - calls base.config.specPath
     - fn [specStatements](../../src/stale.ts#L72) (docs: readonly Document[]) → Statement[]
       - calls features.stale.sectionRefs, features.stale.subtreeRefs, lang.ir.sectionNodes
     - fn [subtreeRefs](../../src/stale.ts#L107) (node: Node) → string[] <!-- internal -->

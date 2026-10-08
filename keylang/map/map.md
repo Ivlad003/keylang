@@ -233,6 +233,7 @@
     - fn [parseStoredExplanation](../../src/explanations.ts#L37) (text: string) → StoredExplanation | null
     - fn [formatStoredExplanation](../../src/explanations.ts#L43) (e: StoredExplanation) → string
     - fn [explainDir](../../src/explanations.ts#L48) (config: Pick<Config, "dir">) → string
+      - calls base.config.specPath
     - fn [explanationPath](../../src/explanations.ts#L56) (config: Pick<Config, "dir">, id: string, detail: ExplanationDetail) → string
       - calls map.explanations.explainDir
     - fn [readStoredExplanation](../../src/explanations.ts#L60) (root: string, rel: string) → StoredExplanation | null

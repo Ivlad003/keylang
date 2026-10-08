@@ -32,12 +32,14 @@
       - calls operations.assistant.fileWindow, operations.assistant.fenced, operations.assistant.listOf, operations.assistant.recentTurns, operations.assistant.assistantSystem
     - fn [listOf](../../src/operations/assistant.ts#L98) (lines: readonly string[]) → string <!-- internal -->
     - fn [fenced](../../src/operations/assistant.ts#L103) (text: string) → string <!-- internal -->
-    - fn [parseReply](../../src/operations/assistant.ts#L121) (answer: string) → Pick<AssistantReplyPayload, "reply" | "proposal" | "dropped">
+    - fn [parseReply](../../src/operations/assistant.ts#L125) (answer: string) → Pick<AssistantReplyPayload, "reply" | "proposal" | "dropped">
+      - calls operations.assistant.candidateEnd, operations.assistant.closes
+    - fn [candidateEnd](../../src/operations/assistant.ts#L163) (lines: readonly string[], from: number, fence: string) → number <!-- internal -->
       - calls operations.assistant.closes
-    - fn [closes](../../src/operations/assistant.ts#L150) (line: string, fence: string) → boolean <!-- internal -->
-    - fn [runAssistantReply](../../src/operations/assistant.ts#L162) (request: AssistantReplyRequest, context: OperationContext) → Promise<OperationEnvelope<"assistant-reply">>
+    - fn [closes](../../src/operations/assistant.ts#L179) (line: string, fence: string) → boolean <!-- internal -->
+    - fn [runAssistantReply](../../src/operations/assistant.ts#L191) (request: AssistantReplyRequest, context: OperationContext) → Promise<OperationEnvelope<"assistant-reply">>
       - calls operations.shared.empty, base.config.loadConfig, base.diag.errorText, operations.assistant.assistantPrompt, operations.shared.rootRelative, operations.assistant.parseReply, operations.assistant.replyMessages
-    - fn [replyMessages](../../src/operations/assistant.ts#L197) (payload: AssistantReplyPayload) → OperationMessage[] <!-- internal -->
+    - fn [replyMessages](../../src/operations/assistant.ts#L226) (payload: AssistantReplyPayload) → OperationMessage[] <!-- internal -->
   - module [code](../../src/operations/code.ts#L1)
     - node external.node
     - analyze map.analyze
@@ -211,8 +213,9 @@
     - shared operations.shared
     - llm features.llm
     - fn [featureSlugOf](../../src/operations/feature.ts#L23) (path: string, dir: string) → string | null
+      - calls base.config.specPath
     - fn [runFeature](../../src/operations/feature.ts#L37) (request: FeatureRequest, context: OperationContext) → Promise<OperationEnvelope<"feature">>
-      - calls operations.shared.empty, base.config.loadConfig, base.diag.errorText, features.git-changes.readFeatureBase, operations.feature.featureReportOf, operations.feature.gapLine, operations.feature.hintLine, operations.feature.featureSummary
+      - calls operations.shared.empty, base.config.loadConfig, base.diag.errorText, base.config.specPath, features.git-changes.readFeatureBase, operations.feature.featureReportOf, operations.feature.gapLine, operations.feature.hintLine, operations.feature.featureSummary
     - fn [featureReportOf](../../src/operations/feature.ts#L83) (analyzed: Analysis, slug: string, base: FeatureBase) → FeatureReport | null
       - calls features.git-changes.deletedModuleIds, features.feature-status.featureStatus
     - fn [gapLine](../../src/operations/feature.ts#L106) (gap: Gap) → string
@@ -221,7 +224,7 @@
     - fn [questionLines](../../src/operations/feature.ts#L124) (answer: string) → { questions: string[]; dropped: number }
     - fn [withQuestions](../../src/operations/feature.ts#L137) (text: string, questions: readonly string[], slug: string) → string
     - fn [runFeatureQuestions](../../src/operations/feature.ts#L161) (request: FeatureQuestionsRequest, context: OperationContext) → Promise<OperationEnvelope<"feature-questions">>
-      - calls operations.shared.empty, base.diag.errorText, operations.shared.modelSetup, operations.shared.rootRelative, operations.shared.generatedIn, features.proposals.proposalProblem, lang.files.existingText, base.safe-write.writeProblem, operations.shared.proposalRefusal, map.map.sourceInputs, features.agent-context.contextText, features.agent-context.contextForIds, features.feature-status.idsIn, operations.feature.questionLines, operations.shared.commitProposal, operations.feature.withQuestions
+      - calls operations.shared.empty, base.diag.errorText, base.config.specPath, operations.shared.modelSetup, operations.shared.rootRelative, operations.shared.generatedIn, features.proposals.proposalProblem, lang.files.existingText, base.safe-write.writeProblem, operations.shared.proposalRefusal, map.map.sourceInputs, features.agent-context.contextText, features.agent-context.contextForIds, features.feature-status.idsIn, operations.feature.questionLines, operations.shared.commitProposal, operations.feature.withQuestions
   - module [generate](../../src/operations/generate.ts#L1)
     - node external.node
     - analyze map.analyze

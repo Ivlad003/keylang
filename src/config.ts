@@ -602,6 +602,17 @@ export function toPosix(p: string): string {
   return p.split("\\").join("/");
 }
 
+/**
+ * `rest` under the spec directory `dir`, relative to the root and POSIX, as
+ * the analysis names its documents: `keylang/features/f1.md`, or plain
+ * `features/f1.md` when `dir` is `.` (the root). Every path keylang builds
+ * under `dir` goes through here: `./features/f1.md` would match no document
+ * and fail the write policy's «plain relative path».
+ */
+export function specPath(dir: string, rest: string): string {
+  return dir === "." || dir === "" ? rest : `${dir}/${rest}`;
+}
+
 function detectLanguages(root: string): Language[] {
   const found = new Set<Language>();
   const walk = (dir: string, depth: number): void => {

@@ -6,7 +6,7 @@ import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Analysis } from "./analyze.ts";
 import { sameFinding } from "./assess.ts";
-import { CONFIG_FILE } from "./config.ts";
+import { CONFIG_FILE, specPath } from "./config.ts";
 import type { Diagnostic } from "./diag.ts";
 import { isGeneratedMap } from "./emit.ts";
 import { capText } from "./brief.ts";
@@ -46,7 +46,7 @@ export interface Workspace {
 }
 
 export function workspace(root: string, analysis: Analysis, buffers: ReadonlyMap<string, string>): Workspace {
-  const mapDir = `${analysis.config.dir}/map/`;
+  const mapDir = specPath(analysis.config.dir, "map/");
   // The analysis checks a generated map as the fresh render; an open buffer
   // of it that differs (a stale committed map) is what the editor shows, so
   // positions in that file come from the buffer.
@@ -55,7 +55,7 @@ export function workspace(root: string, analysis: Analysis, buffers: ReadonlyMap
     if (open === undefined || doc.generated === null || !doc.path.startsWith(mapDir)) return doc;
     return open === analysis.map?.files.get(doc.path.slice(mapDir.length)) ? doc : parse(doc.path, open);
   });
-  const explainedDir = `${analysis.config.dir}/${EXPLAINED_MAP_DIR}/`;
+  const explainedDir = specPath(analysis.config.dir, `${EXPLAINED_MAP_DIR}/`);
   return {
     root,
     analysis: docs.every((doc, i) => doc === analysis.docs[i]) ? analysis : { ...analysis, docs },
@@ -164,7 +164,7 @@ const readingDocs = new Map<string, { text: string; doc: Document }>();
  * definition and Enter in the TUI work there too.
  */
 function readingDoc(ws: Workspace, path: string): Document | undefined {
-  if (!path.startsWith(`${ws.analysis.config.dir}/${EXPLAINED_MAP_DIR}/`)) return undefined;
+  if (!path.startsWith(specPath(ws.analysis.config.dir, `${EXPLAINED_MAP_DIR}/`))) return undefined;
   const text = ws.text(path);
   if (text === null) return undefined;
   const cached = readingDocs.get(path);

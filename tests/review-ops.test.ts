@@ -12,7 +12,7 @@ import { test, type TestContext } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { answerObject } from "../src/draft-llm.ts";
 import { answerText, briefText } from "../src/explain-llm.ts";
-import { exportTargetProblem, runOperation } from "../src/operations.ts";
+import { exportTargetProblem, featureSlugOf, runOperation } from "../src/operations.ts";
 import { fakeAgents, type FakeAgents } from "./agent-fixture.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -361,4 +361,29 @@ test("draft flow, draft rules, code-to-spec and spec-to-code (proposal and --app
     const o = await keylang(dir, args, null);
     assert.equal(o.status, 2, `${args.join(" ")}: ${o.stderr}`);
   }
+});
+
+// ---------- 8. `dir: "."`: the spec directory is the root, and the paths keylang builds under it are plain ----------
+
+test("with `dir: .` feature finds features/<slug>.md, baseline writes rules.baseline.md, explain --llm saves explain/<id>.md: no `./…` path reaches the write policy", async (t) => {
+  const dir = copy(t, { dir: ".", agent: "cli:claude" }, { "features/f1.md": "# flow f1\n\n- trigger app.checkout.checkout\n", "rules.md": "# rules\n\n- layers domain < app\n  - infra\n" });
+  rmSync(join(dir, "keylang"), { recursive: true, force: true });
+  const checked = await keylang(dir, ["check"], null);
+  assert.equal(checked.status, 0, checked.stdout + checked.stderr);
+  assert.match(checked.stdout, /features\/f1\.md:3:1: ID ok app\.checkout\.checkout/);
+  const feature = await keylang(dir, ["feature", "f1"], null);
+  assert.equal(feature.status, 0, feature.stderr);
+  assert.match(feature.stderr, /^done$/m);
+  const baseline = await keylang(dir, ["baseline"], null);
+  assert.equal(baseline.status, 0, baseline.stderr);
+  assert.ok(existsSync(join(dir, "rules.baseline.md")), "the baseline lands at the root");
+  assert.equal((await keylang(dir, ["baseline", "--check"], null)).status, 0);
+  const fake = fakeAgents(t, ["claude"], { reply: "```markdown\nChecks out an order.\n```" });
+  const explained = await keylang(dir, ["explain", "app.checkout.checkout", "--llm"], fake);
+  assert.equal(explained.status, 0, explained.stderr);
+  assert.ok(existsSync(join(dir, "explain/app.checkout.checkout.md")), "the explanation lands in explain/ at the root");
+  assert.equal(fake.calls().length, 1);
+  assert.equal(featureSlugOf("features/f1.md", "."), "f1");
+  assert.equal(featureSlugOf("keylang/features/f1.md", "keylang"), "f1");
+  assert.equal(featureSlugOf("features/f1.md", "keylang"), null);
 });

@@ -291,7 +291,7 @@ test("tui-clip-chat: the prompt has the file around the cursor, the line and the
       "The conversation, oldest first. Answer the person's last message.\n\nPerson: що тут?\n\nClip: потік checkout.\n\nPerson: чому save позначено ◌?",
     ].join("\n\n"),
   );
-  for (const rule of ["in the language the person writes in", "only about this repository", "Never invent a verdict, an edge or an id", "```keylang path=<file>", "under keylang/", "full new text of that file, never a diff", "Do not write code"]) assert.ok(asked.system.includes(rule), rule);
+  for (const rule of ["in the language the person writes in", "only about this repository", "Never invent a verdict, an edge or an id", "````keylang path=<file>", "longer than any run of backticks in the file", "under keylang/", "full new text of that file, never a diff", "Do not write code"]) assert.ok(asked.system.includes(rule), rule);
   // A feature and open questions when there are any; a fence longer than the file's own.
   const feature = assistantPrompt({ ...REQUEST, file: { ...REQUEST.file!, text: "```\ncode\n```\n" }, feature: { stage: "ready", gaps: ["keylang/features/skip.md:4:5: static infrastructure.store.save: no call"] }, questions: ["keylang/flows/checkout.md:7: хто платить?"], context: null }, "keylang");
   assert.ok(feature.prompt.includes("````\n```\ncode\n```\n````"), feature.prompt);
@@ -331,4 +331,16 @@ test("tui-clip-chat: the answer's first closed keylang path= block is the candid
   const nested = parseReply("````keylang path=keylang/flows/a.md\n# flow a\n```\ncode\n```\n````\n```ts\nconst a = 1;\n```");
   assert.deepEqual(nested, { reply: "```ts\nconst a = 1;\n```", proposal: { path: "keylang/flows/a.md", text: "# flow a\n```\ncode\n```\n" }, dropped: [] });
   assert.deepEqual(parseReply("```keylang\n# no path\n```").proposal, null, "a block without a path is text");
+});
+
+test("tui-clip-chat: a spec's own code block inside the candidate survives: a three-backtick block closes at the fence that matches it, not at the inner block's end; the opening fence's indent leaves the body", () => {
+  const spec = "# flow checkout\n\nCheckout from the terminal, paid by card.\n\n```ts\ncheckout();\n```\n\n- trigger presentation.terminal.checkout\n- step application.purchase.buy\n";
+  // The fence the system prompt asks for: longer than the spec's own.
+  assert.deepEqual(parseReply(`Додав.\n\n\`\`\`\`keylang path=keylang/flows/checkout.md\n${spec}\`\`\`\`\nГотово.`), { reply: "Додав.\n\nГотово.", proposal: { path: "keylang/flows/checkout.md", text: spec }, dropped: [] });
+  // A model that still gives three backticks: the inner ```ts opens a block of its own, and its bare ``` closes that one.
+  assert.deepEqual(parseReply(`Додав.\n\n\`\`\`keylang path=keylang/flows/checkout.md\n${spec}\`\`\`\nГотово.`), { reply: "Додав.\n\nГотово.", proposal: { path: "keylang/flows/checkout.md", text: spec }, dropped: [] });
+  // An inner block left open leaves the candidate unclosed: no whole file, left out by path.
+  assert.deepEqual(parseReply("```keylang path=keylang/flows/a.md\n# flow a\n```ts\ncode();\n"), { reply: "", proposal: null, dropped: ["keylang/flows/a.md"] });
+  // A fence in a list item: its indent is not part of the file (CommonMark), deeper lines keep the rest.
+  assert.deepEqual(parseReply("1. Ось:\n   ```keylang path=keylang/flows/a.md\n   # flow a\n\n   - trigger x.y\n     - step a.b\n  short\n   ```").proposal, { path: "keylang/flows/a.md", text: "# flow a\n\n- trigger x.y\n  - step a.b\nshort\n" });
 });

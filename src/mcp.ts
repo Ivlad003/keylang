@@ -20,7 +20,7 @@ import { keepsFactCache, saveFactCache } from "./fact-cache.ts";
 import { idsIn } from "./feature-status.ts";
 import { runOperation } from "./operations.ts";
 import { specToCode } from "./spec-to-code.ts";
-import { CONFIG_FILE, evidenceFiles, loadConfig, toPosix } from "./config.ts";
+import { CONFIG_FILE, evidenceFiles, loadConfig, specPath, toPosix } from "./config.ts";
 import { isStale, readExplanation } from "./explain-llm.ts";
 import { summarizeNode } from "./explain-node.ts";
 import { explanationOf, loadBriefs, type NodeExplanation } from "./explanations.ts";
@@ -220,7 +220,7 @@ export function mcpServer(root: string, version: string): McpServer {
       if ((id === undefined) === (feature === undefined)) return failure("pass exactly one of id or feature");
       const analysis = await fresh();
       if (feature !== undefined) {
-        const path = `${analysis.config.dir}/features/${feature}.md`;
+        const path = specPath(analysis.config.dir, `features/${feature}.md`);
         const doc = analysis.docs.find((item) => item.path === path);
         if (!doc) return failure(`no feature \`${feature}\``);
         return json(contextForIds(analysis, idsIn(doc)));

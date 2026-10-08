@@ -5,7 +5,7 @@ import { existsSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { contextForIds, contextText } from "../agent-context.ts";
 import { analyze, type Analysis } from "../analyze.ts";
-import { loadConfig, type Config } from "../config.ts";
+import { loadConfig, specPath, type Config } from "../config.ts";
 import { errorText } from "../diag.ts";
 import { existingText } from "../files.ts";
 import { PROPOSALS_DIR, proposalProblem } from "../proposals.ts";
@@ -21,7 +21,7 @@ export const FEATURE_SLUG = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 /** The slug of `path` when it is a feature file `<dir>/features/<slug>.md`, else null. */
 export function featureSlugOf(path: string, dir: string): string | null {
-  const prefix = `${dir}/features/`;
+  const prefix = specPath(dir, "features/");
   if (!path.startsWith(prefix) || !path.endsWith(".md")) return null;
   const slug = path.slice(prefix.length, -3);
   return FEATURE_SLUG.test(slug) ? slug : null;
@@ -45,7 +45,7 @@ export async function runFeature(request: FeatureRequest, context: OperationCont
   } catch (error) {
     return empty("feature", "failed", 2, errorText(error));
   }
-  const file = `${config.dir}/features/${request.slug}.md`;
+  const file = specPath(config.dir, `features/${request.slug}.md`);
   if (!existsSync(join(request.root, file))) return empty("feature", "failed", 2, `feature: ${file}: not found`);
   let analyzed: Analysis;
   try {
@@ -171,7 +171,7 @@ export async function runFeatureQuestions(request: FeatureQuestionsRequest, cont
   }
   if (context.signal?.aborted) return empty("feature-questions", "cancelled", null);
   const config = analyzed.config;
-  const file = `${config.dir}/features/${slug}.md`;
+  const file = specPath(config.dir, `features/${slug}.md`);
   const doc = analyzed.docs.find((item) => item.path === file);
   if (!doc) return empty("feature-questions", "failed", 2, `feature questions: ${file}: not found`);
   const setup = await modelSetup("llm", config, "feature questions");

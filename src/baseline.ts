@@ -4,7 +4,7 @@
 // the layer already imports, and they beat `deny <layer> external`.
 
 import { join } from "node:path";
-import type { Config } from "./config.ts";
+import { specPath, type Config } from "./config.ts";
 import { readTextOrNull } from "./files.ts";
 import { sourceInputProblems, sourceInputs, type SourceInputs } from "./map.ts";
 import { isGeneratedText, landing, writeAtomic, writeProblem } from "./safe-write.ts";
@@ -72,7 +72,7 @@ function externalModule(snapshot: AnalysisSnapshot, id: string): string | null {
 
 /** Where the baseline lives: `<dir>/rules.baseline.md`, relative to the root, POSIX. */
 export function baselinePath(config: Pick<Config, "dir">): string {
-  return `${config.dir}/rules.baseline.md`;
+  return specPath(config.dir, "rules.baseline.md");
 }
 
 /**

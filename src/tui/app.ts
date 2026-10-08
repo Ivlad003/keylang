@@ -27,7 +27,7 @@ import { homedir } from "node:os";
 import { basename, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { analyze, within, type Analysis, type AnalysisRequest } from "../analyze.ts";
-import { CONFIG_FILE, guessLayout, loadConfig, parseConfig, toPosix, withLayers } from "../config.ts";
+import { CONFIG_FILE, guessLayout, loadConfig, parseConfig, specPath, toPosix, withLayers } from "../config.ts";
 import { collectMdFiles } from "../files.ts";
 import { sectionNodes, walk, type Document, type Node } from "../ir.ts";
 import { completions, definition, hoverContent, references, runsText, targetAt, workspace, type LspPosition, type Workspace } from "../lsp-features.ts";
@@ -658,7 +658,7 @@ export class App {
 
   /** Files and clean buffers follow the new analysis (a regenerated map, a change on disk). */
   private adopt(analysis: Analysis): void {
-    const explained = [...(analysis.map?.explained?.keys() ?? [])].map((name) => `${analysis.config.dir}/${EXPLAINED_MAP_DIR}/${name}`);
+    const explained = [...(analysis.map?.explained?.keys() ?? [])].map((name) => specPath(analysis.config.dir, `${EXPLAINED_MAP_DIR}/${name}`));
     // A new specification is listed from the moment its buffer opens, before any file exists.
     const fresh = [...this.state.buffers.values()].filter((buffer) => buffer.newFile).map((buffer) => buffer.path);
     const paths = new Set([...this.diskFiles(), ...analysis.docs.map((doc) => doc.path), ...explained, ...fresh]);
@@ -784,7 +784,9 @@ export class App {
   private open(path: string, cursor: Cursor, remember = true): void {
     // Opening a file leaves the start screen; the analysis still waits for Browse or F5.
     this.state.start = null;
-    if (remember && this.state.current) this.state.back.push({ path: this.state.current, cursor: { ...this.state.cursor }, mode: this.state.mode === "code" ? "view" : this.state.mode });
+    // The place remembered is one in the editor: the code viewer and MERGE show what `Ctrl+O` cannot bring back,
+    // and a `merge` mode without `state.merge` would take every key and answer none.
+    if (remember && this.state.current) this.state.back.push({ path: this.state.current, cursor: { ...this.state.cursor }, mode: this.state.mode === "code" || this.state.mode === "merge" ? "view" : this.state.mode });
     this.load(path);
     this.state.current = path;
     this.state.cursor = { ...cursor };
@@ -1188,7 +1190,7 @@ export class App {
 
   /** The map directory of each variant, relative to the root. */
   private mapDirs(analysis: Analysis): { map: string; explained: string } {
-    return { map: `${analysis.config.dir}/map/`, explained: `${analysis.config.dir}/${EXPLAINED_MAP_DIR}/` };
+    return { map: specPath(analysis.config.dir, "map/"), explained: specPath(analysis.config.dir, `${EXPLAINED_MAP_DIR}/`) };
   }
 
   /** `t`: the same layer file in the other map, the cursor on the same node. */
@@ -1265,7 +1267,8 @@ export class App {
     this.load(place.path);
     this.state.current = place.path;
     this.state.cursor = { ...place.cursor };
-    this.state.mode = place.mode;
+    // `open` remembers editor modes only; a MERGE or the code viewer is never restored without what it showed.
+    this.state.mode = place.mode === "merge" || place.mode === "code" ? "view" : place.mode;
     this.state.code = null;
     this.clampCursor();
     this.keepVisible();
@@ -2545,13 +2548,15 @@ export class App {
   /**
    * The file, mode and text an operation started from are current and nothing
    * else is open; with `report`, F6 may show the report it started from, else
-   * it must be closed.
+   * it must be closed. The clip's chat with the focus counts as open: MERGE
+   * takes the focus from it, so the letters typed for a message would decide
+   * the hunks and `w` would write the spec.
    */
   private stillWhereStarted(origin: DraftOrigin, report: boolean): boolean {
     const results = this.state.results;
     const panel = report && origin.results ? results.open && !results.viewing && results.entry === "record" && results.index === origin.record : !results.open;
     const current = this.state.current === origin.path && this.state.mode === origin.mode && (origin.path === null || this.state.buffers.get(origin.path)?.version === origin.version);
-    return panel && current && this.state.merge === null && this.state.prompt === null && this.state.barrier === null && !this.state.help;
+    return panel && current && this.state.merge === null && this.state.prompt === null && this.state.barrier === null && !this.state.help && !this.state.clip.chat.focused;
   }
 
   /** The session's operation worker, started on first use; after a failure the next request starts a new one. */

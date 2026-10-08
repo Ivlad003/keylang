@@ -10,6 +10,7 @@ import { extname, resolve } from "node:path";
 import type { CheckResult } from "../check-results.ts";
 import type { OperationRequest } from "../operations.ts";
 import { PROPOSALS_DIR } from "../proposals.ts";
+import { MERGE_REASON } from "./actions.ts";
 import { bufferLines } from "./buffer.ts";
 import { FILTER_KEYS, findingsOf, visibleFindings } from "./findings.ts";
 import type { KeyEvent } from "./input.ts";
@@ -92,6 +93,12 @@ export class ResultsPanel {
   private rerunRecord(): void {
     const record = this.state.records[this.state.results.index];
     if (!record) return;
+    // MERGE holds the editor: a rerun would open another MERGE over the decided hunks, or write while they wait.
+    // The same reason the palette gives for every action that is not read-only (`mergeOnly`).
+    if (this.state.merge !== null) {
+      this.state.message = MERGE_REASON;
+      return;
+    }
     if (record.status === "running") {
       this.state.message = "this operation is still running";
       return;
