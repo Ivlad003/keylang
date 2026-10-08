@@ -116,30 +116,31 @@
     - fn [externalPackageId](../../src/external-ids.ts#L44) (id: string) → string | null
   - module [adapter](../../src/frameworks/adapter.ts#L1)
     - magento base.magento
+    - python-web base.python-web
     - sfcc base.sfcc
-    - type [TypeName](../../src/frameworks/adapter.ts#L20)
-    - type [ConfigAt](../../src/frameworks/adapter.ts#L26)
-    - type [BindingFact](../../src/frameworks/adapter.ts#L32) extends ConfigAt
-    - type [ArgumentFact](../../src/frameworks/adapter.ts#L38) extends ConfigAt
-    - type [AliasFact](../../src/frameworks/adapter.ts#L45) extends ConfigAt
-    - type [InterceptFact](../../src/frameworks/adapter.ts#L51) extends ConfigAt
-    - type [EntryConfigFact](../../src/frameworks/adapter.ts#L67) extends ConfigAt
-    - type [ConfigFacts](../../src/frameworks/adapter.ts#L75)
-    - type [FrameworkConfig](../../src/frameworks/adapter.ts#L90)
-    - type [FrameworkInput](../../src/frameworks/adapter.ts#L97)
-    - type [FrameworkContext](../../src/frameworks/adapter.ts#L103)
-    - type [FrameworkAdapter](../../src/frameworks/adapter.ts#L114)
-    - fn [activeAdapters](../../src/frameworks/adapter.ts#L139) (frameworks: readonly string[] | null, context: FrameworkContext, available: readonly FrameworkAdapter[] = FRAMEWORK_ADAPTERS) → FrameworkAdapter[]
-    - fn [typeLabel](../../src/frameworks/adapter.ts#L145) (t: TypeName) → string
-    - fn [isConfigFacts](../../src/frameworks/adapter.ts#L150) (value: unknown) → value is ConfigFacts
+    - type [TypeName](../../src/frameworks/adapter.ts#L21)
+    - type [ConfigAt](../../src/frameworks/adapter.ts#L27)
+    - type [BindingFact](../../src/frameworks/adapter.ts#L33) extends ConfigAt
+    - type [ArgumentFact](../../src/frameworks/adapter.ts#L39) extends ConfigAt
+    - type [AliasFact](../../src/frameworks/adapter.ts#L46) extends ConfigAt
+    - type [InterceptFact](../../src/frameworks/adapter.ts#L52) extends ConfigAt
+    - type [EntryConfigFact](../../src/frameworks/adapter.ts#L68) extends ConfigAt
+    - type [ConfigFacts](../../src/frameworks/adapter.ts#L76)
+    - type [FrameworkConfig](../../src/frameworks/adapter.ts#L91)
+    - type [FrameworkInput](../../src/frameworks/adapter.ts#L98)
+    - type [FrameworkContext](../../src/frameworks/adapter.ts#L104)
+    - type [FrameworkAdapter](../../src/frameworks/adapter.ts#L115)
+    - fn [activeAdapters](../../src/frameworks/adapter.ts#L140) (frameworks: readonly string[] | null, context: FrameworkContext, available: readonly FrameworkAdapter[] = FRAMEWORK_ADAPTERS) → FrameworkAdapter[]
+    - fn [typeLabel](../../src/frameworks/adapter.ts#L146) (t: TypeName) → string
+    - fn [isConfigFacts](../../src/frameworks/adapter.ts#L151) (value: unknown) → value is ConfigFacts
       - calls base.adapter.isRecord, base.adapter.every, base.adapter.isAt, base.adapter.isTypeName
-    - fn [isAt](../../src/frameworks/adapter.ts#L164) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isAt](../../src/frameworks/adapter.ts#L165) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       - calls base.adapter.isRecord
-    - fn [isTypeName](../../src/frameworks/adapter.ts#L168) (value: unknown) → boolean <!-- internal -->
+    - fn [isTypeName](../../src/frameworks/adapter.ts#L169) (value: unknown) → boolean <!-- internal -->
       - calls base.adapter.isRecord
-    - fn [every](../../src/frameworks/adapter.ts#L172) (value: unknown, check: (item: Record<string, unknown>) => boolean) → boolean <!-- internal -->
+    - fn [every](../../src/frameworks/adapter.ts#L173) (value: unknown, check: (item: Record<string, unknown>) => boolean) → boolean <!-- internal -->
       - calls base.adapter.isRecord
-    - fn [isRecord](../../src/frameworks/adapter.ts#L176) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isRecord](../../src/frameworks/adapter.ts#L177) (value: unknown) → value is Record<string, unknown> <!-- internal -->
   - module [bindings](../../src/frameworks/bindings.ts#L1)
     - adapter base.adapter
     - type [ResolvedType](../../src/frameworks/bindings.ts#L16)
@@ -207,6 +208,11 @@
     - type [Open](../../src/frameworks/magento.ts#L74) <!-- internal -->
     - fn [parseDi](../../src/frameworks/magento.ts#L83) (path: string, text: string) → ConfigFacts
       - calls base.magento.scopeOf, base.magento.className
+  - module [python-web](../../src/frameworks/python-web.ts#L1)
+    - node external.node
+    - adapter base.adapter
+    - type [PythonWebSpec](../../src/frameworks/python-web.ts#L20) <!-- internal -->
+    - fn [pythonWebAdapter](../../src/frameworks/python-web.ts#L30) (spec: PythonWebSpec) → FrameworkAdapter <!-- internal -->
   - module [sfcc](../../src/frameworks/sfcc.ts#L1)
     - node external.node
     - adapter base.adapter
