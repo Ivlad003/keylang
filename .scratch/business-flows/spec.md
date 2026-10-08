@@ -104,8 +104,8 @@ keylang має допомагати швидко зануритись у чуж�
 | [32](issues/32-php-property-types.md) | PHP: тип властивості з присвоєння в конструкторі та з docblock `@var` | resolved | — |
 | [33](issues/33-web-client-build.md) | Веб-клієнт діаграм: збірка (esbuild), каркас SPA, автентифікація API | resolved | 20 |
 | [34](issues/34-nestjs-adapter.md) | NestJS: providers, контролери, події, cron, мікросервіси | ready-for-agent | — |
-| [35](issues/35-laravel-adapter.md) | Laravel: container, фасади, маршрути, події, черги, scheduler | ready-for-agent | — |
-| [36](issues/36-symfony-adapter.md) | Symfony: services.yaml, маршрути, підписники, Messenger, команди | ready-for-agent | — |
+| [35](issues/35-laravel-adapter.md) | Laravel: container, фасади, маршрути, події, черги, scheduler | resolved | — |
+| [36](issues/36-symfony-adapter.md) | Symfony: services.yaml, маршрути, підписники, Messenger, команди | resolved | — |
 | [37](issues/37-express-next-adapter.md) | Express/Fastify/Next.js: маршрути, middleware, server actions | ready-for-agent | — |
 | [38](issues/38-python-web-adapter.md) | Django/FastAPI/Flask/Celery: маршрути, сигнали, задачі | ready-for-agent | — |
 | [39](issues/39-pwa-kit-overrides.md) | PWA Kit / Composable Storefront: ccExtensibility overrides і маршрути | ready-for-agent | — |
