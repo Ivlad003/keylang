@@ -29,7 +29,11 @@ import { checkResults, type CheckResult } from "../check-results.ts";
 import { toPosix } from "../config.ts";
 import { diagramOf, flowListing, parseView, usagesOf, viewsOf, type Diagram, type DiagramNode } from "../diagram.ts";
 import { PROCESSES_FILE, processViews, readProcesses } from "../discover-names.ts";
-import { DISCOVERED_FLOWS_DIR } from "../map.ts";
+import { callsOf, eventsOf, explorerFlow, parseExplorerFlow } from "../explorer.ts";
+import { DISCOVERED_FLOWS_DIR, sourceInputs } from "../map.ts";
+import { runCoverage } from "../operations/coverage.ts";
+import { flowCandidate } from "../operations/draft.ts";
+import { commitProposal, generatedIn, proposalRefusal, rootRelative } from "../operations/shared.ts";
 import { buildTour, tourMarkdown } from "../tour.ts";
 import { parse } from "../parser.ts";
 import { compileSpec, type SpecIR } from "../spec-ir.ts";
@@ -282,11 +286,71 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
     return discoveredCache.spec;
   };
 
-  /** `GET /api/views`, `GET /api/diagram?view=…`, `GET /api/usages?id=…`, `GET /api/tour`: JSON for the diagram client, with the socket's token as a Bearer. */
+  /**
+   * `POST /api/flow-proposal` (business-flows/22): the branches a person ticked in the explorer as one proposal
+   * for `<dir>/flows/<name>.md`, through the proposals mechanism `flows adopt` uses. The token (a header no other
+   * origin can set without a preflight this server never answers), a JSON body and the same origin guard it.
+   */
+  const flowProposal = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
+    const json = (status: number, body: unknown): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
+    if (request.method !== "POST") {
+      response.setHeader("Allow", "POST");
+      return json(405, { error: "flow-proposal takes POST" });
+    }
+    if (!/^application\/json\s*(;|$)/i.test(String(request.headers["content-type"] ?? ""))) return json(415, { error: "flow-proposal takes Content-Type: application/json" });
+    const text = await readBody(request, MAX_BODY);
+    if (text === null) return json(413, { error: `the body is larger than ${MAX_BODY} bytes` });
+    let body: unknown;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      return json(400, { error: "the body is no JSON" });
+    }
+    const wanted = parseExplorerFlow(body);
+    if (typeof wanted === "string") return json(400, { error: wanted });
+    const done = await analysis();
+    if (!done.snapshot) return json(409, { error: "no code to read (`languages` in keylang.json is empty)" });
+    const draft = explorerFlow(done.snapshot, wanted);
+    if (typeof draft === "string") return json(400, { error: draft });
+    const specDir = rootRelative(options.root, done.config.dir);
+    const generated = generatedIn(done.docs);
+    let candidate;
+    try {
+      candidate = flowCandidate(options.root, specDir, generated, draft);
+    } catch (error) {
+      return json(400, { error: error instanceof Error ? error.message : String(error) });
+    }
+    // The same refusals as `flows adopt`: a generated target, a store that breaks the write policy, a proposal already waiting.
+    const refusal = proposalRefusal(options.root, candidate, "refuse", "web explorer");
+    if (refusal !== null) return json(409, { error: refusal.error, target: candidate.target });
+    const committed = await commitProposal(
+      { root: options.root, specDir, generated, target: candidate.target, text: candidate.text!, expected: { target: candidate.before, proposal: candidate.pending }, config: done.config, inputs: sourceInputs(done.config, done.snapshot.manifest.files) },
+      {},
+    );
+    if ("refused" in committed) return json(409, { error: committed.refused.join("; "), target: candidate.target });
+    if ("failed" in committed) return json(500, { error: committed.failed });
+    if ("cancelled" in committed) return json(409, { error: "cancelled" });
+    return json(200, {
+      proposal: committed.proposal,
+      target: candidate.target,
+      name: draft.name,
+      steps: draft.steps,
+      flow: draft.text,
+      merge: `merge it with MERGE in the TUI (\`keylang\`, m on the proposal), or a person runs \`keylang proposals accept ${candidate.target}\``,
+    });
+  };
+
+  /** `GET /api/views`, `/api/diagram?view=…`, `/api/usages?id=…`, `/api/calls?id=…`, `/api/coverage`, `/api/tour`; `POST /api/flow-proposal`: JSON for the diagram client, with the socket's token as a Bearer. */
   const api = async (request: IncomingMessage, response: ServerResponse, path: string, query: URLSearchParams): Promise<void> => {
     // These paths are public (docs/tui.md); any other is the 404 of every unknown path, token or not.
-    if (path !== "/api/views" && path !== "/api/diagram" && path !== "/api/usages" && path !== "/api/tour") return reply(response, 404, "text/plain", "not found\n");
+    if (!API_PATHS.has(path)) return reply(response, 404, "text/plain", "not found\n");
     if (!sameOrigin(request) || !sameSecret(bearerToken(request), token)) return reply(response, 403, "text/plain", "forbidden\n");
+    if (path === "/api/flow-proposal") {
+      // A write: a browser's own word that the request comes from another site refuses it, besides Origin.
+      const site = request.headers["sec-fetch-site"];
+      if (site !== undefined && site !== "same-origin" && site !== "none") return reply(response, 403, "text/plain", "forbidden\n");
+      return flowProposal(request, response);
+    }
     if (request.method !== "GET") return reply(response, 405, "text/plain", "method not allowed\n");
     const json = (status: number, body: unknown): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
     // The project tour (business-flows/15): the data of `keylang tour --json` and its Markdown, for the «Огляд» tab.
@@ -302,6 +366,20 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
       const done = await analysis();
       return json(200, usagesOf(done.snapshot, done.spec, discoveredSpec(done), id));
     }
+    if (path === "/api/calls") {
+      const id = query.get("id")?.trim() ?? "";
+      if (id === "") return json(400, { error: "calls needs id=" });
+      const done = await analysis();
+      if (!done.snapshot) return json(200, { id, node: null, entries: [], callees: [], holes: [], callers: [], reachedFrom: [], reason: "no snapshot: the specs were checked without code" });
+      return json(200, callsOf(done.snapshot, id));
+    }
+    if (path === "/api/coverage") {
+      // The payload of `keylang coverage --json`: the same operation over the same analyzer as the other requests.
+      const result = await runCoverage({ kind: "coverage", root: options.root }, { analyze: analyzer });
+      if (result.payload === null) return json(409, { error: result.messages[0]?.text ?? "coverage failed" });
+      const { text: _text, ...report } = result.payload;
+      return json(200, report);
+    }
     // A discovered flow is drawn like a flow, from the discovered view and without verdicts: `check` does not judge it.
     const discovered = path === "/api/diagram" && query.get("view") === "discovered";
     const view = path !== "/api/diagram" ? null : parseView(discovered ? new URLSearchParams({ view: "flow", name: query.get("name") ?? "" }) : query);
@@ -312,9 +390,12 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
     if (view === null) {
       const found = discoveredSpec(done);
       const entries = new Map((done.snapshot?.entries ?? []).map((entry) => [entry.id, entry]));
+      const events = eventsOf(done.snapshot);
       return json(200, {
         ...viewsOf(done.snapshot, done.spec, processes),
         root: options.root,
+        events: events.events,
+        ...(events.reason ? { eventsReason: events.reason } : {}),
         flowList: flowListing(done.snapshot, done.spec),
         discovered: (found ? flowListing(done.snapshot, found) : []).map(({ ids: _ids, ...flow }) => {
           const entry = flow.trigger === null ? undefined : entries.get(flow.trigger);
@@ -560,6 +641,35 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
   };
 }
 
+/** The paths of the diagram API; any other under `/api/` is 404. */
+const API_PATHS: ReadonlySet<string> = new Set(["/api/views", "/api/diagram", "/api/usages", "/api/calls", "/api/coverage", "/api/tour", "/api/flow-proposal"]);
+
+/** The largest body `POST /api/flow-proposal` reads. */
+const MAX_BODY = 64 * 1024;
+
+/** A request's body as text, or null when it is larger than `max` bytes (the rest is not read). */
+function readBody(request: IncomingMessage, max: number): Promise<string | null> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    let over = false;
+    request.on("data", (chunk: Buffer) => {
+      if (over) return;
+      size += chunk.length;
+      if (size > max) {
+        over = true;
+        resolve(null);
+        return;
+      }
+      chunks.push(chunk);
+    });
+    request.on("end", () => {
+      if (!over) resolve(Buffer.concat(chunks).toString("utf8"));
+    });
+    request.on("error", reject);
+  });
+}
+
 /** At most this many check results ride on one shape. */
 const MAX_NODE_RESULTS = 20;
 
@@ -626,6 +736,7 @@ function diagramsPage(): string {
 <body>
 <aside id="list">
 <header><span>Діаграми</span><a href="/">термінал</a></header>
+<nav id="modes" aria-label="Режим"><button type="button" data-mode="diagrams" aria-pressed="true">Діаграми</button><button type="button" data-mode="explore" aria-pressed="false">Дослідник</button><button type="button" data-mode="blind" aria-pressed="false">Сліпі зони</button></nav>
 <div id="find">
 <input id="search" type="search" placeholder="Пошук: флоу, точка входу, ID" aria-label="Пошук">
 <button id="find-usages" type="button" title="Де використовується цей ID">де ID?</button>
@@ -639,6 +750,8 @@ function diagramsPage(): string {
 <div id="legend" aria-label="Легенда"></div>
 <div id="minimap" aria-label="Мінікарта"></div>
 </div>
+<section id="explorer" aria-label="Дослідник точок входу"></section>
+<section id="blind" aria-label="Сліпі зони"></section>
 </main>
 <aside id="details"></aside>
 </body>

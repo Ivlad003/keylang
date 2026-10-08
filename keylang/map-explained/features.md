@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [agent-cli](#features.agent-cli) · [agent-context](#features.agent-context) · [baseline](#features.baseline) · [call-sites](#features.call-sites) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [clone](#features.clone) · [coverage-report](#features.coverage-report) · [discover-names](#features.discover-names) · [discover](#features.discover) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [feature-status](#features.feature-status) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [harness](#features.harness) · [integrations](#features.integrations) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stale](#features.stale) · [stats](#features.stats) · [voice-local](#features.voice-local) · [voice](#features.voice)
+[README](README.md) · modules: [agent-cli](#features.agent-cli) · [agent-context](#features.agent-context) · [baseline](#features.baseline) · [call-sites](#features.call-sites) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [clone](#features.clone) · [coverage-report](#features.coverage-report) · [discover-names](#features.discover-names) · [discover](#features.discover) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [explorer](#features.explorer) · [feature-status](#features.feature-status) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [harness](#features.harness) · [integrations](#features.integrations) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stale](#features.stale) · [stats](#features.stats) · [tour](#features.tour) · [voice-local](#features.voice-local) · [voice](#features.voice)
 
 # map
 
@@ -170,26 +170,26 @@
     - safe-write [base.safe-write](base.md#base.safe-write)
     - snapshot [map.snapshot](map.md#map.snapshot)
     - span [base.span](base.md#base.span)
-    - fn [baselineText](../../src/baseline.ts#L25) (snapshot: AnalysisSnapshot) → string
+    - fn [baselineText](../../src/baseline.ts#L27) (snapshot: AnalysisSnapshot) → string
       <a id="features.baseline.baselineText"></a><br>Baseline rules for one snapshot. Layers come from `keylang.json`, in code-unit order; `unassigned` is a source only when a module is in it.
       - calls [base.span.compareText](base.md#base.span.compareText), [features.baseline.externalModule](features.md#features.baseline.externalModule)
-    - fn [externalModule](../../src/baseline.ts#L62) (snapshot: AnalysisSnapshot, id: string) → string | null <!-- internal -->
+    - fn [externalModule](../../src/baseline.ts#L74) (snapshot: AnalysisSnapshot, id: string) → string | null <!-- internal -->
       <a id="features.baseline.externalModule"></a><br>The external module an id belongs to (`external.stripe` for a symbol under it).
-    - fn [baselinePath](../../src/baseline.ts#L74) (config: Pick<Config, "dir">) → string
+    - fn [baselinePath](../../src/baseline.ts#L86) (config: Pick<Config, "dir">) → string
       <a id="features.baseline.baselinePath"></a><br>Where the baseline lives: `<dir>/rules.baseline.md`, relative to the root, POSIX.
       - calls [base.config.specPath](base.md#base.config.specPath)
-    - type [BaselinePlan](../../src/baseline.ts#L82)
+    - type [BaselinePlan](../../src/baseline.ts#L94)
       <a id="features.baseline.BaselinePlan"></a><br>What `keylang baseline` would do, computed before anything is written. Internal to one operation — not a stored format.
-    - fn [planBaseline](../../src/baseline.ts#L103) (config: Config, snapshot: AnalysisSnapshot) → BaselinePlan
+    - fn [planBaseline](../../src/baseline.ts#L115) (config: Config, snapshot: AnalysisSnapshot) → BaselinePlan
       <a id="features.baseline.planBaseline"></a><br>Plans the baseline of `snapshot` against the file on disk. Reads, writes nothing.
       - calls [features.baseline.baselinePath](features.md#features.baseline.baselinePath), [features.baseline.baselineText](features.md#features.baseline.baselineText), [lang.files.readTextOrNull](lang.md#lang.files.readTextOrNull), [base.safe-write.isGeneratedText](base.md#base.safe-write.isGeneratedText), [features.baseline.ruleLines](features.md#features.baseline.ruleLines), [map.map.sourceInputs](map.md#map.map.sourceInputs)
-    - fn [baselinePlanProblems](../../src/baseline.ts#L128) (plan: BaselinePlan) → string[]
+    - fn [baselinePlanProblems](../../src/baseline.ts#L140) (plan: BaselinePlan) → string[]
       <a id="features.baseline.baselinePlanProblems"></a><br>Why the plan may not be committed now (`path: reason` lines; empty when it may): the target must pass the repository's write rules and still hold the bytes the plan saw, and `keylang.json` and the sources must be the ones the baseline was computed from.
       - calls [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [map.map.sourceInputProblems](map.md#map.map.sourceInputProblems)
-    - fn [commitBaseline](../../src/baseline.ts#L137) (plan: BaselinePlan) → void
+    - fn [commitBaseline](../../src/baseline.ts#L149) (plan: BaselinePlan) → void
       <a id="features.baseline.commitBaseline"></a><br>Writes the planned text atomically at the target (a link inside the repository is followed; CRLF of the old file kept). Throws on an I/O error.
       - calls [base.safe-write.landing](base.md#base.safe-write.landing), [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic)
-    - fn [ruleLines](../../src/baseline.ts#L144) (text: string) → string[] <!-- internal -->
+    - fn [ruleLines](../../src/baseline.ts#L156) (text: string) → string[] <!-- internal -->
       <a id="features.baseline.ruleLines"></a><br>The `- deny` / `- allow` lines of a rules text, in order.
   - module [call-sites](../../src/call-sites.ts#L1)
     <a id="features.call-sites"></a><br>What the coverage report and the integrations inventory read beside the snapshot (business-flows/13, 14): every call written in the analysed files with the node that encloses it, matched against lists kept as data (`resources/*.json`), and reachability from entry points over…
@@ -637,65 +637,73 @@
     - parser [lang.parser](lang.md#lang.parser)
     - safe-write [base.safe-write](base.md#base.safe-write)
     - snapshot [map.snapshot](map.md#map.snapshot)
-    - type [FlowDraft](../../src/draft.ts#L14)
+    - trace-evidence [check.trace-evidence](check.md#check.trace-evidence)
+    - type [FlowDraft](../../src/draft.ts#L15)
       <a id="features.draft.FlowDraft"></a><br>Plain data shape for a flow being built: its name, the raw `# flow` section text (newline-terminated), and the ordered list of step IDs with the trigger first. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [draftFlow](../../src/draft.ts#L22) (snapshot: AnalysisSnapshot, trigger: string, options: { name?: string; depth?: number; entry?: string } = {}) → FlowDraft
+    - fn [draftFlow](../../src/draft.ts#L23) (snapshot: AnalysisSnapshot, trigger: string, options: { name?: string; depth?: number; entry?: string } = {}) → FlowDraft
       <a id="features.draft.draftFlow"></a><br>Walks the call graph from a fn in an `AnalysisSnapshot` to a bounded depth, skipping non-fn and external callees, and emits a Markdown flow with `trigger`/`step` lines. Unresolved or dynamic calls per step are appended as HTML comments, and the ordered step IDs are returned… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-    - fn [withFlow](../../src/draft.ts#L69) (existing: string | null, draft: Pick<FlowDraft, "name" | "text">) → string
+    - fn [draftFlowFromTrace](../../src/draft.ts#L77) (snapshot: AnalysisSnapshot, run: TraceRun, options: { name?: string } = {}) → FlowDraft & { rest: string[] }
+      <a id="features.draft.draftFlowFromTrace"></a><br>`draft flow --from-trace`: a flow from what one trace run observed. The first root span (in start order) is the trigger; nesting is the span tree, order among siblings is start order (`seq` on one clock, else `ts`).
+      - calls [features.draft.reachesByCalls](features.md#features.draft.reachesByCalls)
+    - fn [reachesByCalls](../../src/draft.ts#L106) (snapshot: AnalysisSnapshot, from: string, to: string) → boolean <!-- internal -->
+      <a id="features.draft.reachesByCalls"></a><br>A path of resolved calls (the snapshot's `calls`) from `from` to `to`.
+    - fn [withFlow](../../src/draft.ts#L127) (existing: string | null, draft: Pick<FlowDraft, "name" | "text">) → string
       <a id="features.draft.withFlow"></a><br>A spec with the draft added: the section of the same flow is replaced, whatever follows the name on its heading line, otherwise the draft is appended. Sections come from the parser, so a `# ` line in a code block is not a heading.
       - calls [lang.parser.parse](lang.md#lang.parser.parse), [features.draft.nextHeading](features.md#features.draft.nextHeading), [base.safe-write.keepLineEndings](base.md#base.safe-write.keepLineEndings)
-    - fn [withRules](../../src/draft.ts#L93) (existing: string | null, draftText: string) → string
+    - fn [withRules](../../src/draft.ts#L151) (existing: string | null, draftText: string) → string
       <a id="features.draft.withRules"></a><br>`draft rules` into an existing spec: the drafted rules go at the end of its last `# rules` section, or into a new `# rules` section at the end, never under a trailing `# flow`. A rule the file already has (comments aside) is not repeated.
       - calls [lang.parser.parse](lang.md#lang.parser.parse), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.parser.renderMeaning](lang.md#lang.parser.renderMeaning), [features.draft.nextHeading](features.md#features.draft.nextHeading), [base.safe-write.keepLineEndings](base.md#base.safe-write.keepLineEndings)
-    - fn [nextHeading](../../src/draft.ts#L123) (sections: readonly { heading: { span: { start: { line: number } } } | null }[], index: number) → number | null <!-- internal -->
+    - fn [nextHeading](../../src/draft.ts#L181) (sections: readonly { heading: { span: { start: { line: number } } } | null }[], index: number) → number | null <!-- internal -->
       <a id="features.draft.nextHeading"></a><br>0-based line index of the heading after `sections[index]`, or null at the end of the file.
-    - fn [distinctNames](../../src/draft.ts#L133) (drafts: readonly FlowDraft[]) → FlowDraft[]
+    - fn [distinctNames](../../src/draft.ts#L191) (drafts: readonly FlowDraft[]) → FlowDraft[]
       <a id="features.draft.distinctNames"></a><br>Flow names that keep drafts apart in one spec: two `save` triggers (`A.save`, `B.save`) become `A-save` and `B-save`, taking as many trailing ID segments as it needs.
-    - fn [draftRules](../../src/draft.ts#L163) (snapshot: AnalysisSnapshot, cyclic: boolean) → string
+    - fn [draftRules](../../src/draft.ts#L221) (snapshot: AnalysisSnapshot, cyclic: boolean) → string
       <a id="features.draft.draftRules"></a><br>`draft rules --mode algo`: rules the current code already keeps, so each passes `check` as written. Layers in an order where every observed dependency points down (`a < b`: `b` may use `a`), when the layers form no cycle; otherwise a `deny` for each pair used in one direction…
       - calls [features.draft.layerOrder](features.md#features.draft.layerOrder)
-    - fn [layerOrder](../../src/draft.ts#L188) (layers: readonly string[], uses: ReadonlyMap<string, ReadonlySet<string>>) → string[] | null <!-- internal -->
+    - fn [layerOrder](../../src/draft.ts#L246) (layers: readonly string[], uses: ReadonlyMap<string, ReadonlySet<string>>) → string[] | null <!-- internal -->
       <a id="features.draft.layerOrder"></a><br>Layers with those used first (Kahn, ties by name); null for a cycle.
-    - fn [codeToSpecTriggers](../../src/draft.ts#L207) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; triggers: string[] }
+    - fn [codeToSpecTriggers](../../src/draft.ts#L265) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; triggers: string[] }
       <a id="features.draft.codeToSpecTriggers"></a><br>`code-to-spec <path[:line]>`: the functions the code position names — the innermost fn whose range holds the line, or every exported fn of the file in declaration order without a line — and the spec's name: the fn's, or the file's module's. Reads the snapshot only; a position…
-    - fn [codeToSpec](../../src/draft.ts#L230) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; drafts: FlowDraft[] }
+    - fn [codeToSpec](../../src/draft.ts#L288) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; drafts: FlowDraft[] }
       <a id="features.draft.codeToSpec"></a><br>`code-to-spec <path[:line]>`: each fn `codeToSpecTriggers` names as a flow draft; same-named fns get distinct flow names.
       - calls [features.draft.codeToSpecTriggers](features.md#features.draft.codeToSpecTriggers), [features.draft.draftFlow](features.md#features.draft.draftFlow), [features.draft.distinctNames](features.md#features.draft.distinctNames)
-    - type [ChangedLines](../../src/draft.ts#L237)
+    - type [ChangedLines](../../src/draft.ts#L295)
       <a id="features.draft.ChangedLines"></a><br>Changed lines per file, 1-based and inclusive; `all` for a file git does not track yet.
-    - fn [diffHunks](../../src/draft.ts#L243) (diff: string) → Map<string, [number, number][]>
+    - fn [diffHunks](../../src/draft.ts#L301) (diff: string) → Map<string, [number, number][]>
       <a id="features.draft.diffHunks"></a><br>The new-side line ranges of `git diff --unified=0`. A deletion is the line it happened after, so the fn around it counts as changed.
       - calls [features.draft.gitPath](features.md#features.draft.gitPath)
-    - fn [deletedDiffPaths](../../src/draft.ts#L266) (diff: string) → string[]
+    - fn [deletedDiffPaths](../../src/draft.ts#L324) (diff: string) → string[]
       <a id="features.draft.deletedDiffPaths"></a><br>Paths removed in `git diff` (`--- a/file` then `+++ /dev/null`). `diffHunks` follows the new side, so a deletion has no hunk to land on.
       - calls [features.draft.gitPath](features.md#features.draft.gitPath)
-    - fn [gitPath](../../src/draft.ts#L280) (text: string) → string <!-- internal -->
+    - fn [gitPath](../../src/draft.ts#L338) (text: string) → string <!-- internal -->
       <a id="features.draft.gitPath"></a><br>A path as `git diff` prints it: C-quoted (`"b/\303\251.ts"`, `"b/a\"b.ts"`) when it holds a quote, a backslash or a control byte.
-    - fn [changedFlows](../../src/draft.ts#L308) (snapshot: AnalysisSnapshot, changed: ChangedLines, named: ReadonlySet<string>) → { drafts: FlowDraft[]; named: string[] }
+    - fn [changedFlows](../../src/draft.ts#L366) (snapshot: AnalysisSnapshot, changed: ChangedLines, named: ReadonlySet<string>) → { drafts: FlowDraft[]; named: string[] }
       <a id="features.draft.changedFlows"></a><br>`code-to-spec --since <ref>`: a flow draft for each fn the change touches. A fn some hand-written spec already names is reported, not drafted again — its flow is the place to look.
       - calls [features.draft.draftFlow](features.md#features.draft.draftFlow), [features.draft.distinctNames](features.md#features.draft.distinctNames)
   - module [explain-edge](../../src/explain-edge.ts#L1)
     <a id="features.explain-edge"></a><br>The evidence between two ids of one snapshot (`keylang check --explain-edge <a> <b>`): the edges from `a` (or a node under it) to `b`, then back, or — with no edge — whether that absence is proven. Only the snapshot's own edges and coverage count; nothing is inferred from the…
     - snapshot [map.snapshot](map.md#map.snapshot)
+    - flows [check.flows](check.md#check.flows)
     - span [base.span](base.md#base.span)
-    - type [EdgeEvidence](../../src/explain-edge.ts#L10)
+    - type [EdgeEvidence](../../src/explain-edge.ts#L11)
       <a id="features.explain-edge.EdgeEvidence"></a><br>One edge between the two ids: `forward` is `from → to`, `backward` is `to → from`.
-    - type [EdgeConclusion](../../src/explain-edge.ts#L20) = "edges" | "complete" | "unresolved"
+    - type [EdgeConclusion](../../src/explain-edge.ts#L21) = "edges" | "complete" | "unresolved"
       <a id="features.explain-edge.EdgeConclusion"></a><br>`edges`: at least one edge; `complete`: no edge and nothing unresolved in `from` that could form one — the absence is proven; `unresolved`: no confirmed edge, but constructs of `from` were not resolved, so it is not.
-    - type [EdgeExplanation](../../src/explain-edge.ts#L22)
+    - type [EdgeExplanation](../../src/explain-edge.ts#L23)
       <a id="features.explain-edge.EdgeExplanation"></a><br>Result record describing why two nodes are or are not connected: the ordered `EdgeEvidence` entries in both directions, `CoverageItem` gaps in the source node when no edge exists, and an `EdgeConclusion` verdict. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [edgeIdKnown](../../src/explain-edge.ts#L33) (snapshot: AnalysisSnapshot, id: string) → boolean
+    - fn [edgeIdKnown](../../src/explain-edge.ts#L34) (snapshot: AnalysisSnapshot, id: string) → boolean
       <a id="features.explain-edge.edgeIdKnown"></a><br>An id names a node or an ancestor of nodes (a layer or a directory), never an unknown tail under a known module.
-    - fn [under](../../src/explain-edge.ts#L37) (id: string, scope: string) → boolean <!-- internal -->
+    - fn [under](../../src/explain-edge.ts#L38) (id: string, scope: string) → boolean <!-- internal -->
       <a id="features.explain-edge.under"></a><br>Checks whether a dotted node ID is the given scope itself or nested beneath it by testing for an exact match or a `scope.` prefix. Used by [`features.explain-edge.explainEdge`](features.md#features.explain-edge.explainEdge) to decide which side of an edge a node belongs to. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [explainEdge](../../src/explain-edge.ts#L40) (snapshot: AnalysisSnapshot, from: string, to: string) → EdgeExplanation
+    - fn [explainEdge](../../src/explain-edge.ts#L41) (snapshot: AnalysisSnapshot, from: string, to: string) → EdgeExplanation
       <a id="features.explain-edge.explainEdge"></a><br>The edges and the coverage between two known ids (see `edgeIdKnown`).
       - calls [base.span.compareText](base.md#base.span.compareText), [features.explain-edge.under](features.md#features.explain-edge.under), [map.snapshot.leavesUnresolved](map.md#map.snapshot.leavesUnresolved)
-    - fn [edgeLine](../../src/explain-edge.ts#L59) (edge: SnapshotEdge) → string
+    - fn [edgeLine](../../src/explain-edge.ts#L60) (edge: SnapshotEdge) → string
       <a id="features.explain-edge.edgeLine"></a><br>One edge as the CLI prints it: kind, resolution, provenance, range, fragment, `source → target`, candidates, hook, reason.
-    - fn [holeLine](../../src/explain-edge.ts#L73) (hole: CoverageItem) → string
+      - calls [check.flows.describeConfig](check.md#check.flows.describeConfig)
+    - fn [holeLine](../../src/explain-edge.ts#L75) (hole: CoverageItem) → string
       <a id="features.explain-edge.holeLine"></a><br>One unresolved construct as the CLI prints it.
-    - fn [edgeExplanationLines](../../src/explain-edge.ts#L78) (explanation: EdgeExplanation) → string[]
+    - fn [edgeExplanationLines](../../src/explain-edge.ts#L80) (explanation: EdgeExplanation) → string[]
       <a id="features.explain-edge.edgeExplanationLines"></a><br>The CLI's stdout of `check --explain-edge`, line by line.
       - calls [features.explain-edge.edgeLine](features.md#features.explain-edge.edgeLine), [features.explain-edge.holeLine](features.md#features.explain-edge.holeLine)
   - module [explain-inventory](../../src/explain-inventory.ts#L1)
@@ -826,18 +834,18 @@
       <a id="features.explain-node.nodeFacts"></a><br>The facts of `id`: from the snapshot, else from its `planned` line, else from the spec line that declares it; null when nothing does.
       - calls [lang.spec-ir.plannedDeclaration](lang.md#lang.spec-ir.plannedDeclaration)
     - type [NodeSummary](../../src/explain-node.ts#L47)
-      <a id="features.explain-node.NodeSummary"></a><br>Data shape bundling everything gathered about one graph node for explanation: its kind, signature, doc brief, location, export status, call/dependency/flow neighbours, matching rules, and fingerprints. Also counts unresolved constructs per kind in `holes` and flags… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [ExplainResult](../../src/explain-node.ts#L70)
+      <a id="features.explain-node.NodeSummary"></a><br>Data shape bundling everything gathered about one graph node for explanation: its kind, signature, doc brief, location, export status, call/dependency/flow neighbours, matching rules, and fingerprints. Also counts unresolved constructs per kind in `holes` and flags… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+    - type [ExplainResult](../../src/explain-node.ts#L72)
       <a id="features.explain-node.ExplainResult"></a><br>Union returned when explaining a node: either a successful `summary` holding a `NodeSummary`, or a failure carrying the `unknown` identifier that was not found plus an optional `suggestion` for a close match. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [summarizeNode](../../src/explain-node.ts#L72) (analysis: Analysis, id: string) → ExplainResult
-      <a id="features.explain-node.summarizeNode"></a><br>Builds a node's structured summary from [`features.explain-node.nodeFacts`](features.md#features.explain-node.nodeFacts), rules, flows, graph links, unresolved-coverage counts and fingerprints; plan-only nodes get a bare summary, while unknown or spec-only IDs get a suggestion instead. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
+    - fn [summarizeNode](../../src/explain-node.ts#L74) (analysis: Analysis, id: string) → ExplainResult
+      <a id="features.explain-node.summarizeNode"></a><br>Builds a node's structured summary from [`features.explain-node.nodeFacts`](features.md#features.explain-node.nodeFacts), rules, flows, graph links, unresolved-coverage counts and fingerprints; plan-only nodes get a bare summary, while unknown or spec-only IDs get a suggestion instead. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [features.explain-node.nodeFacts](features.md#features.explain-node.nodeFacts), [features.explain-node.rulesNaming](features.md#features.explain-node.rulesNaming), [lang.spec-ir.flowsUsing](lang.md#lang.spec-ir.flowsUsing), [map.snapshot.leavesUnresolved](map.md#map.snapshot.leavesUnresolved)
-    - fn [rulesNaming](../../src/explain-node.ts#L109) (analysis: Analysis, id: string) → string[] <!-- internal -->
+    - fn [rulesNaming](../../src/explain-node.ts#L112) (analysis: Analysis, id: string) → string[] <!-- internal -->
       <a id="features.explain-node.rulesNaming"></a><br>`file:line: rule text` of the rule and module lines that name `id` or a scope around it, sorted; the generated map's are left out.
       - calls [features.explain-node.nodeHolding](features.md#features.explain-node.nodeHolding)
-    - fn [nodeHolding](../../src/explain-node.ts#L138) (root: Node, ref: Ref) → Node | null <!-- internal -->
+    - fn [nodeHolding](../../src/explain-node.ts#L141) (root: Node, ref: Ref) → Node | null <!-- internal -->
       <a id="features.explain-node.nodeHolding"></a><br>The allow, deny, entry item, nested layer, or module line that holds `ref`.
-    - fn [formatSummary](../../src/explain-node.ts#L148) (s: NodeSummary) → string
+    - fn [formatSummary](../../src/explain-node.ts#L151) (s: NodeSummary) → string
       <a id="features.explain-node.formatSummary"></a><br>The summary as text: one line per fact, empty facts left out.
   - module [explain-offline](../../src/explain-offline.ts#L1)
     <a id="features.explain-offline"></a><br>`keylang explain <code|id>` without a model: the help of a diagnostic code, or what the snapshot and the specs say about a node with the explanations saved for it. One result for the CLI, the TUI palette and `e`: the doc comment of the code (in the summary), the saved…
@@ -888,6 +896,54 @@
     - diag [base.diag](base.md#base.diag)
     - fn [explainCode](../../src/explain.ts#L130) (code: string) → string | null
       <a id="features.explain.explainCode"></a><br>Looks up a diagnostic code (case-insensitively) in the `EXPLANATIONS` table and formats its cause, example, and fix as a multi-line string, returning null for unknown codes. For `K005` it appends extra reason lines from `K005_REASON_LINES`. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+  - module [explorer](../../src/explorer.ts#L1)
+    <a id="features.explorer"></a><br>The entry explorer of `keylang web` (business-flows/22): one level of the call graph around an ID at a time, for a person reading old code before any flow is written. `callsOf` gives the direct callees of a fn (with the edge's `via` and `site`), the calls keylang did not…
+    - external-ids [base.external-ids](base.md#base.external-ids)
+    - draft [features.draft](features.md#features.draft)
+    - parser [lang.parser](lang.md#lang.parser)
+    - snapshot [map.snapshot](map.md#map.snapshot)
+    - span [base.span](base.md#base.span)
+    - type [CallSite](../../src/explorer.ts#L20)
+      <a id="features.explorer.CallSite"></a><br>Where a call is written.
+    - type [CallRef](../../src/explorer.ts#L27)
+      <a id="features.explorer.CallRef"></a><br>A callee or a caller: the other end of a resolved edge, with how the edge goes.
+    - type [CallHole](../../src/explorer.ts#L60)
+      <a id="features.explorer.CallHole"></a><br>A call keylang did not resolve: «тут keylang сліпий».
+    - type [Calls](../../src/explorer.ts#L69)
+      <a id="features.explorer.Calls"></a>
+    - fn [follows](../../src/explorer.ts#L92) (edge: SnapshotEdge) → boolean <!-- internal -->
+      <a id="features.explorer.follows"></a><br>The resolved edges a call tree follows: calls, and whatever an adapter adds between a fn and an event.
+    - type [Index](../../src/explorer.ts#L97) <!-- internal -->
+      <a id="features.explorer.Index"></a><br>Indexes of the snapshot's call edges, built once per snapshot.
+    - fn [indexOf](../../src/explorer.ts#L107) (snapshot: AnalysisSnapshot) → Index <!-- internal -->
+      <a id="features.explorer.indexOf"></a>
+      - calls [features.explorer.follows](features.md#features.explorer.follows)
+    - fn [byPosition](../../src/explorer.ts#L138) (a: CallSite, b: CallSite) → number <!-- internal -->
+      <a id="features.explorer.byPosition"></a>
+      - calls [base.span.compareText](base.md#base.span.compareText)
+    - fn [callsOf](../../src/explorer.ts#L144) (snapshot: AnalysisSnapshot, id: string) → Calls
+      <a id="features.explorer.callsOf"></a><br>One level around `id`: its callees and holes, its callers, and the entry points above it. An unknown ID gives empty lists and a `reason`.
+      - calls [features.explorer.indexOf](features.md#features.explorer.indexOf), [features.explorer.byPosition](features.md#features.explorer.byPosition), [base.span.compareText](base.md#base.span.compareText), [features.explorer.holesOf](features.md#features.explorer.holesOf), [features.explorer.reachedFrom](features.md#features.explorer.reachedFrom)
+    - fn [holesOf](../../src/explorer.ts#L193) (index: Index, id: string) → CallHole[] <!-- internal -->
+      <a id="features.explorer.holesOf"></a><br>The unresolved and ambiguous calls of `id`, and the coverage items of the snapshot about it at other places (a `dynamic-event`), by position.
+      - calls [features.explorer.byPosition](features.md#features.explorer.byPosition)
+    - fn [reachedFrom](../../src/explorer.ts#L213) (snapshot: AnalysisSnapshot, index: Index, id: string) → Calls["reachedFrom"] <!-- internal -->
+      <a id="features.explorer.reachedFrom"></a><br>Breadth first up the resolved edges: the entry points that reach `id`, nearest first, then by kind and label.
+      - calls [base.span.compareText](base.md#base.span.compareText)
+    - type [EventListing](../../src/explorer.ts#L236)
+      <a id="features.explorer.EventListing"></a><br>An event of the snapshot (business-flows/08): who publishes it and who subscribes.
+    - fn [eventsOf](../../src/explorer.ts#L245) (snapshot: AnalysisSnapshot | null) → { events: EventListing[]; reason?: string }
+      <a id="features.explorer.eventsOf"></a><br>The event nodes of the snapshot by ID, or why there are none.
+      - calls [features.explorer.indexOf](features.md#features.explorer.indexOf), [base.span.compareText](base.md#base.span.compareText)
+    - type [ExplorerStep](../../src/explorer.ts#L259)
+      <a id="features.explorer.ExplorerStep"></a><br>A branch a person ticked: a step and the steps under it.
+    - type [ExplorerFlowRequest](../../src/explorer.ts#L264)
+      <a id="features.explorer.ExplorerFlowRequest"></a>
+    - fn [parseExplorerFlow](../../src/explorer.ts#L283) (body: unknown) → ExplorerFlowRequest | string
+      <a id="features.explorer.parseExplorerFlow"></a><br>The request body of `POST /api/flow-proposal` as a request, or why not: `{name, trigger, steps}`, where a step is an ID or `{id, steps?}`.
+    - fn [explorerFlow](../../src/explorer.ts#L323) (snapshot: AnalysisSnapshot, request: ExplorerFlowRequest) → FlowDraft | string
+      <a id="features.explorer.explorerFlow"></a><br>The flow a person ticked in the explorer, as a draft: `trigger`, then each step nested under the step that calls it, in the order given. Every step must be a fn of the repository the step above it (the trigger at the top) calls by a resolved edge: the draft claims only what the…
+      - calls [features.explorer.indexOf](features.md#features.explorer.indexOf), [features.explorer.byPosition](features.md#features.explorer.byPosition), [features.explorer.holesOf](features.md#features.explorer.holesOf), [lang.parser.isTriggerKind](lang.md#lang.parser.isTriggerKind)
   - module [feature-status](../../src/feature-status.ts#L1)
     <a id="features.feature-status"></a><br>Whether a feature file is done: it declares something to check, keylang reads it without errors, every `planned` in it is implemented (K202, not K201), every flow step and `calls` in it is static ok, no rule fail of this change remains (ADR 0005 §2: no new violations), and the…
     - assess [check.assess](check.md#check.assess)
@@ -1756,6 +1812,68 @@
       <a id="features.stats.statusesIn"></a><br>`status=` of every `keylang:llm` / `keylang:algo` provenance comment in the lines.
     - fn [addDrafts](../../src/stats.ts#L77) (stats: Stats, counts: Record<string, number>, field: keyof Tally) → void
       <a id="features.stats.addDrafts"></a><br>Adds each per-status count into the matching tally of `stats.drafts`, creating a zeroed tally for statuses not yet present and incrementing only the given field. Used by `operations.operations.countProposed` and [`tui.merge-session.MergeSession.write`](tui.md#tui.merge-session.MergeSession.write) to accumulate draft totals. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+  - module [tour](../../src/tour.ts#L1)
+    <a id="features.tour"></a><br>`keylang tour` (business-flows/15): one page for a newcomer and for an agent — what the system is, its layers and modules, the business processes with their diagrams, entry points and events, integrations, blind spots and «logic in data», and where to start reading. A view over…
+    - node [external.node](external.md#external.node)
+    - call-sites [features.call-sites](features.md#features.call-sites)
+    - config [base.config](base.md#base.config)
+    - coverage-report [features.coverage-report](features.md#features.coverage-report)
+    - diagram [map.diagram](map.md#map.diagram)
+    - discover [features.discover](features.md#features.discover)
+    - discover-names [features.discover-names](features.md#features.discover-names)
+    - external-ids [base.external-ids](base.md#base.external-ids)
+    - integrations [features.integrations](features.md#features.integrations)
+    - snapshot [map.snapshot](map.md#map.snapshot)
+    - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
+    - span [base.span](base.md#base.span)
+    - type [TourFlow](../../src/tour.ts#L39)
+      <a id="features.tour.TourFlow"></a>
+    - type [TourProcess](../../src/tour.ts#L56)
+      <a id="features.tour.TourProcess"></a>
+    - type [Tour](../../src/tour.ts#L64)
+      <a id="features.tour.Tour"></a>
+    - type [TourInputs](../../src/tour.ts#L121)
+      <a id="features.tour.TourInputs"></a><br>What the tour reads besides the snapshot: the config, the hand-written specs.
+    - fn [diagramLink](../../src/tour.ts#L128) (view: "flow" | "discovered", name: string) → string <!-- internal -->
+      <a id="features.tour.diagramLink"></a><br>The diagram of a view on the `keylang web` page.
+    - fn [readOrNull](../../src/tour.ts#L132) (abs: string) → string | null <!-- internal -->
+      <a id="features.tour.readOrNull"></a>
+    - fn [moduleOf](../../src/tour.ts#L141) (snapshot: AnalysisSnapshot, id: string) → string | null <!-- internal -->
+      <a id="features.tour.moduleOf"></a><br>The file module a node counts under: itself or its nearest ancestor that is a module and no class.
+    - fn [layerOrder](../../src/tour.ts#L153) (snapshot: AnalysisSnapshot) → string[] <!-- internal -->
+      <a id="features.tour.layerOrder"></a><br>The repository's layers in `keylang.json` order, then the others by name; packages left out.
+      - calls [base.span.compareText](base.md#base.span.compareText)
+    - fn [layersOf](../../src/tour.ts#L162) (snapshot: AnalysisSnapshot) → Tour["layers"] <!-- internal -->
+      <a id="features.tour.layersOf"></a>
+      - calls [features.tour.layerOrder](features.md#features.tour.layerOrder), [features.tour.moduleOf](features.md#features.tour.moduleOf), [base.span.compareText](base.md#base.span.compareText)
+    - fn [processesOf](../../src/tour.ts#L201) (inputs: TourInputs, flows: readonly DiscoveredFlow[], specDir: string) → Tour["processes"] <!-- internal -->
+      <a id="features.tour.processesOf"></a>
+      - calls [features.tour.readOrNull](features.md#features.tour.readOrNull), [base.config.specPath](base.md#base.config.specPath), [features.tour.diagramLink](features.md#features.tour.diagramLink), [base.span.compareText](base.md#base.span.compareText), [features.discover-names.readProcesses](features.md#features.discover-names.readProcesses)
+    - fn [entriesOf](../../src/tour.ts#L263) (snapshot: AnalysisSnapshot) → Tour["entries"] <!-- internal -->
+      <a id="features.tour.entriesOf"></a>
+    - fn [eventsOf](../../src/tour.ts#L278) (snapshot: AnalysisSnapshot) → Tour["events"] <!-- internal -->
+      <a id="features.tour.eventsOf"></a><br>Event nodes, should the snapshot hold them (a framework adapter's events): who dispatches each, and who listens.
+      - calls [base.span.compareText](base.md#base.span.compareText)
+    - fn [integrationsOf](../../src/tour.ts#L286) (report: IntegrationsReport) → Tour["integrations"] <!-- internal -->
+      <a id="features.tour.integrationsOf"></a>
+      - calls [base.span.compareText](base.md#base.span.compareText)
+    - fn [blindSpotsOf](../../src/tour.ts#L307) (report: CoverageReport) → Tour["blindSpots"] <!-- internal -->
+      <a id="features.tour.blindSpotsOf"></a>
+    - fn [startHereOf](../../src/tour.ts#L331) (snapshot: AnalysisSnapshot, spec: SpecIR, flows: readonly DiscoveredFlow[]) → Tour["startHere"] <!-- internal -->
+      <a id="features.tour.startHereOf"></a><br>The fns to read first: by the flows (hand-written and discovered) that name them, then by their callers, then by ID; packages and test files left out.
+      - calls [map.diagram.flowIds](map.md#map.diagram.flowIds), [features.call-sites.isTestFile](features.md#features.call-sites.isTestFile), [base.span.compareText](base.md#base.span.compareText)
+    - fn [buildTour](../../src/tour.ts#L352) (inputs: TourInputs) → Promise<Tour>
+      <a id="features.tour.buildTour"></a><br>The tour over a snapshot, the hand-written specs and the saved files beside them (the discovered view and its names README). Reads the analysed files' facts, as `coverage` and `integrations` do; writes nothing.
+      - calls [features.discover.specifiedTriggers](features.md#features.discover.specifiedTriggers), [features.discover.discoverFlows](features.md#features.discover.discoverFlows), [features.coverage-report.loadDataLogic](features.md#features.coverage-report.loadDataLogic), [features.coverage-report.findDataLogic](features.md#features.coverage-report.findDataLogic), [features.coverage-report.coverageReport](features.md#features.coverage-report.coverageReport), [features.tour.readOrNull](features.md#features.tour.readOrNull), [features.integrations.findIntegrations](features.md#features.integrations.findIntegrations), [features.integrations.loadIntegrations](features.md#features.integrations.loadIntegrations), [features.tour.layersOf](features.md#features.tour.layersOf), [features.tour.processesOf](features.md#features.tour.processesOf), [features.tour.entriesOf](features.md#features.tour.entriesOf), [features.tour.eventsOf](features.md#features.tour.eventsOf), [features.tour.integrationsOf](features.md#features.tour.integrationsOf), [features.tour.blindSpotsOf](features.md#features.tour.blindSpotsOf), [features.tour.startHereOf](features.md#features.tour.startHereOf)
+    - fn [percent](../../src/tour.ts#L384) (share: number) → string <!-- internal -->
+      <a id="features.tour.percent"></a>
+    - fn [code](../../src/tour.ts#L385) (text: string) → string <!-- internal -->
+      <a id="features.tour.code"></a>
+    - fn [cell](../../src/tour.ts#L387) (text: string) → string <!-- internal -->
+      <a id="features.tour.cell"></a><br>One table cell: no pipe or line break.
+    - fn [tourMarkdown](../../src/tour.ts#L390) (tour: Tour) → string
+      <a id="features.tour.tourMarkdown"></a><br>The tour as one Markdown page, the seven sections in order. Ends with a newline.
+      - calls [features.discover.proseLine](features.md#features.discover.proseLine), [features.tour.code](features.md#features.tour.code), [features.tour.cell](features.md#features.tour.cell), [features.tour.percent](features.md#features.tour.percent)
   - module [voice-local](../../src/voice-local.ts#L1)
     <a id="features.voice-local"></a><br>The optional native parts of voice (design §7.4): `decibri` for the microphone and `@fugood/whisper.node` (whisper.cpp) for local recognition. Both ship prebuilt binaries and are optional peer dependencies: npm installs them only when the user adds them next to keylang, and…
     - node [external.node](external.md#external.node)

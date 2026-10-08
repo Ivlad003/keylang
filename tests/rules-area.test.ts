@@ -671,3 +671,46 @@ test("rust: serde declared in Cargo.toml is not K001 when its importer is exclud
   assert.doesNotMatch(run.stdout, /K001/);
   assert.doesNotMatch(run.stdout, /external\.serde/);
 });
+
+test("no-cycles and entry under a planned submodule of a file module do not stand for the parent module", (t) => {
+  const cyclic = repo(t, {
+    "keylang.json": config({ app: "src/app/**" }),
+    "src/app/x.ts": 'import { z } from "./z";\nexport function x(): void {\n  z();\n}\n',
+    "src/app/z.ts": 'import { x } from "./x";\nexport function z(): void {\n  x();\n}\n',
+    "keylang/flows/feat.md": "# flow feat\n\n- planned module app.x.fresh\n",
+    "keylang/rules.md": "# rules\n\n- module app.x.fresh\n  - no-cycles\n",
+  });
+  const cycles = keylang(cyclic, ["check"]);
+  assert.equal(cycles.status, 0, cycles.stdout);
+  assert.doesNotMatch(cycles.stdout, /K105/);
+  assert.match(cycles.stdout, /unverified .*`app\.x\.fresh` is planned: no code yet/);
+
+  const entry = repo(t, {
+    "keylang.json": config({ app: "src/app/**" }),
+    "src/app/x.ts": 'import { z } from "./z";\nexport function x(): void {\n  z();\n}\n',
+    "src/app/z.ts": "export function z(): void {}\n",
+    "src/app/main.ts": "export function main(): void {}\n",
+    "keylang/flows/feat.md": "# flow feat\n\n- planned module app.x.fresh\n",
+    "keylang/rules.md": "# rules\n\n- entry\n  - app.main\n  - app.x.fresh\n",
+  });
+  const reached = keylang(entry, ["check"]).stdout;
+  assert.match(reached, /K103 absence: module `app\.x` is not reachable from any `entry`/, reached);
+  assert.match(reached, /K103 absence: module `app\.z` is not reachable from any `entry`/, reached);
+});
+
+test("exports on an opaque module (a parse error) whose partial table matches the list is unverified, not ok", (t) => {
+  const dir = repo(t, {
+    "keylang.json": config({ app: "src/app/**" }),
+    "keylang/rules.md": "# rules\n\n- module app.m\n  - exports a\n",
+    "src/app/m.ts": "export function a() { return 1; }\nconst x = ;;; )))) {{{\nexport function hidden() { return 3; }\n",
+  });
+  for (const args of [["check"], ["check", "--strict"]]) {
+    const o = keylang(dir, args);
+    assert.doesNotMatch(o.stdout, /the export table is exactly/, o.stdout);
+    assert.match(o.stdout + o.stderr, /0 fail, 1 unverified, 0 ok/, o.stdout + o.stderr);
+  }
+  const json = JSON.parse(keylang(dir, ["check", "--format", "json"]).stdout) as { results: { criterion: string; verdict: string; evidence: string }[] };
+  const row = json.results.find((r) => r.criterion.startsWith("exports"));
+  assert.equal(row?.verdict, "unverified");
+  assert.match(row?.evidence ?? "", /opaque module `app\.m` may export more than its table shows/);
+});

@@ -744,3 +744,29 @@ test("php: keylang's PHPUnit extension writes a report bound to the snapshot, an
   assert.match(o.stdout, /flows\.md:3:1: trace ok app\.Checkout\.Checkout\.buy/);
   assert.match(o.stdout, /flows\.md:4:3: trace ok domain\.Order\.Order\.add: observed in tests\/BuyTest\.php > BuyTest > testBuy/);
 });
+
+test("php: `insteadof` and `as` in a trait `use` block decide which method `$this->m()` calls", (t) => {
+  const dir = repo(t, {
+    "keylang.json": JSON.stringify({ languages: ["php"], layers: { app: ["src/**"] } }),
+    "src/A.php": "<?php\ntrait Loud {\n    public function hello() { return 'HI'; }\n}\n",
+    "src/B.php": "<?php\ntrait Quiet {\n    public function hello() { return 'hi'; }\n}\n",
+    "src/Greeter.php": [
+      "<?php",
+      "class Greeter {",
+      "    use Quiet, Loud {",
+      "        Loud::hello insteadof Quiet;",
+      "        Quiet::hello as protected whisper;",
+      "        hello as shout;",
+      "    }",
+      "    public function run() { return $this->hello() . $this->whisper(); }",
+      "    public function loud() { return $this->SHOUT(); }",
+      "}",
+      "",
+    ].join("\n"),
+  });
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const index = snapshot(dir);
+  const calls = index.edges.filter((e) => e.kind === "call" && e.source.startsWith("app.Greeter.Greeter.")).map((e) => `${e.text} -> ${e.target ?? "?"}`);
+  assert.deepEqual(calls, ["this.hello -> app.A.Loud.hello", "this.whisper -> app.B.Quiet.hello", "this.SHOUT -> app.A.Loud.hello"]);
+  assert.ok(!index.coverage.some((c) => c.kind === "unresolved-call"), JSON.stringify(index.coverage));
+});

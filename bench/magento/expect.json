@@ -5,7 +5,8 @@
     "quote.Model.QuoteManagement.QuoteManagement.submitQuote",
     "quote.Model.SubmitQuoteValidator.SubmitQuoteValidator.validateQuote",
     "quote.Model.SubmitQuoteValidator.SubmitQuoteValidator.validateOrder",
-    "sales.Model.Service.OrderService.OrderService.place"
+    "sales.Model.Service.OrderService.OrderService.place",
+    "salesrule.Plugin.CouponUsagesIncrement.CouponUsagesIncrement.aroundSubmit"
   ],
   "events": ["checkout_submit_before", "checkout_submit_all_after"]
 }

@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <preference for="Shop\Sales\Api\OrderManagementInterface" type="Shop\Sales\Model\OrderService"/>
+    <preference for="Shop\Checkout\Api\TotalsInterface" type="\Shop\Sales\Model\Totals"/>
+    <preference for="Shop\Checkout\Api\NotifierInterface" type="Shop\Checkout\Model\EmailNotifier"/>
+    <preference for="Shop\Checkout\Api\ClockInterface" type="Shop\Missing\Clock"/>
+    <virtualType name="Shop\Checkout\Model\FastLogger" type="Shop\Checkout\Model\Logger"/>
+    <type name="Shop\Checkout\Model\QuoteManagement">
+        <arguments>
+            <argument name="logger" xsi:type="object">Shop\Checkout\Model\FastLogger</argument>
+        </arguments>
+    </type>
+</config>

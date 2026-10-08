@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [bench](#outside.bench) · [bench.clone](#outside.bench.clone) · [bench.inject](#outside.bench.inject) · [bench.lib](#outside.bench.lib) · [bench.lib.metrics_d](#outside.bench.lib.metrics_d) · [bench.lib.metrics](#outside.bench.lib.metrics) · [bench.magento](#outside.bench.magento) · [bench.magento.run](#outside.bench.magento.run) · [bench.run](#outside.bench.run) · [design](#outside.design) · [design.scripts](#outside.design.scripts) · [design.scripts._60_archive](#outside.design.scripts._60_archive) · [design.scripts._61_tui](#outside.design.scripts._61_tui) · [design.scripts._62_flow](#outside.design.scripts._62_flow) · [design.scripts._63_merge](#outside.design.scripts._63_merge) · [design.scripts._64_explain](#outside.design.scripts._64_explain) · [design.scripts._65_windows](#outside.design.scripts._65_windows) · [design.scripts._66_export](#outside.design.scripts._66_export) · [design.scripts._70_cleanup](#outside.design.scripts._70_cleanup) · [design.scripts._71_editor](#outside.design.scripts._71_editor) · [design.scripts._72_fix](#outside.design.scripts._72_fix) · [design.scripts._73_fix](#outside.design.scripts._73_fix) · [design.scripts._74_agent](#outside.design.scripts._74_agent) · [design.scripts._75_read_s2c](#outside.design.scripts._75_read_s2c) · [design.scripts._76_fix_export](#outside.design.scripts._76_fix_export) · [design.scripts._77_tbl](#outside.design.scripts._77_tbl) · [design.scripts.lib](#outside.design.scripts.lib) · [editors](#outside.editors) · [editors.vscode](#outside.editors.vscode) · [editors.vscode.extension](#outside.editors.vscode.extension) · [examples](#outside.examples) · [examples.wiring-lifecycle](#outside.examples.wiring-lifecycle) · [examples.wiring-lifecycle.demo](#outside.examples.wiring-lifecycle.demo) · [examples.wiring-lifecycle.plan](#outside.examples.wiring-lifecycle.plan) · [scripts](#outside.scripts) · [scripts.build-web](#outside.scripts.build-web) · [scripts.copy-wasm](#outside.scripts.copy-wasm) · [scripts.copy-web](#outside.scripts.copy-web) · [scripts.pack-entry](#outside.scripts.pack-entry) · [web](#outside.web) · [web.src](#outside.web.src) · [web.src.api](#outside.web.src.api) · [web.src.canvas](#outside.web.src.canvas) · [web.src.diagrams](#outside.web.src.diagrams) · [web.src.list](#outside.web.src.list)
+[README](README.md) · modules: [bench](#outside.bench) · [bench.clone](#outside.bench.clone) · [bench.inject](#outside.bench.inject) · [bench.lib](#outside.bench.lib) · [bench.lib.metrics](#outside.bench.lib.metrics) · [bench.magento](#outside.bench.magento) · [bench.magento.run](#outside.bench.magento.run) · [bench.run](#outside.bench.run) · [design](#outside.design) · [design.scripts](#outside.design.scripts) · [design.scripts._60_archive](#outside.design.scripts._60_archive) · [design.scripts._61_tui](#outside.design.scripts._61_tui) · [design.scripts._62_flow](#outside.design.scripts._62_flow) · [design.scripts._63_merge](#outside.design.scripts._63_merge) · [design.scripts._64_explain](#outside.design.scripts._64_explain) · [design.scripts._65_windows](#outside.design.scripts._65_windows) · [design.scripts._66_export](#outside.design.scripts._66_export) · [design.scripts._70_cleanup](#outside.design.scripts._70_cleanup) · [design.scripts._71_editor](#outside.design.scripts._71_editor) · [design.scripts._72_fix](#outside.design.scripts._72_fix) · [design.scripts._73_fix](#outside.design.scripts._73_fix) · [design.scripts._74_agent](#outside.design.scripts._74_agent) · [design.scripts._75_read_s2c](#outside.design.scripts._75_read_s2c) · [design.scripts._76_fix_export](#outside.design.scripts._76_fix_export) · [design.scripts._77_tbl](#outside.design.scripts._77_tbl) · [design.scripts.lib](#outside.design.scripts.lib) · [editors](#outside.editors) · [editors.vscode](#outside.editors.vscode) · [editors.vscode.extension](#outside.editors.vscode.extension) · [examples](#outside.examples) · [examples.wiring-lifecycle](#outside.examples.wiring-lifecycle) · [examples.wiring-lifecycle.demo](#outside.examples.wiring-lifecycle.demo) · [examples.wiring-lifecycle.plan](#outside.examples.wiring-lifecycle.plan) · [scripts](#outside.scripts) · [scripts.build-web](#outside.scripts.build-web) · [scripts.copy-wasm](#outside.scripts.copy-wasm) · [scripts.copy-web](#outside.scripts.copy-web) · [scripts.pack-entry](#outside.scripts.pack-entry) · [web](#outside.web) · [web.src](#outside.web.src) · [web.src.api](#outside.web.src.api) · [web.src.blind](#outside.web.src.blind) · [web.src.canvas](#outside.web.src.canvas) · [web.src.diagrams](#outside.web.src.diagrams) · [web.src.dom](#outside.web.src.dom) · [web.src.explorer](#outside.web.src.explorer) · [web.src.list](#outside.web.src.list) · [web.src.tour](#outside.web.src.tour)
 
 # map
 
@@ -14,8 +14,6 @@
       <a id="outside.bench.inject"></a><br>A benchmark-side module living outside the analyzed layers, with one unresolved dependency on another outside file. Its contents were not captured because the file changed after it was read. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - module lib
       <a id="outside.bench.lib"></a>
-      - module [metrics_d](../../bench/lib/metrics.d.mts#L1) <!-- outside -->
-        <a id="outside.bench.lib.metrics_d"></a>
       - module [metrics](../../bench/lib/metrics.mjs#L1) <!-- outside -->
         <a id="outside.bench.lib.metrics"></a>
     - module magento
@@ -90,9 +88,17 @@
       <a id="outside.web.src"></a>
       - module [api](../../web/src/api.ts#L1) <!-- outside -->
         <a id="outside.web.src.api"></a>
+      - module [blind](../../web/src/blind.ts#L1) <!-- outside -->
+        <a id="outside.web.src.blind"></a>
       - module [canvas](../../web/src/canvas.ts#L1) <!-- outside -->
         <a id="outside.web.src.canvas"></a>
       - module [diagrams](../../web/src/diagrams.ts#L1) <!-- outside -->
         <a id="outside.web.src.diagrams"></a>
+      - module [dom](../../web/src/dom.ts#L1) <!-- outside -->
+        <a id="outside.web.src.dom"></a>
+      - module [explorer](../../web/src/explorer.ts#L1) <!-- outside -->
+        <a id="outside.web.src.explorer"></a>
       - module [list](../../web/src/list.ts#L1) <!-- outside -->
         <a id="outside.web.src.list"></a>
+      - module [tour](../../web/src/tour.ts#L1) <!-- outside -->
+        <a id="outside.web.src.tour"></a>

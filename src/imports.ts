@@ -510,7 +510,11 @@ export class ImportResolver {
     for (const p of probeCandidates(candidate)) {
       if (this.sources.has(p)) return p;
       const abs = join(this.root, p);
-      if (this.onDisk(p) && statSync(abs).isFile()) return p;
+      if (this.onDisk(p) && statSync(abs).isFile()) {
+        // A file the analysis does not read (a `.d.ts`, a test, JSON) still decides the edge: an input of the snapshot id.
+        this.text(p);
+        return p;
+      }
     }
     return null;
   }
@@ -559,8 +563,12 @@ function probeCandidates(candidate: string): string[] {
   const c = posix.normalize(candidate);
   if (c.startsWith("../")) return [];
   const swapped = /\.[cm]?js$/.test(c) ? [c.replace(/\.js$/, ".ts").replace(/\.mjs$/, ".mts").replace(/\.cjs$/, ".cts"), c.replace(/\.js$/, ".tsx"), c.replace(/\.js$/, ".jsx")] : /\.jsx$/.test(c) ? [c.replace(/\.jsx$/, ".tsx")] : [];
-  return [c, ...swapped, ...EXTS.map((e) => c + e), ...EXTS.map((e) => posix.join(c, `index${e}`))];
+  // A module that only has a declaration file is what tsc resolves to after the sources: `./types` → `types.d.ts`.
+  const declared = /\.[cm]?js$/.test(c) ? [c.replace(/\.js$/, ".d.ts").replace(/\.mjs$/, ".d.mts").replace(/\.cjs$/, ".d.cts")] : [];
+  return [c, ...swapped, ...EXTS.map((e) => c + e), ...declared, ...DTS.map((e) => c + e), ...EXTS.map((e) => posix.join(c, `index${e}`)), posix.join(c, "index.d.ts")];
 }
+
+const DTS = [".d.ts", ".d.mts", ".d.cts"];
 
 type Located = { kind: "workspace"; dir: string } | { kind: "installed" } | null;
 
