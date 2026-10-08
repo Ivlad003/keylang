@@ -646,6 +646,79 @@
     - type [PlanItem](../../src/feature-status.ts#L498) = Trigger | FlowStep | QuestionItem <!-- internal -->
     - fn [planItems](../../src/feature-status.ts#L501) (flow: Flow) → { key: string; item: PlanItem }[] <!-- internal -->
     - fn [finding](../../src/feature-status.ts#L515) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
+  - module [flow-bundle](../../src/flow-bundle.ts#L1)
+    - brief base.brief
+    - glob base.glob
+    - ir lang.ir
+    - llm features.llm
+    - parser lang.parser
+    - snapshot map.snapshot
+    - span base.span
+    - type [BundleHeader](../../src/flow-bundle.ts#L37)
+    - type [BundleLayer](../../src/flow-bundle.ts#L50)
+    - type [BundleNode](../../src/flow-bundle.ts#L58)
+    - type [BundleTest](../../src/flow-bundle.ts#L74)
+    - type [BundleReach](../../src/flow-bundle.ts#L81)
+    - type [BundleFlow](../../src/flow-bundle.ts#L91)
+    - type [Bundle](../../src/flow-bundle.ts#L101)
+    - type [ExportFlow](../../src/flow-bundle.ts#L113)
+    - fn [flowIds](../../src/flow-bundle.ts#L126) (text: string) → string[]
+      - calls features.flow-bundle.idSpots
+    - fn [flowTests](../../src/flow-bundle.ts#L133) (flow: string, text: string) → BundleTest[]
+      - calls features.flow-bundle.flowNodes, lang.ir.walk
+    - fn [flowEvents](../../src/flow-bundle.ts#L142) (flow: string, text: string) → BundleReach[]
+      - calls features.flow-bundle.flowNodes, lang.ir.walk
+    - fn [bundleNodes](../../src/flow-bundle.ts#L156) (snapshot: AnalysisSnapshot, flows: readonly ExportFlow[], withCallees: number) → BundleNode[]
+      - calls features.flow-bundle.describe, features.flow-bundle.plannedIn, features.flow-bundle.flowIds
+    - fn [describe](../../src/flow-bundle.ts#L195) (snapshot: AnalysisSnapshot, id: string) → Omit<BundleNode, "role" | "flows"> <!-- internal -->
+      - calls base.brief.firstSentence
+    - fn [bundleText](../../src/flow-bundle.ts#L209) (input: { header: BundleHeader; layers: readonly BundleLayer[]; nodes: readonly BundleNode[]; tests: readonly BundleTest[]; reached: readonly BundleReach[]; flows: readonly ExportFlow[] }) → string
+      - calls features.flow-bundle.word, features.flow-bundle.cell, features.flow-bundle.row, features.flow-bundle.code, features.flow-bundle.text, features.flow-bundle.withBundleComment
+    - fn [withBundleComment](../../src/flow-bundle.ts#L247) (flow: ExportFlow) → string <!-- internal -->
+      - calls features.flow-bundle.quoteLine, features.flow-bundle.word
+    - fn [quoteLine](../../src/flow-bundle.ts#L256) (text: string) → string <!-- internal -->
+    - fn [word](../../src/flow-bundle.ts#L261) (value: string) → string <!-- internal -->
+    - fn [code](../../src/flow-bundle.ts#L265) (value: string) → string <!-- internal -->
+      - calls features.flow-bundle.cell
+    - fn [text](../../src/flow-bundle.ts#L270) (value: string) → string <!-- internal -->
+      - calls features.flow-bundle.cell
+    - fn [cell](../../src/flow-bundle.ts#L275) (value: string) → string <!-- internal -->
+    - fn [row](../../src/flow-bundle.ts#L279) (cells: readonly string[]) → string <!-- internal -->
+    - fn [parseBundle](../../src/flow-bundle.ts#L286) (source: string) → Bundle | { error: string }
+      - calls features.flow-bundle.cells, features.flow-bundle.plain, features.flow-bundle.unescapeText, lang.parser.parse
+    - fn [cells](../../src/flow-bundle.ts#L352) (line: string) → string[] <!-- internal -->
+    - fn [plain](../../src/flow-bundle.ts#L371) (value: string | undefined) → string <!-- internal -->
+    - fn [unescapeText](../../src/flow-bundle.ts#L376) (value: string) → string <!-- internal -->
+    - type [TargetLayer](../../src/flow-bundle.ts#L383)
+    - type [LayerChoice](../../src/flow-bundle.ts#L390)
+    - fn [parseLayerMap](../../src/flow-bundle.ts#L398) (text: string) → Map<string, string> | { error: string }
+    - fn [usedLayers](../../src/flow-bundle.ts#L410) (bundle: Bundle) → string[]
+      - calls features.flow-bundle.flowIds, features.flow-bundle.layerOfPath, base.span.compareText
+    - fn [algoLayers](../../src/flow-bundle.ts#L426) (layers: readonly string[], target: readonly TargetLayer[], taken: ReadonlyMap<string, LayerChoice> = new Map()) → { choices: LayerChoice[]; notes: string[] }
+    - fn [layerMapRequest](../../src/flow-bundle.ts#L442) (bundle: Bundle, layers: readonly string[], target: readonly TargetLayer[]) → LlmRequest
+    - fn [parseLayerMapAnswer](../../src/flow-bundle.ts#L468) (answer: string, layers: readonly string[], target: readonly TargetLayer[]) → { choices: LayerChoice[]; notes: string[] }
+      - calls features.flow-bundle.jsonOf, features.flow-bundle.isRecord
+    - fn [jsonOf](../../src/flow-bundle.ts#L483) (answer: string) → unknown <!-- internal -->
+    - fn [isRecord](../../src/flow-bundle.ts#L495) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [layerOfPath](../../src/flow-bundle.ts#L500) (layers: readonly { name: string; globs: string[] }[], path: string) → { name: string; root: string } | null <!-- internal -->
+      - calls base.glob.globPrefix
+    - type [ImportPlan](../../src/flow-bundle.ts#L513)
+    - type [ImportTarget](../../src/flow-bundle.ts#L523)
+    - fn [importPlan](../../src/flow-bundle.ts#L538) (bundle: Bundle, choices: readonly LayerChoice[], target: ImportTarget, options: { name: string; bundleFile: string; mode: string }) → ImportPlan
+      - calls base.glob.globPrefix, features.flow-bundle.layerOfPath, features.flow-bundle.word, features.flow-bundle.flowIds, features.flow-bundle.plannedIn, features.flow-bundle.plannedLine, features.flow-bundle.rehomedFlow
+    - fn [plannedLine](../../src/flow-bundle.ts#L599) (kind: string | undefined, id: string, signature: string | null, notes: string[]) → string <!-- internal -->
+      - calls lang.parser.parse
+    - fn [rehomedFlow](../../src/flow-bundle.ts#L613) (text: string, rehome: (id: string) => string, rehomePath: (path: string) => string, provenance: string, planned: readonly string[]) → string <!-- internal -->
+      - calls features.flow-bundle.idSpots, features.flow-bundle.flowNodes, lang.ir.walk
+    - fn [withMigration](../../src/flow-bundle.ts#L637) (existing: string | null, name: string, section: string) → string
+      - calls lang.parser.parse
+    - type [IdSpot](../../src/flow-bundle.ts#L654) <!-- internal -->
+    - fn [flowNodes](../../src/flow-bundle.ts#L660) (text: string) → Node[] <!-- internal -->
+      - calls lang.parser.parse
+    - fn [idSpots](../../src/flow-bundle.ts#L665) (text: string) → IdSpot[] <!-- internal -->
+      - calls features.flow-bundle.flowNodes, lang.ir.walk, lang.parser.isId
+    - fn [plannedIn](../../src/flow-bundle.ts#L681) (text: string) → Map<string, { kind: string; signature: string | null }> <!-- internal -->
+      - calls features.flow-bundle.flowNodes, lang.ir.walk
   - module [ghost](../../src/ghost.ts#L1)
     - analyze map.analyze
     - agent-context features.agent-context

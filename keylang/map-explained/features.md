@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [agent-cli](#features.agent-cli) · [agent-context](#features.agent-context) · [baseline](#features.baseline) · [call-sites](#features.call-sites) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [clone](#features.clone) · [coverage-report](#features.coverage-report) · [discover-names](#features.discover-names) · [discover](#features.discover) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [explorer](#features.explorer) · [feature-status](#features.feature-status) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [harness](#features.harness) · [integrations](#features.integrations) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stale](#features.stale) · [stats](#features.stats) · [tour](#features.tour) · [voice-local](#features.voice-local) · [voice](#features.voice)
+[README](README.md) · modules: [agent-cli](#features.agent-cli) · [agent-context](#features.agent-context) · [baseline](#features.baseline) · [call-sites](#features.call-sites) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [clone](#features.clone) · [coverage-report](#features.coverage-report) · [discover-names](#features.discover-names) · [discover](#features.discover) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [explorer](#features.explorer) · [feature-status](#features.feature-status) · [flow-bundle](#features.flow-bundle) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [harness](#features.harness) · [integrations](#features.integrations) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stale](#features.stale) · [stats](#features.stats) · [tour](#features.tour) · [voice-local](#features.voice-local) · [voice](#features.voice)
 
 # map
 
@@ -1015,6 +1015,125 @@
       <a id="features.feature-status.planItems"></a><br>Every `trigger`, `step` and open question of a flow with a key: the flow, its parents, and itself.
     - fn [finding](../../src/feature-status.ts#L515) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
       <a id="features.feature-status.finding"></a><br>Returns the first diagnostic whose file, starting line, and code all match the given values, or undefined when none does. Used by [`features.feature-status.featureStatus`](features.md#features.feature-status.featureStatus) to look up a specific expected finding. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+  - module [flow-bundle](../../src/flow-bundle.ts#L1)
+    <a id="features.flow-bundle"></a><br>`keylang flow export|import` (business-flows/26): the portable bundle of business flows. Export writes one self-contained Markdown file — a header comment with its provenance, tables of the layers, nodes, tests, events and integrations the flows reach, the flows themselves, and…
+    - brief [base.brief](base.md#base.brief)
+    - glob [base.glob](base.md#base.glob)
+    - ir [lang.ir](lang.md#lang.ir)
+    - llm [features.llm](features.md#features.llm)
+    - parser [lang.parser](lang.md#lang.parser)
+    - snapshot [map.snapshot](map.md#map.snapshot)
+    - span [base.span](base.md#base.span)
+    - type [BundleHeader](../../src/flow-bundle.ts#L37)
+      <a id="features.flow-bundle.BundleHeader"></a><br>Where a bundle came from.
+    - type [BundleLayer](../../src/flow-bundle.ts#L50)
+      <a id="features.flow-bundle.BundleLayer"></a>
+    - type [BundleNode](../../src/flow-bundle.ts#L58)
+      <a id="features.flow-bundle.BundleNode"></a>
+    - type [BundleTest](../../src/flow-bundle.ts#L74)
+      <a id="features.flow-bundle.BundleTest"></a>
+    - type [BundleReach](../../src/flow-bundle.ts#L81)
+      <a id="features.flow-bundle.BundleReach"></a><br>An event a flow emits, or an integration one of its nodes calls.
+    - type [BundleFlow](../../src/flow-bundle.ts#L91)
+      <a id="features.flow-bundle.BundleFlow"></a><br>One flow of a bundle: its `# flow` section as written, with the bundle's comment under the heading.
+    - type [Bundle](../../src/flow-bundle.ts#L101)
+      <a id="features.flow-bundle.Bundle"></a>
+    - type [ExportFlow](../../src/flow-bundle.ts#L113)
+      <a id="features.flow-bundle.ExportFlow"></a><br>A flow the export reads: its section text and the business words known about it.
+    - fn [flowIds](../../src/flow-bundle.ts#L126) (text: string) → string[]
+      <a id="features.flow-bundle.flowIds"></a><br>Every ID a flow section names (triggers, steps, calls, reads, `then`, planned), in order of first mention.
+      - calls [features.flow-bundle.idSpots](features.md#features.flow-bundle.idSpots)
+    - fn [flowTests](../../src/flow-bundle.ts#L133) (flow: string, text: string) → BundleTest[]
+      <a id="features.flow-bundle.flowTests"></a><br>The `test` lines of a flow section.
+      - calls [features.flow-bundle.flowNodes](features.md#features.flow-bundle.flowNodes), [lang.ir.walk](lang.md#lang.ir.walk)
+    - fn [flowEvents](../../src/flow-bundle.ts#L142) (flow: string, text: string) → BundleReach[]
+      <a id="features.flow-bundle.flowEvents"></a><br>The `emits` lines of a flow section, as reached events.
+      - calls [features.flow-bundle.flowNodes](features.md#features.flow-bundle.flowNodes), [lang.ir.walk](lang.md#lang.ir.walk)
+    - fn [bundleNodes](../../src/flow-bundle.ts#L156) (snapshot: AnalysisSnapshot, flows: readonly ExportFlow[], withCallees: number) → BundleNode[]
+      <a id="features.flow-bundle.bundleNodes"></a><br>The nodes of the bundle: every ID the flows name, then (`withCallees` > 0) what they call, to that depth, over resolved calls to fns of the repository. A node keeps the flows that name or reach it.
+      - calls [features.flow-bundle.describe](features.md#features.flow-bundle.describe), [features.flow-bundle.plannedIn](features.md#features.flow-bundle.plannedIn), [features.flow-bundle.flowIds](features.md#features.flow-bundle.flowIds)
+    - fn [describe](../../src/flow-bundle.ts#L195) (snapshot: AnalysisSnapshot, id: string) → Omit<BundleNode, "role" | "flows"> <!-- internal -->
+      <a id="features.flow-bundle.describe"></a>
+      - calls [base.brief.firstSentence](base.md#base.brief.firstSentence)
+    - fn [bundleText](../../src/flow-bundle.ts#L209) (input: { header: BundleHeader; layers: readonly BundleLayer[]; nodes: readonly BundleNode[]; tests: readonly BundleTest[]; reached: readonly BundleReach[]; flows: readonly ExportFlow[] }) → string
+      <a id="features.flow-bundle.bundleText"></a><br>The bundle as one Markdown file. The same input gives the same bytes.
+      - calls [features.flow-bundle.word](features.md#features.flow-bundle.word), [features.flow-bundle.cell](features.md#features.flow-bundle.cell), [features.flow-bundle.row](features.md#features.flow-bundle.row), [features.flow-bundle.code](features.md#features.flow-bundle.code), [features.flow-bundle.text](features.md#features.flow-bundle.text), [features.flow-bundle.withBundleComment](features.md#features.flow-bundle.withBundleComment)
+    - fn [withBundleComment](../../src/flow-bundle.ts#L247) (flow: ExportFlow) → string <!-- internal -->
+      <a id="features.flow-bundle.withBundleComment"></a><br>The flow's section with the bundle's comment (origin and source) under the heading, then its business process as a quote.
+      - calls [features.flow-bundle.quoteLine](features.md#features.flow-bundle.quoteLine), [features.flow-bundle.word](features.md#features.flow-bundle.word)
+    - fn [quoteLine](../../src/flow-bundle.ts#L256) (text: string) → string <!-- internal -->
+      <a id="features.flow-bundle.quoteLine"></a><br>One line of a quote: no comment it could open, no `<` read as HTML.
+    - fn [word](../../src/flow-bundle.ts#L261) (value: string) → string <!-- internal -->
+      <a id="features.flow-bundle.word"></a><br>A header value: one word, no `-->`.
+    - fn [code](../../src/flow-bundle.ts#L265) (value: string) → string <!-- internal -->
+      <a id="features.flow-bundle.code"></a>
+      - calls [features.flow-bundle.cell](features.md#features.flow-bundle.cell)
+    - fn [text](../../src/flow-bundle.ts#L270) (value: string) → string <!-- internal -->
+      <a id="features.flow-bundle.text"></a>
+      - calls [features.flow-bundle.cell](features.md#features.flow-bundle.cell)
+    - fn [cell](../../src/flow-bundle.ts#L275) (value: string) → string <!-- internal -->
+      <a id="features.flow-bundle.cell"></a><br>A table cell: one line, `|` escaped.
+    - fn [row](../../src/flow-bundle.ts#L279) (cells: readonly string[]) → string <!-- internal -->
+      <a id="features.flow-bundle.row"></a>
+    - fn [parseBundle](../../src/flow-bundle.ts#L286) (source: string) → Bundle | { error: string }
+      <a id="features.flow-bundle.parseBundle"></a><br>The bundle a file holds, or why it is none.
+      - calls [features.flow-bundle.cells](features.md#features.flow-bundle.cells), [features.flow-bundle.plain](features.md#features.flow-bundle.plain), [features.flow-bundle.unescapeText](features.md#features.flow-bundle.unescapeText), [lang.parser.parse](lang.md#lang.parser.parse)
+    - fn [cells](../../src/flow-bundle.ts#L352) (line: string) → string[] <!-- internal -->
+      <a id="features.flow-bundle.cells"></a><br>The cells of a table row, `\|` kept inside a cell.
+    - fn [plain](../../src/flow-bundle.ts#L371) (value: string | undefined) → string <!-- internal -->
+      <a id="features.flow-bundle.plain"></a><br>A cell without the backticks around it.
+    - fn [unescapeText](../../src/flow-bundle.ts#L376) (value: string) → string <!-- internal -->
+      <a id="features.flow-bundle.unescapeText"></a>
+    - type [TargetLayer](../../src/flow-bundle.ts#L383)
+      <a id="features.flow-bundle.TargetLayer"></a><br>The layers of the repository a bundle is imported into.
+    - type [LayerChoice](../../src/flow-bundle.ts#L390)
+      <a id="features.flow-bundle.LayerChoice"></a><br>How each source layer lands: the target layer and how that was decided.
+    - fn [parseLayerMap](../../src/flow-bundle.ts#L398) (text: string) → Map<string, string> | { error: string }
+      <a id="features.flow-bundle.parseLayerMap"></a><br>`old=new,old2=new2`, or why it is not one.
+    - fn [usedLayers](../../src/flow-bundle.ts#L410) (bundle: Bundle) → string[]
+      <a id="features.flow-bundle.usedLayers"></a><br>The source layers an import must place: the first segment of every ID of its flows and nodes, and the layers of the test paths.
+      - calls [features.flow-bundle.flowIds](features.md#features.flow-bundle.flowIds), [features.flow-bundle.layerOfPath](features.md#features.flow-bundle.layerOfPath), [base.span.compareText](base.md#base.span.compareText)
+    - fn [algoLayers](../../src/flow-bundle.ts#L426) (layers: readonly string[], target: readonly TargetLayer[], taken: ReadonlyMap<string, LayerChoice> = new Map()) → { choices: LayerChoice[]; notes: string[] }
+      <a id="features.flow-bundle.algoLayers"></a><br>The algorithm's choice for the layers the flag and the model left: the layer of the same name, else the first layer of the target (noted).
+    - fn [layerMapRequest](../../src/flow-bundle.ts#L442) (bundle: Bundle, layers: readonly string[], target: readonly TargetLayer[]) → LlmRequest
+      <a id="features.flow-bundle.layerMapRequest"></a><br>The model's request: which target layer each source layer's code belongs in, by names, roots and descriptions.
+    - fn [parseLayerMapAnswer](../../src/flow-bundle.ts#L468) (answer: string, layers: readonly string[], target: readonly TargetLayer[]) → { choices: LayerChoice[]; notes: string[] }
+      <a id="features.flow-bundle.parseLayerMapAnswer"></a><br>The model's answer checked: each value a target layer, each key a layer asked for; anything else is noted and left to the algorithm.
+      - calls [features.flow-bundle.jsonOf](features.md#features.flow-bundle.jsonOf), [features.flow-bundle.isRecord](features.md#features.flow-bundle.isRecord)
+    - fn [jsonOf](../../src/flow-bundle.ts#L483) (answer: string) → unknown <!-- internal -->
+      <a id="features.flow-bundle.jsonOf"></a>
+    - fn [isRecord](../../src/flow-bundle.ts#L495) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+      <a id="features.flow-bundle.isRecord"></a>
+    - fn [layerOfPath](../../src/flow-bundle.ts#L500) (layers: readonly { name: string; globs: string[] }[], path: string) → { name: string; root: string } | null <!-- internal -->
+      <a id="features.flow-bundle.layerOfPath"></a><br>The layer whose root holds `path` (the longest root wins), with that root; null when none does.
+      - calls [base.glob.globPrefix](base.md#base.glob.globPrefix)
+    - type [ImportPlan](../../src/flow-bundle.ts#L513)
+      <a id="features.flow-bundle.ImportPlan"></a><br>What an import proposes: the feature spec and the migration section, and what the person should know.
+    - type [ImportTarget](../../src/flow-bundle.ts#L523)
+      <a id="features.flow-bundle.ImportTarget"></a>
+    - fn [importPlan](../../src/flow-bundle.ts#L538) (bundle: Bundle, choices: readonly LayerChoice[], target: ImportTarget, options: { name: string; bundleFile: string; mode: string }) → ImportPlan
+      <a id="features.flow-bundle.importPlan"></a><br>The import: each flow of the bundle with every ID re-homed (its layer by `choices`, the rest of the ID kept), `planned` declared for each ID the target lacks (with the kind and signature of the bundle's nodes, each ID once in the file), test paths re-homed by layer root, and a…
+      - calls [base.glob.globPrefix](base.md#base.glob.globPrefix), [features.flow-bundle.layerOfPath](features.md#features.flow-bundle.layerOfPath), [features.flow-bundle.word](features.md#features.flow-bundle.word), [features.flow-bundle.flowIds](features.md#features.flow-bundle.flowIds), [features.flow-bundle.plannedIn](features.md#features.flow-bundle.plannedIn), [features.flow-bundle.plannedLine](features.md#features.flow-bundle.plannedLine), [features.flow-bundle.rehomedFlow](features.md#features.flow-bundle.rehomedFlow)
+    - fn [plannedLine](../../src/flow-bundle.ts#L599) (kind: string | undefined, id: string, signature: string | null, notes: string[]) → string <!-- internal -->
+      <a id="features.flow-bundle.plannedLine"></a><br>`- planned <kind> <id> <signature>`; a signature the grammar would not read as one line of words is left out (noted).
+      - calls [lang.parser.parse](lang.md#lang.parser.parse)
+    - fn [rehomedFlow](../../src/flow-bundle.ts#L613) (text: string, rehome: (id: string) => string, rehomePath: (path: string) => string, provenance: string, planned: readonly string[]) → string <!-- internal -->
+      <a id="features.flow-bundle.rehomedFlow"></a><br>The flow's text with IDs and test paths replaced, the bundle's comment turned into the import's provenance, and the planned lines before the first item.
+      - calls [features.flow-bundle.idSpots](features.md#features.flow-bundle.idSpots), [features.flow-bundle.flowNodes](features.md#features.flow-bundle.flowNodes), [lang.ir.walk](lang.md#lang.ir.walk)
+    - fn [withMigration](../../src/flow-bundle.ts#L637) (existing: string | null, name: string, section: string) → string
+      <a id="features.flow-bundle.withMigration"></a><br>The text with the `# migration <name>` section replaced (or appended); a file without one starts with it.
+      - calls [lang.parser.parse](lang.md#lang.parser.parse)
+    - type [IdSpot](../../src/flow-bundle.ts#L654) <!-- internal -->
+      <a id="features.flow-bundle.IdSpot"></a><br>Where a flow section names an ID: a reference (a link as a whole) or the ID of a `planned`. Offsets into `text`.
+    - fn [flowNodes](../../src/flow-bundle.ts#L660) (text: string) → Node[] <!-- internal -->
+      <a id="features.flow-bundle.flowNodes"></a>
+      - calls [lang.parser.parse](lang.md#lang.parser.parse)
+    - fn [idSpots](../../src/flow-bundle.ts#L665) (text: string) → IdSpot[] <!-- internal -->
+      <a id="features.flow-bundle.idSpots"></a>
+      - calls [features.flow-bundle.flowNodes](features.md#features.flow-bundle.flowNodes), [lang.ir.walk](lang.md#lang.ir.walk), [lang.parser.isId](lang.md#lang.parser.isId)
+    - fn [plannedIn](../../src/flow-bundle.ts#L681) (text: string) → Map<string, { kind: string; signature: string | null }> <!-- internal -->
+      <a id="features.flow-bundle.plannedIn"></a><br>The `planned` items of a flow section: ID → kind and signature.
+      - calls [features.flow-bundle.flowNodes](features.md#features.flow-bundle.flowNodes), [lang.ir.walk](lang.md#lang.ir.walk)
   - module [ghost](../../src/ghost.ts#L1)
     <a id="features.ghost"></a><br>Ghost text (design §7.3): one next line of a flow from the agent, shown grey after a pause and only on a cheap signal — the cursor on a new `- ` item of a flow that has a trigger. A suggestion is checked where it would stand, in the buffer: one that does not parse there (a step…
     - analyze [map.analyze](map.md#map.analyze)
