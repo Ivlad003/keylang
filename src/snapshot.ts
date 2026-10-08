@@ -164,7 +164,8 @@ export interface SnapshotNode {
   /**
    * fn and type: the fingerprint of the node with everything it calls, transitively
    * (a call cycle hashes as one). `complete: false` when the node or something it
-   * reaches has a call keylang did not resolve, or has no fingerprint.
+   * reaches has a call keylang did not resolve, reads a value imported from
+   * another file, or has no fingerprint.
    */
   closure?: { fingerprint: string; complete: boolean };
 }
@@ -292,6 +293,8 @@ export function buildSnapshot(
   );
 
   const nodes: Record<string, SnapshotNode> = {};
+  // fns and types that read a value imported from another file: their closure cannot cover it.
+  const readsImported = new Set<string>();
   const visit = (m: Module): void => {
     const moduleNode: SnapshotNode = {
       kind: "module",
@@ -328,9 +331,11 @@ export function buildSnapshot(
       };
       if (f.escapes) fn.escapes = f.escapes;
       if (f.fingerprint !== undefined) fn.fingerprint = sha256(`${f.signature ?? ""}\u0000${f.fingerprint}`);
+      if (f.fingerprint !== undefined && readsImportedValue(f.fingerprint)) readsImported.add(f.id);
       nodes[f.id] = fn;
     }
     for (const t of m.types) {
+      if (t.fingerprint !== undefined && readsImportedValue(t.fingerprint)) readsImported.add(t.id);
       nodes[t.id] = {
         kind: "type",
         layer: m.layer,
@@ -454,7 +459,7 @@ export function buildSnapshot(
   }
   for (const item of graph.assumed) coverage.push({ kind: "assumed-import", ...item });
   coverage.sort(compareCoverage);
-  closures(ordered, coverage);
+  closures(ordered, coverage, readsImported);
 
   return {
     schema: SNAPSHOT_SCHEMA,
@@ -477,8 +482,9 @@ export function buildSnapshot(
  * fingerprints with the closures it calls outside itself, so a cycle
  * terminates and every member of it changes together.
  */
-function closures(nodes: Record<string, SnapshotNode>, coverage: readonly CoverageItem[]): void {
+function closures(nodes: Record<string, SnapshotNode>, coverage: readonly CoverageItem[], readsImported: ReadonlySet<string>): void {
   const holes = new Set(coverage.filter((c) => c.kind === "dynamic-call" || c.kind === "unresolved-call").map((c) => c.source));
+  for (const id of readsImported) holes.add(id);
   // A hole in a declaration itself (a decorator or attribute macro that may replace it): what a call of
   // it runs is not the body keylang read. For a class it is every member, the constructor included.
   for (const c of coverage) {
@@ -518,6 +524,16 @@ function closures(nodes: Record<string, SnapshotNode>, coverage: readonly Covera
       if (node) node.closure = closure;
     }
   }
+}
+
+/**
+ * Whether an extractor fingerprint marks a declaration that reads a value
+ * imported from another file of the repository: it ends with `+`
+ * (`READS_IMPORTED_VALUE` of `extract/treesitter.ts`, never a hex digit;
+ * overloads join with `:`, so any part may carry it).
+ */
+function readsImportedValue(print: string): boolean {
+  return print.includes("+");
 }
 
 function docBrief(doc: string | null | undefined): string | null {
