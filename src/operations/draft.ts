@@ -292,7 +292,8 @@ export async function runDraftLayout(request: DraftLayoutRequest, context: Opera
   if ("error" in setup) return empty("draft-layout", "failed", 2, setup.error);
   const fallbackNote: OperationMessage[] = setup.fallback === null ? [] : [{ level: "warning", text: setup.fallback }];
   if (setup.client === null) {
-    const layers = guessLayout(root, config.exclude).layers;
+    // The guess loadConfig makes: folders out of the map (`exclude`, `outside`, `assume`) are no layers.
+    const layers = guessLayout(root, [...config.exclude, ...config.outside, ...config.assume]).layers;
     const payload: DraftLayoutPayload = { mode: "algo", layers: Object.fromEntries(layers), preview: configToJson({ ...config, layers, guessed: true }), configExists, agent: null, fallback: setup.fallback };
     // The CLI's closing note on stderr.
     const note = configExists ? `printed only; ${CONFIG_FILE} is unchanged` : `no ${CONFIG_FILE}; \`keylang init\` writes this layout`;

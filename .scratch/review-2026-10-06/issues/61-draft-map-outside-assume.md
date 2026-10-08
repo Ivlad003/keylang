@@ -1,6 +1,6 @@
 # 61: `draft map` вгадує шари без `outside`/`assume` і губить `assume` у прев'ю keylang.json
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -54,11 +54,13 @@ keylang.json `{"format":2,"assume":["src/gen/**"],"outside":["src/infra/**"]}`, 
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/operations/draft.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/operations/draft.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+- 2026-10-08: Регресійний тест `draft map --mode algo: guesses as keylang does…` у tests/draft.test.ts (справжній CLI, keylang.json `{format:2, assume:[src/gen/**], outside:[src/infra/**]}`, теки src/app, src/gen, src/infra) падав на старому коді: шари `app, gen, infra` замість `app`. Виправлення: `runDraftLayout` (src/operations/draft.ts) в режимі algo вгадує через `guessLayout(root, [...exclude, ...outside, ...assume])`, як `loadConfig`. `configToJson` не змінено: прев'ю й далі не пише `assume` (ADR 0017), тест це фіксує. docs/cli.md уточнено. `node --test tests/draft.test.ts` — 33/33, `npm run typecheck` — чисто.

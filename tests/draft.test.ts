@@ -165,6 +165,21 @@ test("draft map: prints the guessed layout and leaves keylang.json as it is", (t
   assert.ok(!existsSync(join(dir, ".keylang/proposals")));
 });
 
+test("draft map --mode algo: guesses as keylang does, without `exclude`, `outside` and `assume` folders; the preview keeps `outside` and leaves `assume` to the person", (t) => {
+  const dir = repoOf(t, { format: 2, assume: ["src/gen/**"], outside: ["src/infra/**"] }, {
+    "src/app/a.ts": 'import { x } from "../gen/x.ts";\nexport function a(): number {\n  return x;\n}\n',
+    "src/gen/x.ts": "export const x = 1;\n",
+    "src/infra/i.ts": "export const i = 2;\n",
+  });
+  const o = keylang(dir, ["draft", "map", "--mode", "algo"]);
+  assert.equal(o.status, 0, o.stderr);
+  const preview = JSON.parse(o.stdout) as { layers: Record<string, unknown>; outside?: string[]; assume?: string[] };
+  assert.deepEqual(Object.keys(preview.layers), ["app"], "the layers keylang itself guesses for this keylang.json");
+  assert.deepEqual(preview.outside, ["src/infra/**"]);
+  // ADR 0017: `assume` is the person's decision; draft map does not write it.
+  assert.equal(preview.assume, undefined);
+});
+
 test("code-to-spec: the fn at a line becomes a flow proposal; its unresolved calls are marked, not made steps", (t) => {
   const dir = copy(t);
   const o = keylang(dir, ["code-to-spec", "src/domain/order.ts:7"]);
