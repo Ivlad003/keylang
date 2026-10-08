@@ -131,12 +131,25 @@ function ctxOf(section: SectionKind, parent: NodeKind | undefined): Ctx {
 
 const PLANNED_KINDS: ReadonlySet<string> = new Set(["fn", "module", "type", "event"]);
 
+/** `trigger event <id>` (ADR 0023 п. 1): the flow of an event's subscribers; the ID is an event, not an entry point's fn. */
+export const TRIGGER_EVENT = "event";
+
 /** What starts a flow besides a plain call (ADR 0023 п. 3): `trigger <kind> <id>` names an entry point of that kind. */
 export const TRIGGER_KINDS = ["route", "cron", "consumer", "webhook"] as const;
 export type TriggerKind = (typeof TRIGGER_KINDS)[number];
 
 export function isTriggerKind(word: string): word is TriggerKind {
   return (TRIGGER_KINDS as readonly string[]).includes(word);
+}
+
+/**
+ * An event ID (ADR 0022 п. 6, ADR 0023 п. 1): a member of the generated group
+ * `events` (`events.checkout_submit_all_after`). `emits [event] <name>` with
+ * such a name is a reference checked against the snapshot; any other name
+ * stays prose, as before.
+ */
+export function isEventId(text: string): boolean {
+  return text.startsWith("events.") && isId(text);
 }
 
 /** `30s`, `15m`, `2h`, `7d`: a number and a unit (ms, s, m, min, h, d, w). */
@@ -285,14 +298,14 @@ const ROLES: { readonly [C in Ctx]?: Partial<Record<NodeKind, string>> } = {
   "rules-top": RULE_ROLES,
   "flow-top": {
     kind: "the kind of the flow: `business` or `technical`",
-    trigger: "where the flow starts: a trace is matched from the first trigger; `trigger route|cron|consumer|webhook <id>` names an entry point of that kind",
+    trigger: "where the flow starts: a trace is matched from the first trigger; `trigger route|cron|consumer|webhook <id>` names an entry point of that kind, `trigger event <id>` an event whose subscribers run the steps",
     continues: "this flow continues another one in a later request (a webhook after a checkout): both flows must exist; one trace does not cross requests",
     parallel: PARALLEL_ROLE,
     after: AFTER_ROLE,
     every: EVERY_ROLE,
     step: "a step the trigger must reach: a call path in code (static) and a run in a trace",
     reads: "data the trigger reads: only that the ID exists is checked",
-    emits: "an event the flow emits: the name is not resolved",
+    emits: "an event the flow emits: an event ID (`events.<name>`) is checked for a dispatch in the trigger's code; any other name is prose",
     calls: "a direct call of the trigger, checked without order",
     invariant: "an invariant: text; the nested `test` lines are its evidence",
     when: "a branch: text, its steps are optional in a trace",
@@ -325,7 +338,7 @@ const ROLES: { readonly [C in Ctx]?: Partial<Record<NodeKind, string>> } = {
     after: AFTER_ROLE,
     every: EVERY_ROLE,
     reads: "data the parent step reads: only that the ID exists is checked",
-    emits: "an event the parent step emits: the name is not resolved",
+    emits: "an event the parent step emits: an event ID (`events.<name>`) is checked for a dispatch in the step's code; any other name is prose",
     calls: "a direct call of the parent step, checked without order",
     when: "a branch: text, its steps are optional in a trace",
     test: `evidence for the parent step: ${TEST_ROLE}`,
@@ -754,8 +767,19 @@ class Parser {
       case "emits": {
         const r = rest[0]?.text === "event" ? rest.slice(1) : rest;
         const t = r[0];
-        if (r.length === 1 && t && t.kind === "word") n.text = spanned(t);
-        else this.err("K005", n.span, "expected `emits [event] <name>`", "arguments");
+        const link = t?.kind === "link" ? parseLink(t) : null;
+        if (r.length === 1 && t && link !== null && isEventId(link.text)) {
+          // `emits event [events.x](…)`: a link is a reference, so its text must be an event ID.
+          const ref = this.makeRef(t);
+          if (ref) {
+            n.refs.push(ref);
+            n.text = { value: ref.target, span: ref.span };
+          }
+        } else if (r.length === 1 && t && t.kind === "word") {
+          n.text = spanned(t);
+          // An event ID is a reference (ADR 0023 п. 1); any other name stays prose.
+          if (isEventId(t.text)) n.refs.push({ text: t.text, target: nfc(t.text), span: t.span });
+        } else this.err("K005", n.span, "expected `emits [event] <name>`", "arguments");
         break;
       }
       case "invariant":
@@ -971,14 +995,15 @@ class Parser {
 
   /**
    * `trigger <kind> <id>` (ADR 0023 п. 3): the kind is kept as the label, the
-   * ID is the entry point's fn. A first word without a dot that is no kind is
-   * K005 on it. False when the line is a plain `trigger <id>`.
+   * ID is the entry point's fn; `trigger event <id>` (п. 1) keeps `event` as
+   * the label and the ID is the event's. A first word without a dot that is
+   * no kind is K005 on it. False when the line is a plain `trigger <id>`.
    */
   private typedTrigger(n: Node, rest: Token[]): boolean {
     const [kind, id] = rest;
     if (rest.length !== 2 || !kind || !id || kind.kind !== "word" || kind.text.includes(".")) return false;
-    if (!isTriggerKind(kind.text)) {
-      this.err("K005", kind.span, `unknown trigger kind \`${kind.text}\`; expected one of: ${TRIGGER_KINDS.join(", ")}`, "arguments");
+    if (!isTriggerKind(kind.text) && kind.text !== TRIGGER_EVENT) {
+      this.err("K005", kind.span, `unknown trigger kind \`${kind.text}\`; expected one of: ${[...TRIGGER_KINDS, TRIGGER_EVENT].join(", ")}`, "arguments");
       return true;
     }
     n.label = { value: kind.text, span: kind.span };

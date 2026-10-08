@@ -97,16 +97,16 @@
   - module [diag](../../src/diag.ts#L1)
     - span base.span
     - type [Code](../../src/diag.ts#L5)
-    - type [Severity](../../src/diag.ts#L56) = "error" | "warning"
-    - type [K005Reason](../../src/diag.ts#L59) = "arguments" | "id" | "link" | "quote" | "layer" | "scope"
-    - fn [severityOf](../../src/diag.ts#L61) (code: Code) → Severity
-    - type [Diagnostic](../../src/diag.ts#L65)
-    - fn [diagnostic](../../src/diag.ts#L95) (code: Exclude<Code, "K005">, file: string, span: Span, message: string, target?: string) → Diagnostic
+    - type [Severity](../../src/diag.ts#L58) = "error" | "warning"
+    - type [K005Reason](../../src/diag.ts#L61) = "arguments" | "id" | "link" | "quote" | "layer" | "scope"
+    - fn [severityOf](../../src/diag.ts#L63) (code: Code) → Severity
+    - type [Diagnostic](../../src/diag.ts#L67)
+    - fn [diagnostic](../../src/diag.ts#L97) (code: Exclude<Code, "K005">, file: string, span: Span, message: string, target?: string) → Diagnostic
       - calls base.diag.severityOf
-    - fn [isError](../../src/diag.ts#L106) (d: Diagnostic) → boolean
-    - fn [formatDiagnostic](../../src/diag.ts#L111) (d: Diagnostic) → string
-    - fn [compareDiagnostics](../../src/diag.ts#L116) (a: Diagnostic, b: Diagnostic) → number
-    - fn [errorText](../../src/diag.ts#L126) (error: unknown) → string
+    - fn [isError](../../src/diag.ts#L108) (d: Diagnostic) → boolean
+    - fn [formatDiagnostic](../../src/diag.ts#L113) (d: Diagnostic) → string
+    - fn [compareDiagnostics](../../src/diag.ts#L118) (a: Diagnostic, b: Diagnostic) → number
+    - fn [errorText](../../src/diag.ts#L128) (error: unknown) → string
   - module [external-ids](../../src/external-ids.ts#L1)
     - config base.config
     - fn [externalSegment](../../src/external-ids.ts#L10) (pkg: string) → string
@@ -358,6 +358,9 @@
       - calls base.languages.languageOf
     - fn [implicitMember](../../src/languages.ts#L80) (file: string | null | undefined, name: string) → boolean
       - calls base.languages.languageOf
+  - module [line-diff](../../src/line-diff.ts#L1)
+    - type [Hunk](../../src/line-diff.ts#L5)
+    - fn [diffLines](../../src/line-diff.ts#L14) (base: readonly string[], proposed: readonly string[]) → Hunk[]
   - module [safe-write](../../src/safe-write.ts#L1)
     - node external.node
     - type [WriteOptions](../../src/safe-write.ts#L16)

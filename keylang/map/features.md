@@ -283,6 +283,42 @@
     - fn [percent](../../src/coverage-report.ts#L215) (share: number) → string <!-- internal -->
     - fn [coverageText](../../src/coverage-report.ts#L218) (report: CoverageReport, specDir = "keylang") → string
       - calls features.coverage-report.percent
+  - module [diagram-proposal](../../src/diagram-proposal.ts#L1)
+    - config base.config
+    - drawio map.drawio
+    - draft features.draft
+    - snapshot map.snapshot
+    - span base.span
+    - spec-ir lang.spec-ir
+    - type [EditorNode](../../src/diagram-proposal.ts#L36)
+    - type [EditorEdge](../../src/diagram-proposal.ts#L53)
+    - type [EditorLane](../../src/diagram-proposal.ts#L62)
+    - type [EditorModel](../../src/diagram-proposal.ts#L72)
+    - fn [isObject](../../src/diagram-proposal.ts#L83) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [text](../../src/diagram-proposal.ts#L84) (value: unknown) → value is string <!-- internal -->
+    - fn [finite](../../src/diagram-proposal.ts#L85) (value: unknown) → value is number <!-- internal -->
+    - fn [parseEditorModel](../../src/diagram-proposal.ts#L88) (value: unknown) → EditorModel | string
+      - calls features.diagram-proposal.isObject, features.diagram-proposal.text, features.diagram-proposal.finite
+    - type [BaseDiagram](../../src/diagram-proposal.ts#L128)
+    - type [ChangeInput](../../src/diagram-proposal.ts#L133)
+    - type [ChangedTarget](../../src/diagram-proposal.ts#L150)
+    - type [DiagramChanges](../../src/diagram-proposal.ts#L158)
+    - fn [strip](../../src/diagram-proposal.ts#L165) (id: string) → string <!-- internal -->
+    - fn [flowNameOf](../../src/diagram-proposal.ts#L171) (id: string) → string <!-- internal -->
+    - module [Targets](../../src/diagram-proposal.ts#L177) <!-- internal -->
+      - fn [constructor](../../src/diagram-proposal.ts#L180) (read: (path: string) => string | null)
+      - fn [current](../../src/diagram-proposal.ts#L184) (target: string) → string | null
+      - fn [set](../../src/diagram-proposal.ts#L192) (target: string, text: string, shapes: Iterable<string> = []) → void
+        - calls features.diagram-proposal.Targets.current
+      - fn [changed](../../src/diagram-proposal.ts#L199) () → ChangedTarget[]
+        - calls base.span.compareText
+    - fn [replaceSection](../../src/diagram-proposal.ts#L208) (own: string, section: { text: string; firstLine: number }, edited: string) → string <!-- internal -->
+    - fn [appendToList](../../src/diagram-proposal.ts#L216) (section: string, added: readonly string[]) → string <!-- internal -->
+    - fn [withContinues](../../src/diagram-proposal.ts#L235) (section: string, from: string) → string <!-- internal -->
+      - calls features.diagram-proposal.appendToList
+    - fn [diagramChanges](../../src/diagram-proposal.ts#L248) (input: ChangeInput) → DiagramChanges
+      - calls features.diagram-proposal.Targets, features.diagram-proposal.strip, features.diagram-proposal.flowNameOf, features.diagram-proposal.Targets.current, map.drawio.flowSection, map.drawio.flowFromDrawio, features.diagram-proposal.appendToList, features.diagram-proposal.Targets.set, features.diagram-proposal.replaceSection, features.draft.withFlow, features.diagram-proposal.withContinues, base.span.compareText, features.draft.withRules, features.diagram-proposal.globFor, base.config.withLayers, features.diagram-proposal.Targets.changed
+    - fn [globFor](../../src/diagram-proposal.ts#L481) (layer: string, layers: Readonly<Record<string, readonly string[]>>) → string <!-- internal -->
   - module [discover-names](../../src/discover-names.ts#L1)
     - node external.node
     - config base.config
@@ -344,21 +380,22 @@
     - type [DiscoverOptions](../../src/discover.ts#L23)
     - type [DiscoveredFlow](../../src/discover.ts#L35)
     - type [Discovery](../../src/discover.ts#L53)
-    - fn [specifiedTriggers](../../src/discover.ts#L64) (flows: readonly Flow[]) → Map<string, { file: string; flow: string }>
+    - fn [specifiedTriggers](../../src/discover.ts#L68) (flows: readonly Flow[]) → Map<string, { file: string; flow: string }>
       - calls base.span.compareText
-    - fn [discoverFlows](../../src/discover.ts#L77) (snapshot: AnalysisSnapshot, specified: ReadonlyMap<string, { file: string; flow: string }>, options: DiscoverOptions = {}) → Discovery
-      - calls features.draft.distinctNames, features.draft.draftFlow, lang.parser.isTriggerKind, features.discover.holesBySource, features.discover.offlineDescription, features.discover.firstLevelSteps, features.discover.withComment, features.discover.quoted, base.span.compareText
-    - fn [adoptedFlow](../../src/discover.ts#L126) (flow: DiscoveredFlow, specDir: string) → FlowDraft
-    - fn [discoverySummary](../../src/discover.ts#L133) (discovery: Pick<Discovery, "flows" | "specified">) → string
-    - fn [holesBySource](../../src/discover.ts#L139) (snapshot: AnalysisSnapshot) → Map<string, number> <!-- internal -->
-    - fn [withComment](../../src/discover.ts#L149) (text: string, comment: string, described: { text: string; ids: string[] } | null = null) → string <!-- internal -->
+    - fn [observedEvent](../../src/discover.ts#L89) (snapshot: AnalysisSnapshot, entry: EntryPoint) → string | null <!-- internal -->
+    - fn [discoverFlows](../../src/discover.ts#L104) (snapshot: AnalysisSnapshot, specified: ReadonlyMap<string, { file: string; flow: string }>, options: DiscoverOptions = {}) → Discovery
+      - calls features.draft.distinctNames, features.discover.observedEvent, features.draft.draftFlow, lang.parser.isTriggerKind, features.discover.holesBySource, features.discover.offlineDescription, features.discover.firstLevelSteps, features.discover.withComment, features.discover.quoted, base.span.compareText
+    - fn [adoptedFlow](../../src/discover.ts#L159) (flow: DiscoveredFlow, specDir: string) → FlowDraft
+    - fn [discoverySummary](../../src/discover.ts#L166) (discovery: Pick<Discovery, "flows" | "specified">) → string
+    - fn [holesBySource](../../src/discover.ts#L172) (snapshot: AnalysisSnapshot) → Map<string, number> <!-- internal -->
+    - fn [withComment](../../src/discover.ts#L182) (text: string, comment: string, described: { text: string; ids: string[] } | null = null) → string <!-- internal -->
       - calls features.discover.proseLine
-    - fn [firstLevelSteps](../../src/discover.ts#L156) (draftText: string) → string[]
-    - fn [offlineDescription](../../src/discover.ts#L170) (snapshot: AnalysisSnapshot, trigger: string, steps: readonly string[]) → { text: string; ids: string[] } | null
+    - fn [firstLevelSteps](../../src/discover.ts#L193) (draftText: string) → string[]
+    - fn [offlineDescription](../../src/discover.ts#L208) (snapshot: AnalysisSnapshot, trigger: string, steps: readonly string[]) → { text: string; ids: string[] } | null
       - calls base.brief.firstSentence
-    - fn [proseLine](../../src/discover.ts#L195) (text: string) → string
-    - fn [unproseLine](../../src/discover.ts#L208) (line: string) → string
-    - fn [quoted](../../src/discover.ts#L218) (label: string) → string <!-- internal -->
+    - fn [proseLine](../../src/discover.ts#L233) (text: string) → string
+    - fn [unproseLine](../../src/discover.ts#L246) (line: string) → string
+    - fn [quoted](../../src/discover.ts#L256) (label: string) → string <!-- internal -->
   - module [draft-llm](../../src/draft-llm.ts#L1)
     - analyze map.analyze
     - assess check.assess
@@ -407,29 +444,29 @@
     - snapshot map.snapshot
     - trace-evidence check.trace-evidence
     - type [FlowDraft](../../src/draft.ts#L15)
-    - fn [draftFlow](../../src/draft.ts#L23) (snapshot: AnalysisSnapshot, trigger: string, options: { name?: string; depth?: number; entry?: string } = {}) → FlowDraft
-    - fn [draftFlowFromTrace](../../src/draft.ts#L79) (snapshot: AnalysisSnapshot, run: TraceRun, options: { name?: string } = {}) → FlowDraft & { rest: string[] }
+    - fn [draftFlow](../../src/draft.ts#L28) (snapshot: AnalysisSnapshot, trigger: string, options: { name?: string; depth?: number; entry?: string; event?: string } = {}) → FlowDraft
+    - fn [draftFlowFromTrace](../../src/draft.ts#L90) (snapshot: AnalysisSnapshot, run: TraceRun, options: { name?: string } = {}) → FlowDraft & { rest: string[] }
       - calls features.draft.reachesByCalls
-    - fn [reachesByCalls](../../src/draft.ts#L108) (snapshot: AnalysisSnapshot, from: string, to: string) → boolean <!-- internal -->
-    - fn [withFlow](../../src/draft.ts#L129) (existing: string | null, draft: Pick<FlowDraft, "name" | "text">) → string
+    - fn [reachesByCalls](../../src/draft.ts#L119) (snapshot: AnalysisSnapshot, from: string, to: string) → boolean <!-- internal -->
+    - fn [withFlow](../../src/draft.ts#L140) (existing: string | null, draft: Pick<FlowDraft, "name" | "text">) → string
       - calls lang.parser.parse, features.draft.nextHeading, base.safe-write.keepLineEndings
-    - fn [withRules](../../src/draft.ts#L153) (existing: string | null, draftText: string) → string
+    - fn [withRules](../../src/draft.ts#L164) (existing: string | null, draftText: string) → string
       - calls lang.parser.parse, lang.ir.sectionNodes, lang.parser.renderMeaning, features.draft.nextHeading, base.safe-write.keepLineEndings
-    - fn [nextHeading](../../src/draft.ts#L183) (sections: readonly { heading: { span: { start: { line: number } } } | null }[], index: number) → number | null <!-- internal -->
-    - fn [distinctNames](../../src/draft.ts#L193) (drafts: readonly FlowDraft[]) → FlowDraft[]
-    - fn [draftRules](../../src/draft.ts#L223) (snapshot: AnalysisSnapshot, cyclic: boolean) → string
+    - fn [nextHeading](../../src/draft.ts#L194) (sections: readonly { heading: { span: { start: { line: number } } } | null }[], index: number) → number | null <!-- internal -->
+    - fn [distinctNames](../../src/draft.ts#L204) (drafts: readonly FlowDraft[]) → FlowDraft[]
+    - fn [draftRules](../../src/draft.ts#L234) (snapshot: AnalysisSnapshot, cyclic: boolean) → string
       - calls features.draft.layerOrder
-    - fn [layerOrder](../../src/draft.ts#L248) (layers: readonly string[], uses: ReadonlyMap<string, ReadonlySet<string>>) → string[] | null <!-- internal -->
-    - fn [codeToSpecTriggers](../../src/draft.ts#L267) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; triggers: string[] }
-    - fn [codeToSpec](../../src/draft.ts#L290) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; drafts: FlowDraft[] }
+    - fn [layerOrder](../../src/draft.ts#L259) (layers: readonly string[], uses: ReadonlyMap<string, ReadonlySet<string>>) → string[] | null <!-- internal -->
+    - fn [codeToSpecTriggers](../../src/draft.ts#L278) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; triggers: string[] }
+    - fn [codeToSpec](../../src/draft.ts#L301) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; drafts: FlowDraft[] }
       - calls features.draft.codeToSpecTriggers, features.draft.draftFlow, features.draft.distinctNames
-    - type [ChangedLines](../../src/draft.ts#L297)
-    - fn [diffHunks](../../src/draft.ts#L303) (diff: string) → Map<string, [number, number][]>
+    - type [ChangedLines](../../src/draft.ts#L308)
+    - fn [diffHunks](../../src/draft.ts#L314) (diff: string) → Map<string, [number, number][]>
       - calls features.draft.gitPath
-    - fn [deletedDiffPaths](../../src/draft.ts#L326) (diff: string) → string[]
+    - fn [deletedDiffPaths](../../src/draft.ts#L337) (diff: string) → string[]
       - calls features.draft.gitPath
-    - fn [gitPath](../../src/draft.ts#L340) (text: string) → string <!-- internal -->
-    - fn [changedFlows](../../src/draft.ts#L368) (snapshot: AnalysisSnapshot, changed: ChangedLines, named: ReadonlySet<string>) → { drafts: FlowDraft[]; named: string[] }
+    - fn [gitPath](../../src/draft.ts#L351) (text: string) → string <!-- internal -->
+    - fn [changedFlows](../../src/draft.ts#L379) (snapshot: AnalysisSnapshot, changed: ChangedLines, named: ReadonlySet<string>) → { drafts: FlowDraft[]; named: string[] }
       - calls features.draft.draftFlow, features.draft.distinctNames
   - module [explain-edge](../../src/explain-edge.ts#L1)
     - snapshot map.snapshot
@@ -571,7 +608,7 @@
       - calls lang.spec-ir.plannedDeclaration
   - module [explain](../../src/explain.ts#L1)
     - diag base.diag
-    - fn [explainCode](../../src/explain.ts#L135) (code: string) → string | null
+    - fn [explainCode](../../src/explain.ts#L140) (code: string) → string | null
   - module [explorer](../../src/explorer.ts#L1)
     - external-ids base.external-ids
     - draft features.draft
@@ -1010,16 +1047,17 @@
       - calls features.lsp-features.docOf, features.lsp-features.flowPhrases, lang.ir.walk, features.lsp-features.statusOf, lang.ir.sectionNodes, features.lsp-features.fromPos, features.lsp-features.fromSpan
     - type [CompletionItem](../../src/lsp-features.ts#L598)
     - fn [completions](../../src/lsp-features.ts#L625) (ws: Workspace, path: string, position: LspPosition) → CompletionItem[]
-      - calls features.lsp-features.docOf, features.lsp-features.enclosing, features.lsp-features.sectionAt, lang.parser.keywordsAt, lang.parser.isTriggerKind, features.lsp-features.moduleAround, check.rules.dependencyKindOf, check.rules.blocksDependency
-    - fn [sectionAt](../../src/lsp-features.ts#L696) (doc: Document, line: number) → Section | undefined <!-- internal -->
-    - fn [enclosing](../../src/lsp-features.ts#L706) (doc: Document, line: number, col: number) → Node | undefined <!-- internal -->
+      - calls features.lsp-features.docOf, features.lsp-features.enclosing, features.lsp-features.sectionAt, lang.parser.keywordsAt, features.lsp-features.eventCompletions, lang.parser.isTriggerKind, features.lsp-features.moduleAround, check.rules.dependencyKindOf, check.rules.blocksDependency
+    - fn [eventCompletions](../../src/lsp-features.ts#L707) (ws: Workspace, replacing: (label: string) => Pick<CompletionItem, "filterText" | "textEdit">) → CompletionItem[] <!-- internal -->
+    - fn [sectionAt](../../src/lsp-features.ts#L727) (doc: Document, line: number) → Section | undefined <!-- internal -->
+    - fn [enclosing](../../src/lsp-features.ts#L737) (doc: Document, line: number, col: number) → Node | undefined <!-- internal -->
       - calls features.lsp-features.nodesOf
-    - fn [ancestors](../../src/lsp-features.ts#L715) (doc: Document, node: Node) → Node[] <!-- internal -->
+    - fn [ancestors](../../src/lsp-features.ts#L746) (doc: Document, node: Node) → Node[] <!-- internal -->
       - calls features.lsp-features.nodesOf
-    - fn [moduleAround](../../src/lsp-features.ts#L728) (ws: Workspace, doc: Document, parent: Node | undefined) → string | null <!-- internal -->
+    - fn [moduleAround](../../src/lsp-features.ts#L759) (ws: Workspace, doc: Document, parent: Node | undefined) → string | null <!-- internal -->
       - calls features.lsp-features.ancestors
-    - type [CodeLens](../../src/lsp-features.ts#L743) <!-- internal -->
-    - fn [codeLenses](../../src/lsp-features.ts#L749) (ws: Workspace, path: string) → CodeLens[]
+    - type [CodeLens](../../src/lsp-features.ts#L774) <!-- internal -->
+    - fn [codeLenses](../../src/lsp-features.ts#L780) (ws: Workspace, path: string) → CodeLens[]
       - calls lang.spec-ir.flowsUsing, features.lsp-features.lspPoint
   - module [migration-stack](../../src/migration-stack.ts#L1)
     - node external.node
@@ -1077,66 +1115,67 @@
     - diag base.diag
     - files lang.files
     - languages base.languages
+    - diagram-layout map.diagram-layout
     - map map.map
     - parser lang.parser
     - safe-write base.safe-write
     - span base.span
     - stats features.stats
     - wire-gen map.wire-gen
-    - fn [notPlain](../../src/proposals.ts#L28) (path: string) → boolean <!-- internal -->
-    - fn [unreadDirectory](../../src/proposals.ts#L33) (dirs: readonly string[]) → boolean <!-- internal -->
+    - fn [notPlain](../../src/proposals.ts#L29) (path: string) → boolean <!-- internal -->
+    - fn [unreadDirectory](../../src/proposals.ts#L34) (dirs: readonly string[]) → boolean <!-- internal -->
       - calls features.proposals.unreadName
-    - fn [unreadName](../../src/proposals.ts#L38) (name: string) → boolean <!-- internal -->
-    - fn [statOrNull](../../src/proposals.ts#L43) (abs: string) → Stats | null <!-- internal -->
-    - fn [sameEntry](../../src/proposals.ts#L52) (a: Stats, b: Stats | null) → boolean <!-- internal -->
-    - fn [landsIn](../../src/proposals.ts#L64) (abs: string, dir: string) → boolean
+    - fn [unreadName](../../src/proposals.ts#L39) (name: string) → boolean <!-- internal -->
+    - fn [statOrNull](../../src/proposals.ts#L44) (abs: string) → Stats | null <!-- internal -->
+    - fn [sameEntry](../../src/proposals.ts#L53) (a: Stats, b: Stats | null) → boolean <!-- internal -->
+    - fn [landsIn](../../src/proposals.ts#L65) (abs: string, dir: string) → boolean
       - calls features.proposals.statOrNull, features.proposals.sameEntry
-    - fn [landsUnread](../../src/proposals.ts#L81) (root: string, lands: string) → boolean <!-- internal -->
+    - fn [landsUnread](../../src/proposals.ts#L82) (root: string, lands: string) → boolean <!-- internal -->
       - calls features.proposals.statOrNull, map.analyze.within, features.proposals.sameEntry, features.proposals.unreadName
-    - fn [reservedSpecText](../../src/proposals.ts#L101) (inside: string) → string | null <!-- internal -->
+    - fn [reservedSpecText](../../src/proposals.ts#L103) (inside: string) → string | null <!-- internal -->
       - calls features.proposals.unreadDirectory
-    - fn [reservedSpecLanding](../../src/proposals.ts#L109) (specRoot: string, lands: string) → string | null <!-- internal -->
+    - fn [reservedSpecLanding](../../src/proposals.ts#L111) (specRoot: string, lands: string) → string | null <!-- internal -->
       - calls features.proposals.landsUnread, features.proposals.landsIn
-    - fn [proposalProblem](../../src/proposals.ts#L123) (root: string, specDir: string, path: string, generated: (path: string) => boolean = () => false) → string | null
+    - fn [proposalProblem](../../src/proposals.ts#L125) (root: string, specDir: string, path: string, generated: (path: string) => boolean = () => false) → string | null
       - calls features.proposals.notPlain, features.proposals.reservedSpecText, base.safe-write.landing, map.analyze.within, base.safe-write.writeProblem, features.proposals.reservedSpecLanding, lang.files.existingText, lang.parser.parse, base.safe-write.isGeneratedText, features.proposals.generatedSpecProblem
-    - fn [generatedSpecProblem](../../src/proposals.ts#L153) (marker: string | null, specDir: string) → string <!-- internal -->
-    - fn [codeProposalProblem](../../src/proposals.ts#L167) (root: string, path: string) → string | null
+    - fn [generatedSpecProblem](../../src/proposals.ts#L155) (marker: string | null, specDir: string) → string <!-- internal -->
+    - fn [codeProposalProblem](../../src/proposals.ts#L169) (root: string, path: string) → string | null
       - calls base.languages.languageOf, features.proposals.notPlain, features.proposals.unreadDirectory, base.safe-write.writeProblem, base.safe-write.landing, features.proposals.landsUnread, lang.files.existingText, base.safe-write.isGeneratedText
-    - fn [targetProblem](../../src/proposals.ts#L183) (root: string, specDir: string, path: string, generated?: (path: string) => boolean) → string | null
+    - fn [targetProblem](../../src/proposals.ts#L185) (root: string, specDir: string, path: string, generated?: (path: string) => boolean) → string | null
       - calls features.proposals.proposalProblem, features.proposals.codeProposalProblem
-    - type [ProposalBasis](../../src/proposals.ts#L192)
-    - fn [proposalWriteProblem](../../src/proposals.ts#L202) (root: string, path: string, basis: ProposalBasis) → string | null
+    - type [ProposalBasis](../../src/proposals.ts#L194)
+    - fn [proposalWriteProblem](../../src/proposals.ts#L204) (root: string, path: string, basis: ProposalBasis) → string | null
       - calls lang.files.existingText, base.safe-write.writeProblem
-    - fn [writeProposal](../../src/proposals.ts#L218) (root: string, path: string, text: string, basis?: ProposalBasis) → string
+    - fn [writeProposal](../../src/proposals.ts#L220) (root: string, path: string, text: string, basis?: ProposalBasis) → string
       - calls features.proposals.proposalWriteProblem, base.safe-write.safeWrite
-    - fn [lineDiff](../../src/proposals.ts#L234) (before: string, after: string) → string
+    - fn [lineDiff](../../src/proposals.ts#L236) (before: string, after: string) → string
       - calls base.safe-write.allCrlf
-    - type [PendingProposal](../../src/proposals.ts#L251)
-    - fn [proposalTarget](../../src/proposals.ts#L268) (name: string) → string | null
+    - type [PendingProposal](../../src/proposals.ts#L253)
+    - fn [proposalTarget](../../src/proposals.ts#L270) (name: string) → string | null
       - calls base.config.toPosix, features.proposals.notPlain
-    - fn [pendingTargets](../../src/proposals.ts#L279) (root: string) → string[]
+    - fn [pendingTargets](../../src/proposals.ts#L281) (root: string) → string[]
       - calls base.safe-write.landing, map.analyze.within, base.config.toPosix, base.span.compareText
-    - fn [storeEntry](../../src/proposals.ts#L294) (root: string, target: string) → { abs: string; link: boolean } | { problem: string } | null <!-- internal -->
+    - fn [storeEntry](../../src/proposals.ts#L296) (root: string, target: string) → { abs: string; link: boolean } | { problem: string } | null <!-- internal -->
       - calls base.safe-write.landing, map.analyze.within
-    - type [ReadProposal](../../src/proposals.ts#L308) <!-- internal -->
-    - fn [readProposal](../../src/proposals.ts#L318) (root: string, specDir: string, target: string) → ReadProposal | { problem: string } | null <!-- internal -->
+    - type [ReadProposal](../../src/proposals.ts#L310) <!-- internal -->
+    - fn [readProposal](../../src/proposals.ts#L320) (root: string, specDir: string, target: string) → ReadProposal | { problem: string } | null <!-- internal -->
       - calls features.proposals.storeEntry, features.proposals.targetProblem, base.safe-write.landing, lang.files.existingText
-    - fn [lineCounts](../../src/proposals.ts#L329) (before: string, after: string) → { added: number; removed: number } <!-- internal -->
+    - fn [lineCounts](../../src/proposals.ts#L331) (before: string, after: string) → { added: number; removed: number } <!-- internal -->
       - calls features.proposals.lineDiff
-    - fn [listProposals](../../src/proposals.ts#L335) (root: string, specDir: string) → PendingProposal[]
+    - fn [listProposals](../../src/proposals.ts#L337) (root: string, specDir: string) → PendingProposal[]
       - calls features.proposals.pendingTargets, features.proposals.readProposal, features.proposals.lineCounts
-    - type [ProposalDiff](../../src/proposals.ts#L344)
-    - fn [proposalDiff](../../src/proposals.ts#L346) (root: string, specDir: string, target: string) → ProposalDiff
+    - type [ProposalDiff](../../src/proposals.ts#L346)
+    - fn [proposalDiff](../../src/proposals.ts#L348) (root: string, specDir: string, target: string) → ProposalDiff
       - calls features.proposals.readProposal, features.proposals.lineDiff
-    - type [AcceptResult](../../src/proposals.ts#L353)
-    - fn [acceptProposal](../../src/proposals.ts#L371) (root: string, specDir: string, target: string) → AcceptResult
+    - type [AcceptResult](../../src/proposals.ts#L355)
+    - fn [acceptProposal](../../src/proposals.ts#L373) (root: string, specDir: string, target: string) → AcceptResult
       - calls features.proposals.readProposal, base.safe-write.landing, features.proposals.dropProposal, base.safe-write.writeProblem, base.safe-write.safeWrite, features.proposals.countDecision, features.proposals.lineCounts
-    - type [RejectResult](../../src/proposals.ts#L394)
-    - fn [rejectProposal](../../src/proposals.ts#L401) (root: string, specDir: string, target: string) → RejectResult
+    - type [RejectResult](../../src/proposals.ts#L396)
+    - fn [rejectProposal](../../src/proposals.ts#L403) (root: string, specDir: string, target: string) → RejectResult
       - calls features.proposals.storeEntry, features.proposals.targetProblem, base.safe-write.landing, features.proposals.countDecision, lang.files.existingText
-    - fn [dropProposal](../../src/proposals.ts#L414) (root: string, target: string, text: string) → string | null <!-- internal -->
+    - fn [dropProposal](../../src/proposals.ts#L416) (root: string, target: string, text: string) → string | null <!-- internal -->
       - calls features.proposals.storeEntry, base.diag.errorText
-    - fn [countDecision](../../src/proposals.ts#L426) (root: string, before: string, after: string, decision: "accepted" | "rejected") → void <!-- internal -->
+    - fn [countDecision](../../src/proposals.ts#L428) (root: string, before: string, after: string, decision: "accepted" | "rejected") → void <!-- internal -->
       - calls features.proposals.lineDiff, features.stats.statusesIn, features.stats.updateStats, features.stats.addDrafts
   - module [spec-to-code](../../src/spec-to-code.ts#L1)
     - node external.node

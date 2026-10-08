@@ -98,10 +98,15 @@ export const EXPLANATIONS: Record<Code, { cause: string; example: string; fix: s
     example: "`test tests/nope.test.ts \"creates order\"` while the repository has no `tests/nope.test.ts`.",
     fix: "Fix the path (relative to the directory of keylang.json), create the test, or remove the line.",
   },
+  K204: {
+    cause: "`trigger event <id>` or `emits event events.<name>` names an event no code keylang read dispatches and no framework config observes, so there is nothing to check the line against (ADR 0023 п. 1). Event IDs are the group `events` of the map (`keylang/map/events.md`).",
+    example: "`- emits event events.checkout_submit_after` while the code dispatches `checkout_submit_all_after`.",
+    fix: "Write an ID `keylang/map/events.md` lists (the hint names the nearest one), run `keylang map` if the code is newer than the map, or write the name without `events.` to keep it as prose.",
+  },
   K205: {
-    cause: "`trigger <kind> <id>` names a fn the snapshot records as an entry point of another kind (`keylang entries`), so the flow starts from something else than it says.",
-    example: "`trigger route shop.cli.main` while `keylang entries` lists `shop.cli.main` as a `cli` entry.",
-    fix: "Write the kind `keylang entries` shows for the fn (route, cron, consumer or webhook), or a plain `trigger <id>` when it is none of these.",
+    cause: "`trigger <kind> <id>` names a fn the snapshot records as an entry point of another kind (`keylang entries`), so the flow starts from something else than it says. Or `trigger event <id>` names a fn, type or module instead of an event.",
+    example: "`trigger route shop.cli.main` while `keylang entries` lists `shop.cli.main` as a `cli` entry; `trigger event shop.orders.place`, a fn.",
+    fix: "Write the kind `keylang entries` shows for the fn (route, cron, consumer or webhook), or a plain `trigger <id>` when it is none of these; after `trigger event`, an event ID (`events.<name>`).",
   },
   K206: {
     cause: "`continues <flow>` names a flow that no `# flow` section declares, so there is nothing this flow continues.",

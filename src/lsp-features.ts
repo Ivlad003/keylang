@@ -16,7 +16,7 @@ import { readTextOrNull } from "./files.ts";
 import { kindLabel, sectionNodes, walk, type Document, type Node, type Section, type SectionKind } from "./ir.ts";
 import { EXPLAINED_MAP_DIR } from "./map.ts";
 import { searchNodes, type NodeHit } from "./node-search.ts";
-import { isTriggerKind, keywordsAt, parse, roleAt, TRIGGER_KINDS } from "./parser.ts";
+import { isTriggerKind, keywordsAt, parse, roleAt, TRIGGER_EVENT, TRIGGER_KINDS } from "./parser.ts";
 import { blocksDependency, dependencyKindOf } from "./rules.ts";
 import { flowsUsing, plannedDeclaration, walkFlow, type FlowItem, type SpecIR, type Trigger } from "./spec-ir.ts";
 import { spanContains, type Pos, type Span } from "./span.ts";
@@ -655,6 +655,12 @@ export function completions(ws: Workspace, path: string, position: LspPosition):
     const names = [...new Set(ws.analysis.spec.flows.map((flow) => flow.name))].filter((name) => name !== current).sort();
     return names.map((name) => ({ label: name, kind: COMPLETION.event, detail: "flow", sortText: `1${name}`, ...replacing(name) }));
   }
+  // `trigger event ` and `emits [event] ` name an event (ADR 0023 п. 1): the IDs of the group `events`, with the literal and the subscribers.
+  if ((keyword === "trigger" && written.length === 1 && written[0] === TRIGGER_EVENT) || (keyword === "emits" && (written.length === 0 || (written.length === 1 && written[0] === "event")))) {
+    const out = eventCompletions(ws, replacing);
+    // `emits ` may go on with the word `event`.
+    return keyword === "emits" && written.length === 0 ? [{ label: "event", kind: COMPLETION.keyword, detail: "emits event <id>", sortText: "0event", ...replacing("event") }, ...out] : out;
+  }
   if (keyword === "trigger" && written.length === 1 && isTriggerKind(written[0]!)) {
     // `trigger <kind> ` names an entry point of that kind: its fn, with the label it is known by.
     const kind = written[0]!;
@@ -689,8 +695,33 @@ export function completions(ws: Workspace, path: string, position: LspPosition):
   }
   const sorted = [...labels.values()].sort((a, b) => (a.label < b.label ? -1 : a.label > b.label ? 1 : 0));
   // `trigger ` may go on with the kind of entry point it starts from.
-  if (keyword === "trigger") return [...TRIGGER_KINDS.map((kind) => ({ label: kind, kind: COMPLETION.keyword, detail: `trigger ${kind} <id>: an entry point of this kind`, sortText: `0${kind}`, ...replacing(kind) })), ...sorted];
+  if (keyword === "trigger") {
+    const kinds = TRIGGER_KINDS.map((kind) => ({ label: kind, kind: COMPLETION.keyword, detail: `trigger ${kind} <id>: an entry point of this kind`, sortText: `0${kind}`, ...replacing(kind) }));
+    const event = { label: TRIGGER_EVENT, kind: COMPLETION.keyword, detail: "trigger event <id>: the subscribers of an event", sortText: `0${TRIGGER_EVENT}`, ...replacing(TRIGGER_EVENT) };
+    return [...kinds, event, ...sorted];
+  }
   return sorted;
+}
+
+/** The events of the snapshot, then events the map or `planned` declares, as completions of an event ID. */
+function eventCompletions(ws: Workspace, replacing: (label: string) => Pick<CompletionItem, "filterText" | "textEdit">): CompletionItem[] {
+  const labels = new Map<string, CompletionItem>();
+  const nodes = ws.analysis.snapshot?.nodes ?? {};
+  for (const [id, node] of Object.entries(nodes)) {
+    if (node.kind !== "event") continue;
+    const subscribers = node.calls ?? [];
+    const detail = `event ${node.name ?? id.slice(id.indexOf(".") + 1)}${subscribers.length > 0 ? `; subscribers: ${subscribers.join(", ")}` : ""}`;
+    labels.set(id, { label: id, kind: COMPLETION.event, detail, sortText: `1${id}`, ...replacing(id) });
+  }
+  for (const decl of ws.analysis.index.decls.values()) {
+    if (decl.kind !== "event" || labels.has(decl.id)) continue;
+    labels.set(decl.id, { label: decl.id, kind: COMPLETION.event, detail: "event", sortText: `1${decl.id}`, ...replacing(decl.id) });
+  }
+  for (const item of ws.analysis.spec.planned) {
+    if (item.decl !== "event" || labels.has(item.id)) continue;
+    labels.set(item.id, { label: item.id, kind: COMPLETION.event, detail: "planned event", labelDetails: { description: "planned" }, sortText: `2${item.id}`, ...replacing(item.id) });
+  }
+  return [...labels.values()].sort((a, b) => (a.label < b.label ? -1 : a.label > b.label ? 1 : 0));
 }
 
 function sectionAt(doc: Document, line: number): Section | undefined {

@@ -43,7 +43,9 @@ export type Code =
   | "K202"
   /** A flow `test` names a file that does not exist in the repository (warning). */
   | "K203"
-  /** `trigger <kind> <id>`: the snapshot records the fn as an entry point of another kind. */
+  /** `trigger event <id>` / `emits event events.<name>`: no event has this ID (ADR 0023 п. 1). */
+  | "K204"
+  /** `trigger <kind> <id>`: the snapshot records the fn as an entry point of another kind; `trigger event <id>` names a fn, type or module, not an event. */
   | "K205"
   /** `continues <flow>` names a flow that does not exist. */
   | "K206"

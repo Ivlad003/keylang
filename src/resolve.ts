@@ -3,8 +3,8 @@
 
 import { CONFIG_FILE, SYNTHETIC_LAYERS } from "./config.ts";
 import { diagnostic, type Diagnostic } from "./diag.ts";
-import { isDecl, sectionNodes, walk, type Document, type Node, type NodeKind } from "./ir.ts";
-import { isSegment, linkTextSpan, renderMeaning } from "./parser.ts";
+import { isDecl, kindLabel, sectionNodes, walk, type Document, type Node, type NodeKind, type Ref } from "./ir.ts";
+import { isSegment, linkTextSpan, renderMeaning, TRIGGER_EVENT } from "./parser.ts";
 import { compareText, type Span } from "./span.ts";
 
 export interface Decl {
@@ -268,13 +268,50 @@ function checkContinues(index: Index, doc: Document, node: Node, diags: Diagnost
   diags.push(diagnostic("K206", doc.path, flow.span, `\`continues\` names flow \`${flow.value}\`, which no \`# flow\` declares${hint}`));
 }
 
+/** The reference of `trigger event <id>` or of `emits [event] events.<name>` (ADR 0023 п. 1), null for any other line. */
+function eventRef(node: Node): Ref | null {
+  if (node.kind === "trigger" && node.label?.value === TRIGGER_EVENT) return node.refs[0] ?? null;
+  if (node.kind === "emits") return node.refs[0] ?? null;
+  return null;
+}
+
+/**
+ * K204 / K205 for an event reference: an ID nothing declares is an unknown
+ * event (did you mean the nearest event), an ID of a fn, type or module is
+ * not an event. `planned event` counts as declared.
+ */
+function checkEventRef(index: Index, doc: Document, node: Node, ref: Ref, diags: Diagnostic[]): void {
+  const what = node.kind === "trigger" ? "`trigger event`" : "`emits event`";
+  if (index.planned.has(ref.target)) return;
+  const hit = index.lookup(ref.target);
+  if (hit.kind === "exact") {
+    if (hit.decl.kind !== "event") diags.push(diagnostic("K205", doc.path, ref.span, `${what} names \`${ref.target}\`, a ${kindLabel(hit.decl.kind)}, not an event; an event ID is \`events.<name>\`, as \`keylang/map/events.md\` lists them`, ref.target));
+    return;
+  }
+  if (hit.kind === "opaque") return;
+  if (doc.generated !== null) {
+    diags.push(diagnostic("K204", doc.path, ref.span, `unknown event \`${ref.target}\` in a generated file; regenerate it`, ref.target));
+    return;
+  }
+  const tail = (id: string): string => id.slice(id.lastIndexOf(".") + 1);
+  const near = [...index.decls.values()]
+    .filter((decl) => decl.kind === "event")
+    .map((decl) => ({ id: decl.id, distance: similarity(tail(ref.target), tail(decl.id)) }))
+    .filter((item): item is { id: string; distance: number } => item.distance !== null)
+    .sort((a, b) => a.distance - b.distance || compareText(a.id, b.id))[0];
+  const hint = near === undefined ? "" : ` (did you mean \`${near.id}\`?)`;
+  diags.push(diagnostic("K204", doc.path, ref.span, `unknown event \`${ref.target}\`${hint}: no code keylang read dispatches it and no config observes it`, ref.target));
+}
+
 function checkRefs(index: Index, doc: Document, node: Node, diags: Diagnostic[], unverified: Unverified[], knownExternal: ReadonlySet<string>): void {
   warnBareThen(index, doc, node, diags);
   checkContinues(index, doc, node, diags);
   let ok = true;
+  const event = eventRef(node);
+  if (event !== null) checkEventRef(index, doc, node, event, diags);
   // `exports` lists public names (values, aliases, `default`), compared with the
-  // snapshot's export table by the rule, not declarations of the map.
-  const refs = node.kind === "exports" ? [] : node.refs;
+  // snapshot's export table by the rule, not declarations of the map. An event reference is checked above.
+  const refs = node.kind === "exports" || event !== null ? [] : node.refs;
   for (const r of refs) {
     if (SYNTHETIC.has(r.target)) continue;
     const hit = index.lookup(r.target);

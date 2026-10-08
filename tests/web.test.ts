@@ -9,7 +9,7 @@ import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:chil
 import { createServer, request } from "node:http";
 import { connect } from "node:net";
 import xterm from "@xterm/headless";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -22,7 +22,7 @@ import { serveWeb } from "../src/tui/web.ts";
 import { checkoutRepo, CHECKOUT_FILES, click, drag, KEY, locate, mouseMove, tempHome } from "./tui-fixture.ts";
 import { HOOK_FLOW, HOOKS } from "./hooks-fixture.ts";
 import { CYCLE_AUTHOR_CODE, CYCLE_FILES, refundCycle, type CycleStage } from "./cycle-fixture.ts";
-import { diagramsRepo } from "./diagrams-fixture.ts";
+import { diagramsRepo, editorModelOf, type FixtureModel } from "./diagrams-fixture.ts";
 import { explorerRepo } from "./explorer-fixture.ts";
 import { VirtualTerminal } from "./vt.ts";
 
@@ -1441,4 +1441,206 @@ test("web: POST /api/flow-proposal writes one proposal of the ticked branches th
   const check = spawnSync(process.execPath, [bin, "check"], { cwd: repo, encoding: "utf8" });
   assert.match(check.stdout, /pay/, check.stdout + check.stderr);
   assert.doesNotMatch(check.stdout, /K0\d\d .*pay\.md/);
+});
+
+type DiagramJson = { nodes: { id: string; kind: string; label: string; ref?: { id?: string }; group?: string; x: number; y: number; w: number; h: number }[]; edges: { from: string; to: string; kind: string; label?: string }[]; groups: { id: string; label: string; x: number; y: number; w: number; h: number }[]; specHash: string };
+
+test("web: GET/PUT /api/layout keep a view's layout in keylang/diagrams/<view>.layout.json — keyed by spec IDs, deterministic, never read by check or written by map; links and generated files refused (business-flows/24)", async (t) => {
+  const repo = diagramsRepo(t);
+  const server = await serveWeb({ root: repo, port: 0 });
+  t.after(() => server.close());
+  const url = new URL(server.url);
+  const bearer = { Authorization: `Bearer ${tokenOf(url)}` };
+  const json = { "Content-Type": "application/json" };
+  const put = (body: unknown, headers: Record<string, string> = { ...json, ...bearer }): Promise<{ status: number; body: string }> => send(url, "PUT", "/api/layout?view=flow%3Acheckout", headers, JSON.stringify(body));
+  const file = join(repo, "keylang/diagrams/flow--checkout.layout.json");
+  const checkBefore = spawnSync(process.execPath, [bin, "check"], { cwd: repo, encoding: "utf8" });
+
+  // No file yet: an empty layout, and the diagram as `layout` places it.
+  const empty = await status(url, "/api/layout?view=flow%3Acheckout", bearer);
+  assert.equal(empty.status, 200, empty.body);
+  assert.deepEqual(JSON.parse(empty.body), { view: "flow:checkout", file: "keylang/diagrams/flow--checkout.layout.json", exists: false, layout: {} });
+  const drawn = JSON.parse((await status(url, "/api/diagram?view=flow&name=checkout", bearer)).body) as DiagramJson;
+  assert.match(drawn.specHash, /^[0-9a-f]{64}$/);
+  assert.deepEqual(
+    drawn.nodes.map((n) => n.id),
+    ["trigger:5", "step:6", "step:7", "step:8"],
+  );
+
+  // The guards of every write: token, origin, JSON.
+  assert.equal((await put({ layout: {} }, json)).status, 403);
+  assert.equal((await put({ layout: {} }, { ...json, ...bearer, "Sec-Fetch-Site": "cross-site" })).status, 403);
+  assert.equal((await put({ layout: {} }, { ...bearer, "Content-Type": "text/plain" })).status, 415);
+  assert.equal((await put({ layout: { "step:6": { x: "1" } } })).status, 400);
+  assert.equal(existsSync(file), false);
+
+  // A PUT in the keys of the canvas; the file keys by what the shapes say.
+  const layout = {
+    "step:6": { x: 520.004, y: 140, w: 180, h: 60 },
+    "trigger:5": { x: 20, y: 300 },
+    "lane:application": { x: 0, y: 100, w: 900, h: 140 },
+    "edge:trigger:5->step:6": { x: 0, y: 0, points: [{ x: 300, y: 320 }] },
+    "draft:9": { x: 40, y: 10, w: 170, h: 80, kind: "note", note: "Ask the shop about refunds" },
+    "draft:12": { x: 5, y: 5, kind: "", label: "" },
+  };
+  const written = await put({ layout });
+  assert.equal(written.status, 200, written.body);
+  assert.deepEqual(JSON.parse(written.body), { view: "flow:checkout", file: "keylang/diagrams/flow--checkout.layout.json", written: true });
+  const text = readFileSync(file, "utf8");
+  assert.equal(
+    text,
+    `${JSON.stringify(
+      {
+        format: 1,
+        view: "flow:checkout",
+        shapes: {
+          "lane:application": { h: 140, w: 900, x: 0, y: 100 },
+          "note:draft:9": { h: 80, kind: "note", note: "Ask the shop about refunds", w: 170, x: 40, y: 10 },
+          "step:application.purchase.buy": { h: 60, w: 180, x: 520, y: 140 },
+          "trigger:presentation.terminal.checkout": { x: 20, y: 300 },
+        },
+        edges: { "edge:trigger:presentation.terminal.checkout->step:application.purchase.buy": { points: [{ x: 300, y: 320 }] } },
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  // The same layout again: the same bytes, nothing written.
+  assert.deepEqual(JSON.parse((await put({ layout })).body).written, false);
+  assert.equal(readFileSync(file, "utf8"), text);
+
+  // Read back in the keys of the canvas; `/api/diagram` places the shapes there.
+  const back = JSON.parse((await status(url, "/api/layout?view=flow%3Acheckout", bearer)).body) as { exists: boolean; layout: Record<string, { x: number; y: number; points?: unknown; note?: string }> };
+  assert.equal(back.exists, true);
+  assert.deepEqual(Object.keys(back.layout).sort(), ["draft:9", "edge:trigger:5->step:6", "lane:application", "step:6", "trigger:5"]);
+  assert.equal(back.layout["draft:9"]!.note, "Ask the shop about refunds");
+  const placed = JSON.parse((await status(url, "/api/diagram?view=flow&name=checkout", bearer)).body) as DiagramJson;
+  assert.deepEqual(
+    placed.nodes.filter((n) => n.id === "step:6").map((n) => [n.x, n.y, n.w]),
+    [[520, 140, 180]],
+  );
+
+  // A line of prose above the flow moves every step a line down: the layout keeps them, by ID, not by line.
+  writeFileSync(join(repo, "keylang/flows/checkout.md"), readFileSync(join(repo, "keylang/flows/checkout.md"), "utf8").replace("Checkout from the terminal.", "Checkout from the terminal.\nPaid at once."));
+  const moved = JSON.parse((await status(url, "/api/layout?view=flow%3Acheckout", bearer)).body) as { layout: Record<string, { x: number }> };
+  assert.equal(moved.layout["step:7"]?.x, 520);
+  assert.equal(moved.layout["step:6"], undefined);
+
+  // `check` reads no layout and `map` writes none; `map --check` does not look at the directory.
+  const checkAfter = spawnSync(process.execPath, [bin, "check"], { cwd: repo, encoding: "utf8" });
+  assert.equal(checkAfter.stdout.replace(/checkout\.md:\d+/g, "checkout.md"), checkBefore.stdout.replace(/checkout\.md:\d+/g, "checkout.md"));
+  assert.doesNotMatch(checkAfter.stdout + checkAfter.stderr, /layout\.json|diagrams\//);
+  assert.equal(spawnSync(process.execPath, [bin, "map"], { cwd: repo, encoding: "utf8" }).status, 0);
+  assert.equal(readFileSync(file, "utf8"), text);
+  const mapCheck = spawnSync(process.execPath, [bin, "map", "--check"], { cwd: repo, encoding: "utf8" });
+  assert.equal(mapCheck.status, 0, mapCheck.stdout + mapCheck.stderr);
+
+  // A file with the generated marker is no layout; a directory linked out of the repository is refused, both ways.
+  writeFileSync(file, "// keylang:generated by something\n{}\n");
+  assert.equal((await status(url, "/api/layout?view=flow%3Acheckout", bearer)).status, 409);
+  assert.equal((await put({ layout })).status, 409);
+  rmSync(join(repo, "keylang/diagrams"), { recursive: true });
+  const outside = mkdtempSync(join(tmpdir(), "keylang-outside-"));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  symlinkSync(outside, join(repo, "keylang/diagrams"), "dir");
+  const linked = await put({ layout });
+  assert.equal(linked.status, 409, linked.body);
+  assert.match(linked.body, /leads out of/);
+  assert.deepEqual(readdirSync(outside), []);
+});
+
+/** The editor's model of the checkout flow with a step drawn after `after`, its sequence line from it. */
+function withStep(model: FixtureModel, id: string, after: string): FixtureModel {
+  const from = model.nodes.find((n) => n.key === after)!;
+  return {
+    ...model,
+    mode: "draft",
+    nodes: [...model.nodes, { key: "draft:1", id, kind: "task", label: id.slice(id.lastIndexOf(".") + 1), layer: id.split(".")[0]!.replace(/^planned:/, ""), tests: [], x: from.x + 200, y: from.y, w: 160, h: 60 }],
+    edges: [...model.edges, { key: "draft:2", kind: "sequence", from: after, to: "draft:1" }],
+  };
+}
+
+test("web: POST /api/diagram-proposal turns the editor's drawing into proposals — a new step is one proposal with one hunk that `check` sees once accepted; a deny between lanes is a rule; an allow comes back with K108; a stale spec is 409 (business-flows/24)", async (t) => {
+  const repo = checkoutRepo(t, {
+    "src/application/purchase.ts": ['import { create } from "../domain/order.ts";', 'import { save } from "../infrastructure/store.ts";', 'import { notify } from "../infrastructure/mail.ts";', "export function buy(): void {", "  create();", "  save();", "  notify();", "}", ""].join("\n"),
+    "src/infrastructure/mail.ts": "export function notify(): void {}\n",
+  });
+  const server = await serveWeb({ root: repo, port: 0 });
+  t.after(() => server.close());
+  const url = new URL(server.url);
+  const bearer = { Authorization: `Bearer ${tokenOf(url)}` };
+  const json = { "Content-Type": "application/json" };
+  const post = (body: unknown, headers: Record<string, string> = { ...json, ...bearer }): Promise<{ status: number; body: string }> => send(url, "POST", "/api/diagram-proposal", headers, JSON.stringify(body));
+  const flowFile = join(repo, "keylang/flows/checkout.md");
+  const before = readFileSync(flowFile, "utf8");
+  const drawn = JSON.parse((await status(url, "/api/diagram?view=flow&name=checkout", bearer)).body) as DiagramJson;
+  const model = editorModelOf("flow:checkout", drawn);
+
+  // The guards of every write; a model that is none.
+  assert.equal((await post({ model }, json)).status, 403);
+  assert.equal((await post({ model }, { ...json, ...bearer, Origin: "http://evil.example" })).status, 403);
+  assert.equal((await post({ model }, { ...bearer, "Content-Type": "application/x-www-form-urlencoded" })).status, 415);
+  assert.equal((await send(url, "GET", "/api/diagram-proposal", bearer, "")).status, 405);
+  assert.equal((await post({ model: { view: "flow:checkout", nodes: "x" } })).status, 400);
+  // The drawing as the code draws it: nothing to propose.
+  const same = await post({ model, specHash: drawn.specHash });
+  assert.equal(same.status, 200, same.body);
+  assert.deepEqual(JSON.parse(same.body).targets, []);
+  assert.equal(existsSync(join(repo, ".keylang/proposals")), false);
+
+  // A step drawn after `save`: one proposal, one hunk, the prose and every other line as they were.
+  const made = await post({ model: withStep(model, "infrastructure.mail.notify", "step:8"), specHash: drawn.specHash });
+  assert.equal(made.status, 200, made.body);
+  const answer = JSON.parse(made.body) as { status: string; targets: { target: string; proposal: string; hunks: { line: number; removed: string[]; added: string[] }[] }[]; weakenings: unknown[]; merge: string };
+  assert.equal(answer.status, "proposed");
+  assert.deepEqual(
+    answer.targets.map((x) => [x.target, x.proposal, x.hunks]),
+    [["keylang/flows/checkout.md", ".keylang/proposals/keylang/flows/checkout.md", [{ line: 9, removed: [], added: ["  - step infrastructure.mail.notify"] }]]],
+  );
+  assert.deepEqual(answer.weakenings, []);
+  assert.match(answer.merge, /keylang proposals accept keylang\/flows\/checkout\.md/);
+  assert.equal(readFileSync(join(repo, ".keylang/proposals/keylang/flows/checkout.md"), "utf8"), before.replace("  - step infrastructure.store.save\n", "  - step infrastructure.store.save\n  - step infrastructure.mail.notify\n"));
+  assert.equal(readFileSync(flowFile, "utf8"), before, "a proposal, not the spec");
+  // The drawn step is marked in the layout file: its proposal waits.
+  const marked = JSON.parse(readFileSync(join(repo, "keylang/diagrams/flow--checkout.layout.json"), "utf8")) as { shapes: Record<string, { proposed?: string }> };
+  assert.equal(marked.shapes["step:infrastructure.mail.notify"]?.proposed, "keylang/flows/checkout.md");
+  const waiting = JSON.parse((await status(url, "/api/layout?view=flow%3Acheckout", bearer)).body) as { layout: Record<string, { status?: string }> };
+  assert.equal(waiting.layout["step:infrastructure.mail.notify"]?.status, "pending");
+  // A second one while it waits is refused.
+  assert.equal((await post({ model: withStep(model, "infrastructure.mail.notify", "step:8"), specHash: drawn.specHash })).status, 409);
+
+  // Accepted, `check` sees the step; the layout keeps its place, now under the step's own key.
+  assert.equal(spawnSync(process.execPath, [bin, "proposals", "accept", "keylang/flows/checkout.md"], { cwd: repo, encoding: "utf8" }).status, 0);
+  const check = spawnSync(process.execPath, [bin, "check"], { cwd: repo, encoding: "utf8" });
+  assert.match(check.stdout, /checkout\.md:9\b.*infrastructure\.mail\.notify/, check.stdout + check.stderr);
+  const merged = JSON.parse((await status(url, "/api/layout?view=flow%3Acheckout", bearer)).body) as { layout: Record<string, { x: number; status?: string }> };
+  assert.equal(merged.layout["step:infrastructure.mail.notify"], undefined, "no longer a drawn shape");
+  assert.equal(merged.layout["step:9"]?.x, model.nodes.find((n) => n.key === "step:8")!.x + 200);
+
+  // The spec changed since the drawing was opened: 409, nothing written.
+  const stale = await post({ model: withStep(model, "infrastructure.mail.notify", "step:6"), specHash: drawn.specHash });
+  assert.equal(stale.status, 409, stale.body);
+  assert.match(JSON.parse(stale.body).error, /specs changed since this diagram was opened/);
+  assert.equal(existsSync(join(repo, ".keylang/proposals/keylang/flows/checkout.md")), false);
+
+  // A deny between two lanes: a rule in rules.md, no weakening.
+  const fresh = JSON.parse((await status(url, "/api/diagram?view=flow&name=checkout", bearer)).body) as DiagramJson;
+  const lanes = editorModelOf("flow:checkout", fresh);
+  const deny = await post({ model: { ...lanes, edges: [...lanes.edges, { key: "draft:3", kind: "deny", from: "lane:domain", to: "lane:presentation" }] }, specHash: fresh.specHash });
+  assert.equal(deny.status, 200, deny.body);
+  const denied = JSON.parse(deny.body) as { targets: { target: string; hunks: unknown[] }[]; weakenings: unknown[] };
+  assert.deepEqual(denied.targets.map((x) => [x.target, x.hunks.length]), [["keylang/rules.md", 1]]);
+  assert.deepEqual(denied.weakenings, []);
+  assert.equal(readFileSync(join(repo, ".keylang/proposals/keylang/rules.md"), "utf8"), "# rules\n\n- layers domain < infrastructure < application < presentation\n- deny domain presentation\n");
+  assert.equal(spawnSync(process.execPath, [bin, "proposals", "reject", "keylang/rules.md"], { cwd: repo, encoding: "utf8" }).status, 0);
+
+  // An allow: proposed, and the answer warns that it weakens the spec (K108).
+  const allow = await post({ model: { ...lanes, edges: [...lanes.edges, { key: "draft:4", kind: "allow", from: "lane:domain", to: "lane:presentation" }] }, specHash: fresh.specHash });
+  assert.equal(allow.status, 200, allow.body);
+  const allowed = JSON.parse(allow.body) as { targets: { target: string }[]; weakenings: { file: string; message: string }[] };
+  assert.deepEqual(allowed.targets.map((x) => x.target), ["keylang/rules.md"]);
+  assert.deepEqual(
+    allowed.weakenings.map((w) => [w.file, w.message]),
+    [["keylang/rules.md", "K108 spec weakened: new `allow domain presentation`"]],
+  );
 });

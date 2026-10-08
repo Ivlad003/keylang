@@ -30,3 +30,31 @@ export function diagramsRepo(t: { after: (f: () => void) => void }): string {
   assert.equal(run.status, 0, run.stderr);
   return dir;
 }
+
+/** A diagram of `/api/diagram` as the editor's `currentModel()` gives it «з коду» (web/src/editor.ts): what `POST /api/diagram-proposal` and `keylang diagram propose` compare. */
+export interface FixtureModel {
+  view: string;
+  mode: string;
+  nodes: { key: string; id: string; kind: string; label: string; layer: string | null; tests: string[]; x: number; y: number; w: number; h: number; trigger?: string; signature?: string; role?: "split" | "join" }[];
+  edges: { key: string; kind: string; from: string; to: string; label?: string }[];
+  lanes: { key: string; id: string; label: string; x: number; y: number; w: number; h: number }[];
+}
+
+export function editorModelOf(
+  view: string,
+  diagram: { nodes: { id: string; kind: string; label: string; ref?: { id?: string }; group?: string; x: number; y: number; w: number; h: number }[]; edges: { from: string; to: string; kind: string; label?: string }[]; groups: { id: string; label: string; x: number; y: number; w: number; h: number }[] },
+): FixtureModel {
+  const seen = new Map<string, number>();
+  return {
+    view,
+    mode: "code",
+    nodes: diagram.nodes.map((n) => ({ key: n.id, id: n.ref?.id ?? (n.kind === "layer" ? n.label : ""), kind: n.kind, label: n.label, layer: n.group ?? null, tests: [], x: n.x, y: n.y, w: n.w, h: n.h })),
+    edges: diagram.edges.map((e) => {
+      const base = `edge:${e.from}->${e.to}`;
+      const n = seen.get(base) ?? 0;
+      seen.set(base, n + 1);
+      return { key: n === 0 ? base : `${base}#${n}`, kind: e.kind, from: e.from, to: e.to, ...(e.label ? { label: e.label } : {}) };
+    }),
+    lanes: diagram.groups.map((g) => ({ key: `lane:${g.id}`, id: g.id, label: g.label, x: g.x, y: g.y, w: g.w, h: g.h })),
+  };
+}

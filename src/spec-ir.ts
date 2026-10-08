@@ -6,7 +6,7 @@
 import { SYNTHETIC_LAYERS } from "./config.ts";
 import { diagnostic, type Diagnostic } from "./diag.ts";
 import { sectionNodes, type Document, type Node, type Ref, type Section } from "./ir.ts";
-import { isTriggerKind, renderMeaning, scheduleText, type TriggerKind } from "./parser.ts";
+import { isTriggerKind, renderMeaning, scheduleText, TRIGGER_EVENT, type TriggerKind } from "./parser.ts";
 import type { Span } from "./span.ts";
 
 /** Configured names that are layers even when `keylang.json` does not list them. Assertion checks use this later; compilation does not reject them. */
@@ -89,6 +89,8 @@ export interface Trigger extends Located {
   target: Ref;
   /** `trigger <kind> <id>`: the kind of entry point the fn must be (ADR 0023 п. 3); null for a plain `trigger <id>`. */
   entry: { kind: TriggerKind; span: Span } | null;
+  /** `trigger event <id>` (ADR 0023 п. 1): the span of the word `event`; the target is an event and the steps run in its subscribers. Null otherwise. */
+  event: Span | null;
   children: readonly FlowItem[];
 }
 
@@ -128,6 +130,7 @@ export interface ClaimItem extends Located {
   kind: "invariant" | "reads" | "emits";
   /** Prose of an invariant or emit, or the ID a `reads` names. */
   body: string;
+  /** The ID a `reads` names; for `emits`, the event ID (`events.<name>`, ADR 0023 п. 1), null for a prose name. */
   target: Ref | null;
   children: readonly FlowItem[];
 }
@@ -540,7 +543,8 @@ function triggerItem(file: string, flow: string, node: Node): Trigger | null {
   if (!target) return null;
   const label = node.label;
   const entry = label !== null && isTriggerKind(label.value) ? { kind: label.value, span: label.span } : null;
-  return { kind: "trigger", target, entry, children: flowItems(file, flow, node.children), ...flowAt(file, flow, node) };
+  const event = label !== null && label.value === TRIGGER_EVENT ? label.span : null;
+  return { kind: "trigger", target, entry, event, children: flowItems(file, flow, node.children), ...flowAt(file, flow, node) };
 }
 
 function plannedDeclKind(value: string): Planned["decl"] | null {
