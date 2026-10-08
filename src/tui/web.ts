@@ -30,6 +30,7 @@ import { toPosix } from "../config.ts";
 import { diagramOf, flowListing, parseView, usagesOf, viewsOf, type Diagram, type DiagramNode } from "../diagram.ts";
 import { PROCESSES_FILE, processViews, readProcesses } from "../discover-names.ts";
 import { DISCOVERED_FLOWS_DIR } from "../map.ts";
+import { buildTour, tourMarkdown } from "../tour.ts";
 import { parse } from "../parser.ts";
 import { compileSpec, type SpecIR } from "../spec-ir.ts";
 import { App, MAX_COLS, MAX_ROWS, type Analyzer, type OperationRunner } from "./app.ts";
@@ -281,13 +282,20 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
     return discoveredCache.spec;
   };
 
-  /** `GET /api/views`, `GET /api/diagram?view=…`, `GET /api/usages?id=…`: JSON for the diagram client, with the socket's token as a Bearer. */
+  /** `GET /api/views`, `GET /api/diagram?view=…`, `GET /api/usages?id=…`, `GET /api/tour`: JSON for the diagram client, with the socket's token as a Bearer. */
   const api = async (request: IncomingMessage, response: ServerResponse, path: string, query: URLSearchParams): Promise<void> => {
     // These paths are public (docs/tui.md); any other is the 404 of every unknown path, token or not.
-    if (path !== "/api/views" && path !== "/api/diagram" && path !== "/api/usages") return reply(response, 404, "text/plain", "not found\n");
+    if (path !== "/api/views" && path !== "/api/diagram" && path !== "/api/usages" && path !== "/api/tour") return reply(response, 404, "text/plain", "not found\n");
     if (!sameOrigin(request) || !sameSecret(bearerToken(request), token)) return reply(response, 403, "text/plain", "forbidden\n");
     if (request.method !== "GET") return reply(response, 405, "text/plain", "method not allowed\n");
     const json = (status: number, body: unknown): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
+    // The project tour (business-flows/15): the data of `keylang tour --json` and its Markdown, for the «Огляд» tab.
+    if (path === "/api/tour") {
+      const done = await analysis();
+      if (done.snapshot === null) return json(200, { reason: "no code to read: `languages` in keylang.json is empty" });
+      const tour = await buildTour({ config: done.config, snapshot: done.snapshot, spec: done.spec });
+      return json(200, { ...tour, markdown: tourMarkdown(tour) });
+    }
     if (path === "/api/usages") {
       const id = query.get("id")?.trim() ?? "";
       if (id === "") return json(400, { error: "usages needs id=" });

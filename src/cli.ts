@@ -165,7 +165,7 @@ Commands:
   mcp                       Serve MCP over stdio for agents: search, node, code, flows,
                             check, explain, context, validate_spec, scaffold,
                             feature_status, list_entries, discover_flows, coverage_report,
-                            list_integrations, apply_diff
+                            list_integrations, project_tour, apply_diff
                             (proposals only; no spec is written, the fact cache
                             .keylang/cache/ is kept current)
   wire [--check] [--out f]  Generate keylang.gen.ts (or f: a .ts/.mts/.cts path relative to
@@ -198,6 +198,15 @@ Commands:
                             notify or ipn, integrations.webhooks globs of keylang.json);
                             queue publishers, consumers and pairs. --json: as JSON.
                             Exit 0; writes only the fact cache
+  tour [--out f] [--json]   One page for a newcomer, a view (check does not read it), no
+                            model: what the system is (README, manifest, layer READMEs),
+                            layers and modules with size and coupling, business
+                            processes → flows with descriptions and /diagrams links,
+                            entry points by kind and events, integrations, blind spots
+                            and logic in data, and the fns to read first. Markdown on
+                            stdout; --out f: write it as a generated file (keylang/tour.md;
+                            never a place check reads); --json: the same data as JSON.
+                            Exit 0; 1 when f is a file someone wrote
   flows discover [--kind k] [--layer l] [--limit n] [--depth d] [--print] [--check]
                             A flow draft for every entry point (draft flow from its fn)
                             as the generated view <dir>/flows-discovered/<layer>.md,
@@ -424,6 +433,8 @@ async function run(argv: readonly string[]): Promise<number> {
       return cmdCoverage(values.json === true);
     case "integrations":
       return cmdIntegrations(values.json === true);
+    case "tour":
+      return cmdTour(values.out, values.json === true);
     case "flows":
       return cmdFlows(paths, { kind: values.kind, layer: values.layer, limit: values.limit, depth: values.depth, into: values.into, print: values.print === true, check: values.check === true, names: values.names === true, mode: values.mode, dryRun: values["dry-run"] === true, jobs: values.jobs, stale: values.stale === true });
     case "export":
@@ -978,6 +989,17 @@ async function cmdIntegrations(json: boolean): Promise<number> {
   const { text, ...report } = result.payload;
   process.stdout.write(json ? `${JSON.stringify(report, null, 2)}\n` : text);
   return 0;
+}
+
+/** `tour [--out f] [--json]`: the page on stdout, its data as JSON, or the page written to `f` (named on stderr). */
+async function cmdTour(out: string | undefined, json: boolean): Promise<number> {
+  const result = await runOperation({ kind: "tour", root: findRoot(process.cwd()), ...(out !== undefined ? { out } : {}) });
+  if (result.payload === null) throw new Error(result.messages[0]?.text ?? "tour failed");
+  const { text, out: _written, ...tour } = result.payload;
+  if (out !== undefined) for (const m of result.messages) process.stderr.write(`keylang: ${m.text}\n`);
+  if (json) process.stdout.write(`${JSON.stringify(tour, null, 2)}\n`);
+  else if (out === undefined) process.stdout.write(text);
+  return result.exitCode ?? 2;
 }
 
 /**

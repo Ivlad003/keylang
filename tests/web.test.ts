@@ -1122,6 +1122,32 @@ test("web: scripts/build-web.mjs bundles the client offline: one script, its CSS
   }
 });
 
+test("web: /api/tour answers the project tour as `keylang tour --json` computes it, behind the same token (business-flows/15)", async (t) => {
+  const repo = diagramsRepo(t);
+  const server = await serveWeb({ root: repo, port: 0 });
+  t.after(() => server.close());
+  const url = new URL(server.url);
+  const bearer = { Authorization: `Bearer ${tokenOf(url)}` };
+  const answer = await status(url, "/api/tour", bearer);
+  assert.equal(answer.status, 200, answer.body);
+  assert.match(answer.type, /^application\/json/);
+  const data = JSON.parse(answer.body) as { snapshotId: string; system: unknown; layers: { name: string }[]; processes: { domains: { processes: { flows: { name: string; link: string; inView: boolean }[] }[] }[] }; startHere: unknown[]; markdown: string };
+  assert.deepEqual(Object.keys(data), ["snapshotId", "system", "layers", "processes", "entries", "events", "integrations", "blindSpots", "startHere", "markdown"]);
+  assert.deepEqual(data.layers.map((layer) => layer.name).slice(0, 4), ["domain", "application", "infrastructure", "presentation"]);
+  const flows = data.processes.domains.flatMap((domain) => domain.processes.flatMap((p) => p.flows));
+  assert.deepEqual(flows.map((flow) => [flow.name, flow.link, flow.inView]), [["listOrders", "/diagrams#view=discovered&name=listOrders", true]]);
+  // The page's Markdown is the CLI's.
+  const cli = spawnSync(process.execPath, [bin, "tour"], { cwd: repo, encoding: "utf8" });
+  assert.equal(cli.status, 0, cli.stderr);
+  assert.equal(data.markdown, cli.stdout);
+  assert.match(data.markdown, /^## 7\. Where to start reading$/m);
+  for (const headers of [{}, { Authorization: "Bearer wrong" }, { ...bearer, Origin: "http://evil.example" }]) {
+    const refused = await status(url, "/api/tour", headers);
+    assert.equal(refused.status, 403, JSON.stringify(headers));
+    assert.doesNotMatch(refused.body, /listOrders/);
+  }
+});
+
 test("web: /api/views lists the discovered flows; /api/diagram draws one; /api/usages says where an ID is used, behind the same token (business-flows/21)", async (t) => {
   const repo = diagramsRepo(t);
   const server = await serveWeb({ root: repo, port: 0 });

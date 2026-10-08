@@ -13,6 +13,7 @@
 import { Api, ApiError, type Diagram, type DiagramNode, type Usages, type ViewQuery, type Views, takeToken } from "./api.ts";
 import { Canvas, VERDICT_COLOUR, VERDICT_GLYPH } from "./canvas.ts";
 import { VirtualList, type ListItem } from "./list.ts";
+import { mountTour } from "./tour.ts";
 import "./diagrams.css";
 
 /** How often the page asks again, ms; a request that takes longer delays the next one. */
@@ -389,3 +390,5 @@ class Page {
 }
 
 void new Page().start();
+// «Огляд»: the project tour over the canvas (business-flows/15).
+mountTour();

@@ -32,6 +32,7 @@ import type { DiscoveredFlow } from "../discover.ts";
 import type { BusinessProcess, NameMode } from "../discover-names.ts";
 import type { CoverageReport } from "../coverage-report.ts";
 import type { IntegrationsReport } from "../integrations.ts";
+import type { Tour } from "../tour.ts";
 
 /** The known operations. `doctor` is the first; new kinds arrive with their feature. */
 export interface DoctorRequest {
@@ -348,6 +349,21 @@ export interface IntegrationsRequest {
   kind: "integrations";
   /** Repository root (absolute). */
   root: string;
+}
+
+/**
+ * The project tour (`keylang tour`, MCP `project_tour`, «Project tour» in the
+ * TUI, «Огляд» of the web page): what the system is, layers and modules,
+ * business processes, entry points and events, integrations, blind spots and
+ * where to start reading. Read-only but `out`: a root-relative POSIX path the
+ * Markdown is written to as a generated file (never one `check` reads).
+ */
+export interface TourRequest {
+  kind: "tour";
+  /** Repository root (absolute). */
+  root: string;
+  /** Write the Markdown here (relative to the root, POSIX) instead of returning it only. */
+  out?: string;
 }
 
 /**
@@ -690,7 +706,7 @@ export interface AssistantReplyRequest {
 }
 
 /** Every request `runOperation` takes: its `kind` names the operation and the payload of its result. */
-export type OperationRequest = DoctorRequest | FeatureRequest | FeatureQuestionsRequest | ExportC4Request | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | ExplainRequest | ExplainLlmRequest | ExplainPlanRequest | ExplainBatchRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | EntriesRequest | CoverageRequest | IntegrationsRequest | FlowsDiscoverRequest | FlowsAdoptRequest | DraftFlowRequest | DraftRulesRequest | DraftLayoutRequest | CodeToSpecRequest | SpecToCodeRequest | ApplyCodeRequest | AssistantReplyRequest;
+export type OperationRequest = DoctorRequest | FeatureRequest | FeatureQuestionsRequest | ExportC4Request | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | ExplainRequest | ExplainLlmRequest | ExplainPlanRequest | ExplainBatchRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | EntriesRequest | CoverageRequest | IntegrationsRequest | TourRequest | FlowsDiscoverRequest | FlowsAdoptRequest | DraftFlowRequest | DraftRulesRequest | DraftLayoutRequest | CodeToSpecRequest | SpecToCodeRequest | ApplyCodeRequest | AssistantReplyRequest;
 
 /** The operation kinds that write files: they compute first and commit after `beforeCommit` (a check mode never calls it). */
 export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["feature-questions", "export-c4", "map", "baseline", "agents", "fmt", "wire", "init", "export", "flows-discover", "flows-adopt", "draft-flow", "draft-rules", "code-to-spec", "spec-to-code", "apply-code", "explain-llm", "explain-batch"]);
@@ -1027,6 +1043,14 @@ export interface CoveragePayload extends CoverageReport {
 export interface IntegrationsPayload extends IntegrationsReport {
   /** The CLI's stdout. */
   text: string;
+}
+
+/** The project tour (`keylang tour --json` is it without `text` and `out`). */
+export interface TourPayload extends Tour {
+  /** The Markdown page: the CLI's stdout. */
+  text: string;
+  /** The file `out` names, written; null when nothing was written. */
+  out: string | null;
 }
 
 /** The plan `keylang trace-plan` prints, and what it leaves out. */
@@ -1573,6 +1597,7 @@ export interface OperationPayloads {
   entries: EntriesPayload;
   coverage: CoveragePayload;
   integrations: IntegrationsPayload;
+  tour: TourPayload;
   "flows-discover": FlowsDiscoverPayload;
   "flows-adopt": FlowsAdoptPayload;
   "draft-flow": DraftFlowPayload;
