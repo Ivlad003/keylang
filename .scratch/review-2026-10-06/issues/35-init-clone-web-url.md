@@ -1,6 +1,6 @@
 # 35: `init`, `clone` і `web <url>` падають з кодом 2 на `opencode.jsonc` з коментарями
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -46,11 +46,13 @@ t2: opencode.jsonc з коментарем і кінцевою комою. `keyl
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/harness.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/harness.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+- 2026-10-07: Регресійний тест `tests/cli-harness.test.ts` («init on a repository with opencode.jsonc…»): `opencode.jsonc` з коментарем і кінцевою комою — `init --agents=none` (шлях `clone`/`web <url>`) має дати 0 і лишити файл байт у байт, `init` (auto) — дописати `mcp.keylang`; на старому коді exit 2 `invalid JSON`. Виправлення: `parseObject(existing, jsonc)` розбирає через `parseJsoncStrict` (вже є в `src/imports.ts`), `mergeJsonKey`/`mergeOpencode` передають прапорець, `planHarness` ставить його для `opencode.jsonc`. Файл без запису keylang у `--agents=none` і раніше не переписувався (`mergeJsonKey` повертає `existing`); перезапис із ключем — JSON без коментарів, задокументовано в `docs/cli.md`. Зіпсований JSONC — і далі код 2, нічого не записано (теж у тесті). `node --test tests/cli-harness.test.ts`: 12/12; typecheck чистий; `keylang check` 0 fail.

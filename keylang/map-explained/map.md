@@ -777,75 +777,77 @@
       <a id="map.map.MapResult"></a><br>Bundles everything one map run produces: the `Graph`, generated map files and optional explanations keyed by file name, the `AnalysisSnapshot`, skip and fact-cache reuse counts, and the serialized fact cache text for the next run. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [generateMap](../../src/map.ts#L44) (config: Config, options: { persist?: boolean | "changed"; overlay?: ReadonlyMap<string, string> } = {}) → Promise<MapResult>
       <a id="map.map.generateMap"></a><br>`persist` prepares the fact cache for the next process: `true` always (`keylang map`, whose commit step writes it), `"changed"` only when the facts of this run differ from the cache on disk (an analysis that saves it best-effort); generation writes nothing. `overlay` gives…
-      - calls [base.config.classifySources](base.md#base.config.classifySources), [base.config.toPosix](base.md#base.config.toPosix), [base.languages.languageOf](base.md#base.languages.languageOf), [base.config.isAnalysed](base.md#base.config.isAnalysed), [map.map.readSource](map.md#map.map.readSource), [map.snapshot.sha256](map.md#map.snapshot.sha256), [map.graph.placeFile](map.md#map.graph.placeFile), [map.fact-cache.FactCache.open](map.md#map.fact-cache.FactCache.open), [map.map.extractorCode](map.md#map.map.extractorCode), [map.snapshot.grammarVersions](map.md#map.snapshot.grammarVersions), [map.frontends.frontendFor](map.md#map.frontends.frontendFor), [map.map.extractGuarded](map.md#map.map.extractGuarded), [map.map.opaqueFacts](map.md#map.map.opaqueFacts), [map.graph.buildGraph](map.md#map.graph.buildGraph), [base.config.layerGlobWarnings](base.md#base.config.layerGlobWarnings), [map.entries.collectEntries](map.md#map.entries.collectEntries), [map.snapshot.buildSnapshot](map.md#map.snapshot.buildSnapshot), [map.map.readRepositoryDocs](map.md#map.map.readRepositoryDocs), [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs), [map.emit.renderExplainedMap](map.md#map.emit.renderExplainedMap), [map.explanations.explanationOf](map.md#map.explanations.explanationOf), [map.emit.renderMap](map.md#map.emit.renderMap)
-    - fn [readRepositoryDocs](../../src/map.ts#L137) (config: Config) → RepositoryDocs <!-- internal -->
+      - calls [base.config.classifySources](base.md#base.config.classifySources), [base.config.toPosix](base.md#base.config.toPosix), [base.languages.languageOf](base.md#base.languages.languageOf), [base.config.isAnalysed](base.md#base.config.isAnalysed), [map.map.readAnalysedSource](map.md#map.map.readAnalysedSource), [map.graph.placeFile](map.md#map.graph.placeFile), [map.snapshot.sha256](map.md#map.snapshot.sha256), [map.fact-cache.FactCache.open](map.md#map.fact-cache.FactCache.open), [map.map.extractorCode](map.md#map.map.extractorCode), [map.snapshot.grammarVersions](map.md#map.snapshot.grammarVersions), [map.frontends.frontendFor](map.md#map.frontends.frontendFor), [map.map.extractGuarded](map.md#map.map.extractGuarded), [map.map.opaqueFacts](map.md#map.map.opaqueFacts), [map.graph.buildGraph](map.md#map.graph.buildGraph), [base.config.layerGlobWarnings](base.md#base.config.layerGlobWarnings), [map.map.readSource](map.md#map.map.readSource), [map.entries.collectEntries](map.md#map.entries.collectEntries), [map.snapshot.buildSnapshot](map.md#map.snapshot.buildSnapshot), [map.map.readRepositoryDocs](map.md#map.map.readRepositoryDocs), [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs), [map.emit.renderExplainedMap](map.md#map.emit.renderExplainedMap), [map.explanations.explanationOf](map.md#map.explanations.explanationOf), [map.emit.renderMap](map.md#map.emit.renderMap)
+    - fn [readRepositoryDocs](../../src/map.ts#L143) (config: Config) → RepositoryDocs <!-- internal -->
       <a id="map.map.readRepositoryDocs"></a><br>What the repository writes about itself (ADR 0014, the system and container levels of C4): the root README or a root manifest, and the README in each layer's own directory. Read on every analysis, so an edit shows in the next map without touching `snapshotId`.
       - calls [base.glob.globDirectory](base.md#base.glob.globDirectory), [map.map.readReadme](map.md#map.map.readReadme), [base.brief.readmeBrief](base.md#base.brief.readmeBrief), [map.map.readSystemDoc](map.md#map.map.readSystemDoc)
-    - fn [readSystemDoc](../../src/map.ts#L148) (root: string) → SystemDoc <!-- internal -->
+    - fn [readSystemDoc](../../src/map.ts#L154) (root: string) → SystemDoc <!-- internal -->
       <a id="map.map.readSystemDoc"></a>
       - calls [map.map.manifestAbout](map.md#map.map.manifestAbout), [map.map.readSource](map.md#map.map.readSource), [map.map.readReadme](map.md#map.map.readReadme), [base.brief.readmeBrief](base.md#base.brief.readmeBrief), [base.brief.briefOf](base.md#base.brief.briefOf)
-    - fn [readReadme](../../src/map.ts#L162) (root: string, dir: string) → { path: string; text: string } | null <!-- internal -->
+    - fn [readReadme](../../src/map.ts#L168) (root: string, dir: string) → { path: string; text: string } | null <!-- internal -->
       <a id="map.map.readReadme"></a><br>`README.md` in `dir` (relative, POSIX; "" for the root), its name in any case; null without one.
       - calls [map.map.readSource](map.md#map.map.readSource)
-    - fn [manifestAbout](../../src/map.ts#L184) (file: (typeof ROOT_MANIFESTS)[number], text: string | null) → { name: string | null; description: string | null } <!-- internal -->
+    - fn [manifestAbout](../../src/map.ts#L190) (file: (typeof ROOT_MANIFESTS)[number], text: string | null) → { name: string | null; description: string | null } <!-- internal -->
       <a id="map.map.manifestAbout"></a><br>`name` and `description` of a root manifest: `package.json` and `composer.json` at the top, `[package]` (or `[workspace.package]`) of `Cargo.toml`, `[project]` of `pyproject.toml`. A manifest that does not parse gives neither: the analysis reports it where it reads the…
-    - fn [opaqueFacts](../../src/map.ts#L210) (path: string) → FileFacts <!-- internal -->
+    - fn [opaqueFacts](../../src/map.ts#L216) (path: string) → FileFacts <!-- internal -->
       <a id="map.map.opaqueFacts"></a><br>Builds an empty `FileFacts` record for a path with completeness set to "opaque": no imports, declarations, exports, or references, and no parse error. [`map.map.extractGuarded`](map.md#map.map.extractGuarded) and [`map.map.generateMap`](map.md#map.map.generateMap) use it as the placeholder when a file cannot or should not be analyzed. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [readSource](../../src/map.ts#L215) (abs: string) → string | null <!-- internal -->
+    - fn [readSource](../../src/map.ts#L221) (abs: string) → string | null <!-- internal -->
       <a id="map.map.readSource"></a><br>A file's text; null when it no longer exists.
-    - fn [extractGuarded](../../src/map.ts#L229) (extract: (path: string, src: string) => Promise<FileFacts>, path: string, src: string) → Promise<FileFacts> <!-- internal -->
+    - fn [readAnalysedSource](../../src/map.ts#L231) (abs: string) → string | null | { unreadable: string } <!-- internal -->
+      <a id="map.map.readAnalysedSource"></a><br>A source file's text as readSource, or the reason when keylang may not read it (EACCES/EPERM): a hole, not an I/O error.
+      - calls [map.map.readSource](map.md#map.map.readSource)
+    - fn [extractGuarded](../../src/map.ts#L246) (extract: (path: string, src: string) => Promise<FileFacts>, path: string, src: string) → Promise<FileFacts> <!-- internal -->
       <a id="map.map.extractGuarded"></a><br>Facts of one file; a file whose syntax nests deeper than the extractor's stack (thousands of `+` terms or parentheses) is opaque with a parse error, so one pathological file does not stop the whole analysis.
       - calls [map.map.opaqueFacts](map.md#map.map.opaqueFacts)
-    - type [MapDiff](../../src/map.ts#L240)
+    - type [MapDiff](../../src/map.ts#L257)
       <a id="map.map.MapDiff"></a><br>Describes the result of comparing generated output against the target directory: paths of existing files the generator does not own, and paths of generated files that are missing, changed, or extra. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [targets](../../src/map.ts#L251) (config: Config, r: MapResult) → { dir: string; files: ReadonlyMap<string, string>; artifact: "map" | "explained" }[] <!-- internal -->
+    - fn [targets](../../src/map.ts#L268) (config: Config, r: MapResult) → { dir: string; files: ReadonlyMap<string, string>; artifact: "map" | "explained" }[] <!-- internal -->
       <a id="map.map.targets"></a><br>Directories the generator owns and what they should hold: the map, and the explained map (empty when `explain.map` is off, so its generated files go).
-    - fn [extraGenerated](../../src/map.ts#L259) (dir: string, files: ReadonlyMap<string, string>) → string[] <!-- internal -->
+    - fn [extraGenerated](../../src/map.ts#L276) (dir: string, files: ReadonlyMap<string, string>) → string[] <!-- internal -->
       <a id="map.map.extraGenerated"></a><br>Generated files in `dir` that should not be there.
       - calls [map.emit.isGeneratedMap](map.md#map.emit.isGeneratedMap)
-    - fn [mapConflicts](../../src/map.ts#L267) (config: Config, r: MapResult) → string[]
+    - fn [mapConflicts](../../src/map.ts#L284) (config: Config, r: MapResult) → string[]
       <a id="map.map.mapConflicts"></a><br>Target files of both maps that exist and are not generated. Sorted.
       - calls [map.map.targets](map.md#map.map.targets), [map.emit.isGeneratedMap](map.md#map.emit.isGeneratedMap)
-    - type [MapArtifact](../../src/map.ts#L279) = "map" | "explained" | "index" | "facts"
+    - type [MapArtifact](../../src/map.ts#L296) = "map" | "explained" | "index" | "facts"
       <a id="map.map.MapArtifact"></a><br>What a step of the map's commit touches.
-    - type [MapStep](../../src/map.ts#L282)
+    - type [MapStep](../../src/map.ts#L299)
       <a id="map.map.MapStep"></a><br>One file step of `keylang map`: a path relative to the root, POSIX.
-    - type [PlannedStep](../../src/map.ts#L288) extends MapStep <!-- internal -->
+    - type [PlannedStep](../../src/map.ts#L305) extends MapStep <!-- internal -->
       <a id="map.map.PlannedStep"></a><br>Extends `MapStep` with the bytes a write step should produce and a precondition snapshot: the file's expected current content, null for absent, or undefined when no check applies. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [MapPlan](../../src/map.ts#L304)
+    - type [MapPlan](../../src/map.ts#L321)
       <a id="map.map.MapPlan"></a><br>What `keylang map` will do, computed before anything is written: the expected bytes of every target, the removals, and what the render was made from. Internal to one operation — not a stored format.
-    - type [SourceInputs](../../src/map.ts#L316)
+    - type [SourceInputs](../../src/map.ts#L333)
       <a id="map.map.SourceInputs"></a><br>What a snapshot was computed from: `keylang.json` and the source files. A change in either makes a plan built on it unfit.
-    - type [MapInputs](../../src/map.ts#L324) extends SourceInputs <!-- internal -->
+    - type [MapInputs](../../src/map.ts#L341) extends SourceInputs <!-- internal -->
       <a id="map.map.MapInputs"></a><br>The inputs of the render: a change in any makes the plan unfit.
-    - fn [sourceInputs](../../src/map.ts#L330) (config: Config, sources: readonly { path: string; sha256: string }[]) → SourceInputs
-      <a id="map.map.sourceInputs"></a><br>The inputs of a snapshot as they are on disk now: the saved `keylang.json` and the snapshot's manifest.
-      - calls [map.map.readOrNull](map.md#map.map.readOrNull)
-    - fn [sourceInputProblems](../../src/map.ts#L339) (config: Config, inputs: SourceInputs, subject: string) → string[]
+    - fn [sourceInputs](../../src/map.ts#L351) (config: Config, sources: readonly { path: string; sha256: string }[]) → SourceInputs
+      <a id="map.map.sourceInputs"></a><br>The inputs of a snapshot: the `keylang.json` text the analysis parsed (not the disk now — a save made during the analysis must be caught at the commit, not become the base) and the snapshot's manifest.
+    - fn [sourceInputProblems](../../src/map.ts#L360) (config: Config, inputs: SourceInputs, subject: string) → string[]
       <a id="map.map.sourceInputProblems"></a><br>How `keylang.json` and the source files differ from the ones `subject` was computed from (`path: reason` lines, empty when none does): a changed config, a source added, changed or removed since.
       - calls [map.map.readOrNull](map.md#map.map.readOrNull), [base.config.sourceTree](base.md#base.config.sourceTree), [map.snapshot.sha256](map.md#map.snapshot.sha256)
-    - type [CommittedStep](../../src/map.ts#L358) extends MapStep
+    - type [CommittedStep](../../src/map.ts#L379) extends MapStep
       <a id="map.map.CommittedStep"></a><br>A step after the commit: done, failed with the reason, or never tried.
-    - type [MapCommit](../../src/map.ts#L363)
+    - type [MapCommit](../../src/map.ts#L384)
       <a id="map.map.MapCommit"></a><br>Result record of a map commit, holding the list of steps that were actually written plus a flag saying whether the run finished, failed, or was cancelled by a signal between steps. Cancelled runs keep whatever steps already landed. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [planMap](../../src/map.ts#L374) (config: Config, r: MapResult) → MapPlan
+    - fn [planMap](../../src/map.ts#L395) (config: Config, r: MapResult) → MapPlan
       <a id="map.map.planMap"></a><br>Plans both maps, the index and the fact cache: a write for every missing or changed generated file, a removal for every generated file of a layer that is gone (or of a map turned off). Reads the disk, writes nothing.
       - calls [base.config.toPosix](base.md#base.config.toPosix), [map.map.targets](map.md#map.map.targets), [map.map.readOrNull](map.md#map.map.readOrNull), [map.map.extraGenerated](map.md#map.map.extraGenerated), [map.map.mapConflicts](map.md#map.map.mapConflicts), [map.map.sourceInputs](map.md#map.map.sourceInputs), [map.map.briefsKey](map.md#map.map.briefsKey)
-    - fn [mapPlanProblems](../../src/map.ts#L408) (plan: MapPlan) → string[]
+    - fn [mapPlanProblems](../../src/map.ts#L429) (plan: MapPlan) → string[]
       <a id="map.map.mapPlanProblems"></a><br>Why the plan may not be committed now, as `path: reason` lines; empty when it may. Every target must pass the repository's write rules (a plain path that stays inside the repository through links) and still hold the bytes the plan saw — a manual file created meanwhile included…
       - calls [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [map.map.sourceInputProblems](map.md#map.map.sourceInputProblems), [map.map.briefsKey](map.md#map.map.briefsKey)
-    - fn [commitMap](../../src/map.ts#L427) (plan: MapPlan, options: { signal?: AbortSignal; onStep?: (step: MapStep) => void } = {}) → Promise<MapCommit>
+    - fn [commitMap](../../src/map.ts#L448) (plan: MapPlan, options: { signal?: AbortSignal; onStep?: (step: MapStep) => void } = {}) → Promise<MapCommit>
       <a id="map.map.commitMap"></a><br>Runs the plan's steps in order, each an atomic write (the generator's exact bytes, the permissions of the file it replaces, links followed inside the repository) or a removal. The signal is checked between steps: the step under way finishes. `onStep` is told before each step…
       - calls [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic), [base.safe-write.landing](base.md#base.safe-write.landing)
-    - fn [briefsKey](../../src/map.ts#L456) (config: Config) → string <!-- internal -->
+    - fn [briefsKey](../../src/map.ts#L477) (config: Config) → string <!-- internal -->
       <a id="map.map.briefsKey"></a><br>A hash of the briefs the explained map reads.
       - calls [map.snapshot.sha256](map.md#map.snapshot.sha256), [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs)
-    - fn [readOrNull](../../src/map.ts#L461) (abs: string) → string | null <!-- internal -->
+    - fn [readOrNull](../../src/map.ts#L482) (abs: string) → string | null <!-- internal -->
       <a id="map.map.readOrNull"></a><br>A file's text, or null when there is none.
-    - fn [diffMap](../../src/map.ts#L470) (config: Config, r: MapResult) → MapDiff
+    - fn [diffMap](../../src/map.ts#L491) (config: Config, r: MapResult) → MapDiff
       <a id="map.map.diffMap"></a><br>Compare both generated maps with the files on disk (`map --check`).
       - calls [map.map.mapConflicts](map.md#map.map.mapConflicts), [map.map.targets](map.md#map.map.targets), [map.map.extraGenerated](map.md#map.map.extraGenerated)
-    - fn [extractorCode](../../src/map.ts#L492) () → string <!-- internal -->
+    - fn [extractorCode](../../src/map.ts#L513) () → string <!-- internal -->
       <a id="map.map.extractorCode"></a><br>A hash of the extractor's own code. Facts cached by a changed extractor are stale even when nobody bumped `EXTRACTOR_VERSION`; in the package the same files are the built `.js`.
       - calls [map.snapshot.sha256](map.md#map.snapshot.sha256)
   - module [php-imports](../../src/php-imports.ts#L1)
@@ -1069,9 +1071,11 @@
       <a id="map.wire-gen.key"></a><br>Returns the given string unchanged if it is a valid JavaScript identifier, otherwise wraps it as a JSON string literal so it can be safely emitted as an object key in generated wire code by [`map.wire-gen.generateWire`](map.md#map.wire-gen.generateWire). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [importExtension](../../src/wire-gen.ts#L195) (root: string) → "ts" | "js" | "none" <!-- internal -->
       <a id="map.wire-gen.importExtension"></a><br>How the project writes relative imports: `.ts` with `allowImportingTsExtensions` or `rewriteRelativeImportExtensions`, `.js` under `node16`/`nodenext` resolution, no extension otherwise (bundlers). Relative `extends` are followed.
-      - calls [map.wire-gen.compilerOptions](map.md#map.wire-gen.compilerOptions)
-    - fn [compilerOptions](../../src/wire-gen.ts#L203) (file: string, depth: number) → Record<string, unknown> <!-- internal -->
+      - calls [map.wire-gen.compilerOptions](map.md#map.wire-gen.compilerOptions), [map.wire-gen.moduleResolution](map.md#map.wire-gen.moduleResolution)
+    - fn [moduleResolution](../../src/wire-gen.ts#L204) (options: Record<string, unknown>) → string <!-- internal -->
+      <a id="map.wire-gen.moduleResolution"></a><br>The module resolution tsc uses: the explicit one, else the one `module` implies (node16/node18/node20 → node16, nodenext → nodenext).
+    - fn [compilerOptions](../../src/wire-gen.ts#L211) (file: string, depth: number) → Record<string, unknown> <!-- internal -->
       <a id="map.wire-gen.compilerOptions"></a><br>`compilerOptions` of a tsconfig over those of its relative `extends`; package configs are not read.
       - calls [map.imports.readJsonc](map.md#map.imports.readJsonc)
-    - fn [specifier](../../src/wire-gen.ts#L218) (out: string, file: string, ext: "ts" | "js" | "none") → string <!-- internal -->
+    - fn [specifier](../../src/wire-gen.ts#L226) (out: string, file: string, ext: "ts" | "js" | "none") → string <!-- internal -->
       <a id="map.wire-gen.specifier"></a><br>Builds a relative import path from the output file to `file`, forcing a `./` prefix, then rewrites its extension per the `ext` mode: kept for `ts`, mapped through `RUNTIME_EXTENSION` for `js`, or stripped for TS/JS sources under `none`. _(llm · claude:claude-fable-5-1 · 2026-10-04)_

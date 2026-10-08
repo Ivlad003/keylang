@@ -585,6 +585,32 @@ test("a source directory keylang cannot read is a hole of its scope, not a crash
   assert.match(keylang(dir, ["check"]).stdout, /K102 divergence: `domain\.locked\.sneaky` depends on `infra\.db`/, "readable again, the edge is there");
 });
 
+test("a source file keylang cannot read is an opaque module and a hole, not code 2", { skip: process.getuid?.() === 0 ? "root reads any file" : false }, (t) => {
+  const dir = repo(t, {
+    "keylang.json": config({ domain: ["src/domain/**"], infra: ["src/infra/**"] }),
+    "keylang/rules.md": "# rules\n\n- layers infra < domain\n- deny domain infra\n- no-cycles\n",
+    "src/domain/order.ts": "export function total(): number {\n  return 1;\n}\n",
+    "src/infra/db.ts": "export function save(): void {}\n",
+    "src/domain/secret.ts": 'import { save } from "../infra/db.ts";\nexport function sneaky(): void {\n  save();\n}\n',
+  });
+  const secret = join(dir, "src/domain/secret.ts");
+  chmodSync(secret, 0o000);
+  try {
+    const map = keylang(dir, ["map"]);
+    assert.equal(map.status, 0, map.stderr);
+    assert.match(map.stderr, /warning: `src\/domain\/secret\.ts`: file is not readable \(EACCES\); its contents are not indexed/);
+    assert.equal(keylang(dir, ["map", "--check"]).status, 0);
+    const check = keylang(dir, ["check", "--strict"]);
+    assert.equal(check.status, 1, `unverified under --strict: ${check.stderr}`);
+    assert.match(check.stdout, /rules\.md:4:1: unverified file is not readable \(EACCES\) \(src\/domain\/secret\.ts:1:1\)/, "deny over the module is not ok");
+    assert.equal(keylang(dir, ["check"]).status, 0, "unverified is not a fail");
+  } finally {
+    // Before the temporary copy is removed.
+    chmodSync(secret, 0o644);
+  }
+  assert.match(keylang(dir, ["check"]).stdout, /K102 divergence: `domain\.secret` depends on `infra\.db`/, "readable again, the edge is there");
+});
+
 test("exports with no names is only parser K005, and an empty entry has no verdict", (t) => {
   const exportsDir = repo(t, {
     "keylang.json": config({ app: ["src/app/**"] }),

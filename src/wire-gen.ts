@@ -195,8 +195,16 @@ function key(name: string): string {
 function importExtension(root: string): "ts" | "js" | "none" {
   const options = compilerOptions(join(root, "tsconfig.json"), 0);
   if (options.allowImportingTsExtensions === true || options.rewriteRelativeImportExtensions === true) return "ts";
-  const resolution = String(options.moduleResolution ?? options.module ?? "").toLowerCase();
-  return resolution === "node16" || resolution === "nodenext" ? "js" : "none";
+  return NODE_RESOLUTION.test(moduleResolution(options)) ? "js" : "none";
+}
+
+const NODE_RESOLUTION = /^node(16|next)$/;
+
+/** The module resolution tsc uses: the explicit one, else the one `module` implies (node16/node18/node20 → node16, nodenext → nodenext). */
+function moduleResolution(options: Record<string, unknown>): string {
+  if (options.moduleResolution !== undefined) return String(options.moduleResolution).toLowerCase();
+  const module = String(options.module ?? "").toLowerCase();
+  return /^node(16|18|20)$/.test(module) ? "node16" : module;
 }
 
 /** `compilerOptions` of a tsconfig over those of its relative `extends`; package configs are not read. */

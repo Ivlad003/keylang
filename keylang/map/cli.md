@@ -141,24 +141,24 @@
     - fn [stopDecision](../../src/cli.ts#L1072) (input: string, cwd: string) → Promise<string> <!-- internal -->
       - calls features.changed.parseHookEvent, features.changed.hookDecision, map.analyze.findRoot, map.analyze.analyze, features.git-changes.gitChangedFiles, features.git-changes.changedPathSet, features.changed.filterChanged, features.git-changes.deletedModuleIds, features.changed.hookFails
     - fn [cmdHookInstall](../../src/cli.ts#L1093) (checkOnly: boolean) → Promise<number> <!-- internal -->
-      - calls cli.cli.packageVersion, base.config.toPosix, base.safe-write.writeAtomic
-    - fn [cmdNew](../../src/cli.ts#L1122) (args: readonly string[], layer: string | undefined) → Promise<number> <!-- internal -->
+      - calls cli.cli.packageVersion, base.config.toPosix, map.analyze.findRoot, base.safe-write.writeAtomic
+    - fn [cmdNew](../../src/cli.ts#L1129) (args: readonly string[], layer: string | undefined) → Promise<number> <!-- internal -->
       - calls map.analyze.findRoot, base.config.loadConfig, cli.cli.plannedModuleTemplate, base.config.toPosix, base.safe-write.safeWrite
-    - fn [plannedModuleTemplate](../../src/cli.ts#L1164) (layer: string, name: string) → string <!-- internal -->
-    - fn [cmdCompletions](../../src/cli.ts#L1172) (shell: string | undefined) → Promise<number> <!-- internal -->
-    - fn [packageVersion](../../src/cli.ts#L1180) () → string <!-- internal -->
-    - fn [readStdin](../../src/cli.ts#L1184) () → Promise<string> <!-- internal -->
-    - fn [cmdMap](../../src/cli.ts#L1190) (dir: string, checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [plannedModuleTemplate](../../src/cli.ts#L1171) (layer: string, name: string) → string <!-- internal -->
+    - fn [cmdCompletions](../../src/cli.ts#L1179) (shell: string | undefined) → Promise<number> <!-- internal -->
+    - fn [packageVersion](../../src/cli.ts#L1187) () → string <!-- internal -->
+    - fn [readStdin](../../src/cli.ts#L1191) () → Promise<string> <!-- internal -->
+    - fn [cmdMap](../../src/cli.ts#L1197) (dir: string, checkOnly: boolean) → Promise<number> <!-- internal -->
       - calls operations.operations.runOperation, operations.generate.mapCheckLines, base.config.toPosix, cli.cli.printMap
-    - fn [printMap](../../src/cli.ts#L1208) (result: OperationEnvelope<"map">, root: string) → number <!-- internal -->
+    - fn [printMap](../../src/cli.ts#L1215) (result: OperationEnvelope<"map">, root: string) → number <!-- internal -->
       - calls base.config.toPosix, operations.generate.mapConflictLines, operations.generate.mapStepLines, operations.generate.mapSummary
-    - fn [cmdParse](../../src/cli.ts#L1239) (paths: string[], json: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdParse](../../src/cli.ts#L1246) (paths: string[], json: boolean) → Promise<number> <!-- internal -->
       - calls operations.operations.runOperation, map.analyze.findRoot, base.diag.formatDiagnostic
-    - fn [cmdCheck](../../src/cli.ts#L1250) (paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined; stale: boolean; accept: boolean }) → Promise<number> <!-- internal -->
+    - fn [cmdCheck](../../src/cli.ts#L1257) (paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined; stale: boolean; accept: boolean }) → Promise<number> <!-- internal -->
       - calls cli.cli.cmdCheckStale, features.check-format.isCheckFormat, map.analyze.findRoot, base.config.loadConfig, operations.operations.runOperation, operations.spec.checkSkipNote, features.check-format.checkReportText, operations.spec.checkSummary
-    - fn [cmdCheckStale](../../src/cli.ts#L1307) (paths: string[], accept: boolean, strict: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdCheckStale](../../src/cli.ts#L1314) (paths: string[], accept: boolean, strict: boolean) → Promise<number> <!-- internal -->
       - calls map.analyze.findRoot
-    - fn [cmdFmt](../../src/cli.ts#L1328) (paths: string[], checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdFmt](../../src/cli.ts#L1335) (paths: string[], checkOnly: boolean) → Promise<number> <!-- internal -->
       - calls operations.operations.runOperation, map.analyze.findRoot, operations.spec.fmtGeneratedNote
   - module [completions](../../src/completions.ts#L1)
     - type [Shell](../../src/completions.ts#L7) = (typeof SHELLS)[number]

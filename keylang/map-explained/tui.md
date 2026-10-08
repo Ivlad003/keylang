@@ -219,7 +219,7 @@
         <a id="tui.app.App.specDir"></a><br>The spec directory of the saved configuration (`keylang` when it cannot be read).
         - calls [base.config.loadConfig](base.md#base.config.loadConfig)
       - fn [diskFiles](../../src/tui/app.ts#L755) () → string[] <!-- internal -->
-        <a id="tui.app.App.diskFiles"></a><br>Lists the editable files on disk: Markdown specs under the [`tui.app.App.specDir`](tui.md#tui.app.App.specDir) folder, skipping the saved `explain` store, plus `keylang.json` if it exists, as sorted root-relative POSIX paths via [`tui.app.sortFiles`](tui.md#tui.app.sortFiles). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+        <a id="tui.app.App.diskFiles"></a><br>Lists the editable files on disk: Markdown specs under the [`tui.app.App.specDir`](tui.md#tui.app.App.specDir) folder, skipping the saved `explain` store, plus `keylang.json` if it exists, as sorted root-relative POSIX paths via [`tui.app.sortFiles`](tui.md#tui.app.sortFiles). _(llm · claude:claude-opus-5-5 · 2026-10-06 · stale)_
         - calls [tui.app.App.specDir](tui.md#tui.app.App.specDir), [lang.files.collectMdFiles](lang.md#lang.files.collectMdFiles), [map.analyze.within](map.md#map.analyze.within), [tui.app.sortFiles](tui.md#tui.app.sortFiles), [base.config.toPosix](base.md#base.config.toPosix)
       - fn [buffer](../../src/tui/app.ts#L768) () → Buffer | null <!-- internal -->
         <a id="tui.app.App.buffer"></a><br>Looks up the buffer for the currently active file key in the app state's buffer map, returning null when no file is current or the key has no entry. Nearly every editing and cursor method in [`tui.app.App`](tui.md#tui.app.App) goes through it to reach the open document. _(llm · claude:claude-fable-5-1 · 2026-10-04)_

@@ -672,7 +672,10 @@ async function modelBody(analysis: Analysis, model: LlmClient, target: CodeTarge
     ].join("\n\n"),
     maxTokens: 8192,
   }, options);
-  const code = dedent((/```[a-zA-Z]*\n([\s\S]*?)```/.exec(answer)?.[1] ?? answer).replace(/^\n+|\s+$/g, ""));
+  // An opening fence without a closing one is an answer cut short (the token limit): not code, nothing written.
+  const fenced = /```[a-zA-Z]*\n([\s\S]*?)```/.exec(answer);
+  if (fenced === null && /^\s*```/m.test(answer)) throw new Error(`the model's code block is not closed (the answer was cut short?); nothing written`);
+  const code = dedent((fenced?.[1] ?? answer).replace(/^\n+|\s+$/g, ""));
   const escaped = name.replace(/[$]/g, "\\$");
   // A TS/JS method has no keyword before its name.
   const declares = owner && (language === "TypeScript" || language === "JavaScript") ? new RegExp(`^(?:(?:public|private|protected|static|async|override)\\s+)*\\*?${escaped}\\s*[<(]`, "m") : new RegExp(`\\b(function|def|fn)\\s+${escaped}\\b`);

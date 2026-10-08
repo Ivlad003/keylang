@@ -368,3 +368,80 @@ test("hook install follows core.hooksPath and needs a git repository", (t) => {
   assert.match(none.stderr, /git/);
   assert.equal(keylang(bare, ["hook", "nope"]).status, 2);
 });
+
+test("hook install from a keylang root below the git top level: the hook runs `check --changed` there, so a commit passes; --check calls a hook without the path stale", (t) => {
+  const mono = tempDir(t, "keylang-hook-mono-");
+  writeTree(mono, { "README.md": "# mono\n", "packages/x/keylang.json": `${JSON.stringify(LAYERS)}\n`, "packages/x/keylang/rules.md": "# rules\n\n- deny domain app\n", "packages/x/src/app/pay.ts": PAY });
+  git(mono, ["init", "-q"]);
+  const pkg = join(mono, "packages/x");
+  // A stand-in `npx` first on PATH: drops `-y keylang@<v>`, logs its cwd and runs this checkout's CLI.
+  const bindir = tempDir(t, "keylang-hook-bin-");
+  const log = join(bindir, "cwd.log");
+  writeFileSync(join(bindir, "npx"), `#!/bin/sh\nshift 2\npwd >> "${log}"\nexec "${process.execPath}" "${bin}" "$@"\n`);
+  chmodSync(join(bindir, "npx"), 0o755);
+  const commit = (cwd: string, message: string): { status: number | null; stdout: string; stderr: string } =>
+    spawnSync("git", ["-c", "user.email=t@example.com", "-c", "user.name=T", "commit", "-qm", message], { cwd, encoding: "utf8", env: { ...process.env, PATH: `${bindir}:${process.env.PATH ?? ""}` } });
+
+  const install = keylang(pkg, ["hook", "install"]);
+  assert.equal(install.status, 0, install.stderr);
+  assert.match(install.stdout, /\.\.\/\.\.\/\.git\/hooks\/pre-commit: written; runs `npx -y keylang@[^`]+ check --changed` in packages\/x/);
+  const hook = join(mono, ".git/hooks/pre-commit");
+  const text = readFileSync(hook, "utf8");
+  assert.match(text, /^cd "\$\(git rev-parse --show-toplevel\)\/packages\/x" \|\| exit 2$/m);
+  assert.equal(keylang(pkg, ["hook", "install", "--check"]).status, 0);
+
+  git(mono, ["add", "-A"]);
+  const one = commit(pkg, "one");
+  assert.equal(one.status, 0, one.stderr + one.stdout);
+  assert.equal(readFileSync(log, "utf8").trim(), pkg, "the hook ran keylang from the keylang root");
+  writeFileSync(join(mono, "README.md"), "# mono\n\nmore\n");
+  git(mono, ["add", "-A"]);
+  const two = commit(mono, "two");
+  assert.equal(two.status, 0, two.stderr + two.stdout);
+
+  // A finding that touches a changed file still blocks the commit.
+  writeTree(pkg, { "src/domain/order.ts": 'import { charge } from "../app/pay.ts";\nexport function price(): number {\n  return charge();\n}\n' });
+  git(mono, ["add", "-A"]);
+  const blocked = commit(pkg, "three");
+  assert.notEqual(blocked.status, 0, "the pre-commit hook blocks the commit");
+  assert.match(blocked.stdout + blocked.stderr, /K102/);
+
+  // The hook of a version without the `cd` line is stale: install rewrites it.
+  writeFileSync(hook, text.replace(/^cd .*\n/m, ""));
+  assert.equal(keylang(pkg, ["hook", "install", "--check"]).status, 1);
+  assert.equal(keylang(pkg, ["hook", "install"]).status, 0);
+  assert.equal(readFileSync(hook, "utf8"), text);
+});
+
+test("init on a repository with opencode.jsonc (comments, trailing comma): JSONC is read; --agents=none leaves the file byte for byte, auto init adds the mcp.keylang entry", (t) => {
+  const jsonc = '{\n  // opencode config\n  "$schema": "https://opencode.ai/config.json",\n  "model": "x",\n}\n';
+  const make = (): string => {
+    const dir = tempDir(t, "keylang-opencode-jsonc-");
+    writeTree(dir, { "opencode.jsonc": jsonc, "src/app/pay.ts": PAY, "src/domain/order.ts": ORDER });
+    return dir;
+  };
+  // `clone` and `web <url>` run `init --agents=none` on the clone: the file is parsed, nothing of keylang's is in it, so it stays.
+  const none = make();
+  const o = keylang(none, ["init", "--agents=none"]);
+  assert.equal(o.status, 0, o.stderr);
+  assert.ok(existsSync(join(none, "keylang.json")));
+  assert.equal(readFileSync(join(none, "opencode.jsonc"), "utf8"), jsonc);
+
+  const auto = make();
+  const init = keylang(auto, ["init"]);
+  assert.equal(init.status, 0, init.stderr);
+  const parsed = JSON.parse(readFileSync(join(auto, "opencode.jsonc"), "utf8")) as { model: string; mcp: { keylang: { command: string[] } } };
+  assert.equal(parsed.model, "x");
+  assert.deepEqual(parsed.mcp.keylang.command, ["npx", "-y", `keylang@${VERSION}`, "mcp"]);
+  assert.equal(keylang(auto, ["agents", "--check"]).status, 0);
+  assert.equal(keylang(auto, ["agents", "--agents=none"]).status, 0);
+  assert.equal((JSON.parse(readFileSync(join(auto, "opencode.jsonc"), "utf8")) as { mcp?: unknown }).mcp, undefined);
+
+  // A broken file is still code 2 and nothing is written.
+  const broken = make();
+  writeFileSync(join(broken, "opencode.jsonc"), "{ // comment\n  \"model\": \n}\n");
+  const bad = keylang(broken, ["init"]);
+  assert.equal(bad.status, 2);
+  assert.match(bad.stderr, /opencode\.jsonc: invalid JSON/);
+  assert.equal(existsSync(join(broken, "keylang.json")), false);
+});
