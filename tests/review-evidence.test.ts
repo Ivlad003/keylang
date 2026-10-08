@@ -394,6 +394,49 @@ fn main() {
   assert.equal(traceOf(rows, "app.main.later"), "unverified: unverified app.main.later: `app.main.later` is not instrumented");
 });
 
+test("rust: a `;` inside an array type of the signature does not make the fn bodiless; its span is recorded", { skip: rustc ? false : "rustc is not installed" }, (t) => {
+  const rust = join(root, "adapters/rust/keylang_trace.rs");
+  const dir = repo(t, { languages: ["rust"], layers: { app: ["src/*.rs"] }, check: { trace: ".keylang/trace/*.jsonl" } }, {
+    "Cargo.toml": '[package]\nname = "shop"\nversion = "0.1.0"\nedition = "2021"\n',
+    "src/main.rs": `#[path = ${JSON.stringify(rust)}]
+mod keylang_trace;
+
+fn digest(data: &[u8]) -> [u8; 4] {
+    let _span = keylang_trace::span("app.main.digest");
+    [data.len() as u8, 0, 0, 0]
+}
+
+fn save(d: [u8; 4], check: impl Fn(&[u8; 4]) -> bool) -> bool {
+    let _span = keylang_trace::span("app.main.save");
+    check(&d)
+}
+
+fn checkout() {
+    let _span = keylang_trace::span("app.main.checkout");
+    save(digest(b"abc"), |d| d[0] == 3);
+}
+
+fn main() {
+    checkout();
+    keylang_trace::finish();
+}
+`,
+    "keylang/flows.md": "# flow checkout\n\n- trigger app.main.checkout\n  - step app.main.digest\n  - step app.main.save\n",
+  });
+  const plan = keylang(dir, ["trace-plan", "checkout"]);
+  assert.equal(plan.status, 0, plan.stderr);
+  writeFileSync(join(dir, "plan.json"), plan.stdout);
+  const build = spawnSync("rustc", ["--edition", "2021", "-A", "warnings", "-o", join(dir, "shop"), "src/main.rs"], { cwd: dir, encoding: "utf8" });
+  assert.equal(build.status, 0, build.stderr);
+  const exec = spawnSync(join(dir, "shop"), [], { cwd: dir, encoding: "utf8", env: { ...process.env, KEYLANG_TRACE: ".keylang/trace/checkout.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_TRACE_TEST: "shop > @flow checkout" } });
+  assert.equal(exec.status, 0, exec.stderr);
+  const events = readFileSync(join(dir, ".keylang/trace/checkout.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line) as { event: string; instrumented?: string[] });
+  assert.deepEqual(events.find((e) => e.event === "run")?.instrumented, ["app.main.checkout", "app.main.digest", "app.main.save"]);
+  const rows = results(dir);
+  assert.equal(traceOf(rows, "app.main.digest"), "ok: ok app.main.digest: observed in shop > @flow checkout");
+  assert.equal(traceOf(rows, "app.main.save"), "ok: ok app.main.save: observed in shop > @flow checkout");
+});
+
 const php = spawnSync("php", ["--version"], { encoding: "utf8" }).status === 0;
 
 test("php: a generator whose body has an arrow function before its `yield` is still a generator", { skip: php ? false : "php is not installed" }, (t) => {

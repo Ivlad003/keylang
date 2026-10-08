@@ -309,8 +309,23 @@ fn marks(source: &str, line: usize, id: &str) -> Mark {
     for _ in 1..line {
         start = s[start..].iter().position(|&b| b == b'\n').map_or(s.len(), |p| start + p + 1);
     }
-    // The body is the first `{` after the signature; a `;` first means the fn has none.
-    let Some(open) = (start..s.len()).find(|&i| class[i] == CODE && (s[i] == b'{' || s[i] == b';')).filter(|&i| s[i] == b'{') else { return Mark::None };
+    // The body is the first `{` after the signature; a `;` first means the fn has none. Only a `;` outside
+    // brackets counts: the one in an array type (`[u8; 32]`, `-> [u8; N]`, `Fn(&[u8; 4])`) is part of the signature.
+    let mut nested = 0usize;
+    let body = (start..s.len()).find(|&i| {
+        if class[i] != CODE {
+            return false;
+        }
+        match s[i] {
+            b'(' | b'[' => nested += 1,
+            b')' | b']' => nested = nested.saturating_sub(1),
+            b'{' => return nested == 0,
+            b';' => return nested == 0,
+            _ => {}
+        }
+        false
+    });
+    let Some(open) = body.filter(|&i| s[i] == b'{') else { return Mark::None };
     // The `}` that closes the `{` at `from`, in code; the end of the source when there is none.
     let closing = |from: usize| {
         let mut depth = 0usize;
