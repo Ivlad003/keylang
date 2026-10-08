@@ -4,7 +4,7 @@
 
 Як відтворити: `node bench/magento/run.mjs [--repo <клон>]` — див. [README](README.md). Цей файл пише бенч; змінюється тільки блок «Цього запуску».
 
-`check --format json`: 985 fail, 0 unverified, 0 ok, 0 warning; записів coverage 14257. `map`: 2327 попереджень.
+`check --format json`: 985 fail, 0 unverified, 0 ok, 0 warning; записів coverage 14050. `map`: 2327 попереджень.
 
 `draft flow quote.Model.QuoteManagement.QuoteManagement.placeOrder --mode algo --print`: кроків 83 (разом із тригером).
 `draft flow quote.Model.QuoteManagement.QuoteManagement.submitQuote --mode algo --print`: кроків 221 (разом із тригером).
@@ -17,17 +17,17 @@
 
 ## Виклики
 
-Розв'язано **46.2 %** (12116 з 26236; ціль spec §6 — ≥ 60 %).
+Розв'язано **47.0 %** (12317 з 26230; ціль spec §6 — ≥ 60 %).
 
 | resolved | external | dynamic | unresolved |
 |---:|---:|---:|---:|
-| 12116 | 2795 | 8578 | 2747 |
+| 12317 | 2795 | 8371 | 2747 |
 
 ## Дірки за видами
 
 | Вид | Кількість |
 |---|---:|
-| `dynamic-call` | 8574 |
+| `dynamic-call` | 8367 |
 | `unresolved-call` | 2747 |
 | `unresolved-import` | 2327 |
 | `outside-file` | 508 |
@@ -38,17 +38,17 @@
 | `ambiguous-binding` | 4 |
 | `unassigned-file` | 3 |
 
-## Дірки за причинами (top-10 з 13660)
+## Дірки за причинами (top-10 з 13453)
 
 Імена в зворотних лапках зведено до `X`.
 
 | # | Причина | Кількість |
 |---:|---|---:|
-| 1 | dynamic-call: call through a local value `X` | 3995 |
+| 1 | dynamic-call: call through a local value `X` | 3985 |
 | 2 | unresolved-call: unresolved call `X` | 2726 |
-| 3 | dynamic-call: call through an expression `X` | 2654 |
+| 3 | dynamic-call: call through an expression `X` | 2490 |
 | 4 | unresolved-import: unresolved import `X` | 2327 |
-| 5 | dynamic-call: call through an interface `X` | 684 |
+| 5 | dynamic-call: call through an interface `X` | 651 |
 | 6 | dynamic-call: call through `X` of a function value `X` | 641 |
 | 7 | dynamic-call: call through `X` of `X` | 329 |
 | 8 | dynamic-call: bound to opaque `X` by `X` (app/code/Magento/Quote/etc/di.xml:18:5): `X` may be declared by a base keylang has not read | 62 |
@@ -101,10 +101,10 @@ found **6/6** у чернетці; бракує: нічого.
 | Що | Значення |
 |---|---|
 | Дата | 2026-10-08 |
-| keylang | `d481232` |
+| keylang | `3d7fdfd` |
 | Node | v24.20.0 |
 | Клон | `/home/kosmodev/.cache/keylang/bench/magento2` (`git describe`: `2.4.9`) |
-| `map` без кешу фактів (`node --max-old-space-size=4096`) | 11.1 с, maxRSS 683 МБ |
-| `check --format json` | 3.3 с, maxRSS 491 МБ |
-| Підсумок `map` | 2141 file(s), 2656 module(s), 7099 fn, 276 type(s), 3426 dep(s); calls 12116 resolved, 2795 external, 8578 dynamic, 2747 unresolved; 2327 unresolved import(s); 3 file(s) outside any layer |
+| `map` без кешу фактів (`node --max-old-space-size=4096`) | 10.7 с, maxRSS 678 МБ |
+| `check --format json` | 2.9 с, maxRSS 482 МБ |
+| Підсумок `map` | 2141 file(s), 2656 module(s), 7099 fn, 276 type(s), 3426 dep(s); calls 12317 resolved, 2795 external, 8371 dynamic, 2747 unresolved; 2327 unresolved import(s); 3 file(s) outside any layer |
 | snapshotId | `1f7980f0c9f11a46241496c865805af17efc94d0c3e15c0aee396ad9351bdeda` |

@@ -6,6 +6,10 @@
 2. `keylang check` на згенерованій карті;
 3. негативні проби `bench/inject.ts` (з M1.1 — п'ять, див. нижче); кожна ламає копію в один спосіб, запускає справжній CLI й відновлює файли.
 
+## Business-flows: Magento 2.4.9 — після тікета 40 (2026-10-08)
+
+Вузький бенч ([`bench/magento/results.md`](magento/results.md), типовий): **47.0 %** розв'язаних викликів (12 317 з 26 230), `map` 10,7 с, maxRSS 678 МБ. Широкий (`node bench/magento/run.mjs --wide`, [`bench/magento/results-wide.md`](magento/results-wide.md)): ті самі п'ять шарів, решта 217 модулів і весь Framework — `outside` (декларації та preferences їхніх `di.xml`) — **72.1 %** (17 965 з 24 918; ціль spec §6 ≥ 60 %), `map` 53,7 с, maxRSS 1,3 ГБ (`--max-old-space-size=8192`); золотий список 6/6, чернетки 83/221 кроків в обох.
+
 ## Business-flows: Magento 2.4.9 — базова лінія 2026-10-07
 
 Окремий бенч [`bench/magento/`](magento/README.md) (`node bench/magento/run.mjs`, повний звіт — [`bench/magento/results.md`](magento/results.md)); тікет 03 business-flows. П'ять модулів `Checkout`, `Quote`, `Sales`, `SalesRule`, `Payment` як шари, `lib/internal/Magento/Framework/{App,Event,Model,Api}` як `outside`, `exclude: ["**/Test/**"]`; keylang `661886b`, Node v24.20.0.

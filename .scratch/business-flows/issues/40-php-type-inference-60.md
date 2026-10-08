@@ -23,7 +23,7 @@
 
 - [x] тести на кожне джерело типу (new, return type, @return, inline @var, foreach з Foo[], instanceof, ланцюжок, конфлікт присвоєнь → дірка), на member lookup у outside-базі
 - [x] `tests/metamorphic.test.ts`: видалення docblock/outside-файла переводить ok/fail лише в unverified
-- [x] бенч Magento: частка розв'язаних викликів ≥ 60 % або задокументований розрив з причинами
+- [x] бенч Magento: частка розв'язаних викликів ≥ 60 % або задокументований розрив з причинами — 72,1 % на широкому бенчі (`--wide`, `bench/magento/results-wide.md`); вузький — 47,0 %, розрив задокументовано
 - [x] `docs/snapshot.md` (PHP), `docs/semantics.md`
 
 **Межі:** лише PHP; аналоги для TS/Python — окремо, якщо знадобиться.
@@ -68,3 +68,30 @@
 | виклик через вираз keylang не називає (`$this->$m()`, `$arr[$k]->m()`, `ObjectManager->get(X::class)` — тип з аргументу), фабрика інтерфейсу, `super` інших баз | ≈ 900 | частково — лише новими фактами фреймворку (`ObjectManager::get(X::class)` → `X`), не в цьому тікеті |
 
 Навіть якби розв'язалось усе, крім першого рядка, частка була б ≈ 58 %: ціль ≥ 60 % на цьому бенчі недосяжна без коду, якого бенч не містить. Далі — або ширший sparse-checkout (`Framework/{View,Data,DB,Session,ObjectManager}`, `Backend`, `Store`, `Customer`, `Catalog` як `outside`; ціна — пам'ять, рев'ю плану п. 8), або факт `ObjectManager::get/create(X::class)` → `X` в адаптері Magento.
+
+### 2026-10-08 — широкий бенч (`--wide`), ObjectManager і preferences модулів `outside`
+
+**Бенч.** `node bench/magento/run.mjs --wide` (звіт — `bench/magento/results-wide.md`; вузький `results.md` лишається типовим): `git worktree` кешованого клону в `~/.cache/keylang/bench/magento2-wide` з non-cone sparse-checkout — увесь `app/code/Magento` і `lib/internal/Magento/Framework` без тек `Test` (тести п'яти модулів лишаються) і `app/etc/di.xml`; мережа — лише довантаження blobs у кешований клон (≈ 11 с). Ті самі п'ять модулів — шари, решта 217 модулів (glob на модуль) і Framework — `outside`. 13 485 файлів; `map` без кешу ≈ 54 с, maxRSS 1,0–1,3 ГБ (`--max-old-space-size=8192`), `check` 5,4 с, 0,7 ГБ — у межах (< 8 ГБ, < 10 хв), тож профілювання не знадобилось. Файли `outside` і далі проходять повний розбір tree-sitter, з якого `declarationsOnly` лишає декларації (кеш за хешем); легший прохід без тіл — можлива оптимізація, але не вузьке місце.
+
+| Крок | Вузький | Широкий |
+|---|---:|---:|
+| після 4b (до цієї нотатки) | 46,2 % (12116/26236) | 64,5 % (16023/24848) — лише ширший checkout |
+| 5: `di.xml` модулів `outside` (preferences) + ObjectManager `get/create(X::class)` → `X` | **47,0 %** (12317/26230) | **72,1 %** (17965/24918) |
+
+Золотий список 6/6, чернетки `placeOrder` 83 і `submitQuote` 221 кроків — однаково в обох. Ребер `via: object-manager` на широкому — 400, `preference` — 2660 (зокрема через інтерфейси `outside`: `StoreManagerInterface`, `ScopeConfigInterface`, `LayoutInterface`, `RequestInterface`, `Event\ManagerInterface`…). `check` широкого: 2456 `fail` K107 — наслідок `outside`, як і у вузькому.
+
+**Рішення.** (1) Адаптер може віддати конфіг компонента `outside` з `declarations: true` — Magento: `etc/di.xml` і `etc/<area>/di.xml` кожного `registration.php` серед файлів `outside`; граф бере з нього лише preferences (`FrameworkBindings.boundByName` — за кваліфікованим іменем інтерфейсу, якого граф не має). Виклик через такий інтерфейс — ребро `via: preference` до члена класу (графа чи `outside`), `indirect: true`. Plugins, observers, аргументи й точки входу модулів `outside` не читаються: це код поза аналізом. (2) `locators` у `FrameworkInput`: Magento ObjectManager (`ObjectManagerInterface`, `ObjectManager\ObjectManager`, `App\ObjectManager`; `get`, `create`) з літералом класу першим аргументом (`X::class` чи рядок з кваліфікованим ім'ям) — ребро `via: object-manager` до `X` (для інтерфейсу — до класу preference кожної області), результат має клас `X`; `indirect: true` (залежність уже записує літерал `X::class`). Аргумент, обчислений під час виконання, — дірка. ADR 0022, уточнення. Тести: `tests/frameworks-magento.test.ts` (ObjectManager і preference модуля `outside`, з адаптером і без), `tests/metamorphic.test.ts` (вимкнути адаптер — лише `unverified`), `tests/bench-magento.test.ts` (`--wide`: аргументи, `keylang.json`, заголовок звіту).
+
+**Решта дірок на широкому бенчі** (4216 дірок викликів з 24 918; класифікація за конструкцією отримувача, тимчасовий скрипт, у код не увійшов):
+
+| Причина | Дірок | Чи закривається без здогаду |
+|---|---:|---|
+| значення — результат виклику без оголошеного чи прочитаного типу результату: `$x = $a->m()` (865), ланцюжки `$var->m()->x()` (417), `$this->m()->x()` (309), `$this->prop->m()->x()` (69) — переважно магічні геттери `DataObject` у ланцюжку з базою, якої немає (vendor) чи без `@method`, і методи без `: T`/`@return` | ≈ 1660 | ні: класу ніде не записано |
+| `foreach` по об'єкту-колекції (`foreach ($collection as $item)`) — тип елемента дає `getIterator()`/`_itemObjectClass` під час виконання | 483 | ні без факту фреймворку про колекції |
+| інтерфейс без preference: `DB\Adapter\AdapterInterface` 483 (з'єднання дає `ResourceConnection::getConnection()`), `Setup\ModuleDataSetupInterface` 111, пули й virtualType (`Payment MethodInterface` 70, `IdentityInterface` 46, `InfoInterface` 36, gateway-інтерфейси), `RequestInterface` в областях без власного preference, `ObjectManager->get()` класу вендора (`Psr\Log\LoggerInterface`) | ≈ 980 | ні: класу немає в конфігу чи на диску |
+| інтерфейс шару, прив'язаний preference до класу, член якого оголошено в базі `outside` чи через `__call` («bound to opaque … may be declared by a base keylang has not read») | 273 | **так** — `FrameworkBindings.place` дивиться лише в базах графа; наступний крок |
+| параметр без класу (113), `catch (\Exception $e)` (99 — PHP-клас, мав би бути `external`), інші присвоєння, елемент масиву, `new` класу вендора | ≈ 410 | частково (`catch` вбудованого класу → `external`) |
+| `unresolved call` `$this->logger->…` (`Psr\Log` вендора немає в checkout) і preference до класу, якого немає | ≈ 175 | ні на цьому checkout |
+| вираз без імені (`$this->$m()`, `$arr[$k]->m()`, змінна назва члена), значення-функція | ≈ 235 | ні |
+
+**Критерій ≥ 60 % досягнуто на широкому бенчі (72,1 %).** Вузький лишається 47,0 %: його розрив — код, якого немає на диску (див. «Розрив і причини» вище); широкий бенч цей розрив закриває, як і передбачала та нотатка. Тікет лишається `resolved`.
