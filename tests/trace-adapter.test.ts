@@ -149,6 +149,64 @@ test("trace adapter: a SIGTERM handler of the program keeps its turn; the adapte
   assert.match(traceOf(c.rows, "app.server.handle"), /^unverified: unverified app\.server\.handle: observed outside/);
 });
 
+test("trace adapter: overloads, CommonJS exports and `(…) satisfies T` are instrumented; a function left out says why", (t) => {
+  const dir = repo(t, JS_LAYERS, {
+    "src/app/legacy.cjs": "exports.a = function () {\n  return 1;\n};\n",
+    "src/app/legacy2.cjs": "module.exports = {\n  b: function () {\n    return 2;\n  },\n  c: () => {\n    return 3;\n  },\n};\n",
+    "src/app/main.ts": [
+      'import legacy from "./legacy.cjs";',
+      'import legacy2 from "./legacy2.cjs";',
+      "type H = (x: number) => number;",
+      "export function fmt(x: number): string;",
+      "export function fmt(x: string): string;",
+      "export function fmt(x: unknown): string {",
+      "  return String(x);",
+      "}",
+      "export class Svc {",
+      "  run(x: number): string;",
+      "  run(x: string): string;",
+      "  run(x: unknown): string {",
+      "    return fmt(x as number);",
+      "  }",
+      "}",
+      "export const typed = ((x: number): number => {",
+      "  return x + 1;",
+      "}) satisfies H;",
+      "export const asd = ((x: number): number => x * 2) as H;",
+      "export const plain = (x: number): number => x;",
+      "export function* gen(): Generator<number> {",
+      "  yield 1;",
+      "}",
+      "export function main(): void {",
+      "  legacy.a();",
+      "  legacy2.b();",
+      "  legacy2.c();",
+      "  typed(1);",
+      "  asd(1);",
+      "  plain(1);",
+      "  new Svc().run(1);",
+      "  [...gen()];",
+      "}",
+      "",
+    ].join("\n"),
+    "keylang/flows/f.md":
+      "# flow f\n\n- trigger app.main.main\n  - step app.legacy.a\n  - step app.legacy2.b\n  - step app.legacy2.c\n  - step app.main.typed\n  - step app.main.asd\n  - step app.main.plain\n  - step app.main.Svc.run\n    - step app.main.fmt\n  - step app.main.gen\n",
+  });
+  snapshotOf(dir);
+  const r = traced(dir, "const m = await import('./src/app/main.ts'); m.main();");
+  assert.equal(r.status, 0, r.stderr);
+  const run = events(dir, "f.jsonl").find((e) => e.event === "run") as Event & { instrumented: string[]; uninstrumented?: Record<string, string> };
+  assert.deepEqual(run.instrumented, ["app.legacy.a", "app.legacy2.b", "app.legacy2.c", "app.main.Svc.run", "app.main.asd", "app.main.fmt", "app.main.main", "app.main.plain", "app.main.typed"]);
+  // The one function left out is named with the reason, in the run record and in the verdict.
+  assert.deepEqual(run.uninstrumented, { "app.main.gen": "a generator" });
+  const c = check(dir);
+  assert.notEqual(c.status, 2, c.stderr);
+  for (const id of ["app.legacy.a", "app.legacy2.b", "app.legacy2.c", "app.main.typed", "app.main.asd", "app.main.plain", "app.main.Svc.run", "app.main.fmt"]) {
+    assert.equal(traceOf(c.rows, id), `ok: ok ${id}: observed in t`, id);
+  }
+  assert.equal(traceOf(c.rows, "app.main.gen"), "unverified: unverified app.main.gen: `app.main.gen` is not instrumented (a generator)");
+});
+
 test("trace evidence: a clock with spans but no run record of its own makes the run incomplete", (t) => {
   const dir = repo(t, JS_LAYERS, {
     "src/app/main.ts": "export function main(): void {}\nexport function never(): void {}\n",

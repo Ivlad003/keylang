@@ -147,12 +147,14 @@ function record(file: string): void {
     if (recorded) return;
     recorded = true;
     const info = planned();
+    const left = info === null ? null : instrumented(info, loads);
     write({
       event: "run",
       clockId,
       complete: !killed && info !== null && !info.error && open.size === 0 && !crashed,
       dropped: 0,
-      instrumented: info === null ? [] : instrumented(info, loads),
+      instrumented: left?.ids ?? [],
+      ...(left && Object.keys(left.reasons).length > 0 ? { uninstrumented: left.reasons } : {}),
       ...(code !== null && code !== 0 ? { exitCode: code } : {}),
       open: [...open],
       ...(info?.error ? { error: info.error } : {}),
@@ -198,14 +200,16 @@ interface Loads {
  * hooks (a `require` from a module they never saw), or an ES module that
  * `require` loaded before any `import` did.
  */
-function instrumented(plan: Plan, loads: Loads): string[] {
+function instrumented(plan: Plan, loads: Loads): { ids: string[]; reasons: Record<string, string> } {
   const cache = createRequire(import.meta.url).cache;
-  const left = new Set(loads.skipped);
+  // Each function of the flow left out, with the reason: the run record names them for `check`.
+  const reasons: Record<string, string> = { ...plan.unplanned };
+  for (const id of loads.skipped) reasons[id] = "its file loaded with other content than the snapshot saw";
   for (const file of plan.files) {
     const copy = cache[file.path];
     // A `require` of an ES module the hooks loaded first gets that module, wrappers included.
     if (copy === undefined || loads.own.has(copy) || file.ids.every((id) => loads.imported.has(id))) continue;
-    for (const id of file.ids) left.add(id);
+    for (const id of file.ids) reasons[id] ??= "its file was loaded past the trace hooks";
   }
-  return plan.planned.filter((id) => !left.has(id));
+  return { ids: plan.planned.filter((id) => !(id in reasons)), reasons };
 }

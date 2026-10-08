@@ -278,7 +278,7 @@ test("trace adapter: a planned CommonJS file is instrumented; one a CommonJS mod
   rmSync(join(dir, ".keylang/trace"), { recursive: true, force: true });
   const g = traced(dir, "const m = await import('./src/app/main.ts'); m.viaBridge();", "g");
   assert.equal(g.status, 0, g.stderr);
-  assert.equal(traceOf(results(dir), "app.far.far"), "unverified: unverified app.far.far: `app.far.far` is not instrumented");
+  assert.equal(traceOf(results(dir), "app.far.far"), "unverified: unverified app.far.far: `app.far.far` is not instrumented (its file was loaded past the trace hooks)");
 });
 
 test("trace adapter: a worker that loads one file leaves the plan instrumented, so an uncalled step is still missing", (t) => {
