@@ -16,7 +16,8 @@ import { explanationOf, loadBriefs } from "./explanations.ts";
 import { buildGraph, placeFile, type Graph } from "./graph.ts";
 import { FACT_CACHE_FILE, FactCache } from "./fact-cache.ts";
 import { landing, writeAtomic, writeProblem } from "./safe-write.ts";
-import { collectEntries, ENTRY_MANIFESTS, type EntryManifests } from "./entries.ts";
+import { collectEntries, compareEntries, ENTRY_MANIFESTS, type EntryManifests } from "./entries.ts";
+import { sfcc } from "./frameworks/sfcc.ts";
 import { buildSnapshot, EXTRACTOR_VERSION, grammarVersions, sha256, type AnalysisSnapshot, type RepositoryDocs, type SystemDoc } from "./snapshot.ts";
 
 export interface MapResult {
@@ -116,13 +117,24 @@ export async function generateMap(config: Config, options: { persist?: boolean |
   const manifests: EntryManifests = { "package.json": null, "pyproject.toml": null, "Cargo.toml": null };
   for (const name of ENTRY_MANIFESTS) manifests[name] = readSource(join(config.root, name));
   const entries = collectEntries({ graph, facts, manifests, exists: (path) => existsSync(join(config.root, path)) });
+  // Framework adapters (ADR 0022 п. 2): their entry points, holes and config files join the snapshot.
+  const frameworkInputs: (readonly [string, string | null])[] = [];
+  for (const adapter of FRAMEWORK_ADAPTERS) {
+    if (!adapter.detect(config.root)) continue;
+    const found = adapter.facts({ root: config.root, config, graph, facts });
+    entries.push(...found.entries);
+    graph.gaps.push(...found.holes);
+    graph.warnings.push(...found.warnings);
+    frameworkInputs.push(...found.inputs);
+  }
+  entries.sort(compareEntries);
   const index = buildSnapshot(graph, config, indexed, [
     ...skipped.map((file) => ({ file, reason: "outside guessed layers" })),
     ...excluded.map((file) => ({ file, reason: "excluded by keylang.json" })),
     ...outside.map((file) => ({ file, reason: "outside the architecture (`outside` in keylang.json)", kind: "outside-file" as const })),
     ...unreadable,
     ...unreadableFiles,
-  ], readRepositoryDocs(config), { list: entries, inputs: ENTRY_MANIFESTS.map((name) => [name, manifests[name]] as const) });
+  ], readRepositoryDocs(config), { list: entries, inputs: [...ENTRY_MANIFESTS.map((name) => [name, manifests[name]] as const), ...frameworkInputs] });
   let explained: Map<string, string> | null = null;
   if (config.explain.map) {
     const briefs = loadBriefs(config);
@@ -130,6 +142,9 @@ export async function generateMap(config: Config, options: { persist?: boolean |
   }
   return { graph, files: renderMap(index, mapDir), explained, index, skipped: skipped.length, facts: { reused: cache.reused, extracted: cache.extracted }, factCache };
 }
+
+/** The framework adapters `map` asks, each when it detects its framework. */
+const FRAMEWORK_ADAPTERS = [sfcc] as const;
 
 /** Root manifests a repository names and describes itself in, in the order they are asked. */
 const ROOT_MANIFESTS = ["package.json", "Cargo.toml", "pyproject.toml", "composer.json"] as const;
