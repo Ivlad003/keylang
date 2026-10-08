@@ -14,8 +14,10 @@ import { compareEntries, entryScope, fnIn, frameworkEntry, type EntryScope } fro
 import type { FileFacts } from "./extract/facts.ts";
 import type { ConfigFacts, EntryConfigFact, FrameworkInput, TypeName } from "./frameworks/adapter.ts";
 import { cartridgeAnswers, cartridgeLayout, SUPER_MODULE, type CartridgeLayout } from "./frameworks/cartridges.ts";
+import { PYTHON_WEB_FRAMEWORKS } from "./frameworks/python-web.ts";
 import type { Call, Fn, Gap, Graph, Module } from "./graph.ts";
 import { probeCandidates } from "./imports.ts";
+import { pythonWebEntries } from "./python-web-entries.ts";
 import type { EntryPoint } from "./snapshot.ts";
 
 export interface FrameworkEntryInputs {
@@ -75,6 +77,13 @@ export function frameworkEntries({ config, graph, facts, frameworks }: Framework
       holes.push(...guessedOrder(layout, graph, facts, probe));
     }
     entries.push(...controllerEntries(graph, facts, scope));
+  }
+  // Django, FastAPI, Flask, Celery: registrations written in the Python code (`src/python-web-entries.ts`).
+  const python = frameworks.map((f) => f.name).filter((name) => PYTHON_WEB_FRAMEWORKS.includes(name));
+  if (python.length > 0) {
+    const found = pythonWebEntries(config, graph, facts, scope, python);
+    entries.push(...found.entries);
+    holes.push(...found.holes);
   }
   return { entries: entries.sort(compareEntries), holes, warnings };
 }

@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [analyze](#map.analyze) · [bpmn-export](#map.bpmn-export) · [c4-export](#map.c4-export) · [declared-packages](#map.declared-packages) · [diagram](#map.diagram) · [drawio](#map.drawio) · [emit](#map.emit) · [entries](#map.entries) · [exact-path](#map.exact-path) · [explanations](#map.explanations) · [exports](#map.exports) · [fact-cache](#map.fact-cache) · [index](#map.index) · [laravel](#map.laravel) · [php](#map.php) · [symfony](#map.symfony) · [framework-entries](#map.framework-entries) · [frontends](#map.frontends) · [graph](#map.graph) · [imports](#map.imports) · [map](#map.map) · [php-imports](#map.php-imports) · [python-imports](#map.python-imports) · [python-stdlib](#map.python-stdlib) · [rust-imports](#map.rust-imports) · [snapshot](#map.snapshot) · [trace-plan](#map.trace-plan) · [wire-gen](#map.wire-gen)
+[README](README.md) · modules: [analyze](#map.analyze) · [bpmn-export](#map.bpmn-export) · [c4-export](#map.c4-export) · [declared-packages](#map.declared-packages) · [diagram](#map.diagram) · [drawio](#map.drawio) · [emit](#map.emit) · [entries](#map.entries) · [exact-path](#map.exact-path) · [explanations](#map.explanations) · [exports](#map.exports) · [fact-cache](#map.fact-cache) · [index](#map.index) · [laravel](#map.laravel) · [php](#map.php) · [symfony](#map.symfony) · [framework-entries](#map.framework-entries) · [frontends](#map.frontends) · [graph](#map.graph) · [imports](#map.imports) · [map](#map.map) · [php-imports](#map.php-imports) · [python-imports](#map.python-imports) · [python-stdlib](#map.python-stdlib) · [python-web-entries](#map.python-web-entries) · [rust-imports](#map.rust-imports) · [snapshot](#map.snapshot) · [trace-plan](#map.trace-plan) · [wire-gen](#map.wire-gen)
 
 # map
 
@@ -18,31 +18,35 @@
     - fact-cache [map.fact-cache](map.md#map.fact-cache)
     - map [map.map](map.md#map.map)
     - parser [lang.parser](lang.md#lang.parser)
+    - migration [check.migration](check.md#check.migration)
     - snapshot [map.snapshot](map.md#map.snapshot)
     - test-report [check.test-report](check.md#check.test-report)
     - trace-evidence [check.trace-evidence](check.md#check.trace-evidence)
-    - type [AnalysisRequest](../../src/analyze.ts#L22)
-      <a id="map.analyze.AnalysisRequest"></a><br>Options for one analysis run: an absolute repository root, optional spec paths and unsaved buffer overlays, flags to skip code or evidence and to persist or save the fact cache, plus a pluggable snapshot generator and static-mode override. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
-    - type [Analysis](../../src/analyze.ts#L49) extends Assessment
+    - type [AnalysisRequest](../../src/analyze.ts#L23)
+      <a id="map.analyze.AnalysisRequest"></a><br>Options for one analysis run: an absolute repository root, optional spec paths and unsaved buffer overlays, flags to skip code or evidence and to persist or save the fact cache, plus a pluggable snapshot generator and static-mode override. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
+    - type [Analysis](../../src/analyze.ts#L56) extends Assessment
       <a id="map.analyze.Analysis"></a><br>Result record of analyzing a repository: bundles the resolved config, an optional map and snapshot, parsed spec documents, request paths that held no specs, and the declared packages sorted by id. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [analyze](../../src/analyze.ts#L63) (request: AnalysisRequest) → Promise<Analysis>
+    - fn [analyze](../../src/analyze.ts#L70) (request: AnalysisRequest) → Promise<Analysis>
       <a id="map.analyze.analyze"></a><br>Generates the code map via [`map.map.generateMap`](map.md#map.map.generateMap), parses spec Markdown plus rendered map files, and runs [`check.assess.assess`](check.md#check.assess.assess) with test and trace evidence, returning the result with config, map and docs. _(llm · claude:claude-opus-5-5 · 2026-10-06 · stale)_
-      - calls [base.config.loadConfig](base.md#base.config.loadConfig), [base.config.toPosix](base.md#base.config.toPosix), [map.fact-cache.keepsFactCache](map.md#map.fact-cache.keepsFactCache), [map.map.generateMap](map.md#map.map.generateMap), [map.fact-cache.saveFactCache](map.md#map.fact-cache.saveFactCache), [map.analyze.readingAid](map.md#map.analyze.readingAid), [lang.files.collectMdFiles](lang.md#lang.files.collectMdFiles), [lang.files.walkReaches](lang.md#lang.files.walkReaches), [lang.parser.parse](lang.md#lang.parser.parse), [map.analyze.within](map.md#map.analyze.within), [map.analyze.parseRenderedMap](map.md#map.analyze.parseRenderedMap), [base.span.compareText](base.md#base.span.compareText), [base.config.evidenceFiles](base.md#base.config.evidenceFiles), [base.config.resolveStatic](base.md#base.config.resolveStatic), [map.declared-packages.readManifests](map.md#map.declared-packages.readManifests), [check.assess.assess](check.md#check.assess.assess), [check.test-report.loadReports](check.md#check.test-report.loadReports), [check.trace-evidence.loadTraces](check.md#check.trace-evidence.loadTraces), [map.analyze.repositoryFile](map.md#map.analyze.repositoryFile)
-    - fn [parseRenderedMap](../../src/analyze.ts#L133) (path: string, text: string) → Document <!-- internal -->
+      - calls [base.config.loadConfig](base.md#base.config.loadConfig), [base.config.toPosix](base.md#base.config.toPosix), [map.fact-cache.keepsFactCache](map.md#map.fact-cache.keepsFactCache), [map.map.generateMap](map.md#map.map.generateMap), [map.fact-cache.saveFactCache](map.md#map.fact-cache.saveFactCache), [map.analyze.readingAid](map.md#map.analyze.readingAid), [lang.files.collectMdFiles](lang.md#lang.files.collectMdFiles), [lang.files.walkReaches](lang.md#lang.files.walkReaches), [lang.parser.parse](lang.md#lang.parser.parse), [map.analyze.within](map.md#map.analyze.within), [map.analyze.parseRenderedMap](map.md#map.analyze.parseRenderedMap), [base.span.compareText](base.md#base.span.compareText), [base.config.evidenceFiles](base.md#base.config.evidenceFiles), [base.config.resolveStatic](base.md#base.config.resolveStatic), [map.declared-packages.readManifests](map.md#map.declared-packages.readManifests), [map.analyze.oldSnapshotFor](map.md#map.analyze.oldSnapshotFor), [check.assess.assess](check.md#check.assess.assess), [check.test-report.loadReports](check.md#check.test-report.loadReports), [check.trace-evidence.loadTraces](check.md#check.trace-evidence.loadTraces), [map.analyze.repositoryFile](map.md#map.analyze.repositoryFile)
+    - fn [oldSnapshotFor](../../src/analyze.ts#L145) (root: string, from: string) → Promise<OldSnapshot>
+      <a id="map.analyze.oldSnapshotFor"></a><br>The nodes of the old stack of a migration (`migration.from` of keylang.json, relative to the root; business-flows/27): an index file, or the old checkout analysed read-only — no fact cache, its own `migration.from` unread. An unreadable one is a state, never a thrown error: the…
+      - calls [map.analyze.analyze](map.md#map.analyze.analyze), [check.migration.readOldIndex](check.md#check.migration.readOldIndex)
+    - fn [parseRenderedMap](../../src/analyze.ts#L181) (path: string, text: string) → Document <!-- internal -->
       <a id="map.analyze.parseRenderedMap"></a>
       - calls [lang.parser.parse](lang.md#lang.parser.parse)
-    - fn [findRoot](../../src/analyze.ts#L143) (start: string) → string
+    - fn [findRoot](../../src/analyze.ts#L191) (start: string) → string
       <a id="map.analyze.findRoot"></a><br>Walk up from `start` to the directory that holds `keylang.json`; `start` when there is none.
-    - fn [repositoryFile](../../src/analyze.ts#L154) (root: string, path: string) → boolean <!-- internal -->
+    - fn [repositoryFile](../../src/analyze.ts#L202) (root: string, path: string) → boolean <!-- internal -->
       <a id="map.analyze.repositoryFile"></a><br>`path` (relative to the root, as a flow's `test` writes it) is a file inside the repository.
       - calls [map.analyze.within](map.md#map.analyze.within)
-    - fn [readingAid](../../src/analyze.ts#L165) (specDir: string, abs: string) → boolean
+    - fn [readingAid](../../src/analyze.ts#L213) (specDir: string, abs: string) → boolean
       <a id="map.analyze.readingAid"></a><br>A generated reading aid beside the specs (the explained map, explanations, discovered flows, the project tour): never a spec.
       - calls [map.analyze.within](map.md#map.analyze.within)
-    - fn [specPathProblem](../../src/analyze.ts#L174) (config: Config, abs: string) → string | null
+    - fn [specPathProblem](../../src/analyze.ts#L222) (config: Config, abs: string) → string | null
       <a id="map.analyze.specPathProblem"></a><br>Why `check` does not read `abs` as a spec, or null when it does: a `.md` file the walk of the spec directory reaches (no hidden directory, `node_modules` or `target` on the way) outside the reading aids.
       - calls [map.analyze.within](map.md#map.analyze.within), [lang.files.walkReaches](lang.md#lang.files.walkReaches), [map.analyze.readingAid](map.md#map.analyze.readingAid)
-    - fn [within](../../src/analyze.ts#L185) (abs: string, dir: string) → boolean
+    - fn [within](../../src/analyze.ts#L233) (abs: string, dir: string) → boolean
       <a id="map.analyze.within"></a><br>Reports whether an absolute path lies inside a directory by taking the relative path and rejecting results that climb out via `..` or resolve to a different root. Used as the boundary check by callers like [`map.analyze.repositoryFile`](map.md#map.analyze.repositoryFile) and [`tui.disk.leavesBoundary`](tui.md#tui.disk.leavesBoundary). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [bpmn-export](../../src/bpmn-export.ts#L1)
     <a id="map.bpmn-export"></a><br>BPMN 2.0 of a diagram (business-flows/28): the picture `/diagrams` draws (`diagramOf` + `layout`), as XML with its BPMNDI so Camunda Modeler or bpmn.io opens it as drawn. The mapping is the table «Відображення в BPMN» of ADR 0023: a layer is a lane of the one pool, a trigger a…
@@ -813,33 +817,35 @@
     - facts [extract.facts](extract.md#extract.facts)
     - adapter [base.adapter](base.md#base.adapter)
     - cartridges [base.cartridges](base.md#base.cartridges)
+    - python-web [base.python-web](base.md#base.python-web)
     - graph [map.graph](map.md#map.graph)
     - imports [map.imports](map.md#map.imports)
+    - python-web-entries [map.python-web-entries](map.md#map.python-web-entries)
     - snapshot [map.snapshot](map.md#map.snapshot)
-    - type [FrameworkEntryInputs](../../src/framework-entries.ts#L21)
+    - type [FrameworkEntryInputs](../../src/framework-entries.ts#L23)
       <a id="map.framework-entries.FrameworkEntryInputs"></a>
-    - fn [frameworkEntries](../../src/framework-entries.ts#L29) ({ config, graph, facts, frameworks }: FrameworkEntryInputs) → { entries: EntryPoint[]; holes: Gap[]; warnings: string[] }
+    - fn [frameworkEntries](../../src/framework-entries.ts#L31) ({ config, graph, facts, frameworks }: FrameworkEntryInputs) → { entries: EntryPoint[]; holes: Gap[]; warnings: string[] }
       <a id="map.framework-entries.frameworkEntries"></a>
-      - calls [map.entries.entryScope](map.md#map.entries.entryScope), [map.imports.probeCandidates](map.md#map.imports.probeCandidates), [map.framework-entries.phpClassFiles](map.md#map.framework-entries.phpClassFiles), [map.framework-entries.placeMethod](map.md#map.framework-entries.placeMethod), [map.framework-entries.withExtras](map.md#map.framework-entries.withExtras), [map.entries.frameworkEntry](map.md#map.entries.frameworkEntry), [map.entries.fnIn](map.md#map.entries.fnIn), [map.framework-entries.dispatchEdges](map.md#map.framework-entries.dispatchEdges), [base.cartridges.cartridgeLayout](base.md#base.cartridges.cartridgeLayout), [map.framework-entries.guessedOrder](map.md#map.framework-entries.guessedOrder), [map.framework-entries.controllerEntries](map.md#map.framework-entries.controllerEntries), [map.entries.compareEntries](map.md#map.entries.compareEntries)
-    - fn [withExtras](../../src/framework-entries.ts#L83) (entry: EntryPoint, fact: EntryConfigFact) → EntryPoint <!-- internal -->
+      - calls [map.entries.entryScope](map.md#map.entries.entryScope), [map.imports.probeCandidates](map.md#map.imports.probeCandidates), [map.framework-entries.phpClassFiles](map.md#map.framework-entries.phpClassFiles), [map.framework-entries.placeMethod](map.md#map.framework-entries.placeMethod), [map.framework-entries.withExtras](map.md#map.framework-entries.withExtras), [map.entries.frameworkEntry](map.md#map.entries.frameworkEntry), [map.entries.fnIn](map.md#map.entries.fnIn), [map.framework-entries.dispatchEdges](map.md#map.framework-entries.dispatchEdges), [base.cartridges.cartridgeLayout](base.md#base.cartridges.cartridgeLayout), [map.framework-entries.guessedOrder](map.md#map.framework-entries.guessedOrder), [map.framework-entries.controllerEntries](map.md#map.framework-entries.controllerEntries), [map.python-web-entries.pythonWebEntries](map.md#map.python-web-entries.pythonWebEntries), [map.entries.compareEntries](map.md#map.entries.compareEntries)
+    - fn [withExtras](../../src/framework-entries.ts#L92) (entry: EntryPoint, fact: EntryConfigFact) → EntryPoint <!-- internal -->
       <a id="map.framework-entries.withExtras"></a><br>The HTTP method and the note an entry fact gives its entry.
-    - fn [phpClassFiles](../../src/framework-entries.ts#L88) (facts: readonly FileFacts[]) → Map<string, { file: string; name: string; facts: FileFacts }> <!-- internal -->
+    - fn [phpClassFiles](../../src/framework-entries.ts#L97) (facts: readonly FileFacts[]) → Map<string, { file: string; name: string; facts: FileFacts }> <!-- internal -->
       <a id="map.framework-entries.phpClassFiles"></a><br>PHP classes by their qualified name in ASCII lower case → the file and the name it declares.
       - calls [map.framework-entries.lower](map.md#map.framework-entries.lower)
-    - fn [lower](../../src/framework-entries.ts#L96) (name: string) → string <!-- internal -->
+    - fn [lower](../../src/framework-entries.ts#L105) (name: string) → string <!-- internal -->
       <a id="map.framework-entries.lower"></a>
-    - fn [placeMethod](../../src/framework-entries.ts#L104) (scope: EntryScope, classes: ReadonlyMap<string, { file: string; name: string; facts: FileFacts }>, type: TypeName, method: string) → { id: string; at: { file: string; line: number } } | { reason: string } <!-- internal -->
+    - fn [placeMethod](../../src/framework-entries.ts#L113) (scope: EntryScope, classes: ReadonlyMap<string, { file: string; name: string; facts: FileFacts }>, type: TypeName, method: string) → { id: string; at: { file: string; line: number } } | { reason: string } <!-- internal -->
       <a id="map.framework-entries.placeMethod"></a><br>The fn of `method` of the class a config names, its own or a base's the analysis has; the reason when it has neither the class nor the method.
       - calls [map.framework-entries.lower](map.md#map.framework-entries.lower), [map.entries.fnIn](map.md#map.entries.fnIn)
-    - fn [dispatchEdges](../../src/framework-entries.ts#L134) (graph: Graph, scope: EntryScope, classes: ReadonlyMap<string, { file: string; name: string; facts: FileFacts }>, configs: readonly { facts: ConfigFacts }[]) → Gap[] <!-- internal -->
+    - fn [dispatchEdges](../../src/framework-entries.ts#L143) (graph: Graph, scope: EntryScope, classes: ReadonlyMap<string, { file: string; name: string; facts: FileFacts }>, configs: readonly { facts: ConfigFacts }[]) → Gap[] <!-- internal -->
       <a id="map.framework-entries.dispatchEdges"></a><br>Edges from every fn that dispatches an event or a message to the listeners and handlers the framework runs for it (ADR 0022 п. 6): `via: "observer"` for a listener of the event, `via: "dispatch"` for the handler of a job or a message, at the dispatching call, with the line of…
       - calls [map.framework-entries.placeMethod](map.md#map.framework-entries.placeMethod), [map.framework-entries.lower](map.md#map.framework-entries.lower), [map.entries.fnIn](map.md#map.entries.fnIn), [map.framework-entries.fnOf](map.md#map.framework-entries.fnOf)
-    - fn [fnOf](../../src/framework-entries.ts#L181) (graph: Graph, id: string) → Fn | null <!-- internal -->
+    - fn [fnOf](../../src/framework-entries.ts#L190) (graph: Graph, id: string) → Fn | null <!-- internal -->
       <a id="map.framework-entries.fnOf"></a><br>The fn node of an id: a member of its module or of a class in it.
-    - fn [guessedOrder](../../src/framework-entries.ts#L202) (layout: CartridgeLayout, graph: Graph, facts: readonly FileFacts[], probe: (candidate: string) => string | null) → Gap[] <!-- internal -->
+    - fn [guessedOrder](../../src/framework-entries.ts#L211) (layout: CartridgeLayout, graph: Graph, facts: readonly FileFacts[], probe: (candidate: string) => string | null) → Gap[] <!-- internal -->
       <a id="map.framework-entries.guessedOrder"></a><br>A `*\/cartridge/…` require that two cartridges answer, or a `module.superModule`, resolved along a guessed cartridge path: the order decided the edge, and nothing the repository writes gave the order. A hole (`unsupported`) of the requiring module, so a rule over it is…
       - calls [base.cartridges.cartridgeAnswers](base.md#base.cartridges.cartridgeAnswers)
-    - fn [controllerEntries](../../src/framework-entries.ts#L228) (graph: Graph, facts: readonly FileFacts[], scope: EntryScope) → EntryPoint[] <!-- internal -->
+    - fn [controllerEntries](../../src/framework-entries.ts#L237) (graph: Graph, facts: readonly FileFacts[], scope: EntryScope) → EntryPoint[] <!-- internal -->
       <a id="map.framework-entries.controllerEntries"></a><br>`server.get('Show', …, handler)` in `controllers/Cart.js`: a `route` labelled `Cart-Show`. The handler is the last argument when it names a fn keylang resolves; a handler written in place has no fn ID, so the controller module stands for it, at the registration's line, with a…
       - calls [map.entries.fnIn](map.md#map.entries.fnIn), [map.entries.frameworkEntry](map.md#map.entries.frameworkEntry)
   - module [frontends](../../src/frontends.ts#L1)
@@ -912,78 +918,78 @@
       <a id="map.graph.Via"></a><br>How a call edge that is not a plain call of the code came about; see `Call.via`.
     - type [Call](../../src/graph.ts#L174)
       <a id="map.graph.Call"></a><br>Describes one outgoing call edge recorded for a function: the callee name, the source span and text of the call, and optional fields marking calls that arrive through a hook (a parameter default or a value injected at a recorded site) or from inside a closure. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-    - type [TypeNode](../../src/graph.ts#L215)
+    - type [TypeNode](../../src/graph.ts#L218)
       <a id="map.graph.TypeNode"></a><br>Describes one declared type in the dependency graph: its unique id, display name, source file and start/end position, optional signature and doc text, whether it is exported, and an optional content fingerprint. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Stats](../../src/graph.ts#L229)
+    - type [Stats](../../src/graph.ts#L232)
       <a id="map.graph.Stats"></a><br>Holds counters summarizing a built graph: counts of files, modules, functions, types, and dependencies, plus call-resolution tallies (resolved, unresolved, external, dynamic), unresolved imports, and files assigned to no module. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [globalsOf](../../src/graph.ts#L252) (file: string) → Frontend["globals"] <!-- internal -->
+    - fn [globalsOf](../../src/graph.ts#L255) (file: string) → Frontend["globals"] <!-- internal -->
       <a id="map.graph.globalsOf"></a><br>Looks up the language frontend for a file path via [`map.frontends.frontendFor`](map.md#map.frontends.frontendFor) and returns its globals table, falling back to an empty set when no frontend matches. Used by [`map.graph.buildGraph`](map.md#map.graph.buildGraph) to seed per-file global symbols. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [map.frontends.frontendFor](map.md#map.frontends.frontendFor)
-    - type [FileEntry](../../src/graph.ts#L256) <!-- internal -->
+    - type [FileEntry](../../src/graph.ts#L259) <!-- internal -->
       <a id="map.graph.FileEntry"></a><br>Pairs a file's extracted facts with the module it belongs to, giving the graph builder a single record per source file to hold both pieces of per-file state together. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [buildGraph](../../src/graph.ts#L261) (config: Config, files: FileFacts[], frameworks: readonly FrameworkInput[] = []) → Graph
+    - fn [buildGraph](../../src/graph.ts#L264) (config: Config, files: FileFacts[], frameworks: readonly FrameworkInput[] = []) → Graph
       <a id="map.graph.buildGraph"></a><br>Turns analyzed files into the architecture graph: places them into layered modules, registers declarations, resolves imports, exports and calls into edges, and records unresolved spots as gaps and warnings. _(llm · claude:claude-opus-5-5 · 2026-10-06 · stale)_
       - calls [map.frontends.frontendOf](map.md#map.frontends.frontendOf), [map.frontends.frontendFor](map.md#map.frontends.frontendFor), [map.graph.placeFile](map.md#map.graph.placeFile), [map.graph.isIndexFile](map.md#map.graph.isIndexFile), [map.graph.topSegments](map.md#map.graph.topSegments), [base.config.layerName](base.md#base.config.layerName), [map.graph.addDecl](map.md#map.graph.addDecl), [map.graph.markOpaque](map.md#map.graph.markOpaque), [map.declared-packages.readManifests](map.md#map.declared-packages.readManifests), [base.external-ids.assignExternalIds](base.md#base.external-ids.assignExternalIds), [map.graph.importedPackages](map.md#map.graph.importedPackages), [base.span.compareText](base.md#base.span.compareText), [map.imports.assumedTarget](map.md#map.imports.assumedTarget), [base.config.isAssumed](base.md#base.config.isAssumed), [map.graph.importTarget](map.md#map.graph.importTarget), [map.graph.notIndexed](map.md#map.graph.notIndexed), [base.external-ids.externalSegment](base.md#base.external-ids.externalSegment), [base.languages.languageOf](base.md#base.languages.languageOf), [map.graph.exportInput](map.md#map.graph.exportInput), [map.exports.resolveExports](map.md#map.exports.resolveExports), [base.languages.caselessNames](base.md#base.languages.caselessNames), [map.graph.memberKey](map.md#map.graph.memberKey), [base.languages.asciiLowerCase](base.md#base.languages.asciiLowerCase), [map.graph.caselessIndex](map.md#map.graph.caselessIndex), [map.graph.staticThroughInstance](map.md#map.graph.staticThroughInstance), [map.graph.globalsOf](map.md#map.graph.globalsOf), [base.bindings.FrameworkBindings](base.md#base.bindings.FrameworkBindings), [map.graph.directoryModuleIn](map.md#map.graph.directoryModuleIn), [base.bindings.FrameworkBindings.interceptors](base.md#base.bindings.FrameworkBindings.interceptors), [map.graph.addCall](map.md#map.graph.addCall), [base.languages.interfaceTypes](base.md#base.languages.interfaceTypes), [map.graph.holeReason](map.md#map.graph.holeReason), [base.languages.constructorName](base.md#base.languages.constructorName), [map.graph.markEscapes](map.md#map.graph.markEscapes)
-    - fn [directoryModule](../../src/graph.ts#L1389) (config: Config, dir: string, graph: Pick<Graph, "modules" | "layers">) → string | null
+    - fn [directoryModule](../../src/graph.ts#L1392) (config: Config, dir: string, graph: Pick<Graph, "modules" | "layers">) → string | null
       <a id="map.graph.directoryModule"></a><br>The module of a directory (a framework module's root): a directory module, or the layer itself when the layer's glob starts there; null when the graph has neither.
       - calls [map.graph.directoryModuleIn](map.md#map.graph.directoryModuleIn)
-    - fn [directoryModuleIn](../../src/graph.ts#L1393) (config: Config, dir: string, modules: ReadonlyMap<string, Module>, layers: ReadonlyMap<string, Layer>) → string | null <!-- internal -->
+    - fn [directoryModuleIn](../../src/graph.ts#L1396) (config: Config, dir: string, modules: ReadonlyMap<string, Module>, layers: ReadonlyMap<string, Layer>) → string | null <!-- internal -->
       <a id="map.graph.directoryModuleIn"></a>
       - calls [map.graph.placeFile](map.md#map.graph.placeFile)
-    - type [GlobSource](../../src/graph.ts#L1411) <!-- internal -->
+    - type [GlobSource](../../src/graph.ts#L1414) <!-- internal -->
       <a id="map.graph.GlobSource"></a><br>What one glob import (`use m::*`, `from m import *`) brings into a file's scope.
-    - type [BaseLink](../../src/graph.ts#L1419) <!-- internal -->
+    - type [BaseLink](../../src/graph.ts#L1422) <!-- internal -->
       <a id="map.graph.BaseLink"></a><br>A class's `extends`: the base keylang has read, or the text of one it has not, and whether that names a package's or the language's class.
-    - fn [staticThroughInstance](../../src/graph.ts#L1426) (file: string) → boolean <!-- internal -->
+    - fn [staticThroughInstance](../../src/graph.ts#L1429) (file: string) → boolean <!-- internal -->
       <a id="map.graph.staticThroughInstance"></a><br>Python and PHP reach a static member through an instance (`s.make()`, `$this->make()`); JavaScript does not.
       - calls [base.languages.languageOf](base.md#base.languages.languageOf)
-    - type [ImportTarget](../../src/graph.ts#L1432) <!-- internal -->
+    - type [ImportTarget](../../src/graph.ts#L1435) <!-- internal -->
       <a id="map.graph.ImportTarget"></a><br>What one import binding names in the file: a declaration of the module (`named`, `default`) or the module itself.
-    - fn [unindexedModule](../../src/graph.ts#L1448) (name: string) → Module <!-- internal -->
+    - fn [unindexedModule](../../src/graph.ts#L1451) (name: string) → Module <!-- internal -->
       <a id="map.graph.unindexedModule"></a><br>A module an import may bind that is never added to the graph: an external one, so calls through its names are external. Its ID is no valid ID, so it names no node.
-    - fn [importTarget](../../src/graph.ts#L1462) (module: Module, unit: string, binding: ImportBinding, whole: boolean) → ImportTarget <!-- internal -->
+    - fn [importTarget](../../src/graph.ts#L1465) (module: Module, unit: string, binding: ImportBinding, whole: boolean) → ImportTarget <!-- internal -->
       <a id="map.graph.importTarget"></a><br>A specifier that names the module itself (Rust `use crate::a`, Python `from pkg import mod`) binds the module object, which is no function, like an ESM namespace.
-    - fn [exportInput](../../src/graph.ts#L1474) (row: ExportRow, facts: FileFacts, scope: ReadonlyMap<string, string>, imported: ReadonlyMap<string, ImportTarget[]>) → ExportRowInput <!-- internal -->
+    - fn [exportInput](../../src/graph.ts#L1477) (row: ExportRow, facts: FileFacts, scope: ReadonlyMap<string, string>, imported: ReadonlyMap<string, ImportTarget[]>) → ExportRowInput <!-- internal -->
       <a id="map.graph.exportInput"></a><br>One export row of a file, with what it stands for: a declaration of the file (`scope`), a name or the namespace of the module an import binds, or nothing keylang indexes. A re-export (`export { a } from`, Rust `pub use`) goes through its own import; any other name through a…
       - calls [base.config.layerName](base.md#base.config.layerName)
-    - fn [importedPackages](../../src/graph.ts#L1494) (files: readonly FileFacts[], resolve: (file: string, spec: string) => Resolution) → Set<string> <!-- internal -->
+    - fn [importedPackages](../../src/graph.ts#L1497) (files: readonly FileFacts[], resolve: (file: string, spec: string) => Resolution) → Set<string> <!-- internal -->
       <a id="map.graph.importedPackages"></a><br>Names of the external packages (and `node` for built-ins) the files import.
-    - fn [notIndexed](../../src/graph.ts#L1511) (config: Config, file: string) → string | null <!-- internal -->
+    - fn [notIndexed](../../src/graph.ts#L1514) (config: Config, file: string) → string | null <!-- internal -->
       <a id="map.graph.notIndexed"></a><br>Why a resolved source file has no module; null when it is left out on purpose: not source code (JSON, CSS), a test or declaration file, `exclude`, outside guessed layers.
       - calls [base.languages.languageOf](base.md#base.languages.languageOf), [base.config.isExcluded](base.md#base.config.isExcluded), [base.config.isOutside](base.md#base.config.isOutside), [map.graph.placeFile](map.md#map.graph.placeFile)
-    - fn [isIndexFile](../../src/graph.ts#L1518) (file: string) → boolean <!-- internal -->
+    - fn [isIndexFile](../../src/graph.ts#L1521) (file: string) → boolean <!-- internal -->
       <a id="map.graph.isIndexFile"></a><br>Reports whether a path's extension-stripped basename appears in the per-language index list, resolving the language via [`base.languages.languageOf`](base.md#base.languages.languageOf) and returning false when no language matches. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [base.languages.languageOf](base.md#base.languages.languageOf)
-    - fn [addCall](../../src/graph.ts#L1533) (fn: Fn, call: Call) → boolean <!-- internal -->
+    - fn [addCall](../../src/graph.ts#L1536) (fn: Fn, call: Call) → boolean <!-- internal -->
       <a id="map.graph.addCall"></a><br>Add a call unless an edge to the same target already says as much. Edges rank by what they prove: a plain call outside a closure (3) proves the path in every mode; a hook's default, a callable passed as an argument or a call in a closure passed as one (2) prove it in…
-    - fn [holeReason](../../src/graph.ts#L1542) (c: CallFact) → string <!-- internal -->
+    - fn [holeReason](../../src/graph.ts#L1545) (c: CallFact) → string <!-- internal -->
       <a id="map.graph.holeReason"></a><br>Builds a human-readable explanation for why a call site could not be resolved to a concrete target, distinguishing hook-based calls, calls through `this`, and calls through local values. [`map.graph.buildGraph`](map.md#map.graph.buildGraph) uses the string to annotate unresolved edges. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [markEscapes](../../src/graph.ts#L1555) (modules: Map<string, Module>, readIds: ReadonlyMap<string, Escape>, readMembers: ReadonlyMap<string, Escape>, calledNames: ReadonlyMap<string, Escape>, members: Decls["members"]) → void <!-- internal -->
+    - fn [markEscapes](../../src/graph.ts#L1558) (modules: Map<string, Module>, readIds: ReadonlyMap<string, Escape>, readMembers: ReadonlyMap<string, Escape>, calledNames: ReadonlyMap<string, Escape>, members: Decls["members"]) → void <!-- internal -->
       <a id="map.graph.markEscapes"></a><br>Functions that code may reach without naming them in a call: read as a value (`later(save)` names the declaration `save` resolves to; `obj.save` any method `save`), called implicitly, or the constructor of a class read as a value (`extends A` runs `A`'s constructor). Names read…
       - calls [map.graph.foldCase](map.md#map.graph.foldCase), [base.languages.caselessNames](base.md#base.languages.caselessNames), [base.languages.asciiLowerCase](base.md#base.languages.asciiLowerCase), [base.languages.constructorName](base.md#base.languages.constructorName), [base.languages.implicitMember](base.md#base.languages.implicitMember)
-    - fn [foldCase](../../src/graph.ts#L1577) (names: ReadonlyMap<string, Escape>) → Map<string, Escape> <!-- internal -->
+    - fn [foldCase](../../src/graph.ts#L1580) (names: ReadonlyMap<string, Escape>) → Map<string, Escape> <!-- internal -->
       <a id="map.graph.foldCase"></a><br>Names keyed in ASCII lower case, each with the escape of its first spelling: what a language whose names compare without case looks up.
       - calls [base.languages.asciiLowerCase](base.md#base.languages.asciiLowerCase)
-    - fn [markOpaque](../../src/graph.ts#L1583) (m: Module) → void <!-- internal -->
+    - fn [markOpaque](../../src/graph.ts#L1586) (m: Module) → void <!-- internal -->
       <a id="map.graph.markOpaque"></a><br>Sets a module's `members` field to the string `"opaque"`, then recurses into each entry of `m.children` so the whole subtree is marked the same way; used by [`map.graph.buildGraph`](map.md#map.graph.buildGraph). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Decls](../../src/graph.ts#L1589) <!-- internal -->
+    - type [Decls](../../src/graph.ts#L1592) <!-- internal -->
       <a id="map.graph.Decls"></a><br>Where each declaration went: several facts (overloads) may share one node.
-    - fn [caselessIndex](../../src/graph.ts#L1603) (rows: readonly ExportRowInput[]) → Map<string, string[]> <!-- internal -->
+    - fn [caselessIndex](../../src/graph.ts#L1606) (rows: readonly ExportRowInput[]) → Map<string, string[]> <!-- internal -->
       <a id="map.graph.caselessIndex"></a><br>Name in ASCII lower case → the names of the declarations an export table lists under it. A row that stands for no declaration (a PHP constant, which keeps its case) is left out.
       - calls [base.languages.asciiLowerCase](base.md#base.languages.asciiLowerCase)
-    - fn [memberKey](../../src/graph.ts#L1615) (member: string, isStatic: boolean, caseless = false) → string
+    - fn [memberKey](../../src/graph.ts#L1618) (member: string, isStatic: boolean, caseless = false) → string
       <a id="map.graph.memberKey"></a><br>Lookup key of a class member: `this.#m` in a static method is `static #m`. `caseless`: a language whose method names compare without ASCII case (PHP).
       - calls [base.config.layerName](base.md#base.config.layerName), [base.languages.asciiLowerCase](base.md#base.languages.asciiLowerCase)
-    - fn [memberSegments](../../src/graph.ts#L1631) (members: readonly DeclFact[], caseless: boolean) → Map<DeclFact, { key: string; segment: string }> <!-- internal -->
+    - fn [memberSegments](../../src/graph.ts#L1634) (members: readonly DeclFact[], caseless: boolean) → Map<DeclFact, { key: string; segment: string }> <!-- internal -->
       <a id="map.graph.memberSegments"></a><br>ID segments of class members. An instance member keeps its name; a static or `#private` member of the same name as another gets a suffix (`m-static`, `go-private`, `go-static-private`), which no JS name can collide with.
       - calls [map.graph.memberKey](map.md#map.graph.memberKey), [base.config.layerName](base.md#base.config.layerName)
-    - fn [topSegments](../../src/graph.ts#L1660) (module: Module, files: readonly FileFacts[], warnings: string[]) → Map<DeclFact, string> <!-- internal -->
+    - fn [topSegments](../../src/graph.ts#L1663) (module: Module, files: readonly FileFacts[], warnings: string[]) → Map<DeclFact, string> <!-- internal -->
       <a id="map.graph.topSegments"></a><br>ID segments of a module's top-level declarations. One file's declarations of a name share a node (overloads, a class merged with its interface); the same name in another file of the module (`module: "dir"`, `x.ts` beside `x/index.ts`) is another symbol, whose segment gets `-2`…
       - calls [base.span.compareText](base.md#base.span.compareText), [base.config.layerName](base.md#base.config.layerName)
-    - fn [addDecl](../../src/graph.ts#L1690) (module: Module, d: DeclFact, names: Map<string, string>, declModule: Map<string, Map<string, string>>, decls: Decls, stats: Stats, file: string, member?: { key: string; segment: string }) → void <!-- internal -->
+    - fn [addDecl](../../src/graph.ts#L1693) (module: Module, d: DeclFact, names: Map<string, string>, declModule: Map<string, Map<string, string>>, decls: Decls, stats: Stats, file: string, member?: { key: string; segment: string }) → void <!-- internal -->
       <a id="map.graph.addDecl"></a><br>Registers a declaration in a module as a function, type, or class node, recursing into class members. Overloads merge into the first function node, and a type yields to a same-named class or function. _(llm · claude:claude-opus-5-5 · 2026-10-06 · stale)_
       - calls [base.config.layerName](base.md#base.config.layerName), [map.graph.memberSegments](map.md#map.graph.memberSegments), [base.languages.caselessNames](base.md#base.languages.caselessNames)
-    - fn [placeFile](../../src/graph.ts#L1776) (config: Config, file: string) → { layer: string; segments: string[]; stem: string; glob: string | null } | null
+    - fn [placeFile](../../src/graph.ts#L1779) (config: Config, file: string) → { layer: string; segments: string[]; stem: string; glob: string | null } | null
       <a id="map.graph.placeFile"></a><br>Where `file` lands: its layer, module ID segments and path stem, and the layer glob that placed it (none for `outside`).
       - calls [base.config.isOutside](base.md#base.config.isOutside), [base.config.layerName](base.md#base.config.layerName), [base.glob.matchesGlob](base.md#base.glob.matchesGlob), [base.glob.globPrefix](base.md#base.glob.globPrefix), [base.languages.languageOf](base.md#base.languages.languageOf)
   - module [imports](../../src/imports.ts#L1)
@@ -1287,6 +1293,161 @@
     <a id="map.python-stdlib"></a><br>Top-level modules of the Python standard library: the union of `sys.stdlib_module_names` over CPython 3.10–3.14, copied from the generated `Python/stdlib_module_names.h` of each CPython branch (no npm package carries this list, and analysis never runs a Python interpreter). The…
     - fn [isPythonStdlib](../../src/python-stdlib.ts#L49) (name: string) → boolean
       <a id="map.python-stdlib.isPythonStdlib"></a><br>`name` (the first segment of a dotted import) is a module of the Python standard library.
+  - module [python-web-entries](../../src/python-web-entries.ts#L1)
+    <a id="map.python-web-entries"></a><br>The registrations of the Python web frameworks (business-flows/38, ADR 0022), placed on the graph: Django `urls.py` (`path`, `re_path`, `include`, class-based views), signals (`signal.connect(h)`, `@receiver`) and management commands; FastAPI routers (`APIRouter(prefix=…)`…
+    - config [base.config](base.md#base.config)
+    - entries [map.entries](map.md#map.entries)
+    - facts [extract.facts](extract.md#extract.facts)
+    - graph [map.graph](map.md#map.graph)
+    - python-imports [map.python-imports](map.md#map.python-imports)
+    - snapshot [map.snapshot](map.md#map.snapshot)
+    - type [Ref](../../src/python-web-entries.ts#L31) <!-- internal -->
+      <a id="map.python-web-entries.Ref"></a><br>What a dotted name written in a file stands for.
+    - type [ObjectKind](../../src/python-web-entries.ts#L38) = "fastapi" | "flask" | "blueprint" | "celery" | "signal" <!-- internal -->
+      <a id="map.python-web-entries.ObjectKind"></a>
+    - type [FrameworkObject](../../src/python-web-entries.ts#L41) <!-- internal -->
+      <a id="map.python-web-entries.FrameworkObject"></a><br>An object a module-level statement makes with a framework's constructor: `router = APIRouter(prefix="/x")`.
+    - type [Mount](../../src/python-web-entries.ts#L54) <!-- internal -->
+      <a id="map.python-web-entries.Mount"></a><br>`parent.include_router(child, prefix=…)`, `app.register_blueprint(bp, url_prefix=…)`.
+    - type [Receiver](../../src/python-web-entries.ts#L62) <!-- internal -->
+      <a id="map.python-web-entries.Receiver"></a>
+    - type [PythonWebResult](../../src/python-web-entries.ts#L72)
+      <a id="map.python-web-entries.PythonWebResult"></a>
+    - fn [pythonWebEntries](../../src/python-web-entries.ts#L83) (config: Config, graph: Graph, facts: readonly FileFacts[], scope: EntryScope, active: readonly string[]) → PythonWebResult
+      <a id="map.python-web-entries.pythonWebEntries"></a><br>The entries, edges and holes of the active Python web adapters (`active`, their names). Adds the edges to the graph's fns and lifts the holes the registrations answer (a recognised decorator, a `.delay()` or `.send()` whose target it names).
+      - calls [map.python-web-entries.PythonWeb.run](map.md#map.python-web-entries.PythonWeb.run), [map.python-web-entries.PythonWeb](map.md#map.python-web-entries.PythonWeb)
+    - module [PythonWeb](../../src/python-web-entries.ts#L87) <!-- internal -->
+      <a id="map.python-web-entries.PythonWeb"></a>
+      - fn [constructor](../../src/python-web-entries.ts#L108) (config: Config, graph: Graph, facts: readonly FileFacts[], scope: EntryScope, active: ReadonlySet<string>)
+        <a id="map.python-web-entries.PythonWeb.constructor"></a>
+        - calls [map.python-imports.PythonResolver](map.md#map.python-imports.PythonResolver)
+      - fn [run](../../src/python-web-entries.ts#L121) () → PythonWebResult
+        <a id="map.python-web-entries.PythonWeb.run"></a>
+        - calls [map.python-web-entries.PythonWeb.collectObjects](map.md#map.python-web-entries.PythonWeb.collectObjects), [map.python-web-entries.PythonWeb.collectMounts](map.md#map.python-web-entries.PythonWeb.collectMounts), [map.python-web-entries.PythonWeb.decorated](map.md#map.python-web-entries.PythonWeb.decorated), [map.python-web-entries.PythonWeb.dependsInParams](map.md#map.python-web-entries.PythonWeb.dependsInParams), [map.python-web-entries.PythonWeb.connects](map.md#map.python-web-entries.PythonWeb.connects), [map.python-web-entries.PythonWeb.urls](map.md#map.python-web-entries.PythonWeb.urls), [map.python-web-entries.PythonWeb.command](map.md#map.python-web-entries.PythonWeb.command), [map.python-web-entries.PythonWeb.beat](map.md#map.python-web-entries.PythonWeb.beat), [map.python-web-entries.PythonWeb.dispatches](map.md#map.python-web-entries.PythonWeb.dispatches), [map.python-web-entries.PythonWeb.lift](map.md#map.python-web-entries.PythonWeb.lift)
+      - fn [resolve](../../src/python-web-entries.ts#L140) (file: string, dotted: string, depth = 0) → Ref | null <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.resolve"></a><br>What `dotted`, written in `file`, stands for; null for a name the file neither declares nor imports.
+        - calls [map.python-web-entries.PythonWeb.declares](map.md#map.python-web-entries.PythonWeb.declares), [map.python-imports.PythonResolver.resolve](map.md#map.python-imports.PythonResolver.resolve), [map.python-web-entries.PythonWeb.descend](map.md#map.python-web-entries.PythonWeb.descend)
+      - fn [descend](../../src/python-web-entries.ts#L165) (ref: Ref, rest: string[], depth: number) → Ref | null <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.descend"></a><br>A module or name with more attributes read on it; a name another module only imports is followed there.
+        - calls [map.python-web-entries.PythonWeb.follow](map.md#map.python-web-entries.PythonWeb.follow)
+      - fn [follow](../../src/python-web-entries.ts#L174) (file: string, name: string, rest: string[], depth: number) → Ref | null <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.follow"></a>
+        - calls [map.python-web-entries.PythonWeb.declares](map.md#map.python-web-entries.PythonWeb.declares), [map.python-web-entries.PythonWeb.resolve](map.md#map.python-web-entries.PythonWeb.resolve)
+      - fn [declares](../../src/python-web-entries.ts#L183) (facts: FileFacts, name: string) → boolean <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.declares"></a><br>The file binds `name` at its top: a `def`, a `class` or an assignment.
+      - fn [qualified](../../src/python-web-entries.ts#L190) (file: string, dotted: string) → string | null <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.qualified"></a><br>The qualified name of a package's name written in `file`: `APIRouter` → `fastapi.APIRouter`.
+        - calls [map.python-web-entries.PythonWeb.resolve](map.md#map.python-web-entries.PythonWeb.resolve)
+      - fn [fnOf](../../src/python-web-entries.ts#L195) (file: string, dotted: string) → string | null <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.fnOf"></a>
+        - calls [map.python-web-entries.PythonWeb.resolve](map.md#map.python-web-entries.PythonWeb.resolve), [map.entries.fnIn](map.md#map.entries.fnIn)
+      - fn [classOf](../../src/python-web-entries.ts#L201) (file: string, dotted: string) → Module | null <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.classOf"></a>
+        - calls [map.python-web-entries.PythonWeb.resolve](map.md#map.python-web-entries.PythonWeb.resolve)
+      - fn [objectOf](../../src/python-web-entries.ts#L207) (file: string, dotted: string) → FrameworkObject | null <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.objectOf"></a>
+        - calls [map.python-web-entries.PythonWeb.resolve](map.md#map.python-web-entries.PythonWeb.resolve)
+      - fn [collectObjects](../../src/python-web-entries.ts#L214) (file: FileFacts) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.collectObjects"></a>
+        - calls [map.python-web-entries.PythonWeb.qualified](map.md#map.python-web-entries.PythonWeb.qualified), [map.python-web-entries.objectKind](map.md#map.python-web-entries.objectKind), [map.python-web-entries.frameworkOf](map.md#map.python-web-entries.frameworkOf), [map.python-web-entries.kwarg](map.md#map.python-web-entries.kwarg), [map.python-web-entries.str](map.md#map.python-web-entries.str)
+      - fn [collectMounts](../../src/python-web-entries.ts#L227) (file: FileFacts) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.collectMounts"></a>
+        - calls [map.python-web-entries.PythonWeb.objectOf](map.md#map.python-web-entries.PythonWeb.objectOf), [map.python-web-entries.PythonWeb.hole](map.md#map.python-web-entries.PythonWeb.hole), [map.python-web-entries.text](map.md#map.python-web-entries.text), [map.python-web-entries.str](map.md#map.python-web-entries.str), [map.python-web-entries.kwarg](map.md#map.python-web-entries.kwarg)
+      - fn [prefixes](../../src/python-web-entries.ts#L248) (key: string, seen: ReadonlySet<string> = new Set()) → string[] <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.prefixes"></a><br>Every URL prefix an object's routes have: its own, behind each mount's (through the objects that mount it).
+      - fn [decorated](../../src/python-web-entries.ts#L264) (file: FileFacts) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.decorated"></a>
+        - calls [map.python-web-entries.PythonWeb.objectOf](map.md#map.python-web-entries.PythonWeb.objectOf), [map.python-web-entries.PythonWeb.qualified](map.md#map.python-web-entries.PythonWeb.qualified), [map.python-web-entries.PythonWeb.route](map.md#map.python-web-entries.PythonWeb.route), [map.python-web-entries.isQualified](map.md#map.python-web-entries.isQualified), [map.python-web-entries.PythonWeb.task](map.md#map.python-web-entries.PythonWeb.task), [map.python-web-entries.PythonWeb.receiver](map.md#map.python-web-entries.PythonWeb.receiver)
+      - fn [route](../../src/python-web-entries.ts#L277) (file: FileFacts, d: NonNullable<FileFacts["decorators"]>[number], object: FrameworkObject, verb: string) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.route"></a>
+        - calls [map.entries.fnIn](map.md#map.entries.fnIn), [map.python-web-entries.str](map.md#map.python-web-entries.str), [map.python-web-entries.kwarg](map.md#map.python-web-entries.kwarg), [map.python-web-entries.PythonWeb.hole](map.md#map.python-web-entries.PythonWeb.hole), [map.python-web-entries.strings](map.md#map.python-web-entries.strings), [map.python-web-entries.PythonWeb.prefixes](map.md#map.python-web-entries.PythonWeb.prefixes), [map.python-web-entries.joinUrl](map.md#map.python-web-entries.joinUrl), [map.entries.frameworkEntry](map.md#map.entries.frameworkEntry), [map.python-web-entries.PythonWeb.depends](map.md#map.python-web-entries.PythonWeb.depends)
+      - fn [task](../../src/python-web-entries.ts#L305) (file: FileFacts, d: NonNullable<FileFacts["decorators"]>[number]) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.task"></a>
+        - calls [map.entries.fnIn](map.md#map.entries.fnIn), [map.python-web-entries.PythonWeb.hole](map.md#map.python-web-entries.PythonWeb.hole), [map.python-web-entries.str](map.md#map.python-web-entries.str), [map.python-web-entries.kwarg](map.md#map.python-web-entries.kwarg), [map.python-web-entries.moduleName](map.md#map.python-web-entries.moduleName), [map.entries.frameworkEntry](map.md#map.entries.frameworkEntry)
+      - fn [receiver](../../src/python-web-entries.ts#L318) (file: FileFacts, d: NonNullable<FileFacts["decorators"]>[number]) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.receiver"></a>
+        - calls [map.entries.fnIn](map.md#map.entries.fnIn), [map.python-web-entries.PythonWeb.hole](map.md#map.python-web-entries.PythonWeb.hole), [map.python-web-entries.PythonWeb.observe](map.md#map.python-web-entries.PythonWeb.observe), [map.python-web-entries.kwarg](map.md#map.python-web-entries.kwarg)
+      - fn [observe](../../src/python-web-entries.ts#L331) (file: string, line: number, col: number, signal: LiteralValue, fn: string, sender: LiteralValue | undefined) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.observe"></a><br>A receiver of a signal: an `observer` entry, and the fn `signal.send()` reaches.
+        - calls [map.python-web-entries.PythonWeb.signalKey](map.md#map.python-web-entries.PythonWeb.signalKey), [map.python-web-entries.PythonWeb.hole](map.md#map.python-web-entries.PythonWeb.hole), [map.python-web-entries.text](map.md#map.python-web-entries.text), [map.entries.frameworkEntry](map.md#map.entries.frameworkEntry)
+      - fn [signalKey](../../src/python-web-entries.ts#L345) (file: string, dotted: string) → string | null <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.signalKey"></a><br>A signal's identity: the qualified name of Django's, `file#name` of one the repository makes with `Signal()`.
+        - calls [map.python-web-entries.PythonWeb.resolve](map.md#map.python-web-entries.PythonWeb.resolve), [map.python-web-entries.isQualified](map.md#map.python-web-entries.isQualified)
+      - fn [connects](../../src/python-web-entries.ts#L355) (file: FileFacts) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.connects"></a><br>`signal.connect(handler, sender=M)` at module level, or in a fn (`AppConfig.ready`).
+        - calls [map.python-web-entries.PythonWeb.signalKey](map.md#map.python-web-entries.PythonWeb.signalKey), [map.python-web-entries.kwarg](map.md#map.python-web-entries.kwarg), [map.python-web-entries.PythonWeb.fnOf](map.md#map.python-web-entries.PythonWeb.fnOf), [map.python-web-entries.PythonWeb.hole](map.md#map.python-web-entries.PythonWeb.hole), [map.python-web-entries.text](map.md#map.python-web-entries.text), [map.python-web-entries.PythonWeb.observe](map.md#map.python-web-entries.PythonWeb.observe), [map.python-web-entries.PythonWeb.eachCall](map.md#map.python-web-entries.PythonWeb.eachCall)
+      - fn [urls](../../src/python-web-entries.ts#L383) () → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.urls"></a><br>`urlpatterns` from each root urls module (one no other `include`s), with the prefixes `include` adds.
+        - calls [map.python-web-entries.PythonWeb.patterns](map.md#map.python-web-entries.PythonWeb.patterns), [map.python-web-entries.PythonWeb.includes](map.md#map.python-web-entries.PythonWeb.includes), [map.python-web-entries.PythonWeb.walkUrls](map.md#map.python-web-entries.PythonWeb.walkUrls)
+      - fn [patterns](../../src/python-web-entries.ts#L390) (file: FileFacts) → LiteralValue[] <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.patterns"></a>
+      - fn [includes](../../src/python-web-entries.ts#L395) (file: string, value: LiteralValue, found: (target: string) => void) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.includes"></a><br>The urls modules a pattern `include`s, without reporting anything.
+        - calls [map.python-web-entries.PythonWeb.isDjango](map.md#map.python-web-entries.PythonWeb.isDjango), [map.python-web-entries.kwarg](map.md#map.python-web-entries.kwarg), [map.python-web-entries.PythonWeb.includedFile](map.md#map.python-web-entries.PythonWeb.includedFile)
+      - fn [includedFile](../../src/python-web-entries.ts#L405) (file: string, arg: LiteralValue | undefined) → string | LiteralValue[] | null <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.includedFile"></a><br>What `include(x)` includes: a urls module's file, an inline list of patterns, or null.
+        - calls [map.python-imports.PythonResolver.resolve](map.md#map.python-imports.PythonResolver.resolve), [map.python-web-entries.PythonWeb.resolve](map.md#map.python-web-entries.PythonWeb.resolve)
+      - fn [walkUrls](../../src/python-web-entries.ts#L421) (path: string, prefix: string, seen: ReadonlySet<string>) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.walkUrls"></a>
+        - calls [map.python-web-entries.PythonWeb.patterns](map.md#map.python-web-entries.PythonWeb.patterns), [map.python-web-entries.PythonWeb.urlPattern](map.md#map.python-web-entries.PythonWeb.urlPattern)
+      - fn [urlPattern](../../src/python-web-entries.ts#L428) (file: FileFacts, value: LiteralValue, prefix: string, seen: ReadonlySet<string>) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.urlPattern"></a>
+        - calls [map.python-web-entries.PythonWeb.isDjango](map.md#map.python-web-entries.PythonWeb.isDjango), [map.python-web-entries.PythonWeb.hole](map.md#map.python-web-entries.PythonWeb.hole), [map.python-web-entries.text](map.md#map.python-web-entries.text), [map.python-web-entries.str](map.md#map.python-web-entries.str), [map.python-web-entries.kwarg](map.md#map.python-web-entries.kwarg), [map.python-web-entries.PythonWeb.includedFile](map.md#map.python-web-entries.PythonWeb.includedFile), [map.python-web-entries.PythonWeb.walkUrls](map.md#map.python-web-entries.PythonWeb.walkUrls), [map.python-web-entries.PythonWeb.classOf](map.md#map.python-web-entries.PythonWeb.classOf), [map.entries.frameworkEntry](map.md#map.entries.frameworkEntry), [map.python-web-entries.PythonWeb.fnOf](map.md#map.python-web-entries.PythonWeb.fnOf)
+      - fn [isDjango](../../src/python-web-entries.ts#L475) (file: string, callee: string, names: string[]) → boolean <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.isDjango"></a>
+        - calls [map.python-web-entries.PythonWeb.qualified](map.md#map.python-web-entries.PythonWeb.qualified), [map.python-web-entries.isQualified](map.md#map.python-web-entries.isQualified)
+      - fn [command](../../src/python-web-entries.ts#L481) (file: FileFacts) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.command"></a><br>`<app>/management/commands/<name>.py` with a class `Command`: `manage.py <name>` runs its `handle`.
+        - calls [map.entries.fnIn](map.md#map.entries.fnIn), [map.entries.frameworkEntry](map.md#map.entries.frameworkEntry)
+      - fn [beat](../../src/python-web-entries.ts#L494) (file: FileFacts) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.beat"></a><br>`beat_schedule = {name: {"task": "…", "schedule": crontab(…)}}`, in a Celery config or Django settings.
+        - calls [map.python-web-entries.kwarg](map.md#map.python-web-entries.kwarg), [map.python-web-entries.str](map.md#map.python-web-entries.str), [map.python-web-entries.entryOf](map.md#map.python-web-entries.entryOf), [map.python-web-entries.PythonWeb.hole](map.md#map.python-web-entries.PythonWeb.hole), [map.python-web-entries.text](map.md#map.python-web-entries.text), [map.python-web-entries.PythonWeb.qualified](map.md#map.python-web-entries.PythonWeb.qualified), [map.python-web-entries.scheduleText](map.md#map.python-web-entries.scheduleText), [map.entries.frameworkEntry](map.md#map.entries.frameworkEntry)
+      - fn [dependsInParams](../../src/python-web-entries.ts#L520) (file: FileFacts) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.dependsInParams"></a><br>`Depends(f)` in a parameter: the fn calls `f` with what the framework injects.
+        - calls [map.entries.fnIn](map.md#map.entries.fnIn), [map.python-web-entries.PythonWeb.depends](map.md#map.python-web-entries.PythonWeb.depends)
+      - fn [depends](../../src/python-web-entries.ts#L527) (file: string, fn: string, value: LiteralValue, hook: string) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.depends"></a>
+        - calls [map.python-web-entries.PythonWeb.qualified](map.md#map.python-web-entries.PythonWeb.qualified), [map.python-web-entries.isQualified](map.md#map.python-web-entries.isQualified), [map.python-web-entries.kwarg](map.md#map.python-web-entries.kwarg), [map.python-web-entries.PythonWeb.resolve](map.md#map.python-web-entries.PythonWeb.resolve), [map.python-web-entries.PythonWeb.fnOf](map.md#map.python-web-entries.PythonWeb.fnOf), [map.python-web-entries.PythonWeb.constructorOf](map.md#map.python-web-entries.PythonWeb.constructorOf), [map.python-web-entries.PythonWeb.hole](map.md#map.python-web-entries.PythonWeb.hole), [map.python-web-entries.text](map.md#map.python-web-entries.text), [map.python-web-entries.PythonWeb.edge](map.md#map.python-web-entries.PythonWeb.edge)
+      - fn [constructorOf](../../src/python-web-entries.ts#L544) (file: string, dotted: string) → string | null <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.constructorOf"></a>
+        - calls [map.python-web-entries.PythonWeb.classOf](map.md#map.python-web-entries.PythonWeb.classOf)
+      - fn [dispatches](../../src/python-web-entries.ts#L550) (file: FileFacts) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.dispatches"></a><br>`task.delay()` / `task.apply_async()` → the task (`dispatch`); `signal.send()` → its receivers (`observer`).
+        - calls [map.python-web-entries.PythonWeb.eachCall](map.md#map.python-web-entries.PythonWeb.eachCall), [map.python-web-entries.PythonWeb.fnOf](map.md#map.python-web-entries.PythonWeb.fnOf), [map.python-web-entries.PythonWeb.edge](map.md#map.python-web-entries.PythonWeb.edge), [map.python-web-entries.PythonWeb.signalKey](map.md#map.python-web-entries.PythonWeb.signalKey)
+      - fn [eachCall](../../src/python-web-entries.ts#L574) (file: FileFacts, visit: (caller: string, call: CallFact) => void) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.eachCall"></a><br>Every call written in a fn of the file (methods of top-level classes included), with the fn's id.
+        - calls [map.entries.fnIn](map.md#map.entries.fnIn)
+      - fn [edge](../../src/python-web-entries.ts#L587) (source: string, call: Call) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.edge"></a>
+      - fn [lift](../../src/python-web-entries.ts#L595) () → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.lift"></a><br>Lifts the holes a registration answers: a recognised decorator's, a dispatch's or a send's call.
+      - fn [hole](../../src/python-web-entries.ts#L610) (file: string, line: number, col: number, fragment: string, reason: string, source: string | null) → void <!-- internal -->
+        <a id="map.python-web-entries.PythonWeb.hole"></a>
+    - fn [objectKind](../../src/python-web-entries.ts#L615) (q: string | null) → ObjectKind | null <!-- internal -->
+      <a id="map.python-web-entries.objectKind"></a>
+      - calls [map.python-web-entries.isQualified](map.md#map.python-web-entries.isQualified)
+    - fn [frameworkOf](../../src/python-web-entries.ts#L625) (kind: ObjectKind) → string <!-- internal -->
+      <a id="map.python-web-entries.frameworkOf"></a>
+    - fn [isQualified](../../src/python-web-entries.ts#L630) (q: string, pkg: string, names: readonly string[]) → boolean <!-- internal -->
+      <a id="map.python-web-entries.isQualified"></a><br>`fastapi.routing.APIRouter` is `APIRouter` of `fastapi`; no `names` accepts any name of the package.
+    - fn [kwarg](../../src/python-web-entries.ts#L635) (kwargs: readonly Kwarg[], name: string) → LiteralValue | undefined <!-- internal -->
+      <a id="map.python-web-entries.kwarg"></a>
+    - fn [entryOf](../../src/python-web-entries.ts#L639) (dict: Extract<LiteralValue, { kind: "dict" }>, key: string) → LiteralValue | undefined <!-- internal -->
+      <a id="map.python-web-entries.entryOf"></a>
+    - fn [str](../../src/python-web-entries.ts#L643) (value: LiteralValue | undefined) → string | undefined <!-- internal -->
+      <a id="map.python-web-entries.str"></a>
+    - fn [strings](../../src/python-web-entries.ts#L648) (value: LiteralValue | undefined) → string[] | undefined <!-- internal -->
+      <a id="map.python-web-entries.strings"></a><br>A list of string literals, or undefined for anything else.
+      - calls [map.python-web-entries.str](map.md#map.python-web-entries.str)
+    - fn [text](../../src/python-web-entries.ts#L655) (value: LiteralValue) → string <!-- internal -->
+      <a id="map.python-web-entries.text"></a><br>A value in words: a literal as written, a call by its callee.
+    - fn [joinUrl](../../src/python-web-entries.ts#L675) (prefix: string, path: string) → string <!-- internal -->
+      <a id="map.python-web-entries.joinUrl"></a><br>A URL from a router's prefix and a route's path: `/orders` + `/{id}`; at least `/`.
+    - fn [moduleName](../../src/python-web-entries.ts#L681) (file: string) → string <!-- internal -->
+      <a id="map.python-web-entries.moduleName"></a><br>The dotted module name of a Python file, as Celery names its tasks: `shop/tasks.py` → `shop.tasks`.
+    - fn [scheduleText](../../src/python-web-entries.ts#L686) (value: LiteralValue | undefined, qualified: (dotted: string) => string | null) → string <!-- internal -->
+      <a id="map.python-web-entries.scheduleText"></a><br>Celery's `crontab(minute=0, hour="*\/3")` as cron fields; a number of seconds; another schedule as written.
+      - calls [map.python-web-entries.isQualified](map.md#map.python-web-entries.isQualified), [map.python-web-entries.kwarg](map.md#map.python-web-entries.kwarg), [map.python-web-entries.text](map.md#map.python-web-entries.text)
   - module [rust-imports](../../src/rust-imports.ts#L1)
     <a id="map.rust-imports"></a><br>Rust path → file. A crate is a directory with `Cargo.toml` and `[package]`; each target — the library (`src/lib.rs` or `[lib] path`), and each binary (`src/main.rs`, `src/bin/*.rs`, `src/bin/*/main.rs`, `[[bin]] path`) — is a module tree of its own rooted at that file…
     - node [external.node](external.md#external.node)

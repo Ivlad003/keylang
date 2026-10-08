@@ -5,6 +5,7 @@ import { compareDiagnostics, type Diagnostic } from "./diag.ts";
 import type { StaticMode, StaticSource } from "./config.ts";
 import { evaluateFlows, type FlowInput } from "./flows.ts";
 import { sectionNodes, type Document, type Node } from "./ir.ts";
+import { migrationCheck, type OldSnapshot } from "./migration.ts";
 import { check, type Index } from "./resolve.ts";
 import type { RuleFormat } from "./config.ts";
 import { canonicalRuleSpec, dependencyKindOf, evaluateRules } from "./rules.ts";
@@ -43,6 +44,8 @@ export function assess(
     staticSetBy?: StaticSource;
     knownExternal?: ReadonlySet<string>;
     testFileExists?: FlowInput["testFileExists"];
+    /** The old stack the old IDs of `# migration` rows resolve against; absent: none (they stay unverified). */
+    migration?: OldSnapshot;
   } = { tests: null, traces: null },
   format: RuleFormat = 1,
 ): Assessment {
@@ -78,7 +81,8 @@ export function assess(
   const planned = new Set(spec.planned.map((item) => item.id));
   const kindOf = dependencyKindOf(spec, index, snapshot?.nodes);
   const wiring = checkWiring(spec, snapshot === null ? null : { kinds: nodeKinds(snapshot.nodes), nodes: snapshot.nodes, exports: snapshot.exports }, kindOf, format);
-  const diagnostics = [...docs.flatMap((doc) => doc.diagnostics), ...specDiags, ...resolveDiags, ...rules.diagnostics, ...flows.diagnostics, ...wiring].filter(
+  const migration = migrationCheck(docs, evidence.migration ?? { state: "absent" }, snapshot?.snapshotId ?? null);
+  const diagnostics = [...docs.flatMap((doc) => doc.diagnostics), ...specDiags, ...resolveDiags, ...rules.diagnostics, ...flows.diagnostics, ...wiring, ...migration.diagnostics].filter(
     // A `planned` declaration answers a dangling reference to exactly its ID, not any message that mentions it.
     (diag) => diag.code !== "K001" || diag.target === undefined || !planned.has(diag.target),
   );
@@ -97,7 +101,7 @@ export function assess(
     code: null,
     message: item.message,
   }));
-  const verdicts = afterRecovery([...rules.verdicts, ...refinedVerdicts, ...flows.verdicts], recoveredLines(docs));
+  const verdicts = afterRecovery([...rules.verdicts, ...refinedVerdicts, ...flows.verdicts, ...migration.verdicts], recoveredLines(docs));
   return { index, diagnostics, verdicts, spec };
 }
 

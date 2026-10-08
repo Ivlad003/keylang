@@ -491,7 +491,8 @@ test("python: a decorator that may replace a fn is a hole of that fn, not of the
   const dir = repo(t, {
     "keylang.json": JSON.stringify({ languages: ["python"], layers: { app: ["app/**"], infra: ["infra/**"] } }),
     "infra/store.py": "def save():\n    pass\n",
-    "app/web.py": 'from fastapi import APIRouter\n\nrouter = APIRouter()\n\n\n@router.get("/orders")\ndef handler():\n    pass\n\n\nclass Ctx:\n    def __exit__(self, *args):\n        pass\n',
+    // A decorator keylang knows nothing about (a framework's route decorator is the adapter's: tests/frameworks-python-web.test.ts).
+    "app/web.py": 'from tenacity import retry\n\n\n@retry(stop=3)\ndef handler():\n    pass\n\n\nclass Ctx:\n    def __exit__(self, *args):\n        pass\n',
     "keylang/rules.md": "# rules\n\n- deny app infra\n",
   });
   const { status, lines } = verdicts(dir, ["--strict"]);
@@ -499,7 +500,7 @@ test("python: a decorator that may replace a fn is a hole of that fn, not of the
   assert.ok(lines.includes("deny app infra convergence: no edge from `app` to `infra` and no dependency hole in the area"), lines.join("\n"));
   assert.equal(keylang(dir, ["map"]).status, 0);
   const index = snapshot(dir);
-  assert.ok(index.coverage.some((c) => c.kind === "unsupported" && c.reason === "decorator `router.get` may replace `handler`" && c.source === "app.web.handler"), JSON.stringify(index.coverage));
+  assert.ok(index.coverage.some((c) => c.kind === "unsupported" && c.reason === "decorator `retry` may replace `handler`" && c.source === "app.web.handler"), JSON.stringify(index.coverage));
   // A framework holds the decorated fn and calls it; a dunder method runs through syntax.
   assert.equal(index.nodes["app.web.handler"]?.escapes?.reason, "`handler` is read as a value");
   assert.equal(index.nodes["app.web.Ctx.__exit__"]?.escapes?.reason, "`__exit__` is called implicitly");

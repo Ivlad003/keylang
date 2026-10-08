@@ -415,12 +415,20 @@ export class App {
     this.draw();
   }
 
-  input(chunk: string): void {
+  /**
+   * Keys from the transport. `whole`: the chunk is complete — a browser tab
+   * sends each key (or paste) as one message — so a lone ESC at its end is the
+   * Escape key now. A terminal's byte stream may cut a sequence anywhere and
+   * waits `ESC_MS`; over a socket that pause raced the next message: on a
+   * loaded server ESC and `v` were read together, as Alt+V (ticket 71).
+   */
+  input(chunk: string, whole = false): void {
     // A closed session takes no keys: nothing may start an analysis, a save or an operation after it.
     if (this.closed) return;
     if (this.escTimer) clearTimeout(this.escTimer);
     this.escTimer = null;
     const events = this.decoder.feed(chunk);
+    if (whole && this.decoder.waiting) events.push(...this.decoder.flush());
     for (let i = 0; i < events.length; ) {
       const typed = typedRun(events, i);
       // In the clip's chat a pasted line break is a space but Enter sends: an Enter that ends the chunk
@@ -2181,6 +2189,8 @@ export class App {
       case "coverage":
       case "integrations":
       case "tour":
+      // The parity reads the code, keylang.json, the specs (flows and `# migration` rows) and the old stack, read-only.
+      case "migration-status":
         return { inputs: specs };
       // A code's help reads nothing. A node's summary, the inventory and a trace plan read the specs and
       // the saved explanations under the spec directory, keylang.json and the code.
@@ -3297,6 +3307,8 @@ export class App {
         return this.requestOperation("integrations", { kind: "integrations", root: this.state.root });
       case "tour":
         return this.requestOperation("tour", { kind: "tour", root: this.state.root });
+      case "migration-status":
+        return this.requestOperation("migration-status", { kind: "migration-status", root: this.state.root });
       case "feature":
         return this.runs.openFeaturePrompt();
       case "export-c4":

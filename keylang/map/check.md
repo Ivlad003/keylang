@@ -9,6 +9,7 @@
     - config base.config
     - flows check.flows
     - ir lang.ir
+    - migration check.migration
     - resolve check.resolve
     - rules check.rules
     - spec-ir lang.spec-ir
@@ -16,15 +17,15 @@
     - trace-evidence check.trace-evidence
     - verdict check.verdict
     - wiring check.wiring
-    - type [SnapshotInput](../../src/assess.ts#L18)
-    - type [Assessment](../../src/assess.ts#L28)
-    - fn [assess](../../src/assess.ts#L36) ( docs: readonly Document[], snapshot: SnapshotInput | null, evidence: { tests: TestCase[] | null; traces: TraceRun[] | null; static?: StaticMode; staticSetBy?: StaticSource; knownExternal?: ReadonlySet<string>; testFileExists?: FlowInput["testFileExists"]; } = { tests: null, traces: null }, format: RuleFormat = 1, ) → Assessment
-      - calls lang.spec-ir.compileSpec, check.resolve.check, check.rules.evaluateRules, check.flows.evaluateFlows, check.rules.dependencyKindOf, check.wiring.checkWiring, check.assess.nodeKinds, base.diag.compareDiagnostics, check.rules.canonicalRuleSpec, check.assess.afterRecovery, check.assess.recoveredLines
-    - fn [recoveredLines](../../src/assess.ts#L109) (docs: readonly Document[]) → Map<string, string> <!-- internal -->
+    - type [SnapshotInput](../../src/assess.ts#L19)
+    - type [Assessment](../../src/assess.ts#L29)
+    - fn [assess](../../src/assess.ts#L37) ( docs: readonly Document[], snapshot: SnapshotInput | null, evidence: { tests: TestCase[] | null; traces: TraceRun[] | null; static?: StaticMode; staticSetBy?: StaticSource; knownExternal?: ReadonlySet<string>; testFileExists?: FlowInput["testFileExists"]; /** The old stack the old IDs of `# migration` rows resolve against; absent: none (they stay unverified). */ migration?: OldSnapshot; } = { tests: null, traces: null }, format: RuleFormat = 1, ) → Assessment
+      - calls lang.spec-ir.compileSpec, check.resolve.check, check.rules.evaluateRules, check.flows.evaluateFlows, check.rules.dependencyKindOf, check.wiring.checkWiring, check.assess.nodeKinds, check.migration.migrationCheck, base.diag.compareDiagnostics, check.rules.canonicalRuleSpec, check.assess.afterRecovery, check.assess.recoveredLines
+    - fn [recoveredLines](../../src/assess.ts#L113) (docs: readonly Document[]) → Map<string, string> <!-- internal -->
       - calls lang.ir.sectionNodes
-    - fn [afterRecovery](../../src/assess.ts#L129) (verdicts: Verdict[], recovered: ReadonlyMap<string, string>) → Verdict[] <!-- internal -->
-    - fn [sameFinding](../../src/assess.ts#L142) (verdict: Verdict, diagnostics: readonly Diagnostic[]) → boolean
-    - fn [nodeKinds](../../src/assess.ts#L151) (nodes: SnapshotInput["nodes"]) → Map<string, string> <!-- internal -->
+    - fn [afterRecovery](../../src/assess.ts#L133) (verdicts: Verdict[], recovered: ReadonlyMap<string, string>) → Verdict[] <!-- internal -->
+    - fn [sameFinding](../../src/assess.ts#L146) (verdict: Verdict, diagnostics: readonly Diagnostic[]) → boolean
+    - fn [nodeKinds](../../src/assess.ts#L155) (nodes: SnapshotInput["nodes"]) → Map<string, string> <!-- internal -->
   - module [flows](../../src/flows.ts#L1)
     - node external.node
     - config base.config
@@ -111,6 +112,38 @@
     - fn [parameterList](../../src/flows.ts#L993) (signature: string) → string | null <!-- internal -->
     - fn [normalizeSignature](../../src/flows.ts#L1003) (text: string) → string <!-- internal -->
     - fn [specHash](../../src/flows.ts#L1007) (text: string) → string <!-- internal -->
+  - module [migration](../../src/migration.ts#L1)
+    - node external.node
+    - diag base.diag
+    - ir lang.ir
+    - span base.span
+    - test-report check.test-report
+    - verdict check.verdict
+    - type [MigrationRow](../../src/migration.ts#L25)
+    - fn [migrationRows](../../src/migration.ts#L47) (docs: readonly Document[]) → MigrationRow[]
+      - calls lang.ir.sectionNodes, base.span.compareText
+    - type [NodeView](../../src/migration.ts#L77)
+    - type [OldSnapshot](../../src/migration.ts#L83)
+    - type [OldIndex](../../src/migration.ts#L89)
+    - fn [readOldIndex](../../src/migration.ts#L101) (abs: string) → OldIndex
+      - calls base.diag.errorText
+    - fn [lookupNode](../../src/migration.ts#L127) (nodes: Readonly<Record<string, NodeView>>, id: string) → "present" | "opaque" | "missing"
+    - fn [migrationCheck](../../src/migration.ts#L147) (docs: readonly Document[], old: OldSnapshot, snapshotId: string | null) → { diagnostics: Diagnostic[]; verdicts: Verdict[] }
+      - calls check.migration.migrationRows, check.migration.lookupNode, base.diag.diagnostic
+    - type [StackFlow](../../src/migration.ts#L184)
+    - type [StackIntegration](../../src/migration.ts#L199)
+    - type [StackWebhook](../../src/migration.ts#L207)
+    - type [Stack](../../src/migration.ts#L214)
+    - type [StepParity](../../src/migration.ts#L225)
+    - type [TestParity](../../src/migration.ts#L233)
+    - type [FlowParity](../../src/migration.ts#L240)
+    - type [MigrationStatus](../../src/migration.ts#L253)
+    - fn [migrationStatus](../../src/migration.ts#L280) (input: { from: string; old: Stack; current: Stack; rows: readonly MigrationRow[]; notes?: readonly string[] }) → MigrationStatus
+      - calls base.span.compareText, check.migration.lookupNode, check.migration.counterpartOf, check.migration.evidence
+    - fn [evidence](../../src/migration.ts#L409) (stack: Stack, file: string, name: string, side: "old" | "new") → Pick<TestEvidence, "verdict" | "message"> <!-- internal -->
+      - calls check.test-report.matchTest
+    - fn [counterpartOf](../../src/migration.ts#L421) (flow: StackFlow, candidates: readonly StackFlow[], mapped: ReadonlyMap<string, readonly MigrationRow[]>) → { flow: StackFlow; by: "import" | "trigger" | "steps" } | null <!-- internal -->
+    - fn [migrationStatusText](../../src/migration.ts#L440) (status: MigrationStatus) → string
   - module [resolve](../../src/resolve.ts#L1)
     - config base.config
     - diag base.diag

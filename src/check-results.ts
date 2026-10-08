@@ -93,7 +93,7 @@ export interface CheckCounts {
 }
 
 /** Evidence channels whose `ok` the human lines keep. */
-const CHANNELS: ReadonlySet<string> = new Set(["ID", "static", "tests", "trace"]);
+const CHANNELS: ReadonlySet<string> = new Set(["ID", "static", "tests", "trace", "migration"]);
 
 export function checkReport(verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]): CheckReport {
   const own = verdicts.filter((verdict) => !sameFinding(verdict, diags));

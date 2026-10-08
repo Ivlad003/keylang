@@ -39,43 +39,53 @@
     <a id="extract.facts"></a><br>Language-independent facts extracted from one source file. Everything the map and the index need; nothing about layers or IDs yet.
     - type [FileFacts](../../src/extract/facts.ts#L4)
       <a id="extract.facts.FileFacts"></a><br>Per-file extraction result: imports, declarations, exports and re-exports, value references, module-level calls, unsupported constructs, and whether the declaration list is complete or opaque after a parse error. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
-    - type [EntryFact](../../src/extract/facts.ts#L78)
+    - type [LiteralValue](../../src/extract/facts.ts#L95)
+      <a id="extract.facts.LiteralValue"></a><br>A value as the code writes it, for an adapter to read: literals, dotted names and calls with their arguments; anything else is `other` with its text. Containers keep their items in order.
+    - type [Kwarg](../../src/extract/facts.ts#L106)
+      <a id="extract.facts.Kwarg"></a>
+    - type [DecoratorFact](../../src/extract/facts.ts#L112)
+      <a id="extract.facts.DecoratorFact"></a><br>A decorator of a declaration: `@x.get("/a", tags=["t"])` → `x.get` with its arguments; `call` null for `@x`.
+    - type [StatementFact](../../src/extract/facts.ts#L125)
+      <a id="extract.facts.StatementFact"></a><br>A module-level statement: `target = value`, `target += value` (`augmented`), or a call standing alone (`target` null, `value` the call).
+    - type [ParamCallFact](../../src/extract/facts.ts#L135)
+      <a id="extract.facts.ParamCallFact"></a><br>A call in a parameter of a declaration: `symbol`'s parameter `param` is `Depends(get_db)`.
+    - type [EntryFact](../../src/extract/facts.ts#L150)
       <a id="extract.facts.EntryFact"></a><br>A language-level entry point written in the code, before resolution. `route`: `app.get('/x', h)` with a literal path and a named handler — `label` is `GET /x`, `callee` is `h` as written. `main`: a Python `if __name__ == "__main__":` block — `callee` is the fn it calls, or null…
-    - type [QualifiedSymbol](../../src/extract/facts.ts#L90)
+    - type [QualifiedSymbol](../../src/extract/facts.ts#L162)
       <a id="extract.facts.QualifiedSymbol"></a><br>A top-level declaration by its qualified name.
-    - type [ImportFact](../../src/extract/facts.ts#L99)
+    - type [ImportFact](../../src/extract/facts.ts#L171)
       <a id="extract.facts.ImportFact"></a><br>Record of one import, require or re-export in a source file: its specifier, span, source text and name bindings, plus flags for re-exports, glob imports, type-only statements, and specifiers that may not resolve. _(llm · claude:claude-opus-5-5 · 2026-10-06 · stale)_
-    - type [ImportBinding](../../src/extract/facts.ts#L140)
+    - type [ImportBinding](../../src/extract/facts.ts#L212)
       <a id="extract.facts.ImportBinding"></a><br>Describes how a local name binds to an imported module: the whole module (optionally an ESM/Python namespace object), its `default` export, or a specific named export under a possibly different local name. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
-    - type [DeclKind](../../src/extract/facts.ts#L154) = "fn" | "class" | "type"
+    - type [DeclKind](../../src/extract/facts.ts#L226) = "fn" | "class" | "type"
       <a id="extract.facts.DeclKind"></a><br>Restricts a declaration's kind to one of three string literals: a function, a class, or a type alias. Code in the extract layer uses it to tag each extracted declaration with its category. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [DeclFact](../../src/extract/facts.ts#L156)
+    - type [DeclFact](../../src/extract/facts.ts#L228)
       <a id="extract.facts.DeclFact"></a><br>Records one extracted declaration: its kind, source span, signature, export status, outgoing calls, referenced types, nested members, body fingerprint, doc comment, and modifiers like accessor, static, or private. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
-    - type [LiteralFact](../../src/extract/facts.ts#L231)
+    - type [LiteralFact](../../src/extract/facts.ts#L303)
       <a id="extract.facts.LiteralFact"></a><br>A value PHP code writes as a literal, as far as a framework adapter reads it (ADR 0022): a string without interpolation, `X::class` (`self::class` is the enclosing class), a class constant `X::NAME`, `new X(…)`, an array of them, a closure literal at its position; anything else…
-    - type [ArgFact](../../src/extract/facts.ts#L241)
+    - type [ArgFact](../../src/extract/facts.ts#L313)
       <a id="extract.facts.ArgFact"></a><br>One argument of a call or an attribute: named (`methods: ['POST']`) or positional.
-    - type [AttributeFact](../../src/extract/facts.ts#L247)
+    - type [AttributeFact](../../src/extract/facts.ts#L319)
       <a id="extract.facts.AttributeFact"></a><br>`#[Name(args)]` on a declaration; `name` qualified as PHP resolves it.
-    - type [PropertyFact](../../src/extract/facts.ts#L255)
+    - type [PropertyFact](../../src/extract/facts.ts#L327)
       <a id="extract.facts.PropertyFact"></a><br>A class property with a literal default value.
-    - type [ParamFact](../../src/extract/facts.ts#L263)
+    - type [ParamFact](../../src/extract/facts.ts#L335)
       <a id="extract.facts.ParamFact"></a><br>A parameter of a function; `type` is the qualified class when the parameter is typed with one.
-    - type [ChainLinkFact](../../src/extract/facts.ts#L269)
+    - type [ChainLinkFact](../../src/extract/facts.ts#L341)
       <a id="extract.facts.ChainLinkFact"></a><br>One call of a chain `Route::prefix('admin')->name('a.')->group(…)`, root first; the root names its class when it is a static call.
-    - type [CallFact](../../src/extract/facts.ts#L275)
+    - type [CallFact](../../src/extract/facts.ts#L347)
       <a id="extract.facts.CallFact"></a><br>Record of one call site: the callee's dotted name (or raw text when `opaque`), how its head is bound, the receiver's class, a `HookFact` default, `PassFact` function arguments, and position. Each call becomes an edge or a `dynamic-call` hole. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-    - type [HookFact](../../src/extract/facts.ts#L341)
+    - type [HookFact](../../src/extract/facts.ts#L413)
       <a id="extract.facts.HookFact"></a><br>A callable chosen at run time with a default written next to it. `param` and `path` say where a caller injects the value: `analyze({ generate })` is parameter 0, path `generate`; `function f(run = defaultRun)` is parameter 0, path "".
-    - type [PassFact](../../src/extract/facts.ts#L360)
+    - type [PassFact](../../src/extract/facts.ts#L432)
       <a id="extract.facts.PassFact"></a><br>A function value in the arguments of a call: argument index, property path ("" for the argument itself). `callee` names it as a call would (`this.m`, `Cls.m`, `save`); `text` is the argument as written (`[$this, 'm']`), at the position. One passed as the argument itself is a…
-    - type [ValueRefFact](../../src/extract/facts.ts#L375)
+    - type [ValueRefFact](../../src/extract/facts.ts#L447)
       <a id="extract.facts.ValueRefFact"></a><br>Describes a single occurrence of a value being referenced in source, recording its name (plain or module-qualified), whether it was read as a property off an object, and its line and column. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [TypeRefFact](../../src/extract/facts.ts#L385)
+    - type [TypeRefFact](../../src/extract/facts.ts#L457)
       <a id="extract.facts.TypeRefFact"></a><br>A type name in type position. `text` is the source fragment.
-    - type [ExportRow](../../src/extract/facts.ts#L399)
+    - type [ExportRow](../../src/extract/facts.ts#L471)
       <a id="extract.facts.ExportRow"></a><br>One public name of a file, compared with the `exports` rule and followed by the graph to the symbol it stands for.
-    - type [UnsupportedFact](../../src/extract/facts.ts#L429)
+    - type [UnsupportedFact](../../src/extract/facts.ts#L501)
       <a id="extract.facts.UnsupportedFact"></a><br>Records a source construct the extractor could not analyze: its line/column span, raw text, and a reason string. The optional `symbol` names the dotted-path declaration whose call behavior the construct may alter, without adding a dependency. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [grammars](../../src/extract/grammars.ts#L1)
     <a id="extract.grammars"></a><br>The tree-sitter grammars keylang parses with. One list for the runtime (`treesitter.ts` loads them) and for packaging (`scripts/copy-wasm.mjs` copies each into dist/wasm), so a new language cannot be left out of the published package.
@@ -280,100 +290,118 @@
       - calls [extract.treesitter.withTree](extract.md#extract.treesitter.withTree), [extract.python.extractTree](extract.md#extract.python.extractTree)
     - fn [extractTree](../../src/extract/python.ts#L28) (path: string, root: Node) → FileFacts <!-- internal -->
       <a id="extract.python.extractTree"></a><br>Builds a Python file's facts from its parse tree: imports, top-level functions, classes and assignments, exports governed by `__all__` or underscore privacy and package re-exports, plus calls, value refs, docstring, and syntax-error status. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
-      - calls [extract.python.collectTopLevel](extract.md#extract.python.collectTopLevel), [extract.python.dunderAll](extract.md#extract.python.dunderAll), [extract.python.importsIn](extract.md#extract.python.importsIn), [extract.python.fnDecl](extract.md#extract.python.fnDecl), [extract.python.noteDecorators](extract.md#extract.python.noteDecorators), [extract.python.classDecl](extract.md#extract.python.classDecl), [extract.python.exportRow](extract.md#extract.python.exportRow), [extract.python.importsOf](extract.md#extract.python.importsOf), [extract.python.bindsUnlisted](extract.md#extract.python.bindsUnlisted), [extract.python.moduleCalls](extract.md#extract.python.moduleCalls), [extract.python.collectMainEntries](extract.md#extract.python.collectMainEntries), [extract.python.valueRefs](extract.md#extract.python.valueRefs), [extract.python.collectDynamic](extract.md#extract.python.collectDynamic), [extract.python.docstring](extract.md#extract.python.docstring), [extract.treesitter.valuesFingerprint](extract.md#extract.treesitter.valuesFingerprint), [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.treesitter.errorLine](extract.md#extract.treesitter.errorLine)
-    - fn [collectTopLevel](../../src/extract/python.ts#L97) (node: Node, out: Node[]) → void <!-- internal -->
+      - calls [extract.python.collectTopLevel](extract.md#extract.python.collectTopLevel), [extract.python.dunderAll](extract.md#extract.python.dunderAll), [extract.python.importsIn](extract.md#extract.python.importsIn), [extract.python.fnDecl](extract.md#extract.python.fnDecl), [extract.python.noteDecorators](extract.md#extract.python.noteDecorators), [extract.python.noteParamCalls](extract.md#extract.python.noteParamCalls), [extract.python.classDecl](extract.md#extract.python.classDecl), [extract.python.exportRow](extract.md#extract.python.exportRow), [extract.python.importsOf](extract.md#extract.python.importsOf), [extract.python.bindsUnlisted](extract.md#extract.python.bindsUnlisted), [extract.python.moduleCalls](extract.md#extract.python.moduleCalls), [extract.python.statementsOf](extract.md#extract.python.statementsOf), [extract.python.collectMainEntries](extract.md#extract.python.collectMainEntries), [extract.python.valueRefs](extract.md#extract.python.valueRefs), [extract.python.collectDynamic](extract.md#extract.python.collectDynamic), [extract.python.docstring](extract.md#extract.python.docstring), [extract.treesitter.valuesFingerprint](extract.md#extract.treesitter.valuesFingerprint), [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.treesitter.errorLine](extract.md#extract.treesitter.errorLine)
+    - fn [collectTopLevel](../../src/extract/python.ts#L100) (node: Node, out: Node[]) → void <!-- internal -->
       <a id="extract.python.collectTopLevel"></a><br>Top-level statements, including those under `if`/`try` at module level (`if TYPE_CHECKING:`, `try: import x`).
-    - fn [dunderAll](../../src/extract/python.ts#L110) (topLevel: Node[]) → Set<string> | null <!-- internal -->
+    - fn [dunderAll](../../src/extract/python.ts#L113) (topLevel: Node[]) → Set<string> | null <!-- internal -->
       <a id="extract.python.dunderAll"></a><br>The names of `__all__`: a literal list or tuple, extended by `+=`, `+`, `.extend([...])` and `.append("x")`; null without an `__all__`.
-    - fn [bindsUnlisted](../../src/extract/python.ts#L143) (node: Node) → string | null <!-- internal -->
+    - fn [bindsUnlisted](../../src/extract/python.ts#L146) (node: Node) → string | null <!-- internal -->
       <a id="extract.python.bindsUnlisted"></a><br>What a module-level statement that binds names the export table does not list is, for the reason (`for`, `with`, `while`, `match`, `except … as`, tuple unpacking); null for one whose bindings the table has.
-    - fn [exportRow](../../src/extract/python.ts#L151) (facts: FileFacts, name: string, kind: ExportRow["kind"]) → void <!-- internal -->
+    - fn [exportRow](../../src/extract/python.ts#L154) (facts: FileFacts, name: string, kind: ExportRow["kind"]) → void <!-- internal -->
       <a id="extract.python.exportRow"></a><br>Records a named export on the per-file facts, skipping duplicates already present in the exports set and appending a row with the given kind and no local binding. Used by [`extract.python.extractTree`](extract.md#extract.python.extractTree) while walking a Python module's tree. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [decorators](../../src/extract/python.ts#L157) (node: Node) → { name: string; node: Node }[] <!-- internal -->
+    - fn [decorators](../../src/extract/python.ts#L160) (node: Node) → { name: string; node: Node }[] <!-- internal -->
       <a id="extract.python.decorators"></a><br>Collects the decorator children of a Python `decorated_definition` tree-sitter node, pairing each with the decorator's name (the callee text when applied as a call, else the bare expression text). Returns an empty list for any other node type, and is used by… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [isAccessor](../../src/extract/python.ts#L165) (name: string) → boolean <!-- internal -->
+    - fn [isAccessor](../../src/extract/python.ts#L168) (name: string) → boolean <!-- internal -->
       <a id="extract.python.isAccessor"></a><br>`@property`, `@x.setter`: the method runs on attribute access.
-    - fn [noteDecorators](../../src/extract/python.ts#L175) (node: Node, symbol: string, member: boolean, facts: FileFacts) → void <!-- internal -->
+    - fn [noteDecorators](../../src/extract/python.ts#L178) (node: Node, symbol: string, member: boolean, facts: FileFacts) → void <!-- internal -->
       <a id="extract.python.noteDecorators"></a><br>A decorator keylang does not know may return another function: calls of the name may not reach the body (a hole of that declaration), and the decorator holds the function as a value, so code keylang cannot follow may call it (a framework calling a registered handler).
-      - calls [extract.python.decorators](extract.md#extract.python.decorators), [extract.python.isAccessor](extract.md#extract.python.isAccessor), [extract.python.unsupported](extract.md#extract.python.unsupported), [extract.treesitter.located](extract.md#extract.treesitter.located)
-    - fn [classDecl](../../src/extract/python.ts#L185) (def: Node, name: string, symbol: string, topLevel: boolean, facts: FileFacts) → DeclFact <!-- internal -->
+      - calls [extract.python.decorators](extract.md#extract.python.decorators), [extract.python.isAccessor](extract.md#extract.python.isAccessor), [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.python.argumentsOf](extract.md#extract.python.argumentsOf), [extract.python.unsupported](extract.md#extract.python.unsupported)
+    - fn [classDecl](../../src/extract/python.ts#L190) (def: Node, name: string, symbol: string, topLevel: boolean, facts: FileFacts) → DeclFact <!-- internal -->
       <a id="extract.python.classDecl"></a><br>A class and its members: methods, and nested classes with theirs. `symbol` is its dotted path in the file.
-      - calls [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.python.decorators](extract.md#extract.python.decorators), [extract.python.noteDecorators](extract.md#extract.python.noteDecorators), [extract.python.fnDecl](extract.md#extract.python.fnDecl), [extract.python.isAccessor](extract.md#extract.python.isAccessor), [extract.python.docstring](extract.md#extract.python.docstring), [extract.treesitter.valuesFingerprint](extract.md#extract.treesitter.valuesFingerprint), [extract.treesitter.fingerprintFacts](extract.md#extract.treesitter.fingerprintFacts)
-    - type [Owner](../../src/extract/python.ts#L222) <!-- internal -->
+      - calls [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.python.decorators](extract.md#extract.python.decorators), [extract.python.noteDecorators](extract.md#extract.python.noteDecorators), [extract.python.fnDecl](extract.md#extract.python.fnDecl), [extract.python.noteParamCalls](extract.md#extract.python.noteParamCalls), [extract.python.isAccessor](extract.md#extract.python.isAccessor), [extract.python.docstring](extract.md#extract.python.docstring), [extract.treesitter.valuesFingerprint](extract.md#extract.treesitter.valuesFingerprint), [extract.treesitter.fingerprintFacts](extract.md#extract.treesitter.fingerprintFacts)
+    - type [Owner](../../src/extract/python.ts#L228) <!-- internal -->
       <a id="extract.python.Owner"></a><br>The class a method belongs to: its name, its static and class methods (for a top-level class), and whether the first parameter is the receiver.
-    - fn [fnDecl](../../src/extract/python.ts#L228) (node: Node, name: string, owner: Owner | null) → DeclFact <!-- internal -->
+    - fn [fnDecl](../../src/extract/python.ts#L234) (node: Node, name: string, owner: Owner | null) → DeclFact <!-- internal -->
       <a id="extract.python.fnDecl"></a><br>Builds a function declaration fact from a Python def node: parameter/return signature, source position, docstring, fingerprint, and body calls via [`extract.python.bodyCalls`](extract.md#extract.python.bodyCalls), treating the first parameter as the receiver for methods. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.python.bodyCalls](extract.md#extract.python.bodyCalls), [extract.python.boundNames](extract.md#extract.python.boundNames), [extract.python.typedValues](extract.md#extract.python.typedValues), [extract.python.docstring](extract.md#extract.python.docstring), [extract.treesitter.fingerprintFacts](extract.md#extract.treesitter.fingerprintFacts)
-    - fn [docstring](../../src/extract/python.ts#L248) (body: Node | null) → string | undefined <!-- internal -->
+    - fn [docstring](../../src/extract/python.ts#L254) (body: Node | null) → string | undefined <!-- internal -->
       <a id="extract.python.docstring"></a><br>The docstring of a module, class or function body: its first statement when that is a lone string literal. An f-string, a bytes literal or concatenated strings are code, not documentation, and give none.
       - calls [extract.python.cleandoc](extract.md#extract.python.cleandoc), [extract.doc-comments.isLicense](extract.md#extract.doc-comments.isLicense), [extract.doc-comments.nonEmpty](extract.md#extract.doc-comments.nonEmpty)
-    - fn [cleandoc](../../src/extract/python.ts#L259) (text: string) → string <!-- internal -->
+    - fn [cleandoc](../../src/extract/python.ts#L265) (text: string) → string <!-- internal -->
       <a id="extract.python.cleandoc"></a><br>`inspect.cleandoc`: the first line stripped, the rest dedented by their common indentation.
-    - fn [walkBindings](../../src/extract/python.ts#L276) (fn: Node, visit: (target: Node, kind: "parameter" | "local" | "declared", by: Node) => void) → void <!-- internal -->
+    - fn [walkBindings](../../src/extract/python.ts#L282) (fn: Node, visit: (target: Node, kind: "parameter" | "local" | "declared", by: Node) => void) → void <!-- internal -->
       <a id="extract.python.walkBindings"></a><br>Every binding a function makes, nested scopes included — one scope for the whole function, as `boundNames` and `typedValues` read it: its parameters, assignments, loop and comprehension variables, `with … as x`, `except … as x`, `:=`, `case` captures (`case (x,)`, `case {"k"…
       - calls [extract.python.captures](extract.md#extract.python.captures)
-    - fn [captures](../../src/extract/python.ts#L304) (name: Node) → boolean <!-- internal -->
+    - fn [captures](../../src/extract/python.ts#L310) (name: Node) → boolean <!-- internal -->
       <a id="extract.python.captures"></a><br>A bare name in a `case` pattern binds it (`case x:`, `P(k=x)`); a dotted one (`Color.RED`) and a class (`case P():`) are values.
-    - fn [boundNames](../../src/extract/python.ts#L310) (fn: Node) → Map<string, "parameter" | "local"> <!-- internal -->
+    - fn [boundNames](../../src/extract/python.ts#L316) (fn: Node) → Map<string, "parameter" | "local"> <!-- internal -->
       <a id="extract.python.boundNames"></a><br>Parameter and assigned names in a function: a call through one of them is a call through a value.
       - calls [extract.python.walkBindings](extract.md#extract.python.walkBindings)
-    - type [CallScope](../../src/extract/python.ts#L327) <!-- internal -->
+    - type [CallScope](../../src/extract/python.ts#L333) <!-- internal -->
       <a id="extract.python.CallScope"></a><br>Carries the name-resolution context for one Python function body while call sites are collected: the `self`/`cls` receiver name, the enclosing `Owner`, which names are parameters or locals, and which of those have a syntactically declared class. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [typedValues](../../src/extract/python.ts#L344) (fn: Node) → Map<string, string> <!-- internal -->
+    - fn [typedValues](../../src/extract/python.ts#L350) (fn: Node) → Map<string, string> <!-- internal -->
       <a id="extract.python.typedValues"></a><br>Names in a function whose class the syntax names, bound nowhere else in it: a parameter annotated with a class (`repo: Repo`, `repo: Repo = Depends(…)`, `Optional[Repo]`, `Repo | None`, `Annotated[Repo, …]`) or a local whose only assignment is `x = Repo(…)` or `x: Repo = …`.…
       - calls [extract.python.walkBindings](extract.md#extract.python.walkBindings), [extract.python.annotatedClass](extract.md#extract.python.annotatedClass), [extract.python.constructedClass](extract.md#extract.python.constructedClass)
-    - fn [annotatedClass](../../src/extract/python.ts#L370) (type: Node | null) → string | null <!-- internal -->
+    - fn [annotatedClass](../../src/extract/python.ts#L376) (type: Node | null) → string | null <!-- internal -->
       <a id="extract.python.annotatedClass"></a><br>The one class an annotation names: `X`, `"X"`, `Optional[X]`, `X | None`, `Annotated[X, …]`; null for anything else.
       - calls [extract.python.classInAnnotation](extract.md#extract.python.classInAnnotation)
-    - fn [classInAnnotation](../../src/extract/python.ts#L374) (text: string) → string | null <!-- internal -->
+    - fn [classInAnnotation](../../src/extract/python.ts#L380) (text: string) → string | null <!-- internal -->
       <a id="extract.python.classInAnnotation"></a><br>Reduces a Python type-annotation string to the single class name it wraps, recursively peeling string quotes, `Optional[...]`, `Annotated[...]`, and `X | None` unions while treating `None` as absent. Returns null for generics with brackets or unions with more than one non-None… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-    - fn [constructedClass](../../src/extract/python.ts#L388) (value: Node | null) → string | null <!-- internal -->
+    - fn [constructedClass](../../src/extract/python.ts#L394) (value: Node | null) → string | null <!-- internal -->
       <a id="extract.python.constructedClass"></a><br>`X(…)` → `X`.
-    - type [ClosureState](../../src/extract/python.ts#L399) = null | "stored" | { line: number; col: number } <!-- internal -->
+    - type [ClosureState](../../src/extract/python.ts#L405) = null | "stored" | { line: number; col: number } <!-- internal -->
       <a id="extract.python.ClosureState"></a><br>Where a call sits with respect to closures: null outside them; `stored` under a nested `def` or a lambda some value holds (`g = lambda: …`); otherwise the position of the outermost lambda, every lambda between being an argument of a call (`run(lambda: self.m())`, `sorted(xs…
-    - fn [bodyCalls](../../src/extract/python.ts#L401) (body: Node, scope: CallScope) → CallFact[] <!-- internal -->
+    - fn [bodyCalls](../../src/extract/python.ts#L407) (body: Node, scope: CallScope) → CallFact[] <!-- internal -->
       <a id="extract.python.bodyCalls"></a><br>Walks a Python function body's syntax tree and emits one call record per `call` node, resolving the callee via [`extract.python.callOf`](extract.md#extract.python.callOf) and positioning via [`extract.treesitter.located`](extract.md#extract.treesitter.located). Calls nested inside lambdas or inner `def`s are flagged as closure calls. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.python.passesOf](extract.md#extract.python.passesOf), [extract.python.callOf](extract.md#extract.python.callOf)
-    - fn [passesOf](../../src/extract/python.ts#L437) (call: Node, scope: CallScope) → PassFact[] <!-- internal -->
+    - fn [passesOf](../../src/extract/python.ts#L443) (call: Node, scope: CallScope) → PassFact[] <!-- internal -->
       <a id="extract.python.passesOf"></a><br>Callable references among the arguments: `run(self.m)`, `run(Order.m)`, `run(obj.m)` with the class of `obj` known, `run(callback=self.m)`, `functools.partial(self.m, …)`. A lambda is not a pass: its calls carry `closureArg`.
       - calls [extract.python.callableOf](extract.md#extract.python.callableOf), [extract.python.callOf](extract.md#extract.python.callOf), [extract.treesitter.located](extract.md#extract.treesitter.located)
-    - fn [callableOf](../../src/extract/python.ts#L457) (value: Node) → Node | null <!-- internal -->
+    - fn [callableOf](../../src/extract/python.ts#L463) (value: Node) → Node | null <!-- internal -->
       <a id="extract.python.callableOf"></a><br>The expression that names the callable an argument passes: a name, an attribute, or the first argument of `functools.partial(…)`.
-    - fn [callOf](../../src/extract/python.ts#L474) (fn: Node | null, scope: CallScope) → Pick<CallFact, "callee" | "bound" | "receiver"> <!-- internal -->
+    - fn [callOf](../../src/extract/python.ts#L480) (fn: Node | null, scope: CallScope) → Pick<CallFact, "callee" | "bound" | "receiver"> <!-- internal -->
       <a id="extract.python.callOf"></a><br>`f()` → `f`; `a.b.f()` → `a.b.f`; `self.m()` → `this.m` (`Order.m` for a static method); `x.m()` through a value → `x.m`, bound, with the receiver's class when `typedValues` names it. Any other callee (`super().m()`, `f().m()`, `x[0]()`) is a call through a value keylang cannot…
-    - fn [collectMainEntries](../../src/extract/python.ts#L508) (root: Node, names: ReadonlySet<string>, facts: FileFacts) → void <!-- internal -->
+    - fn [collectMainEntries](../../src/extract/python.ts#L514) (root: Node, names: ReadonlySet<string>, facts: FileFacts) → void <!-- internal -->
       <a id="extract.python.collectMainEntries"></a><br>`if __name__ == "__main__":` at module level: the script's entry. Its callee is the first fn of the file (a `def`, or an imported name) the block calls directly (`main()`, `sys.exit(main())`, `asyncio.run(main())`); null when the block calls no such name, and the module's top…
       - calls [extract.treesitter.located](extract.md#extract.treesitter.located)
-    - fn [moduleCalls](../../src/extract/python.ts#L534) (root: Node) → CallFact[] <!-- internal -->
+    - fn [moduleCalls](../../src/extract/python.ts#L540) (root: Node) → CallFact[] <!-- internal -->
       <a id="extract.python.moduleCalls"></a><br>Calls outside every `def`: module level and class bodies run when the module loads; so does a decorator.
       - calls [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.python.callOf](extract.md#extract.python.callOf)
-    - fn [valueRefs](../../src/extract/python.ts#L559) (root: Node, names: ReadonlySet<string>, glob: boolean) → ValueRefFact[] <!-- internal -->
+    - fn [valueRefs](../../src/extract/python.ts#L565) (root: Node, names: ReadonlySet<string>, glob: boolean) → ValueRefFact[] <!-- internal -->
       <a id="extract.python.valueRefs"></a><br>Functions read as values: `later(hit)`, `{"save": save}`, `callback=self.save`, `mod.save` without a call. Code holding the value may call it.
       - calls [extract.python.boundNames](extract.md#extract.python.boundNames), [extract.python.bindsOrCalls](extract.md#extract.python.bindsOrCalls), [extract.python.assigned](extract.md#extract.python.assigned)
-    - fn [bindsOrCalls](../../src/extract/python.ts#L587) (node: Node, parent: Node) → boolean <!-- internal -->
+    - fn [bindsOrCalls](../../src/extract/python.ts#L593) (node: Node, parent: Node) → boolean <!-- internal -->
       <a id="extract.python.bindsOrCalls"></a><br>The identifier is a callee, a declared name or a binding — not a value read.
       - calls [extract.python.assigned](extract.md#extract.python.assigned)
-    - fn [assigned](../../src/extract/python.ts#L600) (node: Node, parent: Node) → boolean <!-- internal -->
+    - fn [assigned](../../src/extract/python.ts#L606) (node: Node, parent: Node) → boolean <!-- internal -->
       <a id="extract.python.assigned"></a><br>The node is the target of an assignment (`x = …`, `x += …`, `self.x = …`).
-    - fn [collectDynamic](../../src/extract/python.ts#L609) (root: Node, facts: FileFacts) → void <!-- internal -->
+    - fn [collectDynamic](../../src/extract/python.ts#L615) (root: Node, facts: FileFacts) → void <!-- internal -->
       <a id="extract.python.collectDynamic"></a><br>`getattr(x, name)`, `importlib.import_module(name)`, `__import__(name)`, `exec`/`eval`: what they reach is decided at run time. A `getattr` in a `def` is a hole of that function's calls; the others may import anything.
       - calls [extract.python.enclosingFn](extract.md#extract.python.enclosingFn), [extract.python.unsupported](extract.md#extract.python.unsupported)
-    - fn [isDeclarationLevel](../../src/extract/python.ts#L624) (node: Node) → boolean <!-- internal -->
+    - fn [isDeclarationLevel](../../src/extract/python.ts#L630) (node: Node) → boolean <!-- internal -->
       <a id="extract.python.isDeclarationLevel"></a><br>No `def` or `class` encloses the node: it is at the top of the module (possibly under `if`/`try`).
-    - fn [enclosingFn](../../src/extract/python.ts#L634) (node: Node) → string | null <!-- internal -->
+    - fn [enclosingFn](../../src/extract/python.ts#L640) (node: Node) → string | null <!-- internal -->
       <a id="extract.python.enclosingFn"></a><br>The indexed fn whose body holds the node, as a dotted path (`place`, `Order.save`, `Order.Line.price`); a `def` nested in a `def` belongs to the outer one. Null at module level and in a class body outside methods.
-    - fn [importsIn](../../src/extract/python.ts#L657) (root: Node, reexported: (local: string | null) => boolean) → ImportFact[] <!-- internal -->
+    - fn [importsIn](../../src/extract/python.ts#L663) (root: Node, reexported: (local: string | null) => boolean) → ImportFact[] <!-- internal -->
       <a id="extract.python.importsIn"></a><br>Every import of the file, in source order, wherever it is written. `import a.b as c` → `a.b` bound to `c`; `import a.b` → `a` bound to `a` plus `a.b` bound to the path `a.b`; `from .m import x` → `.m.x` bound to `x`; `from .m import *` → `.m.*`, which binds no name of its own.…
       - calls [extract.python.importsOf](extract.md#extract.python.importsOf)
-    - fn [importsOf](../../src/extract/python.ts#L670) (node: Node, reexported: (local: string | null) => boolean) → ImportFact[] <!-- internal -->
+    - fn [importsOf](../../src/extract/python.ts#L676) (node: Node, reexported: (local: string | null) => boolean) → ImportFact[] <!-- internal -->
       <a id="extract.python.importsOf"></a><br>Turns one Python `import` or `from … import` statement into import facts with module, named, aliased or wildcard bindings, built via [`extract.python.importAt`](extract.md#extract.python.importAt). Re-export applies only to top-level imports, per [`extract.python.isDeclarationLevel`](extract.md#extract.python.isDeclarationLevel). _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [extract.python.isDeclarationLevel](extract.md#extract.python.isDeclarationLevel), [extract.python.importAt](extract.md#extract.python.importAt)
-    - fn [importAt](../../src/extract/python.ts#L715) (node: Node, source: string, bindings: ImportFact["bindings"], reexport: boolean) → ImportFact <!-- internal -->
+    - fn [importAt](../../src/extract/python.ts#L721) (node: Node, source: string, bindings: ImportFact["bindings"], reexport: boolean) → ImportFact <!-- internal -->
       <a id="extract.python.importAt"></a><br>Builds an `ImportFact` record for a Python import statement by combining the given module source, bindings and re-export flag with the position and text obtained from [`extract.treesitter.located`](extract.md#extract.treesitter.located). It is the single constructor used by [`extract.python.importsOf`](extract.md#extract.python.importsOf) to emit each… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [extract.treesitter.located](extract.md#extract.treesitter.located)
-    - fn [unsupported](../../src/extract/python.ts#L720) (node: Node, reason: string) → UnsupportedFact <!-- internal -->
+    - fn [unsupported](../../src/extract/python.ts#L726) (node: Node, reason: string) → UnsupportedFact <!-- internal -->
       <a id="extract.python.unsupported"></a><br>Builds a record marking a Python construct the extractor can't analyze, taking its position from [`extract.treesitter.located`](extract.md#extract.treesitter.located) and keeping only the first line of its source text plus the given reason. Used by [`extract.python.collectDynamic`](extract.md#extract.python.collectDynamic) and [`extract.python.noteDecorators`](extract.md#extract.python.noteDecorators) to… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [extract.treesitter.located](extract.md#extract.treesitter.located)
+    - fn [statementsOf](../../src/extract/python.ts#L739) (topLevel: readonly Node[]) → StatementFact[] <!-- internal -->
+      <a id="extract.python.statementsOf"></a><br>Module-level statements a framework may execute as its config: an assignment (`x = …`, `x += …`, `a.b = …`) or a call statement whose value has a call in it, the value as written (`LiteralValue`).
+      - calls [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.python.literalOf](extract.md#extract.python.literalOf), [extract.python.dottedName](extract.md#extract.python.dottedName), [extract.python.hasCall](extract.md#extract.python.hasCall)
+    - fn [noteParamCalls](../../src/extract/python.ts#L760) (def: Node, symbol: string, facts: FileFacts) → void <!-- internal -->
+      <a id="extract.python.noteParamCalls"></a><br>Calls written in the parameters of a `def`, defaults and annotations: `db = Depends(get_db)`.
+      - calls [extract.python.literalOf](extract.md#extract.python.literalOf)
+    - fn [hasCall](../../src/extract/python.ts#L777) (node: Node) → boolean <!-- internal -->
+      <a id="extract.python.hasCall"></a>
+    - fn [dottedName](../../src/extract/python.ts#L784) (node: Node) → boolean <!-- internal -->
+      <a id="extract.python.dottedName"></a><br>`a`, `a.b.c`: a name or a chain of attributes on a name.
+    - fn [literalOf](../../src/extract/python.ts#L792) (node: Node, budget: { left: number }) → LiteralValue <!-- internal -->
+      <a id="extract.python.literalOf"></a><br>A value as written, within `budget` nodes; past it, `other`.
+      - calls [extract.python.other](extract.md#extract.python.other), [extract.python.dottedName](extract.md#extract.python.dottedName), [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.python.argumentsOf](extract.md#extract.python.argumentsOf)
+    - fn [argumentsOf](../../src/extract/python.ts#L843) (call: Node, budget: { left: number }) → { args: LiteralValue[]; kwargs: Kwarg[] } <!-- internal -->
+      <a id="extract.python.argumentsOf"></a><br>The positional and keyword arguments of a call; a `*xs` or `**kw` is an `other` positional.
+      - calls [extract.python.literalOf](extract.md#extract.python.literalOf)
+    - fn [other](../../src/extract/python.ts#L860) (node: Node) → LiteralValue <!-- internal -->
+      <a id="extract.python.other"></a>
   - module [rust](../../src/extract/rust.ts#L1)
     <a id="extract.rust"></a><br>Rust facts: items, `impl` members, `use` trees, calls. A `use` leaf is one import whose specifier is the full path (`crate::domain::order::place`); the resolver decides how much of it is a module.
     - facts [extract.facts](extract.md#extract.facts)
