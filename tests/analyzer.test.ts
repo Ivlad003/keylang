@@ -1138,3 +1138,44 @@ test("static: a callable passed as an argument (`this.m.bind(this)`, `this.m`, `
   // Resolved call edges: `run` and the three calls in closures; callables passed are not calls.
   assert.equal(snap.stats.callsResolved, 4);
 });
+
+/**
+ * Runs `keylang <args>` for each command in a copy of `files` on a casefold
+ * tmpfs in a user namespace, which models APFS and NTFS. Each command's
+ * output follows a `=== <i>` line; null when the platform has no such file system.
+ */
+function onCasefold(t: { after: (f: () => void) => void }, files: Record<string, string>, commands: string[][]): string | null {
+  if (process.platform !== "linux" || spawnSync("unshare", ["-rm", "true"]).status !== 0) return null;
+  const fixture = mkdtempSync(join(tmpdir(), "keylang-casefold-src-"));
+  const mount = mkdtempSync(join(tmpdir(), "keylang-casefold-"));
+  t.after(() => {
+    rmSync(fixture, { recursive: true, force: true });
+    rmSync(mount, { recursive: true, force: true });
+  });
+  for (const [path, text] of Object.entries(files)) {
+    mkdirSync(dirname(join(fixture, path)), { recursive: true });
+    writeFileSync(join(fixture, path), text);
+  }
+  const script = [
+    'mount -t tmpfs -o casefold tmpfs "$1" 2>/dev/null || { echo SKIP:mount; exit 0; }',
+    'mkdir "$1/repo" && chattr +F "$1/repo" 2>/dev/null || { echo SKIP:chattr; exit 0; }',
+    'cp -r "$2/." "$1/repo/" && cd "$1/repo" || exit 1',
+    'node=$3; bin=$4; shift 4; i=0',
+    'for c in "$@"; do echo "=== $i"; eval "\\"$node\\" \\"$bin\\" $c" 2>&1; i=$((i+1)); done',
+  ].join("\n");
+  const run = spawnSync("unshare", ["-rm", "sh", "-c", script, "sh", mount, fixture, process.execPath, bin, ...commands.map((c) => c.join(" "))], { encoding: "utf8" });
+  assert.equal(run.status, 0, run.stderr);
+  return /^SKIP:/m.test(run.stdout) ? null : run.stdout;
+}
+
+test("guessed layout: an import of a directory in another letter case is a hole on a case-insensitive file system, not silently dropped", (t) => {
+  const files = {
+    "keylang/rules.md": "# rules\n\n- deny ui db\n",
+    "src/ui/view.ts": 'import { query } from "../DB/conn";\nexport function view(): void { query(); }\n',
+    "src/db/conn.ts": "export function query(): void {}\n",
+  };
+  const out = onCasefold(t, files, [["check"]]);
+  if (out === null) return t.skip("casefold tmpfs is not available here");
+  assert.match(out, /unverified unresolved import `\.\.\/DB\/conn`/, out);
+  assert.match(out, /0 fail, 1 unverified, 0 ok/, out);
+});
