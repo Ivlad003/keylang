@@ -36,6 +36,10 @@ import { DISCOVERED_FLOWS_DIR, sourceInputs } from "../map.ts";
 import { runCoverage } from "../operations/coverage.ts";
 import { DIAGRAM_FORMATS, diagramExportText, exportSourcesOf, exportViewOfQuery } from "../operations/diagram-export.ts";
 import { runDiagramPropose, specHash } from "../operations/diagram-propose.ts";
+import { exportBundle, exportFlows, gitOf, runFlowImport } from "../operations/flow-bundle.ts";
+import { clipLayout, clipLayoutText, fragmentFlow, fragmentName, parseClipSelection, pastedShapes } from "../diagram-clip.ts";
+import { parseBundle, usedLayers, type ExportFlow } from "../flow-bundle.ts";
+import { keylangVersion } from "../harness.ts";
 import { flowCandidate } from "../operations/draft.ts";
 import { commitProposal, generatedIn, proposalRefusal, rootRelative } from "../operations/shared.ts";
 import { buildTour, tourMarkdown } from "../tour.ts";
@@ -404,6 +408,105 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
     return json(status, { ...done, ...(done.error !== null ? { error: done.error } : {}) });
   };
 
+  /**
+   * `POST /api/bundle` (business-flows/25): «Копіювати як пакет» — `{view?, flows?, shapes?, edges?, withCallees?}`.
+   * The flows named (or the flow of a `flow:`/`discovered:` view; else a flow made of the
+   * selected shapes' IDs) as the bundle `keylang flow export` writes, with callees to
+   * `withCallees` (default 1) and the selection in its ```keylang-layout``` block. One
+   * `text/plain` the page puts in the clipboard: no custom MIME type.
+   */
+  const bundleRequest = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
+    const json = (status: number, body: unknown): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
+    const body = await jsonBody(request, response, "bundle", "POST", MAX_MODEL_BODY);
+    if (body === NO_BODY) return;
+    if (body === null || typeof body !== "object" || Array.isArray(body)) return json(400, { error: "the body: {view?, flows?, shapes?, edges?, withCallees?}" });
+    const raw = body as { view?: unknown; flows?: unknown; shapes?: unknown; edges?: unknown; withCallees?: unknown };
+    const view = typeof raw.view === "string" ? raw.view : "";
+    if (raw.flows !== undefined && (!Array.isArray(raw.flows) || !raw.flows.every((f) => typeof f === "string" && /^[\p{L}\p{N}_.-]+$/u.test(f)))) return json(400, { error: "flows: an array of flow names" });
+    const withCallees = raw.withCallees ?? 1;
+    if (typeof withCallees !== "number" || !Number.isInteger(withCallees) || withCallees < 0 || withCallees > 10) return json(400, { error: "withCallees: a whole number from 0 to 10" });
+    const selection = parseClipSelection(raw.shapes, raw.edges);
+    if (typeof selection === "string") return json(400, { error: selection });
+    const done = await analysis();
+    if (!done.snapshot) return json(409, { error: "no code to read (`languages` in keylang.json is empty)" });
+    const wanted = viewOfKey(view);
+    const names = (raw.flows as string[] | undefined) ?? (wanted?.view.kind === "flow" ? [wanted.view.name] : []);
+    const flows: ExportFlow[] = [];
+    if (names.length > 0) {
+      const resolved = exportFlows(options.root, done, names);
+      if ("error" in resolved) return json(400, { error: resolved.error });
+      flows.push(...resolved.flows);
+    } else {
+      // No flow open: the selection's IDs as one flow of their own.
+      const name = fragmentName(selection.shapes);
+      const text = fragmentFlow(name, selection.shapes);
+      if (text === null) return json(400, { error: "nothing to copy: select shapes with keylang IDs, or open a flow" });
+      flows.push({ name, origin: "spec", source: `web:${view || "canvas"}`, text, process: null });
+    }
+    const layout = selection.shapes.length === 0 ? "" : clipLayoutText(clipLayout(view, selection.shapes, selection.edges));
+    const bundle = await exportBundle(options.root, done, flows, withCallees, keylangVersion(), layout);
+    return json(200, { text: bundle.text, header: bundle.header, flows: flows.map((f) => f.name), shapes: selection.shapes.length, summary: bundle.summary, messages: bundle.messages });
+  };
+
+  /**
+   * `POST /api/bundle-import` (business-flows/25): a paste — `{text, layerMap?, mode?, output?}`.
+   * The text is data: it is parsed as a bundle and never run. From another repository it
+   * goes through `flow import` (`output: "preview"` first: the layer choices for the
+   * dialog; then `proposal`: the feature and the migration table as proposals); from this
+   * repository nothing is written and the shapes come back for copies with new draft IDs.
+   * Either way the shapes to draw, re-homed, at the bundle's layout (or laid out here).
+   */
+  const bundleImport = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
+    const json = (status: number, body: unknown): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
+    const body = await jsonBody(request, response, "bundle-import", "POST", MAX_MODEL_BODY);
+    if (body === NO_BODY) return;
+    if (body === null || typeof body !== "object" || Array.isArray(body)) return json(400, { error: "the body: {text, layerMap?, mode?, output?}" });
+    const raw = body as { text?: unknown; layerMap?: unknown; mode?: unknown; output?: unknown };
+    if (typeof raw.text !== "string") return json(400, { error: "text: the pasted bundle" });
+    const mode = raw.mode ?? "algo";
+    if (mode !== "algo" && mode !== "hybrid") return json(400, { error: "mode: algo or hybrid" });
+    const output = raw.output ?? "proposal";
+    if (output !== "preview" && output !== "proposal") return json(400, { error: "output: preview or proposal" });
+    let layerMap: string | undefined;
+    if (raw.layerMap !== undefined) {
+      const map = raw.layerMap;
+      if (map === null || typeof map !== "object" || Array.isArray(map) || !Object.entries(map).every(([from, to]) => /^[^=,\s]+$/.test(from) && typeof to === "string" && /^[^=,\s]+$/.test(to))) return json(400, { error: "layerMap: {<layer of the bundle>: <layer here>}" });
+      layerMap = Object.entries(map as Record<string, string>).map(([from, to]) => `${from}=${to}`).join(",");
+    }
+    const bundle = parseBundle(raw.text);
+    if ("error" in bundle) return json(400, { error: bundle.error });
+    const here = gitOf(options.root);
+    if (bundle.header.repo === here.repo) {
+      const pasted = pastedShapes(bundle, [], []);
+      return json(200, { sameRepo: true, header: bundle.header, flows: bundle.flows.map((f) => f.name), ...pasted });
+    }
+    const done = await runFlowImport({ kind: "flow-import", root: options.root, bundle: "clipboard.bundle.md", source: raw.text, mode, output, pending: "refuse", ...(layerMap !== undefined ? { layerMap } : {}) }, { analyze: () => analysis() });
+    const notes = done.messages.filter((m) => m.level === "warning").map((m) => m.text);
+    if (done.status !== "completed" || !done.payload) {
+      const errors = done.messages.filter((m) => m.level === "error").map((m) => m.text);
+      return json(done.exitCode === 1 ? 409 : 400, { error: errors.join("; ") || `the import ${done.status}`, notes });
+    }
+    const payload = done.payload;
+    const pasted = pastedShapes(bundle, payload.ids, payload.layers);
+    return json(200, {
+      sameRepo: false,
+      header: payload.header,
+      flows: bundle.flows.map((f) => f.name),
+      used: usedLayers(bundle),
+      sourceLayers: bundle.layers.map((l) => ({ name: l.name, description: l.description })),
+      targetLayers: payload.targetLayers,
+      layers: payload.layers,
+      ids: payload.ids,
+      target: payload.target,
+      migrationTarget: payload.migrationTarget,
+      proposals: payload.proposals,
+      agent: payload.agent,
+      notes,
+      ...pasted,
+      ...(payload.proposals.length > 0 ? { merge: `merge them with MERGE in the TUI (\`keylang\`, m on a proposal), or a person runs \`keylang proposals accept ${payload.target}\` and \`keylang proposals accept ${payload.migrationTarget}\`` } : {}),
+    });
+  };
+
   /** `GET /api/views`, `/api/diagram?view=…`, `/api/usages?id=…`, `/api/calls?id=…`, `/api/ids?prefix=…`, `/api/coverage`, `/api/tour`; `POST /api/flow-proposal`: JSON for the diagram client (`GET /api/export?format=bpmn|drawio&view=…`: the file), with the socket's token as a Bearer. */
   const api = async (request: IncomingMessage, response: ServerResponse, path: string, query: URLSearchParams): Promise<void> => {
     // These paths are public (docs/tui.md); any other is the 404 of every unknown path, token or not.
@@ -416,6 +519,8 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
     }
     if (path === "/api/flow-proposal") return flowProposal(request, response);
     if (path === "/api/diagram-proposal") return diagramProposal(request, response);
+    if (path === "/api/bundle") return bundleRequest(request, response);
+    if (path === "/api/bundle-import") return bundleImport(request, response);
     if (path === "/api/layout") return layoutRequest(request, response, query);
     if (request.method !== "GET") return reply(response, 405, "text/plain", "method not allowed\n");
     const json = (status: number, body: unknown): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
@@ -750,7 +855,7 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
 }
 
 /** The paths of the diagram API; any other under `/api/` is 404. */
-const API_PATHS: ReadonlySet<string> = new Set(["/api/views", "/api/diagram", "/api/usages", "/api/calls", "/api/ids", "/api/coverage", "/api/tour", "/api/flow-proposal", "/api/export", "/api/layout", "/api/diagram-proposal"]);
+const API_PATHS: ReadonlySet<string> = new Set(["/api/views", "/api/diagram", "/api/usages", "/api/calls", "/api/ids", "/api/coverage", "/api/tour", "/api/flow-proposal", "/api/export", "/api/layout", "/api/diagram-proposal", "/api/bundle", "/api/bundle-import"]);
 
 /** At most this many IDs in one answer of `GET /api/ids`. */
 const MAX_IDS = 100;

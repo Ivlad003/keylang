@@ -157,3 +157,18 @@ body[data-mode="editor"] #stage, body[data-mode="editor"] #details, body[data-mo
 #editor .editor-result .editor-result-warning { color: #b71c1c; }
 #editor .editor-result .editor-result-note { color: #607d8b; }
 #editor .editor-result .editor-result-close { position: absolute; top: 4px; right: 6px; border: none; background: none; cursor: pointer; font-size: 16px; }
+
+/* Copy and paste of bundles (business-flows/25): the dialogs over the page. */
+.bundle-overlay { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: rgba(38, 50, 56, 0.35); }
+.bundle-dialog { width: min(720px, calc(100vw - 32px)); max-height: calc(100vh - 64px); overflow: auto; padding: 12px 16px; border-radius: 6px; background: #ffffff; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25); font-size: 13px; }
+.bundle-dialog h2 { margin: 0 0 8px; font-size: 15px; }
+.bundle-dialog p { margin: 6px 0; }
+.bundle-dialog .bundle-hint { color: #607d8b; font-size: 12px; }
+.bundle-dialog .bundle-text { width: 100%; min-height: 220px; box-sizing: border-box; font: 12px ui-monospace, monospace; }
+.bundle-dialog table.bundle-layers { border-collapse: collapse; margin: 8px 0; }
+.bundle-dialog table.bundle-layers th, .bundle-dialog table.bundle-layers td { padding: 3px 8px; border-bottom: 1px solid #eceff1; text-align: left; }
+.bundle-dialog .bundle-notes { margin: 6px 0; padding-left: 18px; color: #607d8b; font-size: 12px; }
+.bundle-dialog .bundle-actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 10px; }
+.bundle-dialog .bundle-actions button { border: 1px solid #b0bec5; border-radius: 4px; background: #ffffff; cursor: pointer; padding: 3px 10px; }
+.bundle-dialog .bundle-actions button#bundle-import, .bundle-dialog .bundle-actions button#bundle-paste-ok { background: #1565c0; border-color: #1565c0; color: #ffffff; }
+body[data-mode="editor"] #toolbar button#copy-bundle { display: none; }

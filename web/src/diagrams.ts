@@ -13,10 +13,14 @@
 // lazy call tree of an entry point with «Зберегти як флоу» — and «Сліпі
 // зони» (blind.ts), the report of `keylang coverage`. The fourth, «Редактор»
 // (editor.ts, business-flows/23), opens a view on an editable canvas.
+// «Копіювати як пакет» (and Ctrl+C with no text selected) puts the open view —
+// a flow as `keylang flow export` writes it, its shapes in the layout block —
+// in the clipboard for another keylang web (business-flows/25).
 
-import { Api, ApiError, type Diagram, type DiagramNode, type PageQuery, type Usages, type ViewQuery, type Views, takeToken } from "./api.ts";
+import { Api, ApiError, type ClipShape, type Diagram, type DiagramNode, type PageQuery, type Usages, type ViewQuery, type Views, takeToken } from "./api.ts";
 import { BlindSpots } from "./blind.ts";
 import { Canvas, VERDICT_COLOUR, VERDICT_GLYPH } from "./canvas.ts";
+import { writeClipboard } from "./bundle-clip.ts";
 import { codeLink, element, make } from "./dom.ts";
 import { Editor } from "./editor.ts";
 import { FileLayoutStore, useLayoutStore } from "./layout-store.ts";
@@ -221,6 +225,20 @@ class Page {
     element<HTMLButtonElement>("zoom-out").addEventListener("click", () => this.canvas.zoomAt(1 / 1.25));
     element<HTMLButtonElement>("zoom-fit").addEventListener("click", () => this.canvas.fit());
     mountExport(element("toolbar"), () => (this.active === null || this.active.view === "explore" || this.active.view === "blind" ? null : this.active.view === "editor" ? this.active.of : this.active), (text) => (this.status.textContent = text));
+    const copy = make("button", { text: "Копіювати як пакет", title: "Відкритий вид як пакет keylang у буфер обміну (Ctrl+C): вставте його в редакторі іншого keylang web" });
+    copy.type = "button";
+    copy.id = "copy-bundle";
+    copy.addEventListener("click", () => void this.copyBundle(true));
+    element("toolbar").append(copy);
+    document.addEventListener("keydown", (event) => {
+      if (this.mode !== "diagrams" || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "c" || event.shiftKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target && (target.closest("input, textarea, select") || target.isContentEditable)) return;
+      // Text the person selected is theirs to copy.
+      if (!(window.getSelection()?.isCollapsed ?? true)) return;
+      event.preventDefault();
+      void this.copyBundle(false);
+    });
     window.addEventListener("hashchange", () => {
       const wanted = readHash();
       if (wanted && (this.active === null || keyOf(wanted.query) !== keyOf(this.active))) void this.open(wanted.query, wanted.node);
@@ -355,6 +373,29 @@ class Page {
     if (keepView && this.node !== null) {
       const node = diagram.nodes.find((n) => n.id === this.node) ?? null;
       this.renderDetails(node);
+    }
+  }
+
+  /**
+   * The open view as a bundle in the clipboard: a flow (written or discovered)
+   * as `flow export` writes it, another view as a flow of its IDs; the shapes
+   * where the canvas draws them go into the layout block.
+   */
+  private async copyBundle(fromButton: boolean): Promise<void> {
+    const query = this.active;
+    if (query === null || modeOf(query) !== "diagrams") {
+      if (fromButton) this.status.textContent = "pick a view first";
+      return;
+    }
+    const diagram = this.canvas.current();
+    const shapes: ClipShape[] = diagram.nodes.map((n) => ({ key: n.id, id: n.ref?.id ?? "", kind: n.kind, label: n.label, layer: n.group ?? null, x: n.x, y: n.y, w: n.w, h: n.h }));
+    const edges = diagram.edges.map((e) => ({ from: e.from, to: e.to, kind: e.kind, ...(e.label ? { label: e.label } : {}) }));
+    try {
+      const answer = await this.api.bundle({ view: keyOf(query), shapes, edges });
+      const way = fromButton ? await writeClipboard(answer.text) : await navigator.clipboard.writeText(answer.text).then(() => "clipboard" as const, () => "refused" as const);
+      this.status.textContent = way === "clipboard" ? `copied as a bundle: ${answer.flows.join(", ")} · ${answer.shapes} shape(s) — paste it with Ctrl+V in the editor of another keylang web` : way === "dialog" ? "the bundle is selected in the dialog: Ctrl+C copies it" : "the browser refused the clipboard: «Копіювати як пакет» shows the bundle to copy";
+    } catch (error) {
+      this.status.textContent = `copy as bundle failed: ${explain(error)}`;
     }
   }
 

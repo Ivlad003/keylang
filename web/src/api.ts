@@ -223,6 +223,82 @@ export interface DiagramProposal {
   merge: string | null;
 }
 
+/** One shape of a copied fragment (src/diagram-clip.ts): a canvas key, the keylang side, a box in model coordinates. */
+export interface ClipShape {
+  key: string;
+  id: string;
+  kind: string;
+  label: string;
+  layer: string | null;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  signature?: string;
+  trigger?: string;
+  role?: "split" | "join";
+  description?: string;
+  tests?: string[];
+  colour?: string;
+}
+
+export interface ClipEdge {
+  from: string;
+  to: string;
+  kind: string;
+  label?: string;
+  points?: { x: number; y: number }[];
+}
+
+/** The body of `POST /api/bundle`. */
+export interface BundleRequest {
+  view?: string;
+  flows?: string[];
+  shapes?: ClipShape[];
+  edges?: ClipEdge[];
+  withCallees?: number;
+}
+
+export interface BundleHeader {
+  format: number;
+  repo: string;
+  commit: string;
+  snapshotId: string;
+  keylang: string;
+  flows: string[];
+  withCallees: number;
+}
+
+/** The answer of `POST /api/bundle`: the text for the clipboard. */
+export interface BundleCopy {
+  text: string;
+  header: BundleHeader;
+  flows: string[];
+  shapes: number;
+  summary: string;
+}
+
+/** The answer of `POST /api/bundle-import`. */
+export interface BundleImport {
+  sameRepo: boolean;
+  header: BundleHeader;
+  flows: string[];
+  shapes: ClipShape[];
+  edges: ClipEdge[];
+  laidOut: boolean;
+  used?: string[];
+  sourceLayers?: { name: string; description: string }[];
+  targetLayers?: { name: string; description: string }[];
+  layers?: { from: string; to: string; by: string }[];
+  ids?: { from: string; to: string; planned: boolean }[];
+  target?: string;
+  migrationTarget?: string;
+  proposals?: string[];
+  agent?: string | null;
+  notes?: string[];
+  merge?: string;
+}
+
 export interface Usages {
   id: string;
   flows: { name: string; file: string; line: number }[];
@@ -301,6 +377,22 @@ export class Api {
     if (response.status === 409) return (await response.json()) as DiagramProposal;
     if (!response.ok) throw new ApiError(response.status, await errorText(response));
     return (await response.json()) as DiagramProposal;
+  }
+
+  /** «Копіювати як пакет» (business-flows/25): the bundle of the flows (or the selection) with the selection in its layout block. */
+  bundle(body: BundleRequest): Promise<BundleCopy> {
+    return this.post<BundleCopy>("/api/bundle", body);
+  }
+
+  /** A pasted bundle: the preview (layer choices for the dialog) or the import (proposals), and the shapes to draw. */
+  bundleImport(body: { text: string; layerMap?: Record<string, string>; mode?: "algo" | "hybrid"; output?: "preview" | "proposal" }): Promise<BundleImport> {
+    return this.post<BundleImport>("/api/bundle-import", body);
+  }
+
+  private async post<T>(path: string, body: unknown): Promise<T> {
+    const response = await fetch(path, { method: "POST", headers: { Authorization: `Bearer ${this.token}`, "Content-Type": "application/json" }, body: JSON.stringify(body), cache: "no-store" });
+    if (!response.ok) throw new ApiError(response.status, await errorText(response));
+    return (await response.json()) as T;
   }
 
   private async get<T>(path: string): Promise<T> {

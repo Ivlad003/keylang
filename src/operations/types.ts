@@ -500,8 +500,10 @@ export interface FlowImportRequest {
   kind: "flow-import";
   /** Repository root (absolute). */
   root: string;
-  /** The bundle file (absolute). */
+  /** The bundle file (absolute); with `source`, only the bundle's name. */
   bundle: string;
+  /** The bundle's text itself (a paste of `keylang web`, business-flows/25): `bundle` is not read. */
+  source?: string;
   /** The feature spec, relative to the root, POSIX; default `<dir>/features/<first flow>.md`. */
   into?: string;
   /** `old=new,…`: source layer → layer of this repository; the rest by `mode`. */
@@ -528,6 +530,8 @@ export interface FlowImportPayload {
   agent: string | null;
   /** `.keylang/proposals/<target>` written, in order; empty for a preview. */
   proposals: string[];
+  /** The layers of this repository the flows may land in, in the order of keylang.json. */
+  targetLayers: { name: string; description: string }[];
 }
 
 /**

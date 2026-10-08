@@ -18,7 +18,7 @@ import { discoverFlows, specifiedTriggers } from "../discover.ts";
 import { readProcesses } from "../discover-names.ts";
 import { withFlow } from "../draft.ts";
 import { existingText } from "../files.ts";
-import { algoLayers, BUNDLE_FORMAT, BUNDLE_MARK, bundleNodes, bundleText, flowEvents, flowTests, importPlan, layerMapRequest, MIGRATION_FILE, parseBundle, parseLayerMap, parseLayerMapAnswer, usedLayers, withMigration, type BundleReach, type ExportFlow, type LayerChoice, type TargetLayer } from "../flow-bundle.ts";
+import { algoLayers, BUNDLE_FORMAT, BUNDLE_MARK, bundleNodes, bundleText, flowEvents, flowTests, importPlan, layerMapRequest, MIGRATION_FILE, parseBundle, parseLayerMap, parseLayerMapAnswer, usedLayers, withMigration, type BundleHeader, type BundleReach, type ExportFlow, type LayerChoice, type TargetLayer } from "../flow-bundle.ts";
 import { findIntegrations, loadIntegrations } from "../integrations.ts";
 import { sourceInputs } from "../map.ts";
 import { PROPOSALS_DIR, proposalProblem } from "../proposals.ts";
@@ -55,13 +55,39 @@ export async function runFlowExport(request: FlowExportRequest, context: Operati
     const problem = outProblem(root, specDir, request.out);
     if (problem !== null) return empty("flow-export", "failed", 2, `flow export: --out ${request.out}: ${problem}; nothing written`);
   }
+  const resolved = exportFlows(root, analyzed, request.names);
+  if ("error" in resolved) return empty("flow-export", "failed", 2, `flow export: ${resolved.error}`);
+  const { header, text, messages, summary } = await exportBundle(root, analyzed, resolved.flows, withCallees, request.version ?? "n/a");
+  const payload: FlowExportPayload = { header, text, out: null };
+  if (request.out === undefined) return { ...empty("flow-export", "completed", 0), payload, messages: [...messages, { level: "info", text: summary }] };
+  try {
+    const gate = await context.beforeCommit?.({ targets: [displayPath(root, request.out)] });
+    if (context.signal?.aborted) return { ...empty("flow-export", "cancelled", null), payload };
+    if (gate && gate.refused.length > 0) return { ...empty("flow-export", "failed", 1), payload, messages: gate.refused.map((t) => ({ level: "error" as const, text: t })) };
+    writeAtomic(request.out, text);
+  } catch (error) {
+    return { ...empty("flow-export", "failed", 2, `flow export: ${errorText(error)}`), payload };
+  }
+  payload.out = displayPath(root, request.out);
+  return { ...empty("flow-export", "completed", 0), payload, written: [payload.out], messages: [...messages, { level: "info", text: `${summary}; wrote ${payload.out}` }] };
+}
+
+/**
+ * The flows of an export by name: a hand-written `# flow` section as written,
+ * else the discovered view's flow, each with the business process it belongs
+ * to; or which names are neither.
+ */
+export function exportFlows(root: string, analyzed: Analysis, names: readonly string[]): { flows: ExportFlow[] } | { error: string } {
+  const snapshot = analyzed.snapshot;
+  if (snapshot === null) return { error: "no code to read (`languages` in keylang.json is empty)" };
+  const specDir = rootRelative(root, analyzed.config.dir);
   const generated = new Set(analyzed.docs.filter((doc) => doc.generated !== null).map((doc) => doc.path));
   const written = analyzed.spec.flows.filter((flow) => !generated.has(flow.file));
   const discovered = discoverFlows(snapshot, specifiedTriggers(analyzed.spec.flows)).flows;
   const processes = readProcesses(root, specDir);
   const flows: ExportFlow[] = [];
   const missing: string[] = [];
-  for (const name of request.names) {
+  for (const name of names) {
     if (flows.some((flow) => flow.name === name)) continue;
     const process = processes.find((p) => p.flows.includes(name));
     const business = process ? { name: process.name, domain: process.domain, description: process.description } : null;
@@ -82,8 +108,18 @@ export async function runFlowExport(request: FlowExportRequest, context: Operati
   }
   if (missing.length > 0) {
     const known = [...new Set([...written.map((f) => f.name), ...discovered.map((f) => f.name)])].sort();
-    return empty("flow-export", "failed", 2, `flow export: no flow ${missing.map((m) => `\`${m}\``).join(", ")}: neither a hand-written \`# flow\` nor a discovered one${known.length > 0 ? `; known: ${known.join(", ")}` : ""}`);
+    return { error: `no flow ${missing.map((m) => `\`${m}\``).join(", ")}: neither a hand-written \`# flow\` nor a discovered one${known.length > 0 ? `; known: ${known.join(", ")}` : ""}` };
   }
+  return { flows };
+}
+
+/**
+ * The bundle of resolved flows: their nodes (and callees to `withCallees`),
+ * tests, events and the integrations their nodes call, the layers, the
+ * provenance; `layout` fills the ```keylang-layout``` block (business-flows/25).
+ */
+export async function exportBundle(root: string, analyzed: Analysis, flows: readonly ExportFlow[], withCallees: number, version: string, layout = ""): Promise<{ header: BundleHeader; text: string; messages: OperationMessage[]; summary: string }> {
+  const snapshot = analyzed.snapshot!;
   const nodes = bundleNodes(snapshot, flows, withCallees);
   const tests = flows.flatMap((flow) => flowTests(flow.name, flow.text));
   const messages: OperationMessage[] = [];
@@ -105,21 +141,10 @@ export async function runFlowExport(request: FlowExportRequest, context: Operati
     return { name, globs, description: doc === null ? "" : (firstSentence(doc) ?? doc) };
   });
   const git = gitOf(root);
-  const header = { format: BUNDLE_FORMAT, repo: git.repo, commit: git.commit, snapshotId: snapshot.snapshotId, keylang: request.version ?? "n/a", flows: flows.map((f) => f.name), withCallees };
-  const text = bundleText({ header, layers, nodes, tests, reached, flows });
-  const payload: FlowExportPayload = { header, text, out: null };
+  const header: BundleHeader = { format: BUNDLE_FORMAT, repo: git.repo, commit: git.commit, snapshotId: snapshot.snapshotId, keylang: version, flows: flows.map((f) => f.name), withCallees };
+  const text = bundleText({ header, layers, nodes, tests, reached, flows, layout });
   const summary = `bundle of ${flows.length} flow(s): ${nodes.length} node(s), ${tests.length} test(s), ${reached.length} event(s) and integration(s)`;
-  if (request.out === undefined) return { ...empty("flow-export", "completed", 0), payload, messages: [...messages, { level: "info", text: summary }] };
-  try {
-    const gate = await context.beforeCommit?.({ targets: [displayPath(root, request.out)] });
-    if (context.signal?.aborted) return { ...empty("flow-export", "cancelled", null), payload };
-    if (gate && gate.refused.length > 0) return { ...empty("flow-export", "failed", 1), payload, messages: gate.refused.map((t) => ({ level: "error" as const, text: t })) };
-    writeAtomic(request.out, text);
-  } catch (error) {
-    return { ...empty("flow-export", "failed", 2, `flow export: ${errorText(error)}`), payload };
-  }
-  payload.out = displayPath(root, request.out);
-  return { ...empty("flow-export", "completed", 0), payload, written: [payload.out], messages: [...messages, { level: "info", text: `${summary}; wrote ${payload.out}` }] };
+  return { header, text, messages, summary };
 }
 
 /** Why the bundle may not be written to `out`: under the spec directory, an existing file that is no bundle, the write policy inside the repository. */
@@ -153,7 +178,7 @@ function sectionText(root: string, analyzed: Analysis, file: string, name: strin
 }
 
 /** The repository as git names it (the `origin` URL without credentials, else the directory) and HEAD; `n/a` without git. */
-function gitOf(root: string): { repo: string; commit: string } {
+export function gitOf(root: string): { repo: string; commit: string } {
   const run = (args: string[]): string | null => {
     try {
       const r = spawnSync("git", args, { cwd: root, stdio: ["ignore", "pipe", "pipe"], encoding: "utf8" });
@@ -174,12 +199,13 @@ function gitOf(root: string): { repo: string; commit: string } {
  */
 export async function runFlowImport(request: FlowImportRequest, context: OperationContext): Promise<OperationEnvelope<"flow-import">> {
   const { root } = request;
-  if (!isAbsolute(root) || !isAbsolute(request.bundle)) return empty("flow-import", "failed", 2, "flow import: root and bundle must be absolute paths");
+  if (!isAbsolute(root) || (request.source === undefined && !isAbsolute(request.bundle))) return empty("flow-import", "failed", 2, "flow import: root and bundle must be absolute paths");
   const mode = request.mode ?? "algo";
   if (context.signal?.aborted) return empty("flow-import", "cancelled", null);
   let source: string;
   try {
-    source = readFileSync(request.bundle, "utf8");
+    // A paste of `keylang web` (business-flows/25) brings the text itself; `bundle` only names it.
+    source = request.source ?? readFileSync(request.bundle, "utf8");
   } catch (error) {
     return empty("flow-import", "failed", 2, `flow import: ${errorText(error)}`);
   }
@@ -248,7 +274,7 @@ export async function runFlowImport(request: FlowImportRequest, context: Operati
   const feature = plan.flows.reduce<string | null>((text, flow) => withFlow(text, flow), featureBefore) ?? "";
   const migrationBefore = existingText(join(root, migrationTarget));
   const migration = withMigration(migrationBefore, slug, plan.migration);
-  const payload: FlowImportPayload = { header: bundle.header, target: into, migrationTarget, feature, migration, layers: choices, ids: plan.ids, agent, proposals: [] };
+  const payload: FlowImportPayload = { header: bundle.header, target: into, migrationTarget, feature, migration, layers: choices, ids: plan.ids, agent, proposals: [], targetLayers: target.map((t) => ({ name: t.name, description: t.description })) };
   const messages: OperationMessage[] = [
     ...choices.map((c) => ({ level: "info" as const, text: `layer ${c.from} → ${c.to} (${c.by})` })),
     ...[...new Set(notes)].map((text) => ({ level: "warning" as const, text })),

@@ -5,6 +5,8 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkoutRepo } from "./tui-fixture.ts";
@@ -57,4 +59,23 @@ export function editorModelOf(
     }),
     lanes: diagram.groups.map((g) => ({ key: `lane:${g.id}`, id: g.id, label: g.label, x: g.x, y: g.y, w: g.w, h: g.h })),
   };
+}
+
+/**
+ * A second repository a fragment is pasted into (business-flows/25): TypeScript
+ * with layers of other names (`api`, `core`) and one module of code, no flows.
+ */
+export function targetRepo(t: { after: (f: () => void) => void }): string {
+  const dir = mkdtempSync(join(tmpdir(), "keylang-target-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const files: Record<string, string> = {
+    "keylang.json": `${JSON.stringify({ languages: ["typescript"], layers: { api: ["src/api/**"], core: ["src/core/**"] } }, null, 2)}\n`,
+    "src/core/base.ts": "/** The shared base. */\nexport function base(): number {\n  return 1;\n}\n",
+    "src/api/http.ts": 'import { base } from "../core/base.ts";\nexport function serve(): number {\n  return base();\n}\n',
+  };
+  for (const [path, text] of Object.entries(files)) {
+    mkdirSync(dirname(join(dir, path)), { recursive: true });
+    writeFileSync(join(dir, path), text);
+  }
+  return dir;
 }
