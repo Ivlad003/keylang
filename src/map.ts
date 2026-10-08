@@ -292,6 +292,9 @@ export const EXPLAINED_MAP_DIR = "map-explained";
 /** The directory of discovered flows under the spec directory: a view `keylang flows discover` writes, never read as specs. */
 export const DISCOVERED_FLOWS_DIR = "flows-discovered";
 
+/** The project tour `keylang tour --out` writes by default, under the spec directory: a view, never read as a spec. */
+export const TOUR_FILE = "tour.md";
+
 /** A file name to place an unreadable directory in the layers, as any of its source files would be. */
 const UNREADABLE_PROBE = "keylang-unreadable.ts";
 

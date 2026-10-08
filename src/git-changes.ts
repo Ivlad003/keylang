@@ -169,6 +169,30 @@ export function gitFileAt(root: string, ref: string, path: string, label: string
 }
 
 /**
+ * The `.md` files under `dir` (POSIX, relative to `root`) at `ref` and their
+ * text; empty when `HEAD` has no commit yet. An unknown ref, no git, or no
+ * repository is an error naming the caller. `skip` leaves a path out before
+ * it is read (the generated map, reading aids).
+ */
+export function gitSpecFilesAt(root: string, ref: string, dir: string, label: string, skip: (path: string) => boolean = () => false): Map<string, string> {
+  assertRef(ref, label);
+  const { run, git } = gitIn(root, label);
+  git(["rev-parse", "--is-inside-work-tree"]);
+  const files = new Map<string, string>();
+  if (run(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]).status !== 0) {
+    if (ref === "HEAD") return files;
+    throw new Error(`${label}: \`${ref}\` is not a commit`);
+  }
+  // `ls-tree` names paths relative to the working directory, which is `root`.
+  const listed = git(["ls-tree", "-r", "-z", "--name-only", ref, "--", dir === "" ? "." : dir])
+    .split("\0")
+    .filter((path) => path.endsWith(".md") && !skip(path))
+    .sort(compareText);
+  for (const path of listed) files.set(path, git(["show", `${ref}:./${path}`]));
+  return files;
+}
+
+/**
  * The feature file at its base commit, and the files changed since that
  * commit as `check --changed --since <base>` reads them: a rule fail of this
  * change is one that touches them. The base is `since`, else

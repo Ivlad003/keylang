@@ -45,6 +45,13 @@ export interface FileFacts {
   /** The file's documentation comment (a header comment, a module docstring) without comment syntax; absent when it has none. */
   doc?: string;
   /**
+   * SHA-256 of the file's top-level value code — constants, assignments,
+   * object tables, top-level calls — without its declarations, imports,
+   * comments and layout (`valuesFingerprint`): a change to a value no fn
+   * reads still changes its module. Absent when the file has none.
+   */
+  values?: string;
+  /**
    * Qualified names of the file's top-level declarations, for a language whose
    * imports name declarations rather than files (PHP: `use App\Domain\Order`
    * names the class `Order` of the namespace `App\Domain`, whatever file
@@ -170,6 +177,20 @@ export interface DeclFact {
   members: DeclFact[];
   /** `fingerprint()` of the declaring node: changes with the body and signature, not with comments or layout. */
   fingerprint?: string;
+  /**
+   * Names the declaration reads as values that an import binds whose syntax
+   * does not tell whether its target is in the repository (Python
+   * `from app.limits import MAX`, PHP `use App\Limits`): the graph marks the
+   * fingerprint as reading an imported value when such an import resolves to
+   * a file of the repository. Absent when there are none.
+   */
+  readsImports?: string[];
+  /**
+   * Classes: SHA-256 of the class body's value code outside its members —
+   * fields, constants, properties, static blocks (`valuesFingerprint`).
+   * Absent when the body has none.
+   */
+  values?: string;
   /** A getter or setter: property access runs it without a call expression. */
   accessor?: true;
   /** The language calls the member through syntax, not a call that names it: a Rust `Drop::drop`, `Display::fmt`, `Add::add`. */

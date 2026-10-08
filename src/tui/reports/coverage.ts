@@ -4,7 +4,7 @@
 // holes, an entry point without a flow, a call into a configuration reader,
 // a call site of a client, a webhook — opens in the code.
 
-import type { CoveragePayload, IntegrationsPayload } from "../../operations.ts";
+import type { CoveragePayload, IntegrationsPayload, TourPayload } from "../../operations.ts";
 import { THEME } from "../theme.ts";
 import { BOLD, codeOf, MUTED, outcomeRow, shortId, textRows, type Report, type ReportItem, type ReportRow } from "./rows.ts";
 
@@ -65,5 +65,33 @@ export const INTEGRATIONS_REPORTS: { integrations: Report<"integrations"> } = {
       return rows;
     },
     items: { noun: "call site", of: (_state, result) => integrationPlaces(result.payload) },
+  },
+};
+
+/** The places of the tour: the fns to read first, then the modules with most holes. */
+export function tourPlaces(payload: TourPayload): ReportItem[] {
+  return [
+    ...payload.startHere.map((fn, i) => ({ file: fn.file, line: fn.line, col: 1, text: `read ${i + 1}  ${fn.id}  ${fn.file}:${fn.line}  ${fn.flows} flow(s), ${fn.callers} caller(s)` })),
+    ...payload.blindSpots.holes.modules.filter((module) => module.file !== null).map((module) => ({ file: module.file!, line: 1, col: 1, text: `holes ${module.holes}  ${module.module}  ${module.reason}` })),
+  ];
+}
+
+export const TOUR_REPORTS: { tour: Report<"tour"> } = {
+  tour: {
+    label: () => "tour",
+    summary: (_record, result) => `${result.payload.layers.length} layer(s) · ${result.payload.entries.total} entry point(s) · ${result.payload.processes.domains.reduce((sum, domain) => sum + domain.processes.reduce((n, p) => n + p.flows.length, 0), 0)} discovered flow(s) · ${result.payload.integrations.outgoing.length} integration(s)${codeOf(result.exitCode)}`,
+    rows(_state, _record, result, view) {
+      const { payload } = result;
+      const rows: ReportRow[] = [
+        { text: `Project tour · a view, check does not read it · read-only, nothing written · fresh snapshot ${shortId(payload.snapshotId)}`, style: BOLD },
+        outcomeRow(view.summary, result.exitCode === 0),
+        { text: "  where to start reading, and the modules with most holes; the whole page below (keylang tour --out keylang/tour.md saves it)", style: MUTED },
+      ];
+      tourPlaces(payload).forEach((item, index) => rows.push({ text: `  ${item.text}`, style: index === view.selected ? THEME.selected : THEME.panel, gap: index }));
+      rows.push({ text: "  Tab, then ↑↓ select a fn or module and Enter opens it in the code", style: THEME.hint });
+      rows.push(...textRows("keylang tour · stdout", payload.text));
+      return rows;
+    },
+    items: { noun: "place", of: (_state, result) => tourPlaces(result.payload) },
   },
 };

@@ -188,6 +188,13 @@ export interface SnapshotNode {
    * another file, or has no fingerprint.
    */
   closure?: { fingerprint: string; complete: boolean };
+  /**
+   * module (a file, a directory or a class): SHA-256 of its value code outside
+   * every fn and type — top-level constants, assignments, object tables and
+   * calls of its files, a class's fields and constants — without comments and
+   * layout. Absent when it has none. Part of the baseline of its explanation.
+   */
+  values?: string;
   /** fn: the plugins the framework's config wraps it in (ADR 0022), in the order they run. */
   interceptedBy?: Interception[];
 }
@@ -368,6 +375,7 @@ export function buildSnapshot(
     if (m.endLine !== null) moduleNode.endLine = m.endLine;
     if (m.endCol !== null) moduleNode.endCol = m.endCol;
     if (m.comment) moduleNode.comment = m.comment;
+    if (m.values !== undefined) moduleNode.values = sha256(m.values);
     nodes[m.id] = moduleNode;
     for (const f of m.fns) {
       const fn: SnapshotNode = {

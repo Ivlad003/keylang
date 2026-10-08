@@ -205,7 +205,7 @@ test("export c4: the help names the command; every writer of the file protocol k
   assert.match(help.stdout, /^ {2}export c4 \[--format plantuml\|mermaid\] \[--level component\|container\] \[--layer <name>\] \[--out f\]$/m);
   // The completions come from the help: the subcommand with a digit and the new flag too.
   const bash = keylang(dir, ["completions", "bash"]).stdout;
-  assert.match(bash, /^ {6}export\) words="c4" ;;$/m);
+  assert.match(bash, /^ {6}export\) words="c4 bpmn drawio" ;;$/m);
   assert.match(bash, /--level/);
   // Every other writer refuses a generated file: the diagrams' PlantUML and Mermaid comments are markers too.
   assert.equal(keylang(dir, ["export", "c4", "--out", "docs/c4.puml"]).status, 0);

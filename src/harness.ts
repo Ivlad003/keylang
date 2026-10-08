@@ -56,9 +56,25 @@ const DEFAULT_SPEC_DIR = "keylang";
  */
 const PROPOSAL_DENY = ["Bash(* proposals accept *)", "Bash(* proposals reject *)"];
 
-/** Claude's deny entries that keep an agent from editing the rules of the spec directory `dir`, or deciding a proposal. */
+/**
+ * Claude's deny entries that keep an agent from editing the rules of the spec
+ * directory `dir` (every `rules*.md`), `keylang.json` — its `exclude`,
+ * `assume`, `outside`, `layers` and `frameworks` decide what the rules
+ * see (ticket 49) — or deciding a proposal. `hook stop` blocks a weakening
+ * (K108) on every harness; this is the first line where Claude has one.
+ */
 function denyRules(dir: string): string[] {
-  return [`Edit(${dir}/rules.md)`, `Write(${dir}/rules.md)`, `Edit(${dir}/rules.baseline.md)`, `Write(${dir}/rules.baseline.md)`, ...PROPOSAL_DENY];
+  return [
+    `Edit(${dir}/rules.md)`,
+    `Write(${dir}/rules.md)`,
+    `Edit(${dir}/rules.baseline.md)`,
+    `Write(${dir}/rules.baseline.md)`,
+    `Edit(${dir}/rules*.md)`,
+    `Write(${dir}/rules*.md)`,
+    `Edit(${CONFIG_FILE})`,
+    `Write(${CONFIG_FILE})`,
+    ...PROPOSAL_DENY,
+  ];
 }
 
 /** The spec directory of `keylang.json` under `root` (`dir`, normalized), or `keylang` without the file. A broken file throws, naming the file and the field. */
@@ -173,9 +189,9 @@ export function agentsBody(version: string, dir: string): string {
     "",
     "MCP: `context`, `validate_spec`, `scaffold`, `feature_status`, `search`, `node`, `code`, `flows`, `check`, `explain`. Only `apply_diff` writes, and only a proposal.",
     "",
-    `Change \`${dir}/rules.md\` and \`${dir}/rules.baseline.md\` only through a proposal (\`apply_diff\`).`,
+    `Change \`${CONFIG_FILE}\`, \`${dir}/rules.md\` and \`${dir}/rules.baseline.md\` (any \`${dir}/rules*.md\`) only as a proposal to a person: rules through \`apply_diff\`; for \`${CONFIG_FILE}\` (\`layers\`, \`exclude\`, \`assume\`, \`outside\`, \`frameworks\`) say what should change and stop. \`baseline\` and \`check --changed --accept-weakening\` are a person's commands, never yours. A turn that weakens the spec (a wider glob, a removed \`deny\` or \`step\`, a new \`allow\`) is blocked with K108: restore it and fix the code.`,
     "",
-    `CLI when MCP is off, pinned like the MCP server: \`${cli} feature <slug> --format json\`, \`${cli} check\`, \`${cli} spec-to-code <id> --print\`, \`${cli} baseline\`.`,
+    `CLI when MCP is off, pinned like the MCP server: \`${cli} feature <slug> --format json\`, \`${cli} check\`, \`${cli} spec-to-code <id> --print\`.`,
     "",
     "`.codex/` applies only in a trusted project; each hook there is approved on its own. This file is the fallback.",
   ].join("\n");

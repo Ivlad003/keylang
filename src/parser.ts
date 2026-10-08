@@ -69,6 +69,7 @@ type Ctx =
   | "rules-top"
   | "flow-top"
   | "wiring-top"
+  | "migration-top"
   | "layer"
   | "module"
   | "fn"
@@ -181,6 +182,8 @@ function keywordsOf(ctx: Ctx): readonly string[] {
       return ["kind", "trigger", "continues", "step", "parallel", "reads", "emits", "calls", "invariant", "when", "after", "every", "test", "planned", "?"];
     case "wiring-top":
       return ["wire"];
+    case "migration-top":
+      return ["map", "dropped"];
     case "layer":
       return ["module"];
     case "module":
@@ -212,6 +215,7 @@ const PLACES: readonly { ctx: Ctx; sections: readonly SectionKind[]; where: stri
   { ctx: "rules-top", sections: ["rules"], where: "at the top of `# rules`" },
   { ctx: "flow-top", sections: ["flow"], where: "at the top of `# flow`" },
   { ctx: "wiring-top", sections: ["wiring"], where: "at the top of `# wiring`" },
+  { ctx: "migration-top", sections: ["migration"], where: "at the top of `# migration`" },
   { ctx: "layer", sections: ["map"], where: "under `- layer`" },
   { ctx: "module", sections: ["map"], where: "under `- module`" },
   { ctx: "fn", sections: ["map"], where: "under `- fn`" },
@@ -227,7 +231,7 @@ const PLACES: readonly { ctx: Ctx; sections: readonly SectionKind[]; where: stri
   { ctx: "wire-dep", sections: ["wiring"], where: "under a dependency of `- wire`" },
 ];
 
-const SECTION_NAMES: Record<SectionKind, string> = { map: "a map", rules: "`# rules`", flow: "`# flow`", wiring: "`# wiring`" };
+const SECTION_NAMES: Record<SectionKind, string> = { map: "a map", rules: "`# rules`", flow: "`# flow`", wiring: "`# wiring`", migration: "`# migration`" };
 
 /**
  * `; \`calls\` goes under \`- fn\`` when `word` is a keyword of other positions
@@ -293,6 +297,10 @@ const ROLES: { readonly [C in Ctx]?: Partial<Record<NodeKind, string>> } = {
     question: QUESTION_ROLE,
   },
   "wiring-top": { wire: "the wiring of a module: how its dependencies are built" },
+  "migration-top": {
+    migrate: "an ID of the old stack and its counterpart in this repository (`planned` while it is not written yet)",
+    dropped: "an ID of the old stack that is not carried over, with the reason",
+  },
   layer: { module: "a module declaration in this layer" },
   module: {
     module: "a submodule declaration",
@@ -341,6 +349,7 @@ export function roleAt(section: SectionKind, parent: NodeKind | undefined, kind:
 }
 
 function keywordKind(ctx: Ctx, kw: string): NodeKind {
+  if (ctx === "migration-top") return kw === "map" ? "migrate" : kw === "dropped" ? "dropped" : "unknown";
   switch (kw) {
     case "layer":
       return "layer";
@@ -558,21 +567,21 @@ class Parser {
     const first = tokens[0]?.text;
     let kind: SectionKind = "map";
     let known = true;
-    if (first === "map" || first === "rules" || first === "flow" || first === "wiring") kind = first;
+    if (first === "map" || first === "rules" || first === "flow" || first === "wiring" || first === "migration") kind = first;
     else known = false;
     let name: Spanned<string> | null = null;
     if (!known) {
       const what = title === "" ? "section heading without a kind" : `unknown section \`# ${title}\``;
-      this.err("K006", full, `${what}; expected \`map\`, \`rules\`, \`flow <name>\` or \`wiring\` (treated as map)`);
+      this.err("K006", full, `${what}; expected \`map\`, \`rules\`, \`flow <name>\`, \`wiring\` or \`migration <name>\` (treated as map)`);
     } else {
-      // Only a flow has a name (§2); any other word is a mistake, not a name.
-      const named = kind === "flow";
+      // Only a flow and a migration have a name (§2); any other word is a mistake, not a name.
+      const named = kind === "flow" || kind === "migration";
       const t = tokens[1];
       if (named && t) {
         if (isSegment(t.text)) name = { value: nfc(t.text), span: t.span };
         else this.err("K005", t.span, `invalid section name \`${t.text}\``, "id");
       } else if (named) {
-        this.err("K005", full, "`# flow` needs a name, e.g. `# flow checkout`", "arguments");
+        this.err("K005", full, kind === "flow" ? "`# flow` needs a name, e.g. `# flow checkout`" : "`# migration` needs a name, e.g. `# migration checkout`", "arguments");
       }
       const extra = tokens[named ? 2 : 1];
       if (extra) this.err("K005", extra.span, named ? "unexpected words in heading" : `unexpected words in heading; only \`# flow\` takes a name`, "arguments");
@@ -787,6 +796,19 @@ class Parser {
         if (sigStart && sigEnd) n.text = { value: renderTokens(sig), span: { start: sigStart.span.start, end: sigEnd.span.end } };
         break;
       }
+      case "migrate":
+        this.migrationRow(n, l, rest);
+        break;
+      case "dropped": {
+        const id = rest[0];
+        if (id && id.kind === "word" && isId(id.text) && rest.length > 1) {
+          n.id = nfc(id.text);
+          this.freeText(n, l, rest.slice(1));
+        } else {
+          this.err("K005", n.span, "expected `dropped <id> <reason>`", "arguments");
+        }
+        break;
+      }
       case "test": {
         const file = rest[0];
         if (file && file.kind === "word") {
@@ -996,6 +1018,25 @@ class Parser {
     if (rest.length === 0 || rest.length % 2 === 0) {
       this.err("K005", n.span, "expected `layers <a> < <b> …`", "arguments");
     }
+  }
+
+  /**
+   * `map <old> → [planned] <new>`: `id` is the old stack's ID, `text` the
+   * row as written, `label` `planned` when the new ID is an intention. No
+   * reference: the old ID lives in another repository (ticket 27 checks both).
+   */
+  private migrationRow(n: Node, l: Line, rest: Token[]): void {
+    const [old, arrow, ...tail] = rest;
+    const planned = tail[0]?.text === "planned" ? tail[0] : null;
+    const target = planned ? tail[1] : tail[0];
+    const extra = planned ? tail[2] : tail[1];
+    if (!old || old.kind !== "word" || !isId(old.text) || !arrow || (arrow.text !== "→" && arrow.text !== "->") || !target || target.kind !== "word" || !isId(target.text) || extra) {
+      this.err("K005", n.span, "expected `map <old id> → [planned] <new id>`", "arguments");
+      return;
+    }
+    n.id = nfc(old.text);
+    if (planned) n.label = spanned(planned);
+    this.freeText(n, l, rest);
   }
 
   private freeText(n: Node, l: Line, rest: Token[]): void {

@@ -33,4 +33,6 @@ Replace the guessed layers in `keylang.json` with the paths from the next part. 
 
 `keylang feature <slug>` reports done when every `planned` line in that file matches the code, every step has a static call path, and no rule fails. Tests and traces are printed beside that answer, but they do not decide it. On exit 0 it prints `done` on stderr.
 
+If the new project ports a process an old one already has, the first feature can come from there: `keylang flow export <flow> --out flow.bundle.md` in the old repository, `keylang flow import flow.bundle.md` in the new one. Without `--layer-map` each old layer goes to the layer of the same name, else to your first layer with a note; `--mode hybrid` asks the model to match the layers by name and description, and an answer that names no layer of yours falls back to that rule. The result is a proposal of a feature full of `planned` lines with the old signatures — the same starting point as writing it by hand.
+
 Next: [a Telegram bot](02-telegram-bot.md).
