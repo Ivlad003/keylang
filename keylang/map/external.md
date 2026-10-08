@@ -9,6 +9,7 @@
   - module fugood-whisper_node <!-- @fugood/whisper.node -->
   - module modelcontextprotocol-sdk <!-- @modelcontextprotocol/sdk -->
   - module node
+  - module saxes
   - module smol-toml
   - module web-tree-sitter
   - module ws

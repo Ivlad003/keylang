@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [anthropic-ai-sdk](#external.anthropic-ai-sdk) · [decibri](#external.decibri) · [eventsource-parser](#external.eventsource-parser) · [fugood-whisper_node](#external.fugood-whisper_node) · [modelcontextprotocol-sdk](#external.modelcontextprotocol-sdk) · [node](#external.node) · [smol-toml](#external.smol-toml) · [web-tree-sitter](#external.web-tree-sitter) · [ws](#external.ws) · [zod](#external.zod)
+[README](README.md) · modules: [anthropic-ai-sdk](#external.anthropic-ai-sdk) · [decibri](#external.decibri) · [eventsource-parser](#external.eventsource-parser) · [fugood-whisper_node](#external.fugood-whisper_node) · [modelcontextprotocol-sdk](#external.modelcontextprotocol-sdk) · [node](#external.node) · [saxes](#external.saxes) · [smol-toml](#external.smol-toml) · [web-tree-sitter](#external.web-tree-sitter) · [ws](#external.ws) · [zod](#external.zod)
 
 # map
 
@@ -18,6 +18,8 @@
     <a id="external.modelcontextprotocol-sdk"></a>
   - module node
     <a id="external.node"></a>
+  - module saxes
+    <a id="external.saxes"></a>
   - module smol-toml
     <a id="external.smol-toml"></a>
   - module web-tree-sitter
