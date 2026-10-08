@@ -337,6 +337,36 @@ export function mcpServer(root: string, version: string): McpServer {
     },
   );
 
+  server.registerTool(
+    "coverage_report",
+    {
+      description:
+        "Where keylang does not see, as `keylang coverage --json` computes it: reach (fns reachable from at least one entry point over resolved call edges, and the share), orphans (fns no entry point reaches: dead code or an entry point keylang does not know; entry fns and test files left out), holes by module with reasons normalised (backticked names as `X`) and counted, entry points no hand-written flow starts from (with the discovered flow `flows discover` would draft and whether the view has it), and «logic in data»: calls into configuration readers (resources/data-logic.json) to check by hand. A view, not a verdict; read-only.",
+      inputSchema: {},
+    },
+    async () => {
+      const result = await runOperation({ kind: "coverage", root }, { analyze: () => fresh() });
+      if (result.payload === null) return failure(result.messages[0]?.text ?? "coverage failed");
+      const { text: _text, ...report } = result.payload;
+      return json(report);
+    },
+  );
+
+  server.registerTool(
+    "list_integrations",
+    {
+      description:
+        "What the code talks to, as `keylang integrations --json` computes it: outgoing integrations (HTTP, SOAP, SDK and queue clients of resources/integrations.json) each with its call sites (file, line, callee, enclosing fn, the host of a literal URL or `dynamic`/`n/a`) and the entry points that reach each site with their hand-written or discovered flow; the client's imports; incoming webhooks (entries of kind webhook, routes whose path names a webhook, callback, notify or IPN, `integrations.webhooks` of keylang.json); queue publishers, consumers and pairs. A view; read-only, nothing is contacted.",
+      inputSchema: {},
+    },
+    async () => {
+      const result = await runOperation({ kind: "integrations", root }, { analyze: () => fresh() });
+      if (result.payload === null) return failure(result.messages[0]?.text ?? "integrations failed");
+      const { text: _text, ...report } = result.payload;
+      return json(report);
+    },
+  );
+
   return server;
 }
 

@@ -86,6 +86,10 @@ node bin/keylang.js                      # terminal UI (? lists keys, q quits)
 node bin/keylang.js web                  # the same UI in a browser; open the printed URL
 ```
 
+`keylang web` also serves a diagram page (`/diagrams`, linked from the terminal page): flows, discovered flows and entry points in a searchable list, the chosen one drawn as a BPMN-like diagram with lanes per layer and verdict colours, and a side panel with the clicked step's ID, `file:line` (a `vscode://` link), verdicts and where else the ID is used. It is read-only and refreshes itself every few seconds ([docs/tui.md](docs/tui.md#сторінка-діаграм-diagrams)).
+
+![The diagram page of keylang web: the checkout flow, a selected step and its panel](docs/course/images/diagrams-flow.png)
+
 `examples/shop` keeps a wrong id, `domain.aggregate`, on purpose, so that you can see an error. The example also has no code snapshot, which means the flow cannot be proved either. The check exits with code 1:
 
 ![check examples/shop reports K001](docs/course/images/cli-shop-k001.png)
@@ -147,6 +151,6 @@ npm test            # node:test, through the real CLI
 npm run typecheck   # tsc --noEmit
 ```
 
-The terminal UI is tested without a real terminal (`tests/tui-*.test.ts`), and `keylang web` is tested through the CLI and a WebSocket (`tests/web.test.ts`).
+The terminal UI is tested without a real terminal (`tests/tui-*.test.ts`), and `keylang web` is tested through the CLI and a WebSocket (`tests/web.test.ts`); the diagram page runs in headless Chromium with `npm run test:web` (not part of `npm test`).
 
 To publish, start from a clean clone: run `npm test && npm run typecheck`, then `npm version patch` (or minor, or major) and `npm publish`. `prepack` builds `dist/` for you. Before publishing, it is worth inspecting the tarball with `npm pack`.

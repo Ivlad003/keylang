@@ -58,7 +58,12 @@ export function explainEdge(snapshot: AnalysisSnapshot, from: string, to: string
 /** One edge as the CLI prints it: kind, resolution, provenance, range, fragment, `source → target`, candidates, hook, reason. */
 export function edgeLine(edge: SnapshotEdge): string {
   const via = edge.candidates?.length ? ` [${edge.candidates.join(", ")}]` : "";
-  const hook = edge.via === "default" ? ` (default of the hook \`${edge.hook ?? ""}\`)` : edge.via === "injected" ? ` (injected as \`${edge.hook ?? ""}\` at ${edge.site ?? "?"})` : "";
+  const hook =
+    edge.via === "default" ? ` (default of the hook \`${edge.hook ?? ""}\`)`
+    : edge.via === "injected" ? ` (injected as \`${edge.hook ?? ""}\` at ${edge.site ?? "?"})`
+    : edge.via === "callable-arg" ? " (a callable passed as an argument)"
+    : edge.via === "closure-arg" ? ` (in a closure passed as an argument at ${edge.site ?? "?"})`
+    : "";
   const fragment = edge.text ? ` \`${edge.text.replace(/\s+/g, " ")}\`` : "";
   const docblock = edge.provenance === "docblock" && edge.docblock ? ` (typed by a docblock at ${edge.docblock})` : "";
   return `${edge.kind} ${edge.resolution} ${edge.provenance} ${edge.file}:${edge.line}:${edge.col}-${edge.endLine}:${edge.endCol}${fragment} ${edge.source} → ${edge.target ?? "?"}${via}${hook}${docblock}${edge.reason ? ` (${edge.reason})` : ""}`;

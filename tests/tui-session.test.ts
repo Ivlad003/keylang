@@ -285,6 +285,29 @@ test("tui: the navigation panel lists layers, modules, flows and rules; Enter op
   assert.equal(s.app.state.current, "keylang/rules.md");
 });
 
+test("tui: a click on a navigation arrow while editing folds the item and keeps the focus and the cursor in the editor (review 2026-10-06, ticket 67)", async (t) => {
+  const s = session(checkoutRepo(t));
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send("i");
+  assert.equal(s.app.state.mode, "edit");
+  assert.notEqual(s.app.frame().cursor, null);
+  const arrow = locate(s.lines(), "▾ domain");
+  s.send(click(arrow.x, arrow.y));
+  assert.ok(s.text().includes("▸ domain"), "the layer folded");
+  assert.equal(s.app.state.mode, "edit");
+  assert.equal(s.app.state.focus, "editor", "the keys still go to the editor, so the focus stays there");
+  assert.notEqual(s.app.frame().cursor, null, "the cursor stays shown while typing goes on");
+  s.send("X");
+  assert.match(s.app.state.buffers.get(FLOW_PATH)!.text, /^X# flow checkout/);
+  // In the view the same click focuses the navigation, as before.
+  await esc(s.send);
+  const folded = locate(s.lines(), "▸ domain");
+  s.send(click(folded.x, folded.y));
+  assert.ok(s.text().includes("▾ domain"));
+  assert.equal(s.app.state.focus, "nav");
+});
+
 test("tui: an unknown step id typed in the editor shows K001 and a hint at once", async (t) => {
   const root = checkoutRepo(t);
   const s = session(root);
@@ -861,6 +884,32 @@ test("tui: Enter on a finding lands on the right cluster after Unicode character
   s.send("\x1b");
   await sleep(40);
   assert.equal(s.app.state.results.open, false);
+});
+
+test("tui: a bracketed paste while editing a finding's target goes into it, as typed keys do (review 2026-10-06, ticket 65)", async (t) => {
+  const root = checkoutRepo(t, { [FLOW_PATH]: CHECKOUT_FLOW.replace("- step application.purchase.buy", "- step application.purchase.nope") });
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send(KEY.f6);
+  assert.match(s.text(), /K001 keylang\/flows\/checkout\.md:6:8/, s.text());
+  s.send(KEY.enter);
+  assert.equal(s.app.state.results.viewing, true);
+  s.send("i");
+  assert.equal(s.app.state.mode, "edit");
+  s.send("\x1b[200~PASTED\x1b[201~");
+  assert.equal(s.app.state.results.viewing, true, "the target stays shown");
+  assert.match(s.app.state.buffers.get(FLOW_PATH)!.text.split("\n")[5]!, /^- step PASTEDapplication\.purchase\.nope$/);
+  // While the list itself is shown, a paste still reaches nothing under it.
+  s.send("\x1b");
+  await sleep(40);
+  s.send("\x1b");
+  await sleep(40);
+  assert.equal(s.app.state.results.viewing, false);
+  assert.equal(s.app.state.results.open, true);
+  const before = s.app.state.buffers.get(FLOW_PATH)!.text;
+  s.send("\x1b[200~MORE\x1b[201~");
+  assert.equal(s.app.state.buffers.get(FLOW_PATH)!.text, before);
 });
 
 test("tui: the findings panel names unsaved inputs and a failed analysis", async (t) => {
@@ -2657,6 +2706,31 @@ test("tui: below 100 columns one side panel is shown — the focused one, else t
   assert.match(s.app.state.message ?? "", /side panels need 60 columns \(now 50\)/);
 });
 
+test("tui: a focused side panel hidden by a resize below 60 columns gives the focus back to the editor; the keys do not go to the hidden list (review 2026-10-06, ticket 66)", async (t) => {
+  const s = session(checkoutRepo(t), { cols: 120, rows: 30 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  assert.equal(s.app.state.current, FLOW_PATH);
+  // F2 focuses the files, Tab moves the focus on to the navigation, F4 opens the context panel focused.
+  for (const [key, focus] of [["\x1b[12~", "files"], [KEY.tab, "nav"], ["\x1bOS", "context"]] as const) {
+    s.vt.resize(120, 30);
+    s.app.resize(120, 30);
+    for (let i = 0; i < 3 && s.app.state.focus !== focus; i++) s.send(key);
+    assert.equal(s.app.state.focus, focus);
+    s.vt.resize(50, 30);
+    s.app.resize(50, 30);
+    assert.doesNotMatch(s.text(), /FILES|NAVIGATION/);
+    assert.equal(s.app.state.focus, "editor", `the hidden ${focus} panel keeps no focus`);
+    s.send("j");
+    s.send("j");
+    s.send(KEY.enter);
+    assert.equal(s.app.state.current, FLOW_PATH, "no file opened from a list nobody sees");
+    assert.equal(s.app.state.cursor.line, 2, "j moved the editor's cursor");
+    s.send("k");
+    s.send("k");
+  }
+});
+
 test("width: sliceCells keeps whole clusters, blanks a wide one cut by the edge and marks hidden text", () => {
   assert.equal(sliceCells("abcdef", 0, 6), "abcdef");
   assert.equal(sliceCells("abcdefgh", 0, 6), "abcde…");
@@ -2664,4 +2738,27 @@ test("width: sliceCells keeps whole clusters, blanks a wide one cut by the edge 
   assert.equal(sliceCells("a支付b", 2, 4), "…付b");
   assert.equal(sliceCells("支付支付支付", 1, 5), "…付…");
   assert.equal(sliceCells("👨‍👩‍👧 done", 0, 3), "👨‍👩‍👧…");
+});
+
+test("tui: over the editor the help takes a chunk of keys as help keys and drops a paste; the hidden buffer is not changed (review 2026-10-06, ticket 64)", async (t) => {
+  const root = checkoutRepo(t);
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send("i");
+  s.send(KEY.ctrlP);
+  for (const ch of "help") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.help, true);
+  assert.equal(s.app.state.mode, "edit");
+  // A held `j` arrives as one chunk: it scrolls the help twice, as two separate keys do.
+  s.send("jj");
+  assert.equal(s.app.state.help, true);
+  assert.equal(s.app.state.helpTop, 2);
+  // A bracketed paste does not reach the buffer under the help either.
+  s.send("\x1b[200~XYZ\x1b[201~");
+  assert.equal(s.app.state.help, true);
+  assert.equal(s.app.state.buffers.get(FLOW_PATH)!.text, CHECKOUT_FLOW);
+  assert.deepEqual(s.app.unsaved(), []);
+  assert.doesNotMatch(s.lines()[0]!, /\[\+\]/);
 });

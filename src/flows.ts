@@ -25,7 +25,7 @@ interface SnapshotEdge {
   col: number;
   reason?: string;
   text?: string;
-  via?: "default" | "injected";
+  via?: "default" | "injected" | "callable-arg" | "closure-arg";
   hook?: string;
   site?: string;
   closure?: true;
@@ -380,8 +380,30 @@ function namedLike(graph: CallGraph, name: string): string[] {
   return [...new Set([...named(name), ...(name.startsWith("#") ? named(name.slice(1)) : [])])];
 }
 
-function describeVia(edge: SnapshotEdge): string {
-  return edge.via === "injected" ? `\`${edge.hook ?? edge.text ?? ""}\` injected at ${edge.site ?? "?"}` : `the default of the hook \`${edge.hook ?? edge.text ?? ""}\``;
+/** A `via` edge in words. `where`: with the position of a passed callable (a hole's message adds the edge's position itself). */
+function describeVia(edge: SnapshotEdge, where = true): string {
+  if (edge.via === "injected") return `\`${edge.hook ?? edge.text ?? ""}\` injected at ${edge.site ?? "?"}`;
+  if (edge.via === "callable-arg") return `the callable \`${edge.text ?? ""}\` passed${where ? ` at ${at(edge)}` : " as an argument"}`;
+  if (edge.via === "closure-arg") return `the closure passed at ${edge.site ?? at(edge)}`;
+  return `the default of the hook \`${edge.hook ?? edge.text ?? ""}\``;
+}
+
+/**
+ * The edges a static mode follows as a proof: plain calls outside closures;
+ * in `behavior` also hook edges, callables passed as arguments and calls in
+ * a closure passed as an argument (the callee of the call holds it).
+ */
+function provesIn(behavior: boolean): (step: Step) => boolean {
+  return (step) => (behavior ? step.edge.via === "closure-arg" || !step.edge.closure : !step.edge.closure && step.edge.via === undefined);
+}
+
+/**
+ * The edge is a route only when some holder calls the closure it sits in: a
+ * call in a stored closure, or (in `behavior`) a callable passed from inside
+ * one. In `shape`, a closure passed as an argument is named as its `via`.
+ */
+function closureOnly(edge: SnapshotEdge, behavior: boolean): boolean {
+  return edge.closure === true && edge.resolution === "resolved" && (behavior ? edge.via !== "closure-arg" : edge.via === undefined);
 }
 
 function describeHole(edge: SnapshotEdge, target: string, input: FlowInput): string {
@@ -389,7 +411,7 @@ function describeHole(edge: SnapshotEdge, target: string, input: FlowInput): str
   if (edge.resolution === "resolved") {
     if (edge.via) {
       const by = input.staticSetBy === "config" ? "keylang.json check.static" : "--static";
-      return `${describeVia(edge)} (not followed in static mode ${input.static}, set by ${by})`;
+      return `${describeVia(edge, false)} (not followed in static mode ${input.static}, set by ${by})`;
     }
     return `\`${edge.text ?? ""}\` may dispatch to another \`${lastSegment(edge.text ?? callName(target))}\``;
   }
@@ -434,8 +456,8 @@ function reachability(graph: CallGraph, input: FlowInput, parent: string | null,
   if (to?.kind === "module" && to.layer === "external") return externalImport(input, parent, target);
   if (to && to.kind !== "fn") return { verdict: "unverified", message: `\`${target}\` is a ${to.kind}, not a callable` };
   const behavior = input.static === "behavior";
-  // A call in a closure runs only when that function value is called: it is a possible route, not a proof.
-  const proves = (step: Step): boolean => !step.edge.closure && (behavior || step.edge.via === undefined);
+  // A call in a stored closure runs only when that function value is called: it is a possible route, not a proof.
+  const proves = provesIn(behavior);
 
   // 1. A proof: breadth-first over the edges this mode follows, through bodies that surely run.
   const doubt = (id: string): string | undefined => graph.replaced.get(id) ?? graph.unreadable.get(id);
@@ -455,7 +477,7 @@ function reachability(graph: CallGraph, input: FlowInput, parent: string | null,
     const others = holes.filter((hole) => hole.edge !== shown).length;
     return others > 0 ? ` (and ${others} more unresolved call${others === 1 ? "" : "s"} in reachable code)` : "";
   };
-  if (uncertain?.closure && uncertain.resolution === "resolved" && !uncertain.via) {
+  if (uncertain && closureOnly(uncertain, behavior)) {
     return { verdict: "unverified", message: `no resolved path from ${parent}; reached only through a closure of ${uncertain.source}: \`${uncertain.text ?? ""}\` at ${at(uncertain)} runs only when that function value is called${more(uncertain)}` };
   }
   if (uncertain) return { verdict: "unverified", message: `no resolved path from ${parent}; ${describeHole(uncertain, target, input)} at ${at(uncertain)} may reach it${more(uncertain)}` };
@@ -496,7 +518,7 @@ function directCall(graph: CallGraph, input: FlowInput, parent: string | null, t
   if (to?.kind === "module" && to.layer === "external") return externalImport(input, parent, target);
   if (to && to.kind !== "fn") return { verdict: "unverified", message: `\`${target}\` is a ${to.kind}, not a callable` };
   const behavior = input.static === "behavior";
-  const proves = (step: Step): boolean => !step.edge.closure && (behavior || step.edge.via === undefined);
+  const proves = provesIn(behavior);
   const own = graph.resolved.get(parent) ?? [];
   const unread = graph.unreadable.get(parent);
   const direct = own.filter((step) => step.to === target);
@@ -506,7 +528,7 @@ function directCall(graph: CallGraph, input: FlowInput, parent: string | null, t
     return unread ? { verdict: "unverified", message: `${message}, but ${unread}` } : { verdict: "ok", message };
   }
   const weak = direct[0];
-  if (weak?.edge.closure) return { verdict: "unverified", message: `\`${weak.edge.text ?? ""}\` at ${at(weak.edge)} is in a closure of ${parent} and runs only when that function value is called` };
+  if (weak && closureOnly(weak.edge, behavior)) return { verdict: "unverified", message: `\`${weak.edge.text ?? ""}\` at ${at(weak.edge)} is in a closure of ${parent} and runs only when that function value is called` };
   if (weak) return { verdict: "unverified", message: `${describeHole(weak.edge, target, input)} at ${at(weak.edge)}` };
   const lead = `no resolved call from ${parent}`;
   if (unread) return { verdict: "unverified", message: `${lead}; ${unread}` };

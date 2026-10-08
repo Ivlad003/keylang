@@ -124,7 +124,7 @@ export function statementPrint(snapshot: AnalysisSnapshot, subjects: readonly st
     const print = snapshotBaseline(snapshot, id);
     parts.push(`${id}=${print ?? "?"}`);
     if (print === null) incomplete.push(`\`${id}\` is not in the snapshot`);
-    else if (!closureComplete(snapshot, id)) incomplete.push(`\`${id}\` reaches calls keylang does not resolve`);
+    else if (!closureComplete(snapshot, id)) incomplete.push(`\`${id}\` reaches calls or values keylang does not resolve`);
   }
   return { fingerprint: createHash("sha256").update(parts.join("\n")).digest("hex"), incomplete };
 }

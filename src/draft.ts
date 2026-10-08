@@ -31,23 +31,30 @@ export function draftFlow(snapshot: AnalysisSnapshot, trigger: string, options: 
     list.push(`${c.text || c.reason} (${c.file}:${c.line})`);
     holes.set(c.source, list);
   }
+  // How a caller reaches a callee when not by a plain call: a callable passed as an argument, a call in a closure passed as one.
+  const via = new Map<string, string>();
+  for (const e of snapshot.edges) {
+    if (e.kind !== "call" || e.resolution !== "resolved" || e.target === null) continue;
+    const key = `${e.source}\u0000${e.target}`;
+    if (!via.has(key)) via.set(key, e.via === "callable-arg" ? " <!-- keylang:algo via callable -->" : e.via === "closure-arg" ? " <!-- keylang:algo via closure -->" : "");
+  }
   const listed = new Set<string>();
   const lines = [`# flow ${name}`, ""];
   const steps: string[] = [];
-  const visit = (id: string, level: number): void => {
+  const visit = (id: string, level: number, how: string): void => {
     listed.add(id);
     steps.push(id);
     const open = holes.get(id) ?? [];
     // Closing `-->` inside a comment would end it early.
     const comment = open.length > 0 ? ` <!-- keylang:algo unresolved: ${open.join("; ").replace(/-->/g, "-- >")} -->` : "";
-    lines.push(`${"  ".repeat(level)}- ${level === 0 ? "trigger" : "step"} ${id}${comment}`);
+    lines.push(`${"  ".repeat(level)}- ${level === 0 ? "trigger" : "step"} ${id}${how}${comment}`);
     if (level >= depth) return;
     for (const callee of snapshot.nodes[id]?.calls ?? []) {
       if (listed.has(callee) || snapshot.nodes[callee]?.kind !== "fn" || snapshot.nodes[callee]?.layer === "external") continue;
-      visit(callee, level + 1);
+      visit(callee, level + 1, via.get(`${id}\u0000${callee}`) ?? "");
     }
   };
-  visit(trigger, 0);
+  visit(trigger, 0, "");
   return { name, text: `${lines.join("\n")}\n`, steps };
 }
 

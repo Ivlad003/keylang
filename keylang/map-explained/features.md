@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [agent-cli](#features.agent-cli) · [agent-context](#features.agent-context) · [baseline](#features.baseline) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [clone](#features.clone) · [discover](#features.discover) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [feature-status](#features.feature-status) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [harness](#features.harness) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stale](#features.stale) · [stats](#features.stats) · [voice-local](#features.voice-local) · [voice](#features.voice)
+[README](README.md) · modules: [agent-cli](#features.agent-cli) · [agent-context](#features.agent-context) · [baseline](#features.baseline) · [call-sites](#features.call-sites) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [clone](#features.clone) · [coverage-report](#features.coverage-report) · [discover](#features.discover) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [feature-status](#features.feature-status) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [harness](#features.harness) · [integrations](#features.integrations) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stale](#features.stale) · [stats](#features.stats) · [voice-local](#features.voice-local) · [voice](#features.voice)
 
 # map
 
@@ -39,7 +39,7 @@
       <a id="features.agent-cli.parseAgentSettings"></a><br>The settings of an agents.json already parsed as JSON.
       - calls [features.agent-cli.isObject](features.md#features.agent-cli.isObject), [base.config.isAgent](base.md#base.config.isAgent), [features.agent-cli.cliDefinition](features.md#features.agent-cli.cliDefinition)
     - fn [cliDefinition](../../src/agent-cli.ts#L110) (file: string, name: string, def: unknown) → CliDefinition <!-- internal -->
-      <a id="features.agent-cli.cliDefinition"></a><br>Validates one `clis.<name>` entry from a settings file, checking the name format, allowed fields, and either a non-empty `bin` string or a `command` array whose placeholders are known, throwing descriptive errors on any violation. Preset names may only override `bin`; it uses… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="features.agent-cli.cliDefinition"></a><br>Validates one `clis.<name>` entry from a settings file, checking the name format, allowed fields, and either a non-empty `bin` string or a `command` array whose placeholders are known, throwing descriptive errors on any violation. Preset names may only override `bin`; it uses… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.agent-cli.isObject](features.md#features.agent-cli.isObject)
     - fn [resolveAgent](../../src/agent-cli.ts#L145) (configAgent: string | null, env: Env, home: string) → { agent: string | null; source: AgentSource | null }
       <a id="features.agent-cli.resolveAgent"></a><br>The agent in effect and where it came from: `KEYLANG_AGENT` (an empty variable is unset), else agents.json "use", else keylang.json `agent`. An invalid variable or agents.json throws, naming it.
@@ -115,7 +115,7 @@
       - calls [features.agent-cli.killGroup](features.md#features.agent-cli.killGroup)
     - fn [runInvocation](../../src/agent-cli.ts#L574) (agent: string, inv: Invocation, root: string, call: CliCallOptions) → Promise<RunResult> <!-- internal -->
       <a id="features.agent-cli.runInvocation"></a><br>Spawns the CLI in its own process group, feeds it stdin, and resolves with the collected output or the first [`features.agent-cli.parseResultLine`](features.md#features.agent-cli.parseResultLine) hit, killing the group via [`features.agent-cli.killGroup`](features.md#features.agent-cli.killGroup). Rejects on timeout, abort ([`features.agent-cli.CliCancelled`](features.md#features.agent-cli.CliCancelled)), oversized… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-      - calls [features.agent-cli.hookExit](features.md#features.agent-cli.hookExit), [features.agent-cli.killGroup](features.md#features.agent-cli.killGroup), [features.agent-cli.CliCancelled](features.md#features.agent-cli.CliCancelled), [features.agent-cli.parseResultLine](features.md#features.agent-cli.parseResultLine), [features.agent-cli.stripAnsi](features.md#features.agent-cli.stripAnsi)
+      - calls [features.agent-cli.hookExit](features.md#features.agent-cli.hookExit), [features.agent-cli.CliCancelled](features.md#features.agent-cli.CliCancelled), [features.agent-cli.parseResultLine](features.md#features.agent-cli.parseResultLine), [features.agent-cli.killGroup](features.md#features.agent-cli.killGroup), [features.agent-cli.stripAnsi](features.md#features.agent-cli.stripAnsi)
     - fn [stripAnsi](../../src/agent-cli.ts#L677) (text: string) → string <!-- internal -->
       <a id="features.agent-cli.stripAnsi"></a><br>Removes ANSI escape sequences (ESC-bracket codes ending in a letter) from a string via a global regex replace, returning plain text. [`features.agent-cli.runInvocation`](features.md#features.agent-cli.runInvocation) uses it to clean captured CLI output. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [parseJson](../../src/agent-cli.ts#L682) (text: string) → unknown <!-- internal -->
@@ -144,7 +144,7 @@
       <a id="features.agent-context.contextForIds"></a><br>The bundle for a list of ids: each node and its neighbors, the flows and rules that name it, its code, and the e2e tests of those flows. A planned id that is not implemented is marked planned and incomplete.
       - calls [features.agent-context.addIdItems](features.md#features.agent-context.addIdItems), [features.agent-context.packOf](features.md#features.agent-context.packOf)
     - fn [contextPack](../../src/agent-context.ts#L73) (analysis: Analysis, input: ContextInput) → ContextPack
-      <a id="features.agent-context.contextPack"></a><br>Builds an agent context pack from the buffer plus IDs referenced on the cursor line (via [`lang.parser.parse`](lang.md#lang.parser.parse), `addIdItems`), with token estimates, cached per analysis in a bounded LRU keyed by a content hash. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
+      <a id="features.agent-context.contextPack"></a><br>Builds an agent context pack from the buffer plus IDs referenced on the cursor line (via [`lang.parser.parse`](lang.md#lang.parser.parse), `addIdItems`), with token estimates, cached per analysis in a bounded LRU keyed by a content hash. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [lang.parser.parse](lang.md#lang.parser.parse), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk), [features.agent-context.specDigest](features.md#features.agent-context.specDigest), [features.agent-context.estimateTokens](features.md#features.agent-context.estimateTokens), [features.agent-context.addIdItems](features.md#features.agent-context.addIdItems)
     - fn [packOf](../../src/agent-context.ts#L112) (items: ContextItem[], keySource: string) → ContextPack <!-- internal -->
       <a id="features.agent-context.packOf"></a><br>Bundles a list of context items into a pack, summing their token counts and tagging it with a SHA-256 hex digest of the given key source. Used by [`features.agent-context.contextForIds`](features.md#features.agent-context.contextForIds) to assemble its result. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
@@ -172,7 +172,7 @@
     - span [base.span](base.md#base.span)
     - fn [baselineText](../../src/baseline.ts#L25) (snapshot: AnalysisSnapshot) → string
       <a id="features.baseline.baselineText"></a><br>Baseline rules for one snapshot. Layers come from `keylang.json`, in code-unit order; `unassigned` is a source only when a module is in it.
-      - calls [features.baseline.externalModule](features.md#features.baseline.externalModule)
+      - calls [base.span.compareText](base.md#base.span.compareText), [features.baseline.externalModule](features.md#features.baseline.externalModule)
     - fn [externalModule](../../src/baseline.ts#L62) (snapshot: AnalysisSnapshot, id: string) → string | null <!-- internal -->
       <a id="features.baseline.externalModule"></a><br>The external module an id belongs to (`external.stripe` for a symbol under it).
     - fn [baselinePath](../../src/baseline.ts#L74) (config: Pick<Config, "dir">) → string
@@ -191,6 +191,101 @@
       - calls [base.safe-write.landing](base.md#base.safe-write.landing), [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic)
     - fn [ruleLines](../../src/baseline.ts#L144) (text: string) → string[] <!-- internal -->
       <a id="features.baseline.ruleLines"></a><br>The `- deny` / `- allow` lines of a rules text, in order.
+  - module [call-sites](../../src/call-sites.ts#L1)
+    <a id="features.call-sites"></a><br>What the coverage report and the integrations inventory read beside the snapshot (business-flows/13, 14): every call written in the analysed files with the node that encloses it, matched against lists kept as data (`resources/*.json`), and reachability from entry points over…
+    - node [external.node](external.md#external.node)
+    - config [base.config](base.md#base.config)
+    - facts [extract.facts](extract.md#extract.facts)
+    - fact-cache [map.fact-cache](map.md#map.fact-cache)
+    - frontends [map.frontends](map.md#map.frontends)
+    - languages [base.languages](base.md#base.languages)
+    - snapshot [map.snapshot](map.md#map.snapshot)
+    - span [base.span](base.md#base.span)
+    - fn [resourcePath](../../src/call-sites.ts#L24) (name: string) → string
+      <a id="features.call-sites.resourcePath"></a><br>A data file of `resources/`, beside `src/` and `dist/` alike.
+    - type [Matcher](../../src/call-sites.ts#L35)
+      <a id="features.call-sites.Matcher"></a><br>How a data list names what it looks for. A call matches when any of `callees`, `imports` or `receivers` matches; `methods` narrows `imports` and `receivers` to calls whose last name is listed. `text` matches source lines (a read such as `process.env.X`, which is no call)…
+    - type [CallSite](../../src/call-sites.ts#L55)
+      <a id="features.call-sites.CallSite"></a><br>A call written in an analysed file.
+    - type [ReadSite](../../src/call-sites.ts#L69)
+      <a id="features.call-sites.ReadSite"></a><br>A read of a name keylang has no call for (`settings.X`), or a source line a `text` pattern matched.
+    - type [FileCalls](../../src/call-sites.ts#L78)
+      <a id="features.call-sites.FileCalls"></a><br>The facts of one analysed file with what a matcher needs: the imports by the local name they bind.
+    - type [Stored](../../src/call-sites.ts#L89) <!-- internal -->
+      <a id="features.call-sites.Stored"></a>
+    - fn [snapshotFacts](../../src/call-sites.ts#L97) (config: Config, snapshot: AnalysisSnapshot) → Promise<FileFacts[]>
+      <a id="features.call-sites.snapshotFacts"></a><br>The facts of every analysed file of the snapshot, in path order: the fact cache's entry when its hash is the manifest's (an analysis that saves the cache has just written it), else the file extracted again. A file that cannot be read or parsed gives none.
+      - calls [base.config.isAnalysed](base.md#base.config.isAnalysed), [features.call-sites.isFacts](features.md#features.call-sites.isFacts), [map.frontends.frontendFor](map.md#map.frontends.frontendFor)
+    - fn [isFacts](../../src/call-sites.ts#L124) (value: unknown) → value is FileFacts <!-- internal -->
+      <a id="features.call-sites.isFacts"></a>
+    - type [Span](../../src/call-sites.ts#L131) <!-- internal -->
+      <a id="features.call-sites.Span"></a><br>Spans of the nodes declared in each file: what places a call in a fn.
+    - fn [spansByFile](../../src/call-sites.ts#L133) (snapshot: AnalysisSnapshot) → { spans: Map<string, Span[]>; modules: Map<string, string> } <!-- internal -->
+      <a id="features.call-sites.spansByFile"></a>
+      - calls [features.call-sites.hasSpan](features.md#features.call-sites.hasSpan)
+    - fn [hasSpan](../../src/call-sites.ts#L150) (node: SnapshotNode) → boolean <!-- internal -->
+      <a id="features.call-sites.hasSpan"></a>
+    - fn [before](../../src/call-sites.ts#L154) (aLine: number, aCol: number, bLine: number, bCol: number) → boolean <!-- internal -->
+      <a id="features.call-sites.before"></a>
+    - fn [enclosing](../../src/call-sites.ts#L157) (spans: readonly Span[] | undefined, module: string | undefined, line: number, col: number) → string | null <!-- internal -->
+      <a id="features.call-sites.enclosing"></a><br>The innermost fn holding the position, else the innermost class, else the file's module.
+      - calls [features.call-sites.before](features.md#features.call-sites.before)
+    - fn [callsOf](../../src/call-sites.ts#L167) (snapshot: AnalysisSnapshot, facts: readonly FileFacts[]) → FileCalls[]
+      <a id="features.call-sites.callsOf"></a><br>Calls, reads and imports of each file, each placed in the node that holds it. Sorted by file, then position.
+      - calls [features.call-sites.spansByFile](features.md#features.call-sites.spansByFile), [base.span.compareText](base.md#base.span.compareText), [features.call-sites.enclosing](features.md#features.call-sites.enclosing), [base.languages.languageOf](base.md#base.languages.languageOf)
+    - type [CompiledMatcher](../../src/call-sites.ts#L200)
+      <a id="features.call-sites.CompiledMatcher"></a><br>A matcher with its regular expressions compiled once.
+    - fn [compileMatcher](../../src/call-sites.ts#L209) (matcher: Matcher) → CompiledMatcher
+      <a id="features.call-sites.compileMatcher"></a>
+      - calls [features.call-sites.withoutRoot](features.md#features.call-sites.withoutRoot)
+    - fn [withoutRoot](../../src/call-sites.ts#L221) (name: string) → string <!-- internal -->
+      <a id="features.call-sites.withoutRoot"></a><br>A PHP name written fully qualified (`\Foo\Bar`) is the name without the leading `\`.
+    - fn [importMatches](../../src/call-sites.ts#L226) (source: string, pattern: string) → boolean
+      <a id="features.call-sites.importMatches"></a><br>Whether an import's source is one the pattern names: exact, under a separator-ended prefix, or under a `*` prefix.
+      - calls [features.call-sites.withoutRoot](features.md#features.call-sites.withoutRoot)
+    - fn [segmentsOf](../../src/call-sites.ts#L237) (site: CallSite) → string[] <!-- internal -->
+      <a id="features.call-sites.segmentsOf"></a><br>The segments of a call's callee, split once.
+      - calls [features.call-sites.segments](features.md#features.call-sites.segments)
+    - fn [segments](../../src/call-sites.ts#L247) (callee: string) → string[] <!-- internal -->
+      <a id="features.call-sites.segments"></a><br>Segments of a callee: `this.config.getValue` → this, config, getValue; `reqwest::get` → reqwest, get.
+    - fn [lastName](../../src/call-sites.ts#L252) (name: string) → string <!-- internal -->
+      <a id="features.call-sites.lastName"></a><br>The last segment of a class name: `Magento\Framework\HTTP\Client\Curl` → `Curl`.
+    - fn [appliesTo](../../src/call-sites.ts#L257) (matcher: CompiledMatcher, language: Language | undefined) → boolean
+      <a id="features.call-sites.appliesTo"></a><br>Whether the matcher applies to files of this language.
+    - fn [callMatches](../../src/call-sites.ts#L265) (matcher: CompiledMatcher, site: CallSite, file: FileCalls, internal: boolean) → boolean
+      <a id="features.call-sites.callMatches"></a><br>Whether the call matches. `internal`: the call resolved to the repository's own code (a local `fetch`), which no `callees` pattern may claim.
+      - calls [features.call-sites.appliesTo](features.md#features.call-sites.appliesTo), [features.call-sites.segmentsOf](features.md#features.call-sites.segmentsOf), [features.call-sites.importMatches](features.md#features.call-sites.importMatches), [features.call-sites.withoutRoot](features.md#features.call-sites.withoutRoot), [features.call-sites.lastName](features.md#features.call-sites.lastName)
+    - fn [readMatches](../../src/call-sites.ts#L295) (matcher: CompiledMatcher, read: ReadSite, file: FileCalls) → boolean
+      <a id="features.call-sites.readMatches"></a><br>Whether a read (`settings.PAYMENT_URL`) goes through a name an import the matcher lists binds.
+      - calls [features.call-sites.appliesTo](features.md#features.call-sites.appliesTo), [features.call-sites.segments](features.md#features.call-sites.segments), [features.call-sites.importMatches](features.md#features.call-sites.importMatches)
+    - fn [textMatches](../../src/call-sites.ts#L308) (matcher: CompiledMatcher, file: FileCalls, source: string, place: (line: number, col: number) => string | null) → ReadSite[]
+      <a id="features.call-sites.textMatches"></a><br>Source lines the matcher's `text` patterns match, each placed in its node: 1-based line, column of the match.
+      - calls [features.call-sites.appliesTo](features.md#features.call-sites.appliesTo)
+    - fn [placer](../../src/call-sites.ts#L324) (snapshot: AnalysisSnapshot) → (file: string, line: number, col: number) => string | null
+      <a id="features.call-sites.placer"></a><br>A placer of positions of one file in its nodes, for matches the facts do not place.
+      - calls [features.call-sites.spansByFile](features.md#features.call-sites.spansByFile), [features.call-sites.enclosing](features.md#features.call-sites.enclosing)
+    - fn [internalCallPositions](../../src/call-sites.ts#L330) (snapshot: AnalysisSnapshot) → Set<string>
+      <a id="features.call-sites.internalCallPositions"></a><br>`file:line:col` of every call edge that resolved into the repository: no built-in or package is called there.
+    - fn [callGraph](../../src/call-sites.ts#L337) (snapshot: AnalysisSnapshot) → { out: Map<string, Set<string>>; in: Map<string, Set<string>> }
+      <a id="features.call-sites.callGraph"></a><br>The resolved call edges as adjacency: source → targets, and target → sources. Hook (`via`) edges included.
+    - fn [reachable](../../src/call-sites.ts#L351) (adjacency: ReadonlyMap<string, ReadonlySet<string>>, starts: Iterable<string>) → Set<string>
+      <a id="features.call-sites.reachable"></a><br>Every node reachable from the starts over the adjacency, the starts included.
+    - fn [isTestFile](../../src/call-sites.ts#L364) (path: string) → boolean
+      <a id="features.call-sites.isTestFile"></a><br>A file of tests: its fns are not expected to be reached from an entry point.
+    - fn [lineStarts](../../src/call-sites.ts#L369) (text: string) → number[]
+      <a id="features.call-sites.lineStarts"></a><br>Lines of a source text, for reading a call's arguments.
+    - fn [urlOf](../../src/call-sites.ts#L382) (text: string, starts: readonly number[], line: number, col: number, callee: string) → { url: "literal" | "dynamic" | "n/a"; host: string | null }
+      <a id="features.call-sites.urlOf"></a><br>The URL a call names: the host of a literal absolute URL among its first two arguments (a literal prefix counts: `"https://api.x.com/" + id`), `dynamic` when an argument there is an expression, `n/a` when the call has no arguments, only literals that are no URL, or no argument…
+      - calls [features.call-sites.firstArguments](features.md#features.call-sites.firstArguments)
+    - fn [literalArgument](../../src/call-sites.ts#L404) (text: string, starts: readonly number[], line: number, col: number, callee: string) → string | null
+      <a id="features.call-sites.literalArgument"></a><br>The first argument of the call when it is a plain string literal (a queue's topic), else null.
+      - calls [features.call-sites.firstArguments](features.md#features.call-sites.firstArguments)
+    - fn [firstArguments](../../src/call-sites.ts#L412) (text: string, starts: readonly number[], line: number, col: number, callee: string, max: number) → string[] | null <!-- internal -->
+      <a id="features.call-sites.firstArguments"></a><br>The first `max` arguments of the call at the position, as written: after the callee's last name; null when no argument list follows it.
+      - calls [features.call-sites.segments](features.md#features.call-sites.segments)
+    - fn [sourceReader](../../src/call-sites.ts#L459) (root: string) → (file: string) => { text: string; starts: number[] } | null
+      <a id="features.call-sites.sourceReader"></a><br>A text read once per file.
+      - calls [features.call-sites.lineStarts](features.md#features.call-sites.lineStarts)
   - module [changed](../../src/changed.ts#L1)
     <a id="features.changed"></a><br>`check --changed` keeps the full analysis and drops findings that do not touch the changed files: a changed spec (every finding in that file), a rule whose scope contains a changed module, and a flow with a step whose code is in a changed file. `hook stop` maps the fails that…
     - assess [check.assess](check.md#check.assess)
@@ -211,7 +306,7 @@
       - calls [features.changed.ruleHits](features.md#features.changed.ruleHits), [features.changed.covers](features.md#features.changed.covers), [features.changed.flowLinesTouching](features.md#features.changed.flowLinesTouching), [check.assess.sameFinding](check.md#check.assess.sameFinding)
     - fn [hookFails](../../src/changed.ts#L71) (report: { diagnostics: readonly Diagnostic[]; verdicts: readonly Verdict[] }) → HookFail[]
       <a id="features.changed.hookFails"></a><br>Error diagnostics, then fail verdicts that are not the same finding.
-      - calls [check.assess.sameFinding](check.md#check.assess.sameFinding)
+      - calls [base.diag.isError](base.md#base.diag.isError), [check.assess.sameFinding](check.md#check.assess.sameFinding)
     - fn [hookDecision](../../src/changed.ts#L82) (event: { stop_hook_active?: boolean }, fails: readonly HookFail[]) → string
       <a id="features.changed.hookDecision"></a><br>Stdin event plus the fails of one changed check. `stop_hook_active` never blocks. The same inputs return the same JSON.
     - fn [uncheckedTurn](../../src/changed.ts#L96) (error: string) → { line: string; decision: string }
@@ -234,11 +329,11 @@
     - explain [features.explain](features.md#features.explain)
     - snapshot [map.snapshot](map.md#map.snapshot)
     - type [CheckFormat](../../src/check-format.ts#L11) = (typeof CHECK_FORMATS)[number]
-      <a id="features.check-format.CheckFormat"></a><br>A string literal union derived from the entries of `CHECK_FORMATS`, so the set of accepted output formats is defined once in the runtime array and the type follows it automatically. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="features.check-format.CheckFormat"></a><br>A string literal union derived from the entries of `CHECK_FORMATS`, so the set of accepted output formats is defined once in the runtime array and the type follows it automatically. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
     - type [CheckReportData](../../src/check-format.ts#L14)
       <a id="features.check-format.CheckReportData"></a><br>What a format shows: the `--format json` data and the human lines of the same report.
     - fn [isCheckFormat](../../src/check-format.ts#L21) (name: string) → name is CheckFormat
-      <a id="features.check-format.isCheckFormat"></a><br>Type guard that returns true when the given string is one of the names listed in the `CHECK_FORMATS` constant. Used by [`cli.cli.cmdCheck`](cli.md#cli.cli.cmdCheck) and `tui.app.exportSourceOf` to validate user-supplied format options before narrowing them. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="features.check-format.isCheckFormat"></a><br>Type guard that returns true when the given string is one of the names listed in the `CHECK_FORMATS` constant. Used by [`cli.cli.cmdCheck`](cli.md#cli.cli.cmdCheck) and `tui.app.exportSourceOf` to validate user-supplied format options before narrowing them. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
     - fn [checkReportText](../../src/check-format.ts#L26) (format: CheckFormat, report: CheckReportData) → string
       <a id="features.check-format.checkReportText"></a><br>The stdout of `keylang check --format <format>` for `report`, every line ending with `\n`.
       - calls [features.check-format.githubText](features.md#features.check-format.githubText), [features.check-format.sarifLog](features.md#features.check-format.sarifLog)
@@ -246,12 +341,12 @@
       <a id="features.check-format.githubText"></a><br>Renders non-ok check results as GitHub Actions workflow commands, mapping fail/warning/other verdicts to error/warning/notice lines with file, line, col and title properties. Property values and message data are escaped via [`features.check-format.githubProperty`](features.md#features.check-format.githubProperty) and… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.check-format.githubProperty](features.md#features.check-format.githubProperty), [features.check-format.ruleOf](features.md#features.check-format.ruleOf), [features.check-format.githubData](features.md#features.check-format.githubData)
     - fn [sarifLog](../../src/check-format.ts#L43) (report: CheckReportData) → unknown <!-- internal -->
-      <a id="features.check-format.sarifLog"></a><br>Builds a SARIF 2.1 log object from a check report, keeping only non-"ok" results and mapping each to a result with rule id, level, message, file/line/column location and verdict metadata. Rule ids come from [`features.check-format.ruleOf`](features.md#features.check-format.ruleOf), their descriptions from… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - calls [features.check-format.ruleText](features.md#features.check-format.ruleText), [features.check-format.ruleOf](features.md#features.check-format.ruleOf)
+      <a id="features.check-format.sarifLog"></a><br>Builds a SARIF 2.1 log object from a check report, keeping only non-"ok" results and mapping each to a result with rule id, level, message, file/line/column location and verdict metadata. Rule ids come from [`features.check-format.ruleOf`](features.md#features.check-format.ruleOf), their descriptions from… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+      - calls [features.check-format.ruleOf](features.md#features.check-format.ruleOf), [features.check-format.ruleText](features.md#features.check-format.ruleText)
     - fn [ruleOf](../../src/check-format.ts#L78) (result: CheckResult) → string <!-- internal -->
       <a id="features.check-format.ruleOf"></a><br>The SARIF rule and GitHub title: every unverified result is `unverified`, a finding its K-code or evidence kind.
     - fn [ruleText](../../src/check-format.ts#L90) (id: string) → string <!-- internal -->
-      <a id="features.check-format.ruleText"></a><br>Maps a diagnostic rule ID to a one-line human-readable description for the SARIF output built by [`features.check-format.sarifLog`](features.md#features.check-format.sarifLog). It special-cases "unverified", then looks up the evidence-rule table, falls back to the first line of [`features.explain.explainCode`](features.md#features.explain.explainCode), and finally… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="features.check-format.ruleText"></a><br>Maps a diagnostic rule ID to a one-line human-readable description for the SARIF output built by [`features.check-format.sarifLog`](features.md#features.check-format.sarifLog). It special-cases "unverified", then looks up the evidence-rule table, falls back to the first line of [`features.explain.explainCode`](features.md#features.explain.explainCode), and finally… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.explain.explainCode](features.md#features.explain.explainCode)
     - fn [githubData](../../src/check-format.ts#L96) (text: string) → string <!-- internal -->
       <a id="features.check-format.githubData"></a><br>Percent-encodes `%`, carriage returns, and newlines in a string so it is safe as a GitHub Actions workflow command payload. Used by [`features.check-format.githubProperty`](features.md#features.check-format.githubProperty) and [`features.check-format.githubText`](features.md#features.check-format.githubText) to escape annotation messages. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
@@ -276,50 +371,88 @@
     - type [CheckCounts](../../src/check-results.ts#L84)
       <a id="features.check-results.CheckCounts"></a><br>The summary on stderr: errors and failed verdicts, unverified and ok verdicts.
     - fn [checkReport](../../src/check-results.ts#L98) (verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]) → CheckReport
-      <a id="features.check-results.checkReport"></a><br>Builds the check report: structured results via [`features.check-results.checkResults`](features.md#features.check-results.checkResults), printable lines for diagnostics and non-duplicate verdicts (deduped with [`check.assess.sameFinding`](check.md#check.assess.sameFinding)), plus fail/unverified/ok counts and distinct holes. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
-      - calls [check.assess.sameFinding](check.md#check.assess.sameFinding), [features.check-results.checkResults](features.md#features.check-results.checkResults)
+      <a id="features.check-results.checkReport"></a><br>Builds the check report: structured results via [`features.check-results.checkResults`](features.md#features.check-results.checkResults), printable lines for diagnostics and non-duplicate verdicts (deduped with [`check.assess.sameFinding`](check.md#check.assess.sameFinding)), plus fail/unverified/ok counts and distinct holes. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
+      - calls [check.assess.sameFinding](check.md#check.assess.sameFinding), [features.check-results.checkResults](features.md#features.check-results.checkResults), [base.diag.formatDiagnostic](base.md#base.diag.formatDiagnostic), [check.verdict.formatVerdict](check.md#check.verdict.formatVerdict), [base.diag.isError](base.md#base.diag.isError)
     - fn [checkExitCode](../../src/check-results.ts#L116) (counts: CheckCounts, strict: boolean) → 0 | 1
       <a id="features.check-results.checkExitCode"></a><br>The exit code of `keylang check`: 1 for a failure, or with `strict` for an unverified verdict; else 0 — an unverified one stays visible.
   - module [clone](../../src/clone.ts#L1)
     <a id="features.clone"></a><br>`keylang clone <source>`: a repository someone names by URL (or a local path) becomes a shallow clone in keylang's cache, which `init`, `map` and `explain` then work on like any checkout. Git runs as an argument array, never through a shell, with its credential prompt off so a…
     - node [external.node](external.md#external.node)
+    - config [base.config](base.md#base.config)
     - git-changes [features.git-changes](features.md#features.git-changes)
     - safe-write [base.safe-write](base.md#base.safe-write)
-    - type [RepoSource](../../src/clone.ts#L15)
+    - type [RepoSource](../../src/clone.ts#L16)
       <a id="features.clone.RepoSource"></a><br>What to clone and where it sits under the cache root.
-    - type [CloneExplain](../../src/clone.ts#L25) = "map-only" | "map-and-ai" | "all"
+    - type [CloneExplain](../../src/clone.ts#L26) = "map-only" | "map-and-ai" | "all"
       <a id="features.clone.CloneExplain"></a><br>How far `clone --explain` goes past the map.
-    - fn [isCloneExplain](../../src/clone.ts#L29) (text: string) → text is CloneExplain
+    - fn [isCloneExplain](../../src/clone.ts#L30) (text: string) → text is CloneExplain
       <a id="features.clone.isCloneExplain"></a>
-    - fn [redactUrl](../../src/clone.ts#L41) (text: string) → string
+    - fn [redactUrl](../../src/clone.ts#L42) (text: string) → string
       <a id="features.clone.redactUrl"></a><br>A URL with its userinfo (`user:token@`) cut, as git does in its own messages; anything else is returned as is. A token passed in the URL goes to git and nowhere else: not to stdout (a CI log), stderr or the marker.
-    - fn [parseRepoSource](../../src/clone.ts#L53) (text: string, cwd: string) → RepoSource | { error: string }
+    - fn [parseRepoSource](../../src/clone.ts#L54) (text: string, cwd: string) → RepoSource | { error: string }
       <a id="features.clone.parseRepoSource"></a><br>Reads a clone source: an `http(s)://`, `ssh://`, `git://` or `file://` URL, the scp form `git@host:owner/repo.git`, or a path to a local repository. The key never holds credentials, `..` or characters a file name cannot carry.
       - calls [features.clone.redactUrl](features.md#features.clone.redactUrl), [features.clone.fromUrl](features.md#features.clone.fromUrl), [features.clone.placeable](features.md#features.clone.placeable), [features.clone.keyed](features.md#features.clone.keyed)
-    - fn [fromUrl](../../src/clone.ts#L69) (source: string) → RepoSource | { error: string } <!-- internal -->
+    - fn [fromUrl](../../src/clone.ts#L70) (source: string) → RepoSource | { error: string } <!-- internal -->
       <a id="features.clone.fromUrl"></a>
       - calls [features.clone.redactUrl](features.md#features.clone.redactUrl), [features.clone.parseRepoSource](features.md#features.clone.parseRepoSource), [features.clone.keyed](features.md#features.clone.keyed)
-    - fn [keyed](../../src/clone.ts#L83) (url: string, host: string, path: string) → RepoSource | { error: string } <!-- internal -->
+    - fn [keyed](../../src/clone.ts#L84) (url: string, host: string, path: string) → RepoSource | { error: string } <!-- internal -->
       <a id="features.clone.keyed"></a>
       - calls [features.clone.redactUrl](features.md#features.clone.redactUrl), [features.clone.placeable](features.md#features.clone.placeable)
-    - fn [placeable](../../src/clone.ts#L94) (segment: string) → string | undefined <!-- internal -->
+    - fn [placeable](../../src/clone.ts#L95) (segment: string) → string | undefined <!-- internal -->
       <a id="features.clone.placeable"></a>
-    - fn [cloneCacheRoot](../../src/clone.ts#L99) (env: Readonly<Record<string, string | undefined>>, home: string) → string
+    - fn [cloneCacheRoot](../../src/clone.ts#L100) (env: Readonly<Record<string, string | undefined>>, home: string) → string
       <a id="features.clone.cloneCacheRoot"></a><br>`$XDG_CACHE_HOME/keylang/repos`, else `~/.cache/keylang/repos`.
-    - type [CloneSync](../../src/clone.ts#L104)
+    - type [CloneSync](../../src/clone.ts#L105)
       <a id="features.clone.CloneSync"></a>
-    - fn [syncClone](../../src/clone.ts#L117) (source: RepoSource, dir: string) → CloneSync
+    - fn [syncClone](../../src/clone.ts#L118) (source: RepoSource, dir: string) → CloneSync
       <a id="features.clone.syncClone"></a><br>Clones `source` into `dir`, or brings a clone keylang made there up to the remote's default branch. A directory keylang did not clone is never touched: the reset would drop its work.
       - calls [features.clone.git](features.md#features.clone.git), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite), [features.clone.readMarker](features.md#features.clone.readMarker), [features.clone.redactUrl](features.md#features.clone.redactUrl)
-    - fn [readMarker](../../src/clone.ts#L142) (dir: string) → { url: string; key: string[] } | undefined <!-- internal -->
+    - fn [readMarker](../../src/clone.ts#L143) (dir: string) → { url: string; key: string[] } | undefined <!-- internal -->
       <a id="features.clone.readMarker"></a><br>The marker of `dir`, or undefined: absent, unreadable, or behind a link out of the directory — a file elsewhere is no proof keylang cloned `dir`.
-      - calls [base.safe-write.targetProblem](base.md#base.safe-write.targetProblem)
-    - fn [git](../../src/clone.ts#L157) (cwd: string, args: string[]) → void <!-- internal -->
+      - calls [base.safe-write.targetProblem](base.md#base.safe-write.targetProblem), [base.config.withoutBom](base.md#base.config.withoutBom)
+    - fn [git](../../src/clone.ts#L158) (cwd: string, args: string[]) → void <!-- internal -->
       <a id="features.clone.git"></a>
       - calls [features.git-changes.gitUnavailable](features.md#features.git-changes.gitUnavailable)
-    - fn [enableExplainedMap](../../src/clone.ts#L176) (root: string) → string | null
+    - fn [enableExplainedMap](../../src/clone.ts#L177) (root: string) → string | null
       <a id="features.clone.enableExplainedMap"></a><br>Turns on the explained map (`"explain": {"map": true}`) in the clone's keylang.json; the rest of the file stays. Returns an error to name, or null.
-      - calls [base.safe-write.targetProblem](base.md#base.safe-write.targetProblem), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite)
+      - calls [base.safe-write.targetProblem](base.md#base.safe-write.targetProblem), [base.config.withoutBom](base.md#base.config.withoutBom), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite)
+  - module [coverage-report](../../src/coverage-report.ts#L1)
+    <a id="features.coverage-report"></a><br>`keylang coverage` (business-flows/13): where keylang does not see, so a person does not take the map for the whole program. A view over the snapshot (ADR 0014), never a verdict: (1) the share of fns reachable from at least one entry point over resolved call edges, (2) fns no…
+    - node [external.node](external.md#external.node)
+    - config [base.config](base.md#base.config)
+    - call-sites [features.call-sites](features.md#features.call-sites)
+    - discover [features.discover](features.md#features.discover)
+    - snapshot [map.snapshot](map.md#map.snapshot)
+    - span [base.span](base.md#base.span)
+    - type [DataLogicSignal](../../src/coverage-report.ts#L20) extends Matcher
+      <a id="features.coverage-report.DataLogicSignal"></a><br>One kind of «logic in data» the data file names.
+    - type [DataLogicSite](../../src/coverage-report.ts#L26)
+      <a id="features.coverage-report.DataLogicSite"></a><br>A call or read of a configuration reader: the program's behaviour is decided by data keylang does not read.
+    - type [HoleReason](../../src/coverage-report.ts#L38)
+      <a id="features.coverage-report.HoleReason"></a><br>A hole reason with the names in backticks replaced by `X`, and how often it occurs.
+    - type [CoverageReport](../../src/coverage-report.ts#L44)
+      <a id="features.coverage-report.CoverageReport"></a>
+    - fn [loadDataLogic](../../src/coverage-report.ts#L78) (path = resourcePath("data-logic.json")) → DataLogicSignal[]
+      <a id="features.coverage-report.loadDataLogic"></a><br>`resources/data-logic.json`: the configuration readers whose calls are «logic in data».
+      - calls [features.call-sites.resourcePath](features.md#features.call-sites.resourcePath)
+    - fn [findDataLogic](../../src/coverage-report.ts#L88) (config: Config, snapshot: AnalysisSnapshot, signals: readonly DataLogicSignal[]) → Promise<DataLogicSite[]>
+      <a id="features.coverage-report.findDataLogic"></a><br>Calls and reads of the snapshot's files that the signals match, in signal order, then file and position.
+      - calls [features.call-sites.callsOf](features.md#features.call-sites.callsOf), [features.call-sites.snapshotFacts](features.md#features.call-sites.snapshotFacts), [features.call-sites.internalCallPositions](features.md#features.call-sites.internalCallPositions), [features.call-sites.placer](features.md#features.call-sites.placer), [features.call-sites.sourceReader](features.md#features.call-sites.sourceReader), [features.call-sites.compileMatcher](features.md#features.call-sites.compileMatcher), [features.call-sites.callMatches](features.md#features.call-sites.callMatches), [features.call-sites.readMatches](features.md#features.call-sites.readMatches), [features.call-sites.appliesTo](features.md#features.call-sites.appliesTo), [features.call-sites.textMatches](features.md#features.call-sites.textMatches), [base.span.compareText](base.md#base.span.compareText)
+    - fn [normaliseReason](../../src/coverage-report.ts#L119) (reason: string) → string
+      <a id="features.coverage-report.normaliseReason"></a><br>A reason with every backticked name as `X`: `call through a local value \`X\``.
+    - fn [holeModule](../../src/coverage-report.ts#L124) (snapshot: AnalysisSnapshot, source: string | null) → string | null <!-- internal -->
+      <a id="features.coverage-report.holeModule"></a><br>The module a hole counts under: the file module of its fn or class, else its file.
+    - fn [reasonList](../../src/coverage-report.ts#L135) (counts: ReadonlyMap<string, HoleReason>) → HoleReason[] <!-- internal -->
+      <a id="features.coverage-report.reasonList"></a>
+      - calls [base.span.compareText](base.md#base.span.compareText)
+    - fn [coverageReport](../../src/coverage-report.ts#L144) ( snapshot: AnalysisSnapshot, specified: ReadonlyMap<string, { file: string; flow: string }>, signals: readonly DataLogicSignal[], dataLogic: readonly DataLogicSite[], viewText: (file: string) => string | null, ) → CoverageReport
+      <a id="features.coverage-report.coverageReport"></a><br>The report over a snapshot. `specified`: triggers the hand-written flows name; `viewText`: the text of a file of the discovered view, by its name (`<layer>.md`), or null; `dataLogic`: the sites `findDataLogic` found.
+      - calls [features.call-sites.callGraph](features.md#features.call-sites.callGraph), [features.call-sites.reachable](features.md#features.call-sites.reachable), [features.call-sites.isTestFile](features.md#features.call-sites.isTestFile), [base.span.compareText](base.md#base.span.compareText), [map.snapshot.leavesUnresolved](map.md#map.snapshot.leavesUnresolved), [features.coverage-report.holeModule](features.md#features.coverage-report.holeModule), [features.coverage-report.normaliseReason](features.md#features.coverage-report.normaliseReason), [features.discover.discoverFlows](features.md#features.discover.discoverFlows), [features.coverage-report.reasonList](features.md#features.coverage-report.reasonList)
+    - fn [percent](../../src/coverage-report.ts#L215) (share: number) → string <!-- internal -->
+      <a id="features.coverage-report.percent"></a>
+    - fn [coverageText](../../src/coverage-report.ts#L218) (report: CoverageReport, specDir = "keylang") → string
+      <a id="features.coverage-report.coverageText"></a><br>What `keylang coverage` prints: the five sections, each with what to do about it.
+      - calls [features.coverage-report.percent](features.md#features.coverage-report.percent)
   - module [discover](../../src/discover.ts#L1)
     <a id="features.discover"></a><br>`keylang flows discover` and `keylang flows adopt` (business-flows/11): a flow draft for every entry point of the snapshot, `draftFlow` from the entry's fn, as a generated view `<dir>/flows-discovered/<layer>.md` (ADR 0014: a view, not a spec — `check` does not read it). A…
     - draft [features.draft](features.md#features.draft)
@@ -419,38 +552,38 @@
     - type [FlowDraft](../../src/draft.ts#L14)
       <a id="features.draft.FlowDraft"></a><br>Plain data shape for a flow being built: its name, the raw `# flow` section text (newline-terminated), and the ordered list of step IDs with the trigger first. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [draftFlow](../../src/draft.ts#L22) (snapshot: AnalysisSnapshot, trigger: string, options: { name?: string; depth?: number } = {}) → FlowDraft
-      <a id="features.draft.draftFlow"></a><br>Walks the call graph from a fn in an `AnalysisSnapshot` to a bounded depth, skipping non-fn and external callees, and emits a Markdown flow with `trigger`/`step` lines. Unresolved or dynamic calls per step are appended as HTML comments, and the ordered step IDs are returned… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [withFlow](../../src/draft.ts#L60) (existing: string | null, draft: Pick<FlowDraft, "name" | "text">) → string
+      <a id="features.draft.draftFlow"></a><br>Walks the call graph from a fn in an `AnalysisSnapshot` to a bounded depth, skipping non-fn and external callees, and emits a Markdown flow with `trigger`/`step` lines. Unresolved or dynamic calls per step are appended as HTML comments, and the ordered step IDs are returned… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+    - fn [withFlow](../../src/draft.ts#L67) (existing: string | null, draft: Pick<FlowDraft, "name" | "text">) → string
       <a id="features.draft.withFlow"></a><br>A spec with the draft added: the section of the same flow is replaced, whatever follows the name on its heading line, otherwise the draft is appended. Sections come from the parser, so a `# ` line in a code block is not a heading.
       - calls [lang.parser.parse](lang.md#lang.parser.parse), [features.draft.nextHeading](features.md#features.draft.nextHeading), [base.safe-write.allCrlf](base.md#base.safe-write.allCrlf)
-    - fn [withRules](../../src/draft.ts#L84) (existing: string | null, draftText: string) → string
+    - fn [withRules](../../src/draft.ts#L91) (existing: string | null, draftText: string) → string
       <a id="features.draft.withRules"></a><br>`draft rules` into an existing spec: the drafted rules go at the end of its last `# rules` section, or into a new `# rules` section at the end, never under a trailing `# flow`. A rule the file already has (comments aside) is not repeated.
       - calls [lang.parser.parse](lang.md#lang.parser.parse), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.parser.renderMeaning](lang.md#lang.parser.renderMeaning), [features.draft.nextHeading](features.md#features.draft.nextHeading), [base.safe-write.allCrlf](base.md#base.safe-write.allCrlf)
-    - fn [nextHeading](../../src/draft.ts#L114) (sections: readonly { heading: { span: { start: { line: number } } } | null }[], index: number) → number | null <!-- internal -->
+    - fn [nextHeading](../../src/draft.ts#L121) (sections: readonly { heading: { span: { start: { line: number } } } | null }[], index: number) → number | null <!-- internal -->
       <a id="features.draft.nextHeading"></a><br>0-based line index of the heading after `sections[index]`, or null at the end of the file.
-    - fn [distinctNames](../../src/draft.ts#L124) (drafts: readonly FlowDraft[]) → FlowDraft[]
+    - fn [distinctNames](../../src/draft.ts#L131) (drafts: readonly FlowDraft[]) → FlowDraft[]
       <a id="features.draft.distinctNames"></a><br>Flow names that keep drafts apart in one spec: two `save` triggers (`A.save`, `B.save`) become `A-save` and `B-save`, taking as many trailing ID segments as it needs.
-    - fn [draftRules](../../src/draft.ts#L154) (snapshot: AnalysisSnapshot, cyclic: boolean) → string
+    - fn [draftRules](../../src/draft.ts#L161) (snapshot: AnalysisSnapshot, cyclic: boolean) → string
       <a id="features.draft.draftRules"></a><br>`draft rules --mode algo`: rules the current code already keeps, so each passes `check` as written. Layers in an order where every observed dependency points down (`a < b`: `b` may use `a`), when the layers form no cycle; otherwise a `deny` for each pair used in one direction…
       - calls [features.draft.layerOrder](features.md#features.draft.layerOrder)
-    - fn [layerOrder](../../src/draft.ts#L179) (layers: readonly string[], uses: ReadonlyMap<string, ReadonlySet<string>>) → string[] | null <!-- internal -->
+    - fn [layerOrder](../../src/draft.ts#L186) (layers: readonly string[], uses: ReadonlyMap<string, ReadonlySet<string>>) → string[] | null <!-- internal -->
       <a id="features.draft.layerOrder"></a><br>Layers with those used first (Kahn, ties by name); null for a cycle.
-    - fn [codeToSpecTriggers](../../src/draft.ts#L198) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; triggers: string[] }
+    - fn [codeToSpecTriggers](../../src/draft.ts#L205) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; triggers: string[] }
       <a id="features.draft.codeToSpecTriggers"></a><br>`code-to-spec <path[:line]>`: the functions the code position names — the innermost fn whose range holds the line, or every exported fn of the file in declaration order without a line — and the spec's name: the fn's, or the file's module's. Reads the snapshot only; a position…
-    - fn [codeToSpec](../../src/draft.ts#L221) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; drafts: FlowDraft[] }
+    - fn [codeToSpec](../../src/draft.ts#L228) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; drafts: FlowDraft[] }
       <a id="features.draft.codeToSpec"></a><br>`code-to-spec <path[:line]>`: each fn `codeToSpecTriggers` names as a flow draft; same-named fns get distinct flow names.
       - calls [features.draft.codeToSpecTriggers](features.md#features.draft.codeToSpecTriggers), [features.draft.draftFlow](features.md#features.draft.draftFlow), [features.draft.distinctNames](features.md#features.draft.distinctNames)
-    - type [ChangedLines](../../src/draft.ts#L228)
+    - type [ChangedLines](../../src/draft.ts#L235)
       <a id="features.draft.ChangedLines"></a><br>Changed lines per file, 1-based and inclusive; `all` for a file git does not track yet.
-    - fn [diffHunks](../../src/draft.ts#L234) (diff: string) → Map<string, [number, number][]>
+    - fn [diffHunks](../../src/draft.ts#L241) (diff: string) → Map<string, [number, number][]>
       <a id="features.draft.diffHunks"></a><br>The new-side line ranges of `git diff --unified=0`. A deletion is the line it happened after, so the fn around it counts as changed.
       - calls [features.draft.gitPath](features.md#features.draft.gitPath)
-    - fn [deletedDiffPaths](../../src/draft.ts#L257) (diff: string) → string[]
+    - fn [deletedDiffPaths](../../src/draft.ts#L264) (diff: string) → string[]
       <a id="features.draft.deletedDiffPaths"></a><br>Paths removed in `git diff` (`--- a/file` then `+++ /dev/null`). `diffHunks` follows the new side, so a deletion has no hunk to land on.
       - calls [features.draft.gitPath](features.md#features.draft.gitPath)
-    - fn [gitPath](../../src/draft.ts#L271) (text: string) → string <!-- internal -->
+    - fn [gitPath](../../src/draft.ts#L278) (text: string) → string <!-- internal -->
       <a id="features.draft.gitPath"></a><br>A path as `git diff` prints it: C-quoted (`"b/\303\251.ts"`, `"b/a\"b.ts"`) when it holds a quote, a backslash or a control byte.
-    - fn [changedFlows](../../src/draft.ts#L299) (snapshot: AnalysisSnapshot, changed: ChangedLines, named: ReadonlySet<string>) → { drafts: FlowDraft[]; named: string[] }
+    - fn [changedFlows](../../src/draft.ts#L306) (snapshot: AnalysisSnapshot, changed: ChangedLines, named: ReadonlySet<string>) → { drafts: FlowDraft[]; named: string[] }
       <a id="features.draft.changedFlows"></a><br>`code-to-spec --since <ref>`: a flow draft for each fn the change touches. A fn some hand-written spec already names is reported, not drafted again — its flow is the place to look.
       - calls [features.draft.draftFlow](features.md#features.draft.draftFlow), [features.draft.distinctNames](features.md#features.draft.distinctNames)
   - module [explain-edge](../../src/explain-edge.ts#L1)
@@ -469,14 +602,14 @@
       <a id="features.explain-edge.under"></a><br>Checks whether a dotted node ID is the given scope itself or nested beneath it by testing for an exact match or a `scope.` prefix. Used by [`features.explain-edge.explainEdge`](features.md#features.explain-edge.explainEdge) to decide which side of an edge a node belongs to. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [explainEdge](../../src/explain-edge.ts#L40) (snapshot: AnalysisSnapshot, from: string, to: string) → EdgeExplanation
       <a id="features.explain-edge.explainEdge"></a><br>The edges and the coverage between two known ids (see `edgeIdKnown`).
-      - calls [features.explain-edge.under](features.md#features.explain-edge.under), [base.span.compareText](base.md#base.span.compareText), [map.snapshot.leavesUnresolved](map.md#map.snapshot.leavesUnresolved)
+      - calls [base.span.compareText](base.md#base.span.compareText), [features.explain-edge.under](features.md#features.explain-edge.under), [map.snapshot.leavesUnresolved](map.md#map.snapshot.leavesUnresolved)
     - fn [edgeLine](../../src/explain-edge.ts#L59) (edge: SnapshotEdge) → string
       <a id="features.explain-edge.edgeLine"></a><br>One edge as the CLI prints it: kind, resolution, provenance, range, fragment, `source → target`, candidates, hook, reason.
-    - fn [holeLine](../../src/explain-edge.ts#L68) (hole: CoverageItem) → string
+    - fn [holeLine](../../src/explain-edge.ts#L73) (hole: CoverageItem) → string
       <a id="features.explain-edge.holeLine"></a><br>One unresolved construct as the CLI prints it.
-    - fn [edgeExplanationLines](../../src/explain-edge.ts#L73) (explanation: EdgeExplanation) → string[]
+    - fn [edgeExplanationLines](../../src/explain-edge.ts#L78) (explanation: EdgeExplanation) → string[]
       <a id="features.explain-edge.edgeExplanationLines"></a><br>The CLI's stdout of `check --explain-edge`, line by line.
-      - calls [features.explain-edge.edgeLine](features.md#features.explain-edge.edgeLine)
+      - calls [features.explain-edge.edgeLine](features.md#features.explain-edge.edgeLine), [features.explain-edge.holeLine](features.md#features.explain-edge.holeLine)
   - module [explain-inventory](../../src/explain-inventory.ts#L1)
     <a id="features.explain-inventory"></a><br>Which explanations need work, without asking a model or writing a file: the stale and gone saved explanations (`explain --stale`), and the plan of a brief batch (`explain --missing|--stale` without `--llm`) with its dry-run size. One result for the CLI and the TUI; the batch…
     - analyze [map.analyze](map.md#map.analyze)
@@ -666,7 +799,7 @@
     <a id="features.explain"></a><br>Short explanations for diagnostic codes. Every code in `diag.ts` has an entry.
     - diag [base.diag](base.md#base.diag)
     - fn [explainCode](../../src/explain.ts#L115) (code: string) → string | null
-      <a id="features.explain.explainCode"></a><br>Looks up a diagnostic code (case-insensitively) in the `EXPLANATIONS` table and formats its cause, example, and fix as a multi-line string, returning null for unknown codes. For `K005` it appends extra reason lines from `K005_REASON_LINES`. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="features.explain.explainCode"></a><br>Looks up a diagnostic code (case-insensitively) in the `EXPLANATIONS` table and formats its cause, example, and fix as a multi-line string, returning null for unknown codes. For `K005` it appends extra reason lines from `K005_REASON_LINES`. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
   - module [feature-status](../../src/feature-status.ts#L1)
     <a id="features.feature-status"></a><br>Whether a feature file is done: it declares something to check, keylang reads it without errors, every `planned` in it is implemented (K202, not K201), every flow step and `calls` in it is static ok, no rule fail of this change remains (ADR 0005 §2: no new violations), and the…
     - assess [check.assess](check.md#check.assess)
@@ -791,7 +924,7 @@
       - calls [features.git-changes.assertRef](features.md#features.git-changes.assertRef), [features.git-changes.gitIn](features.md#features.git-changes.gitIn)
     - fn [readFeatureBase](../../src/git-changes.ts#L179) (root: string, path: string, since: string | undefined, label: string) → FeatureBase
       <a id="features.git-changes.readFeatureBase"></a><br>The feature file at its base commit, and the files changed since that commit as `check --changed --since <base>` reads them: a rule fail of this change is one that touches them. The base is `since`, else `featureBaseOrigin`.
-      - calls [features.git-changes.featureBaseOrigin](features.md#features.git-changes.featureBaseOrigin), [features.git-changes.gitFileAt](features.md#features.git-changes.gitFileAt), [features.git-changes.gitChangedFiles](features.md#features.git-changes.gitChangedFiles), [lang.parser.parse](lang.md#lang.parser.parse)
+      - calls [features.git-changes.featureBaseOrigin](features.md#features.git-changes.featureBaseOrigin), [features.git-changes.gitFileAt](features.md#features.git-changes.gitFileAt), [features.git-changes.gitChangedFiles](features.md#features.git-changes.gitChangedFiles), [base.span.compareText](base.md#base.span.compareText), [lang.parser.parse](lang.md#lang.parser.parse)
     - fn [featureBaseOrigin](../../src/git-changes.ts#L218) (root: string, label: string) → BaseOrigin
       <a id="features.git-changes.featureBaseOrigin"></a><br>The base `feature` judges a change against when no `since` is given: the merge-base of HEAD with the main branch, so a fail committed on a feature branch is still the change's own. The main branch is the one `refs/remotes/origin/HEAD` points at, else a local `main`, `master`…
       - calls [features.git-changes.gitIn](features.md#features.git-changes.gitIn)
@@ -829,7 +962,7 @@
     - fn [skillFile](../../src/harness.ts#L36) () → string
       <a id="features.harness.skillFile"></a><br>The skill shipped in the package. The same relative path works from `src` and from `dist`.
     - type [HarnessName](../../src/harness.ts#L41) = (typeof HARNESS_NAMES)[number]
-      <a id="features.harness.HarnessName"></a><br>A string union type derived from the entries of the `HARNESS_NAMES` array, so values are constrained to the harness identifiers listed there. Used to type-check which harness a feature refers to without duplicating the list. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="features.harness.HarnessName"></a><br>A string union type derived from the entries of the `HARNESS_NAMES` array, so values are constrained to the harness identifiers listed there. Used to type-check which harness a feature refers to without duplicating the list. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
     - fn [denyRules](../../src/harness.ts#L60) (dir: string) → string[] <!-- internal -->
       <a id="features.harness.denyRules"></a><br>Claude's deny entries that keep an agent from editing the rules of the spec directory `dir`, or deciding a proposal.
     - fn [specDir](../../src/harness.ts#L65) (root: string) → string <!-- internal -->
@@ -849,7 +982,7 @@
       <a id="features.harness.detectHarnesses"></a><br>Directories and files that mean a harness is already in use. Order matches `HARNESS_NAMES`. `.claude/skills/keylang-feature` is the copy `agents` writes for every harness, so that tree alone is not Claude.
       - calls [features.harness.claudePresent](features.md#features.harness.claudePresent)
     - fn [claudePresent](../../src/harness.ts#L127) (probe: HarnessProbe) → boolean <!-- internal -->
-      <a id="features.harness.claudePresent"></a><br>Decides whether the Claude harness is in use by listing the `.claude` directory via the probe: missing means no, empty means yes, otherwise it defers to [`features.harness.claudeHasUserFile`](features.md#features.harness.claudeHasUserFile) to check for user-authored files. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="features.harness.claudePresent"></a><br>Decides whether the Claude harness is in use by listing the `.claude` directory via the probe: missing means no, empty means yes, otherwise it defers to [`features.harness.claudeHasUserFile`](features.md#features.harness.claudeHasUserFile) to check for user-authored files. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.harness.claudeHasUserFile](features.md#features.harness.claudeHasUserFile)
     - fn [claudeHasUserFile](../../src/harness.ts#L135) (probe: HarnessProbe, dir: string) → boolean <!-- internal -->
       <a id="features.harness.claudeHasUserFile"></a><br>A file under `.claude` that is not the keylang skill copy.
@@ -872,12 +1005,12 @@
       <a id="features.harness.mergeMarked"></a><br>Splice `body` between the markers. Text outside them is copied byte for byte. `body` null removes the block.
       - calls [base.safe-write.allCrlf](base.md#base.safe-write.allCrlf), [features.harness.marked](features.md#features.harness.marked)
     - fn [marked](../../src/harness.ts#L324) (body: string, nl: "\n" | "\r\n") → string <!-- internal -->
-      <a id="features.harness.marked"></a><br>Normalizes every line break in the body to the requested newline style, then wraps the result between the begin and end marker constants on their own lines, so [`features.harness.mergeMarked`](features.md#features.harness.mergeMarked) can splice a consistently delimited block into existing text. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="features.harness.marked"></a><br>Normalizes every line break in the body to the requested newline style, then wraps the result between the begin and end marker constants on their own lines, so [`features.harness.mergeMarked`](features.md#features.harness.mergeMarked) can splice a consistently delimited block into existing text. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
     - fn [mergeClaude](../../src/harness.ts#L333) (existing: string | null) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeClaude"></a><br>`@AGENTS.md` lives in the managed block. A file that already says it outside the block is left without a second copy (the block is removed).
       - calls [features.harness.outsideMarkers](features.md#features.harness.outsideMarkers), [features.harness.mergeMarked](features.md#features.harness.mergeMarked)
     - fn [outsideMarkers](../../src/harness.ts#L340) (existing: string | null) → string | { error: string } <!-- internal -->
-      <a id="features.harness.outsideMarkers"></a><br>Strips the block between the begin/end marker constants out of an existing file's text, returning the surrounding content (or an empty string for null input). Reports an error object when only one marker is present or the end precedes the begin, so… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="features.harness.outsideMarkers"></a><br>Strips the block between the begin/end marker constants out of an existing file's text, returning the surrounding content (or an empty string for null input). Reports an error object when only one marker is present or the end precedes the begin, so… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
     - fn [mergeMcpJson](../../src/harness.ts#L350) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeMcpJson"></a><br>Rewrites an `.mcp.json` document so its `mcpServers` key holds the launch entry built by [`features.harness.mcpCommand`](features.md#features.harness.mcpCommand) for the given version, or removes it when the version is null, via [`features.harness.mergeJsonKey`](features.md#features.harness.mergeJsonKey). Returns the updated text or a parse error for… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.harness.mergeJsonKey](features.md#features.harness.mergeJsonKey), [features.harness.mcpCommand](features.md#features.harness.mcpCommand)
@@ -943,7 +1076,7 @@
     - type [HarnessCategory](../../src/harness.ts#L628) = "instructions" | "mcp" | "skill" | "settings" | "hooks"
       <a id="features.harness.HarnessCategory"></a><br>What a harness file is for, as a step before the write names it.
     - fn [harnessCategory](../../src/harness.ts#L630) (path: string) → HarnessCategory
-      <a id="features.harness.harnessCategory"></a><br>Maps a harness file path to its category: root `AGENTS.md`/`CLAUDE.md` become instructions, the skill constants map to skill, specific `.claude`/`.codex` files map to settings or hooks, and anything else falls back to mcp. Used by [`features.harness.planAgents`](features.md#features.harness.planAgents) to group planned… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="features.harness.harnessCategory"></a><br>Maps a harness file path to its category: root `AGENTS.md`/`CLAUDE.md` become instructions, the skill constants map to skill, specific `.claude`/`.codex` files map to settings or hooks, and anything else falls back to mcp. Used by [`features.harness.planAgents`](features.md#features.harness.planAgents) to group planned… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
     - fn [diskProbe](../../src/harness.ts#L639) (root: string) → HarnessProbe
       <a id="features.harness.diskProbe"></a><br>The probe of the real disk: `.claude` and the other harness directories are directories; opencode is a file.
     - fn [resolveChoice](../../src/harness.ts#L660) (choice: HarnessChoice, probe: HarnessProbe) → HarnessSelection
@@ -957,7 +1090,7 @@
       <a id="features.harness.planAgents"></a><br>Plans the harness files of `choice` against the disk under `root`. Reads, writes nothing; throws on a read error or a broken keylang.json.
       - calls [features.harness.resolveChoice](features.md#features.harness.resolveChoice), [features.harness.diskProbe](features.md#features.harness.diskProbe), [features.harness.specDir](features.md#features.harness.specDir), [features.harness.readInputs](features.md#features.harness.readInputs), [features.harness.skillFile](features.md#features.harness.skillFile), [features.harness.keylangVersion](features.md#features.harness.keylangVersion), [features.harness.planHarness](features.md#features.harness.planHarness), [features.harness.harnessCategory](features.md#features.harness.harnessCategory)
     - fn [readInputs](../../src/harness.ts#L714) (root: string) → Map<string, string | null> <!-- internal -->
-      <a id="features.harness.readInputs"></a><br>Reads every file listed in `HARNESS_PATHS` relative to the given root, mapping each path to its UTF-8 contents or null when the file is absent. Used by [`features.harness.planAgents`](features.md#features.harness.planAgents) and [`features.harness.agentsPlanProblems`](features.md#features.harness.agentsPlanProblems) to inspect existing harness files. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="features.harness.readInputs"></a><br>Reads every file listed in `HARNESS_PATHS` relative to the given root, mapping each path to its UTF-8 contents or null when the file is absent. Used by [`features.harness.planAgents`](features.md#features.harness.planAgents) and [`features.harness.agentsPlanProblems`](features.md#features.harness.agentsPlanProblems) to inspect existing harness files. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
     - fn [agentsPlanProblems](../../src/harness.ts#L726) (plan: AgentsPlan) → string[]
       <a id="features.harness.agentsPlanProblems"></a><br>Why the plan may not be committed now (`path: reason` lines; empty when it may): every harness path must still hold the bytes the plan read, keylang.json must still name the same spec directory, a target must pass the repository's write rules (a removal too: the entry must be…
       - calls [features.harness.readInputs](features.md#features.harness.readInputs), [features.harness.specDir](features.md#features.harness.specDir), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [base.safe-write.targetProblem](base.md#base.safe-write.targetProblem), [features.harness.detectHarnesses](features.md#features.harness.detectHarnesses), [features.harness.diskProbe](features.md#features.harness.diskProbe)
@@ -966,6 +1099,42 @@
     - fn [commitAgents](../../src/harness.ts#L770) ( plan: AgentsPlan, options: { signal?: AbortSignal; onStep?: (step: { path: string; action: "write" | "remove" }) => void } = {}, ) → Promise<{ steps: HarnessStep[]; outcome: "completed" | "failed" | "cancelled" }>
       <a id="features.harness.commitAgents"></a><br>Writes and removes the changed targets one by one, in plan order. A write is atomic at the target (a link inside the repository is followed; CRLF of the old file kept); a removal removes the entry itself, and only when the entry is inside the repository with links followed — a…
       - calls [base.safe-write.targetProblem](base.md#base.safe-write.targetProblem), [base.safe-write.landing](base.md#base.safe-write.landing), [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic)
+  - module [integrations](../../src/integrations.ts#L1)
+    <a id="features.integrations"></a><br>`keylang integrations` (business-flows/14): what the repository talks to, the first thing to know before a migration. A view over the snapshot (ADR 0014), no verdict and no network: outgoing calls into the HTTP, SOAP, SDK and queue clients `resources/integrations.json` lists…
+    - node [external.node](external.md#external.node)
+    - call-sites [features.call-sites](features.md#features.call-sites)
+    - config [base.config](base.md#base.config)
+    - discover [features.discover](features.md#features.discover)
+    - glob [base.glob](base.md#base.glob)
+    - snapshot [map.snapshot](map.md#map.snapshot)
+    - span [base.span](base.md#base.span)
+    - type [IntegrationKind](../../src/integrations.ts#L19) = "http" | "soap" | "sdk" | "payment" | "queue"
+      <a id="features.integrations.IntegrationKind"></a>
+    - type [IntegrationClient](../../src/integrations.ts#L22) extends Matcher
+      <a id="features.integrations.IntegrationClient"></a><br>One client the data file names.
+    - type [Reach](../../src/integrations.ts#L29)
+      <a id="features.integrations.Reach"></a><br>An entry point that reaches a call site, with the flow that starts from it.
+    - type [IntegrationSite](../../src/integrations.ts#L37)
+      <a id="features.integrations.IntegrationSite"></a>
+    - type [Integration](../../src/integrations.ts#L51)
+      <a id="features.integrations.Integration"></a>
+    - type [Webhook](../../src/integrations.ts#L61)
+      <a id="features.integrations.Webhook"></a>
+    - type [IntegrationsReport](../../src/integrations.ts#L73)
+      <a id="features.integrations.IntegrationsReport"></a>
+    - fn [loadIntegrations](../../src/integrations.ts#L90) (path = resourcePath("integrations.json")) → IntegrationClient[]
+      <a id="features.integrations.loadIntegrations"></a><br>`resources/integrations.json`.
+      - calls [features.call-sites.resourcePath](features.md#features.call-sites.resourcePath)
+    - fn [routePath](../../src/integrations.ts#L105) (label: string) → string <!-- internal -->
+      <a id="features.integrations.routePath"></a><br>The path of a route label (`POST /stripe/webhook` → `/stripe/webhook`).
+    - fn [findWebhooks](../../src/integrations.ts#L110) (snapshot: AnalysisSnapshot, globs: readonly string[]) → Webhook[]
+      <a id="features.integrations.findWebhooks"></a><br>Incoming webhooks: entries of kind webhook, routes whose path names one, and what `integrations.webhooks` names.
+      - calls [base.glob.firstMatchingGlob](base.md#base.glob.firstMatchingGlob), [features.integrations.routePath](features.md#features.integrations.routePath), [base.span.compareText](base.md#base.span.compareText)
+    - fn [findIntegrations](../../src/integrations.ts#L137) (config: Config, snapshot: AnalysisSnapshot, clients: readonly IntegrationClient[], specified: ReadonlyMap<string, { file: string; flow: string }>) → Promise<IntegrationsReport>
+      <a id="features.integrations.findIntegrations"></a><br>The report. `specified`: the triggers of hand-written flows, by trigger, with the flow's name. Reads the analysed files' facts and, at each matched call, the source text for its first arguments.
+      - calls [features.call-sites.callsOf](features.md#features.call-sites.callsOf), [features.call-sites.snapshotFacts](features.md#features.call-sites.snapshotFacts), [features.call-sites.internalCallPositions](features.md#features.call-sites.internalCallPositions), [features.call-sites.sourceReader](features.md#features.call-sites.sourceReader), [features.call-sites.callGraph](features.md#features.call-sites.callGraph), [features.discover.discoverFlows](features.md#features.discover.discoverFlows), [features.call-sites.compileMatcher](features.md#features.call-sites.compileMatcher), [features.call-sites.importMatches](features.md#features.call-sites.importMatches), [features.call-sites.callMatches](features.md#features.call-sites.callMatches), [features.call-sites.urlOf](features.md#features.call-sites.urlOf), [features.call-sites.literalArgument](features.md#features.call-sites.literalArgument), [base.span.compareText](base.md#base.span.compareText), [features.integrations.findWebhooks](features.md#features.integrations.findWebhooks)
+    - fn [integrationsText](../../src/integrations.ts#L213) (report: IntegrationsReport) → string
+      <a id="features.integrations.integrationsText"></a><br>What `keylang integrations` prints.
   - module [keys](../../src/keys.ts#L1)
     <a id="features.keys"></a><br>API keys kept outside the environment: `~/.config/keylang/<name>.key`, mode 0600. Shared by the model adapter and voice, without loading either.
     - node [external.node](external.md#external.node)
@@ -1137,9 +1306,9 @@
       <a id="features.lsp-features.workspaceSymbols"></a><br>Nodes of the snapshot and planned intentions matching `query` (`searchNodes`, fuzzy): by name and ID first, then by the text of their explanation. Each points at its code, a planned one at its declaration in the spec, a layer at its line in `keylang.json`; `containerName` is…
       - calls [features.node-search.searchNodes](features.md#features.node-search.searchNodes), [features.lsp-features.symbolLocation](features.md#features.lsp-features.symbolLocation), [base.brief.capText](base.md#base.brief.capText), [features.lsp-features.symbolKind](features.md#features.lsp-features.symbolKind)
     - fn [symbolKind](../../src/lsp-features.ts#L441) (kind: string) → number <!-- internal -->
-      <a id="features.lsp-features.symbolKind"></a><br>Maps a keylang node kind string (after stripping a leading "planned " prefix) to an LSP SymbolKind number: class, fn, type, and event get their own codes, anything else falls back to module. Used by [`features.lsp-features.workspaceSymbols`](features.md#features.lsp-features.workspaceSymbols) to tag workspace symbol results. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="features.lsp-features.symbolKind"></a><br>Maps a keylang node kind string (after stripping a leading "planned " prefix) to an LSP SymbolKind number: class, fn, type, and event get their own codes, anything else falls back to module. Used by [`features.lsp-features.workspaceSymbols`](features.md#features.lsp-features.workspaceSymbols) to tag workspace symbol results. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
     - fn [symbolLocation](../../src/lsp-features.ts#L450) (ws: Workspace, hit: NodeHit) → Location | null <!-- internal -->
-      <a id="features.lsp-features.symbolLocation"></a><br>Builds an LSP location for a workspace symbol: layers point to their key line in the config file via [`features.lsp-features.lineRange`](features.md#features.lsp-features.lineRange), other nodes to their file, line and column via [`features.lsp-features.lspPoint`](features.md#features.lsp-features.lspPoint). _(llm · claude:claude-opus-5-5 · 2026-10-05)_
+      <a id="features.lsp-features.symbolLocation"></a><br>Builds an LSP location for a workspace symbol: layers point to their key line in the config file via [`features.lsp-features.lineRange`](features.md#features.lsp-features.lineRange), other nodes to their file, line and column via [`features.lsp-features.lspPoint`](features.md#features.lsp-features.lspPoint). _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [features.lsp-features.uriOf](features.md#features.lsp-features.uriOf), [features.lsp-features.lineRange](features.md#features.lsp-features.lineRange), [lang.spec-ir.plannedDeclaration](lang.md#lang.spec-ir.plannedDeclaration), [features.lsp-features.lspPoint](features.md#features.lsp-features.lspPoint)
     - type [DocumentSymbol](../../src/lsp-features.ts#L470)
       <a id="features.lsp-features.DocumentSymbol"></a><br>Describes a hierarchical outline entry in the LSP document-symbol shape: a name, optional detail, numeric kind, full and selection `LspRange`s, and nested children of the same shape. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
@@ -1188,7 +1357,7 @@
       <a id="features.node-search.searchNodes"></a><br>Nodes of the snapshot and `planned` intentions of the specs matching the query, case-insensitive: first those whose ID or name matches (for `fuzzy`, the exact name, then a name prefix, a name part, an ID part, then a subsequence of the name and of the ID; shorter IDs first…
       - calls [features.node-search.candidates](features.md#features.node-search.candidates), [features.node-search.idRank](features.md#features.node-search.idRank), [base.span.compareText](base.md#base.span.compareText)
     - fn [candidates](../../src/node-search.ts#L55) (analysis: Analysis, briefs: ReadonlyMap<string, StoredExplanation>) → NodeHit[] <!-- internal -->
-      <a id="features.node-search.candidates"></a><br>Builds the full search pool for [`features.node-search.searchNodes`](features.md#features.node-search.searchNodes): every snapshot node with its explanation via [`map.explanations.explanationOf`](map.md#map.explanations.explanationOf), plus `planned` spec declarations not yet in code, found by [`lang.ir.walk`](lang.md#lang.ir.walk). _(llm · claude:claude-opus-5-5 · 2026-10-05)_
+      <a id="features.node-search.candidates"></a><br>Builds the full search pool for [`features.node-search.searchNodes`](features.md#features.node-search.searchNodes): every snapshot node with its explanation via [`map.explanations.explanationOf`](map.md#map.explanations.explanationOf), plus `planned` spec declarations not yet in code, found by [`lang.ir.walk`](lang.md#lang.ir.walk). _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [map.explanations.explanationOf](map.md#map.explanations.explanationOf), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)
     - fn [idRank](../../src/node-search.ts#L77) (query: string, id: string, fuzzy: boolean) → number | null <!-- internal -->
       <a id="features.node-search.idRank"></a><br>How well the ID or its last segment matches, lower is better; null when it does not.
@@ -1213,6 +1382,7 @@
       <a id="features.proposals.notPlain"></a><br>The write protocol's first test (`writeProblem`): a plain relative POSIX path, before anything on disk is looked at.
     - fn [unreadDirectory](../../src/proposals.ts#L33) (dirs: readonly string[]) → boolean <!-- internal -->
       <a id="features.proposals.unreadDirectory"></a><br>A directory below the spec directory, or the root for code, that `check` and the map do not read: hidden, `node_modules`, `target`.
+      - calls [features.proposals.unreadName](features.md#features.proposals.unreadName)
     - fn [unreadName](../../src/proposals.ts#L38) (name: string) → boolean <!-- internal -->
       <a id="features.proposals.unreadName"></a><br>Case does not tell the directories apart: on a case-insensitive file system `Node_Modules` is `node_modules`.
     - fn [statOrNull](../../src/proposals.ts#L43) (abs: string) → Stats | null <!-- internal -->
@@ -1250,49 +1420,50 @@
     - fn [writeProposal](../../src/proposals.ts#L218) (root: string, path: string, text: string, basis?: ProposalBasis) → string
       <a id="features.proposals.writeProposal"></a><br>Writes the proposal for `path` (relative, POSIX) atomically and returns its file; `.keylang/proposals/` is keylang's own store, so a link there that leads elsewhere is refused like any other. With `basis` nothing is written unless the target and the waiting proposal are still…
       - calls [features.proposals.proposalWriteProblem](features.md#features.proposals.proposalWriteProblem), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite)
-    - fn [lineDiff](../../src/proposals.ts#L227) (before: string, after: string) → string
-      <a id="features.proposals.lineDiff"></a><br>`-`/`+` lines between a common prefix and suffix: enough to see what a proposal changes.
-    - type [PendingProposal](../../src/proposals.ts#L244)
+    - fn [lineDiff](../../src/proposals.ts#L234) (before: string, after: string) → string
+      <a id="features.proposals.lineDiff"></a><br>`-`/`+` lines between a common prefix and suffix: enough to see what a proposal changes. Line endings are compared as MERGE compares them: a target that is CRLF throughout is read as LF (mixed endings stay), and the proposal (an agent writes LF) is read as LF, so a CRLF file…
+      - calls [base.safe-write.allCrlf](base.md#base.safe-write.allCrlf)
+    - type [PendingProposal](../../src/proposals.ts#L251)
       <a id="features.proposals.PendingProposal"></a><br>One pending proposal as `keylang proposals` lists it.
-    - fn [proposalTarget](../../src/proposals.ts#L261) (name: string) → string | null
+    - fn [proposalTarget](../../src/proposals.ts#L268) (name: string) → string | null
       <a id="features.proposals.proposalTarget"></a><br>The target of a proposal as a person names it: as `keylang proposals` lists it, or as its store path `.keylang/proposals/<target>`; POSIX. Null when it is no plain relative path.
       - calls [base.config.toPosix](base.md#base.config.toPosix), [features.proposals.notPlain](features.md#features.proposals.notPlain)
-    - fn [pendingTargets](../../src/proposals.ts#L272) (root: string) → string[]
+    - fn [pendingTargets](../../src/proposals.ts#L279) (root: string) → string[]
       <a id="features.proposals.pendingTargets"></a><br>Every target with a file or a link under `.keylang/proposals/`, sorted. The store is listed only while it stays inside the repository; a link in it is listed, never followed.
-      - calls [base.safe-write.landing](base.md#base.safe-write.landing), [map.analyze.within](map.md#map.analyze.within), [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [storeEntry](../../src/proposals.ts#L287) (root: string, target: string) → { abs: string; link: boolean } | { problem: string } | null <!-- internal -->
+      - calls [base.safe-write.landing](base.md#base.safe-write.landing), [map.analyze.within](map.md#map.analyze.within), [base.config.toPosix](base.md#base.config.toPosix), [base.span.compareText](base.md#base.span.compareText)
+    - fn [storeEntry](../../src/proposals.ts#L294) (root: string, target: string) → { abs: string; link: boolean } | { problem: string } | null <!-- internal -->
       <a id="features.proposals.storeEntry"></a><br>The store entry of `target` where its directory lands: null when there is none, else the entry and whether it is a link. A store whose directory leads out of the repository is a problem, and nothing there is looked at.
       - calls [base.safe-write.landing](base.md#base.safe-write.landing), [map.analyze.within](map.md#map.analyze.within)
-    - type [ReadProposal](../../src/proposals.ts#L301) <!-- internal -->
+    - type [ReadProposal](../../src/proposals.ts#L308) <!-- internal -->
       <a id="features.proposals.ReadProposal"></a><br>A proposal that may be accepted: its text and the target's (null: no file).
-    - fn [readProposal](../../src/proposals.ts#L311) (root: string, specDir: string, target: string) → ReadProposal | { problem: string } | null <!-- internal -->
+    - fn [readProposal](../../src/proposals.ts#L318) (root: string, specDir: string, target: string) → ReadProposal | { problem: string } | null <!-- internal -->
       <a id="features.proposals.readProposal"></a><br>The proposal of `target` read after both gates — a plain file in the store, a target a proposal may change — or why it cannot be accepted; null when none is pending.
       - calls [features.proposals.storeEntry](features.md#features.proposals.storeEntry), [features.proposals.targetProblem](features.md#features.proposals.targetProblem), [base.safe-write.landing](base.md#base.safe-write.landing), [lang.files.existingText](lang.md#lang.files.existingText)
-    - fn [lineCounts](../../src/proposals.ts#L322) (before: string, after: string) → { added: number; removed: number } <!-- internal -->
+    - fn [lineCounts](../../src/proposals.ts#L329) (before: string, after: string) → { added: number; removed: number } <!-- internal -->
       <a id="features.proposals.lineCounts"></a><br>`+` and `-` lines `lineDiff` prints.
       - calls [features.proposals.lineDiff](features.md#features.proposals.lineDiff)
-    - fn [listProposals](../../src/proposals.ts#L328) (root: string, specDir: string) → PendingProposal[]
+    - fn [listProposals](../../src/proposals.ts#L335) (root: string, specDir: string) → PendingProposal[]
       <a id="features.proposals.listProposals"></a><br>Every pending proposal with its target, line counts and why it cannot be accepted. Reads only.
       - calls [features.proposals.pendingTargets](features.md#features.proposals.pendingTargets), [features.proposals.readProposal](features.md#features.proposals.readProposal), [features.proposals.lineCounts](features.md#features.proposals.lineCounts)
-    - type [ProposalDiff](../../src/proposals.ts#L337)
+    - type [ProposalDiff](../../src/proposals.ts#L344)
       <a id="features.proposals.ProposalDiff"></a><br>What `keylang proposals show <target>` prints, or why not. Reads only.
-    - fn [proposalDiff](../../src/proposals.ts#L339) (root: string, specDir: string, target: string) → ProposalDiff
+    - fn [proposalDiff](../../src/proposals.ts#L346) (root: string, specDir: string, target: string) → ProposalDiff
       <a id="features.proposals.proposalDiff"></a>
       - calls [features.proposals.readProposal](features.md#features.proposals.readProposal), [features.proposals.lineDiff](features.md#features.proposals.lineDiff)
-    - type [AcceptResult](../../src/proposals.ts#L346)
+    - type [AcceptResult](../../src/proposals.ts#L353)
       <a id="features.proposals.AcceptResult"></a>
-    - fn [acceptProposal](../../src/proposals.ts#L364) (root: string, specDir: string, target: string) → AcceptResult
+    - fn [acceptProposal](../../src/proposals.ts#L371) (root: string, specDir: string, target: string) → AcceptResult
       <a id="features.proposals.acceptProposal"></a><br>`keylang proposals accept <target>`: the proposal's full text replaces the target, as MERGE does with every hunk accepted. The same gates as MERGE (the target's, a plain file in the store), a target that is not writable (a person's `chmod a-w`) is refused, and the write follows…
       - calls [features.proposals.readProposal](features.md#features.proposals.readProposal), [base.safe-write.landing](base.md#base.safe-write.landing), [features.proposals.dropProposal](features.md#features.proposals.dropProposal), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite), [features.proposals.countDecision](features.md#features.proposals.countDecision), [features.proposals.lineCounts](features.md#features.proposals.lineCounts)
-    - type [RejectResult](../../src/proposals.ts#L387)
+    - type [RejectResult](../../src/proposals.ts#L394)
       <a id="features.proposals.RejectResult"></a>
-    - fn [rejectProposal](../../src/proposals.ts#L394) (root: string, specDir: string, target: string) → RejectResult
+    - fn [rejectProposal](../../src/proposals.ts#L401) (root: string, specDir: string, target: string) → RejectResult
       <a id="features.proposals.rejectProposal"></a><br>`keylang proposals reject <target>`: the proposal is removed and the target stays as it is. A proposal no gate admits is still the person's to drop; a link in the store is removed itself, never followed.
       - calls [features.proposals.storeEntry](features.md#features.proposals.storeEntry), [features.proposals.targetProblem](features.md#features.proposals.targetProblem), [base.safe-write.landing](base.md#base.safe-write.landing), [features.proposals.countDecision](features.md#features.proposals.countDecision), [lang.files.existingText](lang.md#lang.files.existingText)
-    - fn [dropProposal](../../src/proposals.ts#L407) (root: string, target: string, text: string) → string | null <!-- internal -->
+    - fn [dropProposal](../../src/proposals.ts#L414) (root: string, target: string, text: string) → string | null <!-- internal -->
       <a id="features.proposals.dropProposal"></a><br>Removes the proposal while it still holds `text`: null, or why it stays.
       - calls [features.proposals.storeEntry](features.md#features.proposals.storeEntry), [base.diag.errorText](base.md#base.diag.errorText)
-    - fn [countDecision](../../src/proposals.ts#L419) (root: string, before: string, after: string, decision: "accepted" | "rejected") → void <!-- internal -->
+    - fn [countDecision](../../src/proposals.ts#L426) (root: string, before: string, after: string, decision: "accepted" | "rejected") → void <!-- internal -->
       <a id="features.proposals.countDecision"></a><br>The model lines a decision took or dropped, as MERGE counts them (design §5.1 p.7); a count that cannot be written is lost, never the decision.
       - calls [features.proposals.lineDiff](features.md#features.proposals.lineDiff), [features.stats.statusesIn](features.md#features.stats.statusesIn), [features.stats.updateStats](features.md#features.stats.updateStats), [features.stats.addDrafts](features.md#features.stats.addDrafts)
   - module [spec-to-code](../../src/spec-to-code.ts#L1)
@@ -1444,12 +1615,12 @@
       - calls [base.config.specPath](base.md#base.config.specPath)
     - fn [specStatements](../../src/stale.ts#L72) (docs: readonly Document[]) → Statement[]
       <a id="features.stale.specStatements"></a><br>The statements of hand-written specs: descriptions of nodes in map and flow sections, and every flow `when`, `then` and `invariant`. Generated map files are skipped: their text is the code's own.
-      - calls [features.stale.sectionRefs](features.md#features.stale.sectionRefs), [features.stale.subtreeRefs](features.md#features.stale.subtreeRefs), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes)
+      - calls [base.span.compareText](base.md#base.span.compareText), [features.stale.sectionRefs](features.md#features.stale.sectionRefs), [features.stale.subtreeRefs](features.md#features.stale.subtreeRefs), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes)
     - fn [subtreeRefs](../../src/stale.ts#L107) (node: Node) → string[] <!-- internal -->
       <a id="features.stale.subtreeRefs"></a><br>Collects the target strings of every ref on a node and, recursively, on all of its descendants, returning them as one flat list; [`features.stale.specStatements`](features.md#features.stale.specStatements) uses it to gather the references a document subtree points at. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [sectionRefs](../../src/stale.ts#L111) (section: Section) → string[] <!-- internal -->
-      <a id="features.stale.sectionRefs"></a><br>Collects every reference ID found anywhere in a document section by expanding its nodes via [`lang.ir.sectionNodes`](lang.md#lang.ir.sectionNodes) and flattening each node's subtree references into one list. Used by [`features.stale.specStatements`](features.md#features.stale.specStatements) to tie spec statements to the code they mention. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes)
+      <a id="features.stale.sectionRefs"></a><br>Collects every reference ID found anywhere in a document section by expanding its nodes via [`lang.ir.sectionNodes`](lang.md#lang.ir.sectionNodes) and flattening each node's subtree references into one list. Used by [`features.stale.specStatements`](features.md#features.stale.specStatements) to tie spec statements to the code they mention. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+      - calls [features.stale.subtreeRefs](features.md#features.stale.subtreeRefs), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes)
     - fn [statementPrint](../../src/stale.ts#L120) (snapshot: AnalysisSnapshot, subjects: readonly string[]) → { fingerprint: string; incomplete: string[] }
       <a id="features.stale.statementPrint"></a><br>The fingerprint of a statement's subjects in the snapshot, and what makes it incomplete. A subject the snapshot lacks hashes as `?`, so it turning up later is a change too.
       - calls [map.explanations.snapshotBaseline](map.md#map.explanations.snapshotBaseline), [features.stale.closureComplete](features.md#features.stale.closureComplete)
@@ -1462,6 +1633,7 @@
       <a id="features.stale.acceptBaseline"></a><br>The baseline after accepting `report`: the checked files' entries are replaced by the current fingerprints (a file with no statement left is dropped); other files keep theirs.
     - fn [baselineJson](../../src/stale.ts#L185) (baseline: StaleBaseline) → string
       <a id="features.stale.baselineJson"></a><br>The baseline as committed: files, then keys in code-unit order; two-space JSON with a final newline.
+      - calls [base.span.compareText](base.md#base.span.compareText)
     - fn [parseBaseline](../../src/stale.ts#L200) (text: string, path: string) → StaleBaseline
       <a id="features.stale.parseBaseline"></a><br>Reads a committed baseline; throws `path: problem` naming the field when it is not one.
       - calls [base.diag.errorText](base.md#base.diag.errorText), [features.stale.isRecord](features.md#features.stale.isRecord)
@@ -1485,7 +1657,7 @@
     - type [Stats](../../src/stats.ts#L15)
       <a id="features.stats.Stats"></a><br>Shape of the persisted usage counters: tallies of draft lines keyed by agreement status between LLM and algorithm, plus tallies of editor suggestions keyed by source with accumulated decision latency in ms. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [readStats](../../src/stats.ts#L25) (root: string) → Stats
-      <a id="features.stats.readStats"></a><br>Returns the parsed stats for a repository root by delegating to [`features.stats.readStatsFile`](features.md#features.stats.readStatsFile) and discarding the raw file text it also yields. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
+      <a id="features.stats.readStats"></a><br>Returns the parsed stats for a repository root by delegating to [`features.stats.readStatsFile`](features.md#features.stats.readStatsFile) and discarding the raw file text it also yields. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [features.stats.readStatsFile](features.md#features.stats.readStatsFile)
     - fn [readStatsFile](../../src/stats.ts#L30) (root: string) → { text: string | null; stats: Stats } <!-- internal -->
       <a id="features.stats.readStatsFile"></a><br>The file as read — its text, null when there is none (or it cannot be read) — and the counts it holds.
@@ -1522,7 +1694,7 @@
       <a id="features.voice-local.localAvailable"></a><br>Whether `@fugood/whisper.node` and its binary load on this machine.
       - calls [features.voice-local.localStatus](features.md#features.voice-local.localStatus)
     - fn [loadDecibri](../../src/voice-local.ts#L68) () → { module: { Microphone: MicrophoneClass } } | Exclude<ModuleStatus, { status: "ok" }> <!-- internal -->
-      <a id="features.voice-local.loadDecibri"></a><br>Loads the `decibri` package through [`features.voice-local.optional`](features.md#features.voice-local.optional) and checks that it exports a `Microphone` function. Returns the typed module on success, otherwise the load failure or an "unavailable" status. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="features.voice-local.loadDecibri"></a><br>Loads the `decibri` package through [`features.voice-local.optional`](features.md#features.voice-local.optional) and checks that it exports a `Microphone` function. Returns the typed module on success, otherwise the load failure or an "unavailable" status. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.voice-local.optional](features.md#features.voice-local.optional)
     - fn [microphoneStatus](../../src/voice-local.ts#L77) () → Promise<ModuleStatus>
       <a id="features.voice-local.microphoneStatus"></a><br>What `decibri` can do on this machine.
@@ -1569,6 +1741,7 @@
       <a id="features.voice.seamWord"></a><br>A word as the overlap repeats it: case and punctuation differ between windows (`card,` / `Card`).
     - fn [joinWindows](../../src/voice.ts#L108) (texts: readonly string[]) → string
       <a id="features.voice.joinWindows"></a><br>Joins window texts, dropping the words the overlap repeated at a seam: the longest run that ends one window and starts the next.
+      - calls [features.voice.seamWord](features.md#features.voice.seamWord)
     - fn [glossary](../../src/voice.ts#L135) (analysis: Analysis, path: string, text: string, line: number) → string[]
       <a id="features.voice.glossary"></a><br>At most 30 IDs near the cursor: those of the current flow, the neighbours of the IDs on the cursor line, and those IDs last — the end of a prompt weighs most.
       - calls [lang.parser.parse](lang.md#lang.parser.parse), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)

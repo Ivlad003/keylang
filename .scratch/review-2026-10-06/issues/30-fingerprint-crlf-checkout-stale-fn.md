@@ -1,6 +1,6 @@
 # 30: Fingerprint залежить від закінчень рядків: CRLF-checkout робить stale кожну fn з багаторядковим рядком або docstring, а також усіх, хто її викликає
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -51,11 +51,13 @@ scratchpad/…/crlf2: src/calc.py має `total` з багаторядковим
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/extract/treesitter.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/extract/treesitter.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+**2026-10-08.** `fingerprint()` у `src/extract/treesitter.ts` читає текст листа з `\r\n`/`\r` як `\n`, тож багаторядкові рядки, docstring і heredoc дають той самий fingerprint і closure після CRLF-checkout. Регресії: `tests/stale.test.ts` («a CRLF checkout of the same code…», Python + TS через `check --stale --strict`; падав з `3 stale` до виправлення) і `tests/fingerprint.test.ts` (LF і CRLF дають однаковий fingerprint/closure, зміна тексту рядка — ні). `EXTRACTOR_VERSION` не піднято: ключ кешу фактів уже містить хеш коду `src/extract/*` (`extractorCode()` у `src/map.ts`), тож кеш інвалідується сам. Документація: `docs/snapshot.md` §Fingerprint; `docs/review-2026-10-06.md` §2.2 №25 ✔.

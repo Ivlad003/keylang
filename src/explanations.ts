@@ -90,7 +90,9 @@ const sortedIds = new WeakMap<AnalysisSnapshot, string[]>();
  * The baseline an explanation of `id` is compared with: the closure
  * fingerprint of a fn or type; for a module, class or layer, which has no
  * closure of its own, a hash of its dependencies and of the closures of every
- * node under it, so a change inside makes its explanation stale. "" when there
+ * node under it, so a change inside makes its explanation stale (a module
+ * constant or class field counts through the fingerprints of the fns that read
+ * it; one no fn reads is in no hash). "" when there
  * is nothing to hash, null when the snapshot has no such node.
  */
 export function snapshotBaseline(snapshot: AnalysisSnapshot, id: string): string | null {

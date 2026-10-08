@@ -17,6 +17,8 @@
  *     KEYLANG_TRACE_TEST   test id (required unless keylang's PHPUnit extension names each test)
  *     KEYLANG_TRACE_RUN    run id shared by the tests of one run (default: time and pid)
  *     KEYLANG_TRACE_ROOT   repository root the plan's paths are relative to (default: cwd)
+ *   Relative paths are resolved once, against the directory the process started in, and written
+ *   back to the environment as absolute paths (a later chdir() does not move the trace).
  *
  * PHP calls no hook on a function call without an extension, so the adapter
  * instruments source. While it runs, `file://` is its own stream wrapper: a
@@ -126,6 +128,16 @@ if (!class_exists('KeylangTrace', false)) {
             file_put_contents($this->output, $text, FILE_APPEND | LOCK_EX);
         }
 
+        /** `$path` in the working directory when it is relative (`/…`, `C:\…`, `\\server\…` and `scheme://…` are not). */
+        private static function absolute(string $path): string
+        {
+            if (preg_match('~^(?:[/\\\\]|[A-Za-z]:[/\\\\]|[A-Za-z][A-Za-z0-9+.-]*://)~', $path) === 1) {
+                return $path;
+            }
+            $cwd = getcwd();
+            return $cwd === false ? $path : $cwd . DIRECTORY_SEPARATOR . $path;
+        }
+
         /** Reads the environment and starts recording; without `KEYLANG_TRACE` it does nothing. */
         public static function install(): void
         {
@@ -140,6 +152,12 @@ if (!class_exists('KeylangTrace', false)) {
             if ($planPath === false || $planPath === '') {
                 self::fail('KEYLANG_TRACE_PLAN is required with KEYLANG_TRACE');
             }
+            // Relative paths are the startup directory's, once: a script that calls chdir() still writes into the
+            // repository at shutdown, and a child process started elsewhere gets the same absolute paths.
+            $output = self::absolute($output);
+            $planPath = self::absolute($planPath);
+            putenv("KEYLANG_TRACE={$output}");
+            putenv("KEYLANG_TRACE_PLAN={$planPath}");
             $text = @file_get_contents($planPath);
             if ($text === false) {
                 self::fail("{$planPath}: cannot read the plan");
@@ -153,6 +171,7 @@ if (!class_exists('KeylangTrace', false)) {
             if ($root === false) {
                 self::fail('KEYLANG_TRACE_ROOT is not a directory');
             }
+            putenv("KEYLANG_TRACE_ROOT={$root}");
             $test = getenv('KEYLANG_TRACE_TEST');
             $run = getenv('KEYLANG_TRACE_RUN');
             $run = $run !== false && $run !== '' ? $run : dechex((int) (microtime(true) * 1000)) . '-' . getmypid();

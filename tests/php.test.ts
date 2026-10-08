@@ -46,7 +46,7 @@ interface Snapshot {
   system: { name: string | null; brief: string | null; source: string | null };
   manifest: { files: { path: string }[] };
   nodes: Record<string, { kind: string; doc: string | null; escapes?: { reason: string } }>;
-  edges: { kind: string; source: string; target: string | null; resolution: string; text: string; provenance: string; docblock?: string }[];
+  edges: { kind: string; source: string; target: string | null; resolution: string; text: string; provenance: string; docblock?: string; via?: string; closure?: true; site?: string; line: number; col: number }[];
   coverage: { kind: string; file: string; line: number; reason: string; source: string | null }[];
 }
 
@@ -361,6 +361,148 @@ test("php: a flow step and a rule through a docblock-typed property name the doc
   // In `shape` mode a docblock edge is a type, not a hook: the step stays ok.
   const shape = keylang(dir, ["check", "--static", "shape"]);
   assert.match(shape.stdout, /flows\.md:5:3: static ok domain\.Mailer\.Mailer\.send: called from app\.Checkout\.Checkout\.buy, typed by a docblock/);
+});
+
+/** Magento's `QuoteManagement::placeOrder`: the work runs through a callable handed to a mutex typed by an interface. */
+const CALLABLE_FILES = {
+  "keylang.json": JSON.stringify({ languages: ["php"], layers: { Quote: ["src/Quote/**"], Infra: ["src/Infra/**"] } }),
+  "src/Infra/LockManagerInterface.php": "<?php\nnamespace Shop\\Infra;\n\ninterface LockManagerInterface\n{\n    public function execute(int $id, callable $callback, array $args): mixed;\n}\n",
+  "src/Infra/Logger.php": "<?php\nnamespace Shop\\Infra;\n\nclass Logger\n{\n    public function info(string $m): void {}\n    public function each(array $items, callable $fn): void {}\n    public static function flush(int $x): int { return $x; }\n}\n",
+  "src/Quote/QuoteManagement.php": [
+    "<?php",
+    "namespace Shop\\Quote;",
+    "",
+    "use Shop\\Infra\\LockManagerInterface;",
+    "use Shop\\Infra\\Logger;",
+    "",
+    "class QuoteManagement",
+    "{",
+    "    public function __construct(private LockManagerInterface $cartMutex, private Logger $logger) {}",
+    "",
+    "    public function placeOrder(int $cartId): int",
+    "    {",
+    "        return $this->cartMutex->execute($cartId, \\Closure::fromCallable([$this, 'placeOrderRun']), [$cartId]);",
+    "    }",
+    "",
+    "    public function placeOrderRun(int $cartId): int",
+    "    {",
+    "        $this->logger->info('placing');",
+    "        return $this->submitQuote($cartId);",
+    "    }",
+    "",
+    "    public function submitQuote(int $cartId): int { return $cartId; }",
+    "",
+    "    public function sortItems(array $items, Logger $log): array",
+    "    {",
+    "        usort($items, [self::class, 'compare']);",
+    "        array_map('Shop\\Infra\\Logger::flush', $items);",
+    "        $this->logger->each($items, fn($item) => $this->audit($item));",
+    "        $this->logger->each($items, $this->firstClass(...));",
+    "        $this->logger->each($items, [$log, 'info']);",
+    "        $cb = [$this, 'later'];",
+    "        $f = fn() => $this->deferred();",
+    "        return $items;",
+    "    }",
+    "",
+    "    public static function compare(int $a, int $b): int { return $a <=> $b; }",
+    "    public function firstClass(int $item): void {}",
+    "    public function audit(int $item): void {}",
+    "    public function later(): void {}",
+    "    public function deferred(): void {}",
+    "}",
+    "",
+  ].join("\n"),
+};
+
+test("php: a callable passed as an argument (`\\Closure::fromCallable([$this, 'm'])`, `[self::class, 'm']`, `'Cls::m'`, `$this->m(...)`, `[$obj, 'm']`) and a closure passed as one are routes `behavior` follows and `shape` names; stored ones stay holes", (t) => {
+  const dir = repo(t, {
+    ...CALLABLE_FILES,
+    "keylang/flows.md": [
+      "# flow place",
+      "",
+      "- trigger Quote.QuoteManagement.QuoteManagement.placeOrder",
+      "  - step Quote.QuoteManagement.QuoteManagement.placeOrderRun",
+      "    - step Quote.QuoteManagement.QuoteManagement.submitQuote",
+      "",
+      "# flow sort",
+      "",
+      "- trigger Quote.QuoteManagement.QuoteManagement.sortItems",
+      "  - step Quote.QuoteManagement.QuoteManagement.compare",
+      "  - step Infra.Logger.Logger.flush",
+      "  - step Quote.QuoteManagement.QuoteManagement.audit",
+      "  - step Quote.QuoteManagement.QuoteManagement.firstClass",
+      "  - step Infra.Logger.Logger.info",
+      "  - step Quote.QuoteManagement.QuoteManagement.later",
+      "  - step Quote.QuoteManagement.QuoteManagement.deferred",
+      "",
+    ].join("\n"),
+  });
+  // The algo draft follows the callable into `placeOrderRun` and its callees, and says how.
+  const draft = keylang(dir, ["draft", "flow", "Quote.QuoteManagement.QuoteManagement.placeOrder", "--mode", "algo", "--print"]);
+  assert.equal(draft.status, 0, draft.stderr);
+  assert.equal(
+    draft.stdout,
+    [
+      "# flow placeOrder",
+      "",
+      "- trigger Quote.QuoteManagement.QuoteManagement.placeOrder <!-- keylang:algo unresolved: this.cartMutex.execute (src/Quote/QuoteManagement.php:13) -->",
+      "  - step Quote.QuoteManagement.QuoteManagement.placeOrderRun <!-- keylang:algo via callable -->",
+      "    - step Infra.Logger.Logger.info",
+      "    - step Quote.QuoteManagement.QuoteManagement.submitQuote",
+      "",
+    ].join("\n"),
+  );
+  const sort = keylang(dir, ["draft", "flow", "Quote.QuoteManagement.QuoteManagement.sortItems", "--mode", "algo", "--print"]).stdout;
+  assert.match(sort, /^  - step Quote\.QuoteManagement\.QuoteManagement\.compare <!-- keylang:algo via callable -->$/m);
+  assert.match(sort, /^  - step Quote\.QuoteManagement\.QuoteManagement\.audit <!-- keylang:algo via closure -->$/m);
+  assert.match(sort, /^  - step Quote\.QuoteManagement\.QuoteManagement\.deferred$/m);
+
+  const o = keylang(dir, ["check"]);
+  const lines = o.stdout.split("\n").filter((line) => / static /.test(line));
+  assert.deepEqual(
+    lines.map((line) => line.replace(/^keylang\/flows\.md:\d+:\d+: /, "").replace(/Quote\.QuoteManagement\.QuoteManagement\./g, "Q.")),
+    [
+      "static ok Q.placeOrderRun: called from Q.placeOrder through the callable `[$this, 'placeOrderRun']` passed at src/Quote/QuoteManagement.php:13:74",
+      "static ok Q.submitQuote: called from Q.placeOrderRun",
+      "static ok Q.compare: called from Q.sortItems through the callable `[self::class, 'compare']` passed at src/Quote/QuoteManagement.php:26:23",
+      "static ok Infra.Logger.Logger.flush: called from Q.sortItems through the callable `'Shop\\Infra\\Logger::flush'` passed at src/Quote/QuoteManagement.php:27:19",
+      "static ok Q.audit: called from Q.sortItems through the closure passed at src/Quote/QuoteManagement.php:28:37",
+      "static ok Q.firstClass: called from Q.sortItems through the callable `$this->firstClass(...)` passed at src/Quote/QuoteManagement.php:29:37",
+      "static ok Infra.Logger.Logger.info: called from Q.sortItems through the callable `[$log, 'info']` passed at src/Quote/QuoteManagement.php:30:37",
+      // A callable or a closure stored in a variable: whoever holds it may run it, as before.
+      "static unverified Q.later: no call path from Q.sortItems in the static graph; `later` is read as a value at src/Quote/QuoteManagement.php:31:15, so code keylang cannot follow may call `Q.later`",
+      "static unverified Q.deferred: no resolved path from Q.sortItems; reached only through a closure of Q.sortItems: `this.deferred` at src/Quote/QuoteManagement.php:32:22 runs only when that function value is called",
+    ],
+    o.stdout,
+  );
+  // `shape` follows neither and names what it did not follow.
+  const shape = keylang(dir, ["check", "--static", "shape"]).stdout;
+  assert.match(shape, /static unverified Quote\.QuoteManagement\.QuoteManagement\.placeOrderRun: no resolved path from Quote\.QuoteManagement\.QuoteManagement\.placeOrder; the callable `\[\$this, 'placeOrderRun'\]` passed as an argument \(not followed in static mode shape, set by --static\) at src\/Quote\/QuoteManagement\.php:13:74 may reach it/);
+  assert.match(shape, /static ok Quote\.QuoteManagement\.QuoteManagement\.submitQuote: called from Quote\.QuoteManagement\.QuoteManagement\.placeOrderRun/);
+  assert.match(shape, /static unverified Quote\.QuoteManagement\.QuoteManagement\.audit: no resolved path from Quote\.QuoteManagement\.QuoteManagement\.sortItems; the closure passed at src\/Quote\/QuoteManagement\.php:28:37 \(not followed in static mode shape, set by --static\) at src\/Quote\/QuoteManagement\.php:28:50 may reach it/);
+
+  // The snapshot: `via` and position on each edge; a callable passed is no call, so it is not counted as one.
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as Snapshot & {
+    nodes: Record<string, { calls?: string[] }>;
+    edges: { via?: string; site?: string; closure?: true; line: number; col: number }[];
+    stats: { callsResolved: number };
+  };
+  const edges = index.edges
+    .filter((e) => e.kind === "call" && e.source.startsWith("Quote.QuoteManagement.QuoteManagement.sortItems"))
+    .map((e) => `${e.text} → ${e.target ?? "?"}${e.via ? ` via ${e.via}` : ""}${e.closure ? " (closure)" : ""}${e.site ? ` site ${e.site}` : ""} @${e.line}:${e.col}`);
+  assert.deepEqual(edges, [
+    "[self::class, 'compare'] → Quote.QuoteManagement.QuoteManagement.compare via callable-arg @26:23",
+    "'Shop\\Infra\\Logger::flush' → Infra.Logger.Logger.flush via callable-arg @27:19",
+    "this.logger.each → Infra.Logger.Logger.each @28:9",
+    "this.audit → Quote.QuoteManagement.QuoteManagement.audit via closure-arg (closure) site src/Quote/QuoteManagement.php:28:37 @28:50",
+    "$this->firstClass(...) → Quote.QuoteManagement.QuoteManagement.firstClass via callable-arg @29:37",
+    "[$log, 'info'] → Infra.Logger.Logger.info via callable-arg @30:37",
+    "this.deferred → Quote.QuoteManagement.QuoteManagement.deferred (closure) @32:22",
+  ]);
+  // Resolved call edges: `info`, `submitQuote`, `each`, `audit`, `deferred` — the five callables passed add nothing.
+  assert.equal(index.stats.callsResolved, 5);
+  assert.ok(index.nodes["Quote.QuoteManagement.QuoteManagement.placeOrder"]?.calls?.includes("Quote.QuoteManagement.QuoteManagement.placeOrderRun"), "the map lists the callable as a call");
 });
 
 test("php: init on a Laravel layout takes composer's PSR-4 root for the layers; tests and the framework's caches are not indexed", (t) => {

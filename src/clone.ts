@@ -8,6 +8,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
+import { withoutBom } from "./config.ts";
 import { gitUnavailable } from "./git-changes.ts";
 import { safeWrite, targetProblem } from "./safe-write.ts";
 
@@ -144,7 +145,7 @@ function readMarker(dir: string): { url: string; key: string[] } | undefined {
   const marker = join(dir, CLONE_MARKER);
   if (!existsSync(marker)) return undefined;
   try {
-    const parsed: unknown = JSON.parse(readFileSync(marker, "utf8"));
+    const parsed: unknown = JSON.parse(withoutBom(readFileSync(marker, "utf8")));
     if (typeof parsed !== "object" || parsed === null || !("url" in parsed) || typeof parsed.url !== "string") return undefined;
     const key = "key" in parsed && Array.isArray(parsed.key) && parsed.key.every((segment) => typeof segment === "string") ? (parsed.key as string[]) : undefined;
     return { url: parsed.url, key: key ?? [parsed.url] };
@@ -179,7 +180,7 @@ export function enableExplainedMap(root: string): string | null {
   const file = join(root, "keylang.json");
   let config: unknown;
   try {
-    config = JSON.parse(readFileSync(file, "utf8"));
+    config = JSON.parse(withoutBom(readFileSync(file, "utf8")));
   } catch (error) {
     return `keylang.json: ${error instanceof Error ? error.message : String(error)}`;
   }

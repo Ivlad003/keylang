@@ -7,18 +7,23 @@
 // itself, its extensions and composer's own APIs are no packages.
 // A manifest counts at the root or in a directory between an analysed file and
 // the root, unless `exclude` matches it; no directory is walked. Workspace
-// ranges (`workspace:`, `file:`, `link:`, `portal:`) and the packages of the
-// root `workspaces` or of `pnpm-workspace.yaml` are this repository's code,
-// not externals. `@types/x`
+// ranges (`workspace:`, `file:`, `link:`, `portal:`), the packages of the
+// root `workspaces` or of `pnpm-workspace.yaml` (any glob, `**` and `{a,b}`
+// included, listed under its fixed prefix; less what `!pattern` takes), a package
+// whose `node_modules` entry links into the repository, a Cargo `path`
+// dependency inside it (directly or through `workspace = true`) and the
+// members of a Cargo workspace are this repository's code, not externals, as
+// the resolvers read them. `@types/x`
 // counts as `x`. A missing manifest is skipped. One that cannot be read, or
 // whose JSON or TOML is invalid, is an error that names the file and the field.
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, posix } from "node:path";
 import { parse as parseToml } from "smol-toml";
-import { isAnalysed, toPosix, type Config } from "./config.ts";
+import { isAnalysed, toPosix, withoutBom, type Config } from "./config.ts";
 import { assignExternalIds } from "./external-ids.ts";
-import { parseJsonc, parseJsoncStrict, pnpmWorkspacePackages } from "./imports.ts";
+import { globToRegExp } from "./glob.ts";
+import { inside, isGlob, listWorkspaceGlob, parseJsonc, parseJsoncStrict, pnpmWorkspacePackages, withoutNegated, workspaceGlob } from "./imports.ts";
 import { compareText } from "./span.ts";
 
 const PACKAGE_FIELDS = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"] as const;
@@ -73,33 +78,41 @@ export function readManifests(config: Config, files: readonly string[], known: R
     return text;
   };
   const declared = new Map<string, Declaration[]>();
+  const cargo = cargoWorkspaces(read);
   const add: Add = (name, manifest, field, range) => {
     if (range !== null && LOCAL_RANGE.test(range)) return;
     const target = typesTarget(name);
     if (target === "") return;
     declared.set(target, [...(declared.get(target) ?? []), { manifest, field, range }]);
   };
-  for (const dir of [...manifestDirs(files)].sort(compareText)) {
+  const dirs = [...manifestDirs(files)].sort(compareText);
+  for (const dir of dirs) {
     const pkg = dir === "" ? "package.json" : `${dir}/package.json`;
-    const cargo = dir === "" ? "Cargo.toml" : `${dir}/Cargo.toml`;
+    const cargoFile = dir === "" ? "Cargo.toml" : `${dir}/Cargo.toml`;
     const composer = dir === "" ? "composer.json" : `${dir}/composer.json`;
     if (isAnalysed(pkg, config)) {
       const text = read(pkg);
       if (text !== null) addPackages(pkg, text, add);
     }
-    if (isAnalysed(cargo, config)) {
-      const text = read(cargo);
-      if (text !== null) addCrates(cargo, text, add);
+    if (isAnalysed(cargoFile, config)) {
+      const text = read(cargoFile);
+      if (text !== null) addCrates(cargoFile, text, add, (key, dep) => cargo.local(dir, key, dep));
     }
     if (isAnalysed(composer, config)) {
       const text = read(composer);
       if (text !== null) addComposer(composer, text, add);
     }
   }
-  // The listing of `<base>/*` is the resolver's when it made one, and is not
+  // The listing of a workspace glob is the resolver's when it made one, and is not
   // an input otherwise: which directories exist changes no edge by itself.
-  const list = (rel: string): string | null => known.get(rel) ?? readInput(join(config.root, rel), rel);
-  const internal = new Set([...workspaceNames(read, list), ...composerPathNames(read, list)]);
+  const list = (rel: string): string | null => known.get(rel) ?? listWorkspaceGlob(config.root, rel);
+  const crateDirs = dirs.filter((dir) => inputs.get(dir === "" ? "Cargo.toml" : `${dir}/Cargo.toml`) != null);
+  const internal = new Set([
+    ...workspaceNames(read, list),
+    ...composerPathNames(read, list),
+    ...cargo.memberNames(crateDirs, list),
+    ...linkedPackages(config.root, declared, inputs),
+  ]);
   const entries = [...declared].filter(([name]) => !internal.has(name));
   const { ids } = assignExternalIds(entries.map(([name]) => name));
   const packages = entries
@@ -143,7 +156,8 @@ function typesTarget(name: string): string {
  * Names of the packages in the directories the root `workspaces` or the
  * `packages` of `pnpm-workspace.yaml` name (`packages/*`, `apps/web`), read as
  * the import resolver reads them: the same input keys and texts, and a member
- * manifest that does not parse names none.
+ * manifest that does not parse names none. Any glob counts (`packages/**`,
+ * `{a,b}`), less what a `!pattern` takes out.
  */
 function workspaceNames(read: (rel: string) => string | null, list: (rel: string) => string | null): Set<string> {
   const rootText = read("package.json");
@@ -152,15 +166,121 @@ function workspaceNames(read: (rel: string) => string | null, list: (rel: string
   const pnpm = read("pnpm-workspace.yaml");
   const patterns: unknown[] = [...(Array.isArray(declared) ? declared : isRecord(declared) && Array.isArray(declared.packages) ? declared.packages : []), ...(pnpm === null ? [] : pnpmWorkspacePackages(pnpm))];
   const names = new Set<string>();
-  for (const pattern of patterns) {
-    if (typeof pattern !== "string") continue;
-    for (const dir of workspaceDirs(pattern, list)) {
-      const text = read(`${dir}/package.json`);
-      const member = text === null ? null : parseJsonc(text);
-      if (isRecord(member) && typeof member.name === "string") names.add(member.name);
+  const dirs = patterns.flatMap((pattern) => (typeof pattern === "string" && !pattern.startsWith("!") ? workspaceDirs(pattern, list) : []));
+  for (const dir of withoutNegated(dirs, patterns)) {
+    const text = read(`${dir}/package.json`);
+    const member = text === null ? null : parseJsonc(text);
+    if (isRecord(member) && typeof member.name === "string") names.add(member.name);
+  }
+  return names;
+}
+
+/**
+ * npm packages a declaring manifest's directory, or one above it, has in
+ * `node_modules` as a link into the repository (`npm link`, a workspace, pnpm
+ * next to the package): the resolver reads such an entry as a workspace
+ * package. Each entry looked at is an input, keyed as the resolver keys it.
+ */
+function linkedPackages(root: string, declared: ReadonlyMap<string, readonly Declaration[]>, inputs: Map<string, string | null>): Set<string> {
+  const names = new Set<string>();
+  for (const [name, declarations] of declared) {
+    for (const { manifest } of declarations) {
+      if (posix.basename(manifest) !== "package.json" || names.has(name)) continue;
+      for (let dir = posix.dirname(manifest); ; dir = posix.dirname(dir)) {
+        const at = dir === "." ? "" : dir;
+        const key = at === "" ? `node_modules/${name}` : `${at}/node_modules/${name}`;
+        const abs = join(root, key);
+        if (existsSync(abs)) {
+          const rel = inside(root, abs);
+          if (!inputs.has(key)) inputs.set(key, rel === null ? "installed" : `workspace ${rel}`);
+          if (rel !== null) names.add(name);
+          break;
+        }
+        if (at === "") break;
+      }
     }
   }
   return names;
+}
+
+/**
+ * Cargo workspaces as `src/rust-imports.ts` reads them: the nearest
+ * `Cargo.toml` with `[workspace]` from a crate's directory up to the root.
+ * A dependency is local when its `path`, or the `path` of the
+ * `[workspace.dependencies]` entry it inherits (`workspace = true`), stays
+ * inside the repository; every member of a workspace (and its root package)
+ * is internal, as the resolver binds a member's name to its library.
+ */
+function cargoWorkspaces(read: (rel: string) => string | null): {
+  local(dir: string, key: string, dep: unknown): boolean;
+  memberNames(crateDirs: readonly string[], list: (rel: string) => string | null): Set<string>;
+} {
+  const parsed = new Map<string, Record<string, unknown> | null>();
+  const manifestAt = (dir: string): Record<string, unknown> | null => {
+    const cached = parsed.get(dir);
+    if (cached !== undefined) return cached;
+    const text = read(dir === "" ? "Cargo.toml" : `${dir}/Cargo.toml`);
+    let value: unknown = null;
+    try {
+      value = text === null ? null : parseToml(withoutBom(text));
+    } catch {
+      // Reported where its packages are read.
+    }
+    const manifest = isRecord(value) ? value : null;
+    parsed.set(dir, manifest);
+    return manifest;
+  };
+  const workspaceOf = (dir: string): { dir: string; table: Record<string, unknown> } | null => {
+    for (let at = dir; ; at = posix.dirname(at)) {
+      const here = at === "." ? "" : at;
+      const table = manifestAt(here)?.workspace;
+      if (isRecord(table)) return { dir: here, table };
+      if (here === "") return null;
+    }
+  };
+  const insideAt = (dir: string, path: string): boolean => {
+    const at = posix.normalize(posix.join(dir === "" ? "." : dir, toPosix(path)));
+    return at !== ".." && !at.startsWith("../") && !at.startsWith("/");
+  };
+  return {
+    local(dir, key, dep) {
+      if (!isRecord(dep)) return false;
+      if (typeof dep.path === "string") return insideAt(dir, dep.path);
+      if (dep.workspace !== true) return false;
+      const workspace = workspaceOf(dir);
+      const dependencies = workspace?.table.dependencies;
+      const inherited = isRecord(dependencies) ? dependencies[key] : undefined;
+      return workspace !== null && isRecord(inherited) && typeof inherited.path === "string" && insideAt(workspace.dir, inherited.path);
+    },
+    memberNames(crateDirs, list) {
+      const names = new Set<string>();
+      const seen = new Set<string>();
+      for (const crate of crateDirs) {
+        const workspace = workspaceOf(crate);
+        if (workspace === null || seen.has(workspace.dir)) continue;
+        seen.add(workspace.dir);
+        const members = Array.isArray(workspace.table.members) ? workspace.table.members.filter((m): m is string => typeof m === "string") : [];
+        const dirs = [workspace.dir, ...members.flatMap((member) => cargoMemberDirs(workspace.dir, member, list))];
+        for (const dir of dirs) {
+          const pkg = manifestAt(dir)?.package;
+          if (isRecord(pkg) && typeof pkg.name === "string") names.add(pkg.name);
+        }
+      }
+      return names;
+    },
+  };
+}
+
+/** Directories one `[workspace] members` entry names, root-relative; a glob in the last segment is expanded, as the resolver does. */
+function cargoMemberDirs(workspace: string, member: string, list: (rel: string) => string | null): string[] {
+  const full = posix.normalize(posix.join(workspace === "" ? "." : workspace, toPosix(member))).replace(/\/$/, "");
+  if (full === ".." || full.startsWith("../") || full.startsWith("/")) return [];
+  if (!/[*?[{]/.test(full)) return [full === "." ? "" : full];
+  const parent = posix.dirname(full);
+  if (/[*?[{]/.test(parent) || parent === ".") return [];
+  const listing = list(`${parent}/*`);
+  const pattern = globToRegExp(full);
+  return listing === null || listing === "" ? [] : listing.split("\n").filter((dir) => pattern.test(dir));
 }
 
 /**
@@ -171,7 +291,7 @@ function composerPathNames(read: (rel: string) => string | null, list: (rel: str
   const rootText = read("composer.json");
   let manifest: unknown = null;
   try {
-    manifest = rootText === null ? null : JSON.parse(rootText);
+    manifest = rootText === null ? null : JSON.parse(withoutBom(rootText));
   } catch {
     // Reported where its packages are read.
   }
@@ -182,7 +302,7 @@ function composerPathNames(read: (rel: string) => string | null, list: (rel: str
     for (const dir of workspaceDirs(repository.url, list)) {
       const text = read(`${dir}/composer.json`);
       try {
-        const member: unknown = text === null ? null : JSON.parse(text);
+        const member: unknown = text === null ? null : JSON.parse(withoutBom(text));
         if (isRecord(member) && typeof member.name === "string") names.add(member.name);
       } catch {
         // A member that does not parse names no package.
@@ -192,29 +312,17 @@ function composerPathNames(read: (rel: string) => string | null, list: (rel: str
   return names;
 }
 
-/** Directories one `workspaces` entry names; a trailing `/*` expands one level, as in `src/imports.ts`. */
+/** Directories one `workspaces` entry names, through the same listing as `src/imports.ts` (`listWorkspaceGlob`). */
 function workspaceDirs(pattern: string, list: (rel: string) => string | null): string[] {
-  const clean = posix.normalize(toPosix(pattern)).replace(/\/$/, "");
-  if (clean.startsWith("../") || clean.startsWith("/")) return [];
-  if (!clean.endsWith("/*")) return clean.includes("*") ? [] : [clean];
-  const base = clean.slice(0, -2);
-  if (base.includes("*")) return [];
-  const listing = list(`${base}/*`);
+  const glob = workspaceGlob(pattern);
+  if (glob === null) return [];
+  if (!isGlob(glob)) return [glob];
+  const listing = list(glob);
   return listing === null || listing === "" ? [] : listing.split("\n");
 }
 
-/** A file's text, null when there is none; a `<base>/*` key lists the subdirectories of `<base>`. */
+/** A file's text, null when there is none. */
 function readInput(abs: string, rel: string): string | null {
-  if (rel.endsWith("/*")) {
-    const dir = abs.slice(0, -2);
-    const base = rel.slice(0, -2);
-    if (!isDirectory(dir)) return "";
-    return readdirSync(dir, { withFileTypes: true })
-      .filter((e) => e.isDirectory())
-      .map((e) => `${base}/${e.name}`)
-      .sort()
-      .join("\n");
-  }
   return isFile(abs) ? readText(abs, rel) : null;
 }
 
@@ -226,18 +334,14 @@ function isFile(abs: string): boolean {
   }
 }
 
-function isDirectory(abs: string): boolean {
-  try {
-    return statSync(abs).isDirectory();
-  } catch {
-    return false;
-  }
-}
 
-/** The file is there but cannot be read. That is not the same error as invalid contents. */
+/**
+ * The file is there but cannot be read. That is not the same error as invalid
+ * contents. A leading BOM is dropped: Node and npm read such a manifest.
+ */
 function readText(path: string, rel: string): string {
   try {
-    return readFileSync(path, "utf8");
+    return withoutBom(readFileSync(path, "utf8"));
   } catch (error) {
     const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
     throw new Error(`${rel}: cannot read${code === "" ? "" : ` (${code})`}`);
@@ -270,11 +374,11 @@ function addPackages(rel: string, text: string, add: Add): void {
   }
 }
 
-/** `[dependencies]`, `[dev-dependencies]`, `[build-dependencies]`, and the same under `[target.*]`. */
-function addCrates(rel: string, text: string, add: Add): void {
+/** `[dependencies]`, `[dev-dependencies]`, `[build-dependencies]`, and the same under `[target.*]`; `local` ones are left out. */
+function addCrates(rel: string, text: string, add: Add, local: (key: string, dep: unknown) => boolean): void {
   let value: unknown;
   try {
-    value = parseToml(text);
+    value = parseToml(withoutBom(text));
   } catch (error) {
     throw new Error(`${rel}: invalid TOML: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -288,6 +392,8 @@ function addCrates(rel: string, text: string, add: Add): void {
   });
   for (const [field, names] of [...crateTables(rel, value, ""), ...nested]) {
     for (const [key, dep] of Object.entries(names)) {
+      // This repository's crate (`path`, or a `path` the workspace gives): never an external package.
+      if (local(key, dep)) continue;
       const renamed = isRecord(dep) && typeof dep.package === "string" ? dep.package : key;
       const range = typeof dep === "string" ? dep : isRecord(dep) && typeof dep.version === "string" ? dep.version : null;
       add(renamed, rel, field, range);
@@ -299,7 +405,7 @@ function addCrates(rel: string, text: string, add: Add): void {
 function addComposer(rel: string, text: string, add: Add): void {
   let value: unknown;
   try {
-    value = JSON.parse(text);
+    value = JSON.parse(withoutBom(text));
   } catch (error) {
     throw new Error(`${rel}: invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
   }

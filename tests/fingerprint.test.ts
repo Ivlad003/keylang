@@ -100,3 +100,50 @@ test("fingerprint: a decorator that may replace a fn makes its closure and its c
   assert.equal(nodes["main.main.plain"]!.closure!.complete, true);
   assert.equal(nodes["main.main.make"]!.closure!.complete, true, "`C()` runs `C.__init__`, which is complete");
 });
+
+test("fingerprint: CRLF and LF checkouts of a multi-line string give the same fingerprint and closure; a changed string does not", (t) => {
+  // Ticket review-2026-10-06/30.
+  const source = 'export function banner(name: string): string {\n  return `Hello\n  ${name}\n  bye`;\n}\n\nexport function greet(): string {\n  return banner("you");\n}\n';
+  const r = repo(t, { "src/b.ts": source });
+  const lf = r.map().nodes;
+  r.write("src/b.ts", source.replace(/\n/g, "\r\n"));
+  const crlf = r.map().nodes;
+  assert.equal(crlf["main.b.banner"]!.fingerprint, lf["main.b.banner"]!.fingerprint);
+  assert.equal(crlf["main.b.greet"]!.closure!.fingerprint, lf["main.b.greet"]!.closure!.fingerprint);
+  r.write("src/b.ts", source.replace("bye", "ciao"));
+  assert.notEqual(r.map().nodes["main.b.banner"]!.fingerprint, lf["main.b.banner"]!.fingerprint, "the text of a string is still part of it");
+});
+
+test("fingerprint: PHP and Rust constants and properties a fn reads are part of it; an imported value makes the closure incomplete", (t) => {
+  // Ticket review-2026-10-06/31.
+  const php = "<?php\nconst MAX = 100;\n\nclass Box {\n    const K = 1;\n    public $limit = 100;\n    private $unused = 7;\n\n    public function fits($n) {\n        return $n <= $this->limit + self::K + MAX;\n    }\n}\n";
+  const rs = "pub const MAX: u32 = 100;\nstatic SEED: u32 = 1;\n\npub fn cap(n: u32) -> u32 {\n    if n > MAX + SEED { MAX } else { n }\n}\n";
+  const py = "from .limits import LIMIT\nfrom .helpers import double\n\n\ndef cap(n):\n    return min(n, LIMIT)\n\n\ndef twice(n):\n    return double(n)\n";
+  const r = repo(t, {
+    "keylang.json": JSON.stringify({ languages: ["php", "rust", "python"], layers: { main: ["src/**"] } }),
+    "Cargo.toml": '[package]\nname = "app"\nversion = "0.1.0"\n\n[lib]\npath = "src/lib.rs"\n',
+    "src/box.php": php,
+    "src/lib.rs": rs,
+    "src/py/__init__.py": "",
+    "src/py/limits.py": "LIMIT = 100\n",
+    "src/py/helpers.py": "def double(n):\n    return n * 2\n",
+    "src/py/cap.py": py,
+  });
+  const before = r.map().nodes;
+  const fits = Object.keys(before).find((id) => id.endsWith("Box.fits"))!;
+  const cap = Object.keys(before).find((id) => id.endsWith("lib.cap"))!;
+  assert.ok(fits && cap, Object.keys(before).join(" "));
+  assert.equal(before[fits]!.closure!.complete, true);
+  assert.equal(before[cap]!.closure!.complete, true);
+  assert.equal(before["main.py.cap.cap"]!.closure!.complete, false, "`LIMIT` lives in another file");
+  assert.equal(before["main.py.cap.twice"]!.closure!.complete, true, "a called import is the call graph's to follow");
+
+  r.write("src/box.php", php.replace("$unused = 7", "$unused = 8"));
+  assert.equal(r.map().nodes[fits]!.fingerprint, before[fits]!.fingerprint, "a property the fn does not read is not part of it");
+  for (const [from, to] of [["MAX = 100", "MAX = 5"], ["K = 1", "K = 2"], ["$limit = 100", "$limit = 3"]] as const) {
+    r.write("src/box.php", php.replace(from, to));
+    assert.notEqual(r.map().nodes[fits]!.fingerprint, before[fits]!.fingerprint, from);
+  }
+  r.write("src/lib.rs", rs.replace("SEED: u32 = 1", "SEED: u32 = 2"));
+  assert.notEqual(r.map().nodes[cap]!.fingerprint, before[cap]!.fingerprint);
+});
