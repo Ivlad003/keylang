@@ -1,6 +1,7 @@
 // Trace adapter for TS/JS `@flow` tests: `node --import keylang/trace …`
 // (in this repository: `--import ./src/adapters/trace.ts`). Environment:
-//   KEYLANG_TRACE        JSONL file to append to; without it the adapter does nothing
+//   KEYLANG_TRACE        JSONL file to append to; without it the adapter does nothing (a relative
+//                        path, like the root, is resolved once against the startup directory)
 //   KEYLANG_TRACE_FLOW   flow name whose trigger and steps are instrumented (required with KEYLANG_TRACE)
 //   KEYLANG_TRACE_TEST   test id, e.g. `tests/cli-repository.test.ts > @flow check …` (required with KEYLANG_TRACE)
 //   KEYLANG_TRACE_RUN    run id shared by the tests of one run (default: time and pid)
@@ -34,7 +35,7 @@ type Plan = Extract<TracePlanMessage, { kind: "plan" }>;
 const output = process.env.KEYLANG_TRACE;
 if (output) record(output);
 
-function record(file: string): void {
+function record(given: string): void {
   const flow = process.env.KEYLANG_TRACE_FLOW;
   const testId = process.env.KEYLANG_TRACE_TEST;
   const missing = [flow ? null : "KEYLANG_TRACE_FLOW", testId ? null : "KEYLANG_TRACE_TEST"].filter((name) => name !== null);
@@ -44,6 +45,11 @@ function record(file: string): void {
   // a step one of them ran is never missing from another's own run.
   process.env.KEYLANG_TRACE_RUN = run;
   const root = resolve(process.env.KEYLANG_TRACE_ROOT ?? process.cwd());
+  // Relative paths are the startup directory's, once: a program that changes its directory (`process.chdir()`)
+  // still writes into the repository, and a child started elsewhere gets the same absolute paths.
+  const file = resolve(given);
+  process.env.KEYLANG_TRACE = file;
+  process.env.KEYLANG_TRACE_ROOT = root;
 
   const { port1, port2 } = new MessageChannel();
   const hooks = import.meta.url.endsWith(".ts") ? "./trace-hooks.ts" : "./trace-hooks.js";
@@ -82,8 +88,8 @@ function record(file: string): void {
     if (lines.length === 0) return;
     const text = `${lines.join("\n")}\n`;
     lines.length = 0;
-    mkdirSync(dirname(resolve(file)), { recursive: true });
-    appendFileSync(resolve(file), text);
+    mkdirSync(dirname(file), { recursive: true });
+    appendFileSync(file, text);
   };
 
   const write = (event: Record<string, unknown>): void => {

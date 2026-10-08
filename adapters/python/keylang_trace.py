@@ -267,6 +267,10 @@ def main():
     missing = [name for name, value in (("KEYLANG_TRACE_PLAN", plan_path), ("KEYLANG_TRACE_TEST", test)) if not value]
     if missing:
         fail(f"KEYLANG_TRACE is set, so {' and '.join(missing)} {'is' if len(missing) == 1 else 'are'} required too")
+    # Relative paths are the startup directory's, once: a script that calls os.chdir() still writes into the
+    # repository, and a child process started elsewhere gets the same absolute paths.
+    path = os.environ["KEYLANG_TRACE"] = os.path.abspath(path)
+    plan_path = os.environ["KEYLANG_TRACE_PLAN"] = os.path.abspath(plan_path)
     try:
         with open(plan_path, encoding="utf-8") as source:
             plan = json.load(source)
@@ -274,7 +278,7 @@ def main():
         fail(f"{plan_path}: {error}")
     if not isinstance(plan, dict) or plan.get("schemaVersion") != 1 or not isinstance(plan.get("symbols"), list):
         fail(f"{plan_path}: not a plan of schema 1 from `keylang trace-plan`")
-    root = os.path.realpath(os.environ.get("KEYLANG_TRACE_ROOT") or os.getcwd())
+    root = os.environ["KEYLANG_TRACE_ROOT"] = os.path.realpath(os.environ.get("KEYLANG_TRACE_ROOT") or os.getcwd())
     run = os.environ.get("KEYLANG_TRACE_RUN") or f"{int(time.time() * 1000):x}-{os.getpid()}"
     # Child processes under the adapter inherit the id, so the processes of one test are one run.
     os.environ["KEYLANG_TRACE_RUN"] = run

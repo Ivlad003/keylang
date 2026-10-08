@@ -6,7 +6,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
@@ -327,3 +327,96 @@ test("php: a process forked with pcntl_fork() records only its own events, with 
   assert.notEqual(c.status, 2, c.stderr);
   assert.equal(traceOf(c.rows, "app.Work.Work.crunch"), "ok: ok app.Work.Work.crunch: observed in run.php > @flow crunch");
 });
+
+// ---------- relative KEYLANG_TRACE / KEYLANG_TRACE_PLAN and a program that changes its directory ----------
+
+test("trace adapter: a relative KEYLANG_TRACE is the startup directory's, even after process.chdir(); children get it absolute", (t) => {
+  const dir = repo(t, JS_LAYERS, {
+    "src/app/main.ts": 'export function step(): number {\n  return 1;\n}\nexport function main(): number {\n  process.chdir("work");\n  console.log(process.env.KEYLANG_TRACE);\n  return step();\n}\n',
+    "work/.keep": "",
+    "keylang/flows/f.md": "# flow f\n\n- trigger app.main.main\n  - step app.main.step\n",
+  });
+  snapshotOf(dir);
+  writeFileSync(join(dir, "run.mjs"), "const m = await import('./src/app/main.ts'); m.main();");
+  const env: Record<string, string | undefined> = { ...process.env, KEYLANG_TRACE: ".keylang/trace/f.jsonl", KEYLANG_TRACE_FLOW: "f", KEYLANG_TRACE_TEST: "t" };
+  delete env.KEYLANG_TRACE_RUN;
+  delete env.KEYLANG_TRACE_ROOT;
+  const r = spawnSync(process.execPath, ["--import", adapter, "run.mjs"], { cwd: dir, encoding: "utf8", env, timeout: 60_000 });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout.trim(), join(realpathOrSelf(dir), ".keylang/trace/f.jsonl"));
+  assert.equal(existsSync(join(dir, "work/.keylang")), false);
+  const c = check(dir);
+  assert.equal(traceOf(c.rows, "app.main.step"), "ok: ok app.main.step: observed in t");
+});
+
+const rustc = spawnSync("rustc", ["--version"], { encoding: "utf8" }).status === 0;
+
+test("rust: relative KEYLANG_TRACE and KEYLANG_TRACE_PLAN are the startup directory's, though main changes its directory before the first span", { skip: rustc ? false : "rustc is not installed" }, (t) => {
+  const rust = join(root, "adapters/rust/keylang_trace.rs");
+  const dir = repo(t, { languages: ["rust"], layers: { app: ["src/*.rs"] }, check: { trace: ".keylang/trace/*.jsonl" } }, {
+    "Cargo.toml": '[package]\nname = "shop"\nversion = "0.1.0"\nedition = "2021"\n',
+    "src/main.rs": `#[path = ${JSON.stringify(rust)}]
+mod keylang_trace;
+
+fn checkout() {
+    let _span = keylang_trace::span("app.main.checkout");
+}
+
+fn main() {
+    std::env::set_current_dir("work").unwrap();
+    checkout();
+    keylang_trace::finish();
+}
+`,
+    "work/.keep": "",
+    "keylang/flows.md": "# flow checkout\n\n- trigger app.main.checkout\n",
+  });
+  const plan = keylang(dir, ["trace-plan", "checkout"]);
+  assert.equal(plan.status, 0, plan.stderr);
+  writeFileSync(join(dir, "plan.json"), plan.stdout);
+  const build = spawnSync("rustc", ["--edition", "2021", "-A", "warnings", "-o", join(dir, "shop"), "src/main.rs"], { cwd: dir, encoding: "utf8" });
+  assert.equal(build.status, 0, build.stderr);
+  const env: Record<string, string | undefined> = { ...process.env, KEYLANG_TRACE: ".keylang/trace/checkout.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_TRACE_TEST: "shop > @flow checkout" };
+  delete env.KEYLANG_TRACE_ROOT;
+  const exec = spawnSync(join(dir, "shop"), [], { cwd: dir, encoding: "utf8", env });
+  assert.equal(exec.status, 0, exec.stderr);
+  assert.equal(existsSync(join(dir, "work/.keylang")), false);
+  const c = check(dir);
+  assert.equal(traceOf(c.rows, "app.main.checkout"), "ok: ok app.main.checkout: observed in shop > @flow checkout");
+});
+
+test("python: a relative KEYLANG_TRACE is the startup directory's, though the script calls os.chdir()", { skip: python3 ? false : "python3 is not installed" }, (t) => {
+  const r = pythonRun(t, '    os.chdir(os.path.dirname(os.path.abspath(__file__)))\n    print(os.environ["KEYLANG_TRACE"])\n    return crunch(2)\n');
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout, `${join(realpathOrSelf(r.dir), ".keylang/trace/crunch.jsonl")}\n4\n`);
+  assert.equal(existsSync(join(r.dir, "app/.keylang")), false);
+  assert.equal(traceOf(check(r.dir).rows, "app.work.crunch"), "ok: ok app.work.crunch: observed in run.py > @flow crunch");
+});
+
+test("php: a relative KEYLANG_TRACE is the startup directory's, though the script changes its directory", { skip: php.status === 0 ? false : "php is not installed" }, (t) => {
+  const dir = repo(t, { languages: ["php"], layers: { domain: ["src/Domain/**"] }, exclude: ["run.php"], check: { trace: ".keylang/trace/*.jsonl" } }, {
+    "src/Domain/Order.php": "<?php\nnamespace Shop\\Domain;\n\nfunction total(): int\n{\n    return 3;\n}\n",
+    "run.php": "<?php\nrequire __DIR__ . '/src/Domain/Order.php';\nchdir(__DIR__ . '/work');\necho getenv('KEYLANG_TRACE'), \"\\n\";\nShop\\Domain\\total();\n",
+    "work/.keep": "",
+    "keylang/flows.md": "# flow sum\n\n- trigger domain.Order.total\n",
+  });
+  const plan = keylang(dir, ["trace-plan", "sum"]);
+  assert.equal(plan.status, 0, plan.stderr);
+  writeFileSync(join(dir, "plan.json"), plan.stdout);
+  const env: Record<string, string | undefined> = { ...process.env, KEYLANG_TRACE: ".keylang/trace/sum.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_TRACE_TEST: "run.php > @flow sum" };
+  delete env.KEYLANG_TRACE_ROOT;
+  const r = spawnSync("php", [join(root, "adapters/php/keylang_trace.php"), "run.php"], { cwd: dir, encoding: "utf8", env });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout.trim(), join(realpathOrSelf(dir), ".keylang/trace/sum.jsonl"));
+  assert.equal(existsSync(join(dir, "work/.keylang")), false);
+  assert.equal(traceOf(check(dir).rows, "domain.Order.total"), "ok: ok domain.Order.total: observed in run.php > @flow sum");
+});
+
+/** The directory as a process started in it sees it (`/tmp` may be a link). */
+function realpathOrSelf(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+}
