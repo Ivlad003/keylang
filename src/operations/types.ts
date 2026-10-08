@@ -872,7 +872,7 @@ export interface ParsePayload {
   documents: Document[];
   /** Saved explanations, as the paths name them: the model's text, not parsed. */
   skipped: string[];
-  /** Files that could not be read: each is parsed as empty text, as the CLI always did. */
+  /** Files that could not be read: each is parsed as empty text, named in an `error` message and makes the code 2. */
   unreadable: string[];
   /** The diagnostics of every document, in document order. */
   diagnostics: Diagnostic[];

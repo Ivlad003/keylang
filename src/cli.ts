@@ -1233,8 +1233,8 @@ function printMap(result: OperationEnvelope<"map">, root: string): number {
 
 /**
  * A printer over the shared parse operation: the tree or the JSON to stdout
- * and nothing else; the notes on skipped explanations and the diagnostics to
- * stderr.
+ * and nothing else; the notes on skipped explanations, each file it could not
+ * read (code 2) and the diagnostics to stderr.
  */
 async function cmdParse(paths: string[], json: boolean): Promise<number> {
   const cwd = process.cwd();
@@ -1242,6 +1242,10 @@ async function cmdParse(paths: string[], json: boolean): Promise<number> {
   if (result.payload === null) throw new Error(result.messages[0]?.text ?? "parse failed");
   const { payload } = result;
   for (const file of payload.skipped) process.stderr.write(`keylang: note: ${file}: a saved explanation, not keylang Markdown; skipped\n`);
+  for (const file of payload.unreadable) {
+    const why = result.messages.find((message) => message.level === "error" && message.text.startsWith(`${file}: cannot read: `));
+    process.stderr.write(`keylang: ${why?.text ?? `${file}: cannot read`}\n`);
+  }
   process.stdout.write(payload.text);
   for (const d of payload.diagnostics) process.stderr.write(`${formatDiagnostic(d)}\n`);
   return result.exitCode ?? 2;

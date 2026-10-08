@@ -176,6 +176,19 @@ test("fmt over a directory formats every file it can and names each one it canno
   assert.equal(o.stdout, "a.md: formatted\nc.md: formatted\n");
 });
 
+test("parse names a spec it cannot read on stderr and exits 2, as fmt and check do; the readable files are still parsed", { skip: process.getuid?.() === 0 ? "root reads any file" : false }, (t) => {
+  const dir = tempDir(t, "keylang-parse-unreadable-");
+  writeTree(dir, { "keylang/a.md": "# rules\n\n- deny a b\n", "keylang/b.md": "# flow x\n\n- step y.z\n" });
+  chmodSync(join(dir, "keylang/b.md"), 0o000);
+  const tree = keylang(dir, ["parse", "keylang"]);
+  assert.equal(tree.status, 2, tree.stdout + tree.stderr);
+  assert.match(tree.stderr, /^keylang: keylang\/b\.md: cannot read: EACCES/m);
+  assert.match(tree.stdout, /deny/, "a.md is parsed");
+  const json = keylang(dir, ["parse", "--json", "keylang/b.md"]);
+  assert.equal(json.status, 2);
+  assert.match(json.stderr, /keylang\/b\.md: cannot read: EACCES/);
+});
+
 // An astral letter (two UTF-16 code units, one code point) in the IDs and before the link.
 const LINKED_MAP = "# map\n\n- layer 𝒳\n  - module a\n    - fn go\n      - calls 𝒳.a.b, [𝒳.a.go](𝒳.md#𝒳.a.go)\n    - fn b\n";
 

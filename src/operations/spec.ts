@@ -325,9 +325,11 @@ export async function runExplainEdge(request: ExplainEdgeRequest, context: Opera
  * `keylang parse`: every Markdown file under the paths, in their order, into
  * the Text IR. The parser alone runs — no snapshot of the code, no rules.
  * Messages: a `warning` note per skipped explanation, then each diagnostic
- * by its severity — all of which the CLI prints to stderr. Code 1 when a diagnostic is
- * an error, else 0; 2 for a missing path or an edition this keylang cannot
- * read, with no payload.
+ * by its severity, and an `error` `<file>: cannot read: <reason>` per file it
+ * could not read — all of which the CLI prints to stderr. Code 2 when a file
+ * could not be read (it is still parsed as empty text, so the payload shows
+ * the rest), else 1 when a diagnostic is an error, else 0; 2 for a missing
+ * path or an edition this keylang cannot read, with no payload.
  */
 export async function runParse(request: ParseRequest, context: OperationContext): Promise<OperationEnvelope<"parse">> {
   if (!isAbsolute(request.root)) return empty("parse", "failed", 2, "parse: root must be an absolute path");
@@ -338,6 +340,7 @@ export async function runParse(request: ParseRequest, context: OperationContext)
   const documents: Document[] = [];
   const skipped: string[] = [];
   const unreadable: string[] = [];
+  const readErrors: OperationMessage[] = [];
   const messages: OperationMessage[] = [];
   try {
     // `parse` reads nothing of the config but the edition it asks for.
@@ -348,8 +351,9 @@ export async function runParse(request: ParseRequest, context: OperationContext)
       let text: string;
       try {
         text = readFileSync(resolve(base, file), "utf8");
-      } catch {
+      } catch (error) {
         unreadable.push(file);
+        readErrors.push({ level: "error", text: `${file}: cannot read: ${errorText(error)}` });
         text = "";
       }
       if (isStoredExplanation(text)) {
@@ -362,9 +366,12 @@ export async function runParse(request: ParseRequest, context: OperationContext)
   }
   if (context.signal?.aborted) return empty("parse", "cancelled", null);
   const diagnostics = documents.flatMap((doc) => doc.diagnostics);
+  messages.push(...readErrors);
   for (const d of diagnostics) messages.push({ level: isError(d) ? "error" : "warning", text: formatDiagnostic(d) });
   const payload: ParsePayload = { format: request.format, documents, skipped, unreadable, diagnostics, text: parseReportText(request.format, documents) };
-  return { ...empty("parse", "completed", diagnostics.some(isError) ? 1 : 0), payload, messages };
+  // An unreadable file is an I/O error, as in `fmt` and `check`: not a valid empty document.
+  const exitCode = unreadable.length > 0 ? 2 : diagnostics.some(isError) ? 1 : 0;
+  return { ...empty("parse", "completed", exitCode), payload, messages };
 }
 
 /**
