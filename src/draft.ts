@@ -8,7 +8,7 @@
 import { SYNTHETIC_LAYERS } from "./config.ts";
 import { sectionNodes } from "./ir.ts";
 import { parse, renderMeaning } from "./parser.ts";
-import { allCrlf } from "./safe-write.ts";
+import { keepLineEndings } from "./safe-write.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
 
 export interface FlowDraft {
@@ -55,7 +55,7 @@ export function draftFlow(snapshot: AnalysisSnapshot, trigger: string, options: 
  * A spec with the draft added: the section of the same flow is replaced,
  * whatever follows the name on its heading line, otherwise the draft is
  * appended. Sections come from the parser, so a `# ` line in a code block is
- * not a heading. A file with CRLF on every line keeps CRLF.
+ * not a heading. The line endings are kept (`keepLineEndings`), mixed ones too.
  */
 export function withFlow(existing: string | null, draft: Pick<FlowDraft, "name" | "text">): string {
   if (existing === null || existing.trim() === "") return draft.text;
@@ -72,14 +72,14 @@ export function withFlow(existing: string | null, draft: Pick<FlowDraft, "name" 
     const after = lines.slice(end);
     out = `${[...lines.slice(0, start), ...draft.text.trimEnd().split("\n"), ...(after.length > 0 ? ["", ...after] : [])].join("\n")}\n`;
   }
-  return allCrlf(existing) ? out.replace(/\n/g, "\r\n") : out;
+  return keepLineEndings(existing, out);
 }
 
 /**
  * `draft rules` into an existing spec: the drafted rules go at the end of its
  * last `# rules` section, or into a new `# rules` section at the end, never
  * under a trailing `# flow`. A rule the file already has (comments aside) is
- * not repeated. A file with CRLF on every line keeps CRLF.
+ * not repeated. The line endings are kept (`keepLineEndings`), mixed ones too.
  */
 export function withRules(existing: string | null, draftText: string): string {
   if (existing === null || existing.trim() === "") return draftText;
@@ -107,7 +107,7 @@ export function withRules(existing: string | null, draftText: string): string {
     while (after[0]?.trim() === "") after.shift();
     out = `${[...lines.slice(0, end), ...gap, ...added, ...(after.length > 0 ? ["", ...after] : [])].join("\n")}\n`;
   }
-  return allCrlf(existing) ? out.replace(/\n/g, "\r\n") : out;
+  return keepLineEndings(existing, out);
 }
 
 /** 0-based line index of the heading after `sections[index]`, or null at the end of the file. */

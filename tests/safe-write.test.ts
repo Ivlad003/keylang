@@ -7,7 +7,7 @@ import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
-import { safeWrite, safeWriteAll, writeProblem } from "../src/safe-write.ts";
+import { keepLineEndings, safeWrite, safeWriteAll, writeProblem } from "../src/safe-write.ts";
 
 function dirs(t: TestContext): { repo: string; outside: string } {
   const base = mkdtempSync(join(tmpdir(), "keylang-write-"));
@@ -77,4 +77,21 @@ test("safe write: atomic — a missing directory is created, permissions and CRL
   safeWrite(repo, "crlf.md", "lf\nonly\n");
   assert.equal(readFileSync(file, "utf8"), "lf\nonly\n", "mixed endings are not a CRLF file");
   assert.deepEqual(readdirSync(repo).sort(), ["crlf.md", "deep"]);
+});
+
+test("keepLineEndings: LF and all-CRLF files keep their kind; in a mixed file kept lines keep theirs and new lines take the most common", () => {
+  const lf = (text: string): string => text.replace(/\r\n/g, "\n");
+  assert.equal(keepLineEndings("a\nb\n", "a\nx\nb\n"), "a\nx\nb\n");
+  assert.equal(keepLineEndings("a\r\nb\r\n", "a\nx\nb\n"), "a\r\nx\r\nb\r\n");
+  const mixed = "a\r\nb\r\nc\nd\r\n";
+  assert.equal(keepLineEndings(mixed, `${lf(mixed)}NEW\n`), `${mixed}NEW\r\n`, "an append");
+  assert.equal(keepLineEndings(mixed, "a\nb\nX\nc\nd\n"), "a\r\nb\r\nX\r\nc\nd\r\n", "an insertion in the middle");
+  assert.equal(keepLineEndings(mixed, "TOP\na\nb\nc\nX\nd\n"), "TOP\r\na\r\nb\r\nc\nX\r\nd\r\n", "two insertions");
+  assert.equal(keepLineEndings(mixed, "a\nY\nd\n"), "a\r\nY\r\nd\r\n", "a replacement");
+  assert.equal(keepLineEndings("a\r\nb\nc\n", "a\nb\nc\nd"), "a\r\nb\nc\nd", "a tie of endings is LF; no final newline stays none");
+  // Linear: a large file of `\r`-only differences costs no quadratic table.
+  const big = Array.from({ length: 30000 }, (_, i) => `line ${i}${i % 2 === 0 ? "\r" : ""}\n`).join("");
+  const started = Date.now();
+  assert.equal(keepLineEndings(big, `TOP\n${lf(big)}end\n`), `TOP\n${big}end\n`);
+  assert.ok(Date.now() - started < 2000);
 });
