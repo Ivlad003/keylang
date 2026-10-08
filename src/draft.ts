@@ -10,6 +10,7 @@ import { sectionNodes } from "./ir.ts";
 import { parse, renderMeaning } from "./parser.ts";
 import { allCrlf } from "./safe-write.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
+import type { TraceRun, TraceSpan } from "./trace-evidence.ts";
 
 export interface FlowDraft {
   name: string;
@@ -56,6 +57,60 @@ export function draftFlow(snapshot: AnalysisSnapshot, trigger: string, options: 
   };
   visit(trigger, 0, "");
   return { name, text: `${lines.join("\n")}\n`, steps };
+}
+
+/**
+ * `draft flow --from-trace`: a flow from what one trace run observed. The
+ * first root span (in start order) is the trigger; nesting is the span tree,
+ * order among siblings is start order (`seq` on one clock, else `ts`). A fn
+ * already listed is not listed again, as in `draftFlow`, so a loop or a
+ * recursion is one step. A step the static graph does not show — no path of
+ * resolved calls from its parent — is marked `<!-- keylang:trace via
+ * observed -->`. `rest` names the root spans left out: they ran outside the
+ * trigger's call tree.
+ */
+export function draftFlowFromTrace(snapshot: AnalysisSnapshot, run: TraceRun, options: { name?: string } = {}): FlowDraft & { rest: string[] } {
+  const known = new Set(run.spans.map((span) => span.spanId));
+  const children = new Map<string | null, TraceSpan[]>();
+  for (const span of run.spans) {
+    const parent = span.parentSpanId !== null && known.has(span.parentSpanId) ? span.parentSpanId : null;
+    children.set(parent, [...(children.get(parent) ?? []), span]);
+  }
+  const order = (a: TraceSpan, b: TraceSpan): number => (a.start.clockId === b.start.clockId ? a.start.seq - b.start.seq : a.start.ts - b.start.ts);
+  for (const list of children.values()) list.sort(order);
+  const roots = children.get(null) ?? [];
+  const trigger = roots[0];
+  if (trigger === undefined) throw new Error(`run \`${run.runId}\` has no span`);
+  const name = options.name ?? (run.flow || trigger.symbolId.slice(trigger.symbolId.lastIndexOf(".") + 1));
+  const listed = new Set<string>();
+  const lines = [`# flow ${name}`, ""];
+  const steps: string[] = [];
+  const visit = (span: TraceSpan, level: number, parent: string | null): void => {
+    listed.add(span.symbolId);
+    steps.push(span.symbolId);
+    const seen = parent === null || reachesByCalls(snapshot, parent, span.symbolId);
+    lines.push(`${"  ".repeat(level)}- ${level === 0 ? "trigger" : "step"} ${span.symbolId}${seen ? "" : " <!-- keylang:trace via observed -->"}`);
+    for (const child of children.get(span.spanId) ?? []) if (!listed.has(child.symbolId)) visit(child, level + 1, span.symbolId);
+  };
+  visit(trigger, 0, null);
+  const rest = roots.slice(1).map((span) => span.symbolId).filter((id) => !listed.has(id));
+  return { name, text: `${lines.join("\n")}\n`, steps, rest: [...new Set(rest)] };
+}
+
+/** A path of resolved calls (the snapshot's `calls`) from `from` to `to`. */
+function reachesByCalls(snapshot: AnalysisSnapshot, from: string, to: string): boolean {
+  const seen = new Set([from]);
+  const queue = [from];
+  while (queue.length > 0) {
+    for (const callee of snapshot.nodes[queue.pop()!]?.calls ?? []) {
+      if (callee === to) return true;
+      if (!seen.has(callee)) {
+        seen.add(callee);
+        queue.push(callee);
+      }
+    }
+  }
+  return false;
 }
 
 /**
