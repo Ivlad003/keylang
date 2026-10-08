@@ -25,27 +25,27 @@
     - snapshot map.snapshot
     - trace-plan map.trace-plan
     - type [TraceHooksData](../../src/adapters/trace-hooks.ts#L16)
-    - type [TracePlanMessage](../../src/adapters/trace-hooks.ts#L29)
-    - type [FilePlan](../../src/adapters/trace-hooks.ts#L34) <!-- internal -->
-    - fn [initialize](../../src/adapters/trace-hooks.ts#L44) (data: TraceHooksData) → Promise<void>
+    - type [TracePlanMessage](../../src/adapters/trace-hooks.ts#L32)
+    - type [FilePlan](../../src/adapters/trace-hooks.ts#L37) <!-- internal -->
+    - fn [initialize](../../src/adapters/trace-hooks.ts#L47) (data: TraceHooksData) → Promise<void>
       - calls base.config.loadConfig, map.map.generateMap, map.trace-plan.flowSymbols, extract.bodies.functionBodies, cli.trace-hooks.wrap, cli.trace-hooks.applyEdits, extract.bodies.parsesCleanly, map.snapshot.sha256
-    - type [Edit](../../src/adapters/trace-hooks.ts#L87) <!-- internal -->
-    - fn [wrap](../../src/adapters/trace-hooks.ts#L93) (id: string, body: FunctionBody) → Edit[] <!-- internal -->
-    - fn [applyEdits](../../src/adapters/trace-hooks.ts#L109) (src: string, edits: readonly Edit[]) → string <!-- internal -->
-    - type [LoadResult](../../src/adapters/trace-hooks.ts#L116) <!-- internal -->
-    - fn [load](../../src/adapters/trace-hooks.ts#L118) (url: string, context: unknown, nextLoad: (url: string, context: unknown) => Promise<LoadResult>) → Promise<LoadResult>
+    - type [Edit](../../src/adapters/trace-hooks.ts#L97) <!-- internal -->
+    - fn [wrap](../../src/adapters/trace-hooks.ts#L103) (id: string, body: FunctionBody) → Edit[] <!-- internal -->
+    - fn [applyEdits](../../src/adapters/trace-hooks.ts#L119) (src: string, edits: readonly Edit[]) → string <!-- internal -->
+    - type [LoadResult](../../src/adapters/trace-hooks.ts#L126) <!-- internal -->
+    - fn [load](../../src/adapters/trace-hooks.ts#L128) (url: string, context: unknown, nextLoad: (url: string, context: unknown) => Promise<LoadResult>) → Promise<LoadResult>
       - calls map.snapshot.sha256
   - module [trace](../../src/adapters/trace.ts#L1)
     - node external.node
     - trace-evidence check.trace-evidence
     - run-id cli.run-id
     - trace-hooks cli.trace-hooks
-    - type [Span](../../src/adapters/trace.ts#L26) <!-- internal -->
-    - type [Plan](../../src/adapters/trace.ts#L31) = Extract<TracePlanMessage, { kind: "plan" }> <!-- internal -->
-    - fn [record](../../src/adapters/trace.ts#L37) (file: string) → void <!-- internal -->
+    - type [Span](../../src/adapters/trace.ts#L27) <!-- internal -->
+    - type [Plan](../../src/adapters/trace.ts#L32) = Extract<TracePlanMessage, { kind: "plan" }> <!-- internal -->
+    - fn [record](../../src/adapters/trace.ts#L38) (given: string) → void <!-- internal -->
       - calls cli.run-id.runId, cli.trace.instrumented
-    - type [Loads](../../src/adapters/trace.ts#L183) <!-- internal -->
-    - fn [instrumented](../../src/adapters/trace.ts#L201) (plan: Plan, loads: Loads) → string[] <!-- internal -->
+    - type [Loads](../../src/adapters/trace.ts#L191) <!-- internal -->
+    - fn [instrumented](../../src/adapters/trace.ts#L209) (plan: Plan, loads: Loads) → { ids: string[]; reasons: Record<string, string> } <!-- internal -->
   - module [cli](../../src/cli.ts#L1)
     - node external.node
     - safe-write base.safe-write
@@ -140,7 +140,7 @@
       - calls cli.cli.printBaseline, operations.operations.runOperation
     - fn [printBaseline](../../src/cli.ts#L1110) (result: OperationEnvelope<"baseline">) → number <!-- internal -->
     - fn [cmdFeature](../../src/cli.ts#L1125) (slug: string | undefined, format: string, since: string | undefined) → Promise<number> <!-- internal -->
-      - calls operations.operations.runOperation, map.analyze.findRoot, operations.feature.featureSummary
+      - calls operations.operations.runOperation, map.analyze.findRoot, operations.feature.gapLine, operations.feature.hintLine, operations.feature.featureSummary
     - fn [cmdHook](../../src/cli.ts#L1141) (args: readonly string[], checkOnly: boolean) → Promise<number> <!-- internal -->
       - calls cli.cli.cmdHookInstall, cli.cli.cmdHookStop
     - fn [cmdHookStop](../../src/cli.ts#L1156) () → Promise<number> <!-- internal -->

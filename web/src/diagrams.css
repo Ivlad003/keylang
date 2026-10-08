@@ -1,0 +1,15 @@
+/* The diagram page of `keylang web`: a view list on the left, the diagram on the right. */
+html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; color: #212121; background: #ffffff; }
+body { display: flex; }
+#list { width: 280px; flex: none; display: flex; flex-direction: column; border-right: 1px solid #cfd8dc; background: #f7f9fa; }
+#list header { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; font-weight: 600; }
+#list header a { font-weight: 400; color: #1565c0; }
+#search { margin: 0 10px 8px; padding: 6px 8px; border: 1px solid #b0bec5; border-radius: 4px; font: inherit; }
+#views { list-style: none; margin: 0; padding: 0 0 8px; overflow: auto; flex: 1; }
+#views button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 5px 10px; font: inherit; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#views button:hover { background: #e3eaee; }
+#views button.active { background: #cfe3f7; }
+#views .hint { display: inline-block; min-width: 54px; margin-right: 6px; color: #607d8b; font-size: 11px; }
+main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+#status { padding: 8px 12px; border-bottom: 1px solid #eceff1; color: #455a64; min-height: 16px; }
+#graph { flex: 1; position: relative; overflow: auto; }

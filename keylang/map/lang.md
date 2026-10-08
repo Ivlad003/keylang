@@ -48,6 +48,7 @@
     - ir lang.ir
     - type [ParseFormat](../../src/parse-format.ts#L8) = (typeof PARSE_FORMATS)[number]
     - fn [parseReportText](../../src/parse-format.ts#L11) (format: ParseFormat, docs: readonly Document[]) → string
+      - calls lang.parse-format.treeLines
     - fn [treeLines](../../src/parse-format.ts#L17) (doc: Document) → string[] <!-- internal -->
       - calls lang.parse-format.nodeLines
     - fn [nodeLines](../../src/parse-format.ts#L26) (n: Node, depth: number, out: string[]) → void <!-- internal -->
@@ -133,6 +134,7 @@
     - fn [nfc](../../src/parser.ts#L1032) (text: string) → string <!-- internal -->
     - fn [isSegment](../../src/parser.ts#L1037) (s: string) → boolean
     - fn [isId](../../src/parser.ts#L1043) (s: string) → boolean
+      - calls lang.parser.isSegment
     - fn [linkTextSpan](../../src/parser.ts#L1049) (t: Token) → Span
       - calls lang.parser.parseLink, lang.parser.codePoints
     - fn [parseLink](../../src/parser.ts#L1055) (t: Token) → Link <!-- internal -->
