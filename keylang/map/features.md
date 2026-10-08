@@ -814,6 +814,20 @@
     - fn [gitTopLevel](../../src/git-hook.ts#L54) (cwd: string) → string
       - calls features.git-hook.git
     - fn [git](../../src/git-hook.ts#L58) (cwd: string, args: string[]) → string <!-- internal -->
+  - module [greenfield](../../src/greenfield.ts#L1)
+    - config base.config
+    - diagram-layout map.diagram-layout
+    - diagram-proposal features.diagram-proposal
+    - languages base.languages
+    - span base.span
+    - spec-ir lang.spec-ir
+    - type [GreenfieldInput](../../src/greenfield.ts#L42)
+    - type [GreenfieldFile](../../src/greenfield.ts#L52)
+    - type [GreenfieldPlan](../../src/greenfield.ts#L58)
+    - fn [strip](../../src/greenfield.ts#L74) (id: string) → string <!-- internal -->
+    - fn [prose](../../src/greenfield.ts#L77) (text: string) → string <!-- internal -->
+    - fn [greenfieldPlan](../../src/greenfield.ts#L83) (input: GreenfieldInput) → GreenfieldPlan | string
+      - calls base.span.compareText, features.greenfield.strip, base.config.isReservedLayerName, features.diagram-proposal.diagramChanges, features.greenfield.prose, map.diagram-layout.shapeBase, map.diagram-layout.layoutPath, map.diagram-layout.layoutText
   - module [harness](../../src/harness.ts#L1)
     - node external.node
     - smol-toml external.smol-toml

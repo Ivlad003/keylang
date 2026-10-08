@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [agent-cli](#features.agent-cli) · [agent-context](#features.agent-context) · [baseline](#features.baseline) · [call-sites](#features.call-sites) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [clone](#features.clone) · [coverage-report](#features.coverage-report) · [diagram-proposal](#features.diagram-proposal) · [discover-names](#features.discover-names) · [discover](#features.discover) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [explorer](#features.explorer) · [feature-status](#features.feature-status) · [flow-bundle](#features.flow-bundle) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [harness](#features.harness) · [integrations](#features.integrations) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [migration-stack](#features.migration-stack) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stale](#features.stale) · [stats](#features.stats) · [tour](#features.tour) · [voice-local](#features.voice-local) · [voice](#features.voice) · [weakening](#features.weakening)
+[README](README.md) · modules: [agent-cli](#features.agent-cli) · [agent-context](#features.agent-context) · [baseline](#features.baseline) · [call-sites](#features.call-sites) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [clone](#features.clone) · [coverage-report](#features.coverage-report) · [diagram-proposal](#features.diagram-proposal) · [discover-names](#features.discover-names) · [discover](#features.discover) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [explorer](#features.explorer) · [feature-status](#features.feature-status) · [flow-bundle](#features.flow-bundle) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [greenfield](#features.greenfield) · [harness](#features.harness) · [integrations](#features.integrations) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [migration-stack](#features.migration-stack) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stale](#features.stale) · [stats](#features.stats) · [tour](#features.tour) · [voice-local](#features.voice-local) · [voice](#features.voice) · [weakening](#features.weakening)
 
 # map
 
@@ -1284,6 +1284,27 @@
       - calls [features.git-hook.git](features.md#features.git-hook.git)
     - fn [git](../../src/git-hook.ts#L58) (cwd: string, args: string[]) → string <!-- internal -->
       <a id="features.git-hook.git"></a><br>Runs a git command synchronously in the given directory and returns its trimmed stdout, throwing a hook-install error if git can't launch or exits non-zero; used by [`features.git-hook.gitHooksDir`](features.md#features.git-hook.gitHooksDir). _(llm · claude:claude-opus-5-5 · 2026-10-05)_
+  - module [greenfield](../../src/greenfield.ts#L1)
+    <a id="features.greenfield"></a><br>A project from a diagram (business-flows/29): what «Створити специфікацію» of `keylang web --new` writes into an empty project, as texts. Pure: the drawing comes in, the files come out, and the operation (`operations/greenfield.ts`) writes them — only into a project with no…
+    - config [base.config](base.md#base.config)
+    - diagram-layout [map.diagram-layout](map.md#map.diagram-layout)
+    - diagram-proposal [features.diagram-proposal](features.md#features.diagram-proposal)
+    - languages [base.languages](base.md#base.languages)
+    - span [base.span](base.md#base.span)
+    - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
+    - type [GreenfieldInput](../../src/greenfield.ts#L42)
+      <a id="features.greenfield.GreenfieldInput"></a>
+    - type [GreenfieldFile](../../src/greenfield.ts#L52)
+      <a id="features.greenfield.GreenfieldFile"></a>
+    - type [GreenfieldPlan](../../src/greenfield.ts#L58)
+      <a id="features.greenfield.GreenfieldPlan"></a>
+    - fn [strip](../../src/greenfield.ts#L74) (id: string) → string <!-- internal -->
+      <a id="features.greenfield.strip"></a>
+    - fn [prose](../../src/greenfield.ts#L77) (text: string) → string <!-- internal -->
+      <a id="features.greenfield.prose"></a><br>A line of prose that no parser reads as a list item, a heading or a quote.
+    - fn [greenfieldPlan](../../src/greenfield.ts#L83) (input: GreenfieldInput) → GreenfieldPlan | string
+      <a id="features.greenfield.greenfieldPlan"></a><br>The files of a new project drawn on the canvas, or what keeps it from being one.
+      - calls [base.span.compareText](base.md#base.span.compareText), [features.greenfield.strip](features.md#features.greenfield.strip), [base.config.isReservedLayerName](base.md#base.config.isReservedLayerName), [features.diagram-proposal.diagramChanges](features.md#features.diagram-proposal.diagramChanges), [features.greenfield.prose](features.md#features.greenfield.prose), [map.diagram-layout.shapeBase](map.md#map.diagram-layout.shapeBase), [map.diagram-layout.layoutPath](map.md#map.diagram-layout.layoutPath), [map.diagram-layout.layoutText](map.md#map.diagram-layout.layoutText)
   - module [harness](../../src/harness.ts#L1)
     <a id="features.harness"></a><br>Harness adapters: one pure merge from the files on disk and the selected harnesses to the next text. Markdown keeps a marked block; JSON replaces only the `keylang` key; TOML splices only the `[mcp_servers.keylang]` table, so comments and layout around it stay. `--agents=none`…
     - node [external.node](external.md#external.node)

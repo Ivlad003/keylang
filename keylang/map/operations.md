@@ -436,6 +436,24 @@
       - calls lang.files.collectMdFiles, map.analyze.within, lang.files.readTextOrNull, base.config.toPosix, map.snapshot.sha256
     - fn [wireSpecProblems](../../src/operations/generate.ts#L707) (config: Config, before: WireSpecInputs) → string[] <!-- internal -->
       - calls operations.generate.wireSpecInputs
+  - module [greenfield](../../src/operations/greenfield.ts#L1)
+    - node external.node
+    - config base.config
+    - diag base.diag
+    - diagram-proposal features.diagram-proposal
+    - greenfield features.greenfield
+    - safe-write base.safe-write
+    - feature operations.feature
+    - type [GreenfieldRequest](../../src/operations/greenfield.ts#L26)
+    - type [GreenfieldResult](../../src/operations/greenfield.ts#L37)
+    - fn [result](../../src/operations/greenfield.ts#L50) (status: GreenfieldResult["status"], exitCode: 0 | 1 | 2, error: string | null, files: string[] = []) → GreenfieldResult <!-- internal -->
+    - fn [exists](../../src/operations/greenfield.ts#L54) (abs: string) → boolean <!-- internal -->
+    - fn [greenfieldAvailability](../../src/operations/greenfield.ts#L64) (root: string) → { available: boolean; reason: string | null }
+      - calls operations.greenfield.exists
+    - fn [newFileProblem](../../src/operations/greenfield.ts#L70) (root: string, path: string) → string | null <!-- internal -->
+      - calls operations.greenfield.exists, base.safe-write.targetProblem
+    - fn [runGreenfield](../../src/operations/greenfield.ts#L91) (request: GreenfieldRequest) → GreenfieldResult
+      - calls operations.greenfield.result, base.diag.errorText, operations.greenfield.greenfieldAvailability, features.diagram-proposal.parseEditorModel, features.greenfield.greenfieldPlan, operations.greenfield.newFileProblem, base.safe-write.safeWriteAll
   - module [integrations](../../src/operations/integrations.ts#L1)
     - node external.node
     - analyze map.analyze

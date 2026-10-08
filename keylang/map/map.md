@@ -254,8 +254,8 @@
     - fn [rewritten](../../src/drawio.ts#L335) (line: string, item: Trigger | FlowItem, cell: DrawioCell) → string | null <!-- internal -->
     - fn [flowFromDrawio](../../src/drawio.ts#L381) (model: DrawioModel, name: string, current: { text: string; flow: Flow; firstLine: number } | null) → string
       - calls lang.spec-ir.walkFlow, map.drawio.indentOf, map.drawio.rewritten, map.drawio.lineOf, map.drawio.listLine, map.drawio.commentSafe
-    - fn [drawioFlowName](../../src/drawio.ts#L532) (model: DrawioModel) → string | null
-    - fn [flowSection](../../src/drawio.ts#L541) (text: string, name: string) → { text: string; firstLine: number } | null
+    - fn [drawioFlowName](../../src/drawio.ts#L534) (model: DrawioModel) → string | null
+    - fn [flowSection](../../src/drawio.ts#L543) (text: string, name: string) → { text: string; firstLine: number } | null
       - calls lang.parser.parse
   - module [emit](../../src/emit.ts#L1)
     - node external.node

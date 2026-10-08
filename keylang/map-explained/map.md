@@ -401,9 +401,9 @@
     - fn [flowFromDrawio](../../src/drawio.ts#L381) (model: DrawioModel, name: string, current: { text: string; flow: Flow; firstLine: number } | null) → string
       <a id="map.drawio.flowFromDrawio"></a><br>The section of flow `name` as the drawing says it: `current` is the flow's section as it is (lines from its heading to the next heading) and `flow` its IR with lines counted from `firstLine` (the heading's line in the file); both null for a flow the specs do not have yet, which…
       - calls [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow), [map.drawio.indentOf](map.md#map.drawio.indentOf), [map.drawio.rewritten](map.md#map.drawio.rewritten), [map.drawio.lineOf](map.md#map.drawio.lineOf), [map.drawio.listLine](map.md#map.drawio.listLine), [map.drawio.commentSafe](map.md#map.drawio.commentSafe)
-    - fn [drawioFlowName](../../src/drawio.ts#L532) (model: DrawioModel) → string | null
+    - fn [drawioFlowName](../../src/drawio.ts#L534) (model: DrawioModel) → string | null
       <a id="map.drawio.drawioFlowName"></a><br>The flow a `.drawio` file draws: `flow:<name>` or `discovered:<name>` of its view, or null for any other view.
-    - fn [flowSection](../../src/drawio.ts#L541) (text: string, name: string) → { text: string; firstLine: number } | null
+    - fn [flowSection](../../src/drawio.ts#L543) (text: string, name: string) → { text: string; firstLine: number } | null
       <a id="map.drawio.flowSection"></a><br>The section of flow `name` in a spec's text: its lines from the heading to the next heading (LF), and the heading's line; null when the text has none.
       - calls [lang.parser.parse](lang.md#lang.parser.parse)
   - module [emit](../../src/emit.ts#L1)

@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [operations](#operations.operations) · [assistant](#operations.assistant) · [code](#operations.code) · [coverage](#operations.coverage) · [diagram-export](#operations.diagram-export) · [diagram-propose](#operations.diagram-propose) · [discover-names](#operations.discover-names) · [discover](#operations.discover) · [doctor](#operations.doctor) · [draft](#operations.draft) · [entries](#operations.entries) · [explain](#operations.explain) · [export](#operations.export) · [feature](#operations.feature) · [flow-bundle](#operations.flow-bundle) · [generate](#operations.generate) · [integrations](#operations.integrations) · [migration](#operations.migration) · [shared](#operations.shared) · [spec](#operations.spec) · [tour](#operations.tour) · [types](#operations.types)
+[README](README.md) · modules: [operations](#operations.operations) · [assistant](#operations.assistant) · [code](#operations.code) · [coverage](#operations.coverage) · [diagram-export](#operations.diagram-export) · [diagram-propose](#operations.diagram-propose) · [discover-names](#operations.discover-names) · [discover](#operations.discover) · [doctor](#operations.doctor) · [draft](#operations.draft) · [entries](#operations.entries) · [explain](#operations.explain) · [export](#operations.export) · [feature](#operations.feature) · [flow-bundle](#operations.flow-bundle) · [generate](#operations.generate) · [greenfield](#operations.greenfield) · [integrations](#operations.integrations) · [migration](#operations.migration) · [shared](#operations.shared) · [spec](#operations.spec) · [tour](#operations.tour) · [types](#operations.types)
 
 # map
 
@@ -580,6 +580,32 @@
     - fn [wireSpecProblems](../../src/operations/generate.ts#L707) (config: Config, before: WireSpecInputs) → string[] <!-- internal -->
       <a id="operations.generate.wireSpecProblems"></a><br>How the specs and `tsconfig.json` differ from the ones the wiring was computed from (`path: reason` lines).
       - calls [operations.generate.wireSpecInputs](operations.md#operations.generate.wireSpecInputs)
+  - module [greenfield](../../src/operations/greenfield.ts#L1)
+    <a id="operations.greenfield"></a><br>«Створити специфікацію» of `keylang web --new` (business-flows/29): the drawing of a new project as its first files. Nothing exists yet, so this is the one place keylang writes keylang.json itself — and only here: into a project without keylang.json, only files that do not…
+    - node [external.node](external.md#external.node)
+    - config [base.config](base.md#base.config)
+    - diag [base.diag](base.md#base.diag)
+    - diagram-proposal [features.diagram-proposal](features.md#features.diagram-proposal)
+    - greenfield [features.greenfield](features.md#features.greenfield)
+    - safe-write [base.safe-write](base.md#base.safe-write)
+    - feature [operations.feature](operations.md#operations.feature)
+    - type [GreenfieldRequest](../../src/operations/greenfield.ts#L26)
+      <a id="operations.greenfield.GreenfieldRequest"></a>
+    - type [GreenfieldResult](../../src/operations/greenfield.ts#L37)
+      <a id="operations.greenfield.GreenfieldResult"></a>
+    - fn [result](../../src/operations/greenfield.ts#L50) (status: GreenfieldResult["status"], exitCode: 0 | 1 | 2, error: string | null, files: string[] = []) → GreenfieldResult <!-- internal -->
+      <a id="operations.greenfield.result"></a>
+    - fn [exists](../../src/operations/greenfield.ts#L54) (abs: string) → boolean <!-- internal -->
+      <a id="operations.greenfield.exists"></a>
+    - fn [greenfieldAvailability](../../src/operations/greenfield.ts#L64) (root: string) → { available: boolean; reason: string | null }
+      <a id="operations.greenfield.greenfieldAvailability"></a><br>Whether a new project may be drawn here: the root has no keylang.json (not even a link of that name).
+      - calls [operations.greenfield.exists](operations.md#operations.greenfield.exists)
+    - fn [newFileProblem](../../src/operations/greenfield.ts#L70) (root: string, path: string) → string | null <!-- internal -->
+      <a id="operations.greenfield.newFileProblem"></a><br>Why `path` cannot be a new file of the project, or null: it exists, a link included, or a file stands where a directory of it goes.
+      - calls [operations.greenfield.exists](operations.md#operations.greenfield.exists), [base.safe-write.targetProblem](base.md#base.safe-write.targetProblem)
+    - fn [runGreenfield](../../src/operations/greenfield.ts#L91) (request: GreenfieldRequest) → GreenfieldResult
+      <a id="operations.greenfield.runGreenfield"></a><br>The drawing as the first files of the project. 2: the request is not one (no lane, no language, a shape outside every lane); 1: the project has keylang.json or a target is already there — nothing written; 0: written.
+      - calls [operations.greenfield.result](operations.md#operations.greenfield.result), [base.diag.errorText](base.md#base.diag.errorText), [operations.greenfield.greenfieldAvailability](operations.md#operations.greenfield.greenfieldAvailability), [features.diagram-proposal.parseEditorModel](features.md#features.diagram-proposal.parseEditorModel), [features.greenfield.greenfieldPlan](features.md#features.greenfield.greenfieldPlan), [operations.greenfield.newFileProblem](operations.md#operations.greenfield.newFileProblem), [base.safe-write.safeWriteAll](base.md#base.safe-write.safeWriteAll)
   - module [integrations](../../src/operations/integrations.ts#L1)
     <a id="operations.integrations"></a><br>`keylang integrations [--json]`, the MCP tool `list_integrations` and the TUI's «Integrations» (business-flows/14): outgoing clients, incoming webhooks and queues of the current snapshot, read-only. One text for the CLI and the F6 report, one JSON shape for `--json` and MCP.
     - node [external.node](external.md#external.node)
