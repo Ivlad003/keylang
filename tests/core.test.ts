@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
@@ -337,6 +337,24 @@ test("config: `./keylang/` is the spec directory; reserved layer names are rejec
   assert.deepEqual(layers, { _2fa: ["src/2fa/**"], _2fa_2: ["src/_2fa/**"], external_: ["src/external/**"], module_: ["src/module/**"] });
   const checked = keylang(guessed, ["check"]);
   assert.equal(checked.status, 0, checked.stdout);
+});
+
+// `README.md` is the start page of the explained map: a layer of that name (in any case: one file on macOS and Windows) would lose its layer file to it.
+test("config: `README` in any case is a reserved layer name; init renames a guessed one", (t) => {
+  const dir = repo(t, { "src/app/a.ts": "export const a = 1;\n", "src/docs/r.ts": "export function r(): void {}\n" });
+  for (const name of ["README", "readme", "ReadMe"]) {
+    writeFileSync(join(dir, "keylang.json"), `${JSON.stringify({ languages: ["typescript"], layers: { app: ["src/app/**"], [name]: ["src/docs/**"] }, explain: { map: true } })}\n`);
+    const r = keylang(dir, ["map"]);
+    assert.equal(r.status, 2, `${name}: ${r.stdout}${r.stderr}`);
+    assert.match(r.stderr, new RegExp(`keylang\\.json: \`layers\\.${name}\`: \`${name}\` is reserved: \`README\\.md\` is the start page of the explained map`), r.stderr);
+    assert.equal(existsSync(join(dir, "keylang/map-explained")), false);
+  }
+  const guessed = repo(t, { "src/README/a.ts": "export const a = 1;\n", "src/app/b.ts": "export const b = 1;\n" });
+  const init = keylang(guessed, ["init", "--agents=none"]);
+  assert.equal(init.status, 0, init.stderr);
+  assert.match(init.stderr, /note: `src\/README\/` is layer `README_`: `README` is reserved/);
+  const layers = (JSON.parse(readFileSync(join(guessed, "keylang.json"), "utf8")) as { layers: Record<string, string[]> }).layers;
+  assert.deepEqual(Object.keys(layers).sort(), ["README_", "app"]);
 });
 
 test("every keyword at the top of a map is a reserved layer name", () => {
