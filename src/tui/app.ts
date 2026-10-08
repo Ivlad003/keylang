@@ -408,6 +408,9 @@ export class App {
     this.state.cols = Math.max(20, Math.min(MAX_COLS, cols));
     this.state.rows = Math.max(8, Math.min(MAX_ROWS, rows));
     this.state.hover = null;
+    // Below 60 columns no side panel is drawn: a focused one gives the focus back, so keys never go to a list nobody sees.
+    const focus = this.state.focus;
+    if ((focus === "files" || focus === "nav" || focus === "context") && !this.drawable(focus)) this.state.focus = "editor";
     this.keepVisible();
     this.draw();
   }
@@ -419,8 +422,12 @@ export class App {
     this.escTimer = null;
     const events = this.decoder.feed(chunk);
     for (let i = 0; i < events.length; ) {
-      const run = typedRun(events, i);
-      if (run.length > 1 && !this.state.prompt && !this.state.completion && !this.state.results.open && pastedRun(run, this.state.mode === "edit" || chatTakesKeys(this.state))) {
+      const typed = typedRun(events, i);
+      // In the clip's chat a pasted line break is a space but Enter sends: an Enter that ends the chunk
+      // (typed keys coalesced with it) is left out of the paste and sends the line after it.
+      const chat = chatTakesKeys(this.state);
+      const run = chat && typed.length > 1 && typed.at(-1)!.name === "enter" ? typed.slice(0, -1) : typed;
+      if (run.length > 1 && !this.state.prompt && !this.state.completion && !this.state.help && !(this.state.results.open && !this.state.results.viewing) && pastedRun(run, this.state.mode === "edit" || chat)) {
         this.safely({ type: "paste", text: run.map((key) => (key.name === "enter" ? "\n" : key.name === "tab" ? "  " : key.text!)).join("") });
         i += run.length;
         continue;
@@ -1286,7 +1293,10 @@ export class App {
       return;
     }
     if (event.type === "paste") {
-      if (this.state.results.open || this.state.barrier || this.state.quit) return;
+      // While a finding's target is shown (viewing) the panel is hidden and text goes to the target, as keys do.
+      if ((this.state.results.open && !this.state.results.viewing) || this.state.barrier || this.state.quit) return;
+      // The help is modal: text pasted over it would go into the hidden buffer, which it covers.
+      if (this.state.help) return;
       if (this.state.prompt) this.promptType(event.text.replace(/\n/g, " "));
       else if (chatTakesKeys(this.state)) this.clip.paste(printable(event.text));
       else if (this.state.mode === "edit") this.insert(event.text);
@@ -3068,7 +3078,9 @@ export class App {
       const index = this.state.navTop + row;
       // The title, the space below the last item and the explanation under the list open nothing.
       if (row < 0 || row >= navListHeight(this.state, area.nav) - 1 || index >= navEntries(this.state).length) return;
-      this.state.focus = "nav";
+      // As F3 and the context panel: the focus moves only where keys go to the focused panel; while
+      // editing the keys still type, so the focus (and with it the cursor) stays in the editor.
+      if (this.state.mode === "view" || this.state.mode === "read") this.state.focus = "nav";
       this.state.navIndex = index;
       this.fixNavIndex(1);
       const item = navEntries(this.state)[this.state.navIndex];
