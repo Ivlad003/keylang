@@ -360,3 +360,21 @@ test("mcp: list_entries gives the entry points of the fresh snapshot, narrowed b
   const bad = await mcp.call("list_entries", { kind: "nope" });
   assert.equal(bad.isError, true);
 });
+
+test("mcp: discover_flows drafts a flow per entry point and writes nothing; apply_diff refuses the generated view", async (t) => {
+  const mcp = await connect(t);
+  assert.ok((await mcp.list()).includes("discover_flows"));
+  // `checkout` already has a hand-written flow: listed as specified, not drafted.
+  writeFileSync(join(mcp.dir, "src/app/orders.ts"), "export function listOrders(): string[] {\n  return [];\n}\n");
+  writeFileSync(join(mcp.dir, "src/app/server.ts"), 'import { checkout } from "./checkout.ts";\nimport { listOrders } from "./orders.ts";\nconst app = { get: (_p: string, _h: unknown) => 0, post: (_p: string, _h: unknown) => 0 };\napp.post("/checkout", checkout);\napp.get("/orders", listOrders);\n');
+  const found = JSON.parse((await mcp.call("discover_flows")).text) as { summary: string; specified: { trigger: string }[]; flows: { name: string; trigger: string; entry: { kind: string; label: string } }[]; files: { path: string; text: string }[] };
+  assert.match(found.summary, /^discovered 1 flows \(1 already specified\)/);
+  assert.equal(found.specified[0]?.trigger, "app.checkout.checkout");
+  assert.equal(found.flows[0]?.trigger, "app.orders.listOrders");
+  assert.deepEqual(found.flows[0]?.entry, { kind: "route", label: "GET /orders" });
+  assert.equal(found.files[0]?.path, "keylang/flows-discovered/app.md");
+  assert.equal(existsSync(join(mcp.dir, "keylang/flows-discovered")), false, "read-only");
+  const refused = await mcp.call("apply_diff", { path: "keylang/flows-discovered/app.md", text: "# flow x\n" });
+  assert.equal(refused.isError, true);
+  assert.match(refused.text, /flows discover/);
+});

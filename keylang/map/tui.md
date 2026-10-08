@@ -22,22 +22,22 @@
       - calls tui.actions.bufferOrMerge
     - fn [writable](../../src/tui/actions.ts#L80) (ctx: ActionContext) → string | null <!-- internal -->
       - calls tui.actions.bufferOrMerge
-    - fn [openAction](../../src/tui/actions.ts#L404) (path: string) → Action
-    - fn [catalog](../../src/tui/actions.ts#L409) (state: State) → ActionEntry[]
+    - fn [openAction](../../src/tui/actions.ts#L412) (path: string) → Action
+    - fn [catalog](../../src/tui/actions.ts#L417) (state: State) → ActionEntry[]
       - calls tui.actions.availabilityOf, tui.actions.openAction
-    - fn [availabilityOf](../../src/tui/actions.ts#L415) (state: State) → ActionContext
+    - fn [availabilityOf](../../src/tui/actions.ts#L423) (state: State) → ActionContext
       - calls tui.actions.exportRecord, tui.actions.applyRecord, tui.actions.noSnapshotReason, tui.buffer.isDirty, features.agent-cli.selectedAgent, operations.feature.featureSlugOf
-    - fn [exportRecord](../../src/tui/actions.ts#L444) (state: Pick<State, "records" | "results">) → { record: OperationRecord } | { reason: string }
-    - fn [applyRecord](../../src/tui/actions.ts#L459) (state: Pick<State, "records" | "results">) → { record: OperationRecord } | { reason: string }
-    - fn [noSnapshotReason](../../src/tui/actions.ts#L470) (state: Pick<State, "analysis" | "config" | "error" | "updating">) → string | null
-    - fn [actionKey](../../src/tui/actions.ts#L485) (action: Action, mode: State["mode"]) → string | null
-    - fn [actionLabel](../../src/tui/actions.ts#L492) (action: Action, mode: State["mode"] = "view") → string
+    - fn [exportRecord](../../src/tui/actions.ts#L452) (state: Pick<State, "records" | "results">) → { record: OperationRecord } | { reason: string }
+    - fn [applyRecord](../../src/tui/actions.ts#L467) (state: Pick<State, "records" | "results">) → { record: OperationRecord } | { reason: string }
+    - fn [noSnapshotReason](../../src/tui/actions.ts#L478) (state: Pick<State, "analysis" | "config" | "error" | "updating">) → string | null
+    - fn [actionKey](../../src/tui/actions.ts#L493) (action: Action, mode: State["mode"]) → string | null
+    - fn [actionLabel](../../src/tui/actions.ts#L500) (action: Action, mode: State["mode"] = "view") → string
       - calls tui.actions.actionKey
-    - fn [matchActions](../../src/tui/actions.ts#L498) (entries: readonly ActionEntry[], query: string) → ActionEntry[]
+    - fn [matchActions](../../src/tui/actions.ts#L506) (entries: readonly ActionEntry[], query: string) → ActionEntry[]
       - calls tui.actions.searchText, tui.actions.subsequence, tui.actions.fileName
-    - fn [fileName](../../src/tui/actions.ts#L518) (id: string) → string <!-- internal -->
-    - fn [searchText](../../src/tui/actions.ts#L523) (action: Action) → string <!-- internal -->
-    - fn [subsequence](../../src/tui/actions.ts#L527) (text: string, query: string) → boolean <!-- internal -->
+    - fn [fileName](../../src/tui/actions.ts#L526) (id: string) → string <!-- internal -->
+    - fn [searchText](../../src/tui/actions.ts#L531) (action: Action) → string <!-- internal -->
+    - fn [subsequence](../../src/tui/actions.ts#L535) (text: string, query: string) → boolean <!-- internal -->
   - module [analysis-worker](../../src/tui/analysis-worker.ts#L1)
     - node external.node
     - config base.config
@@ -295,109 +295,109 @@
         - calls tui.app.App.saveStep, tui.app.App.startOperation, tui.app.App.withSavedInputs, tui.reports.records.operationLabel
       - fn [saveStep](../../src/tui/app.ts#L2122) (request: OperationRequest) → { inputs?: (path: string) => boolean; writes?: string[]; writesNote?: string } | null <!-- internal -->
         - calls tui.app.App.specDir, base.config.toPosix, tui.app.App.dirtyInputs, features.baseline.baselinePath, tui.app.App.initTargets, features.explain-offline.isDiagnosticCode, map.explanations.explainDir, map.explanations.explanationPath, tui.forms.draft.flowDraftTarget, tui.merge-session.MergeSession.specDir, tui.forms.draft.rulesDraftTarget, tui.forms.draft.codeDraftTarget, tui.forms.draft.codeDraftFormOf, tui.forms.draft.specCodePlace, tui.app.App.mapTargets
-      - fn [mapTargets](../../src/tui/app.ts#L2211) () → string[] <!-- internal -->
+      - fn [mapTargets](../../src/tui/app.ts#L2216) () → string[] <!-- internal -->
         - calls tui.app.App.specDir
-      - fn [initTargets](../../src/tui/app.ts#L2217) () → string[] <!-- internal -->
+      - fn [initTargets](../../src/tui/app.ts#L2222) () → string[] <!-- internal -->
         - calls tui.app.App.mapTargets, features.baseline.baselinePath, tui.app.App.specDir
-      - fn [writingNow](../../src/tui/app.ts#L2223) () → boolean <!-- internal -->
-      - fn [beginCommit](../../src/tui/app.ts#L2235) (record: OperationRecord) → void <!-- internal -->
+      - fn [writingNow](../../src/tui/app.ts#L2228) () → boolean <!-- internal -->
+      - fn [beginCommit](../../src/tui/app.ts#L2240) (record: OperationRecord) → void <!-- internal -->
         - calls tui.reports.records.operationLabel
-      - fn [endCommit](../../src/tui/app.ts#L2255) (result: OperationResult) → string | null <!-- internal -->
+      - fn [endCommit](../../src/tui/app.ts#L2260) (result: OperationResult) → string | null <!-- internal -->
         - calls tui.buffer.isDirty, tui.disk.readText, tui.disk.splitEol, tui.buffer.setText, tui.app.App.inputsChanged, tui.app.App.clampCursor, tui.app.App.reanalyze
-      - fn [startOperation](../../src/tui/app.ts#L2308) (action: string, request: OperationRequest, then?: (record: OperationRecord) => void) → OperationRecord | null <!-- internal -->
+      - fn [startOperation](../../src/tui/app.ts#L2313) (action: string, request: OperationRequest, then?: (record: OperationRecord) => void) → OperationRecord | null <!-- internal -->
         - calls tui.reports.records.operationLabel, tui.app.App.layoutBasis, tui.assist.Assist.suspendGhost, tui.app.App.endCommit, tui.reports.records.recordSummary, tui.app.App.afterProposed, tui.app.App.afterApplyCode, tui.app.App.afterLayoutDraft, tui.app.App.quitAfterSettle, operations.shared.resultWithout, tui.app.App.beginCommit, tui.app.App.commitGate, tui.app.App.track, tui.merge-session.errorText, tui.app.App.draw
-      - fn [commitGate](../../src/tui/app.ts#L2400) (request: OperationRequest, plan?: CommitPlan) → CommitGate <!-- internal -->
+      - fn [commitGate](../../src/tui/app.ts#L2405) (request: OperationRequest, plan?: CommitPlan) → CommitGate <!-- internal -->
         - calls tui.buffer.isDirty, tui.app.App.applyConflicts, tui.forms.draft.rulesDraftTarget, tui.merge-session.MergeSession.specDir, tui.forms.draft.flowDraftTarget
-      - fn [cancelOperation](../../src/tui/app.ts#L2434) () → void <!-- internal -->
-      - fn [afterProposed](../../src/tui/app.ts#L2448) (record: OperationRecord, origin: DraftOrigin) → void <!-- internal -->
+      - fn [cancelOperation](../../src/tui/app.ts#L2439) () → void <!-- internal -->
+      - fn [afterProposed](../../src/tui/app.ts#L2453) (record: OperationRecord, origin: DraftOrigin) → void <!-- internal -->
         - calls tui.app.App.afterProposal
-      - fn [afterProposal](../../src/tui/app.ts#L2532) (origin: DraftOrigin, proposal: { target: string | null; report: boolean; opened: string; waits: string }) → void <!-- internal -->
+      - fn [afterProposal](../../src/tui/app.ts#L2537) (origin: DraftOrigin, proposal: { target: string | null; report: boolean; opened: string; waits: string }) → void <!-- internal -->
         - calls tui.app.App.stillWhereStarted, tui.results-panel.ResultsPanel.closeResults, tui.merge-session.MergeSession.open
-      - fn [stillWhereStarted](../../src/tui/app.ts#L2550) (origin: DraftOrigin, report: boolean) → boolean <!-- internal -->
-      - fn [worker](../../src/tui/app.ts#L2558) () → OperationWorker <!-- internal -->
+      - fn [stillWhereStarted](../../src/tui/app.ts#L2555) (origin: DraftOrigin, report: boolean) → boolean <!-- internal -->
+      - fn [worker](../../src/tui/app.ts#L2563) () → OperationWorker <!-- internal -->
         - calls tui.background.OperationWorker
-      - fn [askFeatureQuestions](../../src/tui/app.ts#L2569) (slug: string) → void <!-- internal -->
+      - fn [askFeatureQuestions](../../src/tui/app.ts#L2574) (slug: string) → void <!-- internal -->
         - calls tui.app.App.agentName, tui.app.App.requestOperation
-      - fn [flowAtCursor](../../src/tui/app.ts#L2580) () → string | null <!-- internal -->
+      - fn [flowAtCursor](../../src/tui/app.ts#L2585) () → string | null <!-- internal -->
         - calls tui.app.App.buffer, tui.app.App.offsetOf
-      - fn [agentName](../../src/tui/app.ts#L2596) () → string | null <!-- internal -->
+      - fn [agentName](../../src/tui/app.ts#L2601) () → string | null <!-- internal -->
         - calls features.agent-cli.selectedAgent
-      - fn [draftAtCursor](../../src/tui/app.ts#L2609) () → void <!-- internal -->
+      - fn [draftAtCursor](../../src/tui/app.ts#L2614) () → void <!-- internal -->
         - calls tui.app.App.buffer, tui.buffer.isDirty, tui.app.App.proposalWaiting, tui.app.App.flowAtCursor, tui.app.App.triggerAtCursor, tui.app.App.contextPack, features.agent-context.contextText, tui.app.App.requestOperation, tui.merge-session.errorText, tui.app.App.track
-      - fn [triggerAtCursor](../../src/tui/app.ts#L2653) () → string | null <!-- internal -->
+      - fn [triggerAtCursor](../../src/tui/app.ts#L2658) () → string | null <!-- internal -->
         - calls tui.app.App.flowAtCursor
-      - fn [proposalWaiting](../../src/tui/app.ts#L2660) (path: string) → boolean <!-- internal -->
-      - fn [plannedFns](../../src/tui/app.ts#L2672) () → string[] <!-- internal -->
-      - fn [applyCandidate](../../src/tui/app.ts#L2687) (record: OperationRecord | undefined) → void <!-- internal -->
+      - fn [proposalWaiting](../../src/tui/app.ts#L2665) (path: string) → boolean <!-- internal -->
+      - fn [plannedFns](../../src/tui/app.ts#L2677) () → string[] <!-- internal -->
+      - fn [applyCandidate](../../src/tui/app.ts#L2692) (record: OperationRecord | undefined) → void <!-- internal -->
         - calls tui.app.App.applyConflicts, tui.app.App.requestOperation
-      - fn [applyConflicts](../../src/tui/app.ts#L2711) (files: readonly string[], proposals: boolean) → string[] <!-- internal -->
+      - fn [applyConflicts](../../src/tui/app.ts#L2716) (files: readonly string[], proposals: boolean) → string[] <!-- internal -->
         - calls tui.buffer.isDirty
-      - fn [afterApplyCode](../../src/tui/app.ts#L2727) (record: OperationRecord) → void <!-- internal -->
-      - fn [layoutBasis](../../src/tui/app.ts#L2742) () → LayoutBasis <!-- internal -->
+      - fn [afterApplyCode](../../src/tui/app.ts#L2732) (record: OperationRecord) → void <!-- internal -->
+      - fn [layoutBasis](../../src/tui/app.ts#L2747) () → LayoutBasis <!-- internal -->
         - calls tui.disk.readText
-      - fn [layoutStale](../../src/tui/app.ts#L2747) (record: OperationRecord) → string | null <!-- internal -->
+      - fn [layoutStale](../../src/tui/app.ts#L2752) (record: OperationRecord) → string | null <!-- internal -->
         - calls tui.app.App.layoutBasis, tui.disk.splitEol
-      - fn [afterLayoutDraft](../../src/tui/app.ts#L2761) (record: OperationRecord) → void <!-- internal -->
+      - fn [afterLayoutDraft](../../src/tui/app.ts#L2766) (record: OperationRecord) → void <!-- internal -->
         - calls tui.app.App.layoutStale
-      - fn [moveLayers](../../src/tui/app.ts#L2781) (record: OperationRecord) → void <!-- internal -->
+      - fn [moveLayers](../../src/tui/app.ts#L2786) (record: OperationRecord) → void <!-- internal -->
         - calls tui.app.App.layoutStale, tui.app.App.load, tui.buffer.newFileBuffer, base.config.withLayers, tui.results-panel.ResultsPanel.closeResults, tui.app.App.openConfig, tui.app.sortFiles, tui.app.App.open, tui.buffer.setText, tui.app.App.clampCursor, tui.app.App.keepVisible, base.config.parseConfig, tui.merge-session.errorText
-      - fn [openNewSpec](../../src/tui/app.ts#L2841) () → void <!-- internal -->
+      - fn [openNewSpec](../../src/tui/app.ts#L2846) () → void <!-- internal -->
         - calls tui.app.App.refreshNewSpec
-      - fn [refreshNewSpec](../../src/tui/app.ts#L2847) () → void <!-- internal -->
+      - fn [refreshNewSpec](../../src/tui/app.ts#L2852) () → void <!-- internal -->
         - calls tui.new-spec.defaultSpecPath, tui.new-spec.newSpecProblem, tui.merge-session.MergeSession.specDir, tui.app.App.generatedDoc, tui.new-spec.flowNameProblem
-      - fn [submitNewSpec](../../src/tui/app.ts#L2877) () → void <!-- internal -->
+      - fn [submitNewSpec](../../src/tui/app.ts#L2882) () → void <!-- internal -->
         - calls tui.new-spec.defaultSpecPath, tui.merge-session.MergeSession.specDir, tui.app.App.refreshNewSpec, tui.new-spec.newSpecProblem, tui.app.App.generatedDoc, tui.app.App.open, tui.new-spec.suggestedFlowName, tui.app.App.createSpec, tui.new-spec.flowNameProblem
-      - fn [createSpec](../../src/tui/app.ts#L2920) (kind: NewSpecForm["kind"], path: string, name: string) → void <!-- internal -->
+      - fn [createSpec](../../src/tui/app.ts#L2925) (kind: NewSpecForm["kind"], path: string, name: string) → void <!-- internal -->
         - calls tui.buffer.newFileBuffer, tui.new-spec.specTemplate, tui.app.sortFiles, tui.buffer.bufferLines, tui.app.App.open, tui.app.App.reanalyzeSoon
-      - fn [mergeOrPick](../../src/tui/app.ts#L2939) () → void <!-- internal -->
+      - fn [mergeOrPick](../../src/tui/app.ts#L2944) () → void <!-- internal -->
         - calls tui.merge-session.MergeSession.scan, tui.merge-session.MergeSession.open, tui.app.App.openProposals
-      - fn [openProposals](../../src/tui/app.ts#L2947) (prefer: readonly string[] = []) → void <!-- internal -->
+      - fn [openProposals](../../src/tui/app.ts#L2952) (prefer: readonly string[] = []) → void <!-- internal -->
         - calls tui.merge-session.MergeSession.entries, tui.merge-session.MergeSession.scan, tui.app.App.refreshProposalPrompt
-      - fn [refreshProposalPrompt](../../src/tui/app.ts#L2960) (selected?: string) → void <!-- internal -->
+      - fn [refreshProposalPrompt](../../src/tui/app.ts#L2965) (selected?: string) → void <!-- internal -->
         - calls tui.width.stringWidth, tui.width.padWidth, tui.app.proposalSummary
-      - fn [submitProposal](../../src/tui/app.ts#L2979) () → void <!-- internal -->
+      - fn [submitProposal](../../src/tui/app.ts#L2984) () → void <!-- internal -->
         - calls tui.merge-session.MergeSession.entries, tui.merge-session.MergeSession.scan, tui.app.App.refreshProposalPrompt, tui.merge-session.MergeSession.open
-      - fn [mouse](../../src/tui/app.ts#L2998) (event: MouseEvent) → void <!-- internal -->
+      - fn [mouse](../../src/tui/app.ts#L3003) (event: MouseEvent) → void <!-- internal -->
         - calls tui.results-panel.ResultsPanel.scrollReport, tui.clip.Clip.mouse, tui.view.layout, tui.zoom-screen.ZoomScreen.zoomMouse, tui.merge.mergeRows, tui.app.App.contextPack, tui.view.navEntries, tui.app.App.lines, tui.app.App.clampCursor, tui.app.App.cellAt, tui.app.App.hoverAt, tui.view.contextTop, tui.view.navListHeight, tui.app.App.fixNavIndex, tui.app.App.navKey, tui.view.filesTop, tui.app.App.filesKey, tui.app.App.keepVisible, tui.app.App.goToCode
-      - fn [promptType](../../src/tui/app.ts#L3090) (text: string) → void <!-- internal -->
+      - fn [promptType](../../src/tui/app.ts#L3095) (text: string) → void <!-- internal -->
         - calls tui.prompt-keys.typeInto, tui.app.App.keysFor
-      - fn [keysFor](../../src/tui/app.ts#L3099) (prompt: Prompt) → PromptKeys <!-- internal -->
+      - fn [keysFor](../../src/tui/app.ts#L3104) (prompt: Prompt) → PromptKeys <!-- internal -->
         - calls tui.app.App.findNext, tui.app.App.addToContext, tui.app.App.refreshPalette, tui.prompt-keys.noteOfSelection, tui.app.App.runAction, tui.app.App.findNodes, tui.zoom-screen.ZoomScreen.openZoom, tui.app.App.goToNode, tui.zoom-screen.ZoomScreen.findFlows, tui.app.App.refreshProposalPrompt, tui.app.App.submitProposal, tui.app.App.refreshNewSpec, tui.app.App.submitNewSpec, tui.forms.explain.ExplainForms.keys, tui.forms.run.RunForms.keys, tui.forms.draft.DraftForms.keys, tui.forms.export.ExportForms.keys
-      - fn [openNodeSearch](../../src/tui/app.ts#L3184) () → void <!-- internal -->
+      - fn [openNodeSearch](../../src/tui/app.ts#L3189) () → void <!-- internal -->
         - calls tui.app.App.findNodes
-      - fn [findNodes](../../src/tui/app.ts#L3190) () → void <!-- internal -->
+      - fn [findNodes](../../src/tui/app.ts#L3195) () → void <!-- internal -->
         - calls features.node-search.searchNodes
-      - fn [promptKey](../../src/tui/app.ts#L3200) (event: KeyEvent) → void <!-- internal -->
+      - fn [promptKey](../../src/tui/app.ts#L3205) (event: KeyEvent) → void <!-- internal -->
         - calls tui.prompt-keys.promptKey, tui.app.App.keysFor
-      - fn [openPalette](../../src/tui/app.ts#L3210) () → void <!-- internal -->
+      - fn [openPalette](../../src/tui/app.ts#L3215) () → void <!-- internal -->
         - calls tui.app.App.refreshPalette
-      - fn [refreshPalette](../../src/tui/app.ts#L3216) () → void <!-- internal -->
+      - fn [refreshPalette](../../src/tui/app.ts#L3221) () → void <!-- internal -->
         - calls tui.actions.matchActions, tui.actions.catalog, tui.actions.actionLabel
-      - fn [runAction](../../src/tui/app.ts#L3232) (id: string) → void <!-- internal -->
+      - fn [runAction](../../src/tui/app.ts#L3237) (id: string) → void <!-- internal -->
         - calls tui.actions.catalog, tui.clip.chatTakesKeys, tui.app.App.browse, tui.app.App.reanalyze, tui.app.App.toggleFiles, tui.app.App.toggleNav, tui.zoom-screen.ZoomScreen.openZoom, tui.app.App.toggleContext, tui.results-panel.ResultsPanel.openResults, tui.app.App.requestOperation, tui.forms.run.RunForms.openFeaturePrompt, tui.forms.export.ExportForms.openC4Prompt, operations.feature.featureSlugOf, tui.app.App.specDir, tui.app.App.askFeatureQuestions, tui.forms.run.RunForms.openCheckPrompt, tui.forms.run.RunForms.openEdgePrompt, tui.forms.export.ExportForms.openExportPrompt, tui.forms.run.RunForms.openBaselinePrompt, tui.forms.run.RunForms.openAgentsPrompt, tui.forms.run.RunForms.openInitPrompt, tui.forms.run.RunForms.openFmtPrompt, tui.forms.run.RunForms.openParsePrompt, tui.forms.run.RunForms.openTracePlanPrompt, tui.forms.explain.ExplainForms.open, tui.forms.explain.ExplainForms.openModel, tui.forms.explain.ExplainForms.openPlan, tui.forms.draft.DraftForms.openFlow, tui.forms.draft.DraftForms.openRules, tui.forms.draft.DraftForms.openLayout, tui.forms.draft.DraftForms.openCode, tui.forms.draft.DraftForms.openSpecCode, tui.forms.run.RunForms.openWirePrompt, tui.app.App.cancelOperation, tui.app.App.openNodeSearch, tui.app.App.toggleMap, tui.app.App.goToCode, tui.app.App.goToSpec, tui.app.App.idAtCursor, tui.app.App.goBack, tui.app.App.hoverAtCursor, tui.app.App.explainAtCursor, tui.app.App.open, tui.app.App.save, tui.app.App.textToSpec, tui.app.App.draftAtCursor, tui.assist.Assist.voice, tui.app.App.writingNow, tui.merge-session.MergeSession.undo, tui.actions.applyRecord, tui.app.App.applyCandidate, tui.app.App.buffer, tui.app.App.mergeOrPick, tui.app.App.openProposals, tui.app.App.openNewSpec, tui.clip.Clip.reset, tui.app.packageVersion, tui.app.App.quit
-      - fn [findNext](../../src/tui/app.ts#L3383) () → void <!-- internal -->
+      - fn [findNext](../../src/tui/app.ts#L3390) () → void <!-- internal -->
         - calls tui.app.App.lines, tui.width.graphemes, tui.app.App.keepVisible
-      - fn [textToSpec](../../src/tui/app.ts#L3401) () → void <!-- internal -->
+      - fn [textToSpec](../../src/tui/app.ts#L3408) () → void <!-- internal -->
         - calls tui.app.App.buffer, tui.app.plannedIds, tui.text-to-spec.textToSpec, tui.merge-session.MergeSession.start
-    - fn [forNodes](../../src/tui/app.ts#L3448) (doc: Document, visit: (node: Node) => void) → void <!-- internal -->
+    - fn [forNodes](../../src/tui/app.ts#L3455) (doc: Document, visit: (node: Node) => void) → void <!-- internal -->
       - calls lang.ir.sectionNodes, lang.ir.walk
-    - fn [plannedIds](../../src/tui/app.ts#L3452) (docs: readonly Document[]) → { id: string; kind: string }[] <!-- internal -->
+    - fn [plannedIds](../../src/tui/app.ts#L3459) (docs: readonly Document[]) → { id: string; kind: string }[] <!-- internal -->
       - calls tui.app.forNodes
-    - fn [sortFiles](../../src/tui/app.ts#L3463) (files: string[], analysis: Analysis | null) → string[] <!-- internal -->
+    - fn [sortFiles](../../src/tui/app.ts#L3470) (files: string[], analysis: Analysis | null) → string[] <!-- internal -->
       - calls base.span.compareText
-    - fn [typedRun](../../src/tui/app.ts#L3469) (events: readonly InputEvent[], from: number) → KeyEvent[] <!-- internal -->
-    - fn [pasteRefusal](../../src/tui/app.ts#L3480) (state: State) → string <!-- internal -->
-    - fn [pastedRun](../../src/tui/app.ts#L3497) (run: readonly KeyEvent[], editing: boolean) → boolean <!-- internal -->
-    - fn [printable](../../src/tui/app.ts#L3507) (text: string) → string <!-- internal -->
-    - fn [configState](../../src/tui/app.ts#L3519) (root: string) → { config: ConfigState; clip: boolean | null } <!-- internal -->
+    - fn [typedRun](../../src/tui/app.ts#L3476) (events: readonly InputEvent[], from: number) → KeyEvent[] <!-- internal -->
+    - fn [pasteRefusal](../../src/tui/app.ts#L3487) (state: State) → string <!-- internal -->
+    - fn [pastedRun](../../src/tui/app.ts#L3504) (run: readonly KeyEvent[], editing: boolean) → boolean <!-- internal -->
+    - fn [printable](../../src/tui/app.ts#L3514) (text: string) → string <!-- internal -->
+    - fn [configState](../../src/tui/app.ts#L3526) (root: string) → { config: ConfigState; clip: boolean | null } <!-- internal -->
       - calls base.config.loadConfig, base.config.guessLayout, base.config.parseConfig, tui.merge-session.errorText
-    - fn [configErrorCursor](../../src/tui/app.ts#L3540) (text: string, reason: string) → Cursor
+    - fn [configErrorCursor](../../src/tui/app.ts#L3547) (text: string, reason: string) → Cursor
       - calls tui.width.graphemes
-    - fn [packageVersion](../../src/tui/app.ts#L3565) () → string <!-- internal -->
-    - fn [proposalSummary](../../src/tui/app.ts#L3570) (entry: ProposalEntry) → string <!-- internal -->
-    - type [SidePanel](../../src/tui/app.ts#L3583) = "files" | "nav" | "context" <!-- internal -->
-    - type [LayoutBasis](../../src/tui/app.ts#L3586) <!-- internal -->
-    - type [DraftOrigin](../../src/tui/app.ts#L3593) <!-- internal -->
+    - fn [packageVersion](../../src/tui/app.ts#L3572) () → string <!-- internal -->
+    - fn [proposalSummary](../../src/tui/app.ts#L3577) (entry: ProposalEntry) → string <!-- internal -->
+    - type [SidePanel](../../src/tui/app.ts#L3590) = "files" | "nav" | "context" <!-- internal -->
+    - type [LayoutBasis](../../src/tui/app.ts#L3593) <!-- internal -->
+    - type [DraftOrigin](../../src/tui/app.ts#L3600) <!-- internal -->
   - module [assist](../../src/tui/assist.ts#L1)
     - analyze map.analyze
     - agent-context features.agent-context
@@ -1303,6 +1303,12 @@
       - fn [edgeItems](../../src/tui/reports/check.ts#L61) (payload: ExplainEdgePayload) → { file: string; line: number; col: number; text: string }[] <!-- internal -->
         - calls features.explain-edge.edgeLine, features.explain-edge.holeLine
       - fn [c4Label](../../src/tui/reports/check.ts#L69) (request: ExportC4Request) → string <!-- internal -->
+    - module [discover](../../src/tui/reports/discover.ts#L1)
+      - operations operations.operations
+      - theme tui.theme
+      - rows tui.reports.rows
+      - type [DiscoverKind](../../src/tui/reports/discover.ts#L9) = "flows-discover" | "flows-adopt" <!-- internal -->
+      - fn [flowPlaces](../../src/tui/reports/discover.ts#L12) (payload: FlowsDiscoverPayload) → ReportItem[] <!-- internal -->
     - module [draft](../../src/tui/reports/draft.ts#L1)
       - proposals features.proposals
       - operations operations.operations
@@ -1342,29 +1348,30 @@
       - theme tui.theme
       - chat tui.reports.chat
       - check tui.reports.check
+      - discover tui.reports.discover
       - draft tui.reports.draft
       - explain tui.reports.explain
       - rows tui.reports.rows
       - setup tui.reports.setup
-      - fn [isDone](../../src/tui/reports/records.ts#L23) (result: OperationResult) → result is Done<Kind> <!-- internal -->
-      - fn [operationLabel](../../src/tui/reports/records.ts#L28) (request: RequestOf<K>) → string
-      - fn [paramsOf](../../src/tui/reports/records.ts#L32) (request: RequestOf<K>) → string | null <!-- internal -->
-      - fn [recordLabel](../../src/tui/reports/records.ts#L37) (record: OperationRecord) → string
+      - fn [isDone](../../src/tui/reports/records.ts#L24) (result: OperationResult) → result is Done<Kind> <!-- internal -->
+      - fn [operationLabel](../../src/tui/reports/records.ts#L29) (request: RequestOf<K>) → string
+      - fn [paramsOf](../../src/tui/reports/records.ts#L33) (request: RequestOf<K>) → string | null <!-- internal -->
+      - fn [recordLabel](../../src/tui/reports/records.ts#L38) (record: OperationRecord) → string
         - calls tui.reports.records.paramsOf
-      - fn [recordStatus](../../src/tui/reports/records.ts#L44) (record: OperationRecord) → string
-      - fn [summaryOf](../../src/tui/reports/records.ts#L50) (record: OperationRecord, result: Done<K>) → string <!-- internal -->
+      - fn [recordStatus](../../src/tui/reports/records.ts#L45) (record: OperationRecord) → string
+      - fn [summaryOf](../../src/tui/reports/records.ts#L51) (record: OperationRecord, result: Done<K>) → string <!-- internal -->
         - calls tui.reports.records.recordStatus
-      - fn [recordSummary](../../src/tui/reports/records.ts#L55) (record: OperationRecord) → string
+      - fn [recordSummary](../../src/tui/reports/records.ts#L56) (record: OperationRecord) → string
         - calls tui.reports.records.isDone, tui.reports.records.summaryOf, tui.reports.records.recordStatus
-      - fn [rowsOf](../../src/tui/reports/records.ts#L60) (state: State, record: OperationRecord, result: Done<K>) → ReportRow[] <!-- internal -->
+      - fn [rowsOf](../../src/tui/reports/records.ts#L61) (state: State, record: OperationRecord, result: Done<K>) → ReportRow[] <!-- internal -->
         - calls tui.reports.records.summaryOf
-      - fn [timeStr](../../src/tui/reports/records.ts#L65) (ms: number) → string <!-- internal -->
-      - fn [resultsReportRows](../../src/tui/reports/records.ts#L74) (state: State) → ReportRow[]
+      - fn [timeStr](../../src/tui/reports/records.ts#L66) (ms: number) → string <!-- internal -->
+      - fn [resultsReportRows](../../src/tui/reports/records.ts#L75) (state: State) → ReportRow[]
         - calls tui.reports.records.timeStr, tui.reports.records.recordStatus, tui.reports.records.isDone, tui.reports.records.rowsOf
-      - fn [itemsOf](../../src/tui/reports/records.ts#L87) (state: State, result: Done<K>) → ReportItem[] <!-- internal -->
-      - fn [reportItems](../../src/tui/reports/records.ts#L98) (state: State) → ReportItem[]
+      - fn [itemsOf](../../src/tui/reports/records.ts#L88) (state: State, result: Done<K>) → ReportItem[] <!-- internal -->
+      - fn [reportItems](../../src/tui/reports/records.ts#L99) (state: State) → ReportItem[]
         - calls tui.reports.records.isDone, tui.reports.records.itemsOf
-      - fn [itemNoun](../../src/tui/reports/records.ts#L104) (kind: OperationRequest["kind"]) → string
+      - fn [itemNoun](../../src/tui/reports/records.ts#L105) (kind: OperationRequest["kind"]) → string
     - module [rows](../../src/tui/reports/rows.ts#L1)
       - operations operations.operations
       - screen tui.screen

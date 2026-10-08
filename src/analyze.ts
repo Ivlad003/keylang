@@ -13,7 +13,7 @@ import { compareText } from "./span.ts";
 import { collectMdFiles } from "./files.ts";
 import type { Document } from "./ir.ts";
 import { keepsFactCache, saveFactCache } from "./fact-cache.ts";
-import { EXPLAINED_MAP_DIR, generateMap, type MapResult } from "./map.ts";
+import { DISCOVERED_FLOWS_DIR, EXPLAINED_MAP_DIR, generateMap, type MapResult } from "./map.ts";
 import { parse } from "./parser.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
 import { loadReports } from "./test-report.ts";
@@ -74,8 +74,9 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
   const snapshot = map?.index ?? null;
   const specDir = join(root, config.dir);
   const specs = request.specs ?? (existsSync(specDir) ? [specDir] : []);
-  // Generated reading aids beside the specs: never assessed, so the explained map repeats no ID (K002).
-  const reading = [join(specDir, EXPLAINED_MAP_DIR), join(specDir, "explain")];
+  // Generated reading aids beside the specs: never assessed, so the explained map repeats no ID (K002)
+  // and a discovered flow is no claim (ADR 0014).
+  const reading = [join(specDir, EXPLAINED_MAP_DIR), join(specDir, "explain"), join(specDir, DISCOVERED_FLOWS_DIR)];
   const notSpec = (abs: string): boolean => reading.some((dir) => within(abs, dir));
   const notSpecs = specs.filter(notSpec).map(display);
   const files = collectMdFiles(specs.filter((spec) => !notSpec(spec))).filter((abs) => !notSpec(abs));

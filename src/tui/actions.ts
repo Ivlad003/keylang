@@ -199,6 +199,14 @@ export const ACTIONS: readonly Action[] = [
     when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
   },
   {
+    id: "flows-discover",
+    label: "Discover flows: a flow draft for every entry point, as the view flows-discovered/",
+    group: "Map",
+    aliases: ["discover", "discover flows", "flows discover", "keylang flows discover", "find flows", "business flows"],
+    // Reads the saved code, keylang.json and the specs in a worker; writes only the generated view (and the fact cache).
+    when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
+  },
+  {
     id: "export",
     label: "Export the report to a file",
     group: "Check",

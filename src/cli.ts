@@ -163,9 +163,9 @@ Commands:
                             on PATH, voice (engine, local model, microphone); changes nothing
   mcp                       Serve MCP over stdio for agents: search, node, code, flows,
                             check, explain, context, validate_spec, scaffold,
-                            feature_status, list_entries, apply_diff (proposals only;
-                            no spec is written, the fact cache .keylang/cache/ is kept
-                            current)
+                            feature_status, list_entries, discover_flows, apply_diff
+                            (proposals only; no spec is written, the fact cache
+                            .keylang/cache/ is kept current)
   wire [--check] [--out f]  Generate keylang.gen.ts (or f: a .ts/.mts/.cts path relative to
                             the root, inside it) from \`# wiring\`: a typed wire() that builds
                             each factory once, dependencies first
@@ -179,6 +179,16 @@ Commands:
                             controller need its adapter). --kind: one kind. --json: the
                             list as JSON. Exit 0, also with nothing found; writes only
                             the fact cache .keylang/cache/
+  flows discover [--kind k] [--layer l] [--limit n] [--depth d] [--print] [--check]
+                            A flow draft for every entry point (draft flow from its fn)
+                            as the generated view <dir>/flows-discovered/<layer>.md,
+                            which check does not read; a trigger a hand-written flow
+                            already has is skipped and listed. --print: stdout only;
+                            --check: writes nothing, 1 when the view is stale
+  flows adopt <name> [--into <spec.md>]
+                            Propose one discovered flow as a spec, with a provenance
+                            comment, as .keylang/proposals/<dir>/flows/<name>.md (or the
+                            --into target); merge it with m in the TUI
   export c4 [--format plantuml|mermaid] [--level component|container] [--layer <name>] [--out f]
                             Print a C4 diagram of the map, no model: layers as boundaries,
                             their modules as components, packages as external systems
@@ -277,6 +287,7 @@ const OPTIONS = {
   layer: { type: "string" },
   level: { type: "string" },
   kind: { type: "string" },
+  depth: { type: "string" },
 } as const satisfies ParseArgsOptionsConfig;
 
 /** Runs the CLI and returns the exit code: 0 ok, 1 findings, 2 usage or I/O error. */
@@ -380,6 +391,8 @@ async function run(argv: readonly string[]): Promise<number> {
       return cmdTracePlan(paths[0]);
     case "entries":
       return cmdEntries(values.kind, values.json === true);
+    case "flows":
+      return cmdFlows(paths, { kind: values.kind, layer: values.layer, limit: values.limit, depth: values.depth, into: values.into, print: values.print === true, check: values.check === true });
     case "export":
       return cmdExport(paths, { format: values.format, level: values.level, layer: values.layer, out: values.out });
     case "clone":
@@ -914,6 +927,51 @@ async function cmdEntries(kind: string | undefined, json: boolean): Promise<numb
   if (result.payload === null) throw new Error(result.messages[0]?.text ?? "entries failed");
   process.stdout.write(json ? `${JSON.stringify({ snapshotId: result.payload.snapshotId, kind: result.payload.kind, entries: result.payload.entries }, null, 2)}\n` : result.payload.text);
   return result.exitCode ?? 2;
+}
+
+/**
+ * `flows discover|adopt`: the shared operations. Discover prints the view
+ * (`--print`) or what it wrote, the skipped triggers and the summary on
+ * stderr; adopt names the proposal on stderr.
+ */
+async function cmdFlows(args: readonly string[], opts: { kind: string | undefined; layer: string | undefined; limit: string | undefined; depth: string | undefined; into: string | undefined; print: boolean; check: boolean }): Promise<number> {
+  const [action, name, ...rest] = args;
+  if (action !== "discover" && action !== "adopt") throw new Error(`flows: expected discover or adopt${action === undefined ? "" : `, got \`${action}\``}`);
+  const depth = opts.depth === undefined ? undefined : wholeNumber("--depth", opts.depth, 0);
+  const root = findRoot(process.cwd());
+  const report = (messages: readonly { level: string; text: string }[]): void => {
+    for (const m of messages) process.stderr.write(`keylang: ${m.text}\n`);
+  };
+  if (action === "adopt") {
+    if (name === undefined) throw new Error("flows adopt: a discovered flow's name is required");
+    if (rest.length > 0) throw new Error(`flows adopt: unexpected \`${rest[0]}\`; one flow at a time`);
+    const result = await runOperation({ kind: "flows-adopt", root, name, ...(opts.into !== undefined ? { into: opts.into } : {}), ...(depth !== undefined ? { depth } : {}) });
+    report(result.messages);
+    return result.exitCode ?? 2;
+  }
+  if (name !== undefined) throw new Error(`flows discover: unexpected \`${name}\``);
+  if (opts.print && opts.check) throw new Error("flows discover: --print and --check do not go together");
+  if (opts.kind !== undefined && !isEntryKind(opts.kind)) throw new Error(`flows discover: --kind is one of ${ENTRY_KINDS.join(", ")}, got \`${opts.kind}\``);
+  const limit = opts.limit === undefined ? undefined : wholeNumber("--limit", opts.limit, 1);
+  const result = await runOperation({
+    kind: "flows-discover",
+    root,
+    output: opts.print ? "print" : opts.check ? "check" : "write",
+    ...(opts.kind !== undefined ? { only: opts.kind } : {}),
+    ...(opts.layer !== undefined ? { layer: opts.layer } : {}),
+    ...(limit !== undefined ? { limit } : {}),
+    ...(depth !== undefined ? { depth } : {}),
+  });
+  if (opts.print && result.payload !== null) process.stdout.write(result.payload.files.map((file) => file.text).join("\n"));
+  report(result.messages);
+  return result.exitCode ?? 2;
+}
+
+/** A whole number flag at least `min`; anything else is a usage error. */
+function wholeNumber(flag: string, text: string, min: number): number {
+  const n = Number(text);
+  if (!/^\d+$/.test(text) || !Number.isInteger(n) || n < min) throw new Error(`${flag} must be a whole number of at least ${min}, got \`${text}\``);
+  return n;
 }
 
 function needPaths(cmd: string, paths: string[]): void {

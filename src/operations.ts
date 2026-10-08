@@ -10,7 +10,7 @@
 // operations take are `shared.ts` — and every name a caller uses is
 // exported from here.
 
-import type { AgentsRequest, ApplyCodeRequest, AssistantReplyRequest, BaselineRequest, CheckRequest, CodeToSpecRequest, DoctorRequest, DraftFlowRequest, DraftLayoutRequest, DraftRulesRequest, EntriesRequest, ExplainBatchRequest, ExplainEdgeRequest, ExplainLlmRequest, ExplainPlanRequest, ExplainRequest, ExportC4Request, ExportRequest, FeatureQuestionsRequest, FeatureRequest, FmtRequest, InitRequest, MapCheckRequest, MapRequest, OperationContext, OperationEnvelope, OperationRequest, OperationResult, ParseRequest, SpecToCodeRequest, TracePlanRequest, WireRequest } from "./operations/types.ts";
+import type { AgentsRequest, ApplyCodeRequest, AssistantReplyRequest, BaselineRequest, CheckRequest, CodeToSpecRequest, DoctorRequest, DraftFlowRequest, DraftLayoutRequest, DraftRulesRequest, EntriesRequest, FlowsAdoptRequest, FlowsDiscoverRequest, ExplainBatchRequest, ExplainEdgeRequest, ExplainLlmRequest, ExplainPlanRequest, ExplainRequest, ExportC4Request, ExportRequest, FeatureQuestionsRequest, FeatureRequest, FmtRequest, InitRequest, MapCheckRequest, MapRequest, OperationContext, OperationEnvelope, OperationRequest, OperationResult, ParseRequest, SpecToCodeRequest, TracePlanRequest, WireRequest } from "./operations/types.ts";
 import { runAgents, runBaseline, runInit, runMap, runMapCheck, runWire } from "./operations/generate.ts";
 import { runCheck, runExplainEdge, runFmt, runParse, runTracePlan } from "./operations/spec.ts";
 import { runFeature, runFeatureQuestions } from "./operations/feature.ts";
@@ -20,6 +20,7 @@ import { runApplyCode, runSpecToCode } from "./operations/code.ts";
 import { runExport, runExportC4 } from "./operations/export.ts";
 import { runDoctor } from "./operations/doctor.ts";
 import { runEntries } from "./operations/entries.ts";
+import { runFlowsAdopt, runFlowsDiscover } from "./operations/discover.ts";
 import { runAssistantReply } from "./operations/assistant.ts";
 
 export * from "./operations/types.ts";
@@ -52,6 +53,8 @@ export function runOperation(request: ExportRequest, context?: OperationContext)
 export function runOperation(request: ParseRequest, context?: OperationContext): Promise<OperationEnvelope<"parse">>;
 export function runOperation(request: TracePlanRequest, context?: OperationContext): Promise<OperationEnvelope<"trace-plan">>;
 export function runOperation(request: EntriesRequest, context?: OperationContext): Promise<OperationEnvelope<"entries">>;
+export function runOperation(request: FlowsDiscoverRequest, context?: OperationContext): Promise<OperationEnvelope<"flows-discover">>;
+export function runOperation(request: FlowsAdoptRequest, context?: OperationContext): Promise<OperationEnvelope<"flows-adopt">>;
 export function runOperation(request: DraftFlowRequest, context?: OperationContext): Promise<OperationEnvelope<"draft-flow">>;
 export function runOperation(request: DraftRulesRequest, context?: OperationContext): Promise<OperationEnvelope<"draft-rules">>;
 export function runOperation(request: DraftLayoutRequest, context?: OperationContext): Promise<OperationEnvelope<"draft-layout">>;
@@ -106,6 +109,10 @@ export async function runOperation(request: OperationRequest, context: Operation
       return runTracePlan(request, context);
     case "entries":
       return runEntries(request, context);
+    case "flows-discover":
+      return runFlowsDiscover(request, context);
+    case "flows-adopt":
+      return runFlowsAdopt(request, context);
     case "draft-flow":
       return runDraftFlow(request, context);
     case "draft-rules":

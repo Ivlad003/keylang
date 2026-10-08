@@ -80,7 +80,7 @@ keylang має допомагати швидко зануритись у чуж�
 | [08](issues/08-magento-events.md) | Magento: `events.xml` і `dispatch()` → події та підписники | ready-for-agent | 01, 09 |
 | [09](issues/09-entries-snapshot.md) | Знімок: точки входу як факти й команда `keylang entries` | resolved | 01 |
 | [10](issues/10-magento-entries.md) | Magento: точки входу — routes/controllers, webapi, GraphQL, cron, queue, console | ready-for-agent | 06, 09 |
-| [11](issues/11-flows-discover.md) | `keylang flows discover`: чернетка флоу для кожної точки входу | ready-for-agent | 09 |
+| [11](issues/11-flows-discover.md) | `keylang flows discover`: чернетка флоу для кожної точки входу | resolved | 09 |
 | [12](issues/12-flows-business-names.md) | Бізнес-назви, описи й групування флоу в процеси (модель) | ready-for-agent | 11 |
 | [13](issues/13-blind-spots-report.md) | Звіт покриття: сліпі зони, сироти, «логіка в даних» | ready-for-agent | 09, 11 |
 | [14](issues/14-integrations-inventory.md) | Інвентар інтеграцій: вихідні HTTP/SDK, вхідні вебхуки, черги | ready-for-agent | 09 |

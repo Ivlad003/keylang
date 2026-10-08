@@ -28,6 +28,7 @@ import type { CoverageItem } from "../snapshot.ts";
 import type { ModuleStatus } from "../voice-local.ts";
 import type { TracePlan } from "../trace-plan.ts";
 import type { EntryKind, EntryPoint } from "../snapshot.ts";
+import type { DiscoveredFlow } from "../discover.ts";
 
 /** The known operations. `doctor` is the first; new kinds arrive with their feature. */
 export interface DoctorRequest {
@@ -322,6 +323,49 @@ export interface EntriesRequest {
 }
 
 /**
+ * Discovered flows (`keylang flows discover`, MCP `discover_flows`, «Discover
+ * flows» in the TUI): a flow draft for every entry point, as the generated
+ * view `<dir>/flows-discovered/<layer>.md` that `check` does not read.
+ * `write` writes the changed files of the view and removes its generated
+ * files no entry needs any more (only without a filter); `check` compares and
+ * writes nothing (1 when stale); `print` computes and writes nothing.
+ */
+export interface FlowsDiscoverRequest {
+  kind: "flows-discover";
+  /** Repository root (absolute). */
+  root: string;
+  output: "write" | "check" | "print";
+  /** Only entry points of this kind. */
+  only?: EntryKind;
+  /** Only entry points whose fn is in this layer. */
+  layer?: string;
+  /** At most this many flows. */
+  limit?: number;
+  /** The depth of each draft; default 4. */
+  depth?: number;
+}
+
+/**
+ * One discovered flow adopted as a spec (`keylang flows adopt <name> [--into
+ * <spec.md>]`): the flow as `flows discover` draws it now, with a provenance
+ * comment, written as the full proposed text of the target to
+ * `.keylang/proposals/<target>`; default target `<dir>/flows/<name>.md`.
+ */
+export interface FlowsAdoptRequest {
+  kind: "flows-adopt";
+  /** Repository root (absolute). */
+  root: string;
+  /** The discovered flow's name, as its `# flow` heading in the view. */
+  name: string;
+  /** The target spec, relative to the root, POSIX. */
+  into?: string;
+  /** The depth of the draft; default 4. */
+  depth?: number;
+  /** A proposal already waiting for the target: `refuse` (default) writes nothing, `replace` overwrites it. */
+  pending?: "refuse" | "replace";
+}
+
+/**
  * A flow drafted for a trigger (`keylang draft flow <trigger> --mode
  * algo|llm|hybrid`): `algo` is only what the snapshot's call edges show;
  * `llm` and `hybrid` ask the configured model and judge its answer against
@@ -595,10 +639,10 @@ export interface AssistantReplyRequest {
 }
 
 /** Every request `runOperation` takes: its `kind` names the operation and the payload of its result. */
-export type OperationRequest = DoctorRequest | FeatureRequest | FeatureQuestionsRequest | ExportC4Request | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | ExplainRequest | ExplainLlmRequest | ExplainPlanRequest | ExplainBatchRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | EntriesRequest | DraftFlowRequest | DraftRulesRequest | DraftLayoutRequest | CodeToSpecRequest | SpecToCodeRequest | ApplyCodeRequest | AssistantReplyRequest;
+export type OperationRequest = DoctorRequest | FeatureRequest | FeatureQuestionsRequest | ExportC4Request | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | ExplainRequest | ExplainLlmRequest | ExplainPlanRequest | ExplainBatchRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | EntriesRequest | FlowsDiscoverRequest | FlowsAdoptRequest | DraftFlowRequest | DraftRulesRequest | DraftLayoutRequest | CodeToSpecRequest | SpecToCodeRequest | ApplyCodeRequest | AssistantReplyRequest;
 
 /** The operation kinds that write files: they compute first and commit after `beforeCommit` (a check mode never calls it). */
-export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["feature-questions", "export-c4", "map", "baseline", "agents", "fmt", "wire", "init", "export", "draft-flow", "draft-rules", "code-to-spec", "spec-to-code", "apply-code", "explain-llm", "explain-batch"]);
+export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["feature-questions", "export-c4", "map", "baseline", "agents", "fmt", "wire", "init", "export", "flows-discover", "flows-adopt", "draft-flow", "draft-rules", "code-to-spec", "spec-to-code", "apply-code", "explain-llm", "explain-batch"]);
 
 /** What an operation may use besides its request. No UI state, no shell. */
 export interface OperationContext {
@@ -878,6 +922,35 @@ export interface ParsePayload {
   diagnostics: Diagnostic[];
   /** The CLI's stdout for `format`, byte for byte. */
   text: string;
+}
+
+/** The discovered flows and what became of the view. */
+export interface FlowsDiscoverPayload {
+  snapshotId: string;
+  output: FlowsDiscoverRequest["output"];
+  /** The view's directory, relative to the root, POSIX. */
+  dir: string;
+  flows: DiscoveredFlow[];
+  /** Triggers a hand-written flow already names: not drafted. */
+  specified: { trigger: string; file: string; flow: string }[];
+  /** Entry points that name a module's top level, not a fn. */
+  notFns: EntryPoint[];
+  /** The view's files, relative to the root: path → text. */
+  files: { path: string; text: string }[];
+  /** Files of the view that differ from what is on disk, or would be removed. Relative to the root. */
+  stale: string[];
+  /** Files where the view goes that have no keylang:generated marker: nothing is written. */
+  conflicts: string[];
+  /** `discovered N flows (M already specified), K with blind spots`. */
+  summary: string;
+}
+
+/** The discovered flow adopted, and the proposal written. */
+export interface FlowsAdoptPayload {
+  flow: DiscoveredFlow;
+  candidate: FlowCandidate;
+  /** `.keylang/proposals/<target>`, or null when nothing was written. */
+  proposal: string | null;
 }
 
 /** The entry points of the snapshot, as `keylang entries` lists them. */
@@ -1433,6 +1506,8 @@ export interface OperationPayloads {
   parse: ParsePayload;
   "trace-plan": TracePlanPayload;
   entries: EntriesPayload;
+  "flows-discover": FlowsDiscoverPayload;
+  "flows-adopt": FlowsAdoptPayload;
   "draft-flow": DraftFlowPayload;
   "draft-rules": DraftRulesPayload;
   "draft-layout": DraftLayoutPayload;
