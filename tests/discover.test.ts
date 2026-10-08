@@ -46,8 +46,8 @@ test("flows discover: one generated view per layer, marked and commented, the sa
   assert.match(run.stderr, /discovered 4 flows \(0 already specified\), 1 with blind spots/);
   const app = read(dir, `${VIEW}/app.md`);
   assert.equal(app.split("\n")[0], DISCOVER_MARK);
-  assert.match(app, /^# flow listOrders\n\n<!-- keylang:discover entry=route label="GET \/orders" steps=2 holes=0 -->\n\n- trigger app\.handlers\.listOrders\n {2}- step app\.store\.load\n/m);
-  assert.match(app, /<!-- keylang:discover entry=route label="POST \/pay" steps=1 holes=1 -->\n\n- trigger app\.handlers\.pay <!-- keylang:algo unresolved: x\.charge/);
+  assert.match(app, /^# flow listOrders\n\n<!-- keylang:discover entry=route label="GET \/orders" steps=2 holes=0 -->\n\n- trigger route app\.handlers\.listOrders\n {2}- step app\.store\.load\n/m);
+  assert.match(app, /<!-- keylang:discover entry=route label="POST \/pay" steps=1 holes=1 -->\n\n- trigger route app\.handlers\.pay <!-- keylang:algo unresolved: x\.charge/);
   // Two `main` triggers get distinct names, as `code-to-spec` gives them; each layer of an entry is its own file.
   assert.match(read(dir, `${VIEW}/bin.md`), /^# flow shop-main\n\n<!-- keylang:discover entry=cli label="shop" steps=3 holes=0 -->/m);
   assert.match(read(dir, `${VIEW}/shop.md`), /^# flow cli-main\n\n<!-- keylang:discover entry=cli label="shop-py" steps=2 holes=0 -->\n\n- trigger shop\.cli\.main\n {2}- step shop\.cli\.helper\n/m);
@@ -65,7 +65,7 @@ test("flows discover: one generated view per layer, marked and commented, the sa
   assert.deepEqual(treeBytes(join(dir, VIEW)), before);
   const limited = keylang(dir, ["flows", "discover", "--print", "--layer", "app", "--limit", "1", "--depth", "0"]);
   assert.equal(limited.status, 0, limited.stderr);
-  assert.match(limited.stdout, /# flow listOrders\n\n.*steps=1 holes=0 -->\n\n- trigger app\.handlers\.listOrders\n(?! {2}- step)/);
+  assert.match(limited.stdout, /# flow listOrders\n\n.*steps=1 holes=0 -->\n\n- trigger route app\.handlers\.listOrders\n(?! {2}- step)/);
   assert.doesNotMatch(limited.stdout, /flow pay/);
   assert.equal(keylang(dir, ["flows", "discover", "--kind", "nope"]).status, 2);
   assert.equal(keylang(dir, ["flows", "discover", "--limit", "0"]).status, 2);
@@ -111,7 +111,7 @@ test("flows adopt: one discovered flow becomes a proposal; accepted, check sees 
   const store = ".keylang/proposals/keylang/flows/listOrders.md";
   assert.match(adopt.stderr, new RegExp(store.replace(/\./g, "\\.")));
   const proposal = read(dir, store);
-  assert.match(proposal, /^# flow listOrders\n\n<!-- keylang:discover adopted entry=route label="GET \/orders" steps=2 holes=0 from=keylang\/flows-discovered\/app\.md -->\n\n- trigger app\.handlers\.listOrders\n {2}- step app\.store\.load\n$/);
+  assert.match(proposal, /^# flow listOrders\n\n<!-- keylang:discover adopted entry=route label="GET \/orders" steps=2 holes=0 from=keylang\/flows-discovered\/app\.md -->\n\n- trigger route app\.handlers\.listOrders\n {2}- step app\.store\.load\n$/);
   assert.equal(existsSync(join(dir, "keylang/flows/listOrders.md")), false, "a proposal, not the spec");
   // A second adopt while the proposal waits is refused.
   assert.equal(keylang(dir, ["flows", "adopt", "listOrders"]).status, 1);

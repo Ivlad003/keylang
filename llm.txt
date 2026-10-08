@@ -67,6 +67,7 @@ After install, these rules apply to every task in that repository. keylang check
 - **Find the code.** Read the map first: layer, module, signature, calls. Then MCP `search`, `node`, and `code`. Take ids from `keylang map`.
 - **Keep a boundary in CI.** One `deny` line. `check` looks at imports, calls, type mentions, and re-exports. A confirmed forbidden edge is `fail` (K102) and exit 1. CI runs `check` and `map --check`.
 - **Keep a scenario.** A flow step names an id. The static check looks for a call from the parent step. The trigger is a plain named function.
+- **Async flows.** `- parallel` groups steps that run in any order; `- trigger route|cron|consumer|webhook <id>` names an entry point's fn from `keylang entries` (not a path); `- continues <flow>` links a later request's flow; `- after 30m` / `- every 0 * * * *` are timers a nested `test` checks.
 - **Know when a feature is done.** `keylang feature <slug>`: every `planned` in that file is implemented (K202, not K201), every step in that file is static `ok`, and no rule `fail` of this change remains, including the baseline. An older `fail` that touches no file changed since the base commit and no id of the feature (an id it names, or the `<module>.<name>` a K104 is about) is a `hint:` line and does not block. Without git every rule `fail` blocks.
 - **Change a hand-written rule in the open.** `rules.md` and the baseline change only as a proposal the person merges. When the person asks for a feature, you may write `keylang/features/<slug>.md`.
 - **Read a finding.** `npx -y keylang explain K001`, or MCP `explain`, says why. That text is not a second verdict.
@@ -206,6 +207,8 @@ Server name: `keylang`. Only `apply_diff` writes to the repository, and only a p
 | `feature_status` | `{slug}`. Done or the gaps |
 | `list_entries` | Where execution starts: routes, `bin`, scripts, `main`. Same list as `keylang entries --json` |
 | `discover_flows` | A flow draft per entry point, as `keylang flows discover --print`: a generated view, not a spec; `check` ignores it. Nothing is written |
+| `coverage_report` | Blind spots, as `keylang coverage --json`: reach from entry points, orphan fns, holes by module and reason, entries without a flow, logic in data to check by hand. A view; nothing is written |
+| `list_integrations` | What the code talks to, as `keylang integrations --json`: HTTP/SOAP/SDK/queue call sites with host and the entry points that reach them, incoming webhooks, queues. Nothing is written or contacted |
 | `apply_diff` | Propose the full new text of one hand-written spec |
 
 CLI when MCP is off:
@@ -242,7 +245,7 @@ Each file is its own scope, also with `module: "dir"`: import a sibling file's f
 
 In TypeScript, `import type …`, `export type … from`, and an import whose every name is inline `type` (`import { type A }`, `export { type A } from`) when the file's tsconfig does not set `verbatimModuleSyntax`, are still dependencies for the map, `deny` and `layers` (an edge with `typeOnly: true`), but `no-cycles` ignores them. With `verbatimModuleSyntax: true`, `import { type A }` stays `import {} from` and loads the module, so it is an import that runs; `import type` is erased either way, so it is the one that breaks a cycle that exists only in types. A tsconfig keylang cannot read to the end counts as setting the option. Nor do type-only imports prove a flow step to `external.<pkg>`: only an import that loads the package does. `import * as ns` is a namespace object, not the default export: `ns.f()` resolves, `ns()` is a hole. A decorator is not a hole; see the TypeScript subsection of snapshot.md §11. Calls through names imported from a file that `assume` in keylang.json lists are external calls, not gaps. PHP class, function and method names match without case for ASCII letters only, as in PHP: `ORDER::make()` calls `Order::make()`, `äpfel::make()` does not call `Äpfel::make()`. Calling a Python module object (`import m; m()`) is a gap, not a call.
 
-`keylang.json` `layers` maps a name to a glob or a list of globs. The first matching glob wins. `**`, `*`, `?`, and `{a,b}` work. A folder named `external` is renamed `external_` because that word is reserved. The new name is printed at `init`.
+`keylang.json` `layers` maps a name to a glob or a list of globs. The first matching glob wins. `**`, `*`, `?`, and `{a,b}` work. A folder named `external` is renamed `external_` because that word is reserved. The new name is printed at `init`. `README` in any case is reserved too: it is the start page of the explained map.
 
 A missing `format` field means edition 1. No `keylang.json` means edition 2. `"format": 3` or higher exits 2 and names the field. Do not bump `format`.
 
@@ -255,6 +258,8 @@ Only if the person wants keylang itself to draft or explain:
 ```
 
 or `"openrouter:<model>"`. The key is `ANTHROPIC_API_KEY` or `OPENROUTER_API_KEY`, otherwise `~/.config/keylang/<provider>.key`. A key file that other users can read is rejected. This setting does not install you and does not replace the steps above.
+
+`keylang flows discover --names` groups the discovered flows into business processes (one model request per layer, `--dry-run` for the token estimate) in the generated `keylang/flows-discovered/README.md`; it is a view for people, never a verdict.
 
 ## Where to read the rest
 

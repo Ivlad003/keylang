@@ -231,8 +231,8 @@ test("a keyword of another position names where it goes; code and reason stay", 
   const o = keylang(dir, ["check", "."]);
   const lines = o.stdout.split("\n").filter((line) => / K00[45] /.test(line));
   assert.deepEqual(lines, [
-    "flow.md:3:3: K004 unknown keyword `fn` here; expected one of: kind, trigger, step, reads, emits, calls, invariant, when, test, planned, ?; `fn` goes under `- module` in a map",
-    "flow.md:5:5: K004 unknown keyword `trigger` here; expected one of: step, reads, emits, calls, when, test, invariant, ?; `trigger` goes at the top of `# flow`",
+    "flow.md:3:3: K004 unknown keyword `fn` here; expected one of: kind, trigger, continues, step, parallel, reads, emits, calls, invariant, when, after, every, test, planned, ?; `fn` goes under `- module` in a map",
+    "flow.md:5:5: K004 unknown keyword `trigger` here; expected one of: step, parallel, reads, emits, calls, when, after, every, test, invariant, ?; `trigger` goes at the top of `# flow`",
     "map.md:3:5: K005 expected `fn`, `type`, `event`, `module` or a dependency `<alias> <path>`; `calls` goes under `- fn`",
     "map.md:5:8: K005 unexpected arguments after module `fn`; `fn` goes under `- module`",
     "map.md:6:6: K005 unexpected arguments after layer `fn`; `fn` goes under `- module`",

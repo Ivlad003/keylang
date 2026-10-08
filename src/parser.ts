@@ -78,6 +78,8 @@ type Ctx =
   | "invariant"
   | "when"
   | "then"
+  | "parallel"
+  | "timer"
   | "wire"
   | "wire-dep"
   | "unknown"
@@ -107,6 +109,11 @@ function ctxOf(section: SectionKind, parent: NodeKind | undefined): Ctx {
       return section === "flow" ? "when" : "leaf:when";
     case "then":
       return "then";
+    case "parallel":
+      return "parallel";
+    case "after":
+    case "every":
+      return "timer";
     case "wire":
       return "wire";
     case "wire-dep":
@@ -119,6 +126,43 @@ function ctxOf(section: SectionKind, parent: NodeKind | undefined): Ctx {
 }
 
 const PLANNED_KINDS: ReadonlySet<string> = new Set(["fn", "module", "type", "event"]);
+
+/** What starts a flow besides a plain call (ADR 0023 п. 3): `trigger <kind> <id>` names an entry point of that kind. */
+export const TRIGGER_KINDS = ["route", "cron", "consumer", "webhook"] as const;
+export type TriggerKind = (typeof TRIGGER_KINDS)[number];
+
+export function isTriggerKind(word: string): word is TriggerKind {
+  return (TRIGGER_KINDS as readonly string[]).includes(word);
+}
+
+/** `30s`, `15m`, `2h`, `7d`: a number and a unit (ms, s, m, min, h, d, w). */
+const DURATION = /^[1-9][0-9]*(ms|s|m|min|h|d|w)$/;
+
+/** `@hourly` and the other cron macros. */
+const CRON_MACRO = /^@(yearly|annually|monthly|weekly|daily|midnight|hourly)$/;
+
+/** One field of a cron expression: digits, names, `*`, `/`, `,`, `-`, `?`, `L`, `W`, `#`. */
+const CRON_FIELD = /^[0-9A-Za-z*/,?#-]+$/;
+
+export function isDuration(text: string): boolean {
+  return DURATION.test(text);
+}
+
+/**
+ * The schedule of `every <schedule>` in one canonical text, or null when the
+ * words are not one: a duration (`15m`), a cron macro (`@daily`), or five or six
+ * cron fields, bare (`*\/5 * * * *`) or in double quotes. Quotes are dropped.
+ */
+export function scheduleText(words: readonly string[]): string | null {
+  const [one] = words;
+  if (words.length === 1 && one !== undefined) {
+    if (DURATION.test(one) || CRON_MACRO.test(one)) return one;
+    if (one.length >= 2 && one.startsWith('"') && one.endsWith('"')) return scheduleText(one.slice(1, -1).trim().split(/\s+/).filter((w) => w !== ""));
+    return null;
+  }
+  if ((words.length === 5 || words.length === 6) && words.every((word) => CRON_FIELD.test(word))) return words.join(" ");
+  return null;
+}
 
 const RULES = ["layers", "allow", "deny", "entry", "module", "no-cycles"];
 
@@ -134,7 +178,7 @@ function keywordsOf(ctx: Ctx): readonly string[] {
     case "rules-top":
       return RULES;
     case "flow-top":
-      return ["kind", "trigger", "step", "reads", "emits", "calls", "invariant", "when", "test", "planned", "?"];
+      return ["kind", "trigger", "continues", "step", "parallel", "reads", "emits", "calls", "invariant", "when", "after", "every", "test", "planned", "?"];
     case "wiring-top":
       return ["wire"];
     case "layer":
@@ -146,12 +190,15 @@ function keywordsOf(ctx: Ctx): readonly string[] {
     case "rule-module":
       return ["exports", "no-cycles"];
     case "step":
-      return ["step", "reads", "emits", "calls", "when", "test", "invariant", "?"];
+      return ["step", "parallel", "reads", "emits", "calls", "when", "after", "every", "test", "invariant", "?"];
     case "invariant":
     case "then":
+    case "timer":
       return ["test"];
     case "when":
-      return ["then", "step", "test", "?"];
+      return ["then", "step", "parallel", "test", "?"];
+    case "parallel":
+      return ["step"];
     case "wire-dep":
       return ["when", "compose"];
     default:
@@ -174,6 +221,9 @@ const PLACES: readonly { ctx: Ctx; sections: readonly SectionKind[]; where: stri
   { ctx: "when", sections: ["flow"], where: "under `- when`" },
   { ctx: "invariant", sections: ["flow"], where: "under `- invariant`" },
   { ctx: "then", sections: ["flow"], where: "under `- then`" },
+  { ctx: "parallel", sections: ["flow"], where: "under `- parallel`" },
+  { ctx: "timer", sections: ["flow"], where: "under `- after`" },
+  { ctx: "timer", sections: ["flow"], where: "under `- every`" },
   { ctx: "wire-dep", sections: ["wiring"], where: "under a dependency of `- wire`" },
 ];
 
@@ -212,6 +262,12 @@ const TEST_ROLE = "a test that must pass in the `check.tests` report";
 
 const QUESTION_ROLE = "an open question: not a claim `check` judges; a feature with one is not done until a person answers it";
 
+const PARALLEL_ROLE = "a parallel group: every nested step must run, in any order; the next step runs after the whole group";
+
+const AFTER_ROLE = "a timer: the parent runs this long after the step before; only a nested `test` checks it";
+
+const EVERY_ROLE = "a schedule: the parent runs on it; a nested `test` checks it, and a cron entry point's schedule when the snapshot has one";
+
 /**
  * What an item does where it stands (grammar.md §5), for hover. Keyed like
  * `keywordsOf`, which K004 reads, so the roles follow the allowed keywords.
@@ -221,7 +277,11 @@ const ROLES: { readonly [C in Ctx]?: Partial<Record<NodeKind, string>> } = {
   "rules-top": RULE_ROLES,
   "flow-top": {
     kind: "the kind of the flow: `business` or `technical`",
-    trigger: "where the flow starts: a trace is matched from the first trigger",
+    trigger: "where the flow starts: a trace is matched from the first trigger; `trigger route|cron|consumer|webhook <id>` names an entry point of that kind",
+    continues: "this flow continues another one in a later request (a webhook after a checkout): both flows must exist; one trace does not cross requests",
+    parallel: PARALLEL_ROLE,
+    after: AFTER_ROLE,
+    every: EVERY_ROLE,
     step: "a step the trigger must reach: a call path in code (static) and a run in a trace",
     reads: "data the trigger reads: only that the ID exists is checked",
     emits: "an event the flow emits: the name is not resolved",
@@ -248,6 +308,9 @@ const ROLES: { readonly [C in Ctx]?: Partial<Record<NodeKind, string>> } = {
   },
   step: {
     step: "a step the parent step must reach: a call path in code (static) and a run in a trace",
+    parallel: PARALLEL_ROLE,
+    after: AFTER_ROLE,
+    every: EVERY_ROLE,
     reads: "data the parent step reads: only that the ID exists is checked",
     emits: "an event the parent step emits: the name is not resolved",
     calls: "a direct call of the parent step, checked without order",
@@ -259,11 +322,14 @@ const ROLES: { readonly [C in Ctx]?: Partial<Record<NodeKind, string>> } = {
   when: {
     then: "the outcome of the branch",
     step: "a step of the branch: optional in a trace that does not take the branch",
+    parallel: PARALLEL_ROLE,
     test: `evidence for the branch: ${TEST_ROLE}`,
     question: QUESTION_ROLE,
   },
   invariant: { test: `evidence for the invariant: ${TEST_ROLE}` },
   then: { test: `evidence for the outcome: ${TEST_ROLE}` },
+  parallel: { step: "a step of the parallel group: reached from the group's parent, in any order with the other steps of the group" },
+  timer: { test: `evidence for the timer: ${TEST_ROLE}` },
   wire: { "wire-dep": "an override of a dependency of the wired module" },
   "wire-dep": { when: "a condition → id: the dependency is that ID when the condition holds", compose: "a decorator composed around the dependency" },
 };
@@ -302,6 +368,10 @@ function keywordKind(ctx: Ctx, kw: string): NodeKind {
     case "planned":
     case "wire":
     case "compose":
+    case "parallel":
+    case "continues":
+    case "after":
+    case "every":
       return kw;
     case "?":
       return "question";
@@ -623,9 +693,36 @@ class Parser {
         break;
       }
       case "trigger":
+        if (!this.plannedModifier(n, rest) && !this.typedTrigger(n, rest)) this.oneRef(n, rest);
+        break;
       case "step":
         if (!this.plannedModifier(n, rest)) this.oneRef(n, rest);
         break;
+      case "parallel": {
+        const t = rest[0];
+        if (t) this.err("K005", t.span, "`parallel` takes no arguments; nest its steps under it", "arguments");
+        break;
+      }
+      case "continues": {
+        const t = rest[0];
+        if (rest.length === 1 && t && t.kind === "word" && isSegment(t.text)) n.text = { value: nfc(t.text), span: t.span };
+        else if (rest.length === 1 && t) this.err("K005", t.span, `expected a flow name, found \`${t.text}\``, "id");
+        else this.err("K005", rest[1]?.span ?? n.span, "expected `continues <flow>`", "arguments");
+        break;
+      }
+      case "after": {
+        const t = rest[0];
+        if (rest.length === 1 && t && t.kind === "word" && isDuration(t.text)) n.text = spanned(t);
+        else this.err("K005", t?.span ?? n.span, "expected `after <duration>`: a number and a unit (ms, s, m, min, h, d, w), such as `after 30m`", "arguments");
+        break;
+      }
+      case "every": {
+        const first = rest[0];
+        const last = rest.at(-1);
+        if (first && last && scheduleText(rest.map((t) => t.text)) !== null) n.text = { value: renderTokens(rest), span: { start: first.span.start, end: last.span.end } };
+        else this.err("K005", first?.span ?? n.span, 'expected `every <schedule>`: a duration (`every 15m`), a cron macro (`every @daily`) or five cron fields (`every 0 * * * *` or `every "0 * * * *"`)', "arguments");
+        break;
+      }
       case "rule-module":
       case "wire":
       case "compose":
@@ -842,6 +939,23 @@ class Parser {
       `\`planned\` is a declaration, not a ${keyword} modifier: add \`- planned ${kind} ${id.text}\` at the top of the flow and keep \`- ${keyword} ${id.text}\``,
       "arguments",
     );
+    return true;
+  }
+
+  /**
+   * `trigger <kind> <id>` (ADR 0023 п. 3): the kind is kept as the label, the
+   * ID is the entry point's fn. A first word without a dot that is no kind is
+   * K005 on it. False when the line is a plain `trigger <id>`.
+   */
+  private typedTrigger(n: Node, rest: Token[]): boolean {
+    const [kind, id] = rest;
+    if (rest.length !== 2 || !kind || !id || kind.kind !== "word" || kind.text.includes(".")) return false;
+    if (!isTriggerKind(kind.text)) {
+      this.err("K005", kind.span, `unknown trigger kind \`${kind.text}\`; expected one of: ${TRIGGER_KINDS.join(", ")}`, "arguments");
+      return true;
+    }
+    n.label = { value: kind.text, span: kind.span };
+    this.oneRef(n, [id]);
     return true;
   }
 

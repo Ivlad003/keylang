@@ -361,6 +361,46 @@ test("mcp: list_entries gives the entry points of the fresh snapshot, narrowed b
   assert.equal(bad.isError, true);
 });
 
+test("mcp: coverage_report gives the blind spots of the fresh snapshot, as `keylang coverage --json`, and writes nothing", async (t) => {
+  const mcp = await connect(t);
+  assert.ok((await mcp.list()).includes("coverage_report"));
+  writeFileSync(join(mcp.dir, "src/app/orders.ts"), "export function listOrders(): string[] {\n  return [String(process.env.LIMIT)];\n}\n");
+  writeFileSync(join(mcp.dir, "src/app/server.ts"), 'import { checkout } from "./checkout.ts";\nimport { listOrders } from "./orders.ts";\nconst app = { get: (_p: string, _h: unknown) => 0, post: (_p: string, _h: unknown) => 0 };\napp.post("/checkout", checkout);\napp.get("/orders", listOrders);\n');
+  const before = treeBytes(mcp.dir);
+  const answer = await mcp.call("coverage_report");
+  assert.equal(answer.isError, false, answer.text);
+  const report = JSON.parse(answer.text) as { snapshotId: string; reach: { entries: number; reachable: number }; orphans: { id: string }[]; unflowed: { id: string; discovered: { name: string } | null }[]; dataLogic: { sites: { signal: string; file: string; in: string }[] } };
+  assert.match(report.snapshotId, /^[0-9a-f]{64}$/);
+  assert.equal("text" in report, false);
+  assert.equal(report.reach.entries, 2);
+  // checkout reaches createOrder, total and save; the Db class is reached by nothing.
+  assert.equal(report.reach.reachable, 5);
+  assert.deepEqual(report.orphans.map((orphan) => orphan.id), ["infra.db.Db.query", "infra.db.Db.parse"]);
+  // `checkout` has the hand-written flow; `listOrders` only a discovered one.
+  assert.deepEqual(report.unflowed.map((entry) => [entry.id, entry.discovered?.name]), [["app.orders.listOrders", "listOrders"]]);
+  assert.deepEqual(report.dataLogic.sites.map((site) => [site.signal, site.file, site.in]), [["node-env", "src/app/orders.ts", "app.orders.listOrders"]]);
+  assert.equal(treeBytes(mcp.dir), before, "read-only");
+});
+
+test("mcp: list_integrations gives the call sites of known clients with the entry points that reach them, and writes nothing", async (t) => {
+  const mcp = await connect(t);
+  assert.ok((await mcp.list()).includes("list_integrations"));
+  writeFileSync(join(mcp.dir, "src/infra/http.ts"), 'export async function notify(): Promise<void> {\n  await fetch("https://hooks.example.com/orders");\n}\n');
+  writeFileSync(join(mcp.dir, "src/app/server.ts"), 'import { notify } from "../infra/http.ts";\nconst app = { post: (_p: string, _h: unknown) => 0 };\nexport function paypalIpn(): void {\n  void notify();\n}\napp.post("/paypal/ipn", paypalIpn);\n');
+  const before = treeBytes(mcp.dir);
+  const answer = await mcp.call("list_integrations");
+  assert.equal(answer.isError, false, answer.text);
+  const report = JSON.parse(answer.text) as { snapshotId: string; outgoing: { id: string; sites: { file: string; host: string | null; in: string; reachedFrom: { id: string; flow: { name: string; source: string } | null }[] }[] }[]; webhooks: { via: string; label: string }[] };
+  assert.match(report.snapshotId, /^[0-9a-f]{64}$/);
+  assert.equal("text" in report, false);
+  assert.deepEqual(report.outgoing.map((integration) => integration.id), ["fetch"]);
+  const site = report.outgoing[0]!.sites[0]!;
+  assert.deepEqual([site.file, site.host, site.in], ["src/infra/http.ts", "hooks.example.com", "infra.http.notify"]);
+  assert.deepEqual(site.reachedFrom.map((reach) => [reach.id, reach.flow]), [["app.server.paypalIpn", { name: "paypalIpn", source: "discovered" }]]);
+  assert.deepEqual(report.webhooks.map((hook) => [hook.via, hook.label]), [["path", "POST /paypal/ipn"]]);
+  assert.equal(treeBytes(mcp.dir), before, "read-only");
+});
+
 test("mcp: discover_flows drafts a flow per entry point and writes nothing; apply_diff refuses the generated view", async (t) => {
   const mcp = await connect(t);
   assert.ok((await mcp.list()).includes("discover_flows"));

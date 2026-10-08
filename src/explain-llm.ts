@@ -72,12 +72,8 @@ export function briefText(answer: string): string {
  * other text is the answer's own code block, so both stay.
  */
 export function answerText(answer: string): string {
-  let text = answer.trim();
-  for (;;) {
-    const next = withoutRemark(unfenced(text));
-    if (next === text) return text;
-    text = next;
-  }
+  // One remark at most: short paragraphs after it are the answer. The fence goes before it («```…Sure!\n\n…```») or after it («Certainly!\n\n```…```»).
+  return unfenced(withoutRemark(unfenced(answer.trim())));
 }
 
 /** The inside of one fenced block of Markdown or plain text that is the whole of `text`; `text` itself otherwise. */

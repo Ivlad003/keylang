@@ -1,6 +1,6 @@
 # 59: Шар `README` затирається стартовою сторінкою карти з поясненнями
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -62,11 +62,15 @@ scratchpad/review/emit/readme: `keylang map` → `keylang/map-explained/README.m
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/emit.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/emit.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+**2026-10-08.** Виправлено через конфіг, а не emit: ім'я шару `README` у будь-якому регістрі тепер зарезервоване (`isReservedLayerName` у src/config.ts). `keylang.json` з таким шаром — помилка конфігурації з кодом 2 (`keylang.json: \`layers.README\`: \`README\` is reserved: \`README.md\` is the start page of the explained map; rename the layer, e.g. \`README_\``), тож тихого перезапису в `map-explained/` більше немає; вгадана тека `src/README/` стає шаром `README_` з приміткою, як `external_`. Регістронезалежне порівняння закриває і варіант `readme` на macOS/Windows. Припущення: несумісність для наявних конфігів із шаром `README` прийнятна — тікет прямо пропонує помилку конфігу. Документовано в docs/semantics.md («Імена шарів») і llm.txt.
+
+Тест (tests/core.test.ts, справжній CLI): `README`, `readme`, `ReadMe` → `map` 2 з повідомленням і без `map-explained/` (до виправлення — 0 і затертий файл шару); `init` на `src/README/` дає `README_`. `node --test tests/core.test.ts` — 36/36, `npm run typecheck` — 0.

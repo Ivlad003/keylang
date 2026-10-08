@@ -1,0 +1,118 @@
+{
+  "$comment": "«Logic in data» for `keylang coverage` (business-flows/13): calls and reads of configuration readers, whose result decides behaviour keylang cannot read. A signal matches a call by `callees` (regular expressions over the callee as the facts write it), `imports` (a name an import of that package, module or class binds; `methods` narrows to those last names) or `receivers` (the receiver's class), and a source line by `text`; `languages` limits it. Data, not code: add a reader here, not in src/.",
+  "signals": [
+    {
+      "id": "magento-scope-config",
+      "label": "Magento store configuration (ScopeConfigInterface::getValue/isSetFlag)",
+      "languages": ["php"],
+      "imports": ["Magento\\Framework\\App\\Config\\ScopeConfigInterface", "Magento\\Framework\\App\\Config\\ReinitableConfigInterface", "Magento\\Framework\\App\\Config\\MutableScopeConfigInterface"],
+      "receivers": ["ScopeConfigInterface", "ReinitableConfigInterface", "MutableScopeConfigInterface"],
+      "methods": ["getValue", "isSetFlag"]
+    },
+    {
+      "id": "magento-scope-config-by-name",
+      "label": "Magento store configuration through an untyped `scopeConfig` property",
+      "languages": ["php"],
+      "callees": ["(^|\\.)_?scopeConfig\\.(getValue|isSetFlag)$"]
+    },
+    {
+      "id": "magento-deployment-config",
+      "label": "Magento deployment configuration (env.php, config.php)",
+      "languages": ["php"],
+      "imports": ["Magento\\Framework\\App\\DeploymentConfig"],
+      "receivers": ["DeploymentConfig"],
+      "methods": ["get", "getConfigData"]
+    },
+    {
+      "id": "magento-sales-rules",
+      "label": "Magento price and cart rules as models (SalesRule, CatalogRule)",
+      "languages": ["php"],
+      "imports": ["Magento\\SalesRule\\Model\\", "Magento\\SalesRule\\Api\\", "Magento\\CatalogRule\\Model\\", "Magento\\CatalogRule\\Api\\"],
+      "methods": ["load", "getCollection", "create", "getList", "getById", "validate", "process", "getRules", "getActions", "getConditions"]
+    },
+    {
+      "id": "magento-eav",
+      "label": "Magento EAV attributes",
+      "languages": ["php"],
+      "imports": ["Magento\\Eav\\Model\\Config", "Magento\\Eav\\Api\\AttributeRepositoryInterface", "Magento\\Eav\\Model\\Entity\\Attribute\\"],
+      "receivers": ["AttributeRepositoryInterface"],
+      "methods": ["getAttribute", "get", "getEntityAttributes", "getAttributes"]
+    },
+    {
+      "id": "magento-custom-attribute",
+      "label": "Magento custom attribute values",
+      "languages": ["php"],
+      "callees": ["\\.(getCustomAttribute|getExtensionAttributes)$"]
+    },
+    {
+      "id": "laravel-config",
+      "label": "Laravel config() and env()",
+      "languages": ["php"],
+      "callees": ["^(config|env)$", "^Config(::|\\.)(get|string|integer|boolean|array)$"],
+      "imports": ["Illuminate\\Support\\Facades\\Config", "Illuminate\\Contracts\\Config\\Repository"],
+      "methods": ["get", "string", "integer", "boolean", "array"]
+    },
+    {
+      "id": "symfony-parameters",
+      "label": "Symfony container parameters",
+      "languages": ["php"],
+      "callees": ["(^|\\.)(getParameter|hasParameter)$"],
+      "imports": ["Symfony\\Component\\DependencyInjection\\ParameterBag\\ParameterBagInterface", "Symfony\\Component\\DependencyInjection\\ParameterBag\\ContainerBagInterface"],
+      "receivers": ["ParameterBagInterface", "ContainerBagInterface"],
+      "methods": ["get", "has", "all"]
+    },
+    {
+      "id": "php-env",
+      "label": "PHP environment variables",
+      "languages": ["php"],
+      "callees": ["^getenv$"],
+      "text": ["\\$_(ENV|SERVER)\\["]
+    },
+    {
+      "id": "django-settings",
+      "label": "Django settings",
+      "languages": ["python"],
+      "imports": ["django.conf.settings", "django.conf"]
+    },
+    {
+      "id": "python-env",
+      "label": "Python environment variables",
+      "languages": ["python"],
+      "callees": ["^os\\.(getenv|environ\\.get)$"],
+      "text": ["\\bos\\.environ\\b"]
+    },
+    {
+      "id": "python-settings-libs",
+      "label": "Python settings libraries (pydantic-settings, decouple, environs, dynaconf)",
+      "languages": ["python"],
+      "imports": ["pydantic_settings", "decouple", "environs", "dynaconf"]
+    },
+    {
+      "id": "node-env",
+      "label": "Node.js environment variables",
+      "languages": ["typescript", "javascript"],
+      "text": ["\\bprocess\\.env\\b", "\\bimport\\.meta\\.env\\b"]
+    },
+    {
+      "id": "node-config-libs",
+      "label": "Node.js configuration libraries (config, @nestjs/config, convict, nconf)",
+      "languages": ["typescript", "javascript"],
+      "imports": ["config", "@nestjs/config", "convict", "nconf"],
+      "receivers": ["ConfigService"],
+      "methods": ["get", "getOrThrow", "has", "util"]
+    },
+    {
+      "id": "rust-env",
+      "label": "Rust environment variables",
+      "languages": ["rust"],
+      "callees": ["^(std::)?env::var(_os)?$", "^(std::)?env::vars$", "^dotenvy?::"],
+      "text": ["\\benv!\\("]
+    },
+    {
+      "id": "rust-config-libs",
+      "label": "Rust configuration crates (config, figment)",
+      "languages": ["rust"],
+      "imports": ["config", "figment"]
+    }
+  ]
+}

@@ -17,6 +17,8 @@ export type Code =
   | "K006"
   /** A one-word `then` matches a declared id and is still read as text (warning). K007 stays reserved. */
   | "K008"
+  /** A `parallel` group with no steps. */
+  | "K009"
   // rules (M1)
   /** Dependency against the layer order (divergence). */
   | "K101"
@@ -39,6 +41,10 @@ export type Code =
   | "K202"
   /** A flow `test` names a file that does not exist in the repository (warning). */
   | "K203"
+  /** `trigger <kind> <id>`: the snapshot records the fn as an entry point of another kind. */
+  | "K205"
+  /** `continues <flow>` names a flow that does not exist. */
+  | "K206"
   // wiring (M6)
   /** A cycle among `wire` factories. */
   | "K301"

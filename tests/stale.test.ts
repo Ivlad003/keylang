@@ -118,7 +118,7 @@ test("check --stale: a cycle terminates and changes as one; an unresolved call o
   const accept = r.run("check", "--stale", "--accept");
   assert.equal(accept.status, 0, accept.stderr);
   const fresh = r.run("check", "--stale");
-  assert.match(fresh.stdout, /ping\.md:5:1: incomplete description of `main\.pong\.start`: unchanged as far as keylang can see .*incomplete: `main\.pong\.start` reaches calls keylang does not resolve/);
+  assert.match(fresh.stdout, /ping\.md:5:1: incomplete description of `main\.pong\.start`: unchanged as far as keylang can see .*incomplete: `main\.pong\.start` reaches calls or values keylang does not resolve/);
   assert.match(fresh.stdout, /ping\.md:7:1: incomplete description of `main\.pong\.gone`.*`main\.pong\.gone` is not in the snapshot/);
   assert.doesNotMatch(fresh.stdout, /main\.pong\.pong`:/);
   assert.match(fresh.stderr, /0 stale, 0 new, 4 fresh, 3 incomplete/, "the top-level invariant covers the whole flow, `gone` and `start` included");
@@ -205,4 +205,64 @@ test("check --stale --strict: exit 1 while a statement or obsolete entry is to r
   const incomplete = r.run("check", "--stale", "--strict");
   assert.match(incomplete.stdout, /incomplete/);
   assert.equal(incomplete.status, 1, incomplete.stdout);
+});
+
+test("check --stale --strict: a CRLF checkout of the same code leaves multi-line strings and their callers fresh", (t) => {
+  // Ticket review-2026-10-06/30: a multi-line string leaf carried `\r\n` into the fingerprint.
+  const py = 'def total(items):\n    """Sum the items.\n\n    Returns zero for an empty list.\n    """\n    return sum(items)\n\n\ndef plain(n):\n    return n + 1\n\n\ndef checkout(items):\n    return total(items)\n';
+  const ts = "export function banner(name: string): string {\n  return `Hello\n  ${name}\n  bye`;\n}\n\nexport function plain(n: number): number {\n  return n + 1;\n}\n";
+  const r = repo(t, {
+    "keylang.json": JSON.stringify({ languages: ["python", "typescript"], layers: { main: ["src/**"] } }),
+    "src/calc.py": py,
+    "src/banner.ts": ts,
+    "keylang/flows/r.md": "# flow r\n\n- step main.calc.total\n  Sums.\n- step main.calc.plain\n  Adds one.\n- step main.calc.checkout\n  Checks out.\n- step main.banner.banner\n  Greets.\n- step main.banner.plain\n  Adds one.\n",
+  });
+  const accept = r.run("check", "--stale", "--accept");
+  assert.equal(accept.status, 0, accept.stderr);
+  assert.match(r.run("check", "--stale", "--strict").stderr, /0 stale, 0 new, 5 fresh, 0 incomplete/);
+  r.write("src/calc.py", py.replace(/\n/g, "\r\n"));
+  r.write("src/banner.ts", ts.replace(/\n/g, "\r\n"));
+  const crlf = r.run("check", "--stale", "--strict");
+  assert.equal(crlf.status, 0, crlf.stdout + crlf.stderr);
+  assert.match(crlf.stderr, /0 stale, 0 new, 5 fresh/);
+});
+
+test("check --stale --strict: a changed module constant, class field or object table a fn reads makes its prose stale", (t) => {
+  // Ticket review-2026-10-06/31: values a fn reads by name were in no hash, so the prose stayed fresh and complete.
+  const ts = "export const LIMIT = 100;\nconst rates = { eu: 0.2 };\n\nexport function cap(n: number): number {\n  return Math.min(n, LIMIT);\n}\n\nexport function tax(x: number): number {\n  return x * rates.eu;\n}\n\nexport class Box {\n  limit = 100;\n  fits(n: number): boolean {\n    return n <= this.limit;\n  }\n}\n";
+  const py = "MAX = 100\n\n\ndef cap(n):\n    return min(n, MAX)\n\n\nclass Box:\n    limit = 100\n\n    def fits(self, n):\n        return n <= self.limit\n";
+  const r = repo(t, {
+    "keylang.json": JSON.stringify({ languages: ["python", "typescript"], layers: { main: ["src/**"] } }),
+    "src/config.ts": ts,
+    "src/limits.py": py,
+    "keylang/flows/cfg.md": "# flow cfg\n\n- step main.config.cap\n  Caps at 100.\n- step main.config.tax\n  Applies the EU rate.\n- step main.config.Box.fits\n  At most 100.\n- step main.limits.cap\n  Caps at 100.\n- step main.limits.Box.fits\n  At most 100.\n",
+  });
+  const accept = r.run("check", "--stale", "--accept");
+  assert.equal(accept.status, 0, accept.stderr);
+  const fresh = r.run("check", "--stale", "--strict");
+  assert.equal(fresh.status, 0, `values in the same file leave the closure complete: ${fresh.stdout}`);
+
+  // Layout of a value is not a change.
+  r.write("src/config.ts", ts.replace("const rates = { eu: 0.2 };", "const rates = {\n  // EU VAT\n  eu:   0.2\n};"));
+  assert.doesNotMatch(r.run("check", "--stale").stdout, /stale/);
+
+  r.write("src/config.ts", ts.replace("LIMIT = 100", "LIMIT = 5").replace("eu: 0.2", "eu: 0.5").replace("limit = 100", "limit = 3"));
+  r.write("src/limits.py", py.replace("MAX = 100", "MAX = 5").replace("limit = 100", "limit = 3"));
+  const changed = r.run("check", "--stale", "--strict");
+  assert.equal(changed.status, 1, changed.stdout + changed.stderr);
+  for (const id of ["main.config.cap", "main.config.tax", "main.config.Box.fits", "main.limits.cap", "main.limits.Box.fits"]) {
+    assert.match(changed.stdout, new RegExp(`stale description of \`${id.replace(/\./g, "\\.")}\``), id);
+  }
+});
+
+test("check --stale: a fn that reads a value imported from another file of the repository is incomplete", (t) => {
+  const r = repo(t, {
+    "src/limits.ts": "export const LIMIT = 100;\n",
+    "src/cap.ts": 'import { LIMIT } from "./limits.ts";\n\nexport function cap(n: number): number {\n  return Math.min(n, LIMIT);\n}\n\nexport function twice(n: number): number {\n  return n * 2;\n}\n',
+    "keylang/flows/cap.md": "# flow cap\n\n- step main.cap.cap\n  Caps at 100.\n- step main.cap.twice\n  Doubles.\n",
+  });
+  assert.equal(r.run("check", "--stale", "--accept").status, 0);
+  const out = r.run("check", "--stale");
+  assert.match(out.stdout, /cap\.md:3:1: incomplete description of `main\.cap\.cap`: .*incomplete: `main\.cap\.cap` reaches calls or values keylang does not resolve/);
+  assert.doesNotMatch(out.stdout, /main\.cap\.twice/);
 });

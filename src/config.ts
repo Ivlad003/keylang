@@ -76,6 +76,8 @@ export interface Config {
    * `map`: `keylang map` also writes the explained map, `<dir>/map-explained/`.
    */
   explain: { lang: string; detail: "short" | "full"; map: boolean };
+  /** `integrations.webhooks`: globs of files (or route paths) whose handlers are incoming webhooks (`keylang integrations`). Not part of the snapshot. */
+  integrations: { webhooks: string[] };
   /** True when the layout was guessed (no `layers` in the file). */
   guessed: boolean;
   /**
@@ -127,6 +129,15 @@ export const OUTSIDE_LAYER = "outside";
  */
 export const RESERVED_LAYER_NAMES: ReadonlySet<string> = new Set([...SYNTHETIC_LAYERS, "layer", "layers", "allow", "deny", "entry", "module", "no-cycles"]);
 
+/**
+ * A reserved name, or `README` in any case: the explained map writes a layer
+ * as `<layer>.md` beside its start page `README.md`, and on a
+ * case-insensitive file system `readme.md` is that file too.
+ */
+export function isReservedLayerName(name: string): boolean {
+  return RESERVED_LAYER_NAMES.has(name) || name.toLowerCase() === "readme";
+}
+
 /** Directories never indexed. */
 const SKIP_DIRS = new Set(["node_modules", "dist", "build", "out", "coverage", "target", "vendor", "__pycache__", "venv", "site-packages"]);
 /** Test and tooling files: kept out of the map (flows reference tests by path, §3.4). */
@@ -176,6 +187,7 @@ export interface RawConfig {
   assistant?: { clip?: boolean };
   voice?: { engine?: "local" | "openrouter" | "auto"; model?: string };
   explain?: { lang?: string; detail?: "short" | "full"; map?: boolean };
+  integrations?: { webhooks?: string[] };
 }
 
 /** Load `<root>/keylang.json`, or guess a config for `root`. */
@@ -212,6 +224,7 @@ export function loadConfig(root: string): Config {
     assistant: { clip: raw.assistant?.clip ?? true },
     voice: { engine: raw.voice?.engine ?? "auto", model: raw.voice?.model ?? null },
     explain: { lang: raw.explain?.lang ?? "en", detail: raw.explain?.detail ?? "short", map: raw.explain?.map ?? false },
+    integrations: { webhooks: raw.integrations?.webhooks ?? [] },
     guessed,
     text,
   };
@@ -224,11 +237,12 @@ function defaultModule(languages: readonly Language[]): Config["module"] {
 }
 
 /**
- * `text` without a leading U+FEFF: a keylang.json saved with a UTF-8 BOM
- * (PowerShell 5.1 `-Encoding UTF8`, old Notepad) is the same JSON, as the
- * `.md` parser, test reports and trace already read theirs.
+ * `text` without a leading U+FEFF: a JSON file saved with a UTF-8 BOM
+ * (PowerShell 5.1 `-Encoding UTF8`, old Notepad, Visual Studio) is the same
+ * JSON, as Node and npm read a `package.json`, and as the `.md` parser, test
+ * reports and trace already read theirs.
  */
-function withoutBom(text: string): string {
+export function withoutBom(text: string): string {
   return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
 }
 
@@ -252,7 +266,7 @@ export function parseConfig(file: string, text: string): RawConfig {
     return glob;
   };
   if (!isObject(value)) return fail("(root)", "an object", value);
-  const known = new Set(["$schema", "format", "dir", "languages", "module", "layers", "exclude", "outside", "assume", "check", "agent", "explain", "ghost", "assistant", "voice"]);
+  const known = new Set(["$schema", "format", "dir", "languages", "module", "layers", "exclude", "outside", "assume", "check", "agent", "explain", "ghost", "assistant", "voice", "integrations"]);
   for (const key of Object.keys(value)) if (!known.has(key)) throw new Error(`${file}: unknown field \`${key}\``);
   const raw: RawConfig = {};
   if (value.format !== undefined) raw.format = acceptFormat(file, value.format);
@@ -285,7 +299,7 @@ export function parseConfig(file: string, text: string): RawConfig {
       written.set(name, key);
       // A layer is the first segment of every ID under it; `core.domain` would be two.
       if (layerName(name) !== name) throw new Error(`${file}: layer name \`${name}\` must be one ID segment (letters, digits, \`_\`, \`$\`, \`-\`), e.g. \`${layerName(name)}\``);
-      if (RESERVED_LAYER_NAMES.has(name)) throw new Error(`${file}: \`layers.${name}\`: ${reservedReason(name)}; rename the layer, e.g. \`${name}_\``);
+      if (isReservedLayerName(name)) throw new Error(`${file}: \`layers.${name}\`: ${reservedReason(name)}; rename the layer, e.g. \`${name}_\``);
       if (typeof globs === "string") layers[name] = validGlob(`layers.${name}`, globs);
       else if (Array.isArray(globs) && globs.every((glob) => typeof glob === "string")) layers[name] = (globs as string[]).map((glob, i) => validGlob(`layers.${name}[${i}]`, glob));
       else fail(`layers.${name}`, "a glob or an array of globs", globs);
@@ -359,6 +373,16 @@ export function parseConfig(file: string, text: string): RawConfig {
       else throw new Error(`${file}: unknown field \`explain.${key}\``);
     }
     raw.explain = explain;
+  }
+  if (value.integrations !== undefined) {
+    if (!isObject(value.integrations)) return fail("integrations", "an object", value.integrations);
+    const integrations: NonNullable<RawConfig["integrations"]> = {};
+    for (const [key, v] of Object.entries(value.integrations)) {
+      if (key !== "webhooks") throw new Error(`${file}: unknown field \`integrations.${key}\``);
+      if (!Array.isArray(v) || !v.every((glob) => typeof glob === "string")) return fail("integrations.webhooks", "an array of globs", v);
+      integrations.webhooks = (v as string[]).map((glob, i) => validGlob(`integrations.webhooks[${i}]`, glob));
+    }
+    raw.integrations = integrations;
   }
   return raw;
 }
@@ -668,7 +692,7 @@ export function guessLayout(root: string, exclude: readonly string[]): { layers:
   const add = (wanted: string, what: string, globs: string[]): void => {
     const name = freeLayerName(wanted, layers);
     if (name !== wanted) {
-      const why = RESERVED_LAYER_NAMES.has(wanted) ? reservedReason(wanted) : `\`${wanted}\` is already the layer of ${owners.get(wanted) ?? "another directory"}`;
+      const why = isReservedLayerName(wanted) ? reservedReason(wanted) : `\`${wanted}\` is already the layer of ${owners.get(wanted) ?? "another directory"}`;
       notes.push(`${what} is layer \`${name}\`: ${why}`);
     }
     layers.set(name, globs);
@@ -706,7 +730,7 @@ function sourceRoot(root: string, exclude: readonly string[]): string {
 function composerSourceRoot(root: string): string | null {
   let manifest: unknown;
   try {
-    manifest = JSON.parse(readFileSync(join(root, "composer.json"), "utf8"));
+    manifest = JSON.parse(withoutBom(readFileSync(join(root, "composer.json"), "utf8")));
   } catch {
     return null;
   }
@@ -742,7 +766,7 @@ function layerDirs(root: string, dir: string, exclude: readonly string[]): { nam
 
 /** `wanted`, or the first free variant: a reserved name gets `_`, a taken one a number (`_2fa_2`). */
 function freeLayerName(wanted: string, taken: ReadonlyMap<string, unknown>): string {
-  const first = RESERVED_LAYER_NAMES.has(wanted) ? `${wanted}_` : wanted;
+  const first = isReservedLayerName(wanted) ? `${wanted}_` : wanted;
   if (!taken.has(first)) return first;
   for (let n = 2; ; n++) {
     const name = `${wanted}_${n}`;
@@ -754,6 +778,7 @@ function reservedReason(name: string): string {
   if (name === "external") return "`external` is reserved for packages outside the repository";
   if (name === "unassigned") return "`unassigned` is reserved for files outside every layer";
   if (name === OUTSIDE_LAYER) return "`outside` is reserved for files `outside` puts outside the architecture";
+  if (name.toLowerCase() === "readme") return `\`${name}\` is reserved: \`README.md\` is the start page of the explained map`;
   return `\`${name}\` is a keyword at the top of a map`;
 }
 
