@@ -24,7 +24,7 @@
   },
   "type": "module",
   "bin": {
-    "keylang": "./bin/keylang.js"
+    "keylang": "bin/keylang.js"
   },
   "files": [
     "adapters",
