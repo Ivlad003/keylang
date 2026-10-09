@@ -17,11 +17,13 @@ npx keylang web --new shop
 3. Дайте кроку сигнатуру й тести в панелі, наприклад `(cart: Cart) => Order` і `test tests/place.test.ts "refuses an empty cart"`.
 4. Лінія `deny` між двома доріжками — правило; `allow` теж.
 
+Редактор тримає скорочення diagrams.net: `Ctrl+Z` скасовує, `Ctrl+Y` повторює, а `Ctrl+C`/`Ctrl+V` копіюють фігури, зокрема в іншу вкладку `keylang web`. Кнопки «SVG» і «PNG» зберігають полотно як зображення.
+
 Виберіть мови, запишіть ідею одним-двома реченнями й натисніть «Створити специфікацію». Ви отримаєте:
 
 - `keylang.json` з глобом `src/<шар>/**` на кожну доріжку й порожню теку `src/<шар>/` для кожної;
 - `keylang/rules.md` з `- layers domain < infrastructure < application < presentation` у порядку доріжок і намальованими лініями `deny`/`allow`;
-- `keylang/features/placeOrder.md` — флоу й рядок `- planned fn …` на кожну фігуру, бо коду ще немає;
+- `keylang/features/placeOrder.md` — флоу й рядок `- planned fn …` на кожну фігуру, бо коду ще немає (фігури, до яких не доходить жоден тригер, — у `keylang/features/structure.md`);
 - `keylang/README.md` з ідеєю цитатою, а розкладку малюнка — у `keylang/diagrams/`.
 
 Якщо якийсь файл уже є, нічого не записано, і панель каже, який саме. Проєкт, де вже є `keylang.json`, кнопки «Новий проєкт» не має: малюнок там стає пропозиціями.
@@ -36,5 +38,7 @@ npx keylang feature placeOrder
 ```
 
 `check` одразу виходить з кодом 0: кожен крок `unverified` з приміткою «planned fn, not implemented». `feature` перелічує кожен planned-рядок, доки агент не напише код. Відкрийте `keylang web` знову й виберіть флоу в «Діаграмах». Спершу фігури — planned ◇. Коли агент напише код і ви запустите `keylang map`, кожна стане ✓, а якщо маршрут кроку зламано — ✗.
+
+Малюнок не замкнено в браузері. `npx keylang export drawio placeOrder --out place.drawio` і `npx keylang export bpmn placeOrder --out place.bpmn` віддають ту саму діаграму в draw.io чи BPMN-інструмент. Фігура, перейменована чи додана в draw.io, повертається командою `npx keylang import drawio place.drawio` як одна пропозиція для специфікації, яку ви приймаєте або відхиляєте.
 
 Далі — [курс](../../uk/README.md).

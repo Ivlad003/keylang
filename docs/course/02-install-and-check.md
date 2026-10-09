@@ -24,7 +24,7 @@ A layer name must be a single id segment. Reserved names (`external`, `unassigne
 
 | Command | Writes files? | What you read |
 |---|---|---|
-| `keylang check [paths…]` | No | Findings on stdout, `N fail, M unverified, K ok` on stderr. `--changed` keeps only findings that touch files changed since `HEAD` (or `--since`), plus untracked files, including a deleted file that a flow still names |
+| `keylang check [paths…]` | No | Findings on stdout, `N fail, M unverified, K ok` on stderr. `--changed` keeps only findings that touch files changed since `HEAD` (or `--since`), plus untracked files, including a deleted file that a flow still names, and K108 when the spec was weakened since that ref. `--stale` lists prose whose code changed since it was accepted |
 | `keylang baseline` | `keylang/rules.baseline.md` | The generated deny/allow frame. `--check` exits 1 and names `keylang baseline` when the file no longer matches |
 | `keylang feature <slug>` | No | Whether `keylang/features/<slug>.md` is done. Exit 0 means done, 1 means gaps, 2 means the file is missing |
 | `keylang agents` | Harness files outside `keylang/` | The same adapters as `init`. `--agents=none` removes that install and keeps the baseline |
@@ -35,7 +35,8 @@ A layer name must be a single id segment. Reserved names (`external`, `unassigne
 | `keylang explain <id> --llm` | `keylang/explain/<id>.md` | Prose from the configured agent. It never changes a verdict |
 | `keylang fmt <file>` | The file | Exit 1 on a structural error, or, with `--check`, when the file was not canonical |
 | `keylang parse <file>` | No | A text dump. With `--json`, stdout holds only the JSON and diagnostics go to stderr |
-| `keylang doctor` | No | Languages, whether an agent key is set, and voice support. Exits 0 even when it reports a problem |
+| `keylang tour` | No (`--out` writes `keylang/tour.md`) | One page for a newcomer: what the system is, layers and modules, flows, entry points, integrations, blind spots, and the functions to read first |
+| `keylang doctor` | No | Languages, the agent (an API key or an installed agent CLI), and voice support. Exits 0 even when it reports a problem |
 
 By default, `check` reads the spec directory named in `keylang.json`, usually `keylang/`. If you pass a path such as `examples/shop`, it checks that tree instead.
 
@@ -53,15 +54,23 @@ By default, `check` reads the spec directory named in `keylang.json`, usually `k
 
 ![K001 on examples/shop, exit 1](images/cli-shop-k001.png)
 
+The screenshot comes from an older version. Today the same command prints:
+
+```text
+examples/shop/map.md:27:13: K001 dangling reference `domain.aggregate` (did you mean `domain.orderAggregate`?); declare `planned` if this is an intention
+examples/shop/rules.md:3:1: unverified no snapshot
+1 fail, 1 unverified, 0 ok
+```
+
 The output tells you three separate things:
 
-1. `K001` is an error: the name does not resolve. The hint suggests the nearest existing id, and the exit code is 1.
-2. The second line is `unverified`, not another error. This example has no source files, so there is nothing to prove the flow against. `no snapshot` means "not proved," not "broken."
+1. `K001` is an error: the name does not resolve, and the exit code is 1. The hint suggests the nearest existing id. In a generated map file (one with the `keylang:generated` marker) it names the generator instead, because such a file is fixed by regenerating it; this example's map is hand-written.
+2. The second line is `unverified`, not another error. This example has no source files, so the rules have nothing to be checked against. `no snapshot` means "not proved," not "broken."
 3. One failure is enough to fail the whole process. The unverified line on its own would not, unless you pass `--strict`.
 
 ![explain K001](images/cli-explain-k001.png)
 
-`examples/shop-fixed` spells the name correctly as `domain.orderAggregate`. There is still no code, so the flow stays unverified, but nothing is broken, and the process exits 0:
+`examples/shop-fixed` spells the name correctly as `domain.orderAggregate`. There is still no code, so the rules stay unverified, but nothing is broken, and the process exits 0:
 
 ![shop-fixed exits 0](images/cli-shop-fixed.png)
 
@@ -99,7 +108,7 @@ Running `keylang check` at the root of this repository rebuilds the snapshot and
 
 | Field | Role |
 |---|---|
-| `format` | Language edition. If the field is omitted, edition 1 applies. With no `keylang.json` at all, the current edition, 2, is used. Edition 2 lets an incomparable `deny` win |
+| `format` | Language edition. If the field is omitted, edition 1 applies. With no `keylang.json` at all, the current edition, 2, is used, and `init` writes `"format": 2`. Edition 2 lets an incomparable `deny` win |
 | `languages` | A subset of `javascript`, `php`, `python`, `rust`, `typescript`. If omitted, detected from file extensions |
 | `module` | `file` (the default when languages disagree) or `dir` |
 | `layers` | Layer name → list of globs. Key order sets the order of colors and of the tree |
@@ -108,7 +117,8 @@ Running `keylang check` at the root of this repository rebuilds the snapshot and
 | `check.tests` | A keylang JSON report or JUnit XML |
 | `check.trace` | Trace JSONL |
 | `check.static` | `behavior` (default) or `shape`. A command-line flag overrides the file |
-| `agent` | Optional. `anthropic:<model>` or `openrouter:<model>`, used by `explain --llm` and drafts |
+| `frameworks` | Optional. Framework adapters (`magento`, `laravel`, `symfony`, `nestjs`, `django`, `express`, …). If omitted, they are detected; `[]` turns them off |
+| `agent` | Optional. `anthropic:<model>` or `openrouter:<model>` with an API key, or `cli:<name>` for an installed agent CLI (`claude`, `codex`, `opencode`, `cursor`). Used by `explain --llm` and drafts; `KEYLANG_AGENT` overrides it |
 | `explain.map` | Optional. `true` also writes `keylang/map-explained/`. `check` does not read it |
 
 Without `check.tests` and `check.trace`, those kinds of evidence are not printed and do not affect `--strict`. This repository points both at `.keylang/`, which is gitignored, so CI that wants trace evidence has to produce those files within the job itself.

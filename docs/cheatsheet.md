@@ -12,6 +12,7 @@ Specs are Markdown under the spec directory: `dir` in `keylang.json`, `keylang/`
 | `# rules` | dependency rules | `keylang/rules.md` (a person's), `keylang/rules.baseline.md` (written by `init` and `keylang baseline`) |
 | `# flow <name>` | one scenario; the name is required and unique | `keylang/flows/*.md`, `keylang/features/<slug>.md` |
 | `# wiring` | factories for `keylang wire` | `keylang/wiring.md` |
+| `# migration <name>` | old-stack IDs mapped to this repository's; the name is required | `keylang/migration.md` (`keylang flow import` proposes rows) |
 
 An item is a list line, `- <keyword> <arguments>`. A child is indented exactly two spaces more than its parent; any other indent or a tab is K003. Paragraphs, `##` headings, tables and code fences are prose without meaning. Text indented under an item is its description, and `<!-- … -->` at the end of an item is a comment.
 
@@ -29,9 +30,10 @@ A word is a keyword only where this table allows it; elsewhere the line falls ba
 | top of a rules section | `layers`, `allow`, `deny`, `entry`, `module`, `no-cycles` | K004 |
 | top of a flow section | `kind`, `trigger`, `continues`, `step`, `parallel`, `reads`, `emits`, `calls`, `invariant`, `when`, `after`, `every`, `test`, `planned`, `?` | K004 |
 | top of a wiring section | `wire` | K004 |
-| under `layer` | `module` | `<name>`: a module |
+| top of a migration section | `map`, `dropped` | K004 |
+| under `layer` | `module`, `event` (the generated `events` group) | `<name>`: a module |
 | under `module` (map) | `module`, `fn`, `type`, `event` | `<alias> <id>`: a dependency |
-| under `fn` | `calls` | K004 |
+| under `fn`, `event` | `calls` (under `event`: the observers the framework calls) | K004 |
 | under `layers`, `entry` | none | `<id>`: a reference |
 | under `module` (rules) | `exports`, `no-cycles` | K004 |
 | under `trigger`, `step` | `step`, `parallel`, `reads`, `emits`, `calls`, `when`, `after`, `every`, `test`, `invariant`, `?` | K004 |
@@ -68,7 +70,7 @@ Keywords are contextual: under a map module, `- test foo.bar` is a dependency na
 | `parallel` | none; nested `step` lines | the steps run in any order, each reached from the group's parent; the next step comes after the whole group; none is K009 |
 | `continues <flow>` | a flow name | this flow continues that one in a later request; a missing flow is K206; trace is `unverified (crosses requests)` |
 | `after <duration>` | `30s`, `15m`, `2h`, `1d` (ms, s, m, min, h, d, w) | a timer; only a nested `test` checks it |
-| `every <schedule>` | a duration, `@daily` and the other cron macros, or five cron fields (bare or quoted) | a schedule; a nested `test` checks it, and the schedule of a cron entry point when the snapshot has one |
+| `every <schedule>` | a duration, `@daily` and the other cron macros, or five or six cron fields (bare or quoted) | a schedule; a nested `test` checks it, and the schedule of a cron entry point when the snapshot has one |
 | `planned fn`, `module`, `type`, `event` `<id> [signature]` | a kind, an ID, optional free text | an intention: code that does not exist yet; top of a flow only |
 | `emits [event] <name>` | an event name | an event ID (`events.<name>`): the step's code must dispatch it (`ok`, `fail` absence, `unverified` for a computed name or a hole on the way; K204 for an unknown event); any other name: text, not resolved |
 | `invariant <text>` | free text | a claim keylang does not parse; a nested `test` proves it |
@@ -78,6 +80,8 @@ Keywords are contextual: under a map module, `- test foo.bar` is a dependency na
 | `test <file> ["<name>"]` | a path and an optional quoted name | the test that proves the line |
 | `wire <id>`, `compose <id>` | one ID | a factory; a one-argument fn that wraps the dependency's value |
 | `when env.NAME = value → <id>` (wiring) | a condition, `→` or `->`, an ID | another factory when the variable has that value |
+| `map <old id> → [planned] <id>` (migration) | an old-stack ID, `→` or `->`, optional `planned`, an ID here | the new ID must be in the code or declared `planned` (else K001); the old one is checked against `migration.from` in `keylang.json` |
+| `dropped <old id> <reason>` (migration) | an old-stack ID and a reason | not moved on purpose; no reason is K005 |
 
 ## Examples
 
@@ -94,6 +98,10 @@ The map, as `keylang map` writes it (shortened). The first line is the generated
   - module [cli](../../src/ui/cli.ts#L1)
     - orders app.orders
     - fn [main](../../src/ui/cli.ts#L4) (argv: string[]) → Promise<number>
+      - calls app.orders.place
+  - module [http](../../src/ui/http.ts#L1)
+    - orders app.orders
+    - fn [placeOrder](../../src/ui/http.ts#L4) (req: Request) → void
       - calls app.orders.place
 - app
   - module [orders](../../src/app/orders.ts#L1)
@@ -209,6 +217,31 @@ A feature file: what to build is `planned`, a package not imported yet is `plann
 - ? Can an operator refund part of an order?
 ```
 
+A flow from an entry point. `keylang entries` lists `route  POST /orders  ui.http.placeOrder`, so the trigger names that kind and the fn, not the path. The two steps of `parallel` run in any order; `continues` says this flow goes on in a later request of `checkout`; `after` and `every` are timers:
+
+```keylang
+# flow order
+
+- kind business
+- trigger route ui.http.placeOrder
+  - step app.orders.place
+    - parallel
+      - step domain.order.create
+      - step infra.db.save
+    - after 30m
+- continues checkout
+```
+
+A migration table, when this repository replaces an old one: the old IDs are checked against `migration.from` in `keylang.json`, and `keylang migration status` compares the flows of both stacks:
+
+```keylang
+# migration shop
+
+- map Checkout.Order.place → app.orders.place
+- map Checkout.Order.refund → planned app.orders.refund
+- dropped Checkout.Legacy.export the CSV export is not moved
+```
+
 Links instead of bare IDs, for a click on GitHub or in an editor:
 
 ```keylang
@@ -250,6 +283,7 @@ Wiring: `wire` builds `app.orders.place` with a `db` from `infra.db.open`, or fr
 | K105 | error | a dependency cycle where `no-cycles` is declared |
 | K106 | warning | an `allow` and a `deny` that cannot be ordered (each narrower on one side, the `allow` deeper in sum) and no rule on their intersection |
 | K107 | error | architecture code depends on a file that `outside` in `keylang.json` puts outside it |
+| K108 | error | the spec was weakened since the base commit: a wider `exclude`, `assume` or `outside`, a `layers` glob that moves a file out of its layer, `frameworks` turned off, a removed `deny`, `step` or `trigger`, a new `allow`, a rule outside `rules.md`. Only `check --changed`, `hook stop` and `feature` report it; a person accepts it with `check --changed --accept-weakening` |
 | K201 | error | a `planned` ID exists in the code with another kind or signature |
 | K202 | warning | a `planned` ID is implemented as declared: remove the `planned` line |
 | K203 | warning | a flow's `test` names a file the repository does not have |

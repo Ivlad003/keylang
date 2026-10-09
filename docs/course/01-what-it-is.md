@@ -33,6 +33,12 @@ specs under keylang/ → parse → claims ────┴→ keylang check
    keylang/flows/*.md           a named scenario and its evidence
    keylang/features/*.md        one feature: planned ids, flows, then drop planned
    keylang/wiring.md            factories for `keylang wire`
+   keylang/migration.md         `# migration`: old ids → new ids when you move stacks
+
+generated views that check does not read:
+   keylang/flows-discovered/    a draft flow for every entry point (`flows discover`)
+   keylang/map-explained/       the map with a line of words under each node
+   keylang/diagrams/            the layout of the diagram page, committed for the team
 ```
 
 What kind of document a section is depends on its heading, not on the file name. That means `# map`, `# rules`, `# flow checkout` and `# wiring` can all live in one file. Text before the first heading is treated as a map, which is why the original slides still parse.
@@ -41,7 +47,7 @@ The map is a view of the snapshot, and that has a consequence. Checking the Mark
 
 ## What it takes on
 
-**Finding your way.** The map is a short outline of the code: layers, modules, function signatures, and the calls made inside each function. You can read one layer file instead of opening every source file. Places the tool could not read, called holes, are listed explicitly rather than filled in by guesswork.
+**Finding your way.** The map is a short outline of the code: layers, modules, function signatures, and the calls made inside each function. You can read one layer file instead of opening every source file. Places the tool could not read, called holes, are listed explicitly rather than filled in by guesswork. On a codebase you did not write, `keylang tour` prints one page for a newcomer, `keylang entries` lists where execution starts, and `keylang coverage` shows what nothing reaches and where keylang is blind. None of them is a verdict.
 
 **A rule that fails in CI.** "Domain does not import infrastructure" is a single `deny` line. To check it, keylang looks at imports, calls, type mentions and re-exports. A confirmed forbidden edge gives `fail` (K102) and exit code 1. If there is a gap in the same area, such as an import that could not be resolved, the rule stays `unverified`, because the tool cannot be sure — and that is not the same as a clean pass.
 
@@ -51,17 +57,17 @@ The map is a view of the snapshot, and that has a consequence. Checking the Mark
 
 **Jumping to the function.** Hover, go-to-definition and completion all use the same ids as the spec. When you see a diagnostic, `keylang explain K001` prints the reason behind it and a fix. With `"explain": {"map": true}`, the same snapshot also renders an explained map, which shows the doc comment under each node, or a saved brief when the code has no comment. Pressing `t` in the UI switches a layer file between the two maps. Neither map is a verdict.
 
-**When a feature is done.** `keylang/features/<slug>.md` is an ordinary spec made of `planned` ids and a flow. `keylang feature <slug>` reports the feature as done when every `planned` id in it is implemented (K202, not K201), every step has static `ok`, and no rule is left at `fail`, the baseline included. Tests and traces are reported too, but they do not block that answer. An integration that nobody imports yet is written as `planned module external.<pkg>` plus a step leading to that module.
+**When a feature is done.** `keylang/features/<slug>.md` is an ordinary spec made of `planned` ids and a flow. `keylang feature <slug>` reports the feature as done when every `planned` id in it is implemented (K202, not K201), every step has static `ok`, no rule is left at `fail`, the baseline included, no open `?` question remains, and the plan was not weakened since the branch began. Tests and traces are reported too, but they do not block that answer. An integration that nobody imports yet is written as `planned module external.<pkg>` plus a step leading to that module.
 
-**An agent on a repository it has not seen.** `keylang init` writes `keylang.json`, the map, `rules.baseline.md`, and a short managed block in `AGENTS.md`. If it finds Claude, Codex, Cursor or opencode, it also registers the MCP server and a skill for them. The agent then generates the program from that spec using its own tools, so you do not write those functions, and keylang does not launch the agent. The verdict still comes from `check`. Hand-written rules change only through a proposal that a person merges. `--agents=none` skips the harness files but still writes the baseline.
+**An agent on a repository it has not seen.** `keylang init` writes `keylang.json`, the map, `rules.baseline.md`, and a short managed block in `AGENTS.md`. If it finds Claude, Codex, Cursor or opencode, it also registers the MCP server and a skill for them. The agent then generates the program from that spec using its own tools, so you do not write those functions, and keylang does not launch the agent. The verdict still comes from `check`. Hand-written rules change only through a proposal that a person merges, and when a change deletes a `deny` or a step, or adds an `allow`, `check --changed` and the agent's Stop hook report K108: the spec was weakened. `--agents=none` skips the harness files but still writes the baseline.
 
 ## What it leaves alone
 
 **Whether the program does the right thing.** An invariant line is just text: keylang does not parse "total equals the sum of price times quantity." What it can do is record that a named test passed. The test is the proof, and keylang only keeps the books.
 
-**Behavior behind a hole.** Sometimes the language frontend cannot name the function being called: `obj[k]()`, a value passed through a local variable, a decorator that may replace the function, or a Rust macro it does not expand. In those cases the call is not a confirmed edge, so rules that depended on that edge stay `unverified`, and the message names the construct that got in the way.
+**Behavior behind a hole.** Sometimes the language frontend cannot name the function being called: `obj[k]()`, a value passed through a local variable, a decorator that may replace the function, or a Rust macro it does not expand. In those cases the call is not a confirmed edge, so rules that depended on that edge stay `unverified`, and the message names the construct that got in the way. Calls a framework makes from its configuration (Magento `di.xml`, Laravel, Symfony, NestJS, Django and others) are read by framework adapters, but only for the frameworks keylang knows.
 
-**Prose that drifted from the code.** A description in a spec is still just text, and `check` does not mark it stale when the function body changes. A saved explanation is different: `explain <id>` prints `fresh` or `stale` for it. Even so, a green gutter does not mean "this paragraph is true."
+**Prose that drifted from the code.** A description in a spec is still just text, and a plain `check` does not mark it stale when the function body changes. You can opt in: `check --stale` lists each description, `when`, `then` and `invariant` whose code changed since a person accepted it (`check --stale --accept`). A saved explanation has the same mark: `explain <id>` prints `fresh` or `stale` for it. Even so, keylang never reads what the words say, and a green gutter does not mean "this paragraph is true."
 
 **Everything around the code.** Deployments, SLOs, threat models and ADRs are outside what the tool sees. For example, keylang will not notice that two services share a database.
 

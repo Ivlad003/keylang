@@ -75,7 +75,7 @@ A `deny` is `fail` when a forbidden edge is resolved, `unverified` when the area
 | `ok` | The claim held, and the area was fully covered |
 | `fail` | A violation was found and shown |
 | `unverified` | No violation was shown, but the snapshot is not complete enough to pass the claim |
-| warning | K006, K008, K103, K106, K202. Recorded, but not a failing verdict |
+| warning | K006, K008, K103, K106, K202, K203. Recorded, but not a failing verdict |
 
 For an edge, `check` points at the code; for a bad line, it points at the spec. `--explain-edge <a> <b>` prints the edges between two ids, or the unresolved constructs that could have formed one, and it writes nothing.
 
@@ -90,5 +90,7 @@ In the UI, `✓` means every criterion on that line is `ok`. A line that is `ok`
 5. Put `keylang check`, `keylang map --check` and `keylang baseline --check` in CI. Add `--strict` only once the unverified lines are fixed or accepted.
 
 An agent does not edit either rules file in place. A change it makes to the hand-written file is a proposal that you review. The baseline carries the generated marker, so the editor and `apply_diff` refuse to change it, and only `keylang baseline` rewrites it from the graph.
+
+A rule can also be switched off without touching it: by changing what the rules see. So `check --changed` (against `HEAD`, or `--since <ref>` in a pull request) compares the spec with the base and reports K108 when a `deny`, a rule line or a flow step disappeared, a new `allow` appeared, a rule line moved out of `rules.md`, or `keylang.json` took files away from a rule through `exclude`, `assume` or `outside`. A plain `check` does not read git and gives no K108. Only a person accepts such a change, with `check --changed --accept-weakening` and a commit.
 
 Next: [flows](06-flows.md).

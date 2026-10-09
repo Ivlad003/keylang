@@ -36,6 +36,9 @@ keylang — це Markdown, що лежить поруч із кодом. У нь
 | `keylang/rules.md` | ви | Хто від кого може залежати: `layers`, `allow`, `deny`, `entry`, `exports`, `no-cycles` |
 | `keylang/flows/*.md` | ви | Один сценарій на файл. Кожен крок окремо звітує `ID`, `static`, `tests` і `trace` |
 | `keylang/features/*.md` | ви | Що будувати далі. `keylang feature <slug>` підкаже, коли роботу завершено |
+| `keylang/flows-discovered/` | `keylang flows discover` | Чернетка потоку для кожної точки входу. Згенероване представлення, яке `check` не читає |
+| `keylang/diagrams/*.layout.json` | редактор діаграм | Де стоять фігури діаграми. Його комітять, щоб команда бачила ту саму картинку; `check` його не читає |
+| `keylang/migration.md` | ви або `keylang flow import` | Яке ID старого стеку стало яким ID тут, коли систему переносять на інший стек |
 | `.keylang/proposals/` | агент | Чернетка змін до специфікації, яку людина зливає частинами |
 | програма | агент | Функції, згенеровані зі специфікації. Ви їх не пишете, а keylang агента не запускає |
 
@@ -58,7 +61,7 @@ keylang — це Markdown, що лежить поруч із кодом. У нь
 - Речення під вузлом — це проза. keylang його зберігає, але не доводить.
 - Виклик, який keylang не може статично назвати (`obj[k]()`, невідомий декоратор, `eval`), — це дірка, тож відповідь для нього лишається `unverified`.
 - Для Rust і Python keylang записує імпорти й виклики, але не ребра типів.
-- Для PHP він записує імпорти, виклики й типи з type hints. Виклик через інтерфейс або метод трейту, викликаний через `$this`, лишається діркою.
+- Для PHP він записує імпорти, виклики й типи з type hints і docblock-ів. Виклик через інтерфейс лишається діркою, якщо реалізацію не називає адаптер фреймворку (`<preference>` Magento, прив'язка Laravel чи Symfony).
 - Wiring генерує TypeScript-функцію `wire()`, але не забороняє решті програми імпортувати що завгодно. Ловити такі імпорти — і далі завдання правил.
 - keylang читає вже наявні звіти тестів і trace. Сам він не запускає тести, не перевіряє типи й не робить рев'ю безпеки.
 - Go, Java, Ruby та інших мов у знімку просто немає. Але те, що їх немає, не доводить, що вони ні від чого не залежать.
@@ -71,6 +74,7 @@ npx keylang check       # імена і правила в keylang/
 npm i -g keylang        # далі просто `keylang …`
 npx keylang clone https://github.com/owner/repo   # чужий репозиторій: клон у кеш і карта
 npx keylang web https://github.com/owner/repo     # те саме, потім інтерфейс у браузері
+npx keylang web --new shop                         # новий проєкт з діаграми, у браузері
 ```
 
 З клону цього репозиторію:
@@ -85,6 +89,10 @@ node bin/keylang.js explain K001         # що означає код і як в
 node bin/keylang.js                      # інтерфейс у терміналі (? — клавіші, q — вихід)
 node bin/keylang.js web                  # той самий інтерфейс у браузері; відкрийте надрукований URL
 ```
+
+`keylang web` віддає ще й сторінку діаграм (`/diagrams`, посилання — на сторінці терміналу): флоу, знайдені флоу, точки входу й шари у списку з пошуком, вибране — діаграмою на кшталт BPMN з доріжкою на кожен шар і кольорами вердиктів, а на бічній панелі — ID клікнутого кроку, `file:line` (посилання `vscode://`), вердикти й те, де ще вживається цей ID. Дослідник проходить виклики точки входу ще до того, як з'явиться флоу, а «Сліпі зони» показують звіт `coverage`. Вкладка редактора малює вид так, як diagrams.net, з undo/redo, експортом у PNG і SVG та копіюванням і вставленням між вкладками й проєктами. Розкладка йде в `keylang/diagrams/`, а «Запропонувати зміни» перетворює малюнок на пропозиції до специфікацій замість того, щоб їх правити. `keylang web --new <тека>` починає новий проєкт з порожнього полотна ([docs/tui.md](docs/tui.md#сторінка-діаграм-diagrams)).
+
+![Сторінка діаграм keylang web: флоу checkout, вибраний крок і його панель](docs/course/images/diagrams-flow.png)
 
 У `examples/shop` навмисно залишено хибний ID `domain.aggregate`, щоб було видно помилку. Знімка коду в прикладі теж немає, тому й потік довести не вдається. Перевірка завершується кодом 1:
 
@@ -112,16 +120,24 @@ node bin/keylang.js web                  # той самий інтерфейс 
 
 ## Як зануритися в чужий проєкт
 
-Чотири команди, без моделі; пишуть лише згенеровані представлення:
+Кілька команд, без моделі; пишуть лише згенеровані представлення й локальний кеш:
 
 ```sh
-keylang entries          # звідки починається виконання: маршрути, bin-скрипти, main
+keylang entries          # звідки починається виконання: маршрути, cron, консюмери, observers, bin-скрипти, main
 keylang flows discover   # чернетка флоу для кожної точки входу в keylang/flows-discovered/
+keylang coverage         # сліпі зони: до чого не доходить жодна точка входу, дірки за модулями, логіка в даних
+keylang integrations     # з чим говорить код: клієнти HTTP, SOAP, SDK і черг, вебхуки
 keylang tour             # одна сторінка: система, шари, процеси, інтеграції, сліпі зони, з чого почати читати
 keylang web              # ті самі флоу діаграмами; вкладка «Огляд» — це тур
 ```
 
-`keylang tour --out keylang/tour.md` зберігає сторінку як згенерований файл, який `check` не читає; `--json` дає ті самі дані, агенти отримують їх через інструмент MCP `project_tour`. Докладно — [`docs/cli.md`](docs/cli.md#tour).
+`keylang tour --out keylang/tour.md` зберігає сторінку як згенерований файл, який `check` не читає; `--json` дає ті самі дані, агенти отримують їх через інструмент MCP `project_tour`. `keylang flows adopt <назва>` робить з одного знайденого флоу пропозицію специфікації. Докладно — [`docs/cli.md`](docs/cli.md#tour).
+
+Флоу можуть і вийти з keylang, і повернутися: `keylang export bpmn <флоу>` пише BPMN 2.0 з діаграмою, `keylang export drawio <вид>` — файл draw.io, а `keylang import drawio <файл>` перетворює змінений малюнок на одну пропозицію ([`docs/cli.md`](docs/cli.md#export-bpmn)). Коли систему переносять на інший стек, `keylang flow export` пакує її бізнес-флоу в один Markdown-файл, `keylang flow import` пропонує їх у новому репозиторії як кроки `planned`, а `keylang migration status` порівнює кожен старий флоу з його відповідником: кроки й ті самі тести, що проходять з обох боків ([`docs/cli.md`](docs/cli.md#migration)).
+
+## Мови й фреймворки
+
+keylang читає TypeScript, JavaScript, Python, Rust і PHP. Адаптер фреймворку перетворює на факти те, що фреймворк виконує зі своєї конфігурації: прив'язки залежностей, маршрути, події та їхні observers, cron-задачі й консюмери черг. Адаптери є для Magento, Salesforce Commerce Cloud (SFRA) і PWA Kit, Laravel, Symfony, NestJS, Django, FastAPI, Flask, Celery, Express, Fastify і Next.js. Кожен вмикається сам, коли маніфести чи код називають його фреймворк, а `frameworks` у `keylang.json` це перевизначає ([`docs/snapshot.md`](docs/snapshot.md)).
 
 ## Чого це коштує
 
@@ -148,10 +164,11 @@ keylang — це структурований список, а не мова п�
 - **M5.** Rust і Python на тому самому графі, з обмеженнями, переліченими вище. Адаптери trace лежать в `adapters/python` і `adapters/rust`, а `keylang trace-plan <flow>` друкує, що саме потрібно інструментувати.
 - **M6.** `# wiring` пише типізований `wire()` у `keylang.gen.ts` ([ADR 0003](docs/adr/0003-wiring-lifecycle.md)).
 - **M7.** `draft`, `code-to-spec`, `spec-to-code` і `explain <id> --llm` не правлять специфікацію напряму, а пишуть пропозиції. Так само `apply_diff` у `keylang mcp` лише записує пропозицію. Голосове введення — за бажанням (`Ctrl+R`). `keylang doctor` повідомляє про проблеми й нічого не змінює.
-- **M8.** `init` і `keylang agents` додають короткий блок в `AGENTS.md`, сервер MCP і skill для Claude Code, Codex, Cursor чи opencode ([ADR 0005](docs/adr/0005-harness-integration.md)). `keylang baseline` пише `keylang/rules.baseline.md` — перелік залежностей між шарами, яких у графі ще немає. `check --changed` і `keylang hook stop` блокують хід агента лише тоді, коли з'являється нове порушення. Усе це покрито тестами CLI і MCP, але наскрізно з Claude Code і Codex на сторонньому репозиторії ще не перевірялося.
+- **M8.** `init` і `keylang agents` додають короткий блок в `AGENTS.md`, сервер MCP і skill для Claude Code, Codex, Cursor чи opencode ([ADR 0005](docs/adr/0005-harness-integration.md)). `keylang baseline` пише `keylang/rules.baseline.md` — перелік залежностей між шарами, яких у графі ще немає. `check --changed` і `keylang hook stop` блокують хід агента лише тоді, коли з'являється нове порушення або специфікацію послаблено від останнього коміту (K108: знятий `deny` чи крок, новий `allow`, ширший `exclude` у `keylang.json`). Усе це покрито тестами CLI і MCP, але наскрізно з Claude Code і Codex на сторонньому репозиторії ще не перевірялося.
 - **PHP.** Класи, функції, `use` і виклики на тому самому графі ([ADR 0015](docs/adr/0015-php-imports-name-declarations.md)). Пакети composer позначаються як `external.*`, а вбудовані функції й класи самого PHP вузлами взагалі не стають. `spec-to-code` пише заготовку PHP разом із тестом PHPUnit, що поки падає, а в `adapters/php` лежать адаптер trace і розширення PHPUnit.
+- **Бізнес-флоу.** Точки входу (`keylang entries`), знайдений флоу для кожної точки входу й бізнес-процеси, які називає модель (`flows discover`, `flows adopt`), представлення `coverage`, `integrations` і `tour`, а також адаптери фреймворків вище ([ADR 0022](docs/adr/0022-framework-facts.md)). У потоках з'явилися групи `parallel`, тригери з видом (`trigger route|cron|consumer|webhook|event`), `continues`, таймери `after` і `every` та `emits event`, який перевіряється проти коду ([ADR 0023](docs/adr/0023-async-flows.md)). Сторінка діаграм і її редактор ([ADR 0024](docs/adr/0024-diagram-editor.md)), експорт у BPMN і draw.io, імпорт з draw.io, пакети флоу й паритет міграції. Trace може йти за одним справжнім запитом: `keylang trace-plan --entry <id>` інструментує те, до чого доходить точка входу, а `draft flow --from-trace` пропонує флоу з того, що побачив запуск ([`docs/cli.md`](docs/cli.md#trace-requests)).
 
-`bench/` запускає інструмент на восьми репозиторіях, а отримані числа зібрано в [`bench/results.md`](bench/results.md).
+`bench/` запускає інструмент на восьми репозиторіях, а отримані числа зібрано в [`bench/results.md`](bench/results.md); `bench/magento/` міряє адаптер PHP на Magento 2.4.9.
 
 ## Тести
 
@@ -160,6 +177,6 @@ npm test            # node:test, через справжній CLI
 npm run typecheck   # tsc --noEmit
 ```
 
-Інтерфейс у терміналі тестується без справжнього термінала (`tests/tui-*.test.ts`), а `keylang web` — через CLI і WebSocket (`tests/web.test.ts`).
+Інтерфейс у терміналі тестується без справжнього термінала (`tests/tui-*.test.ts`), а `keylang web` — через CLI і WebSocket (`tests/web.test.ts`); сторінку діаграм у headless Chromium запускає `npm run test:web` (до `npm test` не входить).
 
 Щоб опублікувати пакет, почніть із чистого клону: виконайте `npm test && npm run typecheck`, далі `npm version patch` (або minor, або major) і `npm publish`. `prepack` сам збере `dist/`. Перед публікацією варто переглянути архів через `npm pack`.

@@ -47,6 +47,8 @@ The screen shows the spec, a gutter with a mark beside each line, a status line,
 | `Tab` | Editor, then the tree, then the file list |
 | `F2` / `F3` | Show or hide the file list / the navigation panel |
 | `F5` | Analyze again |
+| `F6` | The current analysis and the results of operations |
+| `F7` | The chat with the built-in assistant (the paper clip), which proposes spec changes only |
 | `v` | Reading mode; the gutter stays tied to source lines |
 | `i` | Edit; generated maps refuse |
 | `/` then `n` | Search this buffer |
@@ -81,6 +83,22 @@ docker run --rm -v "$PWD":/work keylang check
 
 Inside a container the server has to listen on `0.0.0.0`, so the token is the only guard; `127.0.0.1:` in `-p` keeps the port on your machine. In the printed URL, replace `0.0.0.0` with `localhost`.
 
+## The diagram page
+
+`keylang web` also serves a page of diagrams. The «Діаграми» link at the top right of the terminal page opens it in a new tab with the same token; the page's labels are in Ukrainian.
+
+![The checkout flow on the diagram page, a step selected](images/diagrams-flow.png)
+
+The list on the left holds the flows, the discovered flows, the entry points and the layer view. The canvas draws the chosen view as BPMN-style shapes, one lane per layer, colored by the same verdicts as the gutter. The panel on the right shows the selected shape's id, its place in the code and in the spec, and its `check` results. Four modes sit above the list: Diagrams (Діаграми); Explorer (Дослідник), an entry point's call tree from which you can save a flow as a proposal; Blind spots (Сліпі зони), the `keylang coverage` report; and Editor (Редактор).
+
+![The editor: a planned step added to the checkout flow](images/diagrams-editor.png)
+
+In the editor, a view taken from the code (з коду) lets you change only its layout, while a draft (чернетка) is fully editable. You drag a layer, a step, a trigger, a `when`, a `parallel`, an event or a timer from the palette, and connect shapes with a meaning: sequence, call, dependency, `allow`, `deny`, `emits` or `continues`. A new shape gets a `planned:` id. `Ctrl+Z` and `Ctrl+Y` undo and redo, SVG and PNG export the picture in the browser, and `Ctrl+C` / `Ctrl+V` copy shapes between tabs, even between two `keylang web` servers, as a `flow export` bundle. The layout goes to `keylang/diagrams/<view>.layout.json`, which you commit so the team sees the same picture. «Запропонувати зміни» (propose changes) turns the drawing into proposals for the specs it changes, as `keylang diagram propose` does. Nothing on the page writes a spec directly.
+
+`keylang web --new <dir>` starts a project from a drawing. It opens the editor on an empty canvas with a template of lanes, and the button «Створити специфікацію» writes `keylang.json`, `rules.md`, the features and the layout, but only the files that do not exist yet. The [from-scratch track](from-scratch/README.md) walks through it.
+
+The same views also leave the browser as files. `keylang export bpmn <flow>` writes BPMN 2.0, `keylang export drawio <view>` a draw.io file, and `keylang export c4` a C4 diagram for PlantUML or Mermaid. `keylang import drawio <file>` reads a drawing someone changed in draw.io back as one proposal for the flow's spec. `keylang flow export <name>` packs flows into one portable Markdown bundle; in another repository, `keylang flow import` proposes them as a feature on `planned` nodes, plus rows of `keylang/migration.md`, and `keylang migration status` then reports, flow by flow, whether the new stack has the counterpart and whether the same tests pass in both.
+
 `keylang lsp` serves the same diagnostics over stdio. The client in `editors/vscode/` is a thin wrapper around it; it is not published in the Marketplace and is not part of the npm package.
 
 ## Agents
@@ -89,7 +107,7 @@ keylang does not launch an agent. Instead, `init` and `keylang agents` write a s
 
 A feature file is an ordinary spec. `keylang feature <slug>` reports the feature as done when every `planned` item is implemented, every step is static `ok`, and no rule `fail` remains. Tests and traces are shown, but they do not block it.
 
-For Claude and Codex, keylang also installs a Stop hook, which runs when the agent is about to finish. `keylang hook stop` runs the check on what changed. If a new `fail` appeared, it answers `decision: block`, so the agent has to keep working. If there is no new `fail`, or the same event arrives again with `stop_hook_active: true`, it answers `{}`. Either answer is JSON with exit code 0. An unverified line does not block. Cursor uses Claude's hooks, while opencode does not get a Stop hook at all.
+For Claude and Codex, keylang also installs a Stop hook, which runs when the agent is about to finish. `keylang hook stop` runs the check on what changed. If a new `fail` appeared, or the spec was weakened since `HEAD` (K108), it answers `decision: block`, so the agent has to keep working. If there is no new `fail`, or the same event arrives again with `stop_hook_active: true`, it answers `{}`. Either answer is JSON with exit code 0. When it cannot check the turn at all (no git, a broken `keylang.json`), it answers with a `systemMessage` that the harness shows to you without blocking the agent. An unverified line does not block. Cursor uses Claude's hooks, while opencode does not get a Stop hook at all.
 
 Hand-written rules change only through a proposal. `apply_diff` stores the new text and leaves the file itself untouched until you merge it, and it refuses to touch a generated file.
 
@@ -100,13 +118,16 @@ Hand-written rules change only through a proposal. `apply_diff` stores the new t
 | `draft map` | Nothing; it only prints a layout | The file changes only when you edit it |
 | `code-to-spec <file:line>` | Flows for the function, or for every exported function | `--since <git-ref>` limits the draft to functions the diff touches |
 | `spec-to-code <id>` | A stub and failing tests for a `planned fn` | Files are written only with `--apply`, not by default |
+| `draft flow --from-trace <file>` | A flow from what one trace run observed | Steps static does not see are marked as observed, not proved |
+| `flows adopt <name>` | A discovered flow as a spec | `flows discover` itself writes only the generated view |
+| `diagram propose`, `import drawio` | The changes of a drawing, one proposal per spec | New layers for `keylang.json` are only printed |
 | `explain <id> --llm` | `keylang/explain/<id>.md` | It never changes a verdict |
 
-`keylang mcp` serves search, node, code, flows, check, explain, context, `validate_spec`, `scaffold`, `feature_status`, and `apply_diff`. Of these, only `apply_diff` writes anything, and what it writes is only a proposal.
+`keylang mcp` serves search, node, code, flows, check, explain, context, `validate_spec`, `scaffold`, `feature_status`, `list_entries`, `discover_flows`, `coverage_report`, `list_integrations`, `project_tour`, `migration_status`, and `apply_diff`. Of these, only `apply_diff` writes anything, and what it writes is only a proposal.
 
-In the UI, `m` opens the diff. `a` accepts a hunk, `r` rejects it, and `w` writes the accepted hunks. A hunk you have not decided on is not applied.
+In the UI, `m` opens the diff. `a` accepts a hunk, `r` rejects it, and `w` writes the accepted hunks. A hunk you have not decided on is not applied. Outside the UI, `keylang proposals` lists what is pending, `proposals show <target>` prints the diff, and `proposals accept` or `proposals reject` settle it. Accepting is for a person, never for an agent.
 
-In view mode, `Ctrl+Space` on a flow that has a trigger asks the model for a draft and opens the merge. This needs `agent` to be set in `keylang.json`. After you merge, `check` evaluates the new steps like any other steps, so a line the snapshot does not support becomes `unverified` or `fail`, never `ok`.
+In view mode, `Ctrl+Space` on a flow that has a trigger asks the model for a draft and opens the merge. This needs a model: `agent` in `keylang.json`, or `KEYLANG_AGENT`, as in [lesson 2](02-install-and-check.md). After you merge, `check` evaluates the new steps like any other steps, so a line the snapshot does not support becomes `unverified` or `fail`, never `ok`.
 
 Ghost text is a single suggested line at the end of a fresh `- ` bullet, and `Tab` inserts it. Voice input (`Ctrl+R` while editing) is optional, and `keylang doctor` tells you which engine is set. Neither of them writes a file on its own.
 

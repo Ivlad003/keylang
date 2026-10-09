@@ -33,7 +33,44 @@ Here `/` finds `cli.cli.main`, and on the line below it `K` opens the function. 
 
 `kind` is either `business` or `technical`; it is only a label, and nothing checks it. The trigger is where the scenario starts. A step nested under another step is a call made inside that parent, while sibling steps read as "this, then that." A step written next to the trigger counts as nested under the trigger.
 
-`reads` and `emits` are claims attached to a step, but `emits` is not resolved against the map. `invariant` and `when` are plain prose. `then` is a reference when it is a single dotted id and prose otherwise. `test` binds a file and a quoted test name to the claim it sits under, so that test becomes the evidence for that claim.
+`reads` and `emits` are claims attached to a step, but `emits` with a plain name such as `order.created` is not resolved against the map. `invariant` and `when` are plain prose. `then` is a reference when it is a single dotted id and prose otherwise. `test` binds a file and a quoted test name to the claim it sits under, so that test becomes the evidence for that claim.
+
+## Routes, webhooks, timers and parallel steps
+
+A request, a cron job and a webhook each start their own run, so each gets its own flow. The trigger can say what kind of entry point it is, and `continues` ties together the flows of one business process:
+
+```markdown
+# flow place-order
+
+- trigger route application.purchase.buy
+- step domain.orderAggregate.create
+- parallel
+  - step infrastructure.orderStore.save
+  - step infrastructure.mailer.confirm
+- ? who is told when the mailer is down?
+
+# flow payment-confirmed
+
+- continues place-order
+- trigger webhook infrastructure.payments.confirmed
+- step application.purchase.markPaid
+
+# flow cancel-unpaid
+
+- continues place-order
+- trigger cron application.purchase.cancelUnpaid
+- every @hourly
+- step application.purchase.cancel
+  - after 1h
+    - test tests/cancel.test.ts "cancels an order unpaid for an hour"
+```
+
+- `trigger route|cron|consumer|webhook <id>` names the entry point's function, not its URL. `check` compares the kind with what `keylang entries` found: a match is `ok` and names the route or the schedule, a function the snapshot records only as another kind is K205, and without an adapter for the framework the answer is `unverified`.
+- `parallel` groups steps that must all happen, in any order; the next sibling comes after the whole group. A `parallel` with no `step` is K009.
+- `continues <flow>` says that this flow carries on another one in a later request. A flow that does not exist is K206. One trace run is one request, so a trace cannot prove the link and stays `unverified` there.
+- `after 1h` and `every @hourly` are timers. Only a nested `test` proves them, and `every` is also compared with the schedule of the cron entry point.
+- `emits event events.order_placed` and `trigger event events.order_placed` name an event from the map's `events` group. For `emits`, `check` looks for a `dispatch` of that event in the code the step reaches; under `trigger event`, the steps are checked from the event's subscribers. An unknown event is K204.
+- `? <text>` records an open question. It is not a claim, so it gets no verdict.
 
 ## Four evidence lines
 
@@ -80,18 +117,33 @@ The trace is JSONL, with one event per line. `start` and `end` events nest by `p
 | TypeScript / JavaScript | `node --import keylang/trace script`. By convention here, the test's name contains `@flow <name>` |
 | Python | `python3 adapters/python/keylang_trace.py script`, with `KEYLANG_TRACE_PLAN` pointing at the output of `keylang trace-plan <flow>` |
 | Rust | `mod keylang_trace` from `adapters/rust/keylang_trace.rs`, a `span("<id>")` in the function, and `finish()` at the end of `main`. A step without instrumentation stays `unverified` |
+| PHP | `php adapters/php/keylang_trace.php script`, with the same variables as Python; `adapters/php/keylang_phpunit.php` writes a test report for PHPUnit |
 
 `keylang trace-plan checkout` prints the functions to instrument, along with file hashes. A file that changes after the plan was made is not instrumented, and the next `check` calls the trace stale because `snapshotId` has moved.
+
+A run does not have to be a test. A request to an instrumented server that names its flow in the `X-Keylang-Flow` header, or a process started with `KEYLANG_FLOW`, is recorded the same way. Before a flow exists, `keylang trace-plan --entry <id>` plans the functions an entry point reaches, and `keylang draft flow --from-trace <file.jsonl>` turns what one run observed into a proposed flow.
 
 ## `planned`
 
 A step that names a `planned fn` is not K001. Instead, `ID` and `static` are `unverified` with the reason `planned`. When the symbol appears with the same kind and signature (spaces are ignored, and `->` and `→` count as the same), the declaration warns with K202 to tell you it can go. If the signature does not match, it is K201.
 
-The same declaration can also live in `keylang/features/<slug>.md`. `keylang feature <slug>` is done when every `planned` there is implemented, every step is static `ok`, and no rule `fail` remains, including those from the baseline. Tests and traces are printed too, but they do not decide that answer.
+The same declaration can also live in `keylang/features/<slug>.md`. `keylang feature <slug>` is done when every `planned` there is implemented, every step is static `ok`, no rule `fail` remains, including those from the baseline, no open `?` question is left, and the plan was not weakened since the branch began. Tests and traces are printed too, but they do not decide that answer.
 
 A package nobody imports yet is written as `planned module external.<pkg>`, together with a step from the module that will import it. Until that module imports it, the step stays `unverified`. Once it does, the declaration gives K202 and the step becomes static `ok`.
 
 `spec-to-code <id>` proposes a stub that throws `not implemented`, plus a failing test for each missing test file the flows name. After you accept them, the id check can pass, and K202 suggests deleting `planned`. The tests, however, stay `fail` until the agent writes the real function and the real test from the same spec, because the stub is not the feature.
+
+## Flows you did not write
+
+On a codebase with hundreds of entry points, you do not start by writing every flow by hand. `keylang flows discover` writes a draft flow for every entry point to `keylang/flows-discovered/<layer>.md`, with a description taken from the doc comments. That is a generated view: `check` does not read it, and an entry point that already has a hand-written flow is skipped. When a draft is worth keeping, adopt it:
+
+```sh
+keylang flows discover
+keylang flows adopt main
+keylang proposals accept keylang/flows/main.md
+```
+
+`flows adopt` writes a proposal under `.keylang/proposals/`. You merge it with `m` in the UI, or a person accepts it with `keylang proposals accept`, and from then on it is an ordinary flow that `check` evaluates. `flows discover --names` also asks the configured model to group the drafts into business processes; without a model it stays offline.
 
 ## The mark on the line
 

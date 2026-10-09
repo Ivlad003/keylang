@@ -36,6 +36,9 @@ You need Node.js ≥ 22.18. Inside a clone of this repository, `node bin/keylang
 | `keylang/rules.md` | you | Who may depend on whom: `layers`, `allow`, `deny`, `entry`, `exports`, `no-cycles` |
 | `keylang/flows/*.md` | you | One scenario per file. Each step reports `ID`, `static`, `tests` and `trace` separately |
 | `keylang/features/*.md` | you | What to build next. `keylang feature <slug>` tells you when it is done |
+| `keylang/flows-discovered/` | `keylang flows discover` | A flow draft per entry point. A generated view that `check` does not read |
+| `keylang/diagrams/*.layout.json` | the diagram editor | Where the shapes of a diagram stand. Committed, so the team sees the same picture; `check` does not read it |
+| `keylang/migration.md` | you, or `keylang flow import` | Which id of the old stack became which id here, when moving between stacks |
 | `.keylang/proposals/` | an agent | A draft change to the spec, which a person merges piece by piece |
 | the program | an agent | The functions, generated from the spec. You do not write them, and keylang does not start the agent |
 
@@ -58,7 +61,7 @@ It is just as important to know what keylang does not do: it does not decide whe
 - A sentence written under a node is prose. keylang keeps it, but does not prove it.
 - A call keylang cannot name statically (`obj[k]()`, an unknown decorator, `eval`) is a hole, so the answer for it stays `unverified`.
 - For Rust and Python, keylang records imports and calls, but not type edges.
-- For PHP, it records imports, calls and the types from type hints. A call through an interface, or a trait's method called through `$this`, is still a hole.
+- For PHP, it records imports, calls and the types from type hints and docblocks. A call through an interface is still a hole, unless a framework adapter names the implementation (a Magento `<preference>`, a Laravel or Symfony binding).
 - Wiring generates a TypeScript `wire()` function, but it does not stop the rest of the program from importing whatever it wants. Catching that is still the job of the rules.
 - keylang reads test reports and traces that already exist. It does not run the tests, typecheck the code or review security.
 - Go, Java, Ruby and other languages are simply absent from the snapshot. That absence does not prove they depend on nothing.
@@ -71,6 +74,7 @@ npx keylang check       # ids and rules under keylang/
 npm i -g keylang        # then just `keylang …`
 npx keylang clone https://github.com/owner/repo   # someone else's repo: clone into the cache, map it
 npx keylang web https://github.com/owner/repo     # the same, then the UI in a browser
+npx keylang web --new shop                         # a new project from a diagram, in a browser
 ```
 
 From a clone of this repository:
@@ -86,7 +90,7 @@ node bin/keylang.js                      # terminal UI (? lists keys, q quits)
 node bin/keylang.js web                  # the same UI in a browser; open the printed URL
 ```
 
-`keylang web` also serves a diagram page (`/diagrams`, linked from the terminal page): flows, discovered flows and entry points in a searchable list, the chosen one drawn as a BPMN-like diagram with lanes per layer and verdict colours, and a side panel with the clicked step's ID, `file:line` (a `vscode://` link), verdicts and where else the ID is used. It is read-only and refreshes itself every few seconds ([docs/tui.md](docs/tui.md#сторінка-діаграм-diagrams)).
+`keylang web` also serves a diagram page (`/diagrams`, linked from the terminal page): flows, discovered flows, entry points and the layers in a searchable list, the chosen one drawn as a BPMN-like diagram with lanes per layer and verdict colours, and a side panel with the clicked step's ID, `file:line` (a `vscode://` link), verdicts and where else the ID is used. The explorer walks the calls of an entry point before any flow exists, and «Сліпі зони» shows the `coverage` report. The editor tab draws a view the way diagrams.net does, with undo/redo, PNG and SVG export, and copy and paste between tabs and projects. The layout goes to `keylang/diagrams/`, and «Запропонувати зміни» turns the drawing into proposals for the specs rather than editing them. `keylang web --new <dir>` starts a new project from an empty canvas ([docs/tui.md](docs/tui.md#сторінка-діаграм-diagrams)).
 
 ![The diagram page of keylang web: the checkout flow, a selected step and its panel](docs/course/images/diagrams-flow.png)
 
@@ -116,16 +120,24 @@ You will find more pictures in [lesson 8 of the course](docs/course/08-use-cases
 
 ## Diving into someone else's project
 
-Four commands, no model, nothing written but generated views:
+A few commands, no model, nothing written but generated views and the local cache:
 
 ```sh
-keylang entries          # where execution starts: routes, bin scripts, main
+keylang entries          # where execution starts: routes, cron, consumers, observers, bin scripts, main
 keylang flows discover   # a flow draft per entry point, in keylang/flows-discovered/
+keylang coverage         # blind spots: what no entry point reaches, holes by module, logic in data
+keylang integrations     # what the code talks to: HTTP, SOAP, SDK and queue clients, webhooks
 keylang tour             # one page: the system, layers, processes, integrations, blind spots, what to read first
 keylang web              # the same flows as diagrams; the «Огляд» tab is the tour
 ```
 
-`keylang tour --out keylang/tour.md` saves the page as a generated file that `check` does not read; `--json` gives the same data, and agents get it through the MCP tool `project_tour`. See [`docs/cli.md`](docs/cli.md#tour).
+`keylang tour --out keylang/tour.md` saves the page as a generated file that `check` does not read; `--json` gives the same data, and agents get it through the MCP tool `project_tour`. `keylang flows adopt <name>` turns one discovered flow into a proposed spec. See [`docs/cli.md`](docs/cli.md#tour).
+
+Flows can also leave keylang and come back: `keylang export bpmn <flow>` writes BPMN 2.0 with its diagram, `keylang export drawio <view>` a draw.io file, and `keylang import drawio <file>` turns an edited drawing into one proposal ([`docs/cli.md`](docs/cli.md#export-bpmn)). When a system moves to another stack, `keylang flow export` packs its business flows into one Markdown file, `keylang flow import` proposes them in the new repository as `planned` steps, and `keylang migration status` compares every old flow with its counterpart: the steps and the same tests passing on both sides ([`docs/cli.md`](docs/cli.md#migration)).
+
+## Languages and frameworks
+
+keylang reads TypeScript, JavaScript, Python, Rust and PHP. A framework adapter turns what the framework runs from its configuration into facts: dependency bindings, routes, events and their observers, cron jobs and queue consumers. There are adapters for Magento, Salesforce Commerce Cloud (SFRA) and PWA Kit, Laravel, Symfony, NestJS, Django, FastAPI, Flask, Celery, Express, Fastify and Next.js. Each one switches on by itself when the manifests or the code name its framework, and `frameworks` in `keylang.json` overrides that ([`docs/snapshot.md`](docs/snapshot.md)).
 
 ## What it costs
 
@@ -152,10 +164,11 @@ Below is the short list of milestones; the details are in [`docs/design.md`](doc
 - **M5.** Rust and Python on the same graph, with the limits listed above. Trace adapters live in `adapters/python` and `adapters/rust`, and `keylang trace-plan <flow>` prints what to instrument.
 - **M6.** `# wiring` writes a typed `wire()` in `keylang.gen.ts` ([ADR 0003](docs/adr/0003-wiring-lifecycle.md)).
 - **M7.** `draft`, `code-to-spec`, `spec-to-code` and `explain <id> --llm` write proposals rather than editing the spec directly. Likewise, `apply_diff` in `keylang mcp` only writes a proposal. Voice input is optional (`Ctrl+R`). `keylang doctor` reports problems and changes nothing.
-- **M8.** `init` and `keylang agents` install a short block in `AGENTS.md`, the MCP server and a skill for Claude Code, Codex, Cursor or opencode ([ADR 0005](docs/adr/0005-harness-integration.md)). `keylang baseline` writes `keylang/rules.baseline.md`, which lists the layer dependencies the graph does not have yet. `check --changed` and `keylang hook stop` block an agent's turn only when a new violation appears. All of this is covered by the CLI and MCP tests, but it has not yet been tried end to end with Claude Code and Codex on an outside repository.
+- **M8.** `init` and `keylang agents` install a short block in `AGENTS.md`, the MCP server and a skill for Claude Code, Codex, Cursor or opencode ([ADR 0005](docs/adr/0005-harness-integration.md)). `keylang baseline` writes `keylang/rules.baseline.md`, which lists the layer dependencies the graph does not have yet. `check --changed` and `keylang hook stop` block an agent's turn only when a new violation appears, or when the spec was weakened since the last commit (K108: a removed `deny` or step, a new `allow`, a wider `exclude` in `keylang.json`). All of this is covered by the CLI and MCP tests, but it has not yet been tried end to end with Claude Code and Codex on an outside repository.
 - **PHP.** Classes, functions, `use` and calls on the same graph ([ADR 0015](docs/adr/0015-php-imports-name-declarations.md)). Composer packages appear as `external.*`, while PHP's own built-in functions and classes do not become nodes at all. `spec-to-code` writes a PHP stub together with a failing PHPUnit test, and `adapters/php` holds a trace adapter and a PHPUnit extension.
+- **Business flows.** Entry points (`keylang entries`), a discovered flow per entry point and business processes named by the model (`flows discover`, `flows adopt`), the `coverage`, `integrations` and `tour` views, and the framework adapters above ([ADR 0022](docs/adr/0022-framework-facts.md)). Flows gained `parallel` groups, typed triggers (`trigger route|cron|consumer|webhook|event`), `continues`, the timers `after` and `every`, and an `emits event` that is checked against the code ([ADR 0023](docs/adr/0023-async-flows.md)). The diagram page and its editor ([ADR 0024](docs/adr/0024-diagram-editor.md)), BPMN and draw.io export, draw.io import, flow bundles and migration parity. A trace can follow one real request: `keylang trace-plan --entry <id>` instruments what an entry point reaches, and `draft flow --from-trace` proposes a flow from what a run observed ([`docs/cli.md`](docs/cli.md#trace-requests)).
 
-`bench/` runs the tool on eight repositories, and the resulting numbers are in [`bench/results.md`](bench/results.md).
+`bench/` runs the tool on eight repositories, and the resulting numbers are in [`bench/results.md`](bench/results.md); `bench/magento/` measures the PHP adapter on Magento 2.4.9.
 
 ## Tests
 

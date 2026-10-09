@@ -4,7 +4,7 @@
 
 A keylang file is an ordinary Markdown file with a small extra grammar on top. GitHub renders it as headings, lists and paragraphs, while the parser reads the same bytes under stricter rules. Once the file has been through `fmt`, what GitHub shows you and what `check` believes about it are the same thing.
 
-This lesson gives you enough to write a map, a rules file and a flow. Together they are the spec: the part you write. The functions themselves are the agent's job, so you do not write them. The full keyword table lives in [`docs/format.md`](../format.md).
+This lesson gives you enough to write a map, a rules file and a flow. Together they are the spec: the part you write. The functions themselves are the agent's job, so you do not write them. The full keyword table lives in [`docs/grammar.md`](../grammar.md), §5.
 
 ## Lines
 
@@ -23,16 +23,17 @@ The parser looks at each line and tries these cases in order, taking the first o
 
 `##` headings, tables, quotes and numbered lists all count as prose. `fmt` keeps them where they are, but they declare nothing, so you can use them freely to explain things to a human reader.
 
-A heading is `#`, a space and a kind, and for a flow it is followed by the flow's name:
+A heading is `#`, a space and a kind, and for a flow or a migration table it is followed by a name:
 
 ```markdown
 # map
 # rules
 # flow checkout
 # wiring
+# migration shop-v2
 ```
 
-An unknown heading such as `# Shop` gives warning K006, and the section under it is read as a map. Extra words after `# rules` or `# map` are K005, and so is `# flow` without a name. Two flows with the same name are K002.
+An unknown heading such as `# Shop` gives warning K006, and the section under it is read as a map. Extra words after `# rules`, `# map` or `# wiring` are K005, and so is `# flow` or `# migration` without a name. Two flows with the same name are K002.
 
 ## Indent and ids
 
@@ -65,12 +66,15 @@ The first word on a line is treated as a keyword only where its position allows 
 |---|---|---|
 | Top of a map | `layer`, `layers`, `allow`, `deny`, `entry`, `module`, `no-cycles` | A bare name is a layer, so the slides still parse |
 | Top of rules | `layers`, `allow`, `deny`, `entry`, `module`, `no-cycles` | K004, because rules do not declare layers |
-| Top of a flow | `kind`, `trigger`, `step`, `reads`, `emits`, `calls`, `invariant`, `when`, `test`, `planned` | K004 |
+| Top of a flow | `kind`, `trigger`, `continues`, `step`, `parallel`, `reads`, `emits`, `calls`, `invariant`, `when`, `after`, `every`, `test`, `planned`, `?` | K004 |
 | Top of wiring | `wire` | K004 |
+| Top of migration | `map`, `dropped` | K004 |
 | Under a layer | `module` | A bare name is a module |
 | Under a map module | `module`, `fn`, `type`, `event` | `<alias> <id>`, a dependency |
 | Under a function | `calls` | K004 |
-| Under a flow step or trigger | `step`, `reads`, `emits`, `calls`, `when`, `test`, `invariant` | K004 |
+| Under a flow step or trigger | `step`, `parallel`, `reads`, `emits`, `calls`, `when`, `after`, `every`, `test`, `invariant`, `?` | K004 |
+| Under `when` in a flow | `then`, `step`, `parallel`, `test`, `?` | K004 |
+| Under `parallel` | `step` | K004 |
 | Under a rules `module <id>` | `exports`, `no-cycles` | K004 |
 
 So `test` under a module is just a nickname for a dependency, because `test` is reserved only inside flows. The words `fn`, `type`, `event` and `module`, on the other hand, are keywords under a module, so you cannot use them as a dependency's name.
@@ -150,7 +154,7 @@ Purchase from the terminal, through to a stored order.
   - test tests/purchase.test.ts "rejects out of stock"
 ```
 
-`kind` is either `business` or `technical`. `trigger` and `step` take exactly one id, while `reads` and `calls` take one or more. `emits` takes an event name; the optional word `event` in front of it is not checked against the map. `invariant` and `when` take free text. `then` is a reference when its only token is an id containing a dot, and plain text otherwise. `test` takes a path and, optionally, a test name in quotes.
+`kind` is either `business` or `technical`. `trigger` and `step` take exactly one id, while `reads` and `calls` take one or more; `trigger` may name the kind of entry point first (`route`, `cron`, `consumer`, `webhook`, `event`), as [lesson 6](06-flows.md) shows. `emits` takes an event name; the optional word `event` in front of it is not checked against the map, and a plain name such as `order.created` is prose. Only a name from the map's `events` group (`events.order_placed`) is checked. `? <text>` is an open question, not a claim: `check` ignores it, but a feature with an open question is not done. `invariant` and `when` take free text. `then` is a reference when its only token is an id containing a dot, and plain text otherwise. `test` takes a path and, optionally, a test name in quotes.
 
 `planned` declares an intention rather than a fact from the snapshot:
 
@@ -169,7 +173,8 @@ It can live at the top of a flow or in `keylang/features/<slug>.md`. A reference
 | K003 | error | A bad indent, a tab, or an empty item. `fmt` stops |
 | K004 | error | A keyword this position does not allow |
 | K005 | error | A known keyword with wrong arguments |
-| K006 | warning | A heading that is not `map`, `rules`, `flow` or `wiring` |
+| K006 | warning | A heading that is not `map`, `rules`, `flow`, `wiring` or `migration` |
+| K009 | error | A `parallel` with no `step` under it (from `check`, not `parse`) |
 
 When a declared id is close to the one you wrote, K001 adds `did you mean …`, and when the id might be an intention it mentions `planned`. Warnings do not make `check` fail.
 

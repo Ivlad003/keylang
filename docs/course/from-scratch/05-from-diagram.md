@@ -17,11 +17,13 @@ Draw a process the way lesson 1 describes the four jobs:
 3. Give a step its signature and its tests in the panel, such as `(cart: Cart) => Order` and `test tests/place.test.ts "refuses an empty cart"`.
 4. A `deny` line between two lanes is a rule; so is `allow`.
 
+The editor keeps the shortcuts of diagrams.net: `Ctrl+Z` undoes, `Ctrl+Y` redoes, and `Ctrl+C`/`Ctrl+V` copy shapes, also into another `keylang web` tab. The «SVG» and «PNG» buttons save the canvas as a picture.
+
 Pick the languages, write the idea in one or two sentences, and press «Створити специфікацію». You get:
 
 - `keylang.json`, with one `src/<layer>/**` glob per lane, plus an empty `src/<layer>/` folder for each;
 - `keylang/rules.md`, with `- layers domain < infrastructure < application < presentation` in lane order and the drawn `deny`/`allow` lines;
-- `keylang/features/placeOrder.md`, which holds the flow plus a `- planned fn …` line for every shape, because none of that code exists yet;
+- `keylang/features/placeOrder.md`, which holds the flow plus a `- planned fn …` line for every shape, because none of that code exists yet (shapes no trigger reaches go to `keylang/features/structure.md`);
 - `keylang/README.md`, with the idea as a quote, and the layout of the drawing in `keylang/diagrams/`.
 
 If a file is already there, nothing is written and the panel tells you which one. A project that already has `keylang.json` has no «Новий проєкт» button, and a drawing there becomes proposals instead.
@@ -36,5 +38,7 @@ npx keylang feature placeOrder
 ```
 
 `check` exits 0 right away: each step is `unverified`, with the note «planned fn, not implemented». `feature` lists every planned line until the agent writes the code. Open `keylang web` again and pick the flow under «Діаграми». Its shapes are planned ◇ at first. After the agent writes code and you run `keylang map`, each turns into ✓, or ✗ if a step's route is broken.
+
+The drawing is not locked in the browser. `npx keylang export drawio placeOrder --out place.drawio` and `npx keylang export bpmn placeOrder --out place.bpmn` hand the same diagram to draw.io or a BPMN tool. A shape renamed or added in draw.io comes back with `npx keylang import drawio place.drawio`, as one proposal for the spec that you accept or reject.
 
 Back to the [course](../README.md).

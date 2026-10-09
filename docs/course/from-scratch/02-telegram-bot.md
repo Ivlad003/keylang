@@ -61,12 +61,13 @@ import { Telegraf } from "telegraf";
 export function onStart(text: string): void {
   add(text);
 }
+const bot = new Telegraf(process.env.BOT_TOKEN ?? "");
 bot.start((ctx) => onStart(ctx.message.text));
 ```
 
 keylang can see `onStart` calling `add`. It often cannot see the library calling `onStart`, and it does not need to: the trigger has no parent in the flow, so nothing has to be seen calling it. The step under it does have a parent, and that call is the one keylang must see.
 
-A handler that only exists as `bot.start(() => add(...))`, or only as a decorator, is a hole: the step stays `unverified`, and `feature` does not report done.
+A handler that only exists as `bot.start(() => add(...))` is a hole: an arrow function has no id to name as the trigger, the step stays `unverified`, and `feature` does not report done. A decorated handler, such as aiogram's `@router.message(...)`, is fine as the trigger, because nothing has to be seen calling it.
 
 ```sh
 npx keylang spec-to-code application.note.add

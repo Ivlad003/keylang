@@ -78,5 +78,6 @@ A run can finish with exit code 0 while some claims are still `unverified`. Exit
 | Baseline | The deny frame `init` writes from today's dependencies. A later import across a gap fails until you allow it or regenerate |
 | Feature | A file you write that says when a piece of work is done. The agent generates the functions |
 | Explained map | The same map with a short note under each node. The check does not read it |
+| Discovered flow | A draft flow the tool writes from one starting point of the code. The check does not read it until a person adopts it as a flow |
 
 Next: [the principles](03-principles.md).

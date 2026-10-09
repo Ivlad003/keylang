@@ -35,7 +35,15 @@ npx keylang feature pay
 
 Done means three things: the import exists, `charge` exists with that signature, and the body of `buy` reaches `charge` through a call keylang can see. The agent writes `charge` from the planned line; you do not. If `charge` is a `planned fn` in TypeScript, `spec-to-code` can stub it, but it will not add the `stripe` dependency to `package.json`, so you install the package yourself.
 
-A call written as `obj[k]()`, or hidden behind a decorator keylang does not know, stays `unverified`, and the feature stays open until the agent puts the real call in a plain function.
+A call written as `obj[k]()`, or a step on a function under a Python decorator or a Rust attribute keylang does not know, stays `unverified`, and the feature stays open until the agent puts the real call in a plain function.
+
+To see where the code talks to the outside, run:
+
+```sh
+npx keylang integrations
+```
+
+It lists the calls into known clients (HTTP, SOAP, SDKs such as Stripe, queues) by integration: `file:line`, the function, the host of a literal URL, and the entry points and flows that reach it; then the incoming webhooks and the queue publishers and consumers. It is a view: nothing is contacted, and `check` does not read it. Once the agent writes `charge`, the Stripe call shows up there in `infrastructure.payments`, and a call in any other module is the one to question.
 
 The same shape fits any library, whether it is mail, a queue, or storage: one `planned module external.<pkg>`, one function in `infrastructure` that wraps it, and a `deny` on the package for every layer that must not import it.
 

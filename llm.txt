@@ -17,7 +17,7 @@ keylang is Markdown next to the code. It checks that the code still matches the 
 Two different "agents" exist. Do not mix them up.
 
 - **You** are the external tool (Claude, Codex, Cursor, opencode, or another assistant). You edit the repository with your own tools. keylang talks to you through `AGENTS.md`, a copied skill, MCP, and the CLI.
-- **`agent` in `keylang.json`** is optional. It is only keylang's own model (`anthropic:<model>` or `openrouter:<model>`) for `explain --llm`, `draft`, and ghost text in the terminal UI. You do not need it to install keylang or to write code.
+- **`agent` in `keylang.json`** is optional. It is only keylang's own model (`anthropic:<model>`, `openrouter:<model>`, or `cli:<name>[:<model>]`, an installed agent CLI asked for text only) for `explain --llm`, `draft`, `flows discover --names`, and ghost text in the terminal UI. You do not need it to install keylang or to write code.
 
 ## Install and configure
 
@@ -67,10 +67,12 @@ After install, these rules apply to every task in that repository. keylang check
 - **Find the code.** Read the map first: layer, module, signature, calls. Then MCP `search`, `node`, and `code`. Take ids from `keylang map`.
 - **Keep a boundary in CI.** One `deny` line. `check` looks at imports, calls, type mentions, and re-exports. A confirmed forbidden edge is `fail` (K102) and exit 1. CI runs `check` and `map --check`.
 - **Keep a scenario.** A flow step names an id. The static check looks for a call from the parent step. The trigger is a plain named function.
-- **Framework facts.** With a framework adapter (Magento today, detected from `registration.php`) the config it executes is a fact: `di.xml` preferences and plugins are call edges with `via`; an event is a node `events.<name>` (`events.checkout_submit_all_after`), a literal `dispatch` is an edge to it (`via: dispatch`) and each observer in `events.xml` an edge from it (`via: observer`); a flow `step` may name an event and its observer under it. `keylang entries` lists routes and controllers, REST (`webapi.xml`), GraphQL, cron (label ends with the schedule), queue consumers, console commands and observers; an entry whose class keylang did not read has `unresolved`.
+- **Read an unfamiliar repository.** No model, nothing written but generated views and the fact cache: `keylang entries` (where execution starts), `keylang flows discover` (a flow draft per entry point in `keylang/flows-discovered/`, which `check` does not read; `flows adopt <name>` proposes one as a spec), `keylang coverage` (blind spots), `keylang integrations` (HTTP, SOAP, SDK and queue clients, webhooks), `keylang tour` (one onboarding page). MCP has the same as `list_entries`, `discover_flows`, `coverage_report`, `list_integrations`, `project_tour`.
+- **Framework facts.** Adapters exist for Magento, SFCC (SFRA), PWA Kit, Laravel, Symfony, NestJS, Django, FastAPI, Flask, Celery, Express, Fastify and Next.js; each switches on by itself from the manifests or the code, and `"frameworks"` in keylang.json overrides (details under "Languages and layers"). With the Magento adapter (detected from `registration.php`) the config it executes is a fact: `di.xml` preferences and plugins are call edges with `via`; an event is a node `events.<name>` (`events.checkout_submit_all_after`), a literal `dispatch` is an edge to it (`via: dispatch`) and each observer in `events.xml` an edge from it (`via: observer`); a flow `step` may name an event and its observer under it. `keylang entries` lists routes and controllers, REST (`webapi.xml`), GraphQL, cron (label ends with the schedule), queue consumers, console commands and observers; an entry whose class keylang did not read has `unresolved`.
 - **Async flows.** `- parallel` groups steps that run in any order; `- trigger route|cron|consumer|webhook <id>` names an entry point's fn from `keylang entries` (not a path); `- continues <flow>` links a later request's flow; `- after 30m` / `- every 0 * * * *` are timers a nested `test` checks. Events: `- emits event events.<name>` under a step checks that the step's code dispatches it; `- trigger event events.<name>` is the flow of its subscribers (observers, signal receivers), each step reached from one of them. Event IDs are in `keylang/map/events.md`; a name without `events.` stays prose.
 - **Change a diagram, get proposals.** In `keylang web` → «Редактор», the layout (places, sizes, bends, colours, notes) goes to `keylang/diagrams/<view>.layout.json` (committed, keyed by spec IDs; `check` never reads it); «Запропонувати зміни» turns the drawing into proposals — flow steps, `when`, `parallel`, `emits`, trigger kinds, `continues`, `planned`, `allow`/`deny`/`layers` rules — with the hunks MERGE will show and K108 warnings; `keylang diagram propose <view> --from model.json [--print]` does the same headless. keylang.json layers for a new lane are printed only.
 - **A new project from a diagram.** `keylang web --new <dir>` makes the directory (refused when it has keylang.json) and opens the editor with a template of lanes («4 шари», «hexagonal», «порожньо»); draw lanes, a trigger and its steps (`when`, `parallel`, events, timers, external systems, tests and signatures in the panel) and dependency lines; «Створити специфікацію» (`POST /api/greenfield`) writes keylang.json (a layer per lane, `src/<layer>/**`, the languages picked), `keylang/rules.md` (`layers` in lane order, `allow`/`deny` from lines), `keylang/features/<process>.md` per process with `planned` declarations, `keylang/README.md` with the idea, the layout files and `src/<layer>/.gitkeep` — the only place keylang writes keylang.json, only into a project without one and only files that do not exist (anything in the way: 409, nothing written). Then `keylang agents`, `keylang feature <process>`; the diagram shows planned ◇ → ✓/✗ after `map`. A project with keylang.json gets no «Новий проєкт»: its drawings become proposals.
+- **Trace one real request.** `keylang trace-plan --entry <id>` prints the plan of the fns an entry point reaches, so a trace adapter records a scenario before its flow exists; `keylang draft flow --from-trace <file.jsonl> [--run <runId>]` proposes the flow that run observed (docs/cli.md, "Запити, сценарії й чернетка з trace").
 - **Hand a flow to BPMN or draw.io.** `keylang export bpmn|drawio <flow>` prints BPMN 2.0 (with diagram) or a `.drawio`; `keylang import drawio <file>` turns an edited drawing into one proposal (an unchanged drawing proposes nothing).
 - **Know when a feature is done.** `keylang feature <slug>`: every `planned` in that file is implemented (K202, not K201), every step in that file is static `ok`, and no rule `fail` of this change remains, including the baseline. An older `fail` that touches no file changed since the base commit and no id of the feature (an id it names, or the `<module>.<name>` a K104 is about) is a `hint:` line and does not block. Without git every rule `fail` blocks.
 - **Change a hand-written rule in the open.** `rules.md` and the baseline change only as a proposal the person merges. When the person asks for a feature, you may write `keylang/features/<slug>.md`.
@@ -93,7 +95,7 @@ keylang leaves these jobs to another tool. Do the thing on the right.
 | Index Go, Java, Ruby, and the rest | Indexed languages are a subset of JavaScript, TypeScript, Python, Rust, and PHP. Another language is absent. Absence is not a pass |
 | Inject dependencies at runtime, or isolate modules | `keylang wire` emits one TypeScript file, `keylang.gen.ts`. It does not emit Rust or Python. A hand-written import bypasses `wire()`. The `deny` rules catch that import. `tsc` typechecks the generated file |
 | Start you, install a package, store a token, or scaffold Nest `@Module` / `main.ts` | You do that with your own tools when the person asked. keylang does not |
-| Click through the terminal UI | No subcommand opens a UI for a person at the keyboard. You use the CLI and MCP |
+| Click through the terminal UI | `keylang` and `keylang web` are UIs for a person at the keyboard. You use the CLI and MCP |
 | Quiet a failure by editing the spec in place | Ask, then `apply_diff`. `draft rules` describes what the code already does, or tags the model's lines `agree`, `conflict`, `llm-only`. The person chooses the `deny` |
 | Accept your own proposal | `keylang proposals accept` and `reject` are the person's. You propose. You may list (`proposals`) and print one (`proposals show <path>`) |
 | Call a stub finished | `scaffold` and `spec-to-code` give a signature and a failing test. You write the body. Done is `feature_status` |
@@ -212,7 +214,7 @@ Server name: `keylang`. Only `apply_diff` writes to the repository, and only a p
 | `validate_spec` | Parse text as the file at `path`. Nothing is written |
 | `scaffold` | Stub and failing tests for one `planned fn`. Nothing is written |
 | `feature_status` | `{slug}`. Done or the gaps |
-| `list_entries` | Where execution starts: routes, `bin`, scripts, `main`. Same list as `keylang entries --json` |
+| `list_entries` | Where execution starts: routes, `bin`, scripts, `main`, and a framework's REST, GraphQL, cron, consumers, observers, webhooks, controllers. Same list as `keylang entries --json` |
 | `discover_flows` | A flow draft per entry point, as `keylang flows discover --print`: a generated view, not a spec; `check` ignores it. Nothing is written |
 | `coverage_report` | Blind spots, as `keylang coverage --json`: reach from entry points, orphan fns, holes by module and reason, entries without a flow, logic in data to check by hand. A view; nothing is written |
 | `list_integrations` | What the code talks to, as `keylang integrations --json`: HTTP/SOAP/SDK/queue call sites with host and the entry points that reach them, incoming webhooks, queues. Nothing is written or contacted |
@@ -236,10 +238,10 @@ Proposals wait in `.keylang/proposals/`. `npx -y keylang proposals` lists them a
 ## Exit codes and answers
 
 - `0` — no blocking finding. `unverified` is still allowed, except `map --check` on a stale map, and `check --strict`.
-- `1` — a real break, a feature that is not done, or a stale generated file under `--check`. From `draft`, `code-to-spec` and `spec-to-code`: a file changed while the proposal was prepared, and nothing was written; run it again.
+- `1` — a real break, a feature that is not done, a stale generated file under `--check`, or a failing flow in `migration status`. From `draft`, `code-to-spec` and `spec-to-code`: a file changed while the proposal was prepared, and nothing was written; run it again.
 - `2` — bad invocation or I/O. The message names the file and the field.
 
-On a line: `ok` the claim held where keylang looked, `fail` a break was shown, `unverified` neither. Warnings include K006, K008, K103, K106, K202. A warning is not a failed verdict.
+On a line: `ok` the claim held where keylang looked, `fail` a break was shown, `unverified` neither. Warnings include K006, K008, K103, K106, K202, K203. A warning is not a failed verdict.
 
 A static `fail` ends with the fix: add a call to the step in its parent or in a function the parent reaches; for `calls`, a direct call in the parent. In `check --format json` an unverified rule names its `hole` (`file:line:col`). One hole can leave several rules unverified; the summary then reads `M unverified (from H holes)`. Fix the hole once.
 
@@ -275,7 +277,7 @@ Only if the person wants keylang itself to draft or explain:
 { "agent": "anthropic:<model>" }
 ```
 
-or `"openrouter:<model>"`. The key is `ANTHROPIC_API_KEY` or `OPENROUTER_API_KEY`, otherwise `~/.config/keylang/<provider>.key`. A key file that other users can read is rejected. This setting does not install you and does not replace the steps above.
+or `"openrouter:<model>"`, or `"cli:claude"` (also `codex`, `opencode`, `cursor`) to ask an installed agent CLI for text without an API key. For the first two the key is `ANTHROPIC_API_KEY` or `OPENROUTER_API_KEY`, otherwise `~/.config/keylang/<provider>.key`. A key file that other users can read is rejected. This setting does not install you and does not replace the steps above.
 
 `keylang flows discover --names` groups the discovered flows into business processes (one model request per layer, `--dry-run` for the token estimate) in the generated `keylang/flows-discovered/README.md`; it is a view for people, never a verdict.
 

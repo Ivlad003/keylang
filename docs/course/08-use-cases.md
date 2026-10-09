@@ -2,7 +2,7 @@
 
 [Course](README.md) · **English** · [Українською](uk/08-use-cases.md)
 
-Here are five sessions taken from this repository and from `examples/shop`. In each of them you write the spec, and the agent generates the functions; you do not write those yourself. Every session tells you what to run, what the picture shows, and which decision it helps you make.
+Here are six sessions taken from this repository, from `examples/shop`, and from a repository you have not seen yet. In each of them you write the spec, and the agent generates the functions; you do not write those yourself. Every session tells you what to run, what the picture shows, and which decision it helps you make.
 
 The UI screenshots were taken from `keylang web` on 2026-09-28. At that moment the trace and test files under `.keylang/` were stale, and the CLI summary for the same tree was `0 fail, 22 unverified, 43 ok`.
 
@@ -16,7 +16,7 @@ node bin/keylang.js check examples/shop
 
 ![K001 dangling reference domain.aggregate](images/cli-shop-k001.png)
 
-The first line is the one that decides: the name is a typo or a stale name, so the process fails, and the hint suggests the nearest existing id. The second line reports a different fact. The example ships no TypeScript, so the checkout flow cannot be proved. To fix the first problem, correct the id (see `examples/shop-fixed`). If the module really does not exist yet, declare it `planned` instead and accept `unverified` until the code arrives.
+The first line is the one that decides: the name is a typo or a stale name, so the process fails. In the screenshot the hint suggests the nearest existing id; today it says `run keylang map` instead, because the example's map carries the generated marker ([lesson 2](02-install-and-check.md) shows the current output). The second line reports a different fact. The example ships no source code, so the rules cannot be checked and the checkout flow cannot be proved. To fix the first problem, correct the id (see `examples/shop-fixed`). If the module really does not exist yet, declare it `planned` instead and accept `unverified` until the code arrives.
 
 ```sh
 node bin/keylang.js explain K001
@@ -122,6 +122,25 @@ Turn on `"explain": {"map": true}`, run `keylang map`, open a layer file and pre
 
 Work that is not in the code yet lives in `keylang/features/<slug>.md` as `planned` ids and a flow. You write that file, and an agent generates the functions from it; you do not write them, and keylang does not start the agent. An integration that nothing imports yet is written as `planned module external.<pkg>` plus a step from the module that will import it. `keylang feature <slug>` reports the feature as done when those declarations are implemented, the steps are static `ok`, and no rule fails. The tests and the trace are listed beside that answer, but they do not decide it.
 
+## 6. A codebase you have never seen
+
+There is no screenshot for this session either.
+
+Someone hands you a repository with hundreds of entry points and no spec. Before any rule, find out what is there:
+
+```sh
+keylang init . --agents=none
+keylang tour --out keylang/tour.md
+keylang entries --kind route
+keylang coverage
+keylang integrations
+keylang flows discover
+```
+
+`tour` writes one page: what the system says about itself, layers and modules with their size and coupling, business processes, entry points and events, integrations, blind spots, and the functions to read first. `entries` lists where execution starts; for a framework, its adapter has to find them. `coverage` shows which functions no entry point reaches and which modules have the most holes, and `integrations` lists the HTTP, SDK and queue clients the code calls, without contacting any of them. None of these is a verdict, and `check` reads none of them.
+
+`flows discover` gives every entry point a draft flow under `keylang/flows-discovered/`. Pick the one or two scenarios people actually argue about, run `keylang flows adopt <name>`, and merge the proposal: from then on `check` keeps that flow honest. In `keylang web`, the same report is the Blind spots mode of the diagram page, and the Explorer walks an entry point's calls before any flow exists.
+
 ## When to leave it alone
 
 keylang earns its keep when people already argue about layers and you want that argument to be able to fail a pull request. It is a poor fit when:
@@ -129,7 +148,7 @@ keylang earns its keep when people already argue about layers and you want that 
 - The codebase is a single layer, or the boundaries move every week and nobody will keep the ids up to date.
 - The bugs you care about never show up as an import or a call between modules.
 - You need a language the frontends do not parse. A project made entirely of holes, places the analysis cannot see into, will report `unverified` forever.
-- You want the prose checked against the code. That check is not implemented: `check` reads only the bullets.
+- You want the prose checked against the code. That check is not implemented: `check` reads only the bullets, and `check --stale` only tells you which prose to reread because its code changed.
 - You want a runtime injector for Rust. `keylang wire` emits a single TypeScript composition root.
 
 A small adoption still pays off: `keylang.json`, a short `rules.md` with `layers` and two or three `deny` lines, `check` and `map --check` in CI, and no flows until some scenario is worth a trace.

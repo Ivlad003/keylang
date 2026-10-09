@@ -61,12 +61,13 @@ import { Telegraf } from "telegraf";
 export function onStart(text: string): void {
   add(text);
 }
+const bot = new Telegraf(process.env.BOT_TOKEN ?? "");
 bot.start((ctx) => onStart(ctx.message.text));
 ```
 
 keylang бачить, що `onStart` викликає `add`. А от того, що бібліотека викликає `onStart`, він часто не бачить, і це й не потрібно: у тригера в потоці немає батька, тож бачити виклик до нього не обов'язково. Крок під тригером батька має, і саме цей виклик keylang мусить побачити.
 
-Обробник, який існує лише як `bot.start(() => add(...))` або лише як декоратор, — це дірка: крок лишається `unverified`, і `feature` не повідомляє, що фіча готова.
+Обробник, який існує лише як `bot.start(() => add(...))`, — це дірка: у стрілкової функції немає id, який можна назвати тригером, крок лишається `unverified`, і `feature` не повідомляє, що фіча готова. Декорований обробник, як-от `@router.message(...)` в aiogram, тригером бути може, бо виклик до нього бачити не треба.
 
 ```sh
 npx keylang spec-to-code application.note.add

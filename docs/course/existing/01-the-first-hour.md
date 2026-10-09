@@ -14,6 +14,19 @@ npx keylang check
 
 Open `keylang/map`. The id under each function is the name you will type later, so copy it from the map instead of inventing a shorter one.
 
+Before you write a rule, ask the snapshot what it sees. None of these commands writes a spec, and `check` reads none of their output:
+
+```sh
+npx keylang flows discover
+npx keylang tour
+npx keylang entries
+npx keylang coverage
+```
+
+`flows discover` comes first: it writes a draft flow for every entry point into `keylang/flows-discovered/`, a generated view, so each flow on the tour has its file and its diagram link. `tour` prints one page for a newcomer, with no model: what the system says it is, the layers with their size and coupling, the business processes and their flows, the entry points, the integrations, the blind spots, and the ten functions to start reading with. `tour --out keylang/tour.md` keeps it as a generated file, and the «Огляд» tab of `keylang web` shows the same page. `entries` lists where execution starts: `bin` of `package.json`, a `main`, a route with a literal path, and the routes, cron jobs, consumers and observers of a framework keylang has an adapter for (Magento, Laravel, Symfony, NestJS, PWA Kit, SFCC, Django, FastAPI, Flask, Celery, Express, Fastify, Next.js). An adapter turns itself on when the repository shows its framework (a manifest, an import, a config file), and `frameworks` in `keylang.json` overrides that. `coverage` says where keylang does not see: functions no entry point reaches, the modules with the most holes, entry points without a flow, and settings that decide behavior in data.
+
+When one of the discovered flows is the scenario a newcomer asks about, `npx keylang flows adopt <name>` proposes it as `keylang/flows/<name>.md`, and you accept it with `npx keylang proposals accept keylang/flows/<name>.md`. From then on `check` holds it like a flow you wrote.
+
 Edit `keylang.json` only where the guess is wrong. One thing to know: a folder named `external` is renamed (`external_`), because that word is reserved. `init` prints the new name when it runs.
 
 Then write the rules you actually mean in `keylang/rules.md`, separately from the baseline. Two or three lines are enough to start:
@@ -27,7 +40,7 @@ Then write the rules you actually mean in `keylang/rules.md`, separately from th
 - deny domain external
 ```
 
-`infrastructure` sits beside the chain rather than under `domain`. In the chain, the left side of `<` is the inner layer. The two deny lines mean that domain may import neither the database nor a package.
+`infrastructure` sits beside the chain rather than under `domain`. In the chain, the left side of `<` is the inner layer. The two deny lines mean that domain may import neither the database nor a package. A need out of the side layer into the chain is K101 until you write it down: if the store saves the domain's objects, add `- allow infrastructure domain` with a sentence that says why.
 
 `keylang check` never writes files. Exit 0 means there is no blocking finding, and lines that are still `unverified` are allowed through. Exit 1 means a real break, or, if you ran `map --check`, a map that is out of date.
 
@@ -51,7 +64,7 @@ npx keylang web https://github.com/owner/repo
 
 The first line of the output is where the clone lives; open its `keylang/map` like your own. Run the same command again to pick up new commits. `--explain map-and-ai` also asks the model for a short note on every node and writes `keylang/map-explained/`; `--explain all` adds a longer explanation of every layer. Both need a model in the environment, for example `KEYLANG_AGENT=cli:claude`, because the clone's `keylang.json` belongs to keylang. `--dry-run` prints the token estimate first and asks nothing. `web` with a URL does the clone and then opens the browser UI on it.
 
-Inside the clone, `keylang tour` prints one page for a newcomer, with no model: what the system says it is, the layers with their size and coupling, the business processes and their flows (run `keylang flows discover` first, so each flow has its file and its diagram link), the entry points, the integrations, the blind spots that you have to read by hand, and the ten functions to start reading with. `keylang tour --out keylang/tour.md` keeps it as a generated file that `check` does not read, and the «Огляд» tab of `keylang web` shows the same page.
+Inside the clone, `keylang flows discover` and `keylang tour` work as above, and they are the fastest way in.
 
 If a fence around the code was all you wanted, you can stop here. The next part is for a change that does not exist in the code yet.
 
