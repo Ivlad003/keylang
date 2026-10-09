@@ -19,13 +19,13 @@
     - wiring check.wiring
     - type [SnapshotInput](../../src/assess.ts#L19)
     - type [Assessment](../../src/assess.ts#L29)
-    - fn [assess](../../src/assess.ts#L37) ( docs: readonly Document[], snapshot: SnapshotInput | null, evidence: { tests: TestCase[] | null; traces: TraceRun[] | null; static?: StaticMode; staticSetBy?: StaticSource; knownExternal?: ReadonlySet<string>; testFileExists?: FlowInput["testFileExists"]; /** The old stack the old IDs of `# migration` rows resolve against; absent: none (they stay unverified). */ migration?: OldSnapshot; } = { tests: null, traces: null }, format: RuleFormat = 1, ) → Assessment
+    - fn [assess](../../src/assess.ts#L37) ( docs: readonly Document[], snapshot: SnapshotInput | null, evidence: { tests: TestCase[] | null; traces: TraceRun[] | null; static?: StaticMode; staticSetBy?: StaticSource; knownExternal?: ReadonlySet<string>; testFileExists?: FlowInput["testFileExists"]; /** The old stack the old IDs of `# migration` rows resolve against; absent: none (they stay unverified). */ migration?: OldSnapshot; /** * The spec files whose claims are assessed (`check <file>`): the others are * context only — their declarations, `planned` and flow names resolve * references, but their rules, flows and diagnostics are not reported. * Absent: every file. */ assessed?: (file: string) => boolean; } = { tests: null, traces: null }, format: RuleFormat = 1, ) → Assessment
       - calls lang.spec-ir.compileSpec, check.resolve.check, check.rules.evaluateRules, check.flows.evaluateFlows, check.rules.dependencyKindOf, check.wiring.checkWiring, check.assess.nodeKinds, check.migration.migrationCheck, base.diag.compareDiagnostics, check.rules.canonicalRuleSpec, check.assess.afterRecovery, check.assess.recoveredLines
-    - fn [recoveredLines](../../src/assess.ts#L113) (docs: readonly Document[]) → Map<string, string> <!-- internal -->
+    - fn [recoveredLines](../../src/assess.ts#L129) (docs: readonly Document[]) → Map<string, string> <!-- internal -->
       - calls lang.ir.sectionNodes
-    - fn [afterRecovery](../../src/assess.ts#L133) (verdicts: Verdict[], recovered: ReadonlyMap<string, string>) → Verdict[] <!-- internal -->
-    - fn [sameFinding](../../src/assess.ts#L146) (verdict: Verdict, diagnostics: readonly Diagnostic[]) → boolean
-    - fn [nodeKinds](../../src/assess.ts#L155) (nodes: SnapshotInput["nodes"]) → Map<string, string> <!-- internal -->
+    - fn [afterRecovery](../../src/assess.ts#L149) (verdicts: Verdict[], recovered: ReadonlyMap<string, string>) → Verdict[] <!-- internal -->
+    - fn [sameFinding](../../src/assess.ts#L162) (verdict: Verdict, diagnostics: readonly Diagnostic[]) → boolean
+    - fn [nodeKinds](../../src/assess.ts#L171) (nodes: SnapshotInput["nodes"]) → Map<string, string> <!-- internal -->
   - module [flows](../../src/flows.ts#L1)
     - node external.node
     - config base.config

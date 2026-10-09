@@ -20,21 +20,21 @@
     - test-report check.test-report
     - trace-evidence check.trace-evidence
     - type [AnalysisRequest](../../src/analyze.ts#L24)
-    - type [Analysis](../../src/analyze.ts#L57) extends Assessment
-    - fn [analyze](../../src/analyze.ts#L71) (request: AnalysisRequest) → Promise<Analysis>
+    - type [Analysis](../../src/analyze.ts#L59) extends Assessment
+    - fn [analyze](../../src/analyze.ts#L73) (request: AnalysisRequest) → Promise<Analysis>
       - calls base.config.loadConfig, base.config.toPosix, map.fact-cache.keepsFactCache, map.map.generateMap, map.fact-cache.saveFactCache, map.analyze.readingAid, lang.files.collectMdFiles, lang.files.walkReaches, lang.parser.parse, map.analyze.within, map.analyze.parseRenderedMap, base.span.compareText, base.config.evidenceFiles, base.config.resolveStatic, map.declared-packages.readManifests, map.analyze.oldSnapshotFor, check.assess.assess, check.test-report.loadReports, check.trace-evidence.loadTraces, map.analyze.repositoryFile
-    - fn [oldSnapshotFor](../../src/analyze.ts#L146) (root: string, from: string) → Promise<OldSnapshot>
+    - fn [oldSnapshotFor](../../src/analyze.ts#L149) (root: string, from: string) → Promise<OldSnapshot>
       - calls map.analyze.analyze, check.migration.readOldIndex
-    - fn [parseRenderedMap](../../src/analyze.ts#L182) (path: string, text: string) → Document <!-- internal -->
+    - fn [parseRenderedMap](../../src/analyze.ts#L185) (path: string, text: string) → Document <!-- internal -->
       - calls lang.parser.parse
-    - fn [findRoot](../../src/analyze.ts#L192) (start: string) → string
-    - fn [repositoryFile](../../src/analyze.ts#L203) (root: string, path: string) → boolean <!-- internal -->
+    - fn [findRoot](../../src/analyze.ts#L195) (start: string) → string
+    - fn [repositoryFile](../../src/analyze.ts#L206) (root: string, path: string) → boolean <!-- internal -->
       - calls map.analyze.within
-    - fn [readingAid](../../src/analyze.ts#L214) (specDir: string, abs: string) → boolean
+    - fn [readingAid](../../src/analyze.ts#L217) (specDir: string, abs: string) → boolean
       - calls map.analyze.within
-    - fn [specPathProblem](../../src/analyze.ts#L223) (config: Config, abs: string) → string | null
+    - fn [specPathProblem](../../src/analyze.ts#L226) (config: Config, abs: string) → string | null
       - calls map.analyze.within, lang.files.walkReaches, map.analyze.readingAid
-    - fn [within](../../src/analyze.ts#L234) (abs: string, dir: string) → boolean
+    - fn [within](../../src/analyze.ts#L237) (abs: string, dir: string) → boolean
   - module [bpmn-export](../../src/bpmn-export.ts#L1)
     - diagram map.diagram
     - external-ids base.external-ids

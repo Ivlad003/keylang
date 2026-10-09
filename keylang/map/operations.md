@@ -540,13 +540,13 @@
       - calls base.diag.formatDiagnostic, operations.spec.fmtGeneratedNote
     - fn [runCheck](../../src/operations/spec.ts#L189) (request: CheckRequest, context: OperationContext) → Promise<OperationEnvelope<"check">>
       - calls operations.shared.empty, base.config.loadConfig, base.diag.errorText, features.git-changes.gitChangedFiles, map.analyze.within, base.config.toPosix, map.analyze.analyze, features.check-results.checkReport, features.git-changes.deletedModuleIds, features.changed.filterChanged, features.git-changes.changedPathSet, features.weakening.readWeakenings, features.weakening.weakeningDiagnostic, base.span.compareText, base.diag.formatDiagnostic, base.config.resolveStatic, operations.spec.checkSkipNote, operations.spec.checkSummary, features.check-results.checkExitCode
-    - fn [checkSkipNote](../../src/operations/spec.ts#L290) (path: string) → string
-    - fn [checkSummary](../../src/operations/spec.ts#L300) (counts: CheckCounts) → string
-    - fn [runExplainEdge](../../src/operations/spec.ts#L314) (request: ExplainEdgeRequest, context: OperationContext) → Promise<OperationEnvelope<"explain-edge">>
+    - fn [checkSkipNote](../../src/operations/spec.ts#L297) (path: string) → string
+    - fn [checkSummary](../../src/operations/spec.ts#L307) (counts: CheckCounts) → string
+    - fn [runExplainEdge](../../src/operations/spec.ts#L321) (request: ExplainEdgeRequest, context: OperationContext) → Promise<OperationEnvelope<"explain-edge">>
       - calls operations.shared.empty, map.analyze.analyze, base.diag.errorText, features.explain-edge.edgeIdKnown, features.explain-edge.explainEdge, features.explain-edge.edgeExplanationLines
-    - fn [runParse](../../src/operations/spec.ts#L349) (request: ParseRequest, context: OperationContext) → Promise<OperationEnvelope<"parse">>
+    - fn [runParse](../../src/operations/spec.ts#L356) (request: ParseRequest, context: OperationContext) → Promise<OperationEnvelope<"parse">>
       - calls operations.shared.empty, base.config.assertFormatOnly, lang.files.collectMdFiles, base.diag.errorText, map.explanations.isStoredExplanation, lang.parser.parse, base.diag.isError, base.diag.formatDiagnostic, lang.parse-format.parseReportText
-    - fn [runTracePlan](../../src/operations/spec.ts#L401) (request: TracePlanRequest, context: OperationContext) → Promise<OperationEnvelope<"trace-plan">>
+    - fn [runTracePlan](../../src/operations/spec.ts#L408) (request: TracePlanRequest, context: OperationContext) → Promise<OperationEnvelope<"trace-plan">>
       - calls operations.shared.empty, map.trace-plan.tracePlan, base.config.loadConfig, map.trace-plan.entryTracePlan, base.diag.errorText, map.trace-plan.tracePlanText
   - module [tour](../../src/operations/tour.ts#L1)
     - node external.node
