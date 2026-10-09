@@ -11,7 +11,7 @@
 // and the commands that come next. From then on the project is like any
 // other: the list shows its flows, planned ◇ until the agent builds them.
 
-import { ApiError, takeToken } from "./api.ts";
+import { ApiError, readOnlyPage, transport } from "./api.ts";
 import { button, make } from "./dom.ts";
 import { PALETTE, type Editor } from "./editor.ts";
 import "./greenfield.css";
@@ -50,15 +50,13 @@ interface Answer {
 }
 
 async function call<T>(method: "GET" | "POST", body?: unknown): Promise<{ status: number; body: T }> {
-  const headers: Record<string, string> = { Authorization: `Bearer ${takeToken()}` };
-  if (body !== undefined) headers["Content-Type"] = "application/json";
-  const response = await fetch("/api/greenfield", { method, headers, cache: "no-store", ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
-  const text = await response.text();
+  const response = await transport().send(method, "/api/greenfield", new URLSearchParams(), body);
+  const text = response.text;
   let parsed: unknown = null;
   try {
     parsed = JSON.parse(text);
   } catch {
-    throw new ApiError(response.status, text.trim() || response.statusText);
+    throw new ApiError(response.status, text.trim() || "request failed");
   }
   return { status: response.status, body: parsed as T };
 }
@@ -228,6 +226,8 @@ class Greenfield {
  * when the project exists: a drawing there becomes proposals.
  */
 export async function mountGreenfield(editor: Editor, status: (text: string) => void): Promise<void> {
+  // A viewer draws no new project.
+  if (readOnlyPage()) return;
   const wanted = new URLSearchParams(location.hash.slice(1)).get("new") === "1";
   let availability: Availability;
   try {

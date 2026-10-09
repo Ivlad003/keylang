@@ -41,6 +41,7 @@
     - module [cli-screenshots](../../scripts/cli-screenshots.mjs#L1) <!-- outside -->
     - module [copy-wasm](../../scripts/copy-wasm.mjs#L1) <!-- outside -->
     - module [copy-web](../../scripts/copy-web.mjs#L1) <!-- outside -->
+    - module [docker-publish](../../scripts/docker-publish.mjs#L1) <!-- outside -->
     - module [pack-entry](../../scripts/pack-entry.mjs#L1) <!-- outside -->
   - module web
     - module src
@@ -49,6 +50,7 @@
       - module [bundle-clip](../../web/src/bundle-clip.ts#L1) <!-- outside -->
       - module [canvas](../../web/src/canvas.ts#L1) <!-- outside -->
       - module [diagrams](../../web/src/diagrams.ts#L1) <!-- outside -->
+      - module [docs](../../web/src/docs.ts#L1) <!-- outside -->
       - module [dom](../../web/src/dom.ts#L1) <!-- outside -->
       - module [editor](../../web/src/editor.ts#L1) <!-- outside -->
       - module [explorer](../../web/src/explorer.ts#L1) <!-- outside -->
@@ -56,5 +58,20 @@
       - module [greenfield](../../web/src/greenfield.ts#L1) <!-- outside -->
       - module [layout-store](../../web/src/layout-store.ts#L1) <!-- outside -->
       - module [list](../../web/src/list.ts#L1) <!-- outside -->
+      - module [local-protocol](../../web/src/local-protocol.ts#L1) <!-- outside -->
+      - module [local](../../web/src/local.ts#L1) <!-- outside -->
       - module [properties](../../web/src/properties.ts#L1) <!-- outside -->
+      - module [static](../../web/src/static.ts#L1) <!-- outside -->
       - module [tour](../../web/src/tour.ts#L1) <!-- outside -->
+    - module worker
+      - module [analysis](../../web/worker/analysis.ts#L1) <!-- outside -->
+      - module shims
+        - module [crypto](../../web/worker/shims/crypto.ts#L1) <!-- outside -->
+        - module [fs](../../web/worker/shims/fs.ts#L1) <!-- outside -->
+        - module [globals](../../web/worker/shims/globals.ts#L1) <!-- outside -->
+        - module [module](../../web/worker/shims/module.ts#L1) <!-- outside -->
+        - module [path](../../web/worker/shims/path.ts#L1) <!-- outside -->
+        - module [string_decoder](../../web/worker/shims/string_decoder.ts#L1) <!-- outside -->
+        - module [unavailable](../../web/worker/shims/unavailable.ts#L1) <!-- outside -->
+        - module [url](../../web/worker/shims/url.ts#L1) <!-- outside -->
+        - module [web-tree-sitter](../../web/worker/shims/web-tree-sitter.ts#L1) <!-- outside -->

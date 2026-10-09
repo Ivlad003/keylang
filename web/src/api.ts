@@ -7,6 +7,85 @@
 
 const TOKEN_KEY = "keylang-token";
 
+/** One answer of the API, whatever carried it. `file` is an attachment's name. */
+export interface Reply {
+  status: number;
+  type: string;
+  text: string;
+  file?: string;
+}
+
+/**
+ * How the page reaches the API: `server` is `keylang web` over HTTP; `static`
+ * reads the answers a static export wrote (`web --export`); `local` asks a
+ * Worker that analysed a folder in this tab (`app.html`). The last two, and
+ * `web --read-only`, answer GET only.
+ */
+export interface Transport {
+  readonly kind: "server" | "static" | "local";
+  send(method: "GET" | "POST" | "PUT", path: string, query: URLSearchParams, body?: unknown): Promise<Reply>;
+}
+
+/** The query in one order: a static export files its answers by `path?query`, so the page spells it as `src/tui/read-api.ts` does. */
+export function requestKey(path: string, query: URLSearchParams): string {
+  const pairs = [...query.entries()].sort(([a, x], [b, y]) => (a < b ? -1 : a > b ? 1 : x < y ? -1 : x > y ? 1 : 0));
+  const text = new URLSearchParams(pairs).toString();
+  return text === "" ? path : `${path}?${text}`;
+}
+
+/** The data shard of a key: FNV-1a over its UTF-16 code units, as `keyShard` of `src/tui/read-api.ts`. */
+export function keyShard(key: string, shards: number): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < key.length; i++) {
+    hash ^= key.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash % shards;
+}
+
+/** `keylang web`: the token as a Bearer, the server's answer as it is. */
+class HttpTransport implements Transport {
+  readonly kind = "server";
+  private readonly token: string;
+
+  constructor(token: string) {
+    this.token = token;
+  }
+
+  async send(method: "GET" | "POST" | "PUT", path: string, query: URLSearchParams, body?: unknown): Promise<Reply> {
+    const headers: Record<string, string> = { Authorization: `Bearer ${this.token}` };
+    if (body !== undefined) headers["Content-Type"] = "application/json";
+    const search = query.toString();
+    const response = await fetch(search === "" ? path : `${path}?${search}`, { method, headers, cache: "no-store", ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
+    const file = /filename="([^"]+)"/.exec(response.headers.get("Content-Disposition") ?? "")?.[1];
+    return { status: response.status, type: response.headers.get("Content-Type") ?? "text/plain", text: await response.text(), ...(file ? { file } : {}) };
+  }
+}
+
+let current: Transport | null = null;
+
+/** The transport of this page: the one `useTransport` put, else HTTP with this tab's token. */
+export function transport(): Transport {
+  current ??= new HttpTransport(takeToken());
+  return current;
+}
+
+/** Puts another transport in place before the page starts (the static export, `app.html`). */
+export function useTransport(next: Transport): void {
+  current = next;
+}
+
+/** Whether the page only reads: `--read-only`, a static export, `app.html`. */
+export function readOnlyPage(): boolean {
+  return document.body.dataset["readonly"] === "1";
+}
+
+/** The JSON of a reply, or an `ApiError` with its reason. */
+export function replyJson<T>(reply: Reply): T {
+  if (reply.status < 200 || reply.status >= 300) throw new ApiError(reply.status, errorOf(reply.text));
+  return JSON.parse(reply.text) as T;
+}
+
 /** The token of this tab: from `#t=` once, then from `sessionStorage`. */
 export function takeToken(): string {
   const hash = new URLSearchParams(location.hash.slice(1));
@@ -306,11 +385,17 @@ export interface Usages {
   entries: { id: string; kind: string; label: string }[];
 }
 
+/** The answer of `GET /api/docs`. */
+export interface DocList {
+  dir: string;
+  files: { path: string; group: "map" | "map-explained" | "explain" | "flows" | "flows-discovered" | "spec" }[];
+}
+
 /** A view as the query of `GET /api/diagram` names it. */
 export type ViewQuery = { view: "flow"; name: string } | { view: "discovered"; name: string } | { view: "entry"; id: string } | { view: "layers" } | { view: "process"; domain: string };
 
 /** What the page shows: a diagram, the explorer at an ID (`""`: none picked yet), the blind spots, or the editor on a view (`null`: an empty canvas). */
-export type PageQuery = ViewQuery | { view: "explore"; id: string } | { view: "blind" } | { view: "editor"; of: ViewQuery | null };
+export type PageQuery = ViewQuery | { view: "explore"; id: string } | { view: "blind" } | { view: "editor"; of: ViewQuery | null } | { view: "docs"; path: string };
 
 /** A refused or failed request, with the status the page explains. */
 export class ApiError extends Error {
@@ -322,61 +407,60 @@ export class ApiError extends Error {
 }
 
 export class Api {
-  private readonly token: string;
-
-  constructor(token: string) {
-    this.token = token;
-  }
-
   views(): Promise<Views> {
     return this.get<Views>("/api/views");
   }
 
   diagram(query: ViewQuery): Promise<Diagram> {
-    return this.get<Diagram>(`/api/diagram?${new URLSearchParams(query).toString()}`);
+    return this.get<Diagram>("/api/diagram", query);
   }
 
   usages(id: string): Promise<Usages> {
-    return this.get<Usages>(`/api/usages?${new URLSearchParams({ id }).toString()}`);
+    return this.get<Usages>("/api/usages", { id });
   }
 
   calls(id: string): Promise<Calls> {
-    return this.get<Calls>(`/api/calls?${new URLSearchParams({ id }).toString()}`);
+    return this.get<Calls>("/api/calls", { id });
   }
 
   /** The snapshot's IDs under a prefix (the editor's ID field). */
   ids(prefix: string): Promise<IdList> {
-    return this.get<IdList>(`/api/ids?${new URLSearchParams({ prefix }).toString()}`);
+    return this.get<IdList>("/api/ids", { prefix });
   }
 
   coverage(): Promise<Coverage> {
     return this.get<Coverage>("/api/coverage");
   }
 
+  /** The Markdown files of the specs: the map, the explained map, the flows (the «Карта» tab). */
+  docs(): Promise<DocList> {
+    return this.get<DocList>("/api/docs");
+  }
+
+  doc(path: string): Promise<{ path: string; text: string }> {
+    return this.get("/api/doc", { path });
+  }
+
   /** One proposal of the ticked branches; a refusal (a generated target, a proposal waiting) is an `ApiError` with the server's reason. */
-  async flowProposal(body: { name: string; trigger: string; steps: FlowStep[] }): Promise<FlowProposal> {
-    const response = await fetch("/api/flow-proposal", { method: "POST", headers: { Authorization: `Bearer ${this.token}`, "Content-Type": "application/json" }, body: JSON.stringify(body), cache: "no-store" });
-    if (!response.ok) throw new ApiError(response.status, await errorText(response));
-    return (await response.json()) as FlowProposal;
+  flowProposal(body: { name: string; trigger: string; steps: FlowStep[] }): Promise<FlowProposal> {
+    return this.post<FlowProposal>("/api/flow-proposal", body);
   }
 
   /** The layout file of a view (`flow:checkout`), in the keys of the editor's canvas. */
   async layout(view: string): Promise<{ exists: boolean; file: string; layout: Record<string, LayoutEntry> }> {
-    return this.get(`/api/layout?${new URLSearchParams({ view }).toString()}`);
+    return this.get("/api/layout", { view });
   }
 
   /** Replaces the layout file of a view. */
   async saveLayout(view: string, layout: Record<string, LayoutEntry>): Promise<void> {
-    const response = await fetch(`/api/layout?${new URLSearchParams({ view }).toString()}`, { method: "PUT", headers: { Authorization: `Bearer ${this.token}`, "Content-Type": "application/json" }, body: JSON.stringify({ layout }), cache: "no-store" });
-    if (!response.ok) throw new ApiError(response.status, await errorText(response));
+    replyJson(await transport().send("PUT", "/api/layout", new URLSearchParams({ view }), { layout }));
   }
 
   /** The drawing as proposals; a conflict or a refusal (409) is an answer too, with its `status` and `error`. */
   async diagramProposal(model: unknown, specHash: string | null): Promise<DiagramProposal> {
-    const response = await fetch("/api/diagram-proposal", { method: "POST", headers: { Authorization: `Bearer ${this.token}`, "Content-Type": "application/json" }, body: JSON.stringify({ model, specHash }), cache: "no-store" });
-    if (response.status === 409) return (await response.json()) as DiagramProposal;
-    if (!response.ok) throw new ApiError(response.status, await errorText(response));
-    return (await response.json()) as DiagramProposal;
+    const reply = await transport().send("POST", "/api/diagram-proposal", new URLSearchParams(), { model, specHash });
+    if (reply.status === 409) return JSON.parse(reply.text) as DiagramProposal;
+    return replyJson<DiagramProposal>(reply);
   }
 
   /** «Копіювати як пакет» (business-flows/25): the bundle of the flows (or the selection) with the selection in its layout block. */
@@ -390,26 +474,22 @@ export class Api {
   }
 
   private async post<T>(path: string, body: unknown): Promise<T> {
-    const response = await fetch(path, { method: "POST", headers: { Authorization: `Bearer ${this.token}`, "Content-Type": "application/json" }, body: JSON.stringify(body), cache: "no-store" });
-    if (!response.ok) throw new ApiError(response.status, await errorText(response));
-    return (await response.json()) as T;
+    return replyJson<T>(await transport().send("POST", path, new URLSearchParams(), body));
   }
 
-  private async get<T>(path: string): Promise<T> {
-    const response = await fetch(path, { headers: { Authorization: `Bearer ${this.token}` }, cache: "no-store" });
-    if (!response.ok) throw new ApiError(response.status, await errorText(response));
-    return (await response.json()) as T;
+  private async get<T>(path: string, query: Record<string, string> = {}): Promise<T> {
+    return replyJson<T>(await transport().send("GET", path, new URLSearchParams(query)));
   }
 }
 
 /** The reason of a refused request: `{"error"}` of a JSON answer, else its text. */
-async function errorText(response: Response): Promise<string> {
-  const text = (await response.text()).trim();
+export function errorOf(body: string): string {
+  const text = body.trim();
   try {
     const parsed = JSON.parse(text) as { error?: unknown };
     if (typeof parsed.error === "string") return parsed.error;
   } catch {
     // Not JSON: the text itself.
   }
-  return text || response.statusText;
+  return text || "request failed";
 }

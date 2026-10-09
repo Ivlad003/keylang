@@ -2,10 +2,14 @@
 #   docker build -t keylang .
 #   docker run --rm -v keylang-cache:/cache keylang clone https://github.com/owner/repo
 #   docker run --rm -p 7070:7070 -v keylang-cache:/cache keylang web https://github.com/owner/repo --host 0.0.0.0
+#   docker run --rm -p 127.0.0.1:7070:7070 -v "$PWD":/work:ro keylang web --read-only --host 0.0.0.0
+#   docker run --rm -v "$PWD":/work:ro -v "$PWD/site":/site keylang web --export /site
 #   docker run --rm -v "$PWD":/work keylang check
 # The image installs the packed npm package, the same files `npm install keylang` gets.
+# Published for linux/amd64 and linux/arm64 (scripts/docker-publish.mjs); the
+# package is packed once on the build platform: it is the same for both.
 
-FROM node:22-slim AS pack
+FROM --platform=$BUILDPLATFORM node:22-slim AS pack
 WORKDIR /src
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts

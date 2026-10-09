@@ -75,6 +75,9 @@ npm i -g keylang        # then just `keylang …`
 npx keylang clone https://github.com/owner/repo   # someone else's repo: clone into the cache, map it
 npx keylang web https://github.com/owner/repo     # the same, then the UI in a browser
 npx keylang web --new shop                         # a new project from a diagram, in a browser
+npx keylang web --read-only                        # read-only: map, explained map, diagrams; nothing written
+npx keylang web --export site                      # the same as a static site, no server needed
+docker run --rm -p 127.0.0.1:7070:7070 -v "$PWD":/work:ro ivlad003/keylang web --read-only --host 0.0.0.0
 ```
 
 From a clone of this repository:
@@ -90,7 +93,7 @@ node bin/keylang.js                      # terminal UI (? lists keys, q quits)
 node bin/keylang.js web                  # the same UI in a browser; open the printed URL
 ```
 
-`keylang web` also serves a diagram page (`/diagrams`, linked from the terminal page): flows, discovered flows, entry points and the layers in a searchable list, the chosen one drawn as a BPMN-like diagram with lanes per layer and verdict colours, and a side panel with the clicked step's ID, `file:line` (a `vscode://` link), verdicts and where else the ID is used. The explorer walks the calls of an entry point before any flow exists, and «Сліпі зони» shows the `coverage` report. The editor tab draws a view the way diagrams.net does, with undo/redo, PNG and SVG export, and copy and paste between tabs and projects. The layout goes to `keylang/diagrams/`, and «Запропонувати зміни» turns the drawing into proposals for the specs rather than editing them. `keylang web --new <dir>` starts a new project from an empty canvas ([docs/tui.md](docs/tui.md#сторінка-діаграм-diagrams)).
+`keylang web` also serves a diagram page (`/diagrams`, linked from the terminal page): flows, discovered flows, entry points and the layers in a searchable list, the chosen one drawn as a BPMN-like diagram with lanes per layer and verdict colours, and a side panel with the clicked step's ID, `file:line` (a `vscode://` link), verdicts and where else the ID is used. The explorer walks the calls of an entry point before any flow exists, and «Сліпі зони» shows the `coverage` report. The editor tab draws a view the way diagrams.net does, with undo/redo, PNG and SVG export, and copy and paste between tabs and projects. The layout goes to `keylang/diagrams/`, and «Запропонувати зміни» turns the drawing into proposals for the specs rather than editing them. `keylang web --new <dir>` starts a new project from an empty canvas ([docs/tui.md](docs/tui.md#сторінка-діаграм-diagrams)). To show a repository without changing it, `keylang web --read-only` serves only the diagram page and its «Карта» tab, which holds the map and the explained map; nothing is written. `keylang web --export <dir>` writes the same pages as a static site that opens even from `file://`, plus `app.html`, which analyses a folder dropped into the browser with no server ([docs/tui.md](docs/tui.md#viewer)).
 
 ![The diagram page of keylang web: the checkout flow, a selected step and its panel](docs/course/images/diagrams-flow.png)
 

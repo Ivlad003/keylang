@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [bench](#outside.bench) · [bench.clone](#outside.bench.clone) · [bench.inject](#outside.bench.inject) · [bench.lib](#outside.bench.lib) · [bench.lib.metrics](#outside.bench.lib.metrics) · [bench.magento](#outside.bench.magento) · [bench.magento.run](#outside.bench.magento.run) · [bench.run](#outside.bench.run) · [design](#outside.design) · [design.scripts](#outside.design.scripts) · [design.scripts._60_archive](#outside.design.scripts._60_archive) · [design.scripts._61_tui](#outside.design.scripts._61_tui) · [design.scripts._62_flow](#outside.design.scripts._62_flow) · [design.scripts._63_merge](#outside.design.scripts._63_merge) · [design.scripts._64_explain](#outside.design.scripts._64_explain) · [design.scripts._65_windows](#outside.design.scripts._65_windows) · [design.scripts._66_export](#outside.design.scripts._66_export) · [design.scripts._70_cleanup](#outside.design.scripts._70_cleanup) · [design.scripts._71_editor](#outside.design.scripts._71_editor) · [design.scripts._72_fix](#outside.design.scripts._72_fix) · [design.scripts._73_fix](#outside.design.scripts._73_fix) · [design.scripts._74_agent](#outside.design.scripts._74_agent) · [design.scripts._75_read_s2c](#outside.design.scripts._75_read_s2c) · [design.scripts._76_fix_export](#outside.design.scripts._76_fix_export) · [design.scripts._77_tbl](#outside.design.scripts._77_tbl) · [design.scripts.lib](#outside.design.scripts.lib) · [editors](#outside.editors) · [editors.vscode](#outside.editors.vscode) · [editors.vscode.extension](#outside.editors.vscode.extension) · [examples](#outside.examples) · [examples.wiring-lifecycle](#outside.examples.wiring-lifecycle) · [examples.wiring-lifecycle.demo](#outside.examples.wiring-lifecycle.demo) · [examples.wiring-lifecycle.plan](#outside.examples.wiring-lifecycle.plan) · [scripts](#outside.scripts) · [scripts.build-web](#outside.scripts.build-web) · [scripts.cli-screenshots](#outside.scripts.cli-screenshots) · [scripts.copy-wasm](#outside.scripts.copy-wasm) · [scripts.copy-web](#outside.scripts.copy-web) · [scripts.pack-entry](#outside.scripts.pack-entry) · [web](#outside.web) · [web.src](#outside.web.src) · [web.src.api](#outside.web.src.api) · [web.src.blind](#outside.web.src.blind) · [web.src.bundle-clip](#outside.web.src.bundle-clip) · [web.src.canvas](#outside.web.src.canvas) · [web.src.diagrams](#outside.web.src.diagrams) · [web.src.dom](#outside.web.src.dom) · [web.src.editor](#outside.web.src.editor) · [web.src.explorer](#outside.web.src.explorer) · [web.src.export](#outside.web.src.export) · [web.src.greenfield](#outside.web.src.greenfield) · [web.src.layout-store](#outside.web.src.layout-store) · [web.src.list](#outside.web.src.list) · [web.src.properties](#outside.web.src.properties) · [web.src.tour](#outside.web.src.tour)
+[README](README.md) · modules: [bench](#outside.bench) · [bench.clone](#outside.bench.clone) · [bench.inject](#outside.bench.inject) · [bench.lib](#outside.bench.lib) · [bench.lib.metrics](#outside.bench.lib.metrics) · [bench.magento](#outside.bench.magento) · [bench.magento.run](#outside.bench.magento.run) · [bench.run](#outside.bench.run) · [design](#outside.design) · [design.scripts](#outside.design.scripts) · [design.scripts._60_archive](#outside.design.scripts._60_archive) · [design.scripts._61_tui](#outside.design.scripts._61_tui) · [design.scripts._62_flow](#outside.design.scripts._62_flow) · [design.scripts._63_merge](#outside.design.scripts._63_merge) · [design.scripts._64_explain](#outside.design.scripts._64_explain) · [design.scripts._65_windows](#outside.design.scripts._65_windows) · [design.scripts._66_export](#outside.design.scripts._66_export) · [design.scripts._70_cleanup](#outside.design.scripts._70_cleanup) · [design.scripts._71_editor](#outside.design.scripts._71_editor) · [design.scripts._72_fix](#outside.design.scripts._72_fix) · [design.scripts._73_fix](#outside.design.scripts._73_fix) · [design.scripts._74_agent](#outside.design.scripts._74_agent) · [design.scripts._75_read_s2c](#outside.design.scripts._75_read_s2c) · [design.scripts._76_fix_export](#outside.design.scripts._76_fix_export) · [design.scripts._77_tbl](#outside.design.scripts._77_tbl) · [design.scripts.lib](#outside.design.scripts.lib) · [editors](#outside.editors) · [editors.vscode](#outside.editors.vscode) · [editors.vscode.extension](#outside.editors.vscode.extension) · [examples](#outside.examples) · [examples.wiring-lifecycle](#outside.examples.wiring-lifecycle) · [examples.wiring-lifecycle.demo](#outside.examples.wiring-lifecycle.demo) · [examples.wiring-lifecycle.plan](#outside.examples.wiring-lifecycle.plan) · [scripts](#outside.scripts) · [scripts.build-web](#outside.scripts.build-web) · [scripts.cli-screenshots](#outside.scripts.cli-screenshots) · [scripts.copy-wasm](#outside.scripts.copy-wasm) · [scripts.copy-web](#outside.scripts.copy-web) · [scripts.docker-publish](#outside.scripts.docker-publish) · [scripts.pack-entry](#outside.scripts.pack-entry) · [web](#outside.web) · [web.src](#outside.web.src) · [web.src.api](#outside.web.src.api) · [web.src.blind](#outside.web.src.blind) · [web.src.bundle-clip](#outside.web.src.bundle-clip) · [web.src.canvas](#outside.web.src.canvas) · [web.src.diagrams](#outside.web.src.diagrams) · [web.src.docs](#outside.web.src.docs) · [web.src.dom](#outside.web.src.dom) · [web.src.editor](#outside.web.src.editor) · [web.src.explorer](#outside.web.src.explorer) · [web.src.export](#outside.web.src.export) · [web.src.greenfield](#outside.web.src.greenfield) · [web.src.layout-store](#outside.web.src.layout-store) · [web.src.list](#outside.web.src.list) · [web.src.local-protocol](#outside.web.src.local-protocol) · [web.src.local](#outside.web.src.local) · [web.src.properties](#outside.web.src.properties) · [web.src.static](#outside.web.src.static) · [web.src.tour](#outside.web.src.tour) · [web.worker](#outside.web.worker) · [web.worker.analysis](#outside.web.worker.analysis) · [web.worker.shims](#outside.web.worker.shims) · [web.worker.shims.crypto](#outside.web.worker.shims.crypto) · [web.worker.shims.fs](#outside.web.worker.shims.fs) · [web.worker.shims.globals](#outside.web.worker.shims.globals) · [web.worker.shims.module](#outside.web.worker.shims.module) · [web.worker.shims.path](#outside.web.worker.shims.path) · [web.worker.shims.string_decoder](#outside.web.worker.shims.string_decoder) · [web.worker.shims.unavailable](#outside.web.worker.shims.unavailable) · [web.worker.shims.url](#outside.web.worker.shims.url) · [web.worker.shims.web-tree-sitter](#outside.web.worker.shims.web-tree-sitter)
 
 # map
 
@@ -82,6 +82,8 @@
       <a id="outside.scripts.copy-wasm"></a><br>A standalone build helper script in the outside layer that copies compiled WebAssembly artifacts into their target location during the build; its one import is an unresolved file outside the analyzed graph. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - module [copy-web](../../scripts/copy-web.mjs#L1) <!-- outside -->
       <a id="outside.scripts.copy-web"></a><br>A build-support script that sits outside the analyzed layers and depends on one unresolved external file. Its current contents could not be read, so its concrete behavior is not described here. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+    - module [docker-publish](../../scripts/docker-publish.mjs#L1) <!-- outside -->
+      <a id="outside.scripts.docker-publish"></a>
     - module [pack-entry](../../scripts/pack-entry.mjs#L1) <!-- outside -->
       <a id="outside.scripts.pack-entry"></a><br>A build-side script that lives outside the analyzed source tree and packs an entry point into a distributable form. Its current contents weren't captured, so its exact packing steps are unknown. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module web
@@ -98,6 +100,8 @@
         <a id="outside.web.src.canvas"></a>
       - module [diagrams](../../web/src/diagrams.ts#L1) <!-- outside -->
         <a id="outside.web.src.diagrams"></a>
+      - module [docs](../../web/src/docs.ts#L1) <!-- outside -->
+        <a id="outside.web.src.docs"></a>
       - module [dom](../../web/src/dom.ts#L1) <!-- outside -->
         <a id="outside.web.src.dom"></a>
       - module [editor](../../web/src/editor.ts#L1) <!-- outside -->
@@ -112,7 +116,37 @@
         <a id="outside.web.src.layout-store"></a>
       - module [list](../../web/src/list.ts#L1) <!-- outside -->
         <a id="outside.web.src.list"></a>
+      - module [local-protocol](../../web/src/local-protocol.ts#L1) <!-- outside -->
+        <a id="outside.web.src.local-protocol"></a>
+      - module [local](../../web/src/local.ts#L1) <!-- outside -->
+        <a id="outside.web.src.local"></a>
       - module [properties](../../web/src/properties.ts#L1) <!-- outside -->
         <a id="outside.web.src.properties"></a>
+      - module [static](../../web/src/static.ts#L1) <!-- outside -->
+        <a id="outside.web.src.static"></a>
       - module [tour](../../web/src/tour.ts#L1) <!-- outside -->
         <a id="outside.web.src.tour"></a>
+    - module worker
+      <a id="outside.web.worker"></a>
+      - module [analysis](../../web/worker/analysis.ts#L1) <!-- outside -->
+        <a id="outside.web.worker.analysis"></a>
+      - module shims
+        <a id="outside.web.worker.shims"></a>
+        - module [crypto](../../web/worker/shims/crypto.ts#L1) <!-- outside -->
+          <a id="outside.web.worker.shims.crypto"></a>
+        - module [fs](../../web/worker/shims/fs.ts#L1) <!-- outside -->
+          <a id="outside.web.worker.shims.fs"></a>
+        - module [globals](../../web/worker/shims/globals.ts#L1) <!-- outside -->
+          <a id="outside.web.worker.shims.globals"></a>
+        - module [module](../../web/worker/shims/module.ts#L1) <!-- outside -->
+          <a id="outside.web.worker.shims.module"></a>
+        - module [path](../../web/worker/shims/path.ts#L1) <!-- outside -->
+          <a id="outside.web.worker.shims.path"></a>
+        - module [string_decoder](../../web/worker/shims/string_decoder.ts#L1) <!-- outside -->
+          <a id="outside.web.worker.shims.string_decoder"></a>
+        - module [unavailable](../../web/worker/shims/unavailable.ts#L1) <!-- outside -->
+          <a id="outside.web.worker.shims.unavailable"></a>
+        - module [url](../../web/worker/shims/url.ts#L1) <!-- outside -->
+          <a id="outside.web.worker.shims.url"></a>
+        - module [web-tree-sitter](../../web/worker/shims/web-tree-sitter.ts#L1) <!-- outside -->
+          <a id="outside.web.worker.shims.web-tree-sitter"></a>

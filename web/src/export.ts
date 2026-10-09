@@ -3,40 +3,26 @@
 // same Bearer token as every other request, saved through a blob link. The
 // server writes the bytes `keylang export bpmn|drawio` writes.
 
-import type { ViewQuery } from "./api.ts";
-
-const TOKEN_KEY = "keylang-token";
+import { errorOf, transport, type ViewQuery } from "./api.ts";
 
 const FORMATS = [
   { format: "bpmn", label: "Export BPMN", title: "BPMN 2.0 with its diagram (Camunda Modeler, bpmn.io)" },
   { format: "drawio", label: "Export draw.io", title: "draw.io file; `keylang import drawio` reads it back as a proposal" },
 ] as const;
 
-/** The file name the server suggests, else `diagram.<format>`. */
-function fileName(response: Response, format: string): string {
-  const match = /filename="([^"]+)"/.exec(response.headers.get("Content-Disposition") ?? "");
-  return match?.[1] ?? `diagram.${format}`;
-}
-
 async function download(query: ViewQuery, format: string, report: (text: string) => void): Promise<void> {
   const params = new URLSearchParams(query);
   params.set("format", format);
-  const response = await fetch(`/api/export?${params.toString()}`, { headers: { Authorization: `Bearer ${sessionStorage.getItem(TOKEN_KEY) ?? ""}` }, cache: "no-store" });
-  if (!response.ok) {
-    const text = (await response.text()).trim();
-    let message = text;
-    try {
-      message = (JSON.parse(text) as { error?: string }).error ?? text;
-    } catch {
-      // Plain text: `forbidden`, `server error`.
-    }
-    report(response.status === 403 ? "No access: open the URL printed by `keylang web` (it carries the access token)." : `export failed: ${message || response.statusText}`);
+  const response = await transport().send("GET", "/api/export", params);
+  if (response.status !== 200) {
+    report(response.status === 403 && transport().kind === "server" ? "No access: open the URL printed by `keylang web` (it carries the access token)." : `export failed: ${errorOf(response.text)}`);
     return;
   }
-  const url = URL.createObjectURL(await response.blob());
+  // The file name the server suggests, else `diagram.<format>`.
+  const url = URL.createObjectURL(new Blob([response.text], { type: response.type }));
   const link = document.createElement("a");
   link.href = url;
-  link.download = fileName(response, format);
+  link.download = response.file ?? `diagram.${format}`;
   document.body.append(link);
   link.click();
   link.remove();

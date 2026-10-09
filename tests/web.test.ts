@@ -1109,16 +1109,24 @@ test("web: /diagrams is a static page with no inline script; the bundled maxGrap
   assert.equal((await status(url, "/assets/diagrams.ts")).status, 404);
 });
 
-test("web: scripts/build-web.mjs bundles the client offline: one script, its CSS and the bundled packages' licenses, no CDN import (business-flows/33)", () => {
+test("web: scripts/build-web.mjs bundles the client offline: the page's script and CSS, the analysis worker with its WASM files, the bundled packages' licenses and the site list, no CDN import (business-flows/33)", () => {
   const out = mkdtempSync(join(tmpdir(), "keylang-web-build-"));
   try {
     const run = spawnSync(process.execPath, [join(root, "scripts/build-web.mjs"), "--outdir", out], { encoding: "utf8" });
     assert.equal(run.status, 0, run.stderr);
-    assert.deepEqual(readdirSync(out).sort(), ["diagrams.css", "diagrams.js", "maxgraph-core.LICENSE"]);
-    const script = readFileSync(join(out, "diagrams.js"), "utf8");
-    assert.ok(script.length > 10000);
-    assert.doesNotMatch(script, /(?:\bimport\s*\(?|\bfrom|importScripts\()\s*["'`]https?:\/\//, "no import from a CDN");
-    assert.doesNotMatch(script, /^\s*import\s/m, "an IIFE for a plain <script>, not a module");
+    const site = JSON.parse(readFileSync(join(out, "site.json"), "utf8")) as string[];
+    const built = readdirSync(out, { recursive: true, withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => join(entry.parentPath, entry.name).slice(out.length + 1).split("\\").join("/"))
+      .sort();
+    assert.deepEqual(built, [...site, "site.json"].sort(), "site.json lists every built file");
+    for (const file of ["diagrams.js", "diagrams.css", "analysis.js", "wasm/web-tree-sitter.wasm", "wasm/tree-sitter-typescript.wasm", "wasm/grammars.json", "maxgraph-core.LICENSE", "web-tree-sitter.LICENSE", "noble-hashes.LICENSE"]) assert.ok(site.includes(file), file);
+    for (const name of ["diagrams.js", "analysis.js"]) {
+      const script = readFileSync(join(out, name), "utf8");
+      assert.ok(script.length > 10000, name);
+      assert.doesNotMatch(script, /(?:\bimport\s*\(?|\bfrom|importScripts\()\s*["'`]https?:\/\//, `${name}: no import from a CDN`);
+      assert.doesNotMatch(script, /^\s*import\s/m, `${name}: an IIFE for a plain <script> or a classic worker, not a module`);
+    }
     assert.doesNotMatch(readFileSync(join(out, "diagrams.css"), "utf8"), /@import|url\(["']?https?:/);
     assert.match(readFileSync(join(out, "maxgraph-core.LICENSE"), "utf8"), /Apache License/);
   } finally {

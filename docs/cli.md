@@ -355,6 +355,8 @@ draw.io (`src/drawio.ts`) — `<mxfile host="keylang"><diagram><mxGraphModel>` �
 
 `keylang web <url> [--dir D] [--explain MODE] [--port N] [--host H]` спершу робить те саме, що `clone`, а потім віддає TUI над клоном, як `keylang web` у його корені. Без URL `web` працює як раніше — над поточним репозиторієм.
 
+`keylang web --read-only [url|path]` показує той самий репозиторій лише для читання: сторінку діаграм із вкладкою «Карта» (карта й пояснена карта з рендеру аналізу), без TUI і без жодного запису, зокрема без кешу фактів. `keylang web --export <dir> [url|path]` записує це саме статичним сайтом: `index.html` відкривається навіть з `file://`, а `app.html` поруч аналізує в браузері теку, яку людина перетягне чи обере. Подробиці — [tui.md](tui.md#viewer).
+
 **Docker.** `Dockerfile` у корені збирає образ з упакованого npm-пакета (`npm pack`, ті самі файли, що ставить `npm install keylang`) на `node:22-slim` з git; `ENTRYPOINT` — `keylang`, робоча тека `/work`, кеш клонів — том `/cache` (`XDG_CACHE_HOME=/cache`), користувач `node`. У контейнері git довіряє будь-якій теці (`safe.directory '*'`), бо змонтований `/work` належить користувачу хоста.
 
 ```sh
@@ -362,7 +364,13 @@ docker build -t keylang .
 docker run --rm -v keylang-cache:/cache keylang clone https://github.com/owner/repo
 docker run --rm -p 7070:7070 -v keylang-cache:/cache keylang web https://github.com/owner/repo --host 0.0.0.0
 docker run --rm -v "$PWD":/work keylang check
+# лише читання: сторінка діаграм і «Карта» над змонтованим (:ro) репозиторієм
+docker run --rm -p 127.0.0.1:7070:7070 -v "$PWD":/work:ro keylang web --read-only --host 0.0.0.0
+# статичний сайт у ./site (тека має існувати: користувач образу `node`, uid 1000, у теку від root не запише)
+mkdir -p site && docker run --rm -v "$PWD":/work:ro -v "$PWD/site":/site keylang web --export /site
 ```
+
+Готовий образ — `ivlad003/keylang` у Docker Hub (теги `<версія>` і `latest`, linux/amd64 і linux/arm64): `docker run --rm ivlad003/keylang --version`. Його публікує `node scripts/docker-publish.mjs --image ivlad003/keylang` (`docker buildx build --platform linux/amd64,linux/arm64 … --push`; `--dry-run` лише друкує команду). Пакет пакується один раз на платформі збірки, а кроки RUN для arm64 на amd64-хості виконуються через QEMU, тож потрібні обробники binfmt (`docker run --privileged --rm tonistiigi/binfmt --install arm64`) і `docker login`.
 
 `--host 0.0.0.0` потрібен, щоб порт був досяжний з хоста; тоді доступ стереже лише одноразовий токен в URL (перевірки `Host` на loopback немає), тож публікуйте порт лише на `127.0.0.1` (`-p 127.0.0.1:7070:7070`), якщо машина в спільній мережі. У надрукованому URL замініть `0.0.0.0` на `localhost`.
 

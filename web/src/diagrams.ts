@@ -17,10 +17,11 @@
 // a flow as `keylang flow export` writes it, its shapes in the layout block —
 // in the clipboard for another keylang web (business-flows/25).
 
-import { Api, ApiError, type ClipShape, type Diagram, type DiagramNode, type PageQuery, type Usages, type ViewQuery, type Views, takeToken } from "./api.ts";
+import { Api, ApiError, readOnlyPage, transport, useTransport, type ClipShape, type Diagram, type DiagramNode, type DocList, type PageQuery, type Usages, type ViewQuery, type Views } from "./api.ts";
 import { BlindSpots } from "./blind.ts";
 import { Canvas, VERDICT_COLOUR, VERDICT_GLYPH } from "./canvas.ts";
 import { writeClipboard } from "./bundle-clip.ts";
+import { Docs, docItems } from "./docs.ts";
 import { codeLink, element, make } from "./dom.ts";
 import { Editor } from "./editor.ts";
 import { FileLayoutStore, useLayoutStore } from "./layout-store.ts";
@@ -28,16 +29,23 @@ import { Explorer } from "./explorer.ts";
 import { mountGreenfield } from "./greenfield.ts";
 import { mountExport } from "./export.ts";
 import { VirtualList, type ListItem } from "./list.ts";
+import { openLocal } from "./local.ts";
+import { StaticTransport } from "./static.ts";
 import { mountTour } from "./tour.ts";
 import "./diagrams.css";
 
 /** How often the page asks again, ms; a request that takes longer delays the next one. */
 const POLL_MS = 5000;
 
-type Mode = "diagrams" | "explore" | "blind" | "editor";
+type Mode = "diagrams" | "explore" | "blind" | "editor" | "docs";
 
 function modeOf(query: PageQuery): Mode {
-  return query.view === "explore" ? "explore" : query.view === "blind" ? "blind" : query.view === "editor" ? "editor" : "diagrams";
+  return query.view === "explore" ? "explore" : query.view === "blind" ? "blind" : query.view === "editor" ? "editor" : query.view === "docs" ? "docs" : "diagrams";
+}
+
+/** A query that draws a diagram: not one of the other modes. */
+function isViewQuery(query: PageQuery): query is ViewQuery {
+  return modeOf(query) === "diagrams";
 }
 
 /** The fragment of a view (`view=flow&name=…`), with the selected node. */
@@ -60,6 +68,7 @@ function readHash(): { query: PageQuery; node: string | null } | null {
   if (view === "layers") return { query: { view }, node };
   if (view === "explore") return { query: { view, id: id ?? "" }, node: null };
   if (view === "blind") return { query: { view }, node: null };
+  if (view === "docs") return { query: { view, path: params.get("path") ?? "" }, node: null };
   if (view === "editor") return { query: { view, of: viewOfKey(params.get("of") ?? "") }, node: null };
   return null;
 }
@@ -87,6 +96,8 @@ function keyOf(query: PageQuery): string {
       return `explore:${query.id}`;
     case "blind":
       return "blind";
+    case "docs":
+      return `docs:${query.path}`;
     case "editor":
       return `editor:${query.of ? keyOf(query.of) : ""}`;
     default:
@@ -129,7 +140,7 @@ function itemsOf(views: Views): ListItem[] {
 }
 
 function explain(error: unknown): string {
-  if (error instanceof ApiError && error.status === 403) return "No access: open the URL printed by `keylang web` (it carries the access token).";
+  if (error instanceof ApiError && error.status === 403 && transport().kind === "server" && !readOnlyPage()) return "No access: open the URL printed by `keylang web` (it carries the access token).";
   return error instanceof Error ? error.message : String(error);
 }
 
@@ -169,14 +180,16 @@ class Page {
   private readonly explorer: Explorer;
   private readonly blind: BlindSpots;
   private readonly editor: Editor;
+  private readonly docs: Docs;
+  private docList: DocList | null = null;
   private node: string | null = null;
   private usages: Usages | null = null;
   private items: ListItem[] = [];
 
   constructor() {
-    this.api = new Api(takeToken());
+    this.api = new Api();
     // In the editor a view of the list opens on the editable canvas.
-    this.list = new VirtualList(element("views"), (item) => void this.open(this.mode === "editor" && item.query.view !== "explore" && item.query.view !== "blind" && item.query.view !== "editor" ? { view: "editor", of: item.query } : item.query));
+    this.list = new VirtualList(element("views"), (item) => void this.open(this.mode === "editor" && isViewQuery(item.query) ? { view: "editor", of: item.query } : item.query));
     this.canvas = new Canvas(element("graph"), element("minimap"), { select: (node) => this.pick(node) });
     const host = { root: () => this.views?.root, explore: (id: string) => void this.open({ view: "explore", id }), status: (text: string) => (this.status.textContent = text) };
     this.explorer = new Explorer(element("explorer"), this.api, host);
@@ -193,11 +206,13 @@ class Page {
     });
     (window as unknown as { keylangEditor: unknown }).keylangEditor = this.editor;
     this.blind = new BlindSpots(element("blind"), this.api, { ...host, discovered: (name: string) => void this.open({ view: "discovered", name }) });
+    this.docs = new Docs(element("docs"), this.api, { status: host.status, open: (path: string) => void this.open({ view: "docs", path }) });
     for (const tab of document.querySelectorAll<HTMLButtonElement>("#modes button[data-mode]")) {
       tab.addEventListener("click", () => {
         const mode = tab.dataset["mode"] as Mode;
         if (mode === "explore") void this.open({ view: "explore", id: this.explorer.current() });
         else if (mode === "blind") void this.open({ view: "blind" });
+        else if (mode === "docs") void this.open({ view: "docs", path: this.docs.current() });
         else if (mode === "editor") void this.open({ view: "editor", of: this.editor.view() === "" ? this.lastDiagram : viewOfKey(this.editor.view()) });
         else if (this.lastDiagram) void this.open(this.lastDiagram);
         else {
@@ -225,14 +240,14 @@ class Page {
     element<HTMLButtonElement>("zoom-in").addEventListener("click", () => this.canvas.zoomAt(1.25));
     element<HTMLButtonElement>("zoom-out").addEventListener("click", () => this.canvas.zoomAt(1 / 1.25));
     element<HTMLButtonElement>("zoom-fit").addEventListener("click", () => this.canvas.fit());
-    mountExport(element("toolbar"), () => (this.active === null || this.active.view === "explore" || this.active.view === "blind" ? null : this.active.view === "editor" ? this.active.of : this.active), (text) => (this.status.textContent = text));
+    mountExport(element("toolbar"), () => (this.active === null ? null : this.active.view === "editor" ? this.active.of : isViewQuery(this.active) ? this.active : null), (text) => (this.status.textContent = text));
     const copy = make("button", { text: "Копіювати як пакет", title: "Відкритий вид як пакет keylang у буфер обміну (Ctrl+C): вставте його в редакторі іншого keylang web" });
     copy.type = "button";
     copy.id = "copy-bundle";
     copy.addEventListener("click", () => void this.copyBundle(true));
     element("toolbar").append(copy);
     document.addEventListener("keydown", (event) => {
-      if (this.mode !== "diagrams" || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "c" || event.shiftKey) return;
+      if (this.mode !== "diagrams" || readOnlyPage() || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "c" || event.shiftKey) return;
       const target = event.target as HTMLElement | null;
       if (target && (target.closest("input, textarea, select") || target.isContentEditable)) return;
       // Text the person selected is theirs to copy.
@@ -276,7 +291,7 @@ class Page {
   /** The list of the mode: every view to draw, or the entry points and events to explore. */
   private fillList(): void {
     if (!this.views) return;
-    this.items = this.mode === "diagrams" || this.mode === "editor" ? itemsOf(this.views) : exploreItemsOf(this.views);
+    this.items = this.mode === "docs" ? (this.docList ? docItems(this.docList) : []) : this.mode === "diagrams" || this.mode === "editor" ? itemsOf(this.views) : exploreItemsOf(this.views);
     this.list.setItems(this.items);
     this.markList();
   }
@@ -290,8 +305,19 @@ class Page {
     this.fillList();
   }
 
+  /** The «Карта» list, asked once per entry into the mode; a static or local page asks once at all. */
+  private async loadDocs(): Promise<void> {
+    if (this.docList && transport().kind !== "server") return;
+    const list = await this.api.docs();
+    this.docList = list;
+    this.docs.setList(list);
+    if (this.mode === "docs") this.fillList();
+  }
+
   /** Asks again every few seconds while the tab is visible: a new map, a saved spec or a discovered view shows up without a reload. */
   private poll(): void {
+    // Answers a static export wrote, or an analysis of files in memory, do not change.
+    if (transport().kind !== "server") return;
     window.setTimeout(async () => {
       if (!document.hidden) {
         try {
@@ -321,6 +347,17 @@ class Page {
     this.writeHash();
     if (wanted.view === "explore") return this.explorer.show(wanted.id);
     if (wanted.view === "blind") return this.blind.show();
+    if (wanted.view === "docs") {
+      try {
+        await this.loadDocs();
+      } catch (error) {
+        this.status.textContent = explain(error);
+        return;
+      }
+      this.list.setActive(listKey);
+      this.list.reveal(listKey);
+      return this.docs.show(wanted.path);
+    }
     if (wanted.view === "editor") return this.openEditor(wanted.of);
     const query: ViewQuery = wanted;
     this.lastDiagram = query;
@@ -548,8 +585,18 @@ class Page {
   }
 }
 
-void new Page().start();
-// «Огляд»: the project tour over the canvas (business-flows/15).
-mountTour();
-// «Новий проєкт»: a project drawn before its code, when the root has no keylang.json (business-flows/29).
-void mountGreenfield((window as unknown as { keylangEditor: Editor }).keylangEditor, (text) => (element("status").textContent = text));
+/** The page over its transport: `keylang web` by default, the answers of a static export, or a folder analysed in this tab. */
+async function main(): Promise<void> {
+  const source = document.body.dataset["source"];
+  if (source === "static") useTransport(new StaticTransport(Number(document.body.dataset["shards"] ?? "1")));
+  if (source === "local") useTransport(await openLocal());
+  // The browser tests ask the page's transport directly, as the page does.
+  (window as unknown as { keylangTransport: unknown }).keylangTransport = transport();
+  void new Page().start();
+  // «Огляд»: the project tour over the canvas (business-flows/15).
+  mountTour();
+  // «Новий проєкт»: a project drawn before its code, when the root has no keylang.json (business-flows/29).
+  void mountGreenfield((window as unknown as { keylangEditor: Editor }).keylangEditor, (text) => (element("status").textContent = text));
+}
+
+void main();

@@ -57,13 +57,33 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 #details .usages .clear { float: right; border: 0; background: none; cursor: pointer; color: #607d8b; }
 
 /* Modes (business-flows/22): the diagrams, the entry explorer, the blind spots. */
-#modes { display: flex; gap: 2px; margin: 0 10px 8px; }
-#modes button { flex: 1; border: 1px solid #b0bec5; background: #ffffff; padding: 4px 0; cursor: pointer; border-radius: 4px; color: #37474f; }
+/* Up to three tabs a row: five do not fit the list's width on one. */
+#modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: 2px; margin: 0 10px 8px; }
+#modes button { white-space: nowrap; border: 1px solid #b0bec5; background: #ffffff; padding: 4px 0; cursor: pointer; border-radius: 4px; color: #37474f; }
 #modes button[aria-pressed="true"] { background: #1565c0; border-color: #1565c0; color: #ffffff; }
 #explorer, #blind { display: none; flex: 1; overflow: auto; min-height: 0; padding: 10px 16px; background: #fbfcfc; }
 body[data-mode="explore"] #explorer, body[data-mode="blind"] #blind { display: block; }
 body[data-mode="explore"] #stage, body[data-mode="blind"] #stage, body[data-mode="explore"] #details, body[data-mode="blind"] #details { display: none; }
 body[data-mode="explore"] #toolbar button, body[data-mode="blind"] #toolbar button { display: none; }
+
+/* «Карта»: the Markdown of the specs as written, the syntax marked. */
+#docs { display: none; flex: 1; overflow: auto; min-height: 0; padding: 10px 16px; background: #fbfcfc; }
+body[data-mode="docs"] #docs { display: block; }
+body[data-mode="docs"] #stage, body[data-mode="docs"] #details, body[data-mode="docs"] #toolbar button, body[data-mode="docs"] #find-usages { display: none; }
+#docs h2 { font-size: 13px; margin: 0 0 8px; color: #546e7a; font-weight: normal; word-break: break-all; }
+#docs .empty { color: #78909c; }
+#docs pre.md { margin: 0; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; color: #263238; }
+#docs .md-heading { color: #0d47a1; font-weight: bold; }
+#docs .md-h1 { font-size: 15px; }
+#docs .md-marker { color: #b26a00; }
+#docs .md-fence, #docs .md-code { color: #4e342e; background: #f3efe9; }
+#docs .md-quote { color: #607d8b; }
+#docs code { color: #2e7d32; font: inherit; }
+#docs a { color: #1565c0; }
+#docs .md-link { color: #546e7a; }
+
+/* A viewer (--read-only, a static export, app.html) writes nothing: no buttons that would. */
+body[data-readonly="1"] #save-flow-box, body[data-readonly="1"] #copy-bundle { display: none; }
 #explorer h2, #blind h2 { font-size: 15px; margin: 0 0 6px; word-break: break-all; }
 #explorer h3, #blind h3 { font-size: 12px; margin: 14px 0 4px; color: #455a64; text-transform: uppercase; letter-spacing: 0.04em; }
 #explorer dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 8px; margin: 0 0 6px; }

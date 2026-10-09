@@ -6,7 +6,7 @@
 // link to a diagram sets the fragment the page already follows and closes
 // the tour; `#tour` opens it on load. Read-only, with the page's token.
 
-import { ApiError, takeToken } from "./api.ts";
+import { ApiError, replyJson, transport } from "./api.ts";
 
 interface TourFlow {
   name: string;
@@ -168,7 +168,6 @@ export function mountTour(): void {
   panel.id = "tour";
   panel.hidden = true;
   stage.append(panel);
-  const token = takeToken();
   const close = (): void => {
     panel.hidden = true;
     tab.classList.remove("active");
@@ -179,9 +178,7 @@ export function mountTour(): void {
     if (!tourHash()) history.replaceState(null, "", `${location.pathname}#tour`);
     panel.replaceChildren(make("p", "loading the tour…", "muted"));
     try {
-      const response = await fetch("/api/tour", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
-      if (!response.ok) throw new ApiError(response.status, (await response.text()).trim() || response.statusText);
-      const tour = (await response.json()) as Tour;
+      const tour = replyJson<Tour>(await transport().send("GET", "/api/tour", new URLSearchParams()));
       panel.replaceChildren(...(tour.reason ? [make("p", tour.reason)] : render(tour, close)));
     } catch (error) {
       const text = error instanceof ApiError && error.status === 403 ? "No access: open the URL printed by `keylang web` (it carries the access token)." : error instanceof Error ? error.message : String(error);

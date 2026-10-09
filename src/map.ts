@@ -164,12 +164,19 @@ export async function generateMap(config: Config, options: { persist?: boolean |
     ...frameworks.inputs.flatMap((input) => input.configs.filter((c) => c.facts.error !== null).map((c) => ({ file: c.facts.path, reason: c.facts.error!.reason, text: `${FRAMEWORK_CONFIG}${input.name}`, ...ownerSource(config, graph, c.owner) }))),
     ...frameworks.unread.map((c) => ({ file: c.path, reason: c.reason, text: `${FRAMEWORK_CONFIG}${c.framework}`, ...ownerSource(config, graph, c.owner) })),
   ], readRepositoryDocs(config), { list: entries, inputs: ENTRY_MANIFESTS.map((name) => [name, manifests[name]] as const) }, frameworks.manifest);
-  let explained: Map<string, string> | null = null;
-  if (config.explain.map) {
-    const briefs = loadBriefs(config);
-    explained = renderExplainedMap(index, `${config.dir}/${EXPLAINED_MAP_DIR}`, (id) => explanationOf(index, briefs, id));
-  }
+  const explained = config.explain.map ? explainedMapOf(config, index) : null;
   return { graph, files: renderMap(index, mapDir), explained, index, skipped: skipped.length, facts: { reused: cache.reused, extracted: cache.extracted }, factCache };
+}
+
+/**
+ * The explained map of a snapshot (file name under `<dir>/map-explained/` →
+ * content): the saved briefs where there are some, else the offline
+ * explanation. A viewer (`web --read-only`, the static export) shows it even
+ * when `explain.map` is off; it writes nothing.
+ */
+export function explainedMapOf(config: Config, index: AnalysisSnapshot): Map<string, string> {
+  const briefs = loadBriefs(config);
+  return renderExplainedMap(index, `${config.dir}/${EXPLAINED_MAP_DIR}`, (id) => explanationOf(index, briefs, id));
 }
 
 /**

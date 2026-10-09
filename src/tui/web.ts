@@ -20,22 +20,16 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { createRequire } from "node:module";
 import type { AddressInfo } from "node:net";
-import { dirname, join, relative } from "node:path";
+import { dirname, join } from "node:path";
 import type { Duplex } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
 import { analyze, type Analysis } from "../analyze.ts";
-import { checkResults, type CheckResult } from "../check-results.ts";
-import { toPosix } from "../config.ts";
-import { diagramOf, flowListing, parseView, usagesOf, viewOfKey, viewsOf, type Diagram, type DiagramNode } from "../diagram.ts";
-import { layoutFromFile, layoutText, layoutToFile, readLayout, writeLayout, type ClientEntry, type ClientLayout, type LayoutFile } from "../diagram-layout.ts";
-import { pendingTargets } from "../proposals.ts";
-import { PROCESSES_FILE, processViews, readProcesses } from "../discover-names.ts";
-import { callsOf, eventsOf, explorerFlow, parseExplorerFlow } from "../explorer.ts";
-import { DISCOVERED_FLOWS_DIR, sourceInputs } from "../map.ts";
-import { runCoverage } from "../operations/coverage.ts";
-import { DIAGRAM_FORMATS, diagramExportText, exportSourcesOf, exportViewOfQuery } from "../operations/diagram-export.ts";
-import { runDiagramPropose, specHash } from "../operations/diagram-propose.ts";
+import { viewOfKey } from "../diagram.ts";
+import { layoutText, layoutToFile, readLayout, writeLayout, type ClientEntry, type ClientLayout, type LayoutFile } from "../diagram-layout.ts";
+import { explorerFlow, parseExplorerFlow } from "../explorer.ts";
+import { sourceInputs } from "../map.ts";
+import { runDiagramPropose } from "../operations/diagram-propose.ts";
 import { greenfieldAvailability, runGreenfield } from "../operations/greenfield.ts";
 import { GREENFIELD_LANGUAGES } from "../greenfield.ts";
 import { exportBundle, exportFlows, gitOf, runFlowImport } from "../operations/flow-bundle.ts";
@@ -44,12 +38,9 @@ import { parseBundle, usedLayers, type ExportFlow } from "../flow-bundle.ts";
 import { keylangVersion } from "../harness.ts";
 import { flowCandidate } from "../operations/draft.ts";
 import { commitProposal, generatedIn, proposalRefusal, rootRelative } from "../operations/shared.ts";
-import { buildTour, tourMarkdown } from "../tour.ts";
-import { parse } from "../parser.ts";
-import { compileSpec, type SpecIR } from "../spec-ir.ts";
-import { compareText } from "../span.ts";
 import { App, MAX_COLS, MAX_ROWS, type Analyzer, type OperationRunner } from "./app.ts";
 import { SnapshotWorker } from "./background.ts";
+import { createReadApi, READ_PATHS, type ReadAnswer } from "./read-api.ts";
 import { ENTER } from "./screen.ts";
 
 /** A detached session is kept this long for a reconnect. */
@@ -80,7 +71,7 @@ type BuiltName = keyof typeof BUILT;
 
 // Literal directory URLs: `dist/tui/web.js` and `src/tui/web.ts` both sit two levels below the package root.
 const PACKAGE_ROOT = fileURLToPath(new URL("../../", import.meta.url));
-const BUILT_DIR = join(PACKAGE_ROOT, "dist", "web");
+export const BUILT_DIR = join(PACKAGE_ROOT, "dist", "web");
 /** Only a checkout has the client's sources; the published package has the built files alone. */
 const CLIENT_SOURCES = join(PACKAGE_ROOT, "web", "src");
 
@@ -93,19 +84,21 @@ function newestUnder(dir: string): number {
   return newest;
 }
 
-/** Whether the bundle is missing or older than the client's sources or its build script. */
+/** Whether a built file is missing or older than the client's sources (the page's, the worker's and the keylang modules the worker bundles) or its build script. */
 function clientStale(): boolean {
   if (!existsSync(CLIENT_SOURCES)) return false;
-  const bundle = join(BUILT_DIR, "diagrams.js");
-  if (!existsSync(bundle)) return true;
+  const built = ["diagrams.js", "analysis.js", "site.json"].map((name) => join(BUILT_DIR, name));
+  if (built.some((file) => !existsSync(file))) return true;
   const script = join(PACKAGE_ROOT, "scripts", "build-web.mjs");
-  return statSync(bundle).mtimeMs < Math.max(newestUnder(CLIENT_SOURCES), existsSync(script) ? statSync(script).mtimeMs : 0);
+  const sources = [CLIENT_SOURCES, join(PACKAGE_ROOT, "web", "worker"), join(PACKAGE_ROOT, "src")].filter((dir) => existsSync(dir));
+  const oldest = Math.min(...built.map((file) => statSync(file).mtimeMs));
+  return oldest < Math.max(...sources.map(newestUnder), existsSync(script) ? statSync(script).mtimeMs : 0);
 }
 
 let building: Promise<void> | null = null;
 
 /** In a checkout, builds the diagram client when it is missing or stale (esbuild takes about a second); concurrent requests share one build. */
-function ensureClient(): Promise<void> {
+export function ensureClient(): Promise<void> {
   if (building) return building;
   if (!clientStale()) return Promise.resolve();
   building = new Promise<void>((done, fail) => {
@@ -243,13 +236,22 @@ export interface WebOptions {
   operations?: OperationRunner;
   /** How long a detached session waits for a reconnect. */
   keepMs?: number;
+  /**
+   * `web --read-only`: the diagram page alone, with its «Карта» tab — no TUI
+   * session, no write of any kind (a method other than GET is refused, and
+   * analyses keep no fact cache), so nothing in the repository changes.
+   */
+  readOnly?: boolean;
 }
 
 export async function serveWeb(options: WebOptions): Promise<WebServer> {
   const host = options.host ?? "127.0.0.1";
   const token = randomBytes(16).toString("hex");
   const worker = new SnapshotWorker();
-  const analyzer: Analyzer = options.analyzer ?? ((request) => analyze({ ...request, generate: worker.generate }));
+  const base: Analyzer = options.analyzer ?? ((request) => analyze({ ...request, generate: worker.generate }));
+  const readOnly = options.readOnly === true;
+  // A viewer keeps no fact cache: `.keylang/` is the repository's too.
+  const analyzer: Analyzer = readOnly ? (request) => base({ ...request, persistFacts: false, saveFacts: false }) : base;
   const sessions = new Map<string, Session>();
   const alive = new WeakMap<WebSocket, boolean>();
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE, perMessageDeflate: false, handleProtocols: (offered) => (offered.has(PROTOCOL) ? PROTOCOL : false) });
@@ -274,28 +276,7 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
     return pending;
   };
 
-  // The discovered view (`<dir>/flows-discovered/*.md`) parsed as specs, kept while its files are the same: `check` never reads it (ADR 0014).
-  let discoveredCache: { key: string; spec: SpecIR } | null = null;
-  const discoveredSpec = (done: Analysis): SpecIR | null => {
-    const dir = join(options.root, done.config.dir, DISCOVERED_FLOWS_DIR);
-    if (!existsSync(dir)) return null;
-    const files = readdirSync(dir)
-      // The README of the business processes (`flows discover --names`) is no flow.
-      .filter((name) => name.endsWith(".md") && name !== PROCESSES_FILE)
-      .sort()
-      .map((name) => join(dir, name));
-    const key = files
-      .map((file) => {
-        const stat = statSync(file);
-        return `${file}:${stat.mtimeMs}:${stat.size}`;
-      })
-      .join("\n");
-    if (discoveredCache?.key !== key) {
-      const docs = files.map((file) => parse(toPosix(relative(options.root, file)), readFileSync(file, "utf8")));
-      discoveredCache = { key, spec: compileSpec(docs).spec };
-    }
-    return discoveredCache.spec;
-  };
+  const read = createReadApi({ root: options.root, analysis, analyze: analyzer });
 
   /**
    * `POST /api/flow-proposal` (business-flows/22): the branches a person ticked in the explorer as one proposal
@@ -340,16 +321,6 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
     });
   };
 
-  /** The diagram of a view key (`flow:checkout`, `discovered:<name>`, `layers`…) as `diagramOf` draws it, before any layout file; a string says why there is none. */
-  const keyedDiagram = (done: Analysis, key: string): Diagram | string => {
-    const wanted = viewOfKey(key);
-    if (wanted === null) return `view: a view key such as flow:<name>, discovered:<name>, entry:<id>, process:<domain> or layers`;
-    const spec = wanted.discovered ? discoveredSpec(done) : done.spec;
-    if (spec === null) return { nodes: [], edges: [], groups: [] };
-    const processes = done.snapshot ? processViews(done.snapshot, done.spec, readProcesses(done.config.root, done.config.dir)) : [];
-    return diagramOf({ snapshot: done.snapshot, spec, results: [], view: wanted.view, processes });
-  };
-
   /**
    * `GET /api/layout?view=<key>` and `PUT` (business-flows/24): the layout file of a view,
    * `<dir>/diagrams/<view>.layout.json`, in the keys of the editor's canvas. A PUT replaces
@@ -362,10 +333,11 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
       response.setHeader("Allow", "GET, PUT");
       return json(405, { error: "layout takes GET or PUT" });
     }
-    const body = request.method === "PUT" ? await jsonBody(request, response, "layout", "PUT", MAX_LAYOUT_BODY) : null;
+    if (request.method === "GET") return send(response, await read.answer("/api/layout", query));
+    const body = await jsonBody(request, response, "layout", "PUT", MAX_LAYOUT_BODY);
     if (body === NO_BODY) return;
     const done = await analysis();
-    const diagram = keyedDiagram(done, view);
+    const diagram = read.keyedDiagram(done, view);
     if (typeof diagram === "string") return json(400, { error: diagram });
     const specDir = rootRelative(options.root, done.config.dir);
     let saved: { path: string; file: LayoutFile | null };
@@ -373,10 +345,6 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
       saved = readLayout(options.root, specDir, view);
     } catch (error) {
       return json(409, { error: error instanceof Error ? error.message : String(error) });
-    }
-    if (request.method === "GET") {
-      const pending = new Set(pendingTargets(options.root));
-      return json(200, { view, file: saved.path, exists: saved.file !== null, layout: saved.file === null ? {} : layoutFromFile(saved.file, diagram, pending) });
     }
     const layout = parseClientLayout(body);
     if (typeof layout === "string") return json(400, { error: layout });
@@ -532,6 +500,7 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
     // These paths are public (docs/tui.md); any other is the 404 of every unknown path, token or not.
     if (!API_PATHS.has(path)) return reply(response, 404, "text/plain", "not found\n");
     if (!sameOrigin(request) || !sameSecret(bearerToken(request), token)) return reply(response, 403, "text/plain", "forbidden\n");
+    if (readOnly && (request.method !== "GET" || !READ_PATHS.has(path))) return reply(response, 403, "application/json", `${JSON.stringify({ error: "read-only: this keylang web (--read-only) writes nothing" })}\n`);
     if (request.method !== "GET") {
       // A write: a browser's own word that the request comes from another site refuses it, besides Origin.
       const site = request.headers["sec-fetch-site"];
@@ -544,105 +513,7 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
     if (path === "/api/layout") return layoutRequest(request, response, query);
     if (path === "/api/greenfield") return greenfieldRequest(request, response);
     if (request.method !== "GET") return reply(response, 405, "text/plain", "method not allowed\n");
-    const json = (status: number, body: unknown): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
-    // The project tour (business-flows/15): the data of `keylang tour --json` and its Markdown, for the «Огляд» tab.
-    if (path === "/api/tour") {
-      const done = await analysis();
-      if (done.snapshot === null) return json(200, { reason: "no code to read: `languages` in keylang.json is empty" });
-      const tour = await buildTour({ config: done.config, snapshot: done.snapshot, spec: done.spec });
-      return json(200, { ...tour, markdown: tourMarkdown(tour) });
-    }
-    if (path === "/api/usages") {
-      const id = query.get("id")?.trim() ?? "";
-      if (id === "") return json(400, { error: "usages needs id=" });
-      const done = await analysis();
-      return json(200, usagesOf(done.snapshot, done.spec, discoveredSpec(done), id));
-    }
-    if (path === "/api/calls") {
-      const id = query.get("id")?.trim() ?? "";
-      if (id === "") return json(400, { error: "calls needs id=" });
-      const done = await analysis();
-      if (!done.snapshot) return json(200, { id, node: null, entries: [], callees: [], holes: [], callers: [], reachedFrom: [], reason: "no snapshot: the specs were checked without code" });
-      return json(200, callsOf(done.snapshot, id));
-    }
-    if (path === "/api/ids") {
-      // The editor's ID field (business-flows/23): the snapshot's IDs that start with the prefix, in text order.
-      const prefix = query.get("prefix") ?? "";
-      const done = await analysis();
-      if (!done.snapshot) return json(200, { prefix, ids: [], more: false, reason: "no snapshot: the specs were checked without code" });
-      const found = Object.keys(done.snapshot.nodes)
-        .filter((id) => id.startsWith(prefix))
-        .sort(compareText);
-      const nodes = done.snapshot.nodes;
-      return json(200, { prefix, ids: found.slice(0, MAX_IDS).map((id) => ({ id, kind: nodes[id]!.kind })), more: found.length > MAX_IDS });
-    }
-    if (path === "/api/export") {
-      // The diagram as a file for other tools (business-flows/28): the view as `/api/diagram` names it, the bytes `keylang export` writes.
-      const format = DIAGRAM_FORMATS.find((item) => item === query.get("format"));
-      if (format === undefined) return json(400, { error: `export needs format=${DIAGRAM_FORMATS.join("|")}` });
-      const wanted = exportViewOfQuery(query);
-      if (typeof wanted === "string") return json(400, { error: wanted });
-      const done = await analysis();
-      let text: string;
-      try {
-        text = diagramExportText(format, wanted, exportSourcesOf(done, wanted.discovered ? discoveredSpec(done) : null));
-      } catch (error) {
-        return json(400, { error: error instanceof Error ? error.message : String(error) });
-      }
-      const file = `${wanted.name.replace(/[^A-Za-z0-9._-]+/g, "_")}.${format}`;
-      response.setHeader("Content-Disposition", `attachment; filename="${file}"`);
-      return reply(response, 200, "application/xml; charset=utf-8", text);
-    }
-    if (path === "/api/coverage") {
-      // The payload of `keylang coverage --json`: the same operation over the same analyzer as the other requests.
-      const result = await runCoverage({ kind: "coverage", root: options.root }, { analyze: analyzer });
-      if (result.payload === null) return json(409, { error: result.messages[0]?.text ?? "coverage failed" });
-      const { text: _text, ...report } = result.payload;
-      return json(200, report);
-    }
-    // A discovered flow is drawn like a flow, from the discovered view and without verdicts: `check` does not judge it.
-    const discovered = path === "/api/diagram" && query.get("view") === "discovered";
-    const view = path !== "/api/diagram" ? null : parseView(discovered ? new URLSearchParams({ view: "flow", name: query.get("name") ?? "" }) : query);
-    if (typeof view === "string") return json(400, { error: discovered ? "view=discovered needs name=" : view });
-    const done = await analysis();
-    // The business processes `flows discover --names` saved, with their flows found again in this snapshot.
-    const processes = done.snapshot ? processViews(done.snapshot, done.spec, readProcesses(done.config.root, done.config.dir)) : [];
-    if (view === null) {
-      const found = discoveredSpec(done);
-      const entries = new Map((done.snapshot?.entries ?? []).map((entry) => [entry.id, entry]));
-      const events = eventsOf(done.snapshot);
-      return json(200, {
-        ...viewsOf(done.snapshot, done.spec, processes),
-        root: options.root,
-        events: events.events,
-        ...(events.reason ? { eventsReason: events.reason } : {}),
-        flowList: flowListing(done.snapshot, done.spec),
-        discovered: (found ? flowListing(done.snapshot, found) : []).map(({ ids: _ids, ...flow }) => {
-          const entry = flow.trigger === null ? undefined : entries.get(flow.trigger);
-          return { ...flow, ...(entry ? { kind: entry.kind, label: entry.label } : {}) };
-        }),
-      });
-    }
-    if (discovered) {
-      const found = discoveredSpec(done);
-      let saved: LayoutFile | null = null;
-      try {
-        saved = readLayout(options.root, rootRelative(options.root, done.config.dir), `discovered:${query.get("name") ?? ""}`).file;
-      } catch {
-        saved = null;
-      }
-      return json(200, found ? { ...diagramOf({ snapshot: done.snapshot, spec: found, results: [], view, saved }), specHash: specHash(options.root, done.docs) } : { nodes: [], edges: [], groups: [], reason: "no discovered flows: run `keylang flows discover`" });
-    }
-    const results = checkResults(done.verdicts, done.snapshot?.snapshotId ?? null, done.diagnostics);
-    // The view's layout file places the shapes (business-flows/24); one that cannot be read leaves the computed places.
-    const key = view.kind === "flow" ? `flow:${view.name}` : view.kind === "entry" ? `entry:${view.id}` : view.kind === "process" ? `process:${view.domain}` : view.kind === "layers" ? "layers" : null;
-    let saved: LayoutFile | null = null;
-    try {
-      if (key !== null) saved = readLayout(options.root, rootRelative(options.root, done.config.dir), key).file;
-    } catch {
-      saved = null;
-    }
-    return json(200, { ...withResults(diagramOf({ snapshot: done.snapshot, spec: done.spec, results, view, processes, saved }), results), specHash: specHash(options.root, done.docs) });
+    return send(response, await read.answer(path, query));
   };
 
   const serve = (request: IncomingMessage, response: ServerResponse): void => {
@@ -681,9 +552,14 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
     if (path === "/diagrams") {
       // Static like `/`: the token stays in the fragment and the data comes from `/api/`, which needs it. No inline script.
       response.setHeader("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:");
-      return reply(response, 200, "text/html; charset=utf-8", diagramsPage());
+      return reply(response, 200, "text/html; charset=utf-8", diagramsPage({ readOnly }));
     }
     if (path !== "/") return reply(response, 404, "text/plain", "not found\n");
+    // No terminal in a viewer: the diagram page is the whole of it. The fragment (the token) survives a redirect.
+    if (readOnly) {
+      response.setHeader("Location", "/diagrams");
+      return reply(response, 302, "text/plain", "/diagrams\n");
+    }
     // The page is static and holds no data; everything goes through the socket, which needs the token.
     response.setHeader("Content-Security-Policy", `default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://${request.headers.host}; img-src 'self' data:`);
     return reply(response, 200, "text/html; charset=utf-8", page());
@@ -710,7 +586,7 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
     const path = pathOf(request.url);
     if (path === null) return refuse(socket, "400 Bad Request");
     const origin = request.headers.origin;
-    if (path !== "/ws" || !authorized(request) || !allowedHost(request.headers.host) || (origin !== undefined && origin !== `http://${request.headers.host}`)) return refuse(socket);
+    if (readOnly || path !== "/ws" || !authorized(request) || !allowedHost(request.headers.host) || (origin !== undefined && origin !== `http://${request.headers.host}`)) return refuse(socket);
     wss.handleUpgrade(request, socket, head, (connection) => connect(connection));
   });
 
@@ -876,10 +752,7 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
 }
 
 /** The paths of the diagram API; any other under `/api/` is 404. */
-const API_PATHS: ReadonlySet<string> = new Set(["/api/views", "/api/diagram", "/api/usages", "/api/calls", "/api/ids", "/api/coverage", "/api/tour", "/api/flow-proposal", "/api/export", "/api/layout", "/api/diagram-proposal", "/api/greenfield", "/api/bundle", "/api/bundle-import"]);
-
-/** At most this many IDs in one answer of `GET /api/ids`. */
-const MAX_IDS = 100;
+const API_PATHS: ReadonlySet<string> = new Set([...READ_PATHS, "/api/flow-proposal", "/api/diagram-proposal", "/api/greenfield", "/api/bundle", "/api/bundle-import"]);
 
 /** The largest body `POST /api/flow-proposal` reads. */
 const MAX_BODY = 64 * 1024;
@@ -964,37 +837,6 @@ function readBody(request: IncomingMessage, max: number): Promise<string | null>
   });
 }
 
-/** At most this many check results ride on one shape. */
-const MAX_NODE_RESULTS = 20;
-
-type NodeResult = { verdict: string; criterion: string; message: string };
-
-/**
- * Each shape with the check results behind its verdict, for the side panel of
- * the diagram page: those on its spec line, or, for a shape of code alone
- * (an entry's call tree), those about its ID.
- */
-function withResults(diagram: Diagram, results: readonly CheckResult[]): Omit<Diagram, "nodes"> & { nodes: (DiagramNode & { results?: NodeResult[] })[] } {
-  const byLine = new Map<string, CheckResult[]>();
-  const byArea = new Map<string, CheckResult[]>();
-  const push = (map: Map<string, CheckResult[]>, key: string, result: CheckResult): void => {
-    const list = map.get(key);
-    if (list) list.push(result);
-    else map.set(key, [result]);
-  };
-  for (const result of results) {
-    push(byLine, `${result.file}:${result.line}`, result);
-    push(byArea, result.area, result);
-  }
-  const nodes = diagram.nodes.map((node) => {
-    const ref = node.ref;
-    const found = ref?.specFile !== undefined && ref.specLine !== undefined ? byLine.get(`${ref.specFile}:${ref.specLine}`) : ref?.id !== undefined ? byArea.get(ref.id) : undefined;
-    if (!found || found.length === 0) return node;
-    return { ...node, results: found.slice(0, MAX_NODE_RESULTS).map((result): NodeResult => ({ verdict: result.verdict, criterion: result.criterion, message: result.evidence })) };
-  });
-  return { ...diagram, nodes };
-}
-
 /** The token of an `Authorization: Bearer <token>` header. */
 function bearerToken(request: IncomingMessage): string | null {
   const match = /^Bearer ([^\s]+)$/.exec(String(request.headers.authorization ?? ""));
@@ -1010,27 +852,44 @@ function pathOf(target: string | undefined): string | null {
   }
 }
 
+/** A read answer as the HTTP reply, an attachment with its file name. */
+function send(response: ServerResponse, answer: ReadAnswer): void {
+  if (answer.file !== undefined) response.setHeader("Content-Disposition", `attachment; filename="${answer.file}"`);
+  reply(response, answer.status, answer.type, answer.body);
+}
+
 function reply(response: ServerResponse, status: number, type: string, body: string | Buffer): void {
   response.writeHead(status, { "Content-Type": type, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
   response.end(body);
 }
 
-/** The diagram page: markup only; `/assets/diagrams.js` takes the token from the fragment and fills it from `/api/`. */
-function diagramsPage(): string {
+/**
+ * The diagram page: markup only; `diagrams.js` fills it. Over HTTP it takes the
+ * token from the fragment and reads `/api/`; `source` names another transport:
+ * `static` reads the answers a static export wrote under `data/`, `local`
+ * analyses a folder the person opens in the tab (`app.html`). A read-only
+ * page (`--read-only`, both static ones) has no editor and no terminal link.
+ */
+export function diagramsPage(options: { readOnly?: boolean; source?: "server" | "static" | "local"; assets?: string; title?: string; shards?: number } = {}): string {
+  const source = options.source ?? "server";
+  const readOnly = options.readOnly === true || source !== "server";
+  const assets = options.assets ?? "/assets/";
+  const title = options.title ?? "keylang · діаграми";
+  const escape = (text: string): string => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   return `<!doctype html>
 <html lang="uk">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>keylang · діаграми</title>
+<title>${escape(title)}</title>
 <link rel="icon" href="data:,">
-<link rel="stylesheet" href="/assets/diagrams.css">
-<script src="/assets/diagrams.js" defer></script>
+<link rel="stylesheet" href="${assets}diagrams.css">
+<script src="${assets}diagrams.js" defer></script>
 </head>
-<body>
+<body data-source="${source}"${readOnly ? ' data-readonly="1"' : ""}${options.shards !== undefined ? ` data-shards="${options.shards}"` : ""}>
 <aside id="list">
-<header><span>Діаграми</span><a href="/">термінал</a></header>
-<nav id="modes" aria-label="Режим"><button type="button" data-mode="diagrams" aria-pressed="true">Діаграми</button><button type="button" data-mode="explore" aria-pressed="false">Дослідник</button><button type="button" data-mode="blind" aria-pressed="false">Сліпі зони</button><button type="button" data-mode="editor" aria-pressed="false">Редактор</button></nav>
+<header><span>Діаграми</span>${source === "server" && !readOnly ? '<a href="/">термінал</a>' : ""}</header>
+<nav id="modes" aria-label="Режим"><button type="button" data-mode="diagrams" aria-pressed="true">Діаграми</button><button type="button" data-mode="docs" aria-pressed="false">Карта</button><button type="button" data-mode="explore" aria-pressed="false">Дослідник</button><button type="button" data-mode="blind" aria-pressed="false">Сліпі зони</button>${readOnly ? "" : '<button type="button" data-mode="editor" aria-pressed="false">Редактор</button>'}</nav>
 <div id="find">
 <input id="search" type="search" placeholder="Пошук: флоу, точка входу, ID" aria-label="Пошук">
 <button id="find-usages" type="button" title="Де використовується цей ID">де ID?</button>
@@ -1044,6 +903,7 @@ function diagramsPage(): string {
 <div id="legend" aria-label="Легенда"></div>
 <div id="minimap" aria-label="Мінікарта"></div>
 </div>
+<section id="docs" aria-label="Карта й специфікації"></section>
 <section id="explorer" aria-label="Дослідник точок входу"></section>
 <section id="blind" aria-label="Сліпі зони"></section>
 <section id="editor" aria-label="Редактор діаграм"></section>
