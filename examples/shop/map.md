@@ -1,9 +1,9 @@
-<!-- keylang:generated — не редагувати, `keylang map` -->
-
 # map
 
 Приклад зі слайдів Шемсединова, доповнений API модулів. Помилку слайда
 `order domain.aggregate` збережено навмисно: `keylang check` має її знайти.
+Карту написано вручну: коду, з якого `keylang map` її
+згенерував би, тут немає.
 
 - domain
   - module [orderAggregate](src/domain/order.ts#L1)

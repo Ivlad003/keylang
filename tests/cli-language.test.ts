@@ -13,7 +13,7 @@ import { keylang, root, tempDir, writeTree } from "./cli-helpers.ts";
 test("check shop reports the dangling slide reference", () => {
   const o = keylang(root, ["check", "examples/shop"]);
   assert.equal(o.status, 1);
-  assert.match(o.stdout, /examples\/shop\/map\.md:27:13: K001 dangling reference `domain\.aggregate`/);
+  assert.match(o.stdout, /examples\/shop\/map\.md:27:13: K001 dangling reference `domain\.aggregate` \(did you mean `domain\.orderAggregate`\?\)/);
   assert.match(o.stdout, /unverified no snapshot/);
   assert.doesNotMatch(o.stdout, /K103/);
   assert.match(o.stderr, /1 fail, 1 unverified, 0 ok/);
@@ -108,7 +108,10 @@ test("parse --json shop", () => {
     ["flow", "map", "rules"],
   );
   const map = docs[1];
-  assert.ok(map.generated.startsWith("<!-- keylang:generated"));
+  // The example map is hand-written; a map `keylang map` wrote carries its marker.
+  assert.equal(map.generated, null);
+  const generated = JSON.parse(keylang(root, ["parse", "--json", "keylang/map/lang.md"]).stdout);
+  assert.ok(generated[0].generated.startsWith("<!-- keylang:generated"));
   // items[0] is the prose paragraph, then the four layers.
   const layer = map.sections[0].items[1];
   assert.equal(layer.type, "node");
