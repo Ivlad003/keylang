@@ -973,6 +973,15 @@ test("planned: an implemented intention is checked as code and hints to remove t
   assert.match(signature.stdout, /K201 planned fn `application\.purchase\.refund` has signature `\(order: number\) → void`, the code has `\(order: string\) → void`/);
 });
 
+test("planned: a parameter decorator is not part of a TS method's signature", (t) => {
+  const flow = "# flow create\n\n- planned fn application.tasks.Tasks.create (body: string, id: number) → void\n- trigger presentation.terminal.checkout\n";
+  const code = { ...CHECKOUT, "src/application/tasks.ts": "const Body = () => () => {};\nexport class Tasks {\n  create(@Body() body: string, @Body() id: number): void {}\n}\n" };
+  const dir = repo(t, code, { "flows/create.md": flow });
+  const o = keylang(dir, ["check"]);
+  assert.match(o.stdout, /K202 planned fn `application\.tasks\.Tasks\.create` is implemented/);
+  assert.doesNotMatch(o.stdout, /K201/);
+});
+
 test("planned: a different kind or a duplicate declaration is reported", (t) => {
   const flow = "# flow refund\n\n- planned type application.purchase.buy\n- planned fn domain.order.later\n- planned fn domain.order.later\n- planned event domain.order.create\n";
   const dir = repo(t, CHECKOUT, { "flows/refund.md": flow });

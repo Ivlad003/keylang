@@ -903,15 +903,17 @@
       <a id="extract.ts.pageOf"></a><br>A route object with a literal `path` and a named `component`; null for any other object.
       - calls [extract.ts.stringValue](extract.md#extract.ts.stringValue), [extract.ts.unwrapValue](extract.md#extract.ts.unwrapValue), [extract.ts.templateValue](extract.md#extract.ts.templateValue), [extract.ts.collapse](extract.md#extract.ts.collapse), [extract.treesitter.located](extract.md#extract.treesitter.located)
     - fn [signature](../../src/extract/ts.ts#L2088) (fn: Node) → string <!-- internal -->
-      <a id="extract.ts.signature"></a><br>Builds a one-line signature string from a function-like tree-sitter node: its parameter list (wrapped in parentheses if it isn't a formal parameter list) plus an arrow and return type when present. Whitespace in both parts is squeezed via [`extract.ts.collapse`](extract.md#extract.ts.collapse), and the leading… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - calls [extract.ts.collapse](extract.md#extract.ts.collapse)
-    - fn [typeSignature](../../src/extract/ts.ts#L2097) (n: Node) → string | null <!-- internal -->
+      <a id="extract.ts.signature"></a><br>Builds a one-line signature string from a function-like tree-sitter node: its parameter list (wrapped in parentheses if it isn't a formal parameter list) plus an arrow and return type when present. Whitespace in both parts is squeezed via [`extract.ts.collapse`](extract.md#extract.ts.collapse), and the leading… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+      - calls [extract.ts.collapse](extract.md#extract.ts.collapse), [extract.ts.withoutParamDecorators](extract.md#extract.ts.withoutParamDecorators)
+    - fn [withoutParamDecorators](../../src/extract/ts.ts#L2098) (params: Node) → string <!-- internal -->
+      <a id="extract.ts.withoutParamDecorators"></a><br>`(@Body() body: Dto)` is `(body: Dto)`: a parameter decorator is framework wiring, not the signature a `planned fn` declares.
+    - fn [typeSignature](../../src/extract/ts.ts#L2105) (n: Node) → string | null <!-- internal -->
       <a id="extract.ts.typeSignature"></a><br>Builds the display suffix for a type-like declaration: for a type alias it whitespace-collapses the aliased type via [`extract.ts.collapse`](extract.md#extract.ts.collapse) and returns `= T` only when 60 chars or shorter. For anything else it defers to [`extract.ts.heritage`](extract.md#extract.ts.heritage) to render extends/implements clauses. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [extract.ts.collapse](extract.md#extract.ts.collapse), [extract.ts.heritage](extract.md#extract.ts.heritage)
-    - fn [heritage](../../src/extract/ts.ts#L2106) (n: Node) → string | null <!-- internal -->
+    - fn [heritage](../../src/extract/ts.ts#L2114) (n: Node) → string | null <!-- internal -->
       <a id="extract.ts.heritage"></a><br>Finds the first child of a tree-sitter node whose type is a class heritage, extends-type, or extends clause and returns its source text whitespace-normalised via [`extract.ts.collapse`](extract.md#extract.ts.collapse), or null when no such clause exists. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [extract.ts.collapse](extract.md#extract.ts.collapse)
-    - fn [collapse](../../src/extract/ts.ts#L2111) (s: string) → string <!-- internal -->
+    - fn [collapse](../../src/extract/ts.ts#L2119) (s: string) → string <!-- internal -->
       <a id="extract.ts.collapse"></a><br>Squeezes every run of whitespace in a string down to a single space and strips leading and trailing blanks. Normalizes source text extracted for signatures and heritage by callers like [`extract.ts.signature`](extract.md#extract.ts.signature) and [`extract.ts.heritage`](extract.md#extract.ts.heritage). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [isNodeBuiltin](../../src/extract/ts.ts#L2116) (spec: string) → boolean
+    - fn [isNodeBuiltin](../../src/extract/ts.ts#L2124) (spec: string) → boolean
       <a id="extract.ts.isNodeBuiltin"></a><br>Is this specifier a Node built-in (`fs`, `node:fs`)?

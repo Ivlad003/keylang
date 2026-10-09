@@ -2088,10 +2088,18 @@ function pageOf(node: Node, lazy: ReadonlyMap<string, string>): EntryFact | null
 function signature(fn: Node): string {
   const params = fn.childForFieldName("parameters") ?? fn.childForFieldName("parameter");
   const ret = fn.childForFieldName("return_type");
-  let s = params ? collapse(params.text) : "()";
+  let s = params ? collapse(withoutParamDecorators(params)) : "()";
   if (params && params.type !== "formal_parameters") s = `(${s})`;
   if (ret) s += ` → ${collapse(ret.text.replace(/^:\s*/, ""))}`;
   return s;
+}
+
+/** `(@Body() body: Dto)` is `(body: Dto)`: a parameter decorator is framework wiring, not the signature a `planned fn` declares. */
+function withoutParamDecorators(params: Node): string {
+  let text = params.text;
+  // Decorators are removed in source order, so the first match is always the one being removed.
+  for (const param of params.namedChildren) for (const d of param.children) if (d.type === "decorator") text = text.replace(d.text, "");
+  return text;
 }
 
 function typeSignature(n: Node): string | null {

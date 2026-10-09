@@ -553,10 +553,11 @@
     - fn [pageOf](../../src/extract/ts.ts#L2071) (node: Node, lazy: ReadonlyMap<string, string>) → EntryFact | null <!-- internal -->
       - calls extract.ts.stringValue, extract.ts.unwrapValue, extract.ts.templateValue, extract.ts.collapse, extract.treesitter.located
     - fn [signature](../../src/extract/ts.ts#L2088) (fn: Node) → string <!-- internal -->
-      - calls extract.ts.collapse
-    - fn [typeSignature](../../src/extract/ts.ts#L2097) (n: Node) → string | null <!-- internal -->
+      - calls extract.ts.collapse, extract.ts.withoutParamDecorators
+    - fn [withoutParamDecorators](../../src/extract/ts.ts#L2098) (params: Node) → string <!-- internal -->
+    - fn [typeSignature](../../src/extract/ts.ts#L2105) (n: Node) → string | null <!-- internal -->
       - calls extract.ts.collapse, extract.ts.heritage
-    - fn [heritage](../../src/extract/ts.ts#L2106) (n: Node) → string | null <!-- internal -->
+    - fn [heritage](../../src/extract/ts.ts#L2114) (n: Node) → string | null <!-- internal -->
       - calls extract.ts.collapse
-    - fn [collapse](../../src/extract/ts.ts#L2111) (s: string) → string <!-- internal -->
-    - fn [isNodeBuiltin](../../src/extract/ts.ts#L2116) (spec: string) → boolean
+    - fn [collapse](../../src/extract/ts.ts#L2119) (s: string) → string <!-- internal -->
+    - fn [isNodeBuiltin](../../src/extract/ts.ts#L2124) (spec: string) → boolean
