@@ -307,7 +307,9 @@ Commands:
   check [paths…] [--changed] [--since <ref>] [--accept-weakening]
                             Resolve IDs and check rules (default: ./keylang)
                             Given files, it prints verdicts and the summary for those
-                            files only (e.g. check keylang/flows/buy.md)
+                            files only (e.g. check keylang/flows/buy.md), read with the
+                            rest of the spec directory: flows and planned ids declared
+                            in other files resolve
                             Rebuilds the analysis in memory; does not write the map
                             (only the fact cache .keylang/cache/, for the next run).
                             --changed reports only findings that touch files changed

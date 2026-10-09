@@ -216,6 +216,12 @@ export async function runCheck(request: CheckRequest, context: OperationContext)
   // Specs outside the repository's spec directory (examples, a slide) have no code to check against.
   const withoutCode = !specs.every((spec) => within(spec, specDir));
   const display = (abs: string): string => toPosix(relative(base, abs));
+  // Named files inside the spec directory are checked in its context — a flow another file
+  // declares, a `planned` of a feature — and only their claims are assessed. The rendered map
+  // was always assessed with them.
+  const scoped = request.paths.length > 0 && !withoutCode && existsSync(specDir);
+  const mapDir = join(specDir, "map");
+  const assessed = (file: string): boolean => [...specs, mapDir].some((spec) => within(resolve(base, file), spec));
   context.onProgress?.({ text: "checking the saved specs against the code" });
   // A named hook default: the static evidence of `keylang check` follows it to `analyze`.
   const analyzeSaved = context.analyze ?? analyze;
@@ -223,7 +229,8 @@ export async function runCheck(request: CheckRequest, context: OperationContext)
   try {
     analyzed = await analyzeSaved({
       root: request.root,
-      specs,
+      specs: scoped ? [specDir, ...specs] : specs,
+      ...(scoped ? { assessed } : {}),
       display,
       saveFacts: true,
       ...(request.static ? { static: request.static } : {}),

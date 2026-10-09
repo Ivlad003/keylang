@@ -75,6 +75,43 @@ test("K005 on `step planned <id>` points at the `planned` declaration", (t) => {
   assert.equal(diag?.reason, "arguments");
 });
 
+// `check <file>` reads the whole spec directory as context and reports only the named file.
+test("check of one file resolves flows and planned ids of the other spec files", (t) => {
+  const dir = tempDir(t, "keylang-check-scope-");
+  writeTree(dir, {
+    "keylang/features/refund.md": "# flow refund-plan\n\n- planned fn app.orders.refund\n",
+    "keylang/flows/checkout.md": "# flow checkout\n\n- planned fn app.orders.main\n- trigger app.orders.main\n",
+    "keylang/flows/order.md": "# flow order\n\n- trigger app.orders.main\n- continues checkout\n- step app.orders.refund\n",
+    "keylang/flows/broken.md": "# flow broken\n\n- step app.nowhere.x\n",
+  });
+  const o = keylang(dir, ["check", "keylang/flows/order.md"]);
+  assert.equal(o.status, 0, o.stdout + o.stderr);
+  assert.doesNotMatch(o.stdout, /K206|K001|broken\.md|checkout\.md|refund\.md/);
+  writeTree(dir, { "keylang/flows/order.md": "# flow order\n\n- planned fn app.orders.refund\n- trigger app.orders.main\n" });
+  const duplicate = keylang(dir, ["check", "keylang/flows/order.md"]);
+  assert.equal(duplicate.status, 1, duplicate.stdout);
+  assert.match(duplicate.stdout, /order\.md:3:1: K002 duplicate planned `app\.orders\.refund` \(first declared at keylang\/features\/refund\.md:3:\d+\)/);
+  assert.match(duplicate.stderr, /^1 fail, /m);
+});
+
+test("check of one file reports only its own rules, wherever their findings point in the code", (t) => {
+  const dir = tempDir(t, "keylang-check-rules-scope-");
+  writeTree(dir, {
+    "keylang.json": JSON.stringify({ languages: ["typescript"], layers: { app: "src/app/**", infra: "src/infra/**" } }),
+    "src/infra/db.ts": "export function save(): void {}\n",
+    "src/app/orders.ts": 'import { save } from "../infra/db.ts";\nexport function place(): void { save(); }\n',
+    "keylang/rules.md": "# rules\n\n- deny app infra\n",
+    "keylang/flows/place.md": "# flow place\n\n- trigger app.orders.place\n- step infra.db.save\n",
+  });
+  const flow = keylang(dir, ["check", "keylang/flows/place.md"]);
+  assert.equal(flow.status, 0, flow.stdout);
+  assert.doesNotMatch(flow.stdout, /K102|rules\.md/);
+  const rules = keylang(dir, ["check", "keylang/rules.md"]);
+  assert.equal(rules.status, 1, rules.stdout);
+  assert.match(rules.stdout, /^src\/app\/orders\.ts:1:\d+: K102 /m);
+  assert.doesNotMatch(rules.stdout, /place\.md/);
+});
+
 test("deferred flow properties and a query rule stay K004, and help has no migrate", (t) => {
   const dir = tempDir(t, "keylang-deferred-");
   writeTree(dir, {

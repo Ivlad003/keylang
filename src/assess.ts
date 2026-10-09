@@ -46,10 +46,25 @@ export function assess(
     testFileExists?: FlowInput["testFileExists"];
     /** The old stack the old IDs of `# migration` rows resolve against; absent: none (they stay unverified). */
     migration?: OldSnapshot;
+    /**
+     * The spec files whose claims are assessed (`check <file>`): the others are
+     * context only — their declarations, `planned` and flow names resolve
+     * references, but their rules, flows and diagnostics are not reported.
+     * Absent: every file.
+     */
+    assessed?: (file: string) => boolean;
   } = { tests: null, traces: null },
   format: RuleFormat = 1,
 ): Assessment {
-  const { spec, diagnostics: specDiags } = compileSpec(docs);
+  const { spec: whole, diagnostics: allSpecDiags } = compileSpec(docs);
+  const assessed = evidence.assessed ?? (() => true);
+  const own = <T extends { file: string }>(items: readonly T[]): T[] => items.filter((item) => assessed(item.file));
+  const ownDocs = docs.filter((doc) => assessed(doc.path));
+  const specDiags = own(allSpecDiags);
+  const rulesInScope = own(whole.rules);
+  const rejectedInScope = own(whole.rejectedLayers);
+  // The planned IDs stay whole: a `planned` of another file answers a reference here.
+  const spec: SpecIR = evidence.assessed === undefined ? whole : { ...whole, rules: rulesInScope, rejectedLayers: rejectedInScope, hasRules: whole.hasRules && (rulesInScope.length > 0 || rejectedInScope.length > 0), modules: own(whole.modules), flows: own(whole.flows), wires: own(whole.wires) };
   // The snapshot decides what the map alone cannot: configured layers without modules, and modules it could not read.
   const nodes = snapshot?.nodes;
   const members = (id: string): "complete" | "opaque" | undefined => {
@@ -61,8 +76,9 @@ export function assess(
     ...(nodes ? { members } : {}),
     ...(evidence.knownExternal ? { knownExternal: evidence.knownExternal } : {}),
   });
-  const { index, diagnostics: resolveDiags } = refined;
-  const rules = evaluateRules(spec, index, snapshot, docs, format);
+  const { index } = refined;
+  const resolveDiags = own(refined.diagnostics);
+  const rules = evaluateRules(spec, index, snapshot, ownDocs, format);
   const flows =
     snapshot === null
       ? { diagnostics: [] as Diagnostic[], verdicts: [] as Verdict[] }
@@ -81,15 +97,15 @@ export function assess(
   const planned = new Set(spec.planned.map((item) => item.id));
   const kindOf = dependencyKindOf(spec, index, snapshot?.nodes);
   const wiring = checkWiring(spec, snapshot === null ? null : { kinds: nodeKinds(snapshot.nodes), nodes: snapshot.nodes, exports: snapshot.exports }, kindOf, format);
-  const migration = migrationCheck(docs, evidence.migration ?? { state: "absent" }, snapshot?.snapshotId ?? null);
-  const diagnostics = [...docs.flatMap((doc) => doc.diagnostics), ...specDiags, ...resolveDiags, ...rules.diagnostics, ...flows.diagnostics, ...wiring, ...migration.diagnostics].filter(
+  const migration = migrationCheck(ownDocs, evidence.migration ?? { state: "absent" }, snapshot?.snapshotId ?? null);
+  const diagnostics = [...ownDocs.flatMap((doc) => doc.diagnostics), ...specDiags, ...resolveDiags, ...rules.diagnostics, ...flows.diagnostics, ...wiring, ...migration.diagnostics].filter(
     // A `planned` declaration answers a dangling reference to exactly its ID, not any message that mentions it.
     (diag) => diag.code !== "K001" || diag.target === undefined || !planned.has(diag.target),
   );
   diagnostics.sort(compareDiagnostics);
   // A flow step reports its own ID verdict for the same reference.
   const flowIds = new Set(flows.verdicts.filter((verdict) => verdict.criterion === "ID").map((verdict) => `${verdict.file}:${verdict.line}`));
-  const refinedVerdicts: Verdict[] = refined.unverified.filter((item) => !flowIds.has(`${item.file}:${item.line}`)).map((item) => ({
+  const refinedVerdicts: Verdict[] = own(refined.unverified).filter((item) => !flowIds.has(`${item.file}:${item.line}`)).map((item) => ({
     verdict: "unverified",
     criterion: "ID",
     area: item.message,
@@ -102,7 +118,7 @@ export function assess(
     message: item.message,
   }));
   const verdicts = afterRecovery([...rules.verdicts, ...refinedVerdicts, ...flows.verdicts, ...migration.verdicts], recoveredLines(docs));
-  return { index, diagnostics, verdicts, spec };
+  return { index, diagnostics, verdicts, spec: whole };
 }
 
 /**

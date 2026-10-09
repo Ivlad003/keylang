@@ -52,6 +52,8 @@ export interface AnalysisRequest {
    * migrations is never followed.
    */
   withoutMigration?: boolean;
+  /** The displayed spec files whose claims are assessed; the rest of `specs` is context (see `assess`). Absent: all. */
+  assessed?: (file: string) => boolean;
 }
 
 export interface Analysis extends Assessment {
@@ -125,6 +127,7 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
       traces: traceFiles === null ? null : loadTraces(root, traceFiles),
       static: staticMode.mode,
       migration,
+      ...(request.assessed ? { assessed: request.assessed } : {}),
       ...(staticMode.setBy ? { staticSetBy: staticMode.setBy } : {}),
       ...(request.withoutCode ? {} : { knownExternal: new Set(packages.map((p) => p.id)), testFileExists: (path: string) => repositoryFile(root, path) }),
     },
