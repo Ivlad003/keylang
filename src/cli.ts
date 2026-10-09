@@ -183,7 +183,7 @@ Commands:
   mcp                       Serve MCP over stdio for agents: search, node, code, flows,
                             check, explain, context, validate_spec, scaffold,
                             feature_status, list_entries, discover_flows, coverage_report,
-                            list_integrations, project_tour, apply_diff
+                            list_integrations, project_tour, migration_status, apply_diff
                             (proposals only; no spec is written, the fact cache
                             .keylang/cache/ is kept current)
   wire [--check] [--out f]  Generate keylang.gen.ts (or f: a .ts/.mts/.cts path relative to
@@ -242,7 +242,7 @@ Commands:
                             stale (--stale: ask only for those). --dry-run: requests
                             and a token estimate, writes nothing; --limit: requests.
                             No model: hybrid (default) offline only, llm exit 2
-  flows adopt <name> [--into <spec.md>]
+  flows adopt <name> [--into <spec.md>] [--depth d]
                             Propose one discovered flow as a spec, with a provenance
                             comment, as .keylang/proposals/<dir>/flows/<name>.md (or the
                             --into target); merge it with m in the TUI
