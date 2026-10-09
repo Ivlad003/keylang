@@ -125,7 +125,7 @@ test("async flows: unknown trigger kind, bad timers, an empty parallel and conti
     const pattern = new RegExp(`^keylang/flows/broken\\.md:${line}:${col}: ${code} ${text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "m");
     assert.match(o.stdout, pattern, o.stdout);
   };
-  at(3, 11, "K005", "unknown trigger kind `queue`; expected one of: route, cron, consumer, webhook, event");
+  at(3, 11, "K005", "unknown trigger kind `queue`; expected one of: route, cron, consumer, webhook, event; an entry point of another kind (`cli`, `main`) is a plain `- trigger <id>`");
   at(4, 13, "K206", "`continues` names flow `nowhere`, which no `# flow` declares");
   at(5, 13, "K206", "`continues` names flow `place-ordr`, which no `# flow` declares (did you mean `place-order`?)");
   at(6, 3, "K009", "`parallel` has no steps");

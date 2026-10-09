@@ -1003,7 +1003,7 @@ class Parser {
     const [kind, id] = rest;
     if (rest.length !== 2 || !kind || !id || kind.kind !== "word" || kind.text.includes(".")) return false;
     if (!isTriggerKind(kind.text) && kind.text !== TRIGGER_EVENT) {
-      this.err("K005", kind.span, `unknown trigger kind \`${kind.text}\`; expected one of: ${[...TRIGGER_KINDS, TRIGGER_EVENT].join(", ")}`, "arguments");
+      this.err("K005", kind.span, `unknown trigger kind \`${kind.text}\`; expected one of: ${[...TRIGGER_KINDS, TRIGGER_EVENT].join(", ")}; an entry point of another kind (\`cli\`, \`main\`) is a plain \`- trigger <id>\``, "arguments");
       return true;
     }
     n.label = { value: kind.text, span: kind.span };

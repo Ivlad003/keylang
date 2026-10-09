@@ -348,7 +348,7 @@ Alias залежності не збігається з контекстним �
 | `no-cycles` | нічого | — |
 | `kind business\|technical` | одне з двох слів | `text` |
 | `trigger\|step <id>` | одне ID | посилання |
-| `trigger route\|cron\|consumer\|webhook <id>` | вид точки входу, ID її fn | посилання; вид — `label`. Інше перше слово без крапки — K005 «unknown trigger kind» |
+| `trigger route\|cron\|consumer\|webhook <id>` | вид точки входу, ID її fn | посилання; вид — `label`. Інше перше слово без крапки — K005 «unknown trigger kind»; точка входу іншого виду з `keylang entries` (`cli`, `main`, `observer`…) — звичайний `trigger <id>` |
 | `trigger event <id>` | ID події (`events.<назва>`) | посилання; `label` — `event`. Невідома подія — K204, ID fn, типу чи модуля — K205 (дає `check`) |
 | `parallel` | нічого; кроки — вкладеними `step` | група; без жодного `step` — K009 |
 | `continues <flow>` | ім'я потоку | `text`; потік, якого немає, — K206 |
@@ -475,7 +475,7 @@ keylang/flows/refund.md:5:5: K004 `?` cannot have nested items
 
 **Р17. Асинхронні форми потоку** ([ADR 0023](adr/0023-async-flows.md)). Чотири форми — контекстні слова лише всередині `# flow`; до них такий рядок давав K004, тож зміна додавальна й нової редакції немає ([ADR 0007](adr/0007-format-editions.md)). Поза потоком слова лишаються звичайними (Р7): `- every app.handlers` під модулем карти — залежність з аліасом `every`.
 
-- `- trigger route|cron|consumer|webhook <id>` — потік починається з точки входу цього виду. `<id>` — ID fn точки входу зі списку `keylang entries`, а не шлях маршруту: шлях змінюється частіше за fn і не є ID. Мітку (`POST /V1/carts/mine/order`, розклад cron) показує вердикт ([semantics.md](semantics.md), «Асинхронні форми»).
+- `- trigger route|cron|consumer|webhook <id>` — потік починається з точки входу цього виду. Це чотири асинхронні види, які мають стартову подію BPMN; решта видів `keylang entries` (`cli`, `main`, `rest`, `observer`…) пишеться звичайним `- trigger <id>` без виду, і вид такої точки входу `check` не звіряє. `<id>` — ID fn точки входу зі списку `keylang entries`, а не шлях маршруту: шлях змінюється частіше за fn і не є ID. Мітку (`POST /V1/carts/mine/order`, розклад cron) показує вердикт ([semantics.md](semantics.md), «Асинхронні форми»).
 - `- parallel` з вкладеними `step` — паралельна група: кожен крок має відбутися, порядок між ними не перевіряється, а наступний сусід іде після всієї групи. Стоїть на верху потоку, під `step`/`trigger` і під `when`.
 - `- continues <flow>` на верху потоку — цей потік продовжує інший в іншому запиті (вебхук оплати продовжує оформлення замовлення). Форми `wait` усередині одного потоку немає: кожна точка входу — свій потік.
 - `- after <тривалість>` і `- every <розклад>` — таймери під кроком чи на верху потоку; їх перевіряє вкладений `test`.
@@ -598,7 +598,7 @@ keylang/flows/events.md:15:17: K205 `trigger event` names `shop.orders.place`, a
 ```
 
 ```diagnostics
-keylang/flows/broken.md:3:11: K005 unknown trigger kind `queue`; expected one of: route, cron, consumer, webhook, event
+keylang/flows/broken.md:3:11: K005 unknown trigger kind `queue`; expected one of: route, cron, consumer, webhook, event; an entry point of another kind (`cli`, `main`) is a plain `- trigger <id>`
 keylang/flows/broken.md:4:13: K206 `continues` names flow `place-ordr`, which no `# flow` declares (did you mean `place-order`?)
 keylang/flows/broken.md:5:3: K009 `parallel` has no steps; nest the steps that run in any order under it
 keylang/flows/broken.md:7:11: K005 expected `after <duration>`: a number and a unit (ms, s, m, min, h, d, w), such as `after 30m`
