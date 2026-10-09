@@ -24,7 +24,7 @@ A layer name must be a single id segment. Reserved names (`external`, `unassigne
 
 | Command | Writes files? | What you read |
 |---|---|---|
-| `keylang check [paths…]` | No | Findings on stdout, `N fail, M unverified, K ok` on stderr. `--changed` keeps only findings that touch files changed since `HEAD` (or `--since`), plus untracked files, including a deleted file that a flow still names, and K108 when the spec was weakened since that ref. `--stale` lists prose whose code changed since it was accepted |
+| `keylang check [paths…]` | No | Findings on stdout, `N fail, M unverified, K ok` on stderr. Named files are read with the rest of `keylang/`, but only their findings are shown. `--changed` keeps only findings that touch files changed since `HEAD` (or `--since`), plus untracked files, including a deleted file that a flow still names, and K108 when the spec was weakened since that ref. `--stale` lists prose whose code changed since it was accepted |
 | `keylang baseline` | `keylang/rules.baseline.md` | The generated deny/allow frame. `--check` exits 1 and names `keylang baseline` when the file no longer matches |
 | `keylang feature <slug>` | No | Whether `keylang/features/<slug>.md` is done. Exit 0 means done, 1 means gaps, 2 means the file is missing |
 | `keylang agents` | Harness files outside `keylang/` | The same adapters as `init`. `--agents=none` removes that install and keeps the baseline |
@@ -53,14 +53,6 @@ By default, `check` reads the spec directory named in `keylang.json`, usually `k
 `examples/shop` contains one deliberate mistake: the purchase module depends on `domain.aggregate`, but the module that actually exists is `domain.orderAggregate`.
 
 ![K001 on examples/shop, exit 1](images/cli-shop-k001.png)
-
-The screenshot comes from an older version. Today the same command prints:
-
-```text
-examples/shop/map.md:27:13: K001 dangling reference `domain.aggregate` (did you mean `domain.orderAggregate`?); declare `planned` if this is an intention
-examples/shop/rules.md:3:1: unverified no snapshot
-1 fail, 1 unverified, 0 ok
-```
 
 The output tells you three separate things:
 

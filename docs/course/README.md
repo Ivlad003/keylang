@@ -10,7 +10,7 @@ The idea of keylang is a division of labour. You write the spec, and an agent ge
 
 This course shows how to read and write that spec and how to work with the CLI, the terminal and the browser. The exact spec, written in Ukrainian, is split into the syntax in [`docs/grammar.md`](../grammar.md), ids, diagnostics and evidence in [`docs/semantics.md`](../semantics.md), and the code snapshot in [`docs/snapshot.md`](../snapshot.md). If this course and the spec disagree about a diagnostic, trust the spec. Commands and flags are described in [`docs/cli.md`](../cli.md) and in `keylang --help`, the terminal and the browser UI in [`docs/tui.md`](../tui.md). [`docs/design.md`](../design.md) describes where the tool is heading rather than what it does today, so whenever a lesson mentions something the tool cannot do yet, it says so.
 
-The screenshots were taken in this repository with `node bin/keylang.js web` on 2026-09-28, and with `node bin/keylang.js check` on `examples/shop`. The local trace and test report were out of date at the time, which is why those marks appear as `unverified`. The CLI output has changed in small ways since then; where it matters, the lesson says what you will see today.
+The UI screenshots were taken in this repository with `node bin/keylang.js web` on 2026-09-28, when the local trace and test report were out of date, which is why those marks appear as `unverified`. The CLI pictures show the output of 0.7.0; `node scripts/cli-screenshots.mjs` takes them again from the current checkout.
 
 | Lesson | You will be able to |
 |---|---|

@@ -24,7 +24,7 @@ npm i -g keylang       # далі: keylang check
 
 | Команда | Пише файли? | Що читати |
 |---|---|---|
-| `keylang check [paths…]` | Ні | Знахідки в stdout, `N fail, M unverified, K ok` у stderr. `--changed` лишає тільки знахідки, що стосуються файлів, змінених від `HEAD` (або `--since`), плюс невідстежувані файли, зокрема видалений файл, який ще згадує потік, і K108, коли специфікацію від цього ref послаблено. `--stale` перелічує прозу, чий код змінився відтоді, як її прийняли |
+| `keylang check [paths…]` | Ні | Знахідки в stdout, `N fail, M unverified, K ok` у stderr. Названі файли читаються разом з рештою `keylang/`, але показано лише їхні знахідки. `--changed` лишає тільки знахідки, що стосуються файлів, змінених від `HEAD` (або `--since`), плюс невідстежувані файли, зокрема видалений файл, який ще згадує потік, і K108, коли специфікацію від цього ref послаблено. `--stale` перелічує прозу, чий код змінився відтоді, як її прийняли |
 | `keylang baseline` | `keylang/rules.baseline.md` | Згенерована рамка deny/allow. `--check` завершується з 1 і називає `keylang baseline`, коли файл більше не збігається |
 | `keylang feature <slug>` | Ні | Чи готовий `keylang/features/<slug>.md`. Код 0 — готово, 1 — є прогалини, 2 — файла немає |
 | `keylang agents` | Файли харнеса поза `keylang/` | Ті самі адаптери, що й `init`. `--agents=none` прибирає це встановлення і лишає baseline |
@@ -53,14 +53,6 @@ npm i -g keylang       # далі: keylang check
 У `examples/shop` є одна навмисна помилка: модуль purchase залежить від `domain.aggregate`, хоча насправді існує модуль `domain.orderAggregate`.
 
 ![K001 на examples/shop, вихід 1](../images/cli-shop-k001.png)
-
-Знімок екрана зроблено старішою версією. Сьогодні та сама команда друкує:
-
-```text
-examples/shop/map.md:27:13: K001 dangling reference `domain.aggregate` (did you mean `domain.orderAggregate`?); declare `planned` if this is an intention
-examples/shop/rules.md:3:1: unverified no snapshot
-1 fail, 1 unverified, 0 ok
-```
 
 З цього виводу можна прочитати три окремі факти:
 

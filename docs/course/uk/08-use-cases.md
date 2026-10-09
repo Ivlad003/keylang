@@ -81,7 +81,7 @@ node bin/keylang.js map --check
 
 ![CLI: ID ok, static ok, trace unverified](../images/cli-check-repo.png)
 
-`static ok` на `cli.cli.run` дає виклик із `main`. Нижче `generateMap` досяжний через типове значення хука `generate`. `--static=behavior` зараховує такий шлях, а `--static=shape` — ні. Підсумок `0 fail, 22 unverified, 43 ok` збігається з інтерфейсом, якщо пам'ятати, що інтерфейс рахує рядки, а CLI — результати.
+`static ok` на `cli.cli.run` дає виклик із `main`. Нижче `generateMap` досяжний через типове значення хука `generate`. `--static=behavior` зараховує такий шлях, а `--static=shape` — ні. Знімок CLI новіший за знімки інтерфейсу, тож у його підсумку більше результатів, ніж `0 fail, 22 unverified, 43 ok` того дня; на одному дереві вони збігаються, якщо пам'ятати, що інтерфейс рахує рядки, а CLI — результати.
 
 ![explain cli.cli.cmdCheck](../images/cli-explain-id.png)
 

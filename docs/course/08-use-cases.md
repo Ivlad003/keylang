@@ -81,7 +81,7 @@ Here is the same picture in the CLI, with the middle cut out:
 
 ![CLI: ID ok, static ok, trace unverified](images/cli-check-repo.png)
 
-`static ok` on `cli.cli.run` comes from the call in `main`. Further down, `generateMap` is reached through the default value of the hook `generate`. `--static=behavior` counts that path, while `--static=shape` would not. The summary `0 fail, 22 unverified, 43 ok` matches the UI once you remember that the UI counts lines and the CLI counts results.
+`static ok` on `cli.cli.run` comes from the call in `main`. Further down, `generateMap` is reached through the default value of the hook `generate`. `--static=behavior` counts that path, while `--static=shape` would not. The CLI picture is newer than the UI ones, so its summary has more results than the `0 fail, 22 unverified, 43 ok` of that day; on one tree the two agree once you remember that the UI counts lines and the CLI counts results.
 
 ![explain cli.cli.cmdCheck](images/cli-explain-id.png)
 
