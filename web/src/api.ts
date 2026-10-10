@@ -391,11 +391,36 @@ export interface DocList {
   files: { path: string; group: "map" | "map-explained" | "explain" | "flows" | "flows-discovered" | "spec" }[];
 }
 
+/** The answer of `GET /api/git`. */
+export type GitAnswer =
+  | { available: true; head: { commit: string | null; short: string | null; branch: string | null }; origin: string | null; base: { ref: string; source: string; label: string; main?: string }; bases: { ref: string; label: string }[] }
+  | { available: false; reason: string };
+
+/** A result of `check` as the «Зміни» tab shows it (src/check-results.ts). */
+export interface CheckResultView {
+  criterion: string;
+  verdict: "ok" | "fail" | "unverified" | "warning";
+  evidence: string;
+  file: string;
+  line: number;
+  code: string | null;
+}
+
+/** The answer of `GET /api/changes`. */
+export interface ChangesAnswer {
+  base: { ref: string; source: string; label: string; main?: string };
+  unborn: boolean;
+  files: { path: string; kind: "spec" | "code" | "other"; modules: string[] }[];
+  deleted: { path: string; modules: string[] }[];
+  check: { results: CheckResultView[]; counts: { fail: number; unverified: number; ok: number }; changed: { hidden: number } | null } | null;
+  checkReason?: string;
+}
+
 /** A view as the query of `GET /api/diagram` names it. */
 export type ViewQuery = { view: "flow"; name: string } | { view: "discovered"; name: string } | { view: "entry"; id: string } | { view: "layers" } | { view: "process"; domain: string };
 
 /** What the page shows: a diagram, the explorer at an ID (`""`: none picked yet), the blind spots, or the editor on a view (`null`: an empty canvas). */
-export type PageQuery = ViewQuery | { view: "explore"; id: string } | { view: "blind" } | { view: "editor"; of: ViewQuery | null } | { view: "docs"; path: string };
+export type PageQuery = ViewQuery | { view: "explore"; id: string } | { view: "blind" } | { view: "editor"; of: ViewQuery | null } | { view: "docs"; path: string } | { view: "changes"; since: string };
 
 /** A refused or failed request, with the status the page explains. */
 export class ApiError extends Error {
@@ -439,6 +464,16 @@ export class Api {
 
   doc(path: string): Promise<{ path: string; text: string }> {
     return this.get("/api/doc", { path });
+  }
+
+  /** HEAD, the base of a feature and the branches (the «Зміни» tab). */
+  git(): Promise<GitAnswer> {
+    return this.get<GitAnswer>("/api/git");
+  }
+
+  /** The changes since `since` ("" — the base of a feature) and the findings over them. */
+  changes(since: string): Promise<ChangesAnswer> {
+    return this.get<ChangesAnswer>("/api/changes", since === "" ? {} : { since });
   }
 
   /** One proposal of the ticked branches; a refusal (a generated target, a proposal waiting) is an `ApiError` with the server's reason. */

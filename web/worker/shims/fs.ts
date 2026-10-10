@@ -10,6 +10,8 @@ import { dirname, resolve } from "./path.ts";
 type Data = Uint8Array | string;
 
 const files = new Map<string, Data>();
+/** The modification time a file came with (`File.lastModified`), ms; 0 when none was given. */
+const mtimes = new Map<string, number>();
 const dirs = new Set<string>(["/"]);
 /** Each directory's entries, name → whether it is a directory: a listing reads its own, not every path. */
 const children = new Map<string, Map<string, boolean>>([["/", new Map()]]);
@@ -34,10 +36,11 @@ function addDirs(path: string): void {
   }
 }
 
-/** Puts a file (bytes or text) at an absolute path, with the directories above it. */
-export function mountFile(path: string, data: Data): void {
+/** Puts a file (bytes or text) at an absolute path, with the directories above it; `mtime` in ms. */
+export function mountFile(path: string, data: Data, mtime?: number): void {
   const abs = absolute(path);
   files.set(abs, data);
+  if (mtime !== undefined) mtimes.set(abs, mtime);
   addDirs(dirname(abs));
   entry(dirname(abs), abs.slice(abs.lastIndexOf("/") + 1), false);
 }
@@ -54,8 +57,8 @@ function failure(code: string, syscall: string, path: string): Error {
 
 export class Stats {
   readonly size: number;
-  readonly mtimeMs = 0;
-  readonly mtime = new Date(0);
+  readonly mtimeMs: number;
+  readonly mtime: Date;
   readonly ctimeMs = 0;
   readonly birthtimeMs = 0;
   readonly mode: number;
@@ -63,10 +66,12 @@ export class Stats {
   readonly ino: number;
   private readonly directory: boolean;
 
-  constructor(directory: boolean, size: number, ino: number) {
+  constructor(directory: boolean, size: number, ino: number, mtimeMs = 0) {
     this.directory = directory;
     this.size = size;
     this.ino = ino;
+    this.mtimeMs = mtimeMs;
+    this.mtime = new Date(mtimeMs);
     this.mode = directory ? 0o40555 : 0o100444;
   }
 
@@ -128,7 +133,7 @@ export function existsSync(path: string | URL): boolean {
 export function statSync(path: string | URL, options?: { throwIfNoEntry?: boolean }): Stats | undefined {
   const abs = absolute(path);
   const data = files.get(abs);
-  if (data !== undefined) return new Stats(false, sizeOf(data), inode(abs));
+  if (data !== undefined) return new Stats(false, sizeOf(data), inode(abs), mtimes.get(abs) ?? 0);
   if (dirs.has(abs)) return new Stats(true, 0, inode(abs));
   if (options?.throwIfNoEntry === false) return undefined;
   throw failure("ENOENT", "stat", abs);

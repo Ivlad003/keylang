@@ -49,6 +49,7 @@
       - module [blind](../../web/src/blind.ts#L1) <!-- outside -->
       - module [bundle-clip](../../web/src/bundle-clip.ts#L1) <!-- outside -->
       - module [canvas](../../web/src/canvas.ts#L1) <!-- outside -->
+      - module [changes](../../web/src/changes.ts#L1) <!-- outside -->
       - module [diagrams](../../web/src/diagrams.ts#L1) <!-- outside -->
       - module [docs](../../web/src/docs.ts#L1) <!-- outside -->
       - module [dom](../../web/src/dom.ts#L1) <!-- outside -->
@@ -65,6 +66,8 @@
       - module [tour](../../web/src/tour.ts#L1) <!-- outside -->
     - module worker
       - module [analysis](../../web/worker/analysis.ts#L1) <!-- outside -->
+      - module [git-changes](../../web/worker/git-changes.ts#L1) <!-- outside -->
+      - module [git](../../web/worker/git.ts#L1) <!-- outside -->
       - module shims
         - module [crypto](../../web/worker/shims/crypto.ts#L1) <!-- outside -->
         - module [fs](../../web/worker/shims/fs.ts#L1) <!-- outside -->

@@ -21,6 +21,7 @@ import { Api, ApiError, readOnlyPage, transport, useTransport, type ClipShape, t
 import { BlindSpots } from "./blind.ts";
 import { Canvas, VERDICT_COLOUR, VERDICT_GLYPH } from "./canvas.ts";
 import { writeClipboard } from "./bundle-clip.ts";
+import { Changes, changeItems } from "./changes.ts";
 import { Docs, docItems } from "./docs.ts";
 import { codeLink, element, make } from "./dom.ts";
 import { Editor } from "./editor.ts";
@@ -37,10 +38,10 @@ import "./diagrams.css";
 /** How often the page asks again, ms; a request that takes longer delays the next one. */
 const POLL_MS = 5000;
 
-type Mode = "diagrams" | "explore" | "blind" | "editor" | "docs";
+type Mode = "diagrams" | "explore" | "blind" | "editor" | "docs" | "changes";
 
 function modeOf(query: PageQuery): Mode {
-  return query.view === "explore" ? "explore" : query.view === "blind" ? "blind" : query.view === "editor" ? "editor" : query.view === "docs" ? "docs" : "diagrams";
+  return query.view === "explore" ? "explore" : query.view === "blind" ? "blind" : query.view === "editor" ? "editor" : query.view === "docs" ? "docs" : query.view === "changes" ? "changes" : "diagrams";
 }
 
 /** A query that draws a diagram: not one of the other modes. */
@@ -69,6 +70,7 @@ function readHash(): { query: PageQuery; node: string | null } | null {
   if (view === "explore") return { query: { view, id: id ?? "" }, node: null };
   if (view === "blind") return { query: { view }, node: null };
   if (view === "docs") return { query: { view, path: params.get("path") ?? "" }, node: null };
+  if (view === "changes") return { query: { view, since: params.get("since") ?? "" }, node: null };
   if (view === "editor") return { query: { view, of: viewOfKey(params.get("of") ?? "") }, node: null };
   return null;
 }
@@ -98,6 +100,8 @@ function keyOf(query: PageQuery): string {
       return "blind";
     case "docs":
       return `docs:${query.path}`;
+    case "changes":
+      return `changes:${query.since}`;
     case "editor":
       return `editor:${query.of ? keyOf(query.of) : ""}`;
     default:
@@ -181,6 +185,7 @@ class Page {
   private readonly blind: BlindSpots;
   private readonly editor: Editor;
   private readonly docs: Docs;
+  private readonly changes: Changes;
   private docList: DocList | null = null;
   private node: string | null = null;
   private usages: Usages | null = null;
@@ -207,12 +212,14 @@ class Page {
     (window as unknown as { keylangEditor: unknown }).keylangEditor = this.editor;
     this.blind = new BlindSpots(element("blind"), this.api, { ...host, discovered: (name: string) => void this.open({ view: "discovered", name }) });
     this.docs = new Docs(element("docs"), this.api, { status: host.status, open: (path: string) => void this.open({ view: "docs", path }) });
+    this.changes = new Changes(element("changes"), this.api, { ...host, openDoc: (path: string) => void this.open({ view: "docs", path }), pick: (since: string) => void this.open({ view: "changes", since }) });
     for (const tab of document.querySelectorAll<HTMLButtonElement>("#modes button[data-mode]")) {
       tab.addEventListener("click", () => {
         const mode = tab.dataset["mode"] as Mode;
         if (mode === "explore") void this.open({ view: "explore", id: this.explorer.current() });
         else if (mode === "blind") void this.open({ view: "blind" });
         else if (mode === "docs") void this.open({ view: "docs", path: this.docs.current() });
+        else if (mode === "changes") void this.open({ view: "changes", since: this.changes.current()?.since ?? "" });
         else if (mode === "editor") void this.open({ view: "editor", of: this.editor.view() === "" ? this.lastDiagram : viewOfKey(this.editor.view()) });
         else if (this.lastDiagram) void this.open(this.lastDiagram);
         else {
@@ -291,7 +298,8 @@ class Page {
   /** The list of the mode: every view to draw, or the entry points and events to explore. */
   private fillList(): void {
     if (!this.views) return;
-    this.items = this.mode === "docs" ? (this.docList ? docItems(this.docList) : []) : this.mode === "diagrams" || this.mode === "editor" ? itemsOf(this.views) : exploreItemsOf(this.views);
+    const changed = this.changes.current();
+    this.items = this.mode === "changes" ? (changed ? changeItems(changed.answer, changed.since) : []) : this.mode === "docs" ? (this.docList ? docItems(this.docList) : []) : this.mode === "diagrams" || this.mode === "editor" ? itemsOf(this.views) : exploreItemsOf(this.views);
     this.list.setItems(this.items);
     this.markList();
   }
@@ -347,6 +355,11 @@ class Page {
     this.writeHash();
     if (wanted.view === "explore") return this.explorer.show(wanted.id);
     if (wanted.view === "blind") return this.blind.show();
+    if (wanted.view === "changes") {
+      await this.changes.show(wanted.since);
+      if (this.active === wanted) this.fillList();
+      return;
+    }
     if (wanted.view === "docs") {
       try {
         await this.loadDocs();

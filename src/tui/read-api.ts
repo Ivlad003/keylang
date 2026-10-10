@@ -14,9 +14,12 @@ import { diagramOf, flowListing, parseView, usagesOf, viewOfKey, viewsOf, type D
 import { layoutFromFile, readLayout, type LayoutFile } from "../diagram-layout.ts";
 import { PROCESSES_FILE, processViews, readProcesses } from "../discover-names.ts";
 import { callsOf, eventsOf } from "../explorer.ts";
+import { redactUrl } from "../clone.ts";
 import { collectMdFiles } from "../files.ts";
+import { deletedModuleIds, featureBaseOrigin, gitChangedFiles, gitSummary } from "../git-changes.ts";
 import { DISCOVERED_FLOWS_DIR, EXPLAINED_MAP_DIR, explainedMapOf } from "../map.ts";
 import { runCoverage } from "../operations/coverage.ts";
+import { runCheck } from "../operations/spec.ts";
 import { DIAGRAM_FORMATS, diagramExportText, exportSourcesOf, exportViewOfQuery } from "../operations/diagram-export.ts";
 import { specHash } from "../operations/diagram-propose.ts";
 import { rootRelative } from "../operations/shared.ts";
@@ -45,7 +48,10 @@ export interface ReadApiOptions {
 }
 
 /** The GET paths this module answers; `/api/layout` also takes a PUT, which `web.ts` handles. */
-export const READ_PATHS: ReadonlySet<string> = new Set(["/api/views", "/api/diagram", "/api/usages", "/api/calls", "/api/ids", "/api/coverage", "/api/tour", "/api/export", "/api/layout", "/api/docs", "/api/doc"]);
+export const READ_PATHS: ReadonlySet<string> = new Set(["/api/views", "/api/diagram", "/api/usages", "/api/calls", "/api/ids", "/api/coverage", "/api/tour", "/api/export", "/api/layout", "/api/docs", "/api/doc", "/api/git", "/api/changes"]);
+
+/** At most this many branches in `GET /api/git`: the page offers them as bases. */
+const MAX_BRANCHES = 100;
 
 /**
  * A request as one string, the query in one order: a static export files its
@@ -163,6 +169,26 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
       const tour = await buildTour({ config: done.config, snapshot: done.snapshot, spec: done.spec });
       return json(200, { ...tour, markdown: tourMarkdown(tour) });
     }
+    if (path === "/api/git") {
+      // Where the working tree stands and the base the «Зміни» tab starts from: the base of a feature.
+      let summary;
+      let base;
+      try {
+        summary = gitSummary(root, "web");
+        base = featureBaseOrigin(root, "web");
+      } catch (error) {
+        return json(200, { available: false, reason: error instanceof Error ? error.message : String(error) });
+      }
+      const bases = [{ ref: base.ref, label: base.label }, ...(base.ref === "HEAD" ? [] : [{ ref: "HEAD", label: "HEAD" }]), ...summary.branches.slice(0, MAX_BRANCHES).map((branch) => ({ ref: branch, label: branch }))];
+      return json(200, {
+        available: true,
+        head: { commit: summary.commit, short: summary.commit?.slice(0, 7) ?? null, branch: summary.branch },
+        origin: summary.origin === null ? null : redactUrl(summary.origin),
+        base,
+        bases,
+      });
+    }
+    if (path === "/api/changes") return changes(query.get("since"));
     if (path === "/api/docs") {
       const done = await options.analysis();
       const found = docs(done);
@@ -281,6 +307,45 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
       saved = null;
     }
     return json(200, { ...withResults(diagramOf({ snapshot: done.snapshot, spec: done.spec, results, view, processes, saved }), results), specHash: specHash(root, done.docs) });
+  };
+
+  /**
+   * `GET /api/changes[?since=<ref>]`: what the working tree changed since the base (the base of a
+   * feature when none is named) and the findings of `check --changed` over it. A ref git does not
+   * know is the caller's error (400); no git or no repository is a state (409).
+   */
+  const changes = async (since: string | null): Promise<ReadAnswer> => {
+    const json = (status: number, body: unknown): ReadAnswer => ({ status, type: "application/json", body: `${JSON.stringify(body)}\n` });
+    let base;
+    try {
+      base = since === null || since === "" ? featureBaseOrigin(root, "web") : { ref: since, source: "since" as const, label: since };
+    } catch (error) {
+      return json(409, { error: error instanceof Error ? error.message : String(error) });
+    }
+    let changed;
+    try {
+      changed = gitChangedFiles(root, base.ref, "web");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // A ref git cannot read is the request's; anything else (no git, no repository) is the repository's state.
+      return json(/not a git ref|unknown revision|bad revision|ambiguous argument|not a commit/.test(message) ? 400 : 409, { error: message });
+    }
+    const done = await options.analysis();
+    const modulesOf = new Map<string, string[]>();
+    for (const [id, node] of Object.entries(done.snapshot?.nodes ?? {})) {
+      if (node.kind !== "module" || node.class === true || node.file === null) continue;
+      modulesOf.set(node.file, [...(modulesOf.get(node.file) ?? []), id]);
+    }
+    const specDir = `${rootRelative(root, done.config.dir)}/`;
+    const deleted = new Set(changed.deleted);
+    const files = [...changed.paths]
+      .filter((file) => !deleted.has(file))
+      .sort(compareText)
+      .map((file) => ({ path: file, kind: file.startsWith(specDir) && file.endsWith(".md") ? "spec" : modulesOf.has(file) ? "code" : "other", modules: (modulesOf.get(file) ?? []).sort(compareText) }));
+    const gone = [...deleted].sort(compareText).map((file) => ({ path: file, modules: deletedModuleIds(done.config, [file]) }));
+    // The findings of the slice, as `keylang check --changed --since <base> --format json` reports them.
+    const check = await runCheck({ kind: "check", root, paths: [], strict: false, changed: true, since: base.ref }, { analyze: options.analyze });
+    return json(200, { base, unborn: changed.unborn, files, deleted: gone, check: check.payload, ...(check.payload === null ? { checkReason: check.messages.find((m) => m.level === "error")?.text ?? check.messages[0]?.text ?? "check failed" } : {}) });
   };
 
   return { answer, keyedDiagram, discoveredSpec, docs };

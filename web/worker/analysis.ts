@@ -9,6 +9,7 @@
 import { analyze, type Analysis } from "../../src/analyze.ts";
 import { GRAMMARS, wasmFile } from "../../src/extract/grammars.ts";
 import { createReadApi, type ReadApi } from "../../src/tui/read-api.ts";
+import { prepareGit, setUnread } from "./git.ts";
 import type { FromWorker, ToWorker } from "../src/local-protocol.ts";
 import { mountDirectory, mountFile } from "./shims/fs.ts";
 import { WEB_TREE_SITTER } from "./shims/module.ts";
@@ -22,6 +23,8 @@ const PACKAGE = "/keylang";
 const post = (message: FromWorker): void => self.postMessage(message);
 
 let read: ReadApi | null = null;
+/** The open folder's root and spec directory, for the git the «Зміни» tab asks. */
+let opened: { root: string; specDir: string } | null = null;
 
 async function fetchBytes(name: string): Promise<Uint8Array> {
   const response = await fetch(new URL(name, self.location.href));
@@ -40,12 +43,14 @@ async function load(message: Extract<ToWorker, { type: "load" }>): Promise<void>
   // `map.ts` hashes its extractor's code to key a fact cache, which the browser never keeps: an empty directory is enough.
   mountDirectory(`${PACKAGE}/src/extract`);
   const root = `/repo/${message.name.replace(/[\\/]/g, "_") || "repository"}`;
-  for (const file of message.files) mountFile(`${root}/${file.path}`, new Uint8Array(file.data));
+  for (const file of message.files) mountFile(`${root}/${file.path}`, new Uint8Array(file.data), file.mtime);
   mountDirectory(root);
+  setUnread(root, message.unread);
   post({ type: "progress", text: `analysing ${message.files.length} files` });
   const started = performance.now();
   const done: Analysis = await analyze({ root, persistFacts: false, saveFacts: false });
   read = createReadApi({ root, analysis: async () => done, analyze: async () => done, showRoot: false });
+  opened = { root, specDir: done.config.dir };
   post({ type: "progress", text: `analysed in ${Math.round(performance.now() - started)} ms` });
   post({ type: "ready", root, files: message.files.length, nodes: Object.keys(done.snapshot?.nodes ?? {}).length, languages: [...done.config.languages] });
 }
@@ -61,8 +66,11 @@ self.addEventListener("message", (event) => {
     post({ type: "reply", id: message.id, reply: { status: 409, type: "application/json", text: JSON.stringify({ error: "no repository is open" }) } });
     return;
   }
-  api
-    .answer(message.path, new URLSearchParams(message.query))
+  const query = new URLSearchParams(message.query);
+  // Git is read with isomorphic-git ahead of the questions src/git-changes.ts asks, which are synchronous.
+  const ready = opened !== null && (message.path === "/api/git" || message.path === "/api/changes") ? prepareGit(opened.root, message.path === "/api/changes" ? query.get("since") : null, opened.specDir) : Promise.resolve();
+  ready
+    .then(() => api.answer(message.path, query))
     .then((answer) => post({ type: "reply", id: message.id, reply: { status: answer.status, type: answer.type, text: answer.body, ...(answer.file !== undefined ? { file: answer.file } : {}) } }))
     .catch((error: unknown) => post({ type: "reply", id: message.id, reply: { status: 500, type: "application/json", text: JSON.stringify({ error: error instanceof Error ? error.message : String(error) }) } }));
 });

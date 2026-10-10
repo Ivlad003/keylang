@@ -100,6 +100,11 @@ const browserNode = {
       return { path: join(shims, shim) };
     });
     builder.onResolve({ filter: /^web-tree-sitter$/ }, () => ({ path: join(shims, "web-tree-sitter.ts") }));
+    // keylang's git questions are answered from what isomorphic-git prepared (web/worker/git-changes.ts),
+    // which takes the module's pure helpers by the name `keylang-git-changes`.
+    const gitChanges = join(root, "src/git-changes.ts");
+    builder.onResolve({ filter: /^keylang-git-changes$/ }, () => ({ path: gitChanges }));
+    builder.onResolve({ filter: /git-changes\.ts$/ }, (args) => (resolve(args.resolveDir, args.path) === gitChanges ? { path: join(root, "web/worker/git-changes.ts") } : undefined));
     builder.onResolve({ filter: /^web-tree-sitter-package$/ }, () => ({ path: join(dirname(require.resolve("web-tree-sitter")), "web-tree-sitter.js") }));
     builder.onResolve({ filter: /^(@anthropic-ai\/sdk|eventsource-parser)(\/.*)?$/ }, (args) => (UNAVAILABLE_PACKAGES.has(args.path.split("/").slice(0, args.path.startsWith("@") ? 2 : 1).join("/")) ? { path: join(shims, "unavailable.ts") } : undefined));
     // `import.meta.url` of keylang's own modules: a path under /keylang/ (not inside a string: the TypeScript extractor compares text with it).
@@ -113,14 +118,18 @@ const browserNode = {
 };
 
 /**
- * The license text of a package that ships none (saxes): the standard text of
- * the SPDX id its package.json names, with its author as the holder. Any other
+ * The license text of a package that ships none (saxes, clean-git-ref, diff3): the
+ * standard text of the SPDX id its package.json names, with its author as the
+ * holder. Any other
  * id fails the build: a bundle carries no code without its license.
  */
 function licenseOfManifest(dir) {
   const { name, license, author } = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
   const holder = typeof author === "string" ? author : (author?.name ?? name);
   if (license === "ISC") return `ISC License\n\nCopyright (c) ${holder}\n\nPermission to use, copy, modify, and/or distribute this software for any\npurpose with or without fee is hereby granted, provided that the above\ncopyright notice and this permission notice appear in all copies.\n\nTHE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES\nWITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF\nMERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR\nANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES\nWHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN\nACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF\nOR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.\n\n(${name}: no license file in the package; the text of its package.json \`license\`)\n`;
+  if (license === "MIT") return `MIT License\n\nCopyright (c) ${holder}\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the "Software"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.\n\n(${name}: no license file in the package; the text of its package.json \`license\`)\n`;
+  // Apache-2.0 is keylang's own license: its standard text is the repository's LICENSE.
+  if (license === "Apache-2.0") return `${name}: Apache License 2.0 (no license file in the package; the text of its package.json \`license\`), by ${holder}\n\n${readFileSync(join(root, "LICENSE"), "utf8")}`;
   throw new Error(`build-web: ${name} has no license file to ship with the bundle (license: ${license ?? "none"})`);
 }
 

@@ -839,9 +839,12 @@
       - calls features.git-changes.assertRef, features.git-changes.gitIn, base.span.compareText
     - fn [readFeatureBase](../../src/git-changes.ts#L203) (root: string, path: string, since: string | undefined, label: string) → FeatureBase
       - calls features.git-changes.featureBaseOrigin, features.git-changes.gitFileAt, features.git-changes.gitChangedFiles, base.span.compareText, lang.parser.parse
-    - fn [featureBaseOrigin](../../src/git-changes.ts#L242) (root: string, label: string) → BaseOrigin
+    - type [GitSummary](../../src/git-changes.ts#L225)
+    - fn [gitSummary](../../src/git-changes.ts#L237) (root: string, label: string) → GitSummary
+      - calls features.git-changes.gitIn, base.span.compareText
+    - fn [featureBaseOrigin](../../src/git-changes.ts#L276) (root: string, label: string) → BaseOrigin
       - calls features.git-changes.gitIn
-    - fn [deletedModuleIds](../../src/git-changes.ts#L265) (config: Config, files: readonly string[]) → string[]
+    - fn [deletedModuleIds](../../src/git-changes.ts#L299) (config: Config, files: readonly string[]) → string[]
       - calls map.graph.placeFile
   - module [git-hook](../../src/git-hook.ts#L1)
     - node external.node

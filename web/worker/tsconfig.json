@@ -3,8 +3,12 @@
     "target": "es2023",
     "module": "esnext",
     "moduleResolution": "bundler",
-    "lib": ["es2023"],
-    "types": ["node"],
+    "lib": [
+      "es2023"
+    ],
+    "types": [
+      "node"
+    ],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
@@ -12,7 +16,15 @@
     "verbatimModuleSyntax": true,
     "allowImportingTsExtensions": true,
     "noEmit": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "paths": {
+      "keylang-git-changes": [
+        "../../src/git-changes.ts"
+      ]
+    }
   },
-  "include": ["*.ts", "shims/*.ts"]
+  "include": [
+    "*.ts",
+    "shims/*.ts"
+  ]
 }

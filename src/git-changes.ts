@@ -221,6 +221,40 @@ export function readFeatureBase(root: string, path: string, since: string | unde
   return { ...origin, state: "compared", doc: parse(path, text), changes, ...atHead };
 }
 
+/** Where the working tree stands, for a page that shows the changes (`GET /api/git`). */
+export interface GitSummary {
+  /** The commit of HEAD; null before the first commit. */
+  commit: string | null;
+  /** The branch HEAD is on; null when HEAD is detached. */
+  branch: string | null;
+  /** `remote.origin.url` as configured (credentials included: the caller redacts it), or null. */
+  origin: string | null;
+  /** Local branches, then remote ones (`origin/main`), each sorted; `origin/HEAD` left out. */
+  branches: string[];
+}
+
+/** HEAD, its branch, the origin and the branches of the repository around `root`. No git, or no repository, is an error naming the caller. */
+export function gitSummary(root: string, label: string): GitSummary {
+  const { run, git } = gitIn(root, label);
+  git(["rev-parse", "--is-inside-work-tree"]);
+  const head = run(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]);
+  const branch = run(["symbolic-ref", "--quiet", "--short", "HEAD"]);
+  const origin = run(["config", "--get", "remote.origin.url"]);
+  // Full names, cut here: the short name of `refs/remotes/origin/HEAD` is just `origin`.
+  const listed = (prefix: string): string[] =>
+    git(["for-each-ref", "--format=%(refname)", prefix])
+      .split("\n")
+      .filter((name) => name.startsWith(`${prefix}/`) && !name.endsWith("/HEAD"))
+      .map((name) => name.slice(prefix.length + 1))
+      .sort(compareText);
+  return {
+    commit: head.status === 0 ? head.stdout.trim() : null,
+    branch: branch.status === 0 ? branch.stdout.trim() : null,
+    origin: origin.status === 0 && origin.stdout.trim() !== "" ? origin.stdout.trim() : null,
+    branches: [...listed("refs/heads"), ...listed("refs/remotes")],
+  };
+}
+
 /** Where to look for the main branch after `origin/HEAD`, in order: the ref, and how a sentence names it. */
 const MAIN_BRANCHES: readonly (readonly [ref: string, name: string])[] = [
   ["refs/heads/main", "main"],

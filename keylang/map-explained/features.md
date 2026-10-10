@@ -1324,10 +1324,15 @@
     - fn [readFeatureBase](../../src/git-changes.ts#L203) (root: string, path: string, since: string | undefined, label: string) → FeatureBase
       <a id="features.git-changes.readFeatureBase"></a><br>The feature file at its base commit, and the files changed since that commit as `check --changed --since <base>` reads them: a rule fail of this change is one that touches them. The base is `since`, else `featureBaseOrigin`.
       - calls [features.git-changes.featureBaseOrigin](features.md#features.git-changes.featureBaseOrigin), [features.git-changes.gitFileAt](features.md#features.git-changes.gitFileAt), [features.git-changes.gitChangedFiles](features.md#features.git-changes.gitChangedFiles), [base.span.compareText](base.md#base.span.compareText), [lang.parser.parse](lang.md#lang.parser.parse)
-    - fn [featureBaseOrigin](../../src/git-changes.ts#L242) (root: string, label: string) → BaseOrigin
+    - type [GitSummary](../../src/git-changes.ts#L225)
+      <a id="features.git-changes.GitSummary"></a><br>Where the working tree stands, for a page that shows the changes (`GET /api/git`).
+    - fn [gitSummary](../../src/git-changes.ts#L237) (root: string, label: string) → GitSummary
+      <a id="features.git-changes.gitSummary"></a><br>HEAD, its branch, the origin and the branches of the repository around `root`. No git, or no repository, is an error naming the caller.
+      - calls [features.git-changes.gitIn](features.md#features.git-changes.gitIn), [base.span.compareText](base.md#base.span.compareText)
+    - fn [featureBaseOrigin](../../src/git-changes.ts#L276) (root: string, label: string) → BaseOrigin
       <a id="features.git-changes.featureBaseOrigin"></a><br>The base `feature` judges a change against when no `since` is given: the merge-base of HEAD with the main branch, so a fail committed on a feature branch is still the change's own. The main branch is the one `refs/remotes/origin/HEAD` points at, else a local `main`, `master`…
       - calls [features.git-changes.gitIn](features.md#features.git-changes.gitIn)
-    - fn [deletedModuleIds](../../src/git-changes.ts#L265) (config: Config, files: readonly string[]) → string[]
+    - fn [deletedModuleIds](../../src/git-changes.ts#L299) (config: Config, files: readonly string[]) → string[]
       <a id="features.git-changes.deletedModuleIds"></a><br>Module id a deleted source file had, so a flow step that named it is still "changed".
       - calls [map.graph.placeFile](map.md#map.graph.placeFile)
   - module [git-hook](../../src/git-hook.ts#L1)

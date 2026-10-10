@@ -42,7 +42,7 @@ export function exportTargetProblem(root: string, out: string): string | null {
 
 /**
  * Every request the read-only page makes, in a stable order: the views,
- * coverage, tour and docs; each doc; each diagram with its two export files;
+ * coverage, tour, git and the changes since the base of a feature and HEAD, docs; each doc; each diagram with its two export files;
  * the calls and usages of every ID of the snapshot and of the diagrams.
  */
 async function requests(done: Analysis, answer: (path: string, query: URLSearchParams) => Promise<ReadAnswer>): Promise<{ key: string; answer: ReadAnswer }[]> {
@@ -62,6 +62,11 @@ async function requests(done: Analysis, answer: (path: string, query: URLSearchP
   };
   await ask("/api/coverage");
   await ask("/api/tour");
+  // «Зміни»: the base of a feature and HEAD; another base is not in the export.
+  if ((JSON.parse((await ask("/api/git")).body) as { available: boolean }).available) {
+    await ask("/api/changes");
+    await ask("/api/changes", { since: "HEAD" });
+  }
   const docs = JSON.parse((await ask("/api/docs")).body) as { files: { path: string }[] };
   for (const file of docs.files) await ask("/api/doc", { path: file.path });
   const queries: Record<string, string>[] = [

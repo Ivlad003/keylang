@@ -18,6 +18,7 @@ import { chromium } from "playwright-core";
 import { analyze } from "../../src/analyze.ts";
 import { createReadApi } from "../../src/tui/read-api.ts";
 import { diagramsRepo } from "../diagrams-fixture.ts";
+import { branchRepo } from "../git-fixture.ts";
 import { browserOptions, root, watch } from "./browser.ts";
 
 const options = browserOptions();
@@ -63,7 +64,7 @@ test("web --export: index.html from file:// lists the views, draws a flow, opens
   await page.goto(`file://${join(site, "index.html")}#view=flow&name=checkout`);
   await page.locator("#status", { hasText: /flow:checkout · \d+ shapes/ }).waitFor();
   assert.ok((await page.locator("#graph svg g").count()) > 0, "the flow is drawn");
-  assert.deepEqual(await page.locator("#modes button").allTextContents(), ["Діаграми", "Карта", "Дослідник", "Сліпі зони"], "no editor");
+  assert.deepEqual(await page.locator("#modes button").allTextContents(), ["Діаграми", "Карта", "Дослідник", "Сліпі зони", "Зміни"], "no editor");
   assert.equal(await page.locator("#copy-bundle").isVisible(), false, "nothing that writes");
   await page.click('#modes button[data-mode="docs"]');
   await page.locator("#views .row", { hasText: "presentation.md" }).first().click();
@@ -119,5 +120,62 @@ test("web --export: app.html analyses a folder opened in the tab and answers as 
   const refused = await page.evaluate(() => (globalThis as unknown as { keylangTransport: { send(method: string, path: string, query: URLSearchParams, body: unknown): Promise<{ status: number }> } }).keylangTransport.send("PUT", "/api/layout", new URLSearchParams({ view: "layers" }), { layout: {} }));
   assert.equal(refused.status, 403);
   assert.deepEqual(requests.filter((url) => !url.startsWith(base) && !url.startsWith("data:") && !url.startsWith("blob:")), [], "nothing leaves the tab");
+  assert.deepEqual(problems, []);
+});
+
+test("web --export: app.html reads the .git of the folder and answers /api/git and /api/changes as `keylang web --read-only` does — with isomorphic-git in the Worker, nothing written to the folder", { skip }, async (t) => {
+  const repo = branchRepo(t);
+  const site = exportSiteOf(t, repo);
+  const base = await serveDirectory(t, site);
+  const browser = await chromium.launch(options ?? {});
+  t.after(() => browser.close());
+  const page = await browser.newPage({ viewport: { width: 1300, height: 800 } });
+  const problems = watch(page);
+  await page.goto(`${base}/app.html`);
+  await page.locator("#open-repo-input").setInputFiles(repo);
+  await page.locator("#open-repo").waitFor({ state: "detached", timeout: 60000 });
+
+  const done = await analyze({ root: repo, persistFacts: false, saveFacts: false });
+  const read = createReadApi({ root: repo, analysis: async () => done, analyze: (request) => analyze({ ...request, persistFacts: false, saveFacts: false }), showRoot: false });
+  const queries: [string, string][] = [
+    ["/api/git", ""],
+    ["/api/changes", ""],
+    ["/api/changes", "since=HEAD"],
+    ["/api/changes", "since=main"],
+    ["/api/changes", "since=HEAD~1"],
+    ["/api/changes", "since=main^{commit}"],
+  ];
+  const inBrowser = await page.evaluate(async (list) => {
+    const transport = (globalThis as unknown as { keylangTransport: { send(method: string, path: string, query: URLSearchParams): Promise<{ status: number; text: string }> } }).keylangTransport;
+    const out: { status: number; text: string }[] = [];
+    for (const [path, query] of list) out.push(await transport.send("GET", path, new URLSearchParams(query)));
+    return out;
+  }, queries);
+  for (const [i, [path, query]] of queries.entries()) {
+    const node = await read.answer(path, new URLSearchParams(query));
+    assert.equal(inBrowser[i]!.status, node.status, `${path}?${query}: ${inBrowser[i]!.text}`);
+    assert.equal(inBrowser[i]!.text, node.body, `${path}?${query}`);
+  }
+  const unknown = await page.evaluate(() => (globalThis as unknown as { keylangTransport: { send(method: string, path: string, query: URLSearchParams): Promise<{ status: number }> } }).keylangTransport.send("GET", "/api/changes", new URLSearchParams({ since: "no-such-branch" })));
+  assert.equal(unknown.status, 400);
+  // The tab over it.
+  await page.click('#modes button[data-mode="changes"]');
+  await page.locator("#changes .changes-summary", { hasText: /^5 змінено · 1 видалено/ }).waitFor();
+  assert.deepEqual(problems, []);
+});
+
+test("web --export: app.html on a folder without .git says git is unavailable and the rest works", { skip }, async (t) => {
+  const repo = diagramsRepo(t);
+  const site = exportSiteOf(t, repo);
+  const base = await serveDirectory(t, site);
+  const browser = await chromium.launch(options ?? {});
+  t.after(() => browser.close());
+  const page = await browser.newPage({ viewport: { width: 1300, height: 800 } });
+  const problems = watch(page);
+  await page.goto(`${base}/app.html`);
+  await page.locator("#open-repo-input").setInputFiles(repo);
+  await page.locator("#open-repo").waitFor({ state: "detached", timeout: 60000 });
+  await page.click('#modes button[data-mode="changes"]');
+  await page.locator("#changes .empty", { hasText: /Git недоступний: .*not a git repository/ }).waitFor();
   assert.deepEqual(problems, []);
 });

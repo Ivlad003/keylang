@@ -1296,9 +1296,12 @@
     - diagram-layout map.diagram-layout
     - discover-names features.discover-names
     - explorer features.explorer
+    - clone features.clone
     - files lang.files
+    - git-changes features.git-changes
     - map map.map
     - coverage operations.coverage
+    - spec operations.spec
     - diagram-export operations.diagram-export
     - diagram-propose operations.diagram-propose
     - shared operations.shared
@@ -1307,16 +1310,16 @@
     - span base.span
     - spec-ir lang.spec-ir
     - tour features.tour
-    - type [ReadAnswer](../../src/tui/read-api.ts#L30)
-    - type [ReadApiOptions](../../src/tui/read-api.ts#L37)
-    - fn [requestKey](../../src/tui/read-api.ts#L54) (path: string, query: URLSearchParams) → string
-    - fn [keyShard](../../src/tui/read-api.ts#L61) (key: string, shards: number) → number
-    - type [DocEntry](../../src/tui/read-api.ts#L74)
-    - type [ReadApi](../../src/tui/read-api.ts#L79)
-    - fn [createReadApi](../../src/tui/read-api.ts#L89) (options: ReadApiOptions) → ReadApi
-      - calls lang.parser.parse, base.config.toPosix, lang.spec-ir.compileSpec, features.discover-names.processViews, features.discover-names.readProcesses, map.diagram.viewOfKey, map.diagram.diagramOf, operations.shared.rootRelative, lang.files.collectMdFiles, map.map.explainedMapOf, base.span.compareText, features.tour.buildTour, features.tour.tourMarkdown, map.diagram-layout.readLayout, features.proposals.pendingTargets, map.diagram-layout.layoutFromFile, map.diagram.usagesOf, features.explorer.callsOf, operations.diagram-export.exportViewOfQuery, operations.diagram-export.diagramExportText, operations.diagram-export.exportSourcesOf, operations.coverage.runCoverage, map.diagram.parseView, features.explorer.eventsOf, map.diagram.viewsOf, map.diagram.flowListing, operations.diagram-propose.specHash, features.check-results.checkResults, tui.read-api.withResults
-    - type [NodeResult](../../src/tui/read-api.ts#L292) = { verdict: string; criterion: string; message: string } <!-- internal -->
-    - fn [withResults](../../src/tui/read-api.ts#L299) (diagram: Diagram, results: readonly CheckResult[]) → Omit<Diagram, "nodes"> & { nodes: (DiagramNode & { results?: NodeResult[] })[] } <!-- internal -->
+    - type [ReadAnswer](../../src/tui/read-api.ts#L33)
+    - type [ReadApiOptions](../../src/tui/read-api.ts#L40)
+    - fn [requestKey](../../src/tui/read-api.ts#L60) (path: string, query: URLSearchParams) → string
+    - fn [keyShard](../../src/tui/read-api.ts#L67) (key: string, shards: number) → number
+    - type [DocEntry](../../src/tui/read-api.ts#L80)
+    - type [ReadApi](../../src/tui/read-api.ts#L85)
+    - fn [createReadApi](../../src/tui/read-api.ts#L95) (options: ReadApiOptions) → ReadApi
+      - calls lang.parser.parse, base.config.toPosix, lang.spec-ir.compileSpec, features.discover-names.processViews, features.discover-names.readProcesses, map.diagram.viewOfKey, map.diagram.diagramOf, operations.shared.rootRelative, lang.files.collectMdFiles, map.map.explainedMapOf, base.span.compareText, features.tour.buildTour, features.tour.tourMarkdown, features.git-changes.gitSummary, features.git-changes.featureBaseOrigin, features.clone.redactUrl, map.diagram-layout.readLayout, features.proposals.pendingTargets, map.diagram-layout.layoutFromFile, map.diagram.usagesOf, features.explorer.callsOf, operations.diagram-export.exportViewOfQuery, operations.diagram-export.diagramExportText, operations.diagram-export.exportSourcesOf, operations.coverage.runCoverage, map.diagram.parseView, features.explorer.eventsOf, map.diagram.viewsOf, map.diagram.flowListing, operations.diagram-propose.specHash, features.check-results.checkResults, tui.read-api.withResults, features.git-changes.gitChangedFiles, features.git-changes.deletedModuleIds, operations.spec.runCheck
+    - type [NodeResult](../../src/tui/read-api.ts#L357) = { verdict: string; criterion: string; message: string } <!-- internal -->
+    - fn [withResults](../../src/tui/read-api.ts#L364) (diagram: Diagram, results: readonly CheckResult[]) → Omit<Diagram, "nodes"> & { nodes: (DiagramNode & { results?: NodeResult[] })[] } <!-- internal -->
   - module reports
     - module [chat](../../src/tui/reports/chat.ts#L1)
       - node external.node
@@ -1773,10 +1776,10 @@
     - fn [exportTargetProblem](../../src/tui/web-export.ts#L33) (root: string, out: string) → string | null
     - fn [requests](../../src/tui/web-export.ts#L48) (done: Analysis, answer: (path: string, query: URLSearchParams) => Promise<ReadAnswer>) → Promise<{ key: string; answer: ReadAnswer }[]> <!-- internal -->
       - calls tui.read-api.requestKey, base.span.compareText
-    - fn [shardTexts](../../src/tui/web-export.ts#L88) (answers: readonly { key: string; answer: ReadAnswer }[]) → string[] <!-- internal -->
+    - fn [shardTexts](../../src/tui/web-export.ts#L93) (answers: readonly { key: string; answer: ReadAnswer }[]) → string[] <!-- internal -->
       - calls tui.read-api.keyShard
-    - fn [siteAssets](../../src/tui/web-export.ts#L97) () → string[] <!-- internal -->
-    - fn [exportSite](../../src/tui/web-export.ts#L110) (options: { root: string; out: string; analysis: Analysis }) → Promise<ExportResult>
+    - fn [siteAssets](../../src/tui/web-export.ts#L102) () → string[] <!-- internal -->
+    - fn [exportSite](../../src/tui/web-export.ts#L115) (options: { root: string; out: string; analysis: Analysis }) → Promise<ExportResult>
       - calls tui.web-export.exportTargetProblem, tui.web.ensureClient, tui.web-export.siteAssets, tui.read-api.createReadApi, tui.web-export.requests, tui.web-export.shardTexts, tui.web.diagramsPage, features.harness.keylangVersion
   - module [web](../../src/tui/web.ts#L1)
     - node external.node
@@ -1834,7 +1837,7 @@
       - calls tui.web.reply
     - fn [reply](../../src/tui/web.ts#L861) (response: ServerResponse, status: number, type: string, body: string | Buffer) → void <!-- internal -->
     - fn [diagramsPage](../../src/tui/web.ts#L873) (options: { readOnly?: boolean; source?: "server" | "static" | "local"; assets?: string; title?: string; shards?: number } = {}) → string
-    - fn [page](../../src/tui/web.ts#L918) () → string <!-- internal -->
+    - fn [page](../../src/tui/web.ts#L919) () → string <!-- internal -->
   - module [width](../../src/tui/width.ts#L1)
     - fn [graphemes](../../src/tui/width.ts#L13) (text: string) → string[]
     - fn [clusters](../../src/tui/width.ts#L20) (text: string) → Generator<string>

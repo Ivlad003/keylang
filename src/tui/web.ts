@@ -889,7 +889,7 @@ export function diagramsPage(options: { readOnly?: boolean; source?: "server" | 
 <body data-source="${source}"${readOnly ? ' data-readonly="1"' : ""}${options.shards !== undefined ? ` data-shards="${options.shards}"` : ""}>
 <aside id="list">
 <header><span>Діаграми</span>${source === "server" && !readOnly ? '<a href="/">термінал</a>' : ""}</header>
-<nav id="modes" aria-label="Режим"><button type="button" data-mode="diagrams" aria-pressed="true">Діаграми</button><button type="button" data-mode="docs" aria-pressed="false">Карта</button><button type="button" data-mode="explore" aria-pressed="false">Дослідник</button><button type="button" data-mode="blind" aria-pressed="false">Сліпі зони</button>${readOnly ? "" : '<button type="button" data-mode="editor" aria-pressed="false">Редактор</button>'}</nav>
+<nav id="modes" aria-label="Режим"><button type="button" data-mode="diagrams" aria-pressed="true">Діаграми</button><button type="button" data-mode="docs" aria-pressed="false">Карта</button><button type="button" data-mode="explore" aria-pressed="false">Дослідник</button><button type="button" data-mode="blind" aria-pressed="false">Сліпі зони</button><button type="button" data-mode="changes" aria-pressed="false">Зміни</button>${readOnly ? "" : '<button type="button" data-mode="editor" aria-pressed="false">Редактор</button>'}</nav>
 <div id="find">
 <input id="search" type="search" placeholder="Пошук: флоу, точка входу, ID" aria-label="Пошук">
 <button id="find-usages" type="button" title="Де використовується цей ID">де ID?</button>
@@ -904,6 +904,7 @@ export function diagramsPage(options: { readOnly?: boolean; source?: "server" | 
 <div id="minimap" aria-label="Мінікарта"></div>
 </div>
 <section id="docs" aria-label="Карта й специфікації"></section>
+<section id="changes" aria-label="Зміни від бази"></section>
 <section id="explorer" aria-label="Дослідник точок входу"></section>
 <section id="blind" aria-label="Сліпі зони"></section>
 <section id="editor" aria-label="Редактор діаграм"></section>

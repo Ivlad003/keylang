@@ -1958,9 +1958,12 @@
     - diagram-layout [map.diagram-layout](map.md#map.diagram-layout)
     - discover-names [features.discover-names](features.md#features.discover-names)
     - explorer [features.explorer](features.md#features.explorer)
+    - clone [features.clone](features.md#features.clone)
     - files [lang.files](lang.md#lang.files)
+    - git-changes [features.git-changes](features.md#features.git-changes)
     - map [map.map](map.md#map.map)
     - coverage [operations.coverage](operations.md#operations.coverage)
+    - spec [operations.spec](operations.md#operations.spec)
     - diagram-export [operations.diagram-export](operations.md#operations.diagram-export)
     - diagram-propose [operations.diagram-propose](operations.md#operations.diagram-propose)
     - shared [operations.shared](operations.md#operations.shared)
@@ -1969,24 +1972,24 @@
     - span [base.span](base.md#base.span)
     - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
     - tour [features.tour](features.md#features.tour)
-    - type [ReadAnswer](../../src/tui/read-api.ts#L30)
+    - type [ReadAnswer](../../src/tui/read-api.ts#L33)
       <a id="tui.read-api.ReadAnswer"></a><br>One answer: a status, a media type, the body; `file` names an attachment.
-    - type [ReadApiOptions](../../src/tui/read-api.ts#L37)
+    - type [ReadApiOptions](../../src/tui/read-api.ts#L40)
       <a id="tui.read-api.ReadApiOptions"></a>
-    - fn [requestKey](../../src/tui/read-api.ts#L54) (path: string, query: URLSearchParams) → string
+    - fn [requestKey](../../src/tui/read-api.ts#L60) (path: string, query: URLSearchParams) → string
       <a id="tui.read-api.requestKey"></a><br>A request as one string, the query in one order: a static export files its answers by it, and the page (`web/src/api.ts`, `requestKey`) spells it alike.
-    - fn [keyShard](../../src/tui/read-api.ts#L61) (key: string, shards: number) → number
+    - fn [keyShard](../../src/tui/read-api.ts#L67) (key: string, shards: number) → number
       <a id="tui.read-api.keyShard"></a><br>FNV-1a over the UTF-16 code units of a key: which data shard of a static export holds it (`web/src/api.ts`, `keyShard`).
-    - type [DocEntry](../../src/tui/read-api.ts#L74)
+    - type [DocEntry](../../src/tui/read-api.ts#L80)
       <a id="tui.read-api.DocEntry"></a><br>A spec Markdown file the «Карта» tab lists, with the group it is shown under.
-    - type [ReadApi](../../src/tui/read-api.ts#L79)
+    - type [ReadApi](../../src/tui/read-api.ts#L85)
       <a id="tui.read-api.ReadApi"></a>
-    - fn [createReadApi](../../src/tui/read-api.ts#L89) (options: ReadApiOptions) → ReadApi
+    - fn [createReadApi](../../src/tui/read-api.ts#L95) (options: ReadApiOptions) → ReadApi
       <a id="tui.read-api.createReadApi"></a>
-      - calls [lang.parser.parse](lang.md#lang.parser.parse), [base.config.toPosix](base.md#base.config.toPosix), [lang.spec-ir.compileSpec](lang.md#lang.spec-ir.compileSpec), [features.discover-names.processViews](features.md#features.discover-names.processViews), [features.discover-names.readProcesses](features.md#features.discover-names.readProcesses), [map.diagram.viewOfKey](map.md#map.diagram.viewOfKey), [map.diagram.diagramOf](map.md#map.diagram.diagramOf), [operations.shared.rootRelative](operations.md#operations.shared.rootRelative), [lang.files.collectMdFiles](lang.md#lang.files.collectMdFiles), [map.map.explainedMapOf](map.md#map.map.explainedMapOf), [base.span.compareText](base.md#base.span.compareText), [features.tour.buildTour](features.md#features.tour.buildTour), [features.tour.tourMarkdown](features.md#features.tour.tourMarkdown), [map.diagram-layout.readLayout](map.md#map.diagram-layout.readLayout), [features.proposals.pendingTargets](features.md#features.proposals.pendingTargets), [map.diagram-layout.layoutFromFile](map.md#map.diagram-layout.layoutFromFile), [map.diagram.usagesOf](map.md#map.diagram.usagesOf), [features.explorer.callsOf](features.md#features.explorer.callsOf), [operations.diagram-export.exportViewOfQuery](operations.md#operations.diagram-export.exportViewOfQuery), [operations.diagram-export.diagramExportText](operations.md#operations.diagram-export.diagramExportText), [operations.diagram-export.exportSourcesOf](operations.md#operations.diagram-export.exportSourcesOf), [operations.coverage.runCoverage](operations.md#operations.coverage.runCoverage), [map.diagram.parseView](map.md#map.diagram.parseView), [features.explorer.eventsOf](features.md#features.explorer.eventsOf), [map.diagram.viewsOf](map.md#map.diagram.viewsOf), [map.diagram.flowListing](map.md#map.diagram.flowListing), [operations.diagram-propose.specHash](operations.md#operations.diagram-propose.specHash), [features.check-results.checkResults](features.md#features.check-results.checkResults), [tui.read-api.withResults](tui.md#tui.read-api.withResults)
-    - type [NodeResult](../../src/tui/read-api.ts#L292) = { verdict: string; criterion: string; message: string } <!-- internal -->
+      - calls [lang.parser.parse](lang.md#lang.parser.parse), [base.config.toPosix](base.md#base.config.toPosix), [lang.spec-ir.compileSpec](lang.md#lang.spec-ir.compileSpec), [features.discover-names.processViews](features.md#features.discover-names.processViews), [features.discover-names.readProcesses](features.md#features.discover-names.readProcesses), [map.diagram.viewOfKey](map.md#map.diagram.viewOfKey), [map.diagram.diagramOf](map.md#map.diagram.diagramOf), [operations.shared.rootRelative](operations.md#operations.shared.rootRelative), [lang.files.collectMdFiles](lang.md#lang.files.collectMdFiles), [map.map.explainedMapOf](map.md#map.map.explainedMapOf), [base.span.compareText](base.md#base.span.compareText), [features.tour.buildTour](features.md#features.tour.buildTour), [features.tour.tourMarkdown](features.md#features.tour.tourMarkdown), [features.git-changes.gitSummary](features.md#features.git-changes.gitSummary), [features.git-changes.featureBaseOrigin](features.md#features.git-changes.featureBaseOrigin), [features.clone.redactUrl](features.md#features.clone.redactUrl), [map.diagram-layout.readLayout](map.md#map.diagram-layout.readLayout), [features.proposals.pendingTargets](features.md#features.proposals.pendingTargets), [map.diagram-layout.layoutFromFile](map.md#map.diagram-layout.layoutFromFile), [map.diagram.usagesOf](map.md#map.diagram.usagesOf), [features.explorer.callsOf](features.md#features.explorer.callsOf), [operations.diagram-export.exportViewOfQuery](operations.md#operations.diagram-export.exportViewOfQuery), [operations.diagram-export.diagramExportText](operations.md#operations.diagram-export.diagramExportText), [operations.diagram-export.exportSourcesOf](operations.md#operations.diagram-export.exportSourcesOf), [operations.coverage.runCoverage](operations.md#operations.coverage.runCoverage), [map.diagram.parseView](map.md#map.diagram.parseView), [features.explorer.eventsOf](features.md#features.explorer.eventsOf), [map.diagram.viewsOf](map.md#map.diagram.viewsOf), [map.diagram.flowListing](map.md#map.diagram.flowListing), [operations.diagram-propose.specHash](operations.md#operations.diagram-propose.specHash), [features.check-results.checkResults](features.md#features.check-results.checkResults), [tui.read-api.withResults](tui.md#tui.read-api.withResults), [features.git-changes.gitChangedFiles](features.md#features.git-changes.gitChangedFiles), [features.git-changes.deletedModuleIds](features.md#features.git-changes.deletedModuleIds), [operations.spec.runCheck](operations.md#operations.spec.runCheck)
+    - type [NodeResult](../../src/tui/read-api.ts#L357) = { verdict: string; criterion: string; message: string } <!-- internal -->
       <a id="tui.read-api.NodeResult"></a>
-    - fn [withResults](../../src/tui/read-api.ts#L299) (diagram: Diagram, results: readonly CheckResult[]) → Omit<Diagram, "nodes"> & { nodes: (DiagramNode & { results?: NodeResult[] })[] } <!-- internal -->
+    - fn [withResults](../../src/tui/read-api.ts#L364) (diagram: Diagram, results: readonly CheckResult[]) → Omit<Diagram, "nodes"> & { nodes: (DiagramNode & { results?: NodeResult[] })[] } <!-- internal -->
       <a id="tui.read-api.withResults"></a><br>Each shape with the check results behind its verdict, for the side panel of the diagram page: those on its spec line, or, for a shape of code alone (an entry's call tree), those about its ID.
   - module reports
     <a id="tui.reports"></a>
@@ -2691,14 +2694,14 @@
     - fn [exportTargetProblem](../../src/tui/web-export.ts#L33) (root: string, out: string) → string | null
       <a id="tui.web-export.exportTargetProblem"></a><br>Why `out` may not take an export of `root`, or null.
     - fn [requests](../../src/tui/web-export.ts#L48) (done: Analysis, answer: (path: string, query: URLSearchParams) => Promise<ReadAnswer>) → Promise<{ key: string; answer: ReadAnswer }[]> <!-- internal -->
-      <a id="tui.web-export.requests"></a><br>Every request the read-only page makes, in a stable order: the views, coverage, tour and docs; each doc; each diagram with its two export files; the calls and usages of every ID of the snapshot and of the diagrams.
+      <a id="tui.web-export.requests"></a><br>Every request the read-only page makes, in a stable order: the views, coverage, tour, git and the changes since the base of a feature and HEAD, docs; each doc; each diagram with its two export files; the calls and usages of every ID of the snapshot and of the diagrams.
       - calls [tui.read-api.requestKey](tui.md#tui.read-api.requestKey), [base.span.compareText](base.md#base.span.compareText)
-    - fn [shardTexts](../../src/tui/web-export.ts#L88) (answers: readonly { key: string; answer: ReadAnswer }[]) → string[] <!-- internal -->
+    - fn [shardTexts](../../src/tui/web-export.ts#L93) (answers: readonly { key: string; answer: ReadAnswer }[]) → string[] <!-- internal -->
       <a id="tui.web-export.shardTexts"></a><br>The answers in shards of about `SHARD_BYTES`, each a script that hands its answers to the page.
       - calls [tui.read-api.keyShard](tui.md#tui.read-api.keyShard)
-    - fn [siteAssets](../../src/tui/web-export.ts#L97) () → string[] <!-- internal -->
+    - fn [siteAssets](../../src/tui/web-export.ts#L102) () → string[] <!-- internal -->
       <a id="tui.web-export.siteAssets"></a><br>The built files of the page and of `app.html`, as `scripts/build-web.mjs` lists them.
-    - fn [exportSite](../../src/tui/web-export.ts#L110) (options: { root: string; out: string; analysis: Analysis }) → Promise<ExportResult>
+    - fn [exportSite](../../src/tui/web-export.ts#L115) (options: { root: string; out: string; analysis: Analysis }) → Promise<ExportResult>
       <a id="tui.web-export.exportSite"></a><br>Writes the site of `root` into `out` from one analysis. `out` is made, or is an earlier export (its marker), whose files are replaced; nothing is written into the repository.
       - calls [tui.web-export.exportTargetProblem](tui.md#tui.web-export.exportTargetProblem), [tui.web.ensureClient](tui.md#tui.web.ensureClient), [tui.web-export.siteAssets](tui.md#tui.web-export.siteAssets), [tui.read-api.createReadApi](tui.md#tui.read-api.createReadApi), [tui.web-export.requests](tui.md#tui.web-export.requests), [tui.web-export.shardTexts](tui.md#tui.web-export.shardTexts), [tui.web.diagramsPage](tui.md#tui.web.diagramsPage), [features.harness.keylangVersion](features.md#features.harness.keylangVersion)
   - module [web](../../src/tui/web.ts#L1)
@@ -2786,7 +2789,7 @@
       <a id="tui.web.reply"></a><br>Writes a complete HTTP response for [`tui.web.serveWeb`](tui.md#tui.web.serveWeb): sets the given status and content type, adds `Cache-Control: no-store` and `X-Content-Type-Options: nosniff` headers, then ends the response with the body. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [diagramsPage](../../src/tui/web.ts#L873) (options: { readOnly?: boolean; source?: "server" | "static" | "local"; assets?: string; title?: string; shards?: number } = {}) → string
       <a id="tui.web.diagramsPage"></a><br>The diagram page: markup only; `diagrams.js` fills it. Over HTTP it takes the token from the fragment and reads `/api/`; `source` names another transport: `static` reads the answers a static export wrote under `data/`, `local` analyses a folder the person opens in the tab…
-    - fn [page](../../src/tui/web.ts#L918) () → string <!-- internal -->
+    - fn [page](../../src/tui/web.ts#L919) () → string <!-- internal -->
       <a id="tui.web.page"></a><br>The page: xterm.js from `/assets/`, a WebSocket back to this server, reconnect with the same session.
   - module [width](../../src/tui/width.ts#L1)
     <a id="tui.width"></a><br>Terminal cell width of text: graphemes, not code units. A wide character (CJK, most emoji, a keycap) takes two cells; combining marks, joiners, the other invisible format characters (Default_Ignorable_Code_Point: ZWSP, soft hyphen, word joiner) and Hangul vowels and finals…
