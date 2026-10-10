@@ -923,6 +923,7 @@ function page(): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>keylang</title>
+<link rel="icon" href="data:,">
 <link rel="stylesheet" href="/assets/xterm.css">
 <style>
   html, body { margin: 0; height: 100%; background: #1c1c1c; }

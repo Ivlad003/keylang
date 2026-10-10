@@ -143,6 +143,8 @@ test("web: the socket needs the token, which never leaves the fragment; xterm.js
   assert.match(page.body, /history\.replaceState\(null, "", "\/"\)/, "the page drops the fragment from the address bar");
   // OSC 8 links point at vscode://, which xterm.js ignores unless non-HTTP links are allowed.
   assert.match(page.body, /allowNonHttpProtocols: true/);
+  // An icon of its own: a browser asks /favicon.ico otherwise, a 404 in its console.
+  assert.match(page.body, /<link rel="icon" href="data:,">/);
   for (const [asset, type] of [["xterm.js", "text/javascript"], ["xterm.css", "text/css"], ["addon-fit.js", "text/javascript"]] as const) {
     const res = await status(url, `/assets/${asset}`);
     assert.equal(res.status, 200, asset);
