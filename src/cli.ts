@@ -40,6 +40,13 @@ Commands:
                             with a one-time token (localhost only by default).
                             With a repository URL or path: clone it first, as clone
                             does, and serve the clone
+  web --hub [--read-only] [--port N] [--host H]
+                            A start page on one port: clone a repository by URL
+                            (into the clone cache, then init, as clone does) and
+                            open it, reopen or update a clone made before, or open a
+                            folder of this computer in the tab (app.html: analysed in
+                            the browser, nothing uploaded). Each repository opens as
+                            keylang web under /r/<id>/; --read-only: as web --read-only
   web --export <dir> [url]
                             A static site of the read-only page in <dir>: the map,
                             the explained map, diagrams, explorer and blind spots
@@ -409,6 +416,7 @@ const OPTIONS = {
   dir: { type: "string" },
   new: { type: "string" },
   "read-only": { type: "boolean" },
+  hub: { type: "boolean" },
   export: { type: "string" },
   explain: { type: "string" },
   since: { type: "string" },
@@ -552,6 +560,10 @@ async function run(argv: readonly string[]): Promise<number> {
       return (await prepareClone(paths[0], { dir: values.dir, explain: values.explain, dryRun: values["dry-run"] === true })).code;
     case "web": {
       const readOnly = values["read-only"] === true;
+      if (values.hub === true) {
+        if (paths[0] !== undefined || values.new !== undefined || values.export !== undefined) throw new Error("web --hub: the start page opens repositories itself; it takes no repository, --new or --export");
+        return cmdHub(values.port ?? "7070", values.host ?? "127.0.0.1", readOnly);
+      }
       if (values.export !== undefined) {
         if (values.new !== undefined) throw new Error("web: --export writes a site of an existing repository; --new makes a new project");
         if (values.port !== undefined || values.host !== undefined) throw new Error("web --export serves nothing: --port and --host go with a server");
@@ -601,6 +613,27 @@ function isLink(path: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** `web --hub`: the start page — clone a URL, reopen a clone, open a folder in the tab — and every repository opened from it under `/r/<id>/`, on one port. */
+async function cmdHub(portText: string, host: string, readOnly: boolean): Promise<number> {
+  const port = Number(portText);
+  if (!/^\d+$/.test(portText) || port > 65535) throw new Error(`web: --port must be a number from 0 to 65535, got \`${portText}\``);
+  const { serveHub } = await import("./tui/hub.ts");
+  const hub = await serveHub({ port, host, readOnly });
+  process.stdout.write(`keylang web: ${hub.url}\n`);
+  process.stderr.write(`the start page: clone a repository, reopen one, or open a folder of this computer${readOnly ? " (read-only)" : ""}; Ctrl+C stops the server\n`);
+  await new Promise<void>((resolve) => {
+    const stop = (): void => {
+      process.off("SIGINT", stop);
+      process.off("SIGTERM", stop);
+      resolve();
+    };
+    process.on("SIGINT", stop);
+    process.on("SIGTERM", stop);
+  });
+  await hub.close();
+  return 0;
 }
 
 /** `web --export <dir> [url|path]`: the read-only diagram page of the repository as a static site in `<dir>`. */

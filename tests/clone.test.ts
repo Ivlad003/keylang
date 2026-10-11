@@ -75,7 +75,7 @@ function clonePath(dir: string): string {
   return join(local, only!);
 }
 
-test("clone: a path becomes a shallow clone in the cache with keylang.json and a map; a rerun takes the remote's new commit", async (t) => {
+test("clone: a path becomes a clone with the whole history in the cache with keylang.json and a map; a rerun takes the remote's new commit", async (t) => {
   const { dir, origin } = sandbox(t);
   const first = await keylang(dir, ["clone", "origin"]);
   assert.equal(first.status, 0, first.stderr);
@@ -83,6 +83,7 @@ test("clone: a path becomes a shallow clone in the cache with keylang.json and a
   assert.match(first.stdout, new RegExp(`^${clone}: cloned from ${origin}\n`));
   assert.match(first.stdout, /keylang\/map\/api\.md: written/);
   assert.ok(existsSync(join(clone, "keylang/map/domain.md")));
+  assert.ok(!existsSync(join(clone, ".git/shallow")), "the whole history: --since and the web's «Зміни» reach past HEAD");
   // A clone gets no harness files: init ran with --agents=none.
   assert.ok(!existsSync(join(clone, "AGENTS.md")));
   assert.ok(!existsSync(join(clone, "keylang/map-explained")));

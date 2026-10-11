@@ -75,6 +75,7 @@ npm i -g keylang        # далі просто `keylang …`
 npx keylang clone https://github.com/owner/repo   # чужий репозиторій: клон у кеш і карта
 npx keylang web https://github.com/owner/repo     # те саме, потім інтерфейс у браузері
 npx keylang web --new shop                         # новий проєкт з діаграми, у браузері
+npx keylang web --hub                              # стартова сторінка: викачати репозиторій за URL, відкрити теку з ПК
 npx keylang web --read-only                        # лише читання: карта, пояснена карта, діаграми; нічого не пише
 npx keylang web --export site                      # те саме статичним сайтом, без сервера
 docker run --rm -p 127.0.0.1:7070:7070 -v "$PWD":/work:ro ivlad003/keylang web --read-only --host 0.0.0.0

@@ -75,6 +75,7 @@ npm i -g keylang        # then just `keylang …`
 npx keylang clone https://github.com/owner/repo   # someone else's repo: clone into the cache, map it
 npx keylang web https://github.com/owner/repo     # the same, then the UI in a browser
 npx keylang web --new shop                         # a new project from a diagram, in a browser
+npx keylang web --hub                              # a start page: clone a repository by URL, open a folder of this computer
 npx keylang web --read-only                        # read-only: map, explained map, diagrams; nothing written
 npx keylang web --export site                      # the same as a static site, no server needed
 docker run --rm -p 127.0.0.1:7070:7070 -v "$PWD":/work:ro ivlad003/keylang web --read-only --host 0.0.0.0

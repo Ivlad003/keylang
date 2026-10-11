@@ -119,7 +119,9 @@ export function syncClone(source: RepoSource, dir: string): CloneSync {
   const existed = existsSync(dir);
   if (!existed || (statSync(dir).isDirectory() && readdirSync(dir).length === 0)) {
     mkdirSync(dirname(dir), { recursive: true });
-    git(dirname(dir), ["clone", "--quiet", "--depth", "1", "--", source.url, dir]);
+    // The whole history without file contents: `feature --since`, `check --changed` and the web's
+    // «Зміни» need the commits of every branch; git fetches a blob when it is read.
+    git(dirname(dir), ["clone", "--quiet", "--filter=blob:none", "--", source.url, dir]);
     try {
       safeWrite(dir, CLONE_MARKER, `${JSON.stringify({ url: source.displayUrl, key: source.key }, null, 2)}\n`, { under: ".keylang" });
     } catch (error) {
@@ -134,9 +136,38 @@ export function syncClone(source: RepoSource, dir: string): CloneSync {
   // A marker an older keylang wrote may hold credentials: shown without them.
   // The same repository spelled another way (`.git`, scp form, ssh) has the same key; fetch goes to the first URL's origin.
   if (cloned.key.join("/") !== source.key.join("/")) throw new Error(`clone: ${dir} is a clone of ${redactUrl(cloned.url)}, not ${source.displayUrl}; pass another --dir`);
-  git(dir, ["fetch", "--quiet", "--depth", "1", "origin", "HEAD"]);
+  // HEAD first: FETCH_HEAD's first line is what the reset takes. A shallow clone an older keylang made gets its history.
+  const shallow = existsSync(join(dir, ".git", "shallow")) ? ["--unshallow"] : [];
+  git(dir, ["fetch", "--quiet", "--prune", ...shallow, "origin", "HEAD", "+refs/heads/*:refs/remotes/origin/*"]);
   git(dir, ["reset", "--quiet", "--hard", "FETCH_HEAD"]);
   return { action: "updated", dir };
+}
+
+/**
+ * The clones keylang made under the cache root, by their marker: their
+ * directory, the URL they were cloned from (as shown, without credentials)
+ * and their key; sorted by key. A directory with a marker is not descended
+ * into further; links are not followed.
+ */
+export function listClones(cacheRoot: string, depth = 6): { dir: string; url: string; key: string[] }[] {
+  const out: { dir: string; url: string; key: string[] }[] = [];
+  const walk = (dir: string, level: number): void => {
+    const marker = readMarker(dir);
+    if (marker !== undefined) {
+      out.push({ dir, url: redactUrl(marker.url), key: marker.key });
+      return;
+    }
+    if (level >= depth) return;
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) if (entry.isDirectory() && !entry.name.startsWith(".")) walk(join(dir, entry.name), level + 1);
+  };
+  if (existsSync(cacheRoot)) walk(cacheRoot, 0);
+  return out.sort((a, b) => (a.key.join("/") < b.key.join("/") ? -1 : a.key.join("/") > b.key.join("/") ? 1 : 0));
 }
 
 /** The marker of `dir`, or undefined: absent, unreadable, or behind a link out of the directory — a file elsewhere is no proof keylang cloned `dir`. */
