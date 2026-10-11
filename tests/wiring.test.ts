@@ -11,11 +11,14 @@ import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
+
 const tsc = join(root, "node_modules/typescript/bin/tsc");
 
 function run(cwd: string, file: string, args: string[], env: Record<string, string> = {}): { status: number | null; stdout: string; stderr: string } {
   const r = spawnSync(process.execPath, [file, ...args], { cwd, encoding: "utf8", env: { ...process.env, ...env } });
+
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
@@ -25,6 +28,7 @@ function copy(t: TestContext): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-wiring-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   cpSync(join(root, "tests/fixtures/wiring-shop"), dir, { recursive: true });
+
   return dir;
 }
 
@@ -141,12 +145,14 @@ test("wire: a default export, an alias, IDs that collapse to one name (`memory-d
   writeFileSync(join(dir, "src/infra/named.ts"), 'import type { Db } from "./db.ts";\n\nfunction wrap(inner: Db): Db {\n  return { query: (sql) => `named(${inner.query(sql)})`, dispose: () => inner.dispose() };\n}\n\nexport { wrap as named };\n');
   // `infra.memory.db.createMemoryDb` and `infra.memory_db.createMemoryDb` sanitize to the name of `infra.memory-db.createMemoryDb`.
   mkdirSync(join(dir, "src/infra/memory"));
+
   for (const [file, from, tag] of [
     ["src/infra/memory/db.ts", "../db.ts", "nested"],
     ["src/infra/memory_db.ts", "./db.ts", "underscore"],
   ] as const) {
     writeFileSync(join(dir, file), `import { log, type Db } from "${from}";\n\nexport function createMemoryDb(): Db {\n  log.push("init ${tag}");\n  return { query: (sql) => \`${tag}(\${sql})\`, dispose: () => void log.push("dispose ${tag}") };\n}\n`);
   }
+
   writeFileSync(
     join(dir, "keylang/wiring.md"),
     [
@@ -175,6 +181,7 @@ test("wire: a default export, an alias, IDs that collapse to one name (`memory-d
   writeFileSync(join(dir, "run.ts"), RUNNER);
   // `compose` wraps whichever branch is chosen.
   assert.equal(run(dir, "run.ts", [], { DB: "pg" }).stdout.trim(), "init pg → init store → named(pg2(insert)) → dispose pg");
+
   for (const tag of ["nested", "underscore"]) assert.equal(run(dir, "run.ts", [], { DB: tag }).stdout.trim(), `init ${tag} → init store → named(${tag}(insert)) → dispose ${tag}`);
   assert.equal(run(dir, "run.ts", [], { DB: "memory" }).stdout.trim(), "init memory db → init store → named(mem(insert)) → dispose memory db");
   // The names are stable: the same input gives the same bytes.
@@ -225,6 +232,7 @@ test("wire: a static method is a factory or a decorator called on its class, a d
 test("wire: under nodenext a JS source keeps `.js` and `.mts` becomes `.mjs`; the emitted file loads in Node", (t) => {
   const dir = mkdtempSync(join(tmpdir(), "keylang-wiring-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+
   for (const sub of ["src/infra", "src/app", "keylang"]) mkdirSync(join(dir, sub), { recursive: true });
   writeFileSync(join(dir, "package.json"), '{ "type": "module" }\n');
   writeFileSync(join(dir, "keylang.json"), JSON.stringify({ languages: ["typescript", "javascript"], layers: { infra: ["src/infra/**"], app: ["src/app/**"], wiring: ["keylang.gen.ts"] } }));
@@ -253,6 +261,7 @@ for (const module of ["node18", "node20"]) {
   test(`wire: \`module: ${module}\` without moduleResolution writes runtime extensions; tsc accepts the file`, (t) => {
     const dir = mkdtempSync(join(tmpdir(), "keylang-wiring-"));
     t.after(() => rmSync(dir, { recursive: true, force: true }));
+
     for (const sub of ["src/infra", "src/app", "keylang"]) mkdirSync(join(dir, sub), { recursive: true });
     writeFileSync(join(dir, "package.json"), '{ "type": "module" }\n');
     writeFileSync(join(dir, "keylang.json"), JSON.stringify({ languages: ["typescript"], layers: { infra: ["src/infra/**"], app: ["src/app/**"], wiring: ["keylang.gen.ts"] } }));
@@ -326,17 +335,20 @@ test("wire --out: an absolute path, `..`, a link out of the repository or a non-
   t.after(() => rmSync(outside, { recursive: true, force: true }));
   symlinkSync(outside, join(dir, "gen-link"));
   const escape = `../${basename(dir)}-escape.ts`;
+
   const cases: [string, RegExp][] = [
     [join(outside, "abs.ts"), /not a plain relative path/],
     [escape, /not a plain relative path/],
     ["gen-link/linked.ts", /leads out of the repository through a link/],
     ["gen/wire.js", /must name a TypeScript file/],
   ];
+
   for (const [out, why] of cases) {
     const o = keylang(dir, ["wire", "--out", out]);
     assert.equal(o.status, 2, `${out}: ${o.stdout}${o.stderr}`);
     assert.match(o.stderr, why);
   }
+
   assert.deepEqual(readdirSync(outside), [], "nothing lands outside");
   assert.ok(!existsSync(join(dir, escape)));
   // `--check` is held to the same path before anything is read.

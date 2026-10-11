@@ -44,6 +44,7 @@ export function redactUrl(text: string): string {
 }
 
 const SAFE_SEGMENT = /^[A-Za-z0-9._~-]+$/;
+
 const SCP_LIKE = /^(?:[^@/\s]+@)?([^:/\s]+):(.+)$/;
 
 /**
@@ -53,31 +54,44 @@ const SCP_LIKE = /^(?:[^@/\s]+@)?([^:/\s]+):(.+)$/;
  */
 export function parseRepoSource(text: string, cwd: string): RepoSource | { error: string } {
   const source = text.trim();
+
   if (source === "") return { error: "clone: a repository URL or path is required" };
+
   if (source.startsWith("-")) return { error: `clone: \`${redactUrl(source)}\` is not a repository URL` };
+
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(source)) return fromUrl(source);
   const local = resolve(cwd, source);
+
   if (existsSync(local)) {
     if (!statSync(local).isDirectory()) return { error: `clone: ${source} is not a directory` };
     const hash = createHash("sha256").update(local).digest("hex").slice(0, 8);
+
     return { url: local, displayUrl: local, key: ["local", `${placeable(basename(local)) ?? "repo"}-${hash}`] };
   }
+
   const scp = SCP_LIKE.exec(source);
+
   if (scp !== null) return keyed(source, scp[1]!, scp[2]!);
+
   return { error: `clone: \`${source}\` is neither a URL nor an existing directory` };
 }
 
 function fromUrl(source: string): RepoSource | { error: string } {
   let url: URL;
+
   try {
     url = new URL(source);
   } catch {
     return { error: `clone: \`${redactUrl(source)}\` is not a valid URL` };
   }
+
   const scheme = url.protocol.slice(0, -1).toLowerCase();
+
   if (scheme === "file") return parseRepoSource(decodeURIComponent(url.pathname), "/");
+
   if (!["https", "http", "ssh", "git"].includes(scheme)) return { error: `clone: the ${scheme}:// scheme is not supported; use https, ssh, git or file` };
   const host = url.port === "" ? url.hostname : `${url.hostname}_${url.port}`;
+
   return keyed(source, host, decodeURIComponent(url.pathname));
 }
 
@@ -85,10 +99,13 @@ function keyed(url: string, host: string, path: string): RepoSource | { error: s
   const displayUrl = redactUrl(url);
   const segments = path.split("/").filter((segment) => segment !== "");
   const last = segments.pop()?.replace(/\.git$/, "");
+
   if (last === undefined || last === "") return { error: `clone: \`${displayUrl}\` names no repository` };
   const key = [host.toLowerCase(), ...segments, last];
   const bad = key.find((segment) => placeable(segment) === undefined);
+
   if (bad !== undefined) return { error: `clone: \`${bad}\` in \`${displayUrl}\` cannot be a directory name; pass --dir` };
+
   return { url, displayUrl, key };
 }
 
@@ -99,6 +116,7 @@ function placeable(segment: string): string | undefined {
 /** `$XDG_CACHE_HOME/keylang/repos`, else `~/.cache/keylang/repos`. */
 export function cloneCacheRoot(env: Readonly<Record<string, string | undefined>>, home: string): string {
   const cache = env.XDG_CACHE_HOME !== undefined && env.XDG_CACHE_HOME !== "" ? env.XDG_CACHE_HOME : join(home, ".cache");
+
   return join(cache, "keylang", "repos");
 }
 
@@ -117,22 +135,29 @@ export interface CloneSync {
  */
 export function syncClone(source: RepoSource, dir: string): CloneSync {
   const existed = existsSync(dir);
+
   if (!existed || (statSync(dir).isDirectory() && readdirSync(dir).length === 0)) {
     mkdirSync(dirname(dir), { recursive: true });
     // The whole history without file contents: `feature --since`, `check --changed` and the web's
     // «Зміни» need the commits of every branch; git fetches a blob when it is read.
     git(dirname(dir), ["clone", "--quiet", "--filter=blob:none", "--", source.url, dir]);
+
     try {
       safeWrite(dir, CLONE_MARKER, `${JSON.stringify({ url: source.displayUrl, key: source.key }, null, 2)}\n`, { under: ".keylang" });
     } catch (error) {
       rmSync(dir, { recursive: true, force: true });
+
       if (existed) mkdirSync(dir);
       throw new Error(`clone: ${error instanceof Error ? error.message : String(error)}; the clone of ${source.displayUrl} was removed`);
     }
+
     return { action: "cloned", dir };
   }
+
   const cloned = readMarker(dir);
+
   if (cloned === undefined) throw new Error(`clone: ${dir} exists and keylang did not clone it; pass another --dir`);
+
   // A marker an older keylang wrote may hold credentials: shown without them.
   // The same repository spelled another way (`.git`, scp form, ssh) has the same key; fetch goes to the first URL's origin.
   if (cloned.key.join("/") !== source.key.join("/")) throw new Error(`clone: ${dir} is a clone of ${redactUrl(cloned.url)}, not ${source.displayUrl}; pass another --dir`);
@@ -140,6 +165,7 @@ export function syncClone(source: RepoSource, dir: string): CloneSync {
   const shallow = existsSync(join(dir, ".git", "shallow")) ? ["--unshallow"] : [];
   git(dir, ["fetch", "--quiet", "--prune", ...shallow, "origin", "HEAD", "+refs/heads/*:refs/remotes/origin/*"]);
   git(dir, ["reset", "--quiet", "--hard", "FETCH_HEAD"]);
+
   return { action: "updated", dir };
 }
 
@@ -151,22 +177,30 @@ export function syncClone(source: RepoSource, dir: string): CloneSync {
  */
 export function listClones(cacheRoot: string, depth = 6): { dir: string; url: string; key: string[] }[] {
   const out: { dir: string; url: string; key: string[] }[] = [];
+
   const walk = (dir: string, level: number): void => {
     const marker = readMarker(dir);
+
     if (marker !== undefined) {
       out.push({ dir, url: redactUrl(marker.url), key: marker.key });
+
       return;
     }
+
     if (level >= depth) return;
     let entries;
+
     try {
       entries = readdirSync(dir, { withFileTypes: true });
     } catch {
       return;
     }
+
     for (const entry of entries) if (entry.isDirectory() && !entry.name.startsWith(".")) walk(join(dir, entry.name), level + 1);
   };
+
   if (existsSync(cacheRoot)) walk(cacheRoot, 0);
+
   return out.sort((a, b) => (a.key.join("/") < b.key.join("/") ? -1 : a.key.join("/") > b.key.join("/") ? 1 : 0));
 }
 
@@ -174,15 +208,20 @@ export function listClones(cacheRoot: string, depth = 6): { dir: string; url: st
 function readMarker(dir: string): { url: string; key: string[] } | undefined {
   if (targetProblem(dir, CLONE_MARKER, { under: ".keylang" }) !== null) return undefined;
   const marker = join(dir, CLONE_MARKER);
+
   if (!existsSync(marker)) return undefined;
+
   try {
     const parsed: unknown = JSON.parse(withoutBom(readFileSync(marker, "utf8")));
+
     if (typeof parsed !== "object" || parsed === null || !("url" in parsed) || typeof parsed.url !== "string") return undefined;
     const key = "key" in parsed && Array.isArray(parsed.key) && parsed.key.every((segment) => typeof segment === "string") ? (parsed.key as string[]) : undefined;
+
     return { url: parsed.url, key: key ?? [parsed.url] };
   } catch {
     // An unreadable marker is no proof keylang made the directory.
   }
+
   return undefined;
 }
 
@@ -194,7 +233,9 @@ function git(cwd: string, args: string[]): void {
     encoding: "utf8",
     env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
   });
+
   if (out.error) throw new Error(gitUnavailable("clone", out.error));
+
   if (out.status !== 0) throw new Error(`clone: git ${args[0]}: ${out.stderr.trim().split("\n").at(-1) ?? `exit ${out.status}`}`);
 }
 
@@ -207,24 +248,31 @@ function git(cwd: string, args: string[]): void {
  */
 export function enableExplainedMap(root: string): string | null {
   const place = targetProblem(root, "keylang.json");
+
   if (place !== null) return `keylang.json: ${place}`;
   const file = join(root, "keylang.json");
   let config: unknown;
+
   try {
     config = JSON.parse(withoutBom(readFileSync(file, "utf8")));
   } catch (error) {
     return `keylang.json: ${error instanceof Error ? error.message : String(error)}`;
   }
+
   if (typeof config !== "object" || config === null || Array.isArray(config)) return "keylang.json: not a JSON object";
   const record = config as Record<string, unknown>;
   const explain = record.explain;
+
   if (explain !== undefined && (typeof explain !== "object" || explain === null || Array.isArray(explain))) return "keylang.json: `explain` is not an object";
+
   if ((explain as Record<string, unknown> | undefined)?.map === true) return null;
   record.explain = { ...(explain as Record<string, unknown> | undefined), map: true };
+
   try {
     safeWrite(root, "keylang.json", `${JSON.stringify(record, null, 2)}\n`);
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
   }
+
   return null;
 }

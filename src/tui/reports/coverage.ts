@@ -28,14 +28,17 @@ export const COVERAGE_REPORTS: { [K in CoverageKind]: Report<K> } = {
     summary: (_record, result) => `${result.payload.reach.reachable}/${result.payload.reach.fns} fn reached · ${result.payload.orphans.length} orphan(s) · ${result.payload.holes.total} hole(s) · ${result.payload.dataLogic.sites.length} in data${codeOf(result.exitCode)}`,
     rows(_state, _record, result, view) {
       const { payload } = result;
+
       const rows: ReportRow[] = [
         { text: `Blind spots · a view, check does not read it · read-only, nothing written · fresh snapshot ${shortId(payload.snapshotId)}`, style: BOLD },
         outcomeRow(view.summary, result.exitCode === 0),
         { text: "  where keylang does not see: unreached fns, holes, entry points without a flow, logic in data to check by hand", style: MUTED },
       ];
+
       coveragePlaces(payload).forEach((item, index) => rows.push({ text: `  ${item.text}`, style: index === view.selected ? THEME.selected : THEME.panel, gap: index }));
       rows.push({ text: "  Tab, then ↑↓ select a place and Enter opens it in the code", style: THEME.hint });
       rows.push(...textRows("keylang coverage · stdout", payload.text));
+
       return rows;
     },
     items: { noun: "place", of: (_state, result) => coveragePlaces(result.payload) },
@@ -56,14 +59,17 @@ export const INTEGRATIONS_REPORTS: { integrations: Report<"integrations"> } = {
     summary: (_record, result) => `${result.payload.outgoing.length} integration(s) · ${result.payload.outgoing.reduce((sum, integration) => sum + integration.sites.length, 0)} call site(s) · ${result.payload.webhooks.length} webhook(s)${codeOf(result.exitCode)}`,
     rows(_state, _record, result, view) {
       const { payload } = result;
+
       const rows: ReportRow[] = [
         { text: `Integrations · a view, nothing is contacted · read-only, nothing written · fresh snapshot ${shortId(payload.snapshotId)}`, style: BOLD },
         outcomeRow(view.summary, result.exitCode === 0),
         { text: "  outgoing clients of resources/integrations.json by call site, incoming webhooks, queues", style: MUTED },
       ];
+
       integrationPlaces(payload).forEach((item, index) => rows.push({ text: `  ${item.text}`, style: index === view.selected ? THEME.selected : THEME.panel, gap: index }));
       rows.push({ text: "  Tab, then ↑↓ select a call site or webhook and Enter opens it in the code", style: THEME.hint });
       rows.push(...textRows("keylang integrations · stdout", payload.text));
+
       return rows;
     },
     items: { noun: "call site", of: (_state, result) => integrationPlaces(result.payload) },
@@ -98,14 +104,17 @@ export const TOUR_REPORTS: { tour: Report<"tour"> } = {
     summary: (_record, result) => `${result.payload.layers.length} layer(s) · ${result.payload.entries.total} entry point(s) · ${result.payload.processes.domains.reduce((sum, domain) => sum + domain.processes.reduce((n, p) => n + p.flows.length, 0), 0)} discovered flow(s) · ${result.payload.integrations.outgoing.length} integration(s)${codeOf(result.exitCode)}`,
     rows(_state, _record, result, view) {
       const { payload } = result;
+
       const rows: ReportRow[] = [
         { text: `Project tour · a view, check does not read it · read-only, nothing written · fresh snapshot ${shortId(payload.snapshotId)}`, style: BOLD },
         outcomeRow(view.summary, result.exitCode === 0),
         { text: "  where to start reading, and the modules with most holes; the whole page below (keylang tour --out keylang/tour.md saves it)", style: MUTED },
       ];
+
       tourPlaces(payload).forEach((item, index) => rows.push({ text: `  ${item.text}`, style: index === view.selected ? THEME.selected : THEME.panel, gap: index }));
       rows.push({ text: "  Tab, then ↑↓ select a fn or module and Enter opens it in the code", style: THEME.hint });
       rows.push(...textRows("keylang tour · stdout", payload.text));
+
       return rows;
     },
     items: { noun: "place", of: (_state, result) => tourPlaces(result.payload) },
@@ -126,14 +135,17 @@ export const MIGRATION_REPORTS: { "migration-status": Report<"migration-status">
     summary: (_record, result) => `${result.payload.counts.fail} fail · ${result.payload.counts.unverified} unverified · ${result.payload.counts.ok} ok · ${result.payload.notMigrated.flows.length} flow(s) not migrated${codeOf(result.exitCode)}`,
     rows(_state, _record, result, view) {
       const { payload } = result;
+
       const rows: ReportRow[] = [
         { text: `Migration status · old ${payload.from} → this repository · read-only, nothing written · fresh snapshot ${shortId(payload.newSnapshotId)}`, style: BOLD },
         outcomeRow(view.summary, result.exitCode === 0),
         { text: "  every flow of the old stack through the rows of # migration: counterpart, steps, the same tests passing in both reports", style: MUTED },
       ];
+
       migrationPlaces(payload).forEach((item, index) => rows.push({ text: `  ${item.text}`, style: index === view.selected ? THEME.selected : THEME.panel, gap: index }));
       rows.push({ text: "  Tab, then ↑↓ select a flow or a dropped row and Enter opens its spec", style: THEME.hint });
       rows.push(...textRows("keylang migration status · stdout", payload.text));
+
       return rows;
     },
     items: { noun: "flow", of: (_state, result) => migrationPlaces(result.payload) },

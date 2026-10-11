@@ -102,12 +102,14 @@ const REPO: Record<string, string> = {
 function storefront(t: TestContext, extra: Record<string, string> = {}): string {
   const dir = tempDir(t, "keylang-pwa-");
   writeTree(dir, { ...REPO, ...extra });
+
   return dir;
 }
 
 function snapshotOf(dir: string): AnalysisSnapshot {
   const run = keylang(dir, ["map"]);
   assert.equal(run.status, 0, run.stderr);
+
   return JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as AnalysisSnapshot;
 }
 
@@ -125,7 +127,9 @@ function setConfig(dir: string, change: (raw: Record<string, unknown>) => void):
 /** `file:line:col id → verdict` of every `static` verdict `check` prints. */
 function verdicts(stdout: string): Map<string, string> {
   const out = new Map<string, string>();
+
   for (const m of stdout.matchAll(/^(\S+:\d+:\d+): static (ok|fail|unverified) (\S+?):/gm)) out.set(`${m[1]} ${m[3]}`, m[2]!);
+
   return out;
 }
 
@@ -184,10 +188,12 @@ test("pwa-kit: `frameworks: []` turns the overrides and the entries off — ok a
   assert.ok(off.coverage.some((c) => c.kind === "skipped-file" && c.file === "overrides/app/routes.jsx" && c.text === "framework:pwa-kit"));
   const offVerdicts = verdicts(keylang(dir, ["check"]).stdout);
   assert.equal(offVerdicts.size, on.size);
+
   for (const [key, verdict] of on) {
     const now = offVerdicts.get(key);
     assert.ok(now === verdict || now === "unverified", `${key}: ${verdict} → ${now}`);
   }
+
   assert.equal(offVerdicts.get("keylang/flows.md:4:3 components.header.Header"), "unverified");
 });
 

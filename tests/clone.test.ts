@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { fakeAgents, type FakeAgents } from "./agent-fixture.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
 
 interface Run {
@@ -39,6 +40,7 @@ function keylang(sandbox: string, args: string[], fake: FakeAgents | null = null
         ...env,
       },
     });
+
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
@@ -64,6 +66,7 @@ function sandbox(t: TestContext): { dir: string; origin: string } {
   git(origin, ["init", "-q"]);
   git(origin, ["add", "-A"]);
   git(origin, ["commit", "-qm", "init"]);
+
   return { dir, origin };
 }
 
@@ -72,6 +75,7 @@ function clonePath(dir: string): string {
   const local = join(dir, "cache/keylang/repos/local");
   const [only] = readdirSync(local);
   assert.match(only ?? "", /^origin-[0-9a-f]{8}$/);
+
   return join(local, only!);
 }
 

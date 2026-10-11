@@ -14,6 +14,7 @@ interface Answer {
 }
 
 const answers = new Map<string, Answer>();
+
 const loading = new Map<number, Promise<void>>();
 
 (window as unknown as { keylangData: (batch: Record<string, Answer>) => void }).keylangData = (batch) => {
@@ -22,6 +23,7 @@ const loading = new Map<number, Promise<void>>();
 
 function loadShard(shard: number): Promise<void> {
   let done = loading.get(shard);
+
   if (!done) {
     done = new Promise<void>((resolve, reject) => {
       const script = document.createElement("script");
@@ -32,10 +34,12 @@ function loadShard(shard: number): Promise<void> {
         loading.delete(shard);
         reject(new Error(`cannot load data/${shard}.js of this export`));
       };
+
       document.head.append(script);
     });
     loading.set(shard, done);
   }
+
   return done;
 }
 
@@ -52,7 +56,9 @@ export class StaticTransport implements Transport {
     const key = requestKey(path, query);
     await loadShard(keyShard(key, this.shards));
     const answer = answers.get(key);
+
     if (!answer) return { status: 404, type: "application/json", text: JSON.stringify({ error: `not in this export: ${key}` }) };
+
     return { status: answer.status, type: answer.type, text: answer.body, ...(answer.file ? { file: answer.file } : {}) };
   }
 }

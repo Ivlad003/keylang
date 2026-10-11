@@ -18,10 +18,13 @@ export const laravel: FrameworkAdapter = {
   version: "1",
   detect(context) {
     const composer = parseJson(context.read("composer.json"));
+
     for (const field of ["require", "require-dev"]) {
       const deps = composer !== null && typeof composer === "object" ? (composer as Record<string, unknown>)[field] : null;
+
       if (deps !== null && typeof deps === "object" && "laravel/framework" in deps) return true;
     }
+
     return context.read("artisan") !== null && context.read("bootstrap/app.php") !== null;
   },
   files(context) {
@@ -35,6 +38,7 @@ export const laravel: FrameworkAdapter = {
 
 function parseJson(text: string | null): unknown {
   if (text === null) return null;
+
   try {
     return JSON.parse(text.replace(/^\uFEFF/, ""));
   } catch {

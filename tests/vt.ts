@@ -33,25 +33,33 @@ export class VirtualTerminal {
   feed(data: string): void {
     let text = this.pending + data;
     this.pending = "";
+
     while (text.length > 0) {
       if (text[0] === "\x1b") {
         const osc = /^\x1b\]8;;([^\x1b]*)\x1b\\/.exec(text);
+
         if (osc) {
           if (osc[1]) this.links.push(osc[1]);
           text = text.slice(osc[0].length);
           continue;
         }
+
         const csi = /^\x1b\[([?\d;]*)([A-Za-z])/.exec(text);
+
         if (!csi) {
           this.pending = text;
+
           return;
         }
+
         this.csi(csi[1]!, csi[2]!);
         text = text.slice(csi[0].length);
         continue;
       }
+
       const next = text.indexOf("\x1b");
       const chunk = next === -1 ? text : text.slice(0, next);
+
       for (const cluster of graphemes(chunk)) this.put(cluster);
       text = next === -1 ? "" : text.slice(next);
     }
@@ -68,15 +76,22 @@ export class VirtualTerminal {
   private put(cluster: string): void {
     if (cluster === "\r") {
       this.x = 0;
+
       return;
     }
+
     if (cluster === "\n") {
       this.y++;
+
       return;
     }
+
     const width = graphemeWidth(cluster);
+
     if (width === 0 || this.y >= this.rows) return;
+
     if (this.x < this.cols) this.cells[this.y]![this.x] = cluster;
+
     if (width === 2 && this.x + 1 < this.cols) this.cells[this.y]![this.x + 1] = "";
     this.x += width;
   }

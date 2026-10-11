@@ -53,11 +53,13 @@ async function call<T>(method: "GET" | "POST", body?: unknown): Promise<{ status
   const response = await transport().send(method, "/api/greenfield", new URLSearchParams(), body);
   const text = response.text;
   let parsed: unknown = null;
+
   try {
     parsed = JSON.parse(text);
   } catch {
     throw new ApiError(response.status, text.trim() || "request failed");
   }
+
   return { status: response.status, body: parsed as T };
 }
 
@@ -83,14 +85,17 @@ class Greenfield {
 
     this.template = make("select", { title: "Шаблон доріжок" });
     this.template.id = "greenfield-template";
+
     for (const [value, template] of Object.entries(TEMPLATES)) {
       const option = make("option", { text: template.text });
       option.value = value;
       this.template.append(option);
     }
+
     const apply = button("намалювати доріжки", () => this.applyTemplate(), { title: "Додати доріжки шаблону на полотно" });
     apply.id = "greenfield-apply";
     const languages = make("span", { className: "greenfield-languages" });
+
     for (const [value, text] of LANGUAGES) {
       const label = make("label");
       const box = make("input");
@@ -101,6 +106,7 @@ class Greenfield {
       label.append(box, ` ${text}`);
       languages.append(label);
     }
+
     this.idea = make("textarea", { title: "Ідея проєкту: піде в keylang/README.md" });
     this.idea.id = "greenfield-idea";
     this.idea.rows = 2;
@@ -135,10 +141,12 @@ class Greenfield {
   /** The editor on an empty canvas in «чернетка», the panel over it; a fresh canvas gets the chosen template. */
   async open(): Promise<void> {
     if (location.hash.slice(1) !== "view=editor&of=") location.hash = "view=editor&of=";
+
     // The page opens the editor on the hash change: wait for its empty canvas.
     for (let i = 0; i < 100 && (document.body.dataset["mode"] !== "editor" || this.editor.view() !== ""); i++) await new Promise((done) => setTimeout(done, 30));
     this.editor.setMode("draft");
     this.panel.hidden = false;
+
     if (this.editor.currentModel().lanes.length === 0 && this.editor.currentModel().nodes.length === 0) this.applyTemplate();
     this.status("новий проєкт · чернетка: доріжки — шари (верхня — найвищий), тригер і кроки — процес; далі «Створити специфікацію»");
   }
@@ -147,17 +155,21 @@ class Greenfield {
   applyTemplate(): void {
     const lanes = TEMPLATES[this.template.value]?.lanes ?? [];
     const entry = PALETTE.find((item) => item.kind === "lane");
+
     if (!entry || lanes.length === 0) return;
     this.editor.setMode("draft");
     const model = this.editor.currentModel();
     const taken = new Set(model.lanes.map((lane) => lane.id.replace(/^planned:/, "")));
     let y = model.lanes.reduce((bottom, lane) => Math.max(bottom, lane.y + lane.h + LANE_GAP), 0);
+
     for (const name of lanes) {
       if (taken.has(name)) continue;
       const cell = this.editor.addFromPalette(entry, { x: 0, y });
+
       if (cell) this.editor.updateShape(cell, { id: `planned:${name}` });
       y += entry.size[1] + LANE_GAP;
     }
+
     this.editor.graph.clearSelection();
     this.editor.fit();
   }
@@ -167,18 +179,23 @@ class Greenfield {
     await this.editor.flush();
     this.create.disabled = true;
     let answer: { status: number; body: Answer };
+
     try {
       answer = await call<Answer>("POST", { model: this.editor.currentModel(), languages, idea: this.idea.value });
     } catch (error) {
       this.create.disabled = false;
       this.show(null, error instanceof Error ? error.message : String(error));
+
       return;
     }
+
     if (answer.body.status !== "written") {
       this.create.disabled = false;
       this.show(answer.body, answer.body.error ?? `HTTP ${answer.status}`);
+
       return;
     }
+
     this.done = true;
     this.start.hidden = true;
     this.show(answer.body, null);
@@ -187,29 +204,37 @@ class Greenfield {
   /** The answer under the panel: the files, the features with their planned IDs, the next commands, or why nothing was written. */
   private show(answer: Answer | null, error: string | null): void {
     const items: Node[] = [];
+
     if (error !== null) {
       items.push(make("p", { className: "greenfield-error", text: `Не створено: ${error}` }));
+
       for (const note of answer?.notes ?? []) items.push(make("p", { text: note }));
       this.result.dataset["status"] = answer?.status ?? "failed";
     } else if (answer) {
       items.push(make("p", { text: `Створено файлів: ${answer.files.length}. Шари: ${answer.layers.join(" · ")}.` }));
       const files = make("ul");
+
       for (const file of answer.files) {
         const row = make("li", {}, make("code", { text: file }));
         row.dataset["file"] = file;
         files.append(row);
       }
+
       items.push(files);
+
       for (const feature of answer.features) items.push(make("p", {}, make("code", { text: feature.file }), ` — planned: ${feature.planned.length} (◇ ${feature.planned.join(", ")})`));
+
       for (const note of answer.notes) items.push(make("p", { className: "greenfield-note", text: note }));
       items.push(make("p", { text: "Далі, у терміналі в корені проєкту:" }));
       const next = make("ol");
       next.id = "greenfield-next";
+
       for (const command of answer.next) next.append(make("li", {}, make("code", { text: command })));
       items.push(next);
       items.push(make("p", { text: "Флоу з'являться в списку «Діаграми»: planned ◇, а коли агент напише код і ви виконаєте `keylang map` — ✓ чи ✗." }));
       this.result.dataset["status"] = "written";
     }
+
     this.result.replaceChildren(...items);
     this.result.hidden = false;
     this.status(error === null ? `створено: ${answer?.files.length ?? 0} файлів; далі ${answer?.next[0] ?? ""}` : `не створено: ${error}`);
@@ -230,16 +255,21 @@ export async function mountGreenfield(editor: Editor, status: (text: string) => 
   if (readOnlyPage()) return;
   const wanted = new URLSearchParams(location.hash.slice(1)).get("new") === "1";
   let availability: Availability;
+
   try {
     availability = (await call<Availability>("GET")).body;
   } catch {
     return;
   }
+
   if (!availability.available) {
     if (wanted) status(`новий проєкт: ${availability.reason ?? "недоступно"}`);
+
     return;
   }
+
   const greenfield = new Greenfield(editor, status);
   (window as unknown as { keylangGreenfield: unknown }).keylangGreenfield = greenfield;
+
   if (wanted) await greenfield.open();
 }

@@ -30,14 +30,18 @@ export function readStats(root: string): Stats {
 function readStatsFile(root: string): { text: string | null; stats: Stats } {
   const empty: Stats = { schema: 1, drafts: {}, suggestions: {} };
   let text: string;
+
   try {
     text = readFileSync(join(root, STATS_FILE), "utf8");
   } catch {
     return { text: null, stats: empty };
   }
+
   try {
     const value = JSON.parse(text) as Partial<Stats>;
+
     if (value.schema !== 1 || typeof value.drafts !== "object" || typeof value.suggestions !== "object") return { text, stats: empty };
+
     return { text, stats: { schema: 1, drafts: value.drafts ?? {}, suggestions: value.suggestions ?? {} } };
   } catch {
     return { text, stats: empty };
@@ -54,8 +58,10 @@ export function updateStats(root: string, change: (stats: Stats) => void): void 
   for (let attempt = 1; ; attempt++) {
     const { text, stats } = readStatsFile(root);
     change(stats);
+
     try {
       safeWrite(root, STATS_FILE, `${JSON.stringify(stats, null, 2)}\n`, { under: ".keylang", expect: text });
+
       return;
     } catch (error) {
       // No race (an unwritable file) or a second lost one: what a lost count costs is the caller's call.
@@ -67,10 +73,13 @@ export function updateStats(root: string, change: (stats: Stats) => void): void 
 /** `status=` of every `keylang:llm` / `keylang:algo` provenance comment in the lines. */
 export function statusesIn(lines: readonly string[]): Record<string, number> {
   const out: Record<string, number> = {};
+
   for (const line of lines) {
     const m = /<!-- keylang:(?:llm|algo)\b[^>]*\bstatus=([a-z-]+)/.exec(line);
+
     if (m) out[m[1]!] = (out[m[1]!] ?? 0) + 1;
   }
+
   return out;
 }
 

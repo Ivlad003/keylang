@@ -55,7 +55,9 @@ interface Snapshot {
 }
 
 const SUBMIT = "checkout.Model.QuoteManagement.QuoteManagement.submit";
+
 const PLACE_ORDER = "checkout.Model.QuoteManagement.QuoteManagement.placeOrder";
+
 const CHECKOUT_DI = "app/code/Shop/Checkout/etc/di.xml";
 
 function shop(t: TestContext, extra: Record<string, string> = {}): string {
@@ -63,12 +65,14 @@ function shop(t: TestContext, extra: Record<string, string> = {}): string {
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   cpSync(join(root, "tests/fixtures/magento-shop"), dir, { recursive: true });
   writeTree(dir, extra);
+
   return dir;
 }
 
 function map(dir: string): Snapshot {
   const r = keylang(dir, ["map"]);
   assert.equal(r.status, 0, r.stderr);
+
   return JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as Snapshot;
 }
 
@@ -213,10 +217,12 @@ test("magento: `frameworks: []` turns the adapter off; `[\"magento\"]` turns it 
 
   // Explicitly on: a component no `ComponentRegistrar::MODULE` registers is not detected, but its config is read.
   const explicit = shop(t);
+
   for (const name of ["Checkout", "Sales", "Promo"]) {
     const path = join(explicit, `app/code/Shop/${name}/registration.php`);
     writeFileSync(path, readFileSync(path, "utf8").replace("ComponentRegistrar::MODULE", "ComponentRegistrar::LIBRARY"));
   }
+
   assert.equal(map(explicit).manifest.frameworks, undefined, "no module, no app/etc/di.xml: Magento is not detected");
   setConfig(explicit, (raw) => {
     raw.frameworks = ["magento"];
@@ -290,6 +296,7 @@ test("magento: a cycle of preferences ends; a dependency only the config makes i
 });
 
 const SUBMIT_BEFORE = "events.checkout_submit_before";
+
 const SUBMIT_AFTER = "events.checkout_submit_all_after";
 
 test("magento: a literal dispatch is an edge to an event node; events.xml of every area gives observer edges; a disabled observer and a computed name are no edges", (t) => {
@@ -347,6 +354,7 @@ test("magento: `explain` of an event names who dispatches it and its observers; 
   - step events.checkout_submit_al
 `,
   });
+
   map(dir);
   const explain = keylang(dir, ["explain", SUBMIT_AFTER]);
   assert.equal(explain.status, 0, explain.stderr);

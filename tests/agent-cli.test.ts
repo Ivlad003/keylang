@@ -13,7 +13,9 @@ import { fileURLToPath } from "node:url";
 import { alive, fakeAgents, type FakeAgents } from "./agent-fixture.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
+
 const today = new Date().toISOString().slice(0, 10);
 
 interface Run {
@@ -42,6 +44,7 @@ function keylang(dir: string, args: string[], fake: FakeAgents | null, env: Reco
         ...env,
       },
     });
+
     let stdout = "";
     let stderr = "";
     // Decoded as streams: a character split between two reads of a long answer stays whole here too.
@@ -60,6 +63,7 @@ function copy(t: TestContext, fixture = "repo", config: Record<string, unknown> 
   mkdirSync(join(dir, ".home"));
   const file = join(dir, "keylang.json");
   writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), ...config }));
+
   return dir;
 }
 
@@ -71,6 +75,7 @@ function agentsJson(dir: string, value: unknown): void {
 /** Files under `keylang/explain/`: none is written by a failed request. */
 function saved(dir: string): string[] {
   const at = join(dir, "keylang/explain");
+
   return existsSync(at) ? readdirSync(at, { recursive: true }).map(String) : [];
 }
 
@@ -223,6 +228,7 @@ test("agent CLI failures: a missing binary falls back offline; fail, error resul
     assert.match(draft.stderr, /`claude` is not on PATH/);
     assert.deepEqual(saved(dir), []);
   });
+
   for (const [mode, text] of [
     ["fail", /cli:claude: exited with code 3: boom/],
     ["error-result", /cli:claude: rate limited/],
@@ -237,6 +243,7 @@ test("agent CLI failures: a missing binary falls back offline; fail, error resul
       assert.deepEqual(saved(dir), []);
     });
   }
+
   await t.test("hang with KEYLANG_LLM_TIMEOUT_MS: exit 2, the child and its grandchild are killed", async (t) => {
     const dir = copy(t);
     const fake = fakeAgents(t, ["claude"], { modes: "hang" });
@@ -302,6 +309,7 @@ test("agent selection: KEYLANG_AGENT > agents.json use > keylang.json; Cursor is
       assert.equal(o.status, 2, agent);
       assert.match(o.stderr, /keylang\.json: `agent` must be "anthropic:<model>", "openrouter:<model>" or "cli:<name>\[:<model>\]"/, agent);
     }
+
     const dir = copy(t);
     const env = await keylang(dir, ["explain", NODE, "--llm"], null, { KEYLANG_AGENT: "cli:claude:--x" });
     assert.equal(env.status, 2);
@@ -317,6 +325,7 @@ test("agent selection: KEYLANG_AGENT > agents.json use > keylang.json; Cursor is
       [{ clis: { grok: { command: ["grok"], env: {} } } }, /unknown field `clis\.grok\.env`/],
       [{ other: 1 }, /unknown field `other`/],
     ];
+
     for (const [value, text] of cases) {
       const dir = copy(t);
       agentsJson(dir, value);
@@ -340,6 +349,7 @@ test("doctor: the agent with its source, binary and version, and a line with all
 
 async function waitUntil(check: () => boolean, what: string, timeout = 10_000): Promise<void> {
   const start = Date.now();
+
   while (!check()) {
     if (Date.now() - start > timeout) throw new Error(`timed out waiting for ${what}`);
     await new Promise((resolve) => setTimeout(resolve, 20));

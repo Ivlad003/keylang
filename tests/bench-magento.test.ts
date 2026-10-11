@@ -11,18 +11,22 @@ import { collectMetrics, draftSteps, formatReport, normaliseReason, summaryLine 
 import { benchConfig, parseArgs, reportHeader, WIDE_SPARSE_PATTERNS } from "../bench/magento/run.mjs";
 
 const fixture = join(import.meta.dirname, "fixtures", "bench-magento");
+
 const expect = JSON.parse(readFileSync(join(import.meta.dirname, "..", "bench", "magento", "expect.json"), "utf8"));
+
 const loadSnapshot = (): { coverage: unknown[] } & Record<string, unknown> => JSON.parse(readFileSync(join(fixture, "index.json"), "utf8"));
 
 const placeOrder = `# flow placeOrder
 
 - trigger quote.Model.QuoteManagement.QuoteManagement.placeOrder <!-- keylang:algo unresolved: this.cartMutex.execute (app/code/Magento/Quote/Model/QuoteManagement.php:402) -->
 `;
+
 const submitQuote = `# flow submitQuote
 
 - trigger quote.Model.QuoteManagement.QuoteManagement.submitQuote
   - step quote.Model.SubmitQuoteValidator.SubmitQuoteValidator.validateQuote <!-- keylang:algo unresolved: x (a.php:1) -->
 `;
+
 const drafts = [
   { trigger: "quote.Model.QuoteManagement.QuoteManagement.placeOrder", text: placeOrder },
   { trigger: "quote.Model.QuoteManagement.QuoteManagement.submitQuote", text: submitQuote },
@@ -141,6 +145,7 @@ test("bench-magento: `--wide` writes `results-wide.md`, keeps the five modules a
 
   const header = (isWide: boolean): { title: string; intro: string[] } =>
     reportHeader({ wide: isWide, sha: "755e34dd", outsideModules: 217, verdicts: { fail: 1, unverified: 0, ok: 2, warning: 0 }, coverage: 9, warnings: 3, drafts: [{ trigger: expect.flow, exit: 0, steps: 83 }] });
+
   const w = header(true);
   assert.equal(w.title, "Бенч Magento (широкий): business-flows");
   assert.match(w.intro[0] ?? "", /sparse-checkout `--wide`: модулі `Checkout`, `Quote`, `Sales`, `SalesRule`, `Payment` як шари; решта 217 модулів/);

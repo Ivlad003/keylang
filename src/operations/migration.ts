@@ -20,28 +20,36 @@ import type { MigrationStatusPayload, MigrationStatusRequest, OperationContext, 
  */
 export async function runMigrationStatus(request: MigrationStatusRequest, context: OperationContext): Promise<OperationEnvelope<"migration-status">> {
   if (!isAbsolute(request.root)) return empty("migration-status", "failed", 2, "migration status: root must be an absolute path");
+
   if (context.signal?.aborted) return empty("migration-status", "cancelled", null);
   context.onProgress?.({ text: "reading a fresh snapshot of the saved code" });
   let analysis: Analysis;
+
   try {
     analysis = await (context.analyze ?? analyze)({ root: request.root, saveFacts: true, withoutMigration: true });
   } catch (error) {
     return empty("migration-status", "failed", 2, `migration status: ${errorText(error)}`);
   }
+
   if (context.signal?.aborted) return empty("migration-status", "cancelled", null);
+
   if (analysis.snapshot === null) return empty("migration-status", "failed", 2, "migration status: no code to read (`languages` in keylang.json is empty)");
   const from = request.from ?? analysis.config.migration.from;
+
   if (from === null) return empty("migration-status", "failed", 2, "migration status: no old stack: pass `--from <old index.json|old repository>` or set `migration.from` in keylang.json");
   const abs = resolveFrom(request.root, from);
+
   try {
     context.onProgress?.({ text: `reading the old stack ${fromLabel(request.root, abs)} (read-only)` });
     const old = await loadOldStack(abs);
+
     if (context.signal?.aborted) return empty("migration-status", "cancelled", null);
     context.onProgress?.({ text: "comparing the flows of both stacks" });
     const current = await stackOf(analysis);
     const status = migrationStatus({ from: fromLabel(request.root, abs), old: old.stack, current, rows: migrationRows(analysis.docs), notes: old.notes });
     const text = migrationStatusText(status);
     const payload: MigrationStatusPayload = { ...status, text };
+
     return { ...empty("migration-status", "completed", status.counts.fail > 0 ? 1 : 0), payload, messages: text.trimEnd().split("\n").map((line) => ({ level: "info" as const, text: line })) };
   } catch (error) {
     return empty("migration-status", "failed", 2, `migration status: ${errorText(error)}`);

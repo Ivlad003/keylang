@@ -12,9 +12,11 @@ import { test, type TestContext } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
 
 const SHOP = "export function buy(id: string): void {\n  pay(id);\n}\nexport function pay(id: string): void {}\n";
+
 const REFUND = `# flow refund
 
 - ? who starts a refund: the customer or an operator?
@@ -28,6 +30,7 @@ const REFUND = `# flow refund
 
 function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8" });
+
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
@@ -39,15 +42,18 @@ function git(dir: string, args: string[]): void {
 function repo(t: TestContext, files: Record<string, string>): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-question-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+
   const all: Record<string, string> = {
     "keylang.json": `${JSON.stringify({ languages: ["typescript"], module: "file", layers: { app: ["src/app/**"] } })}\n`,
     "src/app/shop.ts": SHOP,
     ...files,
   };
+
   for (const [path, text] of Object.entries(all)) {
     mkdirSync(join(dir, dirname(path)), { recursive: true });
     writeFileSync(join(dir, path), text);
   }
+
   return dir;
 }
 
@@ -58,11 +64,15 @@ function questions(dir: string, path: string): [string, number, number][] {
   const r = keylang(dir, ["parse", "--json", path]);
   const [doc] = JSON.parse(r.stdout) as { sections: { items: Item[] }[] }[];
   const out: [string, number, number][] = [];
+
   const walk = (item: Item): void => {
     if (item.kind === "question") out.push([item.text!.value, item.span.start.line, item.span.start.col]);
+
     for (const child of item.children ?? []) walk(child);
   };
+
   for (const section of doc!.sections) for (const item of section.items) walk(item);
+
   return out;
 }
 
@@ -72,6 +82,7 @@ test("parse: `- ? <text>` is a question at the top of a flow, under trigger, ste
     "keylang/flows/step.md": "# flow step\n\n- step app.shop.buy\n  - ? does it pay?\n",
     "keylang/flows/elsewhere.md": "# flow elsewhere\n\n- invariant refunds add up\n  - ? to what?\n- when paid\n  - then app.shop.pay\n    - ? and then?\n",
   });
+
   assert.deepEqual(questions(dir, "keylang/flows/refund.md"), [
     ["who starts a refund: the customer or an operator?", 3, 1],
     ["is an operator needed?", 5, 3],
@@ -100,10 +111,13 @@ test("check: a question is no claim: no diagnostic and no verdict; fmt keeps it 
 
 test("feature: each open question is a gap until a person answers it in a commit; deleting it is a weakened plan", (t) => {
   const dir = repo(t, { "keylang/features/refund.md": REFUND });
+
   const status = (): { status: number | null; body: { done: boolean; stage: string; gaps: { kind: string; id: string; line: number; col: number; reason: string; stage: string }[] } } => {
     const r = keylang(dir, ["feature", "refund", "--format", "json"]);
+
     return { status: r.status, body: JSON.parse(r.stdout) };
   };
+
   const open = status();
   assert.equal(open.status, 1);
   assert.equal(open.body.stage, "structure");
@@ -144,12 +158,16 @@ class Lsp {
     this.child = spawn(process.execPath, [bin, "lsp", "--stdio"], { cwd, stdio: ["pipe", "pipe", "pipe"] });
     this.child.stdout.on("data", (chunk: Buffer) => {
       this.buffer = Buffer.concat([this.buffer, chunk]);
+
       for (;;) {
         const end = this.buffer.indexOf("\r\n\r\n");
+
         if (end === -1) return;
         const length = Number(/Content-Length: (\d+)/i.exec(this.buffer.subarray(0, end).toString())?.[1]);
+
         if (this.buffer.length < end + 4 + length) return;
         const message = JSON.parse(this.buffer.subarray(end + 4, end + 4 + length).toString()) as { id?: number; method?: string; result?: unknown };
+
         if (message.id !== undefined && message.method === undefined) this.answers.set(message.id, message.result);
         this.buffer = this.buffer.subarray(end + 4 + length);
       }
@@ -165,10 +183,12 @@ class Lsp {
     const id = this.next++;
     const json = JSON.stringify({ jsonrpc: "2.0", id, method, params });
     this.child.stdin.write(`Content-Length: ${Buffer.byteLength(json)}\r\n\r\n${json}`);
+
     for (let waited = 0; !this.answers.has(id); waited += 25) {
       if (waited > 30000) throw new Error(`${method}: no answer`);
       await new Promise((done) => setTimeout(done, 25));
     }
+
     return this.answers.get(id) as T;
   }
 
@@ -187,10 +207,13 @@ test("lsp: completion after `- ` offers `?` under a trigger and under when; hove
   const uri = pathToFileURL(join(dir, "keylang/flows/refund.md")).href;
   const text = REFUND.replace("  - step app.shop.pay\n  - when", "  - step app.shop.pay\n  - \n  - when");
   lsp.notify("textDocument/didOpen", { textDocument: { uri, languageId: "markdown", version: 1, text } });
+
   const labels = async (line: number, character: number): Promise<string[]> => {
     const listed = await lsp.request<{ items: { label: string }[] } | { label: string }[]>("textDocument/completion", { textDocument: { uri }, position: { line, character } });
+
     return (Array.isArray(listed) ? listed : listed.items).map((item) => item.label);
   };
+
   // Line 6 (0-based) is the new `  - ` under the trigger.
   assert.ok((await labels(6, 4)).includes("?"), "a question under a trigger");
   const hover = await lsp.request<{ contents: { value: string } | string }>("textDocument/hover", { textDocument: { uri }, position: { line: 2, character: 2 } });

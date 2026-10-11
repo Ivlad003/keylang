@@ -38,15 +38,21 @@ export function fakeAgents(t: { after: (f: () => void) => void }, names: string[
   const log = join(dir, "log");
   mkdirSync(bin);
   mkdirSync(log);
+
   for (const name of names) {
     const file = join(bin, name);
     writeFileSync(file, `#!/bin/sh\nFAKE_AGENT_AS=${name} exec "${process.execPath}" "${script}" "$@"\n`);
     chmodSync(file, 0o755);
   }
+
   const env: Record<string, string> = { FAKE_AGENT_LOG: log, FAKE_AGENT_MODES: options.modes ?? "ok" };
+
   if (options.reply !== undefined) env.FAKE_AGENT_REPLY = options.reply;
+
   if (options.version !== undefined) env.FAKE_AGENT_VERSION = options.version;
+
   if (options.model !== undefined) env.FAKE_AGENT_MODEL = options.model;
+
   return {
     bin,
     env,
@@ -57,12 +63,15 @@ export function fakeAgents(t: { after: (f: () => void) => void }, names: string[
         .sort((a, b) => a - b)
         .flatMap((n) => {
           const text = readFileSync(join(log, `${n}.json`), "utf8");
+
           if (text === "") return [];
           const done = join(log, `${n}.done`);
+
           return [{ ...(JSON.parse(text) as Omit<FakeCall, "done">), done: existsSync(done) ? Number(readFileSync(done, "utf8")) : null }];
         }),
     pids: (n) => {
       const file = join(log, `${n}.pid`);
+
       return existsSync(file) ? readFileSync(file, "utf8").trim().split(" ").map(Number) : [];
     },
   };
@@ -72,6 +81,7 @@ export function fakeAgents(t: { after: (f: () => void) => void }, names: string[
 export function alive(pid: number): boolean {
   try {
     process.kill(pid, 0);
+
     return true;
   } catch {
     return false;

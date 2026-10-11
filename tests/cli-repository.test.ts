@@ -18,9 +18,11 @@ import { bin, git, keylang, LAYERS, ORDER, PAY, repoCopy, root, tempDir, treeByt
 
 test("generated maps of the repo and the fixture parse", () => {
   const fixture = repoCopy();
+
   try {
     assert.equal(keylang(fixture, ["map"]).status, 0);
     assert.equal(keylang(root, ["map", "--check"]).status, 0, "committed keylang map is stale");
+
     for (const cwd of [fixture, root]) {
       for (const name of readdirSync(join(cwd, "keylang/map"))) {
         if (!name.endsWith(".md")) continue;
@@ -43,15 +45,19 @@ function packSource(): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-pack-src-"));
   const listed = spawnSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], { cwd: root, encoding: "utf8" });
   assert.equal(listed.status, 0, listed.stderr);
+
   for (const file of listed.stdout.split("\0")) {
     // Regular files only: a worktree may have node_modules as an untracked link.
     if (file === "" || lstatSync(join(root, file), { throwIfNoEntry: false })?.isFile() !== true) continue;
     const top = file.includes("/") ? file.slice(0, file.indexOf("/")) : "";
+
     if (top !== "" && !["bin", "src", "scripts", "adapters", "resources", "web"].includes(top)) continue;
     mkdirSync(dirname(join(dir, file)), { recursive: true });
     cpSync(join(root, file), join(dir, file));
   }
+
   symlinkSync(join(root, "node_modules"), join(dir, "node_modules"), "dir");
+
   return dir;
 }
 
@@ -76,9 +82,11 @@ test("packed tarball runs the CLI from node_modules", async (t) => {
   assert.equal(listing.status, 0, listing.stderr);
   const names = listing.stdout.split("\n");
   assert.ok(names.some((n) => n.endsWith("/dist/cli.js")));
+
   // Every grammar the runtime loads ships in dist/wasm, which the package reads instead of @vscode/tree-sitter-wasm.
   for (const grammar of GRAMMARS) assert.ok(names.some((n) => n.endsWith(`/dist/wasm/${wasmFile(grammar)}`)), grammar);
   assert.ok(names.some((n) => n.endsWith("/bin/keylang.js")));
+
   for (const asset of ["xterm.js", "xterm.css", "addon-fit.js", "xterm.LICENSE"]) assert.ok(names.some((n) => n.endsWith(`/dist/web/${asset}`)), asset);
   assert.ok(names.some((n) => n.endsWith("/dist/tui/analysis-worker.js")));
   assert.ok(names.some((n) => n.endsWith("/dist/tui/operation-worker.js")));
@@ -89,11 +97,14 @@ test("packed tarball runs the CLI from node_modules", async (t) => {
   assert.ok(published.files.includes("dist/wasm"));
 
   writeFileSync(join(tmp, "package.json"), '{"name":"keylang-pack-test","private":true}\n');
+
   const install = spawnSync("npm", ["install", "--omit=dev", "--offline", "--ignore-scripts", tarball], {
     cwd: tmp,
     encoding: "utf8",
   });
+
   assert.equal(install.status, 0, install.stderr);
+
   // The grammars ship in dist/wasm, and local voice is an optional peer the user adds: a plain install pulls in neither.
   for (const name of ["@vscode/tree-sitter-wasm", "@fugood/whisper.node", "decibri"]) assert.equal(existsSync(join(tmp, "node_modules", name)), false, name);
   const installedBin = join(tmp, "node_modules/keylang/bin/keylang.js");
@@ -109,6 +120,7 @@ test("packed tarball runs the CLI from node_modules", async (t) => {
   // Without the optional voice modules (no prebuilt binary for a platform, or `--omit=optional`) the CLI works and says so.
   // A directory of its own: module resolution must not find the first install in a parent's node_modules.
   const bare = mkdtempSync(join(tmpdir(), "keylang-bare-"));
+
   try {
     writeFileSync(join(bare, "package.json"), '{"name":"keylang-bare-test","private":true}\n');
     const bareInstall = spawnSync("npm", ["install", "--omit=dev", "--omit=optional", "--offline", "--ignore-scripts", tarball], { cwd: bare, encoding: "utf8" });
@@ -141,16 +153,19 @@ test("packed tarball runs the CLI from node_modules", async (t) => {
   }
 
   const localParse = keylang(localRepo, ["parse", "--json", "keylang/rules.md"]);
+
   const packedParse = spawnSync(process.execPath, [installedBin, "parse", "--json", "keylang/rules.md"], {
     cwd: packedRepo,
     encoding: "utf8",
   });
+
   assert.equal(packedParse.status, 0, packedParse.stderr);
   assert.equal(packedParse.stdout, localParse.stdout);
 
   assert.equal(keylang(localRepo, ["map"]).status, 0);
   const packedMap = spawnSync(process.execPath, [installedBin, "map"], { cwd: packedRepo, encoding: "utf8" });
   assert.equal(packedMap.status, 0, packedMap.stderr);
+
   for (const name of readdirSync(join(localRepo, "keylang/map"))) {
     assert.equal(
       readFileSync(join(packedRepo, "keylang/map", name), "utf8"),
@@ -158,6 +173,7 @@ test("packed tarball runs the CLI from node_modules", async (t) => {
       name,
     );
   }
+
   // The TUI's operation worker runs from the package's JS entry: the same map check as the packed CLI.
   // A script file, not `--eval`: a worker inherits the parent's exec flags, and `--input-type` refuses a file entry.
   const workerScript = join(tmp, "operation-worker-check.mjs");
@@ -178,7 +194,9 @@ test("packed tarball runs the CLI from node_modules", async (t) => {
   assert.equal(packedIndex.schema, localIndex.schema);
   // The package names its grammars from dist/wasm/grammars.json and its runtime from web-tree-sitter's own package.json.
   assert.deepEqual(packedIndex.manifest.grammars, localIndex.manifest.grammars);
+
   for (const version of Object.values(packedIndex.manifest.grammars as Record<string, string>)) assert.match(version, /^\d+\.\d+\.\d+/);
+
   // Rust, Python and PHP parse with the package's own grammars too: the same map and snapshot as the checkout.
   for (const fixture of ["rust-shop", "py-shop", "php-shop"]) {
     const local = mkdtempSync(join(tmpdir(), `keylang-${fixture}-`));
@@ -194,6 +212,7 @@ test("packed tarball runs the CLI from node_modules", async (t) => {
     assert.equal(packedInit.status, 0, `${fixture}: ${packedInit.stderr}`);
     const maps = readdirSync(join(local, "keylang/map"));
     assert.ok(maps.length > 0, fixture);
+
     for (const name of maps) assert.equal(readFileSync(join(packedCopy, "keylang/map", name), "utf8"), readFileSync(join(local, "keylang/map", name), "utf8"), `${fixture}: ${name}`);
     const snapshotOf = (dir: string): string => (JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as { snapshotId: string }).snapshotId;
     assert.equal(snapshotOf(packedCopy), snapshotOf(local), fixture);
@@ -205,10 +224,12 @@ test("packed tarball runs the CLI from node_modules", async (t) => {
   let out = "";
   web.stdout.on("data", (chunk: Buffer) => (out += chunk.toString()));
   const started = Date.now();
+
   while (!/keylang web: (\S+)/.test(out)) {
     assert.ok(Date.now() - started < 10000, "keylang web did not print its URL");
     await new Promise((done) => setTimeout(done, 20));
   }
+
   const url = new URL(/keylang web: (\S+)/.exec(out)![1]!);
   const asset = await fetch(new URL("/assets/xterm.js", url));
   assert.equal(asset.status, 200);
@@ -217,10 +238,12 @@ test("packed tarball runs the CLI from node_modules", async (t) => {
   const socket = new WebSocket(`ws://${url.host}/ws`, ["keylang", `keylang.t.${new URLSearchParams(url.hash.slice(1)).get("t")}`]);
   socket.onmessage = (event) => frames.push(String(event.data));
   socket.onopen = () => socket.send(JSON.stringify({ type: "hello", session: "packed-session", cols: 100, rows: 24 }));
+
   while (!/✗ 0/.test(frames.join(""))) {
     assert.ok(Date.now() - started < 20000, `no analysis over the socket: ${frames.join("").slice(-400)}`);
     await new Promise((done) => setTimeout(done, 20));
   }
+
   socket.close();
 });
 
@@ -233,17 +256,20 @@ test("@flow check: check reports a denied import without writing the map", (t) =
   appendFileSync(join(dir, "src/domain/order.ts"), 'import { save } from "../infra/db.ts";\nexport function again(o: Order): void { save(o); }\n');
   const trace = join(root, ".keylang/trace/check.jsonl");
   rmSync(trace, { force: true });
+
   const r = spawnSync(process.execPath, ["--import", join(root, "src/adapters/trace.ts"), bin, "check"], {
     cwd: dir,
     encoding: "utf8",
     env: { ...process.env, KEYLANG_TRACE: trace, KEYLANG_TRACE_FLOW: "check", KEYLANG_TRACE_TEST: "tests/cli-repository.test.ts > @flow check", KEYLANG_TRACE_ROOT: root },
   });
+
   assert.equal(r.status, 1, r.stderr);
   assert.match(r.stdout, /K102 divergence: `domain\.order` depends on `infra\.db`/);
   assert.equal(existsSync(join(dir, ".keylang/index.json")), false);
   const events = readFileSync(trace, "utf8").trim().split("\n").map((line) => JSON.parse(line) as { event: string; symbolId?: string; complete?: boolean });
   assert.equal(events.at(-1)?.event, "run");
   assert.equal(events.at(-1)?.complete, true);
+
   for (const id of ["cli.cli.main", "cli.cli.cmdCheck", "map.analyze.analyze", "check.rules.evaluateRules", "features.check-format.checkReportText"]) {
     assert.ok(events.some((event) => event.event === "start" && event.symbolId === id), id);
   }
@@ -256,16 +282,19 @@ test("@flow tui: F5 reanalyses with the snapshot from the worker", (t) => {
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const trace = join(root, ".keylang/trace/tui.jsonl");
   rmSync(trace, { force: true });
+
   const r = spawnSync(process.execPath, ["--import", join(root, "src/adapters/trace.ts"), join(root, "tests/fixtures/tui-session/session.ts"), dir], {
     cwd: dir,
     encoding: "utf8",
     env: { ...process.env, KEYLANG_TRACE: trace, KEYLANG_TRACE_FLOW: "tui", KEYLANG_TRACE_TEST: "tests/cli-repository.test.ts > @flow tui", KEYLANG_TRACE_ROOT: root },
   });
+
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /^[0-9a-f]{64}\n$/, "the session got a snapshot");
   const events = readFileSync(trace, "utf8").trim().split("\n").map((line) => JSON.parse(line) as { event: string; symbolId?: string; complete?: boolean });
   assert.equal(events.at(-1)?.event, "run");
   assert.equal(events.at(-1)?.complete, true);
+
   for (const id of ["tui.app.App.input", "tui.input.InputDecoder.feed", "tui.app.App.handle", "tui.app.App.reanalyze", "map.analyze.analyze", "tui.background.SnapshotWorker.generate"]) {
     assert.ok(events.some((event) => event.event === "start" && event.symbolId === id), id);
   }
@@ -275,17 +304,21 @@ test("the in-repo check flow reports ID, static, tests, and trace separately", (
   const checked = keylang(root, ["check", "--format", "json"]);
   const rows = (JSON.parse(checked.stdout) as { results: { criterion: string; area: string; verdict: string; evidence: string }[] }).results;
   const steps = ["cli.cli.run", "cli.cli.cmdCheck", "map.analyze.analyze", "map.map.generateMap", "lang.parser.parse", "check.assess.assess", "check.resolve.check", "check.rules.evaluateRules", "check.flows.evaluateFlows", "features.check-format.checkReportText"];
+
   for (const id of steps) {
     for (const criterion of ["ID", "static", "trace"]) assert.ok(rows.some((row) => row.criterion === criterion && row.area === id), `${criterion} ${id}`);
     assert.equal(rows.find((row) => row.criterion === "ID" && row.area === id)?.verdict, "ok", id);
     assert.equal(rows.find((row) => row.criterion === "static" && row.area === id)?.verdict, "ok", id);
   }
+
   // The trace of the @flow test above belongs to this snapshot.
   for (const id of steps) assert.equal(rows.find((row) => row.criterion === "trace" && row.area === id)?.verdict, "ok", id);
+
   // The TUI flow: `this.decoder.feed`, the `analyzer` hook's default, and the injected `generate` are static paths.
   for (const id of ["tui.input.InputDecoder.feed", "tui.app.App.handle", "tui.app.App.reanalyze", "tui.background.SnapshotWorker.generate"]) {
     assert.equal(rows.find((row) => row.criterion === "static" && row.area === id)?.verdict, "ok", id);
   }
+
   assert.ok(rows.some((row) => row.criterion === "tests" && row.area.startsWith("invariant a denied import")));
   const again = keylang(root, ["check", "--format", "json"]);
   assert.equal(again.stdout, checked.stdout);
@@ -322,10 +355,13 @@ test("check --changed filters to the touched files; hook stop blocks once and wr
   assert.match(noGit.stderr, /git/);
 
   const event = JSON.stringify({ hook_event_name: "Stop", stop_hook_active: false });
+
   const hook = (input: string): { status: number | null; stdout: string } => {
     const r = spawnSync(process.execPath, [bin, "hook", "stop"], { cwd: dir, input, encoding: "utf8" });
+
     return { status: r.status, stdout: r.stdout };
   };
+
   const dirty = treeBytes(dir);
   const blocked = hook(event);
   const again = hook(event);

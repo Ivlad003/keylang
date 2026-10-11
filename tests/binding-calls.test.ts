@@ -22,6 +22,7 @@ const adapter: FrameworkAdapter = {
   files: (context) => ["di.admin.json", "di.json"].filter((path) => context.read(path) !== null).map((path) => ({ path, owner: "src/wiring" })),
   parse(path, text): ConfigFacts {
     const rows = JSON.parse(text) as { from: [string, string]; to: [string, string]; line: number }[];
+
     return {
       path,
       scope: path === "di.admin.json" ? "admin" : "global",
@@ -49,12 +50,14 @@ const FILES: Record<string, string> = {
 };
 
 const GLOBAL = JSON.stringify([{ from: ["src/core/repo.ts", "Repo"], to: ["src/core/sql.ts", "SqlRepo"], line: 2 }]);
+
 const ADMIN = JSON.stringify([{ from: ["src/core/repo.ts", "Repo"], to: ["src/core/memory.ts", "MemoryRepo"], line: 7 }]);
 
 function repo(t: TestContext, files: Record<string, string>): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-bindings-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   writeTree(dir, files);
+
   return dir;
 }
 

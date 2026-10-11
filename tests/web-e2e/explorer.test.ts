@@ -19,6 +19,7 @@ import { explorerRepo } from "../explorer-fixture.ts";
 import { browserOptions, root, startWeb, watch } from "./browser.ts";
 
 const SCREENSHOT = join(root, "docs/course/images/diagrams-explorer.png");
+
 const options = browserOptions();
 
 /** The row of `id` in a tree (`down` or `up`), at any depth; the first one. */
@@ -76,6 +77,7 @@ test("explorer: open an entry point, expand three levels, see a via badge and a 
 
   // Ticking the deepest fn ticks the branch above it; «Зберегти як флоу» writes one proposal.
   await row(page, "down", "billing.audit.write").locator(":scope > .row input.pick").check();
+
   for (const id of ["billing.charge.charge", "billing.audit.audit"]) assert.equal(await row(page, "down", id).locator(":scope > .row input.pick").isChecked(), true, id);
   assert.equal(await row(page, "down", "billing.lock.withLock").locator(":scope > .row input.pick").isChecked(), false);
   mkdirSync(dirname(SCREENSHOT), { recursive: true });
@@ -112,6 +114,7 @@ test("explorer: open an entry point, expand three levels, see a via badge and a 
   await page.click('#modes button[data-mode="blind"]');
   await page.locator("#blind-reach").waitFor({ timeout: 60000 });
   assert.match(page.url(), /#view=blind$/);
+
   for (const id of ["#blind-reach", "#blind-orphans", "#blind-holes", "#blind-unflowed", "#blind-data"]) await page.locator(id).waitFor();
   assert.match((await page.locator("#blind-reach").textContent()) ?? "", /100\.0% — 10 з 10 fn; точок входу 3/);
   assert.match((await page.locator("#blind-holes").textContent()) ?? "", /Дірки \(3\)/);
@@ -132,5 +135,5 @@ test("explorer: open an entry point, expand three levels, see a via badge and a 
     problems.filter((p) => !/^409 \/api\/flow-proposal$|status of 409 \(Conflict\)/.test(p)),
     [],
   );
-  assert.equal(problems.filter((p) => /^409 /.test(p)).length, 1);
+  assert.equal(problems.filter((p) => p.startsWith('409 ')).length, 1);
 });

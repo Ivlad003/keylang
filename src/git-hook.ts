@@ -35,7 +35,9 @@ export type PreCommitState = "missing" | "foreign" | "stale" | "current";
 
 export function preCommitState(current: string | null, executable: boolean, version: string, subdir = ""): PreCommitState {
   if (current === null) return "missing";
+
   if (!current.includes(MARKER)) return "foreign";
+
   return current === preCommitText(version, subdir) && executable ? "current" : "stale";
 }
 
@@ -47,6 +49,7 @@ export function preCommitState(current: string | null, executable: boolean, vers
  */
 export function gitHooksDir(cwd: string): string {
   const top = gitTopLevel(cwd);
+
   return resolve(top, git(top, ["rev-parse", "--git-path", "hooks"]));
 }
 
@@ -57,7 +60,10 @@ export function gitTopLevel(cwd: string): string {
 
 function git(cwd: string, args: string[]): string {
   const run = spawnSync("git", args, { cwd, stdio: ["ignore", "pipe", "pipe"], encoding: "utf8" });
+
   if (run.error) throw new Error(`hook install: cannot run git: ${run.error.message}`);
+
   if (run.status !== 0) throw new Error(`hook install: not inside a git work tree (git ${args.join(" ")}: ${run.stderr.trim() || `exit ${run.status}`})`);
+
   return run.stdout.trim();
 }

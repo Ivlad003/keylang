@@ -12,9 +12,13 @@ import { stringWidth } from "../src/tui/width.ts";
 // process's HOME — for a session made without one, a `keylang web` it
 // spawns, the CLI — is a temporary directory, removed when the process exits.
 const HOMES = mkdtempSync(join(tmpdir(), "keylang-home-"));
+
 process.on("exit", () => rmSync(HOMES, { recursive: true, force: true }));
+
 process.env.HOME = join(HOMES, "process");
+
 mkdirSync(process.env.HOME);
+
 let homes = 0;
 
 /** A home of a session's own, made when something is written there: no other session reads its tui.json. */
@@ -56,10 +60,12 @@ export function checkoutRepo(t: { after: (f: () => void) => void }, specs: Recor
   const layers = { domain: ["src/domain/**"], application: ["src/application/**"], infrastructure: ["src/infrastructure/**"], presentation: ["src/presentation/**"] };
   writeFileSync(join(dir, "keylang.json"), `${JSON.stringify({ languages: ["typescript"], layers, check: { trace: ".keylang/trace/*.jsonl" } }, null, 2)}\n`);
   const files = { ...CHECKOUT_FILES, "keylang/flows/checkout.md": CHECKOUT_FLOW, "keylang/rules.md": "# rules\n\n- layers domain < infrastructure < application < presentation\n", ...specs };
+
   for (const [path, text] of Object.entries(files)) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
     writeFileSync(join(dir, path), text);
   }
+
   return dir;
 }
 
@@ -99,8 +105,10 @@ export function drag(from: { x: number; y: number }, to: { x: number; y: number 
 export function locate(lines: readonly string[], text: string): { x: number; y: number } {
   for (let y = 0; y < lines.length; y++) {
     const at = lines[y]!.indexOf(text);
+
     if (at !== -1) return { x: stringWidth(lines[y]!.slice(0, at)), y };
   }
+
   throw new Error(`not on screen: ${text}\n${lines.join("\n")}`);
 }
 

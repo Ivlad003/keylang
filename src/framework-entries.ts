@@ -44,26 +44,33 @@ export function frameworkEntries({ config, graph, facts, frameworks }: Framework
   const holes: Gap[] = [];
   const warnings: string[] = [];
   const classes = phpClassFiles(facts);
+
   for (const framework of frameworks) {
     for (const { facts: file } of framework.configs) {
       for (const hole of file.holes ?? []) holes.push({ kind: "unsupported", file: file.path, line: hole.line, col: hole.col, endLine: hole.line, endCol: hole.col, text: hole.text, reason: hole.reason, source: graph.byPath.get(file.path)?.id ?? null });
+
       for (const fact of file.entries ?? []) {
         if (fact.type !== undefined) {
           const placed = placeMethod(scope, classes, fact.type, fact.fn ?? "__invoke");
+
           if ("reason" in placed) {
             holes.push({ kind: "unsupported", file: file.path, line: fact.line, col: fact.col, endLine: fact.line, endCol: fact.col, text: fact.label, reason: `${fact.kind} \`${fact.label}\`: ${placed.reason}`, source: graph.byPath.get(file.path)?.id ?? null });
             continue;
           }
+
           entries.push(withExtras(frameworkEntry(scope, framework.name, fact.kind, placed.id, fact.label, `${file.path}:${fact.line}`, placed.at), fact));
           continue;
         }
+
         const script = fact.files.map(probe).find((found) => found !== null) ?? null;
         const module = script === null ? undefined : graph.byPath.get(script);
+
         if (script === null || module === undefined) {
           const reason = `${fact.kind === "cron" ? "job step" : "hook"} \`${fact.label}\`: its script (\`${fact.files[0]}\`) is no file of the analysis`;
           holes.push({ kind: "unsupported", file: file.path, line: fact.line, col: fact.col, endLine: fact.line, endCol: fact.col, text: "", reason, source: null });
           continue;
         }
+
         const fn = fact.fn === null ? null : fnIn(scope, script, fact.fn);
         // A handler written in place (a closure in a route file): the module stands for it, at the registration.
         const at = fact.fn === null && fact.note !== undefined ? { file: script, line: fact.line } : { file: script, line: 1 };
@@ -72,42 +79,55 @@ export function frameworkEntries({ config, graph, facts, frameworks }: Framework
       }
     }
   }
+
   if (frameworks.some((f) => f.name === "sfcc")) {
     const layout = cartridgeLayout(config.root, sources, config.sfcc.cartridgePath);
+
     if (layout !== null) {
       if (layout.source === "guessed" && layout.cartridges.length > 1) {
         warnings.push(`sfcc: cartridge path guessed (by name): ${layout.path.map((c) => c.name).join(":")}; set \`sfcc.cartridgePath\` in keylang.json`);
       }
+
       for (const c of layout.cartridges) {
         if (layout.source !== "guessed" && !layout.path.includes(c)) warnings.push(`sfcc: cartridge \`${c.name}\` is not on the cartridge path (${layout.source}): \`*/cartridge/…\` never reaches it`);
       }
+
       holes.push(...guessedOrder(layout, graph, facts, probe));
     }
+
     entries.push(...controllerEntries(graph, facts, scope));
   }
+
   const nest = frameworks.find((f) => f.name === "nestjs");
+
   if (nest !== undefined) entries.push(...nestEntries(facts, scope, new Set(nest.configs.map((c) => c.facts.path))));
   const pwa = frameworks.find((f) => f.name === "pwa-kit");
+
   if (pwa !== undefined) entries.push(...pwaEntries(facts, scope, new Set(pwa.configs.map((c) => c.facts.path))));
   // React Router: the `loader`/`action` exports of file-system route modules (`src/framework-code/react-router.ts`).
   const reactRouter = frameworks.find((f) => f.name === "react-router");
+
   if (reactRouter !== undefined) entries.push(...reactRouterEntries(scope, reactRouter.configs));
   // Django, FastAPI, Flask, Celery: registrations written in the Python code (`src/python-web-entries.ts`).
   const python = frameworks.map((f) => f.name).filter((name) => PYTHON_WEB_FRAMEWORKS.includes(name));
+
   if (python.length > 0) {
     const found = pythonWebEntries(config, graph, facts, scope, python);
     entries.push(...found.entries);
     holes.push(...found.holes);
   }
+
   // Express, Fastify, Next.js: registrations written in the JavaScript code (`src/framework-code/web-entries.ts`).
   const web = frameworks.map((f) => f.name).filter((name) => WEB_FRAMEWORKS.includes(name));
   let supersedes = new Set<string>();
+
   if (web.length > 0) {
     const found = webEntries(facts, scope, web);
     entries.push(...found.entries);
     holes.push(...found.holes);
     supersedes = found.supersedes;
   }
+
   return { entries: entries.sort(compareEntries), holes, warnings, supersedes };
 }
 
@@ -119,9 +139,11 @@ function withExtras(entry: EntryPoint, fact: EntryConfigFact): EntryPoint {
 /** PHP classes by their qualified name in ASCII lower case → the file and the name it declares. */
 function phpClassFiles(facts: readonly FileFacts[]): Map<string, { file: string; name: string; facts: FileFacts }> {
   const out = new Map<string, { file: string; name: string; facts: FileFacts }>();
+
   for (const file of [...facts].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))) {
     for (const symbol of file.symbols ?? []) if (symbol.table === "class" && !out.has(lower(symbol.qualified))) out.set(lower(symbol.qualified), { file: file.path, name: symbol.name, facts: file });
   }
+
   return out;
 }
 
@@ -136,21 +158,28 @@ function lower(name: string): string {
 function placeMethod(scope: EntryScope, classes: ReadonlyMap<string, { file: string; name: string; facts: FileFacts }>, type: TypeName, method: string): { id: string; at: { file: string; line: number } } | { reason: string } {
   const seen = new Set<string>();
   let at = classes.get(lower(type.name));
+
   if (at === undefined) return { reason: `it names \`${type.name}\`, which no analysed file declares` };
+
   while (at !== undefined && !seen.has(at.file + at.name)) {
     seen.add(at.file + at.name);
     const decl = at.facts.decls.find((d) => d.kind === "class" && d.name === at!.name);
     const member = decl?.members.find((m) => m.kind === "fn" && lower(m.name) === lower(method));
+
     if (decl && member) {
       const id = fnIn(scope, at.file, `${at.name}.${member.name}`);
+
       if (id !== null) return { id, at: { file: at.file, line: member.line } };
     }
+
     // The method may be a base's: follow `extends` through the file's imports.
     const base = decl?.base;
+
     if (!base) break;
     const qualified = at.facts.imports.find((imp) => imp.bindings.some((b) => lower(b.local) === lower(base)) && !/^(function|const|include) /.test(imp.source))?.source ?? base;
     at = classes.get(lower(qualified));
   }
+
   return { reason: `\`${type.name}\` declares no method \`${method}\` keylang has read` };
 }
 
@@ -165,20 +194,25 @@ function guessedOrder(layout: CartridgeLayout, graph: Graph, facts: readonly Fil
   if (layout.source !== "guessed" || layout.path.length < 2) return [];
   const holes: Gap[] = [];
   const order = layout.path.map((c) => c.name).join(":");
+
   for (const file of facts) {
     const module = graph.byPath.get(file.path);
+
     for (const imp of file.imports) {
       if (!imp.source.startsWith("*/") && imp.source !== SUPER_MODULE) continue;
       const answers = cartridgeAnswers(layout, file.path, imp.source, probe);
+
       if (!Array.isArray(answers) || answers.length === 0 || (imp.source !== SUPER_MODULE && answers.length < 2)) continue;
       const reason = `cartridge path guessed: \`${imp.source}\` resolved to \`${answers[0]}\` by the order ${order} (cartridges by name); set \`sfcc.cartridgePath\` in keylang.json`;
       holes.push({ kind: "unsupported", file: file.path, line: imp.line, col: imp.col, endLine: imp.endLine, endCol: imp.endCol, text: imp.text, reason, source: module?.id ?? null });
     }
   }
+
   return holes;
 }
 
 const CONTROLLER = /^(?:.*\/)?cartridges\/[^/]+\/cartridge\/controllers\/([^/]+)\.js$/;
+
 const HTTP_METHODS: Record<string, string> = { get: "GET", post: "POST" };
 
 /**
@@ -189,15 +223,20 @@ const HTTP_METHODS: Record<string, string> = { get: "GET", post: "POST" };
  */
 function controllerEntries(graph: Graph, facts: readonly FileFacts[], scope: EntryScope): EntryPoint[] {
   const out: EntryPoint[] = [];
+
   for (const file of facts) {
     const match = CONTROLLER.exec(file.path);
     const module = graph.byPath.get(file.path);
+
     if (match === null || module === undefined) continue;
+
     for (const fact of file.entries ?? []) {
       if (fact.kind !== "sfra") continue;
       const fn = fact.callee === null ? null : fnIn(scope, file.path, fact.callee);
       const notes: string[] = [];
+
       if (fact.method === "append" || fact.method === "prepend" || fact.method === "replace") notes.push(`server.${fact.method}: changes the route a cartridge further down the path declares`);
+
       if (fact.callee === null) notes.push("handler written in place: the controller module stands for it");
       else if (fn === null) notes.push(`handler \`${fact.callee}\` does not resolve to a fn: the controller module stands for it`);
       const at = { file: file.path, line: fact.line };
@@ -206,10 +245,12 @@ function controllerEntries(graph: Graph, facts: readonly FileFacts[], scope: Ent
       out.push({ ...found, ...(fn === null ? at : {}), ...(method === undefined ? {} : { method }), ...(notes.length > 0 ? { note: notes.join("; ") } : {}) });
     }
   }
+
   return out;
 }
 
 const NEST_HTTP: Record<string, string> = { Get: "GET", Post: "POST", Put: "PUT", Patch: "PATCH", Delete: "DELETE", Options: "OPTIONS", Head: "HEAD", All: "ALL", Search: "SEARCH" };
+
 const NEST_GRAPHQL = new Set(["Query", "Mutation", "Subscription"]);
 
 /**
@@ -226,34 +267,45 @@ const NEST_GRAPHQL = new Set(["Query", "Mutation", "Subscription"]);
 function nestEntries(facts: readonly FileFacts[], scope: EntryScope, files: ReadonlySet<string>): EntryPoint[] {
   const prefixes = new Set<string>();
   let computedPrefix: string | null = null;
+
   for (const file of facts) {
     for (const call of allCalls(file)) {
       if (!call.callee.endsWith(".setGlobalPrefix") || call.literal === undefined) continue;
+
       if (call.literal === null) computedPrefix ??= `${file.path}:${call.line}`;
       else prefixes.add(call.literal);
     }
   }
+
   const prefixNote = computedPrefix !== null ? `the global prefix at ${computedPrefix} is no literal: the path is without it` : prefixes.size > 1 ? `two global prefixes (${[...prefixes].sort().join(", ")}): the path is without them` : null;
   const prefix = prefixNote === null && prefixes.size === 1 ? [...prefixes][0]! : "";
   const out: EntryPoint[] = [];
+
   for (const file of facts) {
     if (!files.has(file.path)) continue;
+
     for (const cls of file.decls) {
       if (cls.kind !== "class") continue;
       const classDecorators = cls.decorators ?? [];
       const controller = classDecorators.find((d) => d.name === "Controller");
       const resolver = classDecorators.some((d) => d.name === "Resolver");
       const controllerPaths = controller === undefined ? null : pathsOf(controller.args[0], "path");
+
       for (const member of cls.members) {
         if (member.kind !== "fn") continue;
         const id = fnIn(scope, file.path, `${cls.name}.${member.name}`);
+
         if (id === null) continue;
+
         for (const d of member.decorators ?? []) {
           if (d.param !== undefined) continue;
+
           const add = (kind: EntryPoint["kind"], label: string, extra: Partial<EntryPoint> = {}): void => {
             out.push({ ...frameworkEntry(scope, "nestjs", kind, id, label, `${file.path}:${d.line}`, { file: file.path, line: member.line }), ...extra });
           };
+
           const method = NEST_HTTP[d.name];
+
           if (method !== undefined && controllerPaths !== null) {
             for (const base of controllerPaths) {
               for (const path of pathsOf(d.args[0], "path") ?? [""]) add("route", `${method} ${joinPath(prefix, base, path)}`, { method, ...(prefixNote !== null ? { note: prefixNote } : {}) });
@@ -271,34 +323,44 @@ function nestEntries(facts: readonly FileFacts[], scope: EntryScope, files: Read
       }
     }
   }
+
   return out;
 }
 
 /** Every call of a file: its declarations' (members too) and its top level's. */
 function allCalls(file: FileFacts): CallFact[] {
   const out: CallFact[] = [...file.moduleCalls];
+
   const visit = (decls: readonly DeclFact[]): void => {
     for (const d of decls) {
       out.push(...d.calls);
       visit(d.members);
     }
   };
+
   visit(file.decls);
+
   return out;
 }
 
 /** `'orders'`, `['a', 'b']`, `{ path: 'orders' }` → the paths; none written → `['']`; null for a path keylang cannot read. */
 function pathsOf(arg: DecoratorArg | undefined, key: string): string[] | null {
   if (arg === undefined) return [""];
+
   if (arg.kind === "string") return [arg.value];
+
   if (arg.kind === "array") {
     const paths = arg.items.flatMap((i) => (i.kind === "string" ? [i.value] : []));
+
     return paths.length === arg.items.length ? paths : null;
   }
+
   if (arg.kind === "object") {
     const path = arg.props.find((p) => p.key === key)?.value;
+
     return path === undefined ? [""] : pathsOf(path, key);
   }
+
   return null;
 }
 
@@ -313,6 +375,7 @@ function joinPath(...parts: string[]): string {
 /** A decorator argument in words: a string's value, a name, a number; an object or an array as written. */
 function argText(arg: DecoratorArg | undefined): string {
   if (arg === undefined) return "";
+
   switch (arg.kind) {
     case "string":
       return arg.value;
@@ -341,15 +404,20 @@ function argText(arg: DecoratorArg | undefined): string {
  */
 function pwaEntries(facts: readonly FileFacts[], scope: EntryScope, files: ReadonlySet<string>): EntryPoint[] {
   const out: EntryPoint[] = [];
+
   for (const file of facts) {
     if (!files.has(file.path)) continue;
     const module = scope.graph.byPath.get(file.path);
+
     if (module === undefined) continue;
     const ssr = /(?:^|\/)ssr\.[^/]+$/.test(file.path);
+
     for (const fact of file.entries ?? []) {
       const at = { file: file.path, line: fact.line };
+
       if (fact.kind === "page") {
         let id = fact.callee === null ? null : fnIn(scope, file.path, fact.callee);
+
         if (id === null && fact.source !== undefined) id = lazyDefault(scope, module, file.path, fact.source);
         const head = fact.callee?.split(".")[0];
         const from = file.imports.find((imp) => imp.bindings.some((b) => b.local === head))?.source;
@@ -364,6 +432,7 @@ function pwaEntries(facts: readonly FileFacts[], scope: EntryScope, files: Reado
         out.push({ ...found, ...(id === null ? at : {}), method: fact.label.slice(0, fact.label.indexOf(" ")), ...(note !== null ? { note } : {}) });
       }
     }
+
     // `exports.get = runtime.createHandler(…).handler`: the function the Managed Runtime calls.
     if (ssr && file.exportRows.some((row) => row.name === "get")) {
       const row = scope.graph.exports.find((e) => e.module === module.id && e.name === "get");
@@ -372,13 +441,16 @@ function pwaEntries(facts: readonly FileFacts[], scope: EntryScope, files: Reado
       out.push({ ...frameworkEntry(scope, "pwa-kit", "route", id ?? module.id, "ssr handler", `${file.path}:${line}`, { file: file.path, line }), note: "the exported `get`: the Managed Runtime calls it for every request" });
     }
   }
+
   return out;
 }
 
 /** The default export of the module a routes file loads with `import('<source>')` when it is a fn, else that module; null when the import does not resolve. */
 function lazyDefault(scope: EntryScope, module: { deps: readonly { file: string; text: string; target: string }[] }, file: string, source: string): string | null {
   const dep = module.deps.find((d) => d.file === file && (d.text.includes(`"${source}"`) || d.text.includes(`'${source}'`) || d.text.includes(`\`${source}\``)));
+
   if (dep === undefined) return null;
   const row = scope.graph.exports.find((e) => e.module === dep.target && e.name === "default");
+
   return row?.symbol != null && scope.fns.has(row.symbol) ? row.symbol : dep.target;
 }

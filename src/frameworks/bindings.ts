@@ -125,6 +125,7 @@ interface Plugin {
 }
 
 const GLOBAL = "global";
+
 const KINDS = [
   ["before", "plugin:before"],
   ["around", "plugin:around"],
@@ -157,65 +158,87 @@ export class FrameworkBindings {
     this.any = configs.length > 0;
     // `virtualType V type=C`: V is C wherever a config names it.
     const aliases = new Map<string, { type: TypeName; scope: string }[]>();
+
     for (const { facts } of configs) for (const a of facts.aliases) aliases.set(key(a.name), [...(aliases.get(key(a.name)) ?? []), { type: a.type, scope: facts.scope }]);
+
     const unalias = (t: TypeName, scope: string): { type: TypeName; aliases: string[] } => {
       const seen: string[] = [];
       let cur = t;
+
       for (;;) {
         if (cur.file !== undefined) return { type: cur, aliases: seen };
         const list = aliases.get(key(cur.name));
         const hit = list?.find((a) => a.scope === scope) ?? list?.find((a) => a.scope === GLOBAL) ?? list?.[0];
+
         if (!hit || seen.includes(cur.name)) return { type: cur, aliases: seen };
         seen.push(cur.name);
         cur = hit.type;
       }
     };
+
     this.unalias = (t, scope) => unalias(t, scope).type;
+
     const declared = (written: TypeName, scope: string, file: string, at: { line: number; col: number }, owner: string | null, from: string | null = null): Declared => {
       const { type, aliases: through } = unalias(written, scope);
+
       return { name: type.name, written: type, resolved: deps.resolve(type), scope, site: `${file}:${at.line}:${at.col}`, file, line: at.line, col: at.col, owner, aliases: through, from };
     };
+
     for (const { facts, owner: dir } of configs) {
       const owner = deps.owner(dir);
+
       for (const b of facts.bindings) {
         const from = deps.resolve(unalias(b.from, facts.scope).type);
         const to = declared(b.to, facts.scope, facts.path, b, owner, b.from.name);
+
         if (from.kind !== "node") {
           // A type of code `outside` the architecture: the graph finds its preference by name (business-flows 40).
           if (b.from.file === undefined) {
             const name = key(unalias(b.from, facts.scope).type.name);
             this.preferencesByName.set(name, [...(this.preferencesByName.get(name) ?? []), to]);
           }
+
           continue;
         }
+
         this.preferences.set(from.id, [...(this.preferences.get(from.id) ?? []), to]);
+
         if (to.resolved.kind === "missing") this.hole(facts.path, b, `<preference for="${typeLabel(b.from)}" type="${typeLabel(b.to)}">`, `the preference \`${typeLabel(b.from)} → ${typeLabel(b.to)}\` names \`${typeLabel(to.written)}\`, which no analysed file declares`, owner);
       }
+
       for (const a of facts.arguments) {
         if (a.type.name === EVERY_CLASS && a.type.file === undefined) {
           const value = { ...declared(a.value, facts.scope, facts.path, a, owner), param: a.param };
           this.everyClass.set(asciiLower(a.param), [...(this.everyClass.get(asciiLower(a.param)) ?? []), value]);
+
           if (value.resolved.kind === "missing") this.hole(facts.path, a, `${a.param}: ${typeLabel(a.value)}`, `the argument \`${a.param}\` of every class names \`${typeLabel(value.written)}\`, which no analysed file declares`, owner);
           continue;
         }
+
         // A virtualType's arguments are those of its class, for the instances it names.
         const holder = deps.resolve(unalias(a.type, facts.scope).type);
+
         if (holder.kind !== "node" || !deps.isClass(holder.id)) continue;
         const value = { ...declared(a.value, facts.scope, facts.path, a, owner), param: a.param };
         const params = this.argumentsOf.get(holder.id) ?? new Map<string, (Declared & { param: string })[]>();
         params.set(asciiLower(a.param), [...(params.get(asciiLower(a.param)) ?? []), value]);
         this.argumentsOf.set(holder.id, params);
+
         if (value.resolved.kind === "missing") this.hole(facts.path, a, `<argument name="${a.param}">${typeLabel(a.value)}</argument>`, `the argument \`${a.param}\` of \`${typeLabel(a.type)}\` names \`${typeLabel(value.written)}\`, which no analysed file declares`, owner);
       }
+
       for (const p of facts.intercepts) {
         const target = deps.resolve(unalias(p.target, facts.scope).type);
+
         if (target.kind !== "node") continue;
         const list = this.plugins.get(target.id) ?? [];
         list.push({ target: target.id, targetWritten: typeLabel(p.target), name: p.name, plugin: p.plugin, pluginWritten: p.plugin ? typeLabel(p.plugin) : null, sortOrder: p.sortOrder, disabled: p.disabled, scope: facts.scope, site: `${facts.path}:${p.line}:${p.col}`, file: facts.path, line: p.line, col: p.col, owner });
         this.plugins.set(target.id, list);
       }
     }
+
     this.linkTokens(configs, declared);
+
     // A plugin of a class keylang does not have wraps methods nobody can name: a hole of its declaration.
     for (const plugin of this.activePlugins()) {
       if (plugin.plugin && deps.resolve(plugin.plugin).kind === "missing") this.hole(plugin.file, plugin, `<plugin name="${plugin.name}" type="${plugin.pluginWritten}">`, `the plugin \`${plugin.name}\` names \`${plugin.pluginWritten}\`, which no analysed file declares`, plugin.owner);
@@ -231,40 +254,53 @@ export class FrameworkBindings {
    */
   private linkTokens(configs: readonly FrameworkInput["configs"][number][], declared: (written: TypeName, scope: string, file: string, at: { line: number; col: number }, owner: string | null, from?: string | null) => Declared): void {
     const providers = new Map<string, { fact: ProviderFact; file: string; scope: string; owner: string | null }[]>();
+
     for (const { facts, owner: dir } of configs) {
       const owner = this.deps.owner(dir);
+
       for (const p of facts.providers ?? []) {
         const k = this.deps.token(p.token);
+
         if (k === null) continue;
         providers.set(k, [...(providers.get(k) ?? []), { fact: p, file: facts.path, scope: facts.scope, owner }]);
+
         if (p.use.kind === "factory" || p.use.kind === "value") {
           const how = p.use.kind === "factory" ? "useFactory" : "useValue";
           this.hole(facts.path, p, `{ provide: ${tokenLabel(p.token)}, ${how} }`, `\`${how}\` provides ${tokenLabel(p.token)}: the value is made at run time, so calls through an injection of it are not followed`, owner);
         }
       }
     }
+
     /** The classes a token's providers give, following `useExisting`. */
     const classesOf = (k: string, seen: Set<string>): { type: TypeName; file: string; scope: string; owner: string | null; at: ProviderFact; via: string }[] => {
       if (seen.has(k)) return [];
       seen.add(k);
+
       return (providers.get(k) ?? []).flatMap(({ fact, file, scope, owner }) => {
         if (fact.use.kind === "class") return [{ type: fact.use.type, file, scope, owner, at: fact, via: tokenLabel(fact.token) }];
+
         if (fact.use.kind !== "existing") return [];
         const next = this.deps.token(fact.use.token);
+
         // The alias is the fact the injection rests on: its line, its module.
         return next === null ? [] : classesOf(next, seen).map((c) => ({ ...c, file, scope, owner, at: fact, via: `${tokenLabel(fact.token)} → ${c.via}` }));
       });
     };
+
     for (const { facts } of configs) {
       for (const inj of facts.injections ?? []) {
         const holder = this.deps.resolve(inj.type);
         const k = this.deps.token(inj.token);
+
         if (holder.kind !== "node" || !this.deps.isClass(holder.id) || k === null) continue;
+
         for (const c of classesOf(k, new Set())) {
           const value = { ...declared(c.type, c.scope, c.file, c.at, c.owner, c.via), param: inj.param };
+
           if (value.resolved.kind === "missing" && c.at.use.kind === "class" && !this.holes.some((h) => h.file === c.file && h.line === c.at.line && h.col === c.at.col)) {
             this.hole(c.file, c.at, `{ provide: ${tokenLabel(c.at.token)}, useClass: ${typeLabel(c.type)} }`, `the provider of ${tokenLabel(c.at.token)} names \`${c.type.name}\`, which no analysed file declares`, c.owner);
           }
+
           const params = this.argumentsOf.get(holder.id) ?? new Map<string, (Declared & { param: string })[]>();
           params.set(asciiLower(inj.param), [...(params.get(asciiLower(inj.param)) ?? []), value]);
           this.argumentsOf.set(holder.id, params);
@@ -290,7 +326,9 @@ export class FrameworkBindings {
   /** A call of `member` through a value typed `type` (a type or a class the config binds). */
   callThroughType(type: string, member: string): BoundCall {
     const out = emptyCall();
+
     for (const [scope, chain] of this.effective(type, out)) this.place(out, chain, member, "preference", scope);
+
     return finish(out);
   }
 
@@ -298,27 +336,35 @@ export class FrameworkBindings {
   callThroughArgument(classId: string, param: string, member: string): BoundCall {
     const out = emptyCall();
     const values = this.valuesOf(classId, param);
+
     for (const [scope, list] of groupBy(values, (v) => v.scope)) {
       const distinct = distinctTargets(list);
+
       if (distinct.length > 1) {
         out.ambiguous ??= `ambiguous binding of the argument \`${param}\`: ${distinct.map(describe).join(" and ")} in scope ${scope}`;
         continue;
       }
+
       const value = distinct[0]!;
       // An interface as the argument's value goes on through its own preference.
       const chain: Declared[] = [value];
+
       if (value.resolved.kind === "node" && this.preferences.has(value.resolved.id)) {
         const next = this.effective(value.resolved.id, out).get(scope) ?? this.effective(value.resolved.id, out).get(GLOBAL);
+
         if (next) chain.push(...next);
       }
+
       this.place(out, chain, member, "argument", scope, `the argument \`${param}\``);
     }
+
     return finish(out);
   }
 
   /** What the config sets for the parameter of the class: its own arguments, else those for every class. */
   private valuesOf(classId: string, param: string): (Declared & { param: string })[] {
     const own = this.argumentsOf.get(classId)?.get(asciiLower(param)) ?? [];
+
     return own.length > 0 ? own : (this.everyClass.get(asciiLower(param)) ?? []);
   }
 
@@ -332,28 +378,36 @@ export class FrameworkBindings {
     const result = new Map<string, Declared[]>();
     const own = this.preferences.get(type) ?? [];
     const scopes = [...new Set(own.map((d) => d.scope))].sort((a, b) => (a === GLOBAL ? -1 : b === GLOBAL ? 1 : a < b ? -1 : a > b ? 1 : 0));
+
     for (const scope of scopes) {
       const chain: Declared[] = [];
       const seen = new Set<string>([type]);
       let at = type;
+
       for (;;) {
         const list = this.preferences.get(at) ?? [];
         const here = list.filter((d) => d.scope === scope);
         const candidates = distinctTargets(here.length > 0 ? here : list.filter((d) => d.scope === GLOBAL));
+
         if (candidates.length === 0) break;
+
         if (candidates.length > 1) {
           out.ambiguous ??= `ambiguous binding of \`${candidates[0]!.from ?? chain.at(-1)?.name ?? at}\`: ${candidates.map(describe).join(" and ")} in scope ${scope}`;
           chain.length = 0;
           break;
         }
+
         const next = candidates[0]!;
         chain.push(next);
+
         if (next.resolved.kind !== "node" || seen.has(next.resolved.id)) break;
         seen.add(next.resolved.id);
         at = next.resolved.id;
       }
+
       if (chain.length > 0) result.set(scope, chain);
     }
+
     return result;
   }
 
@@ -376,69 +430,93 @@ export class FrameworkBindings {
     const out = emptyCall();
     const targets: BoundClasses["targets"] = [];
     const scopes = [...new Set(own.map((d) => d.scope))].sort((a, b) => (a === GLOBAL ? -1 : b === GLOBAL ? 1 : a < b ? -1 : a > b ? 1 : 0));
+
     for (const scope of scopes) {
       const chain: Declared[] = [];
       const seen = new Set<string>([name, `?${key(name)}`]);
       let list = own;
+
       for (;;) {
         const here = list.filter((d) => d.scope === scope);
         const candidates = distinctTargets(here.length > 0 ? here : list.filter((d) => d.scope === GLOBAL));
+
         if (candidates.length === 0) break;
+
         if (candidates.length > 1) {
           out.ambiguous ??= `ambiguous binding of \`${candidates[0]!.from ?? chain.at(-1)?.name ?? name}\`: ${candidates.map(describe).join(" and ")} in scope ${scope}`;
           chain.length = 0;
           break;
         }
+
         const next = candidates[0]!;
         chain.push(next);
         const id = next.resolved.kind === "node" ? next.resolved.id : `?${key(next.name)}`;
+
         if (seen.has(id)) break;
         seen.add(id);
         list = next.resolved.kind === "node" ? (this.preferences.get(next.resolved.id) ?? []) : (this.preferencesByName.get(key(next.name)) ?? []);
       }
+
       const last = chain.at(-1);
+
       if (!last) continue;
       const aliases = chain.flatMap((d) => d.aliases);
       const through = aliases.length > 0 ? ` (virtualType ${aliases.map((v) => `\`${v}\``).join(", ")})` : "";
       const binding = `\`${chain[0]!.from !== null ? `${chain[0]!.from} → ` : ""}${chain.map((d) => d.name).join(" → ")}\`${through}`;
       targets.push({ scope, name: last.name, node: last.resolved.kind === "node" ? last.resolved.id : null, site: chain[0]!.site, owner: chain[0]!.owner, binding });
     }
+
     return { targets, ambiguous: out.ambiguous };
   }
 
   /** The edge (or the reason there is none) of one area's chain. */
   private place(out: BoundCall, chain: readonly Declared[], member: string, via: "preference" | "argument", scope: string, lead = ""): void {
     const last = chain.at(-1);
+
     if (!last) return;
     const aliases = chain.flatMap((d) => d.aliases);
     const names = chain.map((d) => d.name).join(" → ");
     const through = aliases.length > 0 ? ` (virtualType ${aliases.map((v) => `\`${v}\``).join(", ")})` : "";
     const binding = `${lead ? `${lead} → ` : ""}\`${chain[0]!.from !== null ? `${chain[0]!.from} → ` : ""}${names}\`${through}`;
+
     if (last.resolved.kind === "external") {
       out.external = true;
+
       return;
     }
+
     if (last.resolved.kind === "missing") {
       out.missing ??= `bound by ${binding} (${last.site}) to \`${last.name}\`, which no analysed file declares`;
+
       return;
     }
+
     const impl = last.resolved.id;
+
     if (!this.deps.isClass(impl)) {
       out.missing ??= `bound by ${binding} (${last.site}) to \`${last.name}\`, which is no class`;
+
       return;
     }
+
     const target = this.deps.member(impl, member);
+
     if (!target) {
       if (this.deps.opaqueBase(impl)) out.opaque ??= `bound to opaque \`${last.name}\` by ${binding} (${last.site}): \`${member}\` may be declared by a base keylang has not read`;
       else out.missing ??= `bound by ${binding} (${last.site}) to \`${last.name}\`, which has no \`${member}\``;
+
       return;
     }
+
     const first = chain[0]!;
     const existing = out.edges.find((e) => e.target === target && e.via === via);
+
     if (existing) {
       existing.scope = [...new Set([...existing.scope.split(","), scope])].sort(scopeOrder).join(",");
+
       return;
     }
+
     out.edges.push({ target, impl, via, scope, site: first.site, owner: first.owner, binding });
   }
 
@@ -447,20 +525,27 @@ export class FrameworkBindings {
     if (this.active) return this.active;
     const out: Plugin[] = [];
     this.active = out;
+
     for (const list of this.plugins.values()) {
       const byName = groupBy(list, (p) => p.name);
+
       for (const decls of byName.values()) {
         const global = merge(decls.filter((p) => p.scope === GLOBAL));
+
         if (global && !global.disabled && global.plugin) out.push(global);
+
         for (const [scope, own] of groupBy(decls.filter((p) => p.scope !== GLOBAL), (p) => p.scope)) {
           const effective = merge([...decls.filter((p) => p.scope === GLOBAL), ...own]);
+
           if (!effective || effective.disabled || !effective.plugin) continue;
+
           // The global declaration already applies in this area unless the area changed the plugin's class.
           if (global && !global.disabled && global.plugin && effective.pluginWritten === global.pluginWritten) continue;
           out.push({ ...effective, scope });
         }
       }
     }
+
     return out;
   }
 
@@ -472,20 +557,27 @@ export class FrameworkBindings {
   interceptors(types: readonly string[], member: string): PluginEdge[] {
     const cacheKey = `${[...types].sort().join(",")}\0${asciiLower(member)}`;
     const cached = this.interceptorCache.get(cacheKey);
+
     if (cached) return cached;
     const supers = new Set(types.flatMap((t) => this.deps.supertypes(t)));
     const active = this.activePlugins().filter((p) => supers.has(p.target));
     active.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0) || (a.scope < b.scope ? -1 : a.scope > b.scope ? 1 : 0));
     const out: PluginEdge[] = [];
+
     for (const p of active) {
       const cls = p.plugin ? this.deps.resolve(p.plugin) : null;
+
       if (cls?.kind !== "node" || !this.deps.isClass(cls.id)) continue;
+
       for (const [prefix, via] of KINDS) {
         const target = this.deps.member(cls.id, `${prefix}${member.charAt(0).toUpperCase()}${member.slice(1)}`);
+
         if (target) out.push({ target, via, name: p.name, site: p.site, scope: p.scope, owner: p.owner, binding: `plugin \`${p.name}\` (\`${p.pluginWritten}\`) on \`${p.targetWritten}\`` });
       }
     }
+
     this.interceptorCache.set(cacheKey, out);
+
     return out;
   }
 }
@@ -501,16 +593,20 @@ function emptyCall(): BoundCall {
 
 function finish(out: BoundCall): BoundCall {
   out.edges.sort((a, b) => scopeOrder(a.scope, b.scope) || (a.target < b.target ? -1 : a.target > b.target ? 1 : 0));
+
   return out;
 }
 
 /** Declarations that name different classes: one per class. */
 function distinctTargets<T extends Declared>(list: readonly T[]): T[] {
   const seen = new Map<string, T>();
+
   for (const d of list) {
     const k = d.resolved.kind === "node" ? d.resolved.id : `?${key(d.name)}`;
+
     if (!seen.has(k)) seen.set(k, d);
   }
+
   return [...seen.values()];
 }
 
@@ -521,21 +617,27 @@ function describe(d: Declared): string {
 /** Declarations of one plugin in config order, merged: a later one changes what it writes. */
 function merge(decls: readonly Plugin[]): Plugin | null {
   let out: Plugin | null = null;
+
   for (const d of decls) {
     if (out === null) {
       out = { ...d };
       continue;
     }
+
     const prev: Plugin = out;
     out = { ...prev, plugin: d.plugin ?? prev.plugin, pluginWritten: d.pluginWritten ?? prev.pluginWritten, sortOrder: d.sortOrder ?? prev.sortOrder, disabled: d.disabled };
+
     if (d.plugin) Object.assign(out, { site: d.site, file: d.file, line: d.line, col: d.col, owner: d.owner });
   }
+
   return out;
 }
 
 function groupBy<T>(list: readonly T[], keyOf: (item: T) => string): Map<string, T[]> {
   const out = new Map<string, T[]>();
+
   for (const item of list) out.set(keyOf(item), [...(out.get(keyOf(item)) ?? []), item]);
+
   return out;
 }
 

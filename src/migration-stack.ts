@@ -40,6 +40,7 @@ export function stackFlows(analysis: Pick<Analysis, "spec" | "docs" | "config">,
   const specified = specifiedTriggers(analysis.spec.flows);
   const written = analysis.spec.flows.map((flow) => specFlow(flow, analysis.docs));
   const dir = analysis.config.dir === "" ? "" : `${analysis.config.dir}/`;
+
   const discovered = discoverFlows(snapshot, specified).flows.map((flow): StackFlow => ({
     name: flow.name,
     source: "discovered",
@@ -48,6 +49,7 @@ export function stackFlows(analysis: Pick<Analysis, "spec" | "docs" | "config">,
     steps: [...new Set(flow.steps)],
     tests: [],
   }));
+
   return [...written, ...discovered].sort((a, b) => compareText(a.name, b.name) || compareText(a.source, b.source) || compareText(a.file ?? "", b.file ?? ""));
 }
 
@@ -56,22 +58,26 @@ function specFlow(flow: Flow, docs: readonly Document[]): StackFlow {
   const tests: StackFlow["tests"] = [];
   walkFlow(flow, (item) => {
     if ((item.kind === "trigger" || item.kind === "step") && !steps.includes(item.target.target)) steps.push(item.target.target);
+
     if (item.kind === "test" && item.name !== null && !tests.some((test) => test.name === item.name)) tests.push({ file: item.path, name: item.name });
   });
   const section = docs.find((doc) => doc.path === flow.file)?.sections.find((s) => s.kind === "flow" && s.name?.value === flow.name);
   const imported = section !== undefined && (section.comment?.value.includes("keylang:import ") === true || section.items.some((item) => item.type === "prose" && item.lines.some((line) => line.includes("<!-- keylang:import "))));
+
   return { name: flow.name, source: "spec", file: flow.file, trigger: flow.triggers[0]?.target.target ?? null, steps, tests, ...(imported ? { imported: true as const } : {}) };
 }
 
 /** The test results `check.tests` names; null when it names none. */
 export function stackTests(analysis: Pick<Analysis, "config">): TestCase[] | null {
   const files = evidenceFiles(analysis.config, "tests");
+
   return files === null ? null : loadReports(analysis.config.root, files);
 }
 
 /** Outgoing integrations (with the fns of their call sites) and incoming webhooks of the snapshot. */
 export async function stackIntegrations(analysis: Pick<Analysis, "spec" | "config">, snapshot: AnalysisSnapshot): Promise<NonNullable<Stack["integrations"]>> {
   const report = await findIntegrations(analysis.config, snapshot, loadIntegrations(), specifiedTriggers(analysis.spec.flows));
+
   return {
     outgoing: report.outgoing.map((item) => ({ id: item.id, label: item.label, kind: item.kind, fns: [...new Set(item.sites.flatMap((site) => (site.in === null ? [] : [site.in])))].sort(compareText) })),
     webhooks: report.webhooks.map((hook) => ({ id: hook.id, label: hook.label, kind: hook.kind })),
@@ -81,7 +87,9 @@ export async function stackIntegrations(analysis: Pick<Analysis, "spec" | "confi
 /** The stack of an analysis with a snapshot: everything parity reads. */
 export async function stackOf(analysis: Analysis): Promise<Stack> {
   const snapshot = analysis.snapshot;
+
   if (snapshot === null) throw new Error(`${analysis.config.root}: no code to read (\`languages\` in keylang.json is empty)`);
+
   return {
     snapshotId: snapshot.snapshotId,
     nodes: snapshot.nodes,
@@ -105,6 +113,7 @@ export function resolveFrom(base: string, from: string): string {
 /** How a path is shown in a report: relative to the root, POSIX. */
 export function fromLabel(root: string, abs: string): string {
   const rel = toPosix(relative(root, abs));
+
   return rel === "" ? "." : rel;
 }
 
@@ -112,22 +121,29 @@ export function fromLabel(root: string, abs: string): string {
 export async function loadOldStack(abs: string): Promise<LoadedStack> {
   if (statSync(abs).isDirectory()) {
     const analysis = await analyzeOld(abs, false);
+
     return { stack: await stackOf(analysis), notes: [] };
   }
+
   const body = readOldIndex(abs);
   const migration = body.migration as MigrationExport | undefined;
+
   if (migration !== undefined) {
     if (migration.schema !== MIGRATION_EXPORT_SCHEMA || !Array.isArray(migration.flows)) throw new Error(`${abs}: unsupported \`migration\` block (expected schema ${MIGRATION_EXPORT_SCHEMA})`);
+
     return {
       stack: { snapshotId: body.snapshotId, nodes: body.nodes, entries: body.entries, flows: migration.flows, tests: migration.tests, integrations: migration.integrations },
       notes: [],
     };
   }
+
   const notes = ["the old snapshot is a plain index.json: its hand-written flows, test results and integrations are not in it (`keylang map --export-index <file>` in the old repository writes them); its flows are the drafts `flows discover` makes from its entry points"];
   let flows: StackFlow[] = [];
+
   if (body.schema === SNAPSHOT_SCHEMA) {
     flows = discoverFlows({ ...(body.raw as unknown as AnalysisSnapshot), entries: body.entries as AnalysisSnapshot["entries"] }, new Map()).flows.map((flow) => ({ name: flow.name, source: "discovered" as const, file: null, trigger: flow.trigger, steps: [...new Set(flow.steps)], tests: [] }));
   } else notes.push(`the old snapshot has schema ${String(body.schema)}, this keylang reads ${SNAPSHOT_SCHEMA}: no flows drafted from it`);
+
   return { stack: { snapshotId: body.snapshotId, nodes: body.nodes, entries: body.entries, flows, tests: null, integrations: null }, notes };
 }
 
@@ -135,9 +151,11 @@ export async function loadOldStack(abs: string): Promise<LoadedStack> {
 export async function migrationExport(root: string): Promise<string> {
   const analysis = await analyze({ root, withoutMigration: true });
   const snapshot = analysis.snapshot;
+
   if (snapshot === null) throw new Error("map --export-index: no code to read (`languages` in keylang.json is empty)");
   const stack = await stackOf(analysis);
   const migration: MigrationExport = { schema: MIGRATION_EXPORT_SCHEMA, flows: [...stack.flows], tests: stack.tests === null ? null : [...stack.tests], integrations: stack.integrations };
+
   return `${JSON.stringify({ ...snapshot, migration }, null, 2)}\n`;
 }
 
@@ -146,5 +164,6 @@ export async function writeMigrationExport(root: string, out: string): Promise<s
   const text = await migrationExport(root);
   const abs = resolve(process.cwd(), out);
   writeFileSync(abs, text);
+
   return abs;
 }

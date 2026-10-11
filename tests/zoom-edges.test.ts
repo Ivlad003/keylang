@@ -16,8 +16,10 @@ const DYNAMIC = { "src/domain/run.ts": "export function run(task: () => void): v
 
 test("zoom edges model: grouped by the level's units, with kinds and counts, and an unresolved row", async (t) => {
   const analysis = await analyze({ root: checkoutRepo(t, DYNAMIC) });
+
   const rows = (focus: string): string[] =>
     zoomEdges(analysis, focus).map((edge) => (edge.group === "unresolved" ? `unresolved ${(edge.reasons ?? []).map((item) => `${item.reason}×${item.count}`).join(",")}` : `${edge.group} ${edge.from} → ${edge.to} ${edge.kinds.map((item) => `${item.kind}×${item.count}`).join(",")} =${edge.count} >${edge.other}`));
+
   assert.deepEqual(rows("application"), [
     "in presentation.terminal → application.purchase call×1,import×1 =2 >presentation.terminal",
     "out application.purchase → domain.order call×1,import×1 =2 >domain.order",
@@ -50,11 +52,13 @@ function session(root: string): { app: App; send: (keys: string) => void; text: 
   const vt = new VirtualTerminal(130, 30);
   const app = new App({ root, cols: 130, rows: 30 });
   app.attach({ write: (ansi) => vt.feed(ansi) }, 130, 30);
+
   return { app, send: (keys) => app.input(keys), text: () => vt.text(), lines: () => vt.lines() };
 }
 
 function zoom(s: ReturnType<typeof session>): void {
   s.send(KEY.ctrlP);
+
   for (const ch of "zoom") s.send(ch);
   s.send(KEY.enter);
 }

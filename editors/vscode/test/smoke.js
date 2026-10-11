@@ -3,26 +3,33 @@
 // goes to `.smoke-result.json` in the workspace; `run.mjs` reads it.
 
 const fs = require("node:fs");
+
 const path = require("node:path");
+
 const vscode = require("vscode");
 
 async function until(what, find, ms = 30000) {
   const deadline = Date.now() + ms;
+
   for (;;) {
     const found = await find();
+
     if (found) return found;
+
     if (Date.now() > deadline) throw new Error(`timeout: ${what}`);
     await new Promise((done) => setTimeout(done, 100));
   }
 }
 
 const keylangDiagnostics = (uri) => vscode.languages.getDiagnostics(uri).filter((d) => d.source === "keylang");
+
 const text = (contents) => contents.map((c) => (typeof c === "string" ? c : c.value)).join("\n");
 
 async function run() {
   const root = vscode.workspace.workspaceFolders[0].uri.fsPath;
   const result = { steps: [] };
   const step = (name, ok, detail) => result.steps.push({ name, ok, detail });
+
   try {
     const rulesUri = vscode.Uri.file(path.join(root, "keylang/rules.md"));
     await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(rulesUri));
@@ -79,14 +86,18 @@ async function run() {
 
     const sourceUri = vscode.Uri.file(path.join(root, "src/domain/order.ts"));
     await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(sourceUri));
+
     const lenses = await until("code lens", async () => {
       const found = await vscode.commands.executeCommand("vscode.executeCodeLensProvider", sourceUri, 10);
+
       return found && found.length > 0 ? found : undefined;
     });
+
     step("code lens names the flow", lenses.some((lens) => lens.command && lens.command.title === "flows: use"), lenses.map((lens) => lens.command && lens.command.title));
   } catch (error) {
     step("error", false, String(error && error.stack ? error.stack : error));
   }
+
   fs.writeFileSync(path.join(root, ".smoke-result.json"), JSON.stringify(result, null, 2));
 }
 

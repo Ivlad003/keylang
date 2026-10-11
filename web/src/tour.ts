@@ -48,8 +48,11 @@ const STYLE = `
 
 function make<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, className?: string): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
+
   if (text !== undefined) node.textContent = text;
+
   if (className) node.className = className;
+
   return node;
 }
 
@@ -60,6 +63,7 @@ function code(text: string): HTMLElement {
 function item(...parts: (Node | string)[]): HTMLLIElement {
   const li = make("li");
   li.append(...parts);
+
   return li;
 }
 
@@ -73,16 +77,20 @@ function diagramLink(href: string, close: () => void): HTMLAnchorElement {
     close();
     location.hash = href.slice(href.indexOf("#") + 1);
   });
+
   return a;
 }
 
 function render(tour: Tour, close: () => void): Node[] {
   const out: Node[] = [];
+
   const list = (items: HTMLLIElement[], ordered = false): HTMLElement => {
     const node = make(ordered ? "ol" : "ul");
     node.append(...items);
+
     return node;
   };
+
   const { system } = tour;
   out.push(make("h1", `Огляд проєкту${system.name ? `: ${system.name}` : ""}`));
   out.push(make("p", "A view over the current snapshot (`keylang tour`): no spec, no model; `keylang tour --out keylang/tour.md` saves the same page.", "muted"));
@@ -92,14 +100,19 @@ function render(tour: Tour, close: () => void): Node[] {
   out.push(make("p", `${system.languages.join(", ") || "—"} · ${system.files} file(s) · ${system.fns} fn · ${system.entries} entry point(s)`, "muted"));
 
   out.push(make("h2", "2. Layers and modules"));
+
   for (const layer of tour.layers) {
     out.push(make("h3", `${layer.name} — ${layer.files} file(s), ${layer.fns} fn, deps in ${layer.deps.in} · out ${layer.deps.out} · packages ${layer.deps.packages}`));
+
     if (layer.brief) out.push(make("p", layer.brief));
+
     if (layer.top.length > 0) {
       const table = make("table");
       const head = make("tr");
+
       for (const name of ["module", "fns", "in", "out"]) head.append(make("th", name));
       table.append(head);
+
       for (const module of layer.top) {
         const row = make("tr");
         const id = make("td");
@@ -107,29 +120,38 @@ function render(tour: Tour, close: () => void): Node[] {
         row.append(id, make("td", String(module.fns)), make("td", String(module.in)), make("td", String(module.out)));
         table.append(row);
       }
+
       out.push(table);
     }
   }
 
   out.push(make("h2", "3. Business processes"));
+
   if (tour.processes.source === "discovered") out.push(make("p", "No business processes named yet (`keylang flows discover --names`): the discovered flows by layer.", "muted"));
+
   if (tour.processes.source === "none") out.push(make("p", "No entry point to draft a flow from.", "muted"));
+
   for (const domain of tour.processes.domains) {
     out.push(make("h3", domain.name));
+
     for (const process of domain.processes) {
       const flows = process.flows.map((flow) => item(make("b", flow.name), ` — ${flow.entry.kind} `, code(flow.entry.label), flow.description ? ` · ${flow.description} · ` : " · ", diagramLink(flow.link, close), " · ", code(flow.file), flow.inView ? "" : " (not in the view yet: `keylang flows discover`)"));
       const head = make("p");
       head.append(make("b", process.name));
+
       if (process.description) head.append(` — ${process.description}`);
+
       if (process.provenance) head.append(make("span", ` (model ${process.provenance.agent}, ${process.provenance.date})`, "muted"));
       out.push(head, list(flows));
     }
   }
+
   out.push(make("h3", `Hand-written flows: ${tour.processes.specified.length}`));
   out.push(list(tour.processes.specified.map((flow) => item(make("b", flow.name), " · ", diagramLink(flow.link, close), " · ", code(`${flow.file}:${flow.line}`)))));
 
   out.push(make("h2", "4. Entry points and events"));
   out.push(list(tour.entries.kinds.map((kind) => item(`${kind.kind}: ${kind.count} — `, ...kind.labels.flatMap((label, i) => (i === 0 ? [code(label)] : [", ", code(label)]))))));
+
   if (tour.events.note) out.push(make("p", tour.events.note, "muted"));
   out.push(list(tour.events.events.map((event) => item(code(event.id), `: published by ${event.publishers.join(", ") || "—"}; subscribers ${event.subscribers.join(", ") || "—"}`))));
 
@@ -146,6 +168,7 @@ function render(tour: Tour, close: () => void): Node[] {
 
   out.push(make("h2", "7. Where to start reading"));
   out.push(list(tour.startHere.map((fn) => item(code(fn.id), ` — ${fn.file}:${fn.line} · ${fn.flows} flow(s), ${fn.callers} caller(s)${fn.brief ? ` · ${fn.brief}` : ""}`)), true));
+
   return out;
 }
 
@@ -156,6 +179,7 @@ const tourHash = (): boolean => /^#tour=?$/.test(location.hash);
 export function mountTour(): void {
   const toolbar = document.getElementById("toolbar");
   const stage = document.getElementById("stage");
+
   if (!toolbar || !stage) return;
   const style = document.createElement("style");
   style.textContent = STYLE;
@@ -169,15 +193,19 @@ export function mountTour(): void {
   panel.id = "tour";
   panel.hidden = true;
   stage.append(panel);
+
   const close = (): void => {
     panel.hidden = true;
     tab.classList.remove("active");
   };
+
   const open = async (): Promise<void> => {
     panel.hidden = false;
     tab.classList.add("active");
+
     if (!tourHash()) history.replaceState(null, "", `${location.pathname}#tour`);
     panel.replaceChildren(make("p", "loading the tour…", "muted"));
+
     try {
       const tour = replyJson<Tour>(await transport().send("GET", "/api/tour", new URLSearchParams()));
       panel.replaceChildren(...(tour.reason ? [make("p", tour.reason)] : render(tour, close)));
@@ -186,11 +214,13 @@ export function mountTour(): void {
       panel.replaceChildren(make("p", text));
     }
   };
+
   tab.addEventListener("click", () => (panel.hidden ? void open() : close()));
   // Another view chosen in the list or by a link closes the tour.
   window.addEventListener("hashchange", () => {
     if (!tourHash()) close();
   });
   document.getElementById("views")?.addEventListener("click", close);
+
   if (tourHash()) void open();
 }

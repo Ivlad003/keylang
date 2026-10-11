@@ -14,6 +14,7 @@ import type { VerdictFilter } from "./findings.ts";
 import type { Decision, Hunk } from "./merge.ts";
 
 export type Mode = "view" | "edit" | "read" | "code" | "merge" | "zoom";
+
 export type Focus = "editor" | "nav" | "files" | "context" | "results";
 
 export interface Cursor {

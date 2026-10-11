@@ -24,5 +24,6 @@ export interface Verdict {
 
 export function formatVerdict(v: Verdict): string {
   const tag = v.code ?? v.verdict;
+
   return `${v.file}:${v.line}:${v.col}: ${tag} ${v.message}`;
 }

@@ -19,6 +19,7 @@ const ASKING = `${CHECKOUT_FLOW}  - ? who pays for the delivery?\n- ? what about
 const DENY = "# rules\r\r- deny application infrastructure\r\r";
 
 const FEATURE = "keylang/features/skip.md";
+
 /** A feature with one gap besides its question: the trigger never calls the step (static, line 4); the question is line 5. */
 const SKIP = "# flow skip\n\n- trigger domain.order.create\n  - step infrastructure.store.save\n  - ? why skip the order?\n";
 
@@ -28,13 +29,16 @@ const RULES = "keylang/rules.md";
 function counter(lines: readonly string[]): string {
   for (const line of lines) {
     const match = /╭─[◕◔]{2}╮(9\+|[1-9])?/.exec(line);
+
     if (match) return match[1] ?? "";
   }
+
   throw new Error(`no clip on screen:\n${lines.join("\n")}`);
 }
 
 function openFile(s: ReturnType<typeof session>, path: string): void {
   s.send(KEY.ctrlP);
+
   for (const ch of `open ${path}`) s.send(ch);
   s.send(KEY.enter);
 }
@@ -49,6 +53,7 @@ function say(s: ReturnType<typeof session>, text: string): void {
 function lastAnswer(s: ReturnType<typeof session>): string {
   const messages = s.app.state.clip.chat.messages;
   assert.equal(messages.at(-1)?.role, "clip", JSON.stringify(messages));
+
   return messages.at(-1)!.text;
 }
 
@@ -89,6 +94,7 @@ test("tui-clip-questions: a flow with two `- ?` lines counts 2 and a save that b
   assert.equal(s.app.state.clip.chat.open, false);
   s.send("G");
   s.send("i");
+
   for (let i = 0; i < 1 + "- ? what about refunds?".length; i++) s.send("\x7f");
   s.send(KEY.ctrlS);
   await s.app.idle();
@@ -184,6 +190,7 @@ test("tui-clip-questions: a session with `- ?` lines, a save that brings a fail 
   assert.equal(s.app.state.current, FLOW_PATH);
   assert.equal(counter(s.lines()), "2");
   assert.ok(frames.some((frame) => frame.includes("╭─◕◕╮3")), "the counter was drawn");
+
   for (const frame of frames) assert.doesNotMatch(frame, /скрепка|◕◕ ›|відкриті питання/, frame);
   assert.equal(s.app.state.clip.chat.open, false);
   assert.deepEqual(s.app.state.clip.chat.messages, []);

@@ -25,6 +25,7 @@ import { browserOptions, root, startWeb, watch } from "./browser.ts";
 const SCREENSHOT = join(root, "docs/course/images/diagrams-editor.png");
 
 const options = browserOptions();
+
 const skip = options === null ? "no Chromium: set KEYLANG_CHROMIUM or PLAYWRIGHT_BROWSERS_PATH" : false;
 
 interface Box {
@@ -42,6 +43,7 @@ interface Box {
   signature?: string;
   description?: string;
 }
+
 interface Model {
   view: string;
   mode: string;
@@ -61,6 +63,7 @@ async function screenPoint(page: Page, x: number, y: number): Promise<{ x: numbe
       const editor = (globalThis as unknown as { keylangEditor: { graph: { getView(): { scale: number; translate: { x: number; y: number } }; container: { getBoundingClientRect(): { left: number; top: number } } } } }).keylangEditor;
       const view = editor.graph.getView();
       const box = editor.graph.container.getBoundingClientRect();
+
       return { x: box.left + (mx! + view.translate.x) * view.scale, y: box.top + (my! + view.translate.y) * view.scale };
     },
     [x, y],
@@ -85,6 +88,7 @@ async function openEditor(t: { after: (f: () => void | Promise<void>) => void })
   await page.locator("#views .row.item", { hasText: /^flowcheckout$/ }).click();
   await page.locator("#status", { hasText: /editor · flow:checkout/ }).waitFor();
   assert.match(page.url(), /#view=editor&of=flow%3Acheckout$/);
+
   return { page, problems, repo, url, browser };
 }
 
@@ -173,6 +177,7 @@ test("editor «чернетка»: the palette draws a lane and steps with plann
   // Room below the lanes: the wheel zooms out around the cursor.
   const canvas = (await page.locator("#editor-graph").boundingBox())!;
   await page.mouse.move(canvas.x + canvas.width / 2, canvas.y + 40);
+
   for (let i = 0; i < 4; i++) await page.mouse.wheel(0, 100);
   await dropFromPalette(page, "step", { x: application.x + 120, y: application.y + application.h / 2 });
   const bottom = (await model(page)).lanes.reduce((max, l) => Math.max(max, l.y + l.h), 0);
@@ -231,6 +236,7 @@ test("editor «чернетка»: the palette draws a lane and steps with plann
 async function arrowOf(page: Page, node: { x: number; y: number; w: number; h: number }): Promise<{ x: number; y: number }> {
   const scale = await page.evaluate(() => (globalThis as unknown as { keylangEditor: { graph: { getView(): { scale: number } } } }).keylangEditor.graph.getView().scale);
   const at = await screenPoint(page, node.x + node.w, node.y + node.h / 2);
+
   return node.w > 80 ? { x: at.x - 12 * scale, y: at.y } : { x: at.x + 10, y: at.y };
 }
 
@@ -328,6 +334,7 @@ test("editor properties and connections: a palette shape gets its ID (suggested 
 function selection(page: Page): Promise<{ count: number; scale: number }> {
   return page.evaluate(() => {
     const graph = (globalThis as unknown as { keylangEditor: { graph: { getSelectionCount(): number; getView(): { scale: number } } } }).keylangEditor.graph;
+
     return { count: graph.getSelectionCount(), scale: graph.getView().scale };
   });
 }
@@ -336,8 +343,10 @@ test("editor keys of diagrams.net: a move undone and redone (Ctrl+Z, Ctrl+Y, Ctr
   const { page, problems } = await openEditor(t);
   const before = await model(page);
   const buy = before.nodes.find((n) => n.id === "application.purchase.buy")!;
+
   const x = (key: string, m: Model): { x: number; y: number } => {
     const node = m.nodes.find((n) => n.key === key)!;
+
     return { x: node.x, y: node.y };
   };
 
@@ -457,6 +466,7 @@ async function reopen(browser: Browser, url: URL): Promise<{ page: Page; problem
   const problems = watch(page);
   await page.goto(`${url.origin}/diagrams${url.hash.replace(/^#/, "#view=editor&of=flow%3Acheckout&")}`);
   await page.locator("#status", { hasText: /editor · flow:checkout/ }).waitFor();
+
   return { page, problems };
 }
 
@@ -478,10 +488,12 @@ test("editor layout file: a moved step and a note go to keylang/diagrams/flow--c
   await page.locator("#prop-description").blur();
   const file = join(repo, "keylang/diagrams/flow--checkout.layout.json");
   const start = Date.now();
+
   while (!(existsSync(file) && readFileSync(file, "utf8").includes("Ask the shop about refunds"))) {
     if (Date.now() - start > 10000) throw new Error("the layout file was not written");
     await page.waitForTimeout(100);
   }
+
   const saved = JSON.parse(readFileSync(file, "utf8")) as { view: string; shapes: Record<string, { x: number; note?: string }> };
   assert.equal(saved.view, "flow:checkout");
   assert.equal(saved.shapes["step:application.purchase.buy"]?.x, Math.round(moved.x * 100) / 100);
@@ -507,6 +519,7 @@ test("editor «Запропонувати зміни»: a step drawn after `save
   // Room around the lanes: the wheel zooms out around the cursor.
   const canvas = (await page.locator("#editor-graph").boundingBox())!;
   await page.mouse.move(canvas.x + canvas.width / 2, canvas.y + 40);
+
   for (let i = 0; i < 3; i++) await page.mouse.wheel(0, 100);
   await dropFromPalette(page, "step", { x: save.x + save.w / 2, y: application.y + application.h / 2 });
   const drawn = (await model(page)).nodes.find((n) => n.key.startsWith("draft:") && n.kind === "task")!;

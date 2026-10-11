@@ -70,6 +70,7 @@ test("a worker loaded by URL is a module edge, and deleting the worker is report
     "src/hooks.ts": "export async function load(url: string, context: unknown, next: (u: string, c: unknown) => unknown): Promise<unknown> {\n  return next(url, context);\n}\n",
     "src/trace.ts": 'import { register } from "node:module";\nconst hooks = import.meta.url.endsWith(".ts") ? "./hooks.ts" : "./hooks.js";\nregister(hooks, { parentURL: import.meta.url });\n',
   };
+
   // The worker runs in its own thread, so it stays an entry; the edge now backs the entry.
   const dir = mainRepo(t, files, "- layers main\n- entry\n  - main.cli\n  - main.trace\n  - main.worker\n");
   assert.equal(keylang(dir, ["map"]).status, 0);
@@ -102,9 +103,11 @@ test("exports lists extra public names and a missing one", (t) => {
   writeFileSync(join(dir, "keylang/rules.md"), "# rules\n\n- layers domain < app\n  - infra\n- module domain.order\n  - exports total, notAName\n");
   const checked = keylang(dir, ["check"]);
   assert.equal(checked.status, 1, checked.stdout);
+
   for (const name of ["extra", "secretFlag", "ExtraClass", "ExtraType", "createOrder"]) {
     assert.match(checked.stdout, new RegExp(`exports \`${name}\``));
   }
+
   assert.match(checked.stdout, /does not export `notAName`/);
 });
 
@@ -197,11 +200,13 @@ test("no-cycles: a self-import is a cycle, two cycles are two findings, an acycl
   const selfChecked = keylang(self, ["check"]);
   assert.equal(selfChecked.status, 1, selfChecked.stdout);
   assert.match(selfChecked.stdout, /K105 divergence: dependency cycle main\.a → main\.a/);
+
   const two = mainRepo(
     t,
     { "src/a.ts": 'import "./b.ts";\n', "src/b.ts": 'import "./a.ts";\n', "src/c.ts": 'import "./d.ts";\n', "src/d.ts": 'import "./c.ts";\n' },
     "- no-cycles\n",
   );
+
   const twoChecked = keylang(two, ["check"]);
   assert.equal(twoChecked.stdout.match(/K105/g)?.length, 2, twoChecked.stdout);
   const none = mainRepo(t, { "src/a.ts": 'import "./b.ts";\n', "src/b.ts": "export const b = 1;\n" }, "- no-cycles\n");
@@ -216,6 +221,7 @@ test("no-cycles under a directory module routes through that module", (t) => {
     { "src/a.ts": 'import "./pkg/y.ts";\nimport "./b.ts";\n', "src/b.ts": 'import "./a.ts";\n', "src/pkg/y.ts": 'import "../a.ts";\n' },
     "- module main.pkg\n  - no-cycles\n",
   );
+
   const checked = keylang(dir, ["check"]);
   assert.equal(checked.status, 1, checked.stdout);
   assert.match(checked.stdout, /K105 divergence: dependency cycle main\.pkg\.y → main\.a → main\.pkg\.y/);
@@ -233,6 +239,7 @@ test("entry follows re-exports, skips directory modules, and names the hole", (t
     },
     "- entry\n  - main.main\n",
   );
+
   const checked = keylang(dir, ["check"]);
   assert.match(checked.stdout, /K103 absence: module `main\.lib\.c` is not reachable/);
   assert.doesNotMatch(checked.stdout, /`main\.lib\.(a|b|index)`|`main\.lib` is not/);

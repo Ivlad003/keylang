@@ -81,6 +81,7 @@ interface Site {
   host: string | null;
   reachedFrom: { kind: string; label: string; id: string; flow: { name: string; source: string } | null }[];
 }
+
 interface Report {
   snapshotId: string;
   outgoing: { id: string; kind: string; sites: Site[]; imports: { file: string; line: number; source: string }[] }[];
@@ -155,6 +156,7 @@ test("integrations: --json is the same bytes for the same inputs and only the fa
   assert.equal(second.status, 0, second.stderr);
   assert.equal(second.stdout, first.stdout);
   const after = treeBytes(dir);
+
   for (const map of [before, after]) for (const path of [...map.keys()]) if (path.startsWith(".keylang/cache/")) map.delete(path);
   assert.deepEqual(after, before);
 });
@@ -184,10 +186,12 @@ test("tui: «Integrations» in the palette shows the inventory, the same lines a
   const root = checkoutRepo(t, {
     "src/infrastructure/http.ts": 'export async function ping(): Promise<number> {\n  await fetch("https://status.example.com/ping");\n  return 1;\n}\n',
   });
+
   const s = session(root);
   t.after(() => s.app.close());
   await s.app.idle();
   s.send(KEY.ctrlP);
+
   // `integrations` alone also names Doctor (agent integrations): the webhooks word picks this one.
   for (const ch of "integrations webhooks") s.send(ch);
   assert.match(s.text(), /Integrations: outgoing clients/);

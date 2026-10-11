@@ -13,6 +13,7 @@ const VERSION = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).ver
 
 test("init: managed AGENTS.md block keeps foreign CRLF text, is idempotent, and baseline adds no fail", (t) => {
   const foreign = "Чужий заголовок\r\n\r\nНе чіпати.\r\n";
+
   const make = (): string => {
     const dir = tempDir(t, "keylang-launch-");
     writeTree(dir, {
@@ -22,8 +23,10 @@ test("init: managed AGENTS.md block keeps foreign CRLF text, is idempotent, and 
       "AGENTS.md": foreign,
     });
     mkdirSync(join(dir, ".claude"));
+
     return dir;
   };
+
   const run = (dir: string): string => {
     const init = keylang(dir, ["init"]);
     assert.equal(init.status, 0, init.stderr);
@@ -38,8 +41,10 @@ test("init: managed AGENTS.md block keeps foreign CRLF text, is idempotent, and 
     assert.match(block, /<!-- keylang:end -->/);
     assert.ok(block.includes("\r\n"));
     assert.ok(Buffer.byteLength(block.slice(block.indexOf("<!-- keylang:begin -->"), block.indexOf("<!-- keylang:end -->") + "<!-- keylang:end -->".length)) <= 4096);
+
     return block;
   };
+
   const first = run(make());
   const secondDir = make();
   const once = run(secondDir);
@@ -94,6 +99,7 @@ test("agents: a removal through a harness directory linked out of the repository
     });
     symlinkSync(join(outside, "cur"), join(repo, ".cursor"), "dir");
     symlinkSync(join(outside, "claude"), join(repo, ".claude"), "dir");
+
     return { repo, outside };
   };
 
@@ -116,11 +122,13 @@ test("agents: a removal through a harness directory linked out of the repository
   git(cloned.repo, ["add", "-A"]);
   git(cloned.repo, ["-c", "commit.gpgsign=false", "commit", "-qm", "links"]);
   const sandbox = tempDir(t, "keylang-linked-clone-home-");
+
   const r = spawnSync(process.execPath, [bin, "clone", `file://${cloned.repo}`], {
     cwd: sandbox,
     encoding: "utf8",
     env: { ...process.env, HOME: join(sandbox, "home"), XDG_CACHE_HOME: join(sandbox, "cache"), XDG_CONFIG_HOME: join(sandbox, "config") },
   });
+
   assert.equal(r.status, 1, r.stdout + r.stderr);
   assert.match(r.stdout, /SKILL\.md: leads out of the repository through a link/);
   assert.doesNotMatch(r.stdout, /removed/);
@@ -130,6 +138,7 @@ test("agents: a removal through a harness directory linked out of the repository
 test("agents: --agents=none leaves a harness file without a keylang entry byte for byte, and removes a file only when nothing but keylang's entries was in it", (t) => {
   // Comments only, `{}`, an empty server table, a person's settings with four-space indentation: nothing of keylang's in any of them.
   const dir = tempDir(t, "keylang-none-foreign-");
+
   const files = {
     ".codex/config.toml": "# my codex settings\n# model = \"gpt-5\"\n",
     ".claude/settings.json": "{}\n",
@@ -139,16 +148,20 @@ test("agents: --agents=none leaves a harness file without a keylang entry byte f
     ".codex/hooks.json": '{\n  "hooks": {}\n}\n',
     "AGENTS.md": "\n",
   };
+
   writeTree(dir, { "src/app/pay.ts": PAY, "src/domain/order.ts": ORDER, ...files });
   const init = keylang(dir, ["init", "--agents=none"]);
   assert.equal(init.status, 0, init.stdout + init.stderr);
+
   for (const [path, text] of Object.entries(files)) {
     assert.equal(readFileSync(join(dir, path), "utf8"), text, path);
     assert.ok(!init.stdout.includes(`${path}:`), `${path} is not a step: ${init.stdout}`);
   }
+
   const again = keylang(dir, ["agents", "--agents=none"]);
   assert.equal(again.status, 0, again.stdout + again.stderr);
   assert.equal(again.stdout, "");
+
   for (const [path, text] of Object.entries(files)) assert.equal(readFileSync(join(dir, path), "utf8"), text, path);
   assert.equal(keylang(dir, ["agents", "--check", "--agents=none"]).status, 0);
 
@@ -210,11 +223,14 @@ test("agents: MCP servers, skill copies, Claude deny and a stale --check that wr
   assert.match(skillA, /^---\nname: keylang-feature\n/);
   assert.match(skillA, /^description: /m);
   assert.equal(statSync(join(dir, ".claude/skills/keylang-feature/SKILL.md")).isSymbolicLink(), false);
+
   const settings = JSON.parse(readFileSync(join(dir, ".claude/settings.json"), "utf8")) as {
     permissions: { allow: string[]; deny: string[] };
     hooks: { PostToolUse: unknown[]; Stop: { hooks: { command: string }[] }[] };
   };
+
   assert.deepEqual(settings.permissions.allow, ["Bash"]);
+
   // keylang.json decides what the rules see, and every rules file is the person's (ticket 49).
   for (const rule of ["Edit(keylang/rules.md)", "Write(keylang/rules.md)", "Edit(keylang/rules.baseline.md)", "Write(keylang/rules.baseline.md)", "Edit(keylang/rules*.md)", "Write(keylang/rules*.md)", "Edit(keylang.json)", "Write(keylang.json)", "Bash(* proposals accept *)", "Bash(* proposals reject *)"]) assert.ok(settings.permissions.deny.includes(rule), rule);
   assert.ok(settings.permissions.deny.includes("Read(secret)"));
@@ -225,6 +241,7 @@ test("agents: MCP servers, skill copies, Claude deny and a stale --check that wr
   assert.match(agentsMd, /trusted project/);
   // The CLI fallback is the command MCP and the hook pin: no global `keylang`, no unpinned `npx keylang`.
   const pinned = `npx -y keylang@${VERSION}`;
+
   for (const text of [agentsMd, skillA]) {
     for (const command of ["feature <slug> --format json", "check", "spec-to-code <id> --print"]) assert.ok(text.includes(`\`${pinned} ${command}\``), `${pinned} ${command}`);
     // A person regenerates the baseline: the agent is not told to run it, and changes rules and keylang.json only as a proposal.
@@ -385,6 +402,7 @@ test("hook install from a keylang root below the git top level: the hook runs `c
   const log = join(bindir, "cwd.log");
   writeFileSync(join(bindir, "npx"), `#!/bin/sh\nshift 2\npwd >> "${log}"\nexec "${process.execPath}" "${bin}" "$@"\n`);
   chmodSync(join(bindir, "npx"), 0o755);
+
   const commit = (cwd: string, message: string): { status: number | null; stdout: string; stderr: string } =>
     spawnSync("git", ["-c", "user.email=t@example.com", "-c", "user.name=T", "commit", "-qm", message], { cwd, encoding: "utf8", env: { ...process.env, PATH: `${bindir}:${process.env.PATH ?? ""}` } });
 
@@ -421,11 +439,14 @@ test("hook install from a keylang root below the git top level: the hook runs `c
 
 test("init on a repository with opencode.jsonc (comments, trailing comma): JSONC is read; --agents=none leaves the file byte for byte, auto init adds the mcp.keylang entry", (t) => {
   const jsonc = '{\n  // opencode config\n  "$schema": "https://opencode.ai/config.json",\n  "model": "x",\n}\n';
+
   const make = (): string => {
     const dir = tempDir(t, "keylang-opencode-jsonc-");
     writeTree(dir, { "opencode.jsonc": jsonc, "src/app/pay.ts": PAY, "src/domain/order.ts": ORDER });
+
     return dir;
   };
+
   // `clone` and `web <url>` run `init --agents=none` on the clone: the file is parsed, nothing of keylang's is in it, so it stays.
   const none = make();
   const o = keylang(none, ["init", "--agents=none"]);

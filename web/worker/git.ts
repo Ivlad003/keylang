@@ -34,6 +34,7 @@ export interface PreparedGit {
 }
 
 const prepared = new Map<string, PreparedGit>();
+
 /** Per root: the files of the folder that were not read (binary, too large), by path. */
 const unreadOf = new Map<string, Map<string, UnreadFile>>();
 
@@ -48,6 +49,7 @@ function blobOid(bytes: Uint8Array): string {
   const all = new Uint8Array(head.length + bytes.length);
   all.set(head);
   all.set(bytes, head.length);
+
   return [...sha1(all)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
@@ -63,6 +65,7 @@ export function preparedFor(root: string): PreparedGit | null {
  */
 function fsFor() {
   const withIds = <T extends object>(stats: T): T & { uid: number; gid: number } => Object.assign(stats, { uid: 0, gid: 0 });
+
   return {
     promises: {
       readFile: async (path: string, options?: unknown) => memory.readFileSync(path, options),
@@ -82,7 +85,9 @@ function fsFor() {
 
 /** keylang's own state is never a change (src/git-changes.ts, `ownState`). */
 const ownState = (path: string): boolean => path === ".keylang" || path.startsWith(".keylang/");
+
 const isBinary = (bytes: Uint8Array): boolean => bytes.subarray(0, 8000).includes(0);
+
 const decoder = new TextDecoder();
 
 const MAIN_BRANCHES: readonly (readonly [string, string])[] = [
@@ -115,18 +120,23 @@ class Reader {
     if (ref.startsWith("-")) return null;
     // `^{commit}` and `^{}` peel to the commit, which this does anyway.
     const [, name = "", suffix = ""] = /^(.*?)((?:[~^]\d*)*)$/.exec(ref.replace(/\^\{(commit)?\}$/, "")) ?? [];
+
     if (name === "") return null;
+
     try {
       const oid = /^[0-9a-f]{4,40}$/.test(name) ? await git.expandOid({ ...this.base, oid: name }) : await git.resolveRef({ ...this.base, ref: name });
       const object = await git.readObject({ ...this.base, oid });
       let commit = object.type === "tag" ? (object.object as { object: string }).object : object.type === "commit" ? oid : null;
+
       for (const [, op, digits] of suffix.matchAll(/([~^])(\d*)/g)) {
         if (commit === null) return null;
         const n = digits === "" ? 1 : Number(digits);
+
         if (op === "~") {
           for (let i = 0; i < n && commit !== null; i++) commit = (await git.readCommit({ ...this.base, oid: commit })).commit.parent[0] ?? null;
         } else if (n > 0) commit = (await git.readCommit({ ...this.base, oid: commit })).commit.parent[n - 1] ?? null;
       }
+
       return commit;
     } catch {
       return null;
@@ -136,17 +146,21 @@ class Reader {
   async summary(): Promise<GitSummary> {
     const commit = await this.commit("HEAD");
     let branch: string | null = null;
+
     try {
       const target = await git.resolveRef({ ...this.base, ref: "HEAD", depth: 2 });
       branch = target.startsWith("refs/heads/") ? target.slice("refs/heads/".length) : null;
     } catch {
       branch = null;
     }
+
     const origin = ((await git.getConfig({ fs: this.fs, dir: this.root, path: "remote.origin.url" })) as string | undefined) ?? null;
     const local = (await git.listBranches({ ...this.base })).sort(compareText);
     const remotes = (await git.listRemotes({ fs: this.fs, dir: this.root })).map((remote) => remote.remote).sort(compareText);
     const remote: string[] = [];
+
     for (const name of remotes) for (const branchName of (await git.listBranches({ ...this.base, remote: name })).filter((b) => b !== "HEAD").sort(compareText)) remote.push(`${name}/${branchName}`);
+
     return { commit, branch, origin: origin === "" ? null : origin, branches: [...local, ...remote] };
   }
 
@@ -154,25 +168,32 @@ class Reader {
   async featureBase(): Promise<BaseOrigin> {
     const headBase: BaseOrigin = { ref: "HEAD", source: "HEAD", label: "HEAD" };
     let target = "";
+
     try {
       target = await git.resolveRef({ ...this.base, ref: "refs/remotes/origin/HEAD", depth: 2 });
     } catch {
       target = "";
     }
+
     const candidates = target.startsWith("refs/remotes/") ? [[target, target.slice("refs/remotes/".length)] as const, ...MAIN_BRANCHES] : MAIN_BRANCHES;
     let main: readonly [string, string] | undefined;
+
     for (const candidate of candidates) {
       if ((await this.commit(candidate[0])) !== null) {
         main = candidate;
         break;
       }
     }
+
     if (main === undefined) return headBase;
     const head = await this.commit("HEAD");
     const tip = await this.commit(main[0]);
+
     if (head === null || tip === null) return { ...headBase, main: main[1] };
     const [fork] = (await git.findMergeBase({ ...this.base, oids: [head, tip] })) as string[];
+
     if (!fork || fork === head) return { ...headBase, main: main[1] };
+
     // Git's abbreviation is the shortest unambiguous one, seven characters at least; a repository the browser holds rarely needs more.
     return { ref: fork, source: "merge-base", main: main[1], label: `merge-base ${fork.slice(0, 7)} with ${main[1]}` };
   }
@@ -188,6 +209,7 @@ class Reader {
   async changed(ref: string): Promise<ChangedFiles | null> {
     const unborn = ref === "HEAD" && (await this.commit("HEAD")) === null;
     const base = unborn ? null : await this.commit(ref);
+
     if (!unborn && base === null) return null;
     const tracked = new Map<string, { base: string | null; stage: string | null; size: number | null; mtime: number | null }>();
     await git.walk({
@@ -197,6 +219,7 @@ class Reader {
         if (path === ".") return true;
         const [baseEntry, stage] = base ? entries : [null, ...entries];
         const types = await Promise.all([baseEntry?.type(), stage?.type()]);
+
         if (types.some((type) => type === "tree")) return true;
         const stat = stage ? await stage.stat() : null;
         tracked.set(path, {
@@ -205,6 +228,7 @@ class Reader {
           size: stat ? stat.size : null,
           mtime: stat ? stat.mtimeSeconds * 1000 + Math.floor(stat.mtimeNanoseconds / 1e6) : null,
         });
+
         return null;
       },
     });
@@ -213,49 +237,64 @@ class Reader {
     const indexTime = memory.existsSync(`${this.root}/.git/index`) ? memory.statSync(`${this.root}/.git/index`)!.mtimeMs : 0;
     const paths = new Set<string>();
     const deleted: string[] = [];
+
     for (const [path, entry] of tracked) {
       if (ownState(path)) continue;
       const abs = `${this.root}/${path}`;
       const work = memory.existsSync(abs) && memory.statSync(abs)!.isFile() ? memory.statSync(abs)! : null;
       const skipped = unread.get(path) ?? null;
+
       if (work === null && skipped === null) {
         // Gone from the working tree; a file only staged and then removed is no change against the base.
         if (entry.base !== null) {
           deleted.push(path);
           paths.add(path);
         }
+
         continue;
       }
+
       // In the base, out of the index, still on disk (`git rm --cached`): `diff <base>` calls it deleted, `ls-files --others` lists it.
       if (entry.stage === null) {
         if (entry.base !== null) {
           deleted.push(path);
           paths.add(path);
         }
+
         continue;
       }
+
       const size = work ? work.size : skipped!.size;
       const mtime = work ? work.mtimeMs : skipped!.mtime;
       const asIndexed = entry.stage !== null && entry.size === size && entry.mtime === Math.floor(mtime) && Math.floor(mtime) < indexTime;
+
       if (skipped !== null) {
         // Not read: unchanged when the stat check says so, else changed; a binary one has no hunk.
         if ((asIndexed ? entry.stage : "changed") !== entry.base && !skipped.binary) paths.add(path);
         continue;
       }
+
       const bytes = memory.readFileSync(abs) as Uint8Array;
       const oid = asIndexed ? entry.stage : blobOid(bytes);
+
       if (oid === entry.base) continue;
+
       if (bytes.length === 0 || isBinary(bytes)) continue;
+
       if (entry.base !== null && isBinary(await this.blob(entry.base))) continue;
       paths.add(path);
     }
+
     // `ls-files --others --exclude-standard`: in the folder, not in the index, not ignored.
     const candidates = [...(memory.readdirSync(this.root, { recursive: true }) as string[]).filter((path) => !path.startsWith(".git/") && path !== ".git" && memory.statSync(`${this.root}/${path}`)!.isFile()), ...unread.keys()];
+
     for (const path of candidates) {
       if (ownState(path) || tracked.get(path)?.stage) continue;
+
       if (await git.isIgnored({ fs: this.fs, dir: this.root, filepath: path })) continue;
       paths.add(path);
     }
+
     return { paths, deleted: deleted.sort(compareText), unborn };
   }
 
@@ -274,7 +313,9 @@ class Reader {
   async specs(oid: string, dir: string): Promise<Map<string, string>> {
     const files = new Map<string, string>();
     const listed = (await git.listFiles({ ...this.base, ref: oid })).filter((path) => (dir === "" || dir === "." || path.startsWith(`${dir}/`)) && path.endsWith(".md")).sort(compareText);
+
     for (const path of listed) files.set(path, (await this.file(oid, path)) ?? "");
+
     return files;
   }
 }
@@ -282,8 +323,10 @@ class Reader {
 /** The spec directory a keylang.json names (its `dir`), else the default. */
 function specDirOf(config: string | null, fallback: string): string {
   if (config === null) return fallback;
+
   try {
     const dir = (JSON.parse(config) as { dir?: unknown }).dir;
+
     return typeof dir === "string" && dir !== "" ? dir.replace(/\/+$/, "") : "keylang";
   } catch {
     return fallback;
@@ -297,33 +340,43 @@ function specDirOf(config: string | null, fallback: string): string {
  */
 export async function prepareGit(root: string, since: string | null, specDir: string): Promise<void> {
   let state = prepared.get(root);
+
   if (!state) {
     if (!memory.existsSync(`${root}/.git/HEAD`)) {
       prepared.set(root, { unavailable: "not a git repository (the folder was opened without its .git, or it has none)", summary: null, base: null, refs: new Map() });
+
       return;
     }
+
     const reader = new Reader(root);
+
     try {
       state = { unavailable: null, summary: await reader.summary(), base: await reader.featureBase(), refs: new Map() };
     } catch (error) {
       state = { unavailable: `git cannot be read in the browser: ${error instanceof Error ? error.message : String(error)}`, summary: null, base: null, refs: new Map() };
     }
+
     prepared.set(root, state);
     readers.set(root, reader);
   }
+
   if (state.unavailable !== null || state.base === null) return;
   const ref = since === null || since === "" ? state.base.ref : since;
+
   if (state.refs.has(ref)) return;
   const reader = readers.get(root)!;
   const changed = await reader.changed(ref);
   const oid = await reader.commit(ref);
   const files = new Map<string, string | null>();
   const specs = new Map<string, Map<string, string>>();
+
   if (oid !== null) {
     const config = await reader.file(oid, "keylang.json");
     files.set("keylang.json", config);
+
     for (const dir of new Set([specDirOf(config, specDir), specDir])) specs.set(dir, await reader.specs(oid, dir));
   }
+
   state.refs.set(ref, { changed, files, specs });
 }
 

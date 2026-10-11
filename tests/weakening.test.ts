@@ -13,9 +13,12 @@ import { bin, git, keylang, LAYERS, ORDER, PAY, tempDir, writeTree } from "./cli
 import { configWeakenings } from "../src/weakening.ts";
 
 const DENY = "# rules\n\n- deny domain app\n";
+
 const FLOW = "# flow pay\n\n- trigger app.pay.charge\n  - step domain.order.price\n";
+
 /** domain imports app: what `deny domain app` forbids. */
 const VIOLATION = 'import { charge } from "../app/pay.ts";\nexport function price(): number {\n  return charge();\n}\n';
+
 const PAY_CALLS = 'import { price } from "../domain/order.ts";\nexport function charge(): number {\n  return price();\n}\n';
 
 /** A committed repository: layers app and domain, `deny domain app`, a flow from app to domain. */
@@ -32,12 +35,14 @@ function repo(t: { after: (f: () => void) => void }, extra: Record<string, strin
   git(dir, ["init", "-q"]);
   git(dir, ["add", "."]);
   git(dir, ["commit", "-q", "-m", "base"]);
+
   return dir;
 }
 
 function hook(dir: string): { decision?: string; reason?: string; systemMessage?: string } {
   const r = spawnSync(process.execPath, [bin, "hook", "stop"], { cwd: dir, input: JSON.stringify({ hook_event_name: "Stop", stop_hook_active: false }), encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
+
   return JSON.parse(r.stdout) as { decision?: string; reason?: string; systemMessage?: string };
 }
 

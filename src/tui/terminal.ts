@@ -18,13 +18,18 @@ import { ENTER, LEAVE } from "./screen.ts";
 /** How to open `file` at `line` with the configured editor, or null without one. */
 export function editorCommand(env: NodeJS.ProcessEnv, file: string, line: number): { command: string; args: string[]; wait: boolean } | null {
   const configured = (env.VISUAL ?? env.EDITOR ?? "").trim();
+
   if (configured === "") return null;
   const [command, ...extra] = splitCommand(configured);
+
   if (!command) return null;
   const name = basename(command);
+
   // GUI editors take `-g file:line` and return at once; terminal editors take `+line file` and own the screen.
   if (/^(code|code-insiders|codium|cursor|windsurf)$/.test(name)) return { command: command!, args: [...extra, "-g", `${file}:${line}`], wait: false };
+
   if (/^(subl|zed)$/.test(name)) return { command: command!, args: [...extra, `${file}:${line}`], wait: false };
+
   return { command: command!, args: [...extra, `+${line}`, file], wait: true };
 }
 
@@ -38,8 +43,10 @@ export function splitCommand(value: string, exists: (path: string) => boolean = 
   const words: string[] = [];
   let word: string | null = null;
   let quote: '"' | "'" | null = null;
+
   for (let i = 0; i < value.length; i++) {
     const ch = value[i]!;
+
     if (quote) {
       if (ch === quote) quote = null;
       else if (ch === "\\" && quote === '"' && i + 1 < value.length) word += value[++i]!;
@@ -53,7 +60,9 @@ export function splitCommand(value: string, exists: (path: string) => boolean = 
       word = null;
     } else word = (word ?? "") + ch;
   }
+
   if (word !== null) words.push(word);
+
   return words;
 }
 
@@ -105,6 +114,7 @@ export function processHost(): TerminalHost {
       for (const signal of SIGNALS) process.on(signal, onSignal);
       process.on("uncaughtException", onCrash);
       process.on("unhandledRejection", onCrash);
+
       return () => {
         for (const signal of SIGNALS) process.off(signal, onSignal);
         process.off("uncaughtException", onCrash);
@@ -122,14 +132,18 @@ export async function runTerminal(root: string, host: TerminalHost = processHost
   const { stdin, stdout } = host;
   const worker = new SnapshotWorker();
   let finish: (code: number) => void = () => {};
+
   const done = new Promise<number>((resolve) => (finish = resolve));
   let finished = false;
+
   const end = (code: number): void => {
     if (finished) return;
     finished = true;
     finish(code);
   };
+
   const size = (): [number, number] => [stdout.columns ?? 80, stdout.rows ?? 24];
+
   const app = new App({
     root,
     cols: size()[0],
@@ -138,25 +152,31 @@ export async function runTerminal(root: string, host: TerminalHost = processHost
     onQuit: () => end(0),
     ...session,
   });
+
   const onData = (chunk: string): void => app.input(chunk);
   const onResize = (): void => app.resize(...size());
 
   /** Whether the TUI has the screen: raw mode, the alternate screen, the mouse. */
   let shown = false;
+
   const enter = (): void => {
     if (stdin.isTTY) stdin.setRawMode?.(true);
     stdout.write(ENTER);
     shown = true;
   };
+
   const leave = (): void => {
     if (!shown) return;
     stdout.write(LEAVE);
+
     if (stdin.isTTY) stdin.setRawMode?.(false);
     shown = false;
   };
+
   // `$EDITOR` or a stop has the screen: nothing is read (a flowing stdin would take the editor's keys)
   // and nothing is drawn; taking it back repaints the whole frame at the current size.
   let away: "editor" | "stopped" | null = null;
+
   const handOver = (reason: "editor" | "stopped"): void => {
     away = reason;
     app.detach();
@@ -164,6 +184,7 @@ export async function runTerminal(root: string, host: TerminalHost = processHost
     stdin.pause();
     leave();
   };
+
   const takeBack = (): void => {
     away = null;
     enter();
@@ -171,6 +192,7 @@ export async function runTerminal(root: string, host: TerminalHost = processHost
     stdin.resume();
     app.attach(surface, ...size());
   };
+
   /**
    * `$VISUAL` / `$EDITOR` at `line` of `abs`: a GUI editor in a window of its
    * own, a terminal one with the screen. The answer is for the status line:
@@ -179,9 +201,11 @@ export async function runTerminal(root: string, host: TerminalHost = processHost
    */
   const openEditor = async (abs: string, line: number): Promise<string | null> => {
     const command = editorCommand(host.env, abs, line);
+
     if (!command) return "no $VISUAL or $EDITOR to open the code in";
     const name = basename(command.command);
     const place = `${toPosix(relative(root, abs))}:${line}`;
+
     if (!command.wait) {
       // A GUI editor returns at once and the TUI keeps the screen: without a word nothing would seem to happen.
       return new Promise((resolve) => {
@@ -193,36 +217,47 @@ export async function runTerminal(root: string, host: TerminalHost = processHost
         });
       });
     }
+
     if (finished) return null;
+
     if (away !== null) return `${place} not opened: the screen is with ${away === "editor" ? "the editor" : "the shell"}`;
     handOver("editor");
+
     const failure = await new Promise<string | null>((resolve) => {
       const child = spawn(command.command, command.args, { stdio: "inherit" });
       child.on("exit", () => resolve(null));
       child.on("error", (error) => resolve(`${name}: could not start (${error.message}); ${place} not opened`));
     });
+
     if (!finished && away === "editor") takeBack();
+
     return failure;
   };
+
   /** Ctrl+Z (a key in raw mode) or SIGTSTP: the screen goes back to the shell and keylang stops until SIGCONT. */
   const stop = (): void => {
     // With the editor in front, it stops along with keylang and the screen is the editor's to restore.
     if (away === null) handOver("stopped");
     host.suspend();
   };
+
   const surface: Surface = { write: (ansi) => stdout.write(ansi), ...(editorCommand(host.env, "", 1) ? { openEditor } : {}), ...(JOB_CONTROL ? { suspend: stop } : {}) };
 
   const onSignal = (signal: TerminalSignal): void => {
     if (signal === "SIGTSTP") return stop();
+
     if (signal === "SIGCONT") {
       if (away === "stopped" && !finished) takeBack();
+
       return;
     }
+
     // Ctrl+C and Ctrl+\ typed in the editor reach this process too: they belong to the editor.
     if (away === "editor" && (signal === "SIGINT" || signal === "SIGQUIT")) return;
     // A deliberate stop (kill, a closed terminal): the screen is restored below and the session ends like `q`.
     end(0);
   };
+
   const onCrash = (error: unknown): void => {
     // Leave first, so the message lands on the normal screen, not on the alternate one that disappears.
     leave();
@@ -245,5 +280,6 @@ export async function runTerminal(root: string, host: TerminalHost = processHost
   app.close();
   leave();
   worker.close();
+
   return code;
 }

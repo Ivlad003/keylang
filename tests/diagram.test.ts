@@ -52,21 +52,25 @@ const PY_SHOP: Record<string, string> = {
 async function analyzed(t: { after: (f: () => void) => void }, files: Record<string, string>): Promise<Analysis> {
   const dir = mkdtempSync(join(tmpdir(), "keylang-diagram-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+
   for (const [path, text] of Object.entries(files)) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
     writeFileSync(join(dir, path), text);
   }
+
   return analyze({ root: dir });
 }
 
 function draw(analysis: Analysis, view: DiagramView): Diagram {
   const results = checkResults(analysis.verdicts, analysis.snapshot?.snapshotId ?? null, analysis.diagnostics);
+
   return diagramOf({ snapshot: analysis.snapshot, spec: analysis.spec, results, view });
 }
 
 const node = (diagram: Diagram, kind: string, label: string) => {
   const found = diagram.nodes.find((n) => n.kind === kind && n.label === label);
   assert.ok(found, `no ${kind} node "${label}" in ${JSON.stringify(diagram.nodes.map((n) => `${n.kind}:${n.label}`))}`);
+
   return found;
 };
 
@@ -115,9 +119,11 @@ test("diagram: a flow is a start event, tasks, a gateway with its branch, a hole
     ["domain", "application", "presentation"],
   );
   assert.equal(event.group, undefined);
+
   // Laid out: left to right by depth, every node sized.
   for (const n of d.nodes) assert.ok(n.w > 0 && n.h > 0 && Number.isFinite(n.x) && Number.isFinite(n.y), n.id);
   assert.ok(start.x < buy.x && buy.x < create.x && create.x < gateway.x && gateway.x < reject.x);
+
   for (const g of d.groups) for (const n of d.nodes.filter((m) => m.group === g.id)) assert.ok(n.y >= g.y && n.y + n.h <= g.y + g.h, `${n.id} inside lane ${g.id}`);
 });
 
@@ -138,6 +144,7 @@ test("diagram: a flow in Python has the same shape", async (t) => {
 
 test("diagram: an unknown flow, an unknown entry, events and processes give an empty diagram with the reason", async (t) => {
   const analysis = await analyzed(t, TS_SHOP);
+
   for (const [view, reason] of [
     [{ kind: "flow", name: "nope" }, /no flow named `nope`/],
     [{ kind: "entry", id: "nope.nope" }, /no entry point or fn `nope\.nope`/],
@@ -148,6 +155,7 @@ test("diagram: an unknown flow, an unknown entry, events and processes give an e
     assert.deepEqual([d.nodes, d.edges, d.groups], [[], [], []], view.kind);
     assert.match(d.reason ?? "", reason, view.kind);
   }
+
   // Without a snapshot (specs checked on their own) the code views say so.
   const bare = diagramOf({ snapshot: null, spec: analysis.spec, results: [], view: { kind: "layers" } });
   assert.match(bare.reason ?? "", /no snapshot/);
@@ -206,16 +214,18 @@ test("diagram: layers with their dependencies, the allow and the deny with its v
   // A stack in the declared order, one layer a row, like an architecture drawing: the canvas draws the edges as arcs beside it.
   assert.equal(d.direction, "down");
   assert.deepEqual(new Set(d.nodes.map((n) => n.x)).size, 1, "one column");
-  assert.deepEqual(d.nodes.map((n) => n.y), [...d.nodes.map((n) => n.y)].sort((a, b) => a - b), "rows in the declared order");
+  assert.deepEqual(d.nodes.map((n) => n.y), d.nodes.map((n) => n.y).sort((a, b) => a - b), "rows in the declared order");
   assert.equal(new Set(d.nodes.map((n) => n.y)).size, d.nodes.length, "one layer a row");
 });
 
 test("diagram: the same inputs give the same diagram; layout is pure and manual positions win", async (t) => {
   const one = await analyzed(t, TS_SHOP);
   const two = await analyzed(t, TS_SHOP);
+
   for (const view of [{ kind: "flow", name: "checkout" }, { kind: "entry", id: "presentation.cli", depth: 3 }, { kind: "layers" }] as const) {
     assert.equal(JSON.stringify(draw(one, view)), JSON.stringify(draw(two, view)), view.kind);
   }
+
   const d = draw(one, { kind: "flow", name: "checkout" });
   assert.equal(JSON.stringify(layout(d)), JSON.stringify(d), "laying out again changes nothing");
   const start = d.nodes.find((n) => n.kind === "start")!;
@@ -223,6 +233,7 @@ test("diagram: the same inputs give the same diagram; layout is pure and manual 
   const after = moved.nodes.find((n) => n.id === start.id)!;
   assert.deepEqual([after.x, after.y, after.w, after.h], [999, 7, start.w, start.h]);
   assert.equal(d.nodes.find((n) => n.id === start.id)!.x, start.x, "the input is not changed");
+
   for (const n of moved.nodes) if (n.id !== start.id) assert.deepEqual([n.x, n.y], [d.nodes.find((m) => m.id === n.id)!.x, d.nodes.find((m) => m.id === n.id)!.y]);
 });
 
@@ -244,6 +255,7 @@ test("diagram: views list the flows, entries, layers and processes; a query name
   assert.deepEqual(q("view=layers"), { kind: "layers" });
   assert.deepEqual(q("view=event&name=order.placed"), { kind: "event", name: "order.placed" });
   assert.deepEqual(q("view=process&domain=sales"), { kind: "process", domain: "sales" });
+
   for (const bad of ["", "view=nope", "view=flow", "view=entry", "view=entry&id=a&depth=x", "view=entry&id=a&depth=0", "view=entry&id=a&depth=99"]) {
     assert.equal(typeof q(bad), "string", bad);
   }
@@ -254,6 +266,7 @@ test("diagram: an entry point's tree draws one hole per fn in its lane, counted,
     ...TS_SHOP,
     "src/application/purchase.ts": 'import { create, reject } from "../domain/order.ts";\nexport function buy(gateway: any, mail: any): void {\n  create();\n  reject();\n  gateway.charge();\n  mail.send();\n}\n',
   });
+
   const tree = draw(analysis, { kind: "entry", id: "presentation.terminal.checkout" });
   assert.deepEqual(tree, draw(analysis, { kind: "entry", id: "presentation.terminal.checkout", depth: 2 }), "depth 2 by default");
   const holes = tree.nodes.filter((n) => n.kind === "hole");
@@ -271,16 +284,20 @@ test("diagram: layout wraps a lane's rank of many shapes into columns of at most
   // A start calling twenty fns of one lane, and two callers whose callees come in the reverse order.
   const at = { x: 0, y: 0, w: 0, h: 0 };
   const fns = Array.from({ length: 20 }, (_, i) => ({ id: `fn:f${i}`, kind: "fn" as const, label: `f${i}`, group: "app", ...at }));
+
   const wide = layout({
     nodes: [{ id: "start", kind: "start", label: "start", group: "app", ...at }, ...fns],
     edges: fns.map((fn) => ({ from: "start", to: fn.id, kind: "call" as const })),
     groups: [{ id: "app", label: "app", kind: "lane", ...at }],
   });
+
   const placed = wide.nodes.filter((n) => n.kind === "fn");
   assert.equal(new Set(placed.map((n) => n.y)).size, 7, "twenty in three columns of seven, not a column of twenty");
   assert.equal(new Set(placed.map((n) => n.x)).size, 3);
   const lane = wide.groups[0]!;
+
   for (const n of placed) assert.ok(n.y + n.h <= lane.y + lane.h && n.x + n.w <= lane.x + lane.w, n.id);
+
   // Callees follow their callers: a comes first, so its callee does too, though the diagram lists it last.
   const pair = layout({
     nodes: [
@@ -298,6 +315,7 @@ test("diagram: layout wraps a lane's rank of many shapes into columns of at most
     ],
     groups: [{ id: "app", label: "app", kind: "lane", ...at }],
   });
+
   const y = (id: string): number => pair.nodes.find((n) => n.id === id)!.y;
   assert.ok(y("a") < y("b"));
   assert.ok(y("a1") < y("b1"), "a's callee beside a, though the diagram lists it after b's");
@@ -308,6 +326,7 @@ test("diagram: the layers view keeps one rule edge per pair and effect — a bas
     ...TS_SHOP,
     "keylang/rules.md": "# rules\n\n- layers domain < infrastructure < application < presentation\n- deny domain infrastructure\n- allow presentation application\n- allow presentation application.purchase\n- allow presentation application.purchase.buy\n",
   });
+
   const d = draw(analysis, { kind: "layers" });
   const allows = d.edges.filter((e) => e.kind === "allow");
   assert.equal(allows.length, 1, "three allows of one pair are one edge");

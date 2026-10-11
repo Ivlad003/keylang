@@ -13,11 +13,13 @@ function session(root: string, cols = 120, rows = 30): { app: App; send: (keys: 
   const vt = new VirtualTerminal(cols, rows);
   const app = new App({ root, cols, rows });
   app.attach({ write: (ansi) => vt.feed(ansi) }, cols, rows);
+
   return { app, send: (keys) => app.input(keys), lines: () => vt.lines() };
 }
 
 function zoom(s: ReturnType<typeof session>): void {
   s.send(KEY.ctrlP);
+
   for (const ch of "zoom") s.send(ch);
   s.send(KEY.enter);
 }
@@ -73,6 +75,7 @@ test("tui zoom mouse: a click on a row selects it and opens nothing; at 80 colum
   narrow.send("+");
   narrow.send("+");
   const header = narrow.lines()[1]!;
+
   for (const text of ["[−]", "[+]", "▾▴]", "[c edges]", "[f flow ▾]"]) assert.ok(header.includes(text), `${text} in ${header}`);
   // The crumbs give way to the buttons: what is left of them is cut from the start.
   assert.ok(header.indexOf("[−]") > 1, header);

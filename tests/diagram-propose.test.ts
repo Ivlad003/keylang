@@ -24,13 +24,16 @@ import { checkoutRepo, CHECKOUT_FLOW } from "./tui-fixture.ts";
 async function opened(repo: string): Promise<{ model: FixtureModel; hash: string }> {
   const analysis = await analyze({ root: repo, withoutEvidence: true });
   const diagram = diagramOf({ snapshot: analysis.snapshot, spec: analysis.spec, results: [], view: { kind: "flow", name: "checkout" } });
+
   return { model: editorModelOf("flow:checkout", diagram), hash: specHash(repo, analysis.docs) };
 }
 
 type Node = FixtureModel["nodes"][number];
+
 function node(key: string, kind: string, id: string, label: string, extra: Partial<Node> = {}): Node {
   return { key, id, kind, label, layer: null, tests: [], x: 0, y: 0, w: 160, h: 60, ...extra };
 }
+
 function edge(key: string, kind: string, from: string, to: string, label?: string): FixtureModel["edges"][number] {
   return { key, kind, from, to, ...(label !== undefined ? { label } : {}) };
 }
@@ -54,27 +57,33 @@ test("diagram propose: a planned step with its signature and test lands after th
 test("diagram propose: `when` with its branch, a `parallel` group, `emits`, a timer and a trigger's kind", async (t) => {
   const repo = checkoutRepo(t);
   const { model } = await opened(repo);
+
   // A `when` after `save`: its first line out is the branch.
   const when = await propose(repo, {
     ...model,
     nodes: [...model.nodes, node("draft:1", "gateway", "", "paid by card"), node("draft:2", "task", "domain.order.create", "domain.order.create")],
     edges: [...model.edges, edge("draft:3", "sequence", "step:8", "draft:1"), edge("draft:4", "sequence", "draft:1", "draft:2")],
   });
+
   assert.equal(when.targets[0]!.text, CHECKOUT_FLOW.replace("  - step infrastructure.store.save\n", "  - step infrastructure.store.save\n  - when paid by card\n    - step domain.order.create\n"));
+
   // A parallel group right after the trigger: two steps in it, then the join, then what follows the group.
   const parallel = await propose(repo, {
     ...model,
     nodes: [...model.nodes, node("draft:1", "parallel", "", "parallel", { role: "split" }), node("draft:2", "task", "domain.order.create", "create"), node("draft:3", "task", "infrastructure.store.save", "save"), node("draft:4", "parallel", "", "parallel", { role: "join" }), node("draft:5", "event", "", "order.paid")],
     edges: [...model.edges, edge("e1", "sequence", "trigger:5", "draft:1"), edge("e2", "sequence", "draft:1", "draft:2"), edge("e3", "sequence", "draft:1", "draft:3"), edge("e4", "sequence", "draft:2", "draft:4"), edge("e5", "sequence", "draft:3", "draft:4"), edge("e6", "emits", "draft:4", "draft:5")],
   });
+
   assert.equal(parallel.targets[0]!.text, CHECKOUT_FLOW.replace("- trigger presentation.terminal.checkout\n", "- trigger presentation.terminal.checkout\n- parallel\n  - step domain.order.create\n  - step infrastructure.store.save\n- emits event order.paid\n"));
   // A timer beside a step, and the trigger now a cron job.
   const trigger = model.nodes.find((n) => n.key === "trigger:5")!;
+
   const timed = await propose(repo, {
     ...model,
     nodes: [...model.nodes.filter((n) => n !== trigger), { ...trigger, trigger: "cron" }, node("draft:1", "timer", "", "every @daily")],
     edges: [...model.edges, edge("e1", "sequence", "step:7", "draft:1")],
   });
+
   assert.equal(timed.targets[0]!.text, CHECKOUT_FLOW.replace("- trigger presentation.terminal.checkout", "- trigger cron presentation.terminal.checkout").replace("  - step domain.order.create\n", "  - step domain.order.create\n  - every @daily\n"));
   // The trigger kind the code already has is no change.
   const same = await propose(repo, { ...model, nodes: [...model.nodes.filter((n) => n !== trigger), { ...trigger, trigger: "fn" }] });
@@ -84,11 +93,13 @@ test("diagram propose: `when` with its branch, a `parallel` group, `emits`, a ti
 test("diagram propose: a new trigger starts a new flow that `continues` this one; a removed step comes back with K108", async (t) => {
   const repo = checkoutRepo(t);
   const { model } = await opened(repo);
+
   const out = await propose(repo, {
     ...model,
     nodes: [...model.nodes, node("draft:1", "start", "planned:presentation.webhook.paid", "paid", { trigger: "webhook" }), node("draft:2", "task", "domain.order.create", "create")],
     edges: [...model.edges, edge("draft:3", "sequence", "draft:1", "draft:2"), edge("draft:4", "continues", "step:8", "draft:1")],
   });
+
   assert.deepEqual(out.targets.map((x) => x.target), ["keylang/flows/paid.md"]);
   assert.equal(out.targets[0]!.text, "# flow paid\n\n- continues checkout\n- trigger webhook presentation.webhook.paid\n- step domain.order.create\n- planned fn presentation.webhook.paid\n");
   // `save` taken off the canvas: its line goes, and the answer says the spec got weaker.
@@ -163,6 +174,7 @@ test("layout file keys: a flow's shapes by what they say, twins apart, parallel 
     ],
     groups: [{ id: "a" }],
   };
+
   assert.deepEqual(Object.fromEntries(diagramKeys(diagram)), {
     "trigger:3": "trigger:a.b.t",
     "step:4": "step:a.b.s",

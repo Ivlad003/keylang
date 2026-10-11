@@ -10,10 +10,12 @@ import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
 
 function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8" });
+
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
@@ -21,6 +23,7 @@ function copy(t: TestContext, fixture: string): string {
   const dir = mkdtempSync(join(tmpdir(), `keylang-${fixture}-`));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   cpSync(join(root, "tests/fixtures", fixture), dir, { recursive: true });
+
   return dir;
 }
 
@@ -28,10 +31,12 @@ function copy(t: TestContext, fixture: string): string {
 function repo(t: TestContext, files: Record<string, string>): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-lang-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+
   for (const [file, text] of Object.entries(files)) {
     mkdirSync(dirname(join(dir, file)), { recursive: true });
     writeFileSync(join(dir, file), text);
   }
+
   return dir;
 }
 
@@ -54,6 +59,7 @@ test("rust: init detects the language and layers; map follows `use`, `mod` paths
   assert.deepEqual(config.languages, ["rust"]);
   assert.deepEqual(Object.keys(config.layers), ["domain", "infra", "main"]);
   const index = snapshot(dir);
+
   for (const id of ["domain.order.Order.new", "domain.order.place", "infra.store.save", "main.main.main"]) assert.equal(index.nodes[id]?.kind, "fn", id);
   const edge = (kind: string, source: string, target: string): boolean => index.edges.some((e) => e.kind === kind && e.source === source && e.target === target);
   assert.ok(edge("import", "domain.order", "infra.db"), "`use crate::infra::db::Db`");
@@ -108,6 +114,7 @@ test("rust: a flow over Rust calls has static evidence; a step through a method 
 test("rust: a workspace member's crate name resolves to its root; `crate::` in build.rs does not reach `src/`", (t) => {
   const dir = mkdtempSync(join(tmpdir(), "keylang-rust-ws-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+
   const files: Record<string, string> = {
     "Cargo.toml": '[workspace]\nmembers = ["crates/*"]\n',
     "crates/shop-core/Cargo.toml": '[package]\nname = "shop-core"\nversion = "0.1.0"\n',
@@ -117,10 +124,12 @@ test("rust: a workspace member's crate name resolves to its root; `crate::` in b
     "crates/shop-app/build.rs": "fn main() {\n    crate::gen::run();\n}\n",
     "keylang.json": JSON.stringify({ languages: ["rust"], layers: { core: ["crates/shop-core/**"], app: ["crates/shop-app/**"] } }),
   };
+
   for (const [file, text] of Object.entries(files)) {
     mkdirSync(dirname(join(dir, file)), { recursive: true });
     writeFileSync(join(dir, file), text);
   }
+
   assert.equal(keylang(dir, ["map"]).status, 0);
   const index = snapshot(dir);
   assert.ok(index.edges.some((e) => e.kind === "call" && e.source === "app.src.main.main" && e.target === "core.src.lib.place"), JSON.stringify(index.edges));
@@ -133,23 +142,28 @@ test("rust: a workspace member's crate name resolves to its root; `crate::` in b
 // without any workspace, is that crate's library too, not an external package.
 test("rust: a workspace under a subdirectory and `path` dependencies resolve to the crate's library, so `deny app core` is K102", (t) => {
   const core = { "Cargo.toml": '[package]\nname = "shop-core"\nversion = "0.1.0"\n', "src/lib.rs": "pub fn place() {}\n" };
+
   const app = (dep: string, call: string): Record<string, string> => ({
     "Cargo.toml": `[package]\nname = "shop-app"\nversion = "0.1.0"\n\n[dependencies]\n${dep}\n`,
     "src/main.rs": `fn main() {\n    ${call}::place();\n}\n`,
   });
+
   const under = (dir: string, files: Record<string, string>): Record<string, string> => Object.fromEntries(Object.entries(files).map(([f, text]) => [`${dir}/${f}`, text]));
+
   const polyglot = {
     "package.json": '{ "name": "shop", "private": true }\n',
     "web/index.ts": "export const page = 1;\n",
     "keylang.json": JSON.stringify({ languages: ["typescript", "rust"], layers: { web: ["web/**"], core: ["backend/crates/core/**"], app: ["backend/crates/app/**"] } }),
     "keylang/rules.md": "# rules\n\n- deny app core\n",
   };
+
   const cases: Record<string, Record<string, string>> = {
     "workspace under backend/ with a glob": { "backend/Cargo.toml": '[workspace]\nmembers = ["crates/*"]\n', ...under("backend/crates/app", app('shop-core = { path = "../core" }', "shop_core")) },
     "workspace under backend/ with explicit members": { "backend/Cargo.toml": '[workspace]\nmembers = ["crates/core", "crates/app"]\n', ...under("backend/crates/app", app('shop-core = { path = "../core" }', "shop_core")) },
     "path dependency renamed through `package`": { "backend/Cargo.toml": '[workspace]\nmembers = ["crates/*"]\n', ...under("backend/crates/app", app('domain = { package = "shop-core", path = "../core" }', "domain")) },
     "path dependency without a workspace": under("backend/crates/app", app('shop-core = { path = "../core" }', "shop_core")),
   };
+
   for (const [name, files] of Object.entries(cases)) {
     const dir = repo(t, { ...polyglot, ...under("backend/crates/core", core), ...files });
     const o = keylang(dir, ["check"]);
@@ -211,12 +225,14 @@ test("python: `keylang trace-plan` + the Python adapter give trace evidence; a f
   assert.equal(plan.status, 0, plan.stderr);
   writeFileSync(join(dir, "plan.json"), plan.stdout);
   assert.deepEqual((JSON.parse(plan.stdout) as { symbols: { id: string }[] }).symbols.map((s) => s.id), ["app.main.main", "domain.order.Order.total", "domain.order.place", "infra.store.save"]);
+
   const trace = (): number | null =>
     spawnSync("python3", [join(root, "adapters/python/keylang_trace.py"), "run.py"], {
       cwd: dir,
       encoding: "utf8",
       env: { ...process.env, KEYLANG_TRACE: ".keylang/trace/save.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_TRACE_TEST: "run.py > @flow save" },
     }).status;
+
   assert.equal(trace(), 0);
   const o = keylang(dir, ["check"]);
   assert.match(o.stdout, /flows\.md:5:5: trace ok domain\.order\.place: observed in run\.py > @flow save/);
@@ -244,9 +260,11 @@ test("rust: explicit spans give trace evidence; a step without a span is unobser
     `mod domain;\nmod infra;\n#[path = ${JSON.stringify(adapter)}]\nmod keylang_trace;\n\nuse crate::infra::store::save;\n\nfn main() {\n    {\n        let _span = keylang_trace::span("main.main.main");\n        save();\n    }\n    keylang_trace::finish();\n}\n`,
   );
   writeFileSync(join(dir, "src/infra/store.rs"), 'pub fn save() {\n    let _span = crate::keylang_trace::span("infra.store.save");\n    crate::domain::order::place();\n}\n');
+
   const order = readFileSync(join(dir, "src/domain/order.rs"), "utf8")
     .replace("pub fn place() -> Db {\n", 'pub fn place() -> Db {\n    let _span = crate::keylang_trace::span("domain.order.place");\n')
     .replace("fn helper() {}", 'fn helper() {}\n\npub fn refund() {\n    let _span = crate::keylang_trace::span("domain.order.refund");\n}');
+
   writeFileSync(join(dir, "src/domain/order.rs"), order);
   writeFileSync(join(dir, "keylang.json"), JSON.stringify({ languages: ["rust"], layers: { domain: ["src/domain/**"], infra: ["src/infra/**"], main: ["src/*"] }, check: { trace: ".keylang/trace/*.jsonl" } }));
   mkdirSync(join(dir, "keylang"), { recursive: true });
@@ -271,6 +289,7 @@ const cargoToml = '[package]\nname = "shop"\nversion = "0.1.0"\nedition = "2021"
 function verdicts(dir: string, args: string[] = []): { status: number | null; lines: string[] } {
   const o = keylang(dir, ["check", "--format", "json", ...args]);
   const results = (JSON.parse(o.stdout) as { results: { criterion: string; evidence: string }[] }).results;
+
   return { status: o.status, lines: results.map((r) => `${r.criterion} ${r.evidence}`) };
 }
 
@@ -284,6 +303,7 @@ test("rust: a call keylang cannot name is a hole, so the step is unverified, nev
     "keylang/flows.md":
       "# flow a\n\n- trigger app.main.Order.run\n  - step app.db.Db.save\n  - step app.db.Db.flush\n\n# flow b\n\n- trigger app.main.main\n  - step app.main.helper\n    - step app.main.Order.total\n  - step app.main.later\n\n# flow c\n\n- trigger app.main.Order.boxed\n  - step app.main.Order.run\n",
   });
+
   const { lines } = verdicts(dir);
   assert.ok(!lines.some((line) => line.startsWith("static fail")), lines.join("\n"));
   assert.ok(lines.includes("static unverified app.db.Db.save: no resolved path from app.main.Order.run; call through a local value `self.db.save` at src/main.rs:10:9 may reach it (and 1 more unresolved call in reachable code)"), lines.join("\n"));
@@ -311,6 +331,7 @@ test("python: a call keylang cannot name is a hole; `X()` runs `__init__`, `self
     "keylang/flows.md":
       "# flow a\n\n- trigger app.main.start\n  - step app.main.make\n    - step app.main.Order.__init__\n  - step app.main.Order.total\n  - step app.main.Order.run\n    - step app.main.Order.util\n  - step app.main.hit\n  - step app.main.Order.Line.price\n",
   });
+
   const { lines } = verdicts(dir);
   assert.ok(lines.includes("static ok app.main.Order.__init__: called from app.main.make"), lines.join("\n"));
   assert.ok(lines.includes("static unverified app.main.Order.total: no resolved path from app.main.start; call through a local value `make().total` at app/main.py:42:5 may reach it (and 2 more unresolved calls in reachable code)"), lines.join("\n"));
@@ -336,7 +357,9 @@ test("python: `x.m()` through a parameter annotated with a class or a local `x =
     "keylang/flows.md":
       "# flow a\n\n- trigger app.api.annotated\n  - step app.repo.Repo.save\n  - step app.repo.Base.ping\n\n# flow b\n\n- trigger app.api.injected\n  - step app.repo.Repo.load\n  - step app.repo.Sender.send\n\n# flow c\n\n- trigger app.api.constructed\n  - step app.repo.Repo.drop\n  - step app.repo.Sender.send\n\n# flow d\n\n- trigger app.api.reassigned\n  - step app.repo.Repo.save\n\n# flow e\n\n- trigger app.api.untyped\n  - step app.repo.Sender.send\n\n# flow f\n\n- trigger app.api.marked\n  - step app.repo.Sender.send\n",
   });
+
   const { lines } = verdicts(dir);
+
   for (const line of [
     "static ok app.repo.Repo.save: called from app.api.annotated",
     "static ok app.repo.Base.ping: called from app.api.annotated",
@@ -402,6 +425,7 @@ test("python: `self.m`, `Cls.m`, `obj.m`, `callback=self.m` and `functools.parti
     "keylang/flows.md":
       "# flow main\n\n- trigger app.svc.Svc.main\n  - step app.svc.Svc.ref\n  - step app.svc.Svc.static_one\n  - step app.lib.Repo.load\n  - step app.svc.Svc.partial_one\n  - step app.svc.Svc.in_lambda\n  - step app.svc.Svc.stored\n  - step app.svc.Svc.key\n  - step app.svc.Svc.kw\n  - step app.lib.save\n",
   });
+
   const { lines } = verdicts(dir);
   assert.deepEqual(lines.filter((line) => line.startsWith("static ")), [
     "static ok app.svc.Svc.ref: called from app.svc.Svc.main through the callable `self.ref` passed at app/svc.py:8:13",
@@ -450,6 +474,7 @@ test("rust: `Self::m` and a fn path passed as arguments and a closure passed as 
     ].join("\n"),
     "keylang/flows.md": "# flow place\n\n- trigger app.main.Order.place\n  - step app.main.Order.assoc\n  - step app.main.free\n  - step app.main.Order.in_closure\n  - step app.main.Order.stored\n  - step app.main.Order.each\n",
   });
+
   const { lines } = verdicts(dir);
   assert.deepEqual(lines.filter((line) => line.startsWith("static ")), [
     "static ok app.main.Order.assoc: called from app.main.Order.place through the callable `Self::assoc` passed at src/main.rs:5:13",
@@ -471,9 +496,11 @@ test("an import inside a function body is a dependency: `deny` fails on it (Pyth
     "app/main.py": "def start():\n    from infra.store import save\n    save()\n",
     "keylang/rules.md": "# rules\n\n- deny app infra\n",
   });
+
   const p = keylang(py, ["check", "--strict"]);
   assert.equal(p.status, 1, p.stdout);
   assert.match(p.stdout, /app\/main\.py:2:5: K102 divergence: `app\.main` depends on `infra\.store`, which is denied by `deny app infra`/);
+
   const rs = repo(t, {
     "Cargo.toml": cargoToml,
     "keylang.json": JSON.stringify({ languages: ["rust"], layers: { app: ["src/*.rs"], infra: ["src/infra/**"] } }),
@@ -482,6 +509,7 @@ test("an import inside a function body is a dependency: `deny` fails on it (Pyth
     "src/infra/store.rs": "pub fn save() {}\n",
     "keylang/rules.md": "# rules\n\n- deny app infra\n",
   });
+
   const r = keylang(rs, ["check", "--strict"]);
   assert.equal(r.status, 1, r.stdout);
   assert.match(r.stdout, /src\/main\.rs:4:5: K102 divergence: `app\.main` depends on `infra\.store`/);
@@ -495,6 +523,7 @@ test("python: a decorator that may replace a fn is a hole of that fn, not of the
     "app/web.py": 'from tenacity import retry\n\n\n@retry(stop=3)\ndef handler():\n    pass\n\n\nclass Ctx:\n    def __exit__(self, *args):\n        pass\n',
     "keylang/rules.md": "# rules\n\n- deny app infra\n",
   });
+
   const { status, lines } = verdicts(dir, ["--strict"]);
   assert.equal(status, 0, lines.join("\n"));
   assert.ok(lines.includes("deny app infra convergence: no edge from `app` to `infra` and no dependency hole in the area"), lines.join("\n"));
@@ -514,6 +543,7 @@ test("rust: an attribute macro that may replace a fn is a hole of that fn, not o
     "src/infra/mod.rs": "pub fn save() {}\n",
     "keylang/rules.md": "# rules\n\n- deny app infra\n",
   });
+
   const { status, lines } = verdicts(dir, ["--strict"]);
   assert.equal(status, 0, lines.join("\n"));
   assert.equal(keylang(dir, ["map"]).status, 0);
@@ -540,9 +570,11 @@ test("rust: the library and each binary are separate crate roots; `crate::`, `se
     "src/domain/order.rs":
       "pub struct Order;\n\nimpl Order {\n    pub fn new() -> Self { Order }\n}\n\npub fn f() {}\n\npub mod inner {\n    pub fn f() {}\n}\n\npub fn via_module() {\n    use crate::domain::order;\n    order::Order::new();\n    crate::domain::order::inner::f();\n}\n",
   });
+
   assert.equal(keylang(dir, ["map"]).status, 0);
   const index = snapshot(dir);
   const calls = index.edges.filter((e) => e.kind === "call").map((e) => `${e.source} -> ${e.target ?? `(${e.resolution})`}`);
+
   for (const call of [
     "app.main.main -> app.main.helper",
     "app.main.main -> app.main.run",
@@ -555,10 +587,12 @@ test("rust: the library and each binary are separate crate roots; `crate::`, `se
   ]) {
     assert.ok(calls.includes(call), `${call}\n${calls.join("\n")}`);
   }
+
   // `main.rs` is not the library: `crate::helper` there is its own; `inner::f` is not the top-level `f`.
   assert.ok(!calls.includes("app.main.main -> app.lib.helper"), calls.join("\n"));
   assert.ok(!calls.includes("domain.order.via_module -> domain.order.f"), calls.join("\n"));
   assert.ok(index.coverage.some((c) => c.kind === "dynamic-call" && c.reason === "call through a local value `crate::domain::order::inner::f`"), JSON.stringify(index.coverage));
+
   for (const id of ["app.lib.only_in_tests", "app.lib.a_test"]) assert.equal(index.nodes[id], undefined, id);
   assert.ok(!index.coverage.some((c) => c.reason.includes("`tests`")), "`#[cfg(all(test, …))]` is test code");
 });
@@ -570,6 +604,7 @@ function mapWithoutLines(dir: string, name: string): string {
 
 function docs(dir: string): Record<string, string | null> {
   const nodes = (JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as { nodes: Record<string, { doc: string | null }> }).nodes;
+
   return Object.fromEntries(Object.entries(nodes).filter(([id]) => !id.startsWith("external")).map(([id, n]) => [id, n.doc]));
 }
 
@@ -578,6 +613,7 @@ test("rust: `///`, `/** */`, `//!` and `/*! */` document items and modules; `#[d
   assert.equal(keylang(dir, ["init"]).status, 0);
   const before = mapWithoutLines(dir, "domain.md");
   writeFileSync(join(dir, "src/domain/mod.rs"), "/*! The shop's domain: orders and their totals. */\npub mod order;\n");
+
   const order = readFileSync(join(dir, "src/domain/order.rs"), "utf8")
     .replace("use crate", "//! Orders and how they are placed.\nuse crate")
     .replace("pub struct Order", "/// An order with its total.\n///\n/// Later paragraphs stay out of the brief.\n#[derive(Debug)]\npub struct Order")
@@ -585,6 +621,7 @@ test("rust: `///`, `/** */`, `//!` and `/*! */` document items and modules; `#[d
     .replace("    pub fn total(", "    /** The total in cents. */\n    pub fn total(")
     .replace("pub fn place()", "// A note, not documentation.\npub fn place()")
     .replace("fn helper()", "#[doc = \"Written as an attribute.\"]\nfn helper()");
+
   writeFileSync(join(dir, "src/domain/order.rs"), order);
   assert.equal(keylang(dir, ["map"]).status, 0);
   const d = docs(dir);
@@ -603,6 +640,7 @@ test("python: docstrings of a package, module, class and def are `doc`; an f-str
   assert.equal(keylang(dir, ["init"]).status, 0);
   const before = mapWithoutLines(dir, "domain.md");
   writeFileSync(join(dir, "shop/domain/__init__.py"), `"""The shop's domain."""\n`);
+
   const order = readFileSync(join(dir, "shop/domain/order.py"), "utf8")
     .replace("from ..infra", '"""Orders and how they are placed.\n\nMore about orders.\n"""\nfrom ..infra')
     .replace("class Order:\n", 'class Order:\n    r"""An order with an amount.\n\n    Details stay out.\n    """\n\n')
@@ -610,6 +648,7 @@ test("python: docstrings of a package, module, class and def are `doc`; an f-str
     .replace("    def paid(self):\n", '    def paid(self):\n        f"""Paid {self.amount}."""\n')
     .replace("def place():\n", 'def place():\n    # A comment is not a docstring.\n    """Places an order and stores it."""\n')
     .replace("def _helper():\n", "def _helper():\n    'One line, single quotes.'\n");
+
   writeFileSync(join(dir, "shop/domain/order.py"), order);
   assert.equal(keylang(dir, ["map"]).status, 0);
   const d = docs(dir);
@@ -637,6 +676,7 @@ test("rust and python: a re-exported name has form `reexport`, its symbol and it
     "shop/domain/_private.py": "",
     "shop/app.py": "import shop.domain.order\nfrom shop.domain import place\n\n\ndef run():\n    place()\n    shop.domain.order.other()\n",
   });
+
   assert.equal(keylang(dir, ["map"]).status, 0);
   const index = snapshot(dir);
   assert.deepEqual(index.exports.find((e) => e.module === "app.lib" && e.name === "run"), { module: "app.lib", name: "run", symbol: "domain.order.place", kind: "fn", form: "reexport", from: "domain.order" });
@@ -654,15 +694,18 @@ test("python: the trace adapter records a function by file, name and first line;
     "run.py": "import sys\nfrom app.main import start, stop\n\nstart()\nif len(sys.argv) > 1:\n    stop()\n",
     "keylang/flows.md": "# flow a\n\n- trigger app.main.start\n  - step app.main.B.save\n  - step app.main.gen\n  - step app.main.fetch\n",
   });
+
   const plan = keylang(dir, ["trace-plan", "a"]);
   assert.equal(plan.status, 0, plan.stderr);
   writeFileSync(join(dir, "plan.json"), plan.stdout);
+
   const trace = (...args: string[]): number | null =>
     spawnSync("python3", [join(root, "adapters/python/keylang_trace.py"), "run.py", ...args], {
       cwd: dir,
       encoding: "utf8",
       env: { ...process.env, KEYLANG_TRACE: ".keylang/trace/a.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_TRACE_TEST: "run.py > @flow a" },
     }).status;
+
   assert.equal(trace(), 0);
   const o = keylang(dir, ["check"]);
   // `A.save` ran; its code is not the planned `B.save` declared further down.
@@ -746,6 +789,7 @@ test("rust: a span in async code comes from `instrument`, not a guard; a span in
     "src/main.rs": asyncShop(join(root, "adapters/rust/keylang_trace.rs")),
     "keylang/flows.md": "# flow a\n\n- trigger app.main.run\n  - step app.main.slow\n    - step app.main.quick\n  - step app.main.quick\n    - step app.main.nested\n",
   });
+
   const plan = keylang(dir, ["trace-plan", "a"]);
   assert.equal(plan.status, 0, plan.stderr);
   writeFileSync(join(dir, "plan.json"), plan.stdout);
@@ -832,6 +876,7 @@ test("rust and python: `use crate::models::User` / `from app.models import User`
     "keylang.json": JSON.stringify({ languages: ["rust"], layers: { api: ["src/api/**"], domain: ["src/models/**"] } }),
     "keylang/rules.md": "# rules\n\n- deny api domain\n",
   });
+
   assert.equal(keylang(rust, ["map"]).status, 0);
   const r = keylang(rust, ["check"]);
   assert.equal(r.status, 1, r.stdout + r.stderr);
@@ -850,6 +895,7 @@ test("rust and python: `use crate::models::User` / `from app.models import User`
     "keylang.json": JSON.stringify({ languages: ["python"], layers: { api: ["app/api/**"], domain: ["app/models/**"] } }),
     "keylang/rules.md": "# rules\n\n- deny api domain\n",
   });
+
   assert.equal(keylang(py, ["map"]).status, 0);
   const p = keylang(py, ["check"]);
   assert.equal(p.status, 1, p.stdout + p.stderr);
@@ -869,6 +915,7 @@ test("python: `from m import *` of a module without `__all__` brings the names m
     "app/base.py": "from .util import helper\n\n\ndef own():\n    return 2\n",
     "app/main.py": "from math import *\nfrom .base import *\n\n\ndef run():\n    return helper() + own() + sqrt(4)\n",
   });
+
   const map = keylang(dir, ["map"]);
   assert.equal(map.status, 0, map.stderr);
   assert.match(map.stderr, /calls 2 resolved, 1 external, 0 dynamic/, "`sqrt` is math's; `helper` and `own` are the repository's");
@@ -909,6 +956,7 @@ test("python: `from m import *` of a module without `__all__` brings the names m
 
 test("python: a root directory without Python code does not hide a pip package or a package under src/; a namespace package's head is no hole", (t) => {
   const config = JSON.stringify({ languages: ["python"], layers: { app: "app/**", other: "other/**", cfg: "src/config/**" } });
+
   // (b) `redis/` holds only a Dockerfile: `import redis` is the pip package.
   const pip = repo(t, {
     "keylang.json": config,
@@ -917,7 +965,9 @@ test("python: a root directory without Python code does not hide a pip package o
     "redis/redis.conf": "port 6379\n",
     "app/cache.py": "import redis\n\n\ndef client():\n    return redis.Redis()\n",
   });
+
   assert.match(keylang(pip, ["check"]).stdout, /K102 divergence: `app\.cache` depends on `external\.redis`, which is denied by `deny app external\.redis`/);
+
   // (c) A root `config/` with settings.yaml does not hide `src/config/`.
   const src = repo(t, {
     "keylang.json": config,
@@ -927,7 +977,9 @@ test("python: a root directory without Python code does not hide a pip package o
     "src/config/settings.py": "DEBUG = True\n",
     "app/main.py": "from config import settings\n\n\ndef debug():\n    return settings.DEBUG\n",
   });
+
   assert.match(keylang(src, ["check"]).stdout, /K102 divergence: `app\.main` depends on `cfg/);
+
   // (a) PEP 420: `nsp/` has no `__init__.py`, yet `import nsp.inner.mod` works.
   const ns = repo(t, {
     "keylang.json": JSON.stringify({ languages: ["python"], layers: { app: "app/**", other: "other/**", nsp: "nsp/**" } }),
@@ -936,6 +988,7 @@ test("python: a root directory without Python code does not hide a pip package o
     "other/x.py": "def g():\n    return 2\n",
     "app/cache.py": "import nsp.inner.mod\n\n\ndef run():\n    return nsp.inner.mod.f()\n",
   });
+
   const checked = keylang(ns, ["check"]);
   assert.match(checked.stdout + checked.stderr, /0 fail, 0 unverified, 1 ok/, checked.stdout);
   assert.equal(keylang(ns, ["map"]).status, 0);
@@ -973,6 +1026,7 @@ test("rust: a fn declared inside a fn, or a parameter of one, shadows the module
       "",
     ].join("\n"),
   });
+
   assert.equal(keylang(dir, ["map"]).status, 0);
   const toHelper = snapshot(dir).edges.filter((e) => e.kind === "call" && e.target === "app.main.helper").map((e) => e.source);
   assert.deepEqual(toHelper, ["app.main.main"]);
@@ -986,6 +1040,7 @@ test("python: two `from .x import *` in `__init__.py` with one name export the l
     "shop/app/b.py": "def V():\n    return 2\n\n\ndef g():\n    return 0\n",
     "shop/app/__init__.py": "from .a import *\nfrom .b import *\n",
   };
+
   const all = repo(t, { ...files, "keylang/rules.md": "# rules\n\n- module app.__init__\n  - exports V, f, g\n" });
   const ok = keylang(all, ["check"]);
   assert.equal(ok.status, 0, ok.stdout);

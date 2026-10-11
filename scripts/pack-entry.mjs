@@ -36,6 +36,7 @@ process.exitCode = await main(process.argv.slice(2));
 `;
 
 const mode = process.argv[2];
+
 if (mode === "publish") writeFileSync(bin, published);
 else if (mode === "restore") writeFileSync(bin, dev);
 else {

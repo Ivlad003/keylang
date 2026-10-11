@@ -71,6 +71,7 @@ export type OfflineExplanation = CodeExplanation | NodeExplanation;
 /** The help of a diagnostic code, or null for a code keylang does not have. */
 export function codeExplanation(code: string): CodeExplanation | null {
   const text = explainCode(code);
+
   return text === null ? null : { subject: "code", code: code.toUpperCase(), text };
 }
 
@@ -82,9 +83,11 @@ export function unknownIdMessage(id: string, suggestion: string | null): string 
 /** The offline explanation of `id` on `analysis`, or why there is none. */
 export function nodeExplanation(analysis: Analysis, id: string, detail: ExplanationDetail): NodeExplanation | { unknown: string; suggestion: string | null } {
   const result = summarizeNode(analysis, id);
+
   if ("unknown" in result) return result;
   const saved = readExplanation(analysis.config, id, detail);
   const brief = detail === "brief" ? null : readExplanation(analysis.config, id, "brief");
+
   return {
     subject: "node",
     id,
@@ -106,14 +109,18 @@ export type AnswerMiss = "missing" | "stale" | "lang" | "detail";
 /** Why `saved` does not answer a request of `lang` and `detail`, or null when it does: a fresh one is read, never asked for again. */
 export function savedAnswerMiss(analysis: Analysis, id: string, saved: Explanation | null, lang: string, detail: ExplanationDetail): AnswerMiss | null {
   if (saved === null) return "missing";
+
   if (isStale(analysis, id, saved)) return "stale";
+
   if (saved.lang !== lang) return "lang";
+
   return saved.detail === detail ? null : "detail";
 }
 
 /** A saved answer as the CLI prints it: the text, a blank line, `agent · date · fresh|stale`, and the made-up IDs. */
 export function savedAnswerText(saved: SavedAnswer): string {
   const unknown = saved.unknownIds.length > 0 ? `unknown ids: ${saved.unknownIds.join(", ")}\n` : "";
+
   return `${saved.text}\n\n${saved.agent} · ${saved.date} · ${saved.fresh ? "fresh" : "stale"}\n${unknown}`;
 }
 
@@ -121,6 +128,7 @@ export function savedAnswerText(saved: SavedAnswer): string {
 export function offlineExplanationText(explanation: OfflineExplanation): string {
   if (explanation.subject === "code") return `${explanation.text}\n`;
   const summary = `${formatSummary(explanation.summary)}\n`;
+
   return explanation.saved === null ? summary : `${summary}\n${savedAnswerText(explanation.saved)}`;
 }
 
@@ -128,8 +136,10 @@ export function offlineExplanationText(explanation: OfflineExplanation): string 
 function summaryLinks(analysis: Analysis, summary: NodeSummary): ExplainLink[] {
   const links: ExplainLink[] = [];
   const at = summary.at === null ? null : /^(.*):(\d+)$/.exec(summary.at);
+
   if (at) links.push({ role: "location", id: null, file: at[1]!, line: Number(at[2]), col: 1, text: `at ${summary.at}` });
   const place = (file: string | null, line: number): string => (file === null ? "no file: outside the code" : `${file}:${line}`);
+
   const related = (role: ExplainLink["role"], ids: readonly string[]): void => {
     for (const id of ids) {
       const node = analysis.snapshot?.nodes[id];
@@ -139,19 +149,24 @@ function summaryLinks(analysis: Analysis, summary: NodeSummary): ExplainLink[] {
       links.push({ role, id, file, line, col, text: `${role} ${id}  ${place(file, line)}${plan ? " (planned)" : ""}` });
     }
   };
+
   related("calls", summary.calls);
   related("called by", summary.callers);
   related("depends on", summary.deps);
   related("used by", summary.dependents);
+
   for (const name of summary.flows) {
     const flow = analysis.spec.flows.find((candidate) => candidate.name === name);
     const file = flow?.file ?? null;
     const line = flow?.span.start.line ?? 1;
     links.push({ role: "flow", id: name, file, line, col: flow?.span.start.col ?? 1, text: `flow ${name}  ${place(file, line)}` });
   }
+
   for (const rule of summary.rules) {
     const m = /^(.*?):(\d+): /.exec(rule);
+
     if (m) links.push({ role: "rule", id: null, file: m[1]!, line: Number(m[2]), col: 1, text: `rule ${rule}` });
   }
+
   return links;
 }

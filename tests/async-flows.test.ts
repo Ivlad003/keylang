@@ -78,12 +78,14 @@ function repo(t: { after: (fn: () => void) => void }, flows: Record<string, stri
   const dir = tempDir(t, "keylang-async-");
   const config = { ...(JSON.parse(files["keylang.json"]!) as object), check };
   writeTree(dir, { ...files, "keylang.json": JSON.stringify(config), ...Object.fromEntries(Object.entries(flows).map(([path, text]) => [`keylang/flows/${path}`, text])) });
+
   return dir;
 }
 
 function snapshotOf(dir: string): string {
   const run = keylang(dir, ["map"]);
   assert.equal(run.status, 0, run.stderr);
+
   return (JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as { snapshotId: string }).snapshotId;
 }
 
@@ -92,6 +94,7 @@ function results(dir: string): { status: number | null; rows: Row[]; diagnostics
   assert.ok(o.stdout.startsWith("{"), o.stdout + o.stderr);
   const rows = (JSON.parse(o.stdout) as { results: (Row & { col: number })[] }).results;
   const diagnostics = rows.filter((r) => /^K\d{3}$/.test(r.criterion)).map((r) => ({ code: r.criterion, message: r.evidence, line: r.line, col: r.col }));
+
   return { status: o.status, rows, diagnostics };
 }
 
@@ -118,13 +121,16 @@ test("async flows: unknown trigger kind, bad timers, an empty parallel and conti
     "  - step app.handlers.mail",
     "",
   ].join("\n");
+
   const dir = repo(t, { "place.md": PLACE_ORDER, "broken.md": flow });
   const o = keylang(dir, ["check"]);
   assert.equal(o.status, 1, o.stdout);
+
   const at = (line: number, col: number, code: string, text: string): void => {
     const pattern = new RegExp(`^keylang/flows/broken\\.md:${line}:${col}: ${code} ${text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "m");
     assert.match(o.stdout, pattern, o.stdout);
   };
+
   at(3, 11, "K005", "unknown trigger kind `queue`; expected one of: route, cron, consumer, webhook, event; an entry point of another kind (`cli`, `main`) is a plain `- trigger <id>`");
   at(4, 13, "K206", "`continues` names flow `nowhere`, which no `# flow` declares");
   at(5, 13, "K206", "`continues` names flow `place-ordr`, which no `# flow` declares (did you mean `place-order`?)");
@@ -142,7 +148,9 @@ test("async flows: unknown trigger kind, bad timers, an empty parallel and conti
   const parsed = JSON.parse(keylang(dir, ["parse", "--json", "keylang/flows/broken.md"]).stdout) as { diagnostics: { code: string; span: { start: { line: number; col: number } } }[] }[];
   const codes = parsed[0]!.diagnostics.map((d) => `${d.span.start.line}:${d.span.start.col} ${d.code}`);
   assert.ok(codes.includes("3:11 K005"), codes.join(", "));
+
   for (const code of ["K009", "K206", "K205"]) assert.equal(codes.some((c) => c.endsWith(code)), false, code);
+
   // `keylang explain` knows the new codes.
   for (const code of ["K009", "K205", "K206"]) {
     const explained = keylang(dir, ["explain", code]);
@@ -167,11 +175,13 @@ test("parallel: static — every step of the group is reached from the group's p
   const dir = repo(t, { "place.md": flow });
   const { status, rows } = results(dir);
   assert.equal(status, 1);
+
   for (const id of ["app.handlers.reserve", "app.handlers.mail", "app.handlers.erp", "app.handlers.confirm"]) {
     const r = row(rows, "static", id);
     assert.equal(r?.verdict, "ok", `${id}: ${r?.evidence}`);
     assert.match(r!.evidence, /called from app\.server\.placeOrder/);
   }
+
   const refund = row(rows, "static", "app.handlers.refund");
   assert.equal(refund?.verdict, "fail", refund?.evidence);
   assert.match(refund!.evidence, /absence: no call path from app\.server\.placeOrder/);
@@ -183,10 +193,12 @@ test("parallel: static under a nested step and in Python — the parent of the g
     "src/shop/__init__.py": "",
     "src/shop/jobs.py": "def notify() -> None:\n    pass\n\n\ndef reserve() -> None:\n    pass\n\n\ndef settle() -> None:\n    reserve()\n    notify()\n\n\ndef main() -> None:\n    settle()\n",
   };
+
   const flow = "# flow settle\n\n- trigger shop.jobs.main\n- step shop.jobs.settle\n  - parallel\n    - step shop.jobs.notify\n    - step shop.jobs.reserve\n";
   const dir = repo(t, { "settle.md": flow }, {}, files);
   const { status, rows } = results(dir);
   assert.equal(status, 0, JSON.stringify(rows));
+
   for (const id of ["shop.jobs.notify", "shop.jobs.reserve"]) {
     assert.equal(row(rows, "static", id)?.verdict, "ok", id);
     assert.match(row(rows, "static", id)!.evidence, /called from shop\.jobs\.settle/);
@@ -206,30 +218,40 @@ interface SpanSpec {
 function traceRun(snapshotId: string, flow: string, spans: SpanSpec[], instrumented: string[]): string {
   const base = { schemaVersion: 1, snapshotId, runId: "r1", testId: "t1", flow, traceId: "tr" };
   const events: object[] = [];
+
   for (const span of spans) {
     events.push({ ...base, event: "start", spanId: span.id, parentSpanId: span.parent ?? null, symbolId: span.symbol, clockId: "c", seq: span.start, ts: 1 });
     events.push({ ...base, event: "end", spanId: span.id, outcome: "ok", clockId: "c", seq: span.end, ts: 1 });
   }
+
   events.push({ ...base, event: "run", complete: true, dropped: 0, instrumented });
+
   return `${events.map((e) => JSON.stringify(e)).join("\n")}\n`;
 }
 
 const P = "app.server.placeOrder";
+
 const RESERVE = "app.handlers.reserve";
+
 const MAIL = "app.handlers.mail";
+
 const ERP = "app.handlers.erp";
+
 const CONFIRM = "app.handlers.confirm";
+
 const STEPS = [P, RESERVE, MAIL, ERP, CONFIRM];
 
 function traced(t: { after: (fn: () => void) => void }, flows: Record<string, string> = { "place.md": PLACE_ORDER }): { snapshot: string; write: (text: string) => Row[]; dir: string } {
   const dir = repo(t, flows, { trace: ".keylang/trace/*.jsonl" });
   const snapshot = snapshotOf(dir);
+
   return {
     dir,
     snapshot,
     write: (text) => {
       mkdirSync(join(dir, ".keylang/trace"), { recursive: true });
       writeFileSync(join(dir, ".keylang/trace/t.jsonl"), text);
+
       return results(dir).rows;
     },
   };
@@ -237,6 +259,7 @@ function traced(t: { after: (fn: () => void) => void }, flows: Record<string, st
 
 test("parallel: trace — overlapping steps of a group are ok in any order; the next step after the whole group is ok", (t) => {
   const { snapshot, write } = traced(t);
+
   // `mail` starts before `reserve`, `erp` overlaps both: order inside the group is not checked.
   const spans: SpanSpec[] = [
     { id: "p", symbol: P, start: 1, end: 20 },
@@ -245,12 +268,15 @@ test("parallel: trace — overlapping steps of a group are ok in any order; the 
     { id: "e", symbol: ERP, parent: "p", start: 4, end: 8 },
     { id: "c", symbol: CONFIRM, parent: "p", start: 9, end: 10 },
   ];
+
   const rows = write(traceRun(snapshot, "place-order", spans, STEPS));
+
   for (const id of [RESERVE, MAIL, ERP, CONFIRM]) {
     const r = row(rows, "trace", id);
     assert.equal(r?.verdict, "ok", `${id}: ${r?.evidence}`);
     assert.equal(r?.provenance, "trace");
   }
+
   // In sequence, reversed, is as good.
   const sequential: SpanSpec[] = [
     { id: "p", symbol: P, start: 1, end: 20 },
@@ -259,23 +285,28 @@ test("parallel: trace — overlapping steps of a group are ok in any order; the 
     { id: "r", symbol: RESERVE, parent: "p", start: 6, end: 7 },
     { id: "c", symbol: CONFIRM, parent: "p", start: 8, end: 9 },
   ];
+
   const again = write(traceRun(snapshot, "place-order", sequential, STEPS));
+
   for (const id of [RESERVE, MAIL, ERP, CONFIRM]) assert.equal(row(again, "trace", id)?.verdict, "ok", id);
 });
 
 test("parallel: trace — a step of the group missing from a complete run fails; the next step before the group ends is not ordered", (t) => {
   const { snapshot, write } = traced(t);
+
   const missing: SpanSpec[] = [
     { id: "p", symbol: P, start: 1, end: 20 },
     { id: "r", symbol: RESERVE, parent: "p", start: 2, end: 3 },
     { id: "e", symbol: ERP, parent: "p", start: 4, end: 5 },
     { id: "c", symbol: CONFIRM, parent: "p", start: 6, end: 7 },
   ];
+
   const rows = write(traceRun(snapshot, "place-order", missing, STEPS));
   const mail = row(rows, "trace", MAIL);
   assert.equal(mail?.verdict, "fail", mail?.evidence);
   assert.match(mail!.evidence, /missing step in t1/);
   assert.equal(row(rows, "trace", CONFIRM)?.verdict, "ok");
+
   // `confirm` starts while `erp` still runs: the group has not finished.
   const early: SpanSpec[] = [
     { id: "p", symbol: P, start: 1, end: 20 },
@@ -284,18 +315,21 @@ test("parallel: trace — a step of the group missing from a complete run fails;
     { id: "e", symbol: ERP, parent: "p", start: 6, end: 9 },
     { id: "c", symbol: CONFIRM, parent: "p", start: 7, end: 8 },
   ];
+
   const overlap = row(write(traceRun(snapshot, "place-order", early, STEPS)), "trace", CONFIRM);
   assert.equal(overlap?.verdict, "unverified", overlap?.evidence);
   assert.match(overlap!.evidence, /starts before `app\.handlers\.erp` ends \(parallel\)/);
   // A step of the group that starts before the sibling before the group is out of order.
   const flow = "# flow place-order\n\n- trigger route app.server.placeOrder\n- step app.handlers.confirm\n- parallel\n  - step app.handlers.reserve\n  - step app.handlers.mail\n";
   const before = traced(t, { "place.md": flow });
+
   const spans: SpanSpec[] = [
     { id: "p", symbol: P, start: 1, end: 20 },
     { id: "r", symbol: RESERVE, parent: "p", start: 2, end: 3 },
     { id: "c", symbol: CONFIRM, parent: "p", start: 4, end: 5 },
     { id: "m", symbol: MAIL, parent: "p", start: 6, end: 7 },
   ];
+
   const ordered = before.write(traceRun(before.snapshot, "place-order", spans, STEPS));
   assert.equal(row(ordered, "trace", MAIL)?.verdict, "ok");
   assert.match(row(ordered, "trace", RESERVE)!.evidence, /out of order: starts before `app\.handlers\.confirm`/);
@@ -333,6 +367,7 @@ test("trigger: in Python a `main` entry point named as a route is K205; the plai
     "src/shop/__init__.py": "",
     "src/shop/cli.py": "def helper() -> int:\n    return 1\n\n\ndef main() -> int:\n    return helper()\n",
   };
+
   const dir = repo(t, { "cli.md": "# flow cli\n\n- trigger route shop.cli.main\n- step shop.cli.helper\n\n# flow plain\n\n- trigger shop.cli.main\n" }, {}, files);
   const { rows, diagnostics } = results(dir);
   const k205 = diagnostics.find((d) => d.code === "K205");
@@ -374,14 +409,17 @@ test("after / every: only a nested test checks a timer; every without a cron ent
     '  - test tests/payment.test.ts "sweeps"',
     "",
   ].join("\n");
+
   const dir = repo(t, { "payment.md": flow }, { tests: ".keylang/reports/*.json" });
   writeTree(dir, { "tests/payment.test.ts": "" });
   const snapshot = snapshotOf(dir);
   mkdirSync(join(dir, ".keylang/reports"), { recursive: true });
+
   const tests = [
     { file: "tests/payment.test.ts", name: "times out", status: "pass" },
     { file: "tests/payment.test.ts", name: "sweeps", status: "fail" },
   ];
+
   writeFileSync(join(dir, ".keylang/reports/r.json"), JSON.stringify({ schemaVersion: 1, snapshotId: snapshot, runId: "r1", tests }));
   const { rows } = results(dir);
   const bare = row(rows, "tests", "after 30m");
@@ -405,6 +443,7 @@ function evaluate(flow: string, nodes: string[], entries: FlowInput["entries"]):
   const { spec } = compileSpec(docs);
   const { index } = check(docs);
   const view = Object.fromEntries(nodes.map((id) => [id, { kind: "fn", file: "src/jobs.ts", line: 1 }]));
+
   return evaluateFlows(spec, index, { snapshotId: "s", nodes: view, edges: [], tests: null, traces: null, ...(entries ? { entries } : {}) });
 }
 
@@ -453,6 +492,7 @@ test("fmt: every new form has one canonical spelling and a second fmt changes no
     "- every @daily",
     "",
   ].join("\n");
+
   const canonical = [
     "# flow payment",
     "",
@@ -469,6 +509,7 @@ test("fmt: every new form has one canonical spelling and a second fmt changes no
     "- every @daily",
     "",
   ].join("\n");
+
   const dir = repo(t, { "payment.md": messy, "place.md": PLACE_ORDER });
   const path = "keylang/flows/payment.md";
   assert.equal(keylang(dir, ["fmt", "--check", path]).status, 1);
@@ -529,6 +570,7 @@ test("diagram: a parallel group is a split and a join gateway around its steps; 
   assert.ok(kinds.includes("timer after:9"), kinds.join(", "));
   const from = (id: string): string[] => diagram.edges.filter((edge) => edge.from === id).map((edge) => edge.to).sort();
   assert.deepEqual(from("parallel:4"), ["step:5", "step:6", "step:7"]);
+
   for (const step of ["step:5", "step:6", "step:7"]) assert.deepEqual(from(step), ["parallel:4:join"]);
   assert.deepEqual(from("parallel:4:join"), ["step:8"]);
 });

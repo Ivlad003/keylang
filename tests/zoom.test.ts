@@ -22,6 +22,7 @@ type Edge = { source: string; target: string | null };
 function degree(root: string, id: string): number {
   const index = JSON.parse(readFileSync(join(root, ".keylang/index.json"), "utf8")) as { edges: Edge[] };
   const inside = (other: string): boolean => other === id || other.startsWith(`${id}.`);
+
   return index.edges.filter((edge) => edge.target !== null && inside(edge.source) !== inside(edge.target)).length;
 }
 
@@ -73,6 +74,7 @@ test("zoom model: children, neighbors by depth, crumbs, the more row, and where 
     ["fn", "infrastructure.store.save", 1, false],
     ["fn", "presentation.terminal.checkout", 1, false],
   ]);
+
   // `↔ n` counts the edges of the snapshot with one end inside the node.
   for (const row of [...application.rows, ...purchase.rows]) assert.equal(row.edges, degree(root, row.id), row.id);
 
@@ -86,6 +88,7 @@ function session(root: string, cols = 120, rows = 30): { app: App; vt: VirtualTe
   const vt = new VirtualTerminal(cols, rows);
   const app = new App({ root, cols, rows });
   app.attach({ write: (ansi) => vt.feed(ansi) }, cols, rows);
+
   return { app, vt, send: (keys) => app.input(keys), text: () => vt.text(), lines: () => vt.lines() };
 }
 
@@ -97,6 +100,7 @@ async function esc(send: (keys: string) => void): Promise<void> {
 /** The map file of `layer` open in the view, the cursor on the line of `id`. */
 async function onMapLine(s: ReturnType<typeof session>, layer: string, id: string): Promise<void> {
   s.send(KEY.ctrlP);
+
   for (const ch of `open keylang/map/${layer}.md`) s.send(ch);
   s.send(KEY.enter);
   await s.app.idle();
@@ -184,6 +188,7 @@ test("tui zoom: z in the nav panel and the palette action; a row has its brief, 
   t.after(() => s.app.close());
   await s.app.idle();
   s.send(KEY.ctrlP);
+
   for (const ch of "zoom") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.mode, "zoom");
@@ -208,6 +213,7 @@ test("tui zoom: z in the nav panel and the palette action; a row has its brief, 
   t.after(() => narrow.app.close());
   await narrow.app.idle();
   narrow.send(KEY.ctrlP);
+
   for (const ch of "zoom") narrow.send(ch);
   narrow.send(KEY.enter);
   narrow.send("+");
@@ -224,9 +230,11 @@ test("tui zoom: s finds a node and lands on its level; e explains the selected n
   await s.app.idle();
   const before = files(root);
   s.send(KEY.ctrlP);
+
   for (const ch of "zoom") s.send(ch);
   s.send(KEY.enter);
   s.send("s");
+
   for (const ch of "save") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.mode, "zoom");
@@ -243,13 +251,17 @@ test("tui zoom: s finds a node and lands on its level; e explains the selected n
 /** Every file under `root` with its bytes, sorted. */
 function files(root: string): string {
   const out: string[] = [];
+
   const walk = (dir: string): void => {
     for (const entry of readdirSync(join(root, dir), { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
       const rel = dir === "" ? entry.name : `${dir}/${entry.name}`;
+
       if (entry.isDirectory()) walk(rel);
       else out.push(`${rel} ${readFileSync(join(root, rel), "utf8")}`);
     }
   };
+
   walk("");
+
   return out.join("\n");
 }

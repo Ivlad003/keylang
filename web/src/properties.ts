@@ -54,6 +54,7 @@ export class Properties {
     this.cell = cell;
     const value: unknown = cell?.getValue();
     const body: Node[] = [];
+
     if (value && typeof value === "object" && "kind" in value && cell?.isVertex()) body.push(...this.shapeFields(cell, value as Shape));
     else if (value && typeof value === "object" && "kind" in value && cell?.isEdge()) body.push(...this.linkFields(cell, value as Link));
     else body.push(make("p", { className: "empty", text: "Виберіть фігуру чи з'єднання: тут їхні ID, вид, сигнатура, тести й опис. Нове з'єднання — тягніть від стрілки, що з'являється над фігурою в «чернетці»." }));
@@ -67,12 +68,15 @@ export class Properties {
 
   private field(label: string, input: HTMLElement, note?: string): HTMLElement {
     const row = make("label", { className: "prop" }, make("span", { className: "prop-name", text: label }), input);
+
     if (note) row.append(make("span", { className: "prop-note", text: note }));
+
     return row;
   }
 
   private error(text: string | null): void {
     const box = this.root.querySelector<HTMLElement>(".prop-error");
+
     if (box) {
       box.textContent = text ?? "";
       box.hidden = !text;
@@ -84,10 +88,13 @@ export class Properties {
     // «з коду» changes only notes; a note's text is layout.
     const locked = code && shape.kind !== "note";
     const out: Node[] = [make("h2", { text: SHAPE_NAMES[shape.kind] ?? shape.kind }), make("p", { className: "prop-key", text: shape.key })];
+
     if (locked) out.push(make("p", { className: "prop-hint", text: "«з коду»: тут змінюються лише розкладка й примітки; зміст — у «чернетці»." }));
+
     const apply = (patch: Parameters<PanelEditor["updateShape"]>[1]): void => {
       const refused = this.editor.updateShape(cell, patch);
       this.error(refused);
+
       if (!refused) this.show(cell);
     };
 
@@ -118,6 +125,7 @@ export class Properties {
       const component = make("select");
       component.id = "prop-component";
       component.disabled = locked;
+
       for (const entry of SYSTEM_PALETTE) {
         if (!entry.component) continue;
         const option = make("option", { text: `${entry.component} — ${entry.text}` });
@@ -125,6 +133,7 @@ export class Properties {
         option.selected = entry.component === shape.component;
         component.append(option);
       }
+
       component.addEventListener("change", () => apply({ component: component.value }));
       out.push(this.field("вид", component));
       const tech = make("input");
@@ -138,41 +147,50 @@ export class Properties {
       const kind = make("select");
       kind.id = "prop-kind";
       kind.disabled = locked;
+
       for (const choice of SHAPE_CHOICES) {
         const option = make("option", { text: SHAPE_NAMES[choice] ?? choice });
         option.value = choice;
         option.selected = choice === shape.kind;
         kind.append(option);
       }
+
       kind.addEventListener("change", () => apply({ kind: kind.value as ShapeKind }));
       out.push(this.field("вид", kind));
     }
+
     if (shape.kind === "start") {
       const trigger = make("select");
       trigger.id = "prop-trigger";
       trigger.disabled = locked;
+
       for (const choice of TRIGGERS) {
         const option = make("option", { text: choice });
         option.value = choice;
         option.selected = choice === shape.trigger;
         trigger.append(option);
       }
+
       trigger.addEventListener("change", () => apply({ trigger: trigger.value }));
       out.push(this.field("тригер", trigger));
     }
+
     if (shape.kind === "parallel") {
       const role = make("select");
       role.id = "prop-role";
       role.disabled = locked;
+
       for (const choice of ["split", "join"] as const) {
         const option = make("option", { text: choice === "split" ? "розгалуження" : "злиття" });
         option.value = choice;
         option.selected = choice === shape.role;
         role.append(option);
       }
+
       role.addEventListener("change", () => apply({ role: role.value as "split" | "join" }));
       out.push(this.field("роль", role));
     }
+
     if (NAMED.has(shape.kind) && shape.kind !== "lane" && shape.kind !== "layer") {
       const planned = shape.id.startsWith("planned:");
       const signature = make("input");
@@ -196,12 +214,15 @@ export class Properties {
           .split("\n")
           .map((line) => line.trim())
           .filter((line) => line !== "");
+
         const bad = lines.find((line) => !TEST_LINE.test(line));
+
         if (bad !== undefined) return this.error(`не рядок тесту: ${bad} — потрібно test <файл> "<назва>"`);
         apply({ tests: lines });
       });
       out.push(this.field("тести", tests, 'по рядку: test <файл> "<назва>"'));
     }
+
     if (shape.kind !== "group") {
       const description = make("textarea");
       description.id = "prop-description";
@@ -211,6 +232,7 @@ export class Properties {
       description.addEventListener("change", () => apply({ description: description.value }));
       out.push(this.field(shape.kind === "note" ? "текст" : "опис", description));
     }
+
     if (shape.kind !== "group" && shape.kind !== "lane") {
       const colour = make("input");
       colour.type = "color";
@@ -219,36 +241,45 @@ export class Properties {
       colour.addEventListener("change", () => apply({ colour: colour.value }));
       out.push(this.field("колір", colour, "розкладка: keylang/diagrams/"));
     }
+
     if (shape.status !== null) out.push(make("p", { className: "prop-hint", text: shape.status === "rejected" ? `не прийнято: пропозицію для ${shape.proposed} не злито — фігура лишається на діаграмі, у специфікації її немає` : `очікує злиття: ${shape.proposed} (MERGE чи keylang proposals accept)` }));
+
     if (shape.reason) out.push(make("h3", { text: "чому маршрут не доведено" }), make("p", { className: "prop-reason", text: shape.reason }));
+
     if (shape.verdict) out.push(make("p", { className: "prop-key", text: `вердикт: ${shape.verdict}` }));
     const error = make("p", { className: "prop-error" });
     error.id = "prop-error";
     error.hidden = true;
     error.setAttribute("role", "alert");
     out.push(error);
+
     return out;
   }
 
   private linkFields(cell: Cell, link: Link): Node[] {
     const locked = this.editor.mode() === "code";
     const out: Node[] = [make("h2", { text: "з'єднання" }), make("p", { className: "prop-key", text: link.key })];
+
     if (locked) out.push(make("p", { className: "prop-hint", text: "«з коду»: з'єднання моделі лише згинаються; зміст — у «чернетці»." }));
     const kind = make("select");
     kind.id = "prop-link-kind";
     kind.disabled = locked;
+
     for (const [value, text] of Object.entries(LINK_NAMES)) {
       const option = make("option", { text });
       option.value = value;
       option.selected = value === link.kind;
       kind.append(option);
     }
+
     const apply = (patch: Parameters<PanelEditor["updateLink"]>[1]): void => {
       const refused = this.editor.updateLink(cell, patch);
       this.error(refused);
+
       if (!refused) this.show(cell);
       else kind.value = link.kind;
     };
+
     kind.addEventListener("change", () => apply({ kind: kind.value as LinkKind }));
     out.push(this.field("значення", kind));
     const label = make("input");
@@ -262,6 +293,7 @@ export class Properties {
     error.hidden = true;
     error.setAttribute("role", "alert");
     out.push(error);
+
     return out;
   }
 
@@ -269,6 +301,7 @@ export class Properties {
   private suggest(prefix: string): void {
     const views = this.views();
     const known = new Set<string>([...(views?.layers ?? []), ...(views?.entries ?? []).map((e) => e.id), ...(views?.flowList ?? []).flatMap((f) => f.ids ?? [])]);
+
     const fill = (ids: Iterable<string>): void => {
       const options = [...new Set(ids)]
         .filter((id) => id.startsWith(prefix))
@@ -277,10 +310,13 @@ export class Properties {
         .map((id) => {
           const option = make("option");
           option.value = id;
+
           return option;
         });
+
       this.ids.replaceChildren(...options);
     };
+
     fill(known);
     const ticket = ++this.lookup;
     window.setTimeout(() => {

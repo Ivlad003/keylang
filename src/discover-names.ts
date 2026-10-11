@@ -27,6 +27,7 @@ import { compareText } from "./span.ts";
 
 /** `algo`: no model, the offline descriptions only; `llm`: a model is required; `hybrid`: a model when there is one. */
 export const NAME_MODES = ["algo", "llm", "hybrid"] as const;
+
 export type NameMode = (typeof NAME_MODES)[number];
 
 export function isNameMode(value: string): value is NameMode {
@@ -35,6 +36,7 @@ export function isNameMode(value: string): value is NameMode {
 
 /** The domains a model picks from, in the README's order; it may propose another, which goes before `Інше`. */
 export const DOMAINS = ["Каталог", "Кошик", "Оформлення", "Оплата", "Доставка", "Повернення", "Інтеграції", "Адміністрування", "Інше"] as const;
+
 const OTHER = "Інше";
 
 /** The README of the view, beside its `<layer>.md` files. */
@@ -67,7 +69,9 @@ export interface NameGroup {
 /** The flows of the discovery by the layer of their trigger, layers and flows sorted. */
 export function nameGroups(flows: readonly DiscoveredFlow[]): NameGroup[] {
   const by = new Map<string, DiscoveredFlow[]>();
+
   for (const flow of flows) by.set(flow.layer, [...(by.get(flow.layer) ?? []), flow]);
+
   return [...by.keys()].sort(compareText).map((layer) => ({ layer, flows: by.get(layer)!.sort((a, b) => compareText(a.name, b.name)) }));
 }
 
@@ -80,13 +84,16 @@ export function nameGroups(flows: readonly DiscoveredFlow[]): NameGroup[] {
 export function processBaseline(snapshot: AnalysisSnapshot, flows: readonly Pick<DiscoveredFlow, "name" | "steps">[]): string {
   const lines = [...new Set(flows.flatMap((flow) => flow.steps))].sort(compareText).map((id) => `${id} ${snapshotBaseline(snapshot, id) ?? "-"}`);
   const names = flows.map((flow) => flow.name).sort(compareText);
+
   return createHash("sha256").update([`flows ${names.join(",")}`, ...lines].join("\n")).digest("hex");
 }
 
 /** A saved process whose flows are gone or whose baseline changed. */
 export function isStaleProcess(snapshot: AnalysisSnapshot, byName: ReadonlyMap<string, DiscoveredFlow>, process: BusinessProcess): boolean {
   const flows = process.flows.map((name) => byName.get(name));
+
   if (flows.some((flow) => flow === undefined)) return true;
+
   return processBaseline(snapshot, flows as DiscoveredFlow[]) !== process.closure;
 }
 
@@ -107,8 +114,11 @@ export function planNames(snapshot: AnalysisSnapshot, flows: readonly Discovered
   const staleLayers = new Set(stale.map((p) => p.layer));
   const covered = new Set(saved.filter((p) => !stale.includes(p)).flatMap((p) => p.flows));
   let groups = nameGroups(flows).filter((group) => staleLayers.has(group.layer) || (!options.stale && group.flows.some((flow) => !covered.has(flow.name))));
+
   if (options.layer !== undefined) groups = groups.filter((group) => group.layer === options.layer);
+
   if (options.limit !== undefined) groups = groups.slice(0, options.limit);
+
   return { groups, stale };
 }
 
@@ -124,10 +134,13 @@ export function namesRequest(snapshot: AnalysisSnapshot, group: NameGroup, optio
   const flows = group.flows.map((flow) => {
     const steps = flow.steps.slice(1, MAX_STEPS + 1).map((id) => {
       const e = explanationOf(snapshot, options.briefs, id);
+
       return `  - \`${id}\`${e ? `: ${e.text}` : ""}`;
     });
+
     if (flow.steps.length - 1 > MAX_STEPS) steps.push(`  … (${flow.steps.length - 1 - MAX_STEPS} more not shown)`);
     const trigger = explanationOf(snapshot, options.briefs, flow.trigger);
+
     return [
       `Flow ${flow.name} — ${flow.entry.kind} ${flow.entry.label}, trigger \`${flow.trigger}\`${trigger && !flow.description ? `: ${trigger.text}` : ""}`,
       ...(flow.description ? [`  described in the code: ${flow.description}`] : []),
@@ -135,7 +148,9 @@ export function namesRequest(snapshot: AnalysisSnapshot, group: NameGroup, optio
       ...(flow.holes > 0 ? [`  ${flow.holes} call(s) on its route keylang did not resolve`] : []),
     ].join("\n");
   });
+
   const prompt = [`Layer: ${group.layer}`, `Discovered flows (${group.flows.length}):\n${flows.join("\n\n")}`].join("\n\n");
+
   const system = [
     "You group the discovered flows of one layer of a codebase into business processes, for a person new to the repository.",
     `Write names and descriptions in the language with code \`${options.lang}\`.`,
@@ -146,12 +161,14 @@ export function namesRequest(snapshot: AnalysisSnapshot, group: NameGroup, optio
     "flows: the names of the flows given that belong to the process, exactly as written; every flow in one process.",
     "Refer to code only by the IDs given, in backticks. Never invent a flow name or an ID.",
   ].join("\n");
+
   return { system, prompt, maxTokens: 4096 };
 }
 
 /** A rough size of the requests for `--dry-run`: about four characters a token, about 300 tokens out per process group. */
 export function estimateNameTokens(requests: readonly LlmRequest[]): { input: number; output: number } {
   const chars = requests.reduce((sum, r) => sum + r.system.length + r.prompt.length, 0);
+
   return { input: Math.ceil(chars / 4), output: requests.length * 300 };
 }
 
@@ -168,27 +185,34 @@ export type AnsweredProcess = Omit<BusinessProcess, "agent" | "date" | "closure"
 export function parseNamesAnswer(snapshot: AnalysisSnapshot, group: NameGroup, answer: string): { processes: AnsweredProcess[]; dropped: string[]; unknownIds: string[] } | { error: string } {
   const value = jsonOf(answer);
   const list = Array.isArray(value) ? value : isRecord(value) && Array.isArray(value.processes) ? value.processes : null;
+
   if (list === null) return { error: "the answer is not JSON with a `processes` list" };
   const names = new Set(group.flows.map((flow) => flow.name));
   const taken = new Set<string>();
   const dropped = new Set<string>();
   const processes: AnsweredProcess[] = [];
   const texts: string[] = [];
+
   for (const item of list) {
     if (!isRecord(item)) continue;
     const name = oneLine(item.name);
+
     if (name === "") continue;
     const flows: string[] = [];
+
     for (const raw of Array.isArray(item.flows) ? item.flows : []) {
       const flow = typeof raw === "string" ? raw.trim() : "";
+
       if (!names.has(flow)) {
         if (flow !== "") dropped.add(flow);
         continue;
       }
+
       if (taken.has(flow)) continue;
       taken.add(flow);
       flows.push(flow);
     }
+
     const process: AnsweredProcess = {
       name: name.replace(/^#+\s*/, ""),
       description: oneLine(item.description),
@@ -197,9 +221,12 @@ export function parseNamesAnswer(snapshot: AnalysisSnapshot, group: NameGroup, a
       outputs: entities(item.outputs),
       flows,
     };
+
     texts.push(process.name, process.description, ...process.inputs, ...process.outputs);
+
     if (flows.length > 0) processes.push(process);
   }
+
   return { processes, dropped: [...dropped].sort(compareText), unknownIds: unknownIdsIn(snapshot, texts.join("\n")) };
 }
 
@@ -207,10 +234,13 @@ export function parseNamesAnswer(snapshot: AnalysisSnapshot, group: NameGroup, a
 function unknownIdsIn(snapshot: AnalysisSnapshot, text: string): string[] {
   const layers = new Set(Object.keys(snapshot.nodes).map((id) => id.split(".")[0]!));
   const out = new Set<string>();
+
   for (const m of text.matchAll(/`([\p{L}_$][\p{L}\p{N}_$-]*(?:\.[\p{L}_$][\p{L}\p{N}_$-]*)+)`/gu)) {
     const id = m[1]!;
+
     if (layers.has(id.split(".")[0]!) && snapshot.nodes[id] === undefined) out.add(id);
   }
+
   return [...out].sort(compareText);
 }
 
@@ -218,7 +248,9 @@ function jsonOf(answer: string): unknown {
   const text = answer.trim().replace(/^```[a-z]*\s*\n([\s\S]*)\n```$/i, "$1");
   const from = Math.min(...[text.indexOf("{"), text.indexOf("[")].filter((i) => i >= 0));
   const to = Math.max(text.lastIndexOf("}"), text.lastIndexOf("]"));
+
   if (!Number.isFinite(from) || to < from) return undefined;
+
   try {
     return JSON.parse(text.slice(from, to + 1)) as unknown;
   } catch {
@@ -255,6 +287,7 @@ const PROVENANCE = /^<!-- keylang:llm model=(\S+) date=(\S+) closure=(\S*) layer
 /** Domains in the README's order: the known ones, then others by name, `Інше` last. */
 function domainOrder(a: string, b: string): number {
   const rank = (d: string): number => (d === OTHER ? 2 : (DOMAINS as readonly string[]).includes(d) ? 0 : 1);
+
   return rank(a) - rank(b) || (DOMAINS as readonly string[]).indexOf(a) - (DOMAINS as readonly string[]).indexOf(b) || compareText(a, b);
 }
 
@@ -266,31 +299,41 @@ function domainOrder(a: string, b: string): number {
 export function renderProcesses(processes: readonly BusinessProcess[], fileOf: (flow: string) => string | null): string {
   const lines = [DISCOVER_MARK, "", "# Business processes", ""];
   const domains = [...new Set(processes.map((p) => p.domain))].sort(domainOrder);
+
   if (domains.length === 0) lines.push("No process yet: `keylang flows discover --names` asks a model to group the discovered flows.", "");
+
   for (const domain of domains) {
     lines.push(`## ${domain}`, "");
     const own = processes.filter((p) => p.domain === domain).sort((a, b) => compareText(a.name, b.name) || compareText(a.layer, b.layer));
+
     for (const p of own) {
       lines.push(`### ${p.name}`, "", `<!-- keylang:llm model=${p.agent} date=${p.date} closure=${p.closure} layer=${p.layer} -->`, "");
+
       if (p.description !== "") lines.push(proseLine(p.description), "");
+
       const links = p.flows.map((flow) => {
         const file = fileOf(flow);
+
         return file === null ? flow : `[${flow}](${file}#${flowAnchor(flow)})`;
       });
+
       lines.push(`- in: ${p.inputs.length > 0 ? p.inputs.join(", ") : "—"}`, `- out: ${p.outputs.length > 0 ? p.outputs.join(", ") : "—"}`, `- flows: ${links.join(", ")}`, "");
     }
   }
+
   return `${lines.join("\n").trimEnd()}\n`;
 }
 
 /** The processes of a README `renderProcesses` wrote; a file without the generated marker has none. */
 export function parseProcesses(text: string): BusinessProcess[] {
   const lines = text.replace(/\r\n/g, "\n").split("\n");
+
   if (lines[0] !== DISCOVER_MARK) return [];
   const out: BusinessProcess[] = [];
   let domain = OTHER;
   let current: BusinessProcess | null = null;
   const list = (rest: string): string[] => (rest === "—" ? [] : rest.split(", ").filter((item) => item !== ""));
+
   for (const line of lines) {
     if (line.startsWith("## ")) {
       domain = line.slice(3).trim();
@@ -300,6 +343,7 @@ export function parseProcesses(text: string): BusinessProcess[] {
       out.push(current);
     } else if (current !== null) {
       const provenance = PROVENANCE.exec(line);
+
       if (provenance) {
         current.agent = provenance[1]!;
         current.date = provenance[2]!;
@@ -311,6 +355,7 @@ export function parseProcesses(text: string): BusinessProcess[] {
       else if (line.trim() !== "") current.description = current.description === "" ? unproseLine(line) : `${current.description} ${unproseLine(line)}`;
     }
   }
+
   return out.filter((p) => p.layer !== "");
 }
 
@@ -322,6 +367,7 @@ export function processesPath(specDir: string): string {
 /** The processes saved under `<dir>/flows-discovered/README.md` of `root`; none without the file. */
 export function readProcesses(root: string, specDir: string): BusinessProcess[] {
   const file = join(root, processesPath(specDir));
+
   return existsSync(file) ? parseProcesses(readFileSync(file, "utf8")) : [];
 }
 
@@ -334,12 +380,16 @@ export function processViews(snapshot: AnalysisSnapshot, spec: SpecIR, processes
   if (processes.length === 0) return [];
   const flows = new Map(discoverFlows(snapshot, specifiedTriggers(spec.flows)).flows.map((flow) => [flow.name, flow]));
   const out: DiagramProcess[] = [];
+
   for (const p of processes) {
     const found = p.flows.flatMap((name) => {
       const flow = flows.get(name);
+
       return flow ? [{ name, trigger: flow.trigger, steps: firstLevelSteps(flow.text).filter((id) => snapshot.nodes[id]?.layer !== EXTERNAL) }] : [];
     });
+
     if (found.length > 0) out.push({ name: p.name, domain: p.domain, flows: found });
   }
+
   return out;
 }

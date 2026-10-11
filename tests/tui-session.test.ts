@@ -38,6 +38,7 @@ import { VirtualTerminal } from "./vt.ts";
 function lineOf(lines: readonly string[], text: string): string {
   const found = lines.find((line) => line.includes(text));
   assert.ok(found, `no line with ${text}:\n${lines.join("\n")}`);
+
   return found;
 }
 
@@ -47,7 +48,9 @@ test("tui: a step with ID and static but no trace is ◌, with the channels show
   await s.app.idle();
   const step = lineOf(s.lines(), "- step application.purchase.buy");
   assert.equal(step[0], "◌", step);
+
   for (const line of s.lines().filter((l) => /- (step|trigger) /.test(l))) assert.notEqual(line[0], "✓", `partial evidence shown as ✓: ${line}`);
+
   for (let i = 0; i < 5; i++) s.send(KEY.down);
   const detail = s.lines()[s.lines().findIndex((line) => line.includes("- step application.purchase.buy")) + 1]!;
   assert.match(detail, /└ ID ✓ {2}static ✓ {2}tests — {2}trace ◌ {2}planned — {2}· snapshot [0-9a-f]{8} /);
@@ -68,11 +71,15 @@ test("tui: F5 reindexes in the background; old marks are dimmed and keys still w
   const root = checkoutRepo(t);
   const gate: { release: (() => void) | null } = { release: null };
   let calls = 0;
+
   const analyzer = async (request: AnalysisRequest): Promise<Analysis> => {
     calls++;
+
     if (calls > 1) await new Promise<void>((done) => (gate.release = done));
+
     return analyze(request);
   };
+
   const s = session(root, { analyzer });
   t.after(() => s.app.close());
   await s.app.idle();
@@ -97,13 +104,17 @@ test("tui: a superseded analysis is dropped", async (t) => {
   const root = checkoutRepo(t);
   const gates: (() => void)[] = [];
   let calls = 0;
+
   const analyzer = async (request: AnalysisRequest): Promise<Analysis> => {
     const call = ++calls;
+
     if (call > 1) await new Promise<void>((done) => gates.push(done));
     const result = await analyze(request);
+
     // The second (superseded) result claims a failure that the third does not.
     return call === 2 ? { ...result, verdicts: result.verdicts.map((v) => ({ ...v, verdict: "fail" as const })) } : result;
   };
+
   const s = session(root, { analyzer });
   t.after(() => s.app.close());
   await s.app.idle();
@@ -119,11 +130,15 @@ test("tui: a superseded analysis is dropped", async (t) => {
 test("tui: a failed F5 keeps the old report outdated with a persistent reason", async (t) => {
   const root = checkoutRepo(t);
   let calls = 0;
+
   const analyzer = async (request: AnalysisRequest): Promise<Analysis> => {
     calls++;
+
     if (calls > 1) throw new Error("no specs: boom");
+
     return analyze(request);
   };
+
   const s = session(root, { analyzer });
   t.after(() => s.app.close());
   await s.app.idle();
@@ -135,6 +150,7 @@ test("tui: a failed F5 keeps the old report outdated with a persistent reason", 
   assert.equal(s.app.state.outdated, true, "the old verdict is no longer current");
   assert.match(s.app.state.error ?? "", /boom/);
   assert.match(s.lines().at(-1)!, /outdated.*boom/);
+
   // Keys must neither restore the old verdict nor clear the persistent reason.
   for (let i = 0; i < 3; i++) s.send(KEY.down);
   assert.equal(s.app.state.message, null, "the transient message is gone");
@@ -146,11 +162,15 @@ test("tui: a failed F5 keeps the old report outdated with a persistent reason", 
 test("tui: a successful F5 after a failure clears the reason and restores the marks", async (t) => {
   const root = checkoutRepo(t);
   let calls = 0;
+
   const analyzer = async (request: AnalysisRequest): Promise<Analysis> => {
     calls++;
+
     if (calls === 2) throw new Error("boom");
+
     return analyze(request);
   };
+
   const s = session(root, { analyzer });
   t.after(() => s.app.close());
   await s.app.idle();
@@ -170,15 +190,19 @@ test("tui: a late failure of a superseded generation cannot spoil the new result
   const root = checkoutRepo(t);
   const pending: { call: number; settle: () => void; fail: (error: Error) => void }[] = [];
   let calls = 0;
+
   const analyzer = (request: AnalysisRequest): Promise<Analysis> => {
     const call = ++calls;
+
     if (call > 1) {
       return new Promise<Analysis>((resolve, reject) => {
         pending.push({ call, settle: () => resolve(analyze(request)), fail: reject });
       });
     }
+
     return analyze(request);
   };
+
   const s = session(root, { analyzer });
   t.after(() => s.app.close());
   await s.app.idle();
@@ -197,9 +221,11 @@ test("tui: a late failure of a superseded generation cannot spoil the new result
 
 test("tui: a failed first analysis leaves no phantom success and the session answers keys", async (t) => {
   const root = checkoutRepo(t);
+
   const analyzer = async (): Promise<Analysis> => {
     throw new Error("no specs");
   };
+
   const s = session(root, { analyzer });
   t.after(() => s.app.close());
   await s.app.idle();
@@ -229,6 +255,7 @@ test("tui: hover by mouse and by K shows signature, code, and flows", async (t) 
   assert.match(shown, /flows: checkout/);
   s.send(mouseMove(1, 2));
   assert.doesNotMatch(s.text(), /export function buy/);
+
   for (let i = 0; i < 6; i++) s.send(KEY.down);
   s.send("K");
   assert.match(s.text(), /fn domain\.order\.create/);
@@ -238,6 +265,7 @@ test("tui: K on a line without an ID shows the role of the line under its parent
   const s = session(checkoutRepo(t, { [FLOW_PATH]: `${CHECKOUT_FLOW}- invariant the order is saved once\n` }));
   t.after(() => s.app.close());
   await s.app.idle();
+
   for (let i = 0; i < 8; i++) s.send(KEY.down);
   s.send("K");
   assert.ok(s.app.state.hover, s.app.state.message ?? "");
@@ -248,6 +276,7 @@ test("tui: Enter opens the code in the built-in viewer, Ctrl+O comes back, Alt+E
   const s = session(checkoutRepo(t));
   t.after(() => s.app.close());
   await s.app.idle();
+
   for (let i = 0; i < 5; i++) s.send(KEY.down);
   s.send(KEY.enter);
   assert.equal(s.app.state.mode, "code");
@@ -270,6 +299,7 @@ test("tui: the navigation panel lists layers, modules, flows and rules; Enter op
   t.after(() => s.app.close());
   await s.app.idle();
   const text = s.text();
+
   for (const label of ["NAVIGATION", "LAYERS", "▾ domain", "▸ order", "FLOWS", "checkout", "RULES", "layers domain < infra"]) assert.ok(text.includes(label), `${label} missing:\n${text}`);
   assert.match(lineOf(s.lines(), "  checkout "), /◌\s*$/);
   const order = locate(s.lines(), "▸ order");
@@ -313,6 +343,7 @@ test("tui: an unknown step id typed in the editor shows K001 and a hint at once"
   const s = session(root);
   t.after(() => s.app.close());
   await s.app.idle();
+
   for (let i = 0; i < 6; i++) s.send(KEY.down);
   s.send("i");
   assert.equal(s.app.state.mode, "edit");
@@ -337,10 +368,12 @@ test("tui: completion after `step` offers callables and Tab inserts one", async 
   const s = session(root);
   t.after(() => s.app.close());
   await s.app.idle();
+
   for (let i = 0; i < 7; i++) s.send(KEY.down);
   s.send("i");
   s.send(KEY.end);
   s.send(KEY.enter);
+
   // Enter on an item continues the list: the new line already has `- `.
   for (const ch of "step infra") s.send(ch);
   assert.ok(s.app.state.completion, "completion open");
@@ -356,10 +389,12 @@ test("tui: completion after `step` offers callables and Tab inserts one", async 
 
 test("tui: MERGE decisions on model lines are counted in .keylang/stats.json", async (t) => {
   const root = checkoutRepo(t);
+
   const proposed = CHECKOUT_FLOW.replace("Checkout from the terminal.", "Checkout from the terminal.\n\n- step infrastructure.store.save <!-- keylang:llm model=m status=llm-only -->").replace(
     "  - step infrastructure.store.save\n",
     "  - step infrastructure.store.save\n- emits order.created <!-- keylang:algo status=algo-only -->\n",
   );
+
   mkdirSync(join(root, ".keylang/proposals/keylang/flows"), { recursive: true });
   writeFileSync(join(root, ".keylang/proposals/keylang/flows/checkout.md"), proposed);
   const s = session(root, { cols: 150 });
@@ -443,6 +478,7 @@ test("tui: Ctrl+G turns free text into items through MERGE, keeping the text", a
   s.send(KEY.down);
   s.send("i");
   s.send(KEY.end);
+
   for (const ch of " Then buy is called. It emits order.paid.") s.send(ch);
   s.send("\x1b");
   await sleep(40);
@@ -469,6 +505,7 @@ test("tui: reading mode renders Markdown and keeps the marks; ? explains the cod
   assert.match(s.text(), /FLOW CHECKOUT/);
   assert.match(lineOf(s.lines(), "• step domain.order.missing"), /^✗/);
   s.send("v");
+
   for (let i = 0; i < 6; i++) s.send(KEY.down);
   s.send("?");
   assert.match(s.text(), /K001: A reference names an id that is not declared/);
@@ -483,14 +520,17 @@ test("tui: palette and search", async (t) => {
   t.after(() => s.app.close());
   await s.app.idle();
   s.send(":");
+
   for (const ch of "rules") s.send(ch);
   assert.match(s.text(), /Open keylang\/rules\.md/);
   s.send(KEY.enter);
   assert.equal(s.app.state.current, "keylang/rules.md");
   s.send(":");
+
   for (const ch of "checkout") s.send(ch);
   s.send(KEY.enter);
   s.send("/");
+
   for (const ch of "store") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.cursor.line, 7);
@@ -510,6 +550,7 @@ test("tui: the palette runs doctor by id; F6 keeps the history and the report ma
   s.send(KEY.ctrlP);
   assert.equal(s.app.state.prompt?.kind, "palette");
   assert.equal(s.app.state.prompt!.text, "");
+
   // The CLI alias and the visible name find the same action.
   for (const ch of "doctor") s.send(ch);
   assert.match(s.text(), /Environment diagnostics/);
@@ -518,6 +559,7 @@ test("tui: the palette runs doctor by id; F6 keeps the history and the report ma
   assert.equal(s.app.state.prompt, null);
   assert.equal(s.app.state.mode, "edit");
   s.send(KEY.ctrlP);
+
   for (const ch of "diagnostics") s.send(ch);
   assert.match(s.text(), /Environment diagnostics/);
   s.send(KEY.enter);
@@ -552,6 +594,7 @@ test("tui: F6 reruns a record with the same parameters", async (t) => {
   t.after(() => s.app.close());
   await s.app.idle();
   s.send(KEY.ctrlP);
+
   for (const ch of "doctor") s.send(ch);
   s.send(KEY.enter);
   await s.app.idle();
@@ -568,15 +611,19 @@ test("tui: a slow doctor does not block the UI, and a second run is refused", as
   const root = checkoutRepo(t);
   let release: (() => void) | null = null;
   let calls = 0;
+
   const operations = async (request: OperationRequest, context: OperationContext): Promise<OperationResult> => {
     calls++;
     await new Promise<void>((done) => (release = done));
+
     return runOperation(request, context);
   };
+
   const s = session(root, { operations });
   t.after(() => s.app.close());
   await s.app.idle();
   s.send(KEY.ctrlP);
+
   for (const ch of "doctor") s.send(ch);
   s.send(KEY.enter);
   await sleep(30);
@@ -591,6 +638,7 @@ test("tui: a slow doctor does not block the UI, and a second run is refused", as
   assert.equal(s.lines().length, 16);
   // A second start does not create a second job; the reason is visible.
   s.send(KEY.ctrlP);
+
   for (const ch of "doctor") s.send(ch);
   assert.match(s.text(), /unavailable: an operation is already running|an operation is already running/);
   s.send(KEY.enter);
@@ -623,6 +671,7 @@ test("tui: in MERGE the palette shows reasons for blocked actions and still runs
   assert.equal(s.app.state.mode, "merge");
   // An action that would drop the merge is listed with its reason and does not run.
   s.send(KEY.ctrlP);
+
   for (const ch of "insert") s.send(ch);
   // In MERGE `i` is no key of Edit: the label does not advertise it.
   assert.match(s.text(), / Edit {2}/);
@@ -632,6 +681,7 @@ test("tui: in MERGE the palette shows reasons for blocked actions and still runs
   assert.match(s.lines().at(-2)!, /Edit: finish the merge first/);
   // The independent read-only doctor runs, and the merge stays.
   s.send(KEY.ctrlP);
+
   for (const ch of "doctor") s.send(ch);
   s.send(KEY.enter);
   await s.app.idle();
@@ -643,15 +693,18 @@ test("tui: in MERGE the palette shows reasons for blocked actions and still runs
 test("tui: a failed operation is a visible record, and quitting is still code 0", async (t) => {
   const root = checkoutRepo(t);
   let quit = 0;
+
   const operations = async (): Promise<OperationResult> => {
     throw new Error("adapter exploded");
   };
+
   const vt = new VirtualTerminal(100, 24);
   const app = new App({ root, cols: 100, rows: 24, operations, onQuit: () => quit++ });
   app.attach({ write: (ansi) => vt.feed(ansi) }, 100, 24);
   t.after(() => app.close());
   await app.idle();
   app.input(KEY.ctrlP);
+
   for (const ch of "doctor") app.input(ch);
   app.input(KEY.enter);
   await app.idle();
@@ -677,6 +730,7 @@ test("tui: help lists the registry keys and the palette actions", async (t) => {
   assert.match(s.text(), /Actions · Ctrl\+P or : finds each by its name or CLI alias:/);
   assert.match(s.text(), /Check again · F5/);
   assert.match(s.text(), /↑↓ PgUp PgDn scroll · any other key closes/);
+
   for (let i = 0; i < 400; i++) s.send(KEY.down);
   assert.equal(s.app.state.help, true);
   assert.match(s.text(), /Open <file> for each of the \d+ file\(s\)/);
@@ -685,6 +739,7 @@ test("tui: help lists the registry keys and the palette actions", async (t) => {
   assert.equal(s.app.state.help, false);
   // The palette action "About keylang" shows the version.
   s.send(KEY.ctrlP);
+
   for (const ch of "version") s.send(ch);
   s.send(KEY.enter);
   assert.match(s.lines().at(-2)!, /keylang \d+\.\d+\.\d+/);
@@ -809,6 +864,7 @@ test("tui: findings of a dirty buffer equal `check --format json` once it is sav
   await s.app.idle();
   // The dirty text denies a dependency the code has: the overlay analysis reports the K102 before any save.
   s.send(KEY.ctrlP);
+
   for (const ch of "open keylang/rules.md") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.current, "keylang/rules.md");
@@ -817,6 +873,7 @@ test("tui: findings of a dirty buffer equal `check --format json` once it is sav
   s.send(KEY.down);
   s.send(KEY.end);
   s.send(KEY.enter);
+
   for (const ch of "deny application infrastructure") s.send(ch);
   await sleep(40);
   await s.app.idle();
@@ -868,7 +925,7 @@ test("tui: Enter on a finding lands on the right cluster after Unicode character
   assert.equal(s.app.state.current, "keylang/wiring.md");
   assert.equal(s.app.state.cursor.line, 4);
   const line = s.app.state.buffers.get("keylang/wiring.md")!.text.split("\n")[4]!;
-  assert.equal(s.app.state.cursor.col, [...line.slice(0, line.indexOf("infrastructure.store.missing"))].length);
+  assert.equal(s.app.state.cursor.col, Array.from(line.slice(0, line.indexOf("infrastructure.store.missing"))).length);
   assert.notEqual(s.app.state.cursor.col, line.indexOf("infrastructure.store.missing"), "the fixture must tell UTF-16 from code points");
   // Esc while editing the target leaves editing first; the next Esc returns to the list.
   s.send("i");
@@ -915,11 +972,15 @@ test("tui: a bracketed paste while editing a finding's target goes into it, as t
 test("tui: the findings panel names unsaved inputs and a failed analysis", async (t) => {
   const root = checkoutRepo(t);
   let calls = 0;
+
   const analyzer = async (request: AnalysisRequest): Promise<Analysis> => {
     calls++;
+
     if (calls > 2) throw new Error("boom");
+
     return analyze(request);
   };
+
   const s = session(root, { analyzer });
   t.after(() => s.app.close());
   await s.app.idle();
@@ -958,6 +1019,7 @@ test("tui: the pinned analysis sits above the records and is reachable with the 
   t.after(() => s.app.close());
   await s.app.idle();
   s.send(KEY.ctrlP);
+
   for (const ch of "doctor") s.send(ch);
   s.send(KEY.enter);
   await s.app.idle();
@@ -986,6 +1048,7 @@ test("tui: resize and wide characters keep the frame aligned", async (t) => {
   s.vt.resize(70, 16);
   s.app.resize(70, 16);
   assert.equal(s.lines().length, 16);
+
   for (const line of s.lines()) assert.equal(stringWidth(line), 70);
   assert.match(s.lines().at(-1)!, /✗ 0/);
 });
@@ -1289,6 +1352,7 @@ test("tui: w with nothing accepted keeps the proposal; u in MERGE restores the p
 
 test("tui: a click during MERGE keeps the merge; a click in FILES follows the scroll", async (t) => {
   const specs: Record<string, string> = {};
+
   for (let i = 10; i < 40; i++) specs[`keylang/flows/f${i}.md`] = `# flow f${i}\n`;
   const root = checkoutRepo(t, specs);
   propose(root, FLOW_PATH, PAID);
@@ -1296,6 +1360,7 @@ test("tui: a click during MERGE keeps the merge; a click in FILES follows the sc
   t.after(() => s.app.close());
   await s.app.idle();
   s.send("\x1b[12~");
+
   for (let i = 0; i < 25; i++) s.send("j");
   const top = s.lines().findIndex((line) => line.includes("FILES")) + 1;
   const first = s.lines()[top]!.slice(0, 24).trim();
@@ -1314,19 +1379,24 @@ test("tui: a click during MERGE keeps the merge; a click in FILES follows the sc
 test("tui: typing while an analysis runs keeps the result outdated", async (t) => {
   const root = checkoutRepo(t);
   let release: () => void = () => {};
+
   let computed: Promise<Analysis> | null = null;
   let held: Promise<Analysis> | null = null;
   let calls = 0;
+
   const s = session(root, {
     analyzer: (request) => {
       calls++;
+
       if (calls !== 2) return analyze(request);
       computed = analyze(request);
       const gate = new Promise<void>((done) => (release = done));
       held = gate.then(() => computed!);
+
       return held;
     },
   });
+
   t.after(() => s.app.close());
   await s.app.idle();
   s.send(KEY.f5);
@@ -1395,10 +1465,12 @@ test("tui: CRLF files diff by line and keep their line endings", async (t) => {
 test("tui: a proposal to a file with mixed line endings is one hunk of its real change; kept lines keep their endings", async (t) => {
   const mixedFlow = CHECKOUT_FLOW.replace("# flow checkout\n", "# flow checkout\r\n");
   const mixedCode = "export const a = 1;\r\nexport const b = 2;\r\nexport const c = 3;\n";
+
   const cases = [
     { path: FLOW_PATH, disk: mixedFlow, proposal: `${CHECKOUT_FLOW}<!-- added -->\n`, written: `${mixedFlow}<!-- added -->\n` },
     { path: "src/domain/mixed.ts", disk: mixedCode, proposal: "export const a = 1;\nexport const b = 2;\nexport const c = 3;\n\nexport const d = 4;\n", written: `${mixedCode}\r\nexport const d = 4;\r\n` },
   ];
+
   for (const { path, disk, proposal, written } of cases) {
     const root = checkoutRepo(t, { [path]: disk });
     propose(root, path, proposal);
@@ -1406,6 +1478,7 @@ test("tui: a proposal to a file with mixed line endings is one hunk of its real 
     t.after(() => s.app.close());
     await s.app.idle();
     s.send("m");
+
     // The open file's proposal opens at once; another file's is picked from the proposals list.
     if (s.app.state.merge === null) s.send("\r");
     assert.equal(s.app.state.merge?.path, path, `${s.app.state.message} ${s.text()}`);
@@ -1426,12 +1499,14 @@ test("tui: combining marks, ZWJ emoji and emoji widths in the editor", async (t)
   assert.equal(stringWidth("🚀"), 2);
   assert.equal(stringWidth("👨‍👩‍👧"), 2);
   assert.ok(s.text().includes(line), s.text());
+
   for (const row of s.lines()) assert.equal(stringWidth(row), 90);
   // The cursor steps over whole clusters: End, then Backspace removes the family, not one of its code points.
   s.send(KEY.down);
   s.send(KEY.down);
   s.send("i");
   s.send(KEY.end);
+
   for (let i = 0; i < 5; i++) s.send("\x7f");
   s.send("\x7f");
   assert.equal(s.app.state.buffers.get(FLOW_PATH)!.text.split("\n")[2], "Café ✅ 🚀 ");
@@ -1499,6 +1574,7 @@ test("tui: keylang.json opens in the same editor and a saved change reaches the 
   await s.app.idle();
   assert.equal(s.app.state.files.at(-1), "keylang.json");
   s.send(":");
+
   for (const ch of "open keylang.json") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.current, "keylang.json");
@@ -1552,6 +1628,7 @@ test("tui: undo closes the completion list, so Tab cannot splice into other text
   await s.app.idle();
   s.send("G");
   s.send("i");
+
   for (const ch of "- step appl") s.send(ch);
   assert.ok(s.app.state.completion, "the list is open");
   s.send("\x1a");
@@ -1610,6 +1687,7 @@ test("tui: the context panel (F4) shows what goes to the model; @id adds, x drop
   const s = session(root, { cols: 150 });
   t.after(() => s.app.close());
   await s.app.idle();
+
   // The cursor on `- step application.purchase.buy`.
   for (let i = 0; i < 6; i++) s.send(KEY.down);
   s.send("\x1bOS");
@@ -1621,11 +1699,13 @@ test("tui: the context panel (F4) shows what goes to the model; @id adds, x drop
   assert.match(s.text(), /neighbor domain\.order\.create/);
   assert.match(s.text(), /flow {5}flow checkout/);
   s.send("@");
+
   for (const ch of "presentation.terminal.checkout") s.send(ch);
   s.send(KEY.enter);
   assert.match(s.app.state.message ?? "", /context: presentation\.terminal\.checkout added/);
   assert.ok(tokens() > before);
   s.send("@");
+
   for (const ch of "application.purchase.nope") s.send(ch);
   s.send(KEY.enter);
   assert.match(s.app.state.message ?? "", /unknown id `application\.purchase\.nope`/);
@@ -1651,6 +1731,7 @@ test("tui: Ctrl+Space in a flow asks the agent with the context pack and opens t
   const s = session(root, { cols: 150 });
   t.after(() => s.app.close());
   await s.app.idle();
+
   for (let i = 0; i < 5; i++) s.send(KEY.down);
   s.send(KEY.ctrlSpace);
   await s.app.idle();
@@ -1658,6 +1739,7 @@ test("tui: Ctrl+Space in a flow asks the agent with the context pack and opens t
   assert.match(model.prompts[0]!, /Context chosen by the developer:\n\[buffer\] keylang\/flows\/checkout\.md/);
   assert.equal(s.app.state.mode, "merge", s.app.state.message ?? "");
   assert.equal(readFileSync(join(root, "keylang/flows/checkout.md"), "utf8"), CHECKOUT_FLOW, "nothing written before w");
+
   for (let i = 0; i < s.app.state.merge!.hunks.length; i++) s.send("a");
   s.send("w");
   await s.app.idle();
@@ -1675,6 +1757,7 @@ test("tui: Ctrl+Space says which lines of the model's draft it dropped", async (
   const s = session(root, { cols: 150 });
   t.after(() => s.app.close());
   await s.app.idle();
+
   for (let i = 0; i < 5; i++) s.send(KEY.down);
   s.send(KEY.ctrlSpace);
   await s.app.idle();
@@ -1708,6 +1791,7 @@ test("tui: ghost text appears only on a new flow item, never with an unknown id;
   t.after(() => s.app.close());
   await s.app.idle();
   s.send("i");
+
   // On a line with content there is no signal: nothing is asked.
   for (let i = 0; i < 7; i++) s.send(KEY.down);
   s.send(KEY.end);
@@ -1740,6 +1824,7 @@ test("tui: ghost text appears only on a new flow item, never with an unknown id;
 /** An OpenRouter stand-in in this process: records the audio requests, answers with the next text. */
 async function mockOpenRouter(t: { after: (f: () => void) => void }, replies: string[]): Promise<{ bodies: { model: string; messages: { content: { type: string; text?: string; input_audio?: { data: string; format: string } }[] }[] }[] }> {
   const bodies: { model: string; messages: { content: { type: string; text?: string; input_audio?: { data: string; format: string } }[] }[] }[] = [];
+
   const server = createServer((req, res) => {
     let data = "";
     req.on("data", (chunk: Buffer) => (data += chunk.toString()));
@@ -1749,17 +1834,20 @@ async function mockOpenRouter(t: { after: (f: () => void) => void }, replies: st
       res.end(JSON.stringify({ choices: [{ message: { content: replies[Math.min(bodies.length - 1, replies.length - 1)] } }] }));
     });
   });
+
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const saved = { url: process.env.OPENROUTER_BASE_URL, key: process.env.OPENROUTER_API_KEY };
   process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   process.env.OPENROUTER_API_KEY = "test";
   t.after(() => {
     server.close();
+
     for (const [name, value] of [["OPENROUTER_BASE_URL", saved.url], ["OPENROUTER_API_KEY", saved.key]] as const) {
       if (value === undefined) delete process.env[name];
       else process.env[name] = value;
     }
   });
+
   return { bodies };
 }
 
@@ -1767,7 +1855,9 @@ async function mockOpenRouter(t: { after: (f: () => void) => void }, replies: st
 function recorded(seconds: number): AppOptions["microphone"] {
   return async () => {
     const chunks: Int16Array[] = [];
+
     for (let s = 0; s < seconds * 2; s++) chunks.push(Int16Array.from({ length: 8000 }, (_, i) => Math.round(Math.sin(((s * 8000 + i) * 2 * Math.PI * 440) / 16000) * 8000)));
+
     return { chunks: (async function* () { yield* chunks; })(), stop: () => {} };
   };
 }
@@ -1781,6 +1871,7 @@ test("tui: Ctrl+R records, OpenRouter recognizes with a glossary; «крок …
   t.after(() => s.app.close());
   await s.app.idle();
   s.send("i");
+
   for (let i = 0; i < 6; i++) s.send(KEY.down);
   s.send(KEY.end);
   s.send(KEY.enter);
@@ -1993,6 +2084,7 @@ test("tui: a ghost line is never taken into another file or over a paste", async
   t.after(() => s.app.close());
   await s.app.idle();
   s.send("i");
+
   for (let i = 0; i < 7; i++) s.send(KEY.down);
   s.send(KEY.end);
   s.send(KEY.enter);
@@ -2027,6 +2119,7 @@ test("tui: two ghost requests for the same text show and count one line", async 
   t.after(() => s.app.close());
   await s.app.idle();
   s.send("i");
+
   for (let i = 0; i < 7; i++) s.send(KEY.down);
   s.send(KEY.end);
   s.send(KEY.enter);
@@ -2049,10 +2142,12 @@ async function ghostInFlight(t: { after: (f: () => void) => void }, specs: Recor
   t.after(() => s.app.close());
   await s.app.idle();
   s.send("i");
+
   for (let i = 0; i < 7; i++) s.send(KEY.down);
   s.send(KEY.end);
   s.send(KEY.enter);
   await waitUntil(() => model.prompts.length === 1, "the ghost request");
+
   return { s, model };
 }
 
@@ -2078,6 +2173,7 @@ test("tui: ghost through an agent CLI: a newer request kills the older agent, Es
   const s = session(root, { cols: 150 });
   t.after(() => {
     s.app.close();
+
     for (const [name, value] of Object.entries(saved)) {
       if (value === undefined) delete process.env[name];
       else process.env[name] = value;
@@ -2085,6 +2181,7 @@ test("tui: ghost through an agent CLI: a newer request kills the older agent, Es
   });
   await s.app.idle();
   s.send("i");
+
   for (let i = 0; i < 7; i++) s.send(KEY.down);
   s.send(KEY.end);
   s.send(KEY.enter);
@@ -2102,6 +2199,7 @@ test("tui: ghost through an agent CLI: a newer request kills the older agent, Es
   assert.equal(s.app.state.message, null, "a cancel is no error");
   assert.equal(fake.calls().length, 3);
   s.app.close();
+
   for (const n of [1, 2, 3]) for (const pid of fake.pids(n)) await waitUntil(() => !alive(pid), `agent ${n} to be gone after close()`);
 });
 
@@ -2146,6 +2244,7 @@ test("tui: close() aborts the agent's flow draft in flight", async (t) => {
   const s = session(root, { cols: 150 });
   t.after(() => s.app.close());
   await s.app.idle();
+
   for (let i = 0; i < 5; i++) s.send(KEY.down);
   s.send(KEY.ctrlSpace);
   await waitUntil(() => model.prompts.length === 1, "the draft request");
@@ -2160,7 +2259,9 @@ function liveMicrophone(opened: { count: number }): AppOptions["microphone"] {
     opened.count++;
     await sleep(50);
     let release: () => void = () => {};
+
     const stopped = new Promise<void>((done) => (release = done));
+
     return {
       chunks: (async function* () {
         yield Int16Array.from({ length: 1600 }, (_, i) => Math.round(Math.sin(i / 5) * 8000));
@@ -2180,6 +2281,7 @@ test("tui: two quick Ctrl+R open one microphone and give one transcription", { t
   t.after(() => s.app.close());
   await s.app.idle();
   s.send("i");
+
   for (let i = 0; i < 6; i++) s.send(KEY.down);
   s.send(KEY.end);
   s.send(KEY.enter);
@@ -2201,6 +2303,7 @@ test("tui: Ctrl+R in the view stops a recording; speech is not inserted after th
   t.after(() => s.app.close());
   await s.app.idle();
   s.send("i");
+
   for (let i = 0; i < 6; i++) s.send(KEY.down);
   s.send(KEY.end);
   s.send(KEY.enter);
@@ -2237,6 +2340,7 @@ test("tui: Ctrl+Space never overwrites a waiting proposal and asks nothing over 
   const s = session(root, { cols: 150 });
   t.after(() => s.app.close());
   await s.app.idle();
+
   for (let i = 0; i < 5; i++) s.send(KEY.down);
   s.send(KEY.ctrlSpace);
   await s.app.idle();
@@ -2262,6 +2366,7 @@ test("tui: a draft that arrives during another merge waits as a proposal instead
   const s = session(root, { cols: 150 });
   t.after(() => s.app.close());
   await s.app.idle();
+
   for (let i = 0; i < 5; i++) s.send(KEY.down);
   s.send(KEY.ctrlSpace);
   s.send("m");
@@ -2279,6 +2384,7 @@ test("tui: a click in the context panel selects its row, never the navigation it
   const s = session(checkoutRepo(t), { cols: 150 });
   t.after(() => s.app.close());
   await s.app.idle();
+
   for (let i = 0; i < 6; i++) s.send(KEY.down);
   s.send("\x1bOS");
   const row = locate(s.lines(), "neighbor application.purchase.buy");
@@ -2298,6 +2404,7 @@ test("tui: Esc from a Ctrl+G merge goes back to editing; F4 while editing keeps 
   s.send(KEY.down);
   s.send("i");
   s.send(KEY.end);
+
   for (const ch of " Then buy is called.") s.send(ch);
   s.send(KEY.ctrlG);
   assert.equal(s.app.state.mode, "merge");
@@ -2318,6 +2425,7 @@ test("tui: K in reading mode anchors the hover at the rendered row", async (t) =
   t.after(() => s.app.close());
   await s.app.idle();
   s.send("v");
+
   for (let i = 0; i < 5; i++) s.send(KEY.down);
   s.send("K");
   assert.ok(s.app.state.hover, s.app.state.message ?? "");
@@ -2353,6 +2461,7 @@ test("terminal: nothing is drawn while $EDITOR or a Ctrl+Z stop has the screen; 
   const running = runTerminal(root, term.host);
   t.after(() => term.signal("SIGTERM"));
   await waitUntil(() => /✗ 0/.test(term.out.join("")), "the first analysis");
+
   for (let i = 0; i < 5; i++) term.type(KEY.down);
   // An analysis still running when the editor starts, and a resize while it runs: neither may draw over it.
   term.type(KEY.f5);
@@ -2398,8 +2507,10 @@ function explainedRepo(t: { after: (f: () => void) => void }, on: boolean): stri
     ].join("\n"),
     "src/infrastructure/store.ts": "/** Keeps the order on disk for the next run. */\nexport function save(): void {}\n",
   });
+
   const file = join(root, "keylang.json");
   writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), ...(on ? { explain: { map: true } } : {}) }, null, 2));
+
   return root;
 }
 
@@ -2407,6 +2518,7 @@ test("tui: t switches a map file to the explained map and back on the same node;
   const s = session(explainedRepo(t, true));
   t.after(() => s.app.close());
   await s.app.idle();
+
   for (let i = 0; i < 5; i++) s.send(KEY.down);
   s.send(KEY.altEnter);
   assert.equal(s.app.state.current, "keylang/map/application.md");
@@ -2423,6 +2535,7 @@ test("tui: t switches a map file to the explained map and back on the same node;
   s.send("v");
   // `/` and `n` search the explained map like any buffer.
   s.send("/");
+
   for (const ch of "then stores") s.send(ch);
   s.send(KEY.enter);
   assert.match(cursorLine(), /Buys the cart/);
@@ -2433,6 +2546,7 @@ test("tui: t switches a map file to the explained map and back on the same node;
   // `s`: a word only the explanation has finds the node; Enter goes to its line in the map the reader is in, Enter again to the code.
   s.send("t");
   s.send("s");
+
   for (const ch of "next run") s.send(ch);
   assert.match(s.text(), /infrastructure\.store\.save {2}Keeps the order on disk for the next run\./);
   s.send(KEY.enter);
@@ -2449,6 +2563,7 @@ test("tui: t switches a map file to the explained map and back on the same node;
   // The nav panel's column, its rows joined: a wrapped explanation reads as one text.
   const nav = (): string => s.lines().map((line) => line.slice(-31).trim()).join(" ").replace(/\s+/g, " ");
   const selected = (): string | undefined => navEntries(s.app.state)[s.app.state.navIndex]?.id ?? undefined;
+
   for (let i = 0; i < 20 && selected() !== "application.purchase"; i++) s.send(KEY.down);
   assert.equal(selected(), "application.purchase");
   assert.match(nav(), /Buying: the use case of the shop\./);
@@ -2464,6 +2579,7 @@ test("tui: t with the explained map off says how to turn it on and changes nothi
   const s = session(explainedRepo(t, false));
   t.after(() => s.app.close());
   await s.app.idle();
+
   for (let i = 0; i < 5; i++) s.send(KEY.down);
   s.send(KEY.altEnter);
   const before = { current: s.app.state.current, cursor: { ...s.app.state.cursor } };
@@ -2478,9 +2594,11 @@ test("tui: t with the explained map off says how to turn it on and changes nothi
 /** The palette's ids for `query`, as Ctrl+P lists them; Esc closes it again. */
 async function paletteIds(s: ReturnType<typeof session>, query: string): Promise<string[]> {
   s.send(KEY.ctrlP);
+
   for (const ch of query) s.send(ch);
   const ids = [...(s.app.state.prompt?.ids ?? [])];
   await esc(s.send);
+
   return ids;
 }
 
@@ -2488,6 +2606,7 @@ test("tui: every CLI alias of the design's matrix finds its action; unavailable 
   const s = session(checkoutRepo(t));
   t.after(() => s.app.close());
   await s.app.idle();
+
   const matrix: [string, string][] = [
     ["init", "init"],
     ["init --check", "init"],
@@ -2528,12 +2647,15 @@ test("tui: every CLI alias of the design's matrix finds its action; unavailable 
     ["agent draft", "agent-draft"],
     ["export", "export"],
   ];
+
   for (const [query, id] of matrix) assert.ok((await paletteIds(s, query)).includes(id), `${query} → ${id}`);
   // lsp, mcp, web and hook stay with their clients: no action pretends to run them as a job here.
   const ids = new Set((await paletteIds(s, "")).filter((id) => !id.startsWith("open:")));
+
   for (const transport of ["lsp", "mcp", "web", "hook", "hook-stop"]) assert.ok(!ids.has(transport), transport);
   // Unavailable: listed with the reason, and the way to what it needs.
   s.send(KEY.ctrlP);
+
   for (const ch of "agent draft") s.send(ch);
   assert.equal(s.app.state.prompt!.ids![0], "agent-draft");
   assert.match(s.app.state.prompt!.note ?? "", /no agent in keylang\.json → Open keylang\.json \(set agent\) · Environment diagnostics/);
@@ -2541,16 +2663,19 @@ test("tui: every CLI alias of the design's matrix finds its action; unavailable 
   assert.match(s.app.state.message ?? "", /Agent draft of the flow under the cursor \(MERGE\): no agent/);
   assert.equal(s.app.state.mode, "view");
   s.send(KEY.ctrlP);
+
   for (const ch of "spec-to-code --apply") s.send(ch);
   assert.match(s.app.state.prompt!.note ?? "", /no spec-to-code run yet → Spec to code/);
   await esc(s.send);
   // A model action that still works without one says what is offline and where to set it up.
   s.send(KEY.ctrlP);
+
   for (const ch of "draft rules") s.send(ch);
   assert.match(s.app.state.prompt!.note ?? "", /algo works offline; the model modes need an agent → Open keylang\.json · Environment diagnostics/);
   await esc(s.send);
   // The config is one action away: it opens keylang.json in the editor.
   s.send(KEY.ctrlP);
+
   for (const ch of "config") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.current, "keylang.json");
@@ -2570,14 +2695,17 @@ test("tui: editing types ? and :, so the footer and the palette name Ctrl+P; the
   assert.match(s.app.state.buffers.get("keylang/flows/checkout.md")!.text, /^\?# flow checkout/);
   // The palette in editing: no plain key is advertised; Ctrl+S, F-keys and Ctrl+G are.
   s.send(KEY.ctrlP);
+
   for (const ch of "help") s.send(ch);
   assert.equal(s.app.state.prompt!.items[0], "Keys and help");
   await esc(s.send);
   s.send(KEY.ctrlP);
+
   for (const ch of "save") s.send(ch);
   assert.equal(s.app.state.prompt!.items[0], "Save the file (Ctrl+S)");
   await esc(s.send);
   s.send(KEY.ctrlP);
+
   for (const ch of "help") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.help, true);
@@ -2594,11 +2722,14 @@ test("tui: Ctrl+G from the palette over a dirty paragraph keeps the prose and ch
   const s = session(root);
   t.after(() => s.app.close());
   await s.app.idle();
+
   for (let i = 0; i < 2; i++) s.send(KEY.down);
   s.send("i");
   s.send(KEY.end);
+
   for (const ch of " Then call application.purchase.buy.") s.send(ch);
   s.send(KEY.ctrlP);
+
   for (const ch of "text to spec") s.send(ch);
   assert.equal(s.app.state.prompt!.ids![0], "text-to-spec");
   s.send(KEY.enter);
@@ -2620,9 +2751,11 @@ test("tui: on 80×24 search → a two-field form → a field error → Run → F
   t.after(() => s.app.close());
   await s.app.idle();
   const before = treeBytes(root);
+
   for (let i = 0; i < 5; i++) s.send(KEY.down);
   const place = { ...s.app.state.cursor };
   s.send(KEY.ctrlP);
+
   for (const ch of "edge") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.prompt?.kind, "explain-edge");
@@ -2633,10 +2766,12 @@ test("tui: on 80×24 search → a two-field form → a field error → Run → F
   assert.equal(s.app.state.prompt!.ids![s.app.state.prompt!.index], "to");
   assert.equal(s.app.state.prompt!.edge!.from, "application.purchase.buy");
   assert.match(s.lines().at(-2)!, /two ids are needed/);
+
   // A note longer than the line is also shown whole in the form's box.
   for (const ch of "domain.ordr") s.send(ch);
   assert.match(s.text(), /│ domain\.ordr: not in the current snapshot · did you mean domain\.order\?/);
   s.send("\x7f");
+
   for (const ch of "er") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.prompt, null);
@@ -2662,8 +2797,10 @@ test("tui: on 60×18 the help and a long report scroll to their ends; resize 120
   assert.match(s.lines().at(-1)!, /\? keys · Ctrl\+P actions $/);
   s.send("?");
   assert.match(s.text(), /keys · view/);
+
   for (let i = 0; i < 40; i++) s.send("\x1b[6~");
   assert.match(s.text(), /Open <file> for each of the \d+ file\(s\) — type its name/);
+
   for (const line of s.lines()) assert.equal(stringWidth(line), 60);
   s.send("x");
   // A long report: the parse tree; ↓ after Tab and a page reach its end, ←→ its long rows.
@@ -2674,30 +2811,37 @@ test("tui: on 60×18 the help and a long report scroll to their ends; resize 120
   assert.match(s.lines()[1]!, /←→ scroll · Esc back\s*$/);
   s.send(KEY.right);
   assert.equal(s.app.state.results.left, 16);
-  assert.ok(s.lines().some((line) => /^ ▌ …/.test(line)), s.text());
+  assert.ok(s.lines().some((line) => line.startsWith(' ▌ …')), s.text());
   s.send("\x1b[D"); // ←
   assert.equal(s.app.state.results.left, 0);
+
   for (let i = 0; i < 40; i++) s.send("\x1b[6~");
   assert.ok(s.app.state.results.top > 0);
   // The last page ends at the report's end and stays a full panel.
   assert.match(s.lines().at(-3)!, /^ ▌ \]/);
   s.send(KEY.right);
   const results = { ...s.app.state.results };
+
   // Resize while the report is open: the selection, the scroll and the sideways place stay.
   for (const [cols, rows] of [[120, 30], [60, 18]] as const) {
     s.vt.resize(cols, rows);
     s.app.resize(cols, rows);
+
     for (const line of s.lines()) assert.equal(stringWidth(line), cols);
   }
+
   assert.deepEqual({ ...s.app.state.results }, results);
   s.send(KEY.tab);
   await esc(s.send);
   // A form with typed fields survives a resize too, and Esc brings back the place.
   s.send(KEY.ctrlP);
+
   for (const ch of "explain edge") s.send(ch);
   s.send(KEY.enter);
+
   for (const ch of "domain.order") s.send(ch);
   s.send(KEY.down);
+
   for (const ch of "infrastructure.store") s.send(ch);
   const prompt = structuredClone(s.app.state.prompt);
   s.vt.resize(120, 30);
@@ -2742,10 +2886,12 @@ test("tui: a focused side panel hidden by a resize below 60 columns gives the fo
   t.after(() => s.app.close());
   await s.app.idle();
   assert.equal(s.app.state.current, FLOW_PATH);
+
   // F2 focuses the files, Tab moves the focus on to the navigation, F4 opens the context panel focused.
   for (const [key, focus] of [["\x1b[12~", "files"], [KEY.tab, "nav"], ["\x1bOS", "context"]] as const) {
     s.vt.resize(120, 30);
     s.app.resize(120, 30);
+
     for (let i = 0; i < 3 && s.app.state.focus !== focus; i++) s.send(key);
     assert.equal(s.app.state.focus, focus);
     s.vt.resize(50, 30);
@@ -2778,6 +2924,7 @@ test("tui: over the editor the help takes a chunk of keys as help keys and drops
   await s.app.idle();
   s.send("i");
   s.send(KEY.ctrlP);
+
   for (const ch of "help") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.help, true);

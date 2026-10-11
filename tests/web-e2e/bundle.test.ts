@@ -23,7 +23,9 @@ import { diagramsRepo, targetRepo } from "../diagrams-fixture.ts";
 import { browserOptions, root, startWeb, watch } from "./browser.ts";
 
 const options = browserOptions();
+
 const skip = options === null ? "no Chromium: set KEYLANG_CHROMIUM or PLAYWRIGHT_BROWSERS_PATH" : false;
+
 const bin = join(root, "bin/keylang.js");
 
 interface Box {
@@ -37,6 +39,7 @@ interface Box {
   x: number;
   y: number;
 }
+
 interface Model {
   mode: string;
   nodes: Box[];
@@ -55,10 +58,12 @@ async function editor(context: BrowserContext, url: URL, view: RegExp | null): P
   await page.goto(`${url.origin}/diagrams${url.hash}`);
   await page.locator("#status", { hasText: /pick a view|nothing to draw/ }).waitFor();
   await page.click('#modes button[data-mode="editor"]');
+
   if (view !== null) {
     await page.locator("#views .row.item", { hasText: view }).click();
     await page.locator("#status", { hasText: /editor · flow:/ }).waitFor();
   } else await page.locator("#status", { hasText: /an empty canvas/ }).waitFor();
+
   return { page, problems };
 }
 
@@ -118,6 +123,7 @@ test("copy a flow in one keylang web, paste it in another: the layer dialog, a f
   assert.match((await dialog.textContent()) ?? "", /Флоу: checkout/);
   assert.equal(await two.page.locator("#bundle-layer-application").inputValue(), "api", "no layer of that name: the first one");
   assert.match((await two.page.locator("#bundle-notes").textContent()) ?? "", /layer `application` has no layer of that name here/);
+
   for (const [from, to] of [["presentation", "api"], ["application", "core"], ["domain", "core"], ["infrastructure", "core"]] as const) await two.page.selectOption(`#bundle-layer-${from}`, to);
   await two.page.click("#bundle-import");
   await two.page.locator("#status", { hasText: /pasted 4 shape\(s\) from .*proposed \.keylang\/proposals\/keylang\/features\/checkout\.md/ }).waitFor();

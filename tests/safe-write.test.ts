@@ -14,11 +14,13 @@ function dirs(t: TestContext): { repo: string; outside: string } {
   t.after(() => rmSync(base, { recursive: true, force: true }));
   mkdirSync(join(base, "repo"));
   mkdirSync(join(base, "outside"));
+
   return { repo: join(base, "repo"), outside: join(base, "outside") };
 }
 
 test("safe write: only a plain relative path inside the repository, links followed — a link whose target does not exist yet and a loop included", (t) => {
   const { repo, outside } = dirs(t);
+
   for (const path of ["", "/etc/x.ts", "C:\\x.ts", "a\\b.ts", "../x.ts", "a/../x.ts", "./x.ts", "a//x.ts"]) assert.equal(writeProblem(repo, path), "not a plain relative path", path);
   symlinkSync(outside, join(repo, "out"));
   assert.equal(writeProblem(repo, "out/new/x.ts"), "leads out of the repository through a link");

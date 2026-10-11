@@ -54,6 +54,7 @@ const EXTENSIONS: Record<string, string> = { typescript: ".ts", javascript: ".js
  */
 export async function specToCode(analysis: Analysis, id: string, into?: string, model?: LlmClient, options: LlmCallOptions = {}): Promise<CodeCandidate> {
   const target = plannedCodeTarget(analysis, id, into);
+
   if ("error" in target) throw new Error(target.error);
   const config = analysis.config;
   const abs = join(config.root, target.file);
@@ -67,6 +68,7 @@ export async function specToCode(analysis: Analysis, id: string, into?: string, 
   const next = await analyze({ root: config.root, overlay: new Map([[abs, after]]), withoutEvidence: true });
   const { verdicts, diagnostics } = introduced(analysis, next);
   const { tests, notes } = await testCandidates(analysis, id, target, after, model, options);
+
   return { id, file: target.file, before, after, verdicts, diagnostics, tests, testNotes: notes };
 }
 
@@ -97,36 +99,50 @@ export interface CodeTarget {
  */
 export function plannedCodeTarget(analysis: Analysis, id: string, into?: string): CodeTarget | { error: string; field: "id" | "into" } {
   const plan = plannedDecl(analysis.docs, id);
+
   if (!plan) {
     const present = analysis.snapshot?.nodes[id];
+
     if (present) return { field: "id", error: `\`${id}\` is already implemented (${present.file ?? "?"}:${present.line ?? 1}); spec-to-code builds planned nodes only` };
     const near = analysis.index.suggest(id);
+
     return { field: "id", error: `\`${id}\` is neither planned nor in the code: fix the reference${near ? ` (did you mean \`${near}\`?)` : ""}, or declare \`planned fn ${id} <signature>\` first` };
   }
+
   if (plan.kind !== "fn") return { field: "id", error: `\`${id}\` is a planned ${plan.kind}; spec-to-code builds planned fns` };
   // A second run would add a second function of the same name.
   const implemented = analysis.snapshot?.nodes[id];
+
   if (implemented) return { field: "id", error: `\`${id}\` is already implemented (${implemented.file ?? "?"}:${implemented.line ?? 1}); \`keylang check\` says whether the \`planned\` declaration can go (K202)` };
+
   // A stub the flow could never reach would contradict the rules it is checked by.
   for (const caller of callersInFlows(analysis, id)) {
     if (blocksDependency(analysis.spec, caller, id, dependencyKindOf(analysis.spec, analysis.index, analysis.snapshot?.nodes), analysis.config.format)) return { field: "id", error: `\`deny\` forbids \`${caller}\` → \`${id}\`, which its flow needs; change the rule or the plan first` };
   }
+
   const config = analysis.config;
   const name = id.slice(id.lastIndexOf(".") + 1);
   let placement: Placement;
+
   try {
     placement = placeCode(analysis, parentId(id), into);
   } catch (error) {
     return { field: "into", error: errorText(error) };
   }
+
   const { file, moduleId, owner } = placement;
+
   if (moduleId !== null) {
     const placed = placeFile(config, file);
+
     if (!placed || [placed.layer, ...placed.segments].join(".") !== moduleId) return { field: "into", error: `${file} is not module \`${moduleId}\` under keylang.json layers; pass --into with a file of that module` };
   }
+
   // The rules of a code proposal, before the file is read: inside the repository, not generated (`keylang.gen.ts`).
   const problem = codeProposalProblem(config.root, file);
+
   if (problem) return { field: "into", error: `${file}: ${problem}` };
+
   return { file, name, signature: plan.signature, owner };
 }
 
@@ -146,28 +162,37 @@ function placeCode(analysis: Analysis, ownerId: string, into: string | undefined
   const nodes = analysis.snapshot?.nodes ?? {};
   const node = nodes[ownerId];
   const className = ownerId.slice(ownerId.lastIndexOf(".") + 1);
+
   if (node?.kind === "module" && node.class === true && node.file) {
     // A class in the code: the method goes into its body, wherever the class sits (nested ones included).
     if (into !== undefined && into !== node.file) throw new Error(`\`${ownerId}\` is a class in ${node.file}; --into names another file`);
     const span = node.line !== null && node.endLine !== undefined ? { line: node.line, endLine: node.endLine, endCol: node.endCol ?? null } : null;
+
     if (span === null) throw new Error(`\`${ownerId}\` is a class in ${node.file} without its lines in the snapshot; run \`keylang map\``);
+
     return { file: node.file, moduleId: null, owner: { name: className, span } };
   }
+
   const moduleId = parentId(ownerId);
   const moduleNode = nodes[moduleId];
   const newClass = node === undefined && moduleId.includes(".") && /^\p{Lu}/u.test(className) && moduleNode?.class !== true;
   // `--into` with a file of `ownerId` itself says the capital segment is a file, not a class.
   const intoOwner = into !== undefined && newClass && placedModule(config, into) === ownerId;
+
   if (!newClass || intoOwner) {
     const file = into ?? (node?.kind === "module" && node.file ? node.file : newModuleFile(analysis, ownerId));
+
     return { file, moduleId: ownerId, owner: null };
   }
+
   const file = into ?? (moduleNode?.kind === "module" && moduleNode.file ? moduleNode.file : newModuleFile(analysis, moduleId));
+
   return { file, moduleId, owner: { name: className, span: null } };
 }
 
 function placedModule(config: Config, file: string): string | null {
   const placed = placeFile(config, file);
+
   return placed ? [placed.layer, ...placed.segments].join(".") : null;
 }
 
@@ -178,9 +203,13 @@ function placedModule(config: Config, file: string): string | null {
  */
 export function specToCodeText(candidate: CodeCandidate): string {
   let out = `${fileDiffText(candidate)}\n\nwith the candidate in place:\n`;
+
   for (const v of candidate.verdicts) if (!sameFinding(v, candidate.diagnostics)) out += `${formatVerdict(v)}\n`;
+
   for (const d of candidate.diagnostics) out += `${formatDiagnostic(d)}\n`;
+
   for (const t of candidate.tests) out += `\n${fileDiffText(t)}\n`;
+
   return out;
 }
 
@@ -195,6 +224,7 @@ function introduced(base: Analysis, next: Analysis): { verdicts: Verdict[]; diag
   const verdictKey = (v: Verdict): string => [v.criterion, v.verdict, v.area, v.file, v.line, v.col, v.message].join("\u0000");
   const knownDiagnostics = new Set(base.diagnostics.map(diagnosticKey));
   const knownVerdicts = new Set(base.verdicts.map(verdictKey));
+
   return { verdicts: next.verdicts.filter((v) => !knownVerdicts.has(verdictKey(v))), diagnostics: next.diagnostics.filter((d) => !knownDiagnostics.has(diagnosticKey(d))) };
 }
 
@@ -203,19 +233,23 @@ const TEST_EXTENSIONS = /\.(ts|mts|cts|js|mjs|cjs)$/;
 /** The `test` entries of the flows that name `id`: flow name, test file and test name. */
 function flowTests(analysis: Analysis, id: string): { flow: string; file: string; name: string }[] {
   const out: { flow: string; file: string; name: string }[] = [];
+
   for (const flow of flowsMentioning(analysis, id)) {
     const tests: { file: string; name: string }[] = [];
     walkFlow(flow, (item) => {
       if (item.kind === "test" && item.name !== null) tests.push({ file: item.path, name: item.name });
     });
+
     for (const t of tests) out.push({ flow: flow.name, ...t });
   }
+
   return out;
 }
 
 /** Hand-written flows whose trigger, step, claim, `then`, or `planned` names `id`. */
 function flowsMentioning(analysis: Analysis, id: string): Flow[] {
   const skipped = new Set(analysis.docs.filter((doc) => doc.generated !== null).map((doc) => doc.path));
+
   return analysis.spec.flows.filter((flow) => !skipped.has(flow.file) && flowMentions(analysis.spec, flow, id));
 }
 
@@ -224,16 +258,19 @@ function flowMentions(spec: SpecIR, flow: Flow, id: string): boolean {
   let hit = false;
   walkFlow(flow, (item) => {
     if (hit) return;
+
     if ((item.kind === "trigger" || item.kind === "step") && item.target.target === id) hit = true;
     else if (item.kind === "then" && item.form === "ref" && item.target.target === id) hit = true;
     else if ((item.kind === "reads" || item.kind === "emits" || item.kind === "invariant") && item.target?.target === id) hit = true;
   });
+
   return hit;
 }
 
 /** `line` sits in this flow: after its heading and before the next flow of the same file. */
 function flowOwns(spec: SpecIR, flow: Flow, line: number): boolean {
   if (line < flow.span.start.line) return false;
+
   return !spec.flows.some((other) => other.file === flow.file && other !== flow && other.span.start.line > flow.span.start.line && other.span.start.line <= line);
 }
 
@@ -247,38 +284,49 @@ async function testCandidates(analysis: Analysis, id: string, target: CodeTarget
   const codeFile = target.file;
   const byFile = new Map<string, { flow: string; name: string }[]>();
   const notes: string[] = [];
+
   for (const t of flowTests(analysis, id)) {
     const label = `test ${t.file} "${t.name}"`;
     // Checked before the path is even looked at: a spec can name `../elsewhere` or a link out.
     const problem = codeProposalProblem(root, t.file);
+
     if (problem) {
       notes.push(`${label}: ${problem}; nothing proposed for it`);
       continue;
     }
+
     if (existsSync(join(root, t.file))) {
       if (!readFileSync(join(root, t.file), "utf8").includes(t.name)) notes.push(`${label}: ${t.file} exists without it; add it there`);
       continue;
     }
+
     const php = t.file.endsWith(".php") && codeFile.endsWith(".php");
+
     if (!php && (!TEST_EXTENSIONS.test(t.file) || !TEST_EXTENSIONS.test(codeFile))) {
       notes.push(`${label}: write it by hand (spec-to-code writes node:test files for TS/JS and PHPUnit tests for PHP)`);
       continue;
     }
+
     if (php && !PHP_IDENTIFIER.test(posix.basename(t.file, ".php"))) {
       notes.push(`${label}: write it by hand (a PHPUnit test file holds the class of its name, and \`${posix.basename(t.file, ".php")}\` is no class name)`);
       continue;
     }
+
     if (php && !PHP_IDENTIFIER.test(t.name)) {
       notes.push(`${label}: write it by hand (a PHPUnit test is a method, and \`${t.name}\` is no method name)`);
       continue;
     }
+
     const list = byFile.get(t.file) ?? [];
+
     if (!list.some((x) => x.name === t.name)) list.push({ flow: t.flow, name: t.name });
     byFile.set(t.file, list);
   }
+
   // A method is reached through its class: the test imports the class.
   const subject = target.owner ? { imported: target.owner.name, value: `${target.owner.name}.prototype.${target.name}` } : { imported: target.name, value: target.name };
   const tests: FileCandidate[] = [];
+
   for (const [file, entries] of [...byFile].sort(([a], [b]) => (a < b ? -1 : 1))) {
     if (file.endsWith(".php")) {
       const php = phpSubject(target, code);
@@ -286,11 +334,14 @@ async function testCandidates(analysis: Analysis, id: string, target: CodeTarget
       tests.push({ file, before: null, after: model ? await modelPhpTest(model, file, head, php, id, code, entries, options) : phpTestStub(file, head, php, entries) });
       continue;
     }
+
     let from = toPosix(relative(dirname(file), codeFile));
+
     if (!from.startsWith(".")) from = `./${from}`;
     const after = model ? await modelTest(model, file, from, subject, id, code, entries, options) : testStub(from, subject, entries);
     tests.push({ file, before: null, after });
   }
+
   return { tests, notes };
 }
 
@@ -308,6 +359,7 @@ interface PhpSubject {
 function phpSubject(target: CodeTarget, code: string): PhpSubject {
   const ns = phpNamespaceIn(code);
   const qualify = (name: string): string => (ns === null ? name : `${ns}\\${name}`);
+
   return target.owner ? { class: qualify(target.owner.name), name: target.name } : { class: null, name: qualify(target.name) };
 }
 
@@ -333,44 +385,56 @@ function phpFileHead(analysis: Analysis, file: string): string {
   const siblings = (analysis.snapshot?.manifest.files ?? []).map((f) => f.path).filter((path) => path.endsWith(".php") && path !== file && posix.dirname(path) === dir).sort();
   let strict = false;
   let ns: string | null = null;
+
   for (const path of siblings) {
     let text: string;
+
     try {
       text = readFileSync(join(root, path), "utf8");
     } catch {
       continue;
     }
+
     strict ||= /declare\s*\(\s*strict_types\s*=\s*1\s*\)/.test(text);
     ns ??= phpNamespaceIn(text);
   }
+
   ns ??= composerNamespace(root, dir);
+
   return `<?php\n\n${strict ? "declare(strict_types=1);\n\n" : ""}${ns !== null ? `namespace ${ns};\n\n` : ""}`;
 }
 
 /** The PSR-4 namespace of `dir` by the root `composer.json` (`autoload`, then `autoload-dev`); null when no prefix maps it. */
 function composerNamespace(root: string, dir: string): string | null {
   let manifest: unknown;
+
   try {
     manifest = JSON.parse(readFileSync(join(root, "composer.json"), "utf8"));
   } catch {
     return null;
   }
+
   const record = (value: unknown): Record<string, unknown> | null => (value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null);
   let best: { prefix: string; base: string } | null = null;
+
   for (const section of ["autoload", "autoload-dev"]) {
     const psr4 = record(record(record(manifest)?.[section])?.["psr-4"]);
+
     for (const [prefix, value] of Object.entries(psr4 ?? {})) {
       for (const path of Array.isArray(value) ? value : [value]) {
         if (typeof path !== "string") continue;
         const base = toPosix(path).replace(/^\.\//, "").replace(/\/+$/, "");
         const inside = base === "" || base === "." || dir === base || dir.startsWith(`${base}/`);
+
         if (inside && (best === null || base.length > best.base.length)) best = { prefix, base: base === "." ? "" : base };
       }
     }
   }
+
   if (best === null) return null;
   const rest = best.base === "" ? dir : dir.slice(best.base.length).replace(/^\//, "");
   const parts = [...best.prefix.split("\\").filter((part) => part !== ""), ...(rest === "" || rest === "." ? [] : rest.split("/"))];
+
   return parts.length > 0 ? parts.join("\\") : null;
 }
 
@@ -379,13 +443,17 @@ function phpTestStub(file: string, head: string, subject: PhpSubject, entries: r
   const className = posix.basename(file, ".php");
   const exists = subject.class !== null ? `method_exists(${lastName(subject.class)}::class, ${phpString(subject.name)})` : `function_exists(${phpString(subject.name)})`;
   const reach = subject.class !== null ? `${lastName(subject.class)}::${subject.name}` : subject.name;
+
   const methods = entries.map((e) => {
     // PHPUnit runs a public method whose name starts with lowercase `test` (case-sensitive,
     // unlike PHP method names), or one marked `#[Test]`.
-    const marked = /^test/.test(e.name) ? "" : "    #[\\PHPUnit\\Framework\\Attributes\\Test]\n";
+    const marked = e.name.startsWith('test') ? "" : "    #[\\PHPUnit\\Framework\\Attributes\\Test]\n";
+
     return `${marked}    public function ${e.name}(): void\n    {\n        $this->assertTrue(${exists});\n        $this->fail(${phpString(`not written: drive flow \`${e.flow}\` through ${reach} and assert what the flow promises`)});\n    }\n`;
   });
+
   const uses = ["PHPUnit\\Framework\\TestCase", ...(subject.class !== null ? [subject.class] : [])].sort();
+
   return `${head}${uses.map((use) => `use ${use};\n`).join("")}\nfinal class ${className} extends TestCase\n{\n${methods.join("\n")}}\n`;
 }
 
@@ -397,6 +465,7 @@ function lastName(qualified: string): string {
 async function modelPhpTest(model: LlmClient, file: string, head: string, subject: PhpSubject, id: string, code: string, entries: readonly { flow: string; name: string }[], options: LlmCallOptions): Promise<string> {
   const className = posix.basename(file, ".php");
   const reach = subject.class !== null ? `the method \`${subject.name}\` of \`${subject.class}\`` : `the function \`${subject.name}\``;
+
   const answer = await model.complete({
     system: `You write one PHPUnit test class (PHPUnit 10 or newer): \`final class ${className} extends \\PHPUnit\\Framework\\TestCase\`, in a file that starts as given. It tests ${reach}. Use exactly the test method names given, each a public method returning void. Answer with the whole file only, in one fenced code block.`,
     prompt: [
@@ -407,9 +476,12 @@ async function modelPhpTest(model: LlmClient, file: string, head: string, subjec
     ].join("\n\n"),
     maxTokens: 8192,
   }, options);
+
   const text = (/```[a-zA-Z]*\n([\s\S]*?)```/.exec(answer)?.[1] ?? answer).trim();
   const missing = entries.filter((e) => !new RegExp(`\\bfunction\\s+${e.name}\\s*\\(`).test(text));
+
   if (missing.length > 0) throw new Error(`the model's ${file} has no test method ${missing.map((e) => e.name).join(", ")}; nothing written`);
+
   return `${text}\n`;
 }
 
@@ -423,12 +495,14 @@ function testStub(from: string, subject: TestSubject, entries: readonly { flow: 
   const cases = entries.map(
     (e) => `test(${JSON.stringify(e.name)}, () => {\n  assert.equal(typeof ${subject.value}, "function");\n  assert.fail(${JSON.stringify(`not written: drive flow \`${e.flow}\` through ${subject.value} and assert what the flow promises`)});\n});\n`,
   );
+
   return `import assert from "node:assert/strict";\nimport { test } from "node:test";\nimport { ${subject.imported} } from ${JSON.stringify(from)};\n\n${cases.join("\n")}`;
 }
 
 /** The e2e test file from the model; each declared test name must be in it verbatim. */
 async function modelTest(model: LlmClient, file: string, from: string, subject: TestSubject, id: string, code: string, entries: readonly { flow: string; name: string }[], options: LlmCallOptions): Promise<string> {
   const reach = subject.value === subject.imported ? "" : ` and reach \`${subject.value}\` through it`;
+
   const answer = await model.complete({
     system: `You write one end-to-end test file with node:test and node:assert/strict. Import \`${subject.imported}\` from ${JSON.stringify(from)}${reach}. Use exactly the test names given. Answer with the whole file only, in one fenced code block.`,
     prompt: [
@@ -438,22 +512,31 @@ async function modelTest(model: LlmClient, file: string, from: string, subject: 
     ].join("\n\n"),
     maxTokens: 8192,
   }, options);
+
   const text = (/```[a-zA-Z]*\n([\s\S]*?)```/.exec(answer)?.[1] ?? answer).trim();
   const missing = entries.filter((e) => !text.includes(JSON.stringify(e.name)) && !text.includes(`'${e.name}'`));
+
   if (missing.length > 0) throw new Error(`the model's ${file} has no test ${missing.map((e) => JSON.stringify(e.name)).join(", ")}; nothing written`);
+
   return `${text}\n`;
 }
 
 /** IDs directly above `id` in flows: the trigger or step each of its steps is nested under. */
 function callersInFlows(analysis: Analysis, id: string): string[] {
   const out = new Set<string>();
+
   const visit = (item: Trigger | FlowItem, parent: string | null): void => {
     const own = item.kind === "trigger" || item.kind === "step" ? item.target.target : null;
+
     if (own === id && parent !== null) out.add(parent);
+
     if (item.kind === "test") return;
+
     for (const child of item.children) visit(child, own ?? parent);
   };
+
   for (const flow of analysis.spec.flows) for (const item of flow.top) visit(item, null);
+
   return [...out].sort();
 }
 
@@ -468,9 +551,12 @@ function newModuleFile(analysis: Analysis, moduleId: string): string {
   const config = analysis.config;
   const [layer, ...segments] = moduleId.split(".");
   const globs = config.layers.get(layer!);
+
   if (!globs) throw new Error(`no layer \`${layer}\` in keylang.json`);
   const prefixes = [...new Set(globs.map((g) => globPrefix(g)))];
+
   if (prefixes.length !== 1) throw new Error(`layer \`${layer}\` has ${prefixes.length} roots (${prefixes.join(", ") || "none"}); pass --into <file>`);
+
   if (segments.length === 0) throw new Error(`\`${moduleId}\` is a layer, not a module; pass --into <file>`);
   const sources = (analysis.snapshot?.manifest.files ?? []).map((f) => f.path).filter((path) => languageOf(path) !== undefined);
   const layerFiles = sources.filter((path) => placeFile(config, path)?.layer === layer);
@@ -479,18 +565,23 @@ function newModuleFile(analysis: Analysis, moduleId: string): string {
   const dir = [prefixes[0]!, ...segments.slice(0, -1)].filter((part) => part !== "").join("/");
   const inDir = layerFiles.filter((path) => posix.dirname(path) === (dir === "" ? "." : dir));
   const at = (stem: string): string => `${dir === "" ? "" : `${dir}/`}${stem}${ext}`;
+
   return at(fileStem(segments.at(-1)!, [inDir, layerFiles], (dotted, plain) => `\`${moduleId}\` could be ${at(dotted)} or ${at(plain)}: the layer names files both ways; pass --into <file>`));
 }
 
 /** The language most of `files` are written in; a tie goes to the one `languages` lists first. */
 function mostWritten(files: readonly string[], languages: readonly string[]): string | null {
   const counts = new Map<string, number>();
+
   for (const file of files) {
     const language = languageOf(file);
+
     if (language !== undefined) counts.set(language, (counts.get(language) ?? 0) + 1);
   }
+
   const rank = (language: string): number => (languages.includes(language) ? languages.indexOf(language) : languages.length);
   const best = [...counts].sort(([a, x], [b, y]) => y - x || rank(a) - rank(b) || (a < b ? -1 : 1))[0];
+
   return best?.[0] ?? null;
 }
 
@@ -502,17 +593,23 @@ function mostWritten(files: readonly string[], languages: readonly string[]): st
  */
 function fileStem(segment: string, scopes: readonly (readonly string[])[], ambiguous: (dotted: string, plain: string) => string): string {
   const cut = segment.lastIndexOf("_");
+
   if (cut <= 0) return segment;
   const head = segment.slice(0, cut);
   const suffix = segment.slice(cut + 1);
+
   for (const scope of scopes) {
     const stems = scope.map((path) => posix.basename(path).replace(/\.[^.]+$/, ""));
     const dotted = stems.some((stem) => stem.endsWith(`.${suffix}`) && stem.length > suffix.length + 1);
     const plain = stems.some((stem) => stem.endsWith(`_${suffix}`) && stem.length > suffix.length + 1);
+
     if (dotted && plain) throw new Error(ambiguous(`${head}.${suffix}`, segment));
+
     if (dotted) return `${head}.${suffix}`;
+
     if (plain) return segment;
   }
+
   return segment;
 }
 
@@ -528,19 +625,25 @@ function stubFor(target: CodeTarget, id: string): string {
   const { file, name, owner } = target;
   const { params, result } = declared(target.signature);
   const message = JSON.stringify(`not implemented: ${id}`);
+
   if (file.endsWith(".py")) {
     const receiver = owner !== null && !/^(self|cls)\b/.test(params) ? (params === "" ? "self" : `self, ${params}`) : params;
+
     return `def ${name}(${receiver})${result ? ` -> ${result}` : ""}:\n    raise NotImplementedError(${message})\n`;
   }
+
   if (file.endsWith(".rs")) return `pub fn ${name}(${params})${result ? ` -> ${result}` : ""} {\n    todo!(${message})\n}\n`;
+
   if (file.endsWith(".php")) return `${owner ? "public " : ""}function ${name}(${params})${result ? `: ${result}` : ""}\n{\n    throw new \\LogicException(${phpString(`not implemented: ${id}`)});\n}\n`;
-  const isAsync = result !== null && /^Promise</.test(result);
+  const isAsync = result !== null && result.startsWith('Promise<');
+
   return `${owner ? "" : "export "}${isAsync ? "async " : ""}${owner ? "" : "function "}${name}(${params})${result ? `: ${result}` : ""} {\n  throw new Error(${message});\n}\n`;
 }
 
 /** The parameters and result of a declared signature, as written. */
 function declared(signature: string | null): { params: string; result: string | null } {
   const m = /^\s*\((.*)\)\s*(?:(?:→|->)\s*(.+))?$/.exec(signature ?? "()");
+
   return { params: m?.[1]?.trim() ?? "", result: m?.[2]?.trim() ?? null };
 }
 
@@ -557,21 +660,28 @@ function placeStub(before: string | null, target: CodeTarget, code: string, phpH
   const rust = target.file.endsWith(".rs");
   const php = target.file.endsWith(".php");
   const { owner } = target;
+
   if (owner?.span && before !== null && !rust) return intoClass(before, owner.span, code, python);
   let block = code;
+
   if (owner) {
     const body = indent(code, python || rust || php ? "    " : "  ");
     block = python ? `class ${owner.name}:\n${body}` : rust ? `${owner.span ? "" : `pub struct ${owner.name};\n\n`}impl ${owner.name} {\n${body}}\n` : php ? `class ${owner.name}\n{\n${body}}\n` : `export class ${owner.name} {\n${body}}\n`;
   }
+
   if (before === null || before.trim() === "") {
     const { params, result } = declared(target.signature);
     const future = python && before === null && (params.includes(":") || result !== null) ?"from __future__ import annotations\n\n\n" : "";
+
     return `${future}${php ? phpHead : ""}${block}`;
   }
+
   if (php && /\?>\s*$/.test(before)) {
     const close = before.lastIndexOf("?>");
+
     return `${before.slice(0, close).replace(/\n*$/, "")}\n\n${block}\n${before.slice(close)}`;
   }
+
   // PEP 8: two blank lines around a top-level definition.
   return `${before.replace(/\n*$/, "")}${python ? "\n\n\n" : "\n\n"}${block}`;
 }
@@ -586,13 +696,17 @@ function intoClass(text: string, span: { line: number; endLine: number; endCol: 
   const body = lines.slice(start + 1, python ? end + 1 : end).find((line) => line.trim() !== "" && leadingSpace(line).length > classIndent.length);
   const memberIndent = body !== undefined ? leadingSpace(body) : `${classIndent}${python ? "    " : "  "}`;
   const member = indent(code, memberIndent).replace(/\n$/, "").split("\n");
+
   if (python) {
     lines.splice(end + 1, 0, "", ...member);
+
     return lines.join("\n");
   }
+
   const closing = lines[end] ?? "";
   const brace = span.endCol !== null && closing[span.endCol - 2] === "}" ? span.endCol - 2 : closing.lastIndexOf("}");
   const head = closing.slice(0, brace);
+
   if (head.trim() === "") {
     const opens = (lines[end - 1] ?? "").trimEnd().endsWith("{");
     lines.splice(end, 0, ...(opens ? [] : [""]), ...member);
@@ -600,6 +714,7 @@ function intoClass(text: string, span: { line: number; endLine: number; endCol: 
     // `class A {}` on one line: the body opens onto lines of its own.
     lines.splice(end, 1, head.trimEnd(), ...member, `${classIndent}${closing.slice(brace)}`);
   }
+
   return lines.join("\n");
 }
 
@@ -616,11 +731,13 @@ function indent(code: string, prefix: string): string {
 function dedent(code: string): string {
   const lines = code.split("\n");
   const common = Math.min(...lines.filter((line) => line.trim() !== "").map((line) => leadingSpace(line).length));
+
   return Number.isFinite(common) ? lines.map((line) => line.slice(Math.min(common, leadingSpace(line).length))).join("\n") : code;
 }
 
 /** Most lines of the target file a request shows whole, and of the part where the code goes: the cap of the code `explain --llm` sends. */
 const EXCERPT_LINES = 200;
+
 /** Most lines of a long file's head (its imports) a request shows. */
 const HEAD_LINES = 50;
 
@@ -634,24 +751,30 @@ const HEAD_LINES = 50;
  */
 function fileExcerpt(text: string, owner: CodeTarget["owner"], firstDeclaration: number | null): string {
   const lines = text.split("\n");
+
   // The newline that ends the file is no line of its own.
   if (lines.at(-1) === "") lines.pop();
+
   if (lines.length <= EXCERPT_LINES) return text;
   const span = owner?.span ?? null;
   const from = span === null ? Math.max(0, lines.length - EXCERPT_LINES) : span.line - 1;
   const to = span === null ? lines.length : Math.min(span.endLine, from + EXCERPT_LINES);
   const head = Math.min(HEAD_LINES, from, Math.max(0, (firstDeclaration ?? HEAD_LINES + 1) - 1));
   const gap = (start: number, end: number): string[] => (end > start ? [`… (lines ${start + 1}–${end} not shown)`] : []);
+
   return [...lines.slice(0, head), ...gap(head, from), ...lines.slice(from, to), ...gap(to, lines.length)].join("\n");
 }
 
 /** The first line of a declaration in `file` the snapshot knows: a fn, a type or a class; null without one. */
 function firstDeclarationLine(analysis: Analysis, file: string): number | null {
   let first: number | null = null;
+
   for (const node of Object.values(analysis.snapshot?.nodes ?? {})) {
     if (node.file !== file || node.line === null || (node.kind === "module" && node.class !== true) || node.kind === "layer") continue;
+
     if (first === null || node.line < first) first = node.line;
   }
+
   return first;
 }
 
@@ -663,6 +786,7 @@ async function modelBody(analysis: Analysis, model: LlmClient, target: CodeTarge
   const flows = flowsMentioning(analysis, id).map((flow) => `# flow ${flow.name}`);
   // Not the whole file: a large one would make a long request, and for an agent CLI an argument past its limit.
   const shown = before === null ? "" : fileExcerpt(before, owner, firstDeclarationLine(analysis, file));
+
   const answer = await model.complete({
     system: `You implement one planned ${what} in ${language}. Keep its name \`${name}\` and the signature exactly as declared. Answer with the whole ${owner ? "method only, without the class around it" : "function only"}, in one fenced code block.`,
     prompt: [
@@ -672,13 +796,17 @@ async function modelBody(analysis: Analysis, model: LlmClient, target: CodeTarge
     ].join("\n\n"),
     maxTokens: 8192,
   }, options);
+
   // An opening fence without a closing one is an answer cut short (the token limit): not code, nothing written.
   const fenced = /```[a-zA-Z]*\n([\s\S]*?)```/.exec(answer);
+
   if (fenced === null && /^\s*```/m.test(answer)) throw new Error(`the model's code block is not closed (the answer was cut short?); nothing written`);
   const code = dedent((fenced?.[1] ?? answer).replace(/^\n+|\s+$/g, ""));
   const escaped = name.replace(/[$]/g, "\\$");
   // A TS/JS method has no keyword before its name.
   const declares = owner && (language === "TypeScript" || language === "JavaScript") ? new RegExp(`^(?:(?:public|private|protected|static|async|override)\\s+)*\\*?${escaped}\\s*[<(]`, "m") : new RegExp(`\\b(function|def|fn)\\s+${escaped}\\b`);
+
   if (!declares.test(code)) throw new Error(`the model did not return a ${owner ? "method" : "function"} named \`${name}\`; nothing written`);
+
   return `${code}\n`;
 }

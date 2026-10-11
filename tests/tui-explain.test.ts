@@ -20,13 +20,17 @@ import { answerAll, askedId, BIN, briefReply, esc, explainBatchForm, heldModel, 
 /** The palette's explain form; `subject` replaces the default when given, then Enter explains the first match (or the typed text). */
 function explainForm(s: ReturnType<typeof session>, subject?: string): void {
   s.send(KEY.ctrlP);
+
   for (const ch of "keylang explain") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.prompt?.kind, "explain", s.app.state.message ?? "");
+
   if (subject !== undefined) {
     for (const _ of s.app.state.prompt!.text) s.send("\x7f");
+
     for (const ch of subject) s.send(ch);
   }
+
   s.send(KEY.enter);
 }
 
@@ -35,6 +39,7 @@ type ExplainResult = Extract<OperationResult, { kind: "explain" }> & { payload: 
 function explainRecord(app: App): ExplainResult {
   const result = app.state.records.at(-1)?.result;
   assert.ok(result?.kind === "explain" && result.payload !== null, JSON.stringify(result?.messages));
+
   return result as ExplainResult;
 }
 
@@ -48,6 +53,7 @@ async function explainRepo(t: { after: (f: () => void) => void }, specs: Record<
   const config = join(root, "keylang.json");
   writeFileSync(config, JSON.stringify({ ...JSON.parse(readFileSync(config, "utf8")), agent: "anthropic:claude-opus-5" }));
   const { prompts } = await mockModel(t, "never asked");
+
   return { root, prompts };
 }
 
@@ -96,9 +102,11 @@ test("tui: explain of a diagnostic code in any case and of an unknown code is th
   s.send("x");
   await esc(s.send);
   s.send(KEY.ctrlP);
+
   for (const ch of "keylang explain") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.prompt?.text, "", "no id or diagnostic on a prose line");
+
   for (const ch of "k001") s.send(ch);
   assert.deepEqual(s.app.state.prompt?.ids, ["K001"]);
   assert.equal(promptNote(s.app), "K001: offline help of the code · reads nothing, saves nothing first");
@@ -124,11 +132,13 @@ test("tui: explain of a diagnostic code in any case and of an unknown code is th
   const unknown = s.app.state.records.at(-1)!;
   assert.deepEqual([unknown.kind, unknown.status, unknown.result!.exitCode, unknown.result!.payload, unknown.result!.written], ["explain", "failed", 2, null, []]);
   assert.equal(unknown.result!.messages[0]!.text, "unknown code `K999`");
+
   for (const typed of ["K999", "k999"]) {
     const op = await runOperation({ kind: "explain", root, subject: typed });
     const cli = cliExplain(root, [typed]);
     assert.deepEqual([op.status, op.exitCode, cli.status, cli.stdout, cli.stderr], ["failed", 2, 2, "", `keylang: ${op.messages[0]!.text}\n`]);
   }
+
   s.send(KEY.f6);
   assert.match(s.text(), /unknown code `K999`/);
   assert.notEqual(s.app.state.buffers.get("keylang/flows/checkout.md")!.text, s.app.state.buffers.get("keylang/flows/checkout.md")!.saved, "still dirty");
@@ -164,6 +174,7 @@ test("tui: explain of an id is the CLI's summary with the doc comment, the saved
   await esc(s.send);
   // The palette: the ID under the cursor by default; a fresh analysis of the saved files in the worker.
   s.send(KEY.ctrlP);
+
   for (const ch of "keylang explain") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.prompt?.text, id);
@@ -213,6 +224,7 @@ test("tui: explain of an id is the CLI's summary with the doc comment, the saved
   await s.app.idle();
   assert.equal(s.app.state.records.at(-1)!.outdated, "the code snapshot changed since this run");
   s.send(KEY.f6);
+
   while (s.app.state.results.index < s.app.state.records.length - 1) s.send(KEY.down);
   s.send(KEY.enter);
   await s.app.idle();
@@ -274,14 +286,19 @@ test("tui: explain of an id is the CLI's summary with the doc comment, the saved
 /** The palette's model form; `id` replaces the default when given, ←→ step the detail, then Enter. */
 function explainModelForm(s: ReturnType<typeof session>, options: { id?: string; steps?: number; submit?: boolean } = {}): void {
   s.send(KEY.ctrlP);
+
   for (const ch of "explain --llm") s.send(ch);
   s.send(KEY.enter);
   assert.ok(s.app.state.prompt?.kind === "explain" && s.app.state.prompt.explainModel, s.app.state.message ?? "");
+
   if (options.id !== undefined) {
     for (const _ of s.app.state.prompt.text) s.send("\x7f");
+
     for (const ch of options.id) s.send(ch);
   }
+
   for (let i = 0; i < (options.steps ?? 0); i++) s.send(KEY.right);
+
   if (options.submit !== false) s.send(KEY.enter);
 }
 
@@ -290,6 +307,7 @@ type ExplainLlmResult = Extract<OperationResult, { kind: "explain-llm" }> & { pa
 function explainLlmRecord(app: App): ExplainLlmResult {
   const result = app.state.records.at(-1)?.result;
   assert.ok(result?.kind === "explain-llm" && result.payload !== null, JSON.stringify(result?.messages));
+
   return result as ExplainLlmResult;
 }
 
@@ -438,9 +456,11 @@ test("tui: explain with the model keeps the saved answer on Cancel, a timeout, a
   const cancelled = s.app.state.records.at(-1)!;
   await model.requested(1);
   s.send(KEY.ctrlP);
+
   for (const ch of "cancel") s.send(ch);
   s.send(KEY.enter);
   assert.deepEqual([cancelled.status, cancelled.result?.exitCode, cancelled.result?.payload], ["cancelled", null, null]);
+
   for (let i = 0; i < 100 && model.dropped() === 0; i++) await sleep(10);
   assert.equal(model.dropped(), 1, "the request is closed");
   model.release();
@@ -495,11 +515,13 @@ test("tui: explain with the model keeps the saved answer on Cancel, a timeout, a
   const unknown = await runOperation({ ...request, id: "domain.order.creat" });
   assert.deepEqual([unknown.status, unknown.exitCode, unknown.messages.at(-1)?.text], ["failed", 2, "unknown id `domain.order.creat` (did you mean `domain.order.create`?)"]);
   assert.equal(model.prompts.length, asked + 2);
+
   // A stream error of OpenRouter: 2, the saved answer kept.
   const sse = createServer((_req, res) => {
     res.writeHead(200, { "content-type": "text/event-stream" });
     res.end('data: {"choices":[{"delta":{"content":"Half an"}}]}\n\ndata: {"error":{"message":"overloaded"}}\n\n');
   });
+
   await new Promise<void>((resolve) => sse.listen(0, "127.0.0.1", resolve));
   t.after(() => sse.close());
   withConfig(root, { agent: "openrouter:some/model" });
@@ -543,15 +565,21 @@ test("tui: explain with the model keeps the saved answer on Cancel, a timeout, a
 /** The palette's inventory form: `steps` → on the list row, then `limit` and `jobs` typed into their rows; Enter unless `submit` is false. */
 function explainPlanForm(s: ReturnType<typeof session>, options: { steps?: number; limit?: string; jobs?: string; submit?: boolean } = {}): void {
   s.send(KEY.ctrlP);
+
   for (const ch of "explain --stale") s.send(ch);
   s.send(KEY.enter);
   assert.ok(s.app.state.prompt?.kind === "explain" && s.app.state.prompt.explainPlan, s.app.state.message ?? "");
+
   for (let i = 0; i < (options.steps ?? 0); i++) s.send(KEY.right);
+
   for (const [row, value] of [["limit", options.limit], ["jobs", options.jobs]] as const) {
     if (value === undefined) continue;
+
     while (s.app.state.prompt!.ids![s.app.state.prompt!.index] !== row) s.send(KEY.down);
+
     for (const ch of value) s.send(ch);
   }
+
   if (options.submit !== false) s.send(KEY.enter);
 }
 
@@ -560,6 +588,7 @@ type ExplainPlanResult = Extract<OperationResult, { kind: "explain-plan" }> & { 
 function explainPlanRecord(app: App): ExplainPlanResult {
   const result = app.state.records.at(-1)?.result;
   assert.ok(result?.kind === "explain-plan" && result.payload !== null, JSON.stringify(result?.messages));
+
   return result as ExplainPlanResult;
 }
 
@@ -578,9 +607,11 @@ test("tui: explanations to do — the stale saved list and the missing/stale bri
   writeFileSync(join(root, "keylang/explain/brief/domain.order.ghost.md"), storedExplanation("old", "brief", "Gone."));
   writeFileSync(join(root, "keylang/explain/domain.old.thing.md"), storedExplanation("old", "short", "Gone."));
   const before = treeBytes(root);
+
   const cli = (args: string[]): string => {
     const run = cliExplain(root, args);
     assert.deepEqual([run.status, run.stderr], [0, ""], args.join(" "));
+
     return run.stdout;
   };
 
@@ -667,6 +698,7 @@ test("tui: explanations to do — the stale saved list and the missing/stale bri
 
   // 0, a fraction, a word: the form stays on the field with the CLI's message; nothing runs.
   const records = s.app.state.records.length;
+
   for (const [row, value] of [["limit", "0"], ["limit", "1.5"], ["limit", "abc"], ["jobs", "0"]] as const) {
     explainPlanForm(s, { steps: 1, [row]: value });
     const flag = `--${row}`;
@@ -678,6 +710,7 @@ test("tui: explanations to do — the stale saved list and the missing/stale bri
     const op = await runOperation({ kind: "explain-plan", root, list: "briefs", batch: "missing", [row]: Number(value) });
     assert.deepEqual([op.status, op.exitCode, op.payload], ["failed", 2, null]);
   }
+
   assert.equal(s.app.state.records.length, records);
 
   // The stale brief plan is not the stale list: only buy's brief, no answer, no gone ID.
@@ -729,6 +762,7 @@ type ExplainBatchResult = Extract<OperationResult, { kind: "explain-batch" }> & 
 function explainBatchRecord(app: App): ExplainBatchResult {
   const result = app.state.records.at(-1)?.result;
   assert.ok(result?.kind === "explain-batch" && result.payload !== null, JSON.stringify(result?.messages));
+
   return result as ExplainBatchResult;
 }
 
@@ -783,6 +817,7 @@ test("tui: the brief batch plans again and asks jobs at a time within a wave, bo
   const inFlight: number[] = [];
   const progress = new Set<string>();
   let released = 0;
+
   while (record.status === "running") {
     if (record.progress !== null) progress.add(record.progress);
     inFlight.push(model.prompts.length - released);
@@ -790,6 +825,7 @@ test("tui: the brief batch plans again and asks jobs at a time within a wave, bo
     model.release();
     await sleep(30);
   }
+
   await s.app.idle();
   assert.ok(Math.max(...inFlight) === 2, inFlight.join(" "));
   assert.ok([...progress].some((text) => /^\d+\/13 · \S+$/.test(text)), [...progress].join(" | "));
@@ -838,10 +874,12 @@ test("tui: the brief batch plans again and asks jobs at a time within a wave, bo
   const asks = model.prompts.length;
   explainBatchForm(s);
   const rerun = s.app.state.records.at(-1)!;
+
   while (rerun.status === "running") {
     model.release();
     await sleep(20);
   }
+
   await s.app.idle();
   const again = explainBatchRecord(s.app);
   assert.deepEqual([again.status, again.exitCode, again.payload.done.map((entry) => entry.id), again.payload.text], ["completed", 0, ["presentation.terminal.checkout"], "explained 1 of 1 node(s)\n"]);
@@ -880,9 +918,11 @@ test("tui: Cancel after the first brief keeps it and writes no other — cancell
   await esc(s.send);
   assert.deepEqual([s.app.state.buffers.get("keylang/flows/checkout.md")!.text, readFileSync(join(root, "keylang/flows/checkout.md"), "utf8"), record.status], [edited, CHECKOUT_FLOW, "running"]);
   s.send(KEY.ctrlP);
+
   for (const ch of "cancel") s.send(ch);
   s.send(KEY.enter);
   await s.app.idle();
+
   for (let i = 0; i < 100 && model.dropped() === 0; i++) await sleep(10);
   assert.equal(model.dropped(), 1, "the request in flight is closed");
   const cancelled = explainBatchRecord(s.app);
@@ -907,10 +947,12 @@ test("tui: Cancel after the first brief keeps it and writes no other — cancell
   assert.notEqual(readFileSync(join(root, "keylang/flows/checkout.md"), "utf8"), CHECKOUT_FLOW);
   explainBatchForm(s);
   const rerun = s.app.state.records.at(-1)!;
+
   while (rerun.status === "running") {
     model.release();
     await sleep(20);
   }
+
   await s.app.idle();
   const rest = explainBatchRecord(s.app);
   assert.deepEqual([rest.status, rest.exitCode, rest.payload.done.length], ["completed", 0, 12]);

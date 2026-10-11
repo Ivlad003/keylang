@@ -15,26 +15,32 @@ import { chromium } from "playwright-core";
 import { browserOptions, startWeb, watch } from "./browser.ts";
 
 const options = browserOptions();
+
 const skip = options === null ? "no Chromium: set KEYLANG_CHROMIUM or PLAYWRIGHT_BROWSERS_PATH" : false;
 
 /** Sixty modules of five fns nobody calls: a map of hundreds of lines and three hundred orphans. */
 function largeRepo(t: { after: (f: () => void) => void }): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-large-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+
   const write = (path: string, text: string): void => {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
     writeFileSync(join(dir, path), text);
   };
+
   write("keylang.json", `${JSON.stringify({ languages: ["typescript"], module: "file", layers: { app: ["src/app/**"], domain: ["src/domain/**"] }, explain: { map: true } }, null, 2)}\n`);
   write("keylang/rules.md", "# rules\n\n- layers domain < app\n");
+
   for (let m = 0; m < 60; m++) {
     const layer = m < 40 ? "app" : "domain";
     const body = Array.from({ length: 5 }, (_, f) => `/** Step ${f} of module ${m}. */\nexport function step${m}x${f}(): number {\n  return ${f};\n}\n`).join("");
     write(`src/${layer}/m${m}.ts`, body);
   }
+
   // Briefs of two layers: «Пояснення» groups them by layer.
   write("keylang/explain/brief/app.m0.step0x0.md", "Step zero of the first module.\n");
   write("keylang/explain/brief/domain.m40.step40x0.md", "Step zero of the first domain module.\n");
+
   return dir;
 }
 

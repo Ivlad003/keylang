@@ -37,12 +37,17 @@ function gitIn(root: string, label: string): { run: (args: string[]) => SpawnSyn
   // the `shutdown` that closes a piped stdin, so spawnSync failed with EPERM and
   // a git reading stdin waited forever.
   const run = (args: string[]) => spawnSync("git", ["-c", "core.quotePath=false", ...args], { cwd: root, stdio: ["ignore", "pipe", "pipe"], encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
+
   const git = (args: string[]): string => {
     const out = run(args);
+
     if (out.error) throw new Error(gitUnavailable(label, out.error));
+
     if (out.status !== 0) throw new Error(`${label}: git ${args[0]}: ${out.stderr.trim().split("\n")[0]}`);
+
     return out.stdout;
   };
+
   return { run, git };
 }
 
@@ -50,6 +55,7 @@ function gitIn(root: string, label: string): { run: (args: string[]) => SpawnSyn
 export function gitUnavailable(label: string, error: Error & { code?: string }): string {
   const refused = error.code === "EPERM" || error.code === "EACCES";
   const advice = refused ? "; a sandbox may forbid keylang to run git: run it outside the sandbox, or without the git option (a full `keylang check`)" : "";
+
   return `${label}: git is not available (${error.message})${advice}`;
 }
 
@@ -85,7 +91,9 @@ export function gitChangedFiles(root: string, ref: string, label = "check --chan
   const diff = git(diffArgs(base));
   let deleted = deletedDiffPaths(diff).filter((path) => !ownState(path));
   let paths = new Set<string>([...diffHunks(diff).keys(), ...deleted].filter((path) => !ownState(path)));
+
   for (const file of untracked(git)) if (!ownState(file)) paths.add(file);
+
   // Unset, the option is false: `--get` exits 1 and prints nothing.
   if (run(["config", "--type=bool", "--get", "core.ignorecase"]).stdout.trim() === "true") {
     const onDisk = diskCaseResolver(root);
@@ -93,6 +101,7 @@ export function gitChangedFiles(root: string, ref: string, label = "check --chan
     // A file git calls deleted that the disk has under another case was renamed, not removed.
     deleted = deleted.filter((path) => onDisk(path) === null);
   }
+
   return { paths, deleted, unborn };
 }
 
@@ -104,6 +113,7 @@ export function gitChangedFiles(root: string, ref: string, label = "check --chan
  */
 export function diskCaseResolver(root: string): (path: string) => string | null {
   const listings = new Map<string, readonly string[] | null>();
+
   const entries = (dir: string): readonly string[] | null => {
     if (!listings.has(dir)) {
       try {
@@ -112,20 +122,27 @@ export function diskCaseResolver(root: string): (path: string) => string | null 
         listings.set(dir, null);
       }
     }
+
     return listings.get(dir) ?? null;
   };
+
   const fold = (name: string): string => name.normalize("NFC").toLowerCase();
+
   return (path) => {
     const spelled: string[] = [];
     let dir = root;
+
     for (const part of path.split("/")) {
       const names = entries(dir);
+
       if (names === null) return null;
       const name = names.includes(part) ? part : names.find((candidate) => fold(candidate) === fold(part));
+
       if (name === undefined) return null;
       spelled.push(name);
       dir = join(dir, name);
     }
+
     return spelled.join("/");
   };
 }
@@ -135,17 +152,21 @@ export function gitChangedLines(root: string, ref: string, label = "code-to-spec
   assertRef(ref, label);
   const { git } = gitIn(root, label);
   const changed: Map<string, readonly (readonly [number, number])[] | "all"> = diffHunks(git(diffArgs(ref)));
+
   for (const file of untracked(git)) changed.set(file, "all");
+
   return changed;
 }
 
 /** Git paths are relative to `root`; check reports spec paths relative to `base`. Both forms match. */
 export function changedPathSet(root: string, files: Iterable<string>, base: string): Set<string> {
   const changed = new Set<string>();
+
   for (const file of files) {
     changed.add(file);
     changed.add(toPosix(relative(base, join(root, file))));
   }
+
   return changed;
 }
 
@@ -158,13 +179,17 @@ export function gitFileAt(root: string, ref: string, path: string, label: string
   assertRef(ref, label);
   const { run, git } = gitIn(root, label);
   git(["rev-parse", "--is-inside-work-tree"]);
+
   if (run(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]).status !== 0) {
     if (ref === "HEAD") return null;
     throw new Error(`${label}: \`${ref}\` is not a commit`);
   }
+
   // `./` makes the path relative to `root`, not to the repository's top level.
   const object = `${ref}:./${path}`;
+
   if (run(["cat-file", "-e", object]).status !== 0) return null;
+
   return git(["show", object]);
 }
 
@@ -179,16 +204,20 @@ export function gitSpecFilesAt(root: string, ref: string, dir: string, label: st
   const { run, git } = gitIn(root, label);
   git(["rev-parse", "--is-inside-work-tree"]);
   const files = new Map<string, string>();
+
   if (run(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]).status !== 0) {
     if (ref === "HEAD") return files;
     throw new Error(`${label}: \`${ref}\` is not a commit`);
   }
+
   // `ls-tree` names paths relative to the working directory, which is `root`.
   const listed = git(["ls-tree", "-r", "-z", "--name-only", ref, "--", dir === "" ? "." : dir])
     .split("\0")
     .filter((path) => path.endsWith(".md") && !skip(path))
     .sort(compareText);
+
   for (const path of listed) files.set(path, git(["show", `${ref}:./${path}`]));
+
   return files;
 }
 
@@ -206,18 +235,24 @@ export function readFeatureBase(root: string, path: string, since: string | unde
   // Undefined: HEAD is the base, or `since` is; null: HEAD has no such file.
   let headText: string | null | undefined;
   let changed: ChangedFiles;
+
   try {
     if (since === undefined) origin = featureBaseOrigin(root, label);
     text = gitFileAt(root, origin.ref, path, label);
+
     if (origin.source === "merge-base") headText = gitFileAt(root, "HEAD", path, label);
     changed = gitChangedFiles(root, origin.ref, label);
   } catch (error) {
     if (since !== undefined) throw error;
+
     return { ...origin, state: "unavailable", reason: error instanceof Error ? error.message : String(error) };
   }
+
   const changes = { files: [...changed.paths].sort(compareText), deleted: [...changed.deleted].sort(compareText) };
   const atHead = headText === undefined ? {} : { head: headText === null ? null : parse(path, headText) };
+
   if (text === null) return { ...origin, state: "absent", changes, ...atHead };
+
   return { ...origin, state: "compared", doc: parse(path, text), changes, ...atHead };
 }
 
@@ -240,6 +275,7 @@ export function gitSummary(root: string, label: string): GitSummary {
   const head = run(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]);
   const branch = run(["symbolic-ref", "--quiet", "--short", "HEAD"]);
   const origin = run(["config", "--get", "remote.origin.url"]);
+
   // Full names, cut here: the short name of `refs/remotes/origin/HEAD` is just `origin`.
   const listed = (prefix: string): string[] =>
     git(["for-each-ref", "--format=%(refname)", prefix])
@@ -247,6 +283,7 @@ export function gitSummary(root: string, label: string): GitSummary {
       .filter((name) => name.startsWith(`${prefix}/`) && !name.endsWith("/HEAD"))
       .map((name) => name.slice(prefix.length + 1))
       .sort(compareText);
+
   return {
     commit: head.status === 0 ? head.stdout.trim() : null,
     branch: branch.status === 0 ? branch.stdout.trim() : null,
@@ -276,33 +313,43 @@ const MAIN_BRANCHES: readonly (readonly [ref: string, name: string])[] = [
 export function featureBaseOrigin(root: string, label: string): BaseOrigin {
   const { run, git } = gitIn(root, label);
   git(["rev-parse", "--is-inside-work-tree"]);
+
   const commit = (ref: string): string | null => {
     const out = run(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
+
     return out.status === 0 ? out.stdout.trim() : null;
   };
+
   // A dangling `origin/HEAD` (the remote branch was deleted) is passed over like a missing one.
   const remote = run(["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"]);
   const target = remote.status === 0 ? remote.stdout.trim() : "";
   const candidates = target.startsWith("refs/remotes/") ? [[target, target.slice("refs/remotes/".length)] as const, ...MAIN_BRANCHES] : MAIN_BRANCHES;
   const main = candidates.find(([ref]) => commit(ref) !== null);
+
   if (main === undefined) return HEAD_BASE;
   const [ref, name] = main;
   const found = run(["merge-base", "HEAD", ref]);
   const fork = found.status === 0 ? found.stdout.trim() : "";
+
   if (fork === "" || fork === commit("HEAD")) return { ...HEAD_BASE, main: name };
   // Git's own abbreviation: unambiguous in this repository, so `--since` takes it back.
   const short = run(["rev-parse", "--short", fork]).stdout.trim() || fork.slice(0, 7);
+
   return { ref: fork, source: "merge-base", main: name, label: `merge-base ${short} with ${name}` };
 }
 
 /** Module id a deleted source file had, so a flow step that named it is still "changed". */
 export function deletedModuleIds(config: Config, files: readonly string[]): string[] {
   const ids: string[] = [];
+
   for (const file of files) {
     const placed = placeFile(config, file);
+
     if (placed === null) continue;
     const id = [placed.layer, ...placed.segments].filter((part) => part !== "").join(".");
+
     if (id !== "") ids.push(id);
   }
+
   return ids;
 }

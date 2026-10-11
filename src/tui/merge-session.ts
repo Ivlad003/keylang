@@ -70,7 +70,9 @@ export class MergeSession {
 
   private files(): string[] {
     const dir = join(this.state.root, PROPOSALS_DIR);
+
     if (!existsSync(dir)) return [];
+
     // An unreadable proposals directory means no proposals, not the end of a session with unsaved buffers.
     try {
       return readdirSync(dir, { recursive: true, withFileTypes: true })
@@ -89,8 +91,10 @@ export class MergeSession {
    */
   entries(): ProposalEntry[] {
     const dir = join(this.state.root, PROPOSALS_DIR);
+
     if (!existsSync(dir)) return [];
     let links: string[];
+
     try {
       links = readdirSync(dir, { recursive: true, withFileTypes: true })
         .filter((entry) => entry.isSymbolicLink())
@@ -98,7 +102,9 @@ export class MergeSession {
     } catch {
       links = [];
     }
+
     const linked = links.map((path) => ({ path, kind: proposalKind(path), newFile: false, hunks: null, problem: `a link under ${PROPOSALS_DIR}/: a proposal is a plain file` }));
+
     return [...this.files().map((path) => this.entry(path)), ...linked].sort((a, b) => compareText(a.path, b.path));
   }
 
@@ -106,25 +112,30 @@ export class MergeSession {
   private entry(path: string): ProposalEntry {
     const kind = proposalKind(path);
     const problem = this.problem(path);
+
     if (problem !== null) return { path, kind, newFile: false, hunks: null, problem };
     const proposal = readText(this.proposalAbs(path));
     const disk = readText(resolve(this.state.root, path));
     const newFile = disk === null;
+
     if (proposal === null) return { path, kind, newFile, hunks: null, problem: `${PROPOSALS_DIR}/${path} cannot be read` };
     const hunks = diffLines(lf(disk ?? "").split("\n"), lf(proposal).split("\n")).length;
     const buffer = kind === "spec" ? this.state.buffers.get(path) : undefined;
     const dirty = buffer !== undefined && isDirty(buffer) ? "unsaved changes: save (Ctrl+S) or undo them before merging" : null;
+
     return { path, kind, newFile, hunks, problem: dirty };
   }
 
   /** The spec directory relative to the root, POSIX (`keylang`). */
   specDir(): string {
     let dir = "keylang";
+
     try {
       dir = loadConfig(this.state.root).dir;
     } catch {
       // A broken keylang.json is reported by the analysis; the default directory still bounds proposals.
     }
+
     return toPosix(relative(this.state.root, resolve(this.state.root, dir)));
   }
 
@@ -137,6 +148,7 @@ export class MergeSession {
   problem(path: string): string | null {
     try {
       if (!path.endsWith(".md")) return codeProposalProblem(this.state.root, path);
+
       return proposalProblem(this.state.root, this.specDir(), path, (p) => this.state.analysis?.docs.some((doc) => doc.path === p && doc.generated !== null) === true);
     } catch (error) {
       return `cannot be checked: ${errorText(error)}`;
@@ -164,38 +176,54 @@ export class MergeSession {
     const proposals = this.scan();
     state.proposals = proposals;
     const path = wanted !== undefined ? proposals.find((file) => file === wanted) : (proposals.find((file) => file === state.current) ?? proposals[0]);
+
     if (!path && wanted !== undefined) {
       // Checked again now: a proposal removed or broken since the list was built is not opened from memory.
       const problem = this.files().includes(wanted) ? this.problem(wanted) : null;
       state.message = problem !== null ? `proposal ignored: ${wanted} (${problem})` : `no proposal for ${wanted} under ${PROPOSALS_DIR}/ any more`;
+
       return;
     }
+
     if (!path) {
       const ignored = this.files()
         .map((file) => ({ file, problem: this.problem(file) }))
         .filter((item) => item.problem !== null);
+
       state.message = ignored.length > 0 ? `proposal ignored: ${ignored.map((item) => `${item.file} (${item.problem})`).join("; ")}` : `no proposals under ${PROPOSALS_DIR}/`;
+
       return;
     }
+
     const proposal = readText(this.proposalAbs(path));
+
     if (proposal === null) {
       state.message = `${PROPOSALS_DIR}/${path} cannot be read`;
+
       return;
     }
+
     if (!path.endsWith(".md")) {
       // Code is never a buffer here: the merge compares the proposal with the file on disk.
       const disk = readText(resolve(state.root, path));
+
       if (state.mode === "code") state.mode = "view";
       this.start(path, "code", lf(disk ?? "").split("\n"), lf(proposal).split("\n"), disk, proposal);
+
       return;
     }
+
     const buffer = this.host.load(path);
+
     if (path !== state.current) this.host.open(path, { line: 0, col: 0 });
+
     // The proposal changes the file on disk; unsaved edits would show up as hunks that revert them.
     if (isDirty(buffer)) {
       state.message = `${path} has unsaved changes: save (Ctrl+S) or undo them before merging its proposal`;
+
       return;
     }
+
     const disk = readText(resolve(state.root, path));
     this.start(path, "proposal", lf(disk ?? "").split("\n"), lf(proposal).split("\n"), disk, proposal);
   }
@@ -204,12 +232,16 @@ export class MergeSession {
   start(path: string, origin: MergeState["origin"], base: string[], proposed: string[], disk: string | null, proposal: string | null): void {
     const state = this.state;
     const hunks = diffLines(base, proposed);
+
     if (hunks.length === 0) {
       state.message = "the proposal matches the file; nothing to merge";
+
       if (proposal !== null) this.dropProposal(path, proposal);
       state.proposals = this.scan();
+
       return;
     }
+
     const from = state.mode === "code" || state.mode === "merge" ? "view" : state.mode;
     state.merge = { path, origin, from, base, disk, proposal, hunks, decisions: hunks.map(() => "pending"), history: [], current: 0, top: Math.max(0, hunks[0]!.baseStart - 3) };
     state.mode = "merge";
@@ -222,6 +254,7 @@ export class MergeSession {
   /** Removes the proposal of `path` while it is still `text`. */
   private dropProposal(path: string, text: string): void {
     const abs = this.proposalAbs(path);
+
     try {
       if (readText(abs) === text) removeInside(this.state.root, abs, PROPOSAL_FILE);
     } catch {
@@ -233,38 +266,50 @@ export class MergeSession {
 
   key(event: KeyEvent): void {
     const merge = this.state.merge;
+
     if (!merge) return;
+
     const focus = (index: number): void => {
       merge.current = Math.max(0, Math.min(merge.hunks.length - 1, index));
       const hunk = merge.hunks[merge.current]!;
       // Rows before the hunk: base lines plus the added lines of earlier hunks.
       let row = hunk.baseStart;
+
       for (let i = 0; i < merge.current; i++) row += merge.hunks[i]!.lines.length;
       merge.top = Math.max(0, row - 3);
     };
+
     const nextPending = (): void => {
       const after = merge.decisions.findIndex((decision, index) => index > merge.current && decision === "pending");
       const any = merge.decisions.findIndex((decision) => decision === "pending");
+
       if (after !== -1) focus(after);
       else if (any !== -1) focus(any);
     };
+
     switch (event.name) {
       case "a":
       case "r":
         merge.history.push({ hunk: merge.current, previous: merge.decisions[merge.current]! });
         merge.decisions[merge.current] = event.name === "a" ? "accepted" : "rejected";
         nextPending();
+
         return;
       case "u": {
         const last = merge.history.pop();
+
         if (last === undefined) {
           this.state.message = "no decision to undo";
+
           return;
         }
+
         merge.decisions[last.hunk] = last.previous;
         focus(last.hunk);
+
         return;
       }
+
       case "n":
       case "down":
       case "j":
@@ -280,6 +325,7 @@ export class MergeSession {
         return this.leave(merge, "merge cancelled; nothing written");
       case "?":
         this.state.help = true;
+
         return;
       default:
         return;
@@ -307,21 +353,28 @@ export class MergeSession {
    */
   private write(): void {
     const merge = this.state.merge!;
+
     if (merge.origin === "text-to-spec") return this.writeBuffer(merge);
     const count = (decision: Decision): number => merge.decisions.filter((d) => d === decision).length;
     const accepted = count("accepted");
     const pending = count("pending");
+
     if (accepted === 0 && count("rejected") === 0) {
       this.state.message = "nothing decided yet: a accepts, r rejects; Esc leaves, the proposal stays";
+
       return;
     }
+
     const state = this.state;
     const code = merge.origin === "code";
     const abs = resolve(state.root, merge.path);
+
     if (readText(abs) !== merge.disk) return this.leave(merge, `${merge.path} changed on disk during the merge; nothing written — press m to compare again`);
     const buffer = code ? null : this.host.load(merge.path);
+
     if (buffer && isDirty(buffer)) return this.leave(merge, `${merge.path} has unsaved changes; nothing written`);
     const proposalAbs = this.proposalAbs(merge.path);
+
     if (readText(proposalAbs) !== merge.proposal) return this.leave(merge, `the proposal for ${merge.path} changed during the merge; nothing written — press m to see the new one`);
     const result = applyHunks(merge.base, merge.hunks, merge.decisions).join("\n");
     // The base is the file without `\r`; a buffer holds it as `splitEol` reads it (mixed endings kept).
@@ -329,11 +382,13 @@ export class MergeSession {
 
     // 1. The file. A write that fails (no permission, a link out of bounds) throws here, and nothing has changed.
     let disk: { before: string | null; after: string } | null = null;
+
     if (accepted > 0) {
       // Every line the merge kept keeps its ending, in a file of mixed endings too.
       const after = merge.disk === null ? withEol(result, buffer ? buffer.eol : "\n") : keepLineEndings(merge.disk, result);
       writeInside(this.boundary(code), abs, after);
       disk = { before: merge.disk, after };
+
       if (buffer) {
         const text = splitEol(after).text;
         buffer.undo.push({ text: buffer.text, cursor: { ...state.cursor } });
@@ -346,6 +401,7 @@ export class MergeSession {
     // 2. The proposal: consumed, or reduced to its pending hunks.
     const rest = pending === 0 ? null : applyHunks(merge.base, merge.hunks, merge.decisions.map((d) => (d === "rejected" ? "rejected" : "accepted"))).join("\n");
     let note = pending === 0 ? "" : `; ${pending} pending hunk(s) stay in the proposal`;
+
     try {
       if (rest === null) removeInside(state.root, proposalAbs, PROPOSAL_FILE);
       else writeInside(state.root, proposalAbs, rest, PROPOSAL_FILE);
@@ -367,6 +423,7 @@ export class MergeSession {
         updateStats(state.root, (stats) => {
           merge.hunks.forEach((hunk, i) => {
             const decision = merge.decisions[i];
+
             if (decision === "accepted" || decision === "rejected") addDrafts(stats, statusesIn(hunk.lines), decision);
           });
         });
@@ -381,7 +438,9 @@ export class MergeSession {
     const buffer = this.host.load(merge.path);
     const accepted = merge.decisions.filter((decision) => decision === "accepted").length;
     const base = merge.base.join("\n");
+
     if (buffer.text !== base) return this.leave(merge, `${merge.path} changed during the merge; nothing applied — press Ctrl+G again`);
+
     if (accepted === 0) return this.leave(merge, "merge: nothing accepted; the buffer is unchanged");
     const result = applyHunks(merge.base, merge.hunks, merge.decisions).join("\n");
     buffer.undo.push({ text: base, cursor: { ...this.state.cursor } });
@@ -399,33 +458,44 @@ export class MergeSession {
   undo(): void {
     const state = this.state;
     const last = state.lastMerge;
+
     if (!last) {
       state.message = "no merge to undo";
+
       return;
     }
+
     const abs = resolve(state.root, last.path);
     const buffer = last.code ? null : this.host.load(last.path);
+
     if ((buffer && buffer.text !== last.after) || (last.disk !== null && readText(abs) !== last.disk.after)) {
       state.lastMerge = null;
       state.message = `${last.path} changed after the merge; u no longer applies${buffer ? " (Ctrl+Z in edit mode undoes edits)" : ""}`;
+
       return;
     }
+
     if (last.disk) {
       const boundary = this.boundary(last.code === true);
+
       if (last.disk.before === null) removeInside(boundary, abs);
       else writeInside(boundary, abs, last.disk.before);
+
       if (buffer) {
         buffer.saved = last.before;
         buffer.disk = last.disk.before;
       }
     }
+
     let note = "";
+
     if (last.proposal) {
       if (readText(last.proposal.abs) === last.proposal.after) {
         writeInside(state.root, last.proposal.abs, last.proposal.before, PROPOSAL_FILE);
         note = "; the proposal is back";
       } else note = "; a newer proposal was written since and is kept";
     }
+
     if (buffer) setText(buffer, last.before);
     state.lastMerge = null;
     state.proposals = this.scan();

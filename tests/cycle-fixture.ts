@@ -50,6 +50,7 @@ export type CycleStage = "init" | "config" | "unsaved" | "saved" | "check" | "ga
 
 export async function waitFor(check: () => boolean, what: string, screen?: CycleScreen, timeout = 15000): Promise<void> {
   const start = Date.now();
+
   while (!check()) {
     if (Date.now() - start > timeout) throw new Error(`timed out waiting for ${what}${screen ? `\n${screen.text()}` : ""}`);
     await new Promise((done) => setTimeout(done, 20));
@@ -84,6 +85,7 @@ const analysed = (screen: CycleScreen): boolean => !/updating|analyzing|outdated
 /** MERGE on `path`: accept every hunk, write it, wait for the merge to end. */
 async function mergeAll(screen: CycleScreen, path: string): Promise<void> {
   await waitFor(() => screen.text().includes("MERGE") && screen.text().includes(path), `MERGE on ${path}`, screen);
+
   for (let i = 0; i < 8; i++) screen.input("a");
   screen.input("w");
   await waitFor(() => !/\bMERGE\b/.test(screen.lines()[0] ?? "") && analysed(screen), `the merge of ${path} written`, screen);
@@ -158,6 +160,7 @@ export async function refundCycle(screen: CycleScreen, at: (stage: CycleStage) =
   screen.input(KEY.enter);
   await waitFor(() => /spec-to-code: .*\.keylang\/proposals/.test(screen.text()) || /\bMERGE\b/.test(screen.lines()[0] ?? ""), "the proposals", screen);
   await at("proposed");
+
   // The code first, from the proposals list (MERGE opens itself only when nothing else is open).
   if (!/\bMERGE\b/.test(screen.lines()[0] ?? "")) {
     if (screen.text().includes("Spec to code")) await esc(screen);
@@ -165,6 +168,7 @@ export async function refundCycle(screen: CycleScreen, at: (stage: CycleStage) =
     await waitFor(() => screen.text().includes("2 proposal(s)"), "the proposals list", screen);
     screen.input(KEY.enter);
   }
+
   await mergeAll(screen, "src/app/order.ts");
   palette(screen, "proposals");
   await waitFor(() => screen.text().includes("1 proposal(s)"), "the test's proposal", screen);

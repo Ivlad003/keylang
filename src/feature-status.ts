@@ -167,23 +167,30 @@ export interface FeatureInput {
 }
 
 const RULE_CODES = new Set(["K101", "K102", "K104", "K105", "K107"]);
+
 /** Errors of the spec itself: a line keylang could not read is no claim it checks. */
 const SPEC_CODES = new Set(["K001", "K002", "K003", "K004", "K005"]);
+
 const FLOW = new Set(["ID", "static", "tests", "trace"]);
+
 const KIND_ORDER: Record<Gap["kind"], number> = { empty: 0, diagnostic: 1, question: 2, deny: 3, planned: 4, static: 5, rule: 6, spec: 7, weakened: 8 };
+
 const HINT_ORDER: Record<Hint["kind"], number> = { trigger: 0, steps: 1, layer: 2, signature: 3, rule: 4 };
 
 /** Ids declared or named in one spec, in first-seen order. */
 export function idsIn(doc: Document): string[] {
   const ids: string[] = [];
+
   for (const section of doc.sections) {
     for (const top of sectionNodes(section)) {
       walk(top, (node) => {
         if (node.id) ids.push(node.id);
+
         for (const ref of node.refs) ids.push(ref.target);
       });
     }
   }
+
   return [...new Set(ids)];
 }
 
@@ -194,6 +201,7 @@ export function idsIn(doc: Document): string[] {
 export function featureStatus(input: FeatureInput, slug: string): FeatureReport | null {
   const path = specPath(input.dir, `features/${slug}.md`);
   const doc = input.docs.find((item) => item.path === path);
+
   if (doc === undefined) return null;
   const gaps: Gap[] = [];
   const hasFlow = doc.sections.some((section) => section.kind === "flow");
@@ -211,7 +219,9 @@ export function featureStatus(input: FeatureInput, slug: string): FeatureReport 
       stage: hasFlow ? "behavior" : "idea",
     });
   }
+
   const specErrors = input.diagnostics.filter((diag) => diag.file === path && isError(diag) && SPEC_CODES.has(diag.code));
+
   for (const diag of specErrors) {
     gaps.push({ kind: "diagnostic", id: diag.code, file: path, line: diag.span.start.line, col: diag.span.start.col, reason: diag.message, stage: "structure" });
   }
@@ -231,14 +241,17 @@ export function featureStatus(input: FeatureInput, slug: string): FeatureReport 
     const col = item.span.start.col;
     const mismatch = finding(input.diagnostics, path, line, "K201");
     const implemented = finding(input.diagnostics, path, line, "K202");
+
     if (mismatch) gaps.push({ kind: "planned", id: item.id, file: path, line, col, reason: mismatch.message, stage: "ready" });
     else if (!implemented) gaps.push({ kind: "planned", id: item.id, file: path, line, col, reason: `planned \`${item.id}\` is not implemented`, stage: "ready" });
   }
+
   for (const flow of flows) {
     for (const { id, span } of claimsOf(flow)) {
       // A dangling id is the spec's gap (K001 above); its missing static ok would only repeat it.
       if (specErrors.some((diag) => diag.code === "K001" && diag.span.start.line === span.start.line)) continue;
       const verdict = input.verdicts.find((entry) => entry.file === path && entry.criterion === "static" && entry.line === span.start.line && entry.area === id);
+
       if (verdict?.verdict === "ok") continue;
       gaps.push({
         kind: "static",
@@ -255,8 +268,10 @@ export function featureStatus(input: FeatureInput, slug: string): FeatureReport 
   const hints: Hint[] = [];
   const inherited: RuleFail[] = [];
   const ofThisChange = thisChange(input, path, idsIn(doc));
+
   for (const fail of ruleFails(input)) {
     const at = { id: fail.id, file: fail.file, line: fail.line, col: fail.col };
+
     if (ofThisChange(fail)) gaps.push({ kind: "rule", ...at, reason: fail.reason, stage: "ready" });
     else {
       inherited.push(fail);
@@ -266,6 +281,7 @@ export function featureStatus(input: FeatureInput, slug: string): FeatureReport 
   }
 
   if (input.base !== undefined && input.base.state !== "unavailable") gaps.push(...weakenedPlan(input, path, input.base));
+
   for (const item of input.weakened ?? []) {
     if (item.kind === "step" && item.file === path) continue;
     gaps.push({ kind: "weakened", id: "K108", file: item.file, line: item.line, col: item.col, reason: `K108 ${item.message}`, stage: "structure" });
@@ -273,20 +289,24 @@ export function featureStatus(input: FeatureInput, slug: string): FeatureReport 
 
   for (const flow of flows) {
     const at = { file: path, line: flow.span.start.line, col: flow.span.start.col };
+
     if (flow.triggers.length === 0) hints.push({ kind: "trigger", id: flow.name, ...at, reason: `flow \`${flow.name}\` has no trigger: name its entry point with \`- trigger <id>\``, stage: "behavior" });
     let steps = false;
     walkFlow(flow, (item) => {
       if (item.kind === "step" || item.kind === "calls" || item.kind === "when" || item.kind === "invariant") steps = true;
     });
+
     if (!steps) hints.push({ kind: "steps", id: flow.name, ...at, reason: `flow \`${flow.name}\` has no steps yet: add \`- step\`, \`- calls\`, \`- when\` or \`- invariant\``, stage: "behavior" });
   }
 
   for (const item of planned) {
     const at = { file: path, line: item.span.start.line, col: item.span.start.col };
     const layer = item.id.split(".")[0]!;
+
     if (input.layers !== undefined && layer !== EXTERNAL_LAYER && !input.layers.includes(layer)) {
       hints.push({ kind: "layer", id: item.id, ...at, reason: `\`${layer}\` is no layer of keylang.json, so code can never implement \`${item.id}\`: start the id with a layer (${input.layers.join(", ")}) or \`external\``, stage: "structure" });
     }
+
     if (item.decl === "fn" && item.signature === null) {
       hints.push({ kind: "signature", id: item.id, ...at, reason: `planned fn \`${item.id}\` has no signature: write it after the id, so an agent knows the contract and K201 can check it`, stage: "structure" });
     }
@@ -296,17 +316,21 @@ export function featureStatus(input: FeatureInput, slug: string): FeatureReport 
   // The feature file's own hints first, as they always came; an inherited rule fail elsewhere after them.
   const elsewhere = (hint: Hint): number => (hint.file === path ? 0 : 1);
   hints.sort((a, b) => elsewhere(a) - elsewhere(b) || compareText(a.file, b.file) || a.line - b.line || a.col - b.col || HINT_ORDER[a.kind] - HINT_ORDER[b.kind] || compareText(a.id, b.id) || compareText(a.reason, b.reason));
+
   const info = (criterion: "tests" | "trace"): FeatureInfo[] =>
     input.verdicts
       .filter((verdict) => verdict.file === path && verdict.criterion === criterion)
       .map((verdict) => ({ id: verdict.area, file: verdict.file, line: verdict.line, col: verdict.col, verdict: verdict.verdict, reason: verdict.message }));
+
   const rules = input.changed === undefined ? null : inherited.map((fail) => ({ id: fail.id, file: fail.file, line: fail.line, col: fail.col, verdict: "fail", reason: fail.reason }));
+
   return { done: gaps.length === 0, stage: stageOf(hasFlow, gaps, hints), gaps, hints, info: { tests: info("tests"), trace: info("trace"), rules, base: input.base === undefined ? null : baseInfo(input.base) } };
 }
 
 /** The base as the report names it: the commit and its state first, as they always came, then how it was chosen. */
 function baseInfo(base: FeatureBase): FeatureBaseInfo {
   const origin = { source: base.source, ...(base.main !== undefined ? { main: base.main } : {}) };
+
   return base.state === "unavailable" ? { ref: base.ref, state: "unavailable", reason: base.reason, ...origin } : { ref: base.ref, state: base.state, ...origin };
 }
 
@@ -324,14 +348,18 @@ interface RuleFail {
 /** Every rule fail of the analysis, in the order of its diagnostics, then its verdicts. */
 function ruleFails(input: FeatureInput): RuleFail[] {
   const ruleDiags = input.diagnostics.filter((diag) => isError(diag) && RULE_CODES.has(diag.code));
+
   const fails: RuleFail[] = ruleDiags.map((diag) => {
     const owner = input.verdicts.find((verdict) => sameFinding(verdict, [diag]));
+
     return { id: owner?.area ?? diag.code, file: diag.file, line: diag.span.start.line, col: diag.span.start.col, reason: diag.message, diag };
   });
+
   for (const verdict of input.verdicts) {
     if (verdict.verdict !== "fail" || FLOW.has(verdict.criterion) || sameFinding(verdict, ruleDiags)) continue;
     fails.push({ id: verdict.area, file: verdict.file, line: verdict.line, col: verdict.col, reason: verdict.message, verdict });
   }
+
   return fails;
 }
 
@@ -349,24 +377,32 @@ function thisChange(input: FeatureInput, path: string, named: readonly string[])
   const nodes = input.nodes ?? {};
   const slice = filterChanged({ docs: input.docs, spec: input.spec, diagnostics: input.diagnostics, verdicts: input.verdicts, nodes, edges: input.edges ?? [] }, input.changed.files, input.changed.deleted);
   const kept = new Set<Diagnostic | Verdict>([...slice.diagnostics, ...slice.verdicts]);
+
   const moduleOf = (id: string): string | null => {
     for (let cur = id; ; cur = cur.slice(0, cur.lastIndexOf("."))) {
       if (nodes[cur]?.kind === "module") return cur;
+
       if (!cur.includes(".")) return null;
     }
   };
+
   const isNamed = (end: string): boolean => named.some((id) => end === id || end.startsWith(`${id}.`));
+
   return (fail) => {
     if (fail.file === path || (fail.diag !== undefined && kept.has(fail.diag)) || (fail.verdict !== undefined && kept.has(fail.verdict))) return true;
     // The area is the edge's source module (or the rule's module); the edges at the fail's position give both ends.
     const ends = fail.diag?.target === undefined ? [fail.id] : [fail.id, fail.diag.target];
+
     for (const edge of input.edges ?? []) {
       if (edge.file !== fail.file || edge.line !== fail.line || edge.col !== fail.col) continue;
+
       for (const id of [edge.source, edge.target]) {
         const end = id === null ? null : moduleOf(id);
+
         if (end !== null) ends.push(end);
       }
     }
+
     return ends.some(isNamed);
   };
 }
@@ -374,10 +410,14 @@ function thisChange(input: FeatureInput, path: string, named: readonly string[])
 /** The first stage that holds, from `done` down: see `Stage`. */
 function stageOf(hasFlow: boolean, gaps: readonly Gap[], hints: readonly Hint[]): Stage {
   if (gaps.length === 0) return "done";
+
   if (!hasFlow) return "idea";
   const at = (stage: Stage): boolean => gaps.some((gap) => gap.stage === stage) || hints.some((hint) => hint.stage === stage);
+
   if (at("idea") || at("behavior")) return "behavior";
+
   if (at("structure")) return "structure";
+
   return "ready";
 }
 
@@ -399,16 +439,20 @@ function denyGaps(input: FeatureInput, path: string, flows: readonly Flow[]): Ga
   const generated = new Set(input.docs.filter((doc) => doc.generated !== null).map((doc) => doc.path));
   const gaps: Gap[] = [];
   const seen = new Set<string>();
+
   const check = (from: string | null, to: string, span: Span): void => {
     if (from === null || from === to || (!pending.has(from) && !pending.has(to))) return;
     const rule = denyingRule(input.spec, from, to, kindOf, input.format);
     const key = `${from}\0${to}\0${span.start.line}`;
+
     if (rule === null || seen.has(key)) return;
     seen.add(key);
     const scope = (id: string): string => (id.startsWith(`${EXTERNAL_LAYER}.`) ? id.split(".").slice(0, 2).join(".") : id.split(".")[0]!);
+
     const what = generated.has(rule.file)
       ? `a person adds \`- allow ${scope(from)} ${scope(to)}\` to keylang/rules.md (an agent proposes it through apply_diff)`
       : "the rule is a person's: the plan needs another path, or a person changes the rule";
+
     gaps.push({
       kind: "deny",
       id: to,
@@ -419,17 +463,24 @@ function denyGaps(input: FeatureInput, path: string, flows: readonly Flow[]): Ga
       stage: "structure",
     });
   };
+
   for (const flow of flows) {
     const visit = (item: Trigger | FlowItem, parent: string | null): void => {
       if (item.kind === "step") check(parent, item.target.target, item.span);
+
       if (item.kind === "calls") for (const ref of item.targets) check(parent, ref.target, ref.span);
+
       if (item.kind === "test") return;
       const next = item.kind === "trigger" || item.kind === "step" ? item.target.target : parent;
+
       for (const child of item.children) visit(child, next);
     };
+
     const first = flow.triggers[0]?.target.target ?? null;
+
     for (const item of flow.top) visit(item, item.kind === "trigger" ? null : first);
   }
+
   return gaps;
 }
 
@@ -441,6 +492,7 @@ function claimsOf(flow: Flow): { id: string; span: Span }[] {
     if (item.kind === "step") claims.push({ id: item.target.target, span: item.span });
     else if (item.kind === "calls") for (const ref of item.targets) claims.push({ id: ref.target, span: ref.span });
   });
+
   return claims;
 }
 
@@ -451,9 +503,11 @@ function claimsOf(flow: Flow): { id: string; span: Span }[] {
  */
 function weakenedPlan(input: FeatureInput, path: string, base: Extract<FeatureBase, { state: "compared" | "absent" }>): Gap[] {
   const found = base.state === "compared" ? planGaps(input, path, base.label, base.doc) : [];
+
   if (base.head === undefined || base.head === null) return found.map((item) => item.gap);
   const seen = new Set(found.map((item) => item.key));
   const sinceHead = planGaps(input, path, "HEAD", base.head).filter((item) => !seen.has(item.key));
+
   return [...found, ...sinceHead].map((item) => item.gap);
 }
 
@@ -470,35 +524,45 @@ function planGaps(input: FeatureInput, path: string, at: string, baseDoc: Docume
   const base = compileSpec([baseDoc]).spec;
   const gaps: { key: string; gap: Gap }[] = [];
   const kept = new Set(input.spec.planned.filter((item) => item.file === path).map((item) => item.id));
+
   for (const item of base.planned) {
     if (kept.has(item.id)) continue;
     const code = input.nodes?.[item.id];
     const mismatch = code === undefined ? "missing" : plannedMismatch(item, code);
+
     if (mismatch === null) continue;
     const why = mismatch === "missing" ? "the code does not have it" : `the code has a different ${mismatch}`;
     const reason = `planned ${item.decl} \`${item.id}\` (line ${item.span.start.line} at ${at}) was removed, but ${why}; restore it or implement it`;
     gaps.push({ key: `planned\0${item.id}`, gap: { kind: "spec", id: item.id, file: path, line: item.span.start.line, col: item.span.start.col, reason, stage: "ready" } });
   }
+
   const now = new Map<string, number>();
+
   for (const flow of input.spec.flows) if (flow.file === path) for (const { key } of planItems(flow)) now.set(key, (now.get(key) ?? 0) + 1);
+
   for (const flow of base.flows) {
     for (const { key, item } of planItems(flow)) {
       const left = now.get(key) ?? 0;
+
       if (left > 0) {
         now.set(key, left - 1);
         continue;
       }
+
       const position = { file: path, line: item.span.start.line, col: item.span.start.col };
+
       if (item.kind === "question") {
         const reason = `question «${item.question}» of flow \`${flow.name}\` (line ${item.span.start.line} at ${at}) was removed; done is judged against the plan at ${at}: answer the question in a commit`;
         gaps.push({ key, gap: { kind: "spec", id: flow.name, ...position, reason, stage: "ready" } });
         continue;
       }
+
       const id = item.target.target;
       const reason = `${item.kind} \`${id}\` of flow \`${flow.name}\` (line ${item.span.start.line} at ${at}) was changed or removed; done is judged against the plan at ${at}`;
       gaps.push({ key, gap: { kind: "spec", id, ...position, reason, stage: "ready" } });
     }
   }
+
   return gaps;
 }
 
@@ -507,15 +571,22 @@ export type PlanItem = Trigger | FlowStep | QuestionItem;
 /** Every `trigger`, `step` and open question of a flow with a key: the flow, its parents, and itself. */
 export function planItems(flow: Flow): { key: string; item: PlanItem }[] {
   const out: { key: string; item: PlanItem }[] = [];
+
   const visit = (item: Trigger | FlowItem, parents: string): void => {
     const self =
       item.kind === "trigger" || item.kind === "step" ? `${item.kind} ${item.target.target}` : item.kind === "when" ? `when ${item.condition}` : item.kind === "question" ? `? ${item.question}` : item.kind;
+
     const key = `${parents}\0${self}`;
+
     if (item.kind === "trigger" || item.kind === "step" || item.kind === "question") out.push({ key, item });
+
     if (item.kind === "test") return;
+
     for (const child of item.children) visit(child, key);
   };
+
   for (const item of flow.top) visit(item, flow.name);
+
   return out;
 }
 

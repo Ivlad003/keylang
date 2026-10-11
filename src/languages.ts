@@ -45,18 +45,21 @@ export function languageOf(path: string): Language | undefined {
   for (const name of LANGUAGE_NAMES) {
     if (LANGUAGES[name].extensions.some((ext) => path.endsWith(ext))) return name;
   }
+
   return undefined;
 }
 
 /** The member a call of a class declared in `file` runs; JS `constructor` for a file of no known language. */
 export function constructorName(file: string | null | undefined): string | null {
   const language = file ? languageOf(file) : undefined;
+
   return language === undefined ? "constructor" : LANGUAGES[language].constructor;
 }
 
 /** Classes, functions and methods declared in `file` compare their names without ASCII case: by `asciiLowerCase`. */
 export function caselessNames(file: string | null | undefined): boolean {
   const language = file ? languageOf(file) : undefined;
+
   return language !== undefined && LANGUAGES[language].caselessNames;
 }
 
@@ -73,11 +76,13 @@ export function asciiLowerCase(name: string): string {
 /** The type declarations of `file`'s language are interfaces: a call through a value typed with one goes to a class the code does not name. */
 export function interfaceTypes(file: string | null | undefined): boolean {
   const language = file ? languageOf(file) : undefined;
+
   return language !== undefined && LANGUAGES[language].interfaceTypes;
 }
 
 /** A member of a class in `file` that the language calls without naming it. */
 export function implicitMember(file: string | null | undefined, name: string): boolean {
   const language = file ? languageOf(file) : undefined;
+
   return LANGUAGES[language ?? "typescript"].implicit(name);
 }

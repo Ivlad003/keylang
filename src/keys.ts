@@ -7,8 +7,11 @@ import { join } from "node:path";
 /** The key in `~/.config/keylang/<name>.key`; a file others can read is refused, not used. */
 export function readKey(home: string, name: string): string | undefined {
   const file = join(home, ".config/keylang", `${name}.key`);
+
   if (!existsSync(file)) return undefined;
+
   if ((statSync(file).mode & 0o077) !== 0) throw new Error(`${file}: readable by others; run \`chmod 600 ${file}\``);
   const key = readFileSync(file, "utf8").trim();
+
   return key === "" ? undefined : key;
 }

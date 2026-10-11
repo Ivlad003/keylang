@@ -28,6 +28,7 @@ function exported(t: { after: (f: () => void) => void }): (key: string) => { sta
   const done = keylang(repo, ["web", "--export", site]);
   assert.equal(done.status, 0, done.stderr);
   const answers = new Map<string, { status: number; body: string }>();
+
   for (const name of readdirSync(join(site, "data"))) {
     runInNewContext(readFileSync(join(site, "data", name), "utf8"), {
       keylangData: (batch: Record<string, { status: number; body: string }>) => {
@@ -35,6 +36,7 @@ function exported(t: { after: (f: () => void) => void }): (key: string) => { sta
       },
     });
   }
+
   return (key) => answers.get(key);
 }
 

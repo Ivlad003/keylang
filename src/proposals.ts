@@ -38,6 +38,7 @@ function unreadDirectory(dirs: readonly string[]): boolean {
 /** Case does not tell the directories apart: on a case-insensitive file system `Node_Modules` is `node_modules`. */
 function unreadName(name: string): boolean {
   const lower = name.toLowerCase();
+
   return name.startsWith(".") || lower === "node_modules" || lower === "target";
 }
 
@@ -64,10 +65,14 @@ function sameEntry(a: Stats, b: Stats | null): boolean {
  */
 export function landsIn(abs: string, dir: string): boolean {
   const target = statOrNull(dir);
+
   if (target === null || !target.isDirectory()) return false;
+
   for (let entry = abs; ; entry = dirname(entry)) {
     const stat = statOrNull(entry);
+
     if (stat !== null && sameEntry(target, stat)) return true;
+
     if (dirname(entry) === entry) return false;
   }
 }
@@ -81,12 +86,17 @@ export function landsIn(abs: string, dir: string): boolean {
  */
 function landsUnread(root: string, lands: string): boolean {
   const base = statOrNull(root);
+
   for (let dir = dirname(lands); dir !== dirname(dir) && within(dir, root); dir = dirname(dir)) {
     const stat = statOrNull(dir);
+
     if (base !== null && sameEntry(base, stat)) return false;
+
     if (unreadName(basename(dir))) return true;
+
     if (stat !== null && ["node_modules", "target"].some((name) => sameEntry(stat, statOrNull(join(dirname(dir), name))))) return true;
   }
+
   return false;
 }
 
@@ -102,14 +112,17 @@ const GENERATED_SPEC_DIRS: readonly [string, string][] = [
 /** Why the spec path `inside` the spec directory is in a reserved directory by its text alone (case aside), or null: the fast path. */
 function reservedSpecText(inside: string): string | null {
   const dirs = inside.split("/").slice(0, -1);
+
   if (unreadDirectory(dirs)) return "in a directory specs are not read from";
   const first = dirs[0]?.toLowerCase();
+
   return GENERATED_SPEC_DIRS.find(([name]) => name.toLowerCase() === first)?.[1] ?? null;
 }
 
 /** Why the landing place `lands` of a spec is in a reserved directory of `specRoot` (the spec directory on disk), or null. */
 function reservedSpecLanding(specRoot: string, lands: string): string | null {
   if (landsUnread(specRoot, lands)) return "in a directory specs are not read from";
+
   return GENERATED_SPEC_DIRS.find(([name]) => landsIn(lands, join(specRoot, name)))?.[1] ?? null;
 }
 
@@ -124,27 +137,36 @@ function reservedSpecLanding(specRoot: string, lands: string): string | null {
  */
 export function proposalProblem(root: string, specDir: string, path: string, generated: (path: string) => boolean = () => false): string | null {
   if (!path.endsWith(".md")) return "not a Markdown spec";
+
   if (notPlain(path)) return "not a plain relative path";
+
   if (specDir === ".." || specDir.startsWith("../")) return "the spec directory is outside the repository";
   const prefix = specDir === "" ? "" : `${specDir}/`;
+
   if (!path.startsWith(prefix)) return `outside ${specDir}/: a proposal changes specs only`;
   const inside = path.slice(prefix.length);
   // The same files `check` reads as specs: the spec directory itself may be hidden, a directory below it may not.
   // The text of the path is the fast path; the landing place decides below, since a link or another letter
   // case of a reserved directory's name lands in it too.
   const byText = reservedSpecText(inside);
+
   if (byText !== null) return byText;
   // Links first: nothing outside the spec directory is read, not even to see whether it is generated.
   const specRoot = landing(resolve(root, specDir));
+
   if (specRoot === null || !within(specRoot, realpathSync(root))) return "the spec directory leads out of the repository through a link";
   const problem = writeProblem(root, path, { ...(specDir === "" ? {} : { under: specDir }), generated: true });
+
   if (problem !== null) return problem.startsWith("leads out of") ? `leads out of ${specDir || "."}/ through a link` : problem;
   const lands = landing(resolve(root, path))!;
   const byLanding = reservedSpecLanding(specRoot, lands);
+
   if (byLanding !== null) return byLanding;
   const text = existingText(lands);
   const marker = text === null ? null : parse(path, text).generated;
+
   if (marker !== null || (text !== null && isGeneratedText(text)) || generated(path)) return generatedSpecProblem(marker, specDir);
+
   return null;
 }
 
@@ -154,7 +176,9 @@ export function proposalProblem(root: string, specDir: string, path: string, gen
  */
 function generatedSpecProblem(marker: string | null, specDir: string): string {
   const command = marker?.match(/`(keylang [a-z-]+)`/)?.[1] ?? "keylang map";
+
   if (command !== "keylang baseline") return `a generated file: it is written by \`${command}\` only`;
+
   return `a generated file: it is written by \`keylang baseline\` only; propose rule changes in \`${specDir === "" ? "" : `${specDir}/`}rules.md\``;
 }
 
@@ -168,16 +192,23 @@ function generatedSpecProblem(marker: string | null, specDir: string): string {
  */
 export function codeProposalProblem(root: string, path: string): string | null {
   if (languageOf(path) === undefined) return "not a source file of a language keylang reads";
+
   if (notPlain(path)) return "not a plain relative path";
+
   if (unreadDirectory(path.split("/").slice(0, -1))) return "in a directory sources are not read from";
   const problem = writeProblem(root, path, { generated: true });
+
   if (problem !== null) return problem;
   const lands = landing(resolve(root, path))!;
+
   // The text was the fast path: a link such as `src/vendor -> ../node_modules/lib` lands in `node_modules/` too.
   if (landsUnread(realpathSync(root), lands)) return "in a directory sources are not read from";
   const text = existingText(lands);
+
   if (text?.startsWith(WIRE_MARKER)) return "a generated file: it is written by `keylang wire` only";
+
   if (text !== null && isGeneratedText(text)) return "a generated file: only its generator writes it";
+
   return null;
 }
 
@@ -204,9 +235,12 @@ export interface ProposalBasis {
 export function proposalWriteProblem(root: string, path: string, basis: ProposalBasis): string | null {
   const abs = resolve(root, path);
   const target = existingText(abs);
+
   if (target !== basis.target) return `${path}: ${basis.target === null ? "created" : target === null ? "removed" : "changed"} on disk while the proposal was prepared; nothing written`;
   const problem = writeProblem(root, `${PROPOSALS_DIR}/${path}`, { under: PROPOSALS_DIR, generated: true, expect: basis.proposal });
+
   if (problem === null) return null;
+
   return `${PROPOSALS_DIR}/${path}: ${problem.replace("while the change was prepared", "while the proposal was prepared")}`;
 }
 
@@ -220,8 +254,10 @@ export function proposalWriteProblem(root: string, path: string, basis: Proposal
 export function writeProposal(root: string, path: string, text: string, basis?: ProposalBasis): string {
   if (basis !== undefined) {
     const problem = proposalWriteProblem(root, path, basis);
+
     if (problem !== null) throw new Error(problem);
   }
+
   return safeWrite(root, `${PROPOSALS_DIR}/${path}`, text, { under: PROPOSALS_DIR, generated: true, ...(basis !== undefined ? { expect: basis.proposal } : {}) });
 }
 
@@ -237,13 +273,16 @@ export function lineDiff(before: string, after: string): string {
   const a = (allCrlf(before) ? before.replace(/\r\n/g, "\n") : before).split("\n");
   const b = after.replace(/\r\n/g, "\n").split("\n");
   let start = 0;
+
   while (start < a.length && start < b.length && a[start] === b[start]) start++;
   let endA = a.length;
   let endB = b.length;
+
   while (endA > start && endB > start && a[endA - 1] === b[endB - 1]) {
     endA--;
     endB--;
   }
+
   return [`@@ line ${start + 1} @@`, ...a.slice(start, endA).map((l) => `-${l}`), ...b.slice(start, endB).map((l) => `+${l}`)].join("\n");
 }
 
@@ -270,6 +309,7 @@ export interface PendingProposal {
 export function proposalTarget(name: string): string | null {
   const path = toPosix(name);
   const target = path.startsWith(`${PROPOSALS_DIR}/`) ? path.slice(PROPOSALS_DIR.length + 1) : path;
+
   return notPlain(target) ? null : target;
 }
 
@@ -281,7 +321,9 @@ export function proposalTarget(name: string): string | null {
 export function pendingTargets(root: string): string[] {
   const dir = join(root, PROPOSALS_DIR);
   const lands = landing(dir);
+
   if (!existsSync(dir) || lands === null || !within(lands, realpathSync(root))) return [];
+
   return readdirSync(dir, { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isFile() || entry.isSymbolicLink())
     .map((entry) => toPosix(relative(dir, join(entry.parentPath, entry.name))))
@@ -297,8 +339,10 @@ function storeEntry(root: string, target: string): { abs: string; link: boolean 
   const store = `${PROPOSALS_DIR}/${target}`;
   const parent = landing(dirname(join(root, store)));
   const base = landing(join(root, PROPOSALS_DIR));
+
   if (parent === null || base === null || !within(parent, realpathSync(root)) || !within(parent, base)) return { problem: `${store}: leads out of the repository through a link` };
   const abs = join(parent, basename(store));
+
   try {
     return { abs, link: lstatSync(abs).isSymbolicLink() };
   } catch {
@@ -319,17 +363,22 @@ interface ReadProposal {
  */
 function readProposal(root: string, specDir: string, target: string): ReadProposal | { problem: string } | null {
   const entry = storeEntry(root, target);
+
   if (entry === null || "problem" in entry) return entry;
+
   if (entry.link) return { problem: `a link under ${PROPOSALS_DIR}/: a proposal is a plain file` };
   const problem = targetProblem(root, specDir, target);
+
   if (problem !== null) return { problem };
   const abs = landing(resolve(root, target))!;
+
   return { proposal: readFileSync(entry.abs, "utf8"), before: existingText(abs) };
 }
 
 /** `+` and `-` lines `lineDiff` prints. */
 function lineCounts(before: string, after: string): { added: number; removed: number } {
   const lines = lineDiff(before, after).split("\n").slice(1);
+
   return { added: lines.filter((line) => line.startsWith("+")).length, removed: lines.filter((line) => line.startsWith("-")).length };
 }
 
@@ -337,7 +386,9 @@ function lineCounts(before: string, after: string): { added: number; removed: nu
 export function listProposals(root: string, specDir: string): PendingProposal[] {
   return pendingTargets(root).map((target) => {
     const read = readProposal(root, specDir, target);
+
     if (read === null || "problem" in read) return { target, newFile: false, added: null, removed: null, problem: read === null ? "removed while listed" : read.problem };
+
     return { target, newFile: read.before === null, ...lineCounts(read.before ?? "", read.proposal), problem: null };
   });
 }
@@ -347,8 +398,11 @@ export type ProposalDiff = { state: "none" } | { state: "refused"; reason: strin
 
 export function proposalDiff(root: string, specDir: string, target: string): ProposalDiff {
   const read = readProposal(root, specDir, target);
+
   if (read === null) return { state: "none" };
+
   if ("problem" in read) return { state: "refused", reason: read.problem };
+
   return { state: "diff", newFile: read.before === null, text: `${target}${read.before === null ? " (new file)" : ""}\n${lineDiff(read.before ?? "", read.proposal)}\n` };
 }
 
@@ -372,9 +426,12 @@ export type AcceptResult =
  */
 export function acceptProposal(root: string, specDir: string, target: string): AcceptResult {
   const read = readProposal(root, specDir, target);
+
   if (read === null) return { state: "none" };
+
   if ("problem" in read) return { state: "refused", reason: read.problem };
   const abs = landing(resolve(root, target))!;
+
   if (read.before !== null) {
     try {
       accessSync(abs, constants.W_OK);
@@ -382,14 +439,18 @@ export function acceptProposal(root: string, specDir: string, target: string): A
       return { state: "refused", reason: `not writable (${(error as NodeJS.ErrnoException).code ?? "error"})` };
     }
   }
+
   if (read.before === read.proposal) return { state: "unchanged", kept: dropProposal(root, target, read.proposal) };
   const spec = target.endsWith(".md");
   // MERGE's boundary: the spec directory for a spec, the repository for code; and the target as it was read.
   const options = { ...(spec && specDir !== "" ? { under: specDir } : {}), expect: read.before };
   const problem = writeProblem(root, target, options);
+
   if (problem !== null) return { state: "refused", reason: problem };
   safeWrite(root, target, read.proposal, options);
+
   if (spec) countDecision(root, read.before ?? "", read.proposal, "accepted");
+
   return { state: "written", newFile: read.before === null, ...lineCounts(read.before ?? "", read.proposal), kept: dropProposal(root, target, read.proposal) };
 }
 
@@ -402,13 +463,18 @@ export type RejectResult = { state: "none" } | { state: "refused"; reason: strin
  */
 export function rejectProposal(root: string, specDir: string, target: string): RejectResult {
   const entry = storeEntry(root, target);
+
   if (entry === null) return { state: "none" };
+
   if ("problem" in entry) return { state: "refused", reason: entry.problem };
+
   if (!entry.link && target.endsWith(".md") && targetProblem(root, specDir, target) === null) {
     const abs = landing(resolve(root, target))!;
     countDecision(root, existingText(abs) ?? "", readFileSync(entry.abs, "utf8"), "rejected");
   }
+
   rmSync(entry.abs, { force: true });
+
   return { state: "removed" };
 }
 
@@ -416,8 +482,10 @@ export function rejectProposal(root: string, specDir: string, target: string): R
 function dropProposal(root: string, target: string, text: string): string | null {
   try {
     const entry = storeEntry(root, target);
+
     if (entry === null || "problem" in entry || entry.link || readFileSync(entry.abs, "utf8") !== text) return `${PROPOSALS_DIR}/${target} changed while it was accepted; the newer proposal stays`;
     rmSync(entry.abs);
+
     return null;
   } catch (error) {
     return `${PROPOSALS_DIR}/${target} could not be removed (${errorText(error)})`;
@@ -430,8 +498,11 @@ function countDecision(root: string, before: string, after: string, decision: "a
     .split("\n")
     .slice(1)
     .filter((line) => line.startsWith("+"));
+
   const counts = statusesIn(added);
+
   if (Object.keys(counts).length === 0) return;
+
   try {
     updateStats(root, (stats) => addDrafts(stats, counts, decision));
   } catch {

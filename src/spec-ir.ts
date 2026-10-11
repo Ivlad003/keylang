@@ -218,9 +218,12 @@ export interface SpecIR {
 export function walkFlow(flow: Flow, visit: (item: Trigger | FlowItem) => void): void {
   const walk = (item: Trigger | FlowItem): void => {
     visit(item);
+
     if (item.kind === "test") return;
+
     for (const child of item.children) walk(child);
   };
+
   for (const item of flow.top) walk(item);
 }
 
@@ -252,6 +255,7 @@ export function compileSpec(docs: readonly Document[]): { spec: SpecIR; diagnost
   const diagnostics: Diagnostic[] = [];
   let seq = 0;
   const nextSeq = (): number => seq++;
+
   for (const doc of docs) {
     for (const section of doc.sections) {
       if (section.kind === "rules" || section.kind === "map") compileRules(doc.path, doc.generated !== null, section, placed, candidates, modules, diagnostics, nextSeq);
@@ -259,10 +263,12 @@ export function compileSpec(docs: readonly Document[]): { spec: SpecIR; diagnost
       else if (section.kind === "wiring") compileWires(doc.path, section, wires, diagnostics);
     }
   }
+
   const { orders, rejectedLayers } = settleLayers(candidates, diagnostics);
   const merged = [...placed, ...orders].sort((a, b) => a.seq - b.seq);
   const rules = merged.map((item) => item.rule);
   const hasRules = rules.length > 0 || rejectedLayers.length > 0;
+
   return { spec: { rules, rejectedLayers, hasRules, modules, flows, planned, wires }, diagnostics };
 }
 
@@ -279,25 +285,32 @@ function compileRules(
   const place = (rule: RuleAssertion): void => {
     placed.push({ seq: nextSeq(), rule });
   };
+
   for (const node of sectionNodes(section)) {
     if (node.kind === "layers") {
       const line = considerLayers(file, node, diagnostics);
+
       if (line) candidates.push({ ...line, seq: nextSeq() });
     } else if (node.kind === "allow" || node.kind === "deny") {
       const rule = dependency(file, node, node.kind, generated);
+
       if (rule) place(rule);
     } else if (node.kind === "entry") {
       const entry = entryLine(file, node);
+
       if (entry) place(entry);
     } else if (node.kind === "no-cycles") {
       place(noCycles(file, node, null));
     } else if (node.kind === "rule-module") {
       const module = node.refs[0];
+
       if (!module) continue;
       modules.push({ file, span: node.span, target: module, source: node });
+
       for (const child of node.children) {
         if (child.kind === "exports") {
           const rule = exportsRule(file, child, module);
+
           if (rule) place(rule);
         } else if (child.kind === "no-cycles") place(noCycles(file, child, module));
       }
@@ -308,10 +321,12 @@ function compileRules(
 /** A `layers` line the old text IR would have kept, with K005 for a non-layer or a repeated layer. An empty line is absent. */
 function considerLayers(file: string, node: Node, diagnostics: Diagnostic[]): Omit<LayerCandidate, "seq"> | null {
   const nested = node.children.flatMap((child) => child.refs);
+
   if (node.refs.length === 0 && nested.length === 0) return null;
   const text = node.refs.length > 0 ? `layers ${node.refs.map((ref) => ref.target).join(" < ")}` : "layers";
   const seen = new Set<string>();
   let valid = node.refs.length > 0;
+
   for (const ref of node.refs) {
     if (ref.target.includes(".")) {
       diagnostics.push(diagnostic("K005", file, ref.span, `\`layers\` orders layers; \`${ref.target}\` is not a layer`, "layer"));
@@ -320,11 +335,14 @@ function considerLayers(file: string, node: Node, diagnostics: Diagnostic[]): Om
       diagnostics.push(diagnostic("K005", file, ref.span, `layer \`${ref.target}\` appears twice in one order`, "layer"));
       valid = false;
     }
+
     seen.add(ref.target);
   }
+
   for (const ref of nested) {
     if (ref.target.includes(".")) diagnostics.push(diagnostic("K005", file, ref.span, `\`layers\` lists layers; \`${ref.target}\` is not a layer`, "layer"));
   }
+
   return { file, span: node.span, text, order: node.refs, nested, source: node, valid };
 }
 
@@ -337,39 +355,50 @@ function settleLayers(candidates: readonly LayerCandidate[], diagnostics: Diagno
   const direct = new Map<string, Set<string>>();
   let above = new Map<string, Set<string>>();
   const surviving: LayerCandidate[] = [];
+
   for (const chain of candidates) {
     if (!chain.valid) continue;
     const names = chain.order.map((ref) => ref.target);
     let conflict: [string, string] | null = null;
+
     for (let i = 0; i < names.length && !conflict; i++) {
       for (let j = i + 1; j < names.length && !conflict; j++) {
         const lower = names[i]!;
         const upper = names[j]!;
+
         if (above.get(upper)?.has(lower)) conflict = [lower, upper];
       }
     }
+
     if (conflict) {
       const [lower, upper] = conflict;
       diagnostics.push(diagnostic("K005", chain.file, chain.span, `\`${chain.text}\` contradicts an earlier \`layers\`, which puts \`${lower}\` above \`${upper}\``, "layer"));
       chain.valid = false;
       continue;
     }
+
     surviving.push(chain);
+
     for (let i = 0; i + 1 < names.length; i++) {
       const lower = names[i]!;
       const set = direct.get(lower) ?? new Set<string>();
       set.add(names[i + 1]!);
       direct.set(lower, set);
     }
+
     above = layersAbove(direct);
   }
+
   const ordered = new Set(surviving.flatMap((chain) => chain.order.map((ref) => ref.target)));
+
   for (const candidate of candidates) {
     for (const ref of candidate.nested) {
       if (ref.target.includes(".")) continue;
+
       if (ordered.has(ref.target)) diagnostics.push(diagnostic("K005", candidate.file, ref.span, `layer \`${ref.target}\` is both in a \`layers\` order and unordered under it`, "layer"));
     }
   }
+
   const orders = surviving.map((chain) => ({
     seq: chain.seq,
     rule: {
@@ -379,44 +408,56 @@ function settleLayers(candidates: readonly LayerCandidate[], diagnostics: Diagno
       ...at(chain.file, chain.source, chain.text),
     },
   }));
+
   const rejectedLayers = candidates
     .filter((chain) => !chain.valid)
     .map((chain) => ({ file: chain.file, span: chain.span, text: chain.text, order: chain.order, nested: chain.nested, source: chain.source }));
+
   return { orders, rejectedLayers };
 }
 
 function layersAbove(direct: ReadonlyMap<string, ReadonlySet<string>>): Map<string, Set<string>> {
   const out = new Map<string, Set<string>>();
+
   for (const start of direct.keys()) {
     const reached = new Set<string>();
     const stack = [...(direct.get(start) ?? [])];
+
     while (stack.length > 0) {
       const next = stack.pop()!;
+
       if (reached.has(next)) continue;
       reached.add(next);
       stack.push(...(direct.get(next) ?? []));
     }
+
     out.set(start, reached);
   }
+
   return out;
 }
 
 function dependency(file: string, node: Node, effect: "allow" | "deny", generated: boolean): DependencyRule | null {
   const [from, ...rest] = node.refs;
   const to = nonEmpty(rest);
+
   if (!from || !to) return null;
+
   return { kind: "dependency", effect, from, to, generated, ...at(file, node, `${effect} ${from.target} ${rest.map((ref) => ref.target).join(" ")}`) };
 }
 
 function nonEmpty(refs: readonly Ref[]): NonEmpty<Ref> | null {
   const [first, ...rest] = refs;
+
   return first === undefined ? null : [first, ...rest];
 }
 
 function entryLine(file: string, node: Node): Entry | null {
   const entries = node.children.flatMap((child) => child.refs);
   const [first, ...rest] = entries;
+
   if (!first) return null;
+
   return { kind: "entry", entries: [first, ...rest], ...at(file, node, `entry ${entries.map((ref) => ref.target).join(" ")}`) };
 }
 
@@ -426,8 +467,10 @@ function noCycles(file: string, node: Node, under: Ref | null): NoCycles {
 
 function exportsRule(file: string, node: Node, module: Ref): ExportsRule | null {
   const [first, ...rest] = node.refs;
+
   if (!first) return null;
   const names = node.refs.map((ref) => ref.text).sort().join(", ");
+
   return { kind: "exports", module, names: [first, ...rest], ...at(file, node, `exports ${module.target}: ${names}`) };
 }
 
@@ -437,19 +480,25 @@ function compileFlow(file: string, section: Section, planned: Planned[], diagnos
   const items: FlowItem[] = [];
   const top: (Trigger | FlowItem)[] = [];
   let kind: Flow["kind"] = null;
+
   for (const node of sectionNodes(section)) {
     if (node.kind === "planned") {
       const item = plannedDecl(file, node);
+
       if (item) planned.push(item);
       continue;
     }
+
     if (node.kind === "kind") {
       const value = node.text?.value;
+
       if (kind === null && (value === "business" || value === "technical")) kind = value;
       continue;
     }
+
     if (node.kind === "trigger") {
       const trigger = triggerItem(file, name, node);
+
       if (trigger) {
         triggers.push(trigger);
         top.push(trigger);
@@ -458,13 +507,17 @@ function compileFlow(file: string, section: Section, planned: Planned[], diagnos
         items.push(...hoisted);
         top.push(...hoisted);
       }
+
       continue;
     }
+
     const compiled = flowNode(file, name, node);
     items.push(...compiled);
     top.push(...compiled);
   }
+
   for (const node of sectionNodes(section)) emptyParallel(file, node, diagnostics);
+
   return { file, span: section.name!.span, name, kind, triggers, items, top };
 }
 
@@ -473,64 +526,95 @@ function emptyParallel(file: string, node: Node, diagnostics: Diagnostic[]): voi
   if (node.kind === "parallel" && !node.children.some((child) => child.kind === "step")) {
     diagnostics.push(diagnostic("K009", file, node.keyword ?? node.span, "`parallel` has no steps; nest the steps that run in any order under it"));
   }
+
   for (const child of node.children) emptyParallel(file, child, diagnostics);
 }
 
 function flowNode(file: string, flow: string, node: Node): FlowItem[] {
   if (node.kind === "step") {
     const target = node.refs[0];
+
     if (!target) return flowItems(file, flow, node.children);
+
     return [{ kind: "step", target, children: flowItems(file, flow, node.children), ...flowAt(file, flow, node) }];
   }
+
   if (node.kind === "parallel") {
     return [{ kind: "parallel", children: flowItems(file, flow, node.children), ...flowAt(file, flow, node) }];
   }
+
   if (node.kind === "continues") {
     const text = node.text;
+
     if (text === null) return [];
+
     return [{ kind: "continues", flow: text.value, flowSpan: text.span, children: [], ...flowAt(file, flow, node) }];
   }
+
   if (node.kind === "after" || node.kind === "every") {
     const words = node.tokens.slice(1).map((token) => token.text);
     const value = node.text === null ? null : node.kind === "after" ? node.text.value : scheduleText(words);
+
     if (value === null) return flowItems(file, flow, node.children);
+
     return [{ kind: node.kind, value, children: flowItems(file, flow, node.children), ...flowAt(file, flow, node) }];
   }
+
   if (node.kind === "when") {
     const condition = node.text?.value;
+
     if (condition === undefined) return flowItems(file, flow, node.children);
+
     return [{ kind: "when", condition, children: flowItems(file, flow, node.children), ...flowAt(file, flow, node) }];
   }
+
   if (node.kind === "then") {
     const target = node.refs[0];
     const children = flowItems(file, flow, node.children);
+
     if (target) return [{ kind: "then", form: "ref", target, children, ...flowAt(file, flow, node) }];
     const prose = node.text?.value;
+
     if (prose === undefined) return children;
+
     return [{ kind: "then", form: "text", prose, children, ...flowAt(file, flow, node) }];
   }
+
   if (node.kind === "invariant" || node.kind === "reads" || node.kind === "emits") {
     const target = node.refs[0] ?? null;
     const body = node.text?.value ?? target?.target;
+
     if (body === undefined) return flowItems(file, flow, node.children);
+
     return [{ kind: node.kind, body, target, children: flowItems(file, flow, node.children), ...flowAt(file, flow, node) }];
   }
+
   if (node.kind === "calls") {
     const [first, ...rest] = node.refs;
+
     if (!first) return flowItems(file, flow, node.children);
+
     return [{ kind: "calls", targets: [first, ...rest], children: flowItems(file, flow, node.children), ...flowAt(file, flow, node) }];
   }
+
   if (node.kind === "question") {
     const question = node.text?.value;
+
     if (question === undefined) return [];
+
     return [{ kind: "question", question, children: [], ...flowAt(file, flow, node) }];
   }
+
   if (node.kind === "test") {
     const path = node.text?.value;
+
     if (path === undefined) return [];
+
     return [{ kind: "test", path, name: node.label?.value ?? null, ...flowAt(file, flow, node) }];
   }
+
   if (node.kind === "planned") return [];
+
   return flowItems(file, flow, node.children);
 }
 
@@ -540,45 +624,58 @@ function flowItems(file: string, flow: string, nodes: readonly Node[]): FlowItem
 
 function triggerItem(file: string, flow: string, node: Node): Trigger | null {
   const target = node.refs[0];
+
   if (!target) return null;
   const label = node.label;
   const entry = label !== null && isTriggerKind(label.value) ? { kind: label.value, span: label.span } : null;
   const event = label !== null && label.value === TRIGGER_EVENT ? label.span : null;
+
   return { kind: "trigger", target, entry, event, children: flowItems(file, flow, node.children), ...flowAt(file, flow, node) };
 }
 
 function plannedDeclKind(value: string): Planned["decl"] | null {
   if (value === "fn" || value === "module" || value === "type" || value === "event") return value;
+
   return null;
 }
 
 function plannedDecl(file: string, node: Node): Planned | null {
   const decl = node.label ? plannedDeclKind(node.label.value) : null;
+
   if (!node.id || !decl) return null;
+
   return { kind: "planned", decl, id: node.id, signature: node.text?.value ?? null, ...at(file, node, renderMeaning(node)) };
 }
 
 function compileWires(file: string, section: Section, wires: Wire[], diagnostics: Diagnostic[]): void {
   for (const node of sectionNodes(section)) {
     const target = node.kind === "wire" ? node.refs[0] : undefined;
+
     if (!target) continue;
     const deps: WireDep[] = [];
+
     for (const child of node.children) {
       const depTarget = child.kind === "wire-dep" ? child.refs[0] : undefined;
+
       if (!child.name || !depTarget) continue;
       const when: WireWhen[] = [];
       const compose: WireCompose[] = [];
+
       for (const option of child.children) {
         if (option.kind === "compose") {
           const composeTarget = option.refs[0];
+
           if (composeTarget) compose.push({ target: composeTarget, ...at(file, option, renderMeaning(option)) });
         } else if (option.kind === "when") {
           const parsed = wireWhen(file, option, diagnostics);
+
           if (parsed) when.push(parsed);
         }
       }
+
       deps.push({ name: child.name.value, target: depTarget, when, compose, ...at(file, child, renderMeaning(child)) });
     }
+
     wires.push({ target, deps, ...at(file, node, renderMeaning(node)) });
   }
 }
@@ -588,12 +685,17 @@ function wireWhen(file: string, option: Node, diagnostics: Diagnostic[]): WireWh
   const match = WIRE_CONDITION.exec(wireConditionText(option));
   const env = match?.[1];
   const value = match?.[2];
+
   if (env === undefined || value === undefined) {
     diagnostics.push(diagnostic("K005", file, option.text?.span ?? option.span, "a wiring condition must be `env.NAME = value`", "arguments"));
+
     return null;
   }
+
   const target = option.refs[0];
+
   if (!target) return null;
+
   return { env, value, target, ...at(file, option, renderMeaning(option)) };
 }
 
@@ -607,11 +709,13 @@ function wireConditionText(node: Node): string {
   const arrow = tokens.findIndex((token) => token.text === "→" || token.text === "->");
   let out = "";
   let previous: (typeof tokens)[number] | undefined;
+
   for (const token of tokens.slice(1, arrow === -1 ? tokens.length : arrow)) {
     if (previous !== undefined && previous.span.end.offset !== token.span.start.offset) out += " ";
     out += token.text;
     previous = token;
   }
+
   return out;
 }
 
@@ -643,30 +747,38 @@ export interface PlannedDeclaration {
 export function plannedDeclaration(docs: readonly Document[], id: string): PlannedDeclaration | null {
   const find = (node: Node): Node | null => {
     if (node.kind === "planned" && node.id === id) return node;
+
     for (const child of node.children) {
       const found = find(child);
+
       if (found) return found;
     }
+
     return null;
   };
+
   for (const doc of docs) {
     for (const section of doc.sections) {
       for (const top of sectionNodes(section)) {
         const node = find(top);
+
         if (node) return { kind: node.label?.value ?? "fn", signature: node.text?.value ?? null, file: doc.path, line: node.span.start.line, col: node.span.start.col };
       }
     }
   }
+
   return null;
 }
 
 /** The names of the flows whose steps or trigger name `id`, sorted. */
 export function flowsUsing(spec: SpecIR, id: string): string[] {
   const flows = new Set<string>();
+
   for (const flow of spec.flows) {
     walkFlow(flow, (item) => {
       if ((item.kind === "step" || item.kind === "trigger") && item.target.target === id) flows.add(flow.name);
     });
   }
+
   return [...flows].sort();
 }

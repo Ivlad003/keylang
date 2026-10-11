@@ -36,16 +36,20 @@ test("the package part of an external ID", () => {
 function repo(t: TestContext, files: Record<string, string>): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-external-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+
   for (const [path, text] of Object.entries(files)) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
     writeFileSync(join(dir, path), text);
   }
+
   return dir;
 }
 
 function check(dir: string): { status: number | null; stdout: string; stderr: string } {
   const r = spawnSync(process.execPath, [bin, "check"], { cwd: dir, encoding: "utf8" });
+
   if (r.error) throw r.error;
+
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
@@ -63,6 +67,7 @@ test("Cargo: a `path` dependency or a workspace member is no external package; `
     "Cargo.toml": '[workspace]\nmembers = ["crates/*"]\n',
     "crates/api/Cargo.toml": '[package]\nname = "api"\nversion = "0.1.0"\n\n[dependencies]\ndomain = { path = "../domain" }\nserde = "1"\n',
   });
+
   const out = check(dir).stdout;
   assert.match(out, /K001 dangling reference `external\.domain`/);
   assert.match(out, /K001 dangling reference `external\.nonexistent`/);
@@ -75,15 +80,18 @@ test("Cargo: `{ workspace = true }` on a `path` entry of `[workspace.dependencie
     "Cargo.toml": '[workspace]\nmembers = ["crates/*"]\n\n[workspace.dependencies]\ndomain = { path = "crates/domain" }\nserde = "1"\n',
     "crates/api/Cargo.toml": '[package]\nname = "api"\nversion = "0.1.0"\n\n[dependencies]\ndomain = { workspace = true }\nserde = { workspace = true }\n',
   });
+
   const out = check(inherited).stdout;
   assert.match(out, /K001 dangling reference `external\.domain`/);
   assert.doesNotMatch(out, /external\.serde`/);
+
   // The resolver binds a member's name to its library whatever the dependency says.
   const member = repo(t, {
     ...CRATES,
     "Cargo.toml": '[workspace]\nmembers = ["crates/*"]\n',
     "crates/api/Cargo.toml": '[package]\nname = "api"\nversion = "0.1.0"\n\n[dependencies]\ndomain = "0.1"\nserde = "1"\n',
   });
+
   assert.match(check(member).stdout, /K001 dangling reference `external\.domain`/);
 });
 
@@ -103,6 +111,7 @@ test("npm: a workspace member a `**`, `{a,b}` or negated pattern names is intern
     assert.match(out, /K001 dangling reference `external\.acme-ui`/, workspaces.join(" "));
     assert.doesNotMatch(out, /external\.left-pad`/);
   }
+
   // A negated pattern takes the member out of the workspace: it is declared as a package again.
   const negated = repo(t, { ...WEB, "package.json": JSON.stringify({ name: "root", private: true, workspaces: ["apps/*", "packages/**", "!packages/libs/**"] }) });
   assert.doesNotMatch(check(negated).stdout, /K001 dangling reference `external\.acme-ui`/);

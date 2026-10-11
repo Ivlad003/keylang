@@ -35,14 +35,17 @@ interface Names {
 export function generateWire(input: WireInput): string {
   const { snapshot, wires, out } = input;
   const order = wireOrder(wires);
+
   if ("cycle" in order) throw new Error(`wiring cycle ${order.cycle.join(" → ")}`);
   const byId = new Map(wires.map((w) => [w.target.target, w]));
   // Every ID that is built (wire targets, leaves, `when` branches) and every decorator.
   const built = new Set<string>(order.order);
   const decorators = new Set<string>();
+
   for (const w of wires) for (const d of w.deps) for (const c of d.compose) decorators.add(c.target.target);
   const imports = [...new Set([...built, ...decorators])].sort();
   const kinds = new Map<string, string>();
+
   for (const id of [...imports, ...imports.map((id) => id.slice(0, id.lastIndexOf(".")))]) kinds.set(id, isClass(snapshot, id) ? "class" : (snapshot.nodes[id]?.kind ?? "missing"));
   const view: WiringView = { kinds, nodes: snapshot.nodes, exports: snapshot.exports };
   const names = localNames(imports);
@@ -53,22 +56,28 @@ export function generateWire(input: WireInput): string {
   // A static method is called on its class, under the method's own local name for the class.
   const members = new Map<string, string>();
   const callee = (id: string): string => `${name(id).local}${members.has(id) ? memberAccess(members.get(id)!) : ""}`;
+
   for (const id of imports) {
     if (!snapshot.nodes[id]?.file) throw new Error(`\`${id}\` is not in the snapshot`);
     // `check` reports the same as K302: the generator never writes an import that cannot load.
     const found = wireImport(view, id);
+
     if ("problem" in found) throw new Error(`\`${id}\` ${found.problem}`);
+
     if (found.member !== undefined) members.set(id, found.member);
     const entry = byFile.get(found.file) ?? { default: null, named: [] };
+
     // One default binding per import line; a second one (a class and its static method) is `default as`.
     if (found.name === "default" && entry.default === null) entry.default = name(id).local;
     else entry.named.push({ name: found.name, local: name(id).local });
     byFile.set(found.file, entry);
   }
+
   for (const [file, entry] of [...byFile].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
     const named = entry.named.length > 0 ? `{ ${entry.named.map((n) => (n.name === n.local ? n.name : `${n.name} as ${n.local}`)).join(", ")} }` : null;
     lines.push(`import ${[entry.default, named].filter((part) => part !== null).join(", ")} from ${JSON.stringify(specifier(out, file, ext))};`);
   }
+
   const classes = new Set(imports.filter((id) => kinds.get(id) === "class"));
   lines.push(
     "",
@@ -103,6 +112,7 @@ export function generateWire(input: WireInput): string {
     '    if (errors.length > 0) throw new AggregateError(errors, "keylang wire: dispose failed");',
     "  };",
   );
+
   for (const id of order.order) {
     const w = byId.get(id);
     const n = name(id);
@@ -112,6 +122,7 @@ export function generateWire(input: WireInput): string {
     lines.push(`  const ${n.build} = async () => track(await ${call});`);
     lines.push(`  const ${n.builder} = () => (${n.cell} ??= ${n.build}());`);
   }
+
   const targets = wires.map((w) => w.target.target);
   lines.push(
     "  try {",
@@ -129,6 +140,7 @@ export function generateWire(input: WireInput): string {
     "}",
     "",
   );
+
   return lines.join("\n");
 }
 
@@ -136,9 +148,13 @@ export function generateWire(input: WireInput): string {
 function depValue(d: WireDep, name: (id: string) => Names, callee: (id: string) => string): string {
   let value = `await ${name(d.target.target).builder}()`;
   const branches = d.when.map((when) => ({ env: when.env, value: when.value, id: when.target.target }));
+
   for (const c of [...branches].reverse()) value = `env[${JSON.stringify(c.env)}] === ${JSON.stringify(c.value)} ? await ${name(c.id).builder}() : ${value}`;
+
   if (branches.length > 0) value = `(${value})`;
+
   for (const c of d.compose) value = `${callee(c.target.target)}(${value})`;
+
   return value;
 }
 
@@ -150,6 +166,7 @@ function memberAccess(member: string): string {
 /** A class is a module node with the class marker. */
 function isClass(snapshot: AnalysisSnapshot, id: string): boolean {
   const node = snapshot.nodes[id];
+
   return node?.kind === "module" && node.class === true;
 }
 
@@ -162,20 +179,27 @@ function isClass(snapshot: AnalysisSnapshot, id: string): boolean {
 function localNames(ids: readonly string[]): Map<string, Names> {
   const base = (id: string): string => {
     const name = id.replace(/[^A-Za-z0-9_$]/g, "_");
+
     return /^[0-9]/.test(name) ? `_${name}` : name;
   };
+
   const shared = new Map<string, number>();
+
   for (const id of ids) shared.set(base(id), (shared.get(base(id)) ?? 0) + 1);
   const derive = (local: string): Names => ({ local, builder: `build_${local}`, build: `build_${local}Build`, cell: `built_${local}`, value: `${local}Value` });
   const used = new Set<string>();
   const out = new Map<string, Names>();
+
   for (const id of [...ids].sort()) {
     let local = shared.get(base(id))! > 1 ? `${base(id)}_${shortHash(id)}` : base(id);
+
     for (let salt = 1; Object.values(derive(local)).some((n) => used.has(n)); salt++) local = `${base(id)}_${shortHash(`${id}#${salt}`)}`;
     const names = derive(local);
+
     for (const n of Object.values(names)) used.add(n);
     out.set(id, names);
   }
+
   return out;
 }
 
@@ -194,7 +218,9 @@ function key(name: string): string {
  */
 function importExtension(root: string): "ts" | "js" | "none" {
   const options = compilerOptions(join(root, "tsconfig.json"), 0);
+
   if (options.allowImportingTsExtensions === true || options.rewriteRelativeImportExtensions === true) return "ts";
+
   return NODE_RESOLUTION.test(moduleResolution(options)) ? "js" : "none";
 }
 
@@ -204,20 +230,24 @@ const NODE_RESOLUTION = /^node(16|next)$/;
 function moduleResolution(options: Record<string, unknown>): string {
   if (options.moduleResolution !== undefined) return String(options.moduleResolution).toLowerCase();
   const module = String(options.module ?? "").toLowerCase();
+
   return /^node(16|18|20)$/.test(module) ? "node16" : module;
 }
 
 /** `compilerOptions` of a tsconfig over those of its relative `extends`; package configs are not read. */
 function compilerOptions(file: string, depth: number): Record<string, unknown> {
   const config = readJsonc(file) as { extends?: unknown; compilerOptions?: Record<string, unknown> } | null;
+
   if (config === null || typeof config !== "object" || depth > 5) return {};
   const parents = typeof config.extends === "string" ? [config.extends] : Array.isArray(config.extends) ? config.extends.filter((e): e is string => typeof e === "string") : [];
   let options: Record<string, unknown> = {};
+
   for (const parent of parents) {
     if (!parent.startsWith(".")) continue;
     options = { ...options, ...compilerOptions(join(dirname(file), parent.endsWith(".json") ? parent : `${parent}.json`), depth + 1) };
   }
-  return { ...options, ...(config.compilerOptions ?? {}) };
+
+  return { ...options, ...config.compilerOptions };
 }
 
 /** What a relative import names at run time for each source extension (`.mts` → `.mjs`); a bundler resolves the plain ones itself. */
@@ -225,12 +255,17 @@ const RUNTIME_EXTENSION: Record<string, string> = { ".ts": ".js", ".tsx": ".js",
 
 function specifier(out: string, file: string, ext: "ts" | "js" | "none"): string {
   let rel = posix.relative(posix.dirname(out), file);
+
   if (!rel.startsWith("./") && !rel.startsWith("../")) rel = `./${rel}`;
+
   if (ext === "ts") return rel;
   const source = posix.extname(rel);
   const runtime = RUNTIME_EXTENSION[source];
+
   if (runtime === undefined) return rel;
   const stem = rel.slice(0, -source.length);
+
   if (ext === "js") return `${stem}${runtime}`;
+
   return source === ".ts" || source === ".tsx" || source === ".js" || source === ".jsx" ? stem : `${stem}${runtime}`;
 }

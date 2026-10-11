@@ -32,6 +32,7 @@ const VIEW = "keylang/flows-discovered";
 function repo(t: { after: (fn: () => void) => void }, extra: Record<string, string> = {}): string {
   const dir = tempDir(t, "keylang-discover-");
   writeTree(dir, { ...REPO, ...extra });
+
   return dir;
 }
 
@@ -159,10 +160,12 @@ test("tui: «Discover flows» in the palette writes the view and shows the summa
     "src/presentation/handlers.ts": "export function listOrders(): string[] {\n  return [];\n}\n",
     "src/presentation/server.ts": 'import { listOrders } from "./handlers.ts";\nconst app = { get: (_p: string, _h: unknown) => 0 };\napp.get("/orders", listOrders);\n',
   });
+
   const s = session(root);
   t.after(() => s.app.close());
   await s.app.idle();
   s.send(KEY.ctrlP);
+
   for (const ch of "discover flows") s.send(ch);
   assert.match(s.text(), /Discover flows: a flow draft for every entry point/);
   s.send(KEY.enter);

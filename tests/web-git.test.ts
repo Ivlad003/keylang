@@ -17,6 +17,7 @@ import { git, treeBytes } from "./cli-helpers.ts";
 import { branchRepo, GIT_LAYERS as LAYERS } from "./git-fixture.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
 
 function send(url: URL, path: string, headers: Record<string, string>): Promise<{ status: number; body: string }> {
@@ -26,6 +27,7 @@ function send(url: URL, path: string, headers: Record<string, string>): Promise<
       res.on("data", (chunk: Buffer) => (text += chunk.toString()));
       res.on("end", () => resolve({ status: res.statusCode ?? 0, body: text }));
     });
+
     req.on("error", reject);
     req.end();
   });
@@ -42,12 +44,15 @@ async function readOnlyServer(t: { after: (f: () => void | Promise<void>) => voi
   let out = "";
   child.stdout.on("data", (chunk: Buffer) => (out += chunk.toString()));
   const start = Date.now();
+
   while (!/keylang web: (\S+)/.test(out)) {
     if (child.exitCode !== null || Date.now() - start > 20000) throw new Error(`no URL: ${out}`);
     await new Promise((done) => setTimeout(done, 20));
   }
+
   const url = new URL(/keylang web: (\S+)/.exec(out)![1]!);
   const bearer = { Authorization: `Bearer ${new URLSearchParams(url.hash.slice(1)).get("t")}` };
+
   return { url, get: (path) => send(url, path, bearer) };
 }
 
@@ -126,6 +131,7 @@ test("web --export: the site answers /api/git and /api/changes for the base of a
   const run = spawnSync(process.execPath, [bin, "web", "--export", site], { cwd: repo, encoding: "utf8" });
   assert.equal(run.status, 0, run.stderr);
   const answers = new Map<string, { status: number; body: string }>();
+
   for (const name of readdirSync(join(site, "data"))) {
     runInNewContext(readFileSync(join(site, "data", name), "utf8"), {
       keylangData: (batch: Record<string, { status: number; body: string }>) => {
@@ -133,7 +139,9 @@ test("web --export: the site answers /api/git and /api/changes for the base of a
       },
     });
   }
+
   const server = await readOnlyServer(t, repo);
+
   for (const key of ["/api/git", "/api/changes", "/api/changes?since=HEAD"]) {
     const exported = answers.get(key);
     assert.ok(exported, key);

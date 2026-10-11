@@ -54,6 +54,7 @@ function result(status: GreenfieldResult["status"], exitCode: 0 | 1 | 2, error: 
 function exists(abs: string): boolean {
   try {
     lstatSync(abs);
+
     return true;
   } catch {
     return false;
@@ -63,6 +64,7 @@ function exists(abs: string): boolean {
 /** Whether a new project may be drawn here: the root has no keylang.json (not even a link of that name). */
 export function greenfieldAvailability(root: string): { available: boolean; reason: string | null } {
   if (exists(join(root, CONFIG_FILE))) return { available: false, reason: `${CONFIG_FILE} is there: the project exists; draw on a view and «Запропонувати зміни»` };
+
   return { available: true, reason: null };
 }
 
@@ -70,16 +72,21 @@ export function greenfieldAvailability(root: string): { available: boolean; reas
 function newFileProblem(root: string, path: string): string | null {
   if (exists(join(root, path))) return "already exists";
   const place = targetProblem(root, path);
+
   if (place !== null) return place;
+
   for (let dir = dirname(path); dir !== "." && dir !== ""; dir = dirname(dir)) {
     let entry;
+
     try {
       entry = statSync(join(root, dir));
     } catch {
       continue;
     }
+
     if (!entry.isDirectory()) return `${dir} is not a directory`;
   }
+
   return null;
 }
 
@@ -90,34 +97,47 @@ function newFileProblem(root: string, path: string): string | null {
  */
 export function runGreenfield(request: GreenfieldRequest): GreenfieldResult {
   const { root } = request;
+
   if (!isAbsolute(root)) return result("invalid", 2, "greenfield: root must be an absolute path");
+
   try {
     if (!statSync(root).isDirectory()) return result("invalid", 2, `${root}: not a directory`);
   } catch (error) {
     return result("failed", 2, errorText(error));
   }
+
   const available = greenfieldAvailability(root);
+
   if (!available.available) return result("conflict", 1, available.reason, [CONFIG_FILE]);
   const model = parseEditorModel(request.model);
+
   if (typeof model === "string") return result("invalid", 2, model);
+
   if (!Array.isArray(request.languages) || !request.languages.every((name) => typeof name === "string")) return result("invalid", 2, `languages: an array of ${Object.keys(GREENFIELD_LANGUAGES).join(", ")}`);
   const idea = request.idea ?? "";
+
   if (typeof idea !== "string") return result("invalid", 2, "idea: text");
+
   if (idea.length > MAX_IDEA) return result("invalid", 2, `idea: at most ${MAX_IDEA} characters`);
   const plan = greenfieldPlan({ model, languages: request.languages as string[], idea, specDir: GREENFIELD_SPEC_DIR });
+
   if (typeof plan === "string") return result("invalid", 2, plan);
   const badSlug = plan.features.find((feature) => !FEATURE_SLUG.test(feature.slug));
+
   if (badSlug) return result("invalid", 2, `process \`${badSlug.slug}\`: a feature's name is Latin letters, digits, . _ or - — rename its trigger (the last part of its ID names the process)`);
   // Every target checked before the first write: one in the way, and nothing is written.
   const blocked = plan.files.map((file) => ({ path: file.path, problem: newFileProblem(root, file.path) })).filter((file) => file.problem !== null);
+
   if (blocked.length > 0) {
     return result("conflict", 1, `nothing written: ${blocked.map((file) => `${file.path}: ${file.problem}`).join("; ")}`, blocked.map((file) => file.path));
   }
+
   try {
     safeWriteAll(root, plan.files.map((file) => ({ path: file.path, text: file.text, options: { expect: null } })));
   } catch (error) {
     return result("failed", 2, errorText(error));
   }
+
   return {
     exitCode: 0,
     status: "written",

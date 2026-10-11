@@ -21,6 +21,7 @@ function block(path: string, text: string): string {
 /** The model proposes the file the person's last message names after «запропонуй»: a flow for a spec, a line of code for the rest. */
 function proposing(prompt: string): string {
   const path = /Person: запропонуй (\S+)$/.exec(prompt)?.[1] ?? "none";
+
   return `Ось зміна.\n\n${block(path, path.endsWith(".md") ? "# flow proposed\n" : "export const a = 1;\n")}`;
 }
 
@@ -33,6 +34,7 @@ function say(s: ReturnType<typeof session>, text: string): void {
 function lastAnswer(s: ReturnType<typeof session>): string {
   const messages = s.app.state.clip.chat.messages;
   assert.equal(messages.at(-1)?.role, "clip", JSON.stringify(messages));
+
   return messages.at(-1)!.text;
 }
 
@@ -64,6 +66,7 @@ test("tui-clip-proposals: a block for the open flow is a proposal; m opens MERGE
   assert.equal(s.app.state.mode, "merge");
   assert.equal(s.app.state.merge?.path, FLOW_PATH);
   assert.equal(s.app.state.analysis!.verdicts, verdicts);
+
   for (let i = 0; i < s.app.state.merge!.hunks.length; i++) s.send("a");
   s.send("w");
   await s.app.idle();
@@ -89,6 +92,7 @@ test("tui-clip-proposals: a flow with its own code block comes back whole, wheth
       s.send(KEY.f7);
       s.send("m");
       assert.equal(s.app.state.merge?.path, FLOW_PATH);
+
       for (let i = 0; i < s.app.state.merge!.hunks.length; i++) s.send("a");
       s.send("w");
       await s.app.idle();
@@ -106,13 +110,16 @@ test("tui-clip-proposals: a generated, unsaved, already proposed, code or outsid
   await s.app.idle();
   const before = treeBytes(root);
   s.send(KEY.f7);
+
   const refusal = async (path: string): Promise<string> => {
     say(s, `запропонуй ${path}`);
     await s.app.idle();
     const answer = lastAnswer(s);
     assert.ok(answer.startsWith(`Ось зміна.\nпропозицію для ${path} не записано: `), answer);
+
     return answer;
   };
+
   assert.match(await refusal("keylang/map/app.md"), /a generated map file: change the code or the rules, then run `keylang map`$/);
   assert.match(await refusal("src/app.ts"), /це не специфікація: код пише харнес, скрепка пропонує лише \.md під keylang\/$/);
   assert.match(await refusal("../outside.md"), /not a plain relative path$/);
@@ -158,6 +165,7 @@ test("tui-clip-proposals: of two blocks only the first is written, with a note a
   assert.equal(s.app.state.prompt?.kind, "proposal", "the proposals list: the open flow has none");
   s.send(KEY.enter);
   assert.equal(s.app.state.merge?.path, "keylang/flows/refund.md");
+
   for (let i = 0; i < s.app.state.merge!.hunks.length; i++) s.send("a");
   s.send("w");
   await s.app.idle();
@@ -235,6 +243,7 @@ test("tui-clip-proposals: the open file saved while the model answers — from o
     s.send("G");
     s.send("i");
     assert.equal(s.app.state.mode, "edit");
+
     for (const ch of LINE) s.send(ch);
     s.send(KEY.ctrlS);
     assert.ok(readFileSync(join(root, FLOW_PATH), "utf8").includes(LINE), "saved while the model answers");

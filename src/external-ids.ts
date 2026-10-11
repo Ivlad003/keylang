@@ -19,24 +19,30 @@ export function externalSegment(pkg: string): string {
  */
 export function assignExternalIds(names: Iterable<string>): { ids: Map<string, string>; warnings: string[] } {
   const bySegment = new Map<string, string[]>();
+
   for (const pkg of [...new Set(names)].sort()) {
     const segment = externalSegment(pkg);
     bySegment.set(segment, [...(bySegment.get(segment) ?? []), pkg]);
   }
+
   const ids = new Map<string, string>();
   const warnings: string[] = [];
+
   for (const [segment, group] of bySegment) {
     const keeper = group.find((n) => n === segment) ?? group[0]!;
     ids.set(keeper, `${EXTERNAL}.${segment}`);
     let n = 2;
+
     for (const name of group) {
       if (name === keeper) continue;
+
       while (bySegment.has(`${segment}-${n}`)) n++;
       const id = `${EXTERNAL}.${segment}-${n++}`;
       ids.set(name, id);
       warnings.push(`packages \`${keeper}\` and \`${name}\` share the ID segment \`${segment}\`; \`${name}\` is \`${id}\``);
     }
   }
+
   return { ids, warnings };
 }
 

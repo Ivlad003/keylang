@@ -21,10 +21,12 @@ function copy(t: TestContext): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-context-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   cpSync(join(root, "tests/fixtures/repo"), dir, { recursive: true });
+
   return dir;
 }
 
 const FLOW = "# flow checkout\n\n- trigger app.checkout.checkout\n  - step domain.order.createOrder\n";
+
 const input = { path: "keylang/flows/checkout.md", text: FLOW, line: 2, added: [], removed: new Set<string>() };
 
 test("context pack: another spec comes from the analysis (an unsaved buffer included), not from the disk; each analysis has its own packs", async (t) => {

@@ -70,19 +70,27 @@ export const MERGE_CLICK = "finish the merge first: w writes the decided hunks, 
 export const START_REASON = "choose Browse on the start screen first (Enter)";
 
 const mergeOnly = (ctx: ActionContext): string | null => (ctx.merge ? MERGE_REASON : null);
+
 const editor = (ctx: ActionContext): string | null => (ctx.merge ? MERGE_REASON : ctx.start ? START_REASON : null);
+
 const bufferOrMerge = (ctx: ActionContext): string | null => editor(ctx) ?? (ctx.current === null ? "no file open" : null);
+
 const snapshot = (ctx: ActionContext): string | null => editor(ctx) ?? ctx.noSnapshot;
+
 const running = (ctx: ActionContext): string | null => (ctx.operation ? "an operation is already running" : null);
+
 // Keys of the view that act on the id or line under the cursor: in editing Enter and letters type text.
 const viewOnly = (ctx: ActionContext): string | null =>
   bufferOrMerge(ctx) ?? (ctx.mode === "edit" ? "Esc to the view first: in editing these keys type text" : ctx.mode === "code" ? "back to the spec first (Esc)" : null);
+
 const writable = (ctx: ActionContext): string | null => bufferOrMerge(ctx) ?? (ctx.readOnly ? "generated map files are read-only" : null);
 
 /** The way to a model when none is set: the config and the diagnostics are actions of this catalogue too. */
 /** Model modes without an agent: the algorithmic one works offline. */
 const ALGO_ONLY_NOTE = "algo works offline; the model modes need an agent → Open keylang.json · Environment diagnostics";
+
 const EXPLAIN_NO_AGENT_NOTE = "no agent: Enter shows the summary and the saved answer → Open keylang.json · Environment diagnostics";
+
 export const NO_AGENT_REASON = "no agent in keylang.json → Open keylang.json (set agent) · Environment diagnostics (credentials)";
 
 /** The static actions, in palette order; per-file "open" entries come from `catalog()`. */
@@ -448,6 +456,7 @@ export function openAction(path: string): Action {
 /** The full catalogue for the current session: static actions plus one "open" entry per file. */
 export function catalog(state: State): ActionEntry[] {
   const ctx = availabilityOf(state);
+
   return [...ACTIONS, ...state.files.map((path) => openAction(path))].map((action) => ({ action, reason: action.when?.(ctx) ?? null, note: action.note?.(ctx) ?? null }));
 }
 
@@ -456,6 +465,7 @@ export function availabilityOf(state: State): ActionContext {
   const buffer = state.current !== null ? state.buffers.get(state.current) : undefined;
   const exported = exportRecord(state);
   const applied = applyRecord(state);
+
   return {
     mode: state.mode,
     focus: state.focus,
@@ -484,10 +494,15 @@ export const EXPORTABLE_KINDS: ReadonlySet<OperationRecord["kind"]> = new Set(["
 export function exportRecord(state: Pick<State, "records" | "results">): { record: OperationRecord } | { reason: string } {
   const { results, records } = state;
   const record = results.open ? (results.entry === "record" ? records[results.index] : undefined) : records.findLast((candidate) => EXPORTABLE_KINDS.has(candidate.kind));
+
   if (!record) return { reason: results.open ? "select a check report in F6: the current analysis is not a saved report" : "no report yet: run a check first" };
+
   if (!EXPORTABLE_KINDS.has(record.kind)) return { reason: "only a check, explain-edge, parse or trace-plan report is exported" };
+
   if (record.status === "running") return { reason: "the report is still running" };
+
   if (!record.result || record.result.payload === null) return { reason: "this run has no report to export" };
+
   return { record };
 }
 
@@ -499,20 +514,30 @@ export function exportRecord(state: Pick<State, "records" | "results">): { recor
 export function applyRecord(state: Pick<State, "records" | "results">): { record: OperationRecord } | { reason: string } {
   const { results, records } = state;
   const record = results.open ? (results.entry === "record" ? records[results.index] : undefined) : records.findLast((candidate) => candidate.kind === "spec-to-code");
+
   if (!record || record.kind !== "spec-to-code") return { reason: results.open ? "select a finished spec-to-code run in F6" : "no spec-to-code run yet → Spec to code" };
+
   if (record.status === "running") return { reason: "the spec-to-code run is still running" };
+
   if (record.status !== "completed" || record.result?.kind !== "spec-to-code" || record.result.payload === null) return { reason: "this spec-to-code run has no candidate" };
+
   if (record.outdated !== null) return { reason: `the candidate is outdated (${record.outdated}): Enter in F6 builds it again` };
+
   return { record };
 }
 
 /** Why the session has no code snapshot, or null when it has one. Also the status line's note. */
 export function noSnapshotReason(state: Pick<State, "analysis" | "config" | "error" | "updating">): string | null {
   if (state.analysis?.snapshot) return null;
+
   if (state.config.kind === "invalid-config") return "keylang.json is invalid: fix it and save (Ctrl+S)";
+
   if (state.analysis) return "no supported source files (TypeScript, JavaScript, Python, Rust)";
+
   if (state.updating) return "the analysis is still running";
+
   if (state.error !== null) return "the analysis failed";
+
   return state.config.kind === "missing-config" ? "no analysis yet: browse the repository first" : "the analysis is still running";
 }
 
@@ -525,25 +550,31 @@ export function noSnapshotReason(state: Pick<State, "analysis" | "config" | "err
 export function actionKey(action: Action, mode: State["mode"]): string | null {
   if (action.key === undefined) return null;
   const plain = [...action.key].length === 1 || action.key === "Enter" || action.key === "Alt+Enter";
+
   return plain && mode !== "view" && mode !== "read" ? null : action.key;
 }
 
 /** The palette item text of an action: its label, with the key hint when the mode has one. */
 export function actionLabel(action: Action, mode: State["mode"] = "view"): string {
   const key = actionKey(action, mode);
+
   return key !== null ? `${action.label} (${key})` : action.label;
 }
 
 /** The catalogue entries matching `query`: every query word is a subsequence of some token of the label, key or aliases. */
 export function matchActions(entries: readonly ActionEntry[], query: string): ActionEntry[] {
   const words = query.toLowerCase().split(/\s+/).filter((word) => word !== "");
+
   if (words.length === 0) return [...entries];
+
   const matched = entries.filter((entry) => {
     // Token matching, not one long string: a query never matches across word boundaries
     // ("rules" must not match "infrastructure" via the "keylang" of a repeated alias).
     const tokens = searchText(entry.action).toLowerCase().split(/\s+/);
+
     return words.every((word) => tokens.some((token) => subsequence(token, word)));
   });
+
   // One word that is exactly a file's name opens that file first (`rules` → rules.md, before "Draft rules").
   const named = (entry: ActionEntry): boolean => words.length === 1 && entry.action.id.startsWith("open:") && fileName(entry.action.id) === words[0];
   const phrase = words.join(" ");
@@ -551,12 +582,14 @@ export function matchActions(entries: readonly ActionEntry[], query: string): Ac
   const exact = (entry: ActionEntry): boolean => !named(entry) && entry.action.aliases.some((alias) => alias.toLowerCase() === phrase);
   // Then an action whose label or alias holds the query as typed: `spec to code` before "Code to spec", whose words it also has.
   const literal = (entry: ActionEntry): boolean => !named(entry) && !exact(entry) && [entry.action.label, ...entry.action.aliases].some((text) => text.toLowerCase().includes(phrase));
+
   return [...matched.filter(named), ...matched.filter(exact), ...matched.filter(literal), ...matched.filter((entry) => !named(entry) && !exact(entry) && !literal(entry))];
 }
 
 /** `rules` for `open:keylang/rules.md`: the base name without its extension, lower case. */
 function fileName(id: string): string {
   const base = id.slice(id.lastIndexOf("/") + 1);
+
   return (base.includes(".") ? base.slice(0, base.lastIndexOf(".")) : base).toLowerCase();
 }
 
@@ -566,6 +599,8 @@ function searchText(action: Action): string {
 
 function subsequence(text: string, query: string): boolean {
   let at = 0;
+
   for (const ch of text) if (ch === query[at]) at++;
+
   return at === query.length;
 }

@@ -69,8 +69,10 @@ export interface FrameworkEntries {
 }
 
 const GLOBAL = "global";
+
 /** The area a framework runs an entry kind in: its binding there wins over the global one. */
 const ENTRY_AREA: Record<ConfigEntryKind, string> = { rest: "webapi_rest", graphql: "graphql", cron: "crontab", consumer: GLOBAL, cli: GLOBAL };
+
 const HTTP_ORDER = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 
 interface Declared {
@@ -85,23 +87,29 @@ interface Declared {
 export function frameworkEntries(inputs: readonly FrameworkInput[], deps: EntryDeps): FrameworkEntries {
   const out: FrameworkEntries = { observers: [], events: [], entries: [], holes: [] };
   const events: FrameworkEntries["events"] = [];
+
   for (const input of inputs) {
     const configs = input.configs.filter((c) => c.facts.error === null);
     const observers: Declared[] = [];
+
     for (const { facts, owner: dir } of configs) {
       const owner = deps.owner(dir);
+
       for (const fact of facts.observers ?? []) {
         events.push({ name: fact.event, file: facts.path, line: fact.line, col: fact.col });
         observers.push({ fact, scope: facts.scope, file: facts.path, owner });
       }
+
       for (const fact of facts.classEntries ?? []) {
         const at = { file: facts.path, line: fact.line, col: fact.col };
         const text = `${fact.kind} ${fact.label}`;
         const found = target(deps, fact.target, fact.method, facts.scope === GLOBAL ? ENTRY_AREA[fact.kind] : facts.scope);
         out.entries.push(entryOf(deps, input.name, fact.kind, found, fact.label, at));
+
         if (found.unresolved !== null) out.holes.push({ ...at, text, reason: found.unresolved, source: owner });
       }
     }
+
     for (const observer of effectiveObservers(observers)) {
       const { fact, scope, file, owner } = observer;
       const method = fact.method ?? "execute";
@@ -109,16 +117,22 @@ export function frameworkEntries(inputs: readonly FrameworkInput[], deps: EntryD
       const text = `<observer name="${fact.name}" instance="${fact.instance ? typeLabel(fact.instance) : ""}"${fact.method ? ` method="${fact.method}"` : ""}>`;
       const found = target(deps, fact.instance!, method, scope);
       const label = `${fact.event} (${fact.name}${scope === GLOBAL ? "" : `, ${scope}`})`;
+
       if (fact.entry !== false) out.entries.push(entryOf(deps, input.name, "observer", found, label, at));
+
       if (found.unresolved !== null) {
         out.holes.push({ ...at, text, reason: found.unresolved, source: owner });
         continue;
       }
+
       out.observers.push({ event: fact.event, target: found.id, name: fact.name, ...at, text, site: `${file}:${fact.line}:${fact.col}`, scope, owner, binding: `observer \`${fact.name}\` (\`${typeLabel(fact.instance!)}::${method}\`) of the event \`${fact.event}\`${observer.disabledIn ? ` (disabled in ${observer.disabledIn.join(", ")})` : ""}` });
     }
+
     out.entries.push(...controllerEntries(input, deps));
   }
+
   out.events = events;
+
   return out;
 }
 
@@ -126,24 +140,33 @@ export function frameworkEntries(inputs: readonly FrameworkInput[], deps: EntryD
 function target(deps: EntryDeps, type: TypeName, method: string, area: string): { id: string; unresolved: string | null } {
   const written = `${typeLabel(type)}::${method}`;
   const resolved = deps.resolve(deps.unalias(type, area));
+
   if (resolved.kind === "missing") return { id: written, unresolved: `\`${typeLabel(type)}\` is named by the config, but no analysed file declares it` };
+
   if (resolved.kind === "external") return { id: written, unresolved: `\`${typeLabel(type)}\` belongs to a package keylang does not read` };
   const own = deps.member(resolved.id, method);
   const bound = deps.bound(resolved.id, method);
+
   if (bound !== null) {
     const targets = [...new Set(bound.targets.filter((t) => t.scope.split(",").includes(area)).map((t) => t.target))];
     const global = [...new Set(bound.targets.filter((t) => t.scope.split(",").includes(GLOBAL)).map((t) => t.target))];
     const chosen = targets.length > 0 ? targets : global;
+
     if (chosen.length === 1) return { id: chosen[0]!, unresolved: null };
+
     if (bound.reason !== null || chosen.length > 1) return { id: own ?? resolved.id, unresolved: bound.reason ?? `\`${typeLabel(type)}\` is bound to ${chosen.map((t) => `\`${t}\``).join(" and ")}` };
   }
+
   if (deps.isClass(resolved.id) && own !== null) return { id: own, unresolved: null };
+
   if (own !== null) return { id: own, unresolved: `no preference binds \`${typeLabel(type)}\` to a class, so what runs \`${method}\` is unknown` };
+
   return { id: resolved.id, unresolved: `\`${typeLabel(type)}\` has no method \`${method}\` keylang read` };
 }
 
 function entryOf(deps: EntryDeps, framework: string, kind: ConfigEntry["kind"], found: { id: string; unresolved: string | null }, label: string, at: { file: string; line: number }): ConfigEntry {
   const place = deps.place(found.id) ?? at;
+
   return { kind, id: found.id, label, framework, file: place.file, line: place.line, source: `${at.file}:${at.line}`, ...(found.unresolved !== null ? { unresolved: found.unresolved } : {}) };
 }
 
@@ -156,37 +179,48 @@ function entryOf(deps: EntryDeps, framework: string, kind: ConfigEntry["kind"], 
 function effectiveObservers(declared: readonly Declared[]): Declared[] {
   const out: Declared[] = [];
   const groups = new Map<string, Declared[]>();
+
   for (const d of declared) {
     const key = `${d.fact.event}\0${d.fact.name}`;
     groups.set(key, [...(groups.get(key) ?? []), d]);
   }
+
   const merge = (list: readonly Declared[]): Declared | null => {
     const [first, ...rest] = list;
+
     if (first === undefined) return null;
     let cur: Declared = first;
+
     for (const d of rest) {
       const prev: Declared = cur;
       // A later declaration changes what it writes; the site stays the one that names the class.
       cur = d.fact.instance ? { ...d, fact: { ...d.fact, method: d.fact.method ?? prev.fact.method } } : { ...prev, fact: { ...prev.fact, method: d.fact.method ?? prev.fact.method, disabled: d.fact.disabled } };
     }
+
     return cur;
   };
+
   for (const list of groups.values()) {
     const global = merge(list.filter((d) => d.scope === GLOBAL));
     const live = (d: Declared | null): d is Declared => d !== null && !d.fact.disabled && d.fact.instance !== null;
     const areas = [...new Set(list.filter((d) => d.scope !== GLOBAL).map((d) => d.scope))].sort();
     const disabledIn: string[] = [];
+
     for (const area of areas) {
       const effective = merge([...list.filter((d) => d.scope === GLOBAL), ...list.filter((d) => d.scope === area)]);
+
       if (!live(effective)) {
         if (live(global)) disabledIn.push(area);
         continue;
       }
+
       if (live(global) && typeLabel(global.fact.instance!) === typeLabel(effective.fact.instance!) && (global.fact.method ?? "execute") === (effective.fact.method ?? "execute")) continue;
       out.push({ ...effective, scope: area });
     }
+
     if (live(global)) out.push(disabledIn.length > 0 ? { ...global, disabledIn } : global);
   }
+
   return out.sort((a, b) => (a.fact.event < b.fact.event ? -1 : a.fact.event > b.fact.event ? 1 : 0) || (a.file < b.file ? -1 : a.file > b.file ? 1 : 0) || a.fact.line - b.fact.line);
 }
 
@@ -198,11 +232,14 @@ function effectiveObservers(declared: readonly Declared[]): Declared[] {
  */
 function controllerEntries(input: FrameworkInput, deps: EntryDeps): ConfigEntry[] {
   const convention = input.controllers;
+
   if (!convention) return [];
   const out: ConfigEntry[] = [];
   const dirs = new Map<string, string[]>();
+
   for (const m of input.modules ?? []) dirs.set(m.name, [...(dirs.get(m.name) ?? []), m.dir]);
   const methods = new Map(Object.entries(convention.methods).map(([name, method]) => [asciiLower(name), method]));
+
   for (const { facts } of input.configs) {
     for (const route of facts.routes ?? []) {
       for (const module of route.modules) {
@@ -210,15 +247,19 @@ function controllerEntries(input: FrameworkInput, deps: EntryDeps): ConfigEntry[
           const base = `${dir === "" ? "" : `${dir}/`}${convention.dir(facts.scope)}/`;
           // The frontend's controllers do not include the admin's, which live under them.
           const other = facts.scope === "adminhtml" ? null : `${dir === "" ? "" : `${dir}/`}${convention.dir("adminhtml")}/`;
+
           for (const file of deps.sources) {
             if (!file.startsWith(base) || !file.endsWith(".php") || (other !== null && other !== base && file.startsWith(other))) continue;
             const segments = file.slice(base.length, -".php".length).split("/");
+
             // A class right in the controller directory is a base of the controllers, not one.
             if (segments.length < 2) continue;
             const action = segments.pop()!;
             const url = `${convention.prefix(facts.scope)}/${route.frontName}/${segments.join("_").toLowerCase()}/${action.toLowerCase()}`;
+
             for (const cls of deps.classesIn(file)) {
               const execute = deps.member(cls, convention.member);
+
               if (execute === null) continue;
               const names = deps.supertypeNames(cls);
               const verbs = HTTP_ORDER.filter((verb) => [...names].some((name) => methods.get(name) === verb));
@@ -230,6 +271,7 @@ function controllerEntries(input: FrameworkInput, deps: EntryDeps): ConfigEntry[
       }
     }
   }
+
   return out;
 }
 

@@ -18,6 +18,7 @@ import { StringDecoder } from "node:string_decoder";
 import { AGENT_CLI_PRESETS, AGENT_FORMS, isAgent } from "./config.ts";
 
 type Env = Readonly<Record<string, string | undefined>>;
+
 type Preset = (typeof AGENT_CLI_PRESETS)[number];
 
 /** A user's own CLI: `command[0]` is the binary; `{prompt_file}` and `{model}` are placeholders. A preset name takes only `bin`. */
@@ -65,12 +66,18 @@ export class CliCancelled extends Error {
 }
 
 const PLACEHOLDERS = new Set(["{prompt_file}", "{model}"]);
+
 /** Linux `MAX_ARG_STRLEN` is 128 KiB per argument: Cursor's prompt is one. */
 const CURSOR_PROMPT_LIMIT = 120 * 1024;
+
 const OUTPUT_LIMIT = 16 * 1024 * 1024;
+
 const STDERR_TAIL = 4096;
+
 const KILL_GRACE_MS = 2000;
+
 const VERSION_TIMEOUT_MS = 5000;
+
 const CURSOR_VERSION = /^\d{4}\.\d{2}\.\d{2}-[0-9a-f]{7,}/;
 
 export function agentsFile(home: string): string {
@@ -80,60 +87,79 @@ export function agentsFile(home: string): string {
 /** agents.json, validated; an absent file is empty settings. Errors name the file and the field. */
 export function readAgentSettings(home: string): AgentSettings {
   const file = agentsFile(home);
+
   if (!existsSync(file)) return { use: null, clis: {} };
   let value: unknown;
+
   try {
     value = JSON.parse(readFileSync(file, "utf8")) as unknown;
   } catch (error) {
     throw new Error(`${file}: invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
   }
+
   return parseAgentSettings(file, value);
 }
 
 /** The settings of an agents.json already parsed as JSON. */
 export function parseAgentSettings(file: string, value: unknown): AgentSettings {
   const shown = (v: unknown): string => JSON.stringify(v) ?? String(v);
+
   if (!isObject(value)) throw new Error(`${file}: must be a JSON object, got ${shown(value)}`);
   const settings: AgentSettings = { use: null, clis: {} };
+
   for (const [key, v] of Object.entries(value)) {
     if (key === "use") {
       if (typeof v !== "string" || !isAgent(v)) throw new Error(`${file}: \`use\` must be ${AGENT_FORMS}, got ${shown(v)}`);
       settings.use = v;
     } else if (key === "clis") {
       if (!isObject(v)) throw new Error(`${file}: \`clis\` must be an object of name → { "command": [...] } or { "bin": "..." }, got ${shown(v)}`);
+
       for (const [name, def] of Object.entries(v)) settings.clis[name] = cliDefinition(file, name, def);
     } else throw new Error(`${file}: unknown field \`${key}\` (known: use, clis)`);
   }
+
   return settings;
 }
 
 function cliDefinition(file: string, name: string, def: unknown): CliDefinition {
   const shown = (v: unknown): string => JSON.stringify(v) ?? String(v);
   const field = `clis.${name}`;
+
   if (!/^[a-z][a-z0-9-]*$/.test(name)) throw new Error(`${file}: \`${field}\`: a name is lowercase letters, digits and \`-\`, starting with a letter`);
+
   if (!isObject(def)) throw new Error(`${file}: \`${field}\` must be { "command": [...] } or { "bin": "..." }, got ${shown(def)}`);
   const preset = (AGENT_CLI_PRESETS as readonly string[]).includes(name);
+
   for (const key of Object.keys(def)) {
     if (key !== "command" && key !== "bin") throw new Error(`${file}: unknown field \`${field}.${key}\``);
   }
+
   if (def.bin !== undefined) {
     if (def.command !== undefined) throw new Error(`${file}: \`${field}\` takes \`command\` or \`bin\`, not both`);
+
     if (typeof def.bin !== "string" || def.bin === "") throw new Error(`${file}: \`${field}.bin\` must be a path or a name on PATH, got ${shown(def.bin)}`);
+
     return { bin: def.bin };
   }
+
   if (preset) throw new Error(`${file}: \`${field}\`: a preset takes only \`bin\``);
   const command = def.command;
+
   if (!Array.isArray(command) || command.length === 0 || !command.every((part) => typeof part === "string")) {
     throw new Error(`${file}: \`${field}.command\` must be a non-empty array of strings, got ${shown(command)}`);
   }
+
   const parts = command as string[];
+
   if (parts[0] === "") throw new Error(`${file}: \`${field}.command[0]\` must name the binary`);
   parts.forEach((part, i) => {
     for (const placeholder of part.match(/\{[^{}]*\}/g) ?? []) {
       if (!PLACEHOLDERS.has(placeholder)) throw new Error(`${file}: \`${field}.command[${i}]\`: unknown placeholder \`${placeholder}\` (use {prompt_file}, {model}, or stdin)`);
     }
   });
+
   if (parts[0]!.includes("{")) throw new Error(`${file}: \`${field}.command[0]\` is the binary, not a placeholder`);
+
   return { command: parts };
 }
 
@@ -144,12 +170,17 @@ function cliDefinition(file: string, name: string, def: unknown): CliDefinition 
  */
 export function resolveAgent(configAgent: string | null, env: Env, home: string): { agent: string | null; source: AgentSource | null } {
   const fromEnv = env.KEYLANG_AGENT;
+
   if (fromEnv !== undefined && fromEnv !== "") {
     if (!isAgent(fromEnv)) throw new Error(`KEYLANG_AGENT must be ${AGENT_FORMS}, got ${JSON.stringify(fromEnv)}`);
+
     return { agent: fromEnv, source: "KEYLANG_AGENT" };
   }
+
   const settings = readAgentSettings(home);
+
   if (settings.use !== null) return { agent: settings.use, source: "agents.json" };
+
   return configAgent === null ? { agent: null, source: null } : { agent: configAgent, source: "keylang.json" };
 }
 
@@ -169,6 +200,7 @@ export function selectedAgent(configAgent: string | null, env: Env = process.env
 export function parseCliAgent(agent: string): { name: string; model: string } {
   const rest = agent.slice("cli:".length);
   const colon = rest.indexOf(":");
+
   return colon < 0 ? { name: rest, model: "" } : { name: rest.slice(0, colon), model: rest.slice(colon + 1) };
 }
 
@@ -186,17 +218,22 @@ export function cliClient(agent: string, options: { root: string; env: Env; home
   const defined = settings.clis[name];
   const preset = (AGENT_CLI_PRESETS as readonly string[]).includes(name) ? (name as Preset) : null;
   let runner: Runner;
+
   if (preset === null) {
     if (defined === undefined || !("command" in defined)) return { missing: `agent \`${agent}\`: no CLI \`${name}\`: the presets are ${AGENT_CLI_PRESETS.join(", ")}; define others in ${agentsFile(options.home)} ("clis": {"${name}": {"command": [...]}})` };
     const bin = findBinary(defined.command[0]!, options.env);
+
     if (bin === null) return { missing: `agent \`${agent}\`: \`${defined.command[0]}\` (${agentsFile(options.home)} \`clis.${name}.command[0]\`) is not on PATH` };
     runner = { command: [bin, ...defined.command.slice(1)] };
   } else {
     const found = presetBinary(preset, defined !== undefined && "bin" in defined ? defined.bin : null, options.env, options.home);
+
     if ("missing" in found) return { missing: `agent \`${agent}\`: ${found.missing}` };
     runner = { preset, bin: found.bin };
   }
+
   const bin = "bin" in runner ? runner.bin : runner.command[0]!;
+
   return {
     client: {
       agent,
@@ -218,18 +255,26 @@ const INSTALL: Record<Preset, string> = {
 function presetBinary(preset: Preset, bin: string | null, env: Env, home: string): { bin: string } | { missing: string } {
   if (bin !== null) {
     const found = findBinary(bin, env);
+
     return found === null ? { missing: `\`${bin}\` (${agentsFile(home)} \`clis.${preset}.bin\`) is not an executable file` } : { bin: found };
   }
+
   if (preset !== "cursor") {
     const found = findBinary(preset, env);
+
     return found === null ? { missing: `\`${preset}\` is not on PATH; ${INSTALL[preset]} or change \`agent\`` } : { bin: found };
   }
+
   const cursorAgent = findBinary("cursor-agent", env);
+
   if (cursorAgent !== null) return { bin: cursorAgent };
   const agentBin = findBinary("agent", env);
+
   if (agentBin === null) return { missing: `neither \`cursor-agent\` nor \`agent\` is on PATH; ${INSTALL.cursor} or change \`agent\`` };
   const version = binaryVersion(agentBin, env);
+
   if (version !== null && CURSOR_VERSION.test(version)) return { bin: agentBin };
+
   return { missing: `\`agent\` on PATH (${agentBin}) is \`${version ?? "no version"}\`, not the Cursor CLI; ${INSTALL.cursor}, put cursor-agent on PATH, or set "clis": {"cursor": {"bin": …}} in ${agentsFile(home)}` };
 }
 
@@ -242,6 +287,7 @@ function binaryVersion(bin: string, env: Env): string | null {
   const line = r.status === 0 ? (r.stdout.trim().split("\n")[0]?.trim() ?? "") : "";
   const version = line === "" ? null : line;
   versions.set(bin, version);
+
   return version;
 }
 
@@ -282,16 +328,20 @@ export interface AgentCliProbe {
 /** Every preset, probed in parallel with `--version` only: offline, never a login or status command. */
 export async function probeAgentClis(env: Env = process.env, home: string = homedir()): Promise<AgentCliProbe[]> {
   let settings: AgentSettings = { use: null, clis: {} };
+
   try {
     settings = readAgentSettings(home);
   } catch {
     // doctor's agent line reports a broken agents.json; the presets are still listed.
   }
+
   return Promise.all(
     AGENT_CLI_PRESETS.map(async (name) => {
       const defined = settings.clis[name];
       const found = presetBinary(name, defined !== undefined && "bin" in defined ? defined.bin : null, env, home);
+
       if ("missing" in found) return { name, bin: null, version: null };
+
       return { name, bin: found.bin, version: await cliVersion(found.bin, env) };
     }),
   );
@@ -300,11 +350,14 @@ export async function probeAgentClis(env: Env = process.env, home: string = home
 /** A name on PATH or a path, if it is an executable file. */
 export function findBinary(name: string, env: Env): string | null {
   if (name.includes("/")) return executable(name) ? name : null;
+
   for (const dir of (env.PATH ?? "").split(delimiter)) {
     if (dir === "" || !isAbsolute(dir)) continue;
     const candidate = join(dir, name);
+
     if (executable(candidate)) return candidate;
   }
+
   return null;
 }
 
@@ -312,6 +365,7 @@ function executable(path: string): boolean {
   try {
     if (!statSync(path).isFile()) return false;
     accessSync(path, constants.X_OK);
+
     return true;
   } catch {
     return false;
@@ -342,16 +396,21 @@ export function invocation(runner: Runner, model: string, request: CliRequest, r
   const system = `${request.system}\n\n${PREAMBLE}`;
   const base = { ...env, PWD: root, NO_COLOR: "1", KEYLANG_NESTED: "1" };
   const modelArgs = model === "" ? [] : ["--model", model];
+
   if ("command" in runner) {
     const promptFile = join(tmp, "prompt.txt");
     const usesFile = runner.command.some((part) => part.includes("{prompt_file}"));
+
     const args = runner.command
       .slice(1)
       .filter((part) => model !== "" || !part.includes("{model}"))
       .map((part) => part.replaceAll("{model}", model).replaceAll("{prompt_file}", promptFile));
+
     const text = `${system}\n\n${request.prompt}`;
+
     return { bin: runner.command[0]!, args, stdin: usesFile ? "" : text, env: base, answer: "stdout", files: usesFile ? [{ path: promptFile, text }] : [], answerFile: null };
   }
+
   switch (runner.preset) {
     case "claude":
       return {
@@ -366,6 +425,7 @@ export function invocation(runner: Runner, model: string, request: CliRequest, r
       };
     case "codex": {
       const last = join(tmp, "last.txt");
+
       const config = [
         'approval_policy="never"',
         // A JSON string is a TOML basic string once lone surrogates are gone.
@@ -380,6 +440,7 @@ export function invocation(runner: Runner, model: string, request: CliRequest, r
         'web_search="disabled"',
         "mcp_servers={}",
       ];
+
       return {
         bin: runner.bin,
         args: ["exec", "--sandbox", "read-only", "--ephemeral", "--skip-git-repo-check", "--color", "never", "--cd", root, ...config.flatMap((c) => ["-c", c]), ...(model === "" ? [] : ["-m", model]), "-o", last, "-"],
@@ -390,6 +451,7 @@ export function invocation(runner: Runner, model: string, request: CliRequest, r
         answerFile: last,
       };
     }
+
     case "opencode":
       return {
         bin: runner.bin,
@@ -421,15 +483,19 @@ export function invocation(runner: Runner, model: string, request: CliRequest, r
 /** The user's `OPENCODE_CONFIG_CONTENT` with keylang's agent on top: every permission denied. */
 function opencodeConfig(existing: string | undefined, system: string): string {
   let config: Record<string, unknown> = {};
+
   if (existing !== undefined && existing !== "") {
     try {
       const parsed = JSON.parse(existing) as unknown;
+
       if (isObject(parsed)) config = parsed;
     } catch {
       // Not JSON: opencode would reject it too; keylang's agent replaces it.
     }
   }
+
   const agents = isObject(config.agent) ? config.agent : {};
+
   return JSON.stringify({ ...config, agent: { ...agents, keylang: { mode: "primary", prompt: system, permission: "deny" } } });
 }
 
@@ -442,9 +508,12 @@ type ResultLine = { text: string; model: string | null } | { error: string };
 /** A `{"type":"result"}` line of Claude Code or Cursor: the answer with the model that wrote it, an error, or null for any other line. */
 export function parseResultLine(line: string): ResultLine | null {
   const value = parseJson(line.trim());
+
   if (!isObject(value) || value.type !== "result") return null;
   const result = typeof value.result === "string" ? value.result : "";
+
   if (value.is_error === true || (typeof value.subtype === "string" && value.subtype.startsWith("error"))) return { error: result || String(value.subtype ?? "error") };
+
   return { text: result, model: answeringModel(value.modelUsage) };
 }
 
@@ -456,31 +525,42 @@ export function parseResultLine(line: string): ResultLine | null {
 function answeringModel(usage: unknown): string | null {
   if (!isObject(usage)) return null;
   let best: { model: string; output: number } | null = null;
+
   for (const model of Object.keys(usage).sort()) {
     const entry = usage[model];
+
     // It goes into the `<!-- keylang:explain agent=… -->` header: no spaces, `<`, `>` or `--` (ADR 0012).
     if (!/^[\w.\-/@[\]]+$/.test(model) || model.includes("--") || !isObject(entry)) continue;
     const output = typeof entry.outputTokens === "number" ? entry.outputTokens : 0;
+
     if (best === null || output > best.output) best = { model, output };
   }
+
   return best?.model ?? null;
 }
 
 /** opencode's NDJSON: the text parts after the last step start, or the first error. */
 export function parseOpencodeEvents(output: string): { text: string } | { error: string } {
   let parts: string[] = [];
+
   for (const line of output.split("\n")) {
     const event = parseJson(line.trim());
+
     if (!isObject(event)) continue;
+
     if (event.type === "error") {
       const error = isObject(event.error) ? event.error : {};
       const data = isObject(error.data) ? error.data : {};
       const message = typeof error.message === "string" ? error.message : typeof data.message === "string" ? data.message : JSON.stringify(event.error);
+
       return { error: message };
     }
+
     if (event.type === "step_start") parts = [];
+
     if (event.type === "text" && isObject(event.part) && typeof event.part.text === "string") parts.push(event.part.text);
   }
+
   return { text: parts.join("") };
 }
 
@@ -489,17 +569,23 @@ export function parseOpencodeEvents(output: string): { text: string } | { error:
 async function completeWith(agent: string, runner: Runner, model: string, request: CliRequest, options: { root: string; env: Env }, call: CliCallOptions): Promise<string> {
   if (call.signal?.aborted) throw new CliCancelled(agent);
   const tmp = mkdtempSync(join(tmpdir(), "keylang-agent-"));
+
   try {
     const inv = invocation(runner, model, request, options.root, options.env, tmp);
     const prompt = inv.args.at(-1) ?? "";
+
     if ("preset" in runner && runner.preset === "cursor" && Buffer.byteLength(prompt) > CURSOR_PROMPT_LIMIT) {
       throw new Error(`${agent}: the prompt is ${Buffer.byteLength(prompt)} bytes; Cursor takes it as one argument, at most ${CURSOR_PROMPT_LIMIT}; use another agent CLI`);
     }
+
     for (const file of inv.files) writeFileSync(file.path, file.text, { mode: 0o600 });
     const run = await runInvocation(agent, inv, options.root, call);
     const answer = readAnswer(agent, inv, run);
+
     if (answer.text.trim() === "") throw new Error(`${agent} answered without text`);
+
     if (answer.model !== null) call.onModel?.(answer.model);
+
     return answer.text.trim();
   } finally {
     rmSync(tmp, { recursive: true, force: true });
@@ -517,17 +603,24 @@ function readAnswer(agent: string, inv: Invocation, run: RunResult): { text: str
   switch (inv.answer) {
     case "result-json": {
       const result = run.result ?? lastResult(run.stdout);
+
       if (result === null) throw new Error(`${agent} answered without text`);
+
       if ("error" in result) throw new Error(`${agent}: ${result.error}`);
+
       return result;
     }
+
     case "file":
       return { text: inv.answerFile !== null && existsSync(inv.answerFile) ? readFileSync(inv.answerFile, "utf8") : "", model: null };
     case "opencode-events": {
       const events = parseOpencodeEvents(run.stdout);
+
       if ("error" in events) throw new Error(`${agent}: ${events.error}`);
+
       return { text: events.text, model: null };
     }
+
     case "stdout":
       return { text: run.stdout, model: null };
   }
@@ -535,12 +628,15 @@ function readAnswer(agent: string, inv: Invocation, run: RunResult): { text: str
 
 function lastResult(stdout: string): ResultLine | null {
   let found: ResultLine | null = null;
+
   for (const line of stdout.split("\n")) found = parseResultLine(line) ?? found;
+
   return found;
 }
 
 /** Process groups of runs still alive: killed when keylang exits. */
 const liveGroups = new Set<number>();
+
 let exitHooked = false;
 
 function killGroup(pid: number, signal: NodeJS.Signals): void {
@@ -559,14 +655,17 @@ function hookExit(): void {
       for (const pid of liveGroups) killGroup(pid, "SIGKILL");
     });
   }
+
   // A detached run gets no Ctrl+C from the terminal: without this, an interrupted `explain --llm` would leave it running.
   for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
     if (process.listenerCount(sig) > 0) continue;
+
     const onSignal = (): void => {
       for (const pid of liveGroups) killGroup(pid, "SIGKILL");
       liveGroups.clear();
       process.kill(process.pid, sig);
     };
+
     process.once(sig, onSignal);
   }
 }
@@ -575,13 +674,17 @@ function runInvocation(agent: string, inv: Invocation, root: string, call: CliCa
   return new Promise((resolve, reject) => {
     hookExit();
     let child: ChildProcess;
+
     try {
       child = spawn(inv.bin, inv.args, { cwd: root, env: inv.env, stdio: ["pipe", "pipe", "pipe"], detached: process.platform !== "win32" });
     } catch (error) {
       reject(new Error(`${agent}: cannot run ${inv.bin}: ${error instanceof Error ? error.message : String(error)}`));
+
       return;
     }
+
     const pid = child.pid;
+
     if (pid !== undefined) liveGroups.add(pid);
     let settled = false;
     let stdout = "";
@@ -592,6 +695,7 @@ function runInvocation(agent: string, inv: Invocation, root: string, call: CliCa
     const stdoutDecoder = new StringDecoder("utf8");
     const stderrDecoder = new StringDecoder("utf8");
     let killTimer: NodeJS.Timeout | null = null;
+
     const stopGroup = (): void => {
       if (pid === undefined) return;
       killGroup(pid, "SIGTERM");
@@ -601,49 +705,63 @@ function runInvocation(agent: string, inv: Invocation, root: string, call: CliCa
       }, KILL_GRACE_MS);
       killTimer.unref();
     };
+
     const finish = (outcome: { ok: RunResult } | { error: Error }): void => {
       if (settled) return;
       settled = true;
       clearTimeout(deadline);
       call.signal?.removeEventListener("abort", onAbort);
+
       if ("ok" in outcome) resolve(outcome.ok);
       else reject(outcome.error);
     };
+
     const deadline = setTimeout(() => {
       stopGroup();
       finish({ error: new Error(`${agent}: no answer within ${call.ms} ms${call.fromVariable ? " (KEYLANG_LLM_TIMEOUT_MS)" : ""}`) });
     }, call.ms);
+
     deadline.unref();
+
     const onAbort = (): void => {
       stopGroup();
       finish({ error: new CliCancelled(agent) });
     };
+
     call.signal?.addEventListener("abort", onAbort, { once: true });
 
     child.stdin!.on("error", () => {
       // EPIPE: a CLI that exits without reading its stdin.
     });
+
     if (inv.stdin !== null) child.stdin!.end(inv.stdin);
     child.stdout!.on("data", (chunk: Buffer) => {
       if (settled) return;
       stdoutBytes += chunk.length;
+
       if (stdoutBytes > OUTPUT_LIMIT) {
         stopGroup();
         finish({ error: new Error(`${agent}: more than ${OUTPUT_LIMIT} bytes of output`) });
+
         return;
       }
+
       const text = stdoutDecoder.write(chunk);
       stdout += text;
+
       if (inv.answer !== "result-json") return;
       // The result line ends the call: a CLI that lingers after it (Cursor) is killed.
       pending += text;
       const lines = pending.split("\n");
       pending = lines.pop()!;
+
       for (const line of lines) {
         const result = parseResultLine(line);
+
         if (result === null) continue;
         stopGroup();
         finish({ ok: { stdout, result } });
+
         return;
       }
     });
@@ -658,15 +776,20 @@ function runInvocation(agent: string, inv: Invocation, root: string, call: CliCa
       if (pid !== undefined) {
         // Whatever the run left behind in its group goes with it.
         killGroup(pid, "SIGTERM");
+
         if (killTimer === null) liveGroups.delete(pid);
       }
+
       if (settled) return;
       stdout += stdoutDecoder.end();
       stderr += stderrDecoder.end();
+
       if (code === 0) {
         finish({ ok: { stdout, result: null } });
+
         return;
       }
+
       const tail = stripAnsi(stderr).trim().split("\n").slice(-3).join(" ").slice(-300);
       const why = signal !== null ? `was killed by ${signal}` : `exited with code ${code}`;
       finish({ error: new Error(`${agent}: ${why}${tail === "" ? "" : `: ${tail}`}`) });
@@ -681,6 +804,7 @@ function stripAnsi(text: string): string {
 
 function parseJson(text: string): unknown {
   if (text === "") return undefined;
+
   try {
     return JSON.parse(text) as unknown;
   } catch {

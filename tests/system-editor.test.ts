@@ -32,6 +32,7 @@ const box = { w: 150, h: 70, tests: [] as string[], id: "" };
 test("diagram propose system:<name>: components, zones and relations from the canvas; code, tables, notes and sequences kept", (t) => {
   const dir = tempDir(t, "keylang-system-editor-");
   writeTree(dir, SHOP);
+
   const nodes: Node[] = [
     { key: "component:web", kind: "component", label: "web", layer: null, component: "client", tech: "браузер", x: 0, y: 0, ...box },
     { key: "component:cdn", kind: "component", label: "cdn", layer: null, component: "cdn", tech: "CloudFront", x: 200, y: 0, ...box },
@@ -44,7 +45,9 @@ test("diagram propose system:<name>: components, zones and relations from the ca
     // Drawn: a search index in the zone, and a gateway outside it.
     { key: "draft:1", kind: "component", label: "search", layer: "vpc", component: "search", tech: "elasticsearch", x: 600, y: 300, ...box },
   ];
+
   const edge = (from: string, to: string, label: string, key = `${from}->${to}`) => ({ key, kind: "relation", from: `component:${from}`, to: to.startsWith("draft:") ? to : `component:${to}`, label });
+
   const edges = [
     edge("web", "cdn", "calls: HTTPS"),
     edge("web", "lb", "calls: HTTPS"),
@@ -57,6 +60,7 @@ test("diagram propose system:<name>: components, zones and relations from the ca
     edge("stats", "clicks", "consumes"),
     edge("stats", "cache", "writes: INCR"),
   ];
+
   const model = { view: "system:shortener", mode: "draft", nodes, edges, lanes: [{ key: "lane:vpc", id: "vpc", label: "vpc", x: -20, y: 180, w: 900, h: 300 }] };
   writeTree(dir, { "model.json": JSON.stringify(model) });
   const proposed = keylang(dir, ["diagram", "propose", "system:shortener", "--from", "model.json"]);
@@ -76,15 +80,18 @@ test("diagram propose system:@code: the system of the code adopted as <dir>/syst
   const dir = tempDir(t, "keylang-system-editor-");
   const { "keylang/system/shortener.md": _hand, ...code } = SHOP;
   writeTree(dir, code);
+
   const nodes: Node[] = [
     { key: "component:client", kind: "component", label: "client", layer: null, component: "client", tech: "HTTP", x: 0, y: 0, ...box },
     { key: "component:app", kind: "component", label: "app", layer: null, component: "service", tech: "express", x: 200, y: 0, ...box },
     { key: "component:postgres", kind: "component", label: "postgres", layer: null, component: "db", tech: "postgres", x: 400, y: 0, ...box },
   ];
+
   const edges = [
     { key: "a", kind: "relation", from: "component:client", to: "component:app", label: "calls: HTTP" },
     { key: "b", kind: "relation", from: "component:app", to: "component:postgres", label: "uses" },
   ];
+
   writeTree(dir, { "model.json": JSON.stringify({ view: "system:@code", mode: "draft", nodes, edges, lanes: [] }) });
   const proposed = keylang(dir, ["diagram", "propose", "system:@code", "--from", "model.json"]);
   assert.equal(proposed.status, 0, proposed.stdout + proposed.stderr);

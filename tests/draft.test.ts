@@ -12,10 +12,12 @@ import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
 
 function keylang(cwd: string, args: string[], env: Record<string, string | undefined> = {}): { status: number | null; stdout: string; stderr: string } {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8", env: { ...process.env, ...env } });
+
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
@@ -23,6 +25,7 @@ function copy(t: TestContext): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-draft-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   cpSync(join(root, "tests/fixtures/repo"), dir, { recursive: true });
+
   return dir;
 }
 
@@ -45,6 +48,7 @@ test("draft flow --mode algo: a proposal of nested steps from resolved calls; ac
   mkdirSync(join(dir, "keylang/flows"), { recursive: true });
   copyFileSync(proposal, join(dir, "keylang/flows/checkout.md"));
   const check = keylang(dir, ["check"]);
+
   for (const step of ["domain.order.createOrder", "domain.order.total", "infra.db.save"]) assert.match(check.stdout, new RegExp(`static ok ${step.replace(/\./g, "\\.")}`), check.stdout);
   assert.equal(keylang(dir, ["fmt", "--check", "keylang/flows/checkout.md"]).status, 0, "the draft is already canonical");
 });
@@ -62,6 +66,7 @@ test("draft flow: an unknown trigger is exit 2 with the nearest id; --print writ
 /** A Messages API stand-in that answers each request with the next reply; `onRequest` runs before it answers. */
 async function mockModel(t: TestContext, replies: string[], onRequest: (n: number) => void = () => {}): Promise<{ url: string; prompts: string[] }> {
   const prompts: string[] = [];
+
   const server = createServer((req, res) => {
     let data = "";
     req.on("data", (chunk: Buffer) => (data += chunk.toString()));
@@ -73,8 +78,10 @@ async function mockModel(t: TestContext, replies: string[], onRequest: (n: numbe
       res.end(JSON.stringify({ id: "m", type: "message", role: "assistant", model: "claude-opus-5", content: [{ type: "text", text }], stop_reason: "end_turn", stop_details: null, usage: { input_tokens: 1, output_tokens: 1 } }));
     });
   });
+
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(() => server.close());
+
   return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, prompts };
 }
 
@@ -93,10 +100,12 @@ test("draft flow --mode hybrid: an unknown id goes back once; steps are reconcil
   const dir = copy(t);
   const config = join(dir, "keylang.json");
   writeFileSync(config, JSON.stringify({ ...JSON.parse(readFileSync(config, "utf8")), agent: "anthropic:claude-opus-5" }));
+
   const model = await mockModel(t, [
     "```markdown\n# flow checkout\n\n- trigger app.checkout.checkout\n  - step domain.order.create\n```",
     "```markdown\n# flow checkout\n\n- trigger app.checkout.checkout\n  - step domain.order.createOrder\n  - step infra.db.Db.query\n```",
   ]);
+
   const o = await run(dir, ["draft", "flow", "app.checkout.checkout"], { ANTHROPIC_BASE_URL: model.url, ANTHROPIC_API_KEY: "k", HOME: dir });
   assert.equal(o.status, 0, o.stderr);
   assert.equal(model.prompts.length, 2, "exactly one more round for the unknown id");
@@ -171,6 +180,7 @@ test("draft map --mode algo: guesses as keylang does, without `exclude`, `outsid
     "src/gen/x.ts": "export const x = 1;\n",
     "src/infra/i.ts": "export const i = 2;\n",
   });
+
   const o = keylang(dir, ["draft", "map", "--mode", "algo"]);
   assert.equal(o.status, 0, o.stderr);
   const preview = JSON.parse(o.stdout) as { layers: Record<string, unknown>; outside?: string[]; assume?: string[] };
@@ -197,10 +207,12 @@ test("code-to-spec: the fn at a line becomes a flow proposal; its unresolved cal
 
 test("code-to-spec --since: flows for the fns changed since a git ref; fns already in flows are reported, not redrafted", (t) => {
   const dir = copy(t);
+
   const git = (...args: string[]): void => {
     const r = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", ...args], { cwd: dir, encoding: "utf8" });
     assert.equal(r.status, 0, r.stderr);
   };
+
   mkdirSync(join(dir, "keylang/flows"), { recursive: true });
   writeFileSync(join(dir, "keylang/flows/save.md"), "# flow save\n\n- trigger infra.db.save\n");
   git("init", "-q");
@@ -265,6 +277,7 @@ test("spec-to-code: refund goes planned → stub → map → separate evidence (
   assert.match(check, /K202 planned fn `app\.refund\.refund` is implemented \(src\/app\/refund\.ts:1\); remove the declaration/);
   assert.match(check, /tests unverified test tests\/refund\.test\.ts "refund returns the order": no report/);
   assert.match(check, /trace unverified app\.refund\.refund: no trace for flow `refund`/);
+
   // Run, the generated test reports the flow as not yet shown by a test.
   const ran = spawnSync(process.execPath, ["--test", `--test-reporter=${join(root, "src/adapters/node-test.ts")}`, "--test-reporter-destination=stdout", "tests/refund.test.ts"], {
     cwd: dir,
@@ -272,6 +285,7 @@ test("spec-to-code: refund goes planned → stub → map → separate evidence (
     // Without it the child sees it runs inside a test and skips the files.
     env: { ...process.env, NODE_TEST_CONTEXT: undefined },
   });
+
   assert.equal(ran.status, 1, ran.stderr);
   assert.match(keylang(dir, ["check"]).stdout, /tests fail test tests\/refund\.test\.ts "refund returns the order"/);
 });
@@ -305,6 +319,7 @@ test("spec-to-code: a deny over a planned fn is K005 and does not refuse the stu
 test("spec-to-code: format 2 denies an incomparable pair that format 1 allows", (t) => {
   const dir = mkdtempSync(join(tmpdir(), "keylang-draft-format-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+
   const tree = (format: number): void => {
     mkdirSync(join(dir, "src/app/x"), { recursive: true });
     mkdirSync(join(dir, "src/domain"), { recursive: true });
@@ -314,6 +329,7 @@ test("spec-to-code: format 2 denies an incomparable pair that format 1 allows", 
     writeFileSync(join(dir, "keylang/flows/item.md"), "# flow item\n\n- planned fn domain.storefront.item () → number\n- trigger app.x.y.make\n  - step domain.storefront.item\n");
     writeFileSync(join(dir, "keylang/rules.md"), "# rules\n\n- allow app.x.y domain\n- deny app domain.storefront\n");
   };
+
   tree(2);
   const denied = keylang(dir, ["spec-to-code", "domain.storefront.item"]);
   assert.equal(denied.status, 2, denied.stderr);
@@ -333,10 +349,12 @@ test("spec-to-code --mode llm: the model's body is analyzed as a new snapshot be
   writeFileSync(config, JSON.stringify({ ...JSON.parse(readFileSync(config, "utf8")), agent: "anthropic:claude-opus-5" }));
   mkdirSync(join(dir, "keylang/flows"), { recursive: true });
   writeFileSync(join(dir, "keylang/flows/refund.md"), REFUND);
+
   const model = await mockModel(t, [
     "```ts\nexport function refund(order: Order): Order {\n  return { ...order, total: 0 };\n}\n```",
     '```ts\nimport assert from "node:assert/strict";\nimport { test } from "node:test";\nimport { refund } from "../src/app/refund.ts";\n\ntest("refund returns the order", () => {\n  assert.equal(refund({ id: "o", total: 5 }).total, 0);\n});\n```',
   ]);
+
   const env = { ANTHROPIC_BASE_URL: model.url, ANTHROPIC_API_KEY: "k", HOME: dir };
   const o = await run(dir, ["spec-to-code", "app.refund.refund", "--mode", "llm"], env);
   assert.equal(o.status, 0, o.stderr);
@@ -424,6 +442,7 @@ test("draft map --mode llm: the model's layout is validated and printed; keylang
 function outsideDir(t: TestContext): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-outside-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+
   return dir;
 }
 
@@ -566,10 +585,12 @@ function repoOf(t: TestContext, config: object, files: Record<string, string>): 
   const dir = mkdtempSync(join(tmpdir(), "keylang-draft-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   writeFileSync(join(dir, "keylang.json"), JSON.stringify(config));
+
   for (const [file, text] of Object.entries(files)) {
     mkdirSync(dirname(join(dir, file)), { recursive: true });
     writeFileSync(join(dir, file), text);
   }
+
   return dir;
 }
 
@@ -588,6 +609,7 @@ test("spec-to-code: a method of a new class is a class in a file named as the la
       "",
     ].join("\n"),
   });
+
   const fresh = keylang(dir, ["spec-to-code", "article.bookmark_service.BookmarkService.bookmark", "--print"]);
   assert.equal(fresh.status, 0, fresh.stderr);
   assert.match(fresh.stdout, /^src\/article\/bookmark\.service\.ts \(new file\)\n/);
@@ -603,6 +625,7 @@ test("spec-to-code: a method of a new class is a class in a file named as the la
     const applied = keylang(dir, ["spec-to-code", id, "--apply"]);
     assert.equal(applied.status, 0, applied.stderr);
   }
+
   assert.equal(
     readFileSync(join(dir, "src/article/bookmark.service.ts"), "utf8"),
     'export class BookmarkService {\n  async bookmark(userId: number, slug: string): Promise<string> {\n    throw new Error("not implemented: article.bookmark_service.BookmarkService.bookmark");\n  }\n}\n',
@@ -631,14 +654,17 @@ test("spec-to-code: a Python method goes into its class (with `self`), a new cla
       "",
     ].join("\n"),
   });
+
   const printed = keylang(dir, ["spec-to-code", "app.services.mail.EmailSender.send", "--print"]);
   assert.equal(printed.status, 0, printed.stderr);
   assert.match(printed.stdout, /^app\/services\/mail\.py\n/);
   assert.match(printed.stdout, /K202 planned fn `app\.services\.mail\.EmailSender\.send` is implemented/);
+
   for (const id of ["app.services.mail.Mailer.send", "app.services.mail.EmailSender.send", "app.services.sms.SmsSender.send"]) {
     const applied = keylang(dir, ["spec-to-code", id, "--apply"]);
     assert.equal(applied.status, 0, applied.stderr);
   }
+
   assert.equal(
     readFileSync(join(dir, "app/services/mail.py"), "utf8"),
     [
@@ -661,9 +687,11 @@ test("spec-to-code: a Python method goes into its class (with `self`), a new cla
     'from __future__ import annotations\n\n\nclass SmsSender:\n    def send(self, to: str) -> bool:\n        raise NotImplementedError("not implemented: app.services.sms.SmsSender.send")\n',
   );
   const check = keylang(dir, ["check"]);
+
   for (const id of ["app.services.mail.Mailer.send", "app.services.mail.EmailSender.send", "app.services.sms.SmsSender.send"]) {
     assert.match(check.stdout, new RegExp(`K202 planned fn \`${id.replace(/\./g, "\\.")}\``), check.stdout);
   }
+
   assert.doesNotMatch(check.stdout, /K201/);
 });
 
@@ -673,6 +701,7 @@ test("spec-to-code: a file name the layer's two conventions make ambiguous is an
     "src/shop/b_service.ts": "export function b(): void {}\n",
     "keylang/flows/c.md": "# flow c\n\n- planned fn shop.c_service.CService.run () → void\n",
   });
+
   const o = keylang(dir, ["spec-to-code", "shop.c_service.CService.run", "--print"]);
   assert.equal(o.status, 2);
   assert.match(o.stderr, /src\/shop\/c\.service\.ts or src\/shop\/c_service\.ts/);
@@ -688,10 +717,12 @@ test("draft: --print writes nothing, stats included; draft rules join the `# rul
   writeFileSync(config, JSON.stringify({ ...JSON.parse(readFileSync(config, "utf8")), agent: "anthropic:claude-opus-5" }));
   const model = await mockModel(t, ["```markdown\n# flow checkout\n\n- trigger app.checkout.checkout\n```"]);
   const env = { ANTHROPIC_BASE_URL: model.url, ANTHROPIC_API_KEY: "k", HOME: dir };
+
   for (const args of [["draft", "flow", "app.checkout.checkout", "--print"], ["code-to-spec", "src/app/checkout.ts:5", "--print"]]) {
     const o = await run(dir, args, env);
     assert.equal(o.status, 0, o.stderr);
   }
+
   assert.ok(!existsSync(join(dir, ".keylang")), "no stats.json, no proposal");
 
   writeFileSync(join(dir, "keylang/rules.md"), "# rules\n\n- deny domain infra\n\n# flow checkout\n\n- trigger app.checkout.checkout\n");
@@ -714,6 +745,7 @@ test("draft flow --mode hybrid on the parsed flow: an item that does not parse w
   const dir = copy(t);
   const config = join(dir, "keylang.json");
   writeFileSync(config, JSON.stringify({ ...JSON.parse(readFileSync(config, "utf8")), agent: "anthropic:claude-opus-5" }));
+
   const answer = [
     "Here is the flow:",
     "```markdown",
@@ -728,6 +760,7 @@ test("draft flow --mode hybrid on the parsed flow: an item that does not parse w
     "  - step domain.order.total",
     "```",
   ].join("\n");
+
   const model = await mockModel(t, [answer]);
   const o = await run(dir, ["draft", "flow", "app.checkout.checkout"], { ANTHROPIC_BASE_URL: model.url, ANTHROPIC_API_KEY: "k", HOME: dir });
   assert.equal(o.status, 0, o.stderr);
@@ -791,10 +824,12 @@ test("code-to-spec: methods of the same name in one file are two flows; a headin
 
 test("code-to-spec --since: a moved file and file names outside ASCII count as changed", (t) => {
   const dir = copy(t);
+
   const git = (...args: string[]): void => {
     const r = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", ...args], { cwd: dir, encoding: "utf8" });
     assert.equal(r.status, 0, r.stderr);
   };
+
   writeFileSync(join(dir, "src/domain/замовлення.ts"), "export function оплатити(total: number): number {\n  return total;\n}\n");
   git("init", "-q");
   git("add", ".");
@@ -804,6 +839,7 @@ test("code-to-spec --since: a moved file and file names outside ASCII count as c
   writeFileSync(join(dir, "src/infra/кеш.ts"), "export function взяти(key: string): string {\n  return key;\n}\n");
   const o = keylang(dir, ["code-to-spec", "--since", "HEAD", "--mode", "algo", "--print"]);
   assert.equal(o.status, 0, o.stderr);
+
   for (const id of ["domain.замовлення.оплатити", "infra.store.save", "infra.кеш.взяти"]) assert.match(o.stdout, new RegExp(`- trigger ${id.replace(/\./g, "\\.")}`), o.stdout);
 });
 
@@ -817,10 +853,12 @@ async function stalledProvider(t: TestContext, kind: "anthropic" | "openrouter")
   let closed!: () => void;
   const requestedP = new Promise<void>((resolve) => (requested = resolve));
   const closedP = new Promise<void>((resolve) => (closed = resolve));
+
   const server = createServer((req, res) => {
     req.resume();
     req.on("end", () => {
       requested();
+
       if (kind === "openrouter") {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: "# flow checkout\n\n- trigger app" } }] })}\n\n`);
@@ -830,11 +868,13 @@ async function stalledProvider(t: TestContext, kind: "anthropic" | "openrouter")
       if (!res.writableEnded) closed();
     });
   });
+
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(() => {
     server.closeAllConnections();
     server.close();
   });
+
   return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, requested: requestedP, closed: closedP };
 }
 
@@ -843,17 +883,23 @@ test("llm: a caller's Cancel is `cancelled`, a deadline is a timeout; both provi
   const home = mkdtempSync(join(tmpdir(), "keylang-llm-"));
   t.after(() => rmSync(home, { recursive: true, force: true }));
   const request = { system: "s", prompt: "p", maxTokens: 16 };
+
   const envOf = (kind: "anthropic" | "openrouter", url: string, timeout: string): Record<string, string> =>
     kind === "anthropic" ? { ANTHROPIC_BASE_URL: url, ANTHROPIC_API_KEY: "k", KEYLANG_LLM_TIMEOUT_MS: timeout } : { OPENROUTER_BASE_URL: url, OPENROUTER_API_KEY: "k", KEYLANG_LLM_TIMEOUT_MS: timeout };
+
   const agentOf = (kind: "anthropic" | "openrouter"): string => (kind === "anthropic" ? "anthropic:claude-opus-5" : "openrouter:some/model");
+
   const clientOf = (kind: "anthropic" | "openrouter", url: string, timeout: string) => {
     const setup = llmClient(agentOf(kind), { root: home, env: envOf(kind, url, timeout), home });
     assert.ok("client" in setup);
+
     return setup.client;
   };
+
   // Success without options: the old callers.
   const ok = await mockModel(t, ["an answer"]);
   assert.equal(await clientOf("anthropic", ok.url, "5000").complete(request), "an answer");
+
   for (const kind of ["anthropic", "openrouter"] as const) {
     // Cancel: the request is aborted, the text streamed so far is no answer, and it is not a timeout.
     const cancelled = await stalledProvider(t, kind);
@@ -882,6 +928,7 @@ test("llm: a call's own timeoutMs bounds it under KEYLANG_LLM_TIMEOUT_MS and is 
   const home = mkdtempSync(join(tmpdir(), "keylang-llm-"));
   t.after(() => rmSync(home, { recursive: true, force: true }));
   const request = { system: "s", prompt: "p", maxTokens: 16 };
+
   for (const kind of ["anthropic", "openrouter"] as const) {
     const stalled = await stalledProvider(t, kind);
     const env = kind === "anthropic" ? { ANTHROPIC_BASE_URL: stalled.url, ANTHROPIC_API_KEY: "k", KEYLANG_LLM_TIMEOUT_MS: "60000" } : { OPENROUTER_BASE_URL: stalled.url, OPENROUTER_API_KEY: "k", KEYLANG_LLM_TIMEOUT_MS: "60000" };
@@ -903,6 +950,7 @@ test("llm: a call's own timeoutMs bounds it under KEYLANG_LLM_TIMEOUT_MS and is 
     const cancelled = await setup.client.complete(request, { signal: AbortSignal.abort() }).then(() => null, (e: unknown) => e);
     assert.ok(isCancelled(cancelled), `${kind}: ${String(cancelled)}`);
   }
+
   assert.equal(isCancelled(new Error("anthropic: cancelled")), false);
   assert.equal(isCancelled(null), false);
 });

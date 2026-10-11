@@ -14,10 +14,12 @@ import type { AnalysisSnapshot } from "../src/snapshot.ts";
 import { keylang, tempDir, writeTree } from "./cli-helpers.ts";
 
 const BASE = "cartridges/app_storefront_base/cartridge";
+
 const CUSTOM = "cartridges/app_custom/cartridge";
 
 function config(sfcc: unknown): string {
   const layers = { custom: ["cartridges/app_custom/**"], base: ["cartridges/app_storefront_base/**"], modules: ["cartridges/modules/**"] };
+
   return JSON.stringify({ languages: ["javascript"], module: "file", layers, ...(sfcc === undefined ? {} : { sfcc }) });
 }
 
@@ -79,6 +81,7 @@ const REPO: Record<string, string> = {
 function snapshotOf(dir: string): AnalysisSnapshot {
   const run = keylang(dir, ["map"]);
   assert.equal(run.status, 0, run.stderr);
+
   return JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as AnalysisSnapshot;
 }
 

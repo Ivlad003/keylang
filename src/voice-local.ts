@@ -40,23 +40,30 @@ type MicrophoneClass = new (options: { sampleRate: number; channels: number }) =
  */
 async function loadWhisper(): Promise<{ module: Whisper } | Exclude<ModuleStatus, { status: "ok" }>> {
   const loaded = optional("@fugood/whisper.node", () => require("@fugood/whisper.node"));
+
   if (!("module" in loaded)) return loaded;
   const module = loaded.module as Partial<Whisper> | null;
+
   if (typeof module?.initWhisper !== "function" || typeof module.loadWhisperModule !== "function") {
     return { status: "unavailable", reason: "@fugood/whisper.node has no initWhisper/loadWhisperModule export; update it" };
   }
+
   const load = module.loadWhisperModule;
   const binary = await quietly(() => load());
+
   if ("error" in binary) return { status: "unavailable", reason: [binary.error, ...binary.warnings].join("; ") };
+
   if (typeof (binary.value as { WhisperContext?: unknown } | null)?.WhisperContext !== "function") {
     return { status: "unavailable", reason: ["@fugood/whisper.node loaded no WhisperContext", ...binary.warnings].join("; ") };
   }
+
   return { module: module as Whisper };
 }
 
 /** What `@fugood/whisper.node` can do on this machine. */
 export async function localStatus(): Promise<ModuleStatus> {
   const loaded = await loadWhisper();
+
   return "module" in loaded ? { status: "ok" } : loaded;
 }
 
@@ -67,15 +74,19 @@ export async function localAvailable(): Promise<boolean> {
 
 function loadDecibri(): { module: { Microphone: MicrophoneClass } } | Exclude<ModuleStatus, { status: "ok" }> {
   const loaded = optional("decibri", () => require("decibri"));
+
   if (!("module" in loaded)) return loaded;
   const module = loaded.module as { Microphone?: unknown } | null;
+
   if (typeof module?.Microphone !== "function") return { status: "unavailable", reason: "decibri has no Microphone export; update decibri" };
+
   return { module: module as { Microphone: MicrophoneClass } };
 }
 
 /** What `decibri` can do on this machine. */
 export async function microphoneStatus(): Promise<ModuleStatus> {
   const loaded = loadDecibri();
+
   return "module" in loaded ? { status: "ok" } : loaded;
 }
 
@@ -87,17 +98,22 @@ export async function microphoneAvailable(): Promise<boolean> {
 /** The system microphone through `decibri` (16 kHz, mono, s16le); null when it is not installed. */
 export async function defaultMicrophone(): Promise<Microphone | null> {
   const loaded = loadDecibri();
+
   if ("status" in loaded) {
     if (loaded.status === "missing") return null;
     throw new Error(`voice: the microphone is unavailable: ${loaded.reason}`);
   }
+
   const mic = new loaded.module.Microphone({ sampleRate: 16000, channels: 1 }) as AsyncIterable<Buffer> & { stop?: () => void };
+
   if (typeof mic.stop !== "function" || typeof mic[Symbol.asyncIterator] !== "function") throw new Error("voice: decibri's Microphone is not a readable stream; update decibri");
+
   return {
     chunks: (async function* () {
       for await (const chunk of mic) {
         // A copy: the stream may reuse its buffer, and Int16Array needs an even, aligned offset.
         const pcm = new Int16Array(Math.floor(chunk.length / 2));
+
         for (let i = 0; i < pcm.length; i++) pcm[i] = chunk.readInt16LE(i * 2);
         yield pcm;
       }
@@ -109,18 +125,23 @@ export async function defaultMicrophone(): Promise<Microphone | null> {
 /** whisper.cpp on this machine, window by window, with the glossary as the initial prompt. */
 export async function transcribeLocal(modelFile: string, pcm: Int16Array, terms: readonly string[]): Promise<string> {
   const loaded = await loadWhisper();
+
   if (!("module" in loaded)) throw new Error(loaded.status === "missing" ? "voice: the optional @fugood/whisper.node is not installed" : `voice: @fugood/whisper.node is unavailable: ${loaded.reason}`);
   const { initWhisper } = loaded.module;
   const started = await quietly(() => initWhisper({ filePath: modelFile, useGpu: true }));
+
   if ("error" in started) throw new Error(`voice: whisper.cpp could not load ${modelFile}: ${[started.error, ...started.warnings].join("; ")}`);
   const context = started.value;
+
   try {
     const texts: string[] = [];
+
     for (const window of windows(pcm)) {
       const data = window.buffer.slice(window.byteOffset, window.byteOffset + window.byteLength) as ArrayBuffer;
       const { promise } = context.transcribeData(data, { prompt: terms.join(", ") });
       texts.push((await promise).result ?? "");
     }
+
     return joinWindows(texts);
   } finally {
     await context.release();
@@ -139,7 +160,9 @@ function optional(name: string, load: () => unknown): { module: unknown } | Excl
     // Missing is the package itself; a module it cannot find (its platform binary) makes it unavailable.
     const code = error instanceof Error && "code" in error ? error.code : undefined;
     const message = error instanceof Error ? error.message : String(error);
+
     if ((code === "MODULE_NOT_FOUND" || code === "ERR_MODULE_NOT_FOUND") && (message.includes(`'${name}'`) || message.includes(`"${name}"`))) return { status: "missing" };
+
     return { status: "unavailable", reason: message.split("\n")[0]! };
   }
 }
@@ -159,6 +182,7 @@ function quietly<T>(load: () => Promise<T>): Promise<({ value: T } | { error: st
     console.warn = (...args: unknown[]) => {
       warnings.push(args.map(String).join(" "));
     };
+
     try {
       return { value: await load(), warnings };
     } catch (error) {
@@ -167,6 +191,8 @@ function quietly<T>(load: () => Promise<T>): Promise<({ value: T } | { error: st
       console.warn = warn;
     }
   });
+
   quiet = run.catch(() => undefined);
+
   return run;
 }

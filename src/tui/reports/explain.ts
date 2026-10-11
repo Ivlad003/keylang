@@ -14,6 +14,7 @@ type ExplainKind = "explain" | "explain-llm" | "explain-plan" | "explain-batch";
 /** The CLI command of an inventory: `explain --stale`, `explain --missing --dry-run --limit 3 --jobs 2`. */
 function explainPlanLabel(request: ExplainPlanRequest): string {
   if (request.list === "stale-saved") return "explain --stale";
+
   return [`explain --${request.batch}`, ...(request.estimate === true ? ["--dry-run"] : []), ...(request.limit !== undefined ? ["--limit", String(request.limit)] : []), ...(request.jobs !== undefined ? ["--jobs", String(request.jobs)] : [])].join(" ");
 }
 
@@ -26,10 +27,13 @@ function explainBatchLabel(request: ExplainBatchRequest): string {
 function explainPlanOutcome(payload: ExplainPlanPayload): string {
   if (payload.list === "stale-saved") {
     const stale = payload.entries.filter((entry) => entry.state === "stale").length;
+
     return payload.entries.length === 0 ? `every one of ${payload.saved} saved explanation(s) is fresh` : `${stale} stale, ${payload.entries.length - stale} gone of ${payload.saved} saved explanation(s)`;
   }
+
   if (payload.plan.length === 0) return "nothing to explain: zero work, no request";
   const cut = payload.candidates > payload.plan.length ? ` of ${payload.candidates}` : "";
+
   return `${payload.plan.length}${cut} brief(s) planned${payload.estimate === null ? "" : `, ~${payload.estimate.input} in, ~${payload.estimate.output} out tokens (approximate)`}`;
 }
 
@@ -37,28 +41,36 @@ function explainPlanOutcome(payload: ExplainPlanPayload): string {
 function explainBatchOutcome(payload: ExplainBatchPayload): string {
   if (payload.plan.length === 0) return "nothing to explain: zero work, no request";
   const counts = `${payload.done.length} of ${payload.plan.length} brief(s) written${payload.failed.length > 0 ? `, ${payload.failed.length} failed` : ""}${payload.notStarted.length > 0 ? `, ${payload.notStarted.length} not started` : ""}`;
+
   if (payload.stopped === "cancelled") return `cancelled: ${counts}`;
+
   if (payload.stopped === "outdated") return `outdated, stopped: ${counts}`;
+
   if (payload.stopped === "refused") return `refused: ${counts}`;
+
   return payload.failed.length > 0 ? `partial: ${counts}` : counts;
 }
 
 /** What became of one planned node of a batch: `written <file>`, `failed: <reason>`, `not started`. */
 function batchState(payload: ExplainBatchPayload, id: string): string {
   const done = payload.done.find((entry) => entry.id === id);
+
   if (done) return `written ${done.file}`;
   const failed = payload.failed.find((entry) => entry.id === id);
+
   return failed ? `failed: ${failed.reason}` : "not started";
 }
 
 /** A saved answer or brief: its provenance on one row, then its text and the IDs it made up. */
 function savedRows(rows: ReportRow[], label: string, saved: SavedAnswer): void {
   rows.push({ text: `── ${label} · ${saved.detail} · ${saved.agent} · ${saved.date} · ${saved.fresh ? "fresh" : "stale: the code changed since"} · ${saved.file} ──`, style: { ...THEME.panel, fg: saved.fresh ? 243 : 179 } });
+
   for (const line of saved.text.split("\n")) {
     // A `full` answer is in sections: a `##` heading is a bold title row.
     const heading = /^#{1,6}\s+(.*)$/.exec(line);
     rows.push(heading ? { text: `  ${heading[1]!}`, style: BOLD } : { text: `  ${line}`, style: THEME.panel });
   }
+
   if (saved.unknownIds.length > 0) rows.push({ text: `  unknown ids (in no snapshot, no planned; not followed): ${saved.unknownIds.join(", ")}`, style: WARNING });
 }
 
@@ -68,6 +80,7 @@ function linkRows(rows: ReportRow[], links: readonly { file: string | null; text
   links.forEach((link, index) => {
     rows.push({ text: `  ${link.text}`, style: index === selected ? THEME.selected : link.file === null ? MUTED : THEME.panel, gap: index });
   });
+
   if (links.length > 0) rows.push({ text: "  Tab, then ↑↓ select a place and Enter opens it", style: THEME.hint });
 }
 
@@ -83,11 +96,13 @@ export const EXPLAIN_REPORTS: { [K in ExplainKind]: Report<K> } = {
     summary(_record, result) {
       const { payload } = result;
       const outcome = payload.subject === "code" ? `${payload.code}: offline help` : `${payload.summary.kind} ${payload.id}: ${payload.saved === null ? "no saved answer" : `saved answer ${payload.saved.fresh ? "fresh" : "stale"}`}`;
+
       return `${outcome} · code ${result.exitCode}`;
     },
     rows(_state, _record, result, view) {
       // Offline: a code's help, or the node's summary with its saved answer and brief apart, each with its provenance.
       const { payload } = result;
+
       if (payload.subject === "code") {
         return [
           { text: `Explain · ${payload.code} · offline help of the code · nothing read, nothing written`, style: BOLD },
@@ -95,17 +110,23 @@ export const EXPLAIN_REPORTS: { [K in ExplainKind]: Report<K> } = {
           ...payload.text.trimEnd().split("\n").map((line) => ({ text: `  ${line}`, style: THEME.panel })),
         ];
       }
+
       const rows: ReportRow[] = [
         { text: `Explain · ${payload.id} · offline, no model, nothing written · saved code and specs · snapshot ${shortId(payload.snapshotId)}`, style: BOLD },
         outcomeRow(view.summary, true),
       ];
+
       for (const message of result.messages) if (message.level === "warning") rows.push({ text: `  ${message.text}`, style: WARNING });
       rows.push({ text: "── the snapshot and the specs (doc: is the code's documentation comment) ──", style: MUTED });
+
       for (const line of formatSummary(payload.summary).split("\n")) rows.push({ text: `  ${line}`, style: THEME.panel });
+
       if (payload.saved !== null) savedRows(rows, "saved answer", payload.saved);
       else rows.push({ text: `  no saved ${payload.detail === "brief" ? "brief" : "answer"}: keylang explain ${payload.id} --llm${payload.detail === "brief" ? " --brief" : ""} asks the model; nothing here does`, style: MUTED });
+
       if (payload.brief !== null) savedRows(rows, "saved brief (the explained map)", payload.brief);
       linkRows(rows, payload.links, view.selected);
+
       return rows;
     },
     items: { noun: "place", of: (_state, result) => (result.payload.subject === "node" ? linkItems(result.payload.links) : []) },
@@ -116,6 +137,7 @@ export const EXPLAIN_REPORTS: { [K in ExplainKind]: Report<K> } = {
     summary(_record, result) {
       const { payload } = result;
       const what = `${payload.summary.kind} ${payload.id}`;
+
       const outcome =
         payload.source === "cache"
           ? `${what}: the fresh saved ${payload.detail} answer, no request`
@@ -126,31 +148,43 @@ export const EXPLAIN_REPORTS: { [K in ExplainKind]: Report<K> } = {
               : payload.refused.length > 0
                 ? `${what}: refused, nothing written`
                 : `${what}: the model failed, nothing written`;
+
       return `${outcome}${codeOf(result.exitCode)}`;
     },
     rows(_state, _record, result, view) {
       // The model's answer with where it came from (cache, model, none), the summary it was asked about, and what was written.
       const { payload } = result;
+
       const rows: ReportRow[] = [
         { text: `Explain with the model · ${payload.id} · ${payload.detail} · lang ${payload.lang} · agent ${payload.agent ?? "none"} · saved code and specs · snapshot ${shortId(payload.snapshotId)}`, style: BOLD },
         outcomeRow(view.summary, result.exitCode === 0),
       ];
+
       const why = payload.reason === "missing" ? "no saved answer" : payload.reason === "stale" ? "the saved answer was stale" : payload.reason === "lang" ? `the saved answer was in ${payload.previous?.lang ?? "another language"}` : payload.reason === "detail" ? `the saved answer was ${payload.previous?.detail ?? "another detail"}` : null;
+
       if (payload.source === "cache") rows.push({ text: "  read from the saved file: fresh, same detail and language; the model was not asked, nothing was written", style: MUTED });
+
       if (payload.source === "model" && why !== null) rows.push({ text: `  ${why}: the model was asked once${payload.written === null ? "" : `; the map is not written (the explained map follows keylang map)`}`, style: MUTED });
+
       for (const message of result.messages) if (message.level !== "info") rows.push({ text: `  ${message.text}`, style: message.level === "error" ? ERROR : WARNING });
       rows.push({ text: "── the snapshot and the specs (doc: is the code's documentation comment) ──", style: MUTED });
+
       for (const line of formatSummary(payload.summary).split("\n")) rows.push({ text: `  ${line}`, style: THEME.panel });
+
       if (payload.source === "model" && payload.answer !== null) savedRows(rows, payload.written === null ? "the model's answer, not written" : "new answer, saved", payload.answer);
+
       if (payload.source === "model" && payload.written === null) {
         if (payload.previous !== null) savedRows(rows, "saved answer, kept", payload.previous);
         else rows.push({ text: "  no saved answer: nothing was written", style: MUTED });
       }
+
       if (payload.source !== "model") {
         if (payload.answer !== null) savedRows(rows, payload.source === "cache" ? "saved answer, read" : "saved answer", payload.answer);
         else rows.push({ text: "  no saved answer", style: MUTED });
       }
+
       linkRows(rows, payload.links, view.selected);
+
       return rows;
     },
     items: { noun: "place", of: (_state, result) => linkItems(result.payload.links) },
@@ -165,9 +199,11 @@ export const EXPLAIN_REPORTS: { [K in ExplainKind]: Report<K> } = {
       const snapshot = `snapshot ${shortId(payload.snapshotId)}`;
       const place = (where: { file: string; line: number } | null): string => (where === null ? "" : `  ${where.file}:${where.line}`);
       const rows: ReportRow[] = [];
+
       if (payload.list === "stale-saved") {
         rows.push({ text: `Explanations to do · stale saved answers and briefs (keylang explain --stale) · no model, nothing written · saved code and specs · ${snapshot}`, style: BOLD });
         rows.push(outcomeRow(view.summary, true));
+
         for (const message of result.messages) if (message.level === "warning") rows.push({ text: `  ${message.text}`, style: WARNING });
         rows.push({ text: "  the saved explanations themselves, not the brief plan: a stale one is asked again by its command; a gone id is only listed, nothing generates it", style: MUTED });
         payload.entries.forEach((entry, index) => {
@@ -179,25 +215,32 @@ export const EXPLAIN_REPORTS: { [K in ExplainKind]: Report<K> } = {
         const command = `keylang explain --${payload.batch}${payload.estimate === null ? "" : " --dry-run"}${payload.limit === null ? "" : ` --limit ${payload.limit}`} --jobs ${payload.jobs}`;
         rows.push({ text: `Explanations to do · brief plan: ${payload.batch === "missing" ? "missing and stale briefs" : "stale briefs only"} (${command}) · a preview: no model, nothing written · ${snapshot}`, style: BOLD });
         rows.push(outcomeRow(view.summary, true));
+
         for (const message of result.messages) if (message.level === "warning") rows.push({ text: `  ${message.text}`, style: WARNING });
         const { counts } = payload;
         rows.push({ text: `  ${briefCounts(counts)} · ${payload.waves.length} wave(s) bottom-up · jobs ${payload.jobs} · limit ${payload.limit ?? "none"}${payload.candidates > payload.plan.length ? ` (${payload.candidates - payload.plan.length} more left out)` : ""}`, style: THEME.panel });
+
         if (payload.estimate !== null) rows.push({ text: `  approximate tokens: ~${payload.estimate.input} in, ~${payload.estimate.output} out — about 4 characters a token and 80 a brief; not the API's count or cost`, style: THEME.panel });
         rows.push({ text: `  left out: ${payload.skipped.documented} node(s) with a doc comment, ${payload.skipped.fresh} with a fresh brief${payload.gone.length > 0 ? ` · gone, never asked for: ${payload.gone.join(", ")}` : ""}`, style: MUTED });
         rows.push({ text: "  a preview, not a permission: the batch (the form's last row, or keylang explain --missing --llm) plans again on its own analysis", style: MUTED });
         let index = 0;
         payload.waves.forEach((wave, number) => {
           rows.push({ text: `── wave ${number + 1} · ${wave.level} · ${wave.ids.length} ──`, style: MUTED });
+
           for (const id of wave.ids) {
             const entry = payload.plan[index]!;
             rows.push({ text: `  ${id} (${entry.level}) · ${entry.reason === "stale" ? "stale brief" : "no brief"}${place(entry.place)}`, style: index === view.selected ? THEME.selected : entry.place === null ? MUTED : THEME.panel, gap: index });
             index++;
           }
         });
+
         if (payload.plan.length === 0) rows.push({ text: "  zero work: no node needs a brief; no request would be made", style: THEME.panel });
       }
+
       const listed = payload.list === "stale-saved" ? payload.entries.length : payload.plan.length;
+
       if (listed > 0) rows.push({ text: "  Tab, then ↑↓ select a node and Enter opens its code", style: THEME.hint });
+
       return rows;
     },
     items: {
@@ -206,6 +249,7 @@ export const EXPLAIN_REPORTS: { [K in ExplainKind]: Report<K> } = {
       of(_state, result) {
         const { payload } = result;
         const entries = payload.list === "stale-saved" ? payload.entries.map((entry) => ({ place: entry.place, text: `${entry.id}${entry.kind === "brief" ? " (brief)" : ""}: ${entry.state}` })) : payload.plan.map((entry) => ({ place: entry.place, text: `${entry.id} (${entry.level}): ${entry.reason}` }));
+
         return entries.map(({ place, text }) => ({ file: place?.file ?? "", line: place?.line ?? 1, col: place?.col ?? 1, text }));
       },
     },
@@ -217,14 +261,20 @@ export const EXPLAIN_REPORTS: { [K in ExplainKind]: Report<K> } = {
     rows(_state, _record, result, view) {
       // A batch: what it planned, what landed, what failed with why, what was never asked; Tab, then Enter opens a node.
       const { payload } = result;
+
       const rows: ReportRow[] = [
         { text: `Explain briefs with the model · keylang ${explainBatchLabel({ kind: "explain-batch", root: "", batch: payload.batch, ...(payload.limit !== null ? { limit: payload.limit } : {}), jobs: payload.jobs })} · lang ${payload.lang} · agent ${payload.agent || "none"} · snapshot ${shortId(payload.snapshotId)}`, style: BOLD },
         outcomeRow(view.summary, result.exitCode === 0),
       ];
+
       if (payload.stopped === "cancelled") rows.push({ text: "  cancelled: no request was started after it, the ones in flight were closed; the briefs written before stay (no rollback)", style: WARNING });
+
       if (payload.stopped === "outdated") rows.push({ text: "  the inputs changed while the batch ran: nothing was asked for or written after it; the briefs written before stay — run the batch again", style: WARNING });
+
       if (payload.stopped === "refused") rows.push({ text: "  the session refused the write: nothing was written", style: WARNING });
+
       for (const message of result.messages) if (message.level === "warning" || (message.level === "error" && payload.refused.includes(message.text))) rows.push({ text: `  ${message.text}`, style: message.level === "error" ? ERROR : WARNING });
+
       if (payload.plan.length > 0) rows.push({ text: `  ${payload.plan.length} planned · ${payload.done.length} written · ${payload.failed.length} failed · ${payload.notStarted.length} not started · jobs ${payload.jobs} · limit ${payload.limit ?? "none"} · a run again asks only for what is still missing or stale`, style: MUTED });
       let wave: number | null = null;
       payload.plan.forEach((entry, index) => {
@@ -234,8 +284,11 @@ export const EXPLAIN_REPORTS: { [K in ExplainKind]: Report<K> } = {
         const style = index === view.selected ? THEME.selected : now.startsWith("failed") ? ERROR : now === "not started" ? MUTED : THEME.panel;
         rows.push({ text: `  ${entry.id} (${entry.level}) · ${now}`, style, gap: index });
       });
+
       if (payload.plan.length === 0) rows.push({ text: "  zero work: no node needs a brief; no request was made", style: THEME.panel });
+
       if (payload.plan.length > 0) rows.push({ text: "  Tab, then ↑↓ select a node and Enter opens its code", style: THEME.hint });
+
       return rows;
     },
     items: {

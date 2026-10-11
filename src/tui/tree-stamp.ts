@@ -19,17 +19,22 @@ const MANIFESTS = ["package.json", "pyproject.toml", "requirements.txt", "compos
 /** The files an analysis read, relative to the root, and their directories. */
 export function inputsOf(done: Analysis): string[] {
   const files = new Set<string>([CONFIG_FILE, ...MANIFESTS, done.config.dir]);
+
   for (const file of done.snapshot?.manifest.files ?? []) files.add(file.path);
+
   for (const doc of done.docs) files.add(doc.path);
+
   // The schemas the system of the code reads its tables from.
   for (const file of schemaFiles(done)) files.add(file);
   // The briefs the explained map is written from.
   const briefs = `${done.config.dir}/explain/brief`;
+
   try {
     for (const name of readdirSync(join(done.config.root, briefs))) files.add(`${briefs}/${name}`);
   } catch {
     // No briefs.
   }
+
   for (const field of ["tests", "trace"] as const) {
     try {
       for (const file of evidenceFiles(done.config, field) ?? []) files.add(file);
@@ -37,16 +42,21 @@ export function inputsOf(done: Analysis): string[] {
       // A missing report is a state of the analysis, not of the stamp.
     }
   }
+
   const all = new Set<string>(["."]);
+
   for (const file of files) {
     all.add(file);
+
     for (let dir = dirname(file); dir !== "." && dir !== "/" && !all.has(dir); dir = dirname(dir)) all.add(dir);
   }
+
   return [...all].sort();
 }
 
 export function stampOf(root: string, inputs: readonly string[]): string {
   const hash = createHash("sha256");
+
   for (const path of inputs) {
     try {
       const stat = statSync(join(root, path));
@@ -55,5 +65,6 @@ export function stampOf(root: string, inputs: readonly string[]): string {
       hash.update(`${path}\0-\n`);
     }
   }
+
   return hash.digest("hex");
 }

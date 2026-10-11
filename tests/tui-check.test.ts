@@ -33,26 +33,36 @@ function cliCheck(root: string, args: string[]): { status: number | null; stdout
  */
 function checkForm(app: App, send: (keys: string) => void, options: { paths?: string; strict?: boolean; static?: "config" | "behavior" | "shape"; changed?: boolean; since?: string } = {}): void {
   send(KEY.ctrlP);
+
   for (const ch of "keylang check") send(ch);
   send(KEY.enter);
   assert.equal(app.state.prompt?.kind, "full-check");
+
   if (options.paths !== undefined) {
     for (const _ of app.state.prompt!.text) send("\x7f");
+
     for (const ch of options.paths) send(ch);
   }
+
   // The rows: strict, static, changed, since, run (selected first).
   for (let i = 0; i < 4; i++) send(KEY.up);
+
   if (options.strict) send(KEY.right);
   send(KEY.down);
   const steps = { config: 0, behavior: 1, shape: 2 }[options.static ?? "config"];
+
   for (let i = 0; i < steps; i++) send(KEY.right);
   send(KEY.down);
+
   if (options.changed) send(KEY.right);
   send(KEY.down);
+
   if (options.since !== undefined) {
     for (const _ of app.state.prompt!.checkOptions!.since) send("\x7f");
+
     for (const ch of options.since) send(ch);
   }
+
   send(KEY.down);
   send(KEY.enter);
 }
@@ -71,6 +81,7 @@ test("tui: full check and strict give the CLI's codes on the same evidence; the 
   const before = treeBytes(root);
   // The form: the spec directory, not strict, the static mode of keylang.json (the default here).
   send(KEY.ctrlP);
+
   for (const ch of "keylang check") send(ch);
   send(KEY.enter);
   assert.equal(app.state.prompt?.text, "keylang");
@@ -98,6 +109,7 @@ test("tui: full check and strict give the CLI's codes on the same evidence; the 
   assert.ok(payload.results.some((result) => result.criterion === "trace" && result.verdict === "unverified"));
   assert.deepEqual(payload.options, { paths: ["keylang"], strict: false, static: "behavior", staticFrom: "default", withoutCode: false });
   assert.equal(checkPayload(strict).options.strict, true);
+
   // The CLI on the same saved files: JSON equal to the payload, the human lines and summary, every format the same code.
   for (const [record, flags] of [[normal, []], [strict, ["--strict"]]] as const) {
     const json = cliCheck(root, [...flags, "--format", "json"]);
@@ -106,8 +118,10 @@ test("tui: full check and strict give the CLI's codes on the same evidence; the 
     const human = cliCheck(root, [...flags]);
     assert.equal(human.stdout, checkPayload(record).lines.map((line) => `${line}\n`).join(""));
     assert.equal(human.stderr, record.result!.messages.filter((message) => message.level !== "info" || !checkPayload(record).lines.includes(message.text)).map((message) => `${message.text}\n`).join(""));
+
     for (const format of ["sarif", "github"]) assert.equal(cliCheck(root, [...flags, "--format", format]).status, record.result!.exitCode, format);
   }
+
   assert.deepEqual(treeBytes(root), before, "neither the TUI nor the CLI check wrote anything");
   // The pinned current analysis is not replaced by the disk report.
   assert.equal(app.state.analysis, analysis);
@@ -122,6 +136,7 @@ test("tui: full check and strict give the CLI's codes on the same evidence; the 
   assert.match(vt.text(), /incomplete: \d+ unverified, not proven · strict would make it code 1/);
   send(KEY.tab);
   const trace = payload.results.findIndex((result) => result.criterion === "trace");
+
   for (let i = 0; i < trace; i++) send(KEY.down);
   assert.match(app.state.message ?? "", /^unverified trace: .* · Enter opens keylang\/flows\/checkout\.md:\d+$/);
   send(KEY.enter);
@@ -139,24 +154,35 @@ test("terminal: quitting after a strict check with code 1 and a failed check wit
   const root = checkoutRepo(t);
   const term = fakeTerminal();
   const running = runTerminal(root, term.host);
+
   // The frames are diffs: the screen is what they draw, not their concatenated text.
   const screen = (): string => {
     const vt = new VirtualTerminal(100, 30);
+
     for (const chunk of term.out) vt.feed(chunk);
+
     return vt.text();
   };
+
   await waitUntil(() => screen().includes("checkout"), "the first frame");
+
   const form = (paths: string, strict: boolean): void => {
     term.type(KEY.ctrlP);
+
     for (const ch of "keylang check") term.type(ch);
     term.type(KEY.enter);
+
     for (const _ of "keylang") term.type("\x7f");
+
     for (const ch of paths) term.type(ch);
+
     // From the run row up past since, changed and static to strict.
     for (let i = 0; i < 4; i++) term.type(KEY.up);
+
     if (strict) term.type(KEY.right);
     term.type(KEY.enter);
   };
+
   form("keylang", true);
   await waitUntil(() => /check --strict: 0 fail, \d+ unverified, \d+ ok · code 1/.test(screen()), "the strict check");
   form("keylang/nope", false);
@@ -167,13 +193,16 @@ test("terminal: quitting after a strict check with code 1 and a failed check wit
 
 test("tui: static behavior and shape match the CLI on a hook's default and are named: override, keylang.json or the default", async (t) => {
   const layers = { domain: ["src/domain/**"], application: ["src/application/**"], presentation: ["src/presentation/**"] };
+
   const hooksRepo = (check: Record<string, string>): string =>
     repoWith(t, { ...HOOKS, "keylang.json": `${JSON.stringify({ languages: ["typescript"], layers, check }, null, 2)}\n`, "keylang/flows/hooks.md": HOOK_FLOW });
+
   const root = hooksRepo({});
   const s = session(root);
   t.after(() => s.app.close());
   await s.app.idle();
   const before = treeBytes(root);
+
   for (const [mode, flags] of [["config", []], ["behavior", ["--static=behavior"]], ["shape", ["--static=shape"]]] as const) {
     checkForm(s.app, s.send, { static: mode });
     await s.app.idle();
@@ -183,6 +212,7 @@ test("tui: static behavior and shape match the CLI on a hook's default and are n
     assert.deepEqual(checkJson(record), JSON.parse(cli.stdout), mode);
     assert.equal((record.params as { static?: string }).static, mode === "config" ? undefined : mode);
   }
+
   const [plain, behavior, shape] = s.app.state.records.map(checkPayload);
   assert.deepEqual([plain!.options.static, plain!.options.staticFrom], ["behavior", "default"]);
   assert.deepEqual([behavior!.options.static, behavior!.options.staticFrom], ["behavior", "request"]);
@@ -198,9 +228,11 @@ test("tui: static behavior and shape match the CLI on a hook's default and are n
   t.after(() => t2.app.close());
   await t2.app.idle();
   t2.send(KEY.ctrlP);
+
   for (const ch of "keylang check") t2.send(ch);
   t2.send(KEY.enter);
   assert.equal(t2.app.state.prompt?.items[1], "static: shape, from keylang.json check.static");
+
   // From the run row up past since and changed to static.
   for (let i = 0; i < 3; i++) t2.send(KEY.up);
   t2.send(KEY.right);
@@ -285,18 +317,22 @@ test("tui: the check saves the chosen dirty spec first as its own step — Back 
   t.after(() => s.app.close());
   await s.app.idle();
   const flow = "keylang/flows/checkout.md";
+
   // Dirty the flow with an unknown step, and another spec outside the chosen path.
   // Typed on the last (empty) line of each file.
   const edit = async (path: string, text: string): Promise<void> => {
     s.send(KEY.ctrlP);
+
     for (const ch of `open ${path}`) s.send(ch);
     s.send(KEY.enter);
     assert.equal(s.app.state.current, path);
     s.app.state.cursor = { line: s.app.state.buffers.get(path)!.text.split("\n").length - 1, col: 0 };
     s.send("i");
+
     for (const ch of text) s.send(ch);
     await esc(s.send);
   };
+
   await edit("keylang/notes/other.md", "Unsaved.");
   await edit(flow, "- step domain.order.nope");
   const before = treeBytes(root);
@@ -328,6 +364,7 @@ async function changedCheck(s: ReturnType<typeof session>, root: string, options
   const cli = cliCheck(root, [...(options.paths !== undefined ? [options.paths] : []), "--changed", ...(options.since !== undefined ? ["--since", options.since] : []), "--format", "json"]);
   assert.equal(record.result!.exitCode, cli.status, cli.stderr);
   assert.deepEqual(checkJson(record), JSON.parse(cli.stdout));
+
   return record;
 }
 
@@ -459,6 +496,7 @@ test("tui: changed check without a repository or with an unknown ref fails with 
   t.after(() => r.app.close());
   await r.app.idle();
   const committed = workTree(root);
+
   for (const ref of ["no-such-ref", "--output=leak.txt"]) {
     checkForm(r.app, r.send, { changed: true, since: ref });
     await r.app.idle();
@@ -468,6 +506,7 @@ test("tui: changed check without a repository or with an unknown ref fails with 
     assert.equal(`keylang: ${bad.result!.messages[0]!.text}\n`, cliBad.stderr);
     assert.equal(cliBad.stdout, "", "no fallback to a full report");
   }
+
   assert.match(r.app.state.records.at(-1)!.result!.messages[0]!.text, /`--output=leak\.txt` is not a git ref/);
   assert.equal(existsSync(join(root, "leak.txt")), false, "an option-like ref never reaches git");
   // An empty ref is refused in the form; typing after the failures still works.
@@ -488,11 +527,13 @@ test("check operation: --since without --changed and a missing git binary are co
   const path = process.env.PATH;
   process.env.PATH = join(root, "no-bin");
   let missing: OperationResult;
+
   try {
     missing = await runOperation({ kind: "check", root, paths: [], strict: false, changed: true });
   } finally {
     process.env.PATH = path;
   }
+
   const cliMissing = spawnSync(process.execPath, [BIN, "check", "--changed"], { cwd: root, encoding: "utf8", env: { ...process.env, PATH: join(root, "no-bin") } });
   assert.deepEqual([missing.status, missing.exitCode, missing.payload, cliMissing.status], ["failed", 2, null, 2]);
   assert.match(missing.messages[0]!.text, /^check --changed: git is not available/);
@@ -505,15 +546,19 @@ test("check operation: --since without --changed and a missing git binary are co
 function uninitializedRepo(t: { after: (f: () => void) => void }, extra: Record<string, string> = {}): string {
   const dir = repoWith(t, { ...CHECKOUT_FILES, ...extra });
   mkdirSync(join(dir, ".codex"), { recursive: true });
+
   return dir;
 }
 
 /** The init form from the palette; the selection typed as in `--agents` (empty is auto), then the mode. */
 function initForm(send: (keys: string) => void, selection: string, mode: "write" | "check"): void {
   send(KEY.ctrlP);
+
   for (const ch of "init set up keylang") send(ch);
   send(KEY.enter);
+
   for (const ch of selection) send(ch);
+
   if (mode === "check") send(KEY.down);
   send(KEY.enter);
 }
@@ -521,6 +566,7 @@ function initForm(send: (keys: string) => void, selection: string, mode: "write"
 function initRecord(app: App): Extract<OperationResult, { kind: "init" }> & { payload: NonNullable<Extract<OperationResult, { kind: "init" }>["payload"]> } {
   const result = app.state.records.at(-1)?.result;
   assert.ok(result?.kind === "init" && result.payload !== null, JSON.stringify(result?.messages));
+
   return result as Extract<OperationResult, { kind: "init" }> & { payload: NonNullable<Extract<OperationResult, { kind: "init" }>["payload"]> };
 }
 
@@ -535,17 +581,24 @@ function cliEdge(root: string, from: string, to: string): { status: number | nul
 /** The palette's explain-edge form; `from` replaces the first field when given, `to` is typed into the second, then Enter. */
 function edgeForm(app: App, send: (keys: string) => void, ids: { from?: string; to: string }): void {
   send(KEY.ctrlP);
+
   for (const ch of "explain edge") send(ch);
   send(KEY.enter);
   assert.equal(app.state.prompt?.kind, "explain-edge");
+
   if (ids.from !== undefined) {
     while (app.state.prompt!.index !== 0) send(KEY.up);
+
     for (const _ of app.state.prompt!.edge!.from) send("\x7f");
+
     for (const ch of ids.from) send(ch);
     send(KEY.down);
   }
+
   assert.equal(app.state.prompt!.ids![app.state.prompt!.index], "to");
+
   for (const _ of app.state.prompt!.edge!.to) send("\x7f");
+
   for (const ch of ids.to) send(ch);
   send(KEY.enter);
 }
@@ -553,6 +606,7 @@ function edgeForm(app: App, send: (keys: string) => void, ids: { from?: string; 
 function edgePayload(record: App["state"]["records"][number] | undefined): NonNullable<Extract<OperationResult, { kind: "explain-edge" }>["payload"]> {
   const result = record?.result;
   assert.ok(result?.kind === "explain-edge" && result.payload !== null, JSON.stringify(result?.messages));
+
   return result.payload;
 }
 
@@ -561,13 +615,16 @@ test("tui: explain-edge fills the first id from the cursor, lists both direction
     // A way back: domain.order imports and calls the application.
     "src/domain/order.ts": 'import { buy } from "../application/purchase.ts";\nexport function create(): void {}\nexport function again(): void {\n  buy();\n}\n',
   });
+
   const s = session(root, { cols: 200 });
   t.after(() => s.app.close());
   await s.app.idle();
   const before = treeBytes(root);
   assert.equal(s.app.state.current, "keylang/flows/checkout.md");
+
   for (let i = 0; i < 5; i++) s.send(KEY.down);
   s.send(KEY.ctrlP);
+
   for (const ch of "explain edge") s.send(ch);
   s.send(KEY.enter);
   // The id under the cursor fills only the first field; the second is selected and empty.
@@ -575,9 +632,11 @@ test("tui: explain-edge fills the first id from the cursor, lists both direction
   assert.deepEqual(prompt.edge, { from: "application.purchase.buy", to: "" });
   assert.equal(prompt.ids![prompt.index], "to");
   assert.deepEqual(prompt.items, ["from: application.purchase.buy", "to: ▏", "Explain the edge (reads the saved code, writes nothing)"]);
+
   for (const ch of "domain.ordr") s.send(ch);
   assert.equal(promptNote(s.app), "domain.ordr: not in the current snapshot · did you mean domain.order?");
   s.send("\x7f");
+
   for (const ch of "er") s.send(ch);
   assert.equal(promptNote(s.app), "domain.order: in the current snapshot");
   assert.match(s.text(), /explain edge: application\.purchase\.buy ↔ domain\.order/);
@@ -609,6 +668,7 @@ test("tui: explain-edge fills the first id from the cursor, lists both direction
   assert.match(s.text(), /← call resolved syntactic src\/domain\/order\.ts:4:\d+/);
   s.send(KEY.tab);
   const back = payload.edges.findIndex(({ direction, edge }) => direction === "backward" && edge.kind === "call");
+
   for (let i = 0; i < back; i++) s.send(KEY.down);
   assert.match(s.app.state.message ?? "", /^← call resolved syntactic src\/domain\/order\.ts:4:\d+.* · Enter opens src\/domain\/order\.ts:4$/);
   s.send(KEY.enter);
@@ -626,6 +686,7 @@ test("tui: explain-edge without an edge tells a complete coverage from an unreso
     "src/a.ts": "export function a(): void {}\n",
     "src/b.ts": "export function b(): void {}\n",
   });
+
   const s = session(root);
   t.after(() => s.app.close());
   await s.app.idle();
@@ -698,8 +759,10 @@ test("tui: explain-edge with an unknown tail under a known module is code 2 with
   await esc(s.send);
   // An empty field keeps the form and names what is missing.
   s.send(KEY.ctrlP);
+
   for (const ch of "explain edge") s.send(ch);
   s.send(KEY.enter);
+
   while (s.app.state.prompt!.edge!.from !== "") s.send("\x7f");
   s.send(KEY.enter);
   assert.equal(s.app.state.prompt?.kind, "explain-edge");
@@ -733,6 +796,7 @@ test("tui: init from the start screen writes what the CLI writes in a twin and o
   assert.match(details, /Write, in order: keylang\.json, \.keylang\/ into \.gitignore \(unless a line lists it\), the map .*keylang\/rules\.baseline\.md, the harness files/);
   assert.match(details, /init --check.*the map is not compared/);
   assert.match(s.text(), /Initialize: write keylang\.json, map, baseline, harness files/);
+
   for (const ch of "nope") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.prompt?.kind, "init", "an unknown harness keeps the form");
@@ -797,6 +861,7 @@ test("tui: init keeps a custom keylang.json byte for byte; none and an explicit 
   t.after(() => s.app.close());
   await s.app.idle();
   s.send(KEY.ctrlP);
+
   for (const ch of "init set up keylang") s.send(ch);
   s.send(KEY.enter);
   assert.match((s.app.state.prompt?.details ?? []).join("\n"), /keylang\.json: exists, kept byte for byte/);
@@ -904,6 +969,7 @@ test("tui: an I/O failure after keylang.json names what init wrote, is no succes
   s.send(KEY.f6);
   // A repeat after the obstacle is gone: the config written by the first run and a hand-written spec stay as they are.
   pause = () => {};
+
   rmSync(join(root, "keylang"));
   mkdirSync(join(root, "keylang"));
   writeFileSync(join(root, "keylang/rules.md"), "# rules\n\n- layers domain < infrastructure < application < presentation\n");
@@ -927,9 +993,12 @@ function exportForm(s: ReturnType<typeof session>, options: { format?: "human" |
   s.send("e");
   assert.equal(s.app.state.prompt?.kind, "export", s.app.state.message ?? "");
   const form = s.app.state.prompt!.exportForm!;
+
   if (options.format !== undefined) while (form.format !== options.format) s.send(KEY.right);
+
   if (options.path !== undefined) {
     for (const _ of s.app.state.prompt!.text) s.send("\x7f");
+
     for (const ch of options.path) s.send(ch);
   }
 }
@@ -969,6 +1038,7 @@ test("tui: export saves the selected check report in each format byte for byte a
   assert.equal(s.app.state.records.length, 1, "Esc starts no operation");
   assert.deepEqual(treeBytes(root), before, "the form and Esc wrote nothing, not even a directory");
   const paths = { human: ".keylang/export/check.txt", json: ".keylang/export/check.json", sarif: ".keylang/export/check.sarif", github: ".keylang/export/check.github.txt" } as const;
+
   for (const format of ["human", "json", "sarif", "github"] as const) {
     assert.equal(s.app.state.records[s.app.state.results.index], check, "the check report stays selected");
     exportForm(s, { format });
@@ -983,20 +1053,26 @@ test("tui: export saves the selected check report in each format byte for byte a
     assert.equal(saved, cli.stdout, `${format}: the file is the CLI's stdout`);
     assert.doesNotMatch(saved, /\x1b/, `${format}: no ANSI`);
     assert.doesNotMatch(saved, /\d+ fail, \d+ unverified, \d+ ok/, `${format}: the stderr summary is not in the file`);
+
     if (format === "json" || format === "sarif") JSON.parse(saved);
+
     if (format === "sarif") assert.ok(saved.includes('"ruleId"'), "a SARIF result");
+
     if (format === "github") assert.match(saved, /^::error file=keylang\/flows\/broken\.md,line=\d+,col=\d+,title=/m);
   }
+
   assert.deepEqual(JSON.parse(readFileSync(join(root, paths.json), "utf8")), checkJson(check));
   // Only the four files and their parents are new; the report was not run again.
   const after = treeBytes(root);
   const added = [...after.keys()].filter((path) => !before.has(path)).sort();
   assert.deepEqual(added, Object.values(paths).sort());
+
   for (const [path, bytes] of before) assert.equal(after.get(path), bytes, path);
   assert.equal(check.result, checkResult, "the exported record keeps its report");
   assert.equal(s.app.state.records.filter((record) => record.kind === "check").length, 1, "no hidden check");
   // F6: the export record names its report, format, target and outcome; Enter does not repeat it blindly.
   s.send(KEY.down);
+
   for (let i = 0; i < 4; i++) s.send(KEY.down);
   assert.equal(s.app.state.records[s.app.state.results.index]?.kind, "export");
   assert.match(s.text(), /Export · github of the check report · \.keylang\/export\/check\.github\.txt · \d+ bytes/);
@@ -1037,6 +1113,7 @@ test("tui: export refuses a target changed after the form, a generated target, a
   assert.match(conflict.result!.messages[0]!.text, /^out\.json: changed on disk while the change was prepared; nothing written$/);
   assert.equal(readFileSync(join(root, "out.json"), "utf8"), "someone else\n");
   assert.match(s.app.state.message ?? "", /export human out\.json: refused, nothing written · code 1/);
+
   // Refused in the form: the form stays open and nothing is written.
   const refusals: [string, RegExp][] = [
     ["gen.md", /a generated file: only its generator writes it/],
@@ -1045,8 +1122,10 @@ test("tui: export refuses a target changed after the form, a generated target, a
     ["away/report.json", /leads out of the repository through a link/],
     ["../report.json", /not a plain relative path/],
   ];
+
   const before = treeBytes(root);
   symlinkSync(outside, join(root, "away"));
+
   for (const [path, why] of refusals) {
     exportForm(s, { path });
     assert.match(promptNote(s.app), why, path);
@@ -1056,6 +1135,7 @@ test("tui: export refuses a target changed after the form, a generated target, a
     assert.match(s.app.state.message ?? "", why);
     await esc(s.send);
   }
+
   assert.deepEqual(readdirSync(outside), [], "nothing written through the link");
   rmSync(join(root, "away"));
   // A dirty buffer of the target: its text is never written under.
@@ -1065,6 +1145,7 @@ test("tui: export refuses a target changed after the form, a generated target, a
   await esc(s.send);
   assert.deepEqual(s.app.unsaved(), ["keylang/flows/broken.md"]);
   s.send(KEY.f6);
+
   while (s.app.state.results.index > 0) s.send(KEY.up);
   assert.equal(s.app.state.records[s.app.state.results.index], check);
   assert.notEqual(check.outdated, null, "the edit made the report outdated");
@@ -1072,9 +1153,12 @@ test("tui: export refuses a target changed after the form, a generated target, a
   assert.match(promptNote(s.app), /open with unsaved edits/);
   s.send(KEY.enter);
   assert.equal(s.app.state.prompt?.kind, "export");
+
   // An outdated report is saved as it ran, without a new check: named in the form.
   for (const _ of s.app.state.prompt!.text) s.send("\x7f");
+
   for (const ch of "old-report.txt") s.send(ch);
+
   while (s.app.state.prompt!.exportForm!.format !== "human") s.send(KEY.right);
   assert.match(exportDetails(s.app), /outdated: inputs edited since this run · saved as it ran; nothing is checked again/);
   s.send(KEY.enter);
@@ -1094,6 +1178,7 @@ test("tui: export saves an explained edge as the CLI's lines; the palette export
   t.after(() => s.app.close());
   await s.app.idle();
   s.send(KEY.ctrlP);
+
   for (const ch of "export report") s.send(ch);
   assert.match(promptNote(s.app), /no report yet: run a check first/);
   s.send(KEY.enter);
@@ -1104,6 +1189,7 @@ test("tui: export saves an explained edge as the CLI's lines; the palette export
   assert.equal(edge.status, "completed");
   // F6 closed: the palette takes the newest report.
   s.send(KEY.ctrlP);
+
   for (const ch of "export report") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.prompt?.kind, "export");
@@ -1136,6 +1222,7 @@ const SAVED_EXPLANATION = "<!-- keylang:explain agent=mock date=2026-10-01 closu
 function parseRecord(app: App): Extract<OperationResult, { kind: "parse" }> & { payload: NonNullable<Extract<OperationResult, { kind: "parse" }>["payload"]> } {
   const result = app.state.records.at(-1)?.result;
   assert.ok(result?.kind === "parse" && result.payload !== null, JSON.stringify(result?.messages));
+
   return result as Extract<OperationResult, { kind: "parse" }> & { payload: NonNullable<Extract<OperationResult, { kind: "parse" }>["payload"]> };
 }
 
@@ -1157,11 +1244,13 @@ test("tui: parse of the current spec with Unicode and a nested list gives the CL
   await s.app.idle();
   assert.equal(s.app.state.analysis?.snapshot ?? null, null);
   s.send(KEY.ctrlP);
+
   for (const ch of `open ${file}`) s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.current, file);
   // The form defaults to the current spec and shows both views; a directory only when typed.
   s.send(KEY.ctrlP);
+
   for (const ch of "keylang parse") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.prompt?.kind, "parse");
@@ -1217,6 +1306,7 @@ test("tui: parse of the current spec with Unicode and a nested list gives the CL
   let exported = s.app.state.records.at(-1)!;
   assert.deepEqual([exported.kind, exported.status, exported.result!.exitCode, exported.result!.written], ["export", "completed", 0, [".keylang/export/parse.txt"]]);
   assert.equal(readFileSync(join(root, ".keylang/export/parse.txt"), "utf8"), cliTree.stdout);
+
   while (s.app.state.results.index > 1) s.send(KEY.up);
   assert.equal(s.app.state.records[s.app.state.results.index]?.kind, "parse");
   exportForm(s, { format: "json" });
@@ -1228,8 +1318,10 @@ test("tui: parse of the current spec with Unicode and a nested list gives the CL
   assert.equal(readFileSync(join(root, ".keylang/export/parse.json"), "utf8"), cliJson.stdout);
   const after = treeBytes(root);
   assert.deepEqual([...after.keys()].filter((path) => !before.has(path)).sort(), [".keylang/export/parse.json", ".keylang/export/parse.txt"]);
+
   for (const [path, bytes] of before) assert.equal(after.get(path), bytes, path);
   assert.equal(s.app.state.records.filter((record) => record.kind === "parse").length, 2, "no hidden parse");
+
   while (s.app.state.results.index < s.app.state.records.length - 1) s.send(KEY.down);
   assert.match(s.text(), /Export · json of the parse report · \.keylang\/export\/parse\.json · \d+ bytes/);
 });
@@ -1275,6 +1367,7 @@ test("tui: parse of a syntax error and a directory with a saved explanation keep
   await esc(s.send);
   // A dirty spec under the paths is saved first; Back writes nothing and parses nothing.
   s.send(KEY.ctrlP);
+
   for (const ch of `open ${bad}`) s.send(ch);
   s.send(KEY.enter);
   s.app.state.cursor = { line: 4, col: 0 };
@@ -1315,13 +1408,17 @@ const MIXED_FLOW = "# flow mixed\n\n- trigger presentation.terminal.checkout\n  
 /** The palette's trace-plan form; `flow` replaces the default name when given, then Enter plans the first match (or the typed name). */
 function tracePlanForm(s: ReturnType<typeof session>, flow?: string): void {
   s.send(KEY.ctrlP);
+
   for (const ch of "trace plan") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.prompt?.kind, "trace-plan", s.app.state.message ?? "");
+
   if (flow !== undefined) {
     for (const _ of s.app.state.prompt!.text) s.send("\x7f");
+
     for (const ch of flow) s.send(ch);
   }
+
   s.send(KEY.enter);
 }
 
@@ -1330,6 +1427,7 @@ type TracePlanResult = Extract<OperationResult, { kind: "trace-plan" }> & { payl
 function tracePlanRecord(app: App): TracePlanResult {
   const result = app.state.records.at(-1)?.result;
   assert.ok(result?.kind === "trace-plan" && result.payload !== null, JSON.stringify(result?.messages));
+
   return result as TracePlanResult;
 }
 
@@ -1348,12 +1446,14 @@ test("tui: trace-plan of a flow with a trigger and nested steps gives the CLI's 
   assert.equal(s.app.state.current, "keylang/flows/checkout.md");
   // The flow under the cursor is the visible default; the list is the declared flows, not the file names.
   s.send(KEY.ctrlP);
+
   for (const ch of "keylang trace-plan") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.prompt?.kind, "trace-plan");
   assert.equal(s.app.state.prompt?.text, "checkout");
   assert.deepEqual(s.app.state.prompt?.items, ["checkout  keylang/flows/checkout.md"]);
   assert.equal(promptNote(s.app), "checkout · a fresh snapshot of the saved code · writes nothing, runs nothing");
+
   for (const _ of "checkout") s.send("\x7f");
   assert.deepEqual(s.app.state.prompt?.ids, ["checkout", "mixed"]);
   assert.match(s.text(), /2 flow\(s\): trace plan/);
@@ -1376,6 +1476,7 @@ test("tui: trace-plan of a flow with a trigger and nested steps gives the CLI's 
   assert.deepEqual(plan.symbols.map((symbol) => symbol.id), ["application.purchase.buy", "domain.order.create", "infrastructure.store.save", "presentation.terminal.checkout"]);
   const create = plan.symbols.find((symbol) => symbol.id === "domain.order.create")!;
   assert.deepEqual([create.name, create.file, create.line], ["create", "src/domain/order.ts", 1]);
+
   for (const symbol of plan.symbols) assert.equal(symbol.sha256, fileSha256(root, symbol.file), symbol.id);
   assert.deepEqual(result.payload.omitted, []);
   assert.deepEqual(treeBytes(root), before, "neither the TUI nor the CLI wrote anything: no trace, no cache");
@@ -1422,8 +1523,10 @@ test("tui: trace-plan of a flow with a trigger and nested steps gives the CLI's 
   assert.equal(readFileSync(join(root, ".keylang/export/trace-plan.json"), "utf8"), cli.stdout);
   const after = treeBytes(root);
   assert.deepEqual([...after.keys()].filter((path) => !before.has(path)), [".keylang/export/trace-plan.json"]);
+
   for (const [path, bytes] of before) assert.equal(after.get(path), bytes, path);
   assert.equal(s.app.state.records.filter((record) => record.kind === "trace-plan").length, 2, "no hidden plan");
+
   while (s.app.state.results.index < s.app.state.records.length - 1) s.send(KEY.down);
   assert.match(s.text(), /Export · json of the trace-plan report · \.keylang\/export\/trace-plan\.json · \d+ bytes/);
 });
@@ -1436,9 +1539,12 @@ test("tui: trace-plan of an unknown flow is code 2 with the CLI's message and no
   const before = treeBytes(root);
   // An unknown flow: the form says so, the operation fails with the CLI's code and message, nothing is written.
   s.send(KEY.ctrlP);
+
   for (const ch of "trace plan") s.send(ch);
   s.send(KEY.enter);
+
   for (const _ of s.app.state.prompt!.text) s.send("\x7f");
+
   for (const ch of "zzz") s.send(ch);
   assert.deepEqual(s.app.state.prompt?.items, []);
   assert.equal(promptNote(s.app), "zzz: not in the current documents · a fresh snapshot of the saved code · writes nothing, runs nothing");
@@ -1475,6 +1581,7 @@ test("tui: trace-plan of an unknown flow is code 2 with the CLI's message and no
   const flow = "keylang/flows/checkout.md";
   s.app.state.cursor = { line: 7, col: 0 };
   s.send("i");
+
   for (const ch of "  - step domain.order.create\n") s.send(ch);
   await esc(s.send);
   const typed = s.app.state.buffers.get(flow)!.text;

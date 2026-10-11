@@ -10,6 +10,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { HOOK_FLOW, HOOKS } from "./hooks-fixture.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
 
 interface Message {
@@ -43,10 +44,13 @@ class Session {
     this.child.stderr.on("data", (chunk: Buffer) => (this.stderr += chunk.toString()));
     this.child.stdout.on("data", (chunk: Buffer) => {
       this.buffer = Buffer.concat([this.buffer, chunk]);
+
       for (;;) {
         const end = this.buffer.indexOf("\r\n\r\n");
+
         if (end === -1) return;
         const length = Number(/Content-Length: (\d+)/i.exec(this.buffer.subarray(0, end).toString())?.[1]);
+
         if (this.buffer.length < end + 4 + length) return;
         this.messages.push(JSON.parse(this.buffer.subarray(end + 4, end + 4 + length).toString()) as Message);
         this.buffer = this.buffer.subarray(end + 4 + length);
@@ -68,23 +72,30 @@ class Session {
     const id = this.next++;
     const json = JSON.stringify({ jsonrpc: "2.0", id, method, params });
     this.child.stdin.write(`Content-Length: ${Buffer.byteLength(json)}\r\n\r\n${json}`);
+
     return id;
   }
 
   /** A request and its cancellation in one write, so the server sees both before answering. */
   sendThenCancel(method: string, params: unknown): number {
     const id = this.next++;
+
     const frame = (message: unknown): string => {
       const json = JSON.stringify(message);
+
       return `Content-Length: ${Buffer.byteLength(json)}\r\n\r\n${json}`;
     };
+
     this.child.stdin.write(frame({ jsonrpc: "2.0", id, method, params }) + frame({ jsonrpc: "2.0", method: "$/cancelRequest", params: { id } }));
+
     return id;
   }
 
   async request<T>(method: string, params: unknown): Promise<T> {
     const response = await this.response(this.send(method, params));
+
     if (response.error) throw new Error(`${method}: ${response.error.message}`);
+
     return response.result as T;
   }
 
@@ -94,9 +105,12 @@ class Session {
 
   async until<T>(find: () => T | undefined, ms = 30000): Promise<T> {
     const deadline = Date.now() + ms;
+
     for (;;) {
       const found = find();
+
       if (found !== undefined) return found;
+
       if (Date.now() > deadline) throw new Error(`timeout; got ${JSON.stringify(this.messages).slice(0, 2000)}`);
       await new Promise((done) => setTimeout(done, 25));
     }
@@ -109,6 +123,7 @@ class Session {
   /** End stdin without an `exit` message and wait for the process. */
   end(): Promise<number | null> {
     this.child.stdin.end();
+
     return this.exited;
   }
 }
@@ -118,6 +133,7 @@ async function open(t: { after: (f: () => void) => void }, dir: string, capabili
   t.after(() => session.close());
   await session.request("initialize", { rootUri: pathToFileURL(dir).href, capabilities });
   session.notify("initialized", {});
+
   return session;
 }
 
@@ -125,16 +141,21 @@ function fixture(t: { after: (f: () => void) => void }, extra: Record<string, st
   const dir = mkdtempSync(join(tmpdir(), "keylang-lsp-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   cpSync(join(root, "tests/fixtures", source), dir, { recursive: true });
+
   for (const [path, text] of Object.entries(extra)) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
     writeFileSync(join(dir, path), text);
   }
+
   assert.equal(spawnSync(process.execPath, [bin, "map"], { cwd: dir }).status, 0);
+
   return dir;
 }
 
 const uri = (dir: string, path: string): string => pathToFileURL(join(dir, path)).href;
+
 const lineOf = (text: string, needle: string): number => text.split("\n").findIndex((line) => line.includes(needle));
+
 const charOf = (text: string, line: number, needle: string): number => (text.split("\n")[line] ?? "").indexOf(needle);
 
 interface CheckRow {
@@ -149,6 +170,7 @@ interface CheckRow {
 
 function checkRows(dir: string, file: string): CheckRow[] {
   const o = spawnSync(process.execPath, [bin, "check", "--format", "json"], { cwd: dir, encoding: "utf8" });
+
   return (JSON.parse(o.stdout) as { results: CheckRow[] }).results.filter((row) => row.file === file);
 }
 
@@ -163,6 +185,7 @@ const sameAs = (row: CheckRow, item: Item): boolean =>
 // ---------- 25 ----------
 
 const RULES = "# rules\n\n- layers domain < app\n  - infra\n- deny domain infra\n- module domain.order\n  - exports Order, total, createOrder, extra\n- entry\n  - app.checkout\n- no-cycles\n";
+
 const FLOW = "# flow buy\n\n- planned fn domain.order.later (order: Order) → void\n- trigger app.checkout.checkout\n  - step domain.order.createOrder\n  - step domain.order.later\n";
 
 test("lsp: a request before initialize is -32002, and the same request works after it", async (t) => {
@@ -221,10 +244,12 @@ test("lsp: check.static shape leaves a hook step unverified, same as check", asy
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const layers = Object.fromEntries(["domain", "application", "presentation"].map((layer) => [layer, `src/${layer}/**`]));
   writeFileSync(join(dir, "keylang.json"), `${JSON.stringify({ languages: ["typescript"], layers, check: { static: "shape" } }, null, 2)}\n`);
+
   for (const [path, text] of Object.entries(HOOKS)) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
     writeFileSync(join(dir, path), text);
   }
+
   mkdirSync(join(dir, "keylang/flows"), { recursive: true });
   writeFileSync(join(dir, "keylang/flows/hooks.md"), HOOK_FLOW);
   const session = await open(t, dir);
@@ -261,6 +286,7 @@ test("lsp: diagnostics of an open rules.md equal check --format json, pushed and
   s.notify("textDocument/didOpen", { textDocument: { uri: rulesUri, languageId: "markdown", version: 1, text: RULES } });
   const pushed = await s.until(() => s.messages.find((m) => m.method === "textDocument/publishDiagnostics" && m.params?.uri === rulesUri));
   const pulled = (await s.request<{ items: Item[] }>("textDocument/diagnostic", { textDocument: { uri: rulesUri } })).items;
+
   for (const items of [pushed.params!.diagnostics!, pulled]) {
     for (const row of rows) assert.ok(items.some((item) => sameAs(row, item)), JSON.stringify({ row, items }));
     assert.equal(items.length, rows.length);
@@ -268,6 +294,7 @@ test("lsp: diagnostics of an open rules.md equal check --format json, pushed and
 });
 
 const STALE_BASELINE = "<!-- keylang:generated — не редагувати, `keylang baseline` -->\n\n# rules\n\n- deny ghost domain\n";
+
 const STALE_K001 = "dangling reference `ghost` in a generated file; run `keylang baseline`";
 
 test("lsp: K001 in an open generated baseline names its generator, as check --format json does", async (t) => {
@@ -369,6 +396,7 @@ test("lsp: format 2 completion hides a symbol an incomparable deny wins over", a
     "src/app/x/y.ts": "export function make(): number { return 1; }\n",
     "keylang/rules.md": "# rules\n\n- allow app.x.y domain\n- deny app domain.order\n",
   });
+
   const config = JSON.parse(readFileSync(join(dir, "keylang.json"), "utf8")) as Record<string, unknown>;
   const mapPath = join(dir, "keylang/map/app.md");
   const map = readFileSync(mapPath, "utf8");
@@ -378,17 +406,21 @@ test("lsp: format 2 completion hides a symbol an incomparable deny wins over", a
   const pad = lines[moduleLine]!.match(/^ */)?.[0] ?? "";
   lines.splice(moduleLine + 1, 0, `${pad}  - calls `);
   const edited = lines.join("\n");
+
   const ask = async (format: number | undefined): Promise<string[]> => {
     writeFileSync(join(dir, "keylang.json"), `${JSON.stringify(format === undefined ? config : { ...config, format })}\n`);
     const s = await open(t, dir);
     const mapUri = uri(dir, "keylang/map/app.md");
     s.notify("textDocument/didOpen", { textDocument: { uri: mapUri, languageId: "markdown", version: 1, text: edited } });
+
     const listed = await s.request<{ items: { label: string }[] }>("textDocument/completion", {
       textDocument: { uri: mapUri },
       position: { line: moduleLine + 1, character: `${pad}  - calls `.length },
     });
+
     return listed.items.map((item) => item.label);
   };
+
   const format1 = await ask(1);
   assert.ok(format1.includes("domain.order.total"), format1.join(" "));
   const format2 = await ask(2);
@@ -405,17 +437,21 @@ test("lsp: completion still offers a fn a member deny cannot scope", async (t) =
   const pad = lines[moduleLine]!.match(/^ */)?.[0] ?? "";
   lines.splice(moduleLine + 1, 0, `${pad}  - calls `);
   const edited = lines.join("\n");
+
   const ask = async (rules: string): Promise<string[]> => {
     writeFileSync(join(dir, "keylang/rules.md"), rules);
     const s = await open(t, dir);
     const mapUri = uri(dir, "keylang/map/app.md");
     s.notify("textDocument/didOpen", { textDocument: { uri: mapUri, languageId: "markdown", version: 1, text: edited } });
+
     const listed = await s.request<{ items: { label: string }[] }>("textDocument/completion", {
       textDocument: { uri: mapUri },
       position: { line: moduleLine + 1, character: `${pad}  - calls `.length },
     });
+
     return listed.items.map((item) => item.label);
   };
+
   const member = await ask("# rules\n\n- deny app infra.db.save\n");
   assert.ok(member.includes("infra.db.save"), member.join(" "));
   const module = await ask("# rules\n\n- deny app infra.db\n");
@@ -443,16 +479,21 @@ test("lsp: hover on a flow step shows the signature and each kind of evidence; p
 // A line's role depends on its parent (grammar.md §5): hover on a keyword, or on
 // the text of a line without an ID, says what the line does there.
 const PILOT = '# flow pilot\n\n- trigger app.checkout.checkout\n- step domain.order.createOrder\n  - calls infra.db.save\n  - test tests/nope.test.ts "creates order"\n- invariant total is the sum of items\n  - test tests/missing.test.ts "sums"\n- when items are empty\n  - then Rejected\n  - then domain.order.total\n';
+
 const ROLE_RULES = "# rules\n\n- layers domain < app\n- module domain.order\n  - no-cycles\n- entry\n  - app.checkout\n";
+
 test("lsp: hover on a keyword or a line without an ID tells the line's role under its parent", async (t) => {
   const dir = fixture(t, { "keylang/flows/pilot.md": PILOT, "keylang/rules.md": ROLE_RULES });
   const s = await open(t, dir);
+
   const shownAt = async (path: string, text: string, needle: string, word: string): Promise<string> => {
     const line = lineOf(text, needle);
     const shown = await s.request<{ contents: { value: string } } | null>("textDocument/hover", { textDocument: { uri: uri(dir, path) }, position: { line, character: charOf(text, line, word) } });
     assert.ok(shown, `hover on \`${word}\` of \`${needle}\``);
+
     return shown.contents.value;
   };
+
   const flow = (needle: string, word: string): Promise<string> => shownAt("keylang/flows/pilot.md", PILOT, needle, word);
   const rules = (needle: string, word: string): Promise<string> => shownAt("keylang/rules.md", ROLE_RULES, needle, word);
 
@@ -484,10 +525,13 @@ test("lsp: spans are half-open, so the character after an id is not that id", as
   const s = await open(t, dir);
   const flowUri = uri(dir, "keylang/flows/pair.md");
   const line = lineOf(text, "- calls");
+
   const at = async (character: number): Promise<string | null> => {
     const shown = await s.request<{ contents: { value: string } } | null>("textDocument/hover", { textDocument: { uri: flowUri }, position: { line, character } });
+
     return /`([^`]+)`/.exec(shown?.contents.value ?? "")?.[1] ?? null;
   };
+
   const comma = charOf(text, line, ",");
   assert.equal(await at(comma - 1), "domain.order.total");
   assert.equal(await at(comma), null, "the comma right after the id");
@@ -535,6 +579,7 @@ test("lsp: code columns count code points in the snapshot and UTF-16 characters 
   assert.deepEqual(lenses.map((lens) => lens.range.start), [{ line: 1, character: before("function").length }]);
   // Rust and Python facts come from the same tree-sitter positions.
   const { frontendFor } = await import("../src/frontends.ts");
+
   for (const [path, src] of [
     ["src/wave.rs", 'fn wave() -> usize { let _s = "😀é"; helper() }\n'],
     ["pkg/wave.py", 'def wave():\n    return ("😀é", helper())\n'],
@@ -542,14 +587,16 @@ test("lsp: code columns count code points in the snapshot and UTF-16 characters 
     const facts = await frontendFor(path)!.extract(path, src);
     const target = src.split("\n").find((l) => l.includes("helper("))!;
     const calls = facts.decls.flatMap((decl) => decl.calls).filter((c) => c.callee === "helper");
-    assert.deepEqual(calls.map((c) => c.col), [[...target.slice(0, target.indexOf("helper("))].length + 1], path);
+    assert.deepEqual(calls.map((c) => c.col), [Array.from(target.slice(0, target.indexOf("helper("))).length + 1], path);
   }
 });
 
 test("lsp: document symbols are a tree per document, flows and rules with their status", async (t) => {
   const dir = fixture(t, { "keylang/rules.md": RULES, "keylang/flows/buy.md": FLOW });
   const s = await open(t, dir);
+
   type Sym = { name: string; detail?: string; children: Sym[] };
+
   const map = await s.request<Sym[]>("textDocument/documentSymbol", { textDocument: { uri: uri(dir, "keylang/map/domain.md") } });
   assert.deepEqual(map.map((sym) => sym.name), ["domain"]);
   const order = map[0]!.children.find((sym) => sym.name === "order");
@@ -577,7 +624,9 @@ test("lsp: an open generated map that differs from the fresh render answers at t
   const stale = lines.join("\n");
   const s = await open(t, dir);
   s.notify("textDocument/didOpen", { textDocument: { uri: mapUri, languageId: "markdown", version: 1, text: stale } });
+
   type Sym = { name: string; selectionRange: { start: { line: number; character: number } }; children: Sym[] };
+
   const symbols = await s.request<Sym[]>("textDocument/documentSymbol", { textDocument: { uri: mapUri } });
   const order = symbols[0]!.children.find((sym) => sym.name === "order");
   const line = lineOf(stale, "module [order]");
@@ -628,7 +677,9 @@ test("lsp: a cancelled request answers RequestCancelled", async (t) => {
 test("lsp: completion under a module leaves out what deny forbids; after step only callables", async (t) => {
   const dir = fixture(t, { "keylang/rules.md": RULES, "keylang/flows/buy.md": FLOW, "keylang/flows/more.md": "# flow more\n\n- planned type domain.order.Later\n- planned module domain.future\n" });
   const s = await open(t, dir);
+
   type Completion = { items: { label: string; kind: number; detail?: string; labelDetails?: { description: string } }[] };
+
   const mapUri = uri(dir, "keylang/map/domain.md");
   const map = readFileSync(join(dir, "keylang/map/domain.md"), "utf8");
   const moduleLine = lineOf(map, "module [order]");
@@ -668,17 +719,23 @@ test("lsp: completion of the async flow forms — words by position, trigger kin
   const server = 'import { checkout } from "./checkout.ts";\nconst app = { post: (_p: string, ..._h: unknown[]) => 0 };\napp.post("/checkout", checkout);\n';
   const dir = fixture(t, { "src/app/server.ts": server, "keylang/flows/buy.md": FLOW, "keylang/flows/pay.md": "# flow pay\n\n- trigger app.checkout.checkout\n" });
   const s = await open(t, dir);
+
   type Completion = { items: { label: string; kind: number; detail?: string; labelDetails?: { description: string } }[] };
+
   const flowUri = uri(dir, "keylang/flows/pay.md");
+
   const ask = async (text: string, version: number): Promise<string[]> => {
     s.notify(version === 1 ? "textDocument/didOpen" : "textDocument/didChange", version === 1 ? { textDocument: { uri: flowUri, languageId: "markdown", version, text } } : { textDocument: { uri: flowUri, version }, contentChanges: [{ text }] });
     const lines = text.split("\n");
     const list = await s.request<Completion>("textDocument/completion", { textDocument: { uri: flowUri }, position: { line: lines.length - 1, character: lines.at(-1)!.length } });
+
     return list.items.map((item) => item.label);
   };
+
   const base = "# flow pay\n\n- trigger app.checkout.checkout\n";
   // Under a step: the group and the timers; under `parallel` only `step`.
   const underStep = await ask(`${base}- step app.checkout.checkout\n  - `, 1);
+
   for (const word of ["parallel", "after", "every"]) assert.ok(underStep.includes(word), underStep.join(" "));
   assert.equal(underStep.includes("continues"), false);
   assert.deepEqual(await ask(`${base}- parallel\n  - `, 2), ["step"]);
@@ -699,15 +756,20 @@ test("lsp: completion of the async flow forms — words by position, trigger kin
 test("lsp: `emits event ` and `trigger event ` complete the event IDs of the snapshot, with the literal and the subscribers (business-flows/16)", async (t) => {
   const dir = fixture(t, { "keylang/flows/ev.md": "# flow ev\n\n- trigger event events.checkout_submit_before\n" }, "magento-shop");
   const s = await open(t, dir);
+
   type Completion = { items: { label: string; kind: number; detail?: string }[] };
+
   const flowUri = uri(dir, "keylang/flows/ev.md");
   let version = 0;
+
   const ask = async (text: string): Promise<Completion["items"]> => {
     version++;
     s.notify(version === 1 ? "textDocument/didOpen" : "textDocument/didChange", version === 1 ? { textDocument: { uri: flowUri, languageId: "markdown", version, text } } : { textDocument: { uri: flowUri, version }, contentChanges: [{ text }] });
     const lines = text.split("\n");
+
     return (await s.request<Completion>("textDocument/completion", { textDocument: { uri: flowUri }, position: { line: lines.length - 1, character: lines.at(-1)!.length } })).items;
   };
+
   const events = ["events.checkout_submit_all_after", "events.checkout_submit_before", "events.sales-order-place_after"];
   const base = "# flow ev\n\n- trigger checkout.Model.QuoteManagement.QuoteManagement.submit\n";
   const emitted = await ask(`${base}  - emits event `);
@@ -726,8 +788,11 @@ test("lsp: `emits event ` and `trigger event ` complete the event IDs of the sna
 test("lsp: a completion replaces the whole dotted prefix, which editors split at dots", async (t) => {
   const dir = fixture(t, { "keylang/flows/buy.md": FLOW });
   const s = await open(t, dir);
+
   type Edit = { range: { start: { line: number; character: number }; end: { line: number; character: number } }; newText: string };
+
   type Completion = { items: { label: string; filterText?: string; textEdit?: Edit }[] };
+
   const flowUri = uri(dir, "keylang/flows/buy.md");
   const typed = `${FLOW}  - step domain.or`;
   const line = typed.split("\n").length - 1;
@@ -766,7 +831,9 @@ test("lsp: hover, definition, references and completion work on the ID inside a 
   // The target of the link is not an ID.
   const onHref = await s.request<unknown>("textDocument/hover", { textDocument: { uri: flowUri }, position: { line: step, character: charOf(flow, step, "../map") } });
   assert.equal(onHref, null);
+
   type Completion = { items: { label: string; textEdit?: { range: { start: { character: number } }; newText: string } }[] };
+
   const typed = `${flow}  - step [domain.or`;
   const last = typed.split("\n").length - 1;
   s.notify("textDocument/didChange", { textDocument: { uri: flowUri, version: 2 }, contentChanges: [{ text: typed }] });
@@ -856,10 +923,12 @@ test("lsp: an open spec in a directory check skips does not change the diagnosti
   const s = await open(t, dir);
   const featureUri = uri(dir, "keylang/features/r.md");
   s.notify("textDocument/didOpen", { textDocument: { uri: featureUri, languageId: "markdown", version: 1, text: FEATURE } });
+
   for (const [i, skipped] of ["keylang/.drafts/plan.md", "keylang/node_modules/plan.md", "keylang/target/plan.md"].entries()) {
     s.notify("textDocument/didOpen", { textDocument: { uri: uri(dir, skipped), languageId: "markdown", version: 1, text: PLAN.replace("plan", `plan${i}`) } });
     const pulled = (await s.request<{ items: Item[] }>("textDocument/diagnostic", { textDocument: { uri: featureUri } })).items;
     assert.ok(pulled.some((item) => item.code === "K001"), `${skipped}: ${JSON.stringify(pulled)}`);
+
     for (const row of rows) assert.ok(pulled.some((item) => sameAs(row, item)), JSON.stringify({ skipped, row, pulled }));
   }
 });

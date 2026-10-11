@@ -24,10 +24,15 @@ import { dirname, join, resolve } from "node:path";
 import { collectMetrics, formatReport, summaryLine } from "../lib/metrics.mjs";
 
 export const MAGENTO_URL = "https://github.com/magento/magento2.git";
+
 export const MAGENTO_TAG = "2.4.9";
+
 export const MODULES = ["Checkout", "Quote", "Sales", "SalesRule", "Payment"];
+
 export const FRAMEWORK = ["App", "Event", "Model", "Api"];
+
 export const SPARSE_PATHS = [...MODULES.map((m) => `app/code/Magento/${m}`), ...FRAMEWORK.map((f) => `lib/internal/Magento/Framework/${f}`)];
+
 /** `--wide`: non-cone sparse-checkout patterns — every module and the Framework without tests; the five modules whole, as in the narrow bench (their tests are `exclude`d). */
 export const WIDE_SPARSE_PATTERNS = [
   "/app/etc/di.xml",
@@ -37,13 +42,19 @@ export const WIDE_SPARSE_PATTERNS = [
   "/lib/internal/Magento/Framework/",
   "!/lib/internal/Magento/Framework/**/Test/",
 ];
+
 export const DRAFTS = ["quote.Model.QuoteManagement.QuoteManagement.placeOrder", "quote.Model.QuoteManagement.QuoteManagement.submitQuote"];
+
 const HEAP = "--max-old-space-size=4096";
+
 const WIDE_HEAP = "--max-old-space-size=8192";
+
 const TIME = "/usr/bin/time";
+
 const USAGE = "usage: node bench/magento/run.mjs [--wide] [--repo <dir>] [--out <results.md>]";
 
 const here = dirname(new URL(import.meta.url).pathname);
+
 const bin = resolve(here, "../../bin/keylang.js");
 
 /**
@@ -53,37 +64,47 @@ const bin = resolve(here, "../../bin/keylang.js");
  */
 export function benchConfig(others = []) {
   const layers = {};
+
   for (const m of MODULES) layers[m.toLowerCase()] = [`app/code/Magento/${m}/**`];
   const outside = [...others.filter((m) => !MODULES.includes(m)).sort().map((m) => `app/code/Magento/${m}/**`), "lib/internal/Magento/Framework/**"];
+
   return { format: 1, languages: ["php"], module: "file", layers, exclude: ["**/Test/**"], outside };
 }
 
 export function parseArgs(argv) {
   const opts = { repo: null, out: null, wide: false };
+
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
+
     if (a === "--repo" && argv[i + 1]) opts.repo = resolve(argv[++i]);
     else if (a === "--out" && argv[i + 1]) opts.out = resolve(argv[++i]);
     else if (a === "--wide") opts.wide = true;
     else throw new Error(`unknown argument: ${a}\n${USAGE}`);
   }
+
   opts.out ??= join(here, opts.wide ? "results-wide.md" : "results.md");
+
   return opts;
 }
 
 function run(cmd, args, options = {}) {
   const r = spawnSync(cmd, args, { encoding: "utf8", maxBuffer: 1 << 30, ...options });
+
   if (r.error) throw r.error;
+
   return r;
 }
 
 function must(r, what) {
   if (r.status !== 0) throw new Error(`${what} failed (exit ${r.status}):\n${(r.stderr || r.stdout || "").trimEnd().split("\n").slice(-20).join("\n")}`);
+
   return r;
 }
 
 function cacheDir(wide = false) {
   const xdg = process.env.XDG_CACHE_HOME || join(homedir(), ".cache");
+
   return join(xdg, "keylang", "bench", wide ? "magento2-wide" : "magento2");
 }
 
@@ -93,15 +114,19 @@ const OFFLINE_PROMPT = { ...process.env, GIT_TERMINAL_PROMPT: "0" };
 export function ensureRepo(repo) {
   if (repo) {
     if (!existsSync(repo)) throw new Error(`--repo ${repo}: no such directory`);
+
     return repo;
   }
+
   const dir = cacheDir();
+
   if (!existsSync(join(dir, ".git"))) {
     mkdirSync(dirname(dir), { recursive: true });
     process.stderr.write(`cloning ${MAGENTO_URL}@${MAGENTO_TAG} (sparse) into ${dir}\n`);
     must(run("git", ["clone", "--depth", "1", "--filter=blob:none", "--sparse", "--branch", MAGENTO_TAG, MAGENTO_URL, dir], { env: OFFLINE_PROMPT }), "git clone");
     must(run("git", ["-C", dir, "sparse-checkout", "set", ...SPARSE_PATHS]), "git sparse-checkout");
   }
+
   return dir;
 }
 
@@ -113,19 +138,23 @@ export function ensureWideRepo(repo) {
   if (repo) return ensureRepo(repo);
   const base = ensureRepo(null);
   const dir = cacheDir(true);
+
   if (!existsSync(join(dir, ".git"))) {
     process.stderr.write(`adding the wide worktree ${dir} of ${base}\n`);
     must(run("git", ["-C", base, "worktree", "add", "--detach", "--no-checkout", dir, "HEAD"]), "git worktree add");
     must(run("git", ["-C", dir, "sparse-checkout", "set", "--no-cone", ...WIDE_SPARSE_PATTERNS]), "git sparse-checkout");
     must(run("git", ["-C", dir, "checkout", "--detach", "HEAD"], { env: OFFLINE_PROMPT }), "git checkout");
   }
+
   return dir;
 }
 
 /** The module directories of `app/code/Magento` in a checkout, sorted. */
 export function magentoModules(repo) {
   const dir = join(repo, "app", "code", "Magento");
+
   if (!existsSync(dir)) return [];
+
   return readdirSync(dir, { withFileTypes: true })
     .filter((e) => e.isDirectory())
     .map((e) => e.name)
@@ -140,17 +169,22 @@ function timed(args, cwd, heap) {
   const wallMs = Number((process.hrtime.bigint() - start) / 1_000_000n);
   let maxRssKb = null;
   let stderr = r.stderr;
+
   if (withTime) {
     const m = /Maximum resident set size \(kbytes\): (\d+)/.exec(stderr);
+
     if (m) maxRssKb = Number(m[1]);
     // Everything from the `Command being timed:` line on is time(1)'s report, not the child's.
     const cut = stderr.indexOf("\tCommand being timed:");
+
     if (cut !== -1) stderr = stderr.slice(0, cut);
   }
+
   return { status: r.status, stdout: r.stdout, stderr, wallMs, maxRssKb };
 }
 
 export const seconds = (ms) => `${(ms / 1000).toFixed(1)} с`;
+
 export const megabytes = (kb) => (kb === null ? "n/a (немає /usr/bin/time)" : `${Math.round(kb / 1024)} МБ`);
 
 /**
@@ -159,9 +193,11 @@ export const megabytes = (kb) => (kb === null ? "n/a (немає /usr/bin/time)"
  */
 export function reportHeader({ wide, sha, outsideModules = 0, verdicts, coverage, warnings, drafts }) {
   const layers = MODULES.map((m) => `\`${m}\``).join(", ");
+
   const checkout = wide
     ? `sparse-checkout \`--wide\`: модулі ${layers} як шари; решта ${outsideModules} модулів \`app/code/Magento\` і весь \`lib/internal/Magento/Framework\` (без \`Test\`) як \`outside\` — лише декларації; \`app/etc/di.xml\` і \`di.xml\` усіх модулів читає адаптер Magento; \`exclude: ["**/Test/**"]\`.`
     : `sparse-checkout: модулі ${layers} як шари, \`lib/internal/Magento/Framework/{${FRAMEWORK.join(",")}}\` як \`outside\`, \`exclude: ["**/Test/**"]\`.`;
+
   const intro = [
     `[magento/magento2](${MAGENTO_URL.replace(/\.git$/, "")}) тег \`${MAGENTO_TAG}\` (коміт \`${sha}\`), ${checkout}`,
     "",
@@ -171,6 +207,7 @@ export function reportHeader({ wide, sha, outsideModules = 0, verdicts, coverage
     "",
     ...drafts.map((d) => `\`draft flow ${d.trigger} --mode algo --print\`: ${d.exit === 0 ? `кроків ${d.steps} (разом із тригером)` : `код ${d.exit}`}.`),
   ];
+
   return { title: wide ? "Бенч Magento (широкий): business-flows" : "Бенч Magento: базова лінія business-flows", intro };
 }
 
@@ -189,22 +226,27 @@ export function main(argv) {
   rmSync(join(repo, ".keylang", "cache"), { recursive: true, force: true });
 
   const map = timed([bin, "map"], repo, heap);
+
   if (map.status !== 0) throw new Error(`keylang map failed (exit ${map.status}):\n${map.stderr.trimEnd().split("\n").slice(-10).join("\n")}`);
   const warnings = map.stderr.split("\n").filter((l) => l.startsWith("warning:")).length;
   const mapSummary = map.stderr.trimEnd().split("\n").at(-1) ?? "";
 
   const check = timed([bin, "check", "--format", "json"], repo, heap);
   let checkJson = { results: [], coverage: [] };
+
   try {
     checkJson = JSON.parse(check.stdout);
   } catch {
     throw new Error(`keylang check --format json did not print JSON (exit ${check.status}):\n${check.stderr.trimEnd().split("\n").slice(-10).join("\n")}`);
   }
+
   const verdicts = { fail: 0, unverified: 0, ok: 0, warning: 0 };
+
   for (const r of checkJson.results) verdicts[r.verdict] = (verdicts[r.verdict] ?? 0) + 1;
 
   const drafts = DRAFTS.map((trigger) => {
     const d = run(process.execPath, [heap, bin, "draft", "flow", trigger, "--mode", "algo", "--print"], { cwd: repo });
+
     return { trigger, text: d.status === 0 ? d.stdout : "", exit: d.status };
   });
 
@@ -213,6 +255,7 @@ export function main(argv) {
   const metrics = collectMetrics(snapshot, { drafts, expect });
 
   const keylangSha = run("git", ["-C", here, "rev-parse", "--short", "HEAD"]);
+
   const header = reportHeader({
     wide: opts.wide,
     sha,
@@ -222,6 +265,7 @@ export function main(argv) {
     warnings,
     drafts: drafts.map((d) => ({ trigger: d.trigger, exit: d.exit, steps: metrics.drafts.find((x) => x.trigger === d.trigger)?.steps.length ?? 0 })),
   });
+
   const runRows = [
     ["Дата", new Date().toISOString().slice(0, 10)],
     ["keylang", keylangSha.status === 0 ? `\`${keylangSha.stdout.trim()}\`` : "unknown"],
@@ -232,17 +276,22 @@ export function main(argv) {
     ["Підсумок `map`", mapSummary.replace(/\|/g, "\\|")],
     ["snapshotId", `\`${snapshot.snapshotId ?? "n/a"}\``],
   ];
+
   const report = formatReport(metrics, { ...header, run: runRows });
   mkdirSync(dirname(opts.out), { recursive: true });
   writeFileSync(opts.out, report);
 
   process.stdout.write(`${summaryLine(metrics)}\n`);
+
   if (metrics.golden) {
     const missing = metrics.golden.ids.filter((g) => !g.inFlow).map((g) => g.id);
     process.stdout.write(`golden in ${metrics.golden.flow}: found ${metrics.golden.found}/${metrics.golden.total}${missing.length ? `; missing: ${missing.join(", ")}` : ""}\n`);
+
     for (const e of metrics.golden.events) process.stdout.write(`event ${e.name}: ${e.id ?? "n/a"}\n`);
   }
+
   process.stdout.write(`map ${seconds(map.wallMs)} maxRSS ${megabytes(map.maxRssKb)}; check ${seconds(check.wallMs)} maxRSS ${megabytes(check.maxRssKb)}\n${opts.out}: written\n`);
+
   return 0;
 }
 

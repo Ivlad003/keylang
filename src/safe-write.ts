@@ -45,29 +45,40 @@ const LINK_HOPS = 32;
  */
 export function targetProblem(root: string, path: string, options: Pick<WriteOptions, "under"> = {}): string | null {
   if (path === "" || path.includes("\\") || posix.isAbsolute(path) || win32.isAbsolute(path)) return "not a plain relative path";
+
   if (path.split("/").some((part) => part === ".." || part === "." || part === "")) return "not a plain relative path";
   const target = landing(join(root, path));
+
   if (target === null) return "leads through a loop of links";
+
   if (!inside(target, realpathSync(root))) return "leads out of the repository through a link";
+
   if (options.under !== undefined) {
     const base = landing(join(root, options.under));
+
     if (base === null || !inside(target, base)) return `leads out of ${options.under}/ through a link`;
   }
+
   return null;
 }
 
 /** Why `path` (relative to `root`, POSIX) may not be written, or null. Reads nothing outside the repository. */
 export function writeProblem(root: string, path: string, options: WriteOptions = {}): string | null {
   const place = targetProblem(root, path, options);
+
   if (place !== null) return place;
   const target = landing(join(root, path))!;
   const entry = statOrNull(target);
+
   if (entry?.isDirectory()) return "a directory";
   const current = entry ? readFileSync(target, "utf8") : null;
+
   if (current !== null && options.generated !== true && isGeneratedText(current)) return "a generated file: only its generator writes it";
+
   if (options.expect !== undefined && current !== options.expect) {
     return options.expect === null ? "created on disk while the change was prepared; nothing written" : "changed on disk while the change was prepared; nothing written";
   }
+
   return null;
 }
 
@@ -84,10 +95,13 @@ export function safeWrite(root: string, path: string, text: string, options: Wri
 export function safeWriteAll(root: string, writes: readonly PlannedWrite[]): string[] {
   for (const w of writes) {
     const problem = writeProblem(root, w.path, w.options);
+
     if (problem !== null) throw new Error(`${w.path}: ${problem}`);
   }
+
   return writes.map((w) => {
     writeAtomic(landing(join(root, w.path))!, w.text);
+
     return join(root, w.path);
   });
 }
@@ -106,9 +120,11 @@ export function writeAtomic(abs: string, text: string, options: { exact?: boolea
   const mode = existing?.isFile() ? existing.mode & 0o7777 : undefined;
   const out = options.exact !== true && existing?.isFile() && allCrlf(readFileSync(abs, "utf8")) ? text.replace(/\r?\n/g, "\r\n") : text;
   const temporary = join(dirname(abs), `.${basename(abs)}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`);
+
   try {
     // `wx`: a link planted at the temporary name is never followed.
     writeFileSync(temporary, out, { flag: "wx", ...(mode === undefined ? {} : { mode }) });
+
     if (mode !== undefined) chmodSync(temporary, mode);
     renameSync(temporary, abs);
   } catch (error) {
@@ -124,12 +140,14 @@ export function writeAtomic(abs: string, text: string, options: { exact?: boolea
  */
 export function isGeneratedText(text: string): boolean {
   const first = text.replace(/^﻿/, "").split(/\r?\n/).find((line) => line.trim() !== "");
+
   return first !== undefined && /^\s*(?:<!--|\/\/|'|%%).*keylang:generated/.test(first);
 }
 
 /** Every line ends with CRLF (at least one does): the file keeps them when it is rewritten. */
 export function allCrlf(text: string): boolean {
   const crlf = text.split("\r\n").length - 1;
+
   return crlf > 0 && crlf === text.split("\n").length - 1;
 }
 
@@ -143,6 +161,7 @@ export function allCrlf(text: string): boolean {
  */
 export function keepLineEndings(before: string, next: string): string {
   if (!before.includes("\r\n")) return next;
+
   if (allCrlf(before)) return next.replace(/\n/g, "\r\n");
   const old = before.split("\n");
   // A line has an ending when a `\n` follows it; its `\r` is part of that ending.
@@ -154,24 +173,30 @@ export function keepLineEndings(before: string, next: string): string {
   const cr: boolean[] = lines.map(() => preferCr);
   // The last piece (after the last `\n`) is no line with an ending: it pairs only with the other last piece, in the tail.
   let head = 0;
+
   while (head < lines.length - 1 && head < oldText.length - 1 && lines[head] === oldText[head]) {
     cr[head] = oldCr[head]!;
     head++;
   }
+
   let tailNew = lines.length;
   let tailOld = oldText.length;
+
   while (tailNew > head && tailOld > head && lines[tailNew - 1] === oldText[tailOld - 1]) {
     tailNew--;
     tailOld--;
     cr[tailNew] = oldCr[tailOld]!;
   }
+
   const midNew = Math.min(tailNew, lines.length - 1);
   const midOld = Math.min(tailOld, oldText.length - 1);
+
   for (let i = head, j = head; i < midNew && j < midOld; i++) {
     if (lines[i] !== oldText[j]) continue;
     cr[i] = oldCr[j]!;
     j++;
   }
+
   return lines.map((line, i) => (i < lines.length - 1 && cr[i] ? `${line}\r` : line)).join("\n");
 }
 
@@ -184,18 +209,23 @@ export function landing(abs: string, hops = 0): string | null {
   if (hops > LINK_HOPS) return null;
   let entry = abs;
   const rest: string[] = [];
+
   while (lstatOrNull(entry) === null) {
     const parent = dirname(entry);
+
     if (parent === entry) return abs;
     rest.unshift(basename(entry));
     entry = parent;
   }
+
   if (lstatOrNull(entry)!.isSymbolicLink()) return landing(join(resolve(dirname(entry), readlinkSync(entry)), ...rest), hops + 1);
+
   return join(realpathSync(entry), ...rest);
 }
 
 function inside(abs: string, dir: string): boolean {
   const rel = relative(dir, abs);
+
   return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
 }
 

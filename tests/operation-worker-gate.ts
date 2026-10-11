@@ -6,6 +6,9 @@
 import { workerData } from "node:worker_threads";
 
 const { gate, crashes } = (workerData ?? {}) as { gate?: SharedArrayBuffer; crashes?: SharedArrayBuffer };
+
 if (crashes && Atomics.sub(new Int32Array(crashes), 0, 1) > 0) process.exit(3);
+
 if (gate) Atomics.wait(new Int32Array(gate), 0, 0);
+
 await import("../src/tui/operation-worker.ts");

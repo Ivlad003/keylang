@@ -54,6 +54,7 @@ interface TourFlow {
   inView: boolean;
   link: string;
 }
+
 interface Tour {
   snapshotId: string;
   system: { name: string | null; brief: string | null; source: string | null; languages: string[]; files: number; fns: number; entries: number };
@@ -82,16 +83,19 @@ test("tour: all seven sections on a TypeScript and Python repository, the same b
   const second = tour(dir);
   assert.equal(second.stdout, first.stdout, "deterministic");
   const after = treeBytes(dir);
+
   for (const map of [before, after]) for (const path of [...map.keys()]) if (path.startsWith(".keylang/cache/")) map.delete(path);
   assert.deepEqual(after, before, "read-only but the fact cache");
 
   const md = first.stdout;
   let at = -1;
+
   for (const heading of SECTIONS) {
     const next = md.indexOf(`\n${heading}\n`);
     assert.ok(next > at, `${heading} in order`);
     at = next;
   }
+
   // 1: the README's brief and the layer's own README.
   assert.match(md, /Shop takes orders and charges cards\. It also fetches tax rates\. \(README\.md\)/);
   assert.match(md, /typescript, python/);
@@ -231,6 +235,7 @@ test("tui: «Project tour» in the palette shows the tour in F6, the same lines 
   t.after(() => s.app.close());
   await s.app.idle();
   s.send(KEY.ctrlP);
+
   for (const ch of "project tour") s.send(ch);
   assert.match(s.text(), /Project tour: /);
   s.send(KEY.enter);

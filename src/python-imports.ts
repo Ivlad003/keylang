@@ -46,29 +46,39 @@ export class PythonResolver implements SourceResolver {
     const segments = spec.slice(dots).split(".").filter((s) => s !== "");
     // `m.*`: every public name of `m`, which must be a module itself.
     const glob = segments.at(-1) === "*";
+
     if (glob) segments.pop();
+
     if (dots > 0) {
       let base = posix.dirname(fromFile);
+
       for (let i = 1; i < dots; i++) {
         if (base === ".") return { kind: "unresolved" };
         base = posix.dirname(base);
       }
+
       // `from . import x`: the package itself may be the module that has `x`.
       return this.longest(base === "." ? "" : base, segments, fromFile, glob ? segments.length : Math.max(0, segments.length - 1)) ?? { kind: "unresolved" };
     }
+
     for (const root of this.roots) {
       const head = posix.join(root, segments[0]!);
       // A directory is a package only with Python code in it (a PEP 420 namespace package
       // without `__init__.py` too); `redis/` with a Dockerfile hides neither pip's `redis` nor `src/redis`.
       const isModule = this.moduleFile(head) !== null;
+
       if (!isModule && !this.hasPython(head)) continue;
       // A source root is no module of an absolute import.
       const found = this.longest(root, segments, fromFile, glob ? segments.length : Math.max(1, segments.length - 1));
+
       if (found) return found;
+
       // `import nsp` binding the namespace package of `import nsp.inner.mod`: no module, so no edge, but no hole either.
       if (!isModule && !glob && segments.length === 1) return { kind: "generated" };
+
       return { kind: "unresolved" };
     }
+
     return isPythonStdlib(segments[0]!) ? { kind: "stdlib" } : { kind: "external", pkg: segments[0]! };
   }
 
@@ -77,42 +87,54 @@ export class PythonResolver implements SourceResolver {
     for (let k = segments.length; k >= least; k--) {
       if (k === 0 && base === "") return null;
       const file = this.moduleFile(posix.join(base, ...segments.slice(0, k)));
+
       if (file === null) continue;
+
       if (file === fromFile) return { kind: "local" };
+
       return k === segments.length ? { kind: "internal", file, whole: true } : { kind: "internal", file };
     }
+
     return null;
   }
 
   /** `a/b.py`, else the package `a/b/__init__.py`; null for neither. */
   private moduleFile(path: string): string | null {
     for (const file of [`${path}.py`, posix.join(path, "__init__.py")]) if (this.sources.has(file) || this.onDisk(file)) return file;
+
     return null;
   }
 
   /** A directory with a `.py` file in it or below: among the sources, or on disk (an excluded package). */
   private hasPython(path: string): boolean {
     if (this.pythonDirs.has(path)) return true;
+
     if (!this.isDir(path)) return false;
     const pending = [join(this.root, path)];
+
     for (let seen = 0; pending.length > 0 && seen < 2000; seen++) {
       let entries: Dirent[];
+
       try {
         entries = readdirSync(pending.pop()!, { withFileTypes: true });
       } catch {
         continue;
       }
+
       for (const e of entries) {
         if (e.isFile() && e.name.endsWith(".py")) return true;
+
         if (e.isDirectory() && !e.name.startsWith(".") && e.name !== "node_modules" && e.name !== "__pycache__") pending.push(join(e.parentPath, e.name));
       }
     }
+
     return false;
   }
 
   private isDir(path: string): boolean {
     if (this.sourceDirs.has(path)) return true;
     const abs = join(this.root, path);
+
     return existsSync(abs) && statSync(abs).isDirectory();
   }
 }
@@ -120,6 +142,8 @@ export class PythonResolver implements SourceResolver {
 /** Every directory above a file of `files` (POSIX, relative). */
 function directoriesOf(files: ReadonlySet<string>): Set<string> {
   const dirs = new Set<string>();
+
   for (const file of files) for (let dir = posix.dirname(file); dir !== "." && !dirs.has(dir); dir = posix.dirname(dir)) dirs.add(dir);
+
   return dirs;
 }

@@ -22,6 +22,7 @@ export function defaultBriefJobs(agent: string | null): number {
 /** The CLI's complaint about `--limit`/`--jobs` text that is not a whole number of at least 1, or null when it is one. */
 export function positiveIntegerProblem(flag: string, text: string): string | null {
   const n = Number(text);
+
   return Number.isInteger(n) && n >= 1 ? null : `${flag} must be a positive whole number, got \`${text}\``;
 }
 
@@ -92,9 +93,12 @@ export interface BriefPlan {
 
 function nodePlace(analysis: Analysis, id: string): NodePlace | null {
   const node = analysis.snapshot?.nodes[id];
+
   if (node?.file) return { file: node.file, line: node.line ?? 1, col: node.col ?? 1 };
+
   if (node) return null;
   const planned = plannedDeclaration(analysis.docs, id);
+
   return planned === null ? null : { file: planned.file, line: planned.line, col: planned.col };
 }
 
@@ -102,22 +106,27 @@ function nodePlace(analysis: Analysis, id: string): NodePlace | null {
 export function staleInventory(analysis: Analysis): StaleInventory {
   const entries: StaleExplanation[] = [];
   let saved = 0;
+
   for (const kind of ["answer", "brief"] as const) {
     for (const id of explainedIds(analysis.config, kind === "brief" ? "briefs" : "answers")) {
       const e = readExplanation(analysis.config, id, kind === "brief" ? "brief" : "short");
+
       if (!e) continue;
       saved++;
       const file = explanationPath(analysis.config, id, e.detail);
+
       if (currentBaseline(analysis, id) === null) entries.push({ id, kind, state: "gone", date: e.date, file, again: null, place: null });
       else if (isStale(analysis, id, e)) entries.push({ id, kind, state: "stale", date: e.date, file, again: againCommand(id, kind), place: nodePlace(analysis, id) });
     }
   }
+
   return { entries, saved };
 }
 
 /** The command that asks again: the repository's brief has no id to name, so its batch asks for it. */
 function againCommand(id: string, kind: "answer" | "brief"): string {
   if (id === SYSTEM_ID) return "keylang explain --stale --llm";
+
   return `keylang explain ${id} --llm${kind === "brief" ? " --brief" : ""}`;
 }
 
@@ -126,6 +135,7 @@ export function staleInventoryText(inventory: StaleInventory): string {
   return inventory.entries
     .map((entry) => {
       const what = entry.kind === "brief" ? `${entry.id} (brief)` : entry.id;
+
       return entry.state === "gone" ? `${what}: gone (explained ${entry.date})\n` : `${what}: stale (explained ${entry.date}); run \`${entry.again}\`\n`;
     })
     .join("");
@@ -141,20 +151,27 @@ export function briefPlan(analysis: Analysis, options: { batch: BriefBatch; limi
   const counts: Record<BriefLevel, number> = { "fn/type": 0, "class/module": 0, layer: 0, system: 0 };
   const waves: { level: BriefLevel; ids: string[] }[] = [];
   let wave: number | null = null;
+
   for (const entry of plan) {
     counts[entry.level]++;
+
     if (entry.wave !== wave) waves.push({ level: entry.level, ids: [] });
     wave = entry.wave;
     waves.at(-1)!.ids.push(entry.id);
   }
+
   let documented = 0;
   let fresh = 0;
+
   for (const [id, node] of Object.entries(snapshot?.nodes ?? {})) {
     if (node.layer === EXTERNAL) continue;
+
     if (node.doc) documented++;
     else if (briefs.has(id) && snapshotBaseline(snapshot!, id) === briefs.get(id)!.closure) fresh++;
   }
+
   const gone = [...briefs.keys()].filter((id) => currentBaseline(analysis, id) === null);
+
   return {
     batch: options.batch,
     limit: options.limit,
@@ -173,6 +190,7 @@ export function briefPlan(analysis: Analysis, options: { batch: BriefBatch; limi
 export function briefPlanText(plan: BriefPlan): string {
   if (plan.estimate === null) return plan.plan.map((entry) => `${entry.id} (${entry.level})\n`).join("");
   const { counts, estimate } = plan;
+
   return `would explain ${plan.plan.length} node(s): ${briefCounts(counts)}\nestimated tokens: ~${estimate.input} in, ~${estimate.output} out\n`;
 }
 

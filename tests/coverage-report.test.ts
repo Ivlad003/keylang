@@ -104,8 +104,10 @@ test("coverage: an orphan, a hole, an entry point without a flow and logic in da
   assert.equal(report.reach.entries, 3);
   assert.equal(report.reach.tests, 1);
   const orphanIds = report.orphans.map((orphan) => orphan.id);
+
   // (2) Orphans in every language; entry fns, what they reach and test files are not.
   for (const id of ["app.server.orphanTs", "shop.shop.cli.dead_py", "web.Pay.Pay.active"]) assert.ok(orphanIds.includes(id), `${id} in ${orphanIds.join(", ")}`);
+
   for (const id of ["app.server.listOrders", "app.server.helper", "app.server.checkout", "shop.shop.cli.main", "app.Test.helpers.fixtureHelper"]) assert.ok(!orphanIds.includes(id), id);
   assert.equal(report.reach.reachable, 4);
   assert.equal(report.reach.fns, report.reach.reachable + report.orphans.length);
@@ -139,6 +141,7 @@ test("coverage: an orphan, a hole, an entry point without a flow and logic in da
   // The text has the five sections; exit 0.
   const text = coverage(dir);
   assert.equal(text.status, 0, text.stderr);
+
   for (const heading of [/^reach: 4 of \d+ fn reachable from 3 entry point\(s\)/m, /^orphans: \d+ fn no entry point reaches/m, /^holes: \d+ unresolved place\(s\)/m, /^entry points without a hand-written flow: 2$/m, /^logic in data — check by hand: 4 call\(s\)/m]) assert.match(text.stdout, heading);
   assert.match(text.stdout, /^ {2}app\.server\.orphanTs {2}src\/app\/server\.ts:13 {2}no caller$/m);
   assert.match(text.stdout, /^ {4}src\/php\/Pay\.php:15 {2}web\.Pay\.Pay\.active {2}this\.scopeConfig\.getValue$/m);
@@ -152,6 +155,7 @@ test("coverage: --json is the same bytes for the same inputs; writes nothing but
   const second = coverage(dir, ["--json"]);
   assert.equal(second.stdout, first.stdout);
   const after = treeBytes(dir);
+
   for (const map of [before, after]) for (const path of [...map.keys()]) if (path.startsWith(".keylang/cache/")) map.delete(path);
   assert.deepEqual(after, before);
   assert.ok(![...after.keys()].some((path) => path.startsWith("keylang/map") || path.startsWith("keylang/flows-discovered")), "coverage writes no view");
@@ -185,7 +189,9 @@ test("coverage: a broken keylang.json is exit 2 naming the file", (t) => {
 test("coverage: reasons normalise their names, test files are recognised, a call's URL is read from its first arguments", () => {
   assert.equal(normaliseReason("call through a local value `s.charges.create`"), "call through a local value `X`");
   assert.equal(normaliseReason("shadowed by local `fetch` and `x`"), "shadowed by local `X` and `X`");
+
   for (const path of ["tests/a.ts", "src/__tests__/a.ts", "src/a.test.ts", "pkg/test_x.py", "pkg/x_test.py", "Test/Unit/PayTest.php", "src/spec/a.ts"]) assert.equal(isTestFile(path), true, path);
+
   for (const path of ["src/a.ts", "src/testing.py", "src/Pay.php", "src/latest/x.ts"]) assert.equal(isTestFile(path), false, path);
   const url = (source: string, callee: string): ReturnType<typeof urlOf> => urlOf(source, lineStarts(source), 1, 1, callee);
   assert.deepEqual(url('fetch("https://api.example.com/orders")', "fetch"), { url: "literal", host: "api.example.com" });
@@ -204,10 +210,12 @@ test("tui: «Blind spots» in the palette shows the coverage report, the same li
     "src/presentation/handlers.ts": "export function listOrders(): string[] {\n  return [];\n}\nexport function unused(): number {\n  return 1;\n}\n",
     "src/presentation/server.ts": 'import { listOrders } from "./handlers.ts";\nconst app = { get: (_p: string, _h: unknown) => 0 };\napp.get("/orders", listOrders);\n',
   });
+
   const s = session(root);
   t.after(() => s.app.close());
   await s.app.idle();
   s.send(KEY.ctrlP);
+
   for (const ch of "blind spots") s.send(ch);
   assert.match(s.text(), /Blind spots: unreached fns/);
   s.send(KEY.enter);

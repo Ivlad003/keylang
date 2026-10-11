@@ -16,26 +16,32 @@ import { fileURLToPath } from "node:url";
 import { analyze } from "../src/analyze.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
 
 function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8" });
+
   if (r.error) throw r.error;
+
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
 function scratch(t: TestContext): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-review-core-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+
   return dir;
 }
 
 function repo(t: TestContext, files: Record<string, string>): string {
   const dir = scratch(t);
+
   for (const [path, text] of Object.entries(files)) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
     writeFileSync(join(dir, path), text);
   }
+
   return dir;
 }
 
@@ -60,6 +66,7 @@ interface Row {
 function checkJson(dir: string, args: string[] = []): { status: number | null; stderr: string; results: Row[]; coverage: { kind: string; file: string; line: number; col: number }[] } {
   const run = keylang(dir, ["check", "--format", "json", ...args]);
   const parsed = JSON.parse(run.stdout) as { results: Row[]; coverage: { kind: string; file: string; line: number; col: number }[] };
+
   return { status: run.status, stderr: run.stderr, results: parsed.results, coverage: parsed.coverage };
 }
 
@@ -80,10 +87,12 @@ interface JsonDoc {
 
 function parseJson(dir: string, files: string[]): JsonDoc[] {
   const o = keylang(dir, ["parse", "--json", ...files]);
+
   return JSON.parse(o.stdout) as JsonDoc[];
 }
 
 const MESSY_FLOW = "# flow   a\n-   step x.y\n";
+
 const FORMATTED_FLOW = "# flow a\n\n- step x.y\n";
 
 // ---------- 1. fmt: the write policy of every writer, CRLF kept ----------
@@ -165,6 +174,7 @@ test("rules without a snapshot are unverified at the first rule line in file and
     "keylang/fence.md": "# rules\n\nSome prose.\n\n- module app\n  - exports go\n- no-cycles\n",
     "keylang/later.md": "# rules\n\n- deny infra app\n",
   });
+
   const human = keylang(dir, ["check", "keylang"]);
   assert.match(human.stdout, /^keylang\/fence\.md:6:3: unverified no snapshot$/m, human.stdout);
   assert.doesNotMatch(human.stdout, /crlf\.md:1:1: unverified/);
@@ -201,6 +211,7 @@ test("a planned signature without a return part matches on the parameters; with 
       "",
     ].join("\n"),
   });
+
   const o = keylang(dir, ["check"]);
   const lines = o.stdout.split("\n").filter((line) => / K20[12] /.test(line));
   assert.deepEqual(lines, [
@@ -228,6 +239,7 @@ test("a keyword of another position names where it goes; code and reason stay", 
     "flow.md": "# flow f\n\n- fn app.a.x\n- trigger app.a.x\n  - trigger app.a.x\n",
     "rules.md": "# rules\n\n- layer app\n",
   });
+
   const o = keylang(dir, ["check", "."]);
   const lines = o.stdout.split("\n").filter((line) => / K00[45] /.test(line));
   assert.deepEqual(lines, [
@@ -253,6 +265,7 @@ test("a heading may end with a closing `#` sequence and may have a tab after `#`
     "f.md": "# flow f#\n",
     "g.md": "# flow g <!-- note --> #\n",
   });
+
   const docs = parseJson(dir, ["a.md", "c.md", "d.md", "e.md", "f.md", "g.md"]);
   assert.deepEqual(
     docs.map((doc) => [doc.path, doc.sections[0]?.kind, doc.sections[0]?.name?.value ?? null, doc.diagnostics.map((d) => d.code)]),
@@ -306,6 +319,7 @@ test("a static fail names the call to add: from the parent or code it reaches fo
     "keylang/flows/a.md": "# flow a\n\n- trigger domain.order.create\n- step application.purchase.buy\n",
     "keylang/flows/b.md": "# flow b\n\n- trigger domain.order.other\n  - calls application.purchase.buy\n",
   });
+
   const o = keylang(dir, ["check"]);
   assert.equal(o.status, 1, o.stdout);
   assert.match(
@@ -325,6 +339,7 @@ test("an unverified rule names its hole; the summary counts the holes once two v
     "src/app/main.ts": 'import { place } from "../domain/order.ts";\nexport function main(): void {\n  place();\n}\n',
     "keylang/rules.md": "# rules\n\n- deny domain infra\n- deny domain app\n- deny infra app\n",
   });
+
   const json = checkJson(dir);
   const hole = json.coverage.find((item) => item.kind === "unresolved-import");
   assert.ok(hole, JSON.stringify(json.coverage));
@@ -361,6 +376,7 @@ test("analyses in one process see a new map text: a fn added to the code resolve
     "src/app/main.ts": "export function main(): void {}\n",
     "keylang/flows/f.md": "# flow f\n\n- trigger app.main.main\n- step app.main.later\n",
   });
+
   const k001 = (diagnostics: readonly { code: string }[]): number => diagnostics.filter((d) => d.code === "K001").length;
   const first = await analyze({ root: dir, withoutEvidence: true });
   assert.equal(k001(first.diagnostics), 1);

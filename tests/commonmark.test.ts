@@ -14,7 +14,9 @@ import { fromMarkdown } from "mdast-util-from-markdown";
 import type { Nodes } from "mdast";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
+
 const corpus = ["keylang", "examples", "tests/fixtures"];
 
 /** Mismatches that exist before `fmt` and that `fmt` removes. The post-fmt list is empty. */
@@ -38,7 +40,9 @@ const MAX_OUTPUT = 256 * 1024 * 1024;
 
 function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8", maxBuffer: MAX_OUTPUT });
+
   if (r.error) throw r.error;
+
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
@@ -52,6 +56,7 @@ interface KlNode {
   description: { value: string; span: { start: { line: number } } }[];
   children: KlNode[];
 }
+
 interface KlDoc {
   path: string;
   diagnostics: { code: string }[];
@@ -61,24 +66,32 @@ interface KlDoc {
 function projectKeylang(doc: KlDoc, text: string): Reading {
   const items: Reading["items"] = new Map();
   const owner: Reading["owner"] = new Map();
+
   const walk = (node: KlNode, depth: number, parent: number | null): void => {
     const line = node.span.start.line;
     items.set(line, { depth, parent });
     owner.set(line, line);
+
     for (const d of node.description) {
       if (d.value.trim() !== "") owner.set(d.span.start.line, line);
     }
+
     for (const child of node.children) walk(child, depth + 1, line);
   };
+
   for (const section of doc.sections) {
     for (const item of section.items) if (item.type === "node") walk(item, 0, null);
   }
+
   const lines = text.split(/\r?\n/);
+
   for (let i = 0; i < lines.length; i++) {
     if (lines[i]!.trim() === "") continue;
     const lineNo = i + 1;
+
     if (!owner.has(lineNo)) owner.set(lineNo, null);
   }
+
   return { items, owner };
 }
 
@@ -86,40 +99,52 @@ function projectMdast(text: string): Reading {
   const tree = fromMarkdown(text);
   const items: Reading["items"] = new Map();
   const ranges: { line: number; start: number; end: number; depth: number }[] = [];
+
   const walk = (node: Nodes, blocked: boolean, depth: number, parentLine: number | null): void => {
     if (node.type === "blockquote") {
       for (const child of node.children) walk(child, true, depth, parentLine);
+
       return;
     }
+
     if (node.type === "list") {
       for (const child of node.children) walk(child, blocked || node.ordered === true, depth, parentLine);
+
       return;
     }
+
     if (node.type === "listItem") {
       const start = node.position?.start.line;
       const end = node.position?.end.line;
+
       if (!blocked && start !== undefined && end !== undefined) {
         items.set(start, { depth, parent: parentLine });
         ranges.push({ line: start, start, end, depth });
+
         for (const child of node.children) walk(child, false, depth + 1, start);
       } else {
         for (const child of node.children) walk(child, true, depth, parentLine);
       }
+
       return;
     }
+
     if ("children" in node) {
       for (const child of node.children) walk(child, blocked, depth, parentLine);
     }
   };
+
   walk(tree, false, 0, null);
   const owner: Reading["owner"] = new Map();
   const lines = text.split(/\r?\n/);
+
   for (let i = 0; i < lines.length; i++) {
     if (lines[i]!.trim() === "") continue;
     const lineNo = i + 1;
     const hit = ranges.filter((r) => lineNo >= r.start && lineNo <= r.end).sort((a, b) => b.depth - a.depth || a.line - b.line);
     owner.set(lineNo, hit[0]?.line ?? null);
   }
+
   return { items, owner };
 }
 
@@ -128,6 +153,7 @@ function describe(reading: Reading, line: number): string {
   const itemText = item ? `item depth=${item.depth} parent=${item.parent ?? "-"}` : "no item";
   const owner = reading.owner.get(line);
   const ownerText = owner === undefined ? "no line" : `owner=${owner ?? "-"}`;
+
   return `${itemText}, ${ownerText}`;
 }
 
@@ -137,10 +163,12 @@ function mismatches(rel: string, text: string, doc: KlDoc): { id: string; detail
   const out: { id: string; detail: string }[] = [];
   const itemLines = new Set<number>([...kl.items.keys(), ...md.items.keys()]);
   const itemMismatch = new Set<number>();
+
   for (const line of [...itemLines].sort((a, b) => a - b)) {
     const a = kl.items.get(line);
     const b = md.items.get(line);
     const same = a !== undefined && b !== undefined && a.depth === b.depth && a.parent === b.parent;
+
     if (!same) {
       itemMismatch.add(line);
       const source = text.split(/\r?\n/)[line - 1] ?? "";
@@ -150,9 +178,12 @@ function mismatches(rel: string, text: string, doc: KlDoc): { id: string; detail
       });
     }
   }
+
   const textLines = new Set<number>([...kl.owner.keys(), ...md.owner.keys()]);
+
   for (const line of [...textLines].sort((a, b) => a - b)) {
     if (itemMismatch.has(line)) continue;
+
     if ((kl.owner.get(line) ?? null) === (md.owner.get(line) ?? null)) continue;
     const source = text.split(/\r?\n/)[line - 1] ?? "";
     out.push({
@@ -160,23 +191,27 @@ function mismatches(rel: string, text: string, doc: KlDoc): { id: string; detail
       detail: `${rel}:${line}:owner\n  source: ${JSON.stringify(source)}\n  keylang: ${describe(kl, line)}\n  mdast:   ${describe(md, line)}`,
     });
   }
+
   return out;
 }
 
 function parseDir(cwd: string, dir: string): KlDoc[] {
   const o = keylang(cwd, ["parse", "--json", dir]);
   assert.ok(o.stdout.startsWith("["), o.stderr);
+
   return JSON.parse(o.stdout) as KlDoc[];
 }
 
 /** `parse --json` stores the path it was given, which is relative to that process's cwd. */
 function relOf(cwd: string, docPath: string): string {
   const abs = isAbsolute(docPath) ? docPath : join(cwd, docPath);
+
   return posix(relative(cwd, abs));
 }
 
 test("CommonMark list projection matches parse --json, with an allowlist only before fmt", () => {
   const before = new Map<string, { id: string; detail: string }[]>();
+
   for (const dir of corpus) {
     for (const doc of parseDir(root, dir)) {
       if (doc.diagnostics.some((d) => d.code === "K003")) continue;
@@ -186,12 +221,15 @@ test("CommonMark list projection matches parse --json, with an allowlist only be
   }
 
   const copy = mkdtempSync(join(tmpdir(), "keylang-cm-"));
+
   try {
     for (const dir of corpus) {
       cpSync(join(root, dir), join(copy, dir), { recursive: true });
     }
+
     keylang(copy, ["fmt", ...corpus]);
     const after = new Map<string, { id: string; detail: string }[]>();
+
     for (const dir of corpus) {
       for (const doc of parseDir(copy, dir)) {
         if (doc.diagnostics.some((d) => d.code === "K003")) continue;
@@ -199,20 +237,27 @@ test("CommonMark list projection matches parse --json, with an allowlist only be
         after.set(rel, mismatches(rel, readFileSync(join(copy, rel), "utf8"), doc));
       }
     }
+
     assert.deepEqual([...before.keys()].sort(), [...after.keys()].sort(), "fmt dropped or added a parsed file");
     const problems: string[] = [];
     const seenBefore = new Set<string>();
+
     for (const [rel, found] of before) {
       for (const m of found) {
         seenBefore.add(m.id);
+
         if (!allowBefore.has(m.id)) problems.push(`unexpected before fmt:\n${m.detail}`);
       }
+
       for (const id of allowBefore) {
         if (id.startsWith(`${rel}:`) && !found.some((m) => m.id === id)) problems.push(`stale allowlist entry (no longer before fmt): ${id}`);
       }
+
       const later = after.get(rel) ?? [];
+
       for (const m of later) problems.push(`unexpected after fmt:\n${m.detail}`);
     }
+
     for (const id of allowBefore) if (!seenBefore.has(id)) problems.push(`stale allowlist entry (file not in corpus): ${id}`);
     assert.equal(problems.length, 0, problems.join("\n\n"));
   } finally {
@@ -339,6 +384,7 @@ test("multiline HTML blocks of types 1–5 are prose, and a rule after them is s
     ["<!DOCTYPE", ">"],
     ["<![CDATA[", "]]>"],
   ];
+
   for (const [open, close] of blocks) {
     const text = `# rules\n\n${open}\n- deny a b\n# flow x\n${close}\n\n- deny c d\n`;
     writeFileSync(join(dir, "keylang/rules.md"), text);
@@ -401,16 +447,21 @@ test("a type-1 HTML block ends on any of the four end tags, and the following ru
 function nodesOf(dir: string, file: string): KlNode[] {
   const parsed = keylang(dir, ["parse", "--json", file]);
   const doc = (JSON.parse(parsed.stdout) as KlDoc[])[0]!;
+
   return doc.sections.flatMap((s) => s.items.filter((i): i is KlNode => i.type === "node"));
 }
 
 function codeValues(text: string): string[] {
   const out: string[] = [];
+
   const walk = (node: Nodes): void => {
     if (node.type === "code") out.push(node.value);
+
     if ("children" in node) for (const child of node.children) walk(child);
   };
+
   walk(fromMarkdown(text));
+
   return out;
 }
 

@@ -16,6 +16,7 @@ import { checkoutRepo, KEY } from "./tui-fixture.ts";
 import { VirtualTerminal } from "./vt.ts";
 
 const FEATURE = "keylang/features/refund.md";
+
 // An open question, a planned fn without a signature, and a step its trigger never calls: stage structure.
 const REFUND = [
   "# flow refund",
@@ -36,16 +37,19 @@ function session(t: TestContext, root: string, cols = 130, rows = 32): Session {
   const app = new App({ root, cols, rows });
   app.attach({ write: (ansi) => vt.feed(ansi) }, cols, rows);
   t.after(() => app.close());
+
   return { app, send: (keys) => app.input(keys), lines: () => vt.lines(), text: () => vt.text() };
 }
 
 /** The repository with the refund feature; `agent` goes into keylang.json. */
 function repo(t: TestContext, agent: string | null = null): string {
   const root = checkoutRepo(t, { [FEATURE]: REFUND });
+
   if (agent !== null) {
     const config = JSON.parse(readFileSync(join(root, "keylang.json"), "utf8")) as Record<string, unknown>;
     writeFileSync(join(root, "keylang.json"), `${JSON.stringify({ ...config, agent }, null, 2)}\n`);
   }
+
   return root;
 }
 
@@ -57,12 +61,14 @@ function isolateAgent(t: TestContext, home: string): void {
   t.after(() => {
     if (saved.home === undefined) delete process.env.HOME;
     else process.env.HOME = saved.home;
+
     if (saved.agent !== undefined) process.env.KEYLANG_AGENT = saved.agent;
   });
 }
 
 function palette(s: Session, text: string): void {
   s.send(KEY.ctrlP);
+
   for (const ch of text) s.send(ch);
   s.send(KEY.enter);
 }
@@ -70,6 +76,7 @@ function palette(s: Session, text: string): void {
 function lineOf(lines: readonly string[], text: string): string {
   const found = lines.find((line) => line.includes(text));
   assert.ok(found, `no line with ${text}:\n${lines.join("\n")}`);
+
   return found;
 }
 
@@ -93,11 +100,14 @@ test("readiness: the screen shows the ladder at structure and the gaps and hints
   assert.match(text, /3 gap\(s\) · code 1 · snapshot [0-9a-f]{8}/);
   assert.match(text, /stage {2}idea › behavior › \[structure\] › ready › done/);
   const rows = s.lines().map((line) => line.trimEnd());
+
   const at = (pattern: RegExp): number => {
     const index = rows.findIndex((row) => pattern.test(row));
     assert.ok(index >= 0, `no row ${pattern}:\n${rows.join("\n")}`);
+
     return index;
   };
+
   // Structure first: its gap, then its hint; the implementation's gaps under ready.
   const structure = at(/structure · 1 gap\(s\) · 1 hint\(s\), not blocking/);
   const question = at(/ {2}question refund {2}keylang\/features\/refund\.md:3:1 {2}open question: who starts a refund\?/);
@@ -140,6 +150,7 @@ test("readiness: an open question has its own ? mark; the status line shows the 
   s.send("i");
   s.send(KEY.end);
   s.send(KEY.enter);
+
   for (const ch of "? and a partial refund?") s.send(ch);
   assert.ok(s.app.state.buffers.get(FEATURE)!.text.includes("- ? who starts a refund?\n- ? and a partial refund?\n"));
   await sleep(200);
@@ -162,10 +173,12 @@ test("readiness: an open question has its own ? mark; the status line shows the 
 test("readiness: the status line judges the plan against HEAD, as `feature` does: a question deleted before a commit is no done", async (t) => {
   const BUY = "# flow buy\n\n- ? who buys?\n- trigger presentation.terminal.checkout\n- step application.purchase.buy\n";
   const root = checkoutRepo(t, { "keylang/features/buy.md": BUY });
+
   const git = (args: string[]): void => {
     const r = spawnSync("git", ["-c", "user.email=test@example.com", "-c", "user.name=Test", ...args], { cwd: root, encoding: "utf8" });
     assert.equal(r.status, 0, r.stderr);
   };
+
   git(["init", "-q"]);
   git(["add", "."]);
   git(["commit", "-qm", "plan"]);
@@ -200,6 +213,7 @@ const ANSWER = [
 /** A local stand-in for the Anthropic API: every request gets `answer`, and is kept. */
 async function mockModel(t: TestContext, answer: string): Promise<{ requests: { system: string; prompt: string }[] }> {
   const requests: { system: string; prompt: string }[] = [];
+
   const server = createServer((req, res) => {
     let data = "";
     req.on("data", (chunk: Buffer) => (data += chunk.toString()));
@@ -210,6 +224,7 @@ async function mockModel(t: TestContext, answer: string): Promise<{ requests: { 
       res.end(JSON.stringify({ id: "m", type: "message", role: "assistant", model: "claude-opus-5", content: [{ type: "text", text: answer }], stop_reason: "end_turn", stop_details: null, usage: { input_tokens: 1, output_tokens: 1 } }));
     });
   });
+
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const saved = { url: process.env.ANTHROPIC_BASE_URL, key: process.env.ANTHROPIC_API_KEY, token: process.env.ANTHROPIC_AUTH_TOKEN };
   process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -218,11 +233,13 @@ async function mockModel(t: TestContext, answer: string): Promise<{ requests: { 
   t.after(() => {
     server.closeAllConnections();
     server.close();
+
     for (const [name, value] of [["ANTHROPIC_BASE_URL", saved.url], ["ANTHROPIC_API_KEY", saved.key], ["ANTHROPIC_AUTH_TOKEN", saved.token]] as const) {
       if (value === undefined) delete process.env[name];
       else process.env[name] = value;
     }
   });
+
   return { requests };
 }
 

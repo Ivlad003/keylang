@@ -217,12 +217,14 @@ const APP: Record<string, string> = {
 function app(t: TestContext, extra: Record<string, string> = {}): string {
   const dir = tempDir(t, "keylang-laravel-");
   writeTree(dir, { ...APP, ...extra });
+
   return dir;
 }
 
 function snapshotOf(dir: string): AnalysisSnapshot {
   const run = keylang(dir, ["map"]);
   assert.equal(run.status, 0, run.stderr);
+
   return JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as AnalysisSnapshot;
 }
 
@@ -231,6 +233,7 @@ function setFrameworks(dir: string, frameworks: string[]): void {
 }
 
 const PLACE = "domain.Services.OrderService.OrderService.place";
+
 const REFUND = "http.Controllers.OrderController.OrderController.refund";
 
 test("laravel: routes, commands, the schedule, listeners and queued jobs are entry points", (t) => {
@@ -359,10 +362,12 @@ test("laravel: `frameworks: []` turns the adapter off — ok and fail become unv
   const before = verdicts(on.stdout);
   const after = verdicts(r.stdout);
   assert.ok(before.size > 0);
+
   for (const [at, verdict] of before) {
     const now = after.get(at);
     assert.ok(now === verdict || now === "unverified", `${at}: ${verdict} → ${now}`);
   }
+
   assert.equal(after.get("keylang/flows.md:6:5"), "unverified");
   // The listener's K102 was the observer edge alone: with the adapter off the rule is unverified, not ok.
   assert.match(on.stdout, /K102[^\n]*through the observer `AuditOrder`/);

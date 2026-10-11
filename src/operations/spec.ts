@@ -41,21 +41,28 @@ import { empty } from "./shared.ts";
 export async function runFmt(request: FmtRequest, context: OperationContext): Promise<OperationEnvelope<"fmt">> {
   if (!isAbsolute(request.root)) return empty("fmt", "failed", 2, "fmt: root must be an absolute path");
   const base = request.base ?? request.root;
+
   if (!isAbsolute(base)) return empty("fmt", "failed", 2, "fmt: base must be an absolute path");
+
   if (request.paths.length === 0) return empty("fmt", "failed", 2, "fmt: needs at least one path");
+
   if (context.signal?.aborted) return empty("fmt", "cancelled", null);
   const planned: { file: FmtFile; abs: string; source: string; text: string }[] = [];
   const files: FmtFile[] = [];
+
   try {
     // `fmt` reads nothing of the config but the edition it asks for.
     const config = join(request.root, CONFIG_FILE);
+
     if (existsSync(config)) assertFormatOnly(config, readFileSync(config, "utf8"));
     context.onProgress?.({ text: "reading the files" });
+
     for (const shown of collectMdFiles(request.paths, base)) {
       const abs = resolve(base, shown);
       const file: FmtFile = { shown, path: toPosix(relative(request.root, abs)), state: "current" };
       files.push(file);
       let source: string;
+
       try {
         source = readFileSync(abs, "utf8");
       } catch (error) {
@@ -63,19 +70,24 @@ export async function runFmt(request: FmtRequest, context: OperationContext): Pr
         file.error = errorText(error);
         continue;
       }
+
       // The model's text is kept as it was written: formatting it would change a saved answer.
       if (isStoredExplanation(source)) {
         file.state = "explanation";
         continue;
       }
+
       // A generated file is its generator's, as for every writer of keylang: named, never rewritten.
       if (isGeneratedText(source)) {
         file.state = "generated";
         const generator = generatorCommand(source);
+
         if (generator !== null) file.generator = generator;
         continue;
       }
+
       const formatted = formatSource(shown, source);
+
       if (!formatted.ok) {
         file.state = "invalid";
         file.diagnostics = formatted.diagnostics;
@@ -87,32 +99,43 @@ export async function runFmt(request: FmtRequest, context: OperationContext): Pr
   } catch (error) {
     return empty("fmt", "failed", 2, errorText(error));
   }
+
   const payload: FmtPayload = { check: request.check, files };
+
   const finish = (status: OperationStatus, written: string[]): OperationEnvelope<"fmt"> => {
     const failed = files.some((file) => file.state === "unreadable" || file.state === "failed");
     const findings = files.some((file) => file.state === "invalid" || file.state === "stale");
     const code = failed ? 2 : findings ? 1 : 0;
+
     return { ...empty("fmt", status === "completed" && failed ? "failed" : status, status === "cancelled" ? null : code), payload, messages: fmtMessages(payload), written };
   };
+
   if (context.signal?.aborted) return finish("cancelled", []);
+
   if (request.check || planned.length === 0) return finish("completed", []);
   context.onProgress?.({ text: "waiting to write" });
+
   try {
     await context.beforeCommit?.();
   } catch (error) {
     const stopped = finish("failed", []);
+
     return { ...stopped, exitCode: 2, messages: [...stopped.messages, { level: "error", text: errorText(error) }] };
   }
+
   if (context.signal?.aborted) return finish("cancelled", []);
   const written: string[] = [];
   let cancelled = false;
+
   for (const step of planned) {
     if (cancelled || context.signal?.aborted) {
       cancelled = true;
       step.file.state = "not-attempted";
       continue;
     }
+
     context.onProgress?.({ text: `writing ${step.file.path}` });
+
     try {
       commitFormatted(request.root, step.abs, step.source, step.text);
       step.file.state = "formatted";
@@ -122,6 +145,7 @@ export async function runFmt(request: FmtRequest, context: OperationContext): Pr
       step.file.error = errorText(error);
     }
   }
+
   return finish(cancelled ? "cancelled" : "completed", written);
 }
 
@@ -135,8 +159,11 @@ export async function runFmt(request: FmtRequest, context: OperationContext): Pr
  */
 function commitFormatted(root: string, abs: string, source: string, text: string): void {
   const target = landing(abs);
+
   if (target === null) throw new Error("leads through a loop of links");
+
   if (!within(target, realpathSync(root))) throw new Error(within(abs, root) ? "leads out of the repository through a link" : "outside the repository");
+
   if (readFileSync(target, "utf8") !== source) throw new Error("changed on disk while it was formatted; nothing written");
   closeSync(openSync(target, "r+"));
   writeAtomic(target, text);
@@ -145,6 +172,7 @@ function commitFormatted(root: string, abs: string, source: string, text: string
 /** The command a generation marker names (`keylang map`), or null. */
 function generatorCommand(source: string): string | null {
   const marker = source.replace(/^\uFEFF/, "").split(/\r?\n/).find((line) => line.trim() !== "") ?? "";
+
   return /`(keylang [^`]+)`/.exec(marker)?.[1] ?? null;
 }
 
@@ -161,6 +189,7 @@ export function fmtGeneratedNote(file: FmtFile): string {
  */
 export function fmtMessages(payload: FmtPayload): OperationMessage[] {
   const out: OperationMessage[] = [];
+
   for (const file of payload.files) {
     if (file.state === "stale") out.push({ level: payload.check ? "info" : "error", text: payload.check ? `${file.shown}: not formatted` : `${file.shown}: not written` });
     else if (file.state === "formatted") out.push({ level: "info", text: `${file.shown}: formatted` });
@@ -171,6 +200,7 @@ export function fmtMessages(payload: FmtPayload): OperationMessage[] {
     else if (file.state === "explanation") out.push({ level: "warning", text: `${file.shown}: a saved explanation, not keylang Markdown; skipped` });
     else if (file.state === "generated") out.push({ level: "warning", text: fmtGeneratedNote(file) });
   }
+
   return out;
 }
 
@@ -189,23 +219,32 @@ export function fmtMessages(payload: FmtPayload): OperationMessage[] {
 export async function runCheck(request: CheckRequest, context: OperationContext): Promise<OperationEnvelope<"check">> {
   if (!isAbsolute(request.root)) return empty("check", "failed", 2, "check: root must be an absolute path");
   const base = request.base ?? request.root;
+
   if (!isAbsolute(base)) return empty("check", "failed", 2, "check: base must be an absolute path");
+
   if (context.signal?.aborted) return empty("check", "cancelled", null);
   let config: Config;
+
   try {
     config = loadConfig(request.root);
   } catch (error) {
     return empty("check", "failed", 2, errorText(error));
   }
+
   const specDir = join(request.root, config.dir);
+
   if (request.paths.length === 0 && !existsSync(specDir)) return empty("check", "failed", 2, `no \`${config.dir}/\` directory here; run \`keylang init\` or pass paths`);
   const specs = request.paths.length > 0 ? request.paths.map((path) => resolve(base, path)) : [specDir];
+
   for (const spec of specs) if (!existsSync(spec)) return empty("check", "failed", 2, `${relative(base, spec) || spec}: not found`);
+
   if (request.since !== undefined && request.changed !== true) return empty("check", "failed", 2, "check: --since requires --changed");
+
   if (request.acceptWeakening === true && request.changed !== true) return empty("check", "failed", 2, "check: --accept-weakening requires --changed");
   // The git slice is read before the analysis: without git or with an unknown ref the check fails, it never falls back to a full one.
   const since = request.since ?? "HEAD";
   let git: ChangedFiles | null = null;
+
   if (request.changed === true) {
     try {
       git = gitChangedFiles(request.root, since);
@@ -213,6 +252,7 @@ export async function runCheck(request: CheckRequest, context: OperationContext)
       return empty("check", "failed", 2, errorText(error));
     }
   }
+
   // Specs outside the repository's spec directory (examples, a slide) have no code to check against.
   const withoutCode = !specs.every((spec) => within(spec, specDir));
   const display = (abs: string): string => toPosix(relative(base, abs));
@@ -226,6 +266,7 @@ export async function runCheck(request: CheckRequest, context: OperationContext)
   // A named hook default: the static evidence of `keylang check` follows it to `analyze`.
   const analyzeSaved = context.analyze ?? analyze;
   let analyzed: Analysis;
+
   try {
     analyzed = await analyzeSaved({
       root: request.root,
@@ -239,19 +280,23 @@ export async function runCheck(request: CheckRequest, context: OperationContext)
   } catch (error) {
     return empty("check", "failed", 2, errorText(error));
   }
+
   if (context.signal?.aborted) return empty("check", "cancelled", null);
   const snapshotId = analyzed.snapshot?.snapshotId ?? null;
   const full = checkReport(analyzed.verdicts, snapshotId, analyzed.diagnostics);
   let report = full;
   let changed: ChangedSlice | null = null;
+
   if (git !== null) {
     // The whole analysis, then the slice: only findings that touch the changed files stay.
     const deleted = deletedModuleIds(config, git.deleted);
+
     const filtered = filterChanged(
       { docs: analyzed.docs, spec: analyzed.spec, diagnostics: analyzed.diagnostics, verdicts: analyzed.verdicts, nodes: analyzed.snapshot?.nodes ?? {}, edges: analyzed.snapshot?.edges ?? [] },
       changedPathSet(request.root, git.paths, base),
       deleted,
     );
+
     // The spec weakened since the same ref (K108): a finding of the slice, unless a person accepts it.
     const weakening = readWeakenings(analyzed.config, since, "check --changed");
     const weakened = weakening.weakenings.map((item) => weakeningDiagnostic(item, (path) => display(join(request.root, path))));
@@ -268,7 +313,9 @@ export async function runCheck(request: CheckRequest, context: OperationContext)
       weakening: { accepted: accept ? weakened.map(formatDiagnostic) : [], note: weakening.note },
     };
   }
+
   const mode = resolveStatic(request.static, analyzed.config.check.static);
+
   const payload: CheckPayload = {
     results: report.results,
     snapshotId,
@@ -285,11 +332,13 @@ export async function runCheck(request: CheckRequest, context: OperationContext)
     notSpecs: analyzed.notSpecs,
     changed,
   };
+
   const messages: OperationMessage[] = [
     ...payload.notSpecs.map((path) => ({ level: "warning" as const, text: checkSkipNote(path) })),
     ...payload.lines.map((text) => ({ level: "info" as const, text })),
     { level: "info", text: checkSummary(payload.counts) },
   ];
+
   return { ...empty("check", "completed", checkExitCode(payload.counts, request.strict)), payload, messages };
 }
 
@@ -307,6 +356,7 @@ export function checkSkipNote(path: string): string {
 export function checkSummary(counts: CheckCounts): string {
   const holes = counts.holes;
   const from = holes === undefined ? "" : ` (${holes.unverified === counts.unverified ? "" : `${holes.unverified} `}from ${holes.holes} hole${holes.holes === 1 ? "" : "s"})`;
+
   return `${counts.fail} fail, ${counts.unverified} unverified${from}, ${counts.ok} ok`;
 }
 
@@ -320,26 +370,34 @@ export function checkSummary(counts: CheckCounts): string {
  */
 export async function runExplainEdge(request: ExplainEdgeRequest, context: OperationContext): Promise<OperationEnvelope<"explain-edge">> {
   if (!isAbsolute(request.root)) return empty("explain-edge", "failed", 2, "check --explain-edge: root must be an absolute path");
+
   if (context.signal?.aborted) return empty("explain-edge", "cancelled", null);
   context.onProgress?.({ text: "reading the edges of the saved code" });
   const analyzeSaved = context.analyze ?? analyze;
   let analyzed: Analysis;
+
   try {
     analyzed = await analyzeSaved({ root: request.root, specs: [] });
   } catch (error) {
     return empty("explain-edge", "failed", 2, errorText(error));
   }
+
   if (context.signal?.aborted) return empty("explain-edge", "cancelled", null);
   const { snapshot } = analyzed;
+
   if (!snapshot) return empty("explain-edge", "failed", 2, "no snapshot; run inside a repository with sources");
+
   for (const id of [request.from, request.to]) {
     if (edgeIdKnown(snapshot, id)) continue;
     const near = analyzed.index.suggest(id);
     const failed = empty("explain-edge", "failed", 2, `unknown id \`${id}\``);
+
     return near === undefined ? failed : { ...failed, messages: [...failed.messages, { level: "info", text: `did you mean \`${near}\`?` }] };
   }
+
   const explanation = explainEdge(snapshot, request.from, request.to);
   const payload: ExplainEdgePayload = { ...explanation, snapshotId: snapshot.snapshotId, lines: edgeExplanationLines(explanation) };
+
   return { ...empty("explain-edge", "completed", 0), payload, messages: payload.lines.map((text) => ({ level: "info" as const, text })) };
 }
 
@@ -356,21 +414,28 @@ export async function runExplainEdge(request: ExplainEdgeRequest, context: Opera
 export async function runParse(request: ParseRequest, context: OperationContext): Promise<OperationEnvelope<"parse">> {
   if (!isAbsolute(request.root)) return empty("parse", "failed", 2, "parse: root must be an absolute path");
   const base = request.base ?? request.root;
+
   if (!isAbsolute(base)) return empty("parse", "failed", 2, "parse: base must be an absolute path");
+
   if (request.paths.length === 0) return empty("parse", "failed", 2, "parse: at least one path is required");
+
   if (context.signal?.aborted) return empty("parse", "cancelled", null);
   const documents: Document[] = [];
   const skipped: string[] = [];
   const unreadable: string[] = [];
   const readErrors: OperationMessage[] = [];
   const messages: OperationMessage[] = [];
+
   try {
     // `parse` reads nothing of the config but the edition it asks for.
     const config = join(request.root, CONFIG_FILE);
+
     if (existsSync(config)) assertFormatOnly(config, readFileSync(config, "utf8"));
     context.onProgress?.({ text: "parsing the files" });
+
     for (const file of collectMdFiles(request.paths, base)) {
       let text: string;
+
       try {
         text = readFileSync(resolve(base, file), "utf8");
       } catch (error) {
@@ -378,6 +443,7 @@ export async function runParse(request: ParseRequest, context: OperationContext)
         readErrors.push({ level: "error", text: `${file}: cannot read: ${errorText(error)}` });
         text = "";
       }
+
       if (isStoredExplanation(text)) {
         skipped.push(file);
         messages.push({ level: "warning", text: `note: ${file}: a saved explanation, not keylang Markdown; skipped` });
@@ -386,13 +452,16 @@ export async function runParse(request: ParseRequest, context: OperationContext)
   } catch (error) {
     return empty("parse", "failed", 2, errorText(error));
   }
+
   if (context.signal?.aborted) return empty("parse", "cancelled", null);
   const diagnostics = documents.flatMap((doc) => doc.diagnostics);
   messages.push(...readErrors);
+
   for (const d of diagnostics) messages.push({ level: isError(d) ? "error" : "warning", text: formatDiagnostic(d) });
   const payload: ParsePayload = { format: request.format, documents, skipped, unreadable, diagnostics, text: parseReportText(request.format, documents) };
   // An unreadable file is an I/O error, as in `fmt` and `check`: not a valid empty document.
   const exitCode = unreadable.length > 0 ? 2 : diagnostics.some(isError) ? 1 : 0;
+
   return { ...empty("parse", "completed", exitCode), payload, messages };
 }
 
@@ -407,18 +476,24 @@ export async function runParse(request: ParseRequest, context: OperationContext)
  */
 export async function runTracePlan(request: TracePlanRequest, context: OperationContext): Promise<OperationEnvelope<"trace-plan">> {
   if (!isAbsolute(request.root)) return empty("trace-plan", "failed", 2, "trace-plan: root must be an absolute path");
+
   if (request.flow === "" && request.entry === undefined) return empty("trace-plan", "failed", 2, "trace-plan: a flow name is required");
+
   if (request.entry === "") return empty("trace-plan", "failed", 2, "trace-plan: --entry needs a fn id");
+
   if (context.signal?.aborted) return empty("trace-plan", "cancelled", null);
   context.onProgress?.({ text: request.entry === undefined ? "reading the flow and a fresh snapshot of the saved code" : "a fresh snapshot of the saved code and what the entry reaches" });
   let found: Awaited<ReturnType<typeof tracePlan>>;
+
   try {
     found = request.entry === undefined ? await tracePlan(loadConfig(request.root), request.flow) : await entryTracePlan(loadConfig(request.root), request.entry, request.flow);
   } catch (error) {
     return empty("trace-plan", "failed", 2, errorText(error));
   }
+
   if (context.signal?.aborted) return empty("trace-plan", "cancelled", null);
   const { plan, omitted } = found;
   const payload: TracePlanPayload = { plan, omitted, text: tracePlanText(plan) };
+
   return { ...empty("trace-plan", "completed", 0), payload, messages: [{ level: "info", text: `flow ${plan.flow}: ${plan.symbols.length} function(s) to instrument on snapshot ${plan.snapshotId}` }] };
 }

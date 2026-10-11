@@ -35,10 +35,12 @@ const cache = new WeakMap<Analysis, readonly CheckResult[]>();
 export function findingsOf(analysis: Analysis | null): readonly CheckResult[] {
   if (!analysis) return [];
   let findings = cache.get(analysis);
+
   if (!findings) {
     findings = checkResults(analysis.verdicts, analysis.snapshot?.snapshotId ?? null, analysis.diagnostics);
     cache.set(analysis, findings);
   }
+
   return findings;
 }
 
@@ -49,7 +51,9 @@ export function visibleFindings(findings: readonly CheckResult[], filter: Verdic
 /** The full counts of the report, independent of the filter: findings, not gutter lines. */
 export function findingCounts(findings: readonly CheckResult[]): Record<FindingVerdict, number> {
   const counts: Record<FindingVerdict, number> = { fail: 0, unverified: 0, warning: 0, ok: 0 };
+
   for (const result of findings) counts[result.verdict]++;
+
   return counts;
 }
 

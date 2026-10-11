@@ -10,6 +10,7 @@ import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
 
 function write(dir: string, path: string, text: string): void {
@@ -19,18 +20,23 @@ function write(dir: string, path: string, text: string): void {
 
 function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8" });
+
   if (r.error) throw r.error;
+
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
 function repo(t: TestContext, files: Record<string, string>): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-outside-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+
   for (const [path, text] of Object.entries(files)) write(dir, path, text);
+
   return dir;
 }
 
 const LAYERS = { a: "src/a/**", b: "src/b/**" };
+
 const config = (extra: Record<string, unknown> = {}): string => `${JSON.stringify({ languages: ["typescript"], layers: LAYERS, ...extra })}\n`;
 
 interface Row {
@@ -45,6 +51,7 @@ interface Row {
 
 function check(dir: string): { status: number | null; stdout: string; results: Row[] } {
   const run = keylang(dir, ["check", "--format", "json"]);
+
   return { status: run.status, stdout: run.stdout, results: (JSON.parse(run.stdout) as { results: Row[] }).results };
 }
 
@@ -70,6 +77,7 @@ test("a file outside the architecture is no hole, unlike an excluded one", (t) =
   write(dir, "keylang.json", config({ outside: ["scripts/**"] }));
   const outside = check(dir);
   assert.equal(outside.status, 0, outside.stdout);
+
   for (const criterion of ["layers a < b", "no-cycles", "deny a b"]) assert.equal(verdictOf(outside.results, criterion), "ok", `${criterion}: ${outside.stdout}`);
   assert.equal(keylang(dir, ["check", "--strict"]).status, 0);
 
@@ -85,11 +93,13 @@ test("the map and the index list files outside the architecture", (t) => {
   const layer = readFileSync(join(dir, "keylang/map/outside.md"), "utf8");
   assert.match(layer, /^- outside$/m);
   assert.match(layer, /- module \[run\]\(\.\.\/\.\.\/scripts\/run\.ts#L1\) <!-- outside -->/);
+
   const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as {
     manifest: { config: { outside: string[] } };
     nodes: Record<string, { layer: string; members?: string }>;
     coverage: { kind: string; file: string; reason: string; source: string | null }[];
   };
+
   assert.deepEqual(index.manifest.config.outside, ["scripts/**"]);
   assert.equal(index.nodes["outside.scripts.run"]?.members, "opaque");
   assert.deepEqual(
@@ -109,6 +119,7 @@ test("architecture code that imports a file outside the architecture fails with 
     "scripts/tool.ts": "export function tool(): void {}\n",
     "keylang.json": config({ outside: ["scripts/**"] }),
   });
+
   const found = check(dir);
   assert.equal(found.status, 1, found.stdout);
   const fails = found.results.filter((row) => row.code === "K107");

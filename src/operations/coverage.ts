@@ -20,27 +20,34 @@ import type { CoverageRequest, OperationContext, OperationEnvelope } from "./typ
  */
 export async function runCoverage(request: CoverageRequest, context: OperationContext): Promise<OperationEnvelope<"coverage">> {
   if (!isAbsolute(request.root)) return empty("coverage", "failed", 2, "coverage: root must be an absolute path");
+
   if (context.signal?.aborted) return empty("coverage", "cancelled", null);
   context.onProgress?.({ text: "reading a fresh snapshot of the saved code" });
   let analyzed: Analysis;
+
   try {
     analyzed = await (context.analyze ?? analyze)({ root: request.root, withoutEvidence: true, saveFacts: true });
   } catch (error) {
     return empty("coverage", "failed", 2, `coverage: ${errorText(error)}`);
   }
+
   if (context.signal?.aborted) return empty("coverage", "cancelled", null);
   const snapshot = analyzed.snapshot;
+
   if (snapshot === null) return empty("coverage", "failed", 2, "coverage: no code to read (`languages` in keylang.json is empty)");
   context.onProgress?.({ text: "looking for logic in data" });
   let report;
+
   try {
     const signals = loadDataLogic();
     const sites = await findDataLogic(analyzed.config, snapshot, signals);
     const specDir = rootRelative(request.root, analyzed.config.dir);
     const viewDir = join(request.root, specDir, DISCOVERED_DIR);
     report = coverageReport(snapshot, specifiedTriggers(analyzed.spec.flows), signals, sites, (file) => readOrNull(join(viewDir, file)));
+
     if (context.signal?.aborted) return empty("coverage", "cancelled", null);
     const text = coverageText(report, specDir);
+
     return { ...empty("coverage", "completed", 0), payload: { ...report, text }, messages: text.trimEnd().split("\n").map((line) => ({ level: "info" as const, text: line })) };
   } catch (error) {
     return empty("coverage", "failed", 2, `coverage: ${errorText(error)}`);

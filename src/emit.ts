@@ -12,6 +12,7 @@ export const GENERATED_MARK = "<!-- keylang:generated — не редагува�
 /** True when the first non-empty line is a generator marker. The text after `keylang:generated` may vary. */
 export function isGeneratedMap(text: string): boolean {
   const line = text.replace(/^\uFEFF/, "").split(/\r?\n/).find((l) => l.trim() !== "");
+
   return line !== undefined && line.startsWith("<!--") && line.includes("keylang:generated");
 }
 
@@ -23,10 +24,12 @@ export function isGeneratedMap(text: string): boolean {
  */
 export function codeHref(mapDir: string, filePath: string, line: number): string {
   const rel = posix.relative(mapDir, filePath);
+
   const encoded = rel
     .split("/")
     .map((seg) => (seg === "." || seg === ".." ? seg : encodeSegment(seg)))
     .join("/");
+
   return `${encoded}#L${line}`;
 }
 
@@ -54,6 +57,7 @@ export function renderExplainedMap(snapshot: AnalysisSnapshot, mapDir: string, e
   const children = childrenByParent(snapshot);
   const out = renderLayers({ snapshot, children, mapDir, explain });
   out.set("README.md", renderReadme(snapshot, children, explain));
+
   return out;
 }
 
@@ -67,15 +71,19 @@ interface Render {
 
 function renderLayers(r: Render): Map<string, string> {
   const out = new Map<string, string>();
+
   for (const layerId of layerIds(r.snapshot)) {
     let s = `${GENERATED_MARK}\n\n${r.explain ? `${contents(r, layerId)}\n\n` : ""}# map\n\n- ${layerId}\n${describe(r, layerId, 1)}`;
+
     for (const id of sortIds(r.snapshot, r.children.get(layerId) ?? [])) {
       const node = r.snapshot.nodes[id];
       // The generated group `events` holds events, not modules (ADR 0022 п. 6).
       s += node?.kind === "event" ? renderDecl(r, id, node, 1) : renderModule(r, id, 1);
     }
+
     out.set(`${layerId}.md`, s);
   }
+
   return out;
 }
 
@@ -97,19 +105,25 @@ export function anchorOf(id: string): string {
 function ref(r: Render, id: string): string {
   if (!r.explain) return id;
   const layer = r.snapshot.nodes[id]?.layer ?? id.split(".")[0]!;
+
   return `[${id}](${layer}.md#${anchorOf(id)})`;
 }
 
 /** The first lines of a layer file: back to the start page, and every module of the layer, in map order. */
 function contents(r: Render, layerId: string): string {
   const modules: string[] = [];
+
   const visit = (id: string): void => {
     const node = r.snapshot.nodes[id];
+
     if (node?.kind !== "module" || node.class) return;
     modules.push(`[${id.slice(layerId.length + 1)}](#${anchorOf(id)})`);
+
     for (const child of sortIds(r.snapshot, r.children.get(id) ?? [])) visit(child);
   };
+
   for (const id of sortIds(r.snapshot, r.children.get(layerId) ?? [])) visit(id);
+
   return `[README](README.md)${modules.length > 0 ? ` · modules: ${modules.join(" · ")}` : ""}`;
 }
 
@@ -120,6 +134,7 @@ function contents(r: Render, layerId: string): string {
 function describe(r: Render, id: string, depth: number): string {
   if (!r.explain) return "";
   const e = r.explain(id);
+
   return `${"  ".repeat(depth)}<a id="${anchorOf(id)}"></a>${e === null ? "" : descriptionText(e, (other) => (r.snapshot.nodes[other] ? ref(r, other) : null))}\n`;
 }
 
@@ -139,13 +154,16 @@ export function descriptionText(e: NodeExplanation, link: (id: string) => string
     .split(/(`[^`]*`)/)
     .map((part, i) => (i % 2 === 1 ? part : part.replaceAll("<", "&lt;").replaceAll("-->", "--&gt;")))
     .join("");
+
   if (/^\d+[.)]/.test(text)) text = text.replace(/^(\d+)([.)])/, "$1\\$2");
   else if (/^(?:[-*+_=#>|]|~~~|```)/.test(text)) text = `\\${text}`;
   text = text.replace(/`([\p{L}_$][\p{L}\p{M}\p{N}_$-]*(?:\.[\p{L}_$][\p{L}\p{M}\p{N}_$-]*)+)`/gu, (code, id: string) => {
     const target = link(id);
+
     return target === null ? code : target.replace(/^\[([^\]]*)\]/, "[`$1`]");
   });
   const origin = e.origin === "llm" ? ` _(llm · ${modelName(e.agent ?? "?")} · ${e.date ?? "?"}${e.stale ? " · stale" : ""})_` : "";
+
   return `<br>${text}${origin}`;
 }
 
@@ -160,29 +178,37 @@ interface Counts {
 function renderReadme(snapshot: AnalysisSnapshot, children: Map<string, string[]>, explain: ExplainNode): string {
   const r: Render = { snapshot, children, mapDir: "", explain };
   const counts = new Map<string, Counts>();
+
   for (const [id, node] of Object.entries(snapshot.nodes)) {
     if (node.layer === EXTERNAL) continue;
     let c = counts.get(node.layer);
+
     if (!c) counts.set(node.layer, (c = { doc: 0, llm: 0, stale: 0, none: 0 }));
     const e = explain(id);
+
     if (e === null) c.none++;
     else if (e.origin === "doc") c.doc++;
     else if (e.stale) c.stale++;
     else c.llm++;
   }
+
   const total: Counts = { doc: 0, llm: 0, stale: 0, none: 0 };
   const rows: string[] = [];
+
   for (const layer of layerIds(snapshot)) {
     const c = counts.get(layer);
     const e = explain(layer);
     const text = e === null ? "" : descriptionText(e, (id) => (snapshot.nodes[id] ? ref(r, id) : null)).slice("<br>".length).replaceAll("|", "\\|");
+
     if (!c) {
       rows.push(`| [${layer}](${layer}.md) | ${text} | | | | |`);
       continue;
     }
+
     for (const key of ["doc", "llm", "stale", "none"] as const) total[key] += c[key];
     rows.push(`| [${layer}](${layer}.md) | ${text} | ${c.doc} | ${c.llm} | ${c.stale} | ${c.none} |`);
   }
+
   return [
     GENERATED_MARK,
     "",
@@ -213,8 +239,10 @@ function renderReadme(snapshot: AnalysisSnapshot, children: Map<string, string[]
 function systemSection(r: Render): string[] {
   const name = (r.snapshot.system?.name ?? "Repository").replaceAll("<", "&lt;");
   const e = r.explain?.(SYSTEM_ID) ?? null;
+
   if (e === null) return [`## ${name}`, "", "— Neither a README paragraph nor a manifest description says what this repository is; `keylang explain --missing --llm` asks a model for a brief.", ""];
   const text = descriptionText(e, (id) => (r.snapshot.nodes[id] ? ref(r, id) : null)).slice("<br>".length);
+
   return [`## ${name}`, "", `${text}${e.origin === "doc" && e.source ? ` _(${e.source})_` : ""}`, ""];
 }
 
@@ -225,29 +253,37 @@ function index(r: Render): string[] {
     .map(([id]) => ({ id, name: nameOf(id), parent: id.slice(0, id.lastIndexOf(".")) }))
     // Code-unit order of the lowercase names: the same on every Node, whatever its ICU.
     .sort((a, b) => compareText(a.name.toLowerCase(), b.name.toLowerCase()) || compareText(a.id, b.id));
+
   const groups = new Map<string, string[]>();
+
   for (const e of entries) {
     const letter = [...e.name][0]!.toUpperCase();
     const layer = r.snapshot.nodes[e.id]!.layer;
     const line = `[${e.name}](${layer}.md#${anchorOf(e.id)}) (${e.parent})`;
     const group = groups.get(letter);
+
     if (group) group.push(line);
     else groups.set(letter, [line]);
   }
+
   return [...groups].flatMap(([letter, lines]) => [`**${letter}** · ${lines.join(" · ")}`, ""]);
 }
 
 
 function childrenByParent(snapshot: AnalysisSnapshot): Map<string, string[]> {
   const children = new Map<string, string[]>();
+
   for (const id of Object.keys(snapshot.nodes)) {
     const dot = id.lastIndexOf(".");
+
     if (dot === -1) continue;
     const parent = id.slice(0, dot);
     const list = children.get(parent);
+
     if (list) list.push(id);
     else children.set(parent, [id]);
   }
+
   return children;
 }
 
@@ -262,6 +298,7 @@ function sortIds(snapshot: AnalysisSnapshot, ids: readonly string[]): string[] {
     const nb = snapshot.nodes[b];
     const ka = na?.file ?? nameOf(a);
     const kb = nb?.file ?? nameOf(b);
+
     return compareText(ka, kb) || (na?.line ?? 0) - (nb?.line ?? 0);
   });
 }
@@ -272,26 +309,34 @@ function nameOf(id: string): string {
 
 function linkedName(mapDir: string, node: SnapshotNode, name: string): string {
   if (!node.file || node.line === null) return name;
+
   return `[${name}](${codeHref(mapDir, node.file, node.line)})`;
 }
 
 function renderModule(r: Render, id: string, depth: number): string {
   const { snapshot, mapDir } = r;
   const node = snapshot.nodes[id];
+
   if (!node) return "";
   const pad = "  ".repeat(depth);
   let head = linkedName(mapDir, node, nameOf(id));
+
   if (node.comment) head += ` <!-- ${node.comment} -->`;
   let s = `${pad}- module ${head}\n${describe(r, id, depth + 1)}`;
+
   for (const edge of depsOf(snapshot, id)) s += `${pad}  - ${edge.alias} ${ref(r, edge.target!)}\n`;
   const nested = r.children.get(id) ?? [];
   const body = sortIds(snapshot, nested);
+
   for (const childId of body) {
     const child = snapshot.nodes[childId];
+
     if (!child) continue;
+
     if (child.kind === "module") s += renderModule(r, childId, depth + 1);
     else s += renderDecl(r, childId, child, depth + 1);
   }
+
   return s;
 }
 
@@ -300,15 +345,20 @@ const edgesBySource = new WeakMap<AnalysisSnapshot, Map<string, SnapshotEdge[]>>
 
 function edgesFrom(snapshot: AnalysisSnapshot, id: string): readonly SnapshotEdge[] {
   let index = edgesBySource.get(snapshot);
+
   if (!index) {
     index = new Map();
+
     for (const edge of snapshot.edges) {
       const list = index.get(edge.source);
+
       if (list) list.push(edge);
       else index.set(edge.source, [edge]);
     }
+
     edgesBySource.set(snapshot, index);
   }
+
   return index.get(id) ?? [];
 }
 
@@ -317,7 +367,9 @@ function depsOf(snapshot: AnalysisSnapshot, id: string): SnapshotEdge[] {
   const edges = edgesFrom(snapshot, id)
     .filter((e) => e.source === id && (e.kind === "import" || e.kind === "reexport") && e.resolution === "resolved" && e.alias && e.target)
     .sort((a, b) => a.line - b.line);
+
   const seen = new Set<string | undefined>();
+
   return edges.filter((e) => !seen.has(e.alias) && seen.add(e.alias));
 }
 
@@ -326,22 +378,30 @@ function renderDecl(r: Render, id: string, node: SnapshotNode, depth: number): s
   const pad = "  ".repeat(depth);
   const keyword = node.kind === "type" ? "type" : node.kind === "event" ? "event" : "fn";
   let head = linkedName(mapDir, node, nameOf(id));
+
   if (node.signature) head += ` ${node.signature}`;
+
   if (node.exported === false) head += " <!-- internal -->";
+
   if (node.kind === "event") {
     // Who publishes it: the fns that dispatch it, each a `calls` of its own map line too.
     const about = [...(node.name !== undefined ? [`name: ${node.name}`] : []), ...((node.callers ?? []).length > 0 ? [`dispatched by: ${(node.callers ?? []).join(", ")}`] : ["dispatched by no code keylang read"])];
     head += ` <!-- ${about.join("; ").replace(/-->/g, "-- >")} -->`;
   }
+
   let s = `${pad}- ${keyword} ${head}\n${describe(r, id, depth + 1)}`;
+
   const calls = edgesFrom(snapshot, id)
     // An injected value is the caller's choice, not this function's code; a self-call is not a dependency.
     .filter((e) => e.source === id && e.kind === "call" && e.resolution === "resolved" && e.target && e.target !== id && e.via !== "injected")
     .sort((a, b) => a.line - b.line);
+
   // A call the framework makes by its config (ADR 0022) is a call like any other, marked with its `via` and config line.
   const configured = calls.filter((c) => c.via === "preference" || c.via === "argument" || c.via === "observer" || c.via?.startsWith("plugin:"));
   const marks = [...new Map(configured.map((c) => [c.target!, `${nameOf(c.target!)} ${c.via} ${c.site ?? "?"}${c.via === "observer" && c.scope && c.scope !== "global" ? ` ${c.scope}` : ""}`])).values()];
   const note = marks.length > 0 ? ` <!-- via: ${marks.join("; ").replace(/-->/g, "-- >")} -->` : "";
+
   if (calls.length > 0) s += `${pad}  - calls ${[...new Set(calls.map((c) => c.target!))].map((target) => ref(r, target)).join(", ")}${note}\n`;
+
   return s;
 }

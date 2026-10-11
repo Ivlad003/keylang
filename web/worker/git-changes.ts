@@ -12,15 +12,20 @@ export { changedPathSet, deletedModuleIds, diskCaseResolver, gitUnavailable, typ
 
 function state(root: string, label: string) {
   const found = preparedFor(root);
+
   if (found === null) throw new Error(`${label}: git was not read for this folder in the browser`);
+
   if (found.unavailable !== null) throw new Error(`${label}: ${found.unavailable}`);
+
   return found;
 }
 
 function refOf(root: string, ref: string, label: string): PreparedRef {
   if (ref.startsWith("-")) throw new Error(`${label}: \`${ref}\` is not a git ref`);
   const found = state(root, label).refs.get(ref);
+
   if (!found) throw new Error(`${label}: git was not read for \`${ref}\` in the browser`);
+
   return found;
 }
 
@@ -30,24 +35,34 @@ export const featureBaseOrigin: typeof cli.featureBaseOrigin = (root, label) => 
 
 export const gitChangedFiles: typeof cli.gitChangedFiles = (root, ref, label = "check --changed") => {
   const changed = refOf(root, ref, label).changed;
+
   if (changed === null) throw new Error(`${label}: \`${ref}\` is not a commit`);
+
   return { paths: new Set(changed.paths), deleted: [...changed.deleted], unborn: changed.unborn };
 };
 
 export const gitFileAt: typeof cli.gitFileAt = (root, ref, path, label) => {
   const at = refOf(root, ref, label);
+
   if (at.changed === null) throw new Error(`${label}: \`${ref}\` is not a commit`);
+
   if (at.changed.unborn) return null;
+
   if (!at.files.has(path)) throw new Error(`${label}: git was not read for ${path} at \`${ref}\` in the browser`);
+
   return at.files.get(path)!;
 };
 
 export const gitSpecFilesAt: typeof cli.gitSpecFilesAt = (root, ref, dir, label, skip = () => false) => {
   const at = refOf(root, ref, label);
+
   if (at.changed === null) throw new Error(`${label}: \`${ref}\` is not a commit`);
+
   if (at.changed.unborn) return new Map();
   const files = at.specs.get(dir);
+
   if (!files) throw new Error(`${label}: git was not read for ${dir}/ at \`${ref}\` in the browser`);
+
   return new Map([...files].filter(([path]) => !skip(path)));
 };
 

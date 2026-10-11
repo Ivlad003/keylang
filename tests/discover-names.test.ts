@@ -47,6 +47,7 @@ const REPLY = JSON.stringify({
 function repo(t: { after: (fn: () => void) => void }): string {
   const dir = tempDir(t, "keylang-names-");
   writeTree(dir, REPO);
+
   return dir;
 }
 
@@ -60,8 +61,10 @@ function run(t: { after: (fn: () => void) => void }, cwd: string, args: string[]
   mkdirSync(join(home, ".config"), { recursive: true });
   const base: Record<string, string | undefined> = { ...process.env, HOME: home, KEYLANG_AGENT: undefined, KEYLANG_NESTED: undefined, ANTHROPIC_API_KEY: undefined, OPENROUTER_API_KEY: undefined };
   const path = fake ? `${fake.bin}:${process.env.PATH ?? ""}` : (process.env.PATH ?? "");
-  const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8", env: { ...base, PATH: path, ...(fake?.env ?? {}), ...env } as NodeJS.ProcessEnv });
+  const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8", env: { ...base, PATH: path, ...fake?.env, ...env } as NodeJS.ProcessEnv });
+
   if (r.error) throw r.error;
+
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 

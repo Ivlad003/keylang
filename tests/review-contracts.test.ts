@@ -20,6 +20,7 @@ import { KEY } from "./tui-fixture.ts";
 import { VirtualTerminal } from "./vt.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
 
 interface Run {
@@ -35,13 +36,16 @@ interface Run {
 function keylang(cwd: string, args: string[], input?: string): Run {
   const env = { ...process.env, GIT_CEILING_DIRECTORIES: tmpdir() };
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, env, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, ...(input !== undefined ? { input } : {}) });
+
   if (r.error) throw r.error;
+
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
 function tempDir(t: TestContext, prefix: string): string {
   const dir = mkdtempSync(join(tmpdir(), prefix));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+
   return dir;
 }
 
@@ -56,7 +60,9 @@ const escaped = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\
 
 function git(dir: string, args: string[]): string {
   const r = spawnSync("git", ["-c", "user.email=test@example.com", "-c", "user.name=Test", "-c", "init.defaultBranch=main", ...args], { cwd: dir, encoding: "utf8" });
+
   if (r.status !== 0) throw new Error(r.stderr || r.stdout);
+
   return r.stdout;
 }
 
@@ -106,11 +112,14 @@ interface FeatureJson {
 
 function featureJson(dir: string, slug: string, args: string[] = []): { status: number | null; report: FeatureJson } {
   const r = keylang(dir, ["feature", slug, "--format", "json", ...args]);
+
   return { status: r.status, report: JSON.parse(r.stdout) as FeatureJson };
 }
 
 const REFUND_LAYERS = { languages: ["typescript"], layers: { ui: "src/ui/**", app: "src/app/**", infra: "src/infra/**" } };
+
 const REFUND_FLOW = "# flow refund\n\n- trigger ui.cli.main\n  - step app.purchase.refund\n    - step app.refund_store.record\n";
+
 const DENIED = "src/app/refund_store.ts:1:1: rule app.refund_store: divergence: `app.refund_store` depends on `infra.db`, which is denied by `deny app infra` (keylang/rules.md:3)";
 
 /** `main` with the refund planned, then the branch `refund` that implements it through an import the rules deny, committed. */
@@ -138,6 +147,7 @@ function refundBranch(t: TestContext, extra: Record<string, string> = {}): strin
   assert.equal(keylang(dir, ["map"]).status, 0);
   git(dir, ["add", "."]);
   git(dir, ["commit", "-qm", "implement the refund"]);
+
   return dir;
 }
 
@@ -147,6 +157,7 @@ async function mcpFeature(t: TestContext, dir: string, slug: string): Promise<un
   t.after(() => client.close());
   const r = (await client.callTool({ name: "feature_status", arguments: { slug } })) as { content: { text: string }[]; isError?: boolean };
   assert.notEqual(r.isError, true, r.content.map((c) => c.text).join(""));
+
   return JSON.parse(r.content.map((c) => c.text).join(""));
 }
 
@@ -171,11 +182,14 @@ test("feature: without --since the base is the merge-base with the main branch, 
   const app = new App({ root: dir, cols: 130, rows: 32 });
   app.attach({ write: (ansi) => vt.feed(ansi) }, 130, 32);
   t.after(() => app.close());
+
   const palette = (text: string): void => {
     app.input(KEY.ctrlP);
+
     for (const ch of text) app.input(ch);
     app.input(KEY.enter);
   };
+
   await app.idle();
   palette("open keylang/features/refund.md");
   await app.idle();
@@ -209,6 +223,7 @@ test("feature: the main branch is origin/HEAD before a local main; an inherited 
     "keylang/rules.md": "# rules\n\n- deny app infra\n- deny ui infra\n",
     "src/ui/legacy.ts": 'import { save } from "../infra/db.ts"; export function old(): void { save("old"); }\n',
   });
+
   const fork = git(dir, ["rev-parse", "main"]).trim();
   // The remote's default branch points at the fork; local main moves on, so its merge-base is another commit.
   git(dir, ["update-ref", "refs/remotes/origin/trunk", fork]);
@@ -279,7 +294,9 @@ test("feature: the plan is compared with the merge-base and with HEAD: a questio
 // ---------- TypeScript: `import { type A }` with every name `type` ----------
 
 const ORDER = 'import { type Price } from "./price.ts"; export function total(p: Price): number { return p.amount; }\n';
+
 const PRICE = 'import { total } from "./order.ts"; export type Price = { amount: number }; export function show(p: Price): string { return String(total(p)); }\n';
+
 const CYCLE = "keylang/rules.md:3:1: K105 divergence: dependency cycle app.order → app.price → app.order";
 
 /** A cycle that runs only when `order.ts`'s `import { type Price }` loads `price.ts`. */
@@ -292,15 +309,18 @@ function typeCycleRepo(t: TestContext, extra: Record<string, string> = {}): stri
     "src/app/price.ts": PRICE,
     ...extra,
   });
+
   return dir;
 }
 
 /** `check`'s verdict on the cycle: `runs` (K105, code 1) or `erased` (no fail, code 0). */
 function cycle(dir: string): "runs" | "erased" {
   const r = keylang(dir, ["check"]);
+
   if (r.status === 1 && r.stdout.includes(CYCLE)) return "runs";
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.match(r.stderr, /0 fail, 0 unverified, 1 ok/);
+
   return "erased";
 }
 
@@ -316,6 +336,7 @@ interface IndexEdge {
 function moduleEdges(dir: string): string[] {
   assert.equal(keylang(dir, ["map"]).status, 0);
   const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as { edges: IndexEdge[] };
+
   return index.edges
     .filter((edge) => edge.kind === "import" || edge.kind === "reexport")
     .map((edge) => `${edge.kind}${edge.typeOnly ? " typeOnly" : ""} ${edge.source} → ${edge.target}`)
@@ -330,9 +351,11 @@ test("typescript: `import { type A }` with every name `type` is type-only unless
   // A tsconfig without the option: the same.
   writeTree(dir, { "tsconfig.json": '{\n  // the project\'s own options\n  "compilerOptions": { "strict": true, },\n}\n' });
   assert.equal(cycle(dir), "erased");
+
   // The fact cache keeps what the syntax says, not what the tsconfig decides.
   const cached = (): { source: string; typeOnly?: true; inlineTypeOnly?: true }[] | undefined =>
     (JSON.parse(readFileSync(join(dir, ".keylang/cache/facts.json"), "utf8")) as { files: Record<string, { facts: { imports: { source: string; typeOnly?: true; inlineTypeOnly?: true }[] } }> }).files["src/app/order.ts"]?.facts.imports;
+
   assert.deepEqual(cached()?.map((fact) => [fact.source, fact.typeOnly, fact.inlineTypeOnly]), [["./price.ts", undefined, true]]);
   // With it the statement stays `import {} from "./price.ts"` and loads the module: the cycle runs, as before.
   // The cache of the last run is read as it is: the graph, not the cached facts, reads the tsconfig.
@@ -347,6 +370,7 @@ test("typescript: `import { type A }` with every name `type` is type-only unless
   // The map prints the dependency and `deny` judges it, erased or not.
   assert.match(readFileSync(join(dir, "keylang/map/app.md"), "utf8"), /- module \[order\]\([^)]*\)\n {4}- price app\.price\n/);
   writeTree(dir, { "keylang/rules.md": "# rules\n\n- deny app.order app.price\n" });
+
   for (const verbatim of [false, true]) {
     writeTree(dir, { "tsconfig.json": `{ "compilerOptions": { "verbatimModuleSyntax": ${verbatim} } }\n` });
     const denied = keylang(dir, ["check"]);
@@ -363,6 +387,7 @@ test("typescript: a default or a value name beside `type` names, or empty braces
     "src/app/types.ts": 'export { type Price } from "./price.ts";\n',
     "src/app/values.ts": 'export { type Price, show } from "./price.ts";\n',
   });
+
   assert.deepEqual(
     moduleEdges(dir).filter((edge) => edge.endsWith("→ app.price")),
     ["import app.both → app.price", "import app.empty → app.price", "import app.mixed → app.price", "import typeOnly app.order → app.price", "reexport app.values → app.price", "reexport typeOnly app.types → app.price"],
@@ -376,6 +401,7 @@ test("typescript: the tsconfig that governs a file is the nearest one up to the 
     "src/app/tsconfig.json": '{ "extends": "../../tsconfig.base", "compilerOptions": { "noEmit": true } }\n',
     "tsconfig.base.json": '{ "compilerOptions": { "verbatimModuleSyntax": true } }\n',
   });
+
   assert.equal(cycle(dir), "runs");
   // A later `extends` entry that sets the option wins over an earlier one, as in tsc; one that does not, does not.
   writeTree(dir, { "tsconfig.loose.json": '{ "compilerOptions": { "verbatimModuleSyntax": false } }\n', "src/app/tsconfig.json": '{ "extends": ["../../tsconfig.base.json", "../../tsconfig.loose.json"] }\n' });

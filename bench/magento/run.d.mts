@@ -1,11 +1,17 @@
 // Types of bench/magento/run.mjs for the tests (tests/bench-magento.test.ts).
 
 export const MAGENTO_URL: string;
+
 export const MAGENTO_TAG: string;
+
 export const MODULES: string[];
+
 export const FRAMEWORK: string[];
+
 export const SPARSE_PATHS: string[];
+
 export const WIDE_SPARSE_PATTERNS: string[];
+
 export const DRAFTS: string[];
 
 export interface BenchConfig {

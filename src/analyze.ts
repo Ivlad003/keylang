@@ -80,6 +80,7 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
   const options = { persist: request.persistFacts === true || (save ? ("changed" as const) : false), overlay };
   const generate = request.generate ?? generateMap;
   const map = config.languages.length > 0 && request.withoutCode !== true ? await generate(config, options) : null;
+
   if (save && map?.factCache) saveFactCache(root, map.factCache);
   const snapshot = map?.index ?? null;
   const specDir = join(root, config.dir);
@@ -89,24 +90,30 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
   const notSpec = (abs: string): boolean => readingAid(specDir, abs);
   const notSpecs = specs.filter(notSpec).map(display);
   const files = collectMdFiles(specs.filter((spec) => !notSpec(spec))).filter((abs) => !notSpec(abs));
+
   // An unsaved buffer joins the specs only where the walk of `check` would find it on disk.
   for (const abs of overlay.keys()) if (abs.endsWith(".md") && !files.includes(abs) && !notSpec(abs) && specs.some((spec) => walkReaches(spec, abs))) files.push(abs);
   const mapDir = join(specDir, "map");
   const docs: Document[] = [];
+
   for (const abs of files) {
     const text = overlay.get(abs) ?? readFileSync(abs, "utf8");
     const doc = parse(display(abs), text);
+
     // A generated map file is replaced by the fresh render below.
     if (map && within(abs, mapDir) && doc.generated !== null) continue;
     docs.push(doc);
   }
+
   if (map) {
     for (const [name, text] of map.files) {
       const abs = join(mapDir, name);
+
       if (docs.some((doc) => doc.path === display(abs))) continue;
       docs.push(parseRenderedMap(display(abs), text));
     }
   }
+
   docs.sort((a, b) => compareText(a.path, b.path));
   // Reports and traces are evidence about code; specs checked on their own have none.
   const evidence = snapshot !== null && request.withoutEvidence !== true;
@@ -114,11 +121,13 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
   const traceFiles = evidence ? evidenceFiles(config, "trace") : null;
   const staticMode = resolveStatic(request.static, config.check.static);
   const packages = request.withoutCode === true ? [] : (map?.graph.packages ?? readManifests(config, []).packages);
+
   // The old stack of a migration (business-flows/27), loaded only when keylang.json names one.
   const migration: OldSnapshot =
     request.withoutMigration === true || request.withoutCode === true || config.migration.from === null
       ? { state: "absent" }
       : await oldSnapshotFor(root, config.migration.from);
+
   const assessment = assess(
     docs,
     snapshot,
@@ -133,6 +142,7 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
     },
     config.format,
   );
+
   return { ...assessment, config, map, snapshot, docs, notSpecs, packages };
 }
 
@@ -148,23 +158,29 @@ const oldIds = new Map<string, { stamp: string; ids: Promise<{ snapshotId: strin
  */
 export async function oldSnapshotFor(root: string, from: string): Promise<OldSnapshot> {
   const abs = isAbsolute(from) ? from : resolve(root, from);
+
   try {
     const stat = statSync(abs);
     const stamp = stat.isDirectory() ? "dir" : `${stat.mtimeMs}:${stat.size}`;
     let known = oldIds.get(abs);
+
     if (known === undefined || known.stamp !== stamp) {
       const ids = stat.isDirectory()
         ? analyze({ root: abs, withoutEvidence: true, withoutMigration: true }).then((old) => {
             if (old.snapshot === null) throw new Error("no code to read (`languages` in its keylang.json is empty)");
+
             return { snapshotId: old.snapshot.snapshotId, nodes: old.snapshot.nodes };
           })
         : Promise.resolve().then(() => readOldIndex(abs));
+
       known = { stamp, ids };
       oldIds.set(abs, known);
       // A failure is not remembered: the next check reads again.
       ids.catch(() => oldIds.delete(abs));
     }
+
     const { snapshotId, nodes } = await known.ids;
+
     return { state: "loaded", from, snapshotId, nodes };
   } catch (error) {
     return { state: "error", from, reason: error instanceof Error ? error.message : String(error) };
@@ -185,18 +201,22 @@ const renderedMap = new Map<string, { hash: string; doc: Document }>();
 function parseRenderedMap(path: string, text: string): Document {
   const hash = createHash("sha256").update(text).digest("hex");
   const known = renderedMap.get(path);
+
   if (known?.hash === hash) return known.doc;
   const doc = parse(path, text);
   renderedMap.set(path, { hash, doc });
+
   return doc;
 }
 
 /** Walk up from `start` to the directory that holds `keylang.json`; `start` when there is none. */
 export function findRoot(start: string): string {
   let dir = start;
+
   for (;;) {
     if (existsSync(join(dir, CONFIG_FILE))) return dir;
     const parent = join(dir, "..");
+
     if (parent === dir) return start;
     dir = parent;
   }
@@ -205,7 +225,9 @@ export function findRoot(start: string): string {
 /** `path` (relative to the root, as a flow's `test` writes it) is a file inside the repository. */
 function repositoryFile(root: string, path: string): boolean {
   const abs = resolve(root, path);
+
   if (!within(abs, root)) return false;
+
   try {
     return statSync(abs).isFile();
   } catch {
@@ -225,16 +247,19 @@ export function readingAid(specDir: string, abs: string): boolean {
  */
 export function specPathProblem(config: Config, abs: string): string | null {
   const specDir = join(config.root, config.dir);
+
   const reason =
     !abs.endsWith(".md") ? "not a `.md` file"
     : !within(abs, specDir) ? `outside the spec directory \`${config.dir}/\``
     : !walkReaches(specDir, abs) ? "under a hidden directory, `node_modules` or `target`, which check skips"
     : readingAid(specDir, abs) ? "a generated reading aid, not a spec"
     : null;
+
   return reason === null ? null : `\`keylang check\` does not read this file as a spec: ${reason}`;
 }
 
 export function within(abs: string, dir: string): boolean {
   const rel = relative(dir, abs);
+
   return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
 }

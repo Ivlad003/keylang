@@ -82,14 +82,17 @@ const COMMANDS: readonly ChatCommand[] = [
 
 /** The answer to a message sent while another operation runs: nothing is asked. */
 const BUSY = "вже працює інша операція: дочекайтеся її кінця або скасуйте її (x у F6), тоді спитайте знову; запиту не було";
+
 /** The answer to a request that was cancelled: nothing was asked or written. */
 const CANCELLED = "скасовано";
+
 /** How many fails `/check` names. */
 const CHECK_FAILS = 5;
 
 /** The answer to free text without a model (spec §4.3); `reason` says what is missing when an agent is set. */
 export function noModelAnswer(reason: string | null): string {
   const offline = COMMANDS.filter((command) => command.offline).map((command) => `/${command.name}`);
+
   return `немає моделі: ${reason ?? "задайте `agent` у keylang.json або `KEYLANG_AGENT`"}; без неї працюють ${offline.join(", ")}`;
 }
 
@@ -106,11 +109,13 @@ export function helpAnswer(): string {
 /** `/check`: the session's `✗ ◌ ✓` as the status line counts them, and its first fails with their positions. */
 export function checkAnswer(state: Pick<State, "analysis" | "updating" | "outdated" | "error">): string {
   const analysis = state.analysis;
+
   if (analysis === null) return "аналізу ще немає: він триває, або F5 запускає його";
   const count = totals(analysis);
   const stale = state.updating ? " · аналіз оновлюється, це попередній" : state.outdated || state.error !== null ? " · застарілий: F5 аналізує знову" : "";
   const fails = findingsOf(analysis).filter((result) => result.verdict === "fail");
   const more = fails.length > CHECK_FAILS ? [`… ще ${fails.length - CHECK_FAILS}: F6 — Current analysis`] : [];
+
   return [`✗ ${count.fail}  ◌ ${count.unverified}  ✓ ${count.ok}${stale}`, ...fails.slice(0, CHECK_FAILS).map((result) => `✗ ${findingRow(result)}`), ...more].join("\n");
 }
 
@@ -127,7 +132,9 @@ function cancelled(record: OperationRecord): boolean {
 /** What an operation the chat started ended with: its text, `скасовано`, or the reasons it failed. */
 function outcomeAnswer(record: OperationRecord, text: (result: OperationResult) => string | null): string {
   const result = record.result;
+
   if (cancelled(record) || result === null) return CANCELLED;
+
   return text(result) ?? `помилка: ${failure(result)}`;
 }
 
@@ -139,6 +146,7 @@ function proposalWritten(path: string): string {
 /** Why an operation failed, as its messages say. */
 function failure(result: OperationResult): string {
   const errors = result.messages.filter((message) => message.level === "error").map((message) => message.text);
+
   return errors.length > 0 ? errors.join("; ") : `${result.status}${result.exitCode === null ? "" : `, code ${result.exitCode}`}`;
 }
 
@@ -199,6 +207,7 @@ export class ClipChat {
   /** The person sent `text` (already in the history): a command runs, anything else goes to the model. */
   said(text: string): void {
     this.sent = text;
+
     try {
       if (text.startsWith("/")) return this.command(text.slice(1));
       this.ask();
@@ -216,10 +225,12 @@ export class ClipChat {
   opened(): void {
     const questions = openQuestions(this.state);
     this.state.clip.newFails = [];
+
     if (questions.length === 0) return;
     const chat = this.state.clip.chat;
     const text = questionsAnswer(questions);
     const last = chat.messages.at(-1);
+
     if (last?.role === "clip" && last.text === text) return;
     // No message of the person's is answered: the clip's word starts no exchange and ends none.
     chat.messages.push({ role: "clip", text });
@@ -229,12 +240,16 @@ export class ClipChat {
   /** Esc while the model answers: the request is cancelled, nothing is written, and the history says `скасовано`. */
   cancel(): void {
     const asked = this.asked;
+
     if (asked === null) return;
+
     if (asked.record === null) {
       // The model is still being looked up: nothing was asked.
       this.stopWaiting();
+
       return this.answer(CANCELLED, { said: null });
     }
+
     // The operation's record ends as cancelled, and `replied` says so.
     if (this.state.activeOperation === asked.record) this.host.cancelOperation();
   }
@@ -250,6 +265,7 @@ export class ClipChat {
     const [, word = "", rest = ""] = /^(\S*)\s*([\s\S]*)$/.exec(line) ?? [];
     const name = word.toLowerCase();
     const command = COMMANDS.find((candidate) => candidate.name === name);
+
     if (command === undefined) return this.answer([`невідома команда /${name}; команди:`, ...commandRows()].join("\n"));
     command.run(this, rest.trim());
   }
@@ -257,6 +273,7 @@ export class ClipChat {
   /** `/explain <code|ID>`: the offline `explain` operation, its text as `keylang explain` prints it. */
   explain(arg: string): void {
     const subject = arg !== "" ? arg : this.host.idAtCursor();
+
     if (subject === null) return this.answer("/explain <код|ID>: довідка коду діагностики (K105) чи зведення ID; без аргументу — ID під курсором");
     this.operation("explain", { kind: "explain", root: this.state.root, subject }, (result) => (result.kind === "explain" && result.payload !== null ? result.payload.text.trimEnd() : null));
   }
@@ -265,6 +282,7 @@ export class ClipChat {
   feature(arg: string): void {
     const dir = this.state.analysis?.config.dir ?? "keylang";
     const slug = arg !== "" ? arg : this.state.current === null ? null : featureSlugOf(this.state.current, dir);
+
     if (slug === null) return this.answer(`/feature <slug>: стадія й прогалини файла ${specPath(dir, "features/<slug>.md")}; без аргументу — відкритий файл фічі`);
     this.operation("feature", { kind: "feature", root: this.state.root, slug }, (result) => (result.kind === "feature" && result.payload !== null ? featureAnswer(result.payload.report) : null));
   }
@@ -308,8 +326,11 @@ export class ClipChat {
    */
   private ask(): void {
     const analysis = this.state.analysis;
+
     if (analysis === null) return this.answer("аналіз ще триває: спитайте, коли він закінчиться");
+
     if (selectedAgent(analysis.config.agent) === null) return this.answer(noModelAnswer(null));
+
     if (this.state.activeOperation !== null) return this.answer(BUSY);
     const request = this.request();
     // The file the model reads is the basis of a proposal for it: fixed now, before the answer.
@@ -331,6 +352,7 @@ export class ClipChat {
     const buffer = this.host.buffer();
     const pack = this.host.contextPack();
     const feature = state.featureLine;
+
     return {
       kind: "assistant-reply",
       root: state.root,
@@ -345,6 +367,7 @@ export class ClipChat {
   /** The model's client is looked up off the key path (as `Ctrl+Space` does); then the operation starts, unless Esc came first. */
   private async start(asked: Asked, request: AssistantReplyRequest): Promise<void> {
     let missing: string | null;
+
     try {
       const { llmClient } = await import("../llm.ts");
       const setup = llmClient(asked.agent, { root: request.root });
@@ -352,16 +375,23 @@ export class ClipChat {
     } catch (error) {
       missing = errorText(error);
     }
+
     if (this.asked !== asked) return;
+
     if (missing !== null) {
       this.stopWaiting();
+
       return this.answer(noModelAnswer(missing), { said: asked.said });
     }
+
     const record = this.host.startOperation(CLIP_REPLY, request, (done) => this.replied(asked, done));
+
     if (record === null) {
       this.stopWaiting();
+
       return this.answer(BUSY, { said: asked.said });
     }
+
     asked.record = record.id;
   }
 
@@ -369,7 +399,9 @@ export class ClipChat {
   private replied(asked: Asked, record: OperationRecord): void {
     if (this.asked === asked) this.stopWaiting();
     const result = record.result;
+
     if (cancelled(record) || result === null) return this.answer(CANCELLED, { said: null });
+
     if (result.kind !== "assistant-reply" || result.payload === null) return this.answer(`помилка моделі: ${failure(result)}`, { said: asked.said });
     const { agent, reply, proposal, dropped } = result.payload;
     const proposed = proposal === null ? null : this.propose(proposal, asked.basis);
@@ -395,14 +427,20 @@ export class ClipChat {
   private propose({ path, text }: NonNullable<AssistantReplyPayload["proposal"]>, basis: Asked["basis"]): string {
     const state = this.state;
     const refused = (why: string): string => `пропозицію для ${path} не записано: ${why}`;
+
     if (state.config.kind === "missing-config") return refused("режим перегляду нічого не пише; keylang init створює keylang.json");
     const dir = this.host.proposalDir();
+
     if (!path.endsWith(".md")) return refused(`це не специфікація: код пише харнес, скрепка пропонує лише .md під ${dir === "" ? "коренем репозиторію" : `${dir}/`}`);
+
     try {
       const problem = proposalProblem(state.root, dir, path, (candidate) => this.host.generatedDoc(candidate));
+
       if (problem !== null) return refused(problem);
       const buffer = state.buffers.get(path);
+
       if (buffer !== undefined && isDirty(buffer)) return refused("файл має незбережені правки: збережіть (Ctrl+S) чи відкотіть їх і спитайте знову");
+
       if (this.host.proposalWaiting(path)) return refused("для нього вже чекає пропозиція: m — MERGE, потім спитайте знову");
       // Against the target the model read, else as it is now, and no proposal: a target saved or a proposal
       // appearing meanwhile is never overwritten (`changed on disk while the proposal was prepared`).
@@ -411,7 +449,9 @@ export class ClipChat {
     } catch (error) {
       return refused(errorText(error));
     }
+
     this.host.rescanProposals();
+
     return proposalWritten(path);
   }
 
@@ -430,6 +470,7 @@ export class ClipChat {
     chat.messages.push({ role: "clip", text });
     chat.scroll = 0;
     const { said, agent = null, proposal = null } = ending;
+
     if (said === null) return;
     // The proposal goes in as its path: the line that points at MERGE is the session's.
     const clip = proposal === null ? text : text.split("\n").filter((line) => line !== proposalWritten(proposal)).join("\n");

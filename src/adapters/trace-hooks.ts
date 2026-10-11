@@ -46,59 +46,76 @@ interface FilePlan {
 }
 
 const plans = new Map<string, FilePlan>();
+
 let port: MessagePort | null = null;
 
 export async function initialize(data: TraceHooksData): Promise<void> {
   port = data.port;
+
   try {
     const { snapshotId, symbols } = data.plan !== null ? readPlan(data.plan) : await flowPlan(data.root, data.flow ?? "");
     const byFile = new Map<string, PlannedSymbol[]>();
+
     for (const symbol of symbols) {
       const list = byFile.get(symbol.file) ?? [];
       list.push(symbol);
       byFile.set(symbol.file, list);
     }
+
     const instrumented: string[] = [];
     const unplanned: Record<string, string> = {};
     const files: { path: string; ids: string[] }[] = [];
+
     for (const [file, fns] of byFile) {
       let src: string;
+
       try {
         src = readFileSync(join(data.root, file), "utf8");
       } catch {
         for (const fn of fns) unplanned[fn.id] = `${file} cannot be read`;
         continue;
       }
+
       // A plan names the file its snapshot saw: a file changed since is left alone.
       const expected = fns[0]!.sha256;
+
       if (expected !== null && expected !== sha256(src)) {
         for (const fn of fns) unplanned[fn.id] = "its file changed since the plan";
         continue;
       }
+
       const bodies = await functionBodies(file, src);
       const edits: Edit[] = [];
       const ids: string[] = [];
+
       for (const fn of fns) {
         const body = bodies.get(`${fn.line}:${fn.col}`);
+
         if (!body) unplanned[fn.id] = `no function body at ${file}:${fn.line}:${fn.col}`;
         else if (body.generator) unplanned[fn.id] = "a generator";
+
         if (!body || body.generator) continue;
         edits.push(...wrap(fn.id, body));
         ids.push(fn.id);
       }
+
       const source = applyEdits(src, edits);
+
       // A wrapper that breaks the file would break the test: the file is then left as it is, and not instrumented.
       if (ids.length === 0) continue;
+
       if (!(await parsesCleanly(file, source))) {
         for (const id of ids) unplanned[id] = `the wrapped ${file} does not parse`;
         continue;
       }
+
       instrumented.push(...ids);
       // Node loads a module by its real path; a root reached through a link must match that URL.
       const path = realpathSync(join(data.root, file));
       plans.set(pathToFileURL(path).href, { sha256: sha256(src), source, ids });
       files.push({ path, ids });
     }
+
     data.port.postMessage({ kind: "plan", snapshotId, planned: instrumented.sort(), files, unplanned } satisfies TracePlanMessage);
   } catch (e) {
     data.port.postMessage({ kind: "plan", snapshotId: "", planned: [], files: [], unplanned: {}, error: e instanceof Error ? e.message : String(e) } satisfies TracePlanMessage);
@@ -120,32 +137,42 @@ async function flowPlan(root: string, flow: string): Promise<{ snapshotId: strin
   const { index } = await generateMap(config);
   const wanted = flowSymbols(root, config.dir, flow) ?? new Set<string>();
   const symbols: PlannedSymbol[] = [];
+
   for (const id of wanted) {
     const node = index.nodes[id];
+
     if (node?.kind !== "fn" || !node.file || node.line === null || node.col === null) continue;
     symbols.push({ id, file: node.file, line: node.line, col: node.col, sha256: null });
   }
+
   return { snapshotId: index.snapshotId, symbols };
 }
 
 /** A `keylang trace-plan` file (schema 1): its snapshot, flow and symbols; anything else is an error naming the file. */
 export function readPlan(path: string): { snapshotId: string; flow: string; symbols: PlannedSymbol[] } {
   let plan: unknown;
+
   try {
     plan = JSON.parse(readFileSync(path, "utf8"));
   } catch (e) {
     throw new Error(`${path}: ${e instanceof Error ? e.message : String(e)}`);
   }
+
   const value = (typeof plan === "object" && plan !== null ? plan : {}) as { schemaVersion?: unknown; snapshotId?: unknown; flow?: unknown; symbols?: unknown };
+
   if (value.schemaVersion !== 1 || typeof value.snapshotId !== "string" || typeof value.flow !== "string" || !Array.isArray(value.symbols)) {
     throw new Error(`${path}: not a plan of schema 1 from \`keylang trace-plan\``);
   }
+
   const symbols: PlannedSymbol[] = [];
+
   for (const item of value.symbols as unknown[]) {
     const s = (typeof item === "object" && item !== null ? item : {}) as Record<string, unknown>;
+
     if (typeof s.id !== "string" || typeof s.file !== "string" || typeof s.line !== "number" || typeof s.col !== "number" || typeof s.sha256 !== "string") continue;
     symbols.push({ id: s.id, file: s.file, line: s.line, col: s.col, sha256: s.sha256 });
   }
+
   return { snapshotId: value.snapshotId, flow: value.flow, symbols };
 }
 
@@ -159,12 +186,15 @@ interface Edit {
 function wrap(id: string, body: FunctionBody): Edit[] {
   const arrow = body.async ? "async () =>" : "() =>";
   const call = `globalThis.__keylangTrace.run(${JSON.stringify(id)}, ${body.async}, ${arrow}`;
+
   if (body.expression) return [
     { at: body.start, text: `${call} (` },
     { at: body.end, text: "))" },
   ];
+
   // `{}`: both halves go to one offset, so they are one edit.
   if (body.start === body.end) return [{ at: body.start, text: ` return ${call} {}); ` }];
+
   return [
     { at: body.start, text: ` return ${call} {` },
     { at: body.end, text: "}); " },
@@ -175,7 +205,9 @@ function wrap(id: string, body: FunctionBody): Edit[] {
 function applyEdits(src: string, edits: readonly Edit[]): string {
   const order = edits.map((edit, i) => ({ ...edit, i })).sort((a, b) => b.at - a.at || b.i - a.i);
   let out = src;
+
   for (const edit of order) out = out.slice(0, edit.at) + edit.text + out.slice(edit.at);
+
   return out;
 }
 
@@ -185,18 +217,24 @@ export async function load(url: string, context: unknown, nextLoad: (url: string
   const result = await nextLoad(url, context);
   // `?query` and `#hash` load the same file as another module instance: it gets the wrappers too.
   const plan = plans.get(url.replace(/[?#].*$/s, ""));
+
   if (!plan) return result;
   const commonjs = result.format === "commonjs" || result.format === "commonjs-typescript";
   // Node leaves a CommonJS file to its CommonJS loader (no source here), which would read it past the wrappers.
   const original = result.source ?? (commonjs ? readFileSync(fileURLToPath(url)) : null);
   const source = original === null ? null : typeof original === "string" ? original : Buffer.from(original as Uint8Array).toString("utf8");
+
   // The plan was made for the snapshot's copy of the file; a different file is left alone.
   if (source === null || sha256(source) !== plan.sha256) {
     port?.postMessage({ kind: "skipped", ids: plan.ids } satisfies TracePlanMessage);
+
     return result;
   }
+
   port?.postMessage({ kind: "loaded", ids: plan.ids, commonjs } satisfies TracePlanMessage);
+
   if (!commonjs) return { ...result, source: plan.source };
+
   // Node compiles a CommonJS source given here as it is and routes its `require` calls through these hooks,
   // unless the CommonJS loader cached a copy of the file first. The appended line (after the last one, so
   // no line moves) names the module object this source made, so the adapter can tell its copy from that one.

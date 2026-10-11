@@ -21,11 +21,14 @@ const AGENT = { agent: "anthropic:claude-opus-5" };
 /** The window's frame on screen, or null while it is folded. */
 function windowAt(lines: readonly string[]): { x: number; y: number; width: number; height: number } | null {
   const y = lines.findIndex((line) => line.includes("╭─ ◕◕ скрепка "));
+
   if (y === -1) return null;
   const x = lines[y]!.indexOf("╭─ ◕◕ скрепка ");
   const width = lines[y]!.indexOf("╮", x) - x + 1;
   let bottom = y + 1;
+
   while (bottom < lines.length && lines[bottom]![x] !== "╰") bottom++;
+
   return { x, y, width, height: bottom - y + 1 };
 }
 
@@ -51,6 +54,7 @@ const readTui = (home: string): unknown => JSON.parse(readFileSync(tuiJson(home)
 /** Today's log of a repository: its path, and its text or null. */
 function todaysLog(root: string): { path: string; text: string | null } {
   const path = join(root, chatLogPath(dayOf(new Date())));
+
   return { path, text: existsSync(path) ? readFileSync(path, "utf8") : null };
 }
 
@@ -59,6 +63,7 @@ async function defaultCorner(t: { after: (f: () => void) => void }, root: string
   const plain = session(root);
   t.after(() => plain.app.close());
   await plain.app.idle();
+
   return locate(plain.lines(), "╭─◕◕╮");
 }
 
@@ -93,6 +98,7 @@ test("tui-clip-memory: a drag of the window and of the clip, Alt+arrows and the 
   assert.deepEqual(readTui(home), { editor: { theme: "dark" }, assistant: { voice: "quiet", clip: { x: 8, y: 2 }, window: { x: window.x, y: window.y + 1, cols: 41, rows: 10 } } });
   // The palette puts both back: the file keeps no place, and its other fields.
   second.send(KEY.ctrlP);
+
   for (const ch of "скрепка") second.send(ch);
   second.send(KEY.enter);
   assert.deepEqual(readTui(home), { editor: { theme: "dark" }, assistant: { voice: "quiet" } });
@@ -285,10 +291,13 @@ test("tui-clip-memory: Browse and a cancelled request write no log: .keylang/cha
 
 test("tui-clip-memory: check --changed and map do not see .keylang/chat/: the snapshot, the changed files and the map stay as they were", async (t) => {
   const root = committedCheckout(t, { ".gitignore": ".keylang/\n" });
+
   const cli = (args: string[]): { status: number | null; stdout: string } => {
     const run = spawnSync(process.execPath, [BIN, ...args], { cwd: root, encoding: "utf8" });
+
     return { status: run.status, stdout: run.stdout };
   };
+
   assert.equal(cli(["map"]).status, 0);
   gitRun(root, ["add", "."]);
   gitRun(root, ["commit", "-q", "-m", "map"]);

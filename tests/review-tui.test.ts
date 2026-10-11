@@ -27,6 +27,7 @@ import { checkoutRepo, CHECKOUT_FILES, CHECKOUT_FLOW, click, KEY, locate, mouseM
 import { VirtualTerminal } from "./vt.ts";
 
 const REPO = fileURLToPath(new URL("..", import.meta.url));
+
 const FLOW_PATH = "keylang/flows/checkout.md";
 
 interface Session {
@@ -44,12 +45,15 @@ function session(root: string, options: { cols?: number; rows?: number; surface?
   const vt = new VirtualTerminal(cols, rows);
   const app = new App({ root, cols, rows, ...(options.operationWorker ? { operationWorker: options.operationWorker } : {}) });
   app.attach({ write: (ansi) => vt.feed(ansi), ...options.surface }, cols, rows);
+
   return { app, vt, send: (keys) => app.input(keys), lines: () => vt.lines(), text: () => vt.text() };
 }
 
 const tick = (): Promise<void> => new Promise((done) => setImmediate(done));
+
 /** 200 moves over a long spec in reading mode: under a second with the rows cached, two minutes when every frame rendered them all. */
 const READ_BUDGET_MS = 20_000;
+
 const sleep = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms));
 
 /** A lone ESC is the Escape key once the decoder's pause has passed. */
@@ -61,6 +65,7 @@ async function escape(s: Session): Promise<void> {
 function lineOf(lines: readonly string[], text: string): string {
   const found = lines.find((line) => line.includes(text));
   assert.ok(found, `no line with ${text}:\n${lines.join("\n")}`);
+
   return found;
 }
 
@@ -78,6 +83,7 @@ function fakeTerminal(env: NodeJS.ProcessEnv = {}): { host: TerminalHost; out: s
   const stdin = Object.assign(new EventEmitter(), { isTTY: true, setRawMode: () => {}, setEncoding: () => {}, pause: () => {}, resume: () => {} });
   const stdout = Object.assign(new EventEmitter(), { columns: 100, rows: 30, write: (text: string) => void out.push(text) });
   let onSignal: ((signal: TerminalSignal) => void) | null = null;
+
   const host: TerminalHost = {
     stdin,
     stdout,
@@ -85,15 +91,19 @@ function fakeTerminal(env: NodeJS.ProcessEnv = {}): { host: TerminalHost; out: s
     env,
     listen: (listener) => {
       onSignal = listener;
+
       return () => (onSignal = null);
     },
     suspend: () => void suspended++,
   };
+
   const screen = (): string => {
     const vt = new VirtualTerminal(100, 30);
     vt.feed(out.join(""));
+
     return vt.text();
   };
+
   return { host, out, screen, suspended: () => suspended, type: (keys) => void stdin.emit("data", keys), signal: (signal) => onSignal?.(signal) };
 }
 
@@ -116,6 +126,7 @@ test("review-tui: Browse without keylang.json counts no completion and no merge:
   await s.app.idle();
   assert.ok(s.app.state.analysis?.snapshot, "Browse analyses with the guessed configuration");
   s.send("i");
+
   for (let i = 0; i < 4; i++) s.send(KEY.down);
   s.send(KEY.end);
   s.send(KEY.enter);
@@ -155,6 +166,7 @@ test("review-tui: a stats update that loses a race reads again: neither writer's
       raced = true;
       updateStats(root, (other) => void (other.suggestions.completion = { proposed: 1, accepted: 0, rejected: 0, ms: 0 }));
     }
+
     stats.drafts.agree!.accepted++;
   });
   const stats = readStats(root);
@@ -189,6 +201,7 @@ test("review-tui: a helper that fails is a message in the session, never an unha
 
 test("review-tui: keylang web logs a rejection no session handled and goes on serving", (t) => {
   const root = checkoutRepo(t);
+
   const script = [
     `import { serveWeb } from ${JSON.stringify(pathToFileURL(join(REPO, "src/tui/web.ts")).href)};`,
     `const server = await serveWeb({ root: ${JSON.stringify(root)}, port: 0 });`,
@@ -198,6 +211,7 @@ test("review-tui: keylang web logs a rejection no session handled and goes on se
     `console.log("served", response.status);`,
     "await server.close();",
   ].join("\n");
+
   const result = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8", timeout: 60000 });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^served 200$/m);
@@ -270,6 +284,7 @@ test("review-tui: a decomposed letter arriving alone in the view is one key, not
 test("review-tui: a keycap takes two cells; invisible format characters and Hangul vowels and finals take none and are not drawn", () => {
   assert.equal(graphemeWidth("1\ufe0f\u20e3"), 2);
   assert.equal(graphemeWidth("#\u20e3"), 2);
+
   for (const ch of ["\u200b", "\u00ad", "\u2060", "\u200d", "\ufe0f", "\u1161", "\u11a8", "\ud7b0"]) assert.equal(graphemeWidth(ch), 0, `U+${ch.codePointAt(0)!.toString(16)}`);
   assert.equal(stringWidth("\u1100\u1161\u11a8"), 2, "a syllable written in jamo is one wide cluster");
   assert.equal(stringWidth("a\u200bb\u00adc"), 3);
@@ -327,6 +342,7 @@ test("review-tui: a short line after the end of a long one scrolls back and is d
   const s = session(checkoutRepo(t, { [FLOW_PATH]: `# flow checkout\n\n- trigger presentation.terminal.checkout\n${long}\n- step domain.order.create\n` }));
   t.after(() => s.app.close());
   await s.app.idle();
+
   for (let i = 0; i < 3; i++) s.send(KEY.down);
   s.send(KEY.end);
   assert.ok(s.app.state.left > 0, "the long line scrolls to its end");
@@ -389,11 +405,13 @@ test("review-tui: the wheel stops at the last row in MERGE and over the navigati
   assert.equal(s.app.state.mode, "merge");
   const merge = s.app.state.merge!;
   const rows = mergeRows(merge.base, merge.hunks).length;
+
   for (let i = 0; i < 30; i++) s.send("\x1b[<65;10;10M");
   assert.equal(merge.top, rows - 1);
   assert.ok(s.lines()[2]!.trim() !== "", "the body still shows a row");
   await escape(s);
   const nav = layout(s.app.state).nav!;
+
   for (let i = 0; i < 40; i++) s.send(`\x1b[<65;${nav.x + 5};10M`);
   assert.equal(s.app.state.navTop, navEntries(s.app.state).length - 1);
 });
@@ -442,14 +460,17 @@ test("review-tui: a jump to code in a GUI $EDITOR says where it opened, or that 
   const code = join(tools, "code");
   writeFileSync(code, "#!/bin/sh\nexit 0\n");
   chmodSync(code, 0o755);
+
   const cases: [string, RegExp][] = [
     [code, /src\/application\/purchase\.ts:3 opened in code/],
     [join(tools, "missing", "code"), /code: could not start \(spawn \S*missing\/code ENOENT/],
   ];
+
   for (const [editor, note] of cases) {
     const term = fakeTerminal({ EDITOR: editor });
     const running = runTerminal(checkoutRepo(t), term.host);
     await waitUntil(() => /✗ 0/.test(term.out.join("")), "the first analysis");
+
     for (let i = 0; i < 5; i++) term.type(KEY.down);
     term.type(KEY.enter);
     await waitUntil(() => note.test(term.screen()), `the note about ${editor}`);
@@ -464,15 +485,19 @@ test("review-tui: a paste where no text goes says where it can go, mode by mode"
   const s = session(root);
   t.after(() => s.app.close());
   await s.app.idle();
+
   const paste = (): string => {
     s.send("\x1b[200~src/a.ts\x1b[201~");
+
     return s.app.state.message ?? "";
   };
+
   assert.match(paste(), /^paste: press i to edit first/);
   s.send("m");
   assert.equal(s.app.state.mode, "merge");
   assert.match(paste(), /^paste: MERGE takes no text: finish it \(w writes, Esc cancels\), then i edits/);
   await escape(s);
+
   for (let i = 0; i < 5; i++) s.send(KEY.down);
   s.send(KEY.enter);
   assert.equal(s.app.state.mode, "code");
@@ -491,6 +516,7 @@ test("review-tui: the expanded row names no placeholder for staleness it does no
   const s = session(checkoutRepo(t));
   t.after(() => s.app.close());
   await s.app.idle();
+
   for (let i = 0; i < 5; i++) s.send(KEY.down);
   const detail = s.lines()[s.lines().findIndex((line) => line.includes("- step application.purchase.buy")) + 1]!;
   assert.match(detail, /planned — {2}· snapshot [0-9a-f]{8} /);
@@ -560,6 +586,7 @@ test("review-tui: the TUI draws the hover's parts, so a signature with ** or bac
   const s = session(checkoutRepo(t, { "src/application/purchase.ts": purchase }));
   t.after(() => s.app.close());
   await s.app.idle();
+
   for (let i = 0; i < 5; i++) s.send(KEY.down);
   s.send("K");
   const rows = s.app.state.hover!.lines.map((row) => row.text);
@@ -575,10 +602,13 @@ test("review-tui: explain and hover take a node's kind, place and plan from the 
   const analysis = await analyze({ root });
   const ws = workspace(root, analysis, new Map());
   const lines = ws.text(FLOW_PATH)!.split("\n");
+
   const placeOf = (id: string): string | null => {
     const line = lines.findIndex((text) => text.includes(`planned fn ${id}`));
+
     return hoverContent(ws, FLOW_PATH, { line, character: lines[line]!.indexOf(id) + 1 })?.place ?? null;
   };
+
   const buy = nodeFacts(analysis, "application.purchase.buy")!;
   assert.deepEqual({ source: buy.source, kind: buy.kind, implementsPlan: buy.implementsPlan }, { source: "code", kind: "fn", implementsPlan: true });
   const bought = summarizeNode(analysis, "application.purchase.buy");
@@ -602,17 +632,21 @@ test("review-tui: the pointer moving along one ID reads its code once; an edit m
   const fs = createRequire(import.meta.url)("node:fs") as { readFileSync: typeof readFileSync };
   const read = fs.readFileSync;
   const reads: string[] = [];
+
   const restore = (): void => {
     fs.readFileSync = read;
     syncBuiltinESMExports();
   };
+
   t.after(restore);
   fs.readFileSync = ((...args: Parameters<typeof readFileSync>) => {
     reads.push(String(args[0]));
+
     return read(...args);
   }) as typeof readFileSync;
   syncBuiltinESMExports();
   const purchase = (): number => reads.filter((path) => path.endsWith(join("src", "application", "purchase.ts"))).length;
+
   for (let i = 0; i < 20; i++) s.send(mouseMove(at.x + i, at.y));
   assert.match(s.text(), /export function buy\(\): void \{/);
   assert.equal(purchase(), 1, "one read for twenty moves over the same ID");
@@ -645,6 +679,7 @@ test("review-tui: the hover of a node whose file is a directory (an outside modu
   assert.equal(s.app.state.current, "keylang/map/outside.md");
   const line = s.app.state.buffers.get("keylang/map/outside.md")!.text.split("\n").findIndex((text) => text.trim() === "- module tools");
   assert.ok(line > 0, s.app.state.buffers.get("keylang/map/outside.md")!.text);
+
   for (let i = 0; i < line; i++) s.send(KEY.down);
   s.send("K");
   assert.equal(s.app.state.message, null, "no error from reading a directory as code");
@@ -660,6 +695,7 @@ test("review-tui: reading mode renders a long spec once per text and width, not 
   await s.app.idle();
   s.send("v");
   const started = performance.now();
+
   for (let i = 0; i < 200; i++) s.send(KEY.down);
   const elapsed = performance.now() - started;
   assert.equal(s.app.state.cursor.line, 200);
@@ -680,9 +716,11 @@ function cli(root: string, args: string[]): { status: number | null; stdout: str
 /** The palette's init form: the selection (empty is auto), then Initialize or Check. */
 function initForm(s: Session, mode: "write" | "check"): void {
   s.send(KEY.ctrlP);
+
   for (const ch of "init set up keylang") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.prompt?.kind, "init");
+
   if (mode === "check") s.send(KEY.down);
   s.send(KEY.enter);
 }
@@ -692,6 +730,7 @@ function newestReport(s: Session): string {
   s.send(KEY.f6);
   const text = s.text();
   s.send(KEY.f6);
+
   return text;
 }
 
@@ -700,6 +739,7 @@ test("review-tui: init names its .gitignore stage — a check whose only gap is 
   const outside = mkdtempSync(join(tmpdir(), "keylang-init-ignore-out-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   t.after(() => rmSync(outside, { recursive: true, force: true }));
+
   for (const [path, text] of Object.entries(CHECKOUT_FILES)) put(root, path, text);
   const s = session(root, { cols: 150, rows: 34 });
   t.after(() => s.app.close());
@@ -759,6 +799,7 @@ test("review-tui: the check report counts the holes as the CLI's summary does; t
   t.after(() => s.app.close());
   await s.app.idle();
   s.send(KEY.ctrlP);
+
   for (const ch of "keylang check") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.prompt?.kind, "full-check");
@@ -771,14 +812,17 @@ test("review-tui: the check report counts the holes as the CLI's summary does; t
 
 test("review-tui: the check report counts no import of a file `assume` names among the unresolved constructs", async (t) => {
   const layers = { domain: ["src/domain/**"], application: ["src/application/**"], infrastructure: ["src/infrastructure/**"], presentation: ["src/presentation/**"] };
+
   const root = checkoutRepo(t, {
     "keylang.json": `${JSON.stringify({ languages: ["typescript"], layers, assume: ["src/config.ts"] })}\n`,
     "src/infrastructure/store.ts": 'import { settings } from "../config";\nexport function save(task: () => void): void {\n  settings();\n  task();\n}\n',
   });
+
   const s = session(root, { cols: 120, rows: 30 });
   t.after(() => s.app.close());
   await s.app.idle();
   s.send(KEY.ctrlP);
+
   for (const ch of "keylang check") s.send(ch);
   s.send(KEY.enter);
   s.send(KEY.enter);
@@ -812,5 +856,6 @@ test("review-tui: one word wrapper for the TUI: a word that fits to the last cel
     rows[1]!.map((run) => run.style),
     ["blank", "text"],
   );
+
   for (const row of rows) assert.ok(stringWidth(row.map((run) => run.text).join("").trimEnd()) <= 12);
 });

@@ -42,12 +42,14 @@
     "test": "node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=./src/adapters/node-test.ts --test-reporter-destination=stdout tests/*.test.ts",
     "test:web": "node --test tests/web-e2e/*.test.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p web/tsconfig.json && tsc --noEmit -p web/worker/tsconfig.json",
+    "lint": "oxlint",
     "web:build": "node scripts/build-web.mjs",
     "keylang": "node bin/keylang.js"
   },
   "devDependencies": {
     "@maxgraph/core": "^0.25.0",
     "@noble/hashes": "^2.4.0",
+    "@oxlint/plugins": "1.87.0",
     "@types/node": "^24.0.0",
     "@types/path-browserify": "^1.0.3",
     "@types/ws": "^8.18.1",
@@ -61,6 +63,7 @@
     "fast-check": "^4.10.2",
     "isomorphic-git": "1.42.2",
     "mdast-util-from-markdown": "^2.0.3",
+    "oxlint": "1.87.0",
     "path-browserify": "^1.0.1",
     "playwright-core": "^1.64.0",
     "typescript": "^5.9.0",

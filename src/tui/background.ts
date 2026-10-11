@@ -31,8 +31,10 @@ export class SnapshotWorker {
   /** `generateMap` for `analyze({ generate })`; the fact cache is only read. */
   readonly generate = (config: Config, options: { overlay: ReadonlyMap<string, string> }): Promise<MapResult> => {
     const worker = this.start();
+
     if (!worker) return generateMap(config, { overlay: options.overlay });
     const id = ++this.next;
+
     return new Promise<MapResult>((resolve, reject) => {
       this.waiting.set(id, { resolve, reject });
       worker.ref();
@@ -50,14 +52,18 @@ export class SnapshotWorker {
     // Development runs the TypeScript sources; the package runs dist/*.js. Both
     // names are literals, so the map has the edge to the worker module.
     const url = new URL(import.meta.url.endsWith(".ts") ? "./analysis-worker.ts" : "./analysis-worker.js", import.meta.url);
+
     try {
       const worker = new Worker(url);
       worker.unref();
       worker.on("message", (reply: Reply) => {
         const pending = this.waiting.get(reply.id);
+
         if (!pending) return;
         this.waiting.delete(reply.id);
+
         if (this.waiting.size === 0) worker.unref();
+
         if (reply.result) pending.resolve(reply.result);
         else pending.reject(new Error(reply.error ?? "snapshot worker failed"));
       });
@@ -66,9 +72,11 @@ export class SnapshotWorker {
         if (this.worker === worker && code !== 0) this.fail(new Error(`snapshot worker exited with code ${code}`));
       });
       this.worker = worker;
+
       return worker;
     } catch {
       this.failed = true;
+
       return null;
     }
   }
@@ -76,6 +84,7 @@ export class SnapshotWorker {
   private fail(error: Error): void {
     this.failed = true;
     this.worker = null;
+
     for (const pending of this.waiting.values()) pending.reject(error);
     this.waiting.clear();
   }
@@ -126,14 +135,18 @@ export class OperationWorker {
   /** An `OperationRunner`: the request goes to the worker as cloneable data; progress and the signal stay here. */
   readonly run = (request: OperationRequest, context: OperationContext = {}): Promise<OperationResult> => {
     if (this.closed) return Promise.resolve(resultWithout(request.kind, "failed", 2, "the session is closed"));
+
     if (context.signal?.aborted) return Promise.resolve(resultWithout(request.kind, "cancelled", null));
     let worker: Worker;
+
     try {
       worker = this.start();
     } catch (error) {
       return Promise.resolve(resultWithout(request.kind, "failed", 2, `the operation worker did not start: ${messageOf(error)}`));
     }
+
     const operationId = ++this.next;
+
     return new Promise<OperationResult>((resolve) => {
       const signal = context.signal;
       const onAbort = (): void => this.cancel(operationId);
@@ -148,6 +161,7 @@ export class OperationWorker {
         release: () => signal?.removeEventListener("abort", onAbort),
       });
       worker.ref();
+
       try {
         worker.postMessage({ type: "run", operationId, request } satisfies OperationCall);
       } catch (error) {
@@ -166,12 +180,15 @@ export class OperationWorker {
   featureBase(root: string, path: string): Promise<FeatureBase | null> {
     if (this.closed) return Promise.resolve(null);
     let worker: Worker;
+
     try {
       worker = this.start();
     } catch (error) {
       return Promise.resolve({ ...HEAD_BASE, state: "unavailable", reason: `the operation worker did not start: ${messageOf(error)}` });
     }
+
     const baseId = ++this.nextBase;
+
     return new Promise((resolve) => {
       this.bases.set(baseId, resolve);
       worker.ref();
@@ -188,10 +205,13 @@ export class OperationWorker {
    */
   close(): void {
     this.closed = true;
+
     // A closed session shows no status line: a base read in flight is dropped.
     for (const baseId of [...this.bases.keys()]) this.settleBase(baseId, null);
     const committing = [...this.pending].filter(([, pending]) => pending.committing);
+
     if (committing.length === 0) return this.stop((kind) => resultWithout(kind, "cancelled", null));
+
     for (const [operationId, pending] of [...this.pending]) {
       if (pending.committing) this.post({ type: "cancel", operationId });
       else this.settle(operationId, resultWithout(pending.kind, "cancelled", null));
@@ -206,11 +226,15 @@ export class OperationWorker {
    */
   private cancel(operationId: number): void {
     const pending = this.pending.get(operationId);
+
     if (!pending) return;
+
     if (pending.committing) {
       this.post({ type: "cancel", operationId });
+
       return;
     }
+
     this.settle(operationId, resultWithout(pending.kind, "cancelled", null));
     this.stop((kind) => resultWithout(kind, "failed", 2, "the operation worker was stopped to cancel another operation"));
   }
@@ -222,20 +246,26 @@ export class OperationWorker {
    */
   private commit(worker: Worker, operationId: number, plan: CommitPlan | undefined): void {
     const pending = this.pending.get(operationId);
+
     if (!pending) return;
+
     const answer = (gate: CommitGate): void => {
       // Settled meanwhile (cancelled before the commit, worker replaced): that worker is gone.
       if (this.pending.get(operationId) !== pending || this.worker !== worker) return;
+
       if (pending.signal?.aborted) return this.post({ type: "cancel", operationId });
       pending.committing = true;
       this.post({ type: "commit", operationId, ...(gate && gate.refused.length > 0 ? { refused: gate.refused } : {}) });
     };
+
     let told: Promise<CommitGate> | CommitGate;
+
     try {
       told = pending.beforeCommit?.(plan);
     } catch {
       return this.post({ type: "cancel", operationId });
     }
+
     if (told instanceof Promise) told.then(answer, () => this.post({ type: "cancel", operationId }));
     else answer(told);
   }
@@ -255,8 +285,10 @@ export class OperationWorker {
     worker.on("message", (reply: OperationReply) => {
       if (reply.type === "base") return this.settleBase(reply.baseId, this.worker === worker ? reply.base : null);
       const pending = this.pending.get(reply.operationId);
+
       // A reply for a settled request (cancelled, or its worker replaced) changes nothing.
       if (!pending || this.worker !== worker) return;
+
       if (reply.type === "progress") pending.onProgress?.({ text: reply.text, ...(reply.step ? { step: reply.step } : {}) });
       else if (reply.type === "commit") this.commit(worker, reply.operationId, reply.plan);
       else if (reply.type === "result") this.settle(reply.operationId, reply.result);
@@ -269,6 +301,7 @@ export class OperationWorker {
       if (this.worker === worker) this.stop((kind) => resultWithout(kind, "failed", 2, `the operation worker exited with code ${code}`));
     });
     this.worker = worker;
+
     return worker;
   }
 
@@ -276,31 +309,40 @@ export class OperationWorker {
   private stop(outcome: (kind: OperationRequest["kind"]) => OperationResult): void {
     const worker = this.worker;
     this.worker = null;
+
     if (worker) void worker.terminate();
+
     for (const [operationId, pending] of [...this.pending]) this.settle(operationId, outcome(pending.kind));
+
     for (const baseId of [...this.bases.keys()]) this.settleBase(baseId, null);
   }
 
   private settleBase(baseId: number, base: FeatureBase | null): void {
     const resolve = this.bases.get(baseId);
+
     if (!resolve) return;
     this.bases.delete(baseId);
+
     if (this.pending.size === 0 && this.bases.size === 0) this.worker?.unref();
     resolve(base);
   }
 
   private settle(operationId: number, result: OperationResult): void {
     const pending = this.pending.get(operationId);
+
     if (!pending) return;
     this.pending.delete(operationId);
     pending.release();
+
     if (this.pending.size === 0 && this.bases.size === 0) this.worker?.unref();
+
     // Closed while a commit finished: the worker ends with its last result.
     if (this.closed && this.pending.size === 0 && this.worker) {
       const worker = this.worker;
       this.worker = null;
       void worker.terminate();
     }
+
     pending.resolve(result);
   }
 }

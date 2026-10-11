@@ -30,10 +30,12 @@ import { explorerRepo } from "./explorer-fixture.ts";
 import { VirtualTerminal } from "./vt.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
 
 async function waitFor(check: () => boolean, what: string, timeout = 10000): Promise<void> {
   const start = Date.now();
+
   while (!check()) {
     if (Date.now() - start > timeout) throw new Error(`timed out waiting for ${what}`);
     await new Promise((done) => setTimeout(done, 20));
@@ -52,6 +54,7 @@ async function startWeb(t: { after: (f: () => void | Promise<void>) => void }, c
   let out = "";
   child.stdout.on("data", (chunk: Buffer) => (out += chunk.toString()));
   await waitFor(() => /keylang web: (\S+)/.test(out), "the URL");
+
   return { url: new URL(/keylang web: (\S+)/.exec(out)![1]!), child };
 }
 
@@ -76,20 +79,25 @@ class Client {
     this.socket = new WebSocket(`ws://${url.host}/ws`, ["keylang", `keylang.t.${tokenOf(url)}`]);
     this.socket.onmessage = (event) => {
       const text = String(event.data);
+
       // A NUL-prefixed frame is a control message for the page (the microphone), not ANSI.
       if (text.charCodeAt(0) === 0) {
         const message = JSON.parse(text.slice(1)) as { type: string; on?: boolean };
         this.controls.push(message);
         this.onControl?.(message);
+
         return;
       }
+
       this.raw.push(text);
       this.vt.feed(text);
     };
+
     this.socket.onclose = (event) => {
       this.closed = true;
       this.closeCode = event.code;
     };
+
     this.opened = new Promise((done) => {
       this.socket.onopen = () => {
         this.send({ type: "hello", session, cols, rows });
@@ -118,6 +126,7 @@ function status(url: URL, path: string, headers: Record<string, string> = {}): P
       res.on("data", (chunk: Buffer) => (body += chunk.toString()));
       res.on("end", () => resolve({ status: res.statusCode ?? 0, body, type: String(res.headers["content-type"] ?? ""), headers: res.headers }));
     });
+
     req.on("upgrade", (res, socket) => {
       socket.destroy();
       resolve({ status: res.statusCode ?? 0, body: "", type: "", headers: res.headers });
@@ -147,12 +156,14 @@ test("web: the socket needs the token, which never leaves the fragment; xterm.js
   assert.match(page.body, /allowNonHttpProtocols: true/);
   // An icon of its own: a browser asks /favicon.ico otherwise, a 404 in its console.
   assert.match(page.body, /<link rel="icon" href="data:,">/);
+
   for (const [asset, type] of [["xterm.js", "text/javascript"], ["xterm.css", "text/css"], ["addon-fit.js", "text/javascript"]] as const) {
     const res = await status(url, `/assets/${asset}`);
     assert.equal(res.status, 200, asset);
     assert.equal(res.type, type);
     assert.ok(res.body.length > 1000, asset);
   }
+
   assert.equal((await status(url, "/assets/../package.json")).status, 404);
   // A page of another origin cannot open the socket, and neither can a request without the token.
   const upgrade = { Connection: "Upgrade", Upgrade: "websocket", "Sec-WebSocket-Version": "13", "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==" };
@@ -172,10 +183,12 @@ test("web: check.static shape is the same unverified step the terminal shows", a
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const layers = { domain: ["src/domain/**"], application: ["src/application/**"], presentation: ["src/presentation/**"] };
   writeFileSync(join(dir, "keylang.json"), `${JSON.stringify({ languages: ["typescript"], layers, check: { static: "shape" } }, null, 2)}\n`);
+
   for (const [path, text] of Object.entries({ ...HOOKS, "keylang/flows/hooks.md": HOOK_FLOW, "keylang/rules.md": "# rules\n" })) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
     writeFileSync(join(dir, path), text);
   }
+
   const cols = 240;
   const rows = 24;
   const terminal = new VirtualTerminal(cols, rows);
@@ -183,6 +196,7 @@ test("web: check.static shape is the same unverified step the terminal shows", a
   t.after(() => app.close());
   app.attach({ write: (ansi) => terminal.feed(ansi) }, cols, rows);
   await app.idle();
+
   for (let i = 0; i < 8 && !terminal.text().includes("keylang.json check.static"); i++) app.input(KEY.down);
   assert.match(terminal.text(), /not followed in static mode shape, set by keylang\.json check\.static/);
 
@@ -191,11 +205,13 @@ test("web: check.static shape is the same unverified step the terminal shows", a
   t.after(() => client.close());
   await client.opened;
   await waitFor(() => client.vt.text().includes("domain.build.build") && !/updating|analyzing/.test(client.vt.text()), "the first analysis");
+
   for (let i = 0; i < 8 && !client.vt.text().includes("keylang.json check.static"); i++) {
     const before = client.raw.length;
     client.input(KEY.down);
     await waitFor(() => client.raw.length > before, "the cursor moved");
   }
+
   assert.match(client.vt.text(), /not followed in static mode shape, set by keylang\.json check\.static/);
 });
 
@@ -213,6 +229,7 @@ test("web: flow → hover a step → go to the code gives the terminal's screen"
   app.input(mouseMove(at.x + 2, at.y));
   const hoverTerminal = terminal.text();
   assert.match(hoverTerminal, /fn application\.purchase\.buy/);
+
   for (let i = 0; i < 5; i++) app.input(KEY.down);
   app.input(KEY.enter);
   const codeTerminal = terminal.lines();
@@ -227,6 +244,7 @@ test("web: flow → hover a step → go to the code gives the terminal's screen"
   client.input(mouseMove(at.x + 2, at.y));
   await waitFor(() => client.vt.text().includes("fn application.purchase.buy"), "the hover");
   assert.equal(client.vt.text(), hoverTerminal);
+
   for (let i = 0; i < 5; i++) client.input(KEY.down);
   client.input(KEY.enter);
   await waitFor(() => client.vt.text().includes("▶"), "the code viewer");
@@ -314,6 +332,7 @@ test("web: a reset without the token, oversized sizes and bad frames do not take
       socket.resetAndDestroy();
       done();
     });
+
     socket.on("error", () => done());
   });
   await new Promise((done) => setTimeout(done, 100));
@@ -375,6 +394,7 @@ test("web: resize, paste and Unicode, and a reconnect to the same session", asyn
   // Leave edit mode, go to the code, then drop the connection.
   client.input("\x1b");
   await new Promise((done) => setTimeout(done, 60));
+
   for (let i = 0; i < 3; i++) client.input(KEY.down);
   client.input(KEY.enter);
   await waitFor(() => client.vt.text().includes("▶"), "the code viewer");
@@ -406,6 +426,7 @@ test("web: Ctrl+R records from the browser's microphone over the same socket; th
   const config = join(repo, "keylang.json");
   writeFileSync(config, JSON.stringify({ ...JSON.parse(readFileSync(config, "utf8")), voice: { engine: "openrouter" } }));
   const heard: { format: string; bytes: number }[] = [];
+
   const recognizer = createServer((req, res) => {
     let data = "";
     req.on("data", (chunk: Buffer) => (data += chunk.toString()));
@@ -416,6 +437,7 @@ test("web: Ctrl+R records from the browser's microphone over the same socket; th
       res.end(JSON.stringify({ choices: [{ message: { content: "емітить order paid" } }] }));
     });
   });
+
   await new Promise<void>((resolve) => recognizer.listen(0, "127.0.0.1", resolve));
   t.after(() => recognizer.close());
   const { url } = await startWeb(t, repo, { OPENROUTER_BASE_URL: `http://127.0.0.1:${(recognizer.address() as AddressInfo).port}`, OPENROUTER_API_KEY: "test" });
@@ -427,13 +449,16 @@ test("web: Ctrl+R records from the browser's microphone over the same socket; th
   client.onControl = (message) => {
     if (message.on) {
       const pcm = Buffer.alloc(3200 * 2);
+
       for (let i = 0; i < 3200; i++) pcm.writeInt16LE(Math.round(Math.sin(i / 5) * 8000), i * 2);
       client.send({ type: "audio", data: pcm.toString("base64") });
       client.send({ type: "audio", data: pcm.toString("base64") });
       client.input("\x12");
     } else client.send({ type: "audio-end" });
   };
+
   client.input("i");
+
   for (let i = 0; i < 6; i++) client.input(KEY.down);
   client.input(KEY.end);
   client.input(KEY.enter);
@@ -490,6 +515,7 @@ test("web: a megabyte input frame in one session leaves the server answering the
 
 test("web: a session that cannot be opened says so and closes with 4001", async (t) => {
   const repo = checkoutRepo(t);
+
   const server = await serveWeb({
     root: repo,
     port: 0,
@@ -497,6 +523,7 @@ test("web: a session that cannot be opened says so and closes with 4001", async 
       throw new Error("no analysis here");
     },
   });
+
   t.after(() => server.close());
   const client = new Client(new URL(server.url), "session-broken", 80, 24);
   t.after(() => client.close());
@@ -545,6 +572,7 @@ test("web: t switches the map to the explained map on the same node, the screen 
   t.after(() => app.close());
   app.attach({ write: (ansi) => terminal.feed(ansi) }, cols, rows);
   await app.idle();
+
   for (let i = 0; i < 5; i++) app.input(KEY.down);
   app.input(KEY.altEnter);
   app.input("t");
@@ -557,6 +585,7 @@ test("web: t switches the map to the explained map on the same node, the screen 
   t.after(() => client.close());
   await client.opened;
   await waitFor(() => /✗ 0 /.test(client.vt.lines().at(-1) ?? "") && !/updating|analyzing/.test(client.vt.text()), "the first analysis");
+
   for (let i = 0; i < 5; i++) client.input(KEY.down);
   client.input(KEY.altEnter);
   client.input("t");
@@ -589,16 +618,21 @@ function palette(screen: Screen, words: string): void {
 /** The repository's files, the index's `generated` time taken out: what two runs must share. */
 function artifacts(root: string): Map<string, string> {
   const out = new Map<string, string>();
+
   const walk = (dir: string): void => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const abs = join(dir, entry.name);
+
       if (entry.isDirectory()) walk(abs);
       else out.set(abs.slice(root.length + 1), readFileSync(abs, "latin1"));
     }
   };
+
   walk(root);
   const index = out.get(".keylang/index.json");
+
   if (index !== undefined) out.set(".keylang/index.json", index.replace(/"generated": "[^"]*"/, '"generated": "…"'));
+
   return out;
 }
 
@@ -606,11 +640,14 @@ function artifacts(root: string): Map<string, string> {
 function uninitializedRepo(t: { after: (f: () => void) => void }): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-web-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+
   for (const [path, text] of Object.entries(CHECKOUT_FILES)) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
     writeFileSync(join(dir, path), text);
   }
+
   mkdirSync(join(dir, ".codex"), { recursive: true });
+
   return dir;
 }
 
@@ -633,6 +670,7 @@ async function firstProject(screen: Screen): Promise<string[]> {
   screen.input(KEY.enter);
   screen.input(KEY.enter);
   await waitFor(() => screen.text().includes("init: set up: map, baseline, agents · code 0") && analysed(screen), "init");
+
   // Code from the map: the built-in viewer, never a server-side `$EDITOR`.
   for (let i = 0; i < 8; i++) screen.input(KEY.down);
   screen.input(KEY.enter);
@@ -661,6 +699,7 @@ async function firstProject(screen: Screen): Promise<string[]> {
   await waitFor(() => screen.text().includes("feature refunds: 1 gap(s) · code 1"), "the feature");
   screen.input(KEY.f6);
   await waitFor(() => recordLines(screen).length >= 3, "the F6 list");
+
   return recordLines(screen);
 }
 
@@ -692,6 +731,7 @@ test("web: init → new feature → edit → read → map → feature over the r
   assert.match(inBrowser[2]!, /Feature readiness · refunds +completed · code 1/);
   assert.deepEqual(artifacts(webRoot), artifacts(terminalRoot), "the same files, byte for byte");
   assert.equal(existsSync(mark), false, "no editor ran on the server");
+
   // Actions add no HTTP endpoint: only the page, its assets, the socket and the read-only diagram API.
   for (const path of ["/run", "/operations", "/api/map", "/ws/run"]) assert.equal((await status(url, path)).status, 404, path);
 });
@@ -700,10 +740,12 @@ test("web: init → new feature → edit → read → map → feature over the r
 function cycleRepo(t: { after: (f: () => void) => void }): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-web-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+
   for (const [path, text] of Object.entries(CYCLE_FILES)) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
     writeFileSync(join(dir, path), text);
   }
+
   return dir;
 }
 
@@ -751,21 +793,26 @@ test("web: the whole cycle — init → config → new feature → check → spe
 /** A runner on this thread that holds every operation before its commit until `release`, counting its runs. */
 function heldRunner(): { runner: OperationRunner; release: () => void; runs: () => number; signals: AbortSignal[]; settled: () => number } {
   let open: () => void = () => {};
+
   let gate = new Promise<void>((done) => (open = done));
   let runs = 0;
   let settled = 0;
   const signals: AbortSignal[] = [];
+
   return {
     runner: async (request, context) => {
       runs++;
+
       if (context.signal) signals.push(context.signal);
       // The session's analyzer serves the screen; like the operation worker, the run analyses on its own.
       const { analyze: _screen, ...own } = context;
+
       try {
         return await runOperation(request, {
           ...own,
           beforeCommit: async (plan) => {
             await gate;
+
             return context.beforeCommit?.(plan);
           },
         });
@@ -892,6 +939,7 @@ test("web: the expiry of a detached session and server.close() cancel a held wri
   t.after(() => (closed ? undefined : server.close()));
   const url = new URL(server.url);
   const before = artifacts(root);
+
   const start = async (session: string): Promise<Client> => {
     const client = new Client(url, session, 110, 30);
     t.after(() => client.close());
@@ -901,8 +949,10 @@ test("web: the expiry of a detached session and server.close() cancel a held wri
     await waitFor(() => client.vt.text().includes("[Continue]"), "the map targets");
     client.input(KEY.enter);
     await waitFor(() => client.vt.text().includes("map write: waiting to write"), "the pause before the commit");
+
     return client;
   };
+
   const tab = await start("session-expiry");
   tab.close();
   // The keep time passes with the write held: the session ends as `q` would, the operation is cancelled.
@@ -1055,6 +1105,7 @@ test("web: /api/diagram and /api/views answer JSON with the socket's token as a 
   const unknown = JSON.parse((await status(url, "/api/diagram?view=flow&name=nope", bearer)).body) as { nodes: unknown[]; reason: string };
   assert.deepEqual(unknown.nodes, []);
   assert.match(unknown.reason, /no flow named `nope`/);
+
   // Without the token, with another, or with it in the query: 403, and no data.
   for (const [path, headers] of [
     ["/api/diagram?view=layers", {}],
@@ -1068,6 +1119,7 @@ test("web: /api/diagram and /api/views answer JSON with the socket's token as a 
     assert.equal(res.status, 403, `${path} ${JSON.stringify(headers)}`);
     assert.doesNotMatch(res.body, /checkout/);
   }
+
   assert.equal((await status(url, "/api/diagram?view=layers", { ...bearer, Origin: `http://${url.host}` })).status, 200);
   assert.equal((await status(url, "/api/diagram?view=nope", bearer)).status, 400);
   assert.equal((await status(url, "/api/diagram?view=flow", bearer)).status, 400);
@@ -1107,6 +1159,7 @@ test("web: /diagrams is a static page with no inline script; the bundled maxGrap
   const style = await status(url, "/assets/diagrams.css");
   assert.equal(style.status, 200);
   assert.equal(style.type, "text/css");
+
   for (const path of ["/api/views", "/api/diagram?view=layers"]) assert.equal((await status(url, path)).status, 403, path);
   assert.equal((await status(url, "/api/views", { Authorization: `Bearer ${token}` })).status, 200);
   assert.equal((await status(url, "/diagrams", { Host: `evil.example:${url.port}` })).status, 421);
@@ -1115,22 +1168,28 @@ test("web: /diagrams is a static page with no inline script; the bundled maxGrap
 
 test("web: scripts/build-web.mjs bundles the client offline: the page's script and CSS, the analysis worker with its WASM files, the bundled packages' licenses and the site list, no CDN import (business-flows/33)", () => {
   const out = mkdtempSync(join(tmpdir(), "keylang-web-build-"));
+
   try {
     const run = spawnSync(process.execPath, [join(root, "scripts/build-web.mjs"), "--outdir", out], { encoding: "utf8" });
     assert.equal(run.status, 0, run.stderr);
     const site = JSON.parse(readFileSync(join(out, "site.json"), "utf8")) as string[];
+
     const built = readdirSync(out, { recursive: true, withFileTypes: true })
       .filter((entry) => entry.isFile())
       .map((entry) => join(entry.parentPath, entry.name).slice(out.length + 1).split("\\").join("/"))
       .sort();
+
     assert.deepEqual(built, [...site, "site.json"].sort(), "site.json lists every built file");
+
     for (const file of ["diagrams.js", "diagrams.css", "analysis.js", "wasm/web-tree-sitter.wasm", "wasm/tree-sitter-typescript.wasm", "wasm/grammars.json", "maxgraph-core.LICENSE", "web-tree-sitter.LICENSE", "noble-hashes.LICENSE"]) assert.ok(site.includes(file), file);
+
     for (const name of ["diagrams.js", "analysis.js"]) {
       const script = readFileSync(join(out, name), "utf8");
       assert.ok(script.length > 10000, name);
       assert.doesNotMatch(script, /(?:\bimport\s*\(?|\bfrom|importScripts\()\s*["'`]https?:\/\//, `${name}: no import from a CDN`);
       assert.doesNotMatch(script, /^\s*import\s/m, `${name}: an IIFE for a plain <script> or a classic worker, not a module`);
     }
+
     assert.doesNotMatch(readFileSync(join(out, "diagrams.css"), "utf8"), /@import|url\(["']?https?:/);
     assert.match(readFileSync(join(out, "maxgraph-core.LICENSE"), "utf8"), /Apache License/);
   } finally {
@@ -1157,6 +1216,7 @@ test("web: /api/tour answers the project tour as `keylang tour --json` computes 
   assert.equal(cli.status, 0, cli.stderr);
   assert.equal(data.markdown, cli.stdout);
   assert.match(data.markdown, /^## 7\. Where to start reading$/m);
+
   for (const headers of [{}, { Authorization: "Bearer wrong" }, { ...bearer, Origin: "http://evil.example" }]) {
     const refused = await status(url, "/api/tour", headers);
     assert.equal(refused.status, 403, JSON.stringify(headers));
@@ -1209,6 +1269,7 @@ test("web: /api/views lists the discovered flows; /api/diagram draws one; /api/u
   assert.deepEqual(JSON.parse((await status(url, "/api/usages?id=nowhere.at.all", bearer)).body), { id: "nowhere.at.all", flows: [], discovered: [], entries: [] });
   assert.equal((await status(url, "/api/usages", bearer)).status, 400);
   assert.equal((await status(url, "/api/usages?id=", bearer)).status, 400);
+
   for (const headers of [{}, { Authorization: "Bearer wrong" }, { ...bearer, Origin: "http://evil.example" }]) {
     const refused = await status(url, "/api/usages?id=domain.order.create", headers);
     assert.equal(refused.status, 403, JSON.stringify(headers));
@@ -1224,6 +1285,7 @@ function send(url: URL, method: string, path: string, headers: Record<string, st
       res.on("data", (chunk: Buffer) => (text += chunk.toString()));
       res.on("end", () => resolve({ status: res.statusCode ?? 0, body: text, type: String(res.headers["content-type"] ?? "") }));
     });
+
     req.on("error", reject);
     req.end(body);
   });
@@ -1262,14 +1324,16 @@ test("web: /api/ids lists the snapshot's IDs under a prefix for the editor's ID 
   assert.ok(all.ids.some((i) => i.id === "domain" && i.kind === "layer"), JSON.stringify(all.ids));
   assert.deepEqual(
     all.ids.map((i) => i.id),
-    [...all.ids.map((i) => i.id)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
+    all.ids.map((i) => i.id).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
   );
   assert.deepEqual(JSON.parse((await status(url, "/api/ids?prefix=nowhere.", bearer)).body), { prefix: "nowhere.", ids: [], more: false });
+
   for (const headers of [{}, { Authorization: "Bearer wrong" }, { ...bearer, Origin: "http://evil.example" }]) {
     const refused = await status(url, "/api/ids?prefix=application", headers);
     assert.equal(refused.status, 403, JSON.stringify(headers));
     assert.doesNotMatch(refused.body, /purchase/);
   }
+
   assert.equal((await status(url, `/api/ids?prefix=application&t=${tokenOf(url)}`)).status, 403, "a token in the query is not accepted");
 });
 
@@ -1279,12 +1343,15 @@ test("web: /api/calls opens one level of the call tree — callees with via and 
   t.after(() => server.close());
   const url = new URL(server.url);
   const bearer = { Authorization: `Bearer ${tokenOf(url)}` };
+
   const calls = async (id: string): Promise<CallsJson> => {
     const res = await status(url, `/api/calls?id=${encodeURIComponent(id)}`, bearer);
     assert.equal(res.status, 200, res.body);
     assert.match(res.type, /^application\/json/);
+
     return JSON.parse(res.body) as CallsJson;
   };
+
   const pay = await calls("app.handlers.pay");
   assert.deepEqual(pay.entries, [{ kind: "route", label: "POST /pay" }]);
   // In the order the code writes them; the call inside the closure passed to `withLock` says so.
@@ -1319,6 +1386,7 @@ test("web: /api/calls opens one level of the call tree — callees with via and 
   const views = JSON.parse((await status(url, "/api/views", bearer)).body) as { events: unknown[]; eventsReason?: string };
   assert.deepEqual(views.events, []);
   assert.match(views.eventsReason ?? "", /no event nodes/);
+
   for (const headers of [{}, { Authorization: "Bearer wrong" }, { ...bearer, Origin: "http://evil.example" }]) {
     const refused = await status(url, "/api/calls?id=app.handlers.pay", headers);
     assert.equal(refused.status, 403, JSON.stringify(headers));
@@ -1394,8 +1462,10 @@ test("web: POST /api/flow-proposal writes one proposal of the ticked branches th
   const body = JSON.stringify({ name: "pay", trigger: "app.handlers.pay", steps: [{ id: "billing.charge.charge", steps: [{ id: "billing.audit.audit", steps: ["billing.audit.write"] }] }] });
   const post = (headers: Record<string, string>, text = body): Promise<{ status: number; body: string }> => send(url, "POST", "/api/flow-proposal", headers, text);
   const store = join(repo, ".keylang/proposals");
+
   // CSRF: no token, another token, another origin, another site — 403; a form's content type — 415; GET — 405. Nothing written.
   for (const headers of [json, { ...json, Authorization: "Bearer wrong" }, { ...json, ...bearer, Origin: "http://evil.example" }, { ...json, ...bearer, "Sec-Fetch-Site": "cross-site" }]) assert.equal((await post(headers)).status, 403, JSON.stringify(headers));
+
   for (const type of ["text/plain", "application/x-www-form-urlencoded", "multipart/form-data; boundary=x"]) assert.equal((await post({ ...bearer, "Content-Type": type })).status, 415, type);
   assert.equal((await post(bearer)).status, 415, "no content type");
   assert.equal((await send(url, "GET", "/api/flow-proposal", bearer, "")).status, 405);
@@ -1497,6 +1567,7 @@ test("web: GET/PUT /api/layout keep a view's layout in keylang/diagrams/<view>.l
     "draft:9": { x: 40, y: 10, w: 170, h: 80, kind: "note", note: "Ask the shop about refunds" },
     "draft:12": { x: 5, y: 5, kind: "", label: "" },
   };
+
   const written = await put({ layout });
   assert.equal(written.status, 200, written.body);
   assert.deepEqual(JSON.parse(written.body), { view: "flow:checkout", file: "keylang/diagrams/flow--checkout.layout.json", written: true });
@@ -1566,6 +1637,7 @@ test("web: GET/PUT /api/layout keep a view's layout in keylang/diagrams/<view>.l
 /** The editor's model of the checkout flow with a step drawn after `after`, its sequence line from it. */
 function withStep(model: FixtureModel, id: string, after: string): FixtureModel {
   const from = model.nodes.find((n) => n.key === after)!;
+
   return {
     ...model,
     mode: "draft",
@@ -1579,6 +1651,7 @@ test("web: POST /api/diagram-proposal turns the editor's drawing into proposals 
     "src/application/purchase.ts": ['import { create } from "../domain/order.ts";', 'import { save } from "../infrastructure/store.ts";', 'import { notify } from "../infrastructure/mail.ts";', "export function buy(): void {", "  create();", "  save();", "  notify();", "}", ""].join("\n"),
     "src/infrastructure/mail.ts": "export function notify(): void {}\n",
   });
+
   const server = await serveWeb({ root: repo, port: 0 });
   t.after(() => server.close());
   const url = new URL(server.url);
@@ -1689,6 +1762,7 @@ test("web: POST /api/bundle puts the flow and the selection's layout in one text
   // The guards of every write: no token, another token, another origin, another site — 403; not JSON — 415; GET — 405.
   for (const path of ["/api/bundle", "/api/bundle-import"]) {
     for (const headers of [json, { ...json, Authorization: "Bearer wrong" }, { ...auth(urlOne), Origin: "http://evil.example" }, { ...auth(urlOne), "Sec-Fetch-Site": "cross-site" }]) assert.equal((await send(urlOne, "POST", path, headers, "{}")).status, 403, `${path} ${JSON.stringify(headers)}`);
+
     for (const type of ["text/plain", "application/x-www-form-urlencoded"]) assert.equal((await send(urlOne, "POST", path, { Authorization: `Bearer ${tokenOf(urlOne)}`, "Content-Type": type }, "{}")).status, 415, `${path} ${type}`);
     assert.equal((await send(urlOne, "GET", path, auth(urlOne), "")).status, 405, path);
   }
@@ -1761,6 +1835,7 @@ test("web: POST /api/bundle puts the flow and the selection's layout in one text
     ["trigger:presentation.terminal.checkout", "planned:api.terminal.checkout", "start", "api.terminal.checkout", "api"],
   ]);
   const byKey = new Map(answer.shapes.map((s) => [s.key, s]));
+
   for (const [key, shape] of Object.entries(layout.shapes)) assert.deepEqual([byKey.get(key)?.x, byKey.get(key)?.y], [shape.x, shape.y], key);
   assert.deepEqual(answer.edges.map((e) => `${e.from}->${e.to}`).sort(), Object.keys(layout.edges).map((k) => k.slice("edge:".length)).sort());
   const listed = spawnSync(process.execPath, [bin, "proposals"], { cwd: target, encoding: "utf8" });
@@ -1799,17 +1874,21 @@ test("web: POST /api/bundle puts the flow and the selection's layout in one text
 test("web: the API answers from one analysis while the files it read are as they were; a saved, added or removed file makes the next request analyse again", async (t) => {
   const repo = diagramsRepo(t);
   let analyses = 0;
+
   const server = await serveWeb({
     root: repo,
     port: 0,
     analyzer: (request) => {
       analyses++;
+
       return analyze(request);
     },
   });
+
   t.after(() => server.close());
   const url = new URL(server.url);
   const bearer = { Authorization: `Bearer ${tokenOf(url)}` };
+
   for (const path of ["/api/views", "/api/diagram?view=layers", "/api/docs", "/api/views", "/api/coverage", "/api/search?q=order"]) assert.equal((await status(url, path, bearer)).status, 200, path);
   assert.equal(analyses, 1, "one analysis for six requests");
   // A saved source.

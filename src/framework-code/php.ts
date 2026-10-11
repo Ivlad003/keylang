@@ -28,15 +28,19 @@ export class PhpCode {
 
   constructor(files: readonly FileFacts[]) {
     this.files = files.filter((f) => f.path.endsWith(".php"));
+
     for (const file of this.files) {
       const locals = localNames(file);
       this.locals.set(file.path, locals);
+
       for (const decl of file.decls) {
         if (decl.kind === "fn") continue;
         const symbol = file.symbols?.find((s) => s.table === "class" && s.name === decl.name);
+
         if (!symbol) continue;
         const qualify = (written: string): string => this.qualified(file.path, written);
         const cls: PhpClass = { file: file.path, decl, name: decl.name, qualified: symbol.qualified, base: decl.base ? qualify(decl.base) : null, implements: (decl.implements ?? []).map(qualify) };
+
         if (!this.classes.has(key(symbol.qualified))) this.classes.set(key(symbol.qualified), cls);
       }
     }
@@ -45,6 +49,7 @@ export class PhpCode {
   /** The qualified name a class name written in `file` stands for (its `use`, else its namespace as the extractor recorded it). */
   qualified(file: string, written: string): string {
     const local = this.locals.get(file)?.get(key(written));
+
     return local ?? written.replace(/^\\+/, "");
   }
 
@@ -56,10 +61,12 @@ export class PhpCode {
   lineage(qualified: string): PhpClass[] {
     const out: PhpClass[] = [];
     let at = this.get(qualified);
+
     while (at && !out.includes(at)) {
       out.push(at);
       at = at.base ? this.get(at.base) : undefined;
     }
+
     return out;
   }
 
@@ -72,13 +79,17 @@ export class PhpCode {
   implements(cls: PhpClass, iface: string): boolean {
     const seen = new Set<string>();
     const stack = this.lineage(cls.qualified).flatMap((c) => c.implements);
+
     while (stack.length > 0) {
       const at = stack.pop()!;
+
       if (seen.has(key(at))) continue;
       seen.add(key(at));
+
       if (key(at) === key(iface)) return true;
       stack.push(...(this.get(at)?.implements ?? []));
     }
+
     return false;
   }
 
@@ -86,15 +97,19 @@ export class PhpCode {
   method(qualified: string, name: string): { cls: PhpClass; decl: DeclFact } | null {
     for (const cls of this.lineage(qualified)) {
       const decl = cls.decl.members.find((m) => m.kind === "fn" && key(m.name) === key(name));
+
       if (decl) return { cls, decl };
     }
+
     return null;
   }
 
   /** The qualified class the head of a callee written in `file` names (`Route.get` → `Illuminate\Support\Facades\Route`). */
   calleeClass(file: string, callee: string): string | null {
     const parts = callee.split(".");
+
     if (parts.length !== 2 || parts[0] === "this" || parts[0] === "super") return null;
+
     return this.qualified(file, parts[0]!);
   }
 }
@@ -102,10 +117,13 @@ export class PhpCode {
 /** Local class names of a file's imports (in ASCII lower case) → the qualified names they bind. */
 function localNames(file: FileFacts): Map<string, string> {
   const out = new Map<string, string>();
+
   for (const imp of file.imports) {
     if (/^(function|const|include) /.test(imp.source) || imp.source.includes(" ?? ")) continue;
+
     for (const binding of imp.bindings) if (!out.has(key(binding.local))) out.set(key(binding.local), imp.source.replace(/^\\+/, ""));
   }
+
   return out;
 }
 
@@ -121,12 +139,16 @@ export function sameClass(a: string, b: string): boolean {
 /** An argument by its name, else by its position. */
 export function arg(args: readonly ArgFact[] | undefined, name: string | null, position: number | null): LiteralFact | null {
   if (!args) return null;
+
   if (name !== null) {
     const named = args.find((a) => a.name === name);
+
     if (named) return named.value;
   }
+
   if (position === null) return null;
   const positional = args.filter((a) => a.name === undefined);
+
   return positional[position]?.value ?? null;
 }
 
@@ -141,17 +163,24 @@ export function cls(value: LiteralFact | null | undefined): string | null {
 /** The strings of a string or an array of strings. */
 export function strings(value: LiteralFact | null | undefined): string[] {
   if (!value) return [];
+
   if (value.kind === "string") return [value.value];
+
   if (value.kind === "array") return value.items.flatMap((i) => (i.value.kind === "string" ? [i.value.value] : []));
+
   return [];
 }
 
 /** An event a listener or a dispatch names: a class by its qualified name, a string as written, a class constant as `X::NAME`. */
 export function eventName(value: LiteralFact | null | undefined): string | null {
   if (!value) return null;
+
   if (value.kind === "class" || value.kind === "new") return value.name;
+
   if (value.kind === "string") return value.value;
+
   if (value.kind === "const") return `${value.class}::${value.name}`;
+
   return null;
 }
 
@@ -162,8 +191,10 @@ export function type(name: string): TypeName {
 /** Every call of a file with the declaration it sits in (`Class.method`, a function's name) or null at the module level. */
 export function* callsOf(file: FileFacts): Generator<{ call: CallFact; symbol: string | null; decl: DeclFact | null; cls: DeclFact | null }> {
   for (const call of file.moduleCalls) yield { call, symbol: null, decl: null, cls: null };
+
   for (const decl of file.decls) {
     if (decl.kind === "fn") for (const call of decl.calls) yield { call, symbol: decl.name, decl, cls: null };
+
     for (const member of decl.members) for (const call of member.calls) yield { call, symbol: `${decl.name}.${member.name}`, decl: member, cls: decl };
   }
 }
@@ -180,6 +211,7 @@ export function hasFacts(facts: ConfigFacts): boolean {
 
 /** Global helpers that dispatch the object they get: Laravel's `event()`, `dispatch()`, `dispatch_sync()`. */
 const DISPATCH_FUNCTIONS = new Set(["event", "dispatch", "dispatch_sync", "dispatch_now"]);
+
 /** Static methods that dispatch the object they get on a facade (`Event::dispatch(new X)`, `Bus::dispatch(new J)`, `Queue::push(new J)`). */
 const DISPATCH_STATICS = new Set(["dispatch", "dispatchsync", "dispatchnow", "push", "pushon", "later", "until"]);
 
@@ -195,26 +227,34 @@ const DISPATCH_STATICS = new Set(["dispatch", "dispatchsync", "dispatchnow", "pu
  */
 export function dispatchesIn(code: PhpCode, file: FileFacts): { symbol: string; call: CallFact; event: string }[] {
   const out: { symbol: string; call: CallFact; event: string }[] = [];
+
   for (const { call, symbol } of callsOf(file)) {
     if (symbol === null || call.opaque) continue;
     const parts = call.callee.split(".");
     const method = parts.at(-1)!;
     const first = arg(call.args, null, 0);
+
     if (parts.length === 1) {
       const name = method.slice(method.lastIndexOf("\\") + 1).toLowerCase();
+
       if (DISPATCH_FUNCTIONS.has(name) && first?.kind === "new") out.push({ symbol, call, event: first.name });
       continue;
     }
+
     if (parts.length === 2 && parts[0] !== "this" && parts[0] !== "super" && !call.bound) {
       const target = code.get(code.qualified(file.path, parts[0]!));
+
       // `J::dispatch()` from a trait the framework gives (`Dispatchable`); a class declaring the method itself is called as code.
       if (target && /^dispatch/i.test(method) && !code.method(target.qualified, method)) out.push({ symbol, call, event: target.qualified });
       else if (!target && DISPATCH_STATICS.has(method.toLowerCase()) && first?.kind === "new") out.push({ symbol, call, event: first.name });
       continue;
     }
+
     if (method !== "dispatch" || first?.kind !== "new") continue;
+
     if (call.receiver && code.get(code.qualified(file.path, call.receiver))) continue;
     out.push({ symbol, call, event: str(arg(call.args, null, 1)) ?? first.name });
   }
+
   return out;
 }

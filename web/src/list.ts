@@ -23,6 +23,7 @@ type Row = { type: "group"; group: string; count: number; open: boolean } | { ty
 
 /** One row, px: the CSS of `.row` has the same height. */
 export const ROW_HEIGHT = 26;
+
 /** Rows drawn above and below the visible ones. */
 const OVERSCAN = 8;
 
@@ -78,8 +79,10 @@ export class VirtualList {
   /** Scrolls the active item into sight. */
   reveal(key: string): void {
     const at = this.rows.findIndex((row) => row.type === "item" && row.item.key === key);
+
     if (at === -1) return;
     const top = at * ROW_HEIGHT;
+
     if (top < this.container.scrollTop || top + ROW_HEIGHT > this.container.scrollTop + this.container.clientHeight) this.container.scrollTop = Math.max(0, top - this.container.clientHeight / 2);
     this.schedule();
   }
@@ -87,26 +90,34 @@ export class VirtualList {
   private matches(item: ListItem): boolean {
     // A usages search replaces the text search until it is cleared.
     if (this.marked !== null) return this.marked.has(item.key);
+
     if (this.needle === "") return true;
+
     return this.needle.split(/\s+/).every((word) => item.search.includes(word));
   }
 
   private rebuild(): void {
     const byGroup = new Map<string, ListItem[]>();
+
     for (const item of this.items) {
       if (!this.matches(item)) continue;
       const list = byGroup.get(item.group);
+
       if (list) list.push(item);
       else byGroup.set(item.group, [item]);
     }
+
     // A search or a usages filter opens every group: what it found must be in sight.
     const filtering = this.needle !== "" || this.marked !== null;
     const rows: Row[] = [];
+
     for (const [group, list] of byGroup) {
       const open = filtering || !this.closed.has(group);
       rows.push({ type: "group", group, count: list.length, open });
+
       if (open) for (const item of list) rows.push({ type: "item", item });
     }
+
     this.rows = rows;
     this.spacer.style.height = `${rows.length * ROW_HEIGHT}px`;
     this.render();
@@ -124,6 +135,7 @@ export class VirtualList {
     const first = Math.max(0, Math.floor(this.container.scrollTop / ROW_HEIGHT) - OVERSCAN);
     const last = Math.min(this.rows.length, Math.ceil((this.container.scrollTop + this.container.clientHeight) / ROW_HEIGHT) + OVERSCAN);
     const nodes: HTMLElement[] = [];
+
     for (let i = first; i < last; i++) nodes.push(this.row(this.rows[i]!, i));
     this.spacer.replaceChildren(...nodes);
   }
@@ -132,6 +144,7 @@ export class VirtualList {
     const button = document.createElement("button");
     button.type = "button";
     button.style.top = `${index * ROW_HEIGHT}px`;
+
     if (row.type === "group") {
       button.className = "row group";
       button.textContent = `${row.open ? "▾" : "▸"} ${row.group} (${row.count})`;
@@ -140,8 +153,10 @@ export class VirtualList {
         else this.closed.add(row.group);
         this.rebuild();
       });
+
       return button;
     }
+
     const { item } = row;
     button.className = `row item${item.key === this.active ? " active" : ""}${this.marked?.has(item.key) ? " marked" : ""}`;
     button.title = item.title;
@@ -151,6 +166,7 @@ export class VirtualList {
     hint.textContent = item.hint;
     button.append(hint, document.createTextNode(item.label));
     button.addEventListener("click", () => this.onPick(item));
+
     return button;
   }
 }

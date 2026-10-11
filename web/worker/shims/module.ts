@@ -6,6 +6,7 @@
 // (its version is part of the snapshot ID); nothing else.
 
 declare const KEYLANG_BUILTINS: string[];
+
 declare const KEYLANG_VERSION: string;
 
 /** Where the worker mounts web-tree-sitter's package.json (web/worker/analysis.ts). */
@@ -18,10 +19,12 @@ export function createRequire(_from: string | URL): ((id: string) => unknown) & 
     if (id.endsWith("package.json")) return { name: "keylang", version: KEYLANG_VERSION };
     throw new Error(`require: ${id} is not available in the browser`);
   };
+
   const resolve = (id: string): string => {
     if (id === "web-tree-sitter") return WEB_TREE_SITTER;
     throw Object.assign(new Error(`Cannot find module '${id}' in the browser`), { code: "MODULE_NOT_FOUND" });
   };
+
   return Object.assign(require, { resolve });
 }
 

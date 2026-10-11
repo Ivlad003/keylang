@@ -14,6 +14,7 @@ const bin = join(dirname(fileURLToPath(import.meta.url)), "../bin/keylang.js");
 
 function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8" });
+
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
@@ -22,10 +23,12 @@ function repo(t: TestContext, files: Record<string, string>, config: Record<stri
   const dir = mkdtempSync(join(tmpdir(), "keylang-review-graph-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   writeFileSync(join(dir, "keylang.json"), JSON.stringify({ languages: ["typescript"], layers: { app: ["src/**"] }, ...config }));
+
   for (const [path, text] of Object.entries(files)) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
     writeFileSync(join(dir, path), text);
   }
+
   return dir;
 }
 
@@ -39,6 +42,7 @@ interface Snapshot {
 function map(dir: string): { snapshot: Snapshot; stderr: string } {
   const o = keylang(dir, ["map"]);
   assert.equal(o.status, 0, o.stdout + o.stderr);
+
   return { snapshot: JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as Snapshot, stderr: o.stderr };
 }
 
@@ -70,6 +74,7 @@ test("module of several files: each file keeps its own names; a same-named decla
     },
     { module: "dir" },
   );
+
   const { snapshot, stderr } = map(dir);
   // Two files of one module declare `helper`: two symbols, never one node with both bodies.
   assert.equal(snapshot.nodes["app.a.helper"]?.file, "src/a/x.ts");
@@ -90,6 +95,7 @@ test("`x.ts` beside `x/index.ts` in file mode: one module, two scopes; an import
     "src/x/index.ts": 'import { fromFile } from "../x";\nexport function fromIndex(): void { fromFile(); helper(); }\nfunction helper(): void {}\n',
     "src/user.ts": 'import { fromIndex } from "./x/index";\nimport { fromFile } from "./x";\nexport function use(): void { fromIndex(); fromFile(); }\n',
   });
+
   const { snapshot, stderr } = map(dir);
   assert.match(stderr, /same module ID as .*\(app\.x\); merged/);
   assert.equal(snapshot.nodes["app.x.helper"]?.file, "src/x.ts");
@@ -108,6 +114,7 @@ test("module of several files: an import of one file gets that file's exports, `
     },
     { module: "dir", layers: { ui: ["src/ui/**"] } },
   );
+
   const { snapshot, stderr } = map(dir);
   // Both `make` are exported: the first file by path keeps the name, and the module's public name is ambiguous.
   assert.equal(snapshot.nodes["ui.parts.make"]?.file, "src/ui/parts/button.ts");
@@ -119,6 +126,7 @@ test("module of several files: an import of one file gets that file's exports, `
 test("an identifier written in NFD in code has the NFC ID a spec writes and keeps its name as written; the code's own references to it resolve", (t) => {
   const nfd = `cafe${String.fromCodePoint(0x301)}`; // `e` and a combining acute accent
   const nfc = `caf${String.fromCodePoint(0xe9)}`; // one precomposed `é`
+
   const dir = repo(
     t,
     {
@@ -133,6 +141,7 @@ test("an identifier written in NFD in code has the NFC ID a spec writes and keep
     },
     { languages: ["typescript", "python"], layers: { app: ["src/**"], py: ["pkg/**"] } },
   );
+
   const { snapshot } = map(dir);
   assert.equal(Object.keys(snapshot.nodes).some((id) => id !== id.normalize("NFC")), false, Object.keys(snapshot.nodes).join(", "));
   assert.equal(snapshot.nodes[`app.a.${nfc}`]?.name, nfd);
@@ -175,6 +184,7 @@ test("rust: a name bound by `for`, `if let`, `while let` or a `match` arm shadow
     },
     { languages: ["rust"] },
   );
+
   const { snapshot } = map(dir);
   assert.deepEqual(calls(snapshot, "app.main.main"), ["app.main.main → app.main.ready"]);
   const shadowed = holes(snapshot, "app.main.main").filter((h) => h.includes("shadowed"));
@@ -209,6 +219,7 @@ test("python: a `case` capture and `:=` shadow the module's fn; a value pattern 
     },
     { languages: ["python"], layers: { app: ["pkg/**"] } },
   );
+
   const { snapshot } = map(dir);
   assert.deepEqual(calls(snapshot, "app.m.run"), ["app.m.run → app.m.fd"]);
   const shadowed = holes(snapshot, "app.m.run").filter((h) => h.includes("shadowed"));
@@ -231,6 +242,7 @@ test("typescript: a `const` or `function` in one `case` is in scope in every cas
       "",
     ].join("\n"),
   });
+
   const { snapshot } = map(dir);
   // `function h` in a block of case 3 is scoped to that block, not to the switch.
   assert.deepEqual(calls(snapshot, "app.c."), ["app.c.sw → app.d.g", "app.c.sw → app.d.h"]);
@@ -239,6 +251,7 @@ test("typescript: a `const` or `function` in one `case` is in scope in every cas
 
 test("typescript: `import * as ns` is a namespace object, not the default export: calling it is a hole and `ns.f()` reads no value; `require()` stays `module.exports`", (t) => {
   const b = "export function helper(): void {}\nexport function later(x: unknown): void {}\nexport default function defFn(): void {}\n";
+
   const dir = repo(
     t,
     {
@@ -249,6 +262,7 @@ test("typescript: `import * as ns` is a namespace object, not the default export
     },
     { languages: ["typescript", "javascript"] },
   );
+
   const { snapshot } = map(dir);
   assert.deepEqual(calls(snapshot), ["app.a.useNs → app.b.helper", "app.a.useNs → app.b.later", "app.e.run → app.d.default", "app.e.run → app.d.x"]);
   assert.deepEqual(holes(snapshot), ["app.a.callNs: unresolved-call call of the namespace object `ns`, which is no function"]);
@@ -261,11 +275,14 @@ test("typescript: a namespace object read as a value hands on every export of it
     "src/b.ts": "export function helper(): void {}\nexport class Box { constructor() {} }\nexport default function defFn(): void {}\n",
     "src/c.ts": 'import * as nb from "./b";\nexport function pass(keep: (x: unknown) => void): void { keep(nb); }\n',
   });
+
   const { snapshot } = map(dir);
+
   const escaping = Object.entries(snapshot.nodes)
     .filter(([, node]) => node.escapes?.reason === "`nb` is read as a value")
     .map(([id]) => id)
     .sort();
+
   assert.deepEqual(escaping, ["app.b.Box.constructor", "app.b.defFn", "app.b.helper"]);
 });
 
@@ -283,6 +300,7 @@ test("typescript: `this.m()` follows the base classes as `super.m()` does; throu
       "",
     ].join("\n"),
   });
+
   const { snapshot } = map(dir);
   assert.deepEqual(calls(snapshot, "app.a."), ["app.a.C.m → app.a.C.render", "app.a.D.m → app.base.Base.greet", "app.a.E.n → app.a.D.m", "app.a.E.n → app.base.Base.greet"]);
   assert.deepEqual(holes(snapshot, "app.a."), ["app.a.F.k: unresolved-call unresolved call `this.zz`"]);
@@ -298,6 +316,7 @@ test("python: `self.m()` follows the base classes; a static or class method is f
     },
     { languages: ["python"], layers: { app: ["pkg/**"] } },
   );
+
   const { snapshot } = map(dir);
   assert.deepEqual(calls(snapshot, "app.m."), ["app.m.Child.go → app.a.Base.greet", "app.m.Child.go → app.a.Base.make", "app.m.use → app.a.Base", "app.m.use → app.a.Base.make"]);
   assert.deepEqual(holes(snapshot, "app.m."), []);
@@ -322,6 +341,7 @@ test("php: `$this->m()` finds a method of a `use`d trait and of the base class; 
     },
     { languages: ["php"] },
   );
+
   const { snapshot } = map(dir);
   assert.deepEqual(calls(snapshot, "app.Service."), [
     "app.Service.Service.run → app.Service.Base.greet",
@@ -355,6 +375,7 @@ test("php: a method is found whatever the case its call is written in, as PHP fi
     },
     { languages: ["php"] },
   );
+
   const { snapshot } = map(dir);
   assert.deepEqual(calls(snapshot), [
     "app.Order.Order.run → app.Order.Base.greet",
@@ -382,6 +403,7 @@ test("rust: a name from `use m::*` resolves through that module's public items; 
     },
     { languages: ["rust"] },
   );
+
   const { snapshot } = map(dir);
   assert.deepEqual(calls(snapshot, "app.main."), ["app.main.main → app.other.Order.new", "app.main.main → app.other.from_glob"]);
   const ambiguous = snapshot.edges.filter((e) => e.resolution === "ambiguous").map((e) => `${e.text}: ${e.candidates?.join(", ")}`);
@@ -400,6 +422,7 @@ test("python: a name from `from m import *` resolves through `m`'s public names,
     },
     { languages: ["python"], layers: { app: ["pkg/**"] } },
   );
+
   const { snapshot } = map(dir);
   assert.deepEqual(calls(snapshot, "app.m."), ["app.m.Child.go → app.a.Base.greet", "app.m.run → app.a.Base", "app.m.run → app.a.fa"]);
   assert.equal(snapshot.nodes["app.a.fa"]?.escapes?.reason, "`fa` is read as a value");
@@ -416,6 +439,7 @@ test("python: a module an import binds is a module object: calling it is a hole,
     },
     { languages: ["python"], layers: { app: ["pkg/**"] } },
   );
+
   const { snapshot } = map(dir);
   assert.deepEqual(calls(snapshot, "app.u."), ["app.u.run → app.m.f"]);
   assert.deepEqual(holes(snapshot, "app.u."), [
@@ -438,6 +462,7 @@ test("python: an import from a module that does not exist is an unresolved impor
     },
     { languages: ["python"], layers: { app: ["pkg/**"] } },
   );
+
   const { snapshot } = map(dir);
   const imports = snapshot.edges.filter((e) => e.kind === "import" && e.source === "app.n").map((e) => `${e.line} ${e.target ?? e.reason}`);
   assert.deepEqual(imports, ["4 app.m", "6 app.__init__", "1 unresolved import `.missing.*`", "2 unresolved import `.absent.f`", "3 unresolved import `pkg.absent2.g`"]);
@@ -457,6 +482,7 @@ test("typescript: `import type`, `export type … from` and, without verbatimMod
     },
     { layers: { a: ["src/a/**"], b: ["src/b/**"] } },
   );
+
   const { snapshot } = map(dir);
   const toA = snapshot.edges.filter((e) => e.target === "a.a").map((e) => `${e.kind}${e.typeOnly ? " typeOnly" : ""} ${e.source}:${e.line}`).sort();
   // No tsconfig, so no verbatimModuleSyntax: `import { type A }` is erased like `import type { A }`.
@@ -472,6 +498,7 @@ test("typescript: `import type`, `export type … from` and, without verbatimMod
   assert.equal(o.status, 1, o.stdout);
   // The only cycle runs through the import of `b.e` that loads `a.a`.
   assert.deepEqual(o.stdout.match(/K105 .*/g), ["K105 divergence: dependency cycle a.a → b.e → a.a"]);
+
   for (const m of ["b\\.b", "b\\.c", "b\\.d", "b\\.e"]) assert.match(o.stdout, new RegExp(`K102 divergence: \`${m}\` depends on \`a\\.a\``));
 });
 
@@ -496,6 +523,7 @@ test("typescript: a name a generic binds — a type parameter, a mapped type's k
       "",
     ].join("\n"),
   });
+
   const { snapshot } = map(dir);
   const types = snapshot.edges.filter((e) => e.kind === "type").map((e) => `${e.source} ${e.text} → ${e.target ?? e.resolution}`);
   // A constraint names a type (`U extends Box<T>`: `Box`, not `T`); `T` outside any generic is still a type keylang does not know.
@@ -509,6 +537,7 @@ test("typescript: `export type * from` and `export type * as NS from` are read a
     "src/b.ts": '/** Types of `t`. */\nexport type * as NS from "./t";\n',
     "src/use.ts": 'import type { T } from "./a";\nimport type { NS } from "./b";\nexport function f(x: T, y: NS.U): void {}\n',
   });
+
   const { snapshot } = map(dir);
   assert.deepEqual(snapshot.coverage.filter((c) => c.kind === "parse-error"), []);
   assert.equal(snapshot.nodes["app.a"]?.members, "complete");
@@ -552,6 +581,7 @@ test("php: a class or a function is found whatever the case its name is written 
     },
     { languages: ["php"] },
   );
+
   const { snapshot } = map(dir);
   assert.deepEqual(calls(snapshot), [
     "app.Order.local → app.Order.Order",
@@ -580,6 +610,7 @@ test("typescript: a step to a package is proved by an import from the parent's m
     "keylang/flows/f.md": "# flow f\n\n- trigger app.a.run\n  - step external.zod\n  - step external.yup\n",
     "keylang/flows/g.md": "# flow g\n\n- trigger app.c.both\n  - step external.zod\n",
   });
+
   map(dir);
   const o = keylang(dir, ["check"]);
   assert.equal(o.status, 0, o.stdout + o.stderr);
@@ -603,6 +634,7 @@ test("typescript: a class's type-parameter constraint and default, and a method 
       "",
     ].join("\n"),
   });
+
   const { snapshot } = map(dir);
   const types = snapshot.edges.filter((e) => e.kind === "type").map((e) => `${e.source} ${e.text}:${e.line}:${e.col} → ${e.target}`);
   // A type parameter's own name (`T`, `Q`, `V`) is no reference.
@@ -645,6 +677,7 @@ test("php: a hole, a callable or a module-level call that names a method or a fu
     },
     { languages: ["php", "typescript"] },
   );
+
   map(dir);
   const o = keylang(dir, ["check"]);
   // The only `fail`: a TypeScript call `x.RUN()` cannot run `run`.
@@ -678,6 +711,7 @@ test("typescript: a class field that holds no function names its types for the c
       "",
     ].join("\n"),
   });
+
   const { snapshot } = map(dir);
   const types = snapshot.edges.filter((e) => e.kind === "type" && e.source.startsWith("app.c.")).map((e) => `${e.source} ${e.text}:${e.line}:${e.col} → ${e.target}`);
   assert.deepEqual(types.sort(), [
@@ -700,6 +734,7 @@ test("php: a constructor written `__CONSTRUCT` is the class's `__construct`, the
     },
     { languages: ["php"], layers: { app: ["src/App/**"] } },
   );
+
   const { snapshot } = map(dir);
   assert.ok(snapshot.nodes["app.Order.Order.__construct"], Object.keys(snapshot.nodes).join(", "));
   assert.equal(snapshot.nodes["app.Order.Order.__CONSTRUCT"], undefined);

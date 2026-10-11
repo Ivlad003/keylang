@@ -99,6 +99,7 @@ function ecmascriptResolver(root: string, sources: ReadonlySet<string>, _files: 
   const sfcc = config?.frameworks == null || config.frameworks.includes("sfcc");
   // Likewise `pwa-kit`: template extensibility (`overrides/`) is off with the adapter.
   const pwaKit = config?.frameworks == null || config.frameworks.includes("pwa-kit");
+
   return new ImportResolver(root, sources, undefined, { cartridgePath: config?.sfcc.cartridgePath ?? null, sfcc, pwaKit });
 }
 
@@ -123,5 +124,6 @@ export type { SourceResolver };
 
 export function frontendFor(path: string): Frontend | undefined {
   const language = languageOf(path);
+
   return language === undefined ? undefined : FRONTENDS[language];
 }

@@ -16,11 +16,13 @@ export const CHAT_REPORTS: { "assistant-reply": Report<"assistant-reply"> } = {
     label: () => "clip",
     params: (request) => {
       const line = (request.history.at(-1)?.text ?? "").split("\n")[0]!;
+
       return line.length > PARAMS_CELLS ? `${line.slice(0, PARAMS_CELLS - 1)}…` : line;
     },
     summary: (_record, result) => `${result.payload.proposal === null ? "replied" : `replied with a block for ${result.payload.proposal.path}`}${codeOf(result.exitCode)}`,
     rows(state, record, result, view) {
       const { payload } = result;
+
       const rows = [
         { text: `Clip · ${payload.agent} · the model's reply; nothing written by it`, style: BOLD },
         outcomeRow(view.summary, true),
@@ -28,11 +30,14 @@ export const CHAT_REPORTS: { "assistant-reply": Report<"assistant-reply"> } = {
         ...(payload.reply === "" ? [] : textRows("reply", payload.reply)),
         ...(payload.proposal === null ? [] : textRows(`block for ${payload.proposal.path}`, payload.proposal.text)),
       ];
+
       const request = record.params;
+
       if (request.kind !== "assistant-reply") return rows;
       // The spec directory as the analysis reads it now: the prompt names it.
       const specDir = toPosix(relative(request.root, resolve(request.root, state.analysis?.config.dir ?? "keylang")));
       const asked = assistantPrompt(request, specDir);
+
       return [...rows, ...textRows("system prompt", asked.system), ...textRows("prompt", asked.prompt)];
     },
   },

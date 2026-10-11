@@ -24,6 +24,7 @@ type DraftResult = Extract<OperationResult, { kind: "draft-flow" }> & { payload:
 function draftRecord(app: App): DraftResult {
   const result = app.state.records.at(-1)?.result;
   assert.ok(result?.kind === "draft-flow" && result.payload !== null, JSON.stringify(result?.messages));
+
   return result as DraftResult;
 }
 
@@ -40,6 +41,7 @@ test("tui: Enter in F6 while a MERGE is open is refused as the palette refuses: 
   await s.app.idle();
   // Two records in F6 whose Enter writes or opens a MERGE: a map write, and a draft flow proposed for b.md.
   s.send(KEY.ctrlP);
+
   for (const ch of "map write") s.send(ch);
   s.send(KEY.enter);
   s.send(KEY.enter);
@@ -99,15 +101,18 @@ test("tui: a draft that ends while the clip's chat has the focus waits as a prop
   assert.notEqual(s.app.state.activeOperation, null, "the draft is still running");
   s.send(KEY.f7);
   assert.equal(s.app.state.clip.chat.focused, true);
+
   for (const ch of "hello") s.send(ch);
   await s.app.idle();
   assert.equal(s.app.state.activeOperation, null);
   assert.deepEqual([s.app.state.mode, s.app.state.merge, s.app.state.clip.chat.focused], ["view", null, true], s.app.state.message ?? "");
   assert.match(s.app.state.message ?? "", /waits: m, Proposals or Enter in F6 opens MERGE/);
+
   for (const ch of " can we add a new step") s.send(ch);
   assert.equal(s.app.state.clip.chat.input, "hello can we add a new step");
   assert.deepEqual([s.app.state.mode, s.app.state.merge], ["view", null]);
   const after = treeBytes(root);
+
   for (const [path, bytes] of before) if (!path.startsWith(".keylang/")) assert.equal(after.get(path), bytes, path);
   assert.ok(existsSync(join(root, ".keylang/proposals", FLOW_PATH)), "the proposal waits");
 });
@@ -122,6 +127,7 @@ test("tui: draft flow (algo) of a callable with two calls: the preview is the CL
   const before = treeBytes(root);
   // The form: the trigger of the flow under the cursor is the default; a typed part lists the callable ids; the defaults and the root are visible.
   s.send(KEY.ctrlP);
+
   for (const ch of "draft flow") s.send(ch);
   s.send(KEY.enter);
   const prompt = s.app.state.prompt!;
@@ -190,6 +196,7 @@ test("tui: draft flow (algo) of a callable with two calls: the preview is the CL
   assert.match(text, /Enter open MERGE/);
   s.send(KEY.enter);
   assert.equal(s.app.state.merge?.path, "keylang/flows/buying.md");
+
   for (let i = 0; i < s.app.state.merge!.hunks.length; i++) s.send("a");
   s.send("w");
   await s.app.idle();
@@ -200,6 +207,7 @@ test("tui: draft flow (algo) of a callable with two calls: the preview is the CL
 test("tui: draft flow refuses an unknown trigger, a waiting or just-created proposal and an unsaved target before it runs; a proposal or target changed during the work is kept; the CLI still replaces its own", async (t) => {
   const root = checkoutRepo(t);
   const hook: { during: (() => void) | null } = { during: null };
+
   // The operation on this thread, with a hook between the computation and the commit: what another tool does meanwhile.
   const operations = (request: OperationRequest, context: OperationContext): Promise<OperationResult> =>
     runOperation(request, {
@@ -209,12 +217,14 @@ test("tui: draft flow refuses an unknown trigger, a waiting or just-created prop
         await context.beforeCommit?.();
       },
     });
+
   const s = session(root, { cols: 200, operations });
   t.after(() => s.app.close());
   await s.app.idle();
   const before = treeBytes(root);
   // The trigger of the flow under the cursor is the default.
   s.send(KEY.ctrlP);
+
   for (const ch of "draft flow") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.prompt?.draft?.trigger, "presentation.terminal.checkout");
@@ -247,6 +257,7 @@ test("tui: draft flow refuses an unknown trigger, a waiting or just-created prop
   // An unsaved target: refused, the buffer keeps its text.
   const flow = "keylang/flows/checkout.md";
   s.send("i");
+
   for (const ch of "Draft me. ") s.send(ch);
   await esc(s.send);
   const typed = s.app.state.buffers.get(flow)!.text;
@@ -262,6 +273,7 @@ test("tui: draft flow refuses an unknown trigger, a waiting or just-created prop
     mkdirSync(dirname(join(root, other)), { recursive: true });
     writeFileSync(join(root, other), "agent's proposal\n");
   };
+
   draftForm(s, { trigger: "application.purchase.buy" });
   await s.app.idle();
   const raced = s.app.state.records.at(-1)!.result!;
@@ -303,6 +315,7 @@ const F4 = "\x1bOS";
 /** The draft counts in `.keylang/stats.json`; empty when there is none. */
 function draftCounts(root: string): Record<string, { proposed: number }> {
   const file = join(root, ".keylang/stats.json");
+
   return existsSync(file) ? ((JSON.parse(readFileSync(file, "utf8")) as { drafts?: Record<string, { proposed: number }> }).drafts ?? {}) : {};
 }
 
@@ -313,6 +326,7 @@ test("tui: a hybrid draft from the form sends the F4 pack as it was, asks no gho
   const s = session(root, { cols: 200 });
   t.after(() => s.app.close());
   await s.app.idle();
+
   // F4: the buffer is left out of the pack; the node under the cursor stays.
   for (let i = 0; i < 6; i++) s.send(KEY.down);
   s.send(F4);
@@ -329,6 +343,7 @@ test("tui: a hybrid draft from the form sends the F4 pack as it was, asks no gho
   // The session answers meanwhile: a new flow item asks no ghost line while the operation runs.
   s.app.state.cursor = { line: 0, col: 0 };
   s.send("i");
+
   for (let i = 0; i < 7; i++) s.send(KEY.down);
   s.send(KEY.end);
   s.send(KEY.enter);
@@ -378,9 +393,11 @@ test("tui: Cancel while the model answers ends the draft as cancelled: the reque
   const record = s.app.state.records.at(-1)!;
   assert.equal(record.status, "running");
   s.send(KEY.ctrlP);
+
   for (const ch of "cancel") s.send(ch);
   s.send(KEY.enter);
   assert.deepEqual([record.status, record.result?.exitCode, record.result?.payload], ["cancelled", null, null]);
+
   for (let i = 0; i < 100 && model.dropped() === 0; i++) await sleep(10);
   assert.equal(model.dropped(), 1, "the model request is closed, not left running");
   model.release();
@@ -460,6 +477,7 @@ test("tui: without a model the form drafts hybrid as algo and says so, as the CL
   t.after(() => s.app.close());
   await s.app.idle();
   s.send(KEY.ctrlP);
+
   for (const ch of "draft flow") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.prompt?.draft?.mode, "algo", "no model: the form starts on algo");
@@ -508,27 +526,35 @@ const CYCLIC_ORDER = 'import { checkout } from "../presentation/terminal.ts";\ne
 /** The palette's draft-rules form with the given fields; Enter on the run row. */
 function rulesForm(s: ReturnType<typeof session>, fields: { into?: string; mode?: "algo" | "hybrid" | "llm"; output?: "proposal" | "preview" } = {}): void {
   s.send(KEY.ctrlP);
+
   for (const ch of "draft rules") s.send(ch);
   s.send(KEY.enter);
   const prompt = s.app.state.prompt!;
   assert.equal(prompt.kind, "draft-rules", s.app.state.message ?? "");
+
   const row = (id: string): void => {
     for (let i = 0; i < 8 && prompt.ids?.[prompt.index] !== id; i++) s.send(KEY.down);
     assert.equal(prompt.ids?.[prompt.index], id, JSON.stringify(prompt.ids));
   };
+
   if (fields.into !== undefined) {
     row("into");
+
     for (const ch of fields.into) s.send(ch);
   }
+
   if (fields.mode !== undefined && fields.mode !== prompt.rulesDraft!.mode) {
     row("mode");
+
     for (let i = 0; i < 3 && prompt.rulesDraft!.mode !== fields.mode; i++) s.send(KEY.right);
     assert.equal(prompt.rulesDraft!.mode, fields.mode);
   }
+
   if ((fields.output ?? "proposal") !== prompt.rulesDraft!.output) {
     row("output");
     s.send(KEY.right);
   }
+
   row("run");
   s.send(KEY.enter);
 }
@@ -538,6 +564,7 @@ type RulesResult = Extract<OperationResult, { kind: "draft-rules" }> & { payload
 function rulesRecord(app: App): RulesResult {
   const result = app.state.records.at(-1)?.result;
   assert.ok(result?.kind === "draft-rules" && result.payload !== null, JSON.stringify(result?.messages));
+
   return result as RulesResult;
 }
 
@@ -555,6 +582,7 @@ test("tui: draft rules (algo) on an acyclic and a cyclic repository is the CLI's
   const before = treeBytes(root);
   // The form: the default target and the root are visible; no model, so algo.
   s.send(KEY.ctrlP);
+
   for (const ch of "draft rules") s.send(ch);
   s.send(KEY.enter);
   const prompt = s.app.state.prompt!;
@@ -610,6 +638,7 @@ test("tui: draft rules (algo) on an acyclic and a cyclic repository is the CLI's
   assert.match(s.text(), /Enter open MERGE/);
   s.send(KEY.enter);
   assert.equal(s.app.state.merge?.path, "keylang/rules.md");
+
   for (let i = 0; i < s.app.state.merge!.hunks.length; i++) s.send("a");
   s.send("w");
   await s.app.idle();
@@ -675,9 +704,11 @@ test("tui: a hybrid rules draft shows the model's conflict with its evidence apa
   await model.requested(2);
   const cancelled = s.app.state.records.at(-1)!;
   s.send(KEY.ctrlP);
+
   for (const ch of "cancel") s.send(ch);
   s.send(KEY.enter);
   assert.deepEqual([cancelled.status, cancelled.result?.exitCode, cancelled.result?.payload], ["cancelled", null, null]);
+
   for (let i = 0; i < 100 && model.dropped() === 0; i++) await sleep(10);
   assert.equal(model.dropped(), 1, "the model request is closed");
   model.release();
@@ -710,6 +741,7 @@ test("tui: a hybrid rules draft shows the model's conflict with its evidence apa
   assert.deepEqual(Object.fromEntries(Object.entries(draftCounts(root)).map(([status, n]) => [status, n.proposed])), { agree: 1, "llm-only": 0, "algo-only": 2, conflict: 1 });
   assert.equal(s.app.state.merge?.path, "keylang/rules.md", s.app.state.message ?? "");
   assert.match(s.app.state.message ?? "", /1 conflict\(s\) with the code now: F6 names them/);
+
   // Merged as it is, the conflicting rule is a finding of the check — never an ok.
   for (let i = 0; i < s.app.state.merge!.hunks.length; i++) s.send("a");
   s.send("w");
@@ -725,6 +757,7 @@ test("tui: without a model the rules form drafts hybrid as algo and says so, as 
   t.after(() => s.app.close());
   await s.app.idle();
   s.send(KEY.ctrlP);
+
   for (const ch of "draft rules") s.send(ch);
   s.send(KEY.enter);
   const prompt = s.app.state.prompt!;
@@ -785,11 +818,14 @@ test("tui: without a model the rules form drafts hybrid as algo and says so, as 
 /** The palette's draft-layout form with the given mode; Enter on the run row. */
 function layoutForm(s: ReturnType<typeof session>, mode?: "algo" | "hybrid" | "llm"): void {
   s.send(KEY.ctrlP);
+
   for (const ch of "draft layers") s.send(ch);
   s.send(KEY.enter);
   const prompt = s.app.state.prompt!;
   assert.equal(prompt.kind, "draft-layout", s.app.state.message ?? "");
+
   for (let i = 0; i < 3 && mode !== undefined && prompt.layoutDraft!.mode !== mode; i++) s.send(KEY.right);
+
   if (mode !== undefined) assert.equal(prompt.layoutDraft!.mode, mode);
   s.send(KEY.down);
   assert.equal(prompt.ids?.[prompt.index], "run");
@@ -801,6 +837,7 @@ type LayoutResult = Extract<OperationResult, { kind: "draft-layout" }> & { paylo
 function layoutRecord(app: App): LayoutResult {
   const result = app.state.records.at(-1)?.result;
   assert.ok(result?.kind === "draft-layout" && result.payload !== null, JSON.stringify(result?.messages));
+
   return result as LayoutResult;
 }
 
@@ -823,6 +860,7 @@ test("tui: draft map (algo) is the CLI's layout; Enter moves only layers into ke
   const before = treeBytes(root);
   // The form: with a model, hybrid by default; algo chosen; the root is shown.
   s.send(KEY.ctrlP);
+
   for (const ch of "draft map") s.send(ch);
   s.send(KEY.enter);
   const prompt = s.app.state.prompt!;
@@ -922,6 +960,7 @@ test("tui: a model layout is the validated answer; an edit of keylang.json durin
   const before = treeBytes(root);
   // keylang.json is opened and edited while the model answers.
   s.send(KEY.ctrlP);
+
   for (const ch of "keylang.json") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.current, "keylang.json");
@@ -958,9 +997,11 @@ test("tui: a model layout is the validated answer; an edit of keylang.json durin
   await model.requested(3);
   const cancelled = s.app.state.records.at(-1)!;
   s.send(KEY.ctrlP);
+
   for (const ch of "cancel") s.send(ch);
   s.send(KEY.enter);
   assert.deepEqual([cancelled.status, cancelled.result?.exitCode, cancelled.result?.payload], ["cancelled", null, null]);
+
   for (let i = 0; i < 100 && model.dropped() === 0; i++) await sleep(10);
   assert.equal(model.dropped(), 1);
   model.release();
@@ -1039,6 +1080,7 @@ const PURCHASE_SPEC = "# Purchase\n\nWhy we buy.\n\n# flow buy\n\n- trigger appl
 /** Moves the code-to-spec form's selection to the row `id`. */
 function codeRow(s: ReturnType<typeof session>, id: string): void {
   const prompt = s.app.state.prompt!;
+
   for (let i = 0; i < 20 && prompt.ids?.[prompt.index] !== id; i++) s.send(KEY.down);
   assert.equal(prompt.ids?.[prompt.index], id, JSON.stringify(prompt.ids));
 }
@@ -1046,23 +1088,31 @@ function codeRow(s: ReturnType<typeof session>, id: string): void {
 /** Replaces the text of a field row of the code-to-spec form. */
 function codeField(s: ReturnType<typeof session>, id: "file" | "line" | "into" | "since", text: string): void {
   codeRow(s, id);
+
   for (const _ of s.app.state.prompt!.codeDraft![id]) s.send("\x7f");
+
   for (const ch of text) s.send(ch);
 }
 
 /** The palette's code-to-spec form with the given fields (an absent one keeps its prefill); Enter on the run row. */
 function codeForm(s: ReturnType<typeof session>, fields: { file?: string; line?: string; into?: string; output?: "proposal" | "preview" }): void {
   s.send(KEY.ctrlP);
+
   for (const ch of "code to spec") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.prompt?.kind, "code-to-spec", s.app.state.message ?? "");
+
   if (fields.file !== undefined) codeField(s, "file", fields.file);
+
   if (fields.line !== undefined) codeField(s, "line", fields.line);
+
   if (fields.into !== undefined) codeField(s, "into", fields.into);
+
   if ((fields.output ?? "proposal") !== s.app.state.prompt!.codeDraft!.output) {
     codeRow(s, "output");
     s.send(KEY.right);
   }
+
   codeRow(s, "run");
   s.send(KEY.enter);
 }
@@ -1072,6 +1122,7 @@ type CodeResult = Extract<OperationResult, { kind: "code-to-spec" }> & { payload
 function codeRecord(app: App): CodeResult {
   const result = app.state.records.at(-1)?.result;
   assert.ok(result?.kind === "code-to-spec" && result.payload !== null, JSON.stringify(result?.messages));
+
   return result as CodeResult;
 }
 
@@ -1089,6 +1140,7 @@ test("tui: code-to-spec of a file with two exports and a private fn is the CLI's
   const before = treeBytes(root);
   // No ID under the cursor: empty fields; a typed part lists the source files; Enter takes one and moves to the line.
   s.send(KEY.ctrlP);
+
   for (const ch of "code to spec") s.send(ch);
   s.send(KEY.enter);
   const prompt = s.app.state.prompt!;
@@ -1096,6 +1148,7 @@ test("tui: code-to-spec of a file with two exports and a private fn is the CLI's
   assert.deepEqual(prompt.codeDraft, { source: "file", file: "", line: "", since: "HEAD", into: "", mode: "algo", output: "proposal" });
   assert.equal(promptNote(s.app), "type a source file · ↓ picks a match");
   assert.deepEqual(prompt.details, [`root: ${root} · the file and the target are relative to it · algo: only the calls the snapshot resolved; no model, no search beyond the file`]);
+
   for (const ch of "purch") s.send(ch);
   assert.deepEqual(prompt.ids?.filter((id) => id.startsWith("src:")), ["src:src/application/purchase.ts"]);
   s.send(KEY.down);
@@ -1105,6 +1158,7 @@ test("tui: code-to-spec of a file with two exports and a private fn is the CLI's
   assert.equal(prompt.ids?.[prompt.index], "line");
   assert.equal(promptNote(s.app), "2 exported fn(s): application.purchase.buy, application.purchase.refund");
   assert.match(prompt.items.join("\n"), /target: {4}\(default keylang\/flows\/purchase\.md\)/);
+
   // The line takes digits only; inside the private fn it names that fn and its own target.
   for (const ch of "8x") s.send(ch);
   assert.equal(prompt.codeDraft?.line, "8");
@@ -1170,6 +1224,7 @@ test("tui: code-to-spec of a file with two exports and a private fn is the CLI's
   assert.match(text, /Enter open MERGE/);
   s.send(KEY.enter);
   assert.equal(s.app.state.merge?.path, "keylang/flows/purchase.md");
+
   for (let i = 0; i < s.app.state.merge!.hunks.length; i++) s.send("a");
   s.send("w");
   await s.app.idle();
@@ -1180,22 +1235,27 @@ test("tui: code-to-spec of a file with two exports and a private fn is the CLI's
 test("tui: code-to-spec takes the code viewer's or the cursor's position; a line outside every fn, a file that is not source, a waiting proposal and an unsaved target keep the form; a target edited during the work gets no proposal", async (t) => {
   const root = checkoutRepo(t, { "src/application/purchase.ts": PURCHASE_TWO });
   const hook: { during: (() => void) | null } = { during: null };
+
   // The operation on this thread, with a hook before the session's own answer to the commit.
   const operations = (request: OperationRequest, context: OperationContext): Promise<OperationResult> =>
     runOperation(request, {
       ...context,
       beforeCommit: async (plan) => {
         hook.during?.();
+
         return context.beforeCommit?.(plan);
       },
     });
+
   const s = session(root, { cols: 200, operations });
   t.after(() => s.app.close());
   await s.app.idle();
   const before = treeBytes(root);
+
   // The ID under the cursor (a fn): its file and line.
   for (let i = 0; i < 5; i++) s.send(KEY.down);
   s.send(KEY.ctrlP);
+
   for (const ch of "code to spec") s.send(ch);
   s.send(KEY.enter);
   assert.deepEqual(s.app.state.prompt?.codeDraft, { source: "file", file: "src/application/purchase.ts", line: "3", since: "HEAD", into: "", mode: "algo", output: "proposal" });
@@ -1205,6 +1265,7 @@ test("tui: code-to-spec takes the code viewer's or the cursor's position; a line
   s.send(KEY.enter);
   assert.equal(s.app.state.mode, "code");
   s.send(KEY.ctrlP);
+
   for (const ch of "code to spec") s.send(ch);
   s.send(KEY.enter);
   assert.deepEqual(s.app.state.prompt?.codeDraft, { source: "file", file: "src/application/purchase.ts", line: "3", since: "HEAD", into: "", mode: "algo", output: "proposal" });
@@ -1246,6 +1307,7 @@ test("tui: code-to-spec takes the code viewer's or the cursor's position; a line
   // An unsaved target: refused before the run; the buffer keeps its text.
   const flow = "keylang/flows/checkout.md";
   s.send("i");
+
   for (const ch of "Draft me. ") s.send(ch);
   await esc(s.send);
   const typed = s.app.state.buffers.get(flow)!.text;
@@ -1254,6 +1316,7 @@ test("tui: code-to-spec takes the code viewer's or the cursor's position; a line
   await esc(s.send);
   assert.equal(s.app.state.buffers.get(flow)!.text, typed);
   const buffer = s.app.state.buffers.get(flow)!;
+
   for (let i = 0; i < 20 && buffer.text !== buffer.saved; i++) s.send("\x1a"); // Ctrl+Z
   assert.equal(buffer.text, buffer.saved);
   // The target edited in the session while the draft was prepared: the operation names it, the session refuses, nothing is written.
@@ -1262,6 +1325,7 @@ test("tui: code-to-spec takes the code viewer's or the cursor's position; a line
     s.send("x");
     s.send("\x1b");
   };
+
   codeForm(s, { file: "src/application/purchase.ts", line: "10", into: flow });
   await s.app.idle();
   const refused = s.app.state.records.at(-1)!.result!;
@@ -1289,6 +1353,7 @@ function changeCheckout(root: string): void {
  */
 function sinceForm(s: ReturnType<typeof session>, fields: { since?: string; into?: string; mode?: "algo" | "hybrid" | "llm"; output?: "proposal" | "preview" }): void {
   s.send(KEY.ctrlP);
+
   for (const ch of "code to spec") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.prompt?.kind, "code-to-spec", s.app.state.message ?? "");
@@ -1299,17 +1364,23 @@ function sinceForm(s: ReturnType<typeof session>, fields: { since?: string; into
   const form = s.app.state.prompt!.codeDraft!;
   assert.equal(form.source, "since");
   assert.ok(!s.app.state.prompt!.ids!.includes("file") && !s.app.state.prompt!.ids!.includes("line"), "the file's rows are hidden");
+
   if (fields.since !== undefined) codeField(s, "since", fields.since);
+
   if (fields.into !== undefined) codeField(s, "into", fields.into);
+
   if (fields.mode !== undefined) {
     codeRow(s, "mode");
+
     for (let i = 0; i < 3 && form.mode !== fields.mode; i++) s.send(KEY.right);
     assert.equal(form.mode, fields.mode);
   }
+
   if ((fields.output ?? "proposal") !== form.output) {
     codeRow(s, "output");
     s.send(KEY.right);
   }
+
   codeRow(s, "run");
   s.send(KEY.enter);
 }
@@ -1331,6 +1402,7 @@ test("tui: code-to-spec from the git changes is the CLI's --since: a changed fn 
   const before = workTree(root);
   // The form switches the source explicitly; the git rows show the default ref and the default target.
   s.send(KEY.ctrlP);
+
   for (const ch of "code to spec") s.send(ch);
   s.send(KEY.enter);
   codeRow(s, "source");
@@ -1401,10 +1473,12 @@ test("tui: code-to-spec from the git changes is the CLI's --since: a changed fn 
   // Nothing changed since the ref: a success with no candidate, no proposal, no stats, no directory.
   rmSync(join(root, ".keylang"), { recursive: true, force: true });
   rmSync(join(twin, ".keylang"), { recursive: true, force: true });
+
   for (const dir of [root, twin]) {
     gitRun(dir, ["add", "."]);
     gitRun(dir, ["commit", "-q", "-m", "changes"]);
   }
+
   const clean = workTree(root);
   sinceForm(s, {});
   await s.app.idle();
@@ -1419,6 +1493,7 @@ test("tui: code-to-spec from the git changes is the CLI's --since: a changed fn 
   sinceForm(s, { since: "HEAD~1", output: "preview" });
   await s.app.idle();
   assert.equal(codeRecord(s.app).payload.candidate!.print, cliSince(twin, ["HEAD~1", "--mode", "algo", "--print"]).stdout);
+
   for (const ref of ["no-such-ref", "--output=leak.txt"]) {
     sinceForm(s, { since: ref, output: "preview" });
     await s.app.idle();
@@ -1427,6 +1502,7 @@ test("tui: code-to-spec from the git changes is the CLI's --since: a changed fn 
     assert.deepEqual([failed.status, failed.exitCode, failed.payload, cliBad.status, cliBad.stdout], ["failed", 2, null, 2, ""]);
     assert.equal(`keylang: ${failed.messages[0]!.text}\n`, cliBad.stderr);
   }
+
   assert.ok(!existsSync(join(root, "leak.txt")) && !existsSync(join(twin, "leak.txt")));
   assert.deepEqual(workTree(root), clean);
   // Without a repository: code 2 with the CLI's message; the session goes on.
@@ -1448,6 +1524,7 @@ test("tui: code-to-spec from the git changes is the CLI's --since: a changed fn 
 /** The model's flow for the trigger it is asked about: the trigger and one step of the snapshot. */
 function flowReply(prompt: string): string {
   const [, name, trigger] = /Draft `# flow ([^`]+)` for the trigger `([^`]+)`/.exec(prompt)!;
+
   return `\`\`\`markdown\n# flow ${name}\n\n- trigger ${trigger}\n  - step infrastructure.store.save\n\`\`\``;
 }
 
@@ -1500,9 +1577,11 @@ test("tui: a hybrid code-to-spec from the git changes asks the model once per fl
   model.release();
   await model.requested(4);
   s.send(KEY.ctrlP);
+
   for (const ch of "cancel") s.send(ch);
   s.send(KEY.enter);
   assert.deepEqual([second.status, second.result?.exitCode, second.result?.payload], ["cancelled", null, null]);
+
   for (let i = 0; i < 100 && model.dropped() === 0; i++) await sleep(10);
   assert.equal(model.dropped(), 1, "the second request is closed");
   model.release();
@@ -1521,12 +1600,14 @@ test("code-to-spec operation: a Cancel between two flows asks no second request;
   const request = { kind: "code-to-spec", root, since: "HEAD", output: "proposal", mode: "llm" } as const;
   // Abort once the first answer is in, before the second flow is asked.
   const controller = new AbortController();
+
   const between = runOperation(request, {
     signal: controller.signal,
     onProgress: ({ text }) => {
       if (/flow 2 of 2/.test(text)) controller.abort();
     },
   });
+
   await model.requested(1);
   model.release();
   const cancelled = await between;
@@ -1572,6 +1653,7 @@ const REFUND_PLAN = [
 /** Moves the spec-to-code form's selection to the row `id`. */
 function specRow(s: ReturnType<typeof session>, id: string): void {
   const prompt = s.app.state.prompt!;
+
   for (let i = 0; i < 20 && prompt.ids?.[prompt.index] !== id; i++) s.send(KEY.down);
   assert.equal(prompt.ids?.[prompt.index], id, JSON.stringify(prompt.ids));
 }
@@ -1579,25 +1661,33 @@ function specRow(s: ReturnType<typeof session>, id: string): void {
 /** The palette's spec-to-code form with the given fields (an absent one keeps its prefill); Enter on the run row. */
 function specForm(s: ReturnType<typeof session>, fields: { id?: string; into?: string; mode?: "algo" | "llm"; output?: "proposal" | "preview" }): void {
   s.send(KEY.ctrlP);
+
   for (const ch of "spec to code") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.prompt?.kind, "spec-to-code", s.app.state.message ?? "");
   const form = s.app.state.prompt!.specCode!;
+
   for (const field of ["id", "into"] as const) {
     const text = fields[field];
+
     if (text === undefined) continue;
     specRow(s, field);
+
     for (const _ of form[field]) s.send("\x7f");
+
     for (const ch of text) s.send(ch);
   }
+
   if ((fields.mode ?? "algo") !== form.mode) {
     specRow(s, "mode");
     s.send(KEY.right);
   }
+
   if ((fields.output ?? "proposal") !== form.output) {
     specRow(s, "output");
     s.send(KEY.right);
   }
+
   specRow(s, "run");
   s.send(KEY.enter);
 }
@@ -1607,6 +1697,7 @@ type SpecCodeResult = Extract<OperationResult, { kind: "spec-to-code" }> & { pay
 function specRecord(app: App): SpecCodeResult {
   const result = app.state.records.at(-1)?.result;
   assert.ok(result?.kind === "spec-to-code" && result.payload !== null, JSON.stringify(result?.messages));
+
   return result as SpecCodeResult;
 }
 
@@ -1629,6 +1720,7 @@ test("tui: spec-to-code proposes the CLI's code and each test as separate code p
   assert.deepEqual(planned, ["unverified"]);
   // The form lists the planned fns no code implements; Enter takes one and moves to the target.
   s.send(KEY.ctrlP);
+
   for (const ch of "spec to code") s.send(ch);
   s.send(KEY.enter);
   const prompt = s.app.state.prompt!;
@@ -1636,6 +1728,7 @@ test("tui: spec-to-code proposes the CLI's code and each test as separate code p
   assert.deepEqual(prompt.specCode, { id: "", into: "", mode: "algo", output: "proposal" }, "the offline template unless llm is chosen");
   assert.equal(promptNote(s.app), "type a planned fn · ↓ picks one (1 planned, not implemented)");
   assert.deepEqual(prompt.ids?.filter((id) => id.startsWith("planned:")), ["planned:application.refund.refund"]);
+
   for (const ch of "refu") s.send(ch);
   s.send(KEY.down);
   assert.equal(promptNote(s.app), "Enter takes application.refund.refund");
@@ -1694,10 +1787,12 @@ test("tui: spec-to-code proposes the CLI's code and each test as separate code p
   const cli = cliSpec(twin, ["application.refund.refund"]);
   assert.equal(cli.status, 0, cli.stderr);
   assert.match(cli.stderr, /keylang: proposed \.keylang\/proposals\/src\/application\/refund\.ts, \.keylang\/proposals\/tests\/refund-audit\.test\.ts, \.keylang\/proposals\/tests\/refund\.test\.ts; merge them hunk by hunk/);
+
   for (const [i, store] of REFUND_STORES.entries()) {
     assert.equal(readFileSync(join(root, store), "utf8"), readFileSync(join(twin, store), "utf8"), `${store}: the CLI's bytes`);
     assert.equal(readFileSync(join(root, store), "utf8"), candidate.targets[i]!.after);
   }
+
   assert.deepEqual([...treeBytes(root).keys()].filter((path) => !before.has(path)).sort(), [...REFUND_STORES].sort(), "only the proposals, no stats");
   assert.equal(s.app.state.mode, "merge", s.app.state.message ?? "");
   assert.equal(s.app.state.merge?.path, "src/application/refund.ts");
@@ -1729,6 +1824,7 @@ test("tui: spec-to-code proposes the CLI's code and each test as separate code p
 /** Moves the proposals list's selection to `path`. */
 function specRowOf(s: ReturnType<typeof session>, path: string): void {
   const prompt = s.app.state.prompt!;
+
   for (let i = 0; i < 20 && prompt.ids?.[prompt.index] !== path; i++) s.send(KEY.down);
   assert.equal(prompt.ids?.[prompt.index], path, JSON.stringify(prompt.ids));
 }
@@ -1736,14 +1832,17 @@ function specRowOf(s: ReturnType<typeof session>, path: string): void {
 test("tui: spec-to-code refuses an implemented ID with its place, a file of another module and a waiting proposal before the run; a test proposal waiting or a test file created during the work writes nothing; an I/O failure names the proposals written; g on a planned gap opens the form", async (t) => {
   const root = checkoutRepo(t, { "keylang/flows/refund.md": REFUND_PLAN, "keylang/features/later.md": FEATURES["keylang/features/refund.md"]! });
   const hook: { during: (() => void) | null } = { during: null };
+
   const operations = (request: OperationRequest, context: OperationContext): Promise<OperationResult> =>
     runOperation(request, {
       ...context,
       beforeCommit: async (plan) => {
         hook.during?.();
+
         return context.beforeCommit?.(plan);
       },
     });
+
   const s = session(root, { cols: 200, rows: 60, operations });
   t.after(() => s.app.close());
   await s.app.idle();
@@ -1757,6 +1856,7 @@ test("tui: spec-to-code refuses an implemented ID with its place, a file of anot
   assert.equal(implemented.stderr, `keylang: ${(s.app.state.message ?? "").replace(/^spec-to-code: /, "")}\n`);
   assert.match(s.app.state.message ?? "", /`application\.purchase\.buy` is already implemented \(src\/application\/purchase\.ts:3\)/);
   await esc(s.send);
+
   // A file of another module, and one keylang does not read: the CLI's reasons, on the target row.
   for (const into of ["src/domain/order.ts", "src/application/refund.txt"]) {
     specForm(s, { id: "application.refund.refund", into });
@@ -1767,6 +1867,7 @@ test("tui: spec-to-code refuses an implemented ID with its place, a file of anot
     assert.equal(cli.stderr, `keylang: ${(s.app.state.message ?? "").replace(/^spec-to-code: /, "")}\n`);
     await esc(s.send);
   }
+
   assert.equal(s.app.state.records.length, 0);
   assert.deepEqual(treeBytes(root), before, "no write for a refused ID or target");
   // A proposal waiting for the code file: refused by the form.
@@ -1796,6 +1897,7 @@ test("tui: spec-to-code refuses an implemented ID with its place, a file of anot
     mkdirSync(join(root, "tests"), { recursive: true });
     writeFileSync(join(root, "tests/refund.test.ts"), "// mine\n");
   };
+
   specForm(s, { id: "application.refund.refund" });
   await s.app.idle();
   result = specRecord(s.app);
@@ -1804,12 +1906,14 @@ test("tui: spec-to-code refuses an implemented ID with its place, a file of anot
   assert.ok(!existsSync(join(root, ".keylang/proposals")));
   assert.equal(readFileSync(join(root, "tests/refund.test.ts"), "utf8"), "// mine\n");
   rmSync(join(root, "tests"), { recursive: true, force: true });
+
   // A store directory that cannot be written: the code proposal is written, the failure and what was written are named.
   if (process.getuid?.() !== 0) {
     hook.during = () => {
       mkdirSync(join(root, ".keylang/proposals/tests"), { recursive: true });
       chmodSync(join(root, ".keylang/proposals/tests"), 0o555);
     };
+
     t.after(() => {
       if (existsSync(join(root, ".keylang/proposals/tests"))) chmodSync(join(root, ".keylang/proposals/tests"), 0o755);
     });
@@ -1826,6 +1930,7 @@ test("tui: spec-to-code refuses an implemented ID with its place, a file of anot
     chmodSync(join(root, ".keylang/proposals/tests"), 0o755);
     hook.during = null;
   }
+
   rmSync(join(root, ".keylang"), { recursive: true, force: true });
   // A planned gap of a feature report: g opens the form with its ID; a proposal does not make the feature done.
   featureForm(s.send);
@@ -1855,9 +1960,10 @@ test("tui: spec-to-code refuses an implemented ID with its place, a file of anot
 
 /** The model's answers for REFUND_PLAN: the function for the code request, a test file with the declared names for each test request. */
 function refundReply(prompt: string): string {
-  if (/^Planned: `application\.refund\.refund`/.test(prompt)) return "```ts\nexport function refund(order: Order): Order {\n  return order;\n}\n```";
+  if (prompt.startsWith('Planned: `application.refund.refund`')) return "```ts\nexport function refund(order: Order): Order {\n  return order;\n}\n```";
   const names = [...prompt.matchAll(/- flow refund: ("[^"]+")/g)].map((m) => m[1]!);
   const cases = names.map((name) => `test(${name}, () => {\n  assert.equal(typeof refund, "function");\n});\n`).join("\n");
+
   return `\`\`\`ts\nimport assert from "node:assert/strict";\nimport { test } from "node:test";\nimport { refund } from "../src/application/refund.ts";\n\n${cases}\`\`\``;
 }
 
@@ -1888,16 +1994,21 @@ test("tui: spec-to-code with the model shows the CLI's llm candidate with its pr
   const idVerdicts = (): string[] => (s.app.state.analysis?.verdicts ?? []).filter((v) => v.area === "application.refund.refund" && v.criterion === "ID").map((v) => v.verdict);
   const planned = idVerdicts();
   assert.ok(planned.length > 0 && planned.every((verdict) => verdict === "unverified"), JSON.stringify(planned));
+
   const featureReport = async (): Promise<string> => {
     const feature = await runOperation({ kind: "feature", root, slug: "refunds" });
     assert.ok(feature.payload !== null, JSON.stringify(feature.messages));
+
     return JSON.stringify([feature.exitCode, feature.payload.report]);
   };
+
   const featureBefore = await featureReport();
   // The mode row: algo by default even with a model; llm names the agent and what it writes.
   s.send(KEY.ctrlP);
+
   for (const ch of "spec to code") s.send(ch);
   s.send(KEY.enter);
+
   for (const ch of "application.refund.refund") s.send(ch);
   specRow(s, "mode");
   assert.equal(promptNote(s.app), "algo: the template, offline; no model");
@@ -1915,6 +2026,7 @@ test("tui: spec-to-code with the model shows the CLI's llm candidate with its pr
   await model.requested(1);
   assert.match(model.prompts[0]!, /^Planned: `application\.refund\.refund` \(order: Order\) → Order/);
   assert.equal(previewRecord.status, "running");
+
   for (let i = 0; i < 100 && !/asking anthropic:claude-opus-5/.test(previewRecord.progress ?? ""); i++) await sleep(10);
   assert.match(previewRecord.progress ?? "", /asking anthropic:claude-opus-5/, "the progress of the same operation names the model");
   const preview = await answerAll(model, s.app.idle().then(() => specRecord(s.app)));
@@ -1956,6 +2068,7 @@ test("tui: spec-to-code with the model shows the CLI's llm candidate with its pr
   assert.match(s.app.state.message ?? "", /spec-to-code: 3 proposal\(s\) wait: src\/application\/refund\.ts, tests\/refund-audit\.test\.ts, tests\/refund\.test\.ts/);
   const cli = await answerAll(model, cliSpecAsync(twin, ["application.refund.refund", "--mode", "llm"]));
   assert.equal(cli.status, 0, cli.stderr);
+
   for (const store of REFUND_STORES) assert.equal(readFileSync(join(root, store), "utf8"), readFileSync(join(twin, store), "utf8"), `${store}: the CLI's bytes`);
   assert.deepEqual([...treeBytes(root).keys()].filter((path) => !before.has(path)).sort(), [...REFUND_STORES].sort(), "only the proposals: no source, test, spec or stats");
   await s.app.idle();
@@ -1991,9 +2104,11 @@ test("tui: spec-to-code llm — Cancel, an empty or wrong answer and a timeout w
   model.release();
   await model.requested(2);
   s.send(KEY.ctrlP);
+
   for (const ch of "cancel") s.send(ch);
   s.send(KEY.enter);
   assert.deepEqual([cancelled.status, cancelled.result?.exitCode, cancelled.result?.payload], ["cancelled", null, null]);
+
   for (let i = 0; i < 100 && model.dropped() === 0; i++) await sleep(10);
   assert.equal(model.dropped(), 1, "the request is closed");
   model.release();
@@ -2019,6 +2134,7 @@ test("tui: spec-to-code llm — Cancel, an empty or wrong answer and a timeout w
 
   // The operation itself, as the session runs it: an empty answer and a function of another name are 2 with nothing written.
   const request = { kind: "spec-to-code", root, id: "application.refund.refund", output: "proposal", mode: "llm" } as const;
+
   for (const [answer, message] of [
     ["", /^claude-opus-5 answered without text/],
     ["```ts\n```", /^the model did not return a function named `refund`; nothing written$/],
@@ -2029,6 +2145,7 @@ test("tui: spec-to-code llm — Cancel, an empty or wrong answer and a timeout w
     assert.deepEqual([failed.status, failed.exitCode, failed.payload, failed.proposals], ["failed", 2, null, []]);
     assert.match(failed.messages.at(-1)!.text, message);
   }
+
   reply = refundReply;
   assert.deepEqual(treeBytes(root), before, "no proposal for a bad answer");
   // A spec changed on disk during the answer: refused (1), the new bytes kept, no proposal.
@@ -2097,6 +2214,7 @@ type ApplyCodeResult = Extract<OperationResult, { kind: "apply-code" }> & { payl
 function applyRecord(app: App): ApplyCodeResult {
   const result = app.state.records.at(-1)?.result;
   assert.ok(result?.kind === "apply-code" && result.payload !== null, JSON.stringify(result?.messages));
+
   return result as ApplyCodeResult;
 }
 
@@ -2118,6 +2236,7 @@ test("tui: a spec-to-code candidate is applied only by a in F6 after a step nami
   let text = s.text();
   assert.match(text, /a applies the entire candidate: writes these 3 file\(s\) directly, as --apply/);
   assert.match(text, /Enter rerun · a apply all · Esc back/);
+
   for (const file of REFUND_FILES) assert.ok(text.includes(`${file} (new file)`), file);
   // The step names every file; Back writes nothing and starts nothing.
   s.send("a");
@@ -2139,10 +2258,12 @@ test("tui: a spec-to-code candidate is applied only by a in F6 after a step nami
   assert.equal(cli.status, 0, cli.stderr);
   assert.equal(cli.stdout, candidate.print);
   assert.ok(cli.stderr.endsWith(`keylang: ${REFUND_FILES.join(", ")} written; run \`keylang map\`, then write the body and its tests\n`), cli.stderr);
+
   for (const [i, file] of REFUND_FILES.entries()) {
     assert.equal(readFileSync(join(root, file), "utf8"), readFileSync(join(twin, file), "utf8"), `${file}: the CLI's bytes`);
     assert.equal(readFileSync(join(root, file), "utf8"), candidate.targets[i]!.after);
   }
+
   assert.deepEqual([...treeBytes(root).keys()].filter((path) => !before.has(path)).sort(), [...REFUND_FILES].sort(), "the files only: no proposal, no stats");
   assert.match(s.app.state.message ?? "", /spec-to-code --apply: .* written · no test was run; run them, then check · u undoes only the last MERGE, not this write/);
   // The analysis after the write sees the code.
@@ -2191,6 +2312,7 @@ test("tui: a spec-to-code candidate is applied only by a in F6 after a step nami
   const llmCli = await answerAll(model, cliSpecAsync(llmTwin, ["application.refund.refund", "--mode", "llm", "--apply"]));
   assert.equal(llmCli.status, 0, llmCli.stderr);
   assert.ok(llmCli.stderr.endsWith(`keylang: ${REFUND_FILES.join(", ")} written; run \`keylang map\`, then review the body and the tests, then run them\n`), llmCli.stderr);
+
   for (const file of REFUND_FILES) assert.equal(readFileSync(join(llmRoot, file), "utf8"), readFileSync(join(llmTwin, file), "utf8"), `${file}: the CLI's bytes`);
   assert.equal(readFileSync(join(llmRoot, REFUND_FILES[0]!), "utf8"), "export function refund(order: Order): Order {\n  return order;\n}\n");
 });
@@ -2198,22 +2320,28 @@ test("tui: a spec-to-code candidate is applied only by a in F6 after a step nami
 test("tui: applying a candidate checks every file and input first — a target created after the preview, a spec changed at the commit, an open MERGE or a waiting proposal refuse it with nothing written; a failed second write names the first as written and the rest as not attempted, as the CLI does", async (t) => {
   const root = checkoutRepo(t, { "keylang/flows/refund.md": REFUND_PLAN });
   const hook: { during: (() => void) | null } = { during: null };
+
   const operations = (request: OperationRequest, context: OperationContext): Promise<OperationResult> =>
     runOperation(request, {
       ...context,
       beforeCommit: async (plan) => {
         hook.during?.();
+
         return context.beforeCommit?.(plan);
       },
     });
+
   const s = session(root, { cols: 200, rows: 60, operations });
   t.after(() => s.app.close());
   await s.app.idle();
+
   const preview = async (): Promise<SpecCodeResult> => {
     specForm(s, { id: "application.refund.refund", output: "preview" });
     await s.app.idle();
+
     return specRecord(s.app);
   };
+
   const apply = async (): Promise<ApplyCodeResult> => {
     s.send(KEY.f6);
     s.send("a");
@@ -2221,8 +2349,10 @@ test("tui: applying a candidate checks every file and input first — a target c
     await s.app.idle();
     const result = applyRecord(s.app);
     await esc(s.send);
+
     return result;
   };
+
   const nothing = (): void => {
     for (const file of REFUND_FILES) assert.ok(!existsSync(join(root, file)) || file === "tests/refund.test.ts", `${file} not written`);
   };

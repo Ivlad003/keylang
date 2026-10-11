@@ -72,17 +72,20 @@ const api = (): TraceApi | undefined => (globalThis as { __keylangTrace?: TraceA
  */
 export function withFlow<T>(flow: string | null | undefined, fn: () => T, testId?: string): T {
   const trace = api();
+
   return trace && flow ? trace.withFlow(flow, fn, testId) : fn();
 }
 
 // Without a trace file there is nothing to record, so the import can stay in a test configuration.
 // A second copy of this module (an app's own import by another URL) finds the first one recording.
 const output = process.env.KEYLANG_TRACE;
+
 if (output && !api()) record(output);
 
 function record(given: string): void {
   const planPath = process.env.KEYLANG_TRACE_PLAN ? resolve(process.env.KEYLANG_TRACE_PLAN) : null;
   const specFlow = process.env.KEYLANG_TRACE_FLOW || null;
+
   if (!specFlow && !planPath) throw new Error("keylang trace: KEYLANG_TRACE is set, so KEYLANG_TRACE_FLOW is required too (or KEYLANG_TRACE_PLAN, a plan from `keylang trace-plan`)");
   const flow = process.env.KEYLANG_FLOW || specFlow || planFlow(planPath!);
   const run = runId();
@@ -96,6 +99,7 @@ function record(given: string): void {
   const file = resolve(given);
   process.env.KEYLANG_TRACE = file;
   process.env.KEYLANG_TRACE_ROOT = root;
+
   if (planPath) process.env.KEYLANG_TRACE_PLAN = planPath;
 
   const { port1, port2 } = new MessageChannel();
@@ -103,18 +107,23 @@ function record(given: string): void {
   register(hooks, { parentURL: import.meta.url, data: { root, flow: planPath ? null : specFlow, plan: planPath, port: port2 }, transferList: [port2] });
   let plan: Plan | null = null;
   const loads: Loads = { imported: new Set(), skipped: new Set(), own: new WeakSet() };
+
   /** Reads what the hooks thread sent so far: the plan, then the files it was applied to or left alone. */
   const planned = (): Plan | null => {
     for (;;) {
       const message = receiveMessageOnPort(port1)?.message as TracePlanMessage | undefined;
+
       if (!message) break;
+
       if (message.kind === "plan") plan = message;
       else if (message.kind === "skipped") for (const id of message.ids) loads.skipped.add(id);
       // A CommonJS copy proves itself by `own`: Node may run a copy it cached before instead.
       else if (!message.commonjs) for (const id of message.ids) loads.imported.add(id);
     }
+
     return plan;
   };
+
   port1.unref();
 
   const context = new AsyncLocalStorage<Span>();
@@ -131,6 +140,7 @@ function record(given: string): void {
   // never runs `exit`; its spans must already be on disk, and the missing `run`
   // record of its clock tells `check` the run is incomplete.
   const BUFFER = 64;
+
   const flush = (): void => {
     if (lines.length === 0) return;
     const text = `${lines.join("\n")}\n`;
@@ -151,7 +161,9 @@ function record(given: string): void {
     const span: Span = { spanId: `${scope.clockId}:s${++scope.spans}`, ended: false, scope };
     write(scope, { event: "start", spanId: span.spanId, parentSpanId: parent?.spanId ?? null, symbolId, clockId: scope.clockId, seq: ++scope.seq, ts: performance.now(), ...(parent?.ended ? { links: [parent.spanId] } : {}) });
     scope.open.add(span.spanId);
+
     if (lines.length >= BUFFER) flush();
+
     return span;
   };
 
@@ -185,16 +197,19 @@ function record(given: string): void {
     run<T>(symbolId: string, isAsync: boolean, body: () => T): T {
       const span = start(symbolId);
       let result: T;
+
       try {
         result = context.run(span, body);
       } catch (e) {
         finish(span, "error");
         throw e;
       }
+
       if (isAsync && result instanceof Promise) {
         return result.then(
           (value) => {
             finish(span, "ok");
+
             return value;
           },
           (error: unknown) => {
@@ -203,7 +218,9 @@ function record(given: string): void {
           },
         ) as T;
       }
+
       finish(span, "ok");
+
       return result;
     },
     /** A planned CommonJS file ran from the wrapped source: `module` is that copy. */
@@ -216,16 +233,19 @@ function record(given: string): void {
       // A request that throws did not run its flow to the end, as a crashed process did not.
       const done = (crashed: boolean): void => runRecord(scope, { killed: false, crashed, code: null });
       let result: T;
+
       try {
         result = scopes.run(scope, () => context.exit(body));
       } catch (e) {
         done(true);
         throw e;
       }
+
       if (result instanceof Promise) {
         return result.then(
           (value) => {
             done(false);
+
             return value;
           },
           (error: unknown) => {
@@ -234,10 +254,13 @@ function record(given: string): void {
           },
         ) as T;
       }
+
       done(false);
+
       return result;
     },
   };
+
   (globalThis as { __keylangTrace?: TraceApi }).__keylangTrace = traceApi;
 
   // A process that crashed did not run the flow to its end: its spans are not complete evidence.
@@ -246,17 +269,23 @@ function record(given: string): void {
   process.on("uncaughtExceptionMonitor", () => (crashed = true));
   /** The `run` record of this process, once: at `exit`, or earlier when a signal is about to end the process. */
   let recorded = false;
+
   const record = (code: number | null, killed: boolean): void => {
     if (recorded) return;
     recorded = true;
+
     // A server whose every span was a request's has no run of its own to report.
     if (requests > 0 && processScope.spans === 0) {
       flush();
+
       return;
     }
+
     runRecord(processScope, { killed, crashed, code });
   };
+
   process.on("exit", (code) => record(code, false));
+
   // A signal with no handler ends the process without `exit`. The adapter writes
   // what it has and the record of a run cut short, then lets the signal do its
   // work; a handler of the program itself keeps its turn, and the adapter only flushes.
@@ -264,13 +293,17 @@ function record(given: string): void {
     for (const signal of ["SIGTERM", "SIGINT"] as const) {
       const onSignal = (): void => {
         process.removeListener(signal, onSignal);
+
         if (process.listenerCount(signal) > 0) {
           flush();
+
           return;
         }
+
         record(null, true);
         process.kill(process.pid, signal);
       };
+
       process.on(signal, onSignal);
     }
   }
@@ -279,18 +312,22 @@ function record(given: string): void {
 /** The flow a plan file names; a file that is no plan stops the process with its path. */
 function planFlow(path: string): string {
   let flow: unknown;
+
   try {
     flow = (JSON.parse(readFileSync(path, "utf8")) as { flow?: unknown }).flow;
   } catch (e) {
     throw new Error(`keylang trace: ${path}: ${e instanceof Error ? e.message : String(e)}`);
   }
+
   if (typeof flow !== "string" || flow === "") throw new Error(`keylang trace: ${path}: not a plan of schema 1 from \`keylang trace-plan\``);
+
   return flow;
 }
 
 /** The test id of a process without KEYLANG_TRACE_TEST: its command line, the script relative to the root. */
 function commandLine(root: string): string {
   const [, script, ...args] = process.argv;
+
   return ["node", ...(script ? [relative(root, script) || script] : []), ...args].join(" ");
 }
 
@@ -317,12 +354,17 @@ function instrumented(plan: Plan, loads: Loads): { ids: string[]; reasons: Recor
   const cache = createRequire(import.meta.url).cache;
   // Each function of the flow left out, with the reason: the run record names them for `check`.
   const reasons: Record<string, string> = { ...plan.unplanned };
+
   for (const id of loads.skipped) reasons[id] = "its file loaded with other content than the snapshot saw";
+
   for (const file of plan.files) {
     const copy = cache[file.path];
+
     // A `require` of an ES module the hooks loaded first gets that module, wrappers included.
     if (copy === undefined || loads.own.has(copy) || file.ids.every((id) => loads.imported.has(id))) continue;
+
     for (const id of file.ids) reasons[id] ??= "its file was loaded past the trace hooks";
   }
+
   return { ids: plan.planned.filter((id) => !(id in reasons)), reasons };
 }

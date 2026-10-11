@@ -44,6 +44,7 @@ test("tui: without keylang.json the start screen shows the guess; Browse analyse
   assert.doesNotMatch(s.lines().at(-1)!, /analyzing/);
   // Snapshot actions explain why they cannot run yet; the palette works on the start screen.
   s.send(":");
+
   for (const ch of "find node") s.send(ch);
   assert.match(s.text(), /choose Browse on the start screen first/);
   s.send(KEY.enter);
@@ -67,6 +68,7 @@ test("tui: without keylang.json the start screen shows the guess; Browse analyse
   assert.match(s.app.state.current ?? "", /^keylang\/map\//);
   assert.match(s.lines().at(-1)!, /guessed configuration: no keylang\.json, nothing written/);
   s.send(":");
+
   for (const ch of "find node") s.send(ch);
   assert.doesNotMatch(promptNote(s.app), /Browse|no analysis/);
   s.send("\x1b");
@@ -126,11 +128,13 @@ test("tui: an invalid field names the field; breaking the config later keeps the
   assert.match(bufferLine(s.app, s.app.state.cursor.line), /"languages": 3/);
   // Snapshot actions say why they are unavailable; doctor still runs.
   s.send(":");
+
   for (const ch of "find node") s.send(ch);
   assert.match(promptNote(s.app), /keylang\.json is invalid/);
   s.send("\x1b");
   await sleep(40);
   s.send(KEY.ctrlP);
+
   for (const ch of "doctor") s.send(ch);
   s.send(KEY.enter);
   await s.app.idle();
@@ -147,6 +151,7 @@ test("tui: an invalid field names the field; breaking the config later keeps the
   s.send("\x1b");
   await sleep(40);
   s.send(":");
+
   for (const ch of "checkout") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.current, "keylang/flows/checkout.md");
@@ -185,6 +190,7 @@ test("tui: a valid config without supported sources keeps the editor and doctor;
   assert.match(s.lines().at(-1)!, /no supported source files/);
   assert.equal(s.app.state.current, "keylang/rules.md");
   s.send(":");
+
   for (const ch of "toggle map") s.send(ch);
   assert.match(promptNote(s.app), /no supported source files/);
   s.send("\x1b");
@@ -194,6 +200,7 @@ test("tui: a valid config without supported sources keeps the editor and doctor;
   s.send("\x1b");
   await sleep(40);
   s.send(KEY.ctrlP);
+
   for (const ch of "doctor") s.send(ch);
   s.send(KEY.enter);
   await s.app.idle();
@@ -242,6 +249,7 @@ test("tui: feature gives the same object and code as the CLI for done, planned, 
   const send = (keys: string): void => app.input(keys);
   await app.idle();
   const before = treeBytes(root);
+
   for (const [slug, code] of [["buy", 0], ["refund", 1], ["skip", 1]] as const) {
     featureForm(send);
     assert.equal(app.state.prompt?.kind, "feature");
@@ -255,6 +263,7 @@ test("tui: feature gives the same object and code as the CLI for done, planned, 
     assert.equal(record.result!.kind, "feature");
     assert.deepEqual(record.result!.kind === "feature" ? record.result!.payload?.report : null, JSON.parse(cli.stdout));
   }
+
   const kinds = app.state.records.map((record) => (record.result?.kind === "feature" ? record.result.payload?.report.gaps.map((gap) => gap.kind) : null));
   assert.deepEqual(kinds, [[], ["planned", "static"], ["static"]]);
   assert.match(vt.text(), /feature skip: 1 gap\(s\) · code 1/);
@@ -306,14 +315,18 @@ test("terminal: quitting after a feature with code 1 and one with code 2 returns
   const running = runTerminal(root, term.host);
   await waitUntil(() => term.out.join("").includes("checkout"), "the first frame");
   term.type(KEY.ctrlP);
+
   for (const ch of "feature readiness") term.type(ch);
   term.type(KEY.enter);
+
   for (const ch of "refund") term.type(ch);
   term.type(KEY.enter);
   await waitUntil(() => term.out.join("").includes("code 1"), "the feature with gaps");
   term.type(KEY.ctrlP);
+
   for (const ch of "feature readiness") term.type(ch);
   term.type(KEY.enter);
+
   for (const ch of "nope") term.type(ch);
   term.type(KEY.enter);
   await waitUntil(() => term.out.join("").includes("code 2"), "the failed feature");
@@ -328,6 +341,7 @@ test("tui: dirty spec and config — Back writes nothing; Save and continue writ
   await s.app.idle();
   // A dirty keylang.json (still valid JSON) …
   s.send(KEY.ctrlP);
+
   for (const ch of "open keylang.json") s.send(ch);
   s.send(KEY.enter);
   s.send("i");
@@ -337,12 +351,14 @@ test("tui: dirty spec and config — Back writes nothing; Save and continue writ
   await sleep(40);
   // … and a dirty feature that now plans a fn the code does not have.
   s.send(KEY.ctrlP);
+
   for (const ch of "open keylang/features/buy.md") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.current, "keylang/features/buy.md");
   s.send(KEY.down);
   s.send(KEY.down);
   s.send("i");
+
   for (const ch of "- planned fn application.purchase.refund () → void") s.send(ch);
   s.send(KEY.enter);
   s.send("\x1b");
@@ -381,6 +397,7 @@ test("tui: dirty spec and config — Back writes nothing; Save and continue writ
   s.send(KEY.enter);
   await s.app.idle();
   assert.deepEqual(s.app.unsaved(), []);
+
   for (const path of ["keylang.json", "keylang/features/buy.md"]) assert.equal(readFileSync(join(root, path), "utf8"), s.app.state.buffers.get(path)!.text);
   assert.equal(s.app.state.records.length, 1);
   const record = s.app.state.records[0]!;
@@ -397,18 +414,22 @@ test("tui: a conflict on the second save stops the feature; the first save stays
   t.after(() => s.app.close());
   await s.app.idle();
   s.send(KEY.ctrlP);
+
   for (const ch of "open keylang/rules.md") s.send(ch);
   s.send(KEY.enter);
   s.send(KEY.down);
   s.send("i");
+
   for (const ch of "Notes.") s.send(ch);
   s.send("\x1b");
   await sleep(40);
   s.send(KEY.ctrlP);
+
   for (const ch of "open keylang/features/buy.md") s.send(ch);
   s.send(KEY.enter);
   s.send(KEY.down);
   s.send("i");
+
   for (const ch of "Buying.") s.send(ch);
   s.send("\x1b");
   await sleep(40);
@@ -446,6 +467,7 @@ test("tui: Enter on a feature gap opens its line and Esc returns; an edit marks 
   t.after(() => s.app.close());
   await s.app.idle();
   s.send(KEY.ctrlP);
+
   for (const ch of "open keylang/features/refund.md") s.send(ch);
   s.send(KEY.enter);
   featureForm(s.send);
@@ -500,6 +522,7 @@ test("tui: Enter on a feature gap opens its line and Esc returns; an edit marks 
 /** The palette's Proposals action: the list whatever the current file. */
 function openProposalList(s: ReturnType<typeof session>): void {
   s.send(KEY.ctrlP);
+
   for (const ch of "proposals") s.send(ch);
   assert.equal(s.app.state.prompt?.ids?.[0], "proposals", s.text());
   s.send(KEY.enter);
@@ -515,6 +538,7 @@ function listed(s: ReturnType<typeof session>): string[] | undefined {
 function selectProposal(s: ReturnType<typeof session>, path: string): void {
   const at = s.app.state.prompt!.ids!.indexOf(path);
   assert.notEqual(at, -1, `${path} is not listed: ${s.app.state.prompt!.ids!.join(", ")}`);
+
   while (s.app.state.prompt!.index !== at) s.send(KEY.down);
 }
 
@@ -542,6 +566,7 @@ test("tui: the proposals list reaches any spec, code or test target while the fi
   assert.match(s.text(), /src\/application\/refund\.ts\s+code · new file · 1 hunk\(s\)/);
   assert.match(s.text(), /tests\/refund\.test\.ts\s+code · new file · 1 hunk\(s\)/);
   assert.match(s.text(), /Enter merges into keylang\/flows\/pay\.md on disk/);
+
   // Moving through the list and leaving it writes and removes nothing.
   for (let i = 0; i < 5; i++) s.send(KEY.down);
   s.send("\x1b");
@@ -631,6 +656,7 @@ test("tui: the proposals list shows why a target cannot be merged and writes not
   const before = treeBytes(root);
   openProposalList(s);
   assert.deepEqual(listed(s), ["README.md", FLOW_PATH, "keylang/flows/out.md", "keylang/linked.md", "keylang/map/domain.md"]);
+
   const reasons: Record<string, RegExp> = {
     "README.md": /cannot merge: outside keylang\/: a proposal changes specs only/,
     [FLOW_PATH]: /cannot merge: unsaved changes: save \(Ctrl\+S\) or undo them before merging/,
@@ -638,7 +664,9 @@ test("tui: the proposals list shows why a target cannot be merged and writes not
     "keylang/linked.md": /cannot merge: a link under \.keylang\/proposals\/: a proposal is a plain file/,
     "keylang/map/domain.md": /cannot merge: a generated map file/,
   };
+
   assert.match(s.text(), /keylang\/flows\/checkout\.md\s+spec · 1 hunk\(s\) · cannot merge/);
+
   for (const [path, reason] of Object.entries(reasons)) {
     selectProposal(s, path);
     assert.match(s.text(), reason, path);
@@ -648,6 +676,7 @@ test("tui: the proposals list shows why a target cannot be merged and writes not
     assert.equal(s.app.state.merge, null);
     assert.match(s.text(), reason, `${path}: the reason stays visible after Enter`);
   }
+
   assert.equal(s.app.state.current, FLOW_PATH);
   assert.match(s.app.state.buffers.get(FLOW_PATH)!.text, /^# flow checkout!/, "the unsaved text is kept");
   assert.deepEqual(treeBytes(root), before, "nothing written or removed");
@@ -706,18 +735,24 @@ test("tui: the list is scanned again on Enter; a proposal rewritten during MERGE
 /** The tree without `.keylang/` (typing may count a completion in its stats); a link is its target, not followed. */
 function specTree(root: string): Map<string, string> {
   const out = new Map<string, string>();
+
   const walk = (dir: string): void => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const abs = join(dir, entry.name);
       const rel = abs.slice(root.length + 1);
+
       if (rel === ".keylang") continue;
+
       if (entry.isSymbolicLink()) out.set(rel, `-> ${readlinkSync(abs)}`);
       else if (entry.isDirectory()) walk(abs);
       else out.set(rel, readFileSync(abs, "latin1"));
     }
+
     if (dir !== root && readdirSync(dir).length === 0) out.set(`${dir.slice(root.length + 1)}/`, "");
   };
+
   walk(root);
+
   return out;
 }
 
@@ -729,6 +764,7 @@ function formField(app: App): string | undefined {
 /** The palette's "New specification": the kind form opens. */
 function newSpecForm(send: (keys: string) => void): void {
   send(KEY.ctrlP);
+
   for (const ch of "new specification") send(ch);
   send(KEY.enter);
 }
@@ -737,10 +773,13 @@ function newSpecForm(send: (keys: string) => void): void {
 function newSpecPath(s: ReturnType<typeof session>, kind: string, path: string): void {
   newSpecForm(s.send);
   assert.equal(s.app.state.prompt?.kind, "new-spec");
+
   for (const ch of kind) s.send(ch);
   s.send(KEY.enter);
   assert.equal(formField(s.app), "path");
+
   for (const _ of s.app.state.prompt!.text) s.send("\x7f");
+
   for (const ch of path) s.send(ch);
   s.send(KEY.enter);
 }
@@ -756,6 +795,7 @@ test("tui: a new flow and a new feature exist only as buffers until Ctrl+S; the 
   assert.match(promptNote(s.app), new RegExp(`root ${root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   s.send(KEY.enter);
   assert.equal(s.app.state.prompt?.text, "keylang/flows/");
+
   for (const ch of "refund.md") s.send(ch);
   assert.match(promptNote(s.app), /new file: nothing is written until Ctrl\+S/);
   s.send(KEY.enter);
@@ -772,6 +812,7 @@ test("tui: a new flow and a new feature exist only as buffers until Ctrl+S; the 
   assert.ok(s.app.state.files.includes(flow));
   assert.deepEqual(s.app.unsaved(), [flow]);
   assert.match(s.lines()[0]!, /refund\.md \[\+ new, not on disk\]/);
+
   for (const ch of "- trigger presentation.terminal.checkout") s.send(ch);
   await sleep(200);
   await s.app.idle();
@@ -790,6 +831,7 @@ test("tui: a new flow and a new feature exist only as buffers until Ctrl+S; the 
   const feature = "keylang/features/refunds.md";
   assert.equal(s.app.state.buffers.get(feature)!.text, "## refunds\n");
   assert.equal(existsSync(join(root, "keylang/features")), false);
+
   for (const ch of "Refunds go back to the card.") s.send(ch);
   await sleep(200);
   await s.app.idle();
@@ -822,6 +864,7 @@ test("tui: an empty new file stays unsaved across file switches and asks before 
   await esc(s.send);
   newSpecForm(s.send);
   s.send(KEY.enter);
+
   for (const ch of "x.md") s.send(ch);
   s.send(KEY.enter);
   assert.equal(formField(app), "name");
@@ -836,6 +879,7 @@ test("tui: an empty new file stays unsaved across file switches and asks before 
   assert.deepEqual(app.unsaved(), [notes]);
   await esc(s.send);
   s.send(KEY.ctrlP);
+
   for (const ch of "open keylang/rules.md") s.send(ch);
   s.send(KEY.enter);
   assert.equal(app.state.current, "keylang/rules.md");
@@ -845,6 +889,7 @@ test("tui: an empty new file stays unsaved across file switches and asks before 
   assert.ok(app.state.files.includes(notes));
   assert.deepEqual(app.unsaved(), [notes]);
   s.send(KEY.ctrlP);
+
   for (const ch of `open ${notes}`) s.send(ch);
   s.send(KEY.enter);
   assert.equal(app.state.current, notes);
@@ -870,6 +915,7 @@ test("tui: a new spec outside the spec directory, in a generated or explanations
   t.after(() => s.app.close());
   await s.app.idle();
   const before = specTree(root);
+
   const cases: [string, RegExp][] = [
     ["../x.md", /not a plain relative path/],
     ["keylang/../x.md", /not a plain relative path/],
@@ -881,6 +927,7 @@ test("tui: a new spec outside the spec directory, in a generated or explanations
     ["keylang/explain/brief/x.md", /saved explanations/],
     ["keylang/out/x.md", /leads out of keylang\/ through a link/],
   ];
+
   for (const [path, reason] of cases) {
     newSpecPath(s, "blank", path);
     // The form stays with the typed path and the reason; no buffer is made.
@@ -891,11 +938,13 @@ test("tui: a new spec outside the spec directory, in a generated or explanations
     assert.equal(s.app.state.buffers.has(path), false);
     await esc(s.send);
   }
+
   assert.deepEqual(specTree(root), before);
   assert.deepEqual(readdirSync(outside), []);
   // A buffer whose directory turns into a link out before Ctrl+S: the save checks again and writes nothing.
   newSpecPath(s, "blank", "keylang/drafts/x.md");
   assert.equal(s.app.state.current, "keylang/drafts/x.md");
+
   for (const ch of "Draft.") s.send(ch);
   symlinkSync(outside, join(root, "keylang/drafts"));
   s.send(KEY.ctrlS);
@@ -913,6 +962,7 @@ test("tui: a target created on disk before the first save is kept; the typed tex
   newSpecPath(s, "flow", "keylang/flows/refund.md");
   s.send(KEY.enter);
   const flow = "keylang/flows/refund.md";
+
   for (const ch of "- trigger presentation.terminal.checkout") s.send(ch);
   const typed = s.app.state.buffers.get(flow)!.text;
   // Someone else creates the file between the form and the save.
@@ -959,9 +1009,11 @@ function cliRun(root: string, args: string[]): { status: number | null; stdout: 
 /** The repository with every proposal taken in whole, as MERGE with every hunk accepted leaves it (the emptied store directories stay). */
 function acceptProposals(root: string): void {
   const store = join(root, ".keylang/proposals");
+
   const walk = (dir: string): void => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const abs = join(dir, entry.name);
+
       if (entry.isDirectory()) walk(abs);
       else {
         const target = join(root, abs.slice(store.length + 1));
@@ -971,6 +1023,7 @@ function acceptProposals(root: string): void {
       }
     }
   };
+
   walk(store);
 }
 
@@ -983,40 +1036,50 @@ test("tui: one session goes from a repository without keylang.json to a done fea
   let inCycle = true;
   const spawned: string[] = [];
   let twinRuns = 0;
+
   for (const name of ["spawn", "spawnSync", "exec", "execSync", "execFile", "execFileSync", "fork"] as const) {
     const original = childProcess[name] as (...args: unknown[]) => unknown;
     t.mock.method(childProcess, name, (...args: unknown[]) => {
       if (inCycle) spawned.push(`${name} ${String(args[0])}`);
       else twinRuns++;
+
       return original(...args);
     });
   }
+
   syncBuiltinESMExports();
   t.after(() => {
     t.mock.restoreAll();
     syncBuiltinESMExports();
   });
+
   const last = <K extends OperationResult["kind"]>(kind: K): Extract<OperationResult, { kind: K }> => {
     const result = s.app.state.records.at(-1)?.result;
     assert.equal(result?.kind, kind, JSON.stringify(result?.messages));
+
     return result as Extract<OperationResult, { kind: K }>;
   };
+
   const featureOf = (kind: "feature"): NonNullable<Extract<OperationResult, { kind: "feature" }>["payload"]> => {
     const result = last(kind);
     assert.ok(result.payload !== null, JSON.stringify(result.messages));
+
     return result.payload;
   };
+
   const sameFeature = (code: number): void => {
     const result = last("feature");
     const cli = cliRun(twin, ["feature", "refund", "--format", "json"]);
     assert.deepEqual([result.status, result.exitCode, cli.status], ["completed", code, code], cli.stderr);
     assert.deepEqual(featureOf("feature").report, JSON.parse(cli.stdout), "the CLI's report on the twin");
   };
+
   const stages: string[] = [];
   let initConfig = "";
   await refundCycle({ input: (keys) => s.send(keys), text: () => s.text(), lines: () => s.lines() }, async (stage) => {
     inCycle = false;
     stages.push(stage);
+
     switch (stage) {
       case "init": {
         const result = last("init");
@@ -1028,12 +1091,14 @@ test("tui: one session goes from a repository without keylang.json to a done fea
         initConfig = readFileSync(join(root, "keylang.json"), "utf8");
         break;
       }
+
       case "config": {
         const text = initConfig.replace("{\n", `{\n${CYCLE_CONFIG_LINE}`);
         assert.equal(readFileSync(join(root, "keylang.json"), "utf8"), text, "Ctrl+S wrote the edit");
         writeFileSync(join(twin, "keylang.json"), text);
         break;
       }
+
       case "unsaved":
         assert.equal(existsSync(join(root, "keylang/features")), false, "a new spec is a buffer until Ctrl+S");
         assert.ok(s.app.state.analysis?.docs.some((doc) => doc.path === "keylang/features/refund.md"), "the analysis reads the unsaved buffer");
@@ -1048,6 +1113,7 @@ test("tui: one session goes from a repository without keylang.json to a done fea
         assert.deepEqual(findingsOf(s.app.state.analysis), (JSON.parse(cli.stdout) as { results: unknown[] }).results, "the editor's findings are the CLI's once saved");
         break;
       }
+
       case "check": {
         const result = last("check");
         const json = cliRun(twin, ["check", "--format", "json"]);
@@ -1058,6 +1124,7 @@ test("tui: one session goes from a repository without keylang.json to a done fea
         assert.ok(checkPayload(s.app.state.records.at(-1)).results.some((r) => r.area === "app.order.refund" && r.verdict === "unverified"), "planned is not green");
         break;
       }
+
       case "gaps":
         sameFeature(1);
         assert.deepEqual(featureOf("feature").report.gaps.map((gap) => `${gap.kind} ${gap.id}`), ["planned app.order.refund", "static app.order.refund"]);
@@ -1069,10 +1136,12 @@ test("tui: one session goes from a repository without keylang.json to a done fea
         const stores = [".keylang/proposals/src/app/order.ts", ".keylang/proposals/tests/refund.test.ts"];
         assert.deepEqual(result.proposals, stores);
         assert.deepEqual(result.written, [], "a proposal is not a write of its target");
+
         for (const store of stores) assert.equal(readFileSync(join(root, store), "utf8"), readFileSync(join(twin, store), "utf8"), `${store}: the CLI's bytes`);
         assert.equal(readFileSync(join(root, "src/app/order.ts"), "utf8"), CYCLE_FILES["src/app/order.ts"], "the code waits for MERGE");
         break;
       }
+
       case "template":
         acceptProposals(twin);
         assert.equal(readFileSync(join(root, "src/app/order.ts"), "utf8"), CYCLE_TEMPLATE_CODE);
@@ -1103,6 +1172,7 @@ test("tui: one session goes from a repository without keylang.json to a done fea
         assert.deepEqual(artifacts(root), artifacts(twin), "the same repository, byte for byte, but for the index's time");
         break;
       }
+
       case "done": {
         sameFeature(0);
         const report = featureOf("feature").report;
@@ -1113,13 +1183,16 @@ test("tui: one session goes from a repository without keylang.json to a done fea
         assert.match(s.text(), /Done · code 0/);
         assert.match(s.text(), /Info \(not blocking\): tests unverified 1 · trace —/);
         s.send(KEY.f6);
+
         for (const dir of [root, twin]) {
           assert.equal(cliRun(dir, ["check"]).status, 0);
           assert.equal(cliMapCheck(dir).status, 0);
         }
+
         break;
       }
     }
+
     inCycle = true;
   });
   assert.deepEqual(stages, ["init", "config", "unsaved", "saved", "check", "gaps", "proposed", "template", "gap", "author", "merged", "map", "done"]);
@@ -1163,6 +1236,7 @@ test("tui: on a 50-column terminal a held operation keeps x cancel, the quit ste
   assert.deepEqual(treeBytes(root), before, "the checks write nothing");
   // A dirty feature: the save step before feature; Back writes nothing and runs nothing.
   send(KEY.ctrlP);
+
   for (const ch of "open keylang/features/buy.md") send(ch);
   send(KEY.enter);
   send("i");

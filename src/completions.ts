@@ -4,6 +4,7 @@
 // completed as soon as `--help` and the parser know it.
 
 export const SHELLS = ["bash", "zsh", "fish"] as const;
+
 export type Shell = (typeof SHELLS)[number];
 
 export function isShell(name: string): name is Shell {
@@ -27,21 +28,28 @@ const WORD = /^[a-z][a-z0-9-]*$/;
 export function helpCommands(usage: string): Map<string, string[]> {
   const commands = new Map<string, string[]>();
   let inside = false;
+
   for (const line of usage.split("\n")) {
     if (line === "Commands:") {
       inside = true;
       continue;
     }
+
     if (!inside) continue;
+
     if (line !== "" && !line.startsWith(" ")) break;
     const head = /^ {2}(\S.*)$/.exec(line);
+
     if (head === null) continue;
     const [command, sub] = head[1]!.split(/\s+/);
+
     if (command === undefined || !WORD.test(command)) continue;
     const subs = commands.get(command) ?? [];
+
     if (sub !== undefined && WORD.test(sub) && !subs.includes(sub)) subs.push(sub);
     commands.set(command, subs);
   }
+
   return commands;
 }
 
@@ -66,6 +74,7 @@ function withSubcommands(words: CompletionWords): [string, readonly string[]][] 
 
 function bashScript(words: CompletionWords): string {
   const cases = withSubcommands(words).map(([command, subs]) => `      ${command}) words="${subs.join(" ")}" ;;`);
+
   return [
     "# keylang completions for bash: eval \"$(keylang completions bash)\"",
     "_keylang() {",
@@ -88,6 +97,7 @@ function bashScript(words: CompletionWords): string {
 
 function zshScript(words: CompletionWords): string {
   const cases = withSubcommands(words).map(([command, subs]) => `      ${command}) compadd ${subs.join(" ")}; return ;;`);
+
   return [
     "#compdef keylang",
     "# keylang completions for zsh: source <(keylang completions zsh), or save as _keylang in $fpath",
@@ -114,6 +124,7 @@ function zshScript(words: CompletionWords): string {
 
 function fishScript(words: CompletionWords): string {
   const commands = [...words.commands.keys()];
+
   return [
     "# keylang completions for fish: keylang completions fish | source",
     `complete -c keylang -f -n "not __fish_seen_subcommand_from ${commands.join(" ")}" -a "${commands.join(" ")}"`,

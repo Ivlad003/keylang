@@ -14,10 +14,13 @@ async function download(query: ViewQuery, format: string, report: (text: string)
   const params = new URLSearchParams(query);
   params.set("format", format);
   const response = await transport().send("GET", "/api/export", params);
+
   if (response.status !== 200) {
     report(response.status === 403 && transport().kind === "server" ? "No access: open the URL printed by `keylang web` (it carries the access token)." : `export failed: ${errorOf(response.text)}`);
+
     return;
   }
+
   // The file name the server suggests, else `diagram.<format>`.
   const url = URL.createObjectURL(new Blob([response.text], { type: response.type }));
   const link = document.createElement("a");
@@ -39,6 +42,7 @@ export function mountExport(toolbar: HTMLElement, active: () => ViewQuery | null
     button.title = title;
     button.addEventListener("click", () => {
       const query = active();
+
       if (query === null) return report("pick a view first");
       void download(query, format, report).catch((error: unknown) => report(`export failed: ${error instanceof Error ? error.message : String(error)}`));
     });

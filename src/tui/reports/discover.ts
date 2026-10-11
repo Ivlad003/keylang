@@ -15,6 +15,7 @@ function flowPlaces(payload: FlowsDiscoverPayload): ReportItem[] {
     const path = `${payload.dir}/${flow.file}`;
     const text = payload.files.find((file) => file.path === path)?.text ?? "";
     const line = text.split("\n").indexOf(`# flow ${flow.name}`) + 1;
+
     return { file: path, line: Math.max(line, 1), col: 1, text: `${flow.name}  ${flow.entry.kind} ${flow.entry.label}  ${flow.steps.length} step(s), ${flow.holes} hole(s)` };
   });
 }
@@ -26,14 +27,19 @@ export const DISCOVER_REPORTS: { [K in DiscoverKind]: Report<K> } = {
     summary: (_record, result) => `${result.payload.summary}${codeOf(result.exitCode)}`,
     rows(_state, _record, result, view) {
       const { payload } = result;
+
       const rows: ReportRow[] = [
         { text: `Discovered flows · ${payload.dir}/ · a generated view, check does not read it · fresh snapshot ${shortId(payload.snapshotId)}`, style: BOLD },
         outcomeRow(view.summary, result.exitCode === 0),
         { text: "  a draft per entry point; `keylang flows adopt <name>` proposes one as a spec", style: MUTED },
       ];
+
       flowPlaces(payload).forEach((item, index) => rows.push({ text: `  ${item.text}`, style: index === view.selected ? THEME.selected : THEME.panel, gap: index }));
+
       if (payload.flows.length > 0) rows.push({ text: "  Tab, then ↑↓ select a flow and Enter opens it in the view", style: THEME.hint });
+
       for (const message of result.messages) rows.push(messageRow(message));
+
       return rows;
     },
     items: { noun: "flow", of: (_state, result) => flowPlaces(result.payload) },
@@ -44,8 +50,11 @@ export const DISCOVER_REPORTS: { [K in DiscoverKind]: Report<K> } = {
     summary: (_record, result) => `${result.payload.proposal !== null ? `proposed for ${result.payload.candidate.target}` : "nothing written"}${codeOf(result.exitCode)}`,
     rows(_state, _record, result, view) {
       const rows: ReportRow[] = [{ text: `Adopt flow ${result.payload.flow.name} → ${result.payload.candidate.target}`, style: BOLD }, outcomeRow(view.summary, result.exitCode === 0)];
+
       for (const message of result.messages) rows.push(messageRow(message));
+
       for (const line of result.payload.flow.text.trimEnd().split("\n")) rows.push({ text: `  ${line}`, style: THEME.panel });
+
       return rows;
     },
   },
@@ -55,7 +64,9 @@ export const DISCOVER_REPORTS: { [K in DiscoverKind]: Report<K> } = {
     summary: (_record, result) => `${result.payload.out !== null ? `wrote ${result.payload.out}` : "bundle"}${codeOf(result.exitCode)}`,
     rows(_state, _record, result, view) {
       const rows: ReportRow[] = [{ text: `Flow bundle · ${result.payload.header.flows.join(", ")}`, style: BOLD }, outcomeRow(view.summary, result.exitCode === 0)];
+
       for (const message of result.messages) rows.push(messageRow(message));
+
       return rows;
     },
   },
@@ -65,8 +76,11 @@ export const DISCOVER_REPORTS: { [K in DiscoverKind]: Report<K> } = {
     summary: (_record, result) => `${result.payload.proposals.length > 0 ? `proposed ${result.payload.target}` : "nothing written"}${codeOf(result.exitCode)}`,
     rows(_state, _record, result, view) {
       const rows: ReportRow[] = [{ text: `Flow import → ${result.payload.target}`, style: BOLD }, outcomeRow(view.summary, result.exitCode === 0)];
+
       for (const message of result.messages) rows.push(messageRow(message));
+
       for (const line of result.payload.feature.trimEnd().split("\n")) rows.push({ text: `  ${line}`, style: THEME.panel });
+
       return rows;
     },
   },

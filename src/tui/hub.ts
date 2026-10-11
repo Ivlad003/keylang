@@ -52,6 +52,7 @@ const MAX_BODY = 16 * 1024;
 /** A repository's place in the URL: its directory under the cache (`github.com~owner~repo`), or `here` for the hub's own folder. */
 function idOf(cacheRoot: string, dir: string): string {
   const rel = relative(cacheRoot, dir);
+
   return rel.split(sep).join("~");
 }
 
@@ -66,6 +67,7 @@ function readBody(request: IncomingMessage): Promise<string | null> {
     const chunks: Buffer[] = [];
     request.on("data", (chunk: Buffer) => {
       size += chunk.length;
+
       if (size <= MAX_BODY) chunks.push(chunk);
     });
     request.on("end", () => resolve(size > MAX_BODY ? null : Buffer.concat(chunks).toString("utf8")));
@@ -84,22 +86,27 @@ export async function serveHub(options: HubOptions): Promise<HubServer> {
   const loopback = host === "127.0.0.1" || host === "::1" || host === "localhost";
   const allowedHost = (header: string | undefined): boolean => !!header && (!loopback || [`localhost:${port}`, `127.0.0.1:${port}`, `[::1]:${port}`].includes(header));
   const sameOrigin = (request: IncomingMessage): boolean => request.headers.origin === undefined || request.headers.origin === `http://${request.headers.host}`;
+
   const authorized = (request: IncomingMessage): boolean => {
     const given = /^Bearer (\S+)$/.exec(String(request.headers.authorization ?? ""))?.[1] ?? "";
+
     return given.length === token.length && timingSafeEqual(Buffer.from(given), Buffer.from(token));
   };
 
   /** Mounts the repository at `root` under `id` once; later calls find it. */
   const mount = (id: string, root: string): Mounted => {
     let found = mounted.get(id);
+
     if (!found) {
       const app = createWebApp({ root, port, host, readOnly: options.readOnly === true });
       app.setPort(port);
       found = { root, app };
       mounted.set(id, found);
     }
+
     return found;
   };
+
   const viewer = (id: string, found: Mounted): string => `/r/${encodeURIComponent(id)}/${options.readOnly ? "diagrams" : ""}#t=${found.app.token}`;
 
   /** The hub's own folder, when it holds a repository (keylang.json, or code `init` would find). */
@@ -108,8 +115,10 @@ export async function serveHub(options: HubOptions): Promise<HubServer> {
   const repos = () => {
     const list = listClones(cacheRoot).map((clone) => ({ id: idOf(cacheRoot, clone.dir), label: clone.key.slice(1).join("/") || clone.key.join("/"), source: clone.url, root: clone.dir }));
     const own = hereListed();
+
     return [...(own ? [own] : []), ...list].map((repo) => {
       const open = mounted.get(repo.id);
+
       return { ...repo, cloned: repo.id !== "here", open: open ? viewer(repo.id, open) : null };
     });
   };
@@ -120,40 +129,55 @@ export async function serveHub(options: HubOptions): Promise<HubServer> {
    */
   const fetchRepository = async (text: string): Promise<{ id: string; viewer: string; action: string }> => {
     const source = parseRepoSource(text, cwd);
+
     if ("error" in source) throw new Error(source.error);
     const dir = join(cacheRoot, ...source.key);
     const synced = syncClone(source, dir);
     const init = await runOperation({ kind: "init", root: dir, harnesses: "none", check: false, label: dir });
+
     if (init.payload === null) throw new Error(init.messages.map((m) => m.text).join("; ") || "init failed");
     const id = idOf(cacheRoot, dir);
+
     return { id, viewer: viewer(id, mount(id, dir)), action: synced.action };
   };
 
   const api = async (request: IncomingMessage, response: ServerResponse, path: string): Promise<void> => {
     const json = (status: number, body: unknown): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
+
     if (!sameOrigin(request) || !authorized(request)) return reply(response, 403, "text/plain", "forbidden\n");
+
     if (path === "/hub/api/repos" && request.method === "GET") return json(200, { readOnly: options.readOnly === true, cacheRoot, repos: repos() });
+
     if (request.method !== "POST" || (path !== "/hub/api/open" && path !== "/hub/api/fetch")) return json(404, { error: "not found" });
     const site = request.headers["sec-fetch-site"];
+
     if (site !== undefined && site !== "same-origin" && site !== "none") return reply(response, 403, "text/plain", "forbidden\n");
+
     if (!/^application\/json\s*(;|$)/i.test(String(request.headers["content-type"] ?? ""))) return json(415, { error: "Content-Type: application/json" });
     const text = await readBody(request);
     let body: { id?: unknown; source?: unknown };
+
     try {
       body = text === null ? {} : (JSON.parse(text) as typeof body);
     } catch {
       return json(400, { error: "the body is no JSON" });
     }
+
     // Open a listed repository (the hub's folder, a clone made before) as it is.
     if (path === "/hub/api/open") {
       const repo = repos().find((r) => r.id === body.id);
+
       if (!repo) return json(404, { error: `no repository \`${String(body.id)}\`` });
+
       return json(200, { id: repo.id, viewer: viewer(repo.id, mount(repo.id, repo.root)) });
     }
+
     // Clone a URL or a local path, or update a clone: the source as typed, or a listed clone's.
     const listed = typeof body.id === "string" ? repos().find((r) => r.id === body.id && r.cloned) : undefined;
     const sourceText = listed?.source ?? (typeof body.source === "string" ? body.source.trim() : "");
+
     if (sourceText === "") return json(400, { error: "source: a repository URL or a local path" });
+
     try {
       return json(200, await fetchRepository(sourceText));
     } catch (error) {
@@ -166,6 +190,7 @@ export async function serveHub(options: HubOptions): Promise<HubServer> {
     await ensureClient();
     const manifest = join(BUILT_DIR, "site.json");
     const listed = existsSync(manifest) ? (JSON.parse(readFileSync(manifest, "utf8")) as string[]) : [];
+
     if (!listed.includes(name)) return reply(response, 404, "text/plain", "not found\n");
     const type = name.endsWith(".js") ? "text/javascript" : name.endsWith(".css") ? "text/css" : name.endsWith(".wasm") ? "application/wasm" : name.endsWith(".json") ? "application/json" : "text/plain; charset=utf-8";
     reply(response, 200, type, readFileSync(join(BUILT_DIR, name)));
@@ -174,48 +199,66 @@ export async function serveHub(options: HubOptions): Promise<HubServer> {
   /** `/r/<id>/rest` → the repository and `/rest`; null when the path is no repository's. */
   const routed = (url: string): { found: Mounted; rest: string; id: string } | null => {
     const match = /^\/r\/([^/?#]+)(\/[^?#]*)?(\?[^#]*)?/.exec(url);
+
     if (!match) return null;
     const id = decodeURIComponent(match[1]!);
     const found = mounted.get(id);
+
     return found ? { found, rest: `${match[2] ?? "/"}${match[3] ?? ""}`, id } : null;
   };
 
   const serve = (request: IncomingMessage, response: ServerResponse): void => {
     const url = request.url ?? "/";
     let path: string;
+
     try {
       path = new URL(url, "http://localhost").pathname;
     } catch {
       return reply(response, 400, "text/plain", "bad request\n");
     }
+
     if (!allowedHost(request.headers.host)) return reply(response, 421, "text/plain", "unknown host\n");
+
     if (path.startsWith("/r/")) {
       const target = routed(url);
+
       if (!target) return reply(response, 404, "text/plain", "not open: open the repository from the start page\n");
+
       // `/r/<id>` without its slash: the page's relative URLs need it.
       if (!/^\/r\/[^/]+\//.test(path)) {
         response.setHeader("Location", `${path}/`);
+
         return reply(response, 302, "text/plain", "\n");
       }
+
       request.url = target.rest;
+
       return target.found.app.handle(request, response);
     }
+
     if (path.startsWith("/hub/api/")) {
       api(request, response, path).catch((error: unknown) => {
         process.stderr.write(`keylang web --hub: ${error instanceof Error ? error.message : String(error)}\n`);
+
         if (!response.headersSent) reply(response, 500, "text/plain", "server error\n");
       });
+
       return;
     }
+
     if (path.startsWith("/assets/")) {
       asset(response, path.slice("/assets/".length)).catch(() => {
         if (!response.headersSent) reply(response, 500, "text/plain", "server error\n");
       });
+
       return;
     }
+
     if (path === "/app.html") return reply(response, 200, "text/html; charset=utf-8", diagramsPage({ source: "local", assets: "assets/", title: "keylang · тека з ПК" }));
+
     if (path !== "/") return reply(response, 404, "text/plain", "not found\n");
     response.setHeader("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src data:");
+
     return reply(response, 200, "text/html; charset=utf-8", hubPage());
   };
 
@@ -224,17 +267,22 @@ export async function serveHub(options: HubOptions): Promise<HubServer> {
       serve(request, response);
     } catch (error) {
       process.stderr.write(`keylang web --hub: ${error instanceof Error ? error.message : String(error)}\n`);
+
       if (!response.headersSent) reply(response, 500, "text/plain", "server error\n");
       else response.destroy();
     }
   });
+
   server.on("upgrade", (request: IncomingMessage, socket: Duplex, head: Buffer) => {
     socket.on("error", () => socket.destroy());
     const target = routed(request.url ?? "/");
+
     if (!target) {
       socket.end("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
+
       return;
     }
+
     request.url = target.rest;
     target.found.app.upgrade(request, socket, head);
   });
@@ -244,11 +292,13 @@ export async function serveHub(options: HubOptions): Promise<HubServer> {
   });
   port = (server.address() as AddressInfo).port;
   const stopLogging = logUnhandled();
+
   return {
     url: `http://${shownHost(host)}:${port}/#t=${token}`,
     port,
     close: async () => {
       stopLogging();
+
       for (const { app } of mounted.values()) await app.close();
       const closed = new Promise<void>((resolve) => server.close(() => resolve()));
       server.closeAllConnections();

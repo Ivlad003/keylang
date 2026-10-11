@@ -41,26 +41,35 @@ export function wireOrder(wires: readonly Wire[]): WireOrder {
   const state = new Map<string, "visiting" | "done">();
   const order: string[] = [];
   const path: string[] = [];
+
   const visit = (id: string): string[] | null => {
     if (state.get(id) === "done") return null;
+
     if (state.get(id) === "visiting") return [...path.slice(path.indexOf(id)), id];
     state.set(id, "visiting");
     path.push(id);
+
     for (const dep of byId.get(id)?.deps ?? []) {
       for (const target of [dep.target.target, ...dep.when.map((when) => when.target.target)]) {
         const cycle = visit(target);
+
         if (cycle) return cycle;
       }
     }
+
     path.pop();
     state.set(id, "done");
     order.push(id);
+
     return null;
   };
+
   for (const w of wires) {
     const cycle = visit(w.target.target);
+
     if (cycle) return { cycle };
   }
+
   return { order };
 }
 
@@ -72,20 +81,28 @@ export function wireOrder(wires: readonly Wire[]): WireOrder {
  */
 export function wireImport(view: WiringView, id: string): WireImport | { problem: string } {
   const file = view.nodes[id]?.file ?? null;
+
   if (file === null) return { problem: "has no source file" };
   const language = languageOf(file);
+
   if (language !== "typescript" && language !== "javascript") return { problem: `is ${language ?? "not TS/JS"} code (${file}); \`keylang wire\` generates TypeScript and imports TS/JS only` };
   const parent = id.slice(0, id.lastIndexOf("."));
   const own = id.slice(id.lastIndexOf(".") + 1);
+
   if (view.kinds.get(parent) === "class") {
     // A static method is a factory called on its class; an instance method needs an instance nobody built.
     if (view.nodes[id]?.static !== true) return { problem: `is an instance method of the class \`${parent}\`; wire a module-level fn, a static method or the class` };
     const cls = exportedAs(view, parent);
+
     if (cls === null) return { problem: `is a static method of \`${parent}\`, which ${file} does not export; the generated file cannot import it` };
+
     return { file, name: cls, member: view.nodes[id]?.name ?? own };
   }
+
   const name = exportedAs(view, id);
+
   if (name === null) return { problem: `is not exported by ${file}; the generated file cannot import it` };
+
   return { file, name };
 }
 
@@ -95,6 +112,7 @@ function exportedAs(view: WiringView, id: string): string | null {
   const own = id.slice(id.lastIndexOf(".") + 1);
   const rows = view.exports.filter((row) => row.module === module && row.symbol === id);
   const row = rows.find((r) => r.form === undefined && r.name === own) ?? rows.find((r) => r.form === "alias") ?? rows.find((r) => r.form === "default");
+
   return row === undefined ? null : row.form === "default" ? "default" : row.name;
 }
 
@@ -106,23 +124,30 @@ function exportedAs(view: WiringView, id: string): string | null {
 export function checkWiring(spec: SpecIR, view: WiringView | null, kindOf: (id: string) => string | undefined = () => undefined, format: RuleFormat = 1): Diagnostic[] {
   const wires = spec.wires;
   const diagnostics: Diagnostic[] = [];
+
   if (wires.length === 0) return diagnostics;
   const seen = new Set<string>();
+
   for (const w of wires) {
     if (seen.has(w.target.target)) diagnostics.push(diagnostic("K002", w.file, w.span, `\`${w.target.target}\` is wired twice`));
     seen.add(w.target.target);
     const names = new Set<string>();
+
     for (const d of w.deps) {
       // The argument object would have the key twice: the second silently wins.
       if (names.has(d.name)) diagnostics.push(diagnostic("K002", w.file, d.span, `dependency \`${d.name}\` of \`${w.target.target}\` is named twice`));
       names.add(d.name);
     }
   }
+
   const order = wireOrder(wires);
+
   if ("cycle" in order) {
     const first = wires.find((w) => w.target.target === order.cycle[0]);
+
     if (first) diagnostics.push(diagnostic("K301", first.file, first.span, `wiring cycle ${order.cycle.join(" → ")}: a factory would get a dependency that is not built yet`));
   }
+
   const uses = (w: Wire): { id: string; span: Span; role: string }[] => [
     { id: w.target.target, span: w.span, role: "wire" },
     ...w.deps.flatMap((d) => [
@@ -131,29 +156,38 @@ export function checkWiring(spec: SpecIR, view: WiringView | null, kindOf: (id: 
       ...d.compose.map((c) => ({ id: c.target.target, span: c.span, role: "compose" })),
     ]),
   ];
+
   for (const w of wires) {
     if (view) {
       for (const use of uses(w)) {
         const problem = useProblem(view, use.id, use.role);
+
         if (problem !== null) diagnostics.push(diagnostic("K302", w.file, use.span, `${use.role} \`${use.id}\` ${problem}`));
       }
     }
+
     for (const d of w.deps) {
       for (const target of [d.target.target, ...d.when.map((c) => c.target.target), ...d.compose.map((c) => c.target.target)]) {
         const rule = denyingRule(spec, w.target.target, target, kindOf, format);
+
         if (rule) diagnostics.push(diagnostic("K102", w.file, d.span, `divergence: wiring \`${w.target.target}\` depends on \`${target}\`, which is denied by \`${rule.text}\` (${rule.file}:${rule.line})${rule.aside}`));
       }
     }
   }
+
   return diagnostics;
 }
 
 /** Why the generated file could not build or apply `id` in this role, or null; a missing ID is K001 from the resolver. */
 function useProblem(view: WiringView, id: string, role: string): string | null {
   const kind = view.kinds.get(id);
+
   if (kind === undefined) return null;
+
   if (role === "compose" && kind !== "fn") return `is a ${kind}; a decorator must be a fn of one argument`;
+
   if (kind !== "fn" && kind !== "class") return `is a ${kind}; a factory must be a fn or a class`;
   const found = wireImport(view, id);
+
   return "problem" in found ? found.problem : null;
 }

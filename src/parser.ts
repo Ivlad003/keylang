@@ -12,6 +12,7 @@ export function parse(path: string, src: string): Document {
   const p = new Parser(path);
   let offset = 0;
   let lineNo = 0;
+
   for (const raw of splitInclusive(src)) {
     lineNo += 1;
     // A UTF-8 BOM is not text: the first line starts after it, offsets still count it.
@@ -20,6 +21,7 @@ export function parse(path: string, src: string): Document {
     p.line(new Line(lineNo, offset + bom, text));
     offset += raw.length;
   }
+
   return p.finish();
 }
 
@@ -27,13 +29,16 @@ export function parse(path: string, src: string): Document {
 function splitInclusive(src: string): string[] {
   const out: string[] = [];
   let start = 0;
+
   for (let i = 0; i < src.length; i++) {
     if (src[i] === "\n") {
       out.push(src.slice(start, i + 1));
       start = i + 1;
     }
   }
+
   if (start < src.length) out.push(src.slice(start));
+
   return out;
 }
 
@@ -59,7 +64,9 @@ class Line {
 
 function codePoints(s: string): number {
   let n = 0;
+
   for (const _ of s) n++;
+
   return n;
 }
 
@@ -146,6 +153,7 @@ export const TRIGGER_EVENT = "event";
 
 /** What starts a flow besides a plain call (ADR 0023 п. 3): `trigger <kind> <id>` names an entry point of that kind. */
 export const TRIGGER_KINDS = ["route", "cron", "consumer", "webhook"] as const;
+
 export type TriggerKind = (typeof TRIGGER_KINDS)[number];
 
 export function isTriggerKind(word: string): word is TriggerKind {
@@ -182,12 +190,17 @@ export function isDuration(text: string): boolean {
  */
 export function scheduleText(words: readonly string[]): string | null {
   const [one] = words;
+
   if (words.length === 1 && one !== undefined) {
     if (DURATION.test(one) || CRON_MACRO.test(one)) return one;
+
     if (one.length >= 2 && one.startsWith('"') && one.endsWith('"')) return scheduleText(one.slice(1, -1).trim().split(/\s+/).filter((w) => w !== ""));
+
     return null;
   }
+
   if ((words.length === 5 || words.length === 6) && words.every((word) => CRON_FIELD.test(word))) return words.join(" ");
+
   return null;
 }
 
@@ -195,6 +208,7 @@ const RULES = ["layers", "allow", "deny", "entry", "module", "no-cycles"];
 
 /** What a component of `# system` is (system-design Р2): the first word of its line. */
 export const COMPONENT_KINDS = ["client", "cdn", "dns", "lb", "gateway", "service", "worker", "function", "db", "cache", "queue", "storage", "search", "warehouse", "auth", "external"] as const;
+
 export type ComponentKind = (typeof COMPONENT_KINDS)[number];
 
 /** Components that keep data: only they hold `table` lines. */
@@ -302,13 +316,16 @@ function placeHint(word: string, ctx: Ctx, section: SectionKind): string {
   if (keywordsOf(ctx).includes(word)) return "";
   const places = PLACES.filter((place) => keywordsOf(place.ctx).includes(word));
   const [first] = places;
+
   if (first === undefined) return "";
   const here = places.filter((place) => place.sections.includes(section));
   let shown: string[];
+
   if (here.length > 0) shown = here.map((place) => place.where);
   else if (places.length === 1) shown = [first.ctx.endsWith("-top") ? first.where : `${first.where} in ${SECTION_NAMES[first.sections[0]!]}`];
   else shown = [`in ${[...new Set(places.map((place) => SECTION_NAMES[place.sections[0]!]))].join(" or ")}`];
   const listed = shown.length === 1 ? shown[0]! : `${shown.slice(0, -1).join(", ")} or ${shown.at(-1)!}`;
+
   return `; \`${word}\` goes ${listed}`;
 }
 
@@ -428,17 +445,23 @@ const ROLES: { readonly [C in Ctx]?: Partial<Record<NodeKind, string>> } = {
 /** The role of an item of `kind` under `parent` (or at the top of `section`), or `null` when it has none there. */
 export function roleAt(section: SectionKind, parent: NodeKind | undefined, kind: NodeKind): string | null {
   if (kind === "ref") return parent === "entry" ? "an entry point: what it reaches counts as used" : "a layer outside the order: a dependency into it is free unless denied";
+
   return ROLES[ctxOf(section, parent)]?.[kind] ?? null;
 }
 
 function keywordKind(ctx: Ctx, kw: string): NodeKind {
   if (ctx === "migration-top") return kw === "map" ? "migrate" : kw === "dropped" ? "dropped" : "unknown";
+
   if (isSystemCtx(ctx)) {
     if ((COMPONENT_KINDS as readonly string[]).includes(kw)) return "component";
+
     if ((RELATION_VERBS as readonly string[]).includes(kw)) return "relation";
+
     if (kw === "?") return "question";
+
     return kw === "zone" || kw === "sequence" || kw === "code" || kw === "scale" || kw === "table" || kw === "index" || (INTERVIEW as readonly string[]).includes(kw) ? (kw as NodeKind) : "unknown";
   }
+
   switch (kw) {
     case "layer":
       return "layer";
@@ -517,6 +540,7 @@ class Parser {
     if (this.doc.sections.length === 0) {
       this.doc.sections.push({ kind: "map", heading: null, name: null, items: [] });
     }
+
     return this.doc.sections[this.doc.sections.length - 1]!;
   }
 
@@ -543,6 +567,7 @@ class Parser {
     while (this.stack.length > depth) {
       const node = this.stack.pop()!;
       const parent = this.stack.at(-1);
+
       if (parent) parent.children.push(node);
       else this.section().items.push({ type: "node", ...node });
     }
@@ -553,74 +578,97 @@ class Parser {
       this.section().items.push({ type: "code", lines: this.fence.lines });
       this.fence = null;
     }
+
     this.flushProse();
     this.closeList(0);
+
     return this.doc;
   }
 
   line(l: Line): void {
     const text = l.text;
+
     if (this.fence) {
       this.fence.lines.push(text.trimEnd());
+
       if (closesFence(text, this.fence)) {
         this.section().items.push({ type: "code", lines: this.fence.lines });
         this.fence = null;
       }
+
       return;
     }
+
     if (this.html) {
       const lead = leadingWhitespace(text);
       const desc = this.html.desc;
+
       // A non-empty line shallower than the item's content column ends the item and this block with it.
       if (desc && text.trim() !== "" && lead.indent < desc.contentCol) {
         this.html = null;
         this.line(l);
+
         return;
       }
+
       if (desc) {
         if (text.trim() !== "") this.pushDescription(l, text, lead, desc.depth);
       } else {
         this.prose.push(text.trimEnd());
       }
+
       if (this.html.end(text)) this.html = null;
+
       return;
     }
+
     if (text.trim() === "") {
       this.flushProse();
+
       return;
     }
+
     if (!this.seenContent && text.startsWith("<!--") && text.includes("keylang:generated")) {
       this.seenContent = true;
       this.doc.generated = text.trimEnd();
+
       return;
     }
+
     this.seenContent = true;
 
     const lead = leadingWhitespace(text);
     const { raw: ws, indent } = lead;
     const wsLen = ws.length;
+
     // A tab only matters where indentation decides the tree: items and their descriptions, not prose or fences.
     const tab = (): void => {
       if (lead.hasTab) this.err("K003", l.span(0, wsLen), "tab in indentation; indent with 2 spaces");
     };
+
     const rest = text.slice(wsLen);
 
     // A multi-line HTML block (types 1–5) hides the lines GitHub does not show as a list.
     // A marker that also ends on this line is an ordinary comment, not a block.
     const html = htmlBlockStart(rest);
+
     if (html && !html.end(text)) {
       const underItem = indent >= 2 && this.stack.length > 0;
       const depth = underItem ? Math.min(Math.floor((indent - 2) / 2), this.stack.length - 1) : 0;
       const contentCol = depth * 2 + 2;
+
       if (underItem && indent <= contentCol + 3) {
         this.pushDescription(l, text, lead, depth);
         this.html = { end: html.end, desc: { depth, contentCol } };
+
         return;
       }
+
       if (!underItem && lead.columns <= 3) {
         this.closeList(0);
         this.prose.push(text.trimEnd());
         this.html = { end: html.end, desc: null };
+
         return;
       }
     }
@@ -658,9 +706,11 @@ class Parser {
     const first = tokens[0]?.text;
     let kind: SectionKind = "map";
     let known = true;
+
     if (first === "map" || first === "rules" || first === "flow" || first === "wiring" || first === "migration" || first === "system") kind = first;
     else known = false;
     let name: Spanned<string> | null = null;
+
     if (!known) {
       const what = title === "" ? "section heading without a kind" : `unknown section \`# ${title}\``;
       this.err("K006", full, `${what}; expected \`map\`, \`rules\`, \`flow <name>\`, \`wiring\`, \`migration <name>\` or \`system <name>\` (treated as map)`);
@@ -668,25 +718,32 @@ class Parser {
       // Only a flow, a migration and a system have a name (§2); any other word is a mistake, not a name.
       const named = kind === "flow" || kind === "migration" || kind === "system";
       const t = tokens[1];
+
       if (named && t) {
         if (isSegment(t.text)) name = { value: nfc(t.text), span: t.span };
         else this.err("K005", t.span, `invalid section name \`${t.text}\``, "id");
       } else if (named) {
         this.err("K005", full, `\`# ${kind}\` needs a name, e.g. \`# ${kind} ${kind === "system" ? "shop" : "checkout"}\``, "arguments");
       }
+
       const extra = tokens[named ? 2 : 1];
+
       if (extra) this.err("K005", extra.span, named ? "unexpected words in heading" : `unexpected words in heading; only \`# flow\`, \`# migration\` and \`# system\` take a name`, "arguments");
     }
+
     this.doc.sections.push({ kind, heading: { value: title, span: full }, name, ...(comment ? { comment } : {}), items: [] });
   }
 
   private item(l: Line, wsLen: number, indent: number): void {
     this.flushProse();
     const bulletSpan = l.span(wsLen, wsLen + 1);
+
     if (indent % 2 !== 0) {
       this.err("K003", bulletSpan, `indentation must be a multiple of 2 spaces, found ${indent}`);
     }
+
     let depth = Math.floor(indent / 2);
+
     if (depth > this.stack.length) {
       this.err(
         "K003",
@@ -695,25 +752,33 @@ class Parser {
       );
       depth = this.stack.length;
     }
+
     this.closeList(depth);
     this.section();
 
     const afterBullet = l.text.slice(wsLen + 1);
     const head = wsLen + 1 + (afterBullet.length - afterBullet.trimStart().length);
+
     if (l.text.slice(head).trim() === "") {
       this.err("K003", bulletSpan, "empty list item");
+
       return;
     }
+
     const top = this.stack.at(-1);
+
     const parent: Parent | undefined = top && {
       kind: top.kind,
       id: top.id,
       target: top.refs[0]?.target ?? null,
       label: top.label?.value ?? null,
     };
+
     const errs: [Span, string][] = [];
     const { tokens, comment } = lex(l, head, errs);
+
     for (const [span, msg] of errs) this.err("K005", span, msg, "quote");
+
     const node: Node = {
       kind: "unknown",
       keyword: null,
@@ -729,6 +794,7 @@ class Parser {
       children: [],
       span: l.span(wsLen, l.text.trimEnd().length),
     };
+
     const ctx = ctxOf(this.sectionKind(), parent?.kind);
     this.interpret(node, l, ctx, parent);
     this.stack.push(node);
@@ -736,19 +802,26 @@ class Parser {
 
   private interpret(n: Node, l: Line, ctx: Ctx, parent: Parent | undefined): void {
     const first = n.tokens[0];
+
     if (!first) {
       this.err("K005", n.span, "item has no content", "arguments");
+
       return;
     }
+
     const isKw = first.kind === "word" && keywordsOf(ctx).includes(first.text);
+
     if (!isKw) {
       this.bare(n, ctx, parent);
+
       return;
     }
+
     n.keyword = first.span;
     n.kind = keywordKind(ctx, first.text);
     const rest = n.tokens.slice(1);
     const parentId = parent?.id ?? null;
+
     switch (n.kind) {
       case "layer":
         this.decl(n, rest, null, false);
@@ -767,32 +840,40 @@ class Parser {
         break;
       case "exports": {
         const base = parent?.target ?? null;
+
         for (const t of rest) {
           if (t.kind === "comma") continue;
+
           if (t.kind === "word" && isSegment(t.text)) {
             n.refs.push({ text: t.text, target: base === null ? nfc(t.text) : `${base}.${nfc(t.text)}`, span: t.span });
           } else {
             this.err("K005", t.span, `expected a name, found \`${t.text}\``, "id");
           }
         }
+
         // `- exports ,` lists no name either.
         if (rest.every((t) => t.kind === "comma")) {
           this.err("K005", n.span, "`exports` needs at least one name", "arguments");
         }
+
         break;
       }
+
       case "layers":
         this.layers(n, rest);
         break;
       case "entry":
       case "no-cycles": {
         const t = rest[0];
+
         if (t) {
           const hint = n.kind === "entry" ? "; list entries as nested items" : "";
           this.err("K005", t.span, `\`${kindLabel(n.kind)}\` takes no arguments${hint}`, "arguments");
         }
+
         break;
       }
+
       case "trigger":
         if (!this.plannedModifier(n, rest) && !this.typedTrigger(n, rest)) this.oneRef(n, rest);
         break;
@@ -801,29 +882,37 @@ class Parser {
         break;
       case "parallel": {
         const t = rest[0];
+
         if (t) this.err("K005", t.span, "`parallel` takes no arguments; nest its steps under it", "arguments");
         break;
       }
+
       case "continues": {
         const t = rest[0];
+
         if (rest.length === 1 && t && t.kind === "word" && isSegment(t.text)) n.text = { value: nfc(t.text), span: t.span };
         else if (rest.length === 1 && t) this.err("K005", t.span, `expected a flow name, found \`${t.text}\``, "id");
         else this.err("K005", rest[1]?.span ?? n.span, "expected `continues <flow>`", "arguments");
         break;
       }
+
       case "after": {
         const t = rest[0];
+
         if (rest.length === 1 && t && t.kind === "word" && isDuration(t.text)) n.text = spanned(t);
         else this.err("K005", t?.span ?? n.span, "expected `after <duration>`: a number and a unit (ms, s, m, min, h, d, w), such as `after 30m`", "arguments");
         break;
       }
+
       case "every": {
         const first = rest[0];
         const last = rest.at(-1);
+
         if (first && last && scheduleText(rest.map((t) => t.text)) !== null) n.text = { value: renderTokens(rest), span: { start: first.span.start, end: last.span.end } };
         else this.err("K005", first?.span ?? n.span, 'expected `every <schedule>`: a duration (`every 15m`), a cron macro (`every @daily`) or five cron fields (`every 0 * * * *` or `every "0 * * * *"`)', "arguments");
         break;
       }
+
       case "rule-module":
       case "wire":
       case "compose":
@@ -831,31 +920,38 @@ class Parser {
         break;
       case "kind": {
         const t = rest[0];
+
         if (rest.length === 1 && t && (t.text === "business" || t.text === "technical")) {
           n.text = spanned(t);
         } else {
           this.err("K005", n.span, "`kind` must be `business` or `technical`", "arguments");
         }
+
         break;
       }
+
       case "emits": {
         const r = rest[0]?.text === "event" ? rest.slice(1) : rest;
         const t = r[0];
         const link = t?.kind === "link" ? parseLink(t) : null;
+
         if (r.length === 1 && t && link !== null && isEventId(link.text)) {
           // `emits event [events.x](…)`: a link is a reference, so its text must be an event ID.
           const ref = this.makeRef(t);
+
           if (ref) {
             n.refs.push(ref);
             n.text = { value: ref.target, span: ref.span };
           }
         } else if (r.length === 1 && t && t.kind === "word") {
           n.text = spanned(t);
+
           // An event ID is a reference (ADR 0023 п. 1); any other name stays prose.
           if (isEventId(t.text)) n.refs.push({ text: t.text, target: nfc(t.text), span: t.span });
         } else this.err("K005", n.span, "expected `emits [event] <name>`", "arguments");
         break;
       }
+
       case "invariant":
       case "question":
         this.freeText(n, l, rest);
@@ -863,6 +959,7 @@ class Parser {
       case "when":
         if (ctx === "wire-dep") {
           const arrow = rest.findIndex((t) => t.text === "→" || t.text === "->");
+
           if (arrow > 0) {
             this.freeText(n, l, rest.slice(0, arrow));
             this.oneRef(n, rest.slice(arrow + 1));
@@ -872,33 +969,41 @@ class Parser {
         } else {
           this.freeText(n, l, rest);
         }
+
         break;
       case "then": {
         const t = rest[0];
         const id = t?.kind === "link" ? parseLink(t).text : t?.kind === "word" ? t.text : "";
+
         if (rest.length === 1 && id.includes(".") && isId(id)) {
           this.oneRef(n, rest);
         } else {
           this.freeText(n, l, rest);
         }
+
         break;
       }
+
       case "planned": {
         const kindTok = rest[0];
         const idTok = rest[1];
+
         if (!kindTok || !idTok || !PLANNED_KINDS.has(kindTok.text) || !isId(idTok.text)) {
           const badId = kindTok !== undefined && idTok !== undefined && PLANNED_KINDS.has(kindTok.text) && !isId(idTok.text);
           this.err("K005", n.span, "`planned` needs `<fn|module|type|event> <id> [signature]`", badId ? "id" : "arguments");
           break;
         }
+
         n.id = nfc(idTok.text);
         n.label = { value: kindTok.text, span: kindTok.span };
         const sig = rest.slice(2);
         const sigStart = sig[0];
         const sigEnd = sig.at(-1);
+
         if (sigStart && sigEnd) n.text = { value: renderTokens(sig), span: { start: sigStart.span.start, end: sigEnd.span.end } };
         break;
       }
+
       case "migrate":
         this.migrationRow(n, l, rest);
         break;
@@ -912,6 +1017,7 @@ class Parser {
         if (n.kind === "table" && parent?.kind === "component" && parent.label !== null && !DATA_STORES.has(parent.label)) {
           this.err("K005", first.span, `\`table\` goes under a data store (${[...DATA_STORES].join(", ")}), not under \`${parent.label}\``, "arguments");
         }
+
         this.systemName(n, l, rest, false);
         break;
       case "code":
@@ -920,12 +1026,15 @@ class Parser {
       case "relation": {
         n.label = spanned(first);
         const [target, ...caption] = rest;
+
         if (target && target.kind === "word" && isSegment(target.text)) {
           n.name = { value: nfc(target.text), span: target.span };
+
           if (caption.length > 0) this.freeText(n, l, caption);
         } else this.err("K005", target?.span ?? n.span, `expected \`${first.text} <component> [caption]\``, target ? "id" : "arguments");
         break;
       }
+
       case "scale":
       case "index":
       case "requirement":
@@ -936,20 +1045,25 @@ class Parser {
         break;
       case "dropped": {
         const id = rest[0];
+
         if (id && id.kind === "word" && isId(id.text) && rest.length > 1) {
           n.id = nfc(id.text);
           this.freeText(n, l, rest.slice(1));
         } else {
           this.err("K005", n.span, "expected `dropped <id> <reason>`", "arguments");
         }
+
         break;
       }
+
       case "test": {
         const file = rest[0];
+
         if (file && file.kind === "word") {
           n.text = spanned(file);
           const tail = rest.slice(1);
           const q = tail[0];
+
           if (tail.length === 0) {
             // no name
           } else if (tail.length === 1 && q && q.kind === "quoted") {
@@ -960,8 +1074,10 @@ class Parser {
         } else {
           this.err("K005", n.span, 'expected `test <file> "<name>"`', "arguments");
         }
+
         break;
       }
+
       default:
         break;
     }
@@ -973,6 +1089,7 @@ class Parser {
     const parentId = parent?.id ?? null;
     // A keyword of another position says where it goes when the line here is wrong.
     const hint = (): string => (tokens[0]?.kind === "word" ? placeHint(tokens[0].text, ctx, this.sectionKind()) : "");
+
     switch (ctx) {
       case "map-top":
         n.kind = "layer";
@@ -986,20 +1103,26 @@ class Parser {
       case "wire": {
         n.kind = ctx === "module" ? "dep" : "wire-dep";
         const [alias, target] = tokens;
+
         if (tokens.length === 2 && alias && target && alias.kind === "word" && isSegment(alias.text)) {
           n.name = { value: nfc(alias.text), span: alias.span };
+
           if (ctx === "module") n.id = parentId === null ? null : `${parentId}.${n.name.value}`;
           this.oneRef(n, [target]);
         } else {
           n.kind = "unknown";
+
           const what =
             ctx === "module"
               ? "`fn`, `type`, `event`, `module` or a dependency `<alias> <path>`"
               : "a dependency `<alias> <path>`";
+
           this.err("K005", n.span, `expected ${what}${hint()}`, "arguments");
         }
+
         break;
       }
+
       case "ref-list":
         n.kind = "ref";
         this.oneRef(n, tokens);
@@ -1033,23 +1156,30 @@ class Parser {
    */
   private decl(n: Node, rest: Token[], parentId: string | null, sig: boolean, hint: () => string = () => ""): void {
     const t = rest[0];
+
     if (!t) {
       this.err("K005", n.span, `\`${kindLabel(n.kind)}\` needs a name`, "arguments");
+
       return;
     }
+
     let name = "";
     let link: Link | null = null;
+
     if (t.kind === "word") name = t.text;
     else if (t.kind === "link") {
       link = parseLink(t);
       name = link.text;
     }
+
     if (!isSegment(name)) {
       const brokenLink = t.text.startsWith("[");
       const msg = brokenLink ? "malformed link, expected `[name](path#Lnn)`" : `invalid name \`${t.text}\``;
       this.err("K005", t.span, msg, brokenLink ? "link" : "id");
+
       return;
     }
+
     const nameSpan = link ? linkTextSpan(t) : t.span;
     n.name = { value: nfc(name), span: nameSpan };
     n.id = n.kind === "layer" ? n.name.value : parentId === null ? null : `${parentId}.${n.name.value}`;
@@ -1057,6 +1187,7 @@ class Parser {
     const tail = rest.slice(1);
     const first = tail[0];
     const last = tail.at(-1);
+
     if (first && last) {
       if (sig) {
         n.text = { value: renderTokens(tail), span: { start: first.span.start, end: last.span.end } };
@@ -1073,16 +1204,21 @@ class Parser {
     if (t.kind === "word" && isId(t.text)) {
       return { text: t.text, target: nfc(t.text), span: t.span };
     }
+
     if (t.kind === "link") {
       const link = parseLink(t);
+
       if (isId(link.text)) return { text: link.text, target: nfc(link.text), span: linkTextSpan(t), link };
       this.err("K005", t.span, `expected an ID as the link text, found \`${link.text}\``, "id");
+
       return null;
     }
+
     // `[](x)` and `[a.b](x` are words to the lexer: a link with no text or no closing `)`.
     const brokenLink = t.text.startsWith("[");
     const msg = brokenLink ? "malformed link, expected `[id](href)`" : `expected an ID, found \`${t.text}\``;
     this.err("K005", t.span, msg, brokenLink ? "link" : "id");
+
     return null;
   }
 
@@ -1093,9 +1229,11 @@ class Parser {
    */
   private plannedModifier(n: Node, rest: Token[]): boolean {
     const [word, ...tail] = rest;
+
     if (word?.text !== "planned") return false;
     const kind = tail.length === 2 && PLANNED_KINDS.has(tail[0]!.text) ? tail[0]!.text : tail.length === 1 ? "fn" : null;
     const id = tail.at(-1);
+
     if (kind === null || !id || id.kind !== "word" || !isId(id.text)) return false;
     const keyword = kindLabel(n.kind);
     this.err(
@@ -1104,6 +1242,7 @@ class Parser {
       `\`planned\` is a declaration, not a ${keyword} modifier: add \`- planned ${kind} ${id.text}\` at the top of the flow and keep \`- ${keyword} ${id.text}\``,
       "arguments",
     );
+
     return true;
   }
 
@@ -1115,19 +1254,25 @@ class Parser {
    */
   private typedTrigger(n: Node, rest: Token[]): boolean {
     const [kind, id] = rest;
+
     if (rest.length !== 2 || !kind || !id || kind.kind !== "word" || kind.text.includes(".")) return false;
+
     if (!isTriggerKind(kind.text) && kind.text !== TRIGGER_EVENT) {
       this.err("K005", kind.span, `unknown trigger kind \`${kind.text}\`; expected one of: ${[...TRIGGER_KINDS, TRIGGER_EVENT].join(", ")}; an entry point of another kind (\`cli\`, \`main\`) is a plain \`- trigger <id>\``, "arguments");
+
       return true;
     }
+
     n.label = { value: kind.text, span: kind.span };
     this.oneRef(n, [id]);
+
     return true;
   }
 
   private oneRef(n: Node, rest: Token[]): void {
     if (rest.length === 1) {
       const r = this.makeRef(rest[0]!);
+
       if (r) n.refs.push(r);
     } else if (rest.length === 0) {
       this.err("K005", n.span, "expected an ID", "arguments");
@@ -1138,12 +1283,15 @@ class Parser {
 
   private refList(n: Node, rest: Token[], min: number): void {
     let count = 0;
+
     for (const t of rest) {
       if (t.kind === "comma") continue;
       count++;
       const r = this.makeRef(t);
+
       if (r) n.refs.push(r);
     }
+
     if (count < min) {
       this.err("K005", n.span, `\`${kindLabel(n.kind)}\` needs at least ${min} ID(s)`, "arguments");
     }
@@ -1156,9 +1304,11 @@ class Parser {
         if (t.text !== "<") this.err("K005", t.span, `expected \`<\`, found \`${t.text}\``, "arguments");
       } else {
         const r = this.makeRef(t);
+
         if (r) n.refs.push(r);
       }
     });
+
     if (rest.length === 0 || rest.length % 2 === 0) {
       this.err("K005", n.span, "expected `layers <a> < <b> …`", "arguments");
     }
@@ -1167,12 +1317,17 @@ class Parser {
   /** `<kind|zone|table|sequence> <name> [text…]`: a name local to the system; `text` (a technology, a label) only where `withText`. */
   private systemName(n: Node, l: Line, rest: Token[], withText: boolean): void {
     const [name, ...tail] = rest;
+
     if (!name || name.kind !== "word" || !isSegment(name.text)) {
       this.err("K005", name?.span ?? n.span, name ? `invalid name \`${name.text}\`` : `\`${kindLabel(n.kind) === "component" ? (n.label?.value ?? "component") : kindLabel(n.kind)}\` needs a name`, name ? "id" : "arguments");
+
       return;
     }
+
     n.name = { value: nfc(name.text), span: name.span };
+
     if (tail.length === 0) return;
+
     if (withText) this.freeText(n, l, tail);
     else this.err("K005", tail[0]!.span, `unexpected arguments after ${kindLabel(n.kind)} \`${name.text}\``, "arguments");
   }
@@ -1180,23 +1335,32 @@ class Parser {
   /** `<name> <type> [pk] [unique] [null] [fk <table>.<column>]` under `table`. */
   private column(n: Node, tokens: Token[], hint: () => string): void {
     const [name, type, ...flags] = tokens;
+
     if (!name || !type || name.kind !== "word" || !isSegment(name.text) || type.kind !== "word") {
       this.err("K005", n.span, `expected a column \`<name> <type> [pk] [unique] [null] [fk <table>.<column>]\` or \`index <columns>\`${hint()}`, "arguments");
       n.kind = "unknown";
+
       return;
     }
+
     n.name = { value: nfc(name.text), span: name.span };
     n.text = spanned(type);
+
     for (let i = 0; i < flags.length; i++) {
       const flag = flags[i]!;
+
       if (flag.kind === "comma") continue;
+
       if (!COLUMN_FLAGS.has(flag.text)) {
         this.err("K005", flag.span, `unknown column flag \`${flag.text}\`; expected one of: ${[...COLUMN_FLAGS].join(", ")}`, "arguments");
         continue;
       }
+
       if (flag.text !== "fk") continue;
       const target = flags[i + 1];
+
       if (!target || !/^[^.\s]+\.[^.\s]+$/.test(target.text) || !isId(target.text)) this.err("K005", target?.span ?? flag.span, "expected `fk <table>.<column>`", "arguments");
+
       if (target) i++;
     }
   }
@@ -1205,15 +1369,19 @@ class Parser {
   private message(n: Node, tokens: Token[], hint: () => string): void {
     const [from, arrow, to, ...text] = tokens;
     const arrows = ["→", "->", "⇢", "-->"];
+
     if (!from || !arrow || !to || !arrows.includes(arrow.text) || from.kind !== "word" || !isSegment(from.text) || to.kind !== "word" || !isSegment(to.text)) {
       this.err("K005", n.span, `expected a message \`<from> → <to> [text]\`${hint()}`, "arguments");
       n.kind = "unknown";
+
       return;
     }
+
     n.name = { value: nfc(from.text), span: from.span };
     n.label = { value: nfc(to.text), span: to.span };
     const first = text[0];
     const last = text.at(-1);
+
     if (first && last) n.text = { value: renderTokens(text), span: { start: first.span.start, end: last.span.end } };
   }
 
@@ -1229,12 +1397,16 @@ class Parser {
     const planned = tail[0]?.text === "planned" ? tail[0] : null;
     const target = planned ? tail[1] : tail[0];
     const extra = planned ? tail[2] : tail[1];
+
     if (!old || old.kind !== "word" || !isId(old.text) || !arrow || (arrow.text !== "→" && arrow.text !== "->") || !target || target.kind !== "word" || !isId(target.text) || extra) {
       this.err("K005", n.span, "expected `map <old id> → [planned] <new id>`", "arguments");
+
       return;
     }
+
     n.id = nfc(old.text);
     n.refs.push({ text: target.text, target: nfc(target.text), span: target.span });
+
     if (planned) n.label = spanned(planned);
     this.freeText(n, l, rest);
   }
@@ -1242,6 +1414,7 @@ class Parser {
   private freeText(n: Node, l: Line, rest: Token[]): void {
     const a = rest[0];
     const b = rest.at(-1);
+
     if (a && b) {
       const s = a.span.start.offset - l.start;
       const e = b.span.end.offset - l.start;
@@ -1270,6 +1443,7 @@ function leadingWhitespace(text: string): Lead {
   const raw = /^[ \t]*/.exec(text)![0];
   let indent = 0;
   let columns = 0;
+
   for (const c of raw) {
     if (c === "\t") {
       indent += 2;
@@ -1279,6 +1453,7 @@ function leadingWhitespace(text: string): Lead {
       columns += 1;
     }
   }
+
   return { raw, indent, columns, hasTab: raw.includes("\t") };
 }
 
@@ -1295,12 +1470,17 @@ function openFence(text: string): FenceOpen | null {
   const lead = leadingWhitespace(text);
   const rest = text.slice(lead.raw.length);
   const ch = rest[0];
+
   if (ch !== "`" && ch !== "~") return null;
   let len = 0;
+
   while (rest[len] === ch) len++;
+
   if (len < 3) return null;
   const info = rest.slice(len).trim();
+
   if (ch === "`" && info.includes("`")) return null;
+
   return { char: ch, len, columns: lead.columns, spaces: lead.hasTab ? null : lead.indent };
 }
 
@@ -1310,18 +1490,24 @@ function openFence(text: string): FenceOpen | null {
  */
 function opensFence(text: string, listOpen: boolean): boolean {
   const open = openFence(text);
+
   return open !== null && (open.columns < 4 || listOpen);
 }
 
 function closesFence(text: string, open: { char: string; len: number; columns: number }): boolean {
   const lead = leadingWhitespace(text);
+
   // A document-level fence closes at indent ≤ 3. A fence opened under a list (Р9) also closes at its own indent.
   if (lead.columns > Math.max(3, open.columns)) return false;
   const rest = text.slice(lead.raw.length);
+
   if (!rest.startsWith(open.char)) return false;
   let len = 0;
+
   while (rest[len] === open.char) len++;
+
   if (len < open.len) return false;
+
   return /^[ \t]*$/.test(rest.slice(len));
 }
 
@@ -1332,14 +1518,19 @@ function closesFence(text: string, open: { char: string; len: number; columns: n
  */
 export function dedentFenceLines(lines: string[]): string[] {
   const first = lines[0];
+
   if (first === undefined) return lines;
   const open = openFence(first);
+
   if (!open || open.spaces === null || open.spaces === 0) return lines;
   const spaces = open.spaces;
+
   return lines.map((line, i) => {
     if (i === 0 || (i === lines.length - 1 && closesFence(line, open))) return line.trimStart();
     let n = 0;
+
     while (n < spaces && line[n] === " ") n++;
+
     return line.slice(n);
   });
 }
@@ -1355,10 +1546,15 @@ function htmlBlockStart(rest: string): { end: (line: string) => boolean } | null
   if (/^<(?:pre|script|style|textarea)(?:[ \t]|>|$)/i.test(rest)) {
     return { end: (line) => HTML_TYPE1_END.test(line) };
   }
+
   if (rest.startsWith("<!--")) return { end: (line) => line.includes("-->") };
+
   if (rest.startsWith("<?")) return { end: (line) => line.includes("?>") };
+
   if (rest.startsWith("<![CDATA[")) return { end: (line) => line.includes("]]>") };
+
   if (/^<![A-Za-z]/.test(rest)) return { end: (line) => line.includes(">") };
+
   return null;
 }
 
@@ -1371,12 +1567,14 @@ function htmlBlockStart(rest: string): { end: (line: string) => boolean } | null
 function headingEnd(text: string): number {
   const content = text.replace(/[ \t]+$/, "");
   const closing = /[ \t]+#+$/.exec(content);
+
   return closing ? closing.index : content.length;
 }
 
 function isBullet(rest: string): boolean {
   const c0 = rest[0];
   const c1 = rest[1];
+
   return (c0 === "-" || c0 === "*" || c0 === "+") && (c1 === undefined || c1 === " ");
 }
 
@@ -1404,6 +1602,7 @@ export function isId(s: string): boolean {
 export function linkTextSpan(t: Token): Span {
   const text = parseLink(t).text;
   const { offset, line, col } = t.span.start;
+
   return { start: { offset: offset + 1, line, col: col + 1 }, end: { offset: offset + 1 + text.length, line, col: col + 1 + codePoints(text) } };
 }
 
@@ -1417,11 +1616,15 @@ function parseLink(t: Token): Link {
   const path = decodeLinkPath(rawPath);
   const frag = hash === -1 ? "" : target.slice(hash + 1);
   let line: number | null = null;
+
   if (frag.startsWith("L")) {
     const first = frag.slice(1).split("-")[0] ?? "";
+
     if (/^\d+$/.test(first)) line = Number(first);
   }
+
   const decoded = frag === "" ? path : `${path}#${frag}`;
+
   return { text, path, target: decoded, line, span: t.span };
 }
 
@@ -1445,31 +1648,40 @@ function lex(l: Line, start: number, errs: [Span, string][]): { tokens: Token[];
   let i = start;
   const tokens: Token[] = [];
   let comment: Spanned<string> | null = null;
+
   const wordEnd = (from: number): number => {
     for (let k = from; k < s.length; k++) {
       const c = s[k];
+
       if (c === " " || c === "\t" || c === ",") return k;
     }
+
     return s.length;
   };
+
   while (i < s.length) {
     const c = s[i]!;
+
     if (c === " " || c === "\t") {
       i++;
       continue;
     }
+
     if (s.startsWith("<!--", i)) {
       const e = s.trimEnd().length;
       comment = { value: s.slice(i, e), span: l.span(i, e) };
       break;
     }
+
     let kind: TokenKind;
     let e: number;
+
     if (c === ",") {
       kind = "comma";
       e = i + 1;
     } else if (c === "[") {
       const end = linkEnd(s, i);
+
       if (end !== null) {
         kind = "link";
         e = end;
@@ -1481,6 +1693,7 @@ function lex(l: Line, start: number, errs: [Span, string][]): { tokens: Token[];
       }
     } else if (c === '"') {
       const k = s.indexOf('"', i + 1);
+
       if (k !== -1) {
         kind = "quoted";
         e = k + 1;
@@ -1493,9 +1706,11 @@ function lex(l: Line, start: number, errs: [Span, string][]): { tokens: Token[];
       kind = "word";
       e = wordEnd(i);
     }
+
     tokens.push({ kind, text: s.slice(i, e), span: l.span(i, e) });
     i = e;
   }
+
   return { tokens, comment };
 }
 
@@ -1506,11 +1721,15 @@ function lex(l: Line, start: number, errs: [Span, string][]): { tokens: Token[];
  */
 function linkEnd(s: string, i: number): number | null {
   const close = s.indexOf("]", i);
+
   if (close <= i + 1 || s[close + 1] !== "(") return null;
   let depth = 0;
+
   for (let k = close + 2; k < s.length; k++) {
     const c = s[k]!;
+
     if (/\s/.test(c)) return null;
+
     if (c === "\\" && (s[k + 1] === "(" || s[k + 1] === ")")) k++;
     else if (c === "(") depth++;
     else if (c === ")") {
@@ -1518,6 +1737,7 @@ function linkEnd(s: string, i: number): number | null {
       depth--;
     }
   }
+
   return null;
 }
 
@@ -1528,6 +1748,7 @@ function linkEnd(s: string, i: number): number | null {
  */
 export function renderMeaning(node: Node): string {
   const linked = new Map(node.refs.flatMap((ref) => (ref.link ? [[ref.link.span.start.offset, ref.link.text] as const] : [])));
+
   return renderTokens(node.tokens.map((t) => (t.kind === "link" && linked.has(t.span.start.offset) ? { ...t, text: linked.get(t.span.start.offset)! } : t)));
 }
 
@@ -1535,13 +1756,16 @@ export function renderMeaning(node: Node): string {
 export function renderTokens(tokens: readonly Token[]): string {
   let out = "";
   let previous: Token | undefined;
+
   for (const t of tokens) {
     // Tokens that touch in the source (`"a")`) stay touching; others, and a comma, get one space after.
     const touching = previous !== undefined && previous.kind !== "comma" && previous.span.end.offset === t.span.start.offset && previous.span.end.line === t.span.start.line;
+
     if (out !== "" && t.kind !== "comma" && !touching) out += " ";
     out += t.text;
     previous = t;
   }
+
   return out;
 }
 

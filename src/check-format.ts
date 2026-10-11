@@ -8,6 +8,7 @@ import { explainCode } from "./explain.ts";
 import type { CoverageItem } from "./snapshot.ts";
 
 export const CHECK_FORMATS = ["human", "json", "sarif", "github"] as const;
+
 export type CheckFormat = (typeof CHECK_FORMATS)[number];
 
 /** What a format shows: the `--format json` data and the human lines of the same report. */
@@ -25,18 +26,23 @@ export function isCheckFormat(name: string): name is CheckFormat {
 /** The stdout of `keylang check --format <format>` for `report`, every line ending with `\n`. */
 export function checkReportText(format: CheckFormat, report: CheckReportData): string {
   if (format === "human") return report.lines.map((line) => `${line}\n`).join("");
+
   if (format === "github") return githubText(report.results);
+
   if (format === "json") return `${JSON.stringify({ snapshotId: report.snapshotId, results: report.results, coverage: report.coverage }, null, 2)}\n`;
+
   return `${JSON.stringify(sarifLog(report), null, 2)}\n`;
 }
 
 function githubText(results: readonly CheckResult[]): string {
   let out = "";
+
   for (const result of results) {
     if (result.verdict === "ok") continue;
     const level = result.verdict === "fail" ? "error" : result.verdict === "warning" ? "warning" : "notice";
     out += `::${level} file=${githubProperty(result.file)},line=${result.line},col=${result.col},title=${githubProperty(ruleOf(result))}::${githubData(result.evidence)}\n`;
   }
+
   return out;
 }
 
@@ -44,6 +50,7 @@ function sarifLog(report: CheckReportData): unknown {
   const { snapshotId, results } = report;
   const reported = results.filter((result) => result.verdict !== "ok");
   const ruleIds = [...new Set(reported.map(ruleOf))].sort();
+
   return {
     $schema: "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1/schema/sarif-schema-2.1.0.json",
     version: "2.1.0",
@@ -89,6 +96,7 @@ const EVIDENCE_RULES: Record<string, string> = {
 
 function ruleText(id: string): string {
   if (id === "unverified") return "evidence for this criterion is incomplete";
+
   return EVIDENCE_RULES[id] ?? explainCode(id)?.split("\n")[0] ?? id;
 }
 

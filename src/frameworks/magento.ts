@@ -47,18 +47,25 @@ import type { ConfigFacts, FrameworkAdapter, FrameworkContext, FrameworkModule, 
 
 /** `ComponentRegistrar::register(ComponentRegistrar::MODULE, …)`, however it is spaced or qualified. */
 const MODULE_REGISTRATION = /ComponentRegistrar\s*::\s*register\s*\(\s*\\?(?:[A-Za-z_][A-Za-z0-9_]*\\)*ComponentRegistrar\s*::\s*MODULE\b/;
+
 /** Any component registration: a module, a library, a theme. */
 const REGISTRATION = /ComponentRegistrar\s*::\s*register\s*\(/;
+
 /** `'Vendor_Module'` in a module's registration. */
 const MODULE_NAME = /ComponentRegistrar\s*::\s*MODULE\s*,\s*(['"])([A-Za-z0-9_]+)\1/;
+
 /** The application's own config, outside any module. */
 const APP_DI = "app/etc/di.xml";
+
 /** Config files of a module read in `etc/` and in every area: `etc/<name>`, `etc/<area>/<name>`. */
 const AREA_FILES = ["di.xml", "events.xml", "routes.xml"];
+
 /** Config files of a module read only in `etc/` itself. */
 const GLOBAL_FILES = ["webapi.xml", "crontab.xml", "queue_consumer.xml", "schema.graphqls"];
+
 /** The class whose `commands` argument lists the console commands. */
 const COMMAND_LIST = "Magento\\Framework\\Console\\CommandList";
+
 const ACTION = "Magento\\Framework\\App\\Action\\";
 
 export const magento: FrameworkAdapter = {
@@ -69,25 +76,35 @@ export const magento: FrameworkAdapter = {
   },
   files(context) {
     const out: { path: string; owner: string | null; declarations?: true }[] = [];
+
     const add = (path: string, owner: string | null): void => {
       if (context.analysed(path) && context.read(path) !== null) out.push({ path, owner });
     };
+
     add(APP_DI, null);
+
     // Named in `frameworks` or detected: every registered component's config is read.
     for (const root of componentRoots(context, REGISTRATION)) {
       const etc = root === "" ? "etc" : `${root}/etc`;
+
       for (const file of [...AREA_FILES, ...GLOBAL_FILES]) add(`${etc}/${file}`, root);
+
       for (const area of context.dirs(etc)) for (const file of AREA_FILES) add(`${etc}/${area}/${file}`, root);
     }
+
     // A component `outside` the architecture (business-flows 40): only its `di.xml`, of which the graph takes the preferences.
     for (const root of componentRoots(context, REGISTRATION, context.outside)) {
       const etc = root === "" ? "etc" : `${root}/etc`;
+
       const declare = (path: string): void => {
         if (context.isOutside(path) && context.read(path) !== null) out.push({ path, owner: root, declarations: true });
       };
+
       declare(`${etc}/di.xml`);
+
       for (const area of context.dirs(etc)) declare(`${etc}/${area}/di.xml`);
     }
+
     return out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   },
   parse(path, text) {
@@ -110,11 +127,14 @@ export const magento: FrameworkAdapter = {
   },
   modules(context) {
     const out: FrameworkModule[] = [];
+
     for (const path of context.sources) {
       if (posix.basename(path) !== "registration.php") continue;
       const name = MODULE_NAME.exec(context.read(path) ?? "")?.[2];
+
       if (name !== undefined) out.push({ name, dir: posix.dirname(path) === "." ? "" : posix.dirname(path) });
     }
+
     return out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0) || (a.dir < b.dir ? -1 : a.dir > b.dir ? 1 : 0));
   },
   dispatchers: ["Magento\\Framework\\Event\\ManagerInterface", "Magento\\Framework\\Event\\Manager"],
@@ -139,11 +159,14 @@ export const magento: FrameworkAdapter = {
 /** Directories of the `registration.php` files of `files` (the analysed sources) whose text registers a component as `pattern` says. */
 function componentRoots(context: FrameworkContext, pattern: RegExp, files: readonly string[] = context.sources): string[] {
   const roots: string[] = [];
+
   for (const path of files) {
     if (posix.basename(path) !== "registration.php") continue;
     const text = context.read(path);
+
     if (text !== null && pattern.test(text)) roots.push(posix.dirname(path) === "." ? "" : posix.dirname(path));
   }
+
   return roots;
 }
 
@@ -151,6 +174,7 @@ function componentRoots(context: FrameworkContext, pattern: RegExp, files: reado
 function scopeOf(path: string): string {
   const parts = path.split("/");
   const etc = parts.lastIndexOf("etc");
+
   return etc !== -1 && etc === parts.length - 3 ? parts[etc + 1]! : "global";
 }
 
@@ -194,12 +218,14 @@ export function parseXml(path: string, text: string): { root: XmlElement | null;
   parser.on("opentag", (tag) => {
     const element: XmlElement = { name: tag.name, attributes: tag.attributes as Record<string, string>, line: start.line, col: start.col, text: "", children: [] };
     const parent = stack.at(-1);
+
     if (parent) parent.children.push(element);
     else root ??= element;
     stack.push(element);
   });
   parser.on("text", (t) => {
     const top = stack.at(-1);
+
     if (top) top.text += t;
   });
   parser.on("closetag", () => {
@@ -208,11 +234,13 @@ export function parseXml(path: string, text: string): { root: XmlElement | null;
   parser.on("error", (e) => {
     error ??= { line: parser.line, reason: `\`${path}\` is no well-formed XML: ${e.message.replace(/^\d+:\d+: /, "")}` };
   });
+
   try {
     parser.write(text).close();
   } catch (e) {
     error ??= { line: parser.line, reason: `\`${path}\` is no well-formed XML: ${e instanceof Error ? e.message : String(e)}` };
   }
+
   return error ? { root: null, error } : { root, error: null };
 }
 
@@ -220,8 +248,11 @@ export function parseXml(path: string, text: string): { root: XmlElement | null;
 function fromXml(path: string, text: string, read: (root: XmlElement, facts: MagentoFacts) => void): ConfigFacts {
   const facts = noFacts(path, scopeOf(path));
   const { root, error } = parseXml(path, text);
+
   if (error) return noFacts(path, facts.scope, error);
+
   if (root) read(root, facts);
+
   return facts;
 }
 
@@ -239,13 +270,17 @@ export function parseDi(path: string, text: string): ConfigFacts {
   return fromXml(path, text, (root, facts) => {
     for (const top of root.children) {
       const at = { line: top.line, col: top.col };
+
       if (top.name === "preference" && top.attributes.for && top.attributes.type) {
         facts.bindings.push({ from: type(top.attributes.for), to: type(top.attributes.type), ...at });
         continue;
       }
+
       if (top.name === "virtualType" && top.attributes.name && top.attributes.type) facts.aliases.push({ name: className(top.attributes.name), type: type(top.attributes.type), ...at });
+
       if ((top.name !== "type" && top.name !== "virtualType") || !top.attributes.name) continue;
       const holder = top.attributes.name;
+
       for (const plugin of childrenNamed(top, "plugin")) {
         if (!plugin.attributes.name) continue;
         const order = plugin.attributes.sortOrder === undefined ? null : Number.parseInt(plugin.attributes.sortOrder, 10);
@@ -259,14 +294,18 @@ export function parseDi(path: string, text: string): ConfigFacts {
           col: plugin.col,
         });
       }
+
       for (const argument of childrenNamed(top, "arguments").flatMap((a) => childrenNamed(a, "argument"))) {
         if (!argument.attributes.name) continue;
+
         if (argument.attributes["xsi:type"] === "object") {
           const value = argument.text.trim();
+
           if (value) facts.arguments.push({ type: type(holder), param: argument.attributes.name, value: type(value), line: argument.line, col: argument.col });
         } else if (top.name === "type" && className(holder) === COMMAND_LIST && argument.attributes.name === "commands") {
           for (const item of childrenNamed(argument, "item")) {
             const value = item.text.trim();
+
             if (item.attributes["xsi:type"] === "object" && value) facts.classEntries.push({ kind: "cli", label: item.attributes.name ?? className(value), target: type(value), method: "execute", line: item.line, col: item.col });
           }
         }
@@ -280,9 +319,12 @@ export function parseEvents(path: string, text: string): ConfigFacts {
   return fromXml(path, text, (root, facts) => {
     for (const event of childrenNamed(root, "event")) {
       const name = event.attributes.name?.trim();
+
       if (!name) continue;
+
       for (const observer of childrenNamed(event, "observer")) {
         const id = observer.attributes.name?.trim();
+
         if (!id) continue;
         const instance = observer.attributes.instance?.trim();
         const method = observer.attributes.method?.trim();
@@ -299,6 +341,7 @@ export function parseRoutes(path: string, text: string): ConfigFacts {
       for (const route of childrenNamed(router, "route")) {
         const id = route.attributes.id?.trim() ?? "";
         const frontName = route.attributes.frontName?.trim() || id;
+
         if (!frontName) continue;
         const modules = childrenNamed(route, "module").flatMap((m) => (m.attributes.name ? [m.attributes.name.trim()] : []));
         facts.routes.push({ router: router.attributes.id ?? "", id, frontName, modules, line: route.line, col: route.col });
@@ -315,10 +358,13 @@ export function parseWebapi(path: string, text: string): ConfigFacts {
       const url = route.attributes.url?.trim();
       const cls = service?.attributes.class?.trim();
       const method = service?.attributes.method?.trim();
+
       if (!url || !cls || !method) continue;
+
       const resources = childrenNamed(route, "resources")
         .flatMap((r) => childrenNamed(r, "resource"))
         .flatMap((r) => (r.attributes.ref ? [r.attributes.ref.trim()] : []));
+
       const label = `${(route.attributes.method ?? "GET").trim().toUpperCase()} ${url}${resources.length > 0 ? ` [${resources.join(", ")}]` : ""}`;
       facts.classEntries.push({ kind: "rest", label, target: type(cls), method, line: route.line, col: route.col });
     }
@@ -336,6 +382,7 @@ export function parseCrontab(path: string, text: string): ConfigFacts {
       for (const job of childrenNamed(group, "job")) {
         const name = job.attributes.name?.trim();
         const instance = job.attributes.instance?.trim();
+
         if (!name || !instance) continue;
         const schedule = childrenNamed(job, "schedule")[0]?.text.trim().replace(/\s+/g, " ");
         const configPath = childrenNamed(job, "config_path")[0]?.text.trim();
@@ -354,11 +401,13 @@ export function parseConsumers(path: string, text: string): ConfigFacts {
   return fromXml(path, text, (root, facts) => {
     for (const consumer of childrenNamed(root, "consumer")) {
       const name = consumer.attributes.name?.trim();
+
       if (!name) continue;
       const queue = consumer.attributes.queue?.trim();
       const label = queue && queue !== name ? `${name} (queue ${queue})` : name;
       const handler = consumer.attributes.handler?.trim();
       const [cls, method] = handler ? handler.split("::") : [consumer.attributes.consumerInstance?.trim(), "process"];
+
       if (!cls) continue;
       facts.classEntries.push({ kind: "consumer", label, target: type(cls), method: method?.trim() || "process", line: consumer.line, col: consumer.col });
     }
@@ -366,6 +415,7 @@ export function parseConsumers(path: string, text: string): ConfigFacts {
 }
 
 const IDENT = /[_A-Za-z][_0-9A-Za-z]*/y;
+
 const RESOLVER = /@resolver\s*\(\s*class\s*:\s*"((?:[^"\\]|\\.)*)"/y;
 
 /**
@@ -384,6 +434,7 @@ export function parseGraphql(path: string, text: string): ConfigFacts {
   let expectType = false;
   let field: string | null = null;
   let i = 0;
+
   const moveTo = (to: number): void => {
     for (; i < to; i++) {
       if (text[i] === "\n") {
@@ -392,35 +443,44 @@ export function parseGraphql(path: string, text: string): ConfigFacts {
       } else col++;
     }
   };
+
   while (i < text.length) {
     const ch = text[i]!;
+
     if (ch === "#") {
       const end = text.indexOf("\n", i);
       moveTo(end === -1 ? text.length : end);
       continue;
     }
+
     if (ch === '"') {
       const block = text.startsWith('"""', i);
       let j = i + (block ? 3 : 1);
+
       while (j < text.length && !(block ? text.startsWith('"""', j) : text[j] === '"' || text[j] === "\n")) j += text[j] === "\\" ? 2 : 1;
       moveTo(Math.min(text.length, j + (block ? 3 : 1)));
       continue;
     }
+
     if (ch === "@") {
       RESOLVER.lastIndex = i;
       const found = RESOLVER.exec(text);
+
       if (found && braces === 1 && parens === 0 && typeName !== null && field !== null) {
         facts.classEntries.push({ kind: "graphql", label: `${typeName}.${field}`, target: type(found[1]!.replace(/\\\\/g, "\\")), method: "resolve", line, col });
       }
+
       // The directive's own name is no field.
       IDENT.lastIndex = i + 1;
       moveTo(IDENT.exec(text) ? IDENT.lastIndex : i + 1);
       continue;
     }
+
     if (/[_A-Za-z]/.test(ch)) {
       IDENT.lastIndex = i;
       const word = IDENT.exec(text)![0];
       const end = IDENT.lastIndex;
+
       if (braces === 0 && parens === 0) {
         if (expectType) {
           typeName = word;
@@ -428,14 +488,18 @@ export function parseGraphql(path: string, text: string): ConfigFacts {
         } else if (word === "type" || word === "interface" || word === "input") expectType = true;
       } else if (braces === 1 && parens === 0) {
         const next = /\S/.exec(text.slice(end, end + 200))?.[0];
+
         if (next === "(" || next === ":") field = word;
       }
+
       moveTo(end);
       continue;
     }
+
     if (ch === "{") braces++;
     else if (ch === "}") {
       braces = Math.max(0, braces - 1);
+
       if (braces === 0) {
         typeName = null;
         field = null;
@@ -444,5 +508,6 @@ export function parseGraphql(path: string, text: string): ConfigFacts {
     else if (ch === ")") parens = Math.max(0, parens - 1);
     moveTo(i + 1);
   }
+
   return facts;
 }

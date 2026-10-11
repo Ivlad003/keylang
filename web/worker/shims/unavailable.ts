@@ -13,20 +13,29 @@ function unavailable(what: string): () => never {
 export function spawnSync(command: string): { status: null; signal: null; stdout: string; stderr: string; pid: 0; output: []; error: Error } {
   return { status: null, signal: null, stdout: "", stderr: "", pid: 0, output: [], error: Object.assign(new Error(`spawnSync ${command} ENOENT (no processes in the browser)`), { code: "ENOENT" }) };
 }
+
 export const spawn = unavailable("spawn");
+
 export const execFile = unavailable("execFile");
+
 export const execFileSync = unavailable("execFileSync");
+
 export const execSync = unavailable("execSync");
+
 export class ChildProcess {}
 
 // node:os
 export const homedir = (): string => "/home/keylang";
+
 export const tmpdir = (): string => "/tmp";
+
 export const platform = (): string => "browser";
+
 export const EOL = "\n";
 
 // node:zlib
 export const inflateRawSync = unavailable("zlib");
+
 export const deflateRawSync = unavailable("zlib");
 
 // @anthropic-ai/sdk, eventsource-parser: no model is asked from the browser.
@@ -35,5 +44,7 @@ export class Anthropic {
     throw new Error("a model is not available in the browser");
   }
 }
+
 export const createParser = unavailable("eventsource-parser");
+
 export default { spawnSync, spawn, execFile, homedir, tmpdir, platform, EOL, inflateRawSync, Anthropic, createParser };

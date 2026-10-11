@@ -69,12 +69,14 @@ const REPO: Record<string, string> = {
 function shop(t: TestContext, extra: Record<string, string> = {}): string {
   const dir = tempDir(t, "keylang-react-router-");
   writeTree(dir, { ...REPO, ...extra });
+
   return dir;
 }
 
 function snapshotOf(dir: string): AnalysisSnapshot {
   const run = keylang(dir, ["map"]);
   assert.equal(run.status, 0, run.stderr);
+
   return JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as AnalysisSnapshot;
 }
 

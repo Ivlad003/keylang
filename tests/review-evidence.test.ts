@@ -11,13 +11,16 @@ import { test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
+
 const adapter = join(root, "src/adapters/trace.ts");
 
 type Context = { after: (f: () => void) => void };
 
 function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8", maxBuffer: 1 << 28 });
+
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
@@ -26,15 +29,18 @@ function repo(t: Context, config: object, files: Record<string, string>): string
   const dir = mkdtempSync(join(tmpdir(), "keylang-evidence-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   writeFileSync(join(dir, "keylang.json"), `${JSON.stringify(config, null, 2)}\n`);
+
   for (const [path, text] of Object.entries(files)) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
     writeFileSync(join(dir, path), text);
   }
+
   return dir;
 }
 
 function snapshotOf(dir: string): string {
   assert.equal(keylang(dir, ["map"]).status, 0);
+
   return (JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as { snapshotId: string }).snapshotId;
 }
 
@@ -49,6 +55,7 @@ interface JsonResult {
 function results(dir: string): JsonResult[] {
   const o = keylang(dir, ["check", "--format", "json"]);
   assert.ok(o.stdout.startsWith("{"), o.stdout + o.stderr);
+
   return (JSON.parse(o.stdout) as { results: JsonResult[] }).results;
 }
 
@@ -57,6 +64,7 @@ const row = (rows: JsonResult[], criterion: string, area: string): JsonResult | 
 /** `verdict evidence` of the trace line of `id`, for assertion messages that show what came instead. */
 const traceOf = (rows: JsonResult[], id: string): string => {
   const r = row(rows, "trace", id);
+
   return r ? `${r.verdict}: ${r.evidence}` : "none";
 };
 
@@ -67,17 +75,26 @@ const CHECKOUT: Record<string, string> = {
   "src/application/purchase.ts": 'import { create } from "../domain/order.ts";\nimport { save } from "../infrastructure/store.ts";\nfunction validate(): void {}\nexport function buy(): void {\n  validate();\n  create();\n  save();\n}\n',
   "src/presentation/terminal.ts": 'import { buy } from "../application/purchase.ts";\nexport function checkout(): void {\n  buy();\n}\n',
 };
+
 const LAYERS = Object.fromEntries(["domain", "infrastructure", "application", "presentation"].map((layer) => [layer, `src/${layer}/**`]));
+
 const CHECKOUT_FLOW = "# flow checkout\n\n- trigger presentation.terminal.checkout\n- step application.purchase.buy\n  - step domain.order.create\n  - step infrastructure.store.save\n- invariant total is the sum of the lines\n  - test tests/purchase.test.ts \"computes total\"\n";
+
 const T = "presentation.terminal.checkout";
+
 const BUY = "application.purchase.buy";
+
 const CREATE = "domain.order.create";
+
 const SAVE = "infrastructure.store.save";
+
 const ALL = [T, BUY, CREATE, SAVE];
+
 const AREA = "invariant total is the sum of the lines";
 
 function checkout(t: Context, check: Record<string, string>): { dir: string; snapshot: string } {
   const dir = repo(t, { languages: ["typescript"], layers: LAYERS, check }, { ...CHECKOUT, "keylang/flows/checkout.md": CHECKOUT_FLOW, "tests/purchase.test.ts": "" });
+
   return { dir, snapshot: snapshotOf(dir) };
 }
 
@@ -93,11 +110,15 @@ interface SpanSpec {
 function traceRun(snapshotId: string, spans: SpanSpec[], run: { testId?: string; instrumented?: string[] } = {}): string {
   const base = { schemaVersion: 1, snapshotId, runId: "r1", testId: run.testId ?? "t1", flow: "checkout", traceId: "tr" };
   const events: object[] = [];
+
   for (const span of spans) {
     events.push({ ...base, event: "start", spanId: span.id, parentSpanId: span.parent ?? null, symbolId: span.symbol, clockId: "c", seq: span.start, ts: 1 });
+
     if (span.end !== undefined) events.push({ ...base, event: "end", spanId: span.id, outcome: "ok", clockId: "c", seq: span.end, ts: 1 });
   }
+
   events.push({ ...base, event: "run", complete: true, dropped: 0, instrumented: run.instrumented ?? ALL, open: [] });
+
   return `${events.map((e) => JSON.stringify(e)).join("\n")}\n`;
 }
 
@@ -119,6 +140,7 @@ test("trace: a run of 60 000 spans loads in linear time", (t) => {
   const { dir, snapshot } = checkout(t, { trace: ".keylang/trace/*.jsonl" });
   const spans: SpanSpec[] = [{ id: "a", symbol: T, start: 0, end: 1_000_000 }];
   let seq = 1;
+
   for (let i = 0; i < 60_000; i++) spans.push({ id: `v${i}`, symbol: "application.purchase.validate", parent: "a", start: seq++, end: seq++ });
   spans.push({ id: "b", symbol: BUY, parent: "a", start: seq++, end: seq + 4 }, { id: "c", symbol: CREATE, parent: "b", start: seq++, end: seq++ }, { id: "d", symbol: SAVE, parent: "b", start: seq++, end: seq++ });
   writeTrace(dir, "big.jsonl", traceRun(snapshot, spans));
@@ -126,6 +148,7 @@ test("trace: a run of 60 000 spans loads in linear time", (t) => {
   const rows = results(dir);
   // A scan of every span per event took 28 s here; a lookup by id takes about one.
   assert.ok(Date.now() - started < 15_000, `${Date.now() - started} ms`);
+
   for (const id of ALL) assert.equal(row(rows, "trace", id)?.verdict, "ok", traceOf(rows, id));
 });
 
@@ -139,6 +162,7 @@ test("trace: an end in a file read before the file with its start closes that st
   const o = keylang(dir, ["check"]);
   assert.equal(o.status, 0, o.stderr);
   const rows = results(dir);
+
   for (const id of ALL) assert.equal(row(rows, "trace", id)?.verdict, "ok", traceOf(rows, id));
   // An end whose start is in no file is still an error naming its line.
   writeTrace(dir, "a.jsonl", `${lines.filter(isEnd).join("\n").replace('"spanId":"a"', '"spanId":"zz"')}\n`);
@@ -152,14 +176,18 @@ test("trace: a run that never entered the trigger says nothing about the flow", 
   // A unit test of `save` alone: PHPUnit and several processes without a shared run id make such runs.
   const unit = traceRun(snapshot, [{ id: "u1", symbol: SAVE, start: 1, end: 2 }], { testId: "unit-save" });
   const e2e = traceRun(snapshot, nested(), { testId: "e2e" });
+
   for (const text of [e2e + unit, unit + e2e]) {
     writeTrace(dir, "t.jsonl", text);
     const rows = results(dir);
+
     for (const id of ALL) assert.equal(row(rows, "trace", id)?.verdict, "ok", traceOf(rows, id));
   }
+
   // Alone, it is no run of the flow: unverified, never a missing trigger.
   writeTrace(dir, "t.jsonl", unit);
   const alone = results(dir);
+
   for (const id of ALL) assert.equal(traceOf(alone, id), `unverified: unverified ${id}: trigger not observed in unit-save`);
   // Among the runs that entered the trigger, one that skipped a step still fails it.
   writeTrace(dir, "t.jsonl", e2e + unit + traceRun(snapshot, nested().filter((span) => span.symbol !== SAVE), { testId: "e2e-2" }));
@@ -172,6 +200,7 @@ test("trace: a snapshotId of another type is an error naming the line; a byte or
   const { dir, snapshot } = checkout(t, { trace: ".keylang/trace/*.jsonl" });
   writeTrace(dir, "t.jsonl", `\uFEFF${traceRun(snapshot, nested())}`);
   const rows = results(dir);
+
   for (const id of ALL) assert.equal(row(rows, "trace", id)?.verdict, "ok", traceOf(rows, id));
   writeTrace(dir, "t.jsonl", traceRun(snapshot, nested()).replace(`"snapshotId":"${snapshot}"`, '"snapshotId":123'));
   const bad = keylang(dir, ["check"]);
@@ -191,12 +220,14 @@ function writeReport(dir: string, name: string, text: string): void {
 
 const testsOf = (rows: JsonResult[]): string => {
   const r = row(rows, "tests", AREA);
+
   return r ? `${r.verdict}: ${r.evidence}` : "none";
 };
 
 test("tests: snapshotId and runId of another type are errors naming the field; missing or null is unbound", (t) => {
   const { dir, snapshot } = checkout(t, { tests: ".keylang/reports/*" });
   const report = (fields: object, row: object = {}): string => JSON.stringify({ schemaVersion: 1, runId: "r", ...fields, tests: [{ file: "tests/purchase.test.ts", name: "computes total", status: "pass", ...row }] });
+
   for (const [fields, rowFields, message] of [
     [{ snapshotId: 123 }, {}, /\.keylang\/reports\/r\.json: `snapshotId` must be a string or null, got 123/],
     [{ snapshotId: snapshot, runId: 5 }, {}, /\.keylang\/reports\/r\.json: `runId` must be a string or null, got 5/],
@@ -207,6 +238,7 @@ test("tests: snapshotId and runId of another type are errors naming the field; m
     assert.equal(o.status, 2, o.stdout);
     assert.match(o.stderr, message);
   }
+
   writeReport(dir, "r.json", report({ snapshotId: null, runId: null }));
   assert.match(testsOf(results(dir)), /unverified: .*report \.keylang\/reports\/r\.json is not bound to a snapshot/);
   writeReport(dir, "r.json", report({ snapshotId: snapshot }));
@@ -228,8 +260,10 @@ test("tests: two results of other snapshots are a stale report, not ambiguous", 
 
 test("tests: a JUnit file attribute with the absolute path under the root matches; a testcase without one says so", (t) => {
   const { dir, snapshot } = checkout(t, { tests: ".keylang/reports/*" });
+
   const junit = (attributes: string): string =>
     `<?xml version="1.0"?>\n<testsuites><testsuite name="purchase"><properties><property name="keylang.snapshotId" value="${snapshot}"/></properties><testcase ${attributes} name="computes total"/></testsuite></testsuites>\n`;
+
   // PHPUnit and jest-junit write the absolute path.
   writeReport(dir, "junit.xml", junit(`file="${join(dir, "tests/purchase.test.ts")}" classname="PurchaseTest"`));
   assert.match(testsOf(results(dir)), /^ok: .*passed in \.keylang\/reports\/junit\.xml/);
@@ -251,6 +285,7 @@ function traced(dir: string, script: string, flow = "f"): { status: number | nul
   const env: Record<string, string | undefined> = { ...process.env, KEYLANG_TRACE: join(dir, `.keylang/trace/${flow}.jsonl`), KEYLANG_TRACE_FLOW: flow, KEYLANG_TRACE_TEST: "t" };
   delete env.KEYLANG_TRACE_RUN;
   const r = spawnSync(process.execPath, ["--import", adapter, "run.mjs"], { cwd: dir, encoding: "utf8", env });
+
   return { status: r.status, stderr: r.stderr };
 }
 
@@ -270,6 +305,7 @@ test("trace adapter: a planned CommonJS file is instrumented; one a CommonJS mod
     "src/app/far.cjs": "function far() {\n  return 4;\n}\nmodule.exports = { far };\n",
     "keylang/flows/f.md": "# flow f\n\n- trigger app.main.main\n  - step app.legacy.leg\n\n# flow g\n\n- trigger app.main.viaBridge\n  - step app.far.far\n",
   });
+
   snapshotOf(dir);
   const r = traced(dir, "const m = await import('./src/app/main.ts'); m.main();");
   assert.equal(r.status, 0, r.stderr);
@@ -288,6 +324,7 @@ test("trace adapter: a worker that loads one file leaves the plan instrumented, 
     "src/app/w.ts": "export function inWorker(): number {\n  return 2;\n}\ninWorker();\n",
     "keylang/flows/f.md": "# flow f\n\n- trigger app.main.main\n  - step app.main.helper\n  - step app.main.never\n  - step app.w.inWorker\n",
   });
+
   snapshotOf(dir);
   const r = traced(dir, "const m = await import('./src/app/main.ts'); await m.main();");
   assert.equal(r.status, 0, r.stderr);
@@ -295,6 +332,7 @@ test("trace adapter: a worker that loads one file leaves the plan instrumented, 
   assert.equal(events.length, 2, "the process and its worker");
   // Without KEYLANG_TRACE_RUN the worker inherits the process's run id: a step it ran is not missing from a run of its own.
   assert.equal(events[0]!.runId, events[1]!.runId);
+
   for (const event of events) assert.deepEqual(event.instrumented, ["app.main.helper", "app.main.main", "app.main.never", "app.w.inWorker"]);
   const rows = results(dir);
   assert.equal(traceOf(rows, "app.main.helper"), "ok: ok app.main.helper: observed in t");
@@ -304,6 +342,7 @@ test("trace adapter: a worker that loads one file leaves the plan instrumented, 
 
 test("trace adapter: without KEYLANG_TRACE it does nothing; with it, a missing flow or test is named", () => {
   const env = { ...process.env };
+
   for (const name of ["KEYLANG_TRACE", "KEYLANG_TRACE_FLOW", "KEYLANG_TRACE_TEST"]) delete env[name];
   const quiet = spawnSync(process.execPath, ["--import", adapter, "-e", "console.log('ran')"], { encoding: "utf8", env });
   assert.equal(quiet.status, 0, quiet.stderr);
@@ -320,6 +359,7 @@ const python3 = spawnSync("python3", ["--version"], { encoding: "utf8" }).status
 
 test("python: a child process under the adapter shares the run id, so a step it ran is not missing", { skip: python3 ? false : "python3 is not installed" }, (t) => {
   const python = join(root, "adapters/python/keylang_trace.py");
+
   const dir = repo(t, { languages: ["python"], layers: { app: ["app/**"] }, exclude: ["run.py", "child.py"], check: { trace: ".keylang/trace/*.jsonl" } }, {
     "app/__init__.py": "",
     "app/main.py": "import subprocess\nimport sys\n\n\ndef work():\n    pass\n\n\ndef main(adapter):\n    subprocess.run([sys.executable, adapter, \"child.py\"], check=True)\n",
@@ -327,6 +367,7 @@ test("python: a child process under the adapter shares the run id, so a step it 
     "child.py": "from app.main import work\n\nwork()\n",
     "keylang/flows.md": "# flow f\n\n- trigger app.main.main\n  - step app.main.work\n",
   });
+
   const plan = keylang(dir, ["trace-plan", "f"]);
   assert.equal(plan.status, 0, plan.stderr);
   writeFileSync(join(dir, "plan.json"), plan.stdout);
@@ -344,6 +385,7 @@ const rustc = spawnSync("rustc", ["--version"], { encoding: "utf8" }).status ===
 
 test("rust: a guard in a synchronous fn that starts async code is recorded; a guard inside an async block is not", { skip: rustc ? false : "rustc is not installed" }, (t) => {
   const rust = join(root, "adapters/rust/keylang_trace.rs");
+
   const dir = repo(t, { languages: ["rust"], layers: { app: ["src/*.rs"] }, check: { trace: ".keylang/trace/*.jsonl" } }, {
     "Cargo.toml": '[package]\nname = "shop"\nversion = "0.1.0"\nedition = "2021"\n',
     "src/main.rs": `#[path = ${JSON.stringify(rust)}]
@@ -380,6 +422,7 @@ fn main() {
 `,
     "keylang/flows.md": "# flow a\n\n- trigger app.main.run\n  - step app.main.spawner\n  - step app.main.later\n",
   });
+
   const plan = keylang(dir, ["trace-plan", "a"]);
   assert.equal(plan.status, 0, plan.stderr);
   writeFileSync(join(dir, "plan.json"), plan.stdout);
@@ -396,6 +439,7 @@ fn main() {
 
 test("rust: a `;` inside an array type of the signature does not make the fn bodiless; its span is recorded", { skip: rustc ? false : "rustc is not installed" }, (t) => {
   const rust = join(root, "adapters/rust/keylang_trace.rs");
+
   const dir = repo(t, { languages: ["rust"], layers: { app: ["src/*.rs"] }, check: { trace: ".keylang/trace/*.jsonl" } }, {
     "Cargo.toml": '[package]\nname = "shop"\nversion = "0.1.0"\nedition = "2021"\n',
     "src/main.rs": `#[path = ${JSON.stringify(rust)}]
@@ -423,6 +467,7 @@ fn main() {
 `,
     "keylang/flows.md": "# flow checkout\n\n- trigger app.main.checkout\n  - step app.main.digest\n  - step app.main.save\n",
   });
+
   const plan = keylang(dir, ["trace-plan", "checkout"]);
   assert.equal(plan.status, 0, plan.stderr);
   writeFileSync(join(dir, "plan.json"), plan.stdout);
@@ -469,6 +514,7 @@ test("php: a generator whose body has an arrow function before its `yield` is st
     "run.php": "<?php\nrequire __DIR__ . '/src/Domain/Order.php';\necho (new Shop\\Domain\\Order())->total(), \"\\n\";\n",
     "keylang/flows.md": "# flow sum\n\n- trigger domain.Order.Order.total\n  - step domain.Order.Order.each\n",
   });
+
   const plan = keylang(dir, ["trace-plan", "sum"]);
   assert.equal(plan.status, 0, plan.stderr);
   writeFileSync(join(dir, "plan.json"), plan.stdout);
@@ -505,10 +551,13 @@ class Session {
     this.child.stderr.on("data", (chunk: Buffer) => (this.stderr += chunk.toString()));
     this.child.stdout.on("data", (chunk: Buffer) => {
       this.buffer = Buffer.concat([this.buffer, chunk]);
+
       for (;;) {
         const end = this.buffer.indexOf("\r\n\r\n");
+
         if (end === -1) return;
         const length = Number(/Content-Length: (\d+)/i.exec(this.buffer.subarray(0, end).toString())?.[1]);
+
         if (this.buffer.length < end + 4 + length) return;
         this.messages.push(JSON.parse(this.buffer.subarray(end + 4, end + 4 + length).toString()) as Message);
         this.buffer = this.buffer.subarray(end + 4 + length);
@@ -520,6 +569,7 @@ class Session {
   write(...messages: object[]): void {
     this.child.stdin.write(messages.map((message) => {
       const json = JSON.stringify({ jsonrpc: "2.0", ...message });
+
       return `Content-Length: ${Buffer.byteLength(json)}\r\n\r\n${json}`;
     }).join(""));
   }
@@ -531,6 +581,7 @@ class Session {
   send(method: string, params: unknown): number {
     const id = this.next++;
     this.write({ id, method, params });
+
     return id;
   }
 
@@ -541,7 +592,9 @@ class Session {
 
   async request<T>(method: string, params: unknown): Promise<T> {
     const response = await this.response(this.send(method, params));
+
     if (response.error) throw new Error(`${method}: ${response.error.message}`);
+
     return response.result as T;
   }
 
@@ -551,9 +604,12 @@ class Session {
 
   async until<T>(find: () => T | undefined, ms = 60000): Promise<T> {
     const deadline = Date.now() + ms;
+
     for (;;) {
       const found = find();
+
       if (found !== undefined) return found;
+
       if (Date.now() > deadline) throw new Error(`timeout; got ${JSON.stringify(this.messages).slice(0, 2000)}`);
       await new Promise((done) => setTimeout(done, 25));
     }
@@ -569,6 +625,7 @@ function lspRepo(t: Context): string {
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   cpSync(join(root, "tests/fixtures/repo"), dir, { recursive: true });
   assert.equal(keylang(dir, ["map"]).status, 0);
+
   return dir;
 }
 
@@ -627,13 +684,17 @@ test("lsp: one analysis runs at a time, and the changes made meanwhile are analy
   // Six edits, each followed by a request, in one write: every request needs a newer generation than the last.
   const messages: object[] = [{ method: "textDocument/didOpen", params: { textDocument: { uri: flowUri, languageId: "markdown", version: 1, text: version(0) } } }];
   const ids: number[] = [];
+
   for (let n = 1; n <= 6; n++) {
     const id = s.nextId();
     ids.push(id);
+
     if (n > 1) messages.push({ method: "textDocument/didChange", params: { textDocument: { uri: flowUri, version: n }, contentChanges: [{ text: version(n) }] } });
     messages.push({ id, method: "textDocument/hover", params: { textDocument: { uri: flowUri }, position: { line: 2, character: 22 } } });
   }
+
   s.write(...messages);
+
   for (const id of ids) assert.equal((await s.response(id)).error, undefined);
   await s.request("shutdown", null);
   s.notify("exit", null);
@@ -643,6 +704,7 @@ test("lsp: one analysis runs at a time, and the changes made meanwhile are analy
   const ends = new Map(events.filter((e) => e.event === "end").map((e) => [e.spanId, e]));
   // The first request starts an analysis; the five that wait for it share the next one.
   assert.ok(starts.length >= 2 && starts.length <= 3, `${starts.length} analyses`);
+
   for (let i = 1; i < starts.length; i++) {
     const before = ends.get(starts[i - 1]!.spanId);
     assert.ok(before && before.clockId === starts[i]!.clockId && before.seq! < starts[i]!.seq!, "an analysis starts after the one before it ended");

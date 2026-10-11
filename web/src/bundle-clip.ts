@@ -38,6 +38,7 @@ function modal(id: string, title: string): { box: HTMLDivElement; body: HTMLDivE
   box.append(make("h2", { text: title }), body, actions);
   overlay.append(box);
   document.body.append(overlay);
+
   return { box, body, actions, close: () => overlay.remove() };
 }
 
@@ -49,9 +50,11 @@ export async function writeClipboard(text: string): Promise<"clipboard" | "dialo
   try {
     if (!navigator.clipboard?.writeText) throw new Error("no clipboard");
     await navigator.clipboard.writeText(text);
+
     return "clipboard";
   } catch {
     showCopyDialog(text);
+
     return "dialog";
   }
 }
@@ -79,10 +82,12 @@ export function askPasteText(): Promise<string | null> {
     area.id = "bundle-paste-text";
     area.placeholder = "Вставте сюди пакет keylang (Ctrl+V): текст, який скопіювала інша вкладка keylang web чи `keylang flow export`";
     dialog.body.append(area);
+
     const done = (value: string | null): void => {
       dialog.close();
       resolve(value);
     };
+
     const ok = button("Вставити", () => done(area.value));
     ok.id = "bundle-paste-ok";
     const cancel = button("Скасувати", () => done(null));
@@ -110,29 +115,36 @@ export function mapLayers(preview: BundleImport, askModel: (current: Record<stri
     table.append(make("tr", {}, make("th", { text: "шар пакета" }), make("th", { text: "→ шар тут" }), make("th", { text: "як вибрано" })));
     const selects = new Map<string, HTMLSelectElement>();
     const how = new Map<string, HTMLTableCellElement>();
+
     const fill = (answer: BundleImport): void => {
       for (const choice of answer.layers ?? []) {
         const select = selects.get(choice.from);
+
         if (select && targets.some((t) => t.name === choice.to)) select.value = choice.to;
         const cell = how.get(choice.from);
+
         if (cell) cell.textContent = BY[choice.by] ?? choice.by;
       }
     };
+
     for (const layer of preview.used ?? []) {
       const select = make("select");
       select.id = `bundle-layer-${layer}`;
       select.dataset["layer"] = layer;
+
       for (const target of targets) {
         const option = make("option", { text: target.name, title: target.description });
         option.value = target.name;
         select.append(option);
       }
+
       const cell = make("td");
       select.addEventListener("change", () => (cell.textContent = BY["flag"]!));
       selects.set(layer, select);
       how.set(layer, cell);
       table.append(make("tr", {}, make("td", { title: sources.get(layer) ?? "" }, make("code", { text: layer })), make("td", {}, select), cell));
     }
+
     dialog.body.append(table);
     const notes = make("ul", { className: "bundle-notes" });
     notes.id = "bundle-notes";
@@ -141,10 +153,12 @@ export function mapLayers(preview: BundleImport, askModel: (current: Record<stri
     dialog.body.append(notes);
     fill(preview);
     const current = (): Record<string, string> => Object.fromEntries([...selects].map(([from, select]) => [from, select.value]));
+
     const done = (value: Record<string, string> | null): void => {
       dialog.close();
       resolve(value);
     };
+
     const ask = button("запитати модель", () => {
       ask.disabled = true;
       ask.textContent = "модель думає…";
@@ -159,6 +173,7 @@ export function mapLayers(preview: BundleImport, askModel: (current: Record<stri
           ask.textContent = "запитати модель";
         });
     }, { title: "Запропонувати відповідність шарів моделлю (той самий шлях, що flow import --mode hybrid); рішення — ваше" });
+
     ask.id = "bundle-ask-model";
     const ok = button("Імпортувати", () => done(current()), { title: "Пропозиції фічі й таблиці відповідності; фігури — на полотно біля курсора" });
     ok.id = "bundle-import";

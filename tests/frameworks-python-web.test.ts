@@ -17,12 +17,14 @@ import { DJANGO, FASTAPI, FLASK } from "./fixtures-python-web.ts";
 function repo(t: { after: (fn: () => void) => void }, files: Record<string, string>, extra: Record<string, string> = {}): string {
   const dir = tempDir(t, "keylang-pyweb-");
   writeTree(dir, { ...files, ...extra });
+
   return dir;
 }
 
 function map(dir: string): AnalysisSnapshot {
   const run = keylang(dir, ["map"]);
   assert.equal(run.status, 0, run.stderr);
+
   return JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as AnalysisSnapshot;
 }
 
@@ -37,6 +39,7 @@ function viaEdges(snapshot: AnalysisSnapshot): string[] {
 function setFrameworks(dir: string, frameworks: string[] | undefined): void {
   const path = join(dir, "keylang.json");
   const raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+
   if (frameworks === undefined) delete raw.frameworks;
   else raw.frameworks = frameworks;
   writeFileSync(path, `${JSON.stringify(raw, null, 2)}\n`);

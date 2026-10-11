@@ -20,6 +20,7 @@ import { migrationStatus, type Stack } from "../src/migration.ts";
 import { bin, keylang, tempDir, treeBytes, writeTree } from "./cli-helpers.ts";
 
 const PLACE = "quote.Model.QuoteManagement.QuoteManagement.placeOrder";
+
 const SERVICE = "sales.Model.OrderService.OrderService";
 
 /** The old stack: PHP, Magento-shaped; three hand-written flows, the first and second with tests. */
@@ -51,6 +52,7 @@ function newFiles(from: string | null): Record<string, string> {
 function snapshotIdOf(dir: string): string {
   const r = keylang(dir, ["map"]);
   assert.equal(r.status, 0, r.stderr);
+
   return (JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as { snapshotId: string }).snapshotId;
 }
 
@@ -69,6 +71,7 @@ function setup(t: TestContext, withFrom = false): { old: string; next: string } 
   const next = tempDir(t, "keylang-migration-new-");
   writeTree(next, newFiles(withFrom ? old : null));
   report(next, snapshotIdOf(next), [{ file: "tests/checkout.test.ts", name: "places an order", status: "pass" }]);
+
   return { old, next };
 }
 
@@ -178,6 +181,7 @@ test("check: the new side of a row is a reference (K001 unless code or a planned
   assert.equal(r.status, 1, r.stdout + r.stderr);
   const lines = r.stdout.split("\n").filter((line) => line.startsWith("keylang/migration.md"));
   const at = (line: number): string[] => lines.filter((item) => item.startsWith(`keylang/migration.md:${line}:`));
+
   for (const line of [3, 4, 5]) assert.match(at(line).join("\n"), new RegExp(`:${line}:7: migration ok \\S+: in the old snapshot ${old.replaceAll("/", "\\/")}`), `row ${line}`);
   assert.match(at(6).join("\n"), /:6:7: K001 dangling reference `sales\.Model\.OrderService\.OrderService\.cancel` in the old stack/);
   assert.match(at(6).join("\n"), /:6:\d+: K001 dangling reference `orders\.service\.cancel`/);
@@ -226,6 +230,7 @@ test("migration status with migration.from of keylang.json; a dropped trigger is
 test("parity, pure: a planned step not implemented yet fails; one inside an opaque module is unverified; an unmapped step is unverified", () => {
   const flow = { name: "pay", source: "spec" as const, file: "keylang/flows/pay.md", trigger: "old.pay.run", steps: ["old.pay.run", "old.pay.charge", "old.pay.log"], tests: [] };
   const old: Stack = { snapshotId: "a", nodes: {}, entries: [{ kind: "cron", label: "0 * * * *", id: "old.pay.sweep" }], flows: [flow], tests: null, integrations: null };
+
   const current: Stack = {
     snapshotId: "b",
     nodes: { app: { kind: "layer" }, "app.pay": { kind: "module", members: "complete" }, "app.pay.run": { kind: "fn" }, "app.vendor": { kind: "module", members: "opaque" } },
@@ -234,6 +239,7 @@ test("parity, pure: a planned step not implemented yet fails; one inside an opaq
     tests: null,
     integrations: null,
   };
+
   const row = (oldId: string, to: string, planned = false) => ({ kind: "map" as const, section: "m", old: oldId, to, planned, reason: null, file: "keylang/migration.md", line: 1, col: 1, oldSpan: { start: { offset: 0, line: 1, col: 1 }, end: { offset: 0, line: 1, col: 1 } }, text: "" });
   const planned = migrationStatus({ from: "old", old, current, rows: [row("old.pay.run", "app.pay.run"), row("old.pay.charge", "app.pay.charge", true)] });
   assert.equal(planned.flows[0]!.verdict, "fail");

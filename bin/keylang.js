@@ -10,4 +10,5 @@ process.stdout.on("error", (e) => {
   process.stderr.write(`keylang: cannot write the output: ${e.message}\n`);
   process.exit(2);
 });
+
 process.exitCode = await main(process.argv.slice(2));

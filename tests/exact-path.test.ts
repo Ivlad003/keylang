@@ -18,23 +18,29 @@ import { RustResolver } from "../src/rust-imports.ts";
 function repo(t: TestContext, files: Record<string, string>): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-casefold-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+
   for (const [file, text] of Object.entries(files)) {
     mkdirSync(dirname(join(dir, file)), { recursive: true });
     writeFileSync(join(dir, file), text);
   }
+
   return dir;
 }
 
 /** The real spelling of `abs` under `root` when some spelling of it exists ignoring case; null otherwise. */
 function casefold(root: string, abs: string): string | null {
   let at = root;
+
   for (const segment of relative(root, abs).split(sep)) {
     if (segment === "" || segment === ".") continue;
+
     if (!existsSync(at)) return null;
     const real = readdirSync(at).find((name) => name.normalize("NFC").toLowerCase() === segment.normalize("NFC").toLowerCase());
+
     if (real === undefined) return null;
     at = join(at, real);
   }
+
   return at;
 }
 
@@ -44,7 +50,9 @@ function caseInsensitive(root: string): ExactFs {
     existsSync: (path) => casefold(root, path) !== null,
     readdirSync: (path) => {
       const real = casefold(root, path);
+
       if (real === null) throw new Error(`ENOENT: ${path}`);
+
       return readdirSync(real);
     },
   };
@@ -75,13 +83,16 @@ test("rust: `use crate::models::User` with `models/user.rs` resolves to `models/
     "src/models/user.rs": "pub struct User;\nimpl User { pub fn new() -> Self { User } }\n",
     "src/api/mod.rs": "use crate::models::User;\npub fn handle() { let _ = User::new(); }\n",
   };
+
   const root = repo(t, files);
   const sources = new Set(Object.keys(files).filter((f) => f.endsWith(".rs")));
+
   for (const resolver of [new RustResolver(root, sources, caseInsensitive(root)), new RustResolver(root, sources)]) {
     assert.deepEqual(resolver.resolve("src/api/mod.rs", "crate::models::User"), { kind: "internal", file: "src/models/mod.rs" });
     assert.deepEqual(resolver.resolve("src/api/mod.rs", "crate::models::user"), { kind: "internal", file: "src/models/user.rs", whole: true });
     assert.deepEqual(resolver.resolve("src/api/mod.rs", "crate::models::user::User"), { kind: "internal", file: "src/models/user.rs" });
   }
+
   // A file the index does not list yet (an unsaved buffer) is still found on disk when spelled as on disk.
   const partial = new RustResolver(root, new Set(["src/lib.rs"]), caseInsensitive(root));
   assert.deepEqual(partial.resolve("src/api/mod.rs", "crate::models::User"), { kind: "internal", file: "src/models/mod.rs" });
@@ -96,13 +107,16 @@ test("python: `from app.models import User` with `models/user.py` resolves to `m
     "app/api/__init__.py": "",
     "app/api/views.py": "from app.models import User\n\ndef handle():\n    return User()\n",
   };
+
   const root = repo(t, files);
   const sources = new Set(Object.keys(files));
+
   for (const resolver of [new PythonResolver(root, sources, caseInsensitive(root)), new PythonResolver(root, sources)]) {
     assert.deepEqual(resolver.resolve("app/api/views.py", "app.models.User"), { kind: "internal", file: "app/models/__init__.py" });
     assert.deepEqual(resolver.resolve("app/api/views.py", "app.models.user"), { kind: "internal", file: "app/models/user.py", whole: true });
     assert.deepEqual(resolver.resolve("app/api/views.py", "app.models.user.User"), { kind: "internal", file: "app/models/user.py" });
   }
+
   const partial = new PythonResolver(root, new Set(["app/api/views.py"]), caseInsensitive(root));
   assert.deepEqual(partial.resolve("app/api/views.py", "app.models.User"), { kind: "internal", file: "app/models/__init__.py" });
   assert.deepEqual(partial.resolve("app/api/views.py", "..models.User"), { kind: "internal", file: "app/models/__init__.py" });
@@ -114,13 +128,16 @@ test("typescript: `./models/User` with `models/user.ts` is unresolved on a case-
     "src/models/index.ts": "export { User } from './user';\n",
     "src/api/handler.ts": "import { User } from '../models/User';\n",
   };
+
   const root = repo(t, files);
   const sources = new Set(Object.keys(files));
+
   for (const resolver of [new ImportResolver(root, sources, caseInsensitive(root)), new ImportResolver(root, sources)]) {
     assert.deepEqual(resolver.resolve("src/api/handler.ts", "../models/User"), { kind: "unresolved" });
     assert.deepEqual(resolver.resolve("src/api/handler.ts", "../models/user"), { kind: "internal", file: "src/models/user.ts" });
     assert.deepEqual(resolver.resolve("src/api/handler.ts", "../models"), { kind: "internal", file: "src/models/index.ts" });
   }
+
   const partial = new ImportResolver(root, new Set(["src/api/handler.ts"]), caseInsensitive(root));
   assert.deepEqual(partial.resolve("src/api/handler.ts", "../models/User"), { kind: "unresolved" });
   assert.deepEqual(partial.resolve("src/api/handler.ts", "../models/user"), { kind: "internal", file: "src/models/user.ts" });

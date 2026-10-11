@@ -9,32 +9,39 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
 
 function repo(t: { after: (f: () => void) => void }, files: Record<string, string>): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-format-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+
   for (const [path, text] of Object.entries(files)) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
     writeFileSync(join(dir, path), text);
   }
+
   return dir;
 }
 
 function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8" });
+
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
 const layers = { app: ["src/app/**"], domain: ["src/domain/**"] };
+
 const source = {
   "src/app/x/y.ts": 'import { s } from "../../domain/storefront.ts";\nexport const y = s;\n',
   "src/domain/storefront.ts": "export const s = 1;\n",
 };
+
 const pair = "# rules\n\n- allow app.x.y domain\n- deny app domain.storefront\n";
 
 function config(format?: number): string {
   const body = { languages: ["typescript"], layers, ...(format === undefined ? {} : { format }) };
+
   return `${JSON.stringify(body)}\n`;
 }
 
@@ -82,6 +89,7 @@ test("a directory without keylang.json is format 2, including a spec copy with n
 
 test("format rejects a non-integer or a newer edition and names the file and the field", (t) => {
   const dir = repo(t, { "keylang.json": config(), ...source, "keylang/rules.md": pair, "keylang/map.md": "# map\n\n- app\n" });
+
   const cases: [unknown, RegExp][] = [
     ["1", /`format` must be a positive integer, got "1"/],
     [0, /`format` must be a positive integer, got 0/],
@@ -89,6 +97,7 @@ test("format rejects a non-integer or a newer edition and names the file and the
     [1.5, /`format` must be a positive integer, got 1\.5/],
     [null, /`format` must be a positive integer, got null/],
   ];
+
   for (const [format, message] of cases) {
     writeFileSync(join(dir, "keylang.json"), `${JSON.stringify({ format, languages: ["typescript"], layers })}\n`);
     const checked = keylang(dir, ["check"]);
@@ -96,13 +105,16 @@ test("format rejects a non-integer or a newer edition and names the file and the
     assert.match(checked.stderr, /keylang\.json:/);
     assert.match(checked.stderr, message);
   }
+
   writeFileSync(join(dir, "keylang.json"), `${JSON.stringify({ format: 3, languages: ["typescript"], layers })}\n`);
+
   for (const args of [["check"], ["map"], ["fmt", "--check", "keylang/map.md"], ["parse", "--json", "keylang/map.md"]]) {
     const run = keylang(dir, args);
     assert.equal(run.status, 2, args.join(" "));
     assert.match(run.stderr, /keylang\.json:.*`format` 3 is newer than this keylang reads \(2\); upgrade keylang/);
     assert.equal(existsSync(join(dir, "keylang/map")), false);
   }
+
   writeFileSync(join(dir, "keylang.json"), "{ nope");
   const broken = keylang(dir, ["fmt", "--check", "keylang/map.md"]);
   assert.equal(broken.status, 2);
@@ -145,6 +157,7 @@ test("wiring uses the same decision: format 2 blocks wire, format 1 only warns",
     "keylang/rules.md": pair,
     "keylang/wiring.md": "# wiring\n\n- wire app.x.y.make\n  - item domain.storefront.item\n",
   };
+
   const one = repo(t, { "keylang.json": config(1), ...files });
   const format1 = keylang(one, ["check"]);
   assert.match(format1.stdout, /K106/);
@@ -164,11 +177,13 @@ test("a handwritten deny of a package is not K106; each K102 names the baseline 
     "package.json": `${JSON.stringify({ name: "pkgs", private: true, dependencies: { "left-pad": "1.0.0", has: "1.0.0" } })}\n`,
     "src/app/x/y.ts": 'import leftPad from "left-pad";\nimport has from "has";\nexport const n = leftPad && has ? 1 : 0;\n',
   });
+
   assert.equal(keylang(dir, ["init", "--agents=none"]).status, 0);
   writeFileSync(join(dir, "keylang/rules.md"), "# rules\n\n- deny app.x external\n");
   const checked = keylang(dir, ["check"]);
   assert.doesNotMatch(checked.stdout, /K106/, checked.stdout);
   const baseline = readFileSync(join(dir, "keylang/rules.baseline.md"), "utf8").split("\n");
+
   for (const pkg of ["external.left-pad", "external.has"]) {
     const line = baseline.findIndex((text) => text === `- allow app ${pkg}`) + 1;
     assert.ok(line > 0, baseline.join("\n"));

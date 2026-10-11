@@ -13,6 +13,7 @@ const bin = join(dirname(fileURLToPath(import.meta.url)), "../bin/keylang.js");
 
 function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8" });
+
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
@@ -22,10 +23,12 @@ function repo(t: { after: (f: () => void) => void }, files: Record<string, strin
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const layers = Object.fromEntries([...new Set(Object.keys(files).filter((p) => p.startsWith("src/")).map((p) => p.split("/")[1]!))].map((l) => [l, `src/${l}/**`]));
   writeFileSync(join(dir, "keylang.json"), JSON.stringify({ languages: ["typescript"], layers, ...config }));
+
   for (const [path, text] of Object.entries(files)) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
     writeFileSync(join(dir, path), text);
   }
+
   return dir;
 }
 
@@ -45,6 +48,7 @@ interface Snapshot {
 function snapshot(dir: string): Snapshot {
   const o = keylang(dir, ["map"]);
   assert.equal(o.status, 0, o.stdout + o.stderr);
+
   return JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as Snapshot;
 }
 
@@ -69,9 +73,11 @@ test("exports: a default export, `export { a as b }` and barrel re-exports resol
     ].join("\n"),
     "keylang/flows/f.md": "# flow f\n\n- trigger b.main.main\n- step a.lib.step\n- step a.lib.other\n- step a.lib.s2\n\n# flow g\n\n- trigger b.main.viaBarrel\n- step a.lib.other\n",
   });
+
   const lines = statics(dir);
   assert.equal(lines.length, 4, lines.join("\n"));
   assert.match(lines.pop()!, /static ok a\.lib\.other: called from b\.main\.viaBarrel/);
+
   for (const line of lines) assert.match(line, /static ok a\.lib\.\w+: called from b\.main\.main/);
   const calls = snapshot(dir).edges.filter((e) => e.kind === "call" && e.source.startsWith("b.main.")).map((e) => `${e.source}: ${e.text} → ${e.target}`);
   assert.deepEqual(calls.sort(), ["b.main.main: go → a.lib.step", "b.main.main: run → a.lib.other", "b.main.main: s2 → a.lib.s2", "b.main.viaBarrel: ns.s2 → a.lib.s2", "b.main.viaBarrel: renamed → a.lib.other"]);
@@ -104,7 +110,9 @@ test("classes: `this.#m()` resolves; static, instance and #private members of on
       "# flow i\n\n- trigger a.x.Y.boot\n- step a.x.Y.m\n",
     ].join("\n"),
   });
+
   const nodes = snapshot(dir).nodes;
+
   for (const id of ["a.x.X.work", "a.x.X.m", "a.x.X.m-static", "a.x.Y.go", "a.x.Y.go-private", "a.x.Y.m"]) assert.equal(nodes[id]?.kind, "fn", id);
   const lines = statics(dir);
   assert.match(lines[0]!, /static ok a\.x\.X\.work: called from a\.x\.X\.run/);
@@ -129,6 +137,7 @@ test("module-level code: a wrapped function value or an object method is an esca
       "# flow j\n\n- trigger c.main.main\n- step c.lib.run\n- step c.lib.go\n",
     ].join("\n"),
   }, { languages: ["typescript", "javascript"] });
+
   const lines = statics(dir);
   assert.match(lines[0]!, /static unverified a\.lib\.step: .*`step` is called from a function value outside declarations at src\/a\/api\.ts:2:35/);
   assert.match(lines[1]!, /static unverified a\.lib\.step: /);
@@ -144,6 +153,7 @@ test("module-level code: a module loaded by `import()` or a worker runs its top 
     "src/b/main.ts": 'export async function main(): Promise<void> {\n  await import("../a/plugin.ts");\n}\nexport function main2(): void {\n  new Worker(new URL("../a/w.ts", import.meta.url));\n}\n',
     "keylang/flows/f.md": "# flow f\n\n- trigger b.main.main\n- step a.plugin.step\n\n# flow g\n\n- trigger b.main.main2\n- step a.w.wstep\n",
   });
+
   const lines = statics(dir);
   assert.match(lines[0]!, /static unverified a\.plugin\.step: no call path from b\.main\.main in the static graph; `step` is called from module-level code at src\/a\/plugin\.ts:2:1/);
   assert.match(lines[1]!, /static unverified a\.w\.wstep: .*module-level code at src\/a\/w\.ts:2:1/);
@@ -159,11 +169,14 @@ test("imports: a workspace package is internal through its node_modules link or 
     "packages/app/src/main.ts": 'import { f } from "@acme/lib";\nimport { g } from "@acme/lib/util";\nexport function main(): void { f(); g(); }\n',
     "keylang/rules.md": "# rules\n\n- deny app lib\n",
   }, { layers: { app: ["packages/app/**"], lib: ["packages/lib/**"] } });
+
   const denied = (): string => {
     const o = keylang(dir, ["check"]);
     assert.equal(o.status, 1, o.stdout);
+
     return o.stdout;
   };
+
   // Not installed: the `workspaces` entry with that name.
   assert.match(denied(), /packages\/app\/src\/main\.ts:1:1: K102 .*depends on `lib\.src`/);
   const before = snapshot(dir).snapshotId;
@@ -193,13 +206,16 @@ test("imports: a pnpm workspace package is internal through `pnpm-workspace.yaml
     "packages/db/src/index.ts": "export function query(): void {}\n",
     "keylang/rules.md": "# rules\n\n- deny web db\n",
   };
+
   const layers = { layers: { web: ["apps/web/src/**"], db: ["packages/db/src/**"] } };
+
   const denied = (dir: string): void => {
     const o = keylang(dir, ["check"]);
     assert.equal(o.status, 1, o.stdout + o.stderr);
     assert.match(o.stdout, /apps\/web\/src\/page\.ts:1:1: K102 .*`web\.page` depends on `db\.index`/);
     assert.doesNotMatch(o.stdout, /external/);
   };
+
   // Not installed: `packages` of pnpm-workspace.yaml names the directory.
   const dir = repo(t, files, layers);
   denied(dir);
@@ -237,6 +253,7 @@ test("imports: `import y = require()` and `import.meta.resolve()` are edges; a c
       "",
     ].join("\n"),
   });
+
   const snap = snapshot(dir);
   const imports = snap.edges.filter((e) => e.kind === "import").map((e) => `${e.source} → ${e.target}`);
   assert.ok(imports.includes("app.a → lib.y") && imports.includes("app.b → lib.w"), imports.join("\n"));
@@ -253,6 +270,7 @@ test("classes: a method of a class with an external or unknown base may be calle
     "src/a/s.ts": 'import { Readable } from "node:stream";\nexport class MyStream extends Readable {\n  _read(): void { step(); }\n}\nexport class Mine extends MyStream {\n  more(): void {}\n}\nexport class Plain {\n  run(): void {}\n}\nexport function step(): void {}\nexport function main(): void {\n  new Plain().run();\n}\n',
     "keylang/flows/f.md": "# flow f\n\n- trigger a.s.main\n- step a.s.MyStream._read\n\n# flow g\n\n- trigger a.s.main\n- step a.s.Mine.more\n",
   });
+
   const lines = statics(dir);
   assert.match(lines[0]!, /static unverified a\.s\.MyStream\._read: .*`_read` may be called by the base class `Readable` at src\/a\/s\.ts:3:3/);
   assert.match(lines[1]!, /static unverified a\.s\.Mine\.more: .*`more` may be called by the base class `Readable`/);
@@ -283,6 +301,7 @@ test("receivers: a loop variable or a rebound class name hides the declared clas
     ].join("\n"),
     "keylang/flows/f.md": ["p", "q", "r"].map((fn) => `# flow ${fn}\n\n- trigger a.x.${fn}\n- step a.x.hit\n`).join("\n"),
   });
+
   const lines = statics(dir);
   assert.match(lines[0]!, /static unverified a\.x\.hit: no resolved path from a\.x\.p; call through a local value `w\.m` at src\/a\/x\.ts:9:3/);
   assert.match(lines[1]!, /static unverified a\.x\.hit: no resolved path from a\.x\.q; call through a local value `w\.m` at src\/a\/x\.ts:13:25/);
@@ -303,6 +322,7 @@ test("static: `eval` in code a possible route reaches keeps the step unverified"
     ].join("\n"),
     "keylang/flows/f.md": "# flow f\n\n- trigger a.x.main\n- step a.x.step\n",
   });
+
   assert.match(statics(dir)[0]!, /static unverified a\.x\.step: .*unsupported construct `eval` at src\/a\/x\.ts:3:30 may call it/);
 });
 
@@ -324,6 +344,7 @@ test("static: `this` in an object-literal method is not the class; a route only 
     ].join("\n"),
     "keylang/flows/f.md": "# flow z\n\n- trigger a.x.Z.run\n- step a.x.Z.helper\n\n# flow s\n\n- trigger a.x.s\n- step a.x.hit\n\n# flow e\n\n- trigger a.x.Z.each\n- step a.x.Z.helper\n",
   });
+
   const lines = statics(dir);
   assert.match(lines[0]!, /static unverified a\.x\.Z\.helper: no resolved path from a\.x\.Z\.run; call through `this` of a function value `this\.helper` at src\/a\/x\.ts:4:24/);
   assert.match(lines[1]!, /static unverified a\.x\.hit: no resolved path from a\.x\.s; reached only through a closure of a\.x\.s: `hit` at src\/a\/x\.ts:10:16 runs only when that function value is called/);
@@ -339,6 +360,7 @@ test("classes: a static initializer runs on module load; `this` in it is the cla
     "src/a/x.ts": "export function hit(): void {}\nexport class K {\n  static v = K.make();\n  static make(): number { hit(); return 1; }\n  static { this.make(); }\n}\nexport function main(): void {}\n",
     "keylang/flows/f.md": "# flow f\n\n- trigger a.x.main\n- step a.x.hit\n\n# flow g\n\n- trigger a.x.K.static\n- step a.x.K.make\n",
   });
+
   const lines = statics(dir);
   assert.match(lines[0]!, /static unverified a\.x\.hit: .*a static initializer runs when the module loads at src\/a\/x\.ts:3:3/);
   assert.match(lines[1]!, /static ok a\.x\.K\.make: called from a\.x\.K\.static/);
@@ -369,6 +391,7 @@ test("imports: `paths` and `baseUrl` win over built-in names; the most specific 
     "web/src/app/w.ts": 'import { z } from "#z";\nexport function main(): void { z(); }\n',
     "keylang/rules.md": "# rules\n\n- deny app lib\n- deny app secret\n",
   }, { layers: { app: ["src/app/**", "web/src/app/**"], lib: ["src/lib/**", "src/events.ts", "web/src/z.ts"], secret: ["src/secret/**"] } });
+
   const o = keylang(dir, ["check"]);
   assert.equal(o.status, 1, o.stdout + o.stderr);
   assert.match(o.stdout, /src\/app\/a\.ts:1:1: K102 divergence: `app\.a` depends on `lib\.constants`/);
@@ -392,8 +415,10 @@ test("imports: `paths`/`baseUrl` come from the tsconfig that governs the importi
     "apps/admin/src/ui/page.ts": 'import { db } from "@/data/db";\nexport function page(): void { db(); }\n',
     "keylang/rules.md": "# rules\n\n- deny ui data\n",
   };
+
   const layers = { layers: { ui: ["apps/*/src/ui/**"], data: ["apps/*/src/data/**"], lib: ["src/**"] } };
   const app = '{"compilerOptions":{"baseUrl":".","paths":{"@/*":["./src/*"]}}}';
+
   const denied = (dir: string): void => {
     const o = keylang(dir, ["check"]);
     assert.equal(o.status, 1, o.stdout + o.stderr);
@@ -403,6 +428,7 @@ test("imports: `paths`/`baseUrl` come from the tsconfig that governs the importi
     const edges = snapshot(dir).edges.filter((e) => e.kind === "import" && e.source.startsWith("ui.")).map((e) => `${e.source} -> ${e.target} ${e.resolution}`);
     assert.deepEqual(edges.sort(), ["ui.admin.src.ui.page -> data.admin.src.data.db resolved", "ui.web.src.ui.page -> data.web.src.data.db resolved"]);
   };
+
   // The root alias names another file: the nested tsconfig's alias governs apps/web/.
   const root = '{"compilerOptions":{"baseUrl":".","paths":{"@/*":["src/*"]}}}';
   denied(repo(t, { ...files, "tsconfig.json": root, "apps/web/tsconfig.json": app, "apps/admin/tsconfig.json": app }, layers));
@@ -422,6 +448,7 @@ test("imports: a tsconfig `extends` without `.json` beside a directory of the sa
     "src/a/a.ts": 'import { type B } from "../b/b";\nexport const a: B = 1;\n',
     "src/b/b.ts": "export type B = number;\n",
   });
+
   const o = keylang(dir, ["map"]);
   assert.equal(o.status, 0, o.stdout + o.stderr);
   assert.doesNotMatch(o.stderr, /EISDIR/);
@@ -463,6 +490,7 @@ test("calls: `new ns.X()`, `new C().m()`, a class merged with its interface, a d
       "# flow d\n\n- trigger app.a.viaSuper\n- step lib.svc.Base.constructor\n",
     ].join("\n"),
   });
+
   const lines = statics(dir);
   assert.match(lines[0]!, /static ok lib\.svc\.X\.constructor: called from app\.a\.viaNamespace/);
   assert.match(lines[1]!, /static ok lib\.svc\.Foo\.run: called from app\.a\.merged/);
@@ -523,6 +551,7 @@ test("exports: every export form names its symbol; `export *` resolves cycles, d
     },
     { exclude: ["src/lib/gen.ts"] },
   );
+
   const o = keylang(dir, ["check"]);
   assert.equal(o.status, 1, o.stdout + o.stderr);
   assert.deepEqual(
@@ -560,6 +589,7 @@ test("static: a direct call beside the same call in a closure proves the path; a
     "keylang/flows/f.md": "# flow f\n\n- trigger app.a.main\n- step lib.x.hit\n",
     "keylang/rules.md": "# rules\n\n- deny app lib\n",
   });
+
   const o = keylang(dir, ["check"]);
   assert.match(o.stdout, /static ok lib\.x\.hit: called from app\.a\.main/);
   assert.match(o.stdout, /src\/app\/a\.ts:1:1: K102 /);
@@ -578,6 +608,7 @@ test("modules: two paths of one ID are an opaque module with a hole; scoped pack
     "src/lib/s/t/index.ts": "export function t(): void {}\n",
     "src/app/a.ts": 'import { a } from "@scope/pkg";\nimport { b } from "scope-pkg";\nexport function main(): void { a(); b(); }\n',
   });
+
   const o = keylang(dir, ["map"]);
   assert.equal(o.status, 0, o.stderr);
   assert.match(o.stderr, /src\/lib\/foo_bar\.ts: module ID collision: same module ID as `src\/lib\/foo\.bar\.ts` \(`lib\.foo_bar`\)/);
@@ -602,6 +633,7 @@ test("modules: two paths of one ID are an opaque module with a hole; scoped pack
     },
     { module: "dir" },
   );
+
   const mapped = keylang(dirMode, ["map"]);
   assert.equal(mapped.status, 0, mapped.stderr);
   assert.doesNotMatch(mapped.stderr, /same module ID/);
@@ -622,6 +654,7 @@ test("colliding package names get one ID space over declared and imported names 
     "package.json": '{"dependencies":{"@scope/pkg":"1","scope-pkg":"1"}}',
     "src/app/a.ts": 'import { a } from "@scope/pkg";\nexport function main(): void { a(); }\n',
   });
+
   const o = keylang(dir, ["map"]);
   assert.equal(o.status, 0, o.stderr);
   // `scope-pkg` is declared but not imported; it still keeps the segment, so `@scope/pkg` is `-2`.
@@ -636,6 +669,7 @@ test("a manifest on an analysed file's path enters the snapshot id; a broken one
     "src/app/package.json": '{"devDependencies":{"vitest":"1"}}\n',
     "src/app/a.ts": "export function main(): void {}\n",
   });
+
   assert.equal(keylang(dir, ["map"]).status, 0);
   const id = (): string => (JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as Snapshot).snapshotId;
   const before = id();
@@ -644,6 +678,7 @@ test("a manifest on an analysed file's path enters the snapshot id; a broken one
   assert.notEqual(id(), before);
 
   writeFileSync(join(dir, "src/app/package.json"), "{ not json\n");
+
   for (const args of [["map"], ["map", "--check"]]) {
     const run = keylang(dir, args);
     assert.equal(run.status, 2, `${args.join(" ")}: ${run.stderr}`);
@@ -659,6 +694,7 @@ test("robustness: a file nested thousands deep is opaque, not a crash; a fact ca
     "src/app/a.ts": 'import { f } from "../lib/ok.ts";\nexport function main(): void { f(); }\n',
     "keylang/rules.md": "# rules\n\n- deny app lib\n",
   });
+
   const first = snapshot(dir);
   assert.ok(first.coverage.some((c) => c.kind === "parse-error" && c.file === "src/lib/deep.ts" && /nested deeper than/.test(c.reason)), JSON.stringify(first.coverage));
   assert.equal(first.nodes["lib.deep"]?.members, "opaque");
@@ -704,6 +740,7 @@ test("jsx: a tag naming a component is a call in `.tsx`; intrinsic, fragment and
     "}",
     "",
   ].join("\n");
+
   const dir = repo(t, {
     "src/ui/cart.tsx": "export function Cart(props: { a?: number }) { return null; }\n",
     "src/ui/menu.tsx": "export function Item() { return null; }\n",
@@ -713,6 +750,7 @@ test("jsx: a tag naming a component is a call in `.tsx`; intrinsic, fragment and
     "src/app/bad.ts": 'import { Cart } from "../ui/cart.tsx";\nexport function Bad() { return <Cart />; }\n',
     "keylang/flows/f.md": "# flow f\n\n- trigger app.page.Page\n- step ui.cart.Cart\n- step ui.menu.Item\n\n# flow g\n\n- trigger app.page.List\n- step ui.cart.Cart\n",
   });
+
   const snap = snapshot(dir);
   // `<Cart<Props> />` and `<Cart></Cart>` are one edge to one target; `<Comp />` through the parameter is unresolved.
   const calls = snap.edges.filter((e) => e.kind === "call" && e.source.startsWith("app.")).map((e) => `${e.source}: ${e.text} → ${e.target}${e.closure ? " (closure)" : ""}`).sort();
@@ -745,6 +783,7 @@ test("jsx: a `.jsx` file goes through the `javascript` grammar and gets the same
     },
     { languages: ["javascript"] },
   );
+
   const snap = snapshot(dir);
   const calls = snap.edges.filter((e) => e.kind === "call" && e.source.startsWith("app.")).map((e) => `${e.source}: ${e.text} → ${e.target}`);
   assert.deepEqual(calls, ["app.page.Page: Cart → ui.cart.Cart", "app.page.Page: Cart.Item → null"]);
@@ -777,6 +816,7 @@ test("jsx: a Nest-style `.ts` file keeps its declarations and calls: decorators,
     ].join("\n"),
     "src/cats/cats.service.ts": 'import { Injectable } from "@nestjs/common";\n@Injectable()\nexport class CatsService {\n  findAll(): string[] { return []; }\n}\n',
   });
+
   const snap = snapshot(dir);
   assert.deepEqual(
     Object.keys(snap.nodes).filter((id) => id.startsWith("cats.cats_controller")),
@@ -873,6 +913,7 @@ test("jsx: `memo` / `forwardRef` / `lazy` from `react` unwrap a `const` into the
       "",
     ].join("\n"),
   });
+
   const snap = snapshot(dir);
   const modules = new Set(["ui.wrapped", "ui.typed", "ui.other", "local.own", "cats.cats_module"]);
   assert.deepEqual(
@@ -899,7 +940,9 @@ test("jsx: `memo` / `forwardRef` / `lazy` from `react` unwrap a `const` into the
       "ui.wrapped.Ns:fn",
     ],
   );
+
   for (const id of ["ui.wrapped.Cart", "ui.wrapped.Input", "ui.wrapped.Heavy", "ui.wrapped.Named", "ui.wrapped.Ns", "ui.wrapped.Field", "ui.wrapped.Box", "ui.typed.Still"]) assert.equal(snap.nodes[id]?.kind, "fn", id);
+
   for (const id of ["ui.wrapped.Late", "ui.typed.Typed", "ui.typed.TypedName", "ui.other.Local", "ui.other.Btn", "local.own.Cart", "local.own.Watched", "cats.cats_module.Common"]) assert.equal(snap.nodes[id], undefined, id);
   assert.deepEqual(Object.keys(snap.nodes).filter((id) => id.startsWith("local.own.")).sort(), ["local.own.helper", "local.own.memo"]);
   assert.match(snap.nodes["local.own.helper"]?.escapes?.reason ?? "", /function value outside declarations/);
@@ -962,11 +1005,14 @@ test("jsx: `createElement` / `jsx` / `jsxs` / `jsxDEV` imported from React call 
       "",
     ].join("\n"),
   });
+
   const snap = snapshot(dir);
+
   const calls = snap.edges
     .filter((e) => e.kind === "call" && e.source.startsWith("app."))
     .map((e) => `${e.source}: ${e.text} → ${e.target}${e.closure ? " (closure)" : ""}${e.via === "callable-arg" ? " (callable)" : ""}`)
     .sort();
+
   // A component call covers the same component passed as a callable; `div` and the shadowed factory's `Cart` are callables passed, not component calls.
   assert.deepEqual(calls, [
     "app.page.List: Cart → ui.cart.Cart (closure)",
@@ -980,9 +1026,11 @@ test("jsx: `createElement` / `jsx` / `jsxs` / `jsxDEV` imported from React call 
     "app.page.Shadow: createElement → null",
   ]);
   assert.ok(!calls.some((line) => line.includes("div") && !line.endsWith("(callable)")), calls.join("\n"));
+
   const facts = JSON.parse(readFileSync(join(dir, ".keylang/cache/facts.json"), "utf8")) as {
     files: Record<string, { facts: { decls: { name: string; calls: { callee: string; passes?: { arg: number; callee: string }[] }[] }[] } }>;
   };
+
   const page = facts.files["src/app/page.ts"]!.facts.decls.find((d) => d.name === "Page")!;
   // The factory call stays, with the component as the same `passes` a hook would see, and the component call is added beside it.
   assert.deepEqual(
@@ -1004,16 +1052,21 @@ test("jsx: a type-only import from React binds no factory: `import type React`, 
     "src/app/ns.ts": ['import type * as React from "react";', 'import type * as Runtime from "react/jsx-runtime";', 'import { Cart } from "../ui/cart.ts";', "export function Page() { Runtime.jsx(Cart, {}); return React.createElement(Cart); }", ""].join("\n"),
     "src/app/value.ts": ['import React, { type memo, createElement } from "react";', 'import { Cart } from "../ui/cart.ts";', "export function Page() { createElement(Cart); return React.createElement(Cart); }", ""].join("\n"),
   });
+
   const snap = snapshot(dir);
+
   const calls = snap.edges
     .filter((e) => e.kind === "call")
     .map((e) => `${e.source}: ${e.text} → ${e.target}${e.via === "callable-arg" ? " (callable)" : ""}`)
     .sort();
+
   // The factory call goes into the `react` package (no edge); only a value import adds the component call. Elsewhere `Cart` is a callable passed to an ordinary call.
   assert.deepEqual(calls, ["app.default.Page: Cart → ui.cart.Cart (callable)", "app.named.Page: Cart → ui.cart.Cart (callable)", "app.ns.Page: Cart → ui.cart.Cart (callable)", "app.value.Page: Cart → ui.cart.Cart"]);
+
   const facts = JSON.parse(readFileSync(join(dir, ".keylang/cache/facts.json"), "utf8")) as {
     files: Record<string, { facts: { decls: { name: string; calls: { callee: string; passes?: { arg: number; callee: string }[] }[] }[] } }>;
   };
+
   const pageCalls = (file: string) => facts.files[file]!.facts.decls.find((d) => d.name === "Page")!.calls;
   assert.deepEqual(pageCalls("src/app/default.ts").map((c) => c.callee), ["React.createElement"]);
   assert.deepEqual(pageCalls("src/app/named.ts").map((c) => c.callee), ["createElement", "h", "jsx"]);
@@ -1046,16 +1099,21 @@ test("jsx: a local `createElement` or one imported from another module does not 
       "",
     ].join("\n"),
   });
+
   const snap = snapshot(dir);
+
   const calls = snap.edges
     .filter((e) => e.kind === "call")
     .map((e) => `${e.source}: ${e.text} → ${e.target}${e.via === "callable-arg" ? " (callable)" : ""}`)
     .sort();
+
   // No component call; `Cart` is a callable passed as the argument itself, `go: save` inside an object is not.
   assert.deepEqual(calls, ["app.page.Page: Cart → ui.cart.Cart (callable)", "app.page.Page: createElement → app.dom.createElement", "local.own.Page: Cart → local.own.Cart (callable)", "local.own.Page: createElement → null"]);
+
   const facts = JSON.parse(readFileSync(join(dir, ".keylang/cache/facts.json"), "utf8")) as {
     files: Record<string, { facts: { decls: { name: string; calls: { callee: string; passes?: { arg: number; path: string; callee: string }[] }[] }[] } }>;
   };
+
   const imported = facts.files["src/app/page.ts"]!.facts.decls.find((d) => d.name === "Page")!;
   assert.deepEqual(imported.calls.map((c) => c.callee), ["createElement"]);
   assert.deepEqual(imported.calls[0]!.passes?.map((p) => `${p.arg}:${p.path}:${p.callee}`), ["0::Cart", "1:go:save"]);
@@ -1103,6 +1161,7 @@ test("static: a callable passed as an argument (`this.m.bind(this)`, `this.m`, `
       "",
     ].join("\n"),
   });
+
   const lines = statics(dir).map((line) => line.replace(/^keylang\/flows\/f\.md:\d+:\d+: /, ""));
   assert.deepEqual(lines, [
     "static ok app.a.A.bound: called from app.a.A.main through the callable `this.bound.bind(this)` passed at src/app/a.ts:4:9",
@@ -1122,9 +1181,11 @@ test("static: a callable passed as an argument (`this.m.bind(this)`, `this.m`, `
   assert.match(shape, /static unverified app\.a\.A\.each: no resolved path from app\.a\.A\.main; the closure passed at src\/app\/a\.ts:9:19 \(not followed in static mode shape, set by --static\) at src\/app\/a\.ts:9:26 may reach it/);
   assert.doesNotMatch(shape, /static ok/);
   const snap = snapshot(dir) as Snapshot & { edges: { via?: string; site?: string }[]; stats: { callsResolved: number } };
+
   const main = snap.edges
     .filter((e) => e.kind === "call" && e.source === "app.a.A.main" && e.resolution === "resolved")
     .map((e) => `${e.text} → ${e.target}${e.via ? ` via ${e.via}` : ""}${e.closure ? " (closure)" : ""}`);
+
   assert.deepEqual(main, [
     "this.bound.bind(this) → app.a.A.bound via callable-arg",
     "run → lib.x.run",
@@ -1152,10 +1213,12 @@ function onCasefold(t: { after: (f: () => void) => void }, files: Record<string,
     rmSync(fixture, { recursive: true, force: true });
     rmSync(mount, { recursive: true, force: true });
   });
+
   for (const [path, text] of Object.entries(files)) {
     mkdirSync(dirname(join(fixture, path)), { recursive: true });
     writeFileSync(join(fixture, path), text);
   }
+
   const script = [
     'mount -t tmpfs -o casefold tmpfs "$1" 2>/dev/null || { echo SKIP:mount; exit 0; }',
     'mkdir "$1/repo" && chattr +F "$1/repo" 2>/dev/null || { echo SKIP:chattr; exit 0; }',
@@ -1163,8 +1226,10 @@ function onCasefold(t: { after: (f: () => void) => void }, files: Record<string,
     'node=$3; bin=$4; shift 4; i=0',
     'for c in "$@"; do echo "=== $i"; eval "\\"$node\\" \\"$bin\\" $c" 2>&1; i=$((i+1)); done',
   ].join("\n");
+
   const run = spawnSync("unshare", ["-rm", "sh", "-c", script, "sh", mount, fixture, process.execPath, bin, ...commands.map((c) => c.join(" "))], { encoding: "utf8" });
   assert.equal(run.status, 0, run.stderr);
+
   return /^SKIP:/m.test(run.stdout) ? null : run.stdout;
 }
 
@@ -1174,7 +1239,9 @@ test("guessed layout: an import of a directory in another letter case is a hole 
     "src/ui/view.ts": 'import { query } from "../DB/conn";\nexport function view(): void { query(); }\n',
     "src/db/conn.ts": "export function query(): void {}\n",
   };
+
   const out = onCasefold(t, files, [["check"]]);
+
   if (out === null) return t.skip("casefold tmpfs is not available here");
   assert.match(out, /unverified unresolved import `\.\.\/DB\/conn`/, out);
   assert.match(out, /0 fail, 1 unverified, 0 ok/, out);
@@ -1182,12 +1249,14 @@ test("guessed layout: an import of a directory in another letter case is a hole 
 
 test("no-cycles: `import(\"./a\").A` and `typeof import(\"./a\")` in a type are type-only dependencies, not a runtime cycle", (t) => {
   const a = 'import { fb } from "./b";\nexport type A = number;\nexport function fa(): void {\n  fb(1);\n}\n';
+
   const variants = [
     'export function fb(x: import("./a").A): void {}\n',
     'export type B = import("./a").A;\nexport function fb(x: B): void {}\n',
     'let x: typeof import("./a");\nexport function fb(x2: number): void {}\n',
     'export function fb(x: Array<import("./a").A>): import("./a").A {\n  return x[0] as import("./a").A;\n}\n',
   ];
+
   for (const b of variants) {
     const dir = repo(t, { "keylang/rules.md": "# rules\n\n- no-cycles\n", "src/app/a.ts": a, "src/app/b.ts": b });
     const o = keylang(dir, ["check"]);
@@ -1196,6 +1265,7 @@ test("no-cycles: `import(\"./a\").A` and `typeof import(\"./a\")` in a type are 
     const edge = snapshot(dir).edges.find((e) => e.kind === "import" && e.source === "app.b" && e.target === "app.a");
     assert.equal(edge?.typeOnly, true, `${b}: ${JSON.stringify(edge)}`);
   }
+
   // A runtime `import()` still is one.
   const dir = repo(t, { "keylang/rules.md": "# rules\n\n- no-cycles\n", "src/app/a.ts": a, "src/app/b.ts": 'export async function fb(x: number): Promise<void> {\n  await import("./a");\n}\n' });
   assert.match(keylang(dir, ["check"]).stdout, /K105 divergence: dependency cycle app\.a → app\.b → app\.a/);
@@ -1209,6 +1279,7 @@ test("a relative import of a module that only has a declaration file (`.d.ts`, `
     "src/app/gql/index.d.ts": "export type Query = string;\n",
     "src/app/a.ts": 'import type { Order } from "./types";\nimport type { Query } from "./gql";\nimport { mode } from "./env.mjs";\nexport function total(o: Order, q: Query): string {\n  return o.id + q + mode;\n}\n',
   });
+
   const map = keylang(dir, ["map"]);
   assert.equal(map.status, 0, map.stdout + map.stderr);
   assert.doesNotMatch(map.stdout + map.stderr, /unresolved import/);
@@ -1223,12 +1294,14 @@ test("exports: two `export *` sources with different values of one name export n
     "src/app/b.ts": "export const V = 2;\nexport function g(): void {}\n",
     "src/app/index.ts": 'export * from "./a.ts";\nexport * from "./b.ts";\n',
   };
+
   const listed = repo(t, { ...files, "keylang/rules.md": "# rules\n\n- module app.index\n  - exports f, g\n" });
   const ok = keylang(listed, ["check"]);
   assert.equal(ok.status, 0, ok.stdout);
   assert.match(ok.stdout + ok.stderr, /0 fail, 0 unverified, 1 ok/);
   const withV = repo(t, { ...files, "keylang/rules.md": "# rules\n\n- module app.index\n  - exports f, g, V\n" });
   assert.match(keylang(withV, ["check"]).stdout, /K104 absence: `app\.index` does not export `V`/);
+
   // A diamond: `V` of `a` through two barrels is one declaration.
   const diamond = repo(t, {
     "src/app/a.ts": "export const V = 1;\n",
@@ -1237,5 +1310,6 @@ test("exports: two `export *` sources with different values of one name export n
     "src/app/index.ts": 'export * from "./x.ts";\nexport * from "./y.ts";\n',
     "keylang/rules.md": "# rules\n\n- module app.index\n  - exports V\n",
   });
+
   assert.match(keylang(diamond, ["check"]).stdout + keylang(diamond, ["check"]).stderr, /0 fail, 0 unverified, 1 ok/);
 });

@@ -12,17 +12,20 @@ export class Hash {
 
   update(data: string | Uint8Array): this {
     this.state.update(typeof data === "string" ? encoder.encode(data) : data);
+
     return this;
   }
 
   digest(encoding?: "hex" | "base64" | "base64url"): string | Buffer {
     const bytes = Buffer.from(this.state.digest());
+
     return encoding === undefined ? bytes : bytes.toString(encoding);
   }
 }
 
 export function createHash(algorithm: string): Hash {
   if (algorithm.toLowerCase() !== "sha256") throw new Error(`crypto: only sha256 in the browser, not ${algorithm}`);
+
   return new Hash();
 }
 

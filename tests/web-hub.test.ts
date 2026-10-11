@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 import { branchRepo } from "./git-fixture.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
 
 interface Answer {
@@ -30,6 +31,7 @@ function send(port: number, method: string, path: string, headers: Record<string
       res.on("data", (chunk: Buffer) => (text += chunk.toString()));
       res.on("end", () => resolve({ status: res.statusCode ?? 0, body: text, ...(res.headers.location ? { location: res.headers.location } : {}) }));
     });
+
     req.on("upgrade", (res, socket) => {
       socket.destroy();
       resolve({ status: res.statusCode ?? 0, body: "" });
@@ -51,16 +53,20 @@ async function hub(t: { after: (f: () => void | Promise<void>) => void }, args: 
       child.kill("SIGTERM");
       await new Promise((done) => child.once("exit", done));
     }
+
     rmSync(scratch, { recursive: true, force: true });
   });
   let out = "";
   child.stdout.on("data", (chunk: Buffer) => (out += chunk.toString()));
   const start = Date.now();
+
   while (!/keylang web: (\S+)/.test(out)) {
     if (child.exitCode !== null || Date.now() - start > 20000) throw new Error(`no URL: ${out}`);
     await new Promise((done) => setTimeout(done, 20));
   }
+
   const url = new URL(/keylang web: (\S+)/.exec(out)![1]!);
+
   return { port: Number(url.port), token: new URLSearchParams(url.hash.slice(1)).get("t")!, cache };
 }
 

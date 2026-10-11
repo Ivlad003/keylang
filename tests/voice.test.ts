@@ -14,12 +14,14 @@ import { fileURLToPath } from "node:url";
 import { joinWindows, matchId, transcribeOpenRouter, windows } from "../src/voice.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
 
 function repo(t: TestContext): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-voice-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   cpSync(join(root, "tests/fixtures/repo"), dir, { recursive: true });
+
   return dir;
 }
 
@@ -39,10 +41,12 @@ test("doctor: a key file others can read is a reported problem, not a failure; e
 
 test("voice: an empty recording is no window and no request", async (t) => {
   let requests = 0;
+
   const server = createServer((_req, res) => {
     requests++;
     res.end("{}");
   });
+
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
   t.after(() => server.close());
   assert.deepEqual(windows(new Int16Array(0)), []);
@@ -53,10 +57,12 @@ test("voice: an empty recording is no window and no request", async (t) => {
 
 test("voice: an OpenRouter answer that is not a transcript is an error that says so", async (t) => {
   const replies = ["<html>gateway</html>", JSON.stringify({ error: { message: "model not found" } }), JSON.stringify({ choices: [] })];
+
   const server = createServer((_req, res) => {
     res.writeHead(200, { "content-type": "application/json" });
     res.end(replies.shift());
   });
+
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
   t.after(() => server.close());
   const engine = { kind: "openrouter" as const, key: "k", base: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, model: "m" };

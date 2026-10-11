@@ -17,6 +17,7 @@ import { treeBytes } from "./cli-helpers.ts";
 import { diagramsRepo } from "./diagrams-fixture.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
 
 interface Answer {
@@ -33,6 +34,7 @@ function send(url: URL, method: string, path: string, headers: Record<string, st
       res.on("data", (chunk: Buffer) => (text += chunk.toString()));
       res.on("end", () => resolve({ status: res.statusCode ?? 0, type: String(res.headers["content-type"] ?? ""), body: text, ...(res.headers.location ? { location: res.headers.location } : {}) }));
     });
+
     req.on("upgrade", (res, socket) => {
       socket.destroy();
       resolve({ status: res.statusCode ?? 0, type: "", body: "" });
@@ -53,16 +55,19 @@ async function startReadOnly(t: { after: (f: () => void | Promise<void>) => void
   let out = "";
   child.stdout.on("data", (chunk: Buffer) => (out += chunk.toString()));
   const start = Date.now();
+
   while (!/keylang web: (\S+)/.test(out)) {
     if (child.exitCode !== null || Date.now() - start > 20000) throw new Error(`keylang web --read-only printed no URL: ${out}`);
     await new Promise((done) => setTimeout(done, 20));
   }
+
   return new URL(/keylang web: (\S+)/.exec(out)![1]!);
 }
 
 /** The answers of a static export, as its page would load them: every data script run with `keylangData` collecting. */
 function exportedAnswers(site: string): Map<string, { status: number; type: string; body: string; file?: string }> {
   const answers = new Map<string, { status: number; type: string; body: string; file?: string }>();
+
   for (const name of readdirSync(join(site, "data"))) {
     runInNewContext(readFileSync(join(site, "data", name), "utf8"), {
       keylangData: (batch: Record<string, { status: number; type: string; body: string }>) => {
@@ -70,6 +75,7 @@ function exportedAnswers(site: string): Map<string, { status: number; type: stri
       },
     });
   }
+
   return answers;
 }
 
@@ -102,6 +108,7 @@ test("web --read-only: the diagram page with «Карта» and GET alone — th
   assert.match(map.text, /- module \[orders\]\(\.\.\/\.\.\/src\/presentation\/orders\.ts#L1\)/);
   const flow = JSON.parse((await send(url, "GET", "/api/doc?path=keylang/flows/checkout.md", bearer)).body) as { text: string };
   assert.equal(flow.text, readFileSync(join(repo, "keylang/flows/checkout.md"), "utf8"));
+
   for (const path of ["../keylang.json", "keylang.json", "src/presentation/orders.ts", ""]) assert.equal((await send(url, "GET", `/api/doc?path=${encodeURIComponent(path)}`, bearer)).status, 404, path);
   assert.equal((await send(url, "GET", "/api/docs")).status, 403, "the token still guards the data");
 
@@ -114,6 +121,7 @@ test("web --read-only: the diagram page with «Карта» and GET alone — th
   const graph = JSON.parse((await send(url, "GET", "/api/diagram?view=module&id=presentation.orders", bearer)).body) as { nodes: { label: string }[] };
   assert.ok(graph.nodes.some((n) => n.label === "domain.order"), "what the module imports");
   const json = { ...bearer, "Content-Type": "application/json" };
+
   const writes: [string, string, string][] = [
     ["PUT", "/api/layout?view=layers", JSON.stringify({ layout: {} })],
     ["POST", "/api/flow-proposal", JSON.stringify({ name: "x", trigger: "presentation.orders.listOrders", steps: [] })],
@@ -123,11 +131,13 @@ test("web --read-only: the diagram page with «Карта» and GET alone — th
     ["POST", "/api/greenfield", JSON.stringify({})],
     ["GET", "/api/greenfield", ""],
   ];
+
   for (const [method, path, body] of writes) {
     const refused = await send(url, method, path, json, body || undefined);
     assert.equal(refused.status, 403, `${method} ${path}`);
     assert.match(refused.body, /read-only/);
   }
+
   const socket = await send(url, "GET", "/ws", { ...bearer, Connection: "Upgrade", Upgrade: "websocket", "Sec-WebSocket-Version": "13", "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==", "Sec-WebSocket-Protocol": `keylang, keylang.t.${new URLSearchParams(url.hash.slice(1)).get("t")}` });
   assert.notEqual(socket.status, 101, "no TUI session");
   assert.deepEqual(treeBytes(repo), before, "nothing written: no layout, no proposal, no .keylang/ fact cache");
@@ -167,6 +177,7 @@ test("web --export <dir>: a static site of the read-only page — the answers of
   delete served.root;
   assert.deepEqual(views, served);
   const keys = ["/api/diagram?view=layers", "/api/diagram?name=checkout&view=flow", `/api/diagram?name=${encodeURIComponent(views.discovered[0]!.name)}&view=discovered`, `/api/diagram?id=${encodeURIComponent(views.entries[0]!.id)}&view=entry`, "/api/coverage", "/api/tour", "/api/docs", "/api/doc?path=keylang%2Fmap%2Fpresentation.md", "/api/calls?id=presentation.orders.listOrders", "/api/usages?id=presentation.orders.listOrders"];
+
   for (const key of keys) {
     const exported = answers.get(key);
     assert.ok(exported, `the export answers ${key}`);
@@ -174,6 +185,7 @@ test("web --export <dir>: a static site of the read-only page — the answers of
     assert.equal(exported.status, live.status, key);
     assert.equal(exported.body, live.body, key);
   }
+
   const bpmn = answers.get("/api/export?format=bpmn&name=checkout&view=flow")!;
   assert.equal(bpmn.file, "flow_checkout.bpmn");
   assert.match(bpmn.body, /<bpmn:definitions/);

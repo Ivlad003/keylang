@@ -17,7 +17,9 @@ import { branchRepo, GIT_LAYERS } from "../git-fixture.ts";
 import { browserOptions, root, watch } from "./browser.ts";
 
 const options = browserOptions();
+
 const skip = options === null ? "no Chromium: set KEYLANG_CHROMIUM or PLAYWRIGHT_BROWSERS_PATH" : false;
+
 const bin = join(root, "bin/keylang.js");
 
 async function readOnly(t: { after: (f: () => void | Promise<void>) => void }, cwd: string): Promise<string> {
@@ -31,16 +33,19 @@ async function readOnly(t: { after: (f: () => void | Promise<void>) => void }, c
   let out = "";
   child.stdout.on("data", (chunk: Buffer) => (out += chunk.toString()));
   const start = Date.now();
+
   while (!/keylang web: (\S+)/.test(out)) {
     if (child.exitCode !== null || Date.now() - start > 20000) throw new Error(`no URL: ${out}`);
     await new Promise((done) => setTimeout(done, 20));
   }
+
   return /keylang web: (\S+)/.exec(out)![1]!;
 }
 
 async function openChanges(page: Page): Promise<string> {
   await page.click('#modes button[data-mode="changes"]');
   await page.locator("#changes .changes-summary").waitFor({ timeout: 30000 });
+
   return page.locator("#changes .changes-summary").innerText();
 }
 

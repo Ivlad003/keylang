@@ -114,17 +114,24 @@ export interface AppOptions {
 
 /** Changes typed together are analysed once. */
 const SETTLE_MS = 120;
+
 /** A lone ESC, or a cluster that may go on, waits this long for the rest of its sequence. */
 const ESC_MS = 25;
+
 /** A bracketed paste whose end marker has not come within this pause is ended by hand. */
 const PASTE_MS = 1000;
+
 /** The largest frame a session draws; a bigger size from a client is cut to it. */
 export const MAX_COLS = 1000;
+
 export const MAX_ROWS = 400;
+
 /** At most this many of one key in one chunk are a key held down (auto-repeat); more are pasted text. */
 const HELD_KEYS = 32;
+
 /** Outside the editor, at most this many keys of one chunk are keys typed while the session was busy; more are pasted text. */
 const TYPED_KEYS = 8;
+
 /** Keys handled before the mode: they show panels and the clip's chat and reanalyse, and never edit. */
 const PANEL_KEYS = new Set(["f2", "f3", "f4", "f5", "f6", "f7"]);
 
@@ -280,6 +287,7 @@ export class App {
       },
       options.microphone ?? defaultMicrophone,
     );
+
     const forms: FormHost = {
       state: this.state,
       specDir: () => this.specDir(),
@@ -299,6 +307,7 @@ export class App {
       track: (work) => this.track(work),
       draw: () => this.draw(),
     };
+
     this.drafts = new DraftForms(forms);
     this.explains = new ExplainForms(forms);
     this.runs = new RunForms(forms);
@@ -361,6 +370,7 @@ export class App {
     // The first frame comes from disk, before any analysis: a cold start shows text at once.
     this.state.files = this.diskFiles();
     const first = this.state.files.find((file) => file.includes("/flows/")) ?? this.state.files[0];
+
     if (first) this.open(first, { line: 0, col: 0 }, false);
     this.state.proposals = this.merges.scan();
     // The clip's memory (ADR 0021): where the person left it and its window, and today's conversation.
@@ -368,7 +378,9 @@ export class App {
     this.chat.restore();
     const { config, clip } = configState(this.state.root);
     this.state.config = config;
+
     if (clip !== null) this.state.clip.enabled = clip;
+
     // No config: the start screen, and no analysis until Browse (design §2.1). Invalid: its text, at the field.
     if (config.kind === "missing-config") this.state.start = 0;
     else if (config.kind === "invalid-config") this.openConfig(config.reason, false);
@@ -379,6 +391,7 @@ export class App {
   private restorePlace(): void {
     const { place, problem } = readPlace(this.home);
     placeClip(this.state.clip, place);
+
     if (problem !== null) this.state.message = `${problem}; ignored: the clip and its window start where they do by default, and the first drag rewrites the file`;
   }
 
@@ -410,6 +423,7 @@ export class App {
     this.state.hover = null;
     // Below 60 columns no side panel is drawn: a focused one gives the focus back, so keys never go to a list nobody sees.
     const focus = this.state.focus;
+
     if ((focus === "files" || focus === "nav" || focus === "context") && !this.drawable(focus)) this.state.focus = "editor";
     this.keepVisible();
     this.draw();
@@ -425,36 +439,45 @@ export class App {
   input(chunk: string, whole = false): void {
     // A closed session takes no keys: nothing may start an analysis, a save or an operation after it.
     if (this.closed) return;
+
     if (this.escTimer) clearTimeout(this.escTimer);
     this.escTimer = null;
     const events = this.decoder.feed(chunk);
+
     if (whole && this.decoder.waiting) events.push(...this.decoder.flush());
+
     for (let i = 0; i < events.length; ) {
       const typed = typedRun(events, i);
       // In the clip's chat a pasted line break is a space but Enter sends: an Enter that ends the chunk
       // (typed keys coalesced with it) is left out of the paste and sends the line after it.
       const chat = chatTakesKeys(this.state);
       const run = chat && typed.length > 1 && typed.at(-1)!.name === "enter" ? typed.slice(0, -1) : typed;
+
       if (run.length > 1 && !this.state.prompt && !this.state.completion && !this.state.help && !(this.state.results.open && !this.state.results.viewing) && pastedRun(run, this.state.mode === "edit" || chat)) {
         this.safely({ type: "paste", text: run.map((key) => (key.name === "enter" ? "\n" : key.name === "tab" ? "  " : key.text!)).join("") });
         i += run.length;
         continue;
       }
+
       // The run is handled key by key; it is not measured again from each of its keys.
       const keys = Math.max(1, run.length);
+
       for (let k = 0; k < keys; k++) this.safely(events[i + k]!);
       i += keys;
     }
+
     if (this.decoder.waiting || this.decoder.pasting) {
       this.escTimer = setTimeout(
         () => {
           this.escTimer = null;
+
           for (const event of this.decoder.flush()) this.safely(event);
           this.draw();
         },
         this.decoder.pasting ? PASTE_MS : ESC_MS,
       );
     }
+
     this.draw();
   }
 
@@ -465,6 +488,7 @@ export class App {
     } catch (error) {
       this.state.message = `error: ${errorText(error)}`;
     }
+
     // Whatever path the event took (Esc, a click on another file, MERGE, a panel), a ghost request for a place left is aborted.
     this.assist.cancelStaleGhost();
   }
@@ -482,12 +506,15 @@ export class App {
   /** Resolves when no analysis is running or waiting to start. */
   idle(): Promise<void> {
     if (this.quiet()) return Promise.resolve();
+
     return new Promise((done) => this.waiters.push(done));
   }
 
   close(): void {
     this.closed = true;
+
     if (this.escTimer) clearTimeout(this.escTimer);
+
     if (this.settleTimer) clearTimeout(this.settleTimer);
     this.settleTimer = null;
     this.assist.close();
@@ -511,6 +538,7 @@ export class App {
   /** The frame of the state now. The clip's counter follows what it counts — the analysis, the open file, the chat — so it is counted here (spec §4.6). */
   private paint(): Grid {
     this.state.clip.questions = openQuestions(this.state).length;
+
     return render(this.state);
   }
 
@@ -518,21 +546,27 @@ export class App {
 
   private overlay(): Map<string, string> {
     const overlay = new Map<string, string>();
+
     // The configuration always comes from disk: unparsed text of a dirty `keylang.json` is no overlay.
     for (const buffer of this.state.buffers.values()) if (!buffer.readOnly && buffer.path !== CONFIG_FILE && isDirty(buffer)) overlay.set(resolve(this.state.root, buffer.path), buffer.text);
+
     return overlay;
   }
 
   /** `F5` or a save (`explicit`), or typing that settled: analyse now. */
   reanalyze(explicit = true): void {
     if (this.closed) return;
+
     if (this.settleTimer) clearTimeout(this.settleTimer);
     this.settleTimer = null;
+
     if (this.committing !== null) {
       this.analysisAfterCommit = true;
       this.state.message = `${this.committingLabel} is writing files: the analysis runs when it finishes`;
+
       return;
     }
+
     if (!this.readConfig(explicit)) return;
     const generation = ++this.generation;
     const edits = this.edits;
@@ -547,6 +581,7 @@ export class App {
           this.state.analysis = analysis;
           // The clip counts the fails this analysis added (spec §4.6).
           this.state.clip.newFails = newFailsAfter(this.state.clip.newFails, previous, analysis);
+
           try {
             this.adoptResult(analysis, edits, selected);
           } catch (error) {
@@ -580,15 +615,20 @@ export class App {
     const before = this.state.config;
     const { config, clip } = configState(this.state.root);
     this.state.config = config;
+
     if (clip !== null) this.state.clip.enabled = clip;
+
     if (config.kind !== "invalid-config") return true;
     this.generation++;
     this.state.updating = false;
     this.state.outdated = this.state.analysis !== null;
     const changed = before.kind !== "invalid-config" || before.reason !== config.reason;
+
     if (explicit || changed) this.state.message = `keylang.json is invalid: ${config.reason} — fix it and save (Ctrl+S); nothing was analysed`;
+
     // The config broke under an open session: show its text at the field, unless the user is typing elsewhere.
     if (before.kind !== "invalid-config" && this.state.current !== CONFIG_FILE && (this.state.mode === "view" || this.state.mode === "read")) this.openConfig(config.reason, true);
+
     return false;
   }
 
@@ -607,6 +647,7 @@ export class App {
   /** Keys of the start screen: choose an item; the palette, help, F6 and quitting work as elsewhere. */
   private startKey(event: KeyEvent): void {
     const index = this.state.start ?? 0;
+
     if (event.name === "up" || event.name === "k") this.state.start = Math.max(0, index - 1);
     else if (event.name === "down" || event.name === "j") this.state.start = Math.min(START_ACTIONS.length - 1, index + 1);
     else if (event.name === "enter") this.runAction(START_ACTIONS[index]!);
@@ -624,6 +665,7 @@ export class App {
     this.adopt(analysis);
     // The findings list follows the new analysis: the selected finding stays selected while it is still reported.
     const at = selected ? visibleFindings(findingsOf(analysis), this.state.results.filter).findIndex((result) => sameResult(result, selected)) : -1;
+
     if (at >= 0) this.state.results.finding = at;
     this.results.clampFinding();
   }
@@ -634,6 +676,7 @@ export class App {
     this.edits++;
     this.state.outdated = true;
     this.inputsChanged("inputs edited since this run");
+
     if (this.settleTimer) clearTimeout(this.settleTimer);
     this.settleTimer = setTimeout(() => {
       this.settleTimer = null;
@@ -668,6 +711,7 @@ export class App {
     if (!this.quiet()) return;
     const waiters = this.waiters;
     this.waiters = [];
+
     for (const done of waiters) done();
   }
 
@@ -680,6 +724,7 @@ export class App {
     this.state.files = sortFiles([...paths], analysis);
     this.state.briefs = loadBriefs(analysis.config);
     const ws = workspace(this.state.root, analysis, new Map());
+
     for (const buffer of this.state.buffers.values()) {
       if (isDirty(buffer)) continue;
       const fresh = ws.text(buffer.path);
@@ -687,6 +732,7 @@ export class App {
       // The explained map is no spec, so the analysis has no document of it: its marker decides.
       const doc = analysis.docs.find((d) => d.path === buffer.path);
       buffer.readOnly = doc ? doc.generated !== null : buffer.doc?.generated != null;
+
       if (text !== buffer.text) {
         setText(buffer, text);
         buffer.saved = text;
@@ -694,10 +740,13 @@ export class App {
         this.inputsChanged(`${buffer.path} changed on disk since this run`);
       }
     }
+
     // A snapshot other than the one a result was computed on: the code changed under it.
     const snapshotId = analysis.snapshot?.snapshotId ?? null;
+
     for (const record of this.state.records) {
       const result = record.result;
+
       const computedOn =
         result?.kind === "feature" || result?.kind === "map-check" || (result?.kind === "baseline" && result.payload?.check === true)
           ? (result.payload?.snapshot ?? undefined)
@@ -708,8 +757,10 @@ export class App {
               : result?.kind === "entries"
                 ? (result.payload?.snapshotId ?? undefined)
                 : undefined;
+
       if (computedOn !== undefined && computedOn !== snapshotId) record.outdated ??= "the code snapshot changed since this run";
     }
+
     if (this.state.current === null && this.state.files[0]) this.open(this.state.files[0], { line: 0, col: 0 }, false);
     this.state.proposals = this.merges.scan();
     this.clampCursor();
@@ -729,15 +780,21 @@ export class App {
     const analysis = this.state.analysis;
     const slug = path === null || analysis === null ? null : featureSlugOf(path, analysis.config.dir);
     const request = ++this.featureLineRequest;
+
     if (path === null || analysis === null || slug === null) {
       this.state.featureLine = null;
+
       return;
     }
+
     const buffer = this.state.buffers.get(path);
+
     if (buffer !== undefined && (buffer.newFile || isDirty(buffer))) {
       if (this.state.featureLine?.path !== path) this.state.featureLine = null;
+
       return;
     }
+
     // The plan at the base is read in the operation worker: the session's thread starts no git process.
     // A newer refresh (another analysis, another file) supersedes this one; an unknown base keeps the line.
     this.track(
@@ -771,10 +828,12 @@ export class App {
     const dir = join(this.state.root, this.specDir());
     // The settings are `keylang.json` in the same editor, not a separate form (design §7.1).
     const config = existsSync(join(this.state.root, CONFIG_FILE)) ? [CONFIG_FILE] : [];
+
     if (!existsSync(dir)) return config;
     // Saved explanations are the model's text about nodes, not specs to edit.
     const store = join(dir, "explain");
     const specs = collectMdFiles([dir]).filter((abs) => !within(abs, store));
+
     return sortFiles([...specs.map((abs) => toPosix(relative(this.state.root, abs))), ...config], null);
   }
 
@@ -786,6 +845,7 @@ export class App {
 
   private load(path: string): Buffer {
     const existing = this.state.buffers.get(path);
+
     if (existing) return existing;
     const analysis = this.state.analysis;
     const disk = readText(resolve(this.state.root, path));
@@ -793,12 +853,14 @@ export class App {
     const { text, eol } = splitEol(loaded);
     const buffer = newBuffer(path, text, eol, disk);
     this.state.buffers.set(path, buffer);
+
     return buffer;
   }
 
   private open(path: string, cursor: Cursor, remember = true): void {
     // Opening a file leaves the start screen; the analysis still waits for Browse or F5.
     this.state.start = null;
+
     // The place remembered is one in the editor: the code viewer and MERGE show what `Ctrl+O` cannot bring back,
     // and a `merge` mode without `state.merge` would take every key and answer none.
     if (remember && this.state.current) this.state.back.push({ path: this.state.current, cursor: { ...this.state.cursor }, mode: this.state.mode === "code" || this.state.mode === "merge" ? "view" : this.state.mode });
@@ -806,6 +868,7 @@ export class App {
     this.state.current = path;
     this.state.cursor = { ...cursor };
     this.state.filesIndex = Math.max(0, this.state.files.indexOf(path));
+
     // The file is shown in the view: a screen over the editor goes. The zoom keeps its state, so `z` (or
     // Ctrl+O, when the place was remembered) comes back to it.
     if (this.state.mode === "code" || this.state.mode === "merge" || this.state.mode === "zoom") this.state.mode = "view";
@@ -815,22 +878,27 @@ export class App {
     this.clampCursor();
     this.state.top = Math.max(0, this.state.cursor.line - 3);
     this.keepVisible();
+
     if (this.state.featureLine?.path !== path) this.refreshFeatureLine();
   }
 
   private lines(): readonly string[] {
     const buffer = this.buffer();
+
     return buffer ? bufferLines(buffer) : [];
   }
 
   private clampCursor(): void {
     const buffer = this.buffer();
     const cursor = this.state.cursor;
+
     if (!buffer) {
       cursor.line = 0;
       cursor.col = 0;
+
       return;
     }
+
     cursor.line = Math.max(0, Math.min(cursor.line, bufferLines(buffer).length - 1));
     cursor.col = Math.max(0, Math.min(cursor.col, lineLayout(buffer, cursor.line).clusters.length));
   }
@@ -838,16 +906,20 @@ export class App {
   /** Scrolls so the cursor is on screen; the layout of its line answers in logarithmic time, however long the line. */
   private keepVisible(): void {
     const buffer = this.buffer();
+
     if (!buffer) return;
     const editor = layout(this.state).editor;
     // One row stays free for the evidence row under the cursor line.
     const height = Math.max(1, editor.height - 1);
+
     if (this.state.cursor.line < this.state.top) this.state.top = this.state.cursor.line;
+
     if (this.state.cursor.line >= this.state.top + height) this.state.top = this.state.cursor.line - height + 1;
     // `left` and the cursor count clusters; what must fit is their width in cells.
     const textWidth = editor.width - gutterWidth(buffer) - 1;
     const line = lineLayout(buffer, this.state.cursor.line);
     const col = Math.min(this.state.cursor.col, line.clusters.length);
+
     if (col < this.state.left) this.state.left = col;
     this.state.left = scrollToFit(line, this.state.left, col, textWidth);
     // Scrolled further than this line needs (a longer line was before it): back as far as its end still
@@ -857,15 +929,21 @@ export class App {
 
   private edit(change: (lines: string[], cursor: Cursor) => void, coalesce = false): void {
     const buffer = this.buffer();
+
     if (!buffer) return;
+
     if (buffer.readOnly) {
       this.state.message = this.readOnlyReason(buffer.path);
+
       return;
     }
+
     // `u` undoes a merge only while nothing was typed after it.
     if (this.state.lastMerge?.path === buffer.path) this.state.lastMerge = null;
     const last = buffer.undo.at(-1);
+
     if (!coalesce || !last || last.text === buffer.text) buffer.undo.push({ text: buffer.text, cursor: { ...this.state.cursor } });
+
     if (buffer.undo.length > 200) buffer.undo.shift();
     const lines = buffer.text.split("\n");
     change(lines, this.state.cursor);
@@ -878,20 +956,27 @@ export class App {
 
   private save(): void {
     const buffer = this.buffer();
+
     if (!buffer || buffer.readOnly) return;
+
     if (this.writingNow()) return;
     // A new file is written only where nothing is yet: a file created meanwhile is never overwritten, however often Ctrl+S is pressed.
     const problem = buffer.newFile ? this.newFileProblem(buffer) : null;
+
     if (problem !== null) {
       this.state.message = `${buffer.path}: not saved: ${problem}; your text stays in this buffer`;
+
       return;
     }
+
     // Another editor or `git checkout` changed the file: the first Ctrl+S asks, the second overwrites.
     if (!buffer.newFile && this.changedOnDisk(buffer) && !buffer.overwrite) {
       buffer.overwrite = true;
       this.state.message = `${buffer.path} changed on disk since it was opened: Ctrl+S again overwrites it, Ctrl+Z undoes your edits`;
+
       return;
     }
+
     this.persist(buffer);
     this.state.message = `${buffer.path}: saved`;
     this.reanalyze();
@@ -910,7 +995,9 @@ export class App {
     // A new keylang.json (layers moved in without one) lands in the root, where nothing may be yet.
     if (buffer.path === CONFIG_FILE) return existsSync(resolve(this.state.root, CONFIG_FILE)) ? "the file was created on disk after this buffer opened; it is kept as it is" : null;
     const problem = newSpecProblem(this.state.root, this.merges.specDir(), buffer.path, (path) => this.generatedDoc(path));
+
     if (problem !== null) return problem;
+
     return existsSync(resolve(this.state.root, buffer.path)) ? "the file was created on disk after this buffer opened; it is kept as it is" : null;
   }
 
@@ -922,10 +1009,13 @@ export class App {
   /** Writes the buffer's text with its line ending; the buffer is clean after. Throws when the write fails. */
   private persist(buffer: Buffer): void {
     const written = withEol(buffer.text, buffer.eol);
+
     if (buffer.newFile) {
       const problem = this.newFileProblem(buffer);
+
       if (problem !== null) throw new Error(problem);
     }
+
     // A save stays in the repository, even through a link whose target does not exist yet; a new spec stays in the spec directory.
     const boundary = buffer.newFile && buffer.path !== CONFIG_FILE ? resolve(this.state.root, this.merges.specDir()) : this.state.root;
     writeInside(boundary, resolve(this.state.root, buffer.path), written);
@@ -952,6 +1042,7 @@ export class App {
   private withSavedInputs(action: string, run: () => void, options: { writes?: string[]; writesNote?: string; inputs?: (path: string) => boolean } = {}): void {
     const inputs = options.inputs ?? (() => true);
     const files = this.dirtyInputs().filter(inputs);
+
     if (files.length === 0 && options.writes === undefined) return run();
     this.state.barrier = { action, files, writes: options.writes ?? null, writesNote: options.writesNote ?? null, choice: "save", error: null };
     this.afterSave = run;
@@ -961,6 +1052,7 @@ export class App {
   /** The keys of the save step: ←→/Tab choose, Enter does it, Esc is Back. */
   private barrierKey(event: KeyEvent): void {
     const barrier = this.state.barrier!;
+
     if (event.name === "left" || event.name === "right" || event.name === "tab" || event.name === "h" || event.name === "l") barrier.choice = barrier.choice === "save" ? "back" : "save";
     else if (event.name === "escape" || (event.name === "enter" && barrier.choice === "back")) this.leaveBarrier();
     else if (event.name === "enter") this.saveAndContinue();
@@ -983,10 +1075,13 @@ export class App {
   private saveAndContinue(): void {
     const barrier = this.state.barrier!;
     let saved = 0;
+
     for (const path of barrier.files) {
       const buffer = this.state.buffers.get(path);
+
       if (!buffer || buffer.readOnly || !isDirty(buffer)) continue;
       let problem: string | null = buffer.newFile ? this.newFileProblem(buffer) : null;
+
       if (problem !== null) problem = `${problem}; the text stays in its buffer`;
       else if (!buffer.newFile && this.changedOnDisk(buffer)) problem = "changed on disk since it was opened; open it to compare (Ctrl+S twice overwrites)";
       else {
@@ -996,15 +1091,20 @@ export class App {
           problem = errorText(error);
         }
       }
+
       if (problem !== null) {
         barrier.error = `${path}: ${problem}`;
         barrier.files = this.dirtyInputs().filter(this.barrierInputs);
         this.state.message = `${barrier.action}: not started; ${saved} file(s) saved, ${barrier.error}`;
+
         if (saved > 0) this.reanalyze(false);
+
         return;
       }
+
       saved++;
     }
+
     const run = this.afterSave;
     this.state.barrier = null;
     this.afterSave = null;
@@ -1021,61 +1121,79 @@ export class App {
    */
   private live(): Workspace | null {
     const analysis = this.state.analysis;
+
     if (!analysis) return null;
     const buffers = [...this.state.buffers.values()];
     const last = this.liveWorkspace;
+
     if (last?.analysis === analysis && last.buffers.length === buffers.length && buffers.every((buffer, i) => last.buffers[i] === buffer && last.versions[i] === buffer.version)) return last.ws;
     const docs = analysis.docs.map((doc) => this.state.buffers.get(doc.path)?.doc ?? doc);
+
     for (const buffer of buffers) if (buffer.doc && !docs.some((doc) => doc.path === buffer.path)) docs.push(buffer.doc);
     const texts = new Map(buffers.map((buffer) => [resolve(this.state.root, buffer.path), buffer.text] as const));
     const ws = workspace(this.state.root, { ...analysis, docs }, texts);
     this.liveWorkspace = { analysis, buffers, versions: buffers.map((buffer) => buffer.version), ws };
+
     return ws;
   }
 
   private lspPosition(cursor: Cursor): LspPosition {
     const buffer = this.buffer();
+
     if (!buffer) return { line: cursor.line, character: 0 };
     const line = lineLayout(buffer, cursor.line);
+
     return { line: cursor.line, character: line.units[Math.min(cursor.col, line.clusters.length)]! };
   }
 
   /** The editor line and column under a screen cell, or null. */
   private cellAt(x: number, y: number): Cursor | null {
     const buffer = this.buffer();
+
     if (!buffer || (this.state.mode !== "view" && this.state.mode !== "edit")) return null;
     const editor = layout(this.state).editor;
+
     if (x < editor.x || x >= editor.x + editor.width || y < editor.y || y >= editor.y + editor.height) return null;
     const row = editorRows(this.state, buffer, editor.height)[y - editor.y];
+
     if (!row || row.kind !== "line") return null;
     const textX = x - editor.x - gutterWidth(buffer);
+
     if (textX < 0) return { line: row.line, col: 0 };
+
     return { line: row.line, col: clusterAtCell(lineLayout(buffer, row.line), this.state.left, textX) };
   }
 
   /** The UTF-16 offset of a cursor in the buffer. */
   private offsetOf(at: Cursor): number {
     const buffer = this.buffer();
+
     if (!buffer) return 0;
     const lines = bufferLines(buffer);
     let offset = 0;
+
     for (let i = 0; i < at.line; i++) offset += lines[i]!.length + 1;
     const line = lineLayout(buffer, at.line);
+
     return offset + line.units[Math.min(at.col, line.clusters.length)]!;
   }
 
   /** The id or link at the cursor; on an item line without one under the cursor, its first. */
   private targetNear(cursor: Cursor): Cursor | null {
     const buffer = this.buffer();
+
     if (!buffer?.doc) return null;
+
     if (targetAt(buffer.doc, this.offsetOf(cursor))) return cursor;
     let found: Cursor | null = null;
     forNodes(buffer.doc, (node) => {
       if (found || node.span.start.line !== cursor.line + 1) return;
       // Cursor navigation: the first ref of this item when the cursor is not already on an id.
       const span = node.refs[0]?.span ?? (node.id && node.name ? node.name.span : null);
+
       if (span) found = { line: span.start.line - 1, col: clusterAt(this.lines()[span.start.line - 1] ?? "", span.start.col - 1) };
     });
+
     return found;
   }
 
@@ -1088,31 +1206,41 @@ export class App {
     const ws = this.live();
     const path = this.state.current;
     const doc = this.buffer()?.doc;
+
     if (!ws || !path || !doc) return null;
     const target = targetAt(doc, this.offsetOf(cursor));
     const key = target === null ? `at ${cursor.line}:${cursor.col}` : `${target.kind} ${target.span.start.offset}-${target.span.end.offset}`;
     const last = this.lastHover;
     const lines = last?.ws === ws && last.path === path && last.key === key ? last.lines : this.hoverRows(ws, path, this.lspPosition(cursor));
     this.lastHover = { ws, path, key, lines };
+
     return lines === null ? null : { x, y, lines, source };
   }
 
   /** The popup's rows of the hover at a position: the hover's parts as they are, the code at the declaration, the uses in specs. */
   private hoverRows(ws: Workspace, path: string, position: LspPosition): Hover["lines"] | null {
     const content = hoverContent(ws, path, position);
+
     if (!content) return null;
     const lines: Hover["lines"] = [{ text: runsText(content.title), kind: "title" }];
+
     if (content.place !== null) lines.push({ text: content.place, kind: "text" });
+
     for (const line of content.evidence) lines.push({ text: `• ${runsText(line)}`, kind: "evidence" });
+
     if (content.flows.length > 0) lines.push({ text: `flows: ${content.flows.join(", ")}`, kind: "text" });
     const declaration = content.declaration;
     const code = declaration === null || extname(declaration.file) === ".md" ? null : readText(resolve(this.state.root, declaration.file));
+
     if (declaration !== null && code !== null) {
       const shown = code.split("\n").slice(declaration.line - 1, declaration.line + 3);
       lines.push({ text: "", kind: "rule" }, ...shown.map((text) => ({ text: text.replace(/\t/g, "  "), kind: "code" as const })));
     }
+
     const uses = references(ws, path, position).length;
+
     if (uses > 0) lines.push({ text: `referenced ${uses} time(s) in specs`, kind: "text" });
+
     return lines;
   }
 
@@ -1120,9 +1248,11 @@ export class App {
   private cursorAnchor(col: number): { x: number; y: number } {
     const editor = layout(this.state).editor;
     const buffer = this.buffer();
+
     if (this.state.mode === "read" && buffer) return { x: editor.x + 3, y: editor.y + readCursorRow(this.state, buffer, editor) };
     const line = buffer ? lineLayout(buffer, this.state.cursor.line) : null;
     const cells = line ? Math.max(0, line.cells[Math.min(col, line.clusters.length)]! - line.cells[Math.min(this.state.left, line.clusters.length)]!) : 0;
+
     return { x: editor.x + (buffer ? gutterWidth(buffer) : 0) + cells, y: editor.y + this.state.cursor.line - this.state.top };
   }
 
@@ -1132,15 +1262,21 @@ export class App {
     const at = this.targetNear(this.state.cursor);
     const ws = this.live();
     const path = this.state.current;
+
     if (!at || !ws || !path) {
       this.state.message = ws ? "no id or code link on this line" : "analysis is still running";
+
       return;
     }
+
     const target = definition(ws, path, this.lspPosition(at));
+
     if (!target) {
       this.state.message = "no code for this id (planned, or not in the snapshot)";
+
       return;
     }
+
     this.state.cursor = at;
     this.jump(fileURLToPath(target.uri), target.range.start.line + 1);
   }
@@ -1148,10 +1284,13 @@ export class App {
   /** Opens a file at a line: a spec in the editor, code in `$EDITOR` or the built-in viewer. */
   private jump(abs: string, line: number): void {
     const rel = toPosix(relative(this.state.root, abs));
+
     if (extname(abs) === ".md" && !rel.startsWith("..")) {
       this.open(rel, { line: line - 1, col: 0 });
+
       return;
     }
+
     if (this.surface?.openEditor) {
       // The transport detaches the surface while the editor has the screen and repaints when it is back;
       // what happened elsewhere (a GUI editor's window, an editor that did not start) is the status line's.
@@ -1160,38 +1299,48 @@ export class App {
           if (note !== null && !this.closed) this.state.message = note;
         }),
       );
+
       return;
     }
+
     const place = this.state.current ? { path: this.state.current, cursor: { ...this.state.cursor }, mode: this.state.mode } : null;
+
     if (this.showCode(rel, abs, line) && place) this.state.back.push(place);
   }
 
   /** The built-in read-only viewer at `line` of a code file; false (with a message) when it cannot be read. */
   private showCode(rel: string, abs: string, line: number): boolean {
     let lines: string[];
+
     try {
       lines = readFileSync(abs, "utf8").split(/\r?\n/);
     } catch {
       this.state.message = `${rel}: cannot read`;
+
       return false;
     }
+
     const at = Math.max(1, Math.min(line, lines.length));
     const editor = layout(this.state).editor;
     this.state.code = { file: rel, line: at, lines, top: Math.max(0, at - 1 - Math.floor((editor.height - 1) / 3)), link: `vscode://file${pathToFileURL(abs).pathname}:${at}` };
     this.state.mode = "code";
     this.state.hover = null;
+
     return true;
   }
 
   /** The ID of the node whose item is at the cursor line or the nearest one above it (a description, `calls`). */
   private nodeAtCursor(): string | null {
     const doc = this.buffer()?.doc;
+
     if (!doc) return null;
     let best: { id: string; line: number } | null = null;
     forNodes(doc, (node) => {
       const line = node.span.start.line - 1;
+
       if (node.id && line <= this.state.cursor.line && (best === null || line >= best.line)) best = { id: node.id, line };
     });
+
     return (best as { id: string; line: number } | null)?.id ?? null;
   }
 
@@ -1199,7 +1348,9 @@ export class App {
   private lineOfNode(path: string, id: string): number | null {
     const doc = this.load(path).doc;
     let line: number | null = null;
+
     if (doc) forNodes(doc, (node) => void (line ??= node.id === id ? node.span.start.line - 1 : null));
+
     return line;
   }
 
@@ -1212,24 +1363,32 @@ export class App {
   private toggleMap(): void {
     const analysis = this.state.analysis;
     const path = this.state.current;
+
     if (!analysis || !path) {
       this.state.message = analysis ? "no file open" : (noSnapshotReason(this.state) ?? "analysis is still running");
+
       return;
     }
+
     const dirs = this.mapDirs(analysis);
     let target: string;
+
     if (path.startsWith(dirs.map)) {
       if (!analysis.map?.explained) {
         this.state.message = 'the explained map is off: add "explain": {"map": true} to keylang.json, then F5';
+
         return;
       }
+
       target = dirs.explained + path.slice(dirs.map.length);
     } else if (path.startsWith(dirs.explained) && path !== `${dirs.explained}README.md`) {
       target = dirs.map + path.slice(dirs.explained.length);
     } else {
       this.state.message = "t switches a layer file between the map and the explained map";
+
       return;
     }
+
     const id = this.nodeAtCursor();
     const line = id ? this.lineOfNode(target, id) : null;
     this.open(target, { line: line ?? 0, col: 0 });
@@ -1239,11 +1398,13 @@ export class App {
   private goToNode(id: string): void {
     const analysis = this.state.analysis;
     const node = analysis?.snapshot?.nodes[id];
+
     if (!analysis || !node) return this.goToSpec(id);
     const dirs = this.mapDirs(analysis);
     const explained = this.state.current?.startsWith(dirs.explained) === true && analysis.map?.explained?.has(`${node.layer}.md`) === true;
     const path = `${explained ? dirs.explained : dirs.map}${node.layer}.md`;
     const line = this.lineOfNode(path, id);
+
     if (line === null) return this.goToSpec(id);
     const text = bufferLines(this.load(path))[line] ?? "";
     this.open(path, { line, col: graphemes(/^\s*(?:- )?/.exec(text)![0]).length });
@@ -1251,15 +1412,21 @@ export class App {
 
   private goToSpec(id: string | null): void {
     const analysis = this.state.analysis;
+
     if (!analysis || !id) {
       this.state.message = "no id here";
+
       return;
     }
+
     const found = analysis.index.lookup(id);
+
     if (found.kind === "missing") {
       this.state.message = `\`${id}\` is not declared in any spec`;
+
       return;
     }
+
     const lines = bufferLines(this.load(found.decl.file));
     this.open(found.decl.file, { line: found.decl.span.start.line - 1, col: clusterAt(lines[found.decl.span.start.line - 1] ?? "", found.decl.span.start.col - 1) });
   }
@@ -1267,18 +1434,23 @@ export class App {
   private idAtCursor(): string | null {
     const buffer = this.buffer();
     const at = this.targetNear(this.state.cursor);
+
     if (!buffer?.doc || !at) return null;
     const target = targetAt(buffer.doc, this.offsetOf(at));
+
     return target?.kind === "id" ? target.id : null;
   }
 
   private goBack(): void {
     this.state.completion = null;
     const place = this.state.back.pop();
+
     if (!place) {
       if (this.state.mode === "code") this.state.mode = "view";
+
       return;
     }
+
     this.load(place.path);
     this.state.current = place.path;
     this.state.cursor = { ...place.cursor };
@@ -1295,70 +1467,100 @@ export class App {
     // A ghost line answers the next key in the editor (Tab takes it, Alt+] cycles); a click, a paste,
     // a panel key or anything outside the editor (the clip's chat too) drops it, so it is never taken into other text.
     if (this.state.ghost && !(event.type === "mouse" && event.action !== "down") && !(event.type === "key" && this.state.mode === "edit" && !this.state.prompt && !this.state.help && !chatTakesKeys(this.state) && !PANEL_KEYS.has(event.name) && !(event.ctrl && event.name === "c"))) this.assist.dropGhost();
+
     // The save step is modal: the pointer and pasted text do not reach what is under it.
     if (event.type === "mouse") {
       if (!this.state.barrier && !this.state.quit) this.mouse(event);
+
       return;
     }
+
     if (event.type === "paste") {
       // While a finding's target is shown (viewing) the panel is hidden and text goes to the target, as keys do.
       if ((this.state.results.open && !this.state.results.viewing) || this.state.barrier || this.state.quit) return;
+
       // The help is modal: text pasted over it would go into the hidden buffer, which it covers.
       if (this.state.help) return;
+
       if (this.state.prompt) this.promptType(event.text.replace(/\n/g, " "));
       else if (chatTakesKeys(this.state)) this.clip.paste(printable(event.text));
       else if (this.state.mode === "edit") this.insert(event.text);
       else this.state.message = pasteRefusal(this.state);
+
       return;
     }
+
     this.state.message = null;
+
     if (event.name !== "q" && !(event.ctrl && event.name === "c")) this.state.quitArmed = false;
+
     if (event.ctrl && event.name === "c") return this.quit();
+
     if (this.state.quit) return this.quitKey(event);
+
     // The help scrolls with the arrows and a page; any other key closes it.
     if (this.state.help) return this.helpKey(event);
+
     if (this.state.barrier) return this.barrierKey(event);
+
     // The palette does not open over a form: that would drop what was typed in it. Ctrl+P says how to go on.
     if (this.state.prompt && event.ctrl && event.name === "p") {
       if (this.state.prompt.kind !== "palette") this.state.message = "Ctrl+P: the palette does not open over a form: Enter runs it, Esc closes it, then Ctrl+P";
+
       return;
     }
+
     if (this.state.prompt) return this.promptKey(event);
+
     // Ctrl+P opens the palette from any ordinary mode (view/read/edit/code) and from the panels; in MERGE it
     // allows viewing the catalogue and independent read-only actions, the rest explain why they are blocked.
     if (event.ctrl && event.name === "p") return this.openPalette();
+
     // Ctrl+S still saves the buffer being edited: a person who typed in the chat expects the file to save.
     if (chatTakesKeys(this.state) && event.ctrl && event.name === "s" && this.state.mode === "edit") return this.save();
+
     // The clip's focused window takes every other key, `?` and letters as text; F2–F7 stay global.
     if (chatTakesKeys(this.state) && !PANEL_KEYS.has(event.name)) return this.clip.key(event);
+
     // In raw mode the terminal sends Ctrl+Z as a key, not SIGTSTP: outside the editor (where it undoes) and
     // MERGE (where `u` does), it stops keylang as in any shell. A surface that cannot stop (web) ignores it.
     if (event.ctrl && event.name === "z" && this.state.mode !== "edit" && this.state.mode !== "merge") return this.surface?.suspend?.();
+
     if (this.state.results.open) {
       if (this.state.results.viewing) {
         // The panel is hidden while the finding's target is shown; the keys go to the editor or the
         // code viewer. Esc / Ctrl+O (and q in the code viewer) bring the list back and put back the place the finding was opened
         // from (Esc in edit mode leaves editing first); F6 closes the panel and stays at the target.
         if ((event.name === "escape" && this.state.mode !== "edit") || (event.ctrl && event.name === "o") || (event.name === "q" && this.state.mode === "code")) return this.results.returnToFindings();
+
         if (event.name === "f6") return this.results.closeResults();
       } else {
         return this.results.resultsKey(event);
       }
     }
+
     if (this.state.start !== null && event.name !== "f6") return this.startKey(event);
+
     if (event.name === "f7") return this.clip.toggle();
+
     if (event.name === "f5") return this.reanalyze();
+
     if (event.name === "f6") return this.results.openResults();
     // Panels take the focus only where keys go to the focused panel (the view); in the editor, MERGE,
     // the code viewer and the clip's focused window they are shown, and the keys still go where they went.
     const focusable = (this.state.mode === "view" || this.state.mode === "read") && !chatTakesKeys(this.state);
+
     if (event.name === "f2") return this.toggleFiles(focusable);
+
     if (event.name === "f3") return this.toggleNav(focusable);
+
     if (event.name === "f4") return this.toggleContext(focusable);
+
     switch (this.state.mode) {
       case "merge":
         // `w` writes the merged file: it waits while the map is written.
         if (event.name === "w" && this.writingNow()) return;
+
         return this.merges.key(event);
       case "code":
         return this.codeKey(event);
@@ -1368,8 +1570,11 @@ export class App {
         return this.editKey(event);
       default:
         if (this.state.focus === "context") return this.contextKey(event);
+
         if (this.state.focus === "nav") return this.navKey(event);
+
         if (this.state.focus === "files") return this.filesKey(event);
+
         return this.viewKey(event);
     }
   }
@@ -1377,11 +1582,14 @@ export class App {
   private helpKey(event: KeyEvent): void {
     const page = Math.max(1, layout(this.state).panel.height - 4);
     const step = event.name === "up" || event.name === "k" ? -1 : event.name === "down" || event.name === "j" ? 1 : event.name === "pageup" ? -page : event.name === "pagedown" ? page : 0;
+
     if (step === 0) {
       this.state.help = false;
       this.state.helpTop = 0;
+
       return;
     }
+
     this.state.helpTop = Math.max(0, Math.min(this.state.helpTop + step, helpScrollMax(this.state)));
   }
 
@@ -1392,17 +1600,22 @@ export class App {
    */
   private quit(): void {
     const step = this.state.quit;
+
     if (step?.waiting) {
       this.state.message = `${step.label}: cancelling after the current file; the session ends when it settles (Esc stays)`;
+
       return;
     }
+
     if (this.state.activeOperation !== null) {
       if (step) return this.cancelAndQuit();
       const label = this.activeLabel();
       this.state.quit = { label, choice: "stay", waiting: false };
       this.state.message = `${label} is running: stay, or cancel it and quit (q again)`;
+
       return;
     }
+
     this.state.quit = null;
     this.quitIfSaved();
   }
@@ -1410,11 +1623,14 @@ export class App {
   /** The ordinary end of a session: unsaved buffers ask once (the second q quits), then it closes. */
   private quitIfSaved(note?: string): void {
     const dirty = this.unsaved();
+
     if (dirty.length > 0 && !this.state.quitArmed) {
       this.state.quitArmed = true;
       this.state.message = `${note === undefined ? "" : `${note} · `}unsaved changes in ${dirty.join(", ")}: Ctrl+S saves, q or Ctrl+C again quits`;
+
       return;
     }
+
     this.close();
     this.onQuit();
   }
@@ -1422,19 +1638,25 @@ export class App {
   /** How messages name the running operation. */
   private activeLabel(): string {
     const record = this.state.records.find((entry) => entry.id === this.state.activeOperation);
+
     return record ? operationLabel(record.params) : "an operation";
   }
 
   /** The keys of the quit step: ←→/Tab choose, Enter does it, Esc stays; while it waits only Esc (stay) counts. */
   private quitKey(event: KeyEvent): void {
     const step = this.state.quit!;
+
     if (event.name === "q") return this.quit();
+
     if (event.name === "escape" || (event.name === "enter" && step.choice === "stay" && !step.waiting)) {
       this.state.quit = null;
       this.state.message = step.waiting ? `${step.label}: the cancel goes on; the session stays` : `${step.label}: still running; the session stays`;
+
       return;
     }
+
     if (step.waiting) return this.quit();
+
     if (event.name === "left" || event.name === "right" || event.name === "tab" || event.name === "h" || event.name === "l") step.choice = step.choice === "stay" ? "cancel" : "stay";
     else if (event.name === "enter") this.cancelAndQuit();
   }
@@ -1448,6 +1670,7 @@ export class App {
     const step = this.state.quit!;
     step.waiting = true;
     this.cancelActive?.();
+
     // Still waiting: the operation is in its commit and finishes the current file step first.
     if (this.state.quit === step) this.state.message = `${step.label}: cancelling after the current file; the session ends when it settles`;
   }
@@ -1459,15 +1682,19 @@ export class App {
    */
   private quitAfterSettle(record: OperationRecord): void {
     const step = this.state.quit;
+
     if (!step) return;
     this.state.quit = null;
     const result = record.result;
     const written = result === null ? [] : [...result.written, ...result.removed];
     const outcome = `${step.label}: ${recordSummary(record)} · ${written.length === 0 ? "nothing written" : `written: ${written.join(", ")}`}`;
+
     if (!step.waiting) {
       this.state.message = `${outcome} · q quits`;
+
       return;
     }
+
     this.state.quitArmed = false;
     this.quitIfSaved(outcome);
   }
@@ -1476,44 +1703,55 @@ export class App {
     this.state.cursor.line += lines;
     this.clampCursor();
     this.keepVisible();
+
     if (this.state.hover?.source === "key") this.state.hover = null;
   }
 
   private common(event: KeyEvent): boolean {
     const page = Math.max(1, layout(this.state).editor.height - 2);
     const shift = event.shift && this.state.mode === "edit";
+
     if (shift && (event.name === "up" || event.name === "down")) this.state.selection ??= this.state.cursor.line;
     else if (["up", "down", "pageup", "pagedown", "left", "right", "home", "end"].includes(event.name)) this.state.selection = null;
+
     switch (event.name) {
       case "up":
         this.move(-1);
+
         return true;
       case "down":
         this.move(1);
+
         return true;
       case "pageup":
         this.move(-page);
+
         return true;
       case "pagedown":
         this.move(page);
+
         return true;
       case "left":
         this.state.cursor.col = Math.max(0, this.state.cursor.col - 1);
         this.keepVisible();
+
         return true;
       case "right":
         this.state.cursor.col++;
         this.clampCursor();
         this.keepVisible();
+
         return true;
       case "home":
         this.state.cursor.col = 0;
         this.keepVisible();
+
         return true;
       case "end":
         this.state.cursor.col = Number.MAX_SAFE_INTEGER;
         this.clampCursor();
         this.keepVisible();
+
         return true;
       default:
         return false;
@@ -1526,6 +1764,7 @@ export class App {
     const order: State["focus"][] = ["editor", ...panels.filter((panel) => this.drawable(panel))];
     const at = order.indexOf(this.state.focus);
     this.state.focus = order[(at + 1) % order.length]!;
+
     if (this.state.focus === "nav") this.fixNavIndex(1);
   }
 
@@ -1536,6 +1775,7 @@ export class App {
    */
   private drawable(panel: SidePanel): boolean {
     const area = layout({ ...this.state, focus: panel });
+
     return (panel === "files" ? area.files : area.nav) !== null;
   }
 
@@ -1543,31 +1783,44 @@ export class App {
   private hoverAtCursor(): void {
     const at = this.targetNear(this.state.cursor);
     const buffer = this.buffer();
+
     if (!at || !buffer) {
       // A line without an ID: the hover is the role of the line under the cursor, if it has one.
       const anchor = this.cursorAnchor(this.state.cursor.col);
       this.state.hover = buffer ? this.hoverAt(this.state.cursor, anchor.x, anchor.y, "key") : null;
+
       if (!this.state.hover) this.state.message = "no id on this line";
+
       return;
     }
+
     const anchor = this.cursorAnchor(at.col);
     this.state.hover = this.hoverAt(at, anchor.x, anchor.y, "key");
+
     if (!this.state.hover) this.state.message = this.state.analysis ? "nothing known about this id" : "analysis is still running";
   }
 
   private viewKey(event: KeyEvent): void {
     if (!event.ctrl && !event.alt && this.common(event)) return;
+
     if (event.name === "enter" && event.alt) return this.goToSpec(this.idAtCursor());
+
     if (event.ctrl && event.name === "o") return this.goBack();
+
     if (event.ctrl && event.name === "g") return this.textToSpec();
+
     if (event.ctrl && event.name === "space") return this.draftAtCursor();
+
     if (event.ctrl && event.name === "r") {
       // A recording started in the editor is stopped from anywhere.
       if (this.assist.recordingNow) return this.assist.voice();
       this.state.message = "voice goes where the cursor is: press i to edit, then Ctrl+R";
+
       return;
     }
+
     if (event.ctrl || event.alt) return;
+
     switch (event.name) {
       case "enter":
         return this.goToCode();
@@ -1579,36 +1832,48 @@ export class App {
         return this.move(1);
       case "g":
         this.state.cursor = { line: 0, col: 0 };
+
         return this.keepVisible();
       case "G":
         this.state.cursor = { line: this.lines().length - 1, col: 0 };
+
         return this.keepVisible();
       case "K":
         return this.hoverAtCursor();
       case "escape":
         this.state.hover = null;
         this.state.selection = null;
+
         if (this.state.mode === "read") this.state.mode = "view";
+
         return;
       case "v":
         this.state.mode = this.state.mode === "read" ? "view" : "read";
         this.state.hover = null;
+
         return;
       case "i": {
         const buffer = this.buffer();
+
         if (!buffer) return;
+
         if (buffer.readOnly) {
           this.state.message = this.readOnlyReason(buffer.path);
+
           return;
         }
+
         this.state.mode = "edit";
         this.state.hover = null;
+
         return;
       }
+
       case "m":
         return this.mergeOrPick();
       case "u":
         if (this.writingNow()) return;
+
         return this.merges.undo();
       case "e":
         return this.explainAtCursor();
@@ -1620,9 +1885,11 @@ export class App {
         return this.openNodeSearch();
       case "?":
         this.state.help = true;
+
         return;
       case "/":
         this.state.prompt = { kind: "search", text: this.state.search ?? "", items: [], index: 0 };
+
         return;
       case ":":
         return this.openPalette();
@@ -1637,52 +1904,76 @@ export class App {
 
   private editKey(event: KeyEvent): void {
     const ghost = this.state.ghost;
+
     if (ghost) {
       if (event.alt && event.name === "]") {
         ghost.index = (ghost.index + 1) % ghost.variants.length;
+
         return;
       }
+
       if (event.name === "tab" && !this.state.completion) {
         this.state.ghost = null;
+
         return this.assist.acceptGhost(ghost);
       }
+
       this.assist.dropGhost();
+
       if (event.name === "escape") return;
     }
+
     this.editKeyWithoutGhost(event);
+
     if (this.state.mode === "edit") this.assist.ghostSoon();
   }
 
   private editKeyWithoutGhost(event: KeyEvent): void {
     const completion = this.state.completion;
+
     if (completion) {
       if (event.name === "up" || event.name === "down") {
         completion.index = (completion.index + (event.name === "up" ? -1 : 1) + completion.items.length) % completion.items.length;
+
         return;
       }
+
       if (event.name === "tab" || event.name === "enter") return this.acceptCompletion();
+
       if (event.name === "escape") {
         countSuggestion(this.state, "completion", "rejected", completion.shown);
         this.state.completion = null;
+
         return;
       }
     }
+
     if (event.ctrl && event.name === "s") return this.save();
+
     if (event.ctrl && event.name === "r") return this.assist.voice();
+
     if (event.ctrl && event.name === "z") return this.undoEdit();
+
     if (event.ctrl && event.name === "g") return this.textToSpec();
+
     if (event.ctrl && event.name === "space") return this.complete(true);
+
     if (event.ctrl && event.name === "o") return this.goBack();
+
     if (event.name === "escape") {
       this.state.mode = "view";
       this.state.selection = null;
       this.state.completion = null;
+
       return;
     }
+
     if (this.common(event)) {
       this.state.completion = null;
+
       return;
     }
+
     if (event.name === "enter") {
       this.edit((lines, cursor) => {
         const line = lines[cursor.line] ?? "";
@@ -1695,8 +1986,10 @@ export class App {
         cursor.col = [...indent].length + bullet.length;
       });
       this.state.completion = null;
+
       return;
     }
+
     if (event.name === "backspace") {
       this.edit((lines, cursor) => {
         if (cursor.col > 0) {
@@ -1711,25 +2004,32 @@ export class App {
           cursor.col = graphemes(previous).length;
         }
       }, true);
+
       return this.complete(false);
     }
+
     if (event.name === "delete") {
       this.edit((lines, cursor) => {
         const chars = graphemes(lines[cursor.line] ?? "");
+
         if (cursor.col < chars.length) {
           chars.splice(cursor.col, 1);
           lines[cursor.line] = chars.join("");
         } else if (cursor.line < lines.length - 1) lines.splice(cursor.line, 2, chars.join("") + lines[cursor.line + 1]!);
       }, true);
+
       return;
     }
+
     if (event.name === "tab") return this.insert("  ");
+
     if (event.text !== undefined && !event.ctrl && !event.alt) return this.insert(event.text);
   }
 
   private insert(raw: string): void {
     const text = printable(raw);
     const buffer = this.buffer();
+
     if (text === "" || !buffer) return;
     // The cursor line as laid out before the edit: the split point without segmenting the line again.
     const layout = lineLayout(buffer, this.state.cursor.line);
@@ -1740,13 +2040,16 @@ export class App {
       const parts = text.split("\n");
       const before = line.slice(0, at);
       const after = line.slice(at);
+
       // The cursor is counted in clusters of the result: a combining mark joins the letter before it,
       // and only the last cluster before the cursor can join what is typed.
       if (parts.length === 1) {
         lines[cursor.line] = before + parts[0] + after;
         cursor.col = col === 0 ? graphemes(parts[0]!).length : col - 1 + graphemes(layout.clusters[col - 1]! + parts[0]).length;
+
         return;
       }
+
       const inserted = [before + parts[0], ...parts.slice(1, -1), parts.at(-1)! + after];
       lines.splice(cursor.line, 1, ...inserted);
       cursor.line += parts.length - 1;
@@ -1759,10 +2062,13 @@ export class App {
     this.state.completion = null;
     const buffer = this.buffer();
     const last = buffer?.undo.pop();
+
     if (!buffer || !last) {
       this.state.message = "nothing to undo";
+
       return;
     }
+
     setText(buffer, last.text);
     this.state.cursor = { ...last.cursor };
     this.clampCursor();
@@ -1777,37 +2083,47 @@ export class App {
     const ws = this.live();
     const path = this.state.current;
     const buffer = this.buffer();
+
     if (!ws || !path || !buffer?.doc) {
       this.state.completion = null;
+
       return;
     }
+
     const line = lineLayout(buffer, this.state.cursor.line);
     const col = Math.min(this.state.cursor.col, line.clusters.length);
     // The word under the cursor, found back from it: a regex anchored at the end of the line
     // (`[^\s,]*$`) backtracks from every column and made one key quadratic in the line.
     let from = col;
+
     while (from > 0 && !/[\s,]/u.test(line.clusters[from - 1]!)) from--;
     const prefix = line.clusters.slice(from, col).join("").toLowerCase();
+
     if (!explicit && !this.state.completion && !(col > 0 && /[\s.]$/u.test(line.clusters[col - 1]!)) && prefix.length < 2) {
       this.state.completion = null;
+
       return;
     }
+
     const all = completions(ws, path, this.lspPosition(this.state.cursor));
     const starts = all.filter((item) => item.label.toLowerCase().startsWith(prefix));
     const contains = all.filter((item) => !item.label.toLowerCase().startsWith(prefix) && item.label.toLowerCase().includes(prefix));
     const items = [...starts, ...contains];
     const open = items.length > 0 && !(items.length === 1 && items[0]!.label.toLowerCase() === prefix);
     const shown = this.state.completion?.shown;
+
     if (open && shown === undefined) countSuggestion(this.state, "completion", "proposed", null);
     this.state.completion = open ? { items, index: 0, from, shown: shown ?? Date.now() } : null;
   }
 
   private acceptCompletion(): void {
     const completion = this.state.completion;
+
     if (!completion) return;
     const item = completion.items[completion.index]!;
     this.state.completion = null;
     countSuggestion(this.state, "completion", "accepted", completion.shown);
+
     // The list belongs to the word it was opened on; text moved under it since is not replaced.
     if (completion.from > this.state.cursor.col) return;
     this.edit((lines, cursor) => {
@@ -1822,13 +2138,17 @@ export class App {
 
   private fixNavIndex(direction: 1 | -1): void {
     const items = navEntries(this.state);
+
     if (items.length === 0) return;
     let index = Math.max(0, Math.min(this.state.navIndex, items.length - 1));
+
     while (items[index]?.kind === "heading" && index + direction >= 0 && index + direction < items.length) index += direction;
     this.state.navIndex = index;
     const nav = layout(this.state).nav;
     const height = (nav ? navListHeight(this.state, nav) : 2) - 1;
+
     if (index < this.state.navTop) this.state.navTop = index;
+
     if (index >= this.state.navTop + height) this.state.navTop = index - height + 1;
   }
 
@@ -1836,8 +2156,10 @@ export class App {
 
   private toggleFiles(focusable: boolean): void {
     this.state.showFiles = !this.state.showFiles;
+
     if (this.state.showFiles) this.state.lastPanel = "files";
     this.narrowNote();
+
     if (this.state.showFiles && focusable && this.drawable("files")) this.state.focus = "files";
     else if (!this.state.showFiles && this.state.focus === "files") this.state.focus = "editor";
     this.keepVisible();
@@ -1845,8 +2167,10 @@ export class App {
 
   private toggleNav(focusable: boolean): void {
     this.state.showNav = !this.state.showNav;
+
     if (this.state.showNav) this.state.lastPanel = "nav";
     this.narrowNote();
+
     if (!this.state.showNav && this.state.focus === "nav") this.state.focus = "editor";
     this.keepVisible();
   }
@@ -1855,8 +2179,10 @@ export class App {
   private toggleContext(focusable: boolean): void {
     const context = this.state.context;
     context.open = !context.open;
+
     if (context.open) this.state.lastPanel = "nav";
     this.narrowNote();
+
     if (context.open && focusable && this.drawable("context")) this.state.focus = "context";
     else if (!context.open && this.state.focus === "context") this.state.focus = "editor";
     this.keepVisible();
@@ -1871,8 +2197,10 @@ export class App {
   contextPack(): ContextPack | null {
     const buffer = this.buffer();
     const analysis = this.state.analysis;
+
     if (!buffer || !analysis) return null;
     const context = this.state.context;
+
     return contextPack(analysis, { path: buffer.path, text: buffer.text, line: this.state.cursor.line, added: context.added, removed: context.removed });
   }
 
@@ -1880,26 +2208,33 @@ export class App {
     const pack = this.contextPack();
     const items = pack?.items ?? [];
     const context = this.state.context;
+
     switch (event.name) {
       case "up":
       case "k":
         context.index = Math.max(0, context.index - 1);
+
         return;
       case "down":
       case "j":
         context.index = Math.min(Math.max(0, items.length - 1), context.index + 1);
+
         return;
       case "x": {
         const item = items[context.index];
+
         if (!item) return;
         context.removed.add(item.key);
         context.added = context.added.filter((id) => `node:${id}` !== item.key);
         context.index = Math.min(context.index, Math.max(0, items.length - 2));
         this.state.message = `context: ${item.label} left out`;
+
         return;
       }
+
       case "@":
         this.state.prompt = { kind: "context", text: "", items: [], index: 0 };
+
         return;
       case "tab":
         return this.cycleFocus();
@@ -1912,17 +2247,24 @@ export class App {
 
   private addToContext(id: string): void {
     const analysis = this.state.analysis;
+
     if (!analysis) {
       this.state.message = "analysis is still running";
+
       return;
     }
+
     const result = summarizeNode(analysis, id);
+
     if ("unknown" in result) {
       this.state.message = `unknown id \`${id}\`${result.suggestion ? ` (did you mean \`${result.suggestion}\`?)` : ""}`;
+
       return;
     }
+
     const context = this.state.context;
     context.removed.delete(`node:${id}`);
+
     if (!context.added.includes(id)) context.added.push(id);
     this.state.message = `context: ${id} added`;
   }
@@ -1937,30 +2279,40 @@ export class App {
    */
   private explainAtCursor(): void {
     const analysis = this.state.analysis;
+
     if (!analysis) {
       this.state.message = "analysis is still running";
+
       return;
     }
+
     const id = this.idAtCursor();
     const anchor = this.cursorAnchor(0);
     const x = layout(this.state).editor.x + 2;
     const found = id === null ? null : nodeExplanation(analysis, id, analysis.config.explain.detail);
+
     if (found === null || "unknown" in found) {
       // No known ID here: the help of the line's diagnostic code (an unknown ID is K001), offline.
       const unknown = id !== null && found !== null && "unknown" in found ? unknownIdMessage(id, found.suggestion) : null;
       const buffer = this.buffer();
       const code = buffer ? evidenceOf(analysis, buffer.path).get(this.state.cursor.line + 1)?.diagnostics[0]?.code : undefined;
       const help = code === undefined ? null : codeExplanation(code);
+
       if (!help) {
         this.state.message = unknown ?? "no id or diagnostic on this line";
+
         return;
       }
+
       const lines: Hover["lines"] = help.text.split("\n").map((text, i) => ({ text, kind: i === 0 ? "title" : "text" }));
+
       if (unknown !== null) lines.push({ text: unknown, kind: "evidence" });
       lines.push({ text: `keylang explain ${help.code} · the offline help of the line's diagnostic`, kind: "evidence" });
       this.state.hover = { x, y: anchor.y, lines, source: "key" };
+
       return;
     }
+
     this.state.hover = { x, y: anchor.y, lines: this.explainLines(id!, found), source: "key" };
   }
 
@@ -1970,58 +2322,76 @@ export class App {
     const overlay = this.dirtyInputs().some((path) => path.endsWith(".md"));
     const outdated = this.state.outdated || this.state.updating || this.state.error !== null;
     lines.push({ text: `the session's analysis${overlay ? " · with unsaved buffers (overlay)" : ""}${outdated ? " · outdated" : ""} · Ctrl+P Explain reads the saved files`, kind: "evidence" });
+
     const answer = (label: string, saved: SavedAnswer): void => {
       lines.push({ text: "", kind: "rule" });
+
       // A `full` answer is in sections: its `##` headings read as titles.
       for (const text of saved.text.split("\n")) {
         const heading = /^#{1,6}\s+(.*)$/.exec(text);
         lines.push(heading ? { text: heading[1]!, kind: "title" } : { text, kind: "text" });
       }
+
       lines.push({ text: `${label} · ${saved.agent} · ${saved.date} · ${saved.fresh ? "fresh" : "stale"}`, kind: "evidence" });
+
       if (saved.unknownIds.length > 0) lines.push({ text: `unknown ids: ${saved.unknownIds.join(", ")}`, kind: "evidence" });
     };
+
     if (found.saved) answer(`saved ${found.saved.detail} answer`, found.saved);
+
     if (found.brief) answer("saved brief", found.brief);
+
     if (!found.saved) lines.push({ text: `no saved answer · offline: e asks no model (Ctrl+P Explain with the model, or keylang explain ${id} --llm, does)`, kind: "evidence" });
+
     return lines;
   }
 
   private navKey(event: KeyEvent): void {
     const items = navEntries(this.state);
     const item = items[this.state.navIndex];
+
     switch (event.name) {
       case "up":
       case "k":
         this.state.navIndex = Math.max(0, this.state.navIndex - 1);
+
         return this.fixNavIndex(-1);
       case "down":
       case "j":
         this.state.navIndex = Math.min(items.length - 1, this.state.navIndex + 1);
+
         return this.fixNavIndex(1);
       case "right":
       case "left": {
         if (!item?.parent) return;
         const open = event.name === "right";
+
         if (item.kind === "layer") {
           if (open) this.state.navExpanded.delete(`-${item.key}`);
           else this.state.navExpanded.add(`-${item.key}`);
         } else if (open) this.state.navExpanded.add(item.key);
         else this.state.navExpanded.delete(item.key);
+
         return;
       }
+
       case "enter":
         if (!item) return;
+
         if (event.alt) {
           if (item.spec) this.open(item.spec.file, { line: item.spec.line - 1, col: 0 });
         } else if (item.code) this.jump(resolve(this.state.root, item.code.file), item.code.line);
         else if (item.spec) this.open(item.spec.file, { line: item.spec.line - 1, col: 0 });
         else if (item.parent) this.navKey({ ...event, name: item.expanded ? "left" : "right", alt: false });
+
         if (this.state.mode !== "code") this.state.focus = "editor";
+
         return;
       case "tab":
         return this.cycleFocus();
       case "escape":
         this.state.focus = "editor";
+
         return;
       case "z":
         return this.zoomScreen.openZoom(item?.id ?? null);
@@ -2029,6 +2399,7 @@ export class App {
         return this.quit();
       case "?":
         this.state.help = true;
+
         return;
       default:
         return;
@@ -2040,21 +2411,27 @@ export class App {
       case "up":
       case "k":
         this.state.filesIndex = Math.max(0, this.state.filesIndex - 1);
+
         return;
       case "down":
       case "j":
         this.state.filesIndex = Math.min(this.state.files.length - 1, this.state.filesIndex + 1);
+
         return;
       case "enter": {
         const file = this.state.files[this.state.filesIndex];
+
         if (file) this.open(file, { line: 0, col: 0 });
         this.state.focus = "editor";
+
         return;
       }
+
       case "tab":
         return this.cycleFocus();
       case "escape":
         this.state.focus = "editor";
+
         return;
       case "q":
         return this.quit();
@@ -2067,31 +2444,39 @@ export class App {
 
   private codeKey(event: KeyEvent): void {
     const code = this.state.code;
+
     if (!code) return;
     const page = Math.max(1, layout(this.state).editor.height - 2);
+
     switch (event.name) {
       case "up":
       case "k":
         code.top = Math.max(0, code.top - 1);
+
         return;
       case "down":
       case "j":
         code.top = Math.min(Math.max(0, code.lines.length - 1), code.top + 1);
+
         return;
       case "pageup":
         code.top = Math.max(0, code.top - page);
+
         return;
       case "pagedown":
         code.top = Math.min(Math.max(0, code.lines.length - 1), code.top + page);
+
         return;
       case "escape":
       case "q":
         return this.goBack();
       case "o":
         if (event.ctrl) return this.goBack();
+
         return;
       case "?":
         this.state.help = true;
+
         return;
       default:
         return;
@@ -2110,6 +2495,7 @@ export class App {
       const preview = record.params.kind === "spec-to-code" && record.params.output === "preview";
       // A code's help reads nothing, so no input makes it outdated.
       const node = (record.params.kind === "explain" && !isDiagnosticCode(record.params.subject)) || record.params.kind === "explain-llm" || record.params.kind === "explain-plan" || record.params.kind === "explain-batch";
+
       if (record.kind === "feature" || record.kind === "check" || record.kind === "parse" || record.kind === "trace-plan" || node || preview) record.outdated ??= reason;
     }
   }
@@ -2123,13 +2509,18 @@ export class App {
   private requestOperation(action: string, request: OperationRequest, then?: (record: OperationRecord) => void): void {
     if (this.state.activeOperation !== null) {
       this.state.message = "an operation is already running";
+
       return;
     }
+
     const step = this.saveStep(request);
+
     if (step === null) {
       this.startOperation(action, request, then);
+
       return;
     }
+
     this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request, then), step);
   }
 
@@ -2145,12 +2536,16 @@ export class App {
     const dir = `${this.specDir()}/`;
     const specs = (path: string): boolean => path === CONFIG_FILE || path.startsWith(dir);
     const harness = (path: string): boolean => (HARNESS_PATHS as readonly string[]).includes(path);
+
     // The chosen files and directories, as the paths name them from the root, and keylang.json.
     const chosen = (paths: readonly string[]): ((path: string) => boolean) => {
       const selected = paths.map((path) => toPosix(relative(this.state.root, resolve(this.state.root, path))));
+
       return (path) => path === CONFIG_FILE || selected.some((item) => item === "" || path === item || path.startsWith(`${item}/`));
     };
+
     const naming = (inputs: (path: string) => boolean, targets: string[] | null): { inputs: (path: string) => boolean; writes?: string[] } => ({ inputs, ...(targets !== null && this.dirtyInputs().some(inputs) ? { writes: targets } : {}) });
+
     switch (request.kind) {
       // Doctor reads settings only; a layout draft writes nothing and moves its layers into keylang.json's
       // buffer later, so a dirty keylang.json stays dirty (only an edit after the draft refuses the move).
@@ -2232,8 +2627,10 @@ export class App {
       case "spec-to-code": {
         const placed = specCodePlace(this.state.analysis, { id: request.id, into: request.into ?? "", mode: request.mode ?? "algo", output: request.output });
         const code = placed !== null && "file" in placed ? placed.file : "<the module's file>";
+
         return naming(specs, request.output === "proposal" ? [`${PROPOSALS_DIR}/${code}`, `${PROPOSALS_DIR}/<each new test file of its flows>`] : null);
       }
+
       // Nothing is computed again: no buffer is read or saved. The write is a decision of its own: the step names every file.
       case "apply-code":
         return { inputs: () => false, writes: request.candidate.targets.map((target) => target.file), writesNote: "Writes these files directly, as spec-to-code --apply (no proposal, no test is run):" };
@@ -2249,12 +2646,14 @@ export class App {
   /** What `keylang map` may write, as the step before it shows. */
   private mapTargets(): string[] {
     const dir = this.specDir();
+
     return [`${dir}/map/*.md`, `${dir}/${EXPLAINED_MAP_DIR}/*.md`, ".keylang/index.json", FACT_CACHE_FILE];
   }
 
   /** The classes of files `keylang init` may write, as its form and its save step name them. */
   private initTargets(): string[] {
     const config = existsSync(join(this.state.root, CONFIG_FILE)) ? [] : [CONFIG_FILE];
+
     return [...config, ".gitignore (.keylang/, unless a line lists it)", ...this.mapTargets(), baselinePath({ dir: this.specDir() }), "the harness files of the selection"];
   }
 
@@ -2262,6 +2661,7 @@ export class App {
   private writingNow(): boolean {
     if (this.committing === null) return false;
     this.state.message = `${this.committingLabel} is writing files: try again when it finishes; your text stays in the buffer`;
+
     return true;
   }
 
@@ -2275,11 +2675,13 @@ export class App {
     if (record.status !== "running" || this.closed) return;
     this.committing = record.id;
     this.committingLabel = operationLabel(record.params);
+
     if (this.settleTimer) {
       clearTimeout(this.settleTimer);
       this.settleTimer = null;
       this.analysisAfterCommit = true;
     }
+
     if (this.state.updating) this.analysisAfterCommit = true;
     this.generation++;
     this.state.updating = false;
@@ -2295,43 +2697,59 @@ export class App {
     const wasCommitting = this.committing !== null;
     this.committing = null;
     const touched = [...result.written, ...result.removed];
+
     if (!wasCommitting && touched.length === 0 && !this.analysisAfterCommit) return null;
     this.analysisAfterCommit = false;
     const kept: string[] = [];
+
     for (const path of touched) {
       const buffer = this.state.buffers.get(path);
+
       if (!buffer) continue;
+
       if (isDirty(buffer)) {
         kept.push(path);
         continue;
       }
+
       // A clean buffer takes the new bytes and their line ends now, even when the analysis after this fails.
       const raw = readText(resolve(this.state.root, path));
       buffer.disk = raw;
+
       if (raw === null) continue;
       const { text, eol } = splitEol(raw);
       buffer.eol = eol;
+
       if (text !== buffer.text) {
         setText(buffer, text);
         buffer.saved = text;
         this.inputsChanged(`${path} was written since this run`);
       }
     }
+
     this.clampCursor();
+
     for (const record of this.state.records) {
       if (record.kind === "map-check" && result.kind === "map" && touched.length > 0) record.outdated ??= "the map was written since this run";
       const file = record.result?.kind === "baseline" ? record.result.payload?.file : undefined;
+
       if (record.params.kind === "baseline" && record.params.check && file !== undefined && touched.includes(file)) record.outdated ??= "the baseline was written since this run";
+
       if (record.params.kind === "agents" && record.params.check && result.kind === "agents" && touched.length > 0) record.outdated ??= "the harness files were written since this run";
       // Init writes what map, baseline and agents write: their checks, and an init check, no longer hold.
       const checks = record.params.kind === "map-check" || (record.params.kind === "baseline" && record.params.check) || (record.params.kind === "agents" && record.params.check) || (record.params.kind === "init" && record.params.check);
+
       if (checks && result.kind === "init" && touched.length > 0) record.outdated ??= "keylang init wrote files since this run";
       const checked = record.params.kind === "fmt" && record.params.check && record.result?.kind === "fmt" ? (record.result.payload?.files ?? []) : [];
+
       if (checked.some((file) => touched.includes(file.path))) record.outdated ??= "the files were formatted since this run";
       const wired = record.params.kind === "wire" && record.params.check && record.result?.kind === "wire" ? record.result.payload?.file : undefined;
+
       if (wired !== undefined && touched.includes(wired)) record.outdated ??= "the wiring was written since this run";
     }
+
     this.reanalyze(false);
+
     return kept.length === 0 ? null : `${kept.join(", ")} changed on disk under unsaved edits: the text stays in the buffer (Ctrl+S twice overwrites, Ctrl+Z undoes)`;
   }
 
@@ -2347,8 +2765,10 @@ export class App {
   private startOperation(action: string, request: OperationRequest, then?: (record: OperationRecord) => void): OperationRecord | null {
     if (this.state.activeOperation !== null) {
       this.state.message = "an operation is already running";
+
       return null;
     }
+
     const record: OperationRecord = {
       id: this.nextRecord++,
       action,
@@ -2361,16 +2781,19 @@ export class App {
       outdated: null,
       progress: null,
     };
+
     const label = operationLabel(request);
     const buffer = this.state.current === null ? undefined : this.state.buffers.get(this.state.current);
     const origin: DraftOrigin = { path: this.state.current, mode: this.state.mode, version: buffer?.version ?? null, results: this.state.results.open, record: this.state.results.index };
     this.state.records.push(record);
+
     if (request.kind === "draft-layout") this.layoutBases.set(record.id, this.layoutBasis());
     this.state.activeOperation = record.id;
     this.state.message = `${label}: running…`;
     // One explicit operation at a time: no ghost request is made (or shown) until it ends.
     this.assist.suspendGhost();
     const controller = new AbortController();
+
     // The first outcome wins: a result after Cancel, or a second one, never changes the record.
     const settle = (result: OperationResult): void => {
       if (record.status !== "running") return;
@@ -2379,53 +2802,70 @@ export class App {
       record.finished = Date.now();
       this.state.activeOperation = null;
       this.cancelActive = null;
+
       // A result after the session closed is recorded only: no message, merge, open file or analysis follows it.
       if (this.closed) {
         this.committing = null;
+
         return;
       }
+
       const note = WRITING_KINDS.has(request.kind) ? this.endCommit(result) : null;
+
       // After init the saved keylang.json decides (endCommit read it again): with it, the start screen is done.
       if (request.kind === "init" && this.state.start !== null && this.state.config.kind !== "missing-config") this.state.start = null;
       // Completion adds a message; it never changes the open file.
       this.state.message = `${label}: ${recordSummary(record)} · F6 shows the report${note === null ? "" : ` · ${note}`}`;
       this.afterProposed(record, origin);
+
       if (request.kind === "apply-code") this.afterApplyCode(record);
+
       if (request.kind === "draft-layout") this.afterLayoutDraft(record);
       then?.(record);
       this.quitAfterSettle(record);
       this.draw();
     };
+
     this.cancelActive = () => {
       controller.abort();
+
       // During a commit the operation stops between two file steps; its result names what was written.
       if (this.committing === record.id) {
         record.progress = "cancelling after the current file";
         this.state.message = `${label}: cancelling after the current file…`;
         this.draw();
+
         return;
       }
+
       settle(resultWithout(request.kind, "cancelled", null));
     };
+
     const onProgress = ({ text }: { text: string }): void => {
       if (record.status !== "running") return;
       record.progress = text;
       this.state.message = `${label}: ${text}…`;
       this.draw();
     };
+
     // The session's analyzer serves an operation run on this thread; the worker has its own.
     let work: Promise<OperationResult>;
+
     try {
       const beforeCommit = (plan?: CommitPlan): CommitGate => {
         this.beginCommit(record);
+
         return this.commitGate(request, plan);
       };
+
       work = this.operations(record.params, { analyze: this.analyzer, signal: controller.signal, onProgress, ...(WRITING_KINDS.has(request.kind) ? { beforeCommit } : {}) });
     } catch (error) {
       work = Promise.reject(error);
     }
+
     this.track(work.then(settle, (error: unknown) => settle(resultWithout(request.kind, "failed", 2, errorText(error)))));
     this.draw();
+
     return record;
   }
 
@@ -2440,10 +2880,13 @@ export class App {
     const refuse = (targets: readonly string[], why: string): CommitGate => {
       const edited = targets.filter((target) => {
         const buffer = this.state.buffers.get(target);
+
         return buffer !== undefined && isDirty(buffer);
       });
+
       return edited.length > 0 ? { refused: edited.map((target) => `${target}: ${why}`) } : undefined;
     };
+
     switch (request.kind) {
       case "explain-llm":
       case "explain-batch":
@@ -2453,8 +2896,10 @@ export class App {
         return refuse(plan?.targets ?? [], "open with unsaved edits; save or undo them, then export again");
       case "apply-code": {
         const conflicts = this.applyConflicts(request.candidate.targets.map((target) => target.file), false);
+
         return conflicts.length > 0 ? { refused: conflicts } : undefined;
       }
+
       case "draft-flow":
       case "draft-rules":
       case "code-to-spec":
@@ -2462,8 +2907,10 @@ export class App {
         if (request.output !== "proposal") return undefined;
         // The operation names the target it resolved; code-to-spec's default target depends on the snapshot it read.
         const targets = plan?.targets ?? (request.kind === "draft-rules" ? [rulesDraftTarget(this.merges.specDir(), request.into ?? "")] : request.kind === "draft-flow" ? [flowDraftTarget(this.merges.specDir(), { trigger: request.trigger, name: request.name ?? "", into: request.into ?? "" }).target] : []);
+
         return refuse(targets, "edited in this session while the draft was prepared; save or undo the edits, then draft again");
       }
+
       default:
         return undefined;
     }
@@ -2473,8 +2920,10 @@ export class App {
   private cancelOperation(): void {
     if (!this.cancelActive) {
       this.state.message = "no operation is running";
+
       return;
     }
+
     this.cancelActive();
   }
 
@@ -2486,6 +2935,7 @@ export class App {
    */
   private afterProposed(record: OperationRecord, origin: DraftOrigin): void {
     const result = record.result;
+
     switch (result?.kind) {
       case "draft-flow": {
         if (result.status !== "completed" || result.payload?.proposal == null) return;
@@ -2494,6 +2944,7 @@ export class App {
         // What the proposal does not show: IDs still unknown, and the model's lines that did not parse where they stood.
         const notes = model === null ? "" : [...(model.unknown.length > 0 ? [`still unknown after ${model.rounds} round(s): ${model.unknown.join(", ")}`] : []), ...(model.dropped.length > 0 ? [`dropped from the model's draft: ${model.dropped.join("; ")}`] : [])].join("; ");
         const agent = record.action === AGENT_DRAFT;
+
         return this.afterProposal(origin, {
           target,
           report: false,
@@ -2502,34 +2953,45 @@ export class App {
           waits: agent ? `agent: the draft of flow ${candidate.name} is a proposal for ${target}: m merges it${notes ? `; ${notes}` : ""}` : `draft flow: ${PROPOSALS_DIR}/${target} waits: m, Proposals or Enter in F6 opens MERGE${notes ? ` · ${notes}` : ""}`,
         });
       }
+
       case "draft-rules": {
         // Its conflicts are named, never taken for the workspace's verdict.
         if (result.status !== "completed" || result.payload === null) return;
         const { candidate, model } = result.payload;
         const conflicts = model === null || model.conflicts.length === 0 ? "" : ` · ${model.conflicts.length} conflict(s) with the code now: F6 names them`;
+
         if (result.payload.proposal === null) {
           if (conflicts !== "") this.state.message = `${this.state.message ?? ""}${conflicts}`;
+
           return;
         }
+
         const target = candidate.target;
+
         return this.afterProposal(origin, { target, report: false, opened: `draft rules: ${PROPOSALS_DIR}/${target} · MERGE: decide the hunks, w writes ${target}${conflicts}`, waits: `draft rules: ${PROPOSALS_DIR}/${target} waits: m, Proposals or Enter in F6 opens MERGE${conflicts}` });
       }
+
       case "code-to-spec": {
         // Every flow it proposes is named, and the model's notes.
         if (result.status !== "completed" || result.payload === null) return;
         const { candidate, model, described } = result.payload;
         const review = described.length > 0 ? ` · already in flows (review those): ${described.join(", ")}` : "";
+
         if (candidate === null || result.payload.proposal === null) {
           if (review !== "") this.state.message = `${this.state.message ?? ""}${review}`;
+
           return;
         }
+
         const flows = candidate.flows.map((flow) => flow.name).join(", ");
         const unknown = model === null ? [] : model.flows.flatMap((flow) => flow.unknown);
         const dropped = model === null ? 0 : model.flows.reduce((sum, flow) => sum + flow.dropped.length, 0);
         const notes = `${review}${unknown.length > 0 ? ` · still unknown: ${unknown.join(", ")}` : ""}${dropped > 0 ? ` · ${dropped} line(s) dropped from the model's drafts: F6 names them` : ""}`;
         const target = candidate.target;
+
         return this.afterProposal(origin, { target, report: false, opened: `code-to-spec: ${PROPOSALS_DIR}/${target} (${flows}) · MERGE: decide the hunks, w writes ${target}${notes}`, waits: `code-to-spec: ${PROPOSALS_DIR}/${target} (${flows}) waits: m, Proposals or Enter in F6 opens MERGE${notes}` });
       }
+
       case "spec-to-code": {
         // The code file opens; the tests wait next. A run that stopped opens nothing: what it proposed waits. A candidate is never the feature done.
         if (result.payload === null || result.payload.proposals.length === 0) return;
@@ -2538,6 +3000,7 @@ export class App {
         const next = rest.length > 0 ? ` · then m or Proposals: ${rest.join(", ")}` : "";
         const after = result.payload.mode === "llm" ? "the model's code is a candidate: review it, run its tests, then check" : "run check after: the stub is not the feature done";
         const partial = result.status === "completed" ? "" : ` · ${result.status}: only these were proposed`;
+
         return this.afterProposal(origin, {
           target: result.status === "completed" ? code! : null,
           report: false,
@@ -2545,17 +3008,22 @@ export class App {
           waits: `spec-to-code: ${files.length} proposal(s) wait: ${files.join(", ")} · m, Proposals or Enter in F6 opens them${partial}`,
         });
       }
+
       case "feature-questions": {
         // The model's questions open in MERGE from the readiness report they were asked from, too.
         if (result.status !== "completed" || result.payload === null) return;
         const { file, questions, dropped, proposal, agent } = result.payload;
         const left = dropped > 0 ? ` · ${dropped} line(s) of the answer left out: no \`- ? …\` question, or past the fifth` : "";
+
         if (proposal === null) {
           this.state.message = `questions: ${agent} asked no question, nothing proposed${left}`;
+
           return;
         }
+
         return this.afterProposal(origin, { target: file, report: true, opened: `questions: ${questions.length} proposed for ${file}${left} · MERGE: decide the hunks, w writes ${file}`, waits: `questions: ${proposal} waits: m, Proposals or Enter in F6 opens MERGE${left}` });
       }
+
       default:
         return;
     }
@@ -2570,14 +3038,18 @@ export class App {
    */
   private afterProposal(origin: DraftOrigin, proposal: { target: string | null; report: boolean; opened: string; waits: string }): void {
     const { target, report } = proposal;
+
     if (target !== null && this.stillWhereStarted(origin, report)) {
       if (report && origin.results) this.results.closeResults();
       this.merges.open(target);
+
       if (this.state.merge?.path === target) {
         this.state.message = proposal.opened;
+
         return;
       }
     }
+
     this.state.message = proposal.waits;
   }
 
@@ -2592,12 +3064,14 @@ export class App {
     const results = this.state.results;
     const panel = report && origin.results ? results.open && !results.viewing && results.entry === "record" && results.index === origin.record : !results.open;
     const current = this.state.current === origin.path && this.state.mode === origin.mode && (origin.path === null || this.state.buffers.get(origin.path)?.version === origin.version);
+
     return panel && current && this.state.merge === null && this.state.prompt === null && this.state.barrier === null && !this.state.help && !this.state.clip.chat.focused;
   }
 
   /** The session's operation worker, started on first use; after a failure the next request starts a new one. */
   private worker(): OperationWorker {
     this.operationWorker ??= new OperationWorker();
+
     return this.operationWorker;
   }
 
@@ -2610,8 +3084,10 @@ export class App {
   private askFeatureQuestions(slug: string): void {
     if (this.agentName() === null) {
       this.state.message = `ask the model for questions: ${NO_AGENT_REASON}`;
+
       return;
     }
+
     this.requestOperation("feature-questions", { kind: "feature-questions", root: this.state.root, slug });
   }
 
@@ -2620,14 +3096,18 @@ export class App {
   /** The `# flow <name>` section the cursor is in, or null. */
   private flowAtCursor(): string | null {
     const doc = this.buffer()?.doc;
+
     if (!doc) return null;
     const offset = this.offsetOf(this.state.cursor);
     let found: string | null = null;
+
     for (const section of doc.sections) {
       const start = section.heading?.span.start.offset ?? 0;
+
       if (start > offset) break;
       found = section.kind === "flow" && section.name ? section.name.value : null;
     }
+
     return found;
   }
 
@@ -2636,6 +3116,7 @@ export class App {
   /** The effective agent (`KEYLANG_AGENT`, agents.json, the saved keylang.json as the last analysis read it), or null. Credentials are checked by the operation. */
   private agentName(): string | null {
     const analysis = this.state.analysis;
+
     return analysis ? selectedAgent(analysis.config.agent) : null;
   }
 
@@ -2650,43 +3131,60 @@ export class App {
   private draftAtCursor(): void {
     const buffer = this.buffer();
     const analysis = this.state.analysis;
+
     if (!buffer || !analysis?.snapshot) {
       this.state.message = analysis ? "no spec open" : "analysis is still running";
+
       return;
     }
+
     if (this.state.activeOperation !== null) {
       this.state.message = "an operation is already running";
+
       return;
     }
+
     // The draft is proposed against the file on disk; unsaved edits would come back as hunks that revert them.
     if (isDirty(buffer)) {
       this.state.message = `${buffer.path} has unsaved changes: save (Ctrl+S) or undo them before asking for a draft`;
+
       return;
     }
+
     if (this.proposalWaiting(buffer.path)) {
       this.state.message = `a proposal for ${buffer.path} is waiting: m merges it before a new draft`;
+
       return;
     }
+
     const name = this.flowAtCursor();
     const trigger = name === null ? null : this.triggerAtCursor();
+
     if (name === null || trigger === null) {
       this.state.message = "Ctrl+Space drafts a flow: put the cursor in a `# flow` with a `trigger`";
+
       return;
     }
+
     const pack = this.contextPack();
     const request: DraftFlowRequest = { kind: "draft-flow", root: this.state.root, trigger, name, into: buffer.path, output: "proposal", pending: "refuse", mode: "hybrid", ...(pack ? { context: contextText(pack) } : {}) };
     this.state.message = `agent: drafting flow ${name}…`;
+
     const work = (async () => {
       const { llmClient } = await import("../llm.ts");
       const setup = llmClient(analysis.config.agent, { root: this.state.root });
+
       if ("missing" in setup) {
         this.state.message = `agent: ${setup.missing}`;
+
         return;
       }
+
       if (!this.closed) this.requestOperation(AGENT_DRAFT, request);
     })().catch((error: unknown) => {
       this.state.message = `agent: ${errorText(error)}`;
     });
+
     this.track(work);
   }
 
@@ -2694,6 +3192,7 @@ export class App {
   private triggerAtCursor(): string | null {
     const flow = this.flowAtCursor();
     const found = flow === null ? undefined : this.state.analysis?.spec.flows.find((item) => item.name === flow && item.file === this.state.current);
+
     return found?.triggers[0]?.target.target ?? null;
   }
 
@@ -2701,6 +3200,7 @@ export class App {
   private proposalWaiting(path: string): boolean {
     try {
       lstatSync(join(this.state.root, PROPOSALS_DIR, path));
+
       return true;
     } catch {
       return false;
@@ -2712,8 +3212,10 @@ export class App {
   /** The planned fns of the current analysis that no code implements yet: the IDs spec-to-code builds. */
   private plannedFns(): string[] {
     const analysis = this.state.analysis;
+
     if (!analysis) return [];
     const nodes = analysis.snapshot?.nodes ?? {};
+
     return [...new Set(analysis.spec.planned.filter((item) => item.decl === "fn" && nodes[item.id] === undefined).map((item) => item.id))].sort(compareText);
   }
 
@@ -2727,36 +3229,49 @@ export class App {
    */
   private applyCandidate(record: OperationRecord | undefined): void {
     const result = record?.result;
+
     if (record?.status === "running") {
       this.state.message = "this operation is still running";
+
       return;
     }
+
     if (!record || result?.kind !== "spec-to-code" || result.payload === null || record.status !== "completed") {
       this.state.message = "a applies a spec-to-code candidate: select a finished spec-to-code run";
+
       return;
     }
+
     if (record.outdated !== null) {
       this.state.message = `spec-to-code --apply: not started: the candidate is outdated (${record.outdated}); Enter builds it again`;
+
       return;
     }
+
     const { candidate, mode } = result.payload;
     const conflicts = this.applyConflicts(candidate.targets.map((target) => target.file), true);
+
     if (conflicts.length > 0) {
       this.state.message = `spec-to-code --apply: not started: ${conflicts.join("; ")}`;
+
       return;
     }
+
     this.requestOperation("apply-code", { kind: "apply-code", root: this.state.root, candidate, mode, pending: "refuse" });
   }
 
   /** What in this session stops applying `files`: an open MERGE on one, unsaved edits, and (before the run) a waiting proposal. */
   private applyConflicts(files: readonly string[], proposals: boolean): string[] {
     const conflicts: string[] = [];
+
     for (const file of files) {
       const buffer = this.state.buffers.get(file);
+
       if (this.state.merge?.path === file) conflicts.push(`MERGE is open on ${file}: write it (w) or leave it (Esc) first`);
       else if (buffer !== undefined && isDirty(buffer)) conflicts.push(`${file} has unsaved edits: save or undo them first; they are kept`);
       else if (proposals && existsSync(join(this.state.root, PROPOSALS_DIR, file))) conflicts.push(`a proposal for ${file} is waiting: merge it in MERGE (Enter in F6, m or Proposals) instead; applying never removes it`);
     }
+
     return conflicts;
   }
 
@@ -2767,13 +3282,16 @@ export class App {
    */
   private afterApplyCode(record: OperationRecord): void {
     const result = record.result;
+
     if (result?.kind !== "apply-code") return;
     const written = new Set(result.written);
+
     if (written.size > 0) {
       for (const other of this.state.records) {
         if (other.result?.kind === "spec-to-code" && other.result.payload?.candidate.targets.some((target) => written.has(target.file))) other.outdated ??= "its files were written since this run";
       }
     }
+
     if (result.status === "completed") this.state.message = `spec-to-code --apply: ${result.written.join(", ")} written · no test was run; run them, then check · u undoes only the last MERGE, not this write`;
   }
 
@@ -2787,14 +3305,19 @@ export class App {
   /** Why the layers of a layout draft no longer fit the session, or null: keylang.json was edited, saved or changed on disk, or the code moved on. */
   private layoutStale(record: OperationRecord): string | null {
     const basis = this.layoutBases.get(record.id);
+
     if (!basis) return "the draft's basis is unknown";
     const now = this.layoutBasis();
     const buffer = this.state.buffers.get(CONFIG_FILE);
     // A buffer opened after the start is an edit only when its text is not the file the draft read.
     const edited = basis.version !== null ? now.version !== basis.version : buffer !== undefined && (buffer.newFile || buffer.text !== splitEol(basis.disk ?? "").text);
+
     if (edited) return `${CONFIG_FILE} was edited in this session since the draft started`;
+
     if (now.disk !== basis.disk) return `${CONFIG_FILE} changed on disk since the draft started`;
+
     if (basis.snapshot !== null && now.snapshot !== null && now.snapshot !== basis.snapshot) return "the code snapshot changed since the draft started";
+
     return null;
   }
 
@@ -2802,11 +3325,14 @@ export class App {
   private afterLayoutDraft(record: OperationRecord): void {
     if (record.result?.kind !== "draft-layout" || record.status !== "completed" || record.result.payload === null) return;
     const stale = this.layoutStale(record);
+
     if (stale !== null) {
       record.outdated ??= stale;
       this.state.message = `draft map: outdated: ${stale}; your text is kept · Enter in F6 drafts again`;
+
       return;
     }
+
     this.state.message = `draft map: ${Object.keys(record.result.payload.layers).length} layer(s), nothing written · F6, Enter moves them into ${CONFIG_FILE}'s buffer`;
   }
 
@@ -2821,17 +3347,24 @@ export class App {
    */
   private moveLayers(record: OperationRecord): void {
     const result = record.result;
+
     if (result?.kind !== "draft-layout" || result.payload === null) return;
+
     if (this.state.merge !== null) {
       this.state.message = MERGE_REASON;
+
       return;
     }
+
     const stale = this.layoutStale(record);
+
     if (stale !== null) {
       record.outdated = stale;
       this.state.message = `draft map: outdated: ${stale}; nothing moved, your text is kept · Enter drafts again`;
+
       return;
     }
+
     const { layers, preview } = result.payload;
     const existing = this.state.buffers.get(CONFIG_FILE);
     const onDisk = existing === undefined && existsSync(join(this.state.root, CONFIG_FILE));
@@ -2839,25 +3372,33 @@ export class App {
     // Without keylang.json the base is the config `draft map` printed: the inferred one, as `init` writes it.
     const base = existing === undefined && !onDisk ? preview : buffer.text;
     const moved = withLayers(CONFIG_FILE, base, layers);
+
     if ("error" in moved) {
       this.results.closeResults();
       this.openConfig(moved.error, true);
       this.state.message = `draft map: ${moved.error} — nothing was changed; fix it, then draft again (Enter in F6)`;
+
       return;
     }
+
     if (moved.text === buffer.text && !buffer.newFile) {
       this.state.message = `draft map: ${CONFIG_FILE} already has these layers; nothing changed`;
+
       return;
     }
+
     if (!this.state.buffers.has(CONFIG_FILE)) this.state.buffers.set(CONFIG_FILE, buffer);
+
     if (buffer.newFile && !this.state.files.includes(CONFIG_FILE)) this.state.files = sortFiles([...this.state.files, CONFIG_FILE], this.state.analysis);
     this.results.closeResults();
     this.open(CONFIG_FILE, { line: 0, col: 0 });
     // In the editor, as after any edit: Ctrl+S and Ctrl+Z act on it at once.
     this.state.mode = "edit";
+
     // One edit: Ctrl+Z gives the text back as it was before the move.
     if (this.state.lastMerge?.path === CONFIG_FILE) this.state.lastMerge = null;
     buffer.undo.push({ text: buffer.text, cursor: { ...this.state.cursor } });
+
     if (buffer.undo.length > 200) buffer.undo.shift();
     setText(buffer, moved.text);
     const at = moved.text.split("\n").findIndex((line) => line.startsWith('  "layers"'));
@@ -2868,11 +3409,13 @@ export class App {
     // The move is done; the record does not move the same layers twice.
     record.outdated = `its layers were moved into ${CONFIG_FILE}'s buffer`;
     let invalid: string | null = null;
+
     try {
       parseConfig(CONFIG_FILE, moved.text);
     } catch (error) {
       invalid = errorText(error);
     }
+
     this.state.message = `draft map: layers moved into ${CONFIG_FILE} (unsaved): Ctrl+S saves and analyses with them, Ctrl+Z undoes${invalid === null ? "" : ` · still invalid apart from layers: ${invalid}`}`;
   }
 
@@ -2888,7 +3431,9 @@ export class App {
   private refreshNewSpec(): void {
     const prompt = this.state.prompt;
     const form = prompt?.form;
+
     if (prompt?.kind !== "new-spec" || !form) return;
+
     if (form.field === "kind") {
       const query = prompt.text.toLowerCase();
       const kinds = SPEC_KINDS.filter((entry) => entry.kind.includes(query));
@@ -2897,19 +3442,24 @@ export class App {
       prompt.notes = kinds.map((entry) => `Enter: then the path under ${defaultSpecPath(entry.kind, this.merges.specDir()) || "."} · root ${this.state.root}`);
       prompt.index = 0;
       prompt.note = prompt.notes[0] ?? "no such kind: flow, rules, wiring, feature, blank";
+
       return;
     }
+
     prompt.items = [];
     prompt.ids = [];
     prompt.notes = [];
+
     if (form.field === "path") {
       const path = prompt.text.trim();
       const problem = newSpecProblem(this.state.root, this.merges.specDir(), path, (p) => this.generatedDoc(p));
       const exists = this.state.buffers.has(path) || existsSync(resolve(this.state.root, path));
       // The verdict first: a narrow screen cuts the end of the line, and the root is the longest part.
       prompt.note = `${problem !== null ? `cannot use: ${problem}` : exists ? "exists: Enter opens it as it is" : "new file: nothing is written until Ctrl+S"} · root ${this.state.root}`;
+
       return;
     }
+
     const problem = flowNameProblem(prompt.text.trim());
     prompt.note = problem ?? `# flow ${prompt.text.trim()} in ${form.path}`;
   }
@@ -2918,42 +3468,58 @@ export class App {
   private submitNewSpec(): void {
     const prompt = this.state.prompt!;
     const form = prompt.form!;
+
     if (form.field === "kind") {
       const kind = prompt.ids?.[prompt.index] as NewSpecForm["kind"] | undefined;
+
       if (kind === undefined) return;
       form.kind = kind;
       form.field = "path";
       prompt.text = defaultSpecPath(kind, this.merges.specDir());
+
       return this.refreshNewSpec();
     }
+
     if (form.field === "path") {
       const path = prompt.text.trim();
       const problem = newSpecProblem(this.state.root, this.merges.specDir(), path, (p) => this.generatedDoc(p));
+
       if (problem !== null) {
         this.state.message = `new spec: ${path || "(no path)"}: ${problem}; nothing created`;
+
         return;
       }
+
       // An existing file (or a buffer already open for it) opens as it is; nothing is cleared.
       if (this.state.buffers.has(path) || existsSync(resolve(this.state.root, path))) {
         this.state.prompt = null;
         this.open(path, { line: 0, col: 0 });
         this.state.message = `${path}: exists; opened as it is`;
+
         return;
       }
+
       form.path = path;
+
       if (form.kind === "flow") {
         form.field = "name";
         prompt.text = suggestedFlowName(path);
+
         return this.refreshNewSpec();
       }
+
       return this.createSpec(form.kind, path, form.kind === "feature" ? basename(path, ".md") : "");
     }
+
     const name = prompt.text.trim();
     const problem = flowNameProblem(name);
+
     if (problem !== null) {
       this.state.message = `new spec: ${problem}`;
+
       return;
     }
+
     this.createSpec("flow", form.path, name);
   }
 
@@ -2979,7 +3545,9 @@ export class App {
    */
   private mergeOrPick(): void {
     const proposals = this.merges.scan();
+
     if (this.state.current !== null && proposals.includes(this.state.current)) return this.merges.open(this.state.current);
+
     if (proposals.length > 0) return this.openProposals();
     this.merges.open();
   }
@@ -2988,10 +3556,13 @@ export class App {
   private openProposals(prefer: readonly string[] = []): void {
     this.proposalEntries = this.merges.entries();
     this.state.proposals = this.merges.scan();
+
     if (this.proposalEntries.length === 0) {
       this.state.message = `no proposals under ${PROPOSALS_DIR}/`;
+
       return;
     }
+
     this.state.prompt = { kind: "proposal", text: "", items: [], ids: [], notes: [], index: 0 };
     // `prefer`: the targets of one operation, the first still listed selected.
     this.refreshProposalPrompt(prefer.find((path) => this.proposalEntries.some((entry) => entry.path === path)));
@@ -3000,6 +3571,7 @@ export class App {
   /** The list entries whose path contains the typed text, in POSIX path order, each with its note. */
   private refreshProposalPrompt(selected?: string): void {
     const prompt = this.state.prompt;
+
     if (prompt?.kind !== "proposal") return;
     const query = prompt.text.toLowerCase();
     const entries = this.proposalEntries.filter((entry) => entry.path.toLowerCase().includes(query));
@@ -3020,15 +3592,19 @@ export class App {
   private submitProposal(): void {
     const prompt = this.state.prompt!;
     const path = prompt.ids?.[prompt.index];
+
     if (path === undefined) return;
     this.proposalEntries = this.merges.entries();
     this.state.proposals = this.merges.scan();
     const entry = this.proposalEntries.find((candidate) => candidate.path === path);
     this.refreshProposalPrompt(path);
+
     if (!entry) {
       prompt.note = `${path}: the proposal is gone`;
+
       return;
     }
+
     if (entry.problem !== null) return;
     this.state.prompt = null;
     this.merges.open(path);
@@ -3041,23 +3617,29 @@ export class App {
     // While a finding's target is shown (viewing), the keys and the wheel go to it instead.
     if (this.state.results.open && !this.state.results.viewing) {
       if (event.action === "wheel-up" || event.action === "wheel-down") this.results.scrollReport(event.action === "wheel-up" ? -3 : 3);
+
       return;
     }
+
     // The start screen covers the editor: a click never moves the hidden cursor.
     if (this.state.start !== null) return;
+
     // The clip and its window are over the editor and the panels.
     if (this.clip.mouse(event)) return;
     const area = layout(this.state);
     const inside = (rect: { x: number; y: number; width: number; height: number } | null): boolean => rect !== null && event.x >= rect.x && event.x < rect.x + rect.width && event.y >= rect.y && event.y < rect.y + rect.height;
     // With the context panel open, the panel on the right is the context, not the navigation it covers.
     const context = this.state.context.open && inside(area.nav);
+
     // The zoom screen covers the editor: its rows, not the hidden buffer, take the wheel and the clicks.
     if (this.state.mode === "zoom" && inside(area.editor)) return this.zoomScreen.zoomMouse(event, area.editor);
+
     if (event.action === "wheel-up" || event.action === "wheel-down") {
       const delta = event.action === "wheel-up" ? -3 : 3;
       // Like every list the wheel scrolls, it stops with the last row at the top.
       const scroll = (top: number, rows: number): number => Math.max(0, Math.min(rows - 1, top + delta));
       const merge = this.state.merge;
+
       if (this.state.mode === "code" && this.state.code) this.state.code.top = scroll(this.state.code.top, this.state.code.lines.length);
       else if (this.state.mode === "merge" && merge) merge.top = scroll(merge.top, mergeRows(merge.base, merge.hunks).length);
       else if (context) this.state.context.index = Math.max(0, Math.min(Math.max(0, (this.contextPack()?.items.length ?? 1) - 1), this.state.context.index + delta));
@@ -3067,62 +3649,87 @@ export class App {
         this.state.cursor.line = Math.max(this.state.top, Math.min(this.state.cursor.line, this.state.top + area.editor.height - 2));
         this.clampCursor();
       }
+
       this.state.hover = null;
+
       return;
     }
+
     if (event.action === "move") {
       if (this.state.mode !== "view" && this.state.mode !== "edit") return;
       const cell = this.cellAt(event.x, event.y);
+
       if (!cell) {
         if (this.state.hover?.source === "mouse") this.state.hover = null;
+
         return;
       }
+
       this.state.hover = this.hoverAt(cell, event.x, event.y, "mouse");
+
       return;
     }
+
     if (event.action !== "down" || event.button !== 0) return;
     this.state.message = null;
+
     if (this.state.mode === "merge") {
       this.state.message = MERGE_CLICK;
+
       return;
     }
+
     if (context && area.nav) {
       const row = event.y - area.nav.y - 1;
       const index = contextTop(this.state.context.index, area.nav) + row;
+
       if (row < 0 || index >= (this.contextPack()?.items.length ?? 0)) return;
       this.state.context.index = index;
+
       if (this.state.mode === "view" || this.state.mode === "read") this.state.focus = "context";
+
       return;
     }
+
     if (inside(area.nav) && area.nav) {
       const row = event.y - area.nav.y - 1;
       const index = this.state.navTop + row;
+
       // The title, the space below the last item and the explanation under the list open nothing.
       if (row < 0 || row >= navListHeight(this.state, area.nav) - 1 || index >= navEntries(this.state).length) return;
+
       // As F3 and the context panel: the focus moves only where keys go to the focused panel; while
       // editing the keys still type, so the focus (and with it the cursor) stays in the editor.
       if (this.state.mode === "view" || this.state.mode === "read") this.state.focus = "nav";
       this.state.navIndex = index;
       this.fixNavIndex(1);
       const item = navEntries(this.state)[this.state.navIndex];
+
       if (item?.parent && event.x - area.nav.x <= item.depth * 2 + 2) return this.navKey({ type: "key", name: item.expanded ? "left" : "right", ctrl: false, alt: false, shift: false });
+
       return this.navKey({ type: "key", name: "enter", ctrl: false, alt: event.alt, shift: false });
     }
+
     if (inside(area.files) && area.files) {
       const row = event.y - area.files.y - 1;
       const index = filesTop(this.state, area.files) + row;
+
       if (row < 0 || index >= this.state.files.length) return;
       this.state.filesIndex = index;
       this.state.focus = "files";
+
       return this.filesKey({ type: "key", name: "enter", ctrl: false, alt: false, shift: false });
     }
+
     const cell = this.cellAt(event.x, event.y);
+
     if (!cell) return;
     this.state.focus = "editor";
     this.state.cursor = cell;
     this.state.selection = null;
     this.state.completion = null;
     this.keepVisible();
+
     // Ctrl+click goes to the code, like Enter.
     if (event.ctrl && this.state.mode === "view") this.goToCode();
   }
@@ -3143,7 +3750,9 @@ export class App {
     const close = (): void => {
       this.state.prompt = null;
     };
+
     const selected = (): string | undefined => prompt.ids?.[prompt.index];
+
     switch (prompt.kind) {
       case "search":
         return {
@@ -3166,11 +3775,14 @@ export class App {
           moved: () => noteOfSelection(prompt),
           submit: () => {
             const id = selected();
+
             // Nothing matches: the palette stays with the query, so it can be corrected.
             if (id === undefined) {
               this.state.message = `no action matches "${prompt.text}": Backspace edits the query, Esc closes`;
+
               return;
             }
+
             close();
             this.runAction(id);
           },
@@ -3181,6 +3793,7 @@ export class App {
           submit: () => {
             close();
             const id = selected();
+
             if (id && this.state.mode === "zoom") this.zoomScreen.openZoom(id);
             else if (id) this.goToNode(id);
           },
@@ -3191,6 +3804,7 @@ export class App {
           submit: () => {
             close();
             const name = selected();
+
             if (name && this.state.zoom) this.state.zoom.flow = name;
           },
         };
@@ -3233,6 +3847,7 @@ export class App {
   private findNodes(): void {
     const prompt = this.state.prompt;
     const analysis = this.state.analysis;
+
     if (prompt?.kind !== "node") return;
     const hits = analysis ? searchNodes(analysis, this.state.briefs, { query: prompt.text, limit: NODE_HITS, fuzzy: true }) : [];
     prompt.items = hits.map((hit) => `${hit.id}${hit.explanation ? `  ${hit.explanation.text}` : ""}`);
@@ -3242,10 +3857,13 @@ export class App {
 
   private promptKey(event: KeyEvent): void {
     const prompt = this.state.prompt!;
+
     if (event.name === "escape") {
       this.state.prompt = null;
+
       return;
     }
+
     promptKey(prompt, this.keysFor(prompt), event);
   }
 
@@ -3258,6 +3876,7 @@ export class App {
   /** The catalogue entries matching the prompt text, as parallel item arrays. */
   private refreshPalette(): void {
     const prompt = this.state.prompt;
+
     if (prompt?.kind !== "palette") return;
     const entries = matchActions(catalog(this.state), prompt.text);
     prompt.items = entries.map((entry) => actionLabel(entry.action, this.state.mode));
@@ -3274,15 +3893,21 @@ export class App {
    */
   private runAction(id: string): void {
     const entry = catalog(this.state).find((candidate) => candidate.action.id === id);
+
     if (!entry) return;
+
     if (entry.reason !== null) {
       this.state.message = `${entry.action.label}: ${entry.reason}`;
+
       return;
     }
+
     const focusable = (this.state.mode === "view" || this.state.mode === "read") && !chatTakesKeys(this.state);
+
     switch (id) {
       case "check":
         if (this.state.start !== null) return this.browse();
+
         return this.reanalyze();
       case "browse":
         return this.browse();
@@ -3316,9 +3941,12 @@ export class App {
         return this.exports.openC4Prompt();
       case "feature-questions": {
         const slug = this.state.current === null ? null : featureSlugOf(this.state.current, this.specDir());
+
         if (slug !== null) this.askFeatureQuestions(slug);
+
         return;
       }
+
       case "full-check":
         return this.runs.openCheckPrompt();
       case "explain-edge":
@@ -3369,6 +3997,7 @@ export class App {
         return this.toggleMap();
       case "search":
         this.state.prompt = { kind: "search", text: this.state.search ?? "", items: [], index: 0 };
+
         return;
       case "go-to-code":
         return this.goToCode();
@@ -3392,26 +4021,35 @@ export class App {
         return this.assist.voice();
       case "undo-merge":
         if (this.writingNow()) return;
+
         return this.merges.undo();
       case "apply-code": {
         const found = applyRecord(this.state);
+
         if ("record" in found) return this.applyCandidate(found.record);
         this.state.message = `${entry.action.label}: ${found.reason}`;
+
         return;
       }
+
       case "reading": {
         if (!this.buffer()) return;
         this.state.mode = "read";
         this.state.hover = null;
+
         return;
       }
+
       case "edit": {
         const buffer = this.buffer();
+
         if (!buffer) return;
         this.state.mode = "edit";
         this.state.hover = null;
+
         return;
       }
+
       case "merge":
         return this.mergeOrPick();
       case "proposals":
@@ -3420,11 +4058,13 @@ export class App {
         return this.openNewSpec();
       case "help":
         this.state.help = true;
+
         return;
       case "clip-reset":
         return this.clip.reset();
       case "version":
         this.state.message = `keylang ${packageVersion()}`;
+
         return;
       case "quit":
         return this.quit();
@@ -3435,17 +4075,22 @@ export class App {
 
   private findNext(): void {
     const query = this.state.search;
+
     if (!query) return;
     const lines = this.lines();
+
     for (let step = 1; step <= lines.length; step++) {
       const line = (this.state.cursor.line + step) % lines.length;
       const at = lines[line]!.toLowerCase().indexOf(query.toLowerCase());
+
       if (at !== -1) {
         this.state.cursor = { line, col: graphemes(lines[line]!.slice(0, at)).length };
         this.keepVisible();
+
         return;
       }
     }
+
     this.state.message = `not found: ${query}`;
   }
 
@@ -3453,25 +4098,33 @@ export class App {
 
   private textToSpec(): void {
     const buffer = this.buffer();
+
     if (!buffer?.doc || buffer.readOnly) return;
     const lines = buffer.text.split("\n");
     let from: number;
     let to: number;
+
     if (this.state.selection !== null) {
       from = Math.min(this.state.selection, this.state.cursor.line);
       to = Math.max(this.state.selection, this.state.cursor.line);
     } else {
       // The paragraph of free text around the cursor.
       const prose = (line: string | undefined): boolean => line !== undefined && line.trim() !== "" && !/^\s*(-\s|#|```|<!--)/.test(line);
+
       if (!prose(lines[this.state.cursor.line])) {
         this.state.message = "text → spec: put the cursor on free text or select lines (Shift+↑↓)";
+
         return;
       }
+
       from = this.state.cursor.line;
       to = this.state.cursor.line;
+
       while (prose(lines[from - 1])) from--;
+
       while (prose(lines[to + 1])) to++;
     }
+
     const text = lines.slice(from, to + 1).join("\n");
     const indent = /^\s*/.exec(lines[from] ?? "")![0].length;
     const nodes = this.state.analysis?.snapshot?.nodes ?? {};
@@ -3479,19 +4132,26 @@ export class App {
     const known = [...Object.keys(nodes), ...planned.map((item) => item.id)];
     const callables = [...Object.keys(nodes).filter((id) => nodes[id]!.kind === "fn"), ...planned.filter((item) => item.kind === "fn").map((item) => item.id)];
     const items = textToSpec(text, indent, known, callables);
+
     if (items.length === 0) {
       this.state.message = "text → spec: no step, when, emits or invariant found in the text";
+
       return;
     }
+
     // Items already right after the text came from an earlier Ctrl+G: only the missing ones are proposed.
     let end = to + 1;
+
     while (end < lines.length && /^\s*-\s/.test(lines[end]!)) end++;
     const present = new Set(lines.slice(to + 1, end).map((line) => line.trimEnd()));
     const missing = items.filter((item) => !present.has(item.trimEnd()));
+
     if (missing.length === 0) {
       this.state.message = "text → spec: the items of this text are already there";
+
       return;
     }
+
     const proposed = [...lines.slice(0, end), ...missing, ...lines.slice(end)];
     this.state.selection = null;
     this.merges.start(buffer.path, "text-to-spec", lines, proposed, null, null);
@@ -3504,38 +4164,49 @@ function forNodes(doc: Document, visit: (node: Node) => void): void {
 
 function plannedIds(docs: readonly Document[]): { id: string; kind: string }[] {
   const out: { id: string; kind: string }[] = [];
+
   for (const doc of docs) {
     forNodes(doc, (node) => {
       if (node.kind === "planned" && node.id) out.push({ id: node.id, kind: node.label?.value ?? "fn" });
     });
   }
+
   return out;
 }
 
 /** Hand-written specs first (flows, rules), then generated map files, then `keylang.json`. */
 function sortFiles(files: string[], analysis: Analysis | null): string[] {
   const rank = (file: string): number => (file === CONFIG_FILE ? 2 : analysis?.docs.find((doc) => doc.path === file)?.generated != null || /(^|\/)map(-explained)?\//.test(file) ? 1 : 0);
+
   return [...new Set(files)].sort((a, b) => rank(a) - rank(b) || compareText(a, b));
 }
 
 /** The keys from `from` on that only type text (letters, Enter, Tab without modifiers). */
 function typedRun(events: readonly InputEvent[], from: number): KeyEvent[] {
   const run: KeyEvent[] = [];
+
   for (let i = from; i < events.length; i++) {
     const event = events[i]!;
+
     if (event.type !== "key" || event.ctrl || event.alt || (event.text === undefined && event.name !== "enter" && event.name !== "tab")) break;
     run.push(event);
   }
+
   return run;
 }
 
 /** Why pasted text went nowhere, and the way to where it would go: only the editor takes text. */
 function pasteRefusal(state: State): string {
   if (state.start !== null) return "paste: nothing takes text here: choose Browse or Init first, then i edits a file";
+
   if (state.mode === "merge") return "paste: MERGE takes no text: finish it (w writes, Esc cancels), then i edits";
+
   if (state.mode === "code") return "paste: the code viewer is read-only; Esc goes back to where it was opened from";
+
   if (state.mode === "zoom") return "paste: the zoom screen takes no text: q goes back to the view, then i edits";
+
   if (state.focus !== "editor") return "paste: the panel takes no text: Esc goes to the editor, then i edits";
+
   return "paste: press i to edit first";
 }
 
@@ -3550,6 +4221,7 @@ function pasteRefusal(state: State): string {
 function pastedRun(run: readonly KeyEvent[], editing: boolean): boolean {
   if (editing) return true;
   const held = run.length <= HELD_KEYS && run.every((key) => key.name === run[0]!.name);
+
   return !held && (run.length > TYPED_KEYS || run.some((key) => key.name === "enter" || key.name === "tab"));
 }
 
@@ -3571,16 +4243,21 @@ function printable(text: string): string {
  */
 function configState(root: string): { config: ConfigState; clip: boolean | null } {
   const file = join(root, CONFIG_FILE);
+
   if (!existsSync(file)) {
     const guessed = loadConfig(root);
+
     return { config: { kind: "missing-config", languages: [...guessed.languages], layers: [...guessed.layers.keys()], notes: guessLayout(root, guessed.exclude).notes }, clip: true };
   }
+
   try {
     const raw = parseConfig(file, readFileSync(file, "utf8"));
+
     return { config: { kind: "configured" }, clip: raw.assistant?.clip ?? true };
   } catch (error) {
     // The file is the one open in the editor: the reason keeps only the field.
     const text = errorText(error);
+
     return { config: { kind: "invalid-config", reason: text.startsWith(`${file}: `) ? text.slice(file.length + 2) : text }, clip: null };
   }
 }
@@ -3593,24 +4270,34 @@ function configState(root: string): { config: ConfigState; clip: boolean | null 
 export function configErrorCursor(text: string, reason: string): Cursor {
   const at = (offset: number): Cursor => {
     const before = text.slice(0, offset).split("\n");
+
     return { line: before.length - 1, col: graphemes(before.at(-1)!).length };
   };
+
   const lineCol = /line (\d+) column (\d+)/.exec(reason);
+
   if (lineCol) {
     const line = Number(lineCol[1]) - 1;
     const lineText = text.split("\n")[line] ?? "";
+
     return { line, col: graphemes(lineText.slice(0, Number(lineCol[2]) - 1)).length };
   }
+
   const position = /position (\d+)/.exec(reason);
+
   if (position) return at(Math.min(text.length, Number(position[1])));
   const field = /`([^`]+)`/.exec(reason);
+
   if (!field) return { line: 0, col: 0 };
   let offset = -1;
+
   for (const segment of field[1]!.split(".")) {
     const next = text.indexOf(JSON.stringify(segment), offset + 1);
+
     if (next === -1) break;
     offset = next;
   }
+
   return offset === -1 ? { line: 0, col: 0 } : at(offset);
 }
 
@@ -3622,9 +4309,13 @@ function packageVersion(): string {
 /** The list text of a proposal after its path: kind, a new file, and the hunk count or that it is ignored. */
 function proposalSummary(entry: ProposalEntry): string {
   const parts: string[] = [entry.kind];
+
   if (entry.newFile) parts.push("new file");
+
   if (entry.hunks !== null) parts.push(`${entry.hunks} hunk(s)`);
+
   if (entry.problem !== null) parts.push("cannot merge");
+
   return parts.join(" · ");
 }
 

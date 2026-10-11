@@ -48,10 +48,13 @@ export class ZoomScreen {
    */
   openZoom(id: string | null): void {
     const analysis = this.state.analysis;
+
     if (!analysis?.snapshot) {
       this.state.message = analysis ? (noSnapshotReason(this.state) ?? "no code snapshot to zoom into") : "analysis is still running";
+
       return;
     }
+
     const target = (id === null ? null : zoomTarget(analysis, id)) ?? { focus: ZOOM_ROOT, select: null };
     this.state.zoom ??= { focus: ZOOM_ROOT, depth: 1, selected: new Map(), top: 0, view: "nodes", from: null, flow: null };
     this.state.mode = "zoom";
@@ -67,10 +70,13 @@ export class ZoomScreen {
     const zoom = this.state.zoom!;
     zoom.focus = focus;
     zoom.top = 0;
+
     if (select !== null && zoom.view === "nodes") {
       const index = this.zoomRows().findIndex((row) => row.id === select);
+
       if (index >= 0) zoom.selected.set(focus, index);
     }
+
     this.state.hover = null;
     this.keepZoomVisible();
   }
@@ -79,8 +85,10 @@ export class ZoomScreen {
   private zoomEdgeRows(): ZoomEdge[] {
     const analysis = this.state.analysis;
     const zoom = this.state.zoom;
+
     if (!analysis?.snapshot || !zoom) return [];
     this.zoomRows();
+
     return zoomEdges(analysis, zoom.focus);
   }
 
@@ -93,26 +101,32 @@ export class ZoomScreen {
   private zoomRows(): ZoomRow[] {
     const analysis = this.state.analysis;
     const zoom = this.state.zoom;
+
     if (!analysis?.snapshot || !zoom) return [];
+
     if (zoom.focus !== ZOOM_ROOT && !analysis.snapshot.nodes[zoom.focus]) {
       zoom.focus = ZOOM_ROOT;
       this.state.message = "that level is gone from the snapshot: back at the repository";
     }
+
     return zoomLevel(analysis, zoom.focus, zoom.depth).rows;
   }
 
   /** The selected row of the shown view, clamped to `rows`. */
   private zoomIndex(rows: readonly unknown[]): number {
     const zoom = this.state.zoom!;
+
     return Math.max(0, Math.min(zoom.selected.get(zoomSelectKey(zoom)) ?? 0, rows.length - 1));
   }
 
   /** Keeps the selected row inside the shown rows of the zoom screen. */
   private keepZoomVisible(): void {
     const zoom = this.state.zoom;
+
     if (!zoom) return;
     const visible = Math.max(1, zoomListHeight(this.state, layout(this.state).editor));
     const at = zoom.view === "edges" ? this.zoomIndex(this.zoomEdgeRows()) : this.zoomIndex(this.zoomRows());
+
     if (at < zoom.top) zoom.top = at;
     else if (at >= zoom.top + visible) zoom.top = at - visible + 1;
   }
@@ -126,26 +140,35 @@ export class ZoomScreen {
     const analysis = this.state.analysis!;
     const zoom = this.state.zoom!;
     const above = zoomParent(analysis, zoom.focus);
+
     if (above === null) {
       if (close) return this.closeZoom(false);
       this.state.message = "the repository is the top level: q closes the zoom";
+
       return;
     }
+
     this.zoomTo(above, zoom.focus);
   }
 
   /** `>` and `<`: neighbors one edge farther or nearer, from none up to `MAX_DEPTH`. */
   private zoomDepth(delta: number): void {
     const zoom = this.state.zoom!;
+
     if (zoom.view === "edges") {
       this.state.message = "the edges view shows direct edges: c goes back to the nodes and their depth";
+
       return;
     }
+
     const depth = Math.max(0, Math.min(MAX_DEPTH, zoom.depth + delta));
+
     if (depth === zoom.depth) {
       this.state.message = delta > 0 ? `depth ${MAX_DEPTH} is the farthest` : "depth 0: only the children";
+
       return;
     }
+
     const before = this.zoomRows();
     const selected = before[this.zoomIndex(before)]?.id ?? null;
     zoom.depth = depth;
@@ -162,38 +185,52 @@ export class ZoomScreen {
     const focus = this.state.zoom?.focus ?? ZOOM_ROOT;
     this.state.mode = "view";
     this.state.hover = null;
+
     if (!follow) return;
     const id = row && row.kind !== "more" ? row.id : focus;
+
     if (id !== ZOOM_ROOT) this.host.goToNode(id);
   }
 
   /** Enter on a fn or type: its code in the viewer; Esc there comes back to this level. */
   private zoomCode(id: string): void {
     const node = this.state.analysis?.snapshot?.nodes[id];
+
     if (!node?.file) {
       this.state.message = `\`${id}\` has no code to open`;
+
       return;
     }
+
     this.host.jump(resolve(this.state.root, node.file), node.line ?? 1);
   }
 
   /** The wheel scrolls the rows of the zoom screen; a click on a row selects it and opens nothing. */
   zoomMouse(event: MouseEvent, editor: { x: number; y: number; width: number; height: number }): void {
     const zoom = this.state.zoom;
+
     if (!zoom) return;
+
     if (event.action === "wheel-up" || event.action === "wheel-down") {
       zoom.top = Math.max(0, Math.min(Math.max(0, this.zoomCount() - 1), zoom.top + (event.action === "wheel-up" ? -3 : 3)));
       this.state.hover = null;
+
       return;
     }
+
     if (event.action !== "down" || event.button !== 0) return;
+
     // A button of the header does what its key does.
     if (event.y === editor.y) {
       const button = zoomButtons(zoom, editor.width).buttons.find((item) => event.x - editor.x >= item.x && event.x - editor.x < item.x + item.width);
+
       if (button) this.zoomButton(button.action);
+
       return;
     }
+
     const index = zoom.top + event.y - editor.y - ZOOM_HEAD;
+
     if (event.y < editor.y + ZOOM_HEAD || index >= this.zoomCount()) return;
     zoom.selected.set(zoomSelectKey(zoom), index);
     this.state.hover = null;
@@ -208,12 +245,16 @@ export class ZoomScreen {
   /** `e` and `K`: the explain hover of the selected node, as `e` shows it in the view. */
   private zoomExplain(row: ZoomRow | undefined): void {
     const analysis = this.state.analysis;
+
     if (!analysis || !row || row.kind === "more") return;
     const found = nodeExplanation(analysis, row.id, analysis.config.explain.detail);
+
     if ("unknown" in found) {
       this.state.message = unknownIdMessage(row.id, found.suggestion);
+
       return;
     }
+
     const editor = layout(this.state).editor;
     const zoom = this.state.zoom!;
     const at = zoom.view === "edges" ? this.zoomIndex(this.zoomEdgeRows()) : this.zoomIndex(this.zoomRows());
@@ -224,11 +265,14 @@ export class ZoomScreen {
   /** `f`: the flow picker, the flows through this level first; with a flow laid over the levels, `f` takes it off. */
   private zoomFlowKey(): void {
     const zoom = this.state.zoom!;
+
     if (zoom.flow !== null) {
       this.state.message = `flow ${zoom.flow} taken off`;
       zoom.flow = null;
+
       return;
     }
+
     this.state.prompt = { kind: "flow", text: "", items: [], ids: [], index: 0 };
     this.findFlows();
   }
@@ -237,6 +281,7 @@ export class ZoomScreen {
   findFlows(): void {
     const prompt = this.state.prompt;
     const analysis = this.state.analysis;
+
     if (prompt?.kind !== "flow" || !analysis) return;
     const through = new Set(flowsThrough(analysis, this.state.zoom?.focus ?? ZOOM_ROOT));
     const query = prompt.text.trim().toLowerCase();
@@ -251,10 +296,13 @@ export class ZoomScreen {
   private zoomNextFlow(): void {
     const zoom = this.state.zoom!;
     const through = flowsThrough(this.state.analysis!, zoom.focus);
+
     if (through.length === 0) {
       this.state.message = "no flow goes through this level";
+
       return;
     }
+
     const at = zoom.flow === null ? -1 : through.indexOf(zoom.flow);
     zoom.flow = through[(at + 1) % through.length]!;
     this.state.message = `flow ${zoom.flow} (${((at + 1) % through.length) + 1} of ${through.length} through this level)`;
@@ -264,7 +312,9 @@ export class ZoomScreen {
   private zoomOverlay(): FlowOverlay | null {
     const analysis = this.state.analysis;
     const zoom = this.state.zoom;
+
     if (!analysis || !zoom || zoom.flow === null) return null;
+
     return flowOverlay(analysis, zoom.flow, zoom.focus, (file, line) => evidenceOf(analysis, file).get(line)?.mark ?? null);
   }
 
@@ -281,10 +331,13 @@ export class ZoomScreen {
   private zoomAlongEdge(edge: ZoomEdge): void {
     const analysis = this.state.analysis!;
     const target = zoomContainer(analysis, edge.other) ? edge.other : zoomParent(analysis, edge.other);
+
     if (target === null || edge.group === "unresolved") {
       this.state.message = edge.group === "unresolved" ? "these constructs have no edge to follow: e explains the node" : `\`${edge.other}\` has no level`;
+
       return;
     }
+
     this.zoomTo(target, null);
   }
 
@@ -293,31 +346,39 @@ export class ZoomScreen {
     const zoom = this.state.zoom!;
     let from: string;
     let to: string;
+
     if (zoom.view === "edges") {
       if (!edge || edge.group === "unresolved") return;
       from = edge.from;
       to = edge.to;
     } else {
       if (!row || row.kind === "more") return;
+
       if (zoom.from === null || zoom.from === row.id) {
         zoom.from = row.id;
         this.state.message = `from ${row.id}: x on another node explains the edges between them`;
+
         return;
       }
+
       from = zoom.from;
       to = row.id;
       zoom.from = null;
     }
+
     this.host.requestOperation("explain-edge", { kind: "explain-edge", root: this.state.root, from: from === ZOOM_ROOT ? to : from, to });
   }
 
   zoomKey(event: KeyEvent): void {
     const analysis = this.state.analysis;
     const zoom = this.state.zoom;
+
     if (!analysis?.snapshot || !zoom) {
       this.state.mode = "view";
+
       return;
     }
+
     const edges = zoom.view === "edges" ? this.zoomEdgeRows() : [];
     const rows = zoom.view === "edges" ? [] : this.zoomRows();
     const count = zoom.view === "edges" ? edges.length : rows.length;
@@ -325,23 +386,30 @@ export class ZoomScreen {
     const row = rows[at];
     const edge = edges[at];
     const page = Math.max(1, zoomListHeight(this.state, layout(this.state).editor) - 1);
+
     const select = (index: number): void => {
       zoom.selected.set(zoomSelectKey(zoom), Math.max(0, Math.min(index, count - 1)));
       this.state.hover = null;
       this.keepZoomVisible();
     };
+
     if (event.alt && event.name === "enter") {
       const id = zoom.view === "edges" ? edge?.other : row && row.kind !== "more" ? row.id : undefined;
+
       if (id === undefined) return;
       // With a flow laid over the level, a step of it goes to its line in the flow.
       const overlay = this.zoomOverlay();
       const step = overlay?.steps.get(id)?.[0];
       const line = step === undefined ? undefined : overlay!.marks.get(step)?.line;
       this.closeZoom(false);
+
       if (overlay && line !== undefined) return this.host.open(overlay.file, { line: line - 1, col: 0 });
+
       return this.host.goToSpec(id);
     }
+
     if (event.ctrl || event.alt) return;
+
     switch (event.name) {
       case "up":
       case "k":
@@ -363,21 +431,29 @@ export class ZoomScreen {
       case "=":
       case "enter": {
         if (zoom.view === "edges") return edge ? this.zoomAlongEdge(edge) : undefined;
+
         if (!row) return;
+
         if (row.kind === "more") return this.zoomDepth(1);
+
         if (row.container) return this.zoomTo(row.id, null);
+
         if (event.name === "enter") return this.zoomCode(row.id);
         this.state.message = `\`${row.id}\` has no level of its own: Enter opens its code`;
+
         return;
       }
+
       case "-":
       case "backspace":
         return this.zoomUp(false);
       case "escape":
         if (this.state.hover) {
           this.state.hover = null;
+
           return;
         }
+
         return this.zoomUp(true);
       case ">":
         return this.zoomDepth(1);
@@ -400,6 +476,7 @@ export class ZoomScreen {
         return this.host.openPalette();
       case "?":
         this.state.help = true;
+
         return;
       case "q":
         return this.closeZoom();

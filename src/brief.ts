@@ -18,13 +18,16 @@ export function briefOf(text: string): string | null {
     .split(/\n[ \t]*\n/)
     .map((p) => p.replace(/\s+/g, " ").trim())
     .find((p) => p !== "");
+
   if (paragraph === undefined) return null;
+
   return capText(firstSentences(paragraph, 2), BRIEF_MAX);
 }
 
 /** The first sentence of the first paragraph of `text`, by the rule of `briefOf`; null when nothing is left. */
 export function firstSentence(text: string): string | null {
   const brief = briefOf(text);
+
   return brief === null ? null : firstSentences(brief, 1);
 }
 
@@ -32,10 +35,13 @@ const SENTENCE_END = /[.!?]["'»”’)\]]*(?=\s+\p{Lu})/gu;
 
 function firstSentences(text: string, count: number): string {
   let seen = 0;
+
   for (const end of text.matchAll(SENTENCE_END)) {
     seen++;
+
     if (seen === count) return text.slice(0, end.index + end[0].length);
   }
+
   return text;
 }
 
@@ -51,8 +57,10 @@ function firstSentences(text: string, count: number): string {
 export function readmeBrief(markdown: string): string | null {
   for (const paragraph of proseParagraphs(markdown)) {
     const text = plainInline(paragraph);
+
     if (words(text) >= 4 && /[.!?](?:\s|$)/.test(text)) return briefOf(text);
   }
+
   return null;
 }
 
@@ -62,49 +70,61 @@ function proseParagraphs(markdown: string): string[] {
   let current: string[] = [];
   let fence: string | null = null;
   let comment = false;
+
   const flush = (): void => {
     if (current.length > 0) out.push(current.join("\n"));
     current = [];
   };
+
   for (const line of markdown.replace(/^﻿/, "").split(/\r?\n/)) {
     if (fence !== null) {
       if (line.trimStart().startsWith(fence)) fence = null;
       continue;
     }
+
     if (comment) {
       if (line.includes("-->")) comment = false;
       continue;
     }
+
     const open = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+
     if (open) {
       flush();
       fence = open[1]!;
       continue;
     }
+
     if (line.trim() === "") {
       flush();
       continue;
     }
+
     if (/^ {0,3}<!--/.test(line)) {
       flush();
       comment = !line.includes("-->");
       continue;
     }
+
     // A setext underline makes the lines above it a heading, not a paragraph.
     if (current.length > 0 && /^ {0,3}(?:=+|-+)\s*$/.test(line)) {
       current = [];
       continue;
     }
+
     // ATX heading, quote, table row, HTML block, list item, thematic break.
     if (/^ {0,3}(?:#{1,6}(?:\s|$)|[>|<]|(?:[-*+]|\d{1,9}[.)])(?:\s|$)|(?:\*\s*){3,}$|(?:_\s*){3,}$)/.test(line)) {
       flush();
       continue;
     }
+
     // Indented code starts only where no paragraph is open.
     if (current.length === 0 && /^(?: {4}|\t)/.test(line)) continue;
     current.push(line.trim());
   }
+
   flush();
+
   return out;
 }
 
@@ -128,8 +148,10 @@ function words(text: string): number {
 /** At most `max` code points: cut at the last space before the limit, then `…`. */
 export function capText(text: string, max: number): string {
   const chars = [...text];
+
   if (chars.length <= max) return text;
   const head = chars.slice(0, max - 1).join("");
   const space = head.lastIndexOf(" ");
+
   return `${(space > 0 ? head.slice(0, space) : head).replace(/[\s,;:–—-]+$/u, "")}…`;
 }

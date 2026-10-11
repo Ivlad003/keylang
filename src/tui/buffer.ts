@@ -19,6 +19,7 @@ export function docOf(path: string, text: string): Document | null {
 /** A buffer for `path` with `text` (already `\n`-ended) as both its text and what is saved. */
 export function newBuffer(path: string, text: string, eol: Buffer["eol"], disk: string | null): Buffer {
   const doc = docOf(path, text);
+
   return { path, text, saved: text, readOnly: doc !== null && doc.generated !== null, eol, disk, newFile: false, overwrite: false, doc, undo: [], version: 0 };
 }
 
@@ -48,10 +49,12 @@ const cache = new WeakMap<Buffer, Cached>();
 
 function cached(buffer: Buffer): Cached {
   const entry = cache.get(buffer);
+
   // The same string is compared by reference first: an unchanged buffer costs nothing here.
   if (entry && entry.text === buffer.text) return entry;
   const fresh = { text: buffer.text, lines: buffer.text.split("\n"), layouts: new Map<number, LineLayout>() };
   cache.set(buffer, fresh);
+
   return fresh;
 }
 
@@ -63,11 +66,14 @@ export function bufferLines(buffer: Buffer): readonly string[] {
 export function lineLayout(buffer: Buffer, index: number): LineLayout {
   const entry = cached(buffer);
   let layout = entry.layouts.get(index);
+
   if (!layout) {
     layout = layoutLine(entry.lines[index] ?? "");
+
     // A long session scrolls through many lines; the cache holds the recent ones.
     if (entry.layouts.size > 512) entry.layouts.clear();
     entry.layouts.set(index, layout);
   }
+
   return layout;
 }

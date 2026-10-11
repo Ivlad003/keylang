@@ -15,6 +15,7 @@ import { compareText } from "./span.ts";
 export const BASELINE_MARK = "<!-- keylang:generated — не редагувати, `keylang baseline` -->";
 
 const EDGE_KINDS = new Set(["import", "call", "type", "reexport"]);
+
 /** Calls a framework makes by its config (ADR 0022): a dependency of the module whose config declares them. */
 const CONFIG_VIA = new Set(["preference", "argument", "plugin:before", "plugin:around", "plugin:after", "observer"]);
 
@@ -30,6 +31,7 @@ export function baselineText(snapshot: AnalysisSnapshot): string {
   const sources = hasUnassigned ? [...configured, "unassigned"].sort(compareText) : configured;
   const universe = [...new Set([...sources, "external", "unassigned"])].sort(compareText);
   const layerOf = new Map<string, string>();
+
   for (const [id, node] of Object.entries(snapshot.nodes)) layerOf.set(id, node.layer);
 
   const depends = new Map<string, Set<string>>(sources.map((layer) => [layer, new Set()]));
@@ -37,46 +39,61 @@ export function baselineText(snapshot: AnalysisSnapshot): string {
   /** Layer pairs the code depends on, and those only a framework's config makes: with the first config line of each. */
   const inCode = new Set<string>();
   const byConfig = new Map<string, string>();
+
   for (const edge of snapshot.edges) {
     if (!EDGE_KINDS.has(edge.kind) || edge.resolution !== "resolved" || edge.target === null) continue;
     const configured = edge.via !== undefined && CONFIG_VIA.has(edge.via);
     const from = layerOf.get(configured && edge.owner !== undefined ? edge.owner : edge.source);
     const to = layerOf.get(edge.target);
+
     if (from === undefined || to === undefined || from === to || !depends.has(from)) continue;
     depends.get(from)!.add(to);
     const pair = `${from} → ${to}`;
+
     if (!configured) inCode.add(pair);
     else if (!byConfig.has(pair)) byConfig.set(pair, `${edge.via} ${edge.site ?? "?"}`);
+
     if (to === "external") {
       const pkg = externalModule(snapshot, edge.target);
+
       if (pkg !== null) packages.get(from)!.add(pkg);
     }
   }
 
   const lines = [BASELINE_MARK, "", "# rules", ""];
+
   for (const source of sources) {
     const used = depends.get(source)!;
     const pkgs = [...packages.get(source)!].sort(compareText);
     const targets = universe.filter((layer) => layer !== source && !used.has(layer) && !(layer === "external" && pkgs.length > 0));
+
     if (targets.length > 0) lines.push(`- deny ${source} ${targets.join(", ")}`);
+
     if (pkgs.length > 0) {
       lines.push(`- deny ${source} external`);
+
       for (const pkg of pkgs) lines.push(`- allow ${source} ${pkg}`);
     }
   }
+
   // Dependencies only a framework's config makes stay allowed; the baseline names where each comes from, so it is not read as code.
   const provenance = [...byConfig].filter(([pair]) => !inCode.has(pair)).sort(([a], [b]) => compareText(a, b));
+
   if (provenance.length > 0) lines.push("", ...provenance.map(([pair, at]) => `<!-- keylang:baseline ${pair} only through the framework config: ${at} -->`));
+
   return `${lines.join("\n")}\n`;
 }
 
 /** The external module an id belongs to (`external.stripe` for a symbol under it). */
 function externalModule(snapshot: AnalysisSnapshot, id: string): string | null {
   let cur = id;
+
   for (;;) {
     const node = snapshot.nodes[cur];
+
     if (node?.kind === "module" && node.layer === "external") return cur;
     const dot = cur.lastIndexOf(".");
+
     if (dot === -1) return null;
     cur = cur.slice(0, dot);
   }
@@ -119,6 +136,7 @@ export function planBaseline(config: Config, snapshot: AnalysisSnapshot): Baseli
   const state = current === null ? "stale" : !isGeneratedText(current) ? "manual" : current.replace(/\r\n/g, "\n") === text ? "current" : "stale";
   const before = new Set(ruleLines(current ?? ""));
   const after = new Set(ruleLines(text));
+
   return {
     config,
     path,
@@ -140,7 +158,9 @@ export function planBaseline(config: Config, snapshot: AnalysisSnapshot): Baseli
 export function baselinePlanProblems(plan: BaselinePlan): string[] {
   const problems: string[] = [];
   const problem = writeProblem(plan.config.root, plan.path, { generated: true, expect: plan.current });
+
   if (problem !== null) problems.push(`${plan.path}: ${problem}`);
+
   // A manual file written meanwhile is refused by `expect`; one there from the start never reaches the commit.
   return [...problems, ...sourceInputProblems(plan.config, plan.inputs, "the baseline")];
 }
@@ -148,6 +168,7 @@ export function baselinePlanProblems(plan: BaselinePlan): string[] {
 /** Writes the planned text atomically at the target (a link inside the repository is followed; CRLF of the old file kept). Throws on an I/O error. */
 export function commitBaseline(plan: BaselinePlan): void {
   const abs = landing(join(plan.config.root, plan.path));
+
   if (abs === null) throw new Error(`${plan.path}: leads through a loop of links`);
   writeAtomic(abs, plan.text);
 }

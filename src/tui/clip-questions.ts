@@ -39,24 +39,29 @@ export function newFailsAfter(counted: readonly Verdict[], previous: Analysis | 
   const before = new Set((previous === null ? now : failsOf(previous)).map(failKey));
   const kept = counted.filter((fail) => reported.has(failKey(fail)));
   const seen = new Set(kept.map(failKey));
+
   for (const fail of now) {
     const key = failKey(fail);
+
     if (before.has(key) || seen.has(key)) continue;
     seen.add(key);
     kept.push(fail);
   }
+
   return kept;
 }
 
 /** The `- ?` lines of `path` as the analysis read it, unsaved edits included, in the file's order. */
 function questionsIn(analysis: Analysis, path: string): OpenQuestion[] {
   const found: OpenQuestion[] = [];
+
   for (const flow of analysis.spec.flows) {
     if (flow.file !== path) continue;
     walkFlow(flow, (item) => {
       if (item.kind === "question") found.push({ file: path, line: item.span.start.line, text: `? ${item.question}` });
     });
   }
+
   return found;
 }
 
@@ -77,10 +82,12 @@ export function openQuestions(state: Pick<State, "current" | "analysis" | "featu
   const gaps = feature === null || feature.path !== path ? [] : feature.gaps.filter((gap) => gap.kind !== "question").map((gap) => ({ file: gap.file, line: gap.line, text: `${gap.kind} ${gap.id}: ${gap.reason}` }));
   const fails = state.clip.newFails.map((fail) => ({ file: fail.file, line: fail.line, text: `✗ ${fail.code ?? fail.criterion} ${fail.message}` }));
   const list: OpenQuestion[] = [];
+
   for (const source of [lines, gaps, fails]) {
     const named = new Set(list.map(placeOf));
     list.push(...source.filter((question) => !named.has(placeOf(question))));
   }
+
   return list;
 }
 
@@ -95,11 +102,13 @@ export const QUESTION_ROWS = 20;
 /** The first `QUESTION_ROWS` questions as rows, and a last row saying how many more there are. */
 export function questionRows(questions: readonly OpenQuestion[], limit = QUESTION_ROWS): string[] {
   const more = questions.length > limit ? [`… ще ${questions.length - limit}`] : [];
+
   return [...questions.slice(0, limit).map(questionRow), ...more];
 }
 
 /** What the clip says of the open questions: how many, and one row each up to `QUESTION_ROWS`; or that there are none. */
 export function questionsAnswer(questions: readonly OpenQuestion[]): string {
   if (questions.length === 0) return "немає відкритих питань";
+
   return [`відкриті питання: ${questions.length}`, ...questionRows(questions)].join("\n");
 }

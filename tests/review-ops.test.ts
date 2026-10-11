@@ -16,6 +16,7 @@ import { exportTargetProblem, featureSlugOf, runOperation } from "../src/operati
 import { fakeAgents, type FakeAgents } from "./agent-fixture.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
 
 interface Run {
@@ -43,6 +44,7 @@ function keylang(dir: string, args: string[], fake: FakeAgents | null, env: Reco
         ...env,
       },
     });
+
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
@@ -54,6 +56,7 @@ function keylang(dir: string, args: string[], fake: FakeAgents | null, env: Reco
 function tempDir(t: TestContext, prefix: string): string {
   const dir = mkdtempSync(join(tmpdir(), prefix));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+
   return dir;
 }
 
@@ -65,6 +68,7 @@ function copy(t: TestContext, config: Record<string, unknown> = {}, files: Recor
   const file = join(dir, "keylang.json");
   writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), ...config }));
   write(dir, files);
+
   return dir;
 }
 
@@ -82,10 +86,12 @@ function write(dir: string, files: Record<string, string>): void {
  */
 function editBeforeAnswer(fake: FakeAgents): void {
   const wrapper = join(fake.bin, "claude");
+
   const edit = [
     `n=$(( $(ls "$FAKE_AGENT_LOG" | grep -c '[.]json$') + 1 ))`,
     `if [ -n "$EDIT_FILE" ] && { [ -z "$EDIT_ON_CALL" ] || [ "$n" = "$EDIT_ON_CALL" ]; }; then printf '%s' "$EDIT_TEXT" >> "$EDIT_FILE"; fi`,
   ].join("\n");
+
   // A function, not a string: `$'` in the shell text is no replacement pattern.
   writeFileSync(wrapper, readFileSync(wrapper, "utf8").replace("#!/bin/sh\n", () => `#!/bin/sh\n${edit}\n`));
 }
@@ -102,6 +108,7 @@ test("export c4 --out: a link out of the repository and an absolute path outside
   symlinkSync(join(outside, "plain.txt"), join(dir, "link-plain.puml"));
   symlinkSync(join(outside, "diagram.puml"), join(dir, "link-diagram.puml"));
   symlinkSync(join(outside, "new.puml"), join(dir, "link-new.puml"));
+
   for (const [out, reason] of [
     ["link-plain.puml", "leads out of the repository through a link"],
     ["link-diagram.puml", "leads out of the repository through a link"],
@@ -114,6 +121,7 @@ test("export c4 --out: a link out of the repository and an absolute path outside
     // The policy names the path; the old order read the file first and judged its first line.
     assert.equal(o.stderr, `keylang: export c4: --out ${out}: ${reason}; nothing written\n`);
   }
+
   assert.deepEqual(readdirSync(outside).sort(), ["diagram.puml", "plain.txt"]);
   assert.equal(readFileSync(join(outside, "plain.txt"), "utf8"), "outside text\n");
   assert.equal(readFileSync(join(outside, "diagram.puml"), "utf8"), "' keylang:generated — keylang export c4\n@startuml\n@enduml\n");
@@ -158,11 +166,13 @@ function manyRepo(t: TestContext, count: number): string {
     "src/lib/util.ts": "/** Small helpers. */\n\n/** Doubles a number. */\nexport function twice(n: number): number {\n  return n * 2;\n}\n",
     "src/app/many.ts": `import { twice } from "../lib/util.ts";\n\n${Array.from({ length: count }, (_, i) => `export function f${i}(n: number): number {\n  return twice(n) + ${i};\n}\n`).join("\n")}`,
   });
+
   return dir;
 }
 
 function briefFiles(dir: string): string[] {
   const at = join(dir, "keylang/explain/brief");
+
   return existsSync(at) ? readdirSync(at).sort() : [];
 }
 
@@ -217,6 +227,7 @@ test("explain --missing --llm: a source changed while a wave's first answer come
 test("draft map --mode llm: the ```json block, else the first balanced object of the answer; an answer without one is code 2 naming it", async (t) => {
   const dir = copy(t, { agent: "cli:claude" });
   const before = readFileSync(join(dir, "keylang.json"), "utf8");
+
   for (const [reply, layers] of [
     ['Here you go: {"domain": ["src/domain/**"]} and also {"x": 1}', { domain: ["src/domain/**"] }],
     ['A layer is {name: globs}. Mine:\n{"core": ["src/domain/**"], "edge": ["src/app/**", "src/infra/**"]}\nDone.', { core: ["src/domain/**"], edge: ["src/app/**", "src/infra/**"] }],
@@ -227,6 +238,7 @@ test("draft map --mode llm: the ```json block, else the first balanced object of
     assert.equal(o.status, 0, `${reply}: ${o.stderr}`);
     assert.deepEqual((JSON.parse(o.stdout) as { layers: unknown }).layers, layers, reply);
   }
+
   for (const reply of ["I cannot group these files.", "```json\n[\"src/**\"]\n```", "{\"domain\": [\"src/domain/**\"]"]) {
     const fake = fakeAgents(t, ["claude"], { reply });
     const o = await keylang(dir, ["draft", "map", "--mode", "llm"], fake);
@@ -234,6 +246,7 @@ test("draft map --mode llm: the ```json block, else the first balanced object of
     assert.equal(o.stdout, "");
     assert.equal(o.stderr, "keylang: draft map: the model did not answer with one JSON object\n", reply);
   }
+
   assert.equal(readFileSync(join(dir, "keylang.json"), "utf8"), before, "keylang.json is never written");
   // A brace inside a JSON string does not end the object.
   assert.deepEqual(answerObject('{"a": ["src/}{/**"], "b": "x\\"}"} {"c": 1}'), { a: ["src/}{/**"], b: 'x"}' });
@@ -243,6 +256,7 @@ test("draft map --mode llm: the ```json block, else the first balanced object of
 
 test("export: with `dir: ./keylang` the map and the explained map under keylang/ are the generator's, as `keylang map` reads the same config; a spec directory `.` owns map/", async (t) => {
   const dir = copy(t, { dir: "./keylang" });
+
   for (const path of ["keylang/map/notes.md", "keylang/map-explained/notes.md", "keylang/map/app.md"]) {
     assert.equal(exportTargetProblem(dir, path), "a generated artifact: only its generator writes it", path);
     const exported = await runOperation({ kind: "export", root: dir, path, expect: null, source: { kind: "explain-edge", lines: ["a line"] } });
@@ -250,6 +264,7 @@ test("export: with `dir: ./keylang` the map and the explained map under keylang/
     assert.deepEqual(exported.payload?.refused, [`${path}: a generated artifact: only its generator writes it`]);
     assert.ok(!existsSync(join(dir, path)), `${path} is not written`);
   }
+
   assert.equal(exportTargetProblem(dir, "keylang/notes.md"), null, "a spec file is the person's");
   // The caller's loaded config wins over the saved file.
   assert.equal(exportTargetProblem(dir, "specs/map/x.md", "specs"), "a generated artifact: only its generator writes it");
@@ -283,10 +298,12 @@ test("spec-to-code --mode llm sends the file's imports and the part where the co
 
   // A method: the class it goes into, not the functions before it.
   const method = "```ts\ncount(): number {\n  return 0;\n}\n```";
+
   const cls = copy(t, { agent: "cli:claude" }, {
     "src/infra/db.ts": longModule(150, "\nexport class Db {\n  query(sql: string): string[] {\n    return sql.split(\";\");\n  }\n}\n").replace('import { createOrder, type Order } from "../domain/order.ts";', 'import { writeFileSync } from "node:fs";'),
     "keylang/flows/count.md": flow("infra.db.Db.count", "() → number"),
   });
+
   const classFake = fakeAgents(t, ["claude"], { reply: method });
   const m = await keylang(cls, ["spec-to-code", "infra.db.Db.count", "--mode", "llm", "--print"], classFake);
   assert.equal(m.status, 0, m.stderr);
@@ -350,6 +367,7 @@ test("draft flow, draft rules, code-to-spec and spec-to-code (proposal and --app
   const FLOW = "```markdown\n# flow checkout\n\n- trigger app.checkout.checkout\n```";
   const CODE = "```ts\nexport function refund(order: Order): Order {\n  return order;\n}\n```";
   const PLAN = { "keylang/flows/refund.md": "# flow refund\n\n- planned fn app.refund.refund (order: Order) → Order\n- trigger app.refund.refund\n", "src/app/refund.ts": "export const policy = 1;\n" };
+
   for (const [args, reply, edited, reason] of [
     [["draft", "flow", "app.checkout.checkout", "--mode", "llm"], FLOW, "src/domain/order.ts", "src/domain/order.ts: changed on disk while the draft was computed"],
     [["draft", "rules", "--mode", "llm"], "```markdown\n# rules\n\n- no-cycles\n```", "src/domain/order.ts", "src/domain/order.ts: changed on disk while the draft was computed"],
@@ -368,7 +386,9 @@ test("draft flow, draft rules, code-to-spec and spec-to-code (proposal and --app
     assert.ok(!existsSync(join(dir, ".keylang/proposals")), `${name}: no proposal`);
     assert.equal(readFileSync(join(dir, "src/app/refund.ts"), "utf8"), edited === "src/app/refund.ts" ? `export const policy = 1;\n${EDITED}` : "export const policy = 1;\n", `${name}: the code file is not written`);
   }
+
   const dir = copy(t, {}, PLAN);
+
   for (const args of [["draft", "flow"], ["draft", "rules", "--mode", "nope"], ["code-to-spec", "src/app/checkout.ts", "--since", "HEAD"], ["spec-to-code", "app.refund.refund", "--print", "--apply"], ["spec-to-code"]]) {
     const o = await keylang(dir, args, null);
     assert.equal(o.status, 2, `${args.join(" ")}: ${o.stderr}`);

@@ -11,10 +11,17 @@ import { fileURLToPath } from "node:url";
 import { GRAMMARS, wasmFile } from "../src/extract/grammars.ts";
 
 const require = createRequire(import.meta.url);
+
 const manifest = require.resolve("@vscode/tree-sitter-wasm/package.json");
+
 const from = join(dirname(manifest), "wasm");
+
 const to = join(dirname(fileURLToPath(import.meta.url)), "../dist/wasm");
+
 mkdirSync(to, { recursive: true });
+
 for (const grammar of GRAMMARS) cpSync(join(from, wasmFile(grammar)), join(to, wasmFile(grammar)));
+
 const { name, version } = JSON.parse(readFileSync(manifest, "utf8"));
+
 writeFileSync(join(to, "grammars.json"), `${JSON.stringify({ package: name, version }, null, 2)}\n`);

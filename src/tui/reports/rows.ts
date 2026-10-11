@@ -55,8 +55,11 @@ export interface ReportView {
 }
 
 export const BOLD: Style = { ...THEME.panel, bold: true };
+
 export const MUTED: Style = { ...THEME.panel, fg: 243 };
+
 export const WARNING: Style = { ...THEME.panel, fg: 179 };
+
 export const ERROR: Style = { ...THEME.panel, ...THEME.error };
 
 /** The outcome row under a report's title: green when the operation did what was asked, red otherwise. */
@@ -82,7 +85,9 @@ export function noticeRow(message: OperationMessage): ReportRow {
 /** Text as the CLI prints it, under a rule naming where it comes from (`keylang parse · stdout`); the final newline makes no row. */
 export function textRows(title: string, text: string): ReportRow[] {
   const lines = text.split("\n");
+
   if (lines.at(-1) === "") lines.pop();
+
   return [{ text: `── ${title} ──`, style: MUTED }, ...lines.map((line) => ({ text: line, style: THEME.panel }))];
 }
 

@@ -12,10 +12,12 @@ import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
 
 function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8" });
+
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
@@ -23,10 +25,12 @@ function keylang(cwd: string, args: string[]): { status: number | null; stdout: 
 function repo(t: TestContext, files: Record<string, string>): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-extras-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+
   for (const [path, text] of Object.entries(files)) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
     writeFileSync(join(dir, path), text);
   }
+
   return dir;
 }
 
@@ -40,6 +44,7 @@ interface Snapshot {
 function map(dir: string): Snapshot {
   const o = keylang(dir, ["map"]);
   assert.equal(o.status, 0, o.stdout + o.stderr);
+
   return JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as Snapshot;
 }
 
@@ -72,6 +77,7 @@ test("python: without KEYLANG_TRACE the trace wrapper records nothing and runs t
   const wrapper = join(root, "adapters/python/keylang_trace.py");
   const dir = repo(t, { "run.py": 'import os\nimport sys\n\nprint(__name__, sys.argv[1:], os.environ.get("KEYLANG_TRACE_RUN"))\nsys.exit(3)\n' });
   const env: Record<string, string | undefined> = { ...process.env };
+
   for (const name of ["KEYLANG_TRACE", "KEYLANG_TRACE_PLAN", "KEYLANG_TRACE_TEST", "KEYLANG_TRACE_RUN", "KEYLANG_TRACE_ROOT"]) delete env[name];
   const plain = spawnSync("python3", [wrapper, "run.py", "a", "b"], { cwd: dir, encoding: "utf8", env });
   // The script's own exit code, its arguments, no run id handed to child processes, and no file written.
@@ -94,6 +100,7 @@ test("php: class, function and method names compare in ASCII case only, as PHP c
     "src/Use.php": "<?php\nnamespace App;\n\nfunction useIt(Order $o, $x): void\n{\n    ORDER::make();\n    äpfel::make();\n    $o->GRÖßE();\n    $x->GRÖßE();\n}\n\nfunction keep(Order $o): array\n{\n    return [$o, 'GRÖßE'];\n}\n",
     "keylang/flows/size.md": "# flow size\n\n- trigger app.Use.useIt\n  - step app.Order.Order.größe\n",
   });
+
   const snapshot = map(dir);
   // PHP lowers A–Z only: `ORDER` is `Order`, while `äpfel` and `GRÖßE` keep the letters that differ from `Äpfel` and `größe`.
   assert.deepEqual(calls(snapshot, "app.Use."), ["app.Use.useIt → app.Order.Order.make"]);
@@ -127,6 +134,7 @@ test("php: a method called on a new object, `(new X())->m()` or PHP 8.4's `new X
     ].join("\n"),
     "keylang/flows/checkout.md": "# flow checkout\n\n- trigger app.Cart.checkout\n  - step app.Cart.Cart.total\n",
   });
+
   const snapshot = map(dir);
   assert.deepEqual(calls(snapshot, "app.Cart."), [
     "app.Cart.chain → app.Cart.Cart",
@@ -158,6 +166,7 @@ test("php: spec-to-code marks a test method named TestRefund with #[Test]: PHPUn
       "",
     ].join("\n"),
   });
+
   assert.equal(keylang(dir, ["map"]).status, 0);
   const r = keylang(dir, ["spec-to-code", "Domain.Order.Order.refund", "--print"]);
   assert.equal(r.status, 0, r.stderr);

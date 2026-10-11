@@ -18,10 +18,13 @@ export function normaliseReason(reason) {
 /** Step IDs of a `draft flow --print` text: the trigger first, then every `step`, in document order. */
 export function draftSteps(text) {
   const steps = [];
+
   for (const line of text.split("\n")) {
     const m = /^\s*- (?:trigger|step) (\S+)/.exec(line);
+
     if (m) steps.push(m[1]);
   }
+
   return steps;
 }
 
@@ -47,12 +50,15 @@ export function collectMetrics(snapshot, options = {}) {
 
   const byKind = new Map();
   const byReason = new Map();
+
   for (const c of snapshot.coverage ?? []) {
     byKind.set(c.kind, (byKind.get(c.kind) ?? 0) + 1);
+
     if (!HOLE_KINDS.has(c.kind)) continue;
     const key = `${c.kind}: ${normaliseReason(c.reason ?? "")}`;
     byReason.set(key, (byReason.get(key) ?? 0) + 1);
   }
+
   const sortCounts = (map) => [...map].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
 
   const nodes = snapshot.nodes ?? {};
@@ -62,19 +68,24 @@ export function collectMetrics(snapshot, options = {}) {
   const drafts = (options.drafts ?? []).map((d) => ({ trigger: d.trigger, steps: draftSteps(d.text) }));
   const expect = options.expect ?? null;
   let golden = null;
+
   if (expect) {
     const flow = drafts.find((d) => d.trigger === expect.flow) ?? null;
+
     const ids = (expect.ids ?? []).map((id) => ({
       id,
       inMap: nodes[id] !== undefined,
       inFlow: flow !== null && flow.steps.includes(id),
       inDrafts: drafts.filter((d) => d.steps.includes(id)).map((d) => d.trigger),
     }));
+
     // A golden event is its ID (`events.checkout_submit_before`) or the literal it is dispatched with.
     const events = (expect.events ?? []).map((name) => {
       const id = eventIds.find((e) => e === name || e === `events.${name}` || nodes[e]?.name === name) ?? null;
+
       return { name, id, inFlow: id !== null && flow !== null && flow.steps.includes(id) };
     });
+
     golden = { flow: expect.flow, ids, events, found: ids.filter((g) => g.inFlow).length, total: ids.length };
   }
 
@@ -92,11 +103,14 @@ export function collectMetrics(snapshot, options = {}) {
 function countEntries(entries) {
   const list = Array.isArray(entries) ? entries : Object.values(entries);
   const kinds = new Map();
+
   for (const e of list) kinds.set(e.kind ?? "unknown", (kinds.get(e.kind ?? "unknown") ?? 0) + 1);
+
   return [...kinds].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
 }
 
 const yes = (b) => (b ? "так" : "—");
+
 const code = (s) => `\`${s}\``;
 
 /**
@@ -108,7 +122,9 @@ const code = (s) => `\`${s}\``;
 export function formatReport(metrics, options = {}) {
   const out = [];
   out.push(`# ${options.title ?? "Метрики business-flows"}`, "");
+
   for (const line of options.intro ?? []) out.push(line);
+
   if (options.intro?.length) out.push("");
 
   const { sizes, calls, holes } = metrics;
@@ -123,6 +139,7 @@ export function formatReport(metrics, options = {}) {
 
   out.push("## Дірки за видами", "");
   out.push("| Вид | Кількість |", "|---|---:|");
+
   for (const [kind, n] of holes.byKind) out.push(`| ${code(kind)} | ${n} |`);
   out.push("");
   out.push(`## Дірки за причинами (top-${holes.topReasons.length} з ${holes.total})`, "");
@@ -132,10 +149,12 @@ export function formatReport(metrics, options = {}) {
   out.push("");
 
   out.push("## Точки входу за видами", "");
+
   if (metrics.entries === null) out.push("n/a — у знімку немає `entries` (тікет 09).", "");
   else if (metrics.entries.length === 0) out.push("`entries` порожній.", "");
   else {
     out.push("| Вид | Кількість |", "|---|---:|");
+
     for (const [kind, n] of metrics.entries) out.push(`| ${code(kind)} | ${n} |`);
     out.push("");
   }
@@ -144,9 +163,11 @@ export function formatReport(metrics, options = {}) {
   out.push(metrics.events.length === 0 ? "n/a — у знімку немає вузлів виду `event` (`events.*`, тікет 08)." : `${metrics.events.length} вузлів: ${metrics.events.map(code).join(", ")}.`, "");
 
   out.push("## Чернетки `draft flow --mode algo`", "");
+
   if (metrics.drafts.length === 0) out.push("немає.", "");
   else {
     out.push("| Тригер | Кроків (разом із тригером) |", "|---|---:|");
+
     for (const d of metrics.drafts) out.push(`| ${code(d.trigger)} | ${d.steps.length} |`);
     out.push("");
   }
@@ -156,13 +177,17 @@ export function formatReport(metrics, options = {}) {
     out.push(`## Золотий список для ${code(g.flow)}`, "");
     out.push(`found **${g.found}/${g.total}** у чернетці; бракує: ${g.ids.filter((x) => !x.inFlow).map((x) => code(x.id)).join(", ") || "нічого"}.`, "");
     out.push("| ID | У карті | У цій чернетці | В інших чернетках |", "|---|---|---|---|");
+
     for (const x of g.ids) {
       const others = x.inDrafts.filter((t) => t !== g.flow).map(code).join(", ") || "—";
       out.push(`| ${code(x.id)} | ${yes(x.inMap)} | ${yes(x.inFlow)} | ${others} |`);
     }
+
     out.push("");
+
     if (g.events.length > 0) {
       out.push("| Подія | ID у знімку | У чернетці |", "|---|---|---|");
+
       for (const e of g.events) out.push(`| ${code(e.name)} | ${e.id === null ? "n/a (тікет 08)" : code(e.id)} | ${yes(e.inFlow)} |`);
       out.push("");
     }
@@ -172,9 +197,11 @@ export function formatReport(metrics, options = {}) {
     out.push("## Цього запуску", "");
     out.push("Змінюється між запусками; решта звіту — ні.", "");
     out.push("| Що | Значення |", "|---|---|");
+
     for (const [label, value] of options.run) out.push(`| ${label} | ${value} |`);
     out.push("");
   }
+
   return `${out.join("\n").trimEnd()}\n`;
 }
 
@@ -182,7 +209,10 @@ export function formatReport(metrics, options = {}) {
 export function summaryLine(metrics) {
   const parts = [`resolved ${metrics.calls.resolvedShare} % (${metrics.calls.resolved}/${metrics.calls.total})`, `holes ${metrics.holes.total}`];
   parts.push(metrics.entries === null ? "entries n/a" : `entries ${metrics.entries.reduce((a, [, n]) => a + n, 0)}`);
+
   if (metrics.drafts.length > 0) parts.push(`drafts ${metrics.drafts.map((d) => d.steps.length).join("/")}`);
+
   if (metrics.golden) parts.push(`golden ${metrics.golden.found}/${metrics.golden.total}`);
+
   return parts.join(" | ");
 }

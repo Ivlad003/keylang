@@ -404,6 +404,7 @@ export const FRAMEWORK_NAMES: readonly string[] = FRAMEWORK_ADAPTERS.map((a) => 
  */
 export function activeAdapters(frameworks: readonly string[] | null, context: FrameworkContext, available: readonly FrameworkAdapter[] = FRAMEWORK_ADAPTERS): FrameworkAdapter[] {
   if (frameworks !== null) return available.filter((a) => frameworks.includes(a.name));
+
   return available.filter((a) => a.detect(context));
 }
 
@@ -415,6 +416,7 @@ export function typeLabel(t: TypeName): string {
 /** Whether a cached value has the shape of `ConfigFacts`; a cache entry of another shape is parsed again. */
 export function isConfigFacts(value: unknown): value is ConfigFacts {
   if (!isRecord(value)) return false;
+
   return (
     typeof value.path === "string" &&
     typeof value.scope === "string" &&

@@ -14,6 +14,7 @@ import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
 
 const FULL = [
@@ -40,6 +41,7 @@ interface Mock {
 
 async function mockAnthropic(t: TestContext): Promise<Mock> {
   const mock: Mock = { url: "", requests: [] };
+
   const server = createServer((req, res) => {
     let data = "";
     req.on("data", (chunk: Buffer) => (data += chunk.toString()));
@@ -51,9 +53,11 @@ async function mockAnthropic(t: TestContext): Promise<Mock> {
       res.end(JSON.stringify({ id: "msg_1", type: "message", role: "assistant", model: "claude-opus-5", content: [{ type: "text", text }], stop_reason: "end_turn", stop_details: null, usage: { input_tokens: 10, output_tokens: 10 } }));
     });
   });
+
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(() => server.close());
   mock.url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
   return mock;
 }
 
@@ -75,6 +79,7 @@ async function repo(t: TestContext): Promise<{ dir: string; mock: Mock; env: Rec
   const config = JSON.parse(readFileSync(join(dir, "keylang.json"), "utf8")) as Record<string, unknown>;
   writeFileSync(join(dir, "keylang.json"), JSON.stringify({ ...config, agent: "anthropic:claude-opus-5" }));
   const mock = await mockAnthropic(t);
+
   return { dir, mock, env: { ANTHROPIC_BASE_URL: mock.url, ANTHROPIC_API_KEY: "test-key", ANTHROPIC_AUTH_TOKEN: undefined, HOME: dir } };
 }
 

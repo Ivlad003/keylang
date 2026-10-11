@@ -20,18 +20,23 @@ import { KEY } from "./tui-fixture.ts";
 import { VirtualTerminal } from "./vt.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
+
 const CACHE = ".keylang/cache/facts.json";
 
 function keylang(cwd: string, args: string[], input?: string): { status: number | null; stdout: string; stderr: string } {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, ...(input !== undefined ? { input } : {}) });
+
   if (r.error) throw r.error;
+
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
 function tempDir(t: TestContext, prefix: string): string {
   const dir = mkdtempSync(join(tmpdir(), prefix));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+
   return dir;
 }
 
@@ -44,21 +49,27 @@ function writeTree(dir: string, files: Record<string, string>): void {
 
 function git(dir: string, args: string[]): void {
   const r = spawnSync("git", ["-c", "user.email=test@example.com", "-c", "user.name=Test", ...args], { cwd: dir, encoding: "utf8" });
+
   if (r.status !== 0) throw new Error(r.stderr || r.stdout);
 }
 
 /** Relative paths and their bytes, so a command that must not write can be compared. */
 function treeBytes(dir: string, skip: (path: string) => boolean = () => false): Map<string, string> {
   const out = new Map<string, string>();
+
   const walk = (rel: string): void => {
     for (const name of readdirSync(join(dir, rel))) {
       const path = rel === "" ? name : `${rel}/${name}`;
+
       if (skip(path)) continue;
+
       if (statSync(join(dir, path)).isDirectory()) walk(path);
       else out.set(path, readFileSync(join(dir, path), "utf8"));
     }
   };
+
   walk("");
+
   return out;
 }
 
@@ -67,6 +78,7 @@ function repoCopy(t: TestContext): string {
   const dir = tempDir(t, "keylang-loop-");
   cpSync(join(root, "tests/fixtures/repo"), dir, { recursive: true });
   writeTree(dir, { "keylang/flows/checkout.md": CHECKOUT });
+
   return dir;
 }
 
@@ -76,8 +88,10 @@ async function mcpClient(t: TestContext, dir: string): Promise<(name: string, ar
   const client = new Client({ name: "keylang-test", version: "0" });
   await client.connect(new StdioClientTransport({ command: process.execPath, args: [bin, "mcp"], cwd: dir, stderr: "pipe" }));
   t.after(() => client.close());
+
   return async (name, args = {}) => {
     const r = (await client.callTool({ name, arguments: args })) as { content: { type: string; text: string }[]; isError?: boolean };
+
     return { text: r.content.map((c) => c.text).join(""), isError: r.isError === true };
   };
 }
@@ -127,12 +141,14 @@ test("proposals: list, show, accept and reject without the TUI; the spec changes
   assert.equal(none.status, 0);
   assert.equal(none.stdout, "");
   assert.match(none.stderr, /no proposals under \.keylang\/proposals\//);
+
   for (const sub of ["show", "accept", "reject"]) {
     const missing = keylang(dir, ["proposals", sub, "keylang/rules.md"]);
     assert.equal(missing.status, 1, `${sub}: nothing pending`);
     assert.equal(missing.stdout, "");
     assert.match(missing.stderr, /no proposal for keylang\/rules\.md under \.keylang\/proposals\//);
   }
+
   assert.equal(keylang(dir, ["proposals", "merge", "x.md"]).status, 2);
   assert.equal(keylang(dir, ["proposals", "accept"]).status, 2);
   assert.equal(keylang(dir, ["proposals", "accept", "a.md", "b.md"]).status, 2);
@@ -192,6 +208,7 @@ test("proposals: accept refuses what MERGE refuses — an explanation, a link ou
   assert.equal(linked.status, 1);
   assert.match(linked.stderr, /leads out of keylang\/ through a link; nothing written/);
   assert.equal(readFileSync(join(outside, "victim.md"), "utf8"), "# flow victim\n");
+
   if (process.getuid?.() !== 0) {
     chmodSync(join(dir, "keylang/flows/checkout.md"), 0o444);
     const readOnly = keylang(dir, ["proposals", "accept", "keylang/flows/checkout.md"]);
@@ -199,6 +216,7 @@ test("proposals: accept refuses what MERGE refuses — an explanation, a link ou
     assert.match(readOnly.stderr, /keylang\/flows\/checkout\.md: cannot be accepted: not writable/);
     chmodSync(join(dir, "keylang/flows/checkout.md"), 0o644);
   }
+
   assert.deepEqual(treeBytes(dir), before, "nothing written, every proposal stays");
 
   // A refused proposal is still the person's to drop.
@@ -213,11 +231,13 @@ test("apply_diff refuses saved explanations, the explained map and a spec direct
   const dir = repoCopy(t);
   const call = await mcpClient(t, dir);
   const forged = "<!-- keylang:explain agent=x date=2026-10-05 closure=deadbeef lang=en detail=brief -->\nForged.\n";
+
   const reasons: [string, RegExp][] = [
     ["keylang/explain/app.checkout.checkout.md", /saved explanations: only `keylang explain` writes them/],
     ["keylang/explain/brief/app.checkout.checkout.md", /saved explanations: only `keylang explain` writes them/],
     ["keylang/map-explained/app.md", /the explained map is generated: `keylang map` writes it/],
   ];
+
   for (const [path, reason] of reasons) {
     const r = await call("apply_diff", { path, text: forged });
     assert.equal(r.isError, true, `${path}: ${r.text}`);
@@ -227,6 +247,7 @@ test("apply_diff refuses saved explanations, the explained map and a spec direct
     assert.equal(into.status, 2, into.stdout);
     assert.match(into.stderr, reason, `draft --into ${path}`);
   }
+
   assert.equal(existsSync(join(dir, ".keylang/proposals/keylang/explain")), false);
   assert.equal(existsSync(join(dir, ".keylang/proposals/keylang/map-explained")), false);
 
@@ -296,6 +317,7 @@ test("a reserved directory reached through a link or another case is still refus
 
 test("the code gate is the write protocol's: a Windows path or a backslash is not a plain relative path", () => {
   for (const path of ["C:\\x.ts", "src\\app\\x.ts", "/abs/x.ts", "src/../x.ts"]) assert.equal(codeProposalProblem(root, path), "not a plain relative path", path);
+
   for (const path of ["C:\\x.md", "keylang\\flows\\x.md"]) assert.equal(proposalProblem(root, "keylang", path), "not a plain relative path", path);
   assert.equal(codeProposalProblem(root, "src/new-file-of-the-test.ts"), null);
 });
@@ -362,8 +384,11 @@ test("MCP saves the fact cache when its facts differ from it, and only then", as
 // ---------- feature: only this change's rule fails block ----------
 
 const FEATURE_LAYERS = { languages: ["typescript"], module: "file", layers: { app: ["src/app/**"], domain: ["src/domain/**"], infra: ["src/infra/**"] } };
+
 const LEGACY = 'import { save } from "../infra/db.ts";\nexport function old(): number {\n  return save(1);\n}\n';
+
 const PAY = 'import { price } from "../domain/order.ts";\nexport function charge(): number {\n  return price();\n}\n';
+
 const PAID = 'import { price } from "../domain/order.ts";\nexport function charge(): number {\n  return refund(price());\n}\nexport function refund(n: number): number {\n  return n;\n}\n';
 
 type Report = { done: boolean; stage: string; gaps: { kind: string; id: string; file: string }[]; hints: { kind: string; id: string; file: string; reason: string }[]; info: { rules: { id: string; file: string; verdict: string; reason: string }[] | null; base: { state: string } | null } };
@@ -383,6 +408,7 @@ function inheritedRepo(t: TestContext, feature: string): string {
   git(dir, ["init"]);
   git(dir, ["add", "."]);
   git(dir, ["commit", "-m", "base"]);
+
   return dir;
 }
 
@@ -391,6 +417,7 @@ const REFUND = "# flow refund\n\n- planned fn app.pay.refund (n: number) → num
 function feature(dir: string, slug: string, args: string[] = []): { status: number | null; body: Report; human: string } {
   const r = keylang(dir, ["feature", slug, "--format", "json", ...args]);
   const human = keylang(dir, ["feature", slug, ...args]);
+
   return { status: r.status, body: JSON.parse(r.stdout) as Report, human: human.stdout };
 }
 
@@ -436,11 +463,14 @@ test("the TUI status line and readiness screen agree with feature: an inherited 
   const app = new App({ root: dir, cols: 130, rows: 32 });
   app.attach({ write: (ansi) => vt.feed(ansi) }, 130, 32);
   t.after(() => app.close());
+
   const palette = (text: string): void => {
     app.input(KEY.ctrlP);
+
     for (const ch of text) app.input(ch);
     app.input(KEY.enter);
   };
+
   await app.idle();
   palette("open keylang/features/refund.md");
   await app.idle();
@@ -497,17 +527,20 @@ test("validate_spec takes a spec directory whose name starts with two dots; a pa
   const body = JSON.parse(r.text) as { file: string; diagnostics: { code: string; line: number }[] };
   assert.equal(body.file, "..specs/flows/x.md");
   assert.deepEqual(body.diagnostics.map((diag) => [diag.code, diag.line]), [["K001", 3]]);
+
   for (const path of ["../x.md", "..", "/etc/x.md"]) {
     const out = await call("validate_spec", { path, text: "# flow y\n" });
     assert.equal(out.isError, true, path);
     assert.match(out.text, /outside the repository/, path);
   }
+
   // A path check never reads as a spec is a tool error, not a clean result.
   for (const path of ["notes/x.md", "flows/x.md", "..specs/.drafts/x.md", "..specs/node_modules/x.md", "..specs/target/x.md", "..specs/map-explained/x.md", "..specs/flows/x.txt"]) {
     const out = await call("validate_spec", { path, text: "# flow y\n\n- trigger app.checkout.nope\n" });
     assert.equal(out.isError, true, `${path}: ${out.text}`);
     assert.match(out.text, /`keylang check` does not read this file as a spec/, path);
   }
+
   // apply_diff reads the same directory as specs.
   const proposed = await call("apply_diff", { path: "..specs/flows/checkout.md", text: `${CHECKOUT}  - invariant x\n` });
   assert.equal(proposed.isError, false, proposed.text);

@@ -12,7 +12,9 @@ const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 /** Grapheme clusters of a string, in order. */
 export function graphemes(text: string): string[] {
   const out: string[] = [];
+
   for (const { segment } of segmenter.segment(text)) out.push(segment);
+
   return out;
 }
 
@@ -44,18 +46,26 @@ const IGNORABLE = /^\p{Default_Ignorable_Code_Point}$/u;
 
 function codePointWidth(cp: number): 0 | 1 | 2 {
   if (cp < 0x20 || (cp >= 0x7f && cp < 0xa0)) return 0;
+
   // Hangul vowels and finals (jungseong, jongseong) join the leading consonant before them.
   if ((cp >= 0x1160 && cp <= 0x11ff) || (cp >= 0xd7b0 && cp <= 0xd7ff)) return 0;
+
   if (cp >= 0xa0 && IGNORABLE.test(String.fromCodePoint(cp))) return 0;
+
   for (const [lo, hi] of WIDE) if (cp >= lo && cp <= hi) return 2;
+
   return 1;
 }
 
 const COMBINING = /^\p{M}$/u;
+
 /** Emoji shown as a picture by default (✅, 🚀), and a pictograph made one by VS16 (❤️). */
 const EMOJI_PRESENTATION = /\p{Emoji_Presentation}/u;
+
 const PICTOGRAPHIC = /^\p{Extended_Pictographic}/u;
+
 const REGIONAL = /^\p{Regional_Indicator}{2}$/u;
+
 /** COMBINING ENCLOSING KEYCAP: a keycap (`1` VS16 U+20E3) is drawn as an emoji picture. */
 const KEYCAP = "\u20e3";
 
@@ -66,17 +76,22 @@ const KEYCAP = "\u20e3";
  */
 export function graphemeWidth(cluster: string): 0 | 1 | 2 {
   if (EMOJI_PRESENTATION.test(cluster) || REGIONAL.test(cluster) || cluster.includes(KEYCAP) || (cluster.includes("\ufe0f") && PICTOGRAPHIC.test(cluster))) return 2;
+
   for (const ch of cluster) {
     if (COMBINING.test(ch)) continue;
     const width = codePointWidth(ch.codePointAt(0)!);
+
     if (width > 0) return width;
   }
+
   return 0;
 }
 
 export function stringWidth(text: string): number {
   let width = 0;
+
   for (const cluster of graphemes(text)) width += graphemeWidth(cluster);
+
   return width;
 }
 
@@ -84,12 +99,15 @@ export function stringWidth(text: string): number {
 export function fitWidth(text: string, width: number): string {
   let used = 0;
   let out = "";
+
   for (const cluster of graphemes(text)) {
     const w = graphemeWidth(cluster);
+
     if (used + w > width) break;
     used += w;
     out += cluster;
   }
+
   return out;
 }
 
@@ -97,8 +115,10 @@ export function fitWidth(text: string, width: number): string {
 export function padWidth(text: string, width: number): string {
   if (width <= 0) return "";
   const w = stringWidth(text);
+
   if (w <= width) return text + " ".repeat(width - w);
   const cut = fitWidth(text, width - 1);
+
   return cut + "…" + " ".repeat(width - 1 - stringWidth(cut));
 }
 
@@ -117,26 +137,34 @@ export function sliceCells(text: string, left: number, width: number): string {
   let out = "";
   let cut = false;
   let marked = left <= 0;
+
   for (const cluster of graphemes(text)) {
     const w = graphemeWidth(cluster);
     const at = used;
     used += w;
+
     if (used <= left) continue;
+
     if (!marked) {
       marked = true;
       out = "…";
       room--;
+
       // Straddles the left edge: its visible half is the marker's cell.
       if (at < left) continue;
     }
+
     if (w > room) {
       cut = true;
       break;
     }
+
     out += cluster;
     room -= w;
   }
+
   if (cut) out = `${fitWidth(out, width - 1)}…`;
+
   return out;
 }
 
@@ -158,27 +186,34 @@ export function wrapRuns<S>(runs: readonly StyledText<S>[], width: number, hang:
   const rows: StyledText<S>[][] = [];
   let row: StyledText<S>[] = [];
   let used = 0;
+
   const flush = (): void => {
     rows.push(row);
     row = hang > 0 ? [{ text: " ".repeat(hang), style: blank }] : [];
     used = hang;
   };
+
   for (const run of runs) {
     for (let word of run.text.split(/(?<= )/u)) {
       if (used + stringWidth(word.trimEnd()) > width && used > hang) flush();
+
       // Wider than the room after the hang: a row's worth at a time, at least one cluster each.
       while (width > hang && used + stringWidth(word.trimEnd()) > width) {
         const part = fitWidth(word, width - used) || graphemes(word)[0]!;
+
         if (part === word) break;
         row.push({ text: part, style: run.style });
         word = word.slice(part.length);
         flush();
       }
+
       row.push({ text: word, style: run.style });
       used += stringWidth(word);
     }
   }
+
   rows.push(row);
+
   return rows;
 }
 
@@ -186,6 +221,7 @@ export function wrapRuns<S>(runs: readonly StyledText<S>[], width: number, hang:
 export function wrapCells(text: string, width: number): string[] {
   if (width <= 0) return [text];
   const rows = wrapRuns([{ text, style: null }], width, 0, null).map((row) => row.map((run) => run.text).join(""));
+
   return rows.map((row, index) => (index < rows.length - 1 ? row.trimEnd() : row));
 }
 
@@ -212,12 +248,14 @@ export function layoutLine(line: string): LineLayout {
   const cells = new Uint32Array(clusters.length + 1);
   const points = new Uint32Array(clusters.length + 1);
   const units = new Uint32Array(clusters.length + 1);
+
   for (let i = 0; i < clusters.length; i++) {
     const cluster = clusters[i]!;
     cells[i + 1] = cells[i]! + cellWidth(cluster);
     points[i + 1] = points[i]! + [...cluster].length;
     units[i + 1] = units[i]! + cluster.length;
   }
+
   return { clusters, cells, points, units };
 }
 
@@ -225,11 +263,14 @@ export function layoutLine(line: string): LineLayout {
 export function scrollToFit(layout: LineLayout, left: number, col: number, width: number): number {
   let lo = Math.min(left, col);
   let hi = col;
+
   while (lo < hi) {
     const mid = (lo + hi) >> 1;
+
     if (layout.cells[col]! - layout.cells[mid]! > width) lo = mid + 1;
     else hi = mid;
   }
+
   return lo;
 }
 
@@ -240,11 +281,14 @@ export function clusterAtCell(layout: LineLayout, left: number, x: number): numb
   // The first cluster from `left` whose right edge is past `x`.
   let lo = Math.min(left, n);
   let hi = n;
+
   while (lo < hi) {
     const mid = (lo + hi) >> 1;
+
     if (layout.cells[mid + 1]! - base > x) hi = mid;
     else lo = mid + 1;
   }
+
   return lo;
 }
 
@@ -252,11 +296,14 @@ export function clusterAtCell(layout: LineLayout, left: number, x: number): numb
 export function clusterAt(line: string, codePoints: number): number {
   let seen = 0;
   let index = 0;
+
   for (const cluster of graphemes(line)) {
     seen += [...cluster].length;
+
     if (seen > codePoints) return index;
     index++;
   }
+
   return index;
 }
 

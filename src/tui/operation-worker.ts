@@ -40,25 +40,34 @@ parentPort?.on("message", (call: OperationCall) => {
   if (call.type === "base") {
     // Without an explicit ref a git failure is a state of the base, never an error.
     post({ type: "base", baseId: call.baseId, base: readFeatureBase(call.root, call.path, undefined, "feature") });
+
     return;
   }
+
   const { operationId } = call;
+
   if (call.type !== "run") {
     const entry = running.get(operationId);
+
     if (!entry) return;
+
     if (call.type === "cancel") entry.controller.abort();
     // The session's refusal travels with `commit`: the operation reports it, nothing is written.
     entry.proceed?.(call.type === "commit" && call.refused ? { refused: call.refused } : undefined);
     entry.proceed = null;
+
     return;
   }
+
   const entry = { controller: new AbortController(), proceed: null as ((gate: CommitGate) => void) | null };
   running.set(operationId, entry);
+
   const beforeCommit = (plan?: CommitPlan): Promise<CommitGate> =>
     new Promise<CommitGate>((proceed) => {
       entry.proceed = proceed;
       post({ operationId, type: "commit", ...(plan ? { plan } : {}) });
     });
+
   runOperation(call.request, { signal: entry.controller.signal, beforeCommit, onProgress: ({ text, step }) => post({ operationId, type: "progress", text, ...(step ? { step } : {}) }) })
     .then(
       (result) => post({ operationId, type: "result", result }),

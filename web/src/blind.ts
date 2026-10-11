@@ -18,6 +18,7 @@ export interface BlindHost {
 
 /** More rows than this and a section is grouped (orphans by layer, entry points by kind). */
 const GROUP_FROM = 40;
+
 /** At most this many rows of a long section; the CLI's text keeps a top-10 too. */
 const MAX_ROWS = 200;
 
@@ -35,12 +36,15 @@ export class BlindSpots {
 
   show(): Promise<void> {
     this.loading ??= this.load().finally(() => (this.loading = null));
+
     return this.loading;
   }
 
   private async load(): Promise<void> {
     this.host.status("blind spots: reading a fresh snapshot (coverage)…");
+
     if (this.container.childElementCount === 0) this.container.replaceChildren(make("p", { className: "empty", text: "loading…" }));
+
     try {
       const report = await this.api.coverage();
       this.render(report);
@@ -59,6 +63,7 @@ export class BlindSpots {
   private section(id: string, title: string, note: string, ...body: Node[]): HTMLElement {
     const block = make("section", { className: "blind-section" }, make("h3", { text: title }), make("p", { className: "note", text: note }), ...body);
     block.id = id;
+
     return block;
   }
 
@@ -67,9 +72,12 @@ export class BlindSpots {
     const table = make("table");
     table.append(make("thead", {}, make("tr", {}, ...head.map((h) => make("th", { text: h })))));
     const body = make("tbody");
+
     for (const row of rows.slice(0, MAX_ROWS)) body.append(make("tr", {}, ...row.map((cell) => make("td", {}, cell))));
     table.append(body);
+
     if (total > MAX_ROWS) return make("div", {}, table, make("p", { className: "note", text: `…ще ${total - MAX_ROWS}; повний список — \`keylang coverage --json\`` }));
+
     return table;
   }
 
@@ -81,8 +89,10 @@ export class BlindSpots {
   private grouped<T>(items: readonly T[], keyOf: (item: T) => string, head: string[], row: (item: T) => (Node | string)[]): HTMLElement {
     if (items.length <= GROUP_FROM) return this.table(head, items.map(row), items.length);
     const groups = new Map<string, T[]>();
+
     for (const item of items) groups.set(keyOf(item), [...(groups.get(keyOf(item)) ?? []), item]);
     const box = make("div", { className: "blind-groups" });
+
     for (const [key, list] of [...groups].sort((a, b) => b[1].length - a[1].length || (a[0] < b[0] ? -1 : 1))) {
       const details = make("details", { className: "blind-group" }, make("summary", {}, make("b", { text: key }), ` — ${list.length}`));
       // Opened on demand: the table is built when the group is.
@@ -91,26 +101,32 @@ export class BlindSpots {
       });
       box.append(details);
     }
+
     return box;
   }
 
   private render(report: Coverage): void {
     const root = this.host.root();
     const { reach } = report;
+
     const reachBlock = this.section(
       "blind-reach",
       "1. Досяжність з точок входу",
       "Частка fn поза тестами, досяжних хоч з однієї точки входу по розв'язаних викликах.",
       make("p", { className: "big", text: `${(reach.share * 100).toFixed(1)}% — ${reach.reachable} з ${reach.fns} fn; точок входу ${reach.entries}; fn у тестах ${reach.tests}` }),
     );
+
     const orphans = this.section(
       "blind-orphans",
       `2. Сироти (${report.orphans.length})`,
       "Fn, яких не досягає жодна точка входу: мертвий код або вхід, якого keylang не знає.",
       this.grouped(report.orphans, (o) => o.id.split(".")[0] ?? o.id, ["fn", "код", "викликачів", "втікає як значення", ""], (o) => [make("code", { text: o.id }), codeLink(root, o.file, o.line), String(o.callers), o.escapes ?? "—", this.explore(o.id)]),
     );
+
     const reasons = make("ul", { className: "reasons" });
+
     for (const r of report.holes.reasons.slice(0, 20)) reasons.append(make("li", {}, make("b", { text: String(r.count) }), ` ${r.kind}: ${r.reason}`));
+
     const holes = this.section(
       "blind-holes",
       `3. Дірки (${report.holes.total})`,
@@ -122,6 +138,7 @@ export class BlindSpots {
         report.holes.modules.length,
       ),
     );
+
     const unflowed = this.section(
       "blind-unflowed",
       `4. Точки входу без флоу (${report.unflowed.length})`,
@@ -140,9 +157,12 @@ export class BlindSpots {
         ],
       ),
     );
+
     const labels = new Map(report.dataLogic.signals.map((s) => [s.id, s.label]));
     const signals = make("ul", { className: "reasons" });
+
     for (const s of report.dataLogic.signals) signals.append(make("li", {}, make("b", { text: String(s.count) }), ` ${s.label}`));
+
     const dataLogic = this.section(
       "blind-data",
       `5. Логіка в даних — перевірити вручну (${report.dataLogic.sites.length})`,
@@ -154,6 +174,7 @@ export class BlindSpots {
         report.dataLogic.sites.length,
       ),
     );
+
     const head = make("header", { className: "blind-head" }, make("h2", { text: "Сліпі зони" }), button("оновити", () => void this.show(), { className: "refresh" }));
     this.container.replaceChildren(head, reachBlock, orphans, holes, unflowed, dataLogic);
   }

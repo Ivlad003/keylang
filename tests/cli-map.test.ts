@@ -23,20 +23,25 @@ test("map generates the expected map and index", (t) => {
   const expectedDir = join(root, "tests/fixtures/repo.expected");
   const names = readdirSync(join(dir, "keylang/map")).sort();
   assert.deepEqual(names, readdirSync(expectedDir).sort());
+
   for (const n of names) {
     assert.equal(readFileSync(join(dir, "keylang/map", n), "utf8"), readFileSync(join(expectedDir, n), "utf8"), n);
   }
+
   const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8"));
   assert.equal(index.schema, 9);
   assert.equal(index.nodes["domain.order"].members, "complete");
   assert.equal(index.nodes["external.node"].members, "opaque");
   assert.deepEqual(index.nodes["domain.order.createOrder"].callers, ["app.checkout.checkout"]);
   assert.ok(index.exports.some((e: { module: string; name: string; kind: string }) => e.module === "domain.order" && e.name === "createOrder" && e.kind === "fn"));
+
   for (const node of Object.values(index.nodes) as { precision?: unknown }[]) assert.equal("precision" in node, false);
+
   for (const edge of index.edges as { resolution: string; provenance: string }[]) {
     assert.ok(edge.resolution === "resolved" || edge.resolution === "ambiguous" || edge.resolution === "unresolved");
     assert.equal(edge.provenance, "syntactic");
   }
+
   assert.equal(keylang(dir, ["map", "--check"]).status, 0);
   assert.equal(keylang(dir, ["check"]).status, 0);
 });
@@ -70,6 +75,7 @@ test("map links are relative, encoded, and round-trip", (t) => {
   assert.match(text, /\]\(\.\.\/\.\.\/src\/c%23d\.ts#L1\)/);
   assert.match(text, /- type2 main\.type\n/);
   assert.doesNotMatch(text, /- type main\.type\n/);
+
   for (const href of hrefs(text)) {
     const path = href.split("#")[0] ?? "";
     assert.equal(/[ ()#]/.test(path), false, href);
@@ -117,10 +123,12 @@ test("Next route segments (shop) and [id] are different modules and resolve by t
   assert.match(map, /app\/%28shop%29\/cart\/page\.tsx#L1/);
   assert.match(map, /app\/%5Bid%5D\/page\.tsx#L1/);
   assert.doesNotMatch(map, /_shop_|_id_/);
+
   const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as {
     nodes: Record<string, { kind: string; file?: string }>;
     edges: { source: string; target: string | null }[];
   };
+
   assert.equal(index.nodes["main.$g-shop.cart.page"]?.file, "app/(shop)/cart/page.tsx");
   assert.equal(index.nodes["main.$p-id.page"]?.file, "app/[id]/page.tsx");
   assert.equal(index.nodes["main._shop_.cart.page"], undefined);
@@ -150,20 +158,26 @@ function hrefs(markdown: string): string[] {
 function findNode(doc: { sections: { items: unknown[] }[] }, id: string): { link: { path: string; target: string } } {
   const walk = (node: { id?: string; children?: unknown[]; link?: { path: string; target: string } }): { link: { path: string; target: string } } | null => {
     if (node.id === id) return node as { link: { path: string; target: string } };
+
     for (const child of node.children ?? []) {
       const found = walk(child as { id?: string; children?: unknown[] });
+
       if (found) return found;
     }
+
     return null;
   };
+
   for (const section of doc.sections) {
     for (const item of section.items) {
       if (item && typeof item === "object" && "id" in item) {
         const found = walk(item as { id?: string; children?: unknown[] });
+
         if (found) return found;
       }
     }
   }
+
   throw new Error(`missing node ${id}`);
 }
 
@@ -198,10 +212,12 @@ test("a bare import is external when a package.json between the file and the roo
   writeFileSync(join(dir, "src/app/web/ui.ts"), 'import pad from "left-pad";\n\nexport function ui(): string {\n  return pad("a", 2);\n}\n');
   appendFileSync(join(dir, "src/app/checkout.ts"), 'import pad from "left-pad";\n');
   assert.equal(keylang(dir, ["map"]).status, 0);
+
   const unresolved = (): string[] =>
     (JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")).coverage as { kind: string; file: string; text: string }[])
       .filter((c) => c.kind === "unresolved-import" && c.text.includes("left-pad"))
       .map((c) => c.file);
+
   // checkout.ts is outside web/: web's package.json does not reach it.
   assert.deepEqual(unresolved(), ["src/app/checkout.ts"]);
   writeFileSync(join(dir, "src/app/web/package.json"), "{}");
@@ -235,9 +251,11 @@ test("snapshot keeps unresolved imports, local calls, and completeness", (t) => 
   const parseError = coverage.find((c) => c.kind === "parse-error" && c.file === "src/domain/bad.ts");
   assert.ok(parseError);
   assert.equal(parseError.line > 0, true);
+
   const edge = (index.edges as { resolution: string; provenance: string; reason?: string; file: string | null; line: number }[]).find(
     (e) => e.resolution === "unresolved" && e.reason?.includes("missing.ts"),
   );
+
   assert.ok(edge);
   assert.equal(edge.provenance, "syntactic");
   assert.equal(edge.file, "src/app/checkout.ts");
@@ -269,11 +287,13 @@ test("snapshot edges name type targets, ambiguity, and unsupported constructs", 
     ].join("\n"),
   );
   assert.equal(keylang(dir, ["map"]).status, 0, "map");
+
   const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as {
     nodes: Record<string, { kind: string; line: number | null; col: number | null; endLine?: number; endCol?: number }>;
     edges: { kind: string; source: string; target: string | null; candidates?: string[]; resolution: string; provenance: string; text: string; line: number; col: number; endLine: number; endCol: number }[];
     coverage: { kind: string; file: string; line: number; col: number; endLine: number; endCol: number; reason: string }[];
   };
+
   const order = index.nodes["domain.order"];
   assert.equal(order?.line, 1);
   assert.equal(order?.col, 1);
@@ -299,6 +319,7 @@ test("snapshot edges name type targets, ambiguity, and unsupported constructs", 
   assert.ok(holes.some((item) => item.reason.includes("namespace")));
   assert.ok(holes.some((item) => item.reason.includes("computed call")));
   assert.ok(holes.some((item) => item.reason.includes("eval")));
+
   for (const item of holes) assert.ok(item.line >= 1 && item.col >= 1 && item.endLine >= item.line && item.endCol >= 1);
 });
 
@@ -420,6 +441,7 @@ test("a shadowed parameter is not a confirmed call edge", (t) => {
 test("a local binding in any enclosing scope hides the module function", (t) => {
   const dir = repoCopy();
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+
   const cases = [
     "export function a1({ save }: { save: () => void }): void { save(); }",
     "export function a2(o: { save: () => void }): void { const { save } = o; save(); }",
@@ -431,14 +453,17 @@ test("a local binding in any enclosing scope hides the module function", (t) => 
     "export function a8(): void { const save = pick(); save(); }",
     "export function a9(): void { try { pick(); } catch (save) { (save as () => void)(); } }",
   ];
+
   writeFileSync(join(dir, "src/domain/order.ts"), `export function save(): void {}\nexport function pick(): () => void { return save; }\n${cases.join("\n")}\nexport function direct(): void { save(); }\n`);
   assert.equal(keylang(dir, ["map"]).status, 0);
   const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8"));
   const edges = index.edges as { source: string; target: string | null; resolution: string; reason?: string }[];
+
   for (let i = 1; i <= 9; i++) {
     const hit = edges.find((edge) => edge.source === `domain.order.a${i}` && edge.target === "domain.order.save" && edge.resolution === "resolved");
     assert.equal(hit, undefined, `a${i} must not call domain.order.save`);
   }
+
   assert.ok(edges.some((edge) => edge.source === "domain.order.direct" && edge.target === "domain.order.save" && edge.resolution === "resolved"));
   const reasons = (index.coverage as { source: string | null; reason: string }[]).filter((item) => item.source?.startsWith("domain.order.a")).map((item) => `${item.source} ${item.reason}`);
   assert.ok(reasons.includes("domain.order.a1 shadowed by parameter `save`"), reasons.join("\n"));
@@ -460,6 +485,7 @@ interface IndexEdge {
 function mapIndex(dir: string): { nodes: Record<string, { kind: string; calls?: string[]; escapes?: { reason: string } }>; edges: IndexEdge[]; coverage: { reason: string; text: string }[] } {
   const r = keylang(dir, ["map"]);
   assert.equal(r.status, 0, r.stderr);
+
   return JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8"));
 }
 
@@ -490,6 +516,7 @@ test("class members: arrow fields are fns, field initializers run in the constru
     "}",
     "",
   ].join("\n");
+
   const lib = "export function later(): void {}\nexport function boot(): void {}\nexport function init(): void {}\nexport function make(): void {}\nexport function hidden(): void {}\nexport function count(n: number): number { return n; }\n";
   const dir = mainRepo(t, { "src/a.ts": code, "src/lib.ts": lib }, "- layers main\n");
   const index = mapIndex(dir);
@@ -542,6 +569,7 @@ test("a field or a local of a known class resolves its method calls; any other r
     "}",
     "",
   ].join("\n");
+
   const decoder = "export class Decoder {\n  feed(s: string): void {}\n  flush(): void {}\n  reset(): void {}\n}\n";
   const index = mapIndex(mainRepo(t, { "src/app.ts": code, "src/decoder.ts": decoder }, "- layers main\n"));
   const resolved = (source: string): string[] => index.edges.filter((e) => e.kind === "call" && e.source === source && e.resolution === "resolved").map((e) => `${e.text} ${e.target}`).sort();
@@ -576,17 +604,20 @@ test("map and wire: keylang.json changed during the analysis refuses the commit 
     "src/core/c.ts": "export function c(): number {\n  return 2;\n}\n",
   });
   const withCore = `${JSON.stringify({ languages: ["typescript"], layers: { app: ["src/app/**"], core: ["src/core/**"] } })}\n`;
+
   const map = await runOperation(
     { kind: "map", root: dir },
     {
       analyze: async (request) => {
         const analyzed = await analyze(request);
         writeFileSync(join(dir, "keylang.json"), withCore);
+
         return analyzed;
       },
       beforeCommit: async () => undefined,
     },
   );
+
   assert.equal(map.status, "failed", JSON.stringify(map.messages));
   assert.equal(map.exitCode, 1);
   assert.ok(map.messages.some((m) => m.text === "keylang.json: changed on disk while the map was computed"), JSON.stringify(map.messages));
@@ -600,17 +631,20 @@ test("map and wire: keylang.json changed during the analysis refuses the commit 
   cpSync(join(root, "tests/fixtures/wiring-shop"), shop, { recursive: true });
   const config = readFileSync(join(shop, "keylang.json"), "utf8");
   const excluded = `${JSON.stringify({ ...JSON.parse(config), exclude: ["src/infra/memory-db.ts"] })}\n`;
+
   const wire = await runOperation(
     { kind: "wire", root: shop, check: false },
     {
       analyze: async (request) => {
         const analyzed = await analyze(request);
         writeFileSync(join(shop, "keylang.json"), excluded);
+
         return analyzed;
       },
       beforeCommit: async () => undefined,
     },
   );
+
   assert.equal(wire.status, "failed", JSON.stringify(wire.messages));
   assert.equal(wire.exitCode, 1);
   assert.ok(wire.messages.some((m) => m.text === "keylang.json: changed on disk while the wiring was computed"), JSON.stringify(wire.messages));
@@ -620,9 +654,11 @@ test("map and wire: keylang.json changed during the analysis refuses the commit 
 // A layer renamed by case only (`Domain` → `domain`) on a case-insensitive file system: `domain.md` and `Domain.md` are one file, so removing the old name after writing the new one deleted the map.
 test("map after a case-only layer rename on a case-insensitive file system keeps the layer file (casefold tmpfs in a user namespace)", { skip: process.platform !== "linux" }, (t) => {
   const probe = spawnSync("unshare", ["-rm", "true"], { encoding: "utf8" });
+
   if (probe.status !== 0) return t.skip("unshare -rm is not available here");
   const mount = tempDir(t, "keylang-casefold-map-");
   const config = (layer: string): string => `${JSON.stringify({ languages: ["typescript"], layers: { [layer]: ["src/domain/**"] } })}\n`;
+
   const script = [
     'mount -t tmpfs -o casefold tmpfs "$1" 2>/dev/null || { echo SKIP:mount; exit 0; }',
     'mkdir "$1/repo" && chattr +F "$1/repo" 2>/dev/null || { echo SKIP:chattr; exit 0; }',
@@ -636,8 +672,10 @@ test("map after a case-only layer rename on a case-insensitive file system keeps
     'echo "LS2:$(ls keylang/map)"',
     '"$2" "$3" map --check; echo "CHECK:$?"',
   ].join("\n");
+
   const run = spawnSync("unshare", ["-rm", "sh", "-c", script, "sh", mount, process.execPath, bin, config("Domain"), config("domain")], { encoding: "utf8" });
   assert.equal(run.status, 0, run.stderr);
+
   if (/^SKIP:/m.test(run.stdout)) return t.skip(`casefold tmpfs is not available here (${run.stdout.match(/^SKIP:(\w+)/m)?.[1]})`);
   const out = run.stdout + run.stderr;
   assert.match(run.stdout, /^LS1:Domain\.md$/m, out);
@@ -655,17 +693,21 @@ test("a directory or a dangling symlink named *.md in keylang/map is neither rea
   });
   assert.equal(keylang(dir, ["map"]).status, 0);
   mkdirSync(join(dir, "keylang/map/notes.md"));
+
   for (const [args, code] of [[["map", "--check"], 0], [["map"], 0]] as const) {
     const run = keylang(dir, [...args]);
     assert.equal(run.status, code, `${args.join(" ")}: ${run.stdout}${run.stderr}`);
   }
+
   assert.ok(statSync(join(dir, "keylang/map/notes.md")).isDirectory());
   rmSync(join(dir, "keylang/map/notes.md"), { recursive: true });
   symlinkSync("../../docs/old-notes.md", join(dir, "keylang/map/notes.md"));
+
   for (const args of [["map", "--check"], ["map"]]) {
     const run = keylang(dir, args);
     assert.equal(run.status, 0, `${args.join(" ")}: ${run.stdout}${run.stderr}`);
   }
+
   assert.ok(lstatSync(join(dir, "keylang/map/notes.md")).isSymbolicLink());
 });
 

@@ -37,6 +37,7 @@ export interface CheckResult {
 export function checkResults(verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]): CheckResult[] {
   const fromDiags = diags.map((diag): CheckResult => {
     const owner = verdicts.find((verdict) => sameFinding(verdict, [diag]));
+
     return {
       criterion: owner?.criterion ?? diag.criterion ?? diag.code,
       area: owner?.area ?? diag.area ?? diag.file,
@@ -52,6 +53,7 @@ export function checkResults(verdicts: Verdict[], snapshotId: string | null, dia
       ...(diag.code === "K005" && diag.reason !== undefined ? { reason: diag.reason } : {}),
     };
   });
+
   const fromVerdicts = verdicts
     .filter((verdict) => !sameFinding(verdict, diags))
     .map((verdict): CheckResult => ({
@@ -68,6 +70,7 @@ export function checkResults(verdicts: Verdict[], snapshotId: string | null, dia
       ...(verdict.evidence ?? { provenance: "syntactic" }),
       ...(verdict.hole !== undefined ? { hole: verdict.hole } : {}),
     }));
+
   return [...fromDiags, ...fromVerdicts];
 }
 
@@ -100,6 +103,7 @@ export function checkReport(verdicts: Verdict[], snapshotId: string | null, diag
   // One hole leaves every rule whose area holds it unverified: the summary counts it once.
   const fromHoles = verdicts.filter((verdict) => verdict.verdict === "unverified" && verdict.hole !== undefined);
   const holes = new Set(fromHoles.map((verdict) => verdict.hole)).size;
+
   return {
     results: checkResults(verdicts, snapshotId, diags),
     lines: [...diags.map(formatDiagnostic), ...own.filter((verdict) => verdict.verdict !== "ok" || CHANNELS.has(verdict.criterion)).map(formatVerdict)],

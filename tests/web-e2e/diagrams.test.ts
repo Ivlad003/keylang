@@ -106,10 +106,12 @@ test("diagrams page: search a flow, open it, click a step → file:line in the p
 test("diagrams page: hundreds of entry points stay a few dozen rows in the DOM; scrolling and search answer at once", { skip: options === null ? "no Chromium: set KEYLANG_CHROMIUM or PLAYWRIGHT_BROWSERS_PATH" : false, timeout: 180000 }, async (t) => {
   const routes = 800;
   const names = Array.from({ length: routes }, (_, i) => `handle${i}`);
+
   const repo = checkoutRepo(t, {
     "src/presentation/handlers.ts": `import { create } from "../domain/order.ts";\n${names.map((name) => `export function ${name}(): void {\n  create();\n}\n`).join("")}`,
     "src/presentation/server.ts": `import { ${names.join(", ")} } from "./handlers.ts";\nconst app = { get: (_p: string, ..._h: unknown[]) => 0 };\n${names.map((name, i) => `app.get("/r${i}", ${name});`).join("\n")}\n`,
   });
+
   const url = await startWeb(t, repo);
   const browser: Browser = await chromium.launch({ headless: true, ...options });
   t.after(() => browser.close());

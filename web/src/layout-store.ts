@@ -48,11 +48,13 @@ export class MemoryLayoutStore implements LayoutStore {
 
   load(view: string): Promise<Layout | null> {
     const text = this.layouts.get(view);
+
     return Promise.resolve(text === undefined ? null : (JSON.parse(text) as Layout));
   }
 
   save(view: string, layout: Layout): Promise<void> {
     this.layouts.set(view, JSON.stringify(layout));
+
     return Promise.resolve();
   }
 }
@@ -68,6 +70,7 @@ export class FileLayoutStore implements LayoutStore {
   async load(view: string): Promise<Layout | null> {
     if (view === "") return null;
     const answer = await this.api.layout(view);
+
     return answer.exists ? answer.layout : null;
   }
 

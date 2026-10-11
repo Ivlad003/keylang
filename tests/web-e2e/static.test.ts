@@ -22,7 +22,9 @@ import { branchRepo } from "../git-fixture.ts";
 import { browserOptions, root, watch } from "./browser.ts";
 
 const options = browserOptions();
+
 const skip = options === null ? "no Chromium: set KEYLANG_CHROMIUM or PLAYWRIGHT_BROWSERS_PATH" : false;
+
 const bin = join(root, "bin/keylang.js");
 
 const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".wasm": "application/wasm", ".json": "application/json" };
@@ -32,6 +34,7 @@ async function serveDirectory(t: { after: (f: () => void | Promise<void>) => voi
   const server = createServer((req, res) => {
     const path = normalize(decodeURIComponent(new URL(req.url ?? "/", "http://x").pathname)).replace(/^([/\\])+/, "");
     const file = join(dir, path);
+
     try {
       if (!file.startsWith(dir) || !statSync(file).isFile()) throw new Error("not a file");
       res.writeHead(200, { "Content-Type": TYPES[extname(file)] ?? "application/octet-stream" });
@@ -41,8 +44,10 @@ async function serveDirectory(t: { after: (f: () => void | Promise<void>) => voi
       res.end();
     }
   });
+
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
   t.after(() => new Promise<void>((done) => server.close(() => done())));
+
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 }
 
@@ -51,6 +56,7 @@ function exportSiteOf(t: { after: (f: () => void) => void }, repo: string): stri
   t.after(() => rmSync(join(site, ".."), { recursive: true, force: true }));
   const run = spawnSync(process.execPath, [bin, "web", "--export", site], { cwd: repo, encoding: "utf8" });
   assert.equal(run.status, 0, run.stderr);
+
   return site;
 }
 
@@ -93,6 +99,7 @@ test("web --export: app.html analyses a folder opened in the tab and answers as 
 
   const done = await analyze({ root: repo, persistFacts: false, saveFacts: false });
   const read = createReadApi({ root: repo, analysis: async () => done, analyze: async () => done, showRoot: false });
+
   const queries: [string, string][] = [
     ["/api/views", ""],
     ["/api/diagram", "view=layers"],
@@ -105,18 +112,23 @@ test("web --export: app.html analyses a folder opened in the tab and answers as 
     ["/api/coverage", ""],
     ["/api/tour", ""],
   ];
+
   const inBrowser = await page.evaluate(async (list) => {
     const transport = (globalThis as unknown as { keylangTransport: { send(method: string, path: string, query: URLSearchParams): Promise<{ status: number; text: string }> } }).keylangTransport;
     const out: { status: number; text: string }[] = [];
+
     for (const [path, query] of list) out.push(await transport.send("GET", path, new URLSearchParams(query)));
+
     return out;
   }, queries);
+
   for (const [i, [path, query]] of queries.entries()) {
     const node = await read.answer(path, new URLSearchParams(query));
     assert.equal(inBrowser[i]!.status, node.status, `${path}?${query}`);
     // The browser's root is its own (`/repo/<name>`); the answers carry no absolute path.
     assert.equal(inBrowser[i]!.text, node.body, `${path}?${query}`);
   }
+
   const refused = await page.evaluate(() => (globalThis as unknown as { keylangTransport: { send(method: string, path: string, query: URLSearchParams, body: unknown): Promise<{ status: number }> } }).keylangTransport.send("PUT", "/api/layout", new URLSearchParams({ view: "layers" }), { layout: {} }));
   assert.equal(refused.status, 403);
   assert.deepEqual(requests.filter((url) => !url.startsWith(base) && !url.startsWith("data:") && !url.startsWith("blob:")), [], "nothing leaves the tab");
@@ -137,6 +149,7 @@ test("web --export: app.html reads the .git of the folder and answers /api/git a
 
   const done = await analyze({ root: repo, persistFacts: false, saveFacts: false });
   const read = createReadApi({ root: repo, analysis: async () => done, analyze: (request) => analyze({ ...request, persistFacts: false, saveFacts: false }), showRoot: false });
+
   const queries: [string, string][] = [
     ["/api/git", ""],
     ["/api/changes", ""],
@@ -145,17 +158,22 @@ test("web --export: app.html reads the .git of the folder and answers /api/git a
     ["/api/changes", "since=HEAD~1"],
     ["/api/changes", "since=main^{commit}"],
   ];
+
   const inBrowser = await page.evaluate(async (list) => {
     const transport = (globalThis as unknown as { keylangTransport: { send(method: string, path: string, query: URLSearchParams): Promise<{ status: number; text: string }> } }).keylangTransport;
     const out: { status: number; text: string }[] = [];
+
     for (const [path, query] of list) out.push(await transport.send("GET", path, new URLSearchParams(query)));
+
     return out;
   }, queries);
+
   for (const [i, [path, query]] of queries.entries()) {
     const node = await read.answer(path, new URLSearchParams(query));
     assert.equal(inBrowser[i]!.status, node.status, `${path}?${query}: ${inBrowser[i]!.text}`);
     assert.equal(inBrowser[i]!.text, node.body, `${path}?${query}`);
   }
+
   const unknown = await page.evaluate(() => (globalThis as unknown as { keylangTransport: { send(method: string, path: string, query: URLSearchParams): Promise<{ status: number }> } }).keylangTransport.send("GET", "/api/changes", new URLSearchParams({ since: "no-such-branch" })));
   assert.equal(unknown.status, 400);
   // The tab over it.

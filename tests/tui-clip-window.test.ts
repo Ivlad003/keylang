@@ -12,30 +12,38 @@ import { esc, session, treeBytes } from "./tui-helpers.ts";
 /** The window's frame on screen, or null while it is folded. */
 function windowAt(lines: readonly string[]): { x: number; y: number; width: number; height: number } | null {
   const y = lines.findIndex((line) => line.includes("╭─ ◕◕ скрепка "));
+
   if (y === -1) return null;
   const x = lines[y]!.indexOf("╭─ ◕◕ скрепка ");
   const width = lines[y]!.indexOf("╮", x) - x + 1;
   let bottom = y + 1;
+
   while (bottom < lines.length && lines[bottom]![x] !== "╰") bottom++;
+
   return { x, y, width, height: bottom - y + 1 };
 }
 
 /** A row of the window's inside, frame included: 0 is the first history row. */
 function windowRow(lines: readonly string[], row: number): string {
   const w = windowAt(lines)!;
+
   return lines[w.y + 1 + row]!.slice(w.x, w.x + w.width);
 }
 
 /** The window's input line, frame included. */
 function inputRow(lines: readonly string[]): string {
   const w = windowAt(lines)!;
+
   return lines[w.y + w.height - 2]!.slice(w.x, w.x + w.width);
 }
 
 /** Alt (and Shift) with an arrow, as xterm sends it: A up, B down, C right, D left. */
 const alt = (arrow: "A" | "B" | "C" | "D", shift = false): string => `\x1b[1;${shift ? 4 : 3}${arrow}`;
+
 const wheelUp = (x: number, y: number): string => `\x1b[<64;${x + 1};${y + 1}M`;
+
 const PAGE_DOWN = "\x1b[6~";
+
 const PAGE_UP = "\x1b[5~";
 
 test("tui-clip-window: a drag by the top edge moves the window and one by its bottom-right corner resizes it; both stop at the terminal's edges and at 30×7", async (t) => {
@@ -104,6 +112,7 @@ test("tui-clip-window: the focused window takes j, q, ? and letters while the ed
   await s.app.idle();
   s.send(KEY.f7);
   const cursor = { ...s.app.state.cursor };
+
   for (const ch of "jkq?:i") s.send(ch);
   assert.deepEqual(s.app.state.cursor, cursor);
   assert.equal(s.app.state.mode, "view");
@@ -141,6 +150,7 @@ test("tui-clip-window: Enter puts the line into the history after ти › and t
   t.after(() => s.app.close());
   await s.app.idle();
   s.send(KEY.f7);
+
   for (const ch of "чому save позначено ◌?") s.send(ch);
   s.send(KEY.enter);
   assert.match(windowRow(s.lines(), 0), /^│ ти › чому save позначено ◌\? +│$/);
@@ -154,6 +164,7 @@ test("tui-clip-window: Enter puts the line into the history after ти › and t
   s.send("\x1b[200~first line\nsecond line\x1b[201~");
   assert.match(inputRow(s.lines()), /^│ > first line second line +│$/);
   s.send(KEY.enter);
+
   // A message longer than the window wraps under its text; its answer comes after it, so the wheel brings it back.
   for (const ch of "a long message about the flow checkout and its steps in the window") s.send(ch);
   s.send(KEY.enter);
@@ -163,27 +174,33 @@ test("tui-clip-window: Enter puts the line into the history after ти › and t
   const long = rows.findIndex((row) => /^│ ти › a long message about the flow +│$/.test(row));
   assert.ok(long !== -1 && long + 1 < rows.length, rows.join("\n"));
   assert.match(rows[long + 1]!, /^│ {6}checkout and its steps in the +│$/);
+
   // A line wider than the input scrolls: its end stays in sight, `…` marks the cut.
   for (const ch of "0123456789".repeat(5)) s.send(ch);
   assert.match(inputRow(s.lines()), /^│ > …\d{33} │$/);
   assert.match(inputRow(s.lines()), /56789 │$/);
   s.send(KEY.enter);
+
   // More messages than rows: the newest at the bottom; the wheel over the window goes back, the editor stays.
   for (let i = 1; i <= 12; i++) {
     for (const ch of `message ${i}`) s.send(ch);
     s.send(KEY.enter);
   }
+
   assert.match(s.text(), /ти › message 12/);
   assert.doesNotMatch(s.text(), /ти › чому save/);
   const top = s.app.state.top;
+
   for (let i = 0; i < 40; i++) s.send(wheelUp(w.x + 5, w.y + 3));
   assert.match(windowRow(s.lines(), 0), /^│ ти › чому save позначено/);
   assert.equal(s.app.state.top, top, "the editor did not scroll");
+
   for (let i = 0; i < 20; i++) s.send(PAGE_DOWN);
   assert.match(s.text(), /ти › message 12/);
   // A new message shows the end of the history, wherever it was scrolled to: its answer on the last row.
   s.send(PAGE_UP);
   assert.doesNotMatch(s.text(), /ти › message 12/);
+
   for (const ch of "last") s.send(ch);
   s.send(KEY.enter);
   assert.match(s.text(), /ти › last/);
@@ -202,17 +219,21 @@ test("tui-clip-window: Alt+arrows and Alt+Shift+arrows move and resize the windo
   keys.send(KEY.f7);
   mouse.send(KEY.f7);
   const w = windowAt(keys.lines())!;
+
   for (let i = 0; i < 4; i++) keys.send(alt("D"));
+
   for (let i = 0; i < 2; i++) keys.send(alt("A"));
   mouse.send(drag({ x: w.x + 6, y: w.y }, { x: w.x + 2, y: w.y - 2 }));
   assert.deepEqual(windowAt(keys.lines()), { ...w, x: w.x - 4, y: w.y - 2 });
   assert.deepEqual(windowAt(keys.lines()), windowAt(mouse.lines()));
+
   for (let i = 0; i < 3; i++) keys.send(alt("C", true));
   keys.send(alt("B", true));
   const m = windowAt(mouse.lines())!;
   mouse.send(drag({ x: m.x + m.width - 1, y: m.y + m.height - 1 }, { x: m.x + m.width + 2, y: m.y + m.height }));
   assert.deepEqual(windowAt(keys.lines()), { x: w.x - 4, y: w.y - 2, width: 43, height: 11 });
   assert.deepEqual(windowAt(keys.lines()), windowAt(mouse.lines()));
+
   for (let i = 0; i < 20; i++) keys.send(alt("D", true));
   assert.equal(windowAt(keys.lines())!.width, 30, "not below the minimum");
   // The clip dragged away too; the palette puts both back.
@@ -220,6 +241,7 @@ test("tui-clip-window: Alt+arrows and Alt+Shift+arrows move and resize the windo
   keys.send(drag({ x: corner.x + 2, y: corner.y + 1 }, { x: 10, y: 3 }));
   assert.notDeepEqual(locate(keys.lines(), "╭─◕◕╮"), corner);
   keys.send(KEY.ctrlP);
+
   for (const ch of "скрепка") keys.send(ch);
   assert.equal(keys.app.state.prompt?.ids?.[0], "clip-reset");
   keys.send(KEY.enter);
@@ -233,6 +255,7 @@ test("tui-clip-window: with the window open the help and the palette draw over i
   t.after(() => s.app.close());
   await s.app.idle();
   s.send(KEY.f7);
+
   for (const ch of "hi") s.send(ch);
   const w = windowAt(s.lines())!;
   // With the keys in the editor, `?` opens the help over the window; it takes its keys and clicks.
@@ -249,6 +272,7 @@ test("tui-clip-window: with the window open the help and the palette draw over i
   // Ctrl+P from the focused window: the palette opens over it and takes the typing.
   s.send(KEY.f7);
   s.send(KEY.ctrlP);
+
   for (const ch of "zoom") s.send(ch);
   assert.equal(s.app.state.prompt?.kind, "palette");
   assert.equal(s.app.state.prompt?.text, "zoom");
@@ -274,6 +298,7 @@ test("tui-clip-window: on 50×20 the window takes the width above the detail lin
   assert.match(s.app.state.message ?? "", /narrow terminal/);
   s.send(alt("D", true));
   assert.deepEqual(windowAt(s.lines()), w);
+
   for (const ch of "hi") s.send(ch);
   s.send(KEY.enter);
   assert.match(windowRow(s.lines(), 0), /^│ ти › hi +│$/);

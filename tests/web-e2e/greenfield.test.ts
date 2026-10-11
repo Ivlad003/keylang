@@ -19,7 +19,9 @@ import { chromium, type Browser, type Page } from "playwright-core";
 import { browserOptions, root, watch } from "./browser.ts";
 
 const options = browserOptions();
+
 const skip = options === null ? "no Chromium: set KEYLANG_CHROMIUM or PLAYWRIGHT_BROWSERS_PATH" : false;
+
 const bin = join(root, "bin/keylang.js");
 
 interface Model {
@@ -39,6 +41,7 @@ async function screenPoint(page: Page, x: number, y: number): Promise<{ x: numbe
       const editor = (globalThis as unknown as { keylangEditor: { graph: { getView(): { scale: number; translate: { x: number; y: number } }; container: { getBoundingClientRect(): { left: number; top: number } } } } }).keylangEditor;
       const view = editor.graph.getView();
       const box = editor.graph.container.getBoundingClientRect();
+
       return { x: box.left + (mx! + view.translate.x) * view.scale, y: box.top + (my! + view.translate.y) * view.scale };
     },
     [x, y],
@@ -68,6 +71,7 @@ async function drag(page: Page, from: { x: number; y: number }, to: { x: number;
 async function arrowOf(page: Page, node: { x: number; y: number; w: number; h: number }): Promise<{ x: number; y: number }> {
   const scale = await page.evaluate(() => (globalThis as unknown as { keylangEditor: { graph: { getView(): { scale: number } } } }).keylangEditor.graph.getView().scale);
   const at = await screenPoint(page, node.x + node.w, node.y + node.h / 2);
+
   return node.w > 80 ? { x: at.x - 12 * scale, y: at.y } : { x: at.x + 10, y: at.y };
 }
 
@@ -100,10 +104,12 @@ async function startNew(t: { after: (f: () => void | Promise<void>) => void }, d
   let out = "";
   child.stdout.on("data", (chunk: Buffer) => (out += chunk.toString()));
   const start = Date.now();
+
   while (!/keylang web: (\S+)/.test(out)) {
     if (Date.now() - start > 20000) throw new Error(`keylang web --new printed no URL: ${out}`);
     await new Promise((done) => setTimeout(done, 50));
   }
+
   return new URL(/keylang web: (\S+)/.exec(out)![1]!);
 }
 
@@ -173,9 +179,11 @@ test("web --new: the editor opens with the template's lanes; two lanes and a pro
   await page.check("#greenfield-lang-python");
   await page.click("#greenfield-create");
   await page.locator('#greenfield-result[data-status="written"]').waitFor();
+
   for (const file of ["keylang.json", "keylang/rules.md", "keylang/features/placeOrder.md", "keylang/README.md", "keylang/diagrams/flow--placeOrder.layout.json", "src/application/.gitkeep", "src/domain/.gitkeep"]) {
     assert.ok(existsSync(join(dir, file)), file);
   }
+
   assert.deepEqual(JSON.parse(readFileSync(join(dir, "keylang.json"), "utf8")).languages, ["typescript", "python"]);
   assert.equal(readFileSync(join(dir, "keylang/rules.md"), "utf8"), "# rules\n\n- layers domain < application\n");
   assert.match(await page.locator("#greenfield-next").innerText(), /keylang feature placeOrder/);

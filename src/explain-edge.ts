@@ -43,22 +43,28 @@ export function explainEdge(snapshot: AnalysisSnapshot, from: string, to: string
     (a: string, b: string) =>
     (edge: SnapshotEdge): boolean =>
       under(edge.source, a) && ((edge.target !== null && under(edge.target, b)) || (edge.candidates ?? []).some((id) => under(id, b)));
+
   const forward = between(from, to);
   const backward = between(to, from);
+
   const edges = snapshot.edges
     .filter((edge) => forward(edge) || backward(edge))
     .sort((a, b) => Number(!forward(a)) - Number(!forward(b)) || compareText(a.kind, b.kind) || compareText(a.file ?? "", b.file ?? "") || a.line - b.line || a.col - b.col || compareText(a.source, b.source))
     .map((edge): EdgeEvidence => ({ direction: forward(edge) ? "forward" : "backward", edge }));
+
   if (edges.length > 0) return { from, to, edges, holes: [], conclusion: "edges" };
+
   const holes = snapshot.coverage
     .filter((item) => item.source !== null && under(item.source, from) && leavesUnresolved(item))
     .sort((a, b) => compareText(a.file, b.file) || a.line - b.line || a.col - b.col || compareText(a.reason, b.reason));
+
   return { from, to, edges, holes, conclusion: holes.length === 0 ? "complete" : "unresolved" };
 }
 
 /** One edge as the CLI prints it: kind, resolution, provenance, range, fragment, `source → target`, candidates, hook, reason. */
 export function edgeLine(edge: SnapshotEdge): string {
   const via = edge.candidates?.length ? ` [${edge.candidates.join(", ")}]` : "";
+
   const hook =
     edge.via === "default" ? ` (default of the hook \`${edge.hook ?? ""}\`)`
     : edge.via === "injected" ? ` (injected as \`${edge.hook ?? ""}\` at ${edge.site ?? "?"})`
@@ -66,8 +72,10 @@ export function edgeLine(edge: SnapshotEdge): string {
     : edge.via === "closure-arg" ? ` (in a closure passed as an argument at ${edge.site ?? "?"})`
     : edge.via !== undefined ? ` (through ${describeConfig(edge)})`
     : "";
+
   const fragment = edge.text ? ` \`${edge.text.replace(/\s+/g, " ")}\`` : "";
   const docblock = edge.provenance === "docblock" && edge.docblock ? ` (typed by a docblock at ${edge.docblock})` : "";
+
   return `${edge.kind} ${edge.resolution} ${edge.provenance} ${edge.file}:${edge.line}:${edge.col}-${edge.endLine}:${edge.endCol}${fragment} ${edge.source} → ${edge.target ?? "?"}${via}${hook}${docblock}${edge.reason ? ` (${edge.reason})` : ""}`;
 }
 
@@ -79,6 +87,8 @@ export function holeLine(hole: CoverageItem): string {
 /** The CLI's stdout of `check --explain-edge`, line by line. */
 export function edgeExplanationLines(explanation: EdgeExplanation): string[] {
   if (explanation.conclusion === "edges") return explanation.edges.map(({ edge }) => edgeLine(edge));
+
   if (explanation.conclusion === "complete") return ["no edge, coverage complete"];
+
   return [`no confirmed edge; ${explanation.holes.length} unresolved construct(s) in \`${explanation.from}\` could form one`, ...explanation.holes.map(holeLine)];
 }

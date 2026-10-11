@@ -33,11 +33,14 @@ export function parsesCleanly(path: string, src: string): Promise<boolean> {
 
 function bodiesOf(root: Node): Map<string, FunctionBody> {
   const out = new Map<string, FunctionBody>();
+
   const add = (declaring: Node, fn: Node): void => {
     const body = fn.childForFieldName("body");
+
     if (!body) return;
     const block = body.type === "statement_block";
     const key = `${declaring.startPosition.row + 1}:${startCol(declaring)}`;
+
     if (out.has(key)) return;
     out.set(key, {
       start: block ? body.startIndex + 1 : body.startIndex,
@@ -47,43 +50,59 @@ function bodiesOf(root: Node): Map<string, FunctionBody> {
       async: fn.children.some((c) => c.type === "async"),
     });
   };
+
   /** The function a value is: `(f) as T`, `f satisfies T`, and the first argument of a wrapper call (`memo(() => …)`). */
   const fnOf = (value: Node | null): Node | null => {
     if (!value) return null;
     const at = unwrapValue(value);
+
     if (FUNCTIONS.has(at.type)) return at;
+
     if (at.type !== "call_expression") return null;
     const arg = at.childForFieldName("arguments")?.namedChildren.find((c) => c.type !== "comment");
     const fn = arg ? unwrapValue(arg) : null;
+
     return fn && FUNCTIONS.has(fn.type) ? fn : null;
   };
+
   const visit = (node: Node): void => {
     if (FUNCTIONS.has(node.type)) add(node, node);
+
     // `const f = () => …`, `const f = ((…) => …) satisfies H` and a class field `handler = () => …` are declared by
     // the declarator or the field; `const C = memo(() => …)` by the declarator too (extract keeps it a value unless
     // the wrapper is React's, so a key it never asks for is harmless).
     if (node.type === "variable_declarator" || node.type === "public_field_definition" || node.type === "field_definition") {
       const fn = fnOf(node.childForFieldName("value"));
+
       if (fn) add(node, fn);
     }
+
     // CommonJS: `exports.a = function () {}` and `module.exports = f` are declared by the assignment,
     // `module.exports = { b: function () {} }` by the pair.
     if (node.type === "assignment_expression") {
       const fn = fnOf(node.childForFieldName("right"));
+
       if (fn) add(node, fn);
     }
+
     if (node.type === "pair") {
       const fn = fnOf(node.childForFieldName("value"));
+
       if (fn) add(node, fn);
     }
+
     // An overloaded function or method is declared by its first signature; its body is the implementation's.
     if (node.type === "function_signature" || (node.type === "method_signature" && node.parent?.type === "class_body")) {
       const impl = implementationOf(node);
+
       if (impl) add(node, impl);
     }
+
     for (const child of node.namedChildren) visit(child);
   };
+
   visit(root);
+
   return out;
 }
 
@@ -95,16 +114,22 @@ function bodiesOf(root: Node): Map<string, FunctionBody> {
  */
 function implementationOf(signature: Node): Node | null {
   const name = signature.childForFieldName("name")?.text;
+
   if (!name) return null;
   const method = signature.type === "method_signature";
   const exported = !method && signature.parent?.type === "export_statement";
   const inner = (n: Node): Node | null => (exported ? (n.type === "export_statement" ? (n.childForFieldName("declaration") ?? n.namedChildren.find((c) => c.type !== "comment" && c.type !== "decorator") ?? null) : null) : n);
+
   for (let at = (exported ? signature.parent! : signature).nextNamedSibling; at; at = at.nextNamedSibling) {
     if (at.type === "comment") continue;
     const decl = inner(at);
+
     if (!decl || decl.childForFieldName("name")?.text !== name) return null;
+
     if (decl.type === (method ? "method_definition" : "function_declaration") || (!method && decl.type === "generator_function_declaration")) return decl;
+
     if (decl.type !== signature.type) return null;
   }
+
   return null;
 }

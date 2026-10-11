@@ -10,6 +10,7 @@ import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
 
 interface Node {
@@ -20,18 +21,23 @@ interface Node {
 function repo(t: TestContext, files: Record<string, string>): { dir: string; write(file: string, text: string): void; map(): { snapshotId: string; nodes: Record<string, Node> } } {
   const dir = mkdtempSync(join(tmpdir(), "keylang-fp-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+
   const write = (file: string, text: string): void => {
     mkdirSync(dirname(join(dir, file)), { recursive: true });
     writeFileSync(join(dir, file), text);
   };
+
   write("keylang.json", JSON.stringify({ languages: ["typescript"], layers: { main: ["src/**"] } }));
+
   for (const [file, text] of Object.entries(files)) write(file, text);
+
   return {
     dir,
     write,
     map() {
       const r = spawnSync(process.execPath, [bin, "map"], { cwd: dir, encoding: "utf8" });
       assert.equal(r.status, 0, r.stderr);
+
       return JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8"));
     },
   };
@@ -65,6 +71,7 @@ test("fingerprint: a call cycle terminates and changes as one; an unresolved cal
     "src/ping.ts": 'import { pong } from "./pong.ts";\n\nexport function ping(n: number): number {\n  return n > 0 ? pong(n - 1) : 0;\n}\n',
     "src/pong.ts": 'import { ping } from "./ping.ts";\n\nexport function pong(n: number): number {\n  return ping(n);\n}\n\nexport function start(worker: { run(): void }): number {\n  worker.run();\n  return pong(3);\n}\n',
   });
+
   const before = r.map();
   const ping = before.nodes["main.ping.ping"]!.closure!;
   assert.equal(before.nodes["main.pong.pong"]!.closure!.fingerprint, ping.fingerprint, "a cycle hashes as one");
@@ -93,6 +100,7 @@ test("fingerprint: a decorator that may replace a fn makes its closure and its c
     "app/main.py":
       "def replace(fn):\n    return fn\n\n\n@replace\ndef decorated():\n    return 1\n\n\ndef plain():\n    return 2\n\n\ndef start():\n    return decorated() + plain()\n\n\nclass C:\n    def __init__(self):\n        plain()\n\n\ndef make():\n    return C()\n",
   });
+
   r.write("keylang.json", JSON.stringify({ languages: ["python"], layers: { main: ["app/**"] } }));
   const nodes = r.map().nodes;
   assert.equal(nodes["main.main.decorated"]!.closure!.complete, false, "the body read may not be what a call runs");
@@ -119,6 +127,7 @@ test("fingerprint: PHP and Rust constants and properties a fn reads are part of 
   const php = "<?php\nconst MAX = 100;\n\nclass Box {\n    const K = 1;\n    public $limit = 100;\n    private $unused = 7;\n\n    public function fits($n) {\n        return $n <= $this->limit + self::K + MAX;\n    }\n}\n";
   const rs = "pub const MAX: u32 = 100;\nstatic SEED: u32 = 1;\n\npub fn cap(n: u32) -> u32 {\n    if n > MAX + SEED { MAX } else { n }\n}\n";
   const py = "from .limits import LIMIT\nfrom .helpers import double\n\n\ndef cap(n):\n    return min(n, LIMIT)\n\n\ndef twice(n):\n    return double(n)\n";
+
   const r = repo(t, {
     "keylang.json": JSON.stringify({ languages: ["php", "rust", "python"], layers: { main: ["src/**"] } }),
     "Cargo.toml": '[package]\nname = "app"\nversion = "0.1.0"\n\n[lib]\npath = "src/lib.rs"\n',
@@ -129,6 +138,7 @@ test("fingerprint: PHP and Rust constants and properties a fn reads are part of 
     "src/py/helpers.py": "def double(n):\n    return n * 2\n",
     "src/py/cap.py": py,
   });
+
   const before = r.map().nodes;
   const fits = Object.keys(before).find((id) => id.endsWith("Box.fits"))!;
   const cap = Object.keys(before).find((id) => id.endsWith("lib.cap"))!;
@@ -140,10 +150,12 @@ test("fingerprint: PHP and Rust constants and properties a fn reads are part of 
 
   r.write("src/box.php", php.replace("$unused = 7", "$unused = 8"));
   assert.equal(r.map().nodes[fits]!.fingerprint, before[fits]!.fingerprint, "a property the fn does not read is not part of it");
+
   for (const [from, to] of [["MAX = 100", "MAX = 5"], ["K = 1", "K = 2"], ["$limit = 100", "$limit = 3"]] as const) {
     r.write("src/box.php", php.replace(from, to));
     assert.notEqual(r.map().nodes[fits]!.fingerprint, before[fits]!.fingerprint, from);
   }
+
   r.write("src/lib.rs", rs.replace("SEED: u32 = 1", "SEED: u32 = 2"));
   assert.notEqual(r.map().nodes[cap]!.fingerprint, before[cap]!.fingerprint);
 });

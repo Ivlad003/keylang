@@ -58,24 +58,34 @@ export interface ClipState {
 }
 
 const CLIP_COLS = 5;
+
 const CLIP_ROWS = 3;
+
 /** Below this many columns or rows the clip is a badge in the status line and the window takes the width. */
 const NARROW_COLS = 60;
+
 const NARROW_ROWS = 12;
+
 /** The window's size with its frame, and the least it is resized to. */
 const CHAT_COLS = 40;
+
 const CHAT_ROWS = 10;
+
 export const CHAT_MIN_COLS = 30;
+
 export const CHAT_MIN_ROWS = 7;
+
 /** The window's height on a narrow terminal. */
 const NARROW_CHAT_ROWS = 8;
 
 /** Who said a message, before its first row; its other rows are indented under the text. */
 const SPEAKER: Record<ChatMessage["role"], string> = { you: "ти › ", clip: "◕◕ › " };
+
 const SPEAKER_CELLS = 5;
 
 /** The row after the last message while the model's reply is awaited: no message, and not in the conversation. */
 export const THINKING = "думаю… Esc — скасувати";
+
 const THINKING_SPEAKER = "◔◔ › ";
 
 /** What Enter says while the reply is awaited: one request at a time. */
@@ -114,6 +124,7 @@ export function assistantShown(state: Pick<State, "start" | "results">): boolean
  */
 export function chatTakesKeys(state: State): boolean {
   const chat = state.clip.chat;
+
   return chat.open && chat.focused && assistantShown(state) && state.mode !== "merge" && !state.help && state.prompt === null && state.barrier === null && state.quit === null;
 }
 
@@ -130,6 +141,7 @@ export function counterText(questions: number): string {
 /** The badge that stands for the clip in the status line of a narrow terminal. */
 export function badgeText(clip: Pick<ClipState, "waiting" | "questions">): string {
   const counter = counterText(clip.questions);
+
   return counter === "" ? clipEyes(clip) : `${clipEyes(clip)} ${counter}`;
 }
 
@@ -171,6 +183,7 @@ function clamp(value: number, low: number, high: number): number {
  */
 function clipPlace(state: Pick<State, "cols" | "rows" | "clip">, editor: Rect): Rect {
   const corner = { x: editor.x + editor.width - CLIP_COLS - 1, y: editor.y + editor.height - CLIP_ROWS - 1 };
+
   return inside({ ...(state.clip.place ?? corner), width: CLIP_COLS, height: CLIP_ROWS }, clipArea(state));
 }
 
@@ -182,6 +195,7 @@ export function clipRect(state: Pick<State, "cols" | "rows" | "clip">, editor: R
 /** The badge at the start of the status line of a narrow terminal; null when the clip is in its corner or off. */
 export function badgeRect(state: Pick<State, "cols" | "rows" | "clip">): Rect | null {
   if (!state.clip.enabled || !narrow(state)) return null;
+
   return { x: 1, y: state.rows - 1, width: stringWidth(badgeText(state.clip)), height: 1 };
 }
 
@@ -202,15 +216,19 @@ export function clipYields(clip: Rect, cursor: Cell | null, popups: readonly Rec
 export function chatRect(state: Pick<State, "cols" | "rows" | "clip">, editor: Rect): Rect {
   if (narrow(state)) {
     const height = Math.max(1, Math.min(NARROW_CHAT_ROWS, state.rows - 3));
+
     return { x: 0, y: state.rows - 2 - height, width: state.cols, height };
   }
+
   const chat = state.clip.chat;
   const area = chatArea(state);
   const width = Math.min(chat.size.cols, area.width);
   const height = Math.min(chat.size.rows, area.height);
+
   if (chat.place !== null) return inside({ ...chat.place, width, height }, area);
   const clip = clipPlace(state, editor);
   const y = clip.y - height >= area.y ? clip.y - height : clip.y + CLIP_ROWS;
+
   return inside({ x: clip.x + CLIP_COLS - width, y, width, height }, area);
 }
 
@@ -220,13 +238,16 @@ type ChatPart = "close" | "move" | "resize" | "window";
 function chatPart(rect: Rect, cell: Cell): ChatPart | null {
   if (!contains(rect, cell)) return null;
   const right = rect.x + rect.width - 1;
+
   if (cell.y === rect.y) return cell.x >= right - 3 && cell.x < right ? "close" : "move";
+
   return cell.y === rect.y + rect.height - 1 && cell.x === right ? "resize" : "window";
 }
 
 /** The rows of a window: the history over the input line, one cell in from the frame. */
 export function chatLayout(rect: Rect): { history: Rect; input: Rect } {
   const width = Math.max(1, rect.width - 4);
+
   return {
     history: { x: rect.x + 2, y: rect.y + 1, width, height: Math.max(0, rect.height - 3) },
     input: { x: rect.x + 2, y: rect.y + rect.height - 2, width, height: 1 },
@@ -246,7 +267,9 @@ export interface HistoryRow {
  */
 export function historyRows(messages: readonly ChatMessage[], width: number, waiting = false): HistoryRow[] {
   const rows = messages.flatMap((message) => messageRows(message, width));
+
   if (waiting) rows.push(...speakerRows("thinking", THINKING_SPEAKER, THINKING, width));
+
   return rows;
 }
 
@@ -256,9 +279,11 @@ const wrapped = new WeakMap<ChatMessage, { width: number; rows: readonly History
 /** One message's rows; a message never changes once it is in the history. */
 function messageRows(message: ChatMessage, width: number): readonly HistoryRow[] {
   const known = wrapped.get(message);
+
   if (known?.width === width) return known.rows;
   const rows = speakerRows(message.role, SPEAKER[message.role], message.text, width);
   wrapped.set(message, { width, rows });
+
   return rows;
 }
 
@@ -266,30 +291,35 @@ function speakerRows(role: HistoryRow["role"], speaker: string, text: string, wi
   const room = Math.max(1, width - SPEAKER_CELLS);
   const rows: HistoryRow[] = [];
   let lead = speaker;
+
   for (const line of text.split("\n")) {
     for (const row of line === "" ? [""] : wrapCells(line, room)) {
       rows.push({ role, text: `${lead}${row}` });
       lead = " ".repeat(SPEAKER_CELLS);
     }
   }
+
   return rows;
 }
 
 /** The rows `height` rows of the history show, `scroll` rows back from its end; a short history starts at the top. */
 export function shownHistory<T>(rows: readonly T[], height: number, scroll: number): T[] {
   const end = rows.length - clamp(scroll, 0, Math.max(0, rows.length - height));
+
   return rows.slice(Math.max(0, end - height), end);
 }
 
 /** The end of the input line that fits `room` cells: a longer line scrolls, and `…` marks what it hides on the left. */
 export function inputTail(input: string, room: number): string {
   const width = stringWidth(input);
+
   return width <= room ? input : sliceCells(input, width - room + 1, room);
 }
 
 /** `rect` shifted by the offset, then kept inside `area`: a drag and Alt+arrows move the window the same way. */
 function moved(rect: Rect, dx: number, dy: number, area: Rect): Cell {
   const to = inside({ ...rect, x: rect.x + dx, y: rect.y + dy }, area);
+
   return { x: to.x, y: to.y };
 }
 
@@ -297,6 +327,7 @@ function moved(rect: Rect, dx: number, dy: number, area: Rect): Cell {
 function resized(rect: Rect, dx: number, dy: number, area: Rect): ChatState["size"] {
   const cols = area.x + area.width - rect.x;
   const rows = area.y + area.height - rect.y;
+
   return { cols: clamp(rect.width + dx, Math.min(CHAT_MIN_COLS, cols), cols), rows: clamp(rect.height + dy, Math.min(CHAT_MIN_ROWS, rows), rows) };
 }
 
@@ -360,9 +391,12 @@ export class Clip {
   toggle(): void {
     if (this.state.mode === "merge") {
       this.state.message = MERGE_CLICK;
+
       return;
     }
+
     const chat = this.state.clip.chat;
+
     if (chat.open && chat.focused) return this.fold();
     this.open();
   }
@@ -396,11 +430,15 @@ export class Clip {
   send(): void {
     const chat = this.state.clip.chat;
     const text = chat.input.trim();
+
     if (text === "") return;
+
     if (this.state.clip.waiting) {
       this.state.message = WAIT_FOR_REPLY;
+
       return;
     }
+
     chat.messages.push({ role: "you", text });
     chat.input = "";
     chat.scroll = 0;
@@ -421,7 +459,9 @@ export class Clip {
   key(event: KeyEvent): void {
     const chat = this.state.clip.chat;
     const arrow = ARROWS[event.name];
+
     if (arrow !== undefined && event.alt) return this.nudge(arrow, event.shift);
+
     switch (event.name) {
       // While the model answers, Esc cancels the request; otherwise it folds the window.
       case "escape":
@@ -434,8 +474,10 @@ export class Clip {
         return this.scrollBy(-this.page());
       case "backspace":
         chat.input = backspaced(chat.input);
+
         return;
     }
+
     if (event.text !== undefined && !event.ctrl && !event.alt) chat.input += event.text;
   }
 
@@ -455,41 +497,59 @@ export class Clip {
   mouse(event: MouseEvent): boolean {
     if (!assistantShown(this.state)) return false;
     const press = this.press;
+
     if (event.action === "drag") {
       if (press === null) return false;
       this.dragTo(press, event);
+
       return true;
     }
+
     if (event.action === "up") {
       if (press === null) return false;
       this.press = null;
       // A terminal that reports no motion still says where the button came up.
       this.dragTo(press, event);
+
       if (!press.moved) this.click(press.target);
       else if (this.places(press.target)) this.host.placed();
+
       return true;
     }
+
     const target = this.targetAt(event);
+
     if (target === null) {
       if (event.action === "down" && event.button === 0) this.state.clip.chat.focused = false;
+
       return false;
     }
+
     // The pointer over the clip or the window points at them, not at the text under them.
     if (event.action === "move") {
       if (this.state.hover?.source === "mouse") this.state.hover = null;
+
       return true;
     }
+
     // A form or the help is over them: they take no clicks and no wheel while it is open.
     const modal = this.state.help || this.state.prompt !== null;
+
     if (event.action === "wheel-up" || event.action === "wheel-down") {
       // The wheel over the clip scrolls the editor under it; over the window, the history.
       if (target === "clip" || target === "badge") return false;
+
       if (!modal) this.scrollBy(event.action === "wheel-up" ? WHEEL_ROWS : -WHEEL_ROWS);
+
       return true;
     }
+
     if (this.state.mode === "merge") return false;
+
     if (modal) return true;
+
     if (event.button === 0) this.press = { target, from: { x: event.x, y: event.y }, origin: this.rectOf(target), moved: false };
+
     return true;
   }
 
@@ -497,17 +557,23 @@ export class Clip {
   private targetAt(cell: Cell): Target | null {
     const state = this.state;
     const part = state.clip.chat.open ? chatPart(chatRect(state, this.host.editor()), cell) : null;
+
     if (part !== null) return part;
     const clip = this.host.clipOnScreen();
+
     if (clip !== null && contains(clip, cell)) return "clip";
     const badge = badgeRect(state);
+
     if (badge !== null && contains(badge, cell)) return "badge";
+
     return null;
   }
 
   private rectOf(target: Target): Rect {
     if (target === "clip") return clipPlace(this.state, this.host.editor());
+
     if (target === "badge") return badgeRect(this.state)!;
+
     return chatRect(this.state, this.host.editor());
   }
 
@@ -515,8 +581,10 @@ export class Clip {
   private dragTo(press: Press, cell: Cell): void {
     const dx = cell.x - press.from.x;
     const dy = cell.y - press.from.y;
+
     if (dx !== 0 || dy !== 0) press.moved = true;
     const state = this.state;
+
     if (press.target === "clip") state.clip.place = moved(press.origin, dx, dy, clipArea(state));
     // On a narrow terminal the window takes the width: it does not move.
     else if (narrow(state)) return;
@@ -534,6 +602,7 @@ export class Clip {
 
   private click(target: Target): void {
     if (target === "clip" || target === "badge") return this.open();
+
     if (target === "close") return this.fold();
     this.focus();
   }
@@ -541,12 +610,16 @@ export class Clip {
   /** Alt+arrows move the window a cell, Alt+Shift+arrows resize it: what a drag does. */
   private nudge(delta: Cell, resize: boolean): void {
     const state = this.state;
+
     if (narrow(state)) {
       state.message = NARROW_WINDOW;
+
       return;
     }
+
     const rect = chatRect(state, this.host.editor());
     const chat = state.clip.chat;
+
     if (resize) {
       chat.place = { x: rect.x, y: rect.y };
       chat.size = resized(rect, delta.x, delta.y, chatArea(state));

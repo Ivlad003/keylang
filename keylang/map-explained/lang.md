@@ -14,24 +14,24 @@
     - fn [collectMdFiles](../../src/files.ts#L16) (paths: readonly string[], base?: string) → string[]
       <a id="lang.files.collectMdFiles"></a><br>Expand files and directories into a sorted list of `*.md` files. Hidden directories, `node_modules` and `target` are skipped.
       - calls [lang.files.walkDir](lang.md#lang.files.walkDir), [lang.files.realPath](lang.md#lang.files.realPath)
-    - fn [skippedDirectory](../../src/files.ts#L43) (name: string) → boolean
+    - fn [skippedDirectory](../../src/files.ts#L51) (name: string) → boolean
       <a id="lang.files.skippedDirectory"></a><br>A directory the walk over a spec directory does not enter: hidden, `node_modules`, `target`.
-    - fn [walkReaches](../../src/files.ts#L48) (dir: string, abs: string) → boolean
+    - fn [walkReaches](../../src/files.ts#L56) (dir: string, abs: string) → boolean
       <a id="lang.files.walkReaches"></a><br>Whether the walk from `dir` (or `dir` itself, a file) reaches `abs`: inside it, and through no skipped directory below it.
       - calls [lang.files.skippedDirectory](lang.md#lang.files.skippedDirectory)
-    - fn [walkDir](../../src/files.ts#L55) (dir: string, out: string[], walked: Set<string>, at: (p: string) => string) → void <!-- internal -->
+    - fn [walkDir](../../src/files.ts#L66) (dir: string, out: string[], walked: Set<string>, at: (p: string) => string) → void <!-- internal -->
       <a id="lang.files.walkDir"></a><br>Recursively scans a directory in sorted order, appending `.md` file paths to the output while skipping dot-directories, `target`, and `node_modules`. It records each visited real path via [`lang.files.realPath`](lang.md#lang.files.realPath) so symlink cycles back to an ancestor stop instead of looping… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [lang.files.realPath](lang.md#lang.files.realPath), [lang.files.entryType](lang.md#lang.files.entryType), [lang.files.skippedDirectory](lang.md#lang.files.skippedDirectory)
-    - fn [entryType](../../src/files.ts#L73) (e: Dirent, path: string) → "dir" | "file" | null <!-- internal -->
+    - fn [entryType](../../src/files.ts#L87) (e: Dirent, path: string) → "dir" | "file" | null <!-- internal -->
       <a id="lang.files.entryType"></a><br>What a directory entry is, through a link; a dangling link is neither.
-    - fn [realPath](../../src/files.ts#L83) (path: string) → string <!-- internal -->
+    - fn [realPath](../../src/files.ts#L99) (path: string) → string <!-- internal -->
       <a id="lang.files.realPath"></a><br>Resolves a filesystem path to its canonical form with symlinks followed, falling back to a plain absolute resolution when the path does not exist. Used by [`lang.files.walkDir`](lang.md#lang.files.walkDir) and [`lang.files.collectMdFiles`](lang.md#lang.files.collectMdFiles) to dedupe directories and files. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [load](../../src/files.ts#L92) (files: readonly string[]) → Document[]
+    - fn [load](../../src/files.ts#L108) (files: readonly string[]) → Document[]
       <a id="lang.files.load"></a><br>Read and parse files.
       - calls [lang.parser.parse](lang.md#lang.parser.parse)
-    - fn [readTextOrNull](../../src/files.ts#L97) (path: string) → string | null
+    - fn [readTextOrNull](../../src/files.ts#L113) (path: string) → string | null
       <a id="lang.files.readTextOrNull"></a><br>A file's text, or null when it cannot be read for any reason: missing, a directory, no permission.
-    - fn [existingText](../../src/files.ts#L106) (path: string) → string | null
+    - fn [existingText](../../src/files.ts#L122) (path: string) → string | null
       <a id="lang.files.existingText"></a><br>A file's text, or null when there is no file; a directory or an unreadable file throws, so the caller names it.
   - module [fmt](../../src/fmt.ts#L1)
     <a id="lang.fmt"></a><br>Canonical formatting (`keylang fmt`). Rendered from the IR, so the output is idempotent by construction: `format(parse(format(x))) == format(x)`.
@@ -41,10 +41,10 @@
     - fn [formatSource](../../src/fmt.ts#L12) (path: string, src: string) → { ok: true; text: string } | { ok: false; diagnostics: Diagnostic[] }
       <a id="lang.fmt.formatSource"></a><br>Format source text. Returns the structural (K003) diagnostics instead when the tree shape is ambiguous — formatting would silently re-nest items.
       - calls [lang.parser.parse](lang.md#lang.parser.parse), [lang.fmt.formatDocument](lang.md#lang.fmt.formatDocument)
-    - fn [formatDocument](../../src/fmt.ts#L18) (doc: Document) → string
+    - fn [formatDocument](../../src/fmt.ts#L19) (doc: Document) → string
       <a id="lang.fmt.formatDocument"></a><br>Serializes a parsed document back to text: emits the generated block, each section's `#` heading with optional comment, node items rendered as an indented list via [`lang.fmt.renderNode`](lang.md#lang.fmt.renderNode), and code/raw blocks (fences dedented through [`lang.parser.dedentFenceLines`](lang.md#lang.parser.dedentFenceLines)). Blocks are… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [lang.fmt.renderNode](lang.md#lang.fmt.renderNode), [lang.parser.dedentFenceLines](lang.md#lang.parser.dedentFenceLines)
-    - fn [renderNode](../../src/fmt.ts#L41) (out: string, n: Node, depth: number) → string <!-- internal -->
+    - fn [renderNode](../../src/fmt.ts#L48) (out: string, n: Node, depth: number) → string <!-- internal -->
       <a id="lang.fmt.renderNode"></a><br>Appends one node to the output as an indented bullet line of its tokens via [`lang.parser.renderTokens`](lang.md#lang.parser.renderTokens), with any trailing comment and description lines beneath it. Then recurses into each child one level deeper and returns the accumulated string. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [lang.parser.renderTokens](lang.md#lang.parser.renderTokens)
   - module [ir](../../src/ir.ts#L1)
@@ -77,20 +77,20 @@
       <a id="lang.ir.Token"></a><br>Describes a single lexical unit in the intermediate representation: a `TokenKind` category tag, the raw source text it covers, and the `Span` locating it in the file. It is a pure data shape used by the lang layer to pass tokens between stages. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [walk](../../src/ir.ts#L197) (node: Node, f: (n: Node) => void) → void
       <a id="lang.ir.walk"></a><br>Pre-order walk over a node and its descendants.
-    - fn [sectionNodes](../../src/ir.ts#L202) (section: Section) → Node[]
+    - fn [sectionNodes](../../src/ir.ts#L203) (section: Section) → Node[]
       <a id="lang.ir.sectionNodes"></a><br>Filters a section's mixed item list down to the entries whose type is `"node"`, returning them narrowed to the `Node` shape. A small accessor used throughout the lang, check, features, and tui layers to walk a section's nodes. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [parse-format](../../src/parse-format.ts#L1)
     <a id="lang.parse-format"></a><br>The stdout of `keylang parse [--json]` for parsed documents: the indented tree or the Text IR as JSON. Pure text, shared by the CLI and the TUI (and its export), so both give the same bytes; diagnostics are not part of it.
     - ir [lang.ir](lang.md#lang.ir)
-    - type [ParseFormat](../../src/parse-format.ts#L8) = (typeof PARSE_FORMATS)[number]
+    - type [ParseFormat](../../src/parse-format.ts#L9) = (typeof PARSE_FORMATS)[number]
       <a id="lang.parse-format.ParseFormat"></a><br>Derives a string-literal union type from the element type of the `PARSE_FORMATS` array, so the set of allowed parse format names is defined once as runtime data and reused statically for type checking. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-    - fn [parseReportText](../../src/parse-format.ts#L11) (format: ParseFormat, docs: readonly Document[]) → string
+    - fn [parseReportText](../../src/parse-format.ts#L12) (format: ParseFormat, docs: readonly Document[]) → string
       <a id="lang.parse-format.parseReportText"></a><br>The whole stdout of `parse` in a format, every line ending in `\n`.
       - calls [lang.parse-format.treeLines](lang.md#lang.parse-format.treeLines)
-    - fn [treeLines](../../src/parse-format.ts#L17) (doc: Document) → string[] <!-- internal -->
+    - fn [treeLines](../../src/parse-format.ts#L19) (doc: Document) → string[] <!-- internal -->
       <a id="lang.parse-format.treeLines"></a><br>One document as the tree `parse` prints: the path, each section, its nodes with their start.
       - calls [lang.parse-format.nodeLines](lang.md#lang.parse-format.nodeLines)
-    - fn [nodeLines](../../src/parse-format.ts#L26) (n: Node, depth: number, out: string[]) → void <!-- internal -->
+    - fn [nodeLines](../../src/parse-format.ts#L31) (n: Node, depth: number, out: string[]) → void <!-- internal -->
       <a id="lang.parse-format.nodeLines"></a><br>Recursively renders a parse node and its children as indented text lines, appending kind label (via [`lang.ir.kindLabel`](lang.md#lang.ir.kindLabel)), id, link target, text, label, refs and start position to the output array. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [lang.ir.kindLabel](lang.md#lang.ir.kindLabel)
   - module [parser](../../src/parser.ts#L1)
@@ -101,179 +101,179 @@
     - fn [parse](../../src/parser.ts#L11) (path: string, src: string) → Document
       <a id="lang.parser.parse"></a><br>Feeds each source line, stripped of line endings and any leading BOM, with its number and offset into a [`lang.parser.Parser`](lang.md#lang.parser.Parser), then returns the Document built by [`lang.parser.Parser.finish`](lang.md#lang.parser.Parser.finish). _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [lang.parser.Parser](lang.md#lang.parser.Parser), [lang.parser.splitInclusive](lang.md#lang.parser.splitInclusive), [lang.parser.Parser.line](lang.md#lang.parser.Parser.line), [lang.parser.Line](lang.md#lang.parser.Line), [lang.parser.Parser.finish](lang.md#lang.parser.Parser.finish)
-    - fn [splitInclusive](../../src/parser.ts#L27) (src: string) → string[] <!-- internal -->
+    - fn [splitInclusive](../../src/parser.ts#L29) (src: string) → string[] <!-- internal -->
       <a id="lang.parser.splitInclusive"></a><br>Split keeping the `\n` on each line (like Rust's `split_inclusive`).
-    - module [Line](../../src/parser.ts#L40) <!-- internal -->
+    - module [Line](../../src/parser.ts#L45) <!-- internal -->
       <a id="lang.parser.Line"></a><br>Holds one source line's number, absolute byte offset, and text, and maps byte offsets within it to absolute positions with code-point columns via [`lang.parser.Line.pos`](lang.md#lang.parser.Line.pos). [`lang.parser.Line.span`](lang.md#lang.parser.Line.span) pairs two such positions into a range for tokens, nodes, and errors. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-      - fn [constructor](../../src/parser.ts#L45) (no: number, start: number, text: string)
+      - fn [constructor](../../src/parser.ts#L50) (no: number, start: number, text: string)
         <a id="lang.parser.Line.constructor"></a><br>Stores a line's number, its byte offset in the source, and its raw text as fields on a new line record. Performs no parsing or validation of the given values. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-      - fn [pos](../../src/parser.ts#L51) (b: number) → Pos
+      - fn [pos](../../src/parser.ts#L56) (b: number) → Pos
         <a id="lang.parser.Line.pos"></a><br>Converts a byte offset within the line into a Pos with absolute offset, line number, and 1-based column counted in code points via [`lang.parser.codePoints`](lang.md#lang.parser.codePoints). Used by [`lang.parser.Line.span`](lang.md#lang.parser.Line.span) to build span endpoints. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
         - calls [lang.parser.codePoints](lang.md#lang.parser.codePoints)
-      - fn [span](../../src/parser.ts#L55) (a: number, b: number) → Span
+      - fn [span](../../src/parser.ts#L60) (a: number, b: number) → Span
         <a id="lang.parser.Line.span"></a><br>Builds a `Span` for a slice of the current line by converting two column offsets into absolute positions via [`lang.parser.Line.pos`](lang.md#lang.parser.Line.pos). Used by the lexer and parser routines to attach source ranges to tokens, nodes, and errors. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
         - calls [lang.parser.Line.pos](lang.md#lang.parser.Line.pos)
-    - fn [codePoints](../../src/parser.ts#L60) (s: string) → number <!-- internal -->
+    - fn [codePoints](../../src/parser.ts#L65) (s: string) → number <!-- internal -->
       <a id="lang.parser.codePoints"></a><br>Counts the Unicode code points in a string by iterating it, so surrogate pairs count once rather than twice as with `.length`. Used by [`lang.parser.Line.pos`](lang.md#lang.parser.Line.pos) and [`lang.parser.linkTextSpan`](lang.md#lang.parser.linkTextSpan) to compute character-based column positions. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Ctx](../../src/parser.ts#L67) <!-- internal -->
+    - type [Ctx](../../src/parser.ts#L74) <!-- internal -->
       <a id="lang.parser.Ctx"></a><br>Where an item stands, which decides the keywords it may use.
-    - fn [ctxOf](../../src/parser.ts#L95) (section: SectionKind, parent: NodeKind | undefined) → Ctx <!-- internal -->
+    - fn [ctxOf](../../src/parser.ts#L102) (section: SectionKind, parent: NodeKind | undefined) → Ctx <!-- internal -->
       <a id="lang.parser.ctxOf"></a><br>Maps a parent node kind and the current section into the parsing context used by [`lang.parser.Parser.item`](lang.md#lang.parser.Parser.item) and [`lang.parser.keywordsAt`](lang.md#lang.parser.keywordsAt), grouping related kinds (e.g. `layers`/`entry` → `ref-list`). Unknown parents fall back to a `leaf:` prefix, and `when` depends on whether the… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-    - type [TriggerKind](../../src/parser.ts#L149) = (typeof TRIGGER_KINDS)[number]
+    - type [TriggerKind](../../src/parser.ts#L157) = (typeof TRIGGER_KINDS)[number]
       <a id="lang.parser.TriggerKind"></a>
-    - fn [isTriggerKind](../../src/parser.ts#L151) (word: string) → word is TriggerKind
+    - fn [isTriggerKind](../../src/parser.ts#L159) (word: string) → word is TriggerKind
       <a id="lang.parser.isTriggerKind"></a>
-    - fn [isEventId](../../src/parser.ts#L161) (text: string) → boolean
+    - fn [isEventId](../../src/parser.ts#L169) (text: string) → boolean
       <a id="lang.parser.isEventId"></a><br>An event ID (ADR 0022 п. 6, ADR 0023 п. 1): a member of the generated group `events` (`events.checkout_submit_all_after`). `emits [event] <name>` with such a name is a reference checked against the snapshot; any other name stays prose, as before.
       - calls [lang.parser.isId](lang.md#lang.parser.isId)
-    - fn [isDuration](../../src/parser.ts#L174) (text: string) → boolean
+    - fn [isDuration](../../src/parser.ts#L182) (text: string) → boolean
       <a id="lang.parser.isDuration"></a>
-    - fn [scheduleText](../../src/parser.ts#L183) (words: readonly string[]) → string | null
+    - fn [scheduleText](../../src/parser.ts#L191) (words: readonly string[]) → string | null
       <a id="lang.parser.scheduleText"></a><br>The schedule of `every <schedule>` in one canonical text, or null when the words are not one: a duration (`15m`), a cron macro (`@daily`), or five or six cron fields, bare (`*\/5 * * * *`) or in double quotes. Quotes are dropped.
-    - type [ComponentKind](../../src/parser.ts#L198) = (typeof COMPONENT_KINDS)[number]
+    - type [ComponentKind](../../src/parser.ts#L212) = (typeof COMPONENT_KINDS)[number]
       <a id="lang.parser.ComponentKind"></a>
-    - fn [isSystemCtx](../../src/parser.ts#L212) (ctx: Ctx) → boolean <!-- internal -->
+    - fn [isSystemCtx](../../src/parser.ts#L226) (ctx: Ctx) → boolean <!-- internal -->
       <a id="lang.parser.isSystemCtx"></a>
-    - fn [keywordsAt](../../src/parser.ts#L217) (section: SectionKind, parent: NodeKind | undefined) → readonly string[]
+    - fn [keywordsAt](../../src/parser.ts#L231) (section: SectionKind, parent: NodeKind | undefined) → readonly string[]
       <a id="lang.parser.keywordsAt"></a><br>Keywords an item may start with under `parent` (none at the top of a section).
       - calls [lang.parser.keywordsOf](lang.md#lang.parser.keywordsOf), [lang.parser.ctxOf](lang.md#lang.parser.ctxOf)
-    - fn [keywordsOf](../../src/parser.ts#L221) (ctx: Ctx) → readonly string[] <!-- internal -->
+    - fn [keywordsOf](../../src/parser.ts#L235) (ctx: Ctx) → readonly string[] <!-- internal -->
       <a id="lang.parser.keywordsOf"></a><br>Maps a parser context to the keywords allowed there, e.g. block keywords at a section's top level or `calls` inside a function, returning an empty list for unknown contexts. Used by [`lang.parser.Parser.interpret`](lang.md#lang.parser.Parser.interpret) and [`lang.parser.placeHint`](lang.md#lang.parser.placeHint). _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
-    - fn [placeHint](../../src/parser.ts#L301) (word: string, ctx: Ctx, section: SectionKind) → string <!-- internal -->
+    - fn [placeHint](../../src/parser.ts#L315) (word: string, ctx: Ctx, section: SectionKind) → string <!-- internal -->
       <a id="lang.parser.placeHint"></a><br>`; \`calls\` goes under \`- fn\`` when `word` is a keyword of other positions and not of `ctx`, else "". The places of the current section are listed; when the word belongs to other sections, one place is named with its section and several by their sections only (`; \`test\`…
       - calls [lang.parser.keywordsOf](lang.md#lang.parser.keywordsOf)
-    - fn [roleAt](../../src/parser.ts#L429) (section: SectionKind, parent: NodeKind | undefined, kind: NodeKind) → string | null
+    - fn [roleAt](../../src/parser.ts#L446) (section: SectionKind, parent: NodeKind | undefined, kind: NodeKind) → string | null
       <a id="lang.parser.roleAt"></a><br>The role of an item of `kind` under `parent` (or at the top of `section`), or `null` when it has none there.
       - calls [lang.parser.ctxOf](lang.md#lang.parser.ctxOf)
-    - fn [keywordKind](../../src/parser.ts#L434) (ctx: Ctx, kw: string) → NodeKind <!-- internal -->
+    - fn [keywordKind](../../src/parser.ts#L452) (ctx: Ctx, kw: string) → NodeKind <!-- internal -->
       <a id="lang.parser.keywordKind"></a><br>Maps a parsed keyword to its node kind for [`lang.parser.Parser.interpret`](lang.md#lang.parser.Parser.interpret), passing most keywords through unchanged, turning `?` into a question and top-level `module` into a rule module; unrecognized keywords become unknown. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [lang.parser.isSystemCtx](lang.md#lang.parser.isSystemCtx)
-    - type [Parent](../../src/parser.ts#L481) <!-- internal -->
+    - type [Parent](../../src/parser.ts#L504) <!-- internal -->
       <a id="lang.parser.Parent"></a><br>Describes the enclosing syntax node while walking a parsed tree: its `NodeKind`, the declared identifier if any, and an optional target name, both nullable when the parent has no such piece. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-    - module [Parser](../../src/parser.ts#L489) <!-- internal -->
+    - module [Parser](../../src/parser.ts#L512) <!-- internal -->
       <a id="lang.parser.Parser"></a><br>Line-by-line state machine that builds a keylang document from Markdown, sorting lines into sections, nested items with descriptions, prose, code fences and HTML blocks, and recording diagnostics via [`lang.parser.Parser.err`](lang.md#lang.parser.Parser.err). _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
-      - fn [constructor](../../src/parser.ts#L504) (path: string)
+      - fn [constructor](../../src/parser.ts#L527) (path: string)
         <a id="lang.parser.Parser.constructor"></a><br>Stores the given file path and initializes an empty document record carrying that path, a null `generated` marker, and empty `sections` and `diagnostics` lists for later parsing to fill. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-      - fn [err](../../src/parser.ts#L509) (code: Exclude<Code, "K005">, span: Span, msg: string) → void <!-- internal -->
+      - fn [err](../../src/parser.ts#L532) (code: Exclude<Code, "K005">, span: Span, msg: string) → void <!-- internal -->
         <a id="lang.parser.Parser.err"></a><br>Appends a diagnostic for the current file to the document's diagnostics list via [`base.diag.diagnostic`](base.md#base.diag.diagnostic), attaching the structured reason only when the code is "K005" and one is supplied. Every parse-error site in [`lang.parser.Parser`](lang.md#lang.parser.Parser) funnels through this method. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
         - calls [base.diag.diagnostic](base.md#base.diag.diagnostic)
-      - fn [section](../../src/parser.ts#L516) () → Section <!-- internal -->
+      - fn [section](../../src/parser.ts#L539) () → Section <!-- internal -->
         <a id="lang.parser.Parser.section"></a><br>Returns the last section in `this.doc.sections`, first appending a default heading-less "map" section with no items when the document has none yet, so callers like [`lang.parser.Parser.item`](lang.md#lang.parser.Parser.item) and [`lang.parser.Parser.closeList`](lang.md#lang.parser.Parser.closeList) always have a section to write into. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-      - fn [sectionKind](../../src/parser.ts#L523) () → SectionKind <!-- internal -->
+      - fn [sectionKind](../../src/parser.ts#L547) () → SectionKind <!-- internal -->
         <a id="lang.parser.Parser.sectionKind"></a><br>Returns the kind of the most recently opened section in the document being parsed, defaulting to "map" when no section has been started yet; [`lang.parser.Parser.item`](lang.md#lang.parser.Parser.item) uses it to decide how to interpret an item line. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-      - fn [flushProse](../../src/parser.ts#L527) () → void <!-- internal -->
+      - fn [flushProse](../../src/parser.ts#L551) () → void <!-- internal -->
         <a id="lang.parser.Parser.flushProse"></a><br>If any buffered prose lines exist, wraps them into a single `prose` item appended to the current section from [`lang.parser.Parser.section`](lang.md#lang.parser.Parser.section), then clears the buffer. Does nothing when no prose is pending. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
         - calls [lang.parser.Parser.section](lang.md#lang.parser.Parser.section)
-      - fn [pushDescription](../../src/parser.ts#L535) (l: Line, text: string, lead: Lead, depth: number) → void <!-- internal -->
+      - fn [pushDescription](../../src/parser.ts#L559) (l: Line, text: string, lead: Lead, depth: number) → void <!-- internal -->
         <a id="lang.parser.Parser.pushDescription"></a><br>A non-empty line that belongs to an open item as its description (§3).
         - calls [lang.parser.Parser.err](lang.md#lang.parser.Parser.err), [lang.parser.Line.span](lang.md#lang.parser.Line.span)
-      - fn [closeList](../../src/parser.ts#L542) (depth: number) → void <!-- internal -->
+      - fn [closeList](../../src/parser.ts#L566) (depth: number) → void <!-- internal -->
         <a id="lang.parser.Parser.closeList"></a><br>Pops nested list nodes off the parser stack until it is at most `depth` deep, attaching each popped node to its parent's children or, when no parent remains, to the current section from [`lang.parser.Parser.section`](lang.md#lang.parser.Parser.section) as a top-level item. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
         - calls [lang.parser.Parser.section](lang.md#lang.parser.Parser.section)
-      - fn [finish](../../src/parser.ts#L551) () → Document
+      - fn [finish](../../src/parser.ts#L576) () → Document
         <a id="lang.parser.Parser.finish"></a><br>Flushes any still-open code fence as a code item into the current section via [`lang.parser.Parser.section`](lang.md#lang.parser.Parser.section), then runs [`lang.parser.Parser.flushProse`](lang.md#lang.parser.Parser.flushProse) and [`lang.parser.Parser.closeList`](lang.md#lang.parser.Parser.closeList) to depth 0 before returning the built document. Called once at end of input by… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
         - calls [lang.parser.Parser.section](lang.md#lang.parser.Parser.section), [lang.parser.Parser.flushProse](lang.md#lang.parser.Parser.flushProse), [lang.parser.Parser.closeList](lang.md#lang.parser.Parser.closeList)
-      - fn [line](../../src/parser.ts#L561) (l: Line) → void
+      - fn [line](../../src/parser.ts#L588) (l: Line) → void
         <a id="lang.parser.Parser.line"></a><br>Dispatches one source line by parser state: collects fenced code and multi-line HTML blocks, records the generated marker, and routes to [`lang.parser.Parser.heading`](lang.md#lang.parser.Parser.heading), [`lang.parser.Parser.item`](lang.md#lang.parser.Parser.item), item descriptions or prose, flagging tab indentation. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
         - calls [lang.parser.closesFence](lang.md#lang.parser.closesFence), [lang.parser.Parser.section](lang.md#lang.parser.Parser.section), [lang.parser.leadingWhitespace](lang.md#lang.parser.leadingWhitespace), [lang.parser.Parser.pushDescription](lang.md#lang.parser.Parser.pushDescription), [lang.parser.Parser.flushProse](lang.md#lang.parser.Parser.flushProse), [lang.parser.Parser.err](lang.md#lang.parser.Parser.err), [lang.parser.htmlBlockStart](lang.md#lang.parser.htmlBlockStart), [lang.parser.Parser.closeList](lang.md#lang.parser.Parser.closeList), [lang.parser.Parser.heading](lang.md#lang.parser.Parser.heading), [lang.parser.opensFence](lang.md#lang.parser.opensFence), [lang.parser.openFence](lang.md#lang.parser.openFence), [lang.parser.isBullet](lang.md#lang.parser.isBullet), [lang.parser.Parser.item](lang.md#lang.parser.Parser.item), [lang.parser.Line.span](lang.md#lang.parser.Line.span)
-      - fn [heading](../../src/parser.ts#L651) (l: Line) → void <!-- internal -->
+      - fn [heading](../../src/parser.ts#L699) (l: Line) → void <!-- internal -->
         <a id="lang.parser.Parser.heading"></a><br>Ends pending prose and lists, then lexes a `#` line into a new section of kind map, rules, flow or wiring, defaulting to map with a K006 error. Only a flow takes a name, checked by [`lang.parser.isSegment`](lang.md#lang.parser.isSegment); missing names or extra words raise K005. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
         - calls [lang.parser.Parser.flushProse](lang.md#lang.parser.Parser.flushProse), [lang.parser.Parser.closeList](lang.md#lang.parser.Parser.closeList), [lang.parser.lex](lang.md#lang.parser.lex), [lang.parser.Line](lang.md#lang.parser.Line), [lang.parser.headingEnd](lang.md#lang.parser.headingEnd), [lang.parser.renderTokens](lang.md#lang.parser.renderTokens), [lang.parser.Line.span](lang.md#lang.parser.Line.span), [lang.parser.Parser.err](lang.md#lang.parser.Parser.err), [lang.parser.isSegment](lang.md#lang.parser.isSegment), [lang.parser.nfc](lang.md#lang.parser.nfc)
-      - fn [item](../../src/parser.ts#L683) (l: Line, wsLen: number, indent: number) → void <!-- internal -->
+      - fn [item](../../src/parser.ts#L737) (l: Line, wsLen: number, indent: number) → void <!-- internal -->
         <a id="lang.parser.Parser.item"></a><br>Parses a bulleted list line: checks indentation (K003), closes deeper lists, then lexes the item via [`lang.parser.lex`](lang.md#lang.parser.lex) and classifies it with [`lang.parser.Parser.interpret`](lang.md#lang.parser.Parser.interpret) before pushing it onto the nesting stack. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
         - calls [lang.parser.Parser.flushProse](lang.md#lang.parser.Parser.flushProse), [lang.parser.Line.span](lang.md#lang.parser.Line.span), [lang.parser.Parser.err](lang.md#lang.parser.Parser.err), [lang.parser.Parser.closeList](lang.md#lang.parser.Parser.closeList), [lang.parser.Parser.section](lang.md#lang.parser.Parser.section), [lang.parser.lex](lang.md#lang.parser.lex), [lang.parser.ctxOf](lang.md#lang.parser.ctxOf), [lang.parser.Parser.sectionKind](lang.md#lang.parser.Parser.sectionKind), [lang.parser.Parser.interpret](lang.md#lang.parser.Parser.interpret)
-      - fn [interpret](../../src/parser.ts#L737) (n: Node, l: Line, ctx: Ctx, parent: Parent | undefined) → void <!-- internal -->
+      - fn [interpret](../../src/parser.ts#L803) (n: Node, l: Line, ctx: Ctx, parent: Parent | undefined) → void <!-- internal -->
         <a id="lang.parser.Parser.interpret"></a><br>Classifies an item by its leading keyword, sending non-keyword items to [`lang.parser.Parser.bare`](lang.md#lang.parser.Parser.bare), and parses the remaining tokens per kind into declarations, references, or text. Malformed arguments raise K005 errors. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
         - calls [lang.parser.Parser.err](lang.md#lang.parser.Parser.err), [lang.parser.keywordsOf](lang.md#lang.parser.keywordsOf), [lang.parser.Parser.bare](lang.md#lang.parser.Parser.bare), [lang.parser.keywordKind](lang.md#lang.parser.keywordKind), [lang.parser.Parser.decl](lang.md#lang.parser.Parser.decl), [lang.parser.Parser.refList](lang.md#lang.parser.Parser.refList), [lang.parser.isSegment](lang.md#lang.parser.isSegment), [lang.parser.nfc](lang.md#lang.parser.nfc), [lang.parser.Parser.layers](lang.md#lang.parser.Parser.layers), [lang.ir.kindLabel](lang.md#lang.ir.kindLabel), [lang.parser.Parser.plannedModifier](lang.md#lang.parser.Parser.plannedModifier), [lang.parser.Parser.typedTrigger](lang.md#lang.parser.Parser.typedTrigger), [lang.parser.Parser.oneRef](lang.md#lang.parser.Parser.oneRef), [lang.parser.isDuration](lang.md#lang.parser.isDuration), [lang.parser.spanned](lang.md#lang.parser.spanned), [lang.parser.scheduleText](lang.md#lang.parser.scheduleText), [lang.parser.renderTokens](lang.md#lang.parser.renderTokens), [lang.parser.parseLink](lang.md#lang.parser.parseLink), [lang.parser.isEventId](lang.md#lang.parser.isEventId), [lang.parser.Parser.makeRef](lang.md#lang.parser.Parser.makeRef), [lang.parser.Parser.freeText](lang.md#lang.parser.Parser.freeText), [lang.parser.isId](lang.md#lang.parser.isId), [lang.parser.Parser.migrationRow](lang.md#lang.parser.Parser.migrationRow), [lang.parser.Parser.systemName](lang.md#lang.parser.Parser.systemName)
-      - fn [bare](../../src/parser.ts#L971) (n: Node, ctx: Ctx, parent: Parent | undefined) → void <!-- internal -->
+      - fn [bare](../../src/parser.ts#L1087) (n: Node, ctx: Ctx, parent: Parent | undefined) → void <!-- internal -->
         <a id="lang.parser.Parser.bare"></a><br>Item whose first word is not a keyword of its context.
         - calls [lang.parser.placeHint](lang.md#lang.parser.placeHint), [lang.parser.Parser.sectionKind](lang.md#lang.parser.Parser.sectionKind), [lang.parser.Parser.decl](lang.md#lang.parser.Parser.decl), [lang.parser.isSegment](lang.md#lang.parser.isSegment), [lang.parser.nfc](lang.md#lang.parser.nfc), [lang.parser.Parser.oneRef](lang.md#lang.parser.Parser.oneRef), [lang.parser.Parser.err](lang.md#lang.parser.Parser.err), [lang.parser.Parser.column](lang.md#lang.parser.Parser.column), [lang.parser.Parser.message](lang.md#lang.parser.Parser.message), [lang.ir.kindLabel](lang.md#lang.ir.kindLabel), [lang.parser.keywordsOf](lang.md#lang.parser.keywordsOf)
-      - fn [decl](../../src/parser.ts#L1034) (n: Node, rest: Token[], parentId: string | null, sig: boolean, hint: () => string = () => "") → void <!-- internal -->
+      - fn [decl](../../src/parser.ts#L1157) (n: Node, rest: Token[], parentId: string | null, sig: boolean, hint: () => string = () => "") → void <!-- internal -->
         <a id="lang.parser.Parser.decl"></a><br>`<name>` or `[name](path#Lnn)` + optional signature. `hint` says where a keyword written as an implicit layer or module name goes.
         - calls [lang.parser.Parser.err](lang.md#lang.parser.Parser.err), [lang.ir.kindLabel](lang.md#lang.ir.kindLabel), [lang.parser.parseLink](lang.md#lang.parser.parseLink), [lang.parser.isSegment](lang.md#lang.parser.isSegment), [lang.parser.linkTextSpan](lang.md#lang.parser.linkTextSpan), [lang.parser.nfc](lang.md#lang.parser.nfc), [lang.parser.renderTokens](lang.md#lang.parser.renderTokens)
-      - fn [makeRef](../../src/parser.ts#L1072) (t: Token) → Ref | null <!-- internal -->
+      - fn [makeRef](../../src/parser.ts#L1203) (t: Token) → Ref | null <!-- internal -->
         <a id="lang.parser.Parser.makeRef"></a><br>A bare ID, or `[id](href)`: the link text is the ID, the target is kept and never checked.
         - calls [lang.parser.isId](lang.md#lang.parser.isId), [lang.parser.nfc](lang.md#lang.parser.nfc), [lang.parser.parseLink](lang.md#lang.parser.parseLink), [lang.parser.linkTextSpan](lang.md#lang.parser.linkTextSpan), [lang.parser.Parser.err](lang.md#lang.parser.Parser.err)
-      - fn [plannedModifier](../../src/parser.ts#L1094) (n: Node, rest: Token[]) → boolean <!-- internal -->
+      - fn [plannedModifier](../../src/parser.ts#L1230) (n: Node, rest: Token[]) → boolean <!-- internal -->
         <a id="lang.parser.Parser.plannedModifier"></a><br>`step planned <id>` (or `step planned <kind> <id>`) reads like a modifier, but `planned` is a declaration of its own: K005 on the word says how to write it. Without a line kind the hint assumes `fn`.
         - calls [lang.parser.isId](lang.md#lang.parser.isId), [lang.ir.kindLabel](lang.md#lang.ir.kindLabel), [lang.parser.Parser.err](lang.md#lang.parser.Parser.err)
-      - fn [typedTrigger](../../src/parser.ts#L1116) (n: Node, rest: Token[]) → boolean <!-- internal -->
+      - fn [typedTrigger](../../src/parser.ts#L1255) (n: Node, rest: Token[]) → boolean <!-- internal -->
         <a id="lang.parser.Parser.typedTrigger"></a><br>`trigger <kind> <id>` (ADR 0023 п. 3): the kind is kept as the label, the ID is the entry point's fn; `trigger event <id>` (п. 1) keeps `event` as the label and the ID is the event's. A first word without a dot that is no kind is K005 on it.
         - calls [lang.parser.isTriggerKind](lang.md#lang.parser.isTriggerKind), [lang.parser.Parser.err](lang.md#lang.parser.Parser.err), [lang.parser.Parser.oneRef](lang.md#lang.parser.Parser.oneRef)
-      - fn [oneRef](../../src/parser.ts#L1128) (n: Node, rest: Token[]) → void <!-- internal -->
+      - fn [oneRef](../../src/parser.ts#L1272) (n: Node, rest: Token[]) → void <!-- internal -->
         <a id="lang.parser.Parser.oneRef"></a><br>Requires exactly one argument token, turning it into a reference via [`lang.parser.Parser.makeRef`](lang.md#lang.parser.Parser.makeRef) and appending it to the node's refs. Otherwise it reports K005 via [`lang.parser.Parser.err`](lang.md#lang.parser.Parser.err), at the node for a missing ID or at the second token for extras. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
         - calls [lang.parser.Parser.makeRef](lang.md#lang.parser.Parser.makeRef), [lang.parser.Parser.err](lang.md#lang.parser.Parser.err)
-      - fn [refList](../../src/parser.ts#L1139) (n: Node, rest: Token[], min: number) → void <!-- internal -->
+      - fn [refList](../../src/parser.ts#L1284) (n: Node, rest: Token[], min: number) → void <!-- internal -->
         <a id="lang.parser.Parser.refList"></a><br>Skips commas in the trailing tokens, converts each remaining token into a reference via [`lang.parser.Parser.makeRef`](lang.md#lang.parser.Parser.makeRef) and appends it to the node. Reports a K005 error through [`lang.parser.Parser.err`](lang.md#lang.parser.Parser.err) if fewer than the minimum IDs appear. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
         - calls [lang.parser.Parser.makeRef](lang.md#lang.parser.Parser.makeRef), [lang.parser.Parser.err](lang.md#lang.parser.Parser.err), [lang.ir.kindLabel](lang.md#lang.ir.kindLabel)
-      - fn [layers](../../src/parser.ts#L1153) (n: Node, rest: Token[]) → void <!-- internal -->
+      - fn [layers](../../src/parser.ts#L1301) (n: Node, rest: Token[]) → void <!-- internal -->
         <a id="lang.parser.Parser.layers"></a><br>`layers a < b < c`
         - calls [lang.parser.Parser.makeRef](lang.md#lang.parser.Parser.makeRef), [lang.parser.Parser.err](lang.md#lang.parser.Parser.err)
-      - fn [systemName](../../src/parser.ts#L1168) (n: Node, l: Line, rest: Token[], withText: boolean) → void <!-- internal -->
+      - fn [systemName](../../src/parser.ts#L1318) (n: Node, l: Line, rest: Token[], withText: boolean) → void <!-- internal -->
         <a id="lang.parser.Parser.systemName"></a><br>`<kind|zone|table|sequence> <name> [text…]`: a name local to the system; `text` (a technology, a label) only where `withText`.
         - calls [lang.parser.isSegment](lang.md#lang.parser.isSegment), [lang.parser.Parser.err](lang.md#lang.parser.Parser.err), [lang.ir.kindLabel](lang.md#lang.ir.kindLabel), [lang.parser.nfc](lang.md#lang.parser.nfc), [lang.parser.Parser.freeText](lang.md#lang.parser.Parser.freeText)
-      - fn [column](../../src/parser.ts#L1181) (n: Node, tokens: Token[], hint: () => string) → void <!-- internal -->
+      - fn [column](../../src/parser.ts#L1336) (n: Node, tokens: Token[], hint: () => string) → void <!-- internal -->
         <a id="lang.parser.Parser.column"></a><br>`<name> <type> [pk] [unique] [null] [fk <table>.<column>]` under `table`.
         - calls [lang.parser.isSegment](lang.md#lang.parser.isSegment), [lang.parser.Parser.err](lang.md#lang.parser.Parser.err), [lang.parser.nfc](lang.md#lang.parser.nfc), [lang.parser.spanned](lang.md#lang.parser.spanned), [lang.parser.isId](lang.md#lang.parser.isId)
-      - fn [message](../../src/parser.ts#L1205) (n: Node, tokens: Token[], hint: () => string) → void <!-- internal -->
+      - fn [message](../../src/parser.ts#L1369) (n: Node, tokens: Token[], hint: () => string) → void <!-- internal -->
         <a id="lang.parser.Parser.message"></a><br>`<from> → <to> [text…]` under `sequence`; `->` is `→`, `-->` is `⇢`.
         - calls [lang.parser.isSegment](lang.md#lang.parser.isSegment), [lang.parser.Parser.err](lang.md#lang.parser.Parser.err), [lang.parser.nfc](lang.md#lang.parser.nfc), [lang.parser.renderTokens](lang.md#lang.parser.renderTokens)
-      - fn [migrationRow](../../src/parser.ts#L1227) (n: Node, l: Line, rest: Token[]) → void <!-- internal -->
+      - fn [migrationRow](../../src/parser.ts#L1395) (n: Node, l: Line, rest: Token[]) → void <!-- internal -->
         <a id="lang.parser.Parser.migrationRow"></a><br>`map <old> → [planned] <new>`: `id` is the old stack's ID, `text` the row as written, `label` `planned` when the new ID is an intention. The new ID is a reference of this repository (K001 unless the code has it or a `planned` declares it); the old ID lives in another repository…
         - calls [lang.parser.isId](lang.md#lang.parser.isId), [lang.parser.Parser.err](lang.md#lang.parser.Parser.err), [lang.parser.nfc](lang.md#lang.parser.nfc), [lang.parser.spanned](lang.md#lang.parser.spanned), [lang.parser.Parser.freeText](lang.md#lang.parser.Parser.freeText)
-      - fn [freeText](../../src/parser.ts#L1242) (n: Node, l: Line, rest: Token[]) → void <!-- internal -->
+      - fn [freeText](../../src/parser.ts#L1414) (n: Node, l: Line, rest: Token[]) → void <!-- internal -->
         <a id="lang.parser.Parser.freeText"></a><br>Stores a node's trailing tokens as canonical description text via [`lang.parser.renderTokens`](lang.md#lang.parser.renderTokens), spanning first to last token so reformatting won't change it. If none remain, reports K005 that the node kind needs a description. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
         - calls [lang.parser.renderTokens](lang.md#lang.parser.renderTokens), [lang.parser.Line.span](lang.md#lang.parser.Line.span), [lang.parser.Parser.err](lang.md#lang.parser.Parser.err), [lang.ir.kindLabel](lang.md#lang.ir.kindLabel)
-    - fn [spanned](../../src/parser.ts#L1256) (t: Token) → Spanned<string> <!-- internal -->
+    - fn [spanned](../../src/parser.ts#L1429) (t: Token) → Spanned<string> <!-- internal -->
       <a id="lang.parser.spanned"></a><br>Wraps a token's text together with its source span into a `Spanned<string>` value, so callers like [`lang.parser.Parser.bare`](lang.md#lang.parser.Parser.bare) and [`lang.parser.Parser.interpret`](lang.md#lang.parser.Parser.interpret) can keep location info attached to the extracted string. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Lead](../../src/parser.ts#L1260) <!-- internal -->
+    - type [Lead](../../src/parser.ts#L1433) <!-- internal -->
       <a id="lang.parser.Lead"></a><br>Holds the measured leading whitespace of a source line: the raw prefix string, its indent width where a tab counts as two spaces, its CommonMark column count where a tab advances to the next multiple of 4, and a flag noting whether any tab was present. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [leadingWhitespace](../../src/parser.ts#L1269) (text: string) → Lead <!-- internal -->
+    - fn [leadingWhitespace](../../src/parser.ts#L1442) (text: string) → Lead <!-- internal -->
       <a id="lang.parser.leadingWhitespace"></a><br>Measures the run of spaces and tabs at the start of a line, counting each tab as two indent units and advancing columns to the next multiple of four, and reports whether any tab was present. Used by [`lang.parser.Parser.line`](lang.md#lang.parser.Parser.line), [`lang.parser.openFence`](lang.md#lang.parser.openFence), and… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [FenceOpen](../../src/parser.ts#L1285) <!-- internal -->
+    - type [FenceOpen](../../src/parser.ts#L1460) <!-- internal -->
       <a id="lang.parser.FenceOpen"></a><br>Records the shape of a Markdown fence opener: which fence character was used, how many of them, the fence's column width, and the leading-space count (null when a tab sits in the indent). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [openFence](../../src/parser.ts#L1294) (text: string) → FenceOpen | null <!-- internal -->
+    - fn [openFence](../../src/parser.ts#L1469) (text: string) → FenceOpen | null <!-- internal -->
       <a id="lang.parser.openFence"></a><br>A fence opener, ignoring the indent-of-4 rule. An info string with a backtick is not an opener.
       - calls [lang.parser.leadingWhitespace](lang.md#lang.parser.leadingWhitespace)
-    - fn [opensFence](../../src/parser.ts#L1311) (text: string, listOpen: boolean) → boolean <!-- internal -->
+    - fn [opensFence](../../src/parser.ts#L1491) (text: string, listOpen: boolean) → boolean <!-- internal -->
       <a id="lang.parser.opensFence"></a><br>CommonMark fence: indent under 4 spaces, or any indent while a list is open (Р9). A backtick info string that itself contains a backtick is prose.
       - calls [lang.parser.openFence](lang.md#lang.parser.openFence)
-    - fn [closesFence](../../src/parser.ts#L1316) (text: string, open: { char: string; len: number; columns: number }) → boolean <!-- internal -->
+    - fn [closesFence](../../src/parser.ts#L1497) (text: string, open: { char: string; len: number; columns: number }) → boolean <!-- internal -->
       <a id="lang.parser.closesFence"></a><br>Decides whether a line terminates a code fence opened with the given character, length, and indent by measuring its leading whitespace via [`lang.parser.leadingWhitespace`](lang.md#lang.parser.leadingWhitespace). The line must be indented at most max(3, opener indent), start with at least as many fence characters as… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [lang.parser.leadingWhitespace](lang.md#lang.parser.leadingWhitespace)
-    - fn [dedentFenceLines](../../src/parser.ts#L1333) (lines: string[]) → string[]
+    - fn [dedentFenceLines](../../src/parser.ts#L1519) (lines: string[]) → string[]
       <a id="lang.parser.dedentFenceLines"></a><br>Drop the indent `fmt` owes a fence that was written under a list item. The opener and the closer lose all of their indent; each body line loses as many spaces as the opener had, and never more than it has.
       - calls [lang.parser.openFence](lang.md#lang.parser.openFence), [lang.parser.closesFence](lang.md#lang.parser.closesFence)
-    - fn [htmlBlockStart](../../src/parser.ts#L1354) (rest: string) → { end: (line: string) => boolean } | null <!-- internal -->
+    - fn [htmlBlockStart](../../src/parser.ts#L1545) (rest: string) → { end: (line: string) => boolean } | null <!-- internal -->
       <a id="lang.parser.htmlBlockStart"></a><br>Start of a CommonMark HTML block of types 1–5, or null. The end test reads the whole line.
-    - fn [headingEnd](../../src/parser.ts#L1371) (text: string) → number <!-- internal -->
+    - fn [headingEnd](../../src/parser.ts#L1567) (text: string) → number <!-- internal -->
       <a id="lang.parser.headingEnd"></a><br>Where the words of a `#` heading line end: before an optional closing sequence of `#` that follows a space or a tab and has only spaces or tabs after it (CommonMark). `# flow a #` has the words `flow a`; in `# flow a#` the `#` is part of a word.
-    - fn [isBullet](../../src/parser.ts#L1377) (rest: string) → boolean <!-- internal -->
+    - fn [isBullet](../../src/parser.ts#L1574) (rest: string) → boolean <!-- internal -->
       <a id="lang.parser.isBullet"></a><br>Checks whether a line remainder starts with `-`, `*`, or `+` followed by either end-of-string or a single space, marking it as a list bullet. Used by [`lang.parser.Parser.line`](lang.md#lang.parser.Parser.line) to classify lines during parsing. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [nfc](../../src/parser.ts#L1387) (text: string) → string <!-- internal -->
+    - fn [nfc](../../src/parser.ts#L1585) (text: string) → string <!-- internal -->
       <a id="lang.parser.nfc"></a><br>An ID in Unicode normal form C: a composed `café` and a decomposed one are one ID. Tokens and spans keep the text as written, so `fmt` changes nothing.
-    - fn [isSegment](../../src/parser.ts#L1392) (s: string) → boolean
+    - fn [isSegment](../../src/parser.ts#L1590) (s: string) → boolean
       <a id="lang.parser.isSegment"></a><br>A single ID segment: letter or `_`, then letters (with their combining marks), digits, `_`, `-`.
-    - fn [isId](../../src/parser.ts#L1398) (s: string) → boolean
+    - fn [isId](../../src/parser.ts#L1596) (s: string) → boolean
       <a id="lang.parser.isId"></a><br>A dotted ID: `segment(.segment)*`.
       - calls [lang.parser.isSegment](lang.md#lang.parser.isSegment)
-    - fn [linkTextSpan](../../src/parser.ts#L1404) (t: Token) → Span
+    - fn [linkTextSpan](../../src/parser.ts#L1602) (t: Token) → Span
       <a id="lang.parser.linkTextSpan"></a><br>The span of the text inside `[…]`, the same span a link reference uses.
       - calls [lang.parser.parseLink](lang.md#lang.parser.parseLink), [lang.parser.codePoints](lang.md#lang.parser.codePoints)
-    - fn [parseLink](../../src/parser.ts#L1410) (t: Token) → Link <!-- internal -->
+    - fn [parseLink](../../src/parser.ts#L1609) (t: Token) → Link <!-- internal -->
       <a id="lang.parser.parseLink"></a><br>Splits a markdown-style `[text](target)` token into display text and target, decoding the path via [`lang.parser.decodeLinkPath`](lang.md#lang.parser.decodeLinkPath) and extracting an optional `#L<n>` fragment as a line number. Returns these fields together with the token's span. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [lang.parser.decodeLinkPath](lang.md#lang.parser.decodeLinkPath)
-    - fn [decodeLinkPath](../../src/parser.ts#L1429) (path: string) → string <!-- internal -->
+    - fn [decodeLinkPath](../../src/parser.ts#L1632) (path: string) → string <!-- internal -->
       <a id="lang.parser.decodeLinkPath"></a><br>Percent-decoding for map links. A broken escape is kept as written so the diagnostic still points at the source.
-    - fn [lex](../../src/parser.ts#L1443) (l: Line, start: number, errs: [Span, string][]) → { tokens: Token[]; comment: Spanned<string> | null } <!-- internal -->
+    - fn [lex](../../src/parser.ts#L1646) (l: Line, start: number, errs: [Span, string][]) → { tokens: Token[]; comment: Spanned<string> | null } <!-- internal -->
       <a id="lang.parser.lex"></a><br>Split an item head into tokens. Words end at whitespace or `,`; `[text](target)` and `"quoted"` are single tokens (a `[` that opens no link is an ordinary word); `<!-- … -->` ends the head and is returned separately.
       - calls [lang.parser.Line.span](lang.md#lang.parser.Line.span), [lang.parser.linkEnd](lang.md#lang.parser.linkEnd)
-    - fn [linkEnd](../../src/parser.ts#L1507) (s: string, i: number) → number | null <!-- internal -->
+    - fn [linkEnd](../../src/parser.ts#L1722) (s: string, i: number) → number | null <!-- internal -->
       <a id="lang.parser.linkEnd"></a><br>The end of `[text](destination)` opened at `i`, or null. As in CommonMark, the destination has no whitespace and holds parentheses only in balanced pairs or escaped (`\(`), so `(https://e.com/Foo_(bar))` ends at the last `)`.
-    - fn [renderMeaning](../../src/parser.ts#L1529) (node: Node) → string
+    - fn [renderMeaning](../../src/parser.ts#L1749) (node: Node) → string
       <a id="lang.parser.renderMeaning"></a><br>What an item's head says, for comparing meaning (a verdict's `specHash`, a rule already written): canonical tokens, with a reference written as a link `[id](href)` counted as its ID, so linking a reference changes nothing.
       - calls [lang.parser.renderTokens](lang.md#lang.parser.renderTokens)
-    - fn [renderTokens](../../src/parser.ts#L1535) (tokens: readonly Token[]) → string
+    - fn [renderTokens](../../src/parser.ts#L1756) (tokens: readonly Token[]) → string
       <a id="lang.parser.renderTokens"></a><br>Canonical rendering of head tokens: single spaces, `a, b` for commas.
   - module [spec-ir](../../src/spec-ir.ts#L1)
     <a id="lang.spec-ir"></a><br>SpecIR: typed assertions compiled from the text IR. `compileSpec` checks assertion form (a layer order, a wiring condition). Checks that need the snapshot still run later.
@@ -344,76 +344,76 @@
       <a id="lang.spec-ir.SpecIR"></a><br>The compiled shape of a spec document: rule assertions, declared modules, flows, planned items, and wires, plus `layers` lines that failed to form an order. A `hasRules` flag records that some section produced a rule even when its order was rejected. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [walkFlow](../../src/spec-ir.ts#L218) (flow: Flow, visit: (item: Trigger | FlowItem) => void) → void
       <a id="lang.spec-ir.walkFlow"></a><br>Triggers and top-level items, then nested items, in source order.
-    - type [LayerCandidate](../../src/spec-ir.ts#L229) <!-- internal -->
+    - type [LayerCandidate](../../src/spec-ir.ts#L232) <!-- internal -->
       <a id="lang.spec-ir.LayerCandidate"></a><br>Holds one layer-shaped block found while scanning a spec file: its sequence number, file, `Span`, raw text, the ordered and nested `Ref` lists it declares, the originating `Node`, and whether it passed validation. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [PlacedRule](../../src/spec-ir.ts#L240) <!-- internal -->
+    - type [PlacedRule](../../src/spec-ir.ts#L243) <!-- internal -->
       <a id="lang.spec-ir.PlacedRule"></a><br>Pairs a parsed rule assertion with a sequence number recording its position in the spec, so rules can be ordered or referenced by where they appeared. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [compileSpec](../../src/spec-ir.ts#L245) (docs: readonly Document[]) → { spec: SpecIR; diagnostics: Diagnostic[] }
+    - fn [compileSpec](../../src/spec-ir.ts#L248) (docs: readonly Document[]) → { spec: SpecIR; diagnostics: Diagnostic[] }
       <a id="lang.spec-ir.compileSpec"></a><br>Walks parsed documents and dispatches rules/map, flow and wiring sections to [`lang.spec-ir.compileRules`](lang.md#lang.spec-ir.compileRules), [`lang.spec-ir.compileFlow`](lang.md#lang.spec-ir.compileFlow) and [`lang.spec-ir.compileWires`](lang.md#lang.spec-ir.compileWires). It then resolves layer orders via [`lang.spec-ir.settleLayers`](lang.md#lang.spec-ir.settleLayers) and returns a sequence-ordered spec plus… _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [lang.spec-ir.compileRules](lang.md#lang.spec-ir.compileRules), [lang.spec-ir.compileFlow](lang.md#lang.spec-ir.compileFlow), [lang.spec-ir.compileWires](lang.md#lang.spec-ir.compileWires), [lang.spec-ir.settleLayers](lang.md#lang.spec-ir.settleLayers)
-    - fn [compileRules](../../src/spec-ir.ts#L269) ( file: string, generated: boolean, section: Section, placed: PlacedRule[], candidates: LayerCandidate[], modules: SpecModule[], diagnostics: Diagnostic[], nextSeq: () => number, ) → void <!-- internal -->
+    - fn [compileRules](../../src/spec-ir.ts#L275) ( file: string, generated: boolean, section: Section, placed: PlacedRule[], candidates: LayerCandidate[], modules: SpecModule[], diagnostics: Diagnostic[], nextSeq: () => number, ) → void <!-- internal -->
       <a id="lang.spec-ir.compileRules"></a><br>Walks a spec section's nodes via [`lang.ir.sectionNodes`](lang.md#lang.ir.sectionNodes), turning allow/deny, entry, no-cycles, layers and rule-module lines into sequenced rules, layer candidates and module entries. Delegates each node kind to [`lang.spec-ir.dependency`](lang.md#lang.spec-ir.dependency), [`lang.spec-ir.entryLine`](lang.md#lang.spec-ir.entryLine)… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.spec-ir.considerLayers](lang.md#lang.spec-ir.considerLayers), [lang.spec-ir.dependency](lang.md#lang.spec-ir.dependency), [lang.spec-ir.entryLine](lang.md#lang.spec-ir.entryLine), [lang.spec-ir.noCycles](lang.md#lang.spec-ir.noCycles), [lang.spec-ir.exportsRule](lang.md#lang.spec-ir.exportsRule)
-    - fn [considerLayers](../../src/spec-ir.ts#L309) (file: string, node: Node, diagnostics: Diagnostic[]) → Omit<LayerCandidate, "seq"> | null <!-- internal -->
+    - fn [considerLayers](../../src/spec-ir.ts#L322) (file: string, node: Node, diagnostics: Diagnostic[]) → Omit<LayerCandidate, "seq"> | null <!-- internal -->
       <a id="lang.spec-ir.considerLayers"></a><br>A `layers` line the old text IR would have kept, with K005 for a non-layer or a repeated layer. An empty line is absent.
       - calls [base.diag.diagnostic](base.md#base.diag.diagnostic)
-    - fn [settleLayers](../../src/spec-ir.ts#L336) (candidates: readonly LayerCandidate[], diagnostics: Diagnostic[]) → { orders: PlacedRule[]; rejectedLayers: RejectedLayers[] } <!-- internal -->
+    - fn [settleLayers](../../src/spec-ir.ts#L354) (candidates: readonly LayerCandidate[], diagnostics: Diagnostic[]) → { orders: PlacedRule[]; rejectedLayers: RejectedLayers[] } <!-- internal -->
       <a id="lang.spec-ir.settleLayers"></a><br>One partial order across every document, in encounter order. A line that contradicts an earlier order is K005 and not an order.
       - calls [base.diag.diagnostic](base.md#base.diag.diagnostic), [lang.spec-ir.layersAbove](lang.md#lang.spec-ir.layersAbove), [lang.spec-ir.at](lang.md#lang.spec-ir.at)
-    - fn [layersAbove](../../src/spec-ir.ts#L388) (direct: ReadonlyMap<string, ReadonlySet<string>>) → Map<string, Set<string>> <!-- internal -->
+    - fn [layersAbove](../../src/spec-ir.ts#L419) (direct: ReadonlyMap<string, ReadonlySet<string>>) → Map<string, Set<string>> <!-- internal -->
       <a id="lang.spec-ir.layersAbove"></a><br>Computes the transitive closure of a direct adjacency map: for each key, a depth-first walk collects every name reachable through chained edges, with a visited set guarding against cycles. The result feeds [`lang.spec-ir.settleLayers`](lang.md#lang.spec-ir.settleLayers) for ordering layer candidates. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [dependency](../../src/spec-ir.ts#L404) (file: string, node: Node, effect: "allow" | "deny", generated: boolean) → DependencyRule | null <!-- internal -->
+    - fn [dependency](../../src/spec-ir.ts#L440) (file: string, node: Node, effect: "allow" | "deny", generated: boolean) → DependencyRule | null <!-- internal -->
       <a id="lang.spec-ir.dependency"></a><br>Builds a dependency rule from a parsed spec line, taking the first ref as the source and the remaining refs (checked via [`lang.spec-ir.nonEmpty`](lang.md#lang.spec-ir.nonEmpty)) as targets, returning null if either side is missing. Location and reconstructed rule text are attached through [`lang.spec-ir.at`](lang.md#lang.spec-ir.at). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [lang.spec-ir.nonEmpty](lang.md#lang.spec-ir.nonEmpty), [lang.spec-ir.at](lang.md#lang.spec-ir.at)
-    - fn [nonEmpty](../../src/spec-ir.ts#L411) (refs: readonly Ref[]) → NonEmpty<Ref> | null <!-- internal -->
+    - fn [nonEmpty](../../src/spec-ir.ts#L449) (refs: readonly Ref[]) → NonEmpty<Ref> | null <!-- internal -->
       <a id="lang.spec-ir.nonEmpty"></a><br>Returns `null` when the ref array is empty, otherwise copies it into a tuple typed as `NonEmpty<Ref>` with the first element guaranteed present. [`lang.spec-ir.dependency`](lang.md#lang.spec-ir.dependency) uses it to reject rules that resolve to no references. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [entryLine](../../src/spec-ir.ts#L416) (file: string, node: Node) → Entry | null <!-- internal -->
+    - fn [entryLine](../../src/spec-ir.ts#L455) (file: string, node: Node) → Entry | null <!-- internal -->
       <a id="lang.spec-ir.entryLine"></a><br>Collects the `refs` from all children of a parsed `entry` line into a single list and returns `null` when there are none. Otherwise it builds an `entry` record holding those refs plus source location from [`lang.spec-ir.at`](lang.md#lang.spec-ir.at), for use by [`lang.spec-ir.compileRules`](lang.md#lang.spec-ir.compileRules). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [lang.spec-ir.at](lang.md#lang.spec-ir.at)
-    - fn [noCycles](../../src/spec-ir.ts#L423) (file: string, node: Node, under: Ref | null) → NoCycles <!-- internal -->
+    - fn [noCycles](../../src/spec-ir.ts#L464) (file: string, node: Node, under: Ref | null) → NoCycles <!-- internal -->
       <a id="lang.spec-ir.noCycles"></a><br>Builds a `no-cycles` rule object scoped to an optional `under` reference, attaching source location via [`lang.spec-ir.at`](lang.md#lang.spec-ir.at) with a label that falls back to `*` when no target is given. Used by [`lang.spec-ir.compileRules`](lang.md#lang.spec-ir.compileRules) to turn parsed rule sections into IR. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [lang.spec-ir.at](lang.md#lang.spec-ir.at)
-    - fn [exportsRule](../../src/spec-ir.ts#L427) (file: string, node: Node, module: Ref) → ExportsRule | null <!-- internal -->
+    - fn [exportsRule](../../src/spec-ir.ts#L468) (file: string, node: Node, module: Ref) → ExportsRule | null <!-- internal -->
       <a id="lang.spec-ir.exportsRule"></a><br>Builds an `exports` rule record from a parsed line's refs, bailing out with null when there are none; it sorts the ref texts into a readable label and attaches location via [`lang.spec-ir.at`](lang.md#lang.spec-ir.at). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [lang.spec-ir.at](lang.md#lang.spec-ir.at)
-    - fn [compileFlow](../../src/spec-ir.ts#L434) (file: string, section: Section, planned: Planned[], diagnostics: Diagnostic[]) → Flow <!-- internal -->
+    - fn [compileFlow](../../src/spec-ir.ts#L477) (file: string, section: Section, planned: Planned[], diagnostics: Diagnostic[]) → Flow <!-- internal -->
       <a id="lang.spec-ir.compileFlow"></a><br>Turns a spec section into a flow record, taking the first business/technical kind, triggers via [`lang.spec-ir.triggerItem`](lang.md#lang.spec-ir.triggerItem) and steps via [`lang.spec-ir.flowNode`](lang.md#lang.spec-ir.flowNode). Planned declarations go into the shared list via [`lang.spec-ir.plannedDecl`](lang.md#lang.spec-ir.plannedDecl). _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.spec-ir.plannedDecl](lang.md#lang.spec-ir.plannedDecl), [lang.spec-ir.triggerItem](lang.md#lang.spec-ir.triggerItem), [lang.spec-ir.flowItems](lang.md#lang.spec-ir.flowItems), [lang.spec-ir.flowNode](lang.md#lang.spec-ir.flowNode), [lang.spec-ir.emptyParallel](lang.md#lang.spec-ir.emptyParallel)
-    - fn [emptyParallel](../../src/spec-ir.ts#L472) (file: string, node: Node, diagnostics: Diagnostic[]) → void <!-- internal -->
+    - fn [emptyParallel](../../src/spec-ir.ts#L525) (file: string, node: Node, diagnostics: Diagnostic[]) → void <!-- internal -->
       <a id="lang.spec-ir.emptyParallel"></a><br>K009: a `parallel` with no nested `step`, at any depth.
       - calls [base.diag.diagnostic](base.md#base.diag.diagnostic)
-    - fn [flowNode](../../src/spec-ir.ts#L479) (file: string, flow: string, node: Node) → FlowItem[] <!-- internal -->
+    - fn [flowNode](../../src/spec-ir.ts#L533) (file: string, flow: string, node: Node) → FlowItem[] <!-- internal -->
       <a id="lang.spec-ir.flowNode"></a><br>Converts one parsed spec node into flow items (step, when, then, invariant/reads/emits, calls, question, test) with source location via [`lang.spec-ir.flowAt`](lang.md#lang.spec-ir.flowAt), recursing through [`lang.spec-ir.flowItems`](lang.md#lang.spec-ir.flowItems). Nodes lacking required data are flattened into their children or dropped. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [lang.spec-ir.flowItems](lang.md#lang.spec-ir.flowItems), [lang.spec-ir.flowAt](lang.md#lang.spec-ir.flowAt), [lang.parser.scheduleText](lang.md#lang.parser.scheduleText)
-    - fn [flowItems](../../src/spec-ir.ts#L537) (file: string, flow: string, nodes: readonly Node[]) → FlowItem[] <!-- internal -->
+    - fn [flowItems](../../src/spec-ir.ts#L621) (file: string, flow: string, nodes: readonly Node[]) → FlowItem[] <!-- internal -->
       <a id="lang.spec-ir.flowItems"></a><br>Converts a list of spec nodes into one flat list of flow items by running each node through [`lang.spec-ir.flowNode`](lang.md#lang.spec-ir.flowNode) and concatenating the results. Used recursively for nested nodes, triggers and whole flows. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [lang.spec-ir.flowNode](lang.md#lang.spec-ir.flowNode)
-    - fn [triggerItem](../../src/spec-ir.ts#L541) (file: string, flow: string, node: Node) → Trigger | null <!-- internal -->
+    - fn [triggerItem](../../src/spec-ir.ts#L625) (file: string, flow: string, node: Node) → Trigger | null <!-- internal -->
       <a id="lang.spec-ir.triggerItem"></a><br>Builds a trigger flow item from a parsed node whose first reference is the target, returning null when it has none; children are compiled via [`lang.spec-ir.flowItems`](lang.md#lang.spec-ir.flowItems) and location attached via [`lang.spec-ir.flowAt`](lang.md#lang.spec-ir.flowAt). _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [lang.parser.isTriggerKind](lang.md#lang.parser.isTriggerKind), [lang.spec-ir.flowItems](lang.md#lang.spec-ir.flowItems), [lang.spec-ir.flowAt](lang.md#lang.spec-ir.flowAt)
-    - fn [plannedDeclKind](../../src/spec-ir.ts#L550) (value: string) → Planned["decl"] | null <!-- internal -->
+    - fn [plannedDeclKind](../../src/spec-ir.ts#L636) (value: string) → Planned["decl"] | null <!-- internal -->
       <a id="lang.spec-ir.plannedDeclKind"></a><br>Returns the input unchanged when it is one of the four strings "fn", "module", "type" or "event", otherwise yields null. [`lang.spec-ir.plannedDecl`](lang.md#lang.spec-ir.plannedDecl) uses it to narrow a raw declaration keyword into a typed `Planned["decl"]` value. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [plannedDecl](../../src/spec-ir.ts#L555) (file: string, node: Node) → Planned | null <!-- internal -->
+    - fn [plannedDecl](../../src/spec-ir.ts#L642) (file: string, node: Node) → Planned | null <!-- internal -->
       <a id="lang.spec-ir.plannedDecl"></a><br>Converts a parsed spec node into a planned declaration record when it has an id and a label that [`lang.spec-ir.plannedDeclKind`](lang.md#lang.spec-ir.plannedDeclKind) recognizes, otherwise returns null. The record carries the id, optional signature text, and location plus rendered meaning from [`lang.spec-ir.at`](lang.md#lang.spec-ir.at) and… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [lang.spec-ir.plannedDeclKind](lang.md#lang.spec-ir.plannedDeclKind), [lang.spec-ir.at](lang.md#lang.spec-ir.at), [lang.parser.renderMeaning](lang.md#lang.parser.renderMeaning)
-    - fn [compileWires](../../src/spec-ir.ts#L561) (file: string, section: Section, wires: Wire[], diagnostics: Diagnostic[]) → void <!-- internal -->
+    - fn [compileWires](../../src/spec-ir.ts#L650) (file: string, section: Section, wires: Wire[], diagnostics: Diagnostic[]) → void <!-- internal -->
       <a id="lang.spec-ir.compileWires"></a><br>Walks a section's nodes via [`lang.ir.sectionNodes`](lang.md#lang.ir.sectionNodes), turning each "wire" node and its "wire-dep" children (with "compose" and "when" options parsed by [`lang.spec-ir.wireWhen`](lang.md#lang.spec-ir.wireWhen)) into Wire records. Each record is tagged with source location and rendered text through… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.spec-ir.at](lang.md#lang.spec-ir.at), [lang.parser.renderMeaning](lang.md#lang.parser.renderMeaning), [lang.spec-ir.wireWhen](lang.md#lang.spec-ir.wireWhen)
-    - fn [wireWhen](../../src/spec-ir.ts#L587) (file: string, option: Node, diagnostics: Diagnostic[]) → WireWhen | null <!-- internal -->
+    - fn [wireWhen](../../src/spec-ir.ts#L684) (file: string, option: Node, diagnostics: Diagnostic[]) → WireWhen | null <!-- internal -->
       <a id="lang.spec-ir.wireWhen"></a><br>`env.NAME = value` with a target. A condition of another shape is K005 and is not stored.
       - calls [lang.spec-ir.wireConditionText](lang.md#lang.spec-ir.wireConditionText), [base.diag.diagnostic](base.md#base.diag.diagnostic), [lang.spec-ir.at](lang.md#lang.spec-ir.at), [lang.parser.renderMeaning](lang.md#lang.parser.renderMeaning)
-    - fn [wireConditionText](../../src/spec-ir.ts#L605) (node: Node) → string <!-- internal -->
+    - fn [wireConditionText](../../src/spec-ir.ts#L707) (node: Node) → string <!-- internal -->
       <a id="lang.spec-ir.wireConditionText"></a><br>Condition text of `- when <condition> → <id>`, matching the bytes the wiring check compares: tokens between the keyword and the arrow, joined only where they do not already touch. `env.DB = a,b` stays `a,b`.
-    - fn [at](../../src/spec-ir.ts#L618) (file: string, node: Node, text: string) → Located <!-- internal -->
+    - fn [at](../../src/spec-ir.ts#L722) (file: string, node: Node, text: string) → Located <!-- internal -->
       <a id="lang.spec-ir.at"></a><br>Builds a `Located` record that pairs a spec file path, the span of a parsed `Node`, a text snippet, and the node itself. Shared helper the spec-IR rule builders use to attach source positions to diagnostics and rules. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [flowAt](../../src/spec-ir.ts#L622) (file: string, flow: string, node: Node) → Located <!-- internal -->
+    - fn [flowAt](../../src/spec-ir.ts#L726) (file: string, flow: string, node: Node) → Located <!-- internal -->
       <a id="lang.spec-ir.flowAt"></a><br>Builds a `Located` entry for a node inside a named flow by delegating to [`lang.spec-ir.at`](lang.md#lang.spec-ir.at) with a text key combining the flow name, the node kind, and the node's rendered meaning from [`lang.parser.renderMeaning`](lang.md#lang.parser.renderMeaning). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [lang.spec-ir.at](lang.md#lang.spec-ir.at), [lang.parser.renderMeaning](lang.md#lang.parser.renderMeaning)
-    - type [PlannedDeclaration](../../src/spec-ir.ts#L629)
+    - type [PlannedDeclaration](../../src/spec-ir.ts#L733)
       <a id="lang.spec-ir.PlannedDeclaration"></a><br>A `planned` line as hover, explain and spec-to-code read it: its declared kind (`fn` without one), contract and place.
-    - fn [plannedDeclaration](../../src/spec-ir.ts#L643) (docs: readonly Document[], id: string) → PlannedDeclaration | null
+    - fn [plannedDeclaration](../../src/spec-ir.ts#L747) (docs: readonly Document[], id: string) → PlannedDeclaration | null
       <a id="lang.spec-ir.plannedDeclaration"></a><br>The first `planned` item that declares `id`, in document order and at any depth of any section, whatever its label: `SpecIR.planned` keeps only the valid ones of flows.
       - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes)
-    - fn [flowsUsing](../../src/spec-ir.ts#L664) (spec: SpecIR, id: string) → string[]
+    - fn [flowsUsing](../../src/spec-ir.ts#L774) (spec: SpecIR, id: string) → string[]
       <a id="lang.spec-ir.flowsUsing"></a><br>The names of the flows whose steps or trigger name `id`, sorted.
       - calls [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow)

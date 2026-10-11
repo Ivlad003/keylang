@@ -47,9 +47,11 @@ export const EXPLORER_FILES: Record<string, string> = {
 export function explorerRepo(t: { after: (f: () => void) => void }, extra: Record<string, string> = {}): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-explorer-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+
   for (const [path, text] of Object.entries({ ...EXPLORER_FILES, ...extra })) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
     writeFileSync(join(dir, path), text);
   }
+
   return dir;
 }

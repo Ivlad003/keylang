@@ -17,6 +17,7 @@ import { SHOP } from "../system-fixture.ts";
 import { browserOptions, startWeb, watch } from "./browser.ts";
 
 const options = browserOptions();
+
 const skip = options === null ? "no Chromium: set KEYLANG_CHROMIUM or PLAYWRIGHT_BROWSERS_PATH" : false;
 
 test("a system on the page: listed with its views, schema with zones and verdicts, notes, ER with keys, a sequence, and the system of the code", { skip }, async (t) => {
@@ -28,24 +29,31 @@ test("a system on the page: listed with its views, schema with zones and verdict
   const page = await browser.newPage({ viewport: { width: 1400, height: 860 } });
   const problems = watch(page);
   const shots = process.env["KEYLANG_SHOTS"];
+
   const shot = async (name: string): Promise<void> => {
     if (shots) await page.screenshot({ path: join(shots, `${name}.png`) });
   };
+
   const base = `${url.origin}/diagrams${url.hash}`;
+
   interface Drawn {
     nodes: { id: string; results?: { verdict: string; message: string }[] }[];
     edges: { from: string; to: string; label?: string; verdict?: string }[];
     groups: { label: string }[];
   }
+
   // The page's own transport, as the page asks.
   const diagram = (query: Record<string, string>): Promise<Drawn> =>
     page.evaluate(async (q) => {
       const transport = (globalThis as unknown as { keylangTransport: { send(method: string, path: string, query: URLSearchParams): Promise<{ text: string }> } }).keylangTransport;
+
       return JSON.parse((await transport.send("GET", "/api/diagram", new URLSearchParams(q))).text) as Drawn;
     }, query);
+
   await page.goto(base);
   // The list is virtual: a search brings the system's items into view.
   await page.locator("#search").fill("shortener");
+
   for (const label of ["shortener: схема", "shortener: ER", "shortener: redirect"]) await page.locator("#views").getByText(label).waitFor();
 
   await page.locator("#views").getByText("shortener: схема").click();

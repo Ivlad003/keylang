@@ -41,31 +41,39 @@ function extractTree(path: string, root: Node): FileFacts {
   const impls: { type: string; node: Node; members: { item: Node; decl: DeclFact }[] }[] = [];
   // `#![cfg(test)]` makes the whole file test code.
   const items = root.namedChildren.some((node) => node.type === "inner_attribute_item" && isTestAttribute(node)) ? [] : root.namedChildren.filter((node) => !isComment(node) && !testOnly(node));
+
   // Imports first: a call path resolves against every `use` of the file, wherever it is written.
   for (const node of items) {
     if (node.type === "use_declaration") {
       for (const leaf of useLeaves(node.childForFieldName("argument"), [])) facts.imports.push(useImport(node, leaf, exported(node), facts));
     } else if (node.type === "extern_crate_declaration") {
       const name = node.childForFieldName("name")?.text;
+
       if (name) facts.imports.push(importAt(node, name, [{ kind: "named", local: node.childForFieldName("alias")?.text ?? name, imported: name }], false));
     } else {
       // `use` in a fn body is a dependency of the module as much as one at the top.
       nestedUses(node, facts);
     }
   }
+
   // Item names a call path may start with; a `mod` name starts a path to that module's file.
   const names = new Set(items.filter((node) => node.type !== "mod_item" || node.childForFieldName("body") !== null).map((node) => node.childForFieldName("name")?.text).filter((name) => name !== undefined));
+
   for (const binding of facts.imports.flatMap((imp) => imp.bindings)) names.add(binding.local);
+
   const detached = (body: Node | null, owner: string | null, imports = true): void => {
     // Code keylang indexes under no fn: what it calls escapes, as module-level code does.
     if (body) facts.moduleCalls.push(...bodyCalls(body, { owner, self: owner !== null, bound: new Map(), names, imports }, facts).map((c) => ({ ...c, closure: true as const })));
   };
+
   for (const node of items) {
     const name = node.childForFieldName("name")?.text;
+
     switch (node.type) {
       case "function_item":
         if (!name) break;
         facts.decls.push(fnDecl(node, name, exported(node), null, names, facts));
+
         if (exported(node)) exportRow(facts, name, "fn");
         noteAttributes(node, name, false, facts);
         break;
@@ -79,11 +87,14 @@ function extractTree(path: string, root: Node): FileFacts {
         const at = located(node);
         const doc = itemDoc(node);
         facts.decls.push({ kind, name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature: null, exported: exported(node), calls: [], types: [], members: [], ...fingerprintFacts(node), ...(doc !== undefined ? { doc } : {}) });
+
         if (exported(node)) exportRow(facts, name, kind === "class" ? "class" : "type");
+
         // A trait's default methods are not indexed; any impl may run them.
         if (node.type === "trait_item") for (const item of members(node)) if (item.type === "function_item") detached(item.childForFieldName("body"), null);
         break;
       }
+
       case "const_item":
       case "static_item":
         if (name && exported(node)) exportRow(facts, name, "value");
@@ -92,58 +103,75 @@ function extractTree(path: string, root: Node): FileFacts {
         break;
       case "impl_item": {
         const type = baseType(node.childForFieldName("type"));
+
         if (!type) {
           facts.unsupported.push(unsupported(node, "`impl` for a type keylang cannot name"));
+
           for (const item of members(node)) if (item.type === "function_item") detached(item.childForFieldName("body"), null);
           break;
         }
+
         const list: { item: Node; decl: DeclFact }[] = [];
         // `impl fmt::Display for Order`: `format!` calls `fmt`; `impl Drop`: the end of a scope calls `drop`.
         const trait = baseType(node.childForFieldName("trait"));
         const implicit = trait !== null && IMPLICIT_TRAITS.has(trait);
+
         for (const item of members(node)) {
           const member = item.childForFieldName("name")?.text;
+
           if (item.type !== "function_item" || !member) continue;
           const decl = fnDecl(item, member, exported(item), type, names, facts);
+
           if (implicit) decl.implicit = true;
           list.push({ item, decl });
           noteAttributes(item, `${type}.${member}`, true, facts);
         }
+
         impls.push({ type, node, members: list });
         break;
       }
+
       case "mod_item":
         // `mod x;` names the file `x.rs`; the dependency is whatever code uses from it.
         if (node.childForFieldName("body")) {
           facts.unsupported.push(unsupported(node, `inline module \`${name ?? "?"}\` is not indexed`));
           detached(node.childForFieldName("body"), null, false);
         }
+
         break;
       case "macro_invocation":
         facts.unsupported.push(unsupported(node, `macro \`${macroName(node)}!\` at module level is not expanded`));
         break;
     }
   }
+
   for (const impl of impls) {
     const owner = facts.decls.find((d) => d.kind === "class" && d.name === impl.type);
+
     if (owner) owner.members.push(...impl.members.map((m) => m.decl));
     else {
       facts.unsupported.push(unsupported(impl.node, `\`impl ${impl.type}\` for a type declared in another file`));
+
       for (const { item } of impl.members) detached(item.childForFieldName("body"), impl.type);
     }
   }
+
   facts.valueRefs = [...facts.valueRefs, ...valueRefs(items, names, facts)].sort((a, b) => a.line - b.line || a.col - b.col);
   const doc = moduleDoc(root);
+
   if (doc !== undefined) facts.doc = doc;
   const values = valuesFingerprint(root.namedChildren, facts.decls);
+
   if (values !== undefined) facts.values = values;
   const end = located(root);
   facts.endLine = end.endLine;
   facts.endCol = end.endCol;
+
   if (root.hasError) {
     facts.completeness = "opaque";
     facts.parseError = { line: errorLine(root), reason: "syntax error" };
   }
+
   return facts;
 }
 
@@ -164,6 +192,7 @@ function innerDoc(node: Node): boolean {
 /** Text of doc comments in source order: line comments without `///`/`//!`, blocks without delimiters. */
 function docText(comments: readonly Node[]): string | undefined {
   const text = comments.map((c) => (c.type === "line_comment" ? lineCommentsBody([c.text], /^\/\/[/!]/) : blockCommentBody(c.text))).join("\n");
+
   return isLicense(text) ? undefined : nonEmpty(text) ?? undefined;
 }
 
@@ -174,10 +203,13 @@ function docText(comments: readonly Node[]): string | undefined {
  */
 function itemDoc(node: Node): string | undefined {
   const docs: Node[] = [];
+
   for (let prev = node.previousNamedSibling; prev && (prev.type === "attribute_item" || isComment(prev)); prev = prev.previousNamedSibling) {
     if (innerDoc(prev)) break;
+
     if (outerDoc(prev)) docs.unshift(prev);
   }
+
   return docText(docs);
 }
 
@@ -200,6 +232,7 @@ function testOnly(node: Node): boolean {
   for (let prev = node.previousNamedSibling; prev && (prev.type === "attribute_item" || isComment(prev)); prev = prev.previousNamedSibling) {
     if (prev.type === "attribute_item" && isTestAttribute(prev)) return true;
   }
+
   return false;
 }
 
@@ -213,6 +246,7 @@ function noteAttributes(node: Node, symbol: string, member: boolean, facts: File
   for (let prev = node.previousNamedSibling; prev && (prev.type === "attribute_item" || isComment(prev)); prev = prev.previousNamedSibling) {
     if (prev.type !== "attribute_item") continue;
     const path = prev.namedChildren[0]?.namedChildren[0]?.text.replace(/\s+/g, "") ?? "";
+
     if (KEEPING_ATTRIBUTES.has(path) || /^(clippy|rustfmt|diagnostic)::/.test(path)) continue;
     facts.unsupported.push({ ...unsupported(prev, `attribute \`${path}\` may replace \`${symbol}\``), symbol });
     const at = located(prev);
@@ -223,8 +257,10 @@ function noteAttributes(node: Node, symbol: string, member: boolean, facts: File
 /** `#[cfg(test)]`, `#[cfg(all(test, unix))]`, `#[test]`, `#[tokio::test]`, `#[bench]` (or `#![…]`). */
 function isTestAttribute(node: Node): boolean {
   const text = node.text.replace(/\s+/g, "").replace(/^#!?\[/, "").replace(/\]$/, "");
+
   if (/^((\w+::)*test|bench)(\(.*\))?$/.test(text)) return true;
   const cfg = /^cfg\((.*)\)$/.exec(text);
+
   return cfg !== null && requiresTest(cfg[1]!);
 }
 
@@ -232,8 +268,10 @@ function isTestAttribute(node: Node): boolean {
 function requiresTest(predicate: string): boolean {
   if (predicate === "test") return true;
   const call = /^(all|any)\((.*)\)$/.exec(predicate);
+
   if (!call) return false;
   const args = splitTopLevel(call[2]!);
+
   return call[1] === "all" ? args.some(requiresTest) : args.length > 0 && args.every(requiresTest);
 }
 
@@ -242,8 +280,10 @@ function splitTopLevel(text: string): string[] {
   let depth = 0;
   let quoted = false;
   let start = 0;
+
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
+
     if (c === '"' && text[i - 1] !== "\\") quoted = !quoted;
     else if (!quoted && c === "(") depth++;
     else if (!quoted && c === ")") depth--;
@@ -252,15 +292,19 @@ function splitTopLevel(text: string): string[] {
       start = i + 1;
     }
   }
+
   out.push(text.slice(start));
+
   return out.filter((arg) => arg !== "");
 }
 
 /** `use` declarations inside items (fn bodies, `impl` members), except inline modules, whose paths start elsewhere, and test code. */
 function nestedUses(node: Node, facts: FileFacts): void {
   if (node.type === "mod_item" || node.type === "macro_definition" || node.type === "attribute_item") return;
+
   for (const child of node.namedChildren) {
     if (testOnly(child)) continue;
+
     if (child.type === "use_declaration") {
       for (const leaf of useLeaves(child.childForFieldName("argument"), [])) facts.imports.push(useImport(child, leaf, false, facts));
     } else nestedUses(child, facts);
@@ -275,9 +319,13 @@ function exportRow(facts: FileFacts, name: string, kind: ExportRow["kind"]): voi
 /** `Gen<T>` → `Gen`, `crate::a::S` → `S`; null for references, tuples and the like. */
 function baseType(node: Node | null): string | null {
   if (!node) return null;
+
   if (node.type === "type_identifier") return node.text;
+
   if (node.type === "generic_type") return baseType(node.childForFieldName("type"));
+
   if (node.type === "scoped_type_identifier") return node.childForFieldName("name")?.text ?? null;
+
   return null;
 }
 
@@ -296,8 +344,10 @@ function fnDecl(node: Node, name: string, exported: boolean, owner: string | nul
   const calls = body ? bodyCalls(body, { owner, self, bound: boundNames(node), names, imports: true }, facts) : [];
   const doc = itemDoc(node);
   const decl: DeclFact = { kind: "fn", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature, exported, calls, types: [], members: [], ...fingerprintFacts(node), ...(doc !== undefined ? { doc } : {}) };
+
   // An associated function without `self` is called on the type: `S::new()`.
   if (owner !== null && !self) decl.static = true;
+
   return decl;
 }
 
@@ -309,38 +359,55 @@ function fnDecl(node: Node, name: string, exported: boolean, owner: string | nul
  */
 function boundNames(fn: Node): Map<string, "parameter" | "local"> {
   const out = new Map<string, "parameter" | "local">();
+
   const names = (pattern: Node | null, kind: "parameter" | "local"): void => {
     if (!pattern) return;
+
     // `Point { x, .. }` binds `x` through a shorthand field.
     if (pattern.type === "identifier" || pattern.type === "shorthand_field_identifier") {
       out.set(pattern.text, kind);
+
       return;
     }
+
     // `Some(x)`, `Point { x, .. }`: the constructor is not a binding. Nodes are fresh wrappers on every access: compare ids.
     const type = pattern.childForFieldName("type")?.id;
+
     for (const c of pattern.namedChildren) if (c.type !== "type_identifier" && c.type !== "scoped_identifier" && c.id !== type) names(c, kind);
   };
+
   const params = fn.childForFieldName("parameters");
+
   if (params?.type === "closure_parameters") for (const c of params.namedChildren) names(c, "parameter");
   else for (const p of params?.namedChildren ?? []) if (p.type === "parameter") names(p.childForFieldName("pattern"), "parameter");
+
   const walk = (node: Node): void => {
     if (node.type === "let_declaration" || node.type === "let_condition" || node.type === "for_expression") names(node.childForFieldName("pattern"), "local");
     else if (node.type === "match_pattern") {
       // An arm binds its pattern; its guard (`if ready()`) is an expression.
       const guard = node.childForFieldName("condition")?.id;
+
       for (const c of node.namedChildren) if (c.id !== guard) names(c, "local");
     }
+
     if (node.type === "closure_parameters") for (const c of node.namedChildren) names(c, "parameter");
+
     // A fn declared in the body shadows the module item of its name, and its parameters bind in its body.
     if (node.type === "function_item") {
       const name = node.childForFieldName("name");
+
       if (name) out.set(name.text, "local");
+
       for (const p of node.childForFieldName("parameters")?.namedChildren ?? []) if (p.type === "parameter") names(p.childForFieldName("pattern"), "parameter");
     }
+
     for (const c of node.namedChildren) walk(c);
   };
+
   const body = fn.childForFieldName("body");
+
   if (body) walk(body);
+
   return out;
 }
 
@@ -364,9 +431,11 @@ type ClosureState = null | "stored" | { line: number; col: number };
 
 function bodyCalls(body: Node, scope: CallScope, facts: FileFacts): CallFact[] {
   const out: CallFact[] = [];
+
   const walk = (node: Node, closure: ClosureState): void => {
     if (node.type === "call_expression") {
       const fact = callOf(node.childForFieldName("function"), scope, facts);
+
       if (fact) {
         const at = located(node);
         const passes = passesOf(node, scope, facts);
@@ -385,15 +454,21 @@ function bodyCalls(body: Node, scope: CallScope, facts: FileFacts): CallFact[] {
       const name = macroName(node);
       // `serde_json::json!` comes from another crate; a macro of this crate (`ui_message!`, `crate::m!`) hides calls.
       const foreign = name.includes("::") && !/^(crate|self|super)::/.test(name);
+
       if (!KNOWN_MACROS.has(name) && !foreign) facts.unsupported.push(unsupported(node, `macro \`${name}!\` is not expanded`));
     }
+
     // A nested `fn` runs only when something calls it, like a closure.
     let inner = closure;
+
     if (node.type === "async_block" || node.type === "function_item") inner = "stored";
     else if (node.type === "closure_expression") inner = closure === "stored" || node.parent?.type !== "arguments" ? "stored" : (closure ?? { line: located(node).line, col: located(node).col });
+
     for (const c of node.namedChildren) walk(c, inner);
   };
+
   walk(body, null);
+
   return out;
 }
 
@@ -404,6 +479,7 @@ function bodyCalls(body: Node, scope: CallScope, facts: FileFacts): CallFact[] {
  */
 function passesOf(call: Node, scope: CallScope, facts: FileFacts): PassFact[] {
   const args = call.childForFieldName("arguments");
+
   if (args?.type !== "arguments") return [];
   const out: PassFact[] = [];
   args.namedChildren
@@ -411,11 +487,13 @@ function passesOf(call: Node, scope: CallScope, facts: FileFacts): PassFact[] {
     .forEach((arg, index) => {
       if (arg.type !== "identifier" && arg.type !== "scoped_identifier") return;
       const fact = callOf(arg, scope, facts);
+
       // A local of unknown kind, a variant or a value keylang cannot name resolves to nothing.
       if (!fact || fact.bound) return;
       const at = located(arg);
       out.push({ arg: index, path: "", callee: fact.callee, text: compact(at.text), line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol });
     });
+
   return out;
 }
 
@@ -434,29 +512,41 @@ type Callee = Pick<CallFact, "callee" | "bound">;
 function callOf(fn: Node | null, scope: CallScope, facts: FileFacts): Callee | null {
   if (!fn) return null;
   const { owner, self, bound, names } = scope;
+
   switch (fn.type) {
     case "generic_function": {
       const inner = fn.childForFieldName("function");
+
       return inner ? callOf(inner, scope, facts) : throughValue(fn);
     }
+
     case "parenthesized_expression": {
       // `(f)()` calls the path `f`; `(self.handler)()` calls the value of a field.
       const inner = fn.namedChildren[0];
+
       return inner && (inner.type === "identifier" || inner.type === "scoped_identifier" || inner.type === "generic_function" || inner.type === "parenthesized_expression") ? callOf(inner, scope, facts) : throughValue(fn);
     }
+
     case "identifier": {
       if (/^[A-Z]/.test(fn.text)) return null;
       const kind = bound.get(fn.text);
+
       return kind ? { callee: fn.text, bound: kind } : { callee: fn.text };
     }
+
     case "field_expression": {
       const value = fn.childForFieldName("value");
       const field = fn.childForFieldName("field")?.text;
+
       if (!value || !field) return throughValue(fn);
+
       if (value.type === "self" && self && owner !== null) return { callee: `this.${field}` };
+
       if (value.type === "identifier") return { callee: `${value.text}.${field}`, bound: bound.get(value.text) ?? "local" };
+
       return throughValue(fn);
     }
+
     case "scoped_identifier":
       return pathCall(fn, scope, facts);
     default:
@@ -468,31 +558,43 @@ function callOf(fn: Node | null, scope: CallScope, facts: FileFacts): Callee | n
 function pathCall(fn: Node, scope: CallScope, facts: FileFacts): Callee | null {
   const { owner, bound, names } = scope;
   let segments = pathSegments(fn);
+
   if (!segments) {
     // `<T as Trait>::f()`: a trait method on a type keylang does not resolve.
     const name = fn.childForFieldName("name")?.text;
+
     return name ? { callee: `${compact(fn.childForFieldName("path")?.text ?? "?")}.${name}`, bound: "local" } : throughValue(fn);
   }
+
   if (/^[A-Z]/.test(segments.at(-1)!)) return null;
+
   if (PRIMITIVES.has(segments[0]!)) return { callee: segments.join(".") };
+
   if (segments[0] === "Self" && owner !== null) return { callee: [owner, ...segments.slice(1)].join(".") };
+
   if (segments[0] === "self" && segments.length === 2) return { callee: segments[1]! };
   // `order::Order::new()` or `sync::mpsc::channel()` through a `use` binding: the path of that `use`, then the rest.
   const via = segments.length > 2 ? facts.imports.find((imp) => imp.bindings.some((b) => b.kind === "named" && b.local === segments![0] && b.imported === imp.source.split("::").at(-1))) : undefined;
+
   if (via && !via.source.includes("*")) segments = [...via.source.split("::"), ...segments.slice(1)];
   const head = segments[0]!;
+
   if (!scope.imports) return { callee: segments.join("::"), bound: "local" };
+
   if (head === "crate" || head === "super" || head === "self" || via || (/^[a-z_]/.test(head) && !bound.has(head) && !names.has(head))) {
     // The path is its own import: the call site names the module, or a type in it (`a::Message::raw` → `Message.raw`).
     const type = segments.findIndex((segment, i) => i > 0 && /^[A-Z]/.test(segment));
     const path = type === -1 ? segments : segments.slice(0, type + 1);
     const source = path.join("::");
+
     if (!facts.imports.some((imp) => imp.source === source && imp.bindings.some((b) => b.local === source))) {
       const at = located(fn);
       facts.imports.push({ source, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, text: at.text, bindings: [{ kind: "named", local: source, imported: path.at(-1)! }], reexport: false });
     }
+
     return { callee: [source, ...segments.slice(path.length)].join(".") };
   }
+
   return { callee: segments.join(".") };
 }
 
@@ -508,12 +610,16 @@ function compact(text: string): string {
 /** `a::b::c` → `["a", "b", "c"]`; null when a segment is not a plain name (`<T as X>::f`). */
 function pathSegments(node: Node): string[] | null {
   if (node.type === "identifier" || node.type === "crate" || node.type === "self" || node.type === "super" || node.type === "type_identifier") return [node.text];
+
   if (node.type !== "scoped_identifier" && node.type !== "scoped_type_identifier") return null;
   const name = node.childForFieldName("name");
   const path = node.childForFieldName("path");
+
   if (!name) return null;
+
   if (!path) return [name.text];
   const head = pathSegments(path);
+
   return head ? [...head, name.text] : null;
 }
 
@@ -526,55 +632,82 @@ function pathSegments(node: Node): string[] | null {
 function valueRefs(items: Node[], names: ReadonlySet<string>, facts: FileFacts): ValueRefFact[] {
   const glob = facts.imports.some((imp) => imp.glob);
   const first = new Map<string, ValueRefFact>();
+
   const note = (name: string, node: Node, member: boolean): void => {
     const key = `${member ? "." : ""}${name}`;
+
     if (!first.has(key)) first.set(key, { name, ...(member ? { member: true as const } : {}), line: node.startPosition.row + 1, col: node.startPosition.column + 1 });
   };
+
   const walk = (node: Node, scope: CallScope): void => {
     if (node.type === "use_declaration" || node.type === "attribute_item" || node.type === "macro_definition" || node.type === "lifetime" || node.type === "label" || testOnly(node)) return;
+
     if (node.type === "function_item" || node.type === "closure_expression") scope = { ...scope, bound: new Map([...scope.bound, ...boundNames(node)]) };
+
     if (node.type === "mod_item") scope = { ...scope, imports: false };
+
     if (node.type === "identifier" && !bindsOrCalls(node) && /^[a-z_]/.test(node.text) && !scope.bound.has(node.text) && (glob || names.has(node.text))) note(node.text, node, false);
+
     if (node.type === "scoped_identifier") {
       if (!calledPath(node)) {
         const callee = pathCall(node, scope, facts);
+
         if (callee && !callee.bound) {
           note(callee.callee, node, false);
+
           // `Order::total` as a value may be a method taking `self`.
           if (callee.callee.includes(".")) note(callee.callee.slice(callee.callee.lastIndexOf(".") + 1), node, true);
         }
       }
+
       return;
     }
+
     for (const child of node.namedChildren) walk(child, scope);
   };
+
   for (const item of items) walk(item, { owner: null, self: false, bound: new Map(), names, imports: true });
+
   return [...first.values()];
 }
 
 /** The path is the callee of a call, or a part of a longer path or a pattern: not a value read. */
 function calledPath(node: Node): boolean {
   let at = node;
+
   while (at.parent?.type === "generic_function" || at.parent?.type === "parenthesized_expression") at = at.parent;
   const parent = at.parent;
+
   if (!parent) return true;
+
   if (parent.type === "call_expression" && parent.childForFieldName("function")?.id === at.id) return true;
+
   return parent.type === "scoped_identifier" || parent.type === "scoped_type_identifier" || parent.type === "macro_invocation" || PATTERN_NODES.has(parent.type) || parent.type === "struct_expression";
 }
 
 /** The identifier names what is declared, bound or called here, or is part of a path or pattern. */
 function bindsOrCalls(node: Node): boolean {
   const parent = node.parent;
+
   if (!parent) return true;
   const is = (field: string): boolean => parent.childForFieldName(field)?.id === node.id;
+
   if (parent.type === "call_expression" && is("function")) return true;
+
   if ((parent.type === "generic_function" || parent.type === "parenthesized_expression") && calledPath(node)) return true;
+
   if (PATTERN_NODES.has(parent.type) || parent.type === "scoped_identifier" || parent.type === "scoped_type_identifier" || parent.type === "macro_invocation") return true;
+
   if (parent.type === "let_declaration" && is("pattern")) return true;
+
   if (parent.type === "parameter" && is("pattern")) return true;
+
   if (parent.type === "closure_parameters" || (parent.type === "for_expression" && is("pattern"))) return true;
+
   if (parent.type === "let_condition" && is("pattern")) return true;
+
   if ((parent.type === "function_item" || parent.type === "const_item" || parent.type === "static_item" || parent.type === "mod_item" || parent.type === "function_signature_item") && is("name")) return true;
+
   return false;
 }
 
@@ -587,31 +720,40 @@ interface UseLeaf {
 /** Flatten a `use` tree: `a::{b, c::d as e, f::*}` → `a::b`, `a::c::d` as `e`, `a::f::*`. */
 function useLeaves(node: Node | null, prefix: string[]): UseLeaf[] {
   if (!node) return [];
+
   switch (node.type) {
     case "use_as_clause": {
       const path = node.childForFieldName("path");
       const segments = path ? pathSegments(path) : null;
+
       return segments ? [{ path: [...prefix, ...segments], alias: node.childForFieldName("alias")?.text ?? null, glob: false }] : [];
     }
+
     case "use_list":
       return node.namedChildren.flatMap((c) => useLeaves(c, prefix));
     case "scoped_use_list": {
       const path = node.childForFieldName("path");
       const segments = path ? pathSegments(path) : [];
+
       return segments ? useLeaves(node.childForFieldName("list"), [...prefix, ...segments]) : [];
     }
+
     case "use_wildcard": {
       const path = node.namedChildren[0];
       const segments = path ? pathSegments(path) : [];
+
       return segments ? [{ path: [...prefix, ...segments], alias: null, glob: true }] : [];
     }
+
     case "self":
       // `a::{self}` is the module `a`.
       return prefix.length > 0 ? [{ path: prefix, alias: null, glob: false }] : [];
     default: {
       const segments = pathSegments(node);
+
       if (!segments) return [];
       const path = [...prefix, ...segments];
+
       // `use a::b::self` (rare, but valid) is `a::b`.
       return [{ path: path.at(-1) === "self" ? path.slice(0, -1) : path, alias: null, glob: false }];
     }
@@ -620,18 +762,24 @@ function useLeaves(node: Node | null, prefix: string[]): UseLeaf[] {
 
 function useImport(node: Node, leaf: UseLeaf, exported: boolean, facts: FileFacts): ImportFact {
   const source = leaf.path.join("::");
+
   if (leaf.glob) {
     if (exported) facts.reexportsAll.push(source);
+
     return { ...importAt(node, source, [], exported), glob: true };
   }
+
   const imported = leaf.path.at(-1)!;
   const local = leaf.alias ?? imported;
+
   if (exported && local !== "_") exportRow(facts, local, "reexport");
+
   return importAt(node, source, local === "_" ? [] : [{ kind: "named", local, imported }], exported);
 }
 
 function importAt(node: Node, source: string, bindings: ImportFact["bindings"], reexport: boolean): ImportFact {
   const at = located(node);
+
   return { source, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, text: at.text, bindings, reexport };
 }
 
@@ -641,5 +789,6 @@ function macroName(node: Node): string {
 
 function unsupported(node: Node, reason: string): UnsupportedFact {
   const at = located(node);
+
   return { line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, text: at.text.split("\n")[0]!, reason };
 }

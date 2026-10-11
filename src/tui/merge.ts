@@ -14,11 +14,13 @@ export function applyHunks(base: readonly string[], hunks: readonly Hunk[], deci
   let at = 0;
   hunks.forEach((hunk, index) => {
     out.push(...base.slice(at, hunk.baseStart));
+
     if (decisions[index] === "accepted") out.push(...hunk.lines);
     else out.push(...base.slice(hunk.baseStart, hunk.baseStart + hunk.baseCount));
     at = hunk.baseStart + hunk.baseCount;
   });
   out.push(...base.slice(at));
+
   return out;
 }
 
@@ -36,9 +38,13 @@ export function mergeRows(base: readonly string[], hunks: readonly Hunk[]): Merg
   let at = 0;
   hunks.forEach((hunk, index) => {
     for (; at < hunk.baseStart; at++) rows.push({ kind: "same", text: base[at]!, hunk: null, baseLine: at });
+
     for (let k = 0; k < hunk.baseCount; k++, at++) rows.push({ kind: "removed", text: base[at]!, hunk: index, baseLine: at });
+
     for (const line of hunk.lines) rows.push({ kind: "added", text: line, hunk: index, baseLine: null });
   });
+
   for (; at < base.length; at++) rows.push({ kind: "same", text: base[at]!, hunk: null, baseLine: at });
+
   return rows;
 }

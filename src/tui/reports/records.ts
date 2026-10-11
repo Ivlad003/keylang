@@ -39,6 +39,7 @@ function paramsOf<K extends Kind>(request: RequestOf<K>): string | null {
 export function recordLabel(record: OperationRecord): string {
   const label = ACTIONS.find((action) => action.id === record.action)?.label ?? SESSION_ACTIONS[record.action] ?? record.action;
   const params = paramsOf(record.params as RequestOf<Kind>);
+
   return params === null ? label : `${label} · ${params}`;
 }
 
@@ -46,6 +47,7 @@ export function recordLabel(record: OperationRecord): string {
 export function recordStatus(record: OperationRecord): string {
   if (record.status === "running") return record.progress === null ? "running…" : `running: ${record.progress}…`;
   const code = record.result?.exitCode;
+
   return `${record.status}${code === null || code === undefined ? "" : ` · code ${code}`}${record.outdated !== null ? " · outdated" : ""}`;
 }
 
@@ -56,11 +58,13 @@ function summaryOf<K extends Kind>(record: OperationRecord, result: Done<K>): st
 /** The status with the domain outcome when there is one: `done · code 0`, `2 gap(s) · code 1`. */
 export function recordSummary(record: OperationRecord): string {
   const result = record.result;
+
   return result !== null && isDone(result) ? summaryOf(record, result) : recordStatus(record);
 }
 
 function rowsOf<K extends Kind>(state: State, record: OperationRecord, result: Done<K>): ReportRow[] {
   const view = { selected: state.results.scrollReport ? state.results.gap : -1, summary: summaryOf(record, result) };
+
   return REPORTS[result.kind].rows(state, record, result, view);
 }
 
@@ -75,14 +79,19 @@ function timeStr(ms: number): string {
  */
 export function resultsReportRows(state: State): ReportRow[] {
   const record = state.records[state.results.index];
+
   if (!record) return [];
   const rows: ReportRow[] = [{ text: `root ${record.params.root} · started ${timeStr(record.started)}`, style: MUTED }];
+
   if (record.finished !== null) rows.push({ text: `finished ${timeStr(record.finished)} · ${recordStatus(record)}`, style: MUTED });
+
   if (record.outdated !== null) rows.push({ text: `outdated: ${record.outdated} · Enter reruns`, style: WARNING });
   const result = record.result;
+
   if (result === null) rows.push({ text: `  ${record.progress === null ? "running…" : `running: ${record.progress}…`} · x cancels`, style: THEME.hint });
   else if (isDone(result)) rows.push(...rowsOf(state, record, result));
   else rows.push(...result.messages.map(messageRow));
+
   return rows;
 }
 
@@ -99,6 +108,7 @@ function itemsOf<K extends Kind>(state: State, result: Done<K>): ReportItem[] {
  */
 export function reportItems(state: State): ReportItem[] {
   const result = state.records[state.results.index]?.result;
+
   return result !== null && result !== undefined && isDone(result) ? itemsOf(state, result) : [];
 }
 

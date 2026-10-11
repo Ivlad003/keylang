@@ -16,9 +16,13 @@ import type { AnalysisSnapshot } from "../src/snapshot.ts";
 import { keylang, tempDir, writeTree } from "./cli-helpers.ts";
 
 const PLACE = "orders.orders_service.OrdersService.place";
+
 const ON_CREATED = "notify.notify_listener.NotifyListener.onCreated";
+
 const SAVE = "infra.sql-order_repo.SqlOrderRepo.save";
+
 const MODULE = "src/orders/orders.module.ts";
+
 const EVENT = "events.order-created";
 
 const CONFIG = {
@@ -229,12 +233,14 @@ const REPO: Record<string, string> = {
 function shop(t: TestContext, extra: Record<string, string> = {}): string {
   const dir = tempDir(t, "keylang-nest-");
   writeTree(dir, { ...REPO, ...extra });
+
   return dir;
 }
 
 function snapshotOf(dir: string): AnalysisSnapshot {
   const run = keylang(dir, ["map"]);
   assert.equal(run.status, 0, run.stderr);
+
   return JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as AnalysisSnapshot;
 }
 
@@ -247,7 +253,9 @@ function setConfig(dir: string, change: (raw: Record<string, unknown>) => void):
 /** `file:line:col id → verdict` of every `static` verdict `check` prints. */
 function verdicts(stdout: string): Map<string, string> {
   const out = new Map<string, string>();
+
   for (const m of stdout.matchAll(/^(\S+:\d+:\d+): static (ok|fail|unverified) (\S+?):/gm)) out.set(`${m[1]} ${m[3]}`, m[2]!);
+
   return out;
 }
 
@@ -281,6 +289,7 @@ test("nestjs: an event name that is no literal is a hole; a global prefix that i
     "src/orders/events.ts": ["import { EventEmitter2 } from \"@nestjs/event-emitter\";", "", "export function fire(events: EventEmitter2, name: string): void {", "  events.emit(name);", "}", ""].join("\n"),
     "src/main.ts": ["import { NestFactory } from \"@nestjs/core\";", "import { AppModule } from \"./app.module\";", "", "async function bootstrap(prefix: string): Promise<void> {", "  const app = await NestFactory.create(AppModule);", "  app.setGlobalPrefix(prefix);", "}", "", "bootstrap(\"v1\");", ""].join("\n"),
   });
+
   const snapshot = snapshotOf(dir);
   const hole = snapshot.coverage.find((c) => c.file === "src/orders/events.ts");
   assert.equal(hole?.kind, "dynamic-event");
@@ -345,10 +354,12 @@ test("nestjs: `frameworks: []` turns the adapter off — ok and fail only become
   assert.ok(off.coverage.some((c) => c.kind === "skipped-file" && c.file === MODULE && c.text === "framework:nestjs"));
   const offVerdicts = verdicts(keylang(dir, ["check"]).stdout);
   assert.equal(offVerdicts.size, on.size);
+
   for (const [key, verdict] of on) {
     const now = offVerdicts.get(key);
     assert.ok(now === verdict || now === "unverified", `${key}: ${verdict} → ${now}`);
   }
+
   // Without the adapter the @OnEvent step is unverified (the config may call it), never the old false `fail`.
   assert.equal(offVerdicts.get(`keylang/flows.md:6:5 ${ON_CREATED}`), "unverified");
   assert.equal(on.get(`keylang/flows.md:6:5 ${ON_CREATED}`), "ok");

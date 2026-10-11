@@ -22,19 +22,24 @@ export const ENTRIES_HINT =
  */
 export async function runEntries(request: EntriesRequest, context: OperationContext): Promise<OperationEnvelope<"entries">> {
   if (!isAbsolute(request.root)) return empty("entries", "failed", 2, "entries: root must be an absolute path");
+
   if (context.signal?.aborted) return empty("entries", "cancelled", null);
   context.onProgress?.({ text: "reading a fresh snapshot of the saved code" });
   let snapshot: Awaited<ReturnType<typeof analyze>>["snapshot"];
+
   try {
     snapshot = (await (context.analyze ?? analyze)({ root: request.root, withoutEvidence: true, saveFacts: true })).snapshot;
   } catch (error) {
     return empty("entries", "failed", 2, errorText(error));
   }
+
   if (context.signal?.aborted) return empty("entries", "cancelled", null);
+
   if (snapshot === null) return empty("entries", "failed", 2, "entries: no code to read (`languages` in keylang.json is empty)");
   const entries = snapshot.entries.filter((entry) => request.only === undefined || entry.kind === request.only);
   const text = entriesText(entries, request.only ?? null);
   const payload: EntriesPayload = { snapshotId: snapshot.snapshotId, kind: request.only ?? null, entries, text };
+
   return { ...empty("entries", "completed", 0), payload, messages: text.trimEnd().split("\n").map((line) => ({ level: "info" as const, text: line })) };
 }
 
@@ -43,5 +48,6 @@ export function entriesText(entries: readonly EntryPoint[], kind: EntryPoint["ki
   if (entries.length === 0) return `no entry points found${kind === null ? "" : ` of kind ${kind}`}\n${ENTRIES_HINT}\n`;
   const rows = entries.map((entry) => [entry.kind, entry.label, entry.id, `${entry.file}:${entry.line}${entry.unresolved ? `  unresolved: ${entry.unresolved}` : ""}`]);
   const widths = [0, 1, 2].map((column) => Math.max(...rows.map((row) => row[column]!.length)));
+
   return rows.map((row) => row.map((cell, column) => (column < 3 ? cell.padEnd(widths[column]!) : cell)).join("  ")).join("\n") + "\n";
 }

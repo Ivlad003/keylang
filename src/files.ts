@@ -17,25 +17,33 @@ export function collectMdFiles(paths: readonly string[], base?: string): string[
   const at = (p: string): string => (base === undefined ? p : resolve(base, p));
   const out: string[] = [];
   const walked = new Set<string>();
+
   for (const p of paths) {
     let st;
+
     try {
       st = statSync(at(p));
     } catch {
       throw new Error(`${p}: not found`);
     }
+
     if (st.isDirectory()) walkDir(p, out, walked, at);
     else out.push(p);
   }
+
   // `check d ./d/a.md` names one file twice, and so does a link to it; it is one
   // document, not a duplicate declaration. The path without a link names it.
   const chosen = new Map<string, string>();
+
   for (const file of out) {
     const key = realPath(at(file));
     const current = chosen.get(key);
+
     if (current === undefined || (resolve(at(current)) !== key && resolve(at(file)) === key)) chosen.set(key, file);
   }
+
   const keep = new Set(chosen.values());
+
   return out.filter((file) => keep.delete(file));
 }
 
@@ -47,20 +55,26 @@ export function skippedDirectory(name: string): boolean {
 /** Whether the walk from `dir` (or `dir` itself, a file) reaches `abs`: inside it, and through no skipped directory below it. */
 export function walkReaches(dir: string, abs: string): boolean {
   const rel = relative(dir, abs);
+
   if (rel === "") return true;
+
   if (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return false;
+
   return !rel.split(sep).slice(0, -1).some(skippedDirectory);
 }
 
 function walkDir(dir: string, out: string[], walked: Set<string>, at: (p: string) => string): void {
   // A link back to an ancestor would walk forever.
   const real = realPath(at(dir));
+
   if (walked.has(real)) return;
   walked.add(real);
   const entries = readdirSync(at(dir), { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+
   for (const e of entries) {
     const p = join(dir, e.name);
     const type = entryType(e, at(p));
+
     if (type === "dir") {
       if (!skippedDirectory(e.name)) walkDir(p, out, walked, at);
     } else if (type === "file" && extname(e.name) === ".md") {
@@ -72,8 +86,10 @@ function walkDir(dir: string, out: string[], walked: Set<string>, at: (p: string
 /** What a directory entry is, through a link; a dangling link is neither. */
 function entryType(e: Dirent, path: string): "dir" | "file" | null {
   if (!e.isSymbolicLink()) return e.isDirectory() ? "dir" : e.isFile() ? "file" : null;
+
   try {
     const st = statSync(path);
+
     return st.isDirectory() ? "dir" : st.isFile() ? "file" : null;
   } catch {
     return null;

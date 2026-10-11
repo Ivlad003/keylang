@@ -12,13 +12,16 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
+
 const adapter = join(root, "src/adapters/trace.ts");
 
 type Context = { after: (f: () => void) => void };
 
 function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8", maxBuffer: 1 << 28 });
+
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
@@ -27,10 +30,12 @@ function repo(t: Context, config: object, files: Record<string, string>): string
   const dir = mkdtempSync(join(tmpdir(), "keylang-trace-requests-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   writeFileSync(join(dir, "keylang.json"), `${JSON.stringify(config, null, 2)}\n`);
+
   for (const [path, text] of Object.entries(files)) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
     writeFileSync(join(dir, path), text);
   }
+
   return dir;
 }
 
@@ -43,13 +48,16 @@ interface JsonResult {
 
 function check(dir: string): { status: number | null; rows: JsonResult[]; stderr: string } {
   const o = keylang(dir, ["check", "--format", "json"]);
+
   if (!o.stdout.startsWith("{")) return { status: o.status, rows: [], stderr: o.stderr };
+
   return { status: o.status, rows: (JSON.parse(o.stdout) as { results: JsonResult[] }).results, stderr: o.stderr };
 }
 
 /** `verdict: evidence` of the `criterion` line of `id`, so a failed assertion shows what came instead. */
 const lineOf = (rows: JsonResult[], criterion: string, id: string): string => {
   const r = rows.find((row) => row.criterion === criterion && row.area === id);
+
   return r ? `${r.verdict}: ${r.evidence}` : "none";
 };
 
@@ -76,13 +84,17 @@ function events(file: string): Event[] {
 /** Each run of the file (by run id): its flow, test id, the symbols its spans name, and its `run` records. */
 function runsOf(all: Event[]): Map<string, { flow: string; testId: string; symbols: string[]; records: Event[] }> {
   const runs = new Map<string, { flow: string; testId: string; symbols: string[]; records: Event[] }>();
+
   for (const e of all) {
     const run = runs.get(e.runId) ?? { flow: e.flow, testId: e.testId, symbols: [], records: [] };
     assert.equal(run.flow, e.flow, `run ${e.runId} mixes flows`);
+
     if (e.event === "start") run.symbols.push(e.symbolId!);
+
     if (e.event === "run") run.records.push(e);
     runs.set(e.runId, run);
   }
+
   return runs;
 }
 
@@ -93,6 +105,7 @@ function entryPlan(dir: string, id: string, name?: string): { flow: string; ids:
   writeFileSync(join(dir, "plan.json"), plan.stdout);
   const parsed = JSON.parse(plan.stdout) as { schemaVersion: number; flow: string; symbols: { id: string }[] };
   assert.equal(parsed.schemaVersion, 1);
+
   return { flow: parsed.flow, ids: parsed.symbols.map((s) => s.id) };
 }
 
@@ -109,6 +122,7 @@ const VALUE_CALL = {
   "src/app/main.ts":
     'import { charge, refund } from "./pay.ts";\nconst handlers: Record<string, (n: number) => number> = { charge, refund };\nexport function validate(n: number): number {\n  return n;\n}\nexport function unused(): number {\n  return 0;\n}\nexport function main(kind: string): number {\n  const total = validate(3);\n  const handler = handlers[kind]!;\n  return handler(total);\n}\n',
 };
+
 const JS = { languages: ["typescript", "javascript"], layers: { app: "src/app/**" }, exclude: ["run.mjs"], check: { trace: ".keylang/trace/*.jsonl" } };
 
 test("trace-plan --entry: the fns an entry reaches, with the values a call it cannot resolve may run; same JSON as a flow's plan", (t) => {
@@ -156,6 +170,7 @@ test("trace adapter: a server's two concurrent requests of two flows are two run
     ].join("\n"),
     ...FLOWS,
   });
+
   // The server names each request's flow from its header; the client sends both requests at once.
   writeFileSync(
     join(dir, "run.mjs"),
@@ -180,6 +195,7 @@ test("trace adapter: a server's two concurrent requests of two flows are two run
   // The plan carries the snapshot id: plan after every file of the fixture exists (a new file outside the layers changes the id).
   assert.deepEqual(entryPlan(dir, "app.shop.handle", "server").ids, ["app.shop.buy", "app.shop.charge", "app.shop.credit", "app.shop.handle", "app.shop.refund", "app.shop.tick"]);
   const env: Record<string, string | undefined> = { ...process.env, KEYLANG_TRACE: ".keylang/trace/server.jsonl", KEYLANG_TRACE_PLAN: "plan.json" };
+
   for (const name of ["KEYLANG_TRACE_RUN", "KEYLANG_TRACE_TEST", "KEYLANG_TRACE_FLOW", "KEYLANG_FLOW"]) delete env[name];
   const r = spawnSync(process.execPath, ["--import", adapter, "run.mjs"], { cwd: dir, encoding: "utf8", env, timeout: 60_000 });
   assert.equal(r.status, 0, r.stderr);
@@ -195,6 +211,7 @@ test("trace adapter: a server's two concurrent requests of two flows are two run
   const starts = all.filter((e) => e.event === "start" && e.symbolId === "app.shop.handle");
   const firstEnd = all.findIndex((e) => e.event === "end" && e.spanId === starts[0]!.spanId);
   assert.ok(all.indexOf(starts[1]!) < firstEnd, "the requests did not overlap");
+
   for (const run of runs.values()) assert.equal(run.records[0]!.complete, true);
   const c = check(dir);
   assert.notEqual(c.status, 2, c.stderr);
@@ -208,12 +225,15 @@ test("draft flow --from-trace: a step the static graph cannot see (a call throug
   const dir = repo(t, JS, VALUE_CALL);
   writeFileSync(join(dir, "run.mjs"), "const { main } = await import('./src/app/main.ts');\nmain(process.argv[2]);\n");
   entryPlan(dir, "app.main.main");
+
   const record = (kind: string, test: string): void => {
     const env: Record<string, string | undefined> = { ...process.env, KEYLANG_TRACE: ".keylang/trace/checkout.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_FLOW: "checkout", KEYLANG_TRACE_TEST: test };
+
     for (const name of ["KEYLANG_TRACE_RUN", "KEYLANG_TRACE_FLOW"]) delete env[name];
     const r = spawnSync(process.execPath, ["--import", adapter, "run.mjs", kind], { cwd: dir, encoding: "utf8", env, timeout: 60_000 });
     assert.equal(r.status, 0, r.stderr);
   };
+
   record("charge", "pay by card");
   const drafted = keylang(dir, ["draft", "flow", "--from-trace", ".keylang/trace/checkout.jsonl", "--print"]);
   assert.equal(drafted.status, 0, drafted.stderr);
@@ -286,10 +306,12 @@ test("python: keylang_trace.flow() on two threads at once makes two runs of two 
     ].join("\n"),
     ...FLOWS,
   });
+
   // Every file of the fixture exists before the plan: the plan carries the snapshot id.
   writeFileSync(join(dir, "cli.py"), "import threading\n\nfrom app.shop import buy\n\nprint(buy(threading.Barrier(1)))\n");
   entryPlan(dir, "app.shop.handle", "server");
   const env: Record<string, string | undefined> = { ...process.env, KEYLANG_TRACE: ".keylang/trace/server.jsonl", KEYLANG_TRACE_PLAN: "plan.json" };
+
   for (const name of ["KEYLANG_TRACE_RUN", "KEYLANG_TRACE_TEST", "KEYLANG_FLOW"]) delete env[name];
   const r = spawnSync("python3", [join(root, "adapters/python/keylang_trace.py"), "run.py"], { cwd: dir, encoding: "utf8", env, timeout: 60_000 });
   assert.equal(r.status, 0, r.stderr);
@@ -319,6 +341,7 @@ const rustc = spawnSync("rustc", ["--version"], { encoding: "utf8" }).status ===
 
 test("rust: keylang_trace::flow() on two threads at once makes two runs of two flows, their spans not mixed", { skip: rustc ? false : "rustc is not installed" }, (t) => {
   const rust = join(root, "adapters/rust/keylang_trace.rs");
+
   const dir = repo(t, { languages: ["rust"], layers: { app: ["src/*.rs"] }, check: { trace: ".keylang/trace/*.jsonl" } }, {
     "Cargo.toml": '[package]\nname = "shop"\nversion = "0.1.0"\nedition = "2021"\n',
     "src/main.rs": `#[path = ${JSON.stringify(rust)}]
@@ -382,10 +405,12 @@ fn block_on<F: std::future::Future>(future: F) -> F::Output {
     "keylang/flows/buy.md": "# flow buy\n\n- trigger app.main.buy\n  - step app.main.charge\n",
     "keylang/flows/refund.md": "# flow refund\n\n- trigger app.main.refund\n  - step app.main.credit\n",
   });
+
   entryPlan(dir, "app.main.handle", "server");
   const build = spawnSync("rustc", ["--edition", "2021", "-A", "warnings", "-o", join(dir, "shop"), "src/main.rs"], { cwd: dir, encoding: "utf8" });
   assert.equal(build.status, 0, build.stderr);
   const env: Record<string, string | undefined> = { ...process.env, KEYLANG_TRACE: ".keylang/trace/server.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_TRACE_TEST: "shop" };
+
   for (const name of ["KEYLANG_TRACE_RUN", "KEYLANG_TRACE_ROOT", "KEYLANG_FLOW"]) delete env[name];
   const exec = spawnSync(join(dir, "shop"), [], { cwd: dir, encoding: "utf8", env });
   assert.equal(exec.status, 0, exec.stderr);
@@ -438,6 +463,7 @@ test("php: a DI-like call is a hole for static; the entry plan follows it by nam
   const { snapshotId } = JSON.parse(readFileSync(join(dir, "plan.json"), "utf8")) as { snapshotId: string };
   const base = { schemaVersion: 1, snapshotId, runId: "19a.r1f2e3d4c", testId: "GET /index.php", flow: "checkout", traceId: "19a.r1f2e3d4c:GET /index.php" };
   const clock = "php-41-0a0b0c0d";
+
   const lines = [
     { ...base, event: "start", spanId: `${clock}:s1`, parentSpanId: null, symbolId: "app.Checkout.Checkout.place", clockId: clock, seq: 1, ts: 1 },
     { ...base, event: "start", spanId: `${clock}:s2`, parentSpanId: `${clock}:s1`, symbolId: "app.Container.Container.create", clockId: clock, seq: 2, ts: 2 },
@@ -447,6 +473,7 @@ test("php: a DI-like call is a hole for static; the entry plan follows it by nam
     { ...base, event: "end", spanId: `${clock}:s1`, outcome: "ok", clockId: clock, seq: 6, ts: 6 },
     { ...base, event: "run", clockId: clock, complete: true, dropped: 0, instrumented: ids, open: [] },
   ];
+
   mkdirSync(join(dir, ".keylang/trace"), { recursive: true });
   writeFileSync(join(dir, ".keylang/trace/web.jsonl"), `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`);
   assertDiFlow(dir, ".keylang/trace/web.jsonl", base.runId);
@@ -458,13 +485,16 @@ test("php: on a web server (auto_prepend_file), a request that names its flow by
   const dir = repo(t, PHP_CONFIG, PHP_DI);
   entryPlan(dir, "app.Checkout.Checkout.place", "web");
   const port = 20000 + Math.floor(Math.random() * 20000);
+
   const server = spawn("php", ["-d", `auto_prepend_file=${join(root, "adapters/php/keylang_trace.php")}`, "-S", `127.0.0.1:${port}`, "-t", dir], {
     cwd: dir,
     env: { ...process.env, KEYLANG_TRACE: join(dir, ".keylang/trace/web.jsonl"), KEYLANG_TRACE_PLAN: join(dir, "plan.json"), KEYLANG_TRACE_ROOT: dir, KEYLANG_TRACE_TEST: "", KEYLANG_FLOW: "" },
     stdio: "ignore",
   });
+
   t.after(() => server.kill());
   const url = `http://127.0.0.1:${port}/index.php`;
+
   // Requests that name no flow (these, until the server answers) record nothing.
   for (let i = 0; ; i++) {
     try {
@@ -475,6 +505,7 @@ test("php: on a web server (auto_prepend_file), a request that names its flow by
       await new Promise((done) => setTimeout(done, 100));
     }
   }
+
   assert.equal(await (await fetch(url, { headers: { "X-Keylang-Flow": "checkout" } })).text(), "6");
   assert.equal(await (await fetch(url, { headers: { Cookie: "X-Keylang-Flow=checkout" } })).text(), "6");
   const all = events(join(dir, ".keylang/trace/web.jsonl"));

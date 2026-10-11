@@ -19,6 +19,7 @@ import { VirtualTerminal } from "./vt.ts";
 const sleep = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms));
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
 
 const SHOP: Record<string, string> = {
@@ -69,16 +70,19 @@ Rel(n_infra_store, n_external_node, "import ×1")
 
 function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8" });
+
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
 function repo(t: TestContext): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-c4-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+
   for (const [path, text] of Object.entries(SHOP)) {
     mkdirSync(join(dir, dirname(path)), { recursive: true });
     writeFileSync(join(dir, path), text);
   }
+
   return dir;
 }
 
@@ -147,11 +151,13 @@ Rel(n_infra_store, n_domain_order, "call ×1, import ×1")
   const container = keylang(dir, ["export", "c4", "--level", "container", "--layer", "domain"]);
   assert.equal(container.status, 2);
   assert.match(container.stderr, /--layer draws the components of one layer: use it with --level component/);
+
   for (const [option, value, expected] of [["--format", "svg", "plantuml, mermaid"], ["--level", "code", "component, container"]] as const) {
     const bad = keylang(dir, ["export", "c4", option, value]);
     assert.equal(bad.status, 2);
     assert.equal(bad.stderr, `keylang: export c4: unknown ${option} \`${value}\`; expected ${expected}\n`);
   }
+
   assert.equal(keylang(dir, ["export", "dot"]).status, 2);
 });
 
@@ -193,6 +199,7 @@ test("export c4 --out writes a new file or one it wrote, with stdout empty; a fi
     assert.equal(refused.stderr, `keylang: ${path}: not a diagram \`keylang export c4\` wrote (no keylang:generated marker on its first line); nothing written\n`);
     assert.equal(readFileSync(join(dir, path), "utf8"), text);
   }
+
   // A path out of the repository is refused by the file protocol.
   const out = keylang(dir, ["export", "c4", "--out", "../c4.puml"]);
   assert.equal(out.status, 2);
@@ -224,11 +231,14 @@ test("tui: the palette's Export C4 diagram shows the diagram in F6 without a fil
   t.after(() => app.close());
   const send = (keys: string): void => app.input(keys);
   await app.idle();
+
   const palette = (): void => {
     send(KEY.ctrlP);
+
     for (const ch of "export c4 diagram") send(ch);
     send(KEY.enter);
   };
+
   palette();
   assert.equal(app.state.prompt?.kind, "export-c4");
   assert.match(vt.text(), /Run export c4 --format plantuml --level component/);
@@ -252,6 +262,7 @@ test("tui: the palette's Export C4 diagram shows the diagram in F6 without a fil
 
   // A file typed: written as `--out` writes it; the CLI's twin gives the same bytes.
   palette();
+
   for (const ch of "docs/shop.puml") send(ch);
   assert.match(vt.text(), /docs\/shop\.puml: a new file, written on Enter/);
   send(KEY.enter);
@@ -274,15 +285,20 @@ test("tui: the C4 form runs the write policy on the typed file before reading it
   app.attach({ write: (ansi) => vt.feed(ansi) }, 160, 34);
   t.after(() => app.close());
   await app.idle();
+
   const form = (out: string): string => {
     app.input(KEY.ctrlP);
+
     for (const ch of "export c4 diagram") app.input(ch);
     app.input(KEY.enter);
+
     for (const ch of out) app.input(ch);
     const note = app.state.prompt?.note ?? "";
     app.input("\x1b");
+
     return note;
   };
+
   for (const out of ["docs/linked.puml", join(outside, "c4.puml")]) {
     const cli = keylang(dir, ["export", "c4", "--out", out]);
     assert.equal(cli.status, 2);
@@ -290,6 +306,7 @@ test("tui: the C4 form runs the write policy on the typed file before reading it
     assert.equal(`keylang: ${form(out)}\n`, cli.stderr, out);
     await sleep(40);
   }
+
   assert.match(form("docs/linked.puml"), /leads out of the repository through a link; nothing written$/);
   await sleep(40);
   assert.equal(readFileSync(join(outside, "c4.puml"), "utf8"), COMPONENTS);

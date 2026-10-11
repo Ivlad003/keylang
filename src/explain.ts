@@ -155,8 +155,11 @@ const K005_REASON_LINES = [
 export function explainCode(code: string): string | null {
   const upper = code.toUpperCase();
   const text = Object.hasOwn(EXPLANATIONS, upper) ? EXPLANATIONS[upper as Code] : undefined;
+
   if (!text) return null;
   const lines = [`${upper}: ${text.cause}`, `example: ${text.example}`, `fix: ${text.fix}`];
+
   if (upper === "K005") lines.push(...K005_REASON_LINES);
+
   return lines.join("\n");
 }

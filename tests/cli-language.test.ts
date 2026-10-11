@@ -53,8 +53,10 @@ test("K005 on `step planned <id>` points at the `planned` declaration", (t) => {
   const dir = tempDir(t, "keylang-step-planned-");
   const flow = "# flow p\n\n- trigger planned a.b.c\n- step a.b.d\n  - step planned a.b.e\n- step a.b c\n- step planned type a.b.f\n";
   writeTree(dir, { "keylang/flows/p.md": flow });
+
   const hint = (id: string, keyword = "step", kind = "fn"): string =>
     `K005 \`planned\` is a declaration, not a ${keyword} modifier: add \`- planned ${kind} ${id}\` at the top of the flow and keep \`- ${keyword} ${id}\``;
+
   const o = keylang(dir, ["check", "keylang/flows/p.md"]);
   assert.equal(o.status, 1, o.stdout + o.stderr);
   const k005 = o.stdout.split("\n").filter((line) => line.includes("K005"));
@@ -173,6 +175,7 @@ test("fmt --check passes on examples", () => {
 test("fmt canonicalizes and is idempotent", () => {
   const fixtures = join(root, "tests/fixtures/fmt");
   const tmp = mkdtempSync(join(tmpdir(), "keylang-fmt-"));
+
   try {
     copyFileSync(join(fixtures, "messy.md"), join(tmp, "messy.md"));
 
@@ -205,6 +208,7 @@ test("fmt over a directory formats every file it can and names each one it canno
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const messy = readFileSync(join(root, "tests/fixtures/fmt/messy.md"), "utf8");
   const expected = readFileSync(join(root, "tests/fixtures/fmt/messy.expected"), "utf8");
+
   for (const name of ["a.md", "b.md", "c.md"]) writeFileSync(join(dir, name), messy);
   chmodSync(join(dir, "b.md"), 0o444);
   const o = keylang(dir, ["fmt", "."]);
@@ -246,7 +250,7 @@ test("a reference written as a Markdown link resolves by its text; the span is t
   const [bare, linked] = calls.refs;
   const line = LINKED_MAP.split("\n")[5]!;
   const lineStart = LINKED_MAP.indexOf(line);
-  const colOf = (needle: string): number => [...line.slice(0, line.indexOf(needle))].length + 1;
+  const colOf = (needle: string): number => Array.from(line.slice(0, line.indexOf(needle))).length + 1;
   assert.deepEqual(bare.span.start, { offset: lineStart + line.indexOf("𝒳.a.b"), line: 6, col: colOf("𝒳.a.b") });
   assert.equal(bare.link, undefined);
   assert.equal(linked.text, "𝒳.a.go");
@@ -325,6 +329,7 @@ test("K008 warns when one undotted then word matches a declared id", (t) => {
     parse("map.md", "# map\n\n- layer infra\n  - module db\n    - fn save () → void\n"),
     parse("flow.md", "# flow f\n\n- planned fn app.cart.save () → void\n- when the write fails\n  - then save\n"),
   ]).diagnostics.filter((diag) => diag.code === "K008");
+
   assert.equal(found.length, 1);
   assert.equal(found[0]!.severity, "warning");
   assert.match(found[0]!.message, /`then app\.cart\.save`, `then infra\.db\.save`/);

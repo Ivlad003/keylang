@@ -30,16 +30,19 @@ export interface Transport {
 export function requestKey(path: string, query: URLSearchParams): string {
   const pairs = [...query.entries()].sort(([a, x], [b, y]) => (a < b ? -1 : a > b ? 1 : x < y ? -1 : x > y ? 1 : 0));
   const text = new URLSearchParams(pairs).toString();
+
   return text === "" ? path : `${path}?${text}`;
 }
 
 /** The data shard of a key: FNV-1a over its UTF-16 code units, as `keyShard` of `src/tui/read-api.ts`. */
 export function keyShard(key: string, shards: number): number {
   let hash = 0x811c9dc5;
+
   for (let i = 0; i < key.length; i++) {
     hash ^= key.charCodeAt(i);
     hash = Math.imul(hash, 0x01000193) >>> 0;
   }
+
   return hash % shards;
 }
 
@@ -54,12 +57,14 @@ class HttpTransport implements Transport {
 
   async send(method: "GET" | "POST" | "PUT", path: string, query: URLSearchParams, body?: unknown): Promise<Reply> {
     const headers: Record<string, string> = { Authorization: `Bearer ${this.token}` };
+
     if (body !== undefined) headers["Content-Type"] = "application/json";
     const search = query.toString();
     // Relative to the page: the same server at `/` and mounted under `/r/<id>/` of `web --hub`.
     const relative = path.replace(/^\//, "");
     const response = await fetch(search === "" ? relative : `${relative}?${search}`, { method, headers, cache: "no-store", ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
     const file = /filename="([^"]+)"/.exec(response.headers.get("Content-Disposition") ?? "")?.[1];
+
     return { status: response.status, type: response.headers.get("Content-Type") ?? "text/plain", text: await response.text(), ...(file ? { file } : {}) };
   }
 }
@@ -69,6 +74,7 @@ let current: Transport | null = null;
 /** The transport of this page: the one `useTransport` put, else HTTP with this tab's token. */
 export function transport(): Transport {
   current ??= new HttpTransport(takeToken());
+
   return current;
 }
 
@@ -85,6 +91,7 @@ export function readOnlyPage(): boolean {
 /** The JSON of a reply, or an `ApiError` with its reason. */
 export function replyJson<T>(reply: Reply): T {
   if (reply.status < 200 || reply.status >= 300) throw new ApiError(reply.status, errorOf(reply.text));
+
   return JSON.parse(reply.text) as T;
 }
 
@@ -92,12 +99,14 @@ export function replyJson<T>(reply: Reply): T {
 export function takeToken(): string {
   const hash = new URLSearchParams(location.hash.slice(1));
   const fromUrl = hash.get("t");
+
   if (fromUrl) {
     sessionStorage.setItem(TOKEN_KEY, fromUrl);
     hash.delete("t");
     const rest = hash.toString();
     history.replaceState(null, "", `${location.pathname}${rest ? `#${rest}` : ""}`);
   }
+
   return sessionStorage.getItem(TOKEN_KEY) ?? "";
 }
 
@@ -532,7 +541,9 @@ export class Api {
   /** The drawing as proposals; a conflict or a refusal (409) is an answer too, with its `status` and `error`. */
   async diagramProposal(model: unknown, specHash: string | null): Promise<DiagramProposal> {
     const reply = await transport().send("POST", "/api/diagram-proposal", new URLSearchParams(), { model, specHash });
+
     if (reply.status === 409) return JSON.parse(reply.text) as DiagramProposal;
+
     return replyJson<DiagramProposal>(reply);
   }
 
@@ -558,11 +569,14 @@ export class Api {
 /** The reason of a refused request: `{"error"}` of a JSON answer, else its text. */
 export function errorOf(body: string): string {
   const text = body.trim();
+
   try {
     const parsed = JSON.parse(text) as { error?: unknown };
+
     if (typeof parsed.error === "string") return parsed.error;
   } catch {
     // Not JSON: the text itself.
   }
+
   return text || "request failed";
 }

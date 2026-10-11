@@ -27,30 +27,42 @@ export function reactRouterEntries(scope: EntryScope, configs: readonly Framewor
   const modules = configs.filter((c) => c.owner !== null).map((c) => ({ path: c.facts.path, id: routeId(c.owner!, c.facts.path) }));
   const ids = modules.map((m) => m.id);
   const out: EntryPoint[] = [];
+
   for (const { path, id } of modules) {
     const module = scope.graph.byPath.get(path);
+
     if (module === undefined) continue;
     const top = { file: path, line: module.line ?? 1 };
     const url = `${flatRoutePath(id)}${isLayout(id, ids) ? " (layout)" : ""}`;
+
     const exported = (name: string): { found: boolean; id: string | null } => {
       const row = scope.graph.exports.find((e) => e.module === module.id && e.name === name);
+
       return { found: row !== undefined, id: row?.symbol != null && scope.fns.has(row.symbol) ? row.symbol : null };
     };
+
     const add = (fn: string | null, label: string, method: string | null, what: string): void => {
       const entry = frameworkEntry(scope, "react-router", "route", fn ?? module.id, label, `${path}:${top.line}`, top);
       out.push({ ...entry, ...(method !== null ? { method } : {}), ...(fn === null ? { note: `the exported \`${what}\` is no fn keylang resolves: the route module stands for it` } : {}) });
     };
+
     for (const handler of HANDLERS) {
       const found = exported(handler.name);
+
       if (found.found) add(found.id, `${handler.method} ${url}${handler.client ? " (client)" : ""}`, handler.method, handler.name);
     }
+
     const page = exported("default");
+
     if (page.found) add(page.id, `PAGE ${url}`, null, "default");
+
     for (const name of ROUTE_EXPORTS) {
       const found = exported(name);
+
       // Only a fn: `export const links = [...]`-like data is no code the router runs.
       if (found.id !== null) add(found.id, `${name} ${url}`, null, name);
     }
   }
+
   return out;
 }

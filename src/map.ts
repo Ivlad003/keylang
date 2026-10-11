@@ -51,97 +51,127 @@ export async function generateMap(config: Config, options: { persist?: boolean |
   // One walk sorts every source file into what is read, excluded and outside.
   const tree = classifySources(config);
   const all = tree.analysed;
+
   // An unsaved or proposed file that is not on disk yet is a source too (`spec-to-code` candidates).
   const added = [...(options.overlay?.keys() ?? [])].map((abs) => toPosix(relative(config.root, abs))).filter((rel) => {
     const language = languageOf(rel);
+
     return !rel.startsWith("../") && !all.includes(rel) && language !== undefined && config.languages.includes(language) && isAnalysed(rel, config);
   });
+
   if (added.length > 0) {
     all.push(...added);
     all.sort(compareText);
   }
+
   // One read per file: the manifest hash, the cache key and the extracted facts come from the same text.
   const indexed: { path: string; sha256: string }[] = [];
   const sources = new Map<string, { text: string; sha256: string }>();
   // Files keylang may not read (EACCES/EPERM): opaque modules and holes, as an unreadable directory.
   const unreadableFiles: { file: string; reason: string }[] = [];
+
   for (const p of [...all]) {
     const abs = join(config.root, p);
     const src = options.overlay?.get(abs) ?? readAnalysedSource(abs);
+
     if (src === null || typeof src !== "string") {
       // Removed between listing and reading: not part of this snapshot. Not readable: a hole, its module opaque.
       all.splice(all.indexOf(p), 1);
+
       if (src !== null && (!config.guessed || placeFile(config, p) !== null)) unreadableFiles.push({ file: p, reason: src.unreadable });
       continue;
     }
+
     const hash = sha256(src);
     sources.set(p, { text: src, sha256: hash });
     indexed.push({ path: p, sha256: hash });
   }
+
   const skipped = config.guessed ? all.filter((p) => placeFile(config, p) === null) : [];
   const skippedSet = new Set(skipped);
   const cache = FactCache.open(config.root, JSON.stringify({ extractor: EXTRACTOR_VERSION, code: extractorCode(), grammars: grammarVersions() }));
   const facts: FileFacts[] = [];
+
   for (const p of all) {
     if (skippedSet.has(p)) continue;
     const src = sources.get(p);
+
     if (src === undefined) continue;
     const frontend = frontendFor(p);
+
     if (!frontend) continue;
     facts.push(await cache.facts(p, src.sha256, () => extractGuarded(frontend.extract, p, src.text)));
   }
+
   // A PHP file `outside` the architecture is read as declarations only (business-flows 40): a class of
   // the architecture that extends one of its classes, or a value typed with one, finds its members.
   // Cached by content under a key of its own; its hash joins `snapshotId`, as a resolver's input does.
   const declared = new Map<string, FileFacts>();
   const declarationInputs: [string, string][] = [];
+
   for (const p of tree.outside) {
     const frontend = frontendFor(p);
+
     if (!frontend || languageOf(p) !== "php") continue;
     const abs = join(config.root, p);
     let src: string | null | { unreadable: string };
+
     try {
       src = options.overlay?.get(abs) ?? readAnalysedSource(abs);
     } catch {
       src = null;
     }
+
     if (typeof src !== "string") continue;
     const hash = sha256(src);
     const text = src;
     declared.set(p, await cache.facts(p, `declarations\0${hash}`, async () => declarationsOnly(await extractGuarded(frontend.extract, p, text))));
     declarationInputs.push([`outside-declarations:${p}`, hash]);
   }
+
   // Framework config files (ADR 0022): read by the adapters the repository uses, cached by content like the sources.
   const frameworks = readFrameworks(config, all, sources, options.overlay, cache, options.adapters, facts, tree.outside);
   const factCache = options.persist === true || (options.persist === "changed" && cache.changed()) ? cache.serialize() : null;
   // An explicitly excluded file is a module with unknown contents: in its layer, or in `unassigned`
   // under an explicit config. A guessed layout keeps a file outside its guessed layers out of the graph.
   const excluded = tree.excluded.filter((p) => !config.guessed || placeFile(config, p) !== null);
+
   for (const p of excluded) facts.push(opaqueFacts(p));
   // A file `outside` the architecture is not read either, but it is no hole: a module of the layer `outside`.
   const outside = tree.outside;
+
   for (const p of outside) facts.push(declared.get(p) ?? opaqueFacts(p));
+
   for (const { file } of unreadableFiles) facts.push(opaqueFacts(file));
   const graph = buildGraph(config, facts, frameworks.inputs);
+
   for (const [key, hash] of declarationInputs) graph.resolverInputs.set(key, hash);
+
   // Layers written in keylang.json that overlap or match nothing: the layout still works, so a warning, first.
   if (!config.guessed) graph.warnings.unshift(...layerGlobWarnings(config, [...all, ...excluded, ...unreadableFiles.map((u) => u.file)].sort(compareText)));
+
   for (const [files, comment] of [[excluded, "excluded"], [outside, "outside"]] as const) {
     for (const p of files) {
       const module = graph.byPath.get(p);
+
       if (module) module.comment = comment;
     }
   }
+
   const mapDir = `${config.dir}/map`;
+
   // An unreadable directory inside a layer: a hole of the module IDs its files would have.
   const unreadable = tree.unreadable.flatMap(({ dir, reason }) => {
     graph.warnings.push(`\`${dir}\`: ${reason}; its files are not indexed`);
     const place = placeFile(config, `${dir}/${UNREADABLE_PROBE}`);
+
     return place === null ? [] : [{ file: dir, reason, source: [place.layer, ...place.segments.slice(0, -1)].join(".") }];
   });
+
   for (const { file, reason } of unreadableFiles) graph.warnings.push(`\`${file}\`: ${reason}; its contents are not indexed`);
   // Entry points: what the code and the root manifests write (ADR 0022 п. 5); the manifests join `snapshotId`.
   const manifests: EntryManifests = { "package.json": null, "pyproject.toml": null, "Cargo.toml": null };
+
   for (const name of ENTRY_MANIFESTS) manifests[name] = readSource(join(config.root, name));
   // The active adapters' entry points: Magento's from the graph (config classes and methods, controllers,
   // observers), SFCC's (hooks, jobs, SFRA controllers) placed here, with the holes of placing them (ADR 0022 п. 5).
@@ -153,6 +183,7 @@ export async function generateMap(config: Config, options: { persist?: boolean |
   entries.sort(compareEntries);
   graph.gaps.push(...fromFrameworks.holes);
   graph.warnings.push(...fromFrameworks.warnings);
+
   const index = buildSnapshot(graph, config, indexed, [
     ...skipped.map((file) => ({ file, reason: "outside guessed layers" })),
     ...excluded.map((file) => ({ file, reason: "excluded by keylang.json" })),
@@ -164,7 +195,9 @@ export async function generateMap(config: Config, options: { persist?: boolean |
     ...frameworks.inputs.flatMap((input) => input.configs.filter((c) => c.facts.error !== null).map((c) => ({ file: c.facts.path, reason: c.facts.error!.reason, text: `${FRAMEWORK_CONFIG}${input.name}`, ...ownerSource(config, graph, c.owner) }))),
     ...frameworks.unread.map((c) => ({ file: c.path, reason: c.reason, text: `${FRAMEWORK_CONFIG}${c.framework}`, ...ownerSource(config, graph, c.owner) })),
   ], readRepositoryDocs(config), { list: entries, inputs: ENTRY_MANIFESTS.map((name) => [name, manifests[name]] as const) }, frameworks.manifest);
+
   const explained = config.explain.map ? explainedMapOf(config, index) : null;
+
   return { graph, files: renderMap(index, mapDir), explained, index, skipped: skipped.length, facts: { reused: cache.reused, extracted: cache.extracted }, factCache };
 }
 
@@ -176,6 +209,7 @@ export async function generateMap(config: Config, options: { persist?: boolean |
  */
 export function explainedMapOf(config: Config, index: AnalysisSnapshot): Map<string, string> {
   const briefs = loadBriefs(config);
+
   return renderExplainedMap(index, `${config.dir}/${EXPLAINED_MAP_DIR}`, (id) => explanationOf(index, briefs, id));
 }
 
@@ -194,6 +228,7 @@ function readFrameworks(
   outside: readonly string[],
 ): { inputs: FrameworkInput[]; manifest: FrameworkManifest[]; unread: { path: string; owner: string | null; reason: string; framework: string }[] } {
   const text = (path: string): string | null => read.get(path)?.text ?? overlay?.get(join(config.root, path)) ?? readSource(join(config.root, path));
+
   const context: FrameworkContext = {
     sources,
     read: text,
@@ -208,20 +243,25 @@ function readFrameworks(
     outside,
     isOutside: (path) => isOutside(path, config.outside),
   };
+
   const byPath = new Map(facts.map((f) => [f.path, f]));
   const inputs: FrameworkInput[] = [];
   const manifest: FrameworkManifest[] = [];
   const active = activeAdapters(config.frameworks, context, available);
+
   // A framework the repository uses that `frameworks` leaves out: its config still runs, so what it
   // binds is unknown to the snapshot — a hole of each config file, never an absence.
   const unread = (available ?? FRAMEWORK_ADAPTERS)
     .filter((adapter) => !active.includes(adapter) && adapter.detect(context))
     .flatMap((adapter) => adapter.files(context).filter((f) => !f.declarations).map(({ path, owner }) => ({ path, owner, framework: adapter.name, reason: `\`${path}\` is \`${adapter.name}\` config keylang does not read: \`frameworks\` in keylang.json leaves the adapter out` })));
+
   for (const adapter of active) {
     const configs: FrameworkInput["configs"] = [];
     const files: { path: string; sha256: string }[] = [];
+
     for (const { path, owner, declarations } of adapter.files(context)) {
       const body = text(path);
+
       if (body === null) continue;
       const hash = sha256(body);
       files.push({ path, sha256: hash });
@@ -230,8 +270,10 @@ function readFrameworks(
       const parsed = code !== undefined ? adapter.code!(path, code) : cache.config(path, hash, `${adapter.name}@${adapter.version}`, () => adapter.parse(path, body));
       configs.push({ facts: declarations ? preferencesOnly(parsed) : parsed, owner });
     }
+
     // Wiring the framework reads from code (attributes, service providers): from the sources' facts, which the snapshot covers already.
     const reader = FRAMEWORK_CODE.get(adapter.name);
+
     if (reader) configs.push(...reader(facts, configs.map((c) => c.facts)));
     inputs.push({
       name: adapter.name,
@@ -244,6 +286,7 @@ function readFrameworks(
     });
     manifest.push({ name: adapter.name, version: adapter.version, files });
   }
+
   return { inputs, manifest, unread };
 }
 
@@ -263,8 +306,10 @@ function preferencesOnly(facts: ConfigFacts): ConfigFacts {
  */
 function ownerSource(config: Config, graph: Graph, owner: string | null): { source?: string } {
   const id = owner === null ? null : directoryModule(config, owner, graph);
+
   if (id === null || graph.modules.has(id)) return id === null ? {} : { source: id };
   const inside = [...graph.byPath].filter(([path]) => path.startsWith(`${owner}/`) && !path.slice(owner!.length + 1).includes("/")).sort(([a], [b]) => compareText(a, b))[0];
+
   return { source: inside?.[1].id ?? id };
 }
 
@@ -279,12 +324,15 @@ const ROOT_MANIFESTS = ["package.json", "Cargo.toml", "pyproject.toml", "compose
  */
 function readRepositoryDocs(config: Config): RepositoryDocs {
   const layers = new Map<string, string>();
+
   for (const [layer, globs] of config.layers) {
     const dir = globDirectory(globs);
     const readme = dir === null ? null : readReadme(config.root, dir);
     const brief = readme === null ? null : readmeBrief(readme.text);
+
     if (brief !== null) layers.set(layer, brief);
   }
+
   return { system: readSystemDoc(config.root), layers };
 }
 
@@ -293,17 +341,22 @@ function readSystemDoc(root: string): SystemDoc {
   const name = about.find((m) => m.name !== null)?.name ?? null;
   const readme = readReadme(root, "");
   const fromReadme = readme === null ? null : readmeBrief(readme.text);
+
   if (readme !== null && fromReadme !== null) return { name, brief: fromReadme, source: readme.path };
+
   for (const m of about) {
     const brief = m.description === null ? null : briefOf(m.description);
+
     if (brief !== null) return { name, brief, source: m.file };
   }
+
   return { name, brief: null, source: null };
 }
 
 /** `README.md` in `dir` (relative, POSIX; "" for the root), its name in any case; null without one. */
 function readReadme(root: string, dir: string): { path: string; text: string } | null {
   let names: string[];
+
   try {
     names = readdirSync(join(root, dir), { withFileTypes: true })
       .filter((e) => e.isFile() && e.name.toLowerCase() === "readme.md")
@@ -312,9 +365,12 @@ function readReadme(root: string, dir: string): { path: string; text: string } |
   } catch {
     return null;
   }
+
   const name = names[0];
+
   if (name === undefined) return null;
   const text = readSource(join(root, dir, name));
+
   return text === null ? null : { path: dir === "" ? name : `${dir}/${name}`, text };
 }
 
@@ -327,20 +383,26 @@ function readReadme(root: string, dir: string): { path: string; text: string } |
 function manifestAbout(file: (typeof ROOT_MANIFESTS)[number], text: string | null): { name: string | null; description: string | null } {
   if (text === null) return { name: null, description: null };
   let data: unknown;
+
   try {
     data = file === "package.json" || file === "composer.json" ? JSON.parse(text) : parseToml(text);
   } catch {
     return { name: null, description: null };
   }
+
   const field = (value: unknown, key: string): unknown => (value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>)[key] : undefined);
   const sections = file === "Cargo.toml" ? [field(data, "package"), field(field(data, "workspace"), "package")] : file === "pyproject.toml" ? [field(data, "project")] : [data];
+
   const pick = (key: string): string | null => {
     for (const section of sections) {
       const value = field(section, key);
+
       if (typeof value === "string" && value.trim() !== "") return value.trim();
     }
+
     return null;
   };
+
   return { name: pick("name"), description: pick("description") };
 }
 
@@ -376,6 +438,7 @@ function readAnalysedSource(abs: string): string | null | { unreadable: string }
     return readSource(abs);
   } catch (error) {
     const code = error instanceof Error && "code" in error ? error.code : undefined;
+
     if (code === "EACCES" || code === "EPERM") return { unreadable: `file is not readable (${code})` };
     throw error;
   }
@@ -393,6 +456,7 @@ async function extractGuarded(extract: (path: string, src: string) => Promise<Fi
     if (!(error instanceof RangeError)) throw error;
     const lines = src.split("\n");
     const last = lines.at(-1) ?? "";
+
     return { ...opaqueFacts(path), endLine: lines.length, endCol: [...last].length + 1, parseError: { line: 1, reason: "nesting too deep to read" } };
   }
 }
@@ -431,37 +495,49 @@ interface ExtraGenerated {
 /** Generated files in `dir` that should not be there under their names. */
 function extraGenerated(dir: string, files: ReadonlyMap<string, string>): ExtraGenerated[] {
   if (!existsSync(dir)) return [];
+
   const identity = (p: string): string | null => {
     const st = statSync(p, { throwIfNoEntry: false });
+
     return st === undefined ? null : `${st.dev}:${st.ino}`;
   };
+
   const listed = new Map<string, string>();
+
   for (const name of files.keys()) {
     const id = identity(join(dir, name));
+
     if (id !== null) listed.set(id, name);
   }
+
   const extra: ExtraGenerated[] = [];
+
   for (const e of readdirSync(dir)) {
     if (!e.endsWith(".md") || files.has(e)) continue;
     const p = join(dir, e);
     // A directory or a dangling link named `*.md` is no file of the generator: not read, not removed.
     const text = readOrNull(p);
+
     if (text === null || !isGeneratedMap(text)) continue;
     const id = identity(p);
     extra.push({ path: p, text, alias: id === null ? null : (listed.get(id) ?? null) });
   }
+
   return extra;
 }
 
 /** Target files of both maps that exist and are not generated. Sorted. */
 export function mapConflicts(config: Config, r: MapResult): string[] {
   const conflicts: string[] = [];
+
   for (const { dir, files } of targets(config, r)) {
     for (const name of files.keys()) {
       const p = join(dir, name);
+
       if (existsSync(p) && !isGeneratedMap(readFileSync(p, "utf8"))) conflicts.push(p);
     }
   }
+
   return conflicts.sort();
 }
 
@@ -532,19 +608,26 @@ export function sourceInputs(config: Config, sources: readonly { path: string; s
  */
 export function sourceInputProblems(config: Config, inputs: SourceInputs, subject: string): string[] {
   const problems: string[] = [];
+
   if (readOrNull(join(config.root, CONFIG_FILE)) !== inputs.config) problems.push(`${CONFIG_FILE}: changed on disk while ${subject} was computed`);
   const before = new Map(inputs.sources.map((file) => [file.path, file.sha256]));
   const now = new Map<string, string>();
+
   for (const path of sourceTree(config).files) {
     const text = readOrNull(join(config.root, path));
+
     if (text !== null) now.set(path, sha256(text));
   }
+
   for (const [path, hash] of now) {
     const old = before.get(path);
+
     if (old === undefined) problems.push(`${path}: added while ${subject} was computed`);
     else if (old !== hash) problems.push(`${path}: changed on disk while ${subject} was computed`);
   }
+
   for (const path of before.keys()) if (!now.has(path)) problems.push(`${path}: removed while ${subject} was computed`);
+
   return problems;
 }
 
@@ -569,26 +652,34 @@ export function planMap(config: Config, r: MapResult): MapPlan {
   const rel = (abs: string): string => toPosix(relative(config.root, abs));
   const steps: PlannedStep[] = [];
   const emptyDirs: string[] = [];
+
   for (const { dir, files, artifact } of targets(config, r)) {
     const extra = extraGenerated(dir, files);
     const aliases = new Map(extra.flatMap((e) => (e.alias === null ? [] : [[e.alias, e] as const])));
+
     for (const [name, text] of files) {
       const p = join(dir, name);
       const current = readOrNull(p);
       const alias = aliases.get(name);
+
       // The same file under another spelling: removed first, then written under the listed name.
       if (alias !== undefined) {
         steps.push({ path: rel(alias.path), action: "remove", artifact, text: "", expect: alias.text });
         steps.push({ path: rel(p), action: "write", artifact, text, expect: current });
       } else if (current !== text) steps.push({ path: rel(p), action: "write", artifact, text, expect: current });
     }
+
     // Only generated files of layers that no longer exist (or of a map turned off) may be removed.
     for (const e of extra) if (e.alias === null) steps.push({ path: rel(e.path), action: "remove", artifact, text: "", expect: e.text });
+
     // A map turned off leaves no empty directory behind; one with manual files stays.
     if (files.size === 0) emptyDirs.push(rel(dir));
   }
+
   steps.push({ path: ".keylang/index.json", action: "write", artifact: "index", text: `${JSON.stringify(r.index, null, 2)}\n`, expect: undefined });
+
   if (r.factCache !== null) steps.push({ path: FACT_CACHE_FILE, action: "write", artifact: "facts", text: r.factCache, expect: undefined });
+
   return {
     root: config.root,
     config,
@@ -608,12 +699,17 @@ export function planMap(config: Config, r: MapResult): MapPlan {
  */
 export function mapPlanProblems(plan: MapPlan): string[] {
   const problems: string[] = [];
+
   for (const step of plan.steps) {
     const problem = writeProblem(plan.root, step.path, { generated: true, ...(step.expect === undefined ? {} : { expect: step.expect }) });
+
     if (problem !== null) problems.push(`${step.path}: ${problem}`);
   }
+
   problems.push(...sourceInputProblems(plan.config, plan.inputs, "the map"));
+
   if (plan.inputs.briefs !== null && briefsKey(plan.config) !== plan.inputs.briefs) problems.push(`${plan.config.dir}/explain/brief: changed while the map was computed`);
+
   return problems;
 }
 
@@ -627,29 +723,36 @@ export function mapPlanProblems(plan: MapPlan): string[] {
  */
 export async function commitMap(plan: MapPlan, options: { signal?: AbortSignal; onStep?: (step: MapStep) => void } = {}): Promise<MapCommit> {
   const steps: CommittedStep[] = plan.steps.map(({ path, action, artifact }) => ({ path, action, artifact, state: "not-attempted" }));
+
   for (const [i, step] of plan.steps.entries()) {
     // One turn of the event loop between steps: a cancel message sent to a worker arrives here.
     await new Promise<void>((done) => setImmediate(done));
+
     if (options.signal?.aborted) return { steps, outcome: "cancelled" };
     options.onStep?.({ path: step.path, action: step.action, artifact: step.artifact });
     const abs = join(plan.root, step.path);
+
     try {
       if (step.action === "write") writeAtomic(landing(abs) ?? abs, step.text, { exact: true });
       else rmSync(abs);
       steps[i]!.state = "completed";
     } catch (error) {
       steps[i] = { ...steps[i]!, state: "failed", error: error instanceof Error ? error.message : String(error) };
+
       return { steps, outcome: "failed" };
     }
   }
+
   for (const dir of plan.emptyDirs) {
     const abs = join(plan.root, dir);
+
     try {
       if (existsSync(abs) && readdirSync(abs).length === 0) rmdirSync(abs);
     } catch {
       // An empty directory left behind is no failure of the map.
     }
   }
+
   return { steps, outcome: "completed" };
 }
 
@@ -672,17 +775,22 @@ export function diffMap(config: Config, r: MapResult): MapDiff {
   const conflicts = mapConflicts(config, r);
   const conflicted = new Set(conflicts);
   const stale: string[] = [];
+
   for (const { dir, files } of targets(config, r)) {
     for (const [name, text] of files) {
       const p = join(dir, name);
+
       if (conflicted.has(p)) continue;
       // A file that differs only by CRLF (a Windows checkout with core.autocrlf) is current, as for baseline and wire; `map` writes LF.
       const current = readOrNull(p);
+
       if (current === null || current.replace(/\r\n/g, "\n") !== text) stale.push(p);
     }
+
     // A misspelled alias of a listed file is stale too: `map` renames it.
     stale.push(...extraGenerated(dir, files).map((e) => e.path));
   }
+
   return { conflicts, stale };
 }
 
@@ -698,5 +806,6 @@ function extractorCode(): string {
   const dir = fileURLToPath(new URL("./extract/", import.meta.url));
   const files = readdirSync(dir).filter((name) => /\.(ts|js)$/.test(name)).sort();
   extractorHash = sha256(files.map((name) => `${name}\0${readFileSync(join(dir, name), "utf8")}`).join("\0"));
+
   return extractorHash;
 }

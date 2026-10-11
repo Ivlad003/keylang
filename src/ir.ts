@@ -196,6 +196,7 @@ export interface Token {
 /** Pre-order walk over a node and its descendants. */
 export function walk(node: Node, f: (n: Node) => void): void {
   f(node);
+
   for (const c of node.children) walk(c, f);
 }
 

@@ -16,11 +16,14 @@ import { readmeBrief } from "../src/brief.ts";
 import { globDirectory } from "../src/glob.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
+
 const today = new Date().toISOString().slice(0, 10);
 
 function keylang(cwd: string, args: string[], env: Record<string, string | undefined> = {}): { status: number | null; stdout: string; stderr: string } {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8", env: { ...process.env, ...env } });
+
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
@@ -43,10 +46,12 @@ function repo(t: TestContext, files: Record<string, string> = {}): string {
   cpSync(join(root, "tests/fixtures/explained"), dir, { recursive: true });
   const config = JSON.parse(readFileSync(join(dir, "keylang.json"), "utf8")) as Record<string, unknown>;
   writeFileSync(join(dir, "keylang.json"), `${JSON.stringify({ ...config, explain: { map: true } }, null, 2)}\n`);
+
   for (const [path, text] of Object.entries(files)) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
     writeFileSync(join(dir, path), text);
   }
+
   return dir;
 }
 
@@ -57,6 +62,7 @@ function readme(dir: string): string {
 /** The lines between the generator marker and `## Explained map`: the repository's section of the start page. */
 function systemSection(dir: string): string {
   const text = readme(dir);
+
   return text.slice(text.indexOf("\n\n") + 2, text.indexOf("## Explained map")).trimEnd();
 }
 
@@ -79,6 +85,7 @@ test("readmeBrief: the first paragraph that reads as a sentence, past switchers,
   assert.equal(readmeBrief(README), "Shop is a tiny store for tests. It keeps orders in memory and never saves them.");
   assert.equal(readmeBrief(""), null);
   assert.equal(readmeBrief("# Title\n\n[![a](b)](c)\n\n**EN** · [UK](x)\n"), null);
+
   // A heading in either form, fenced and indented code, an HTML block and comment, a list, a quote, a table: none is prose.
   const blocks = [
     "Setext Heading Line Here.",
@@ -104,6 +111,7 @@ test("readmeBrief: the first paragraph that reads as a sentence, past switchers,
     "",
     "The real description of the project starts here. It has two sentences.",
   ].join("\n");
+
   assert.equal(readmeBrief(blocks), "The real description of the project starts here. It has two sentences.");
   assert.equal(readmeBrief("Uses **strong** and _emphasis_ and `code` words. Done."), "Uses strong and emphasis and `code` words. Done.");
   assert.equal(readmeBrief("Three words only.\n\nThis paragraph has enough words to count."), "This paragraph has enough words to count.");
@@ -173,6 +181,7 @@ test("map: a layer's own directory describes the layer: its README, else the doc
     "src/domain/README.md": "# Domain\n\nThe rules of the shop: orders and money. Nothing here does I/O.\n",
     "src/app/index.ts": "// The application layer: use cases the screens call.\n\nexport const ready = true;\n",
   });
+
   assert.equal(keylang(dir, ["map"]).status, 0);
   const nodes = snapshot(dir).nodes;
   assert.equal(nodes.domain!.doc, "The rules of the shop: orders and money. Nothing here does I/O.");
@@ -197,6 +206,7 @@ interface Mock {
 /** A local stand-in for the Messages API: no network, answers with `mock.reply`. */
 async function mockAnthropic(t: TestContext): Promise<Mock> {
   const mock: Mock = { url: "", prompts: [], reply: () => "" };
+
   const server = createServer((req, res) => {
     let data = "";
     req.on("data", (chunk: Buffer) => (data += chunk.toString()));
@@ -208,21 +218,25 @@ async function mockAnthropic(t: TestContext): Promise<Mock> {
       res.end(JSON.stringify({ id: "msg_1", type: "message", role: "assistant", model: "claude-opus-5", content: [{ type: "text", text: mock.reply(body.system, prompt) }], stop_reason: "end_turn", stop_details: null, usage: { input_tokens: 10, output_tokens: 10 } }));
     });
   });
+
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(() => server.close());
   mock.url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
   return mock;
 }
 
 function withModel(dir: string, mock: Mock): Record<string, string | undefined> {
   const file = join(dir, "keylang.json");
   writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), agent: "anthropic:claude-opus-5" }));
+
   return { ANTHROPIC_BASE_URL: mock.url, ANTHROPIC_API_KEY: "test-key", ANTHROPIC_AUTH_TOKEN: undefined, HOME: dir };
 }
 
 /** What a prompt asks about: a node's ID, or the repository. */
 function asked(system: string, prompt: string): string {
   if (system.startsWith("You describe a whole repository")) return "@system";
+
   return /^Node:\n(?:planned )?\S+ (\S+)/.exec(prompt)?.[1] ?? "?";
 }
 

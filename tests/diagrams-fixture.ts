@@ -30,6 +30,7 @@ export function diagramsRepo(t: { after: (f: () => void) => void }): string {
   const dir = checkoutRepo(t, DIAGRAM_FILES);
   const run = spawnSync(process.execPath, [bin, "flows", "discover"], { cwd: dir, encoding: "utf8" });
   assert.equal(run.status, 0, run.stderr);
+
   return dir;
 }
 
@@ -47,6 +48,7 @@ export function editorModelOf(
   diagram: { nodes: { id: string; kind: string; label: string; ref?: { id?: string }; group?: string; x: number; y: number; w: number; h: number }[]; edges: { from: string; to: string; kind: string; label?: string }[]; groups: { id: string; label: string; x: number; y: number; w: number; h: number }[] },
 ): FixtureModel {
   const seen = new Map<string, number>();
+
   return {
     view,
     mode: "code",
@@ -55,6 +57,7 @@ export function editorModelOf(
       const base = `edge:${e.from}->${e.to}`;
       const n = seen.get(base) ?? 0;
       seen.set(base, n + 1);
+
       return { key: n === 0 ? base : `${base}#${n}`, kind: e.kind, from: e.from, to: e.to, ...(e.label ? { label: e.label } : {}) };
     }),
     lanes: diagram.groups.map((g) => ({ key: `lane:${g.id}`, id: g.id, label: g.label, x: g.x, y: g.y, w: g.w, h: g.h })),
@@ -68,14 +71,17 @@ export function editorModelOf(
 export function targetRepo(t: { after: (f: () => void) => void }): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-target-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+
   const files: Record<string, string> = {
     "keylang.json": `${JSON.stringify({ languages: ["typescript"], layers: { api: ["src/api/**"], core: ["src/core/**"] } }, null, 2)}\n`,
     "src/core/base.ts": "/** The shared base. */\nexport function base(): number {\n  return 1;\n}\n",
     "src/api/http.ts": 'import { base } from "../core/base.ts";\nexport function serve(): number {\n  return base();\n}\n',
   };
+
   for (const [path, text] of Object.entries(files)) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
     writeFileSync(join(dir, path), text);
   }
+
   return dir;
 }

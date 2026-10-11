@@ -116,10 +116,13 @@ test("feature: a plan weakened since the base commit is a spec gap; planned remo
   git(dir, ["init"]);
   git(dir, ["add", "."]);
   git(dir, ["commit", "-m", "plan"]);
+
   const status = (args: string[] = []): { status: number | null; body: { done: boolean; gaps: { kind: string; id: string; line: number; reason: string }[]; info: { base: { ref: string; state: string } } } } => {
     const r = keylang(dir, ["feature", "remind", "--format", "json", ...args]);
+
     return { status: r.status, body: JSON.parse(r.stdout || "null") };
   };
+
   assert.equal(status().body.info.base.state, "compared");
 
   // Rewrite the plan: drop both planned, and swap the reminder step for a wrapper that the code has.
@@ -238,13 +241,16 @@ test("check --changed never hands git a piped stdin: the Codex sandbox cannot cl
   chmodSync(join(fakeBin, "git"), 0o755);
   const env = { ...process.env, PATH: `${fakeBin}:${process.env.PATH ?? ""}` };
   const run = (args: string[]) => spawnSync(process.execPath, [bin, ...args], { cwd: dir, env, encoding: "utf8" });
+
   for (const commits of [false, true]) {
     git(dir, ["init", "-q"]);
+
     if (commits) {
       git(dir, ["add", "."]);
       git(dir, ["commit", "-qm", "base"]);
       writeFileSync(join(dir, "src/app/pay.ts"), `${readFileSync(join(dir, "src/app/pay.ts"), "utf8")}// touched\n`);
     }
+
     const changed = run(["check", "--changed"]);
     assert.doesNotMatch(changed.stderr, /stdin is a pipe|git/, changed.stderr);
     assert.equal(changed.status, 1, changed.stderr);
@@ -270,11 +276,13 @@ test("check --changed and hook stop report K001 when the step's source file was 
   const changed = keylang(dir, ["check", "--changed"]);
   assert.equal(changed.status, 1, changed.stdout);
   assert.match(changed.stdout, /K001 dangling reference `domain\.order\.price`/);
+
   const hook = spawnSync(process.execPath, [bin, "hook", "stop"], {
     cwd: dir,
     input: JSON.stringify({ hook_event_name: "Stop", stop_hook_active: false }),
     encoding: "utf8",
   });
+
   assert.equal(hook.status, 0, hook.stderr);
   const decision = JSON.parse(hook.stdout) as { decision?: string; reason?: string };
   assert.equal(decision.decision, "block");
@@ -342,7 +350,9 @@ test("check --changed, hook stop and feature keep K104 of an `exports` rule when
   });
   git(dir, ["add", "."]);
   git(dir, ["commit", "-m", "leak"]);
+
   type Body = { done: boolean; gaps: { kind: string; id: string; reason: string }[]; hints: { kind: string; reason: string }[]; info: { rules: unknown[] | null } };
+
   const feature = keylang(dir, ["feature", "leak", "--format", "json"]);
   assert.equal(feature.status, 1, feature.stdout);
   const body = JSON.parse(feature.stdout) as Body;
@@ -417,6 +427,7 @@ const CASE_FIXTURE = {
   "src/domain/order.ts": ORDER,
   "keylang/rules.md": "# rules\n\n- deny app domain\n",
 };
+
 const CASE_EDIT = 'import { price } from "../domain/order.ts";\nexport function view(): number {\n  return price();\n}\n';
 
 test("check --changed and hook stop find a file renamed by case only when git has core.ignorecase=true", (t) => {
@@ -449,10 +460,12 @@ test("check --changed and hook stop find a file renamed by case only when git ha
 
 test("check --changed finds a file renamed by case only on a case-insensitive file system (casefold tmpfs in a user namespace)", { skip: process.platform !== "linux" }, (t) => {
   const probe = spawnSync("unshare", ["-rm", "true"], { encoding: "utf8" });
+
   if (probe.status !== 0) return t.skip("unshare -rm is not available here");
   const fixture = tempDir(t, "keylang-casefold-src-");
   writeTree(fixture, CASE_FIXTURE);
   const mount = tempDir(t, "keylang-casefold-");
+
   const script = [
     'mount -t tmpfs -o casefold tmpfs "$1" 2>/dev/null || { echo SKIP:mount; exit 0; }',
     'mkdir "$1/repo" && chattr +F "$1/repo" 2>/dev/null || { echo SKIP:chattr; exit 0; }',
@@ -465,8 +478,10 @@ test("check --changed finds a file renamed by case only on a case-insensitive fi
     '"$3" "$5" check --changed; echo "CHANGED:$?"',
     'echo "{}" | "$3" "$5" hook stop',
   ].join("\n");
+
   const run = spawnSync("unshare", ["-rm", "sh", "-c", script, "sh", mount, fixture, process.execPath, CASE_EDIT, bin], { encoding: "utf8" });
   assert.equal(run.status, 0, run.stderr);
+
   if (/^SKIP:/m.test(run.stdout)) return t.skip(`casefold tmpfs is not available here (${run.stdout.match(/^SKIP:(\w+)/m)?.[1]})`);
   assert.match(run.stdout, /^IGNORECASE:true$/m, run.stdout);
   assert.match(run.stdout, /^STATUS: M src\/app\/view\.ts$/m, run.stdout);
@@ -497,8 +512,10 @@ test("new flow and new module write a skeleton that check accepts and never over
   writeFileSync(join(dir, "keylang/features/payments.md"), "# flow payments\n\n- planned module app.payments\n");
   const withoutNote = [keylang(dir, ["check", "keylang/features/payments.md"]), keylang(dir, ["feature", "payments"])];
   writeFileSync(join(dir, "keylang/features/payments.md"), moduleText);
+
   const outcome = (runs: typeof withNote) =>
     runs.map((run) => ({ status: run.status, stdout: run.stdout.replace(/payments\.md:\d+:/g, "payments.md:N:"), stderr: run.stderr }));
+
   assert.deepEqual(outcome(withNote), outcome(withoutNote));
   assert.match(withNote[1]!.stdout, /planned `app\.payments` is not implemented/);
 

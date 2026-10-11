@@ -11,12 +11,16 @@ import { fileURLToPath } from "node:url";
 import { HOOK_FLOW, HOOKS } from "./hooks-fixture.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
+
 const all = process.env.KEYLANG_METAMORPHIC === "all";
 
 function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8" });
+
   if (r.error) throw r.error;
+
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
@@ -24,6 +28,7 @@ function copyFixture(t: TestContext, name: string): string {
   const dir = mkdtempSync(join(tmpdir(), `keylang-meta-${name}-`));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   cpSync(join(root, "tests/fixtures", name), dir, { recursive: true });
+
   return dir;
 }
 
@@ -52,27 +57,34 @@ const RANK: Record<Row["verdict"], number> = { fail: 4, warning: 3, unverified: 
 function results(dir: string, args: string[] = []): Row[] {
   const run = keylang(dir, ["check", "--format", "json", ...args]);
   assert.notEqual(run.status, 2, run.stderr);
+
   return (JSON.parse(run.stdout) as { results: Row[] }).results;
 }
 
 function layersLines(text: string): LayersLine[] {
   const lines: LayersLine[] = [];
+
   for (const line of text.split("\n")) {
     const match = /^-\s+layers\s+(.+)$/.exec(line);
+
     if (!match?.[1]) continue;
     const layers = match[1].split("<").map((part) => part.trim()).filter((part) => part !== "");
     lines.push({ text: `layers ${layers.join(" < ")}`, layers });
   }
+
   return lines;
 }
 
 function component(lines: readonly LayersLine[], layer: string): LayersLine[] {
   const seen = new Set<string>([layer]);
   let grew = true;
+
   while (grew) {
     grew = false;
+
     for (const line of lines) {
       if (!line.layers.some((item) => seen.has(item))) continue;
+
       for (const item of line.layers) {
         if (seen.has(item)) continue;
         seen.add(item);
@@ -80,6 +92,7 @@ function component(lines: readonly LayersLine[], layer: string): LayersLine[] {
       }
     }
   }
+
   return lines.filter((line) => line.layers.some((item) => seen.has(item)));
 }
 
@@ -93,64 +106,84 @@ function rulesText(dir: string): string {
 
 function keysOf(row: Row, lines: readonly LayersLine[]): string[] {
   if (row.code === "K103" || row.criterion === "entry") return ["entry"];
+
   if (row.code === "K105" || row.criterion === "no-cycles") return [`no-cycles:${row.file}:${row.line}`];
+
   if (row.code === "K102" || row.code === "K104" || row.criterion.startsWith("deny ") || row.criterion.startsWith("allow ") || row.criterion.startsWith("exports ")) {
     return [`rule:${row.criterion}`];
   }
+
   if (row.code === "K101") {
     const [, from, to] = row.criterion.split(" ");
     const group = component(lines, to ?? "").filter((line) => line.layers.includes(from ?? "") || line.layers.includes(to ?? ""));
     const chosen = group.length > 0 ? group : lines.filter((line) => line.layers.includes(from ?? "") && line.layers.includes(to ?? ""));
+
     return (chosen.length > 0 ? chosen : [{ text: row.criterion }]).map((line) => `layers:${line.text}`);
   }
+
   if (row.criterion.startsWith("layers ")) return [`layers:${row.criterion}`];
+
   if (row.criterion === "static" || row.criterion === "tests" || row.criterion === "trace") return [`flow:${row.criterion}:${row.area}:${row.file}:${row.line}`];
+
   if (row.code === null) return [`spec:${row.criterion}:${row.file}:${row.line}`];
+
   return [`diag:${row.code}:${row.file}:${row.line}`];
 }
 
 function aggregate(rows: readonly Row[], lines: readonly LayersLine[]): Map<string, { verdict: Row["verdict"]; evidence: string }> {
   const map = new Map<string, { verdict: Row["verdict"]; evidence: string }>();
+
   for (const row of rows) {
     for (const key of keysOf(row, lines)) {
       const prev = map.get(key);
+
       if (!prev || RANK[row.verdict] > RANK[prev.verdict]) map.set(key, { verdict: row.verdict, evidence: row.evidence });
     }
   }
+
   return map;
 }
 
 function monotonic(fixture: string, operator: string, before: Map<string, { verdict: string; evidence: string }>, after: Map<string, { verdict: string; evidence: string }>): void {
   const bad: string[] = [];
+
   for (const key of new Set([...before.keys(), ...after.keys()])) {
     const left = before.get(key);
     const right = after.get(key);
     const from = left?.verdict ?? "unverified";
     const to = right?.verdict ?? "unverified";
+
     if (from === to || to === "unverified") continue;
     bad.push(`${fixture} ${operator} ${key}: ${from} → ${to}\n  before: ${left?.evidence ?? "(absent)"}\n  after: ${right?.evidence ?? "(absent)"}`);
   }
+
   assert.equal(bad.length, 0, bad.join("\n"));
 }
 
 function sourceFiles(dir: string): string[] {
   const out: string[] = [];
+
   const walk = (rel: string): void => {
     const abs = join(dir, rel);
     let entries;
+
     try {
       entries = readdirSync(abs, { withFileTypes: true });
     } catch {
       return;
     }
+
     for (const entry of entries) {
       if (entry.name === "node_modules" || entry.name === "target" || entry.name === ".git" || entry.name === "keylang") continue;
       const path = rel === "" ? entry.name : `${rel}/${entry.name}`;
+
       if (entry.isDirectory()) walk(path);
       else if (/\.(ts|tsx|js|jsx|py|rs)$/.test(entry.name)) out.push(path);
     }
   };
+
   walk("");
+
   return out.sort();
 }
 
@@ -165,12 +198,15 @@ function excludePair(t: TestContext, fixture: string, dir: string): void {
   const lines = layersLines(rulesText(dir));
   const baseRows = results(dir);
   const base = aggregate(baseRows, lines);
+
   const edges = baseRows
     .filter((row) => row.code === "K101" || row.code === "K102")
     .map((row) => row.file)
     .filter((file) => !file.endsWith(".md"))
     .sort();
+
   const files = all ? sourceFiles(dir) : [edges[0] ?? sourceFiles(dir)[0]].filter((file): file is string => file !== undefined);
+
   for (const file of files) {
     const copy = mkdtempSync(join(tmpdir(), "keylang-meta-ex-"));
     t.after(() => rmSync(copy, { recursive: true, force: true }));
@@ -221,19 +257,23 @@ const PHP_RESULTS: Record<string, string> = {
 test("php: removing a `@return` or an inline `@var` that types a receiver moves a verdict only to unverified", (t) => {
   const php = mkdtempSync(join(tmpdir(), "keylang-meta-php-results-"));
   t.after(() => rmSync(php, { recursive: true, force: true }));
+
   for (const [path, text] of Object.entries(PHP_RESULTS)) write(php, path, text);
   const before = aggregate(results(php), []);
   assert.equal(before.get("rule:deny app domain.Order")?.verdict, "fail");
+
   const moves = (operator: string, path: string, from: string): string[] => {
     write(php, path, PHP_RESULTS[path]!.replace(from, ""));
     const after = aggregate(results(php), []);
     write(php, path, PHP_RESULTS[path]!);
     monotonic("php-results", operator, before, after);
+
     return [...before]
       .filter(([key, left]) => left.verdict !== (after.get(key)?.verdict ?? "unverified"))
       .map(([key, left]) => `${key.split(":")[2]} ${left.verdict} → ${after.get(key)?.verdict ?? "unverified"}`)
       .sort();
   };
+
   assert.deepEqual(moves("remove @return", "src/Domain/Repo.php", "    /** @return Order */\n"), ["domain.Order.Order.cancel ok → unverified", "domain.Order.Order.ship ok → unverified"]);
   assert.deepEqual(moves("remove inline @var", "src/App/Checkout.php", "        /** @var Order $order */\n"), ["domain.Order.Order.pay ok → unverified"]);
 });
@@ -251,15 +291,18 @@ const PHP_OUTSIDE: Record<string, string> = {
 test("php: removing a file `outside` the architecture whose declarations type a receiver moves a verdict only to unverified", (t) => {
   const php = mkdtempSync(join(tmpdir(), "keylang-meta-php-outside-"));
   t.after(() => rmSync(php, { recursive: true, force: true }));
+
   for (const [path, text] of Object.entries(PHP_OUTSIDE)) write(php, path, text);
   const before = aggregate(results(php), layersLines(rulesText(php)));
   rmSync(join(php, "lib/Fw/AbstractModel.php"));
   const after = aggregate(results(php), layersLines(rulesText(php)));
   monotonic("php-outside", "remove lib/Fw/AbstractModel.php", before, after);
+
   const moved = [...before]
     .filter(([key, left]) => left.verdict !== (after.get(key)?.verdict ?? "unverified"))
     .map(([key, left]) => `${key.split(":").slice(0, 3).join(":")} ${left.verdict} → ${after.get(key)?.verdict ?? "unverified"}`)
     .sort();
+
   // The step through the outside base's `@return`, and the K107 of the call into it.
   assert.deepEqual(moved, ["diag:K107:src/App/Order.php fail → unverified", "flow:static:domain.Repo.Repo.store ok → unverified"]);
 });
@@ -334,30 +377,36 @@ test("exclude and --static shape never switch ok and fail", (t) => {
 
   const php = mkdtempSync(join(tmpdir(), "keylang-meta-php-"));
   t.after(() => rmSync(php, { recursive: true, force: true }));
+
   for (const [path, text] of Object.entries(PHP_DOCBLOCK)) write(php, path, text);
   const withDocblock = aggregate(results(php), []);
   write(php, "src/App/Checkout.php", PHP_DOCBLOCK["src/App/Checkout.php"]!.replace("    /** @var Mailer */\n", ""));
   const withoutDocblock = aggregate(results(php), []);
   monotonic("php-docblock", "remove @var", withDocblock, withoutDocblock);
+
   const moved = [...withDocblock]
     .filter(([key, left]) => left.verdict !== (withoutDocblock.get(key)?.verdict ?? "unverified"))
     .map(([key, left]) => `${key.split(":")[2]} ${left.verdict} → ${withoutDocblock.get(key)?.verdict ?? "unverified"}`)
     .sort();
+
   assert.deepEqual(moved, ["domain.Mailer.Mailer.send ok → unverified"]);
 
   const hooks = mkdtempSync(join(tmpdir(), "keylang-meta-hooks-"));
   t.after(() => rmSync(hooks, { recursive: true, force: true }));
   const layers = Object.fromEntries([...new Set(Object.keys(HOOKS).map((path) => path.split("/")[1]!))].map((layer) => [layer, `src/${layer}/**`]));
   write(hooks, "keylang.json", `${JSON.stringify({ languages: ["typescript"], layers }, null, 2)}\n`);
+
   for (const [path, text] of Object.entries(HOOKS)) write(hooks, path, text);
   write(hooks, "keylang/flows/hooks.md", HOOK_FLOW);
   const before = aggregate(results(hooks, ["--static", "behavior"]), []);
   const after = aggregate(results(hooks, ["--static", "shape"]), []);
   monotonic("hooks", "--static shape", before, after);
+
   const changed = [...before]
     .filter(([key, left]) => left.verdict !== (after.get(key)?.verdict ?? "unverified"))
     .map(([key, left]) => `${key.split(":")[2]} ${left.verdict} → ${after.get(key)?.verdict ?? "unverified"}`)
     .sort();
+
   assert.deepEqual(changed, ["domain.build.build ok → unverified", "presentation.worker.Worker.generate ok → unverified"]);
 });
 
@@ -373,6 +422,7 @@ test("06: excluding the far side of a cycle is unverified, not ok", (t) => {
     },
     "src/infra/b.ts",
   );
+
   assert.equal(base.find((item) => item.criterion === "no-cycles")?.verdict, "fail", JSON.stringify(base));
   assert.equal(excluded.find((item) => item.criterion === "no-cycles")?.verdict, "unverified", JSON.stringify(excluded));
 });
@@ -381,6 +431,7 @@ test("06: excluding the far side of a cycle is unverified, not ok", (t) => {
 function excludeCase(t: TestContext, name: string, files: Record<string, string>, file: string): { base: Row[]; excluded: Row[]; status: number | null } {
   const dir = mkdtempSync(join(tmpdir(), `keylang-meta-${name}-`));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+
   for (const [path, text] of Object.entries(files)) write(dir, path, text);
   const lines = layersLines(rulesText(dir));
   const base = results(dir);
@@ -389,10 +440,12 @@ function excludeCase(t: TestContext, name: string, files: Record<string, string>
   assert.notEqual(run.status, 2, run.stderr);
   const excluded = (JSON.parse(run.stdout) as { results: Row[] }).results;
   monotonic(name, `exclude ${file}`, aggregate(base, lines), aggregate(excluded, lines));
+
   return { base, excluded, status: run.status };
 }
 
 const NESTED_LAYERS = "# rules\n\n- layers domain < app\n  - infra\n";
+
 const NESTED_CONFIG = `${JSON.stringify({ languages: ["typescript"], layers: { domain: "src/domain/**", app: "src/app/**", infra: "src/infra/**" } })}\n`;
 
 test("07: excluding an upward file in a nested layer is unverified, not ok", (t) => {
@@ -408,6 +461,7 @@ test("07: excluding an upward file in a nested layer is unverified, not ok", (t)
     },
     "src/infra/x.ts",
   );
+
   assert.ok(base.some((row) => row.code === "K101"), JSON.stringify(base));
   const row = excluded.find((item) => item.criterion.startsWith("layers"));
   assert.equal(row?.verdict, "unverified", JSON.stringify(excluded));
@@ -427,6 +481,7 @@ test("07: excluding an upward file outside every layer is unverified, not ok", (
     },
     "src/misc/z.ts",
   );
+
   assert.ok(base.some((row) => row.criterion.startsWith("layers")), JSON.stringify(base));
   const row = excluded.find((item) => item.criterion.startsWith("layers"));
   assert.equal(row?.verdict, "unverified", JSON.stringify(excluded));
@@ -445,11 +500,13 @@ test("07: excluding the far side of a cycle outside every layer is unverified, n
     },
     "src/misc/b.ts",
   );
+
   assert.equal(base.find((item) => item.criterion === "no-cycles")?.verdict, "fail", JSON.stringify(base));
   assert.equal(excluded.find((item) => item.criterion === "no-cycles")?.verdict, "unverified", JSON.stringify(excluded));
 });
 
 const BARREL_CONFIG = `${JSON.stringify({ languages: ["typescript"], layers: { app: "src/app/**", shared: "src/shared/**", infra: "src/infra/**" } })}\n`;
+
 const BARREL_FILES = {
   "keylang.json": BARREL_CONFIG,
   "src/app/x.ts": 'import { save } from "../shared/barrel.ts";\nexport function run() {\n  return save();\n}\n',
@@ -477,6 +534,7 @@ test("09: a barrel with a parse error leaves the deny unverified, and --strict e
   const dir = mkdtempSync(join(tmpdir(), "keylang-meta-deny-broken-barrel-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const files = { ...BARREL_FILES, "src/shared/barrel.ts": 'const broken = ;;; ))) {{\nexport { save } from "../infra/db.ts";\n' };
+
   for (const [path, text] of Object.entries(files)) write(dir, path, text);
   const rows = results(dir);
   const row = rows.find((item) => item.criterion === "deny app infra");
@@ -498,6 +556,7 @@ test("08: excluding the only importer of an allowed package adds no K001", (t) =
     },
     "src/infra/db.ts",
   );
+
   assert.equal(status, 0, JSON.stringify(excluded));
   assert.equal(excluded.find((item) => item.criterion === "deny infra external")?.verdict, "unverified", JSON.stringify(excluded));
 });
@@ -514,14 +573,17 @@ const PHP_CALLABLES: Record<string, string> = {
 test("--static shape only weakens a step through a callable or a closure passed as an argument: ok → unverified, never fail", (t) => {
   const php = mkdtempSync(join(tmpdir(), "keylang-meta-callables-"));
   t.after(() => rmSync(php, { recursive: true, force: true }));
+
   for (const [path, text] of Object.entries(PHP_CALLABLES)) write(php, path, text);
   const before = aggregate(results(php, ["--static", "behavior"]), []);
   const after = aggregate(results(php, ["--static", "shape"]), []);
   monotonic("php-callables", "--static shape", before, after);
+
   const changed = [...before]
     .filter(([key, left]) => left.verdict !== (after.get(key)?.verdict ?? "unverified"))
     .map(([key, left]) => `${key.split(":")[2]} ${left.verdict} → ${after.get(key)?.verdict ?? "unverified"}`)
     .sort();
+
   // The plain call stays ok in both; the stored callable is unverified in both.
   assert.deepEqual(changed, ["domain.Store.Store.audit ok → unverified", "domain.Store.Store.flush ok → unverified"]);
   assert.equal(before.get("flow:static:domain.Store.Store.save:keylang/flows.md:4")?.verdict, "ok");
@@ -542,10 +604,12 @@ test("a framework's config left unread (`frameworks: []`) or unparsed moves a ve
   write(unread, "keylang.json", `${JSON.stringify({ ...raw, frameworks: [] }, null, 2)}\n`);
   const without = aggregate(results(unread), []);
   monotonic("magento-shop", "frameworks: []", read, without);
+
   const moved = [...read]
     .filter(([key, left]) => left.verdict !== (without.get(key)?.verdict ?? "unverified"))
     .map(([key, left]) => `${key} ${left.verdict} → ${without.get(key)?.verdict ?? "unverified"}`)
     .sort();
+
   assert.deepEqual(moved, [
     "flow:static:checkout.Model.Logger.Logger.log:keylang/flows.md:8 ok → unverified",
     "flow:static:promo.Plugin.CouponPlugin.CouponPlugin.aroundSubmit:keylang/flows.md:4 ok → unverified",
@@ -563,8 +627,10 @@ test("a framework's config left unread (`frameworks: []`) or unparsed moves a ve
   const broken = mkdtempSync(join(tmpdir(), "keylang-meta-magento-"));
   t.after(() => rmSync(broken, { recursive: true, force: true }));
   cpSync(shop, broken, { recursive: true });
+
   for (const file of ["app/code/Shop/Checkout/etc/di.xml", "app/code/Shop/Checkout/etc/adminhtml/di.xml", "app/code/Shop/Promo/etc/di.xml", "app/code/Shop/Promo/etc/frontend/di.xml"]) {
     write(broken, file, `${readFileSync(join(broken, file), "utf8")}<unclosed>\n`);
   }
+
   monotonic("magento-shop", "di.xml that does not parse", read, aggregate(results(broken), []));
 });

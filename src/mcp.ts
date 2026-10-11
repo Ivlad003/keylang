@@ -35,6 +35,7 @@ import { ENTRY_KINDS } from "./snapshot.ts";
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
 
 const json = (value: unknown): ToolResult => ({ content: [{ type: "text", text: JSON.stringify(value, null, 2) }] });
+
 const failure = (message: string): ToolResult => ({ content: [{ type: "text", text: message }], isError: true });
 
 /**
@@ -50,20 +51,24 @@ const failure = (message: string): ToolResult => ({ content: [{ type: "text", te
  */
 export function currentAnalysis(root: string): () => Promise<Analysis> {
   let last: { key: string; analysis: Analysis } | null = null;
+
   return async () => {
     const configFile = join(root, CONFIG_FILE);
     const raw = existingText(configFile);
     const config = loadConfig(root);
     const map = config.languages.length > 0 ? await generateMap(config, keepsFactCache(root) ? { persist: "changed" } : {}) : null;
+
     if (map?.factCache) saveFactCache(root, map.factCache);
     const specDir = join(root, config.dir);
     const specs = existsSync(specDir) ? collectMdFiles([specDir]) : [];
     const evidence = [...(evidenceFiles(config, "tests") ?? []), ...(evidenceFiles(config, "trace") ?? [])].map((file) => join(root, file));
     const digest = (file: string): string => `${file}\u0000${createHash("sha256").update(readFileSync(file)).digest("hex")}`;
     const key = JSON.stringify([raw, map?.index.snapshotId ?? null, specs.map(digest), evidence.map(digest)]);
+
     if (last?.key === key) return last.analysis;
     const analysis = await analyze({ root, ...(map ? { generate: () => Promise.resolve(map) } : {}) });
     last = { key, analysis };
+
     return analysis;
   };
 }
@@ -71,6 +76,7 @@ export function currentAnalysis(root: string): () => Promise<Analysis> {
 /** A node's explanation for an agent: its text, where it comes from, and for a model's brief the model, the date and whether the code changed since. */
 function explanationJson(e: NodeExplanation | null): { text: string; origin: "doc" | "llm"; stale: boolean; agent?: string; date?: string } | null {
   if (e === null) return null;
+
   return { text: e.text, origin: e.origin, stale: e.stale, ...(e.agent !== undefined ? { agent: e.agent } : {}), ...(e.date !== undefined ? { date: e.date } : {}) };
 }
 
@@ -88,6 +94,7 @@ export function mcpServer(root: string, version: string): McpServer {
     async ({ query, limit }) => {
       const analysis = await fresh();
       const hits = searchNodes(analysis, loadBriefs(analysis.config), { query, limit: limit ?? 20, fuzzy: false });
+
       return json(hits.map((hit) => ({ id: hit.id, kind: hit.kind, signature: hit.signature, file: hit.file, line: hit.line, explanation: explanationJson(hit.explanation) })));
     },
   );
@@ -101,12 +108,16 @@ export function mcpServer(root: string, version: string): McpServer {
     async ({ id }) => {
       const analysis = await fresh();
       const result = summarizeNode(analysis, id);
+
       if ("unknown" in result) return failure(`unknown id \`${id}\`${result.suggestion ? ` (did you mean \`${result.suggestion}\`?)` : ""}`);
+
       const edges = (analysis.snapshot?.edges ?? [])
         .filter((e) => e.source === id || e.target === id)
         .map((e) => ({ kind: e.kind, source: e.source, target: e.target, resolution: e.resolution, file: e.file, line: e.line, text: e.text }));
+
       const evidence = analysis.verdicts.filter((v) => v.area === id).map((v) => ({ criterion: v.criterion, verdict: v.verdict, message: v.message, file: v.file, line: v.line }));
       const explanation = analysis.snapshot ? explanationOf(analysis.snapshot, loadBriefs(analysis.config), id) : null;
+
       return json({ ...result.summary, explanation: explanationJson(explanation), edges, evidence, snapshotId: analysis.snapshot?.snapshotId ?? null });
     },
   );
@@ -120,12 +131,15 @@ export function mcpServer(root: string, version: string): McpServer {
     async ({ id, context }) => {
       const analysis = await fresh();
       const node = analysis.snapshot?.nodes[id];
+
       if (!node?.file || node.line === null) return failure(`\`${id}\` has no code in the snapshot`);
       const abs = join(root, node.file);
+
       if (!existsSync(abs)) return failure(`${node.file} is not on disk`);
       const lines = readFileSync(abs, "utf8").split("\n");
       const from = Math.max(1, node.line - (context ?? 0));
       const to = Math.min(lines.length, (node.endLine ?? node.line) + (context ?? 0));
+
       return json({ id, file: node.file, from, to, code: lines.slice(from - 1, to).join("\n") });
     },
   );
@@ -139,13 +153,16 @@ export function mcpServer(root: string, version: string): McpServer {
     async ({ name }) => {
       const analysis = await fresh();
       const flows: { name: string; file: string; steps: { kind: string; id: string; line: number; verdicts: { criterion: string; verdict: string; message: string }[] }[] }[] = [];
+
       for (const doc of analysis.docs) {
         for (const section of doc.sections) {
           if (section.kind !== "flow" || !section.name || (name !== undefined && section.name.value !== name)) continue;
           const steps: (typeof flows)[number]["steps"] = [];
+
           for (const top of sectionNodes(section)) {
             walk(top, (node) => {
               if (node.kind !== "trigger" && node.kind !== "step") return;
+
               for (const ref of node.refs) {
                 const line = node.span.start.line;
                 const verdicts = analysis.verdicts.filter((v) => v.file === doc.path && v.line === line && v.area === ref.target).map((v) => ({ criterion: v.criterion, verdict: v.verdict, message: v.message }));
@@ -153,10 +170,13 @@ export function mcpServer(root: string, version: string): McpServer {
               }
             });
           }
+
           flows.push({ name: section.name.value, file: doc.path, steps });
         }
       }
+
       if (name !== undefined && flows.length === 0) return failure(`no flow \`${name}\``);
+
       return json(flows);
     },
   );
@@ -170,6 +190,7 @@ export function mcpServer(root: string, version: string): McpServer {
     async () => {
       const analysis = await fresh();
       const snapshotId = analysis.snapshot?.snapshotId ?? null;
+
       return json({ snapshotId, results: checkResults(analysis.verdicts, snapshotId, analysis.diagnostics), coverage: analysis.snapshot?.coverage ?? [] });
     },
   );
@@ -183,8 +204,10 @@ export function mcpServer(root: string, version: string): McpServer {
     async ({ id }) => {
       const analysis = await fresh();
       const result = summarizeNode(analysis, id);
+
       if ("unknown" in result) return failure(`unknown id \`${id}\`${result.suggestion ? ` (did you mean \`${result.suggestion}\`?)` : ""}`);
       const saved = readExplanation(analysis.config, id);
+
       return json({ summary: result.summary, explanation: saved ? { text: saved.text, agent: saved.agent, date: saved.date, stale: isStale(analysis, id, saved) } : null });
     },
   );
@@ -201,10 +224,12 @@ export function mcpServer(root: string, version: string): McpServer {
       const target = toPosix(path);
       const specDir = toPosix(relative(root, resolve(root, analysis.config.dir)));
       const problem = proposalProblem(root, specDir, target, (p) => analysis.docs.some((doc) => doc.path === p && doc.generated !== null));
+
       if (problem) return failure(`${target}: ${problem}`);
       const abs = join(root, target);
       const before = existingText(abs) ?? "";
       writeProposal(root, target, text);
+
       return json({ status: "pending", proposal: `${PROPOSALS_DIR}/${target}`, diff: lineDiff(before, text) });
     },
   );
@@ -219,14 +244,20 @@ export function mcpServer(root: string, version: string): McpServer {
     async ({ id, feature }) => {
       if ((id === undefined) === (feature === undefined)) return failure("pass exactly one of id or feature");
       const analysis = await fresh();
+
       if (feature !== undefined) {
         const path = specPath(analysis.config.dir, `features/${feature}.md`);
         const doc = analysis.docs.find((item) => item.path === path);
+
         if (!doc) return failure(`no feature \`${feature}\``);
+
         return json(contextForIds(analysis, idsIn(doc)));
       }
+
       const result = summarizeNode(analysis, id!);
+
       if ("unknown" in result) return failure(`unknown id \`${id}\`${result.suggestion ? ` (did you mean \`${result.suggestion}\`?)` : ""}`);
+
       return json(contextForIds(analysis, [id!]));
     },
   );
@@ -241,18 +272,23 @@ export function mcpServer(root: string, version: string): McpServer {
     async ({ path, text }) => {
       const abs = resolve(root, path);
       const rel = toPosix(relative(root, abs));
+
       // Inside the root by path segments: `..specs/x.md` is a directory named `..specs`, not a way out.
       if (!within(abs, root) || rel === "") return failure(`${path}: outside the repository`);
       // A file check never reads would come back clean: say so instead.
       const notRead = specPathProblem(loadConfig(root), abs);
+
       if (notRead !== null) return failure(`${rel}: ${notRead}`);
       const analysis = await analyze({ root, overlay: new Map([[abs, text]]) });
+
       const diagnostics = analysis.diagnostics
         .filter((diag) => diag.file === rel)
         .map((diag) => ({ code: diag.code, file: diag.file, line: diag.span.start.line, col: diag.span.start.col, message: diag.message, ...(diag.code === "K005" && diag.reason !== undefined ? { reason: diag.reason } : {}) }));
+
       const verdicts = analysis.verdicts
         .filter((verdict) => verdict.file === rel)
         .map((verdict) => ({ criterion: verdict.criterion, verdict: verdict.verdict, area: verdict.area, file: verdict.file, line: verdict.line, col: verdict.col, message: verdict.message }));
+
       return json({ file: rel, diagnostics, verdicts });
     },
   );
@@ -266,8 +302,10 @@ export function mcpServer(root: string, version: string): McpServer {
     },
     async ({ id, into }) => {
       const analysis = await fresh();
+
       try {
         const candidate = await specToCode(analysis, id, into);
+
         return json({
           id: candidate.id,
           file: candidate.file,
@@ -302,7 +340,9 @@ export function mcpServer(root: string, version: string): McpServer {
     async ({ slug, since }) => {
       // The shared operation of `keylang feature` and the TUI's readiness screen, on this server's analysis.
       const result = await runOperation({ kind: "feature", root, slug, ...(since !== undefined ? { since } : {}) }, { analyze: () => fresh() });
+
       if (result.payload === null) return failure(result.messages.find((message) => message.level === "error")?.text ?? `no feature \`${slug}\``);
+
       return json(result.payload.report);
     },
   );
@@ -317,7 +357,9 @@ export function mcpServer(root: string, version: string): McpServer {
     async ({ kind }) => {
       const analysis = await fresh();
       const snapshot = analysis.snapshot;
+
       if (snapshot === null) return failure("no code to read (`languages` in keylang.json is empty)");
+
       return json({ snapshotId: snapshot.snapshotId, kind: kind ?? null, entries: snapshot.entries.filter((entry) => kind === undefined || entry.kind === kind) });
     },
   );
@@ -331,8 +373,10 @@ export function mcpServer(root: string, version: string): McpServer {
     },
     async ({ kind, layer, limit, depth }) => {
       const result = await runOperation({ kind: "flows-discover", root, output: "print", ...(kind !== undefined ? { only: kind } : {}), ...(layer !== undefined ? { layer } : {}), ...(limit !== undefined ? { limit } : {}), ...(depth !== undefined ? { depth } : {}) });
+
       if (result.payload === null) return failure(result.messages[0]?.text ?? "flows discover failed");
       const { snapshotId, summary, flows, specified, files } = result.payload;
+
       return json({ snapshotId, summary, flows: flows.map(({ text: _text, ...flow }) => flow), specified, files });
     },
   );
@@ -346,8 +390,10 @@ export function mcpServer(root: string, version: string): McpServer {
     },
     async () => {
       const result = await runOperation({ kind: "coverage", root }, { analyze: () => fresh() });
+
       if (result.payload === null) return failure(result.messages[0]?.text ?? "coverage failed");
       const { text: _text, ...report } = result.payload;
+
       return json(report);
     },
   );
@@ -361,8 +407,10 @@ export function mcpServer(root: string, version: string): McpServer {
     },
     async () => {
       const result = await runOperation({ kind: "integrations", root }, { analyze: () => fresh() });
+
       if (result.payload === null) return failure(result.messages[0]?.text ?? "integrations failed");
       const { text: _text, ...report } = result.payload;
+
       return json(report);
     },
   );
@@ -376,8 +424,10 @@ export function mcpServer(root: string, version: string): McpServer {
     },
     async ({ format }) => {
       const result = await runOperation({ kind: "tour", root }, { analyze: () => fresh() });
+
       if (result.payload === null) return failure(result.messages[0]?.text ?? "tour failed");
       const { text, out: _out, ...tour } = result.payload;
+
       return format === "markdown" ? { content: [{ type: "text" as const, text }] } : json(tour);
     },
   );
@@ -391,8 +441,10 @@ export function mcpServer(root: string, version: string): McpServer {
     },
     async ({ from }) => {
       const result = await runOperation({ kind: "migration-status", root, ...(from !== undefined ? { from } : {}) }, { analyze: () => fresh() });
+
       if (result.payload === null) return failure(result.messages[0]?.text ?? "migration status failed");
       const { text: _text, ...status } = result.payload;
+
       return json(status);
     },
   );
@@ -405,5 +457,6 @@ export async function serveMcp(root: string, version: string): Promise<number> {
   await server.connect(new StdioServerTransport());
   // The transport keeps the process alive until the client closes stdin.
   await new Promise<void>((done) => process.stdin.once("close", done));
+
   return 0;
 }

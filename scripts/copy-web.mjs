@@ -7,8 +7,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
+
 const to = join(dirname(fileURLToPath(import.meta.url)), "../dist/web");
+
 mkdirSync(to, { recursive: true });
+
 const files = [
   ["@xterm/xterm", "lib/xterm.js", "xterm.js"],
   ["@xterm/xterm", "css/xterm.css", "xterm.css"],
@@ -16,4 +19,5 @@ const files = [
   ["@xterm/addon-fit", "lib/addon-fit.js", "addon-fit.js"],
   ["@xterm/addon-fit", "LICENSE", "addon-fit.LICENSE"],
 ];
+
 for (const [pkg, from, name] of files) cpSync(join(dirname(require.resolve(`${pkg}/package.json`)), from), join(to, name));

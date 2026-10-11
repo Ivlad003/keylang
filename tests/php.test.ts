@@ -12,10 +12,12 @@ import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
 
 function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8" });
+
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
@@ -24,6 +26,7 @@ function shop(t: TestContext): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-php-shop-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   cpSync(join(root, "tests/fixtures/php-shop"), dir, { recursive: true });
+
   return dir;
 }
 
@@ -32,6 +35,7 @@ function repo(t: TestContext, files: Record<string, string>): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-php-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   write(dir, files);
+
   return dir;
 }
 
@@ -67,6 +71,7 @@ test("php: init detects the language and the layers; map follows `use`, a class 
   assert.deepEqual(JSON.parse(readFileSync(join(dir, "keylang.json"), "utf8")), { format: 2, ...SHOP_LAYERS, module: "file", layers: SHOP_LAYERS.layers });
   const index = snapshot(dir);
   const all = edges(index);
+
   for (const edge of [
     // `use`, a group `use` and `use function`; the vendor autoloader adds none.
     "import App.Checkout -> Domain.Order",
@@ -171,9 +176,11 @@ test("php: names resolve as PHP resolves them: a global function after the names
     ].join("\n"),
     "src/Web/Memory.php": "<?php\nnamespace App\\Web;\n\nuse App\\Core\\Repo;\n\nclass Memory implements Repo\n{\n    public function find(int $id): ?array { return null; }\n}\n",
   });
+
   assert.equal(keylang(dir, ["map"]).status, 0);
   const index = snapshot(dir);
   const all = edges(index);
+
   for (const edge of [
     // `parent::` is the base class; `self::make()` a static method of the class.
     "call web.Page.Page.__construct -> core.Base.Base.__construct",
@@ -229,6 +236,7 @@ test("php: what PHP chooses at run time is a hole or an escape: `$obj->$m()`, `n
       "",
     ].join("\n"),
   });
+
   assert.equal(keylang(dir, ["map"]).status, 0);
   const index = snapshot(dir);
   const hole = (kind: string, reason: string): boolean => index.coverage.some((c) => c.kind === kind && c.reason === reason && c.source === "web.Page.Page.run");
@@ -350,6 +358,7 @@ test("php: a flow step and a rule through a docblock-typed property name the doc
     "keylang/flows.md": "# flow buy\n\n- trigger app.Checkout.Checkout.buy\n  - step domain.Store.Store.save\n  - step domain.Mailer.Mailer.send\n  - step domain.Audit.Audit.log\n",
     "keylang/rules.md": "# rules\n\n- deny app domain.Mailer\n",
   });
+
   const o = keylang(dir, ["check"]);
   assert.equal(o.status, 1, o.stdout);
   assert.match(o.stdout, /flows\.md:4:3: static ok domain\.Store\.Store\.save: called from app\.Checkout\.Checkout\.buy\n/);
@@ -437,6 +446,7 @@ test("php: a callable passed as an argument (`\\Closure::fromCallable([$this, 'm
       "",
     ].join("\n"),
   });
+
   // The algo draft follows the callable into `placeOrderRun` and its callees, and says how.
   const draft = keylang(dir, ["draft", "flow", "Quote.QuoteManagement.QuoteManagement.placeOrder", "--mode", "algo", "--print"]);
   assert.equal(draft.status, 0, draft.stderr);
@@ -483,14 +493,17 @@ test("php: a callable passed as an argument (`\\Closure::fromCallable([$this, 'm
 
   // The snapshot: `via` and position on each edge; a callable passed is no call, so it is not counted as one.
   assert.equal(keylang(dir, ["map"]).status, 0);
+
   const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as Snapshot & {
     nodes: Record<string, { calls?: string[] }>;
     edges: { via?: string; site?: string; closure?: true; line: number; col: number }[];
     stats: { callsResolved: number };
   };
+
   const edges = index.edges
     .filter((e) => e.kind === "call" && e.source.startsWith("Quote.QuoteManagement.QuoteManagement.sortItems"))
     .map((e) => `${e.text} → ${e.target ?? "?"}${e.via ? ` via ${e.via}` : ""}${e.closure ? " (closure)" : ""}${e.site ? ` site ${e.site}` : ""} @${e.line}:${e.col}`);
+
   assert.deepEqual(edges, [
     "[self::class, 'compare'] → Quote.QuoteManagement.QuoteManagement.compare via callable-arg @26:23",
     "'Shop\\Infra\\Logger::flush' → Infra.Logger.Logger.flush via callable-arg @27:19",
@@ -516,6 +529,7 @@ test("php: init on a Laravel layout takes composer's PSR-4 root for the layers; 
     "storage/framework/views/0f1e.php": "<?php echo 1;\n",
     "routes/web.php": "<?php\nuse App\\Http\\Controllers\\PostController;\n\nRoute::post('/posts', [PostController::class, 'store']);\n",
   });
+
   assert.equal(keylang(dir, ["init"]).status, 0);
   assert.deepEqual(JSON.parse(readFileSync(join(dir, "keylang.json"), "utf8")).layers, { Http: ["app/Http/**"], Models: ["app/Models/**"] });
   const index = snapshot(dir);
@@ -581,8 +595,10 @@ test("php: spec-to-code puts a planned method into its class, a new class into a
 });
 
 const php = spawnSync("php", ["--version"], { encoding: "utf8" }).status === 0;
+
 /** A PHPUnit to run under `php`: `KEYLANG_PHPUNIT` (a phar or a script), else `phpunit` on the PATH. */
 const phpunit = php ? (process.env.KEYLANG_PHPUNIT ?? (spawnSync("sh", ["-c", "command -v phpunit"], { encoding: "utf8" }).stdout.trim() || null)) : null;
+
 const ADAPTER = join(root, "adapters/php/keylang_trace.php");
 
 const TRACE_FILES: Record<string, string> = {
@@ -648,6 +664,7 @@ function planOf(dir: string, flow: string): string[] {
   const plan = keylang(dir, ["trace-plan", flow]);
   assert.equal(plan.status, 0, plan.stderr);
   writeFileSync(join(dir, "plan.json"), plan.stdout);
+
   return (JSON.parse(plan.stdout) as { symbols: { id: string }[] }).symbols.map((s) => s.id);
 }
 
@@ -658,10 +675,13 @@ function traceEvents(dir: string, flow: string): { event: string; symbolId?: str
 test("php: `keylang trace-plan` + the PHP adapter give trace evidence; a generator and a file changed after the plan are not instrumented; a crash is incomplete", { skip: php ? false : "php is not installed" }, (t) => {
   const dir = repo(t, TRACE_FILES);
   assert.deepEqual(planOf(dir, "buy"), ["app.Checkout.Checkout.buy", "domain.Order.Order.add", "domain.Order.Order.each", "domain.Order.Order.total"]);
+
   const trace = (...args: string[]): { status: number | null; stdout: string; stderr: string } => {
     const r = spawnSync("php", [ADAPTER, "run.php", ...args], { cwd: dir, encoding: "utf8", env: { ...process.env, KEYLANG_TRACE: ".keylang/trace/buy.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_TRACE_TEST: "run.php > @flow buy" } });
+
     return { status: r.status, stdout: r.stdout, stderr: r.stderr };
   };
+
   const ran = trace();
   assert.equal(ran.status, 0, ran.stderr);
   // The program runs as without the adapter.
@@ -703,6 +723,7 @@ test("php: an instrumented function keeps its lines, its result and its exceptio
     "run.php": "<?php\nrequire __DIR__ . '/autoload.php';\n\n$order = new Shop\\Domain\\Order();\necho $order->total(), ' ', $order->where(), ' ', (new Shop\\Domain\\Draft())->total(), \"\\n\";\ntry {\n    (new Shop\\App\\Checkout())->fails();\n} catch (\\RuntimeException $e) {\n    echo $e->getMessage(), ' ', $e->getLine(), \"\\n\";\n}\n",
     "keylang/flows.md": "# flow buy\n\n- trigger app.Checkout.Checkout.fails\n  - step domain.Order.Order.total\n  - step domain.Order.Order.where\n",
   });
+
   planOf(dir, "buy");
   const r = spawnSync("php", [ADAPTER, "run.php"], { cwd: dir, encoding: "utf8", env: { ...process.env, KEYLANG_TRACE: ".keylang/trace/buy.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_TRACE_TEST: "run.php > @flow buy" } });
   assert.equal(r.status, 0, r.stderr);
@@ -723,6 +744,7 @@ test("php: keylang's PHPUnit extension writes a report bound to the snapshot, an
     "tests/bootstrap.php": `<?php\nrequire __DIR__ . '/../autoload.php';\nrequire ${JSON.stringify(join(root, "adapters/php/keylang_phpunit.php"))};\n`,
     "tests/BuyTest.php": "<?php\nnamespace Shop\\Tests;\n\nuse PHPUnit\\Framework\\TestCase;\nuse Shop\\App\\Checkout;\n\nfinal class BuyTest extends TestCase\n{\n    public function testBuy(): void\n    {\n        $this->assertSame(3, (new Checkout())->buy());\n    }\n\n    public function testLater(): void\n    {\n        $this->markTestSkipped('later');\n    }\n}\n",
   });
+
   assert.equal(keylang(dir, ["map"]).status, 0);
   planOf(dir, "buy");
   const r = spawnSync("php", ["-d", `auto_prepend_file=${ADAPTER}`, phpunit!], { cwd: dir, encoding: "utf8", env: { ...process.env, KEYLANG_TRACE: ".keylang/trace/buy.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_TRACE_TEST: undefined } });
@@ -764,6 +786,7 @@ test("php: `insteadof` and `as` in a trait `use` block decide which method `$thi
       "",
     ].join("\n"),
   });
+
   assert.equal(keylang(dir, ["map"]).status, 0);
   const index = snapshot(dir);
   const calls = index.edges.filter((e) => e.kind === "call" && e.source.startsWith("app.Greeter.Greeter.")).map((e) => `${e.text} -> ${e.target ?? "?"}`);
@@ -851,10 +874,12 @@ test("php: a local value has the class its declarations give — `new`, a declar
   const mapped = keylang(dir, ["map"]);
   assert.equal(mapped.status, 0, mapped.stderr);
   const index = snapshot(dir);
+
   const calls = index.edges
     .filter((e) => e.kind === "call" && e.source === "app.Checkout.Checkout.buy" && e.resolution === "resolved")
     .map((e) => `${e.line} ${e.target} ${e.provenance}${e.docblock ? ` ${e.docblock}` : ""}${(e as { indirect?: true }).indirect ? " indirect" : ""}`)
     .sort((a, b) => Number(a.split(" ")[0]) - Number(b.split(" ")[0]) || (a < b ? -1 : 1));
+
   assert.deepEqual(calls, [
     // `new Order()`: a fact of the syntax, as before.
     "15 domain.Order.Order syntactic",
@@ -952,10 +977,12 @@ test("php: a file `outside` the architecture is read as declarations only — me
   const mapped = keylang(dir, ["map"]);
   assert.equal(mapped.status, 0, mapped.stderr);
   const index = snapshot(dir);
+
   const calls = index.edges
     .filter((e) => e.kind === "call" && e.source.startsWith("app.Order.Order.") && e.resolution === "resolved")
     .map((e) => `${e.source.slice("app.Order.Order.".length)} ${e.line} ${e.target}${(e as { member?: string }).member ? ` ${(e as { member?: string }).member}` : ""} ${e.provenance}${e.docblock ? ` ${e.docblock}` : ""}${(e as { indirect?: true }).indirect ? " indirect" : ""}`)
     .sort();
+
   assert.deepEqual(calls, [
     // `parent::__construct()`: the outside base's constructor, two classes up.
     "__construct 11 outside.lib.Fw.DataObject Fw\\DataObject::__construct syntactic",
@@ -1005,6 +1032,7 @@ test("php: a method no class of a fully read chain declares runs the chain's `__
     "src/Helped.php": "<?php\nnamespace App;\n\nclass Helped extends Magic\n{\n    use \\Vendor\\Helpers;\n\n    public function save(): void\n    {\n        $this->getTitle();\n    }\n}\n",
     "src/User.php": "<?php\nnamespace App;\n\nclass User\n{\n    public function run(Model $model): void\n    {\n        $model->getName();\n        $model->save();\n    }\n}\n",
   });
+
   assert.equal(keylang(dir, ["map"]).status, 0);
   const index = snapshot(dir);
   const calls = index.edges.filter((e) => e.kind === "call" && e.resolution === "resolved").map((e) => `${e.source} ${e.text} -> ${e.target}`).sort();

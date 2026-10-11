@@ -34,15 +34,19 @@ export interface CartridgeLayout {
 
 /** `…/cartridges/<name>/cartridge/…`: the cartridges directory and the cartridge's name. */
 const CARTRIDGE_FILE = /^((?:.*\/)?cartridges)\/([^/]+)\/cartridge\//;
+
 const MODULES_FILE = /^((?:.*\/)?cartridges)\/modules\//;
 
 /** The cartridges the analysed files are in, by name; a name met twice is the first directory's. */
 export function cartridgeDirs(sources: Iterable<string>): Cartridge[] {
   const byName = new Map<string, Cartridge>();
+
   for (const path of sources) {
     const match = CARTRIDGE_FILE.exec(path);
+
     if (match !== null && !byName.has(match[2]!)) byName.set(match[2]!, { name: match[2]!, dir: `${match[1]}/${match[2]}` });
   }
+
   return [...byName.values()].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
 
@@ -59,15 +63,20 @@ export function cartridgeLayout(root: string, sources: Iterable<string>, configu
   const cartridges = cartridgeDirs(files);
   const byName = new Map(cartridges.map((c) => [c.name, c]));
   const modules = new Set<string>();
+
   for (const path of files) {
     const mod = MODULES_FILE.exec(path);
+
     if (mod !== null && !CARTRIDGE_FILE.test(path)) modules.add(`${mod[1]}/modules`);
   }
+
   const hint = cartridgePathHint(root);
+
   if (cartridges.length === 0 && hint.dw === false) return null;
   const order = (names: readonly string[]): Cartridge[] => names.flatMap((name) => byName.get(name) ?? []);
   let path: Cartridge[];
   let source: CartridgeLayout["source"];
+
   if (configured !== null) {
     path = order(configured);
     source = "keylang.json";
@@ -78,6 +87,7 @@ export function cartridgeLayout(root: string, sources: Iterable<string>, configu
     path = cartridges;
     source = "guessed";
   }
+
   return { cartridges, path, source, modules: [...modules].sort() };
 }
 
@@ -85,17 +95,21 @@ export function cartridgeLayout(root: string, sources: Iterable<string>, configu
 function cartridgePathHint(root: string): { names: string[] | null; from: "dw.json" | "package.json" | null; dw: boolean } {
   const dw = readJson(join(root, "dw.json"));
   const fromDw = dw === undefined ? null : (names(field(dw, "cartridgePath")) ?? names(field(dw, "cartridge_path")) ?? names(field(dw, "cartridgesPath")) ?? names(field(dw, "cartridge")));
+
   if (fromDw !== null) return { names: fromDw, from: "dw.json", dw: true };
   const pkg = readJson(join(root, "package.json"));
   const fromPkg = pkg === undefined ? null : (names(field(field(pkg, "sfcc"), "cartridgePath")) ?? names(field(pkg, "cartridgePath")));
+
   return { names: fromPkg, from: fromPkg === null ? null : "package.json", dw: dw !== undefined };
 }
 
 /** `a:b:c` as Business Manager writes it, or a list of names. */
 function names(value: unknown): string[] | null {
   const list = typeof value === "string" ? value.split(":") : Array.isArray(value) ? value : null;
+
   if (list === null) return null;
   const out = list.filter((name): name is string => typeof name === "string").map((name) => name.trim()).filter((name) => name !== "");
+
   return out.length > 0 ? out : null;
 }
 
@@ -106,12 +120,14 @@ function field(value: unknown, key: string): unknown {
 /** A JSON file's value; undefined when it is absent, null when it does not parse. */
 function readJson(path: string): unknown {
   let text: string;
+
   try {
     if (!statSync(path).isFile()) return undefined;
     text = readFileSync(path, "utf8");
   } catch {
     return undefined;
   }
+
   try {
     return JSON.parse(text.replace(/^﻿/, ""));
   } catch {
@@ -122,7 +138,9 @@ function readJson(path: string): unknown {
 /** The cartridge a root-relative file belongs to; null outside every cartridge. */
 export function cartridgeOf(layout: CartridgeLayout, file: string): Cartridge | null {
   const match = CARTRIDGE_FILE.exec(file);
+
   if (match === null) return null;
+
   return layout.cartridges.find((c) => c.dir === `${match[1]}/${match[2]}`) ?? null;
 }
 
@@ -138,26 +156,37 @@ export function cartridgeOf(layout: CartridgeLayout, file: string): Cartridge | 
 export function cartridgeAnswers(layout: CartridgeLayout, fromFile: string, spec: string, probe: (candidate: string) => string | null): string[] | "external" | null {
   if (spec === "dw" || spec.startsWith("dw/")) return "external";
   const found = (dirs: readonly string[], rest: string): string[] => dirs.flatMap((dir) => probe(`${dir}/${rest}`) ?? []);
+
   if (spec === SUPER_MODULE) {
     const own = cartridgeOf(layout, fromFile);
     const at = own === null ? -1 : layout.path.findIndex((c) => c.dir === own.dir);
+
     if (own === null || at === -1) return [];
     const rest = fromFile.slice(own.dir.length + 1);
+
     return found(layout.path.slice(at + 1).map((c) => c.dir), rest);
   }
+
   if (spec.startsWith("*/")) return found(layout.path.map((c) => c.dir), spec.slice(2));
+
   if (spec.startsWith("~/")) {
     const own = cartridgeOf(layout, fromFile);
+
     return own === null ? [] : found([own.dir], spec.slice(2));
   }
+
   const slash = spec.indexOf("/");
   const head = slash === -1 ? spec : spec.slice(0, slash);
   const named = layout.cartridges.find((c) => c.name === head);
+
   if (named !== undefined && slash !== -1) return found([named.dir], spec.slice(slash + 1));
+
   // `require('server')`: the `modules` folder beside the cartridges, as the platform has it; else a package.
   if (!spec.startsWith(".") && !spec.startsWith("/") && !spec.startsWith("#")) {
     const modules = found(layout.modules, spec);
+
     if (modules.length > 0) return modules;
   }
+
   return null;
 }

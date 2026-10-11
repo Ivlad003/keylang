@@ -101,6 +101,7 @@ const MAGENTO: Record<string, string> = {
 };
 
 const SERVICE = "sales.Model.OrderService.OrderService";
+
 const MAILER = "sales.Observer.Mailer.Mailer";
 
 const MAGENTO_FLOWS = lines(
@@ -143,12 +144,14 @@ function repo(t: { after: (fn: () => void) => void }, files: Record<string, stri
   writeTree(dir, { ...files, ...extra });
   const mapped = keylang(dir, ["map"]);
   assert.equal(mapped.status, 0, mapped.stderr);
+
   return dir;
 }
 
 function rows(dir: string, args: string[] = []): Row[] {
   const o = keylang(dir, ["check", "--format", "json", ...args]);
   assert.ok(o.stdout.startsWith("{"), o.stdout + o.stderr);
+
   return (JSON.parse(o.stdout) as { results: Row[] }).results;
 }
 
@@ -160,6 +163,7 @@ function one(all: Row[], file: string, line: number, criterion: string): Row {
   assert.equal(found.length, 1, `${file}:${line} ${criterion}: ${JSON.stringify(all.filter((r) => r.file === file), null, 1)}`);
   const row = found[0]!;
   const lead = `${row.verdict} ${row.area}: `;
+
   return { ...row, evidence: row.evidence.startsWith(lead) ? row.evidence.slice(lead.length) : row.evidence };
 }
 
@@ -228,6 +232,7 @@ test("magento: an unknown event is K204 with the nearest event; a fn after `trig
     "  - emits event events.order_place",
     "  - emits [events.nowhere](../map/events.md)",
   );
+
   const dir = repo(t, MAGENTO, { "keylang/flows/broken.md": broken });
   const o = keylang(dir, ["check"]);
   assert.equal(o.status, 1, o.stdout);
@@ -240,6 +245,7 @@ test("magento: an unknown event is K204 with the nearest event; a fn after `trig
   assert.doesNotMatch(o.stdout, /broken\.md:(3|7|12|13):\d+: static/);
   const parsed = JSON.parse(keylang(dir, ["parse", "--json", "keylang/flows/broken.md"]).stdout) as { diagnostics: { code: string }[] }[];
   assert.deepEqual(parsed[0]!.diagnostics, []);
+
   for (const code of ["K204", "K205"]) {
     const explained = keylang(dir, ["explain", code]);
     assert.equal(explained.status, 0, explained.stderr);

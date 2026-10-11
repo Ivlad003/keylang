@@ -63,10 +63,12 @@ interface Recording {
  */
 export function countSuggestion(state: Pick<State, "root" | "config">, source: "ghost" | "completion", field: "proposed" | "accepted" | "rejected", shown: number | null | undefined): void {
   if (state.config.kind === "missing-config") return;
+
   try {
     updateStats(state.root, (stats) => {
       const tally = (stats.suggestions[source] ??= { proposed: 0, accepted: 0, rejected: 0, ms: 0 });
       tally[field]++;
+
       if (field !== "proposed" && typeof shown === "number") tally.ms += Date.now() - shown;
     });
   } catch {
@@ -113,6 +115,7 @@ export class Assist {
   /** The session is where `spot` was taken: the same buffer, its text unchanged, the same mode, no merge on top. */
   private at(spot: Spot): boolean {
     const buffer = this.host.buffer();
+
     return !this.host.closed && buffer !== null && buffer.path === spot.path && buffer.version === spot.version && this.state.mode === spot.mode;
   }
 
@@ -135,6 +138,7 @@ export class Assist {
   /** After any input: a ghost request in flight for a place the session has left (buffer, text, mode, line) is aborted. */
   cancelStaleGhost(): void {
     const flight = this.ghostFlight;
+
     if (flight && (!this.at(flight.spot) || this.state.cursor.line !== flight.line)) this.cancelGhost();
   }
 
@@ -154,22 +158,28 @@ export class Assist {
     const buffer = this.host.buffer();
     const analysis = this.state.analysis;
     const agent = analysis ? selectedAgent(analysis.config.agent) : null;
+
     if (!buffer || !analysis?.snapshot || agent === null || this.state.completion || this.state.activeOperation !== null) return;
     const { line, col } = this.state.cursor;
+
     if (!ghostSignal(buffer.path, buffer.text, line, col)) return;
     const spot = this.spot(buffer);
     const request = ++this.ghostRequest;
     this.ghostTimer = setTimeout(() => {
       this.ghostTimer = null;
+
       if (request !== this.ghostRequest || this.state.activeOperation !== null) return this.host.settled();
       const text = buffer.text;
       const flight: GhostFlight = { spot, line, controller: new AbortController() };
       this.ghostFlight = flight;
+
       const work = (async () => {
         const { llmClient, isCancelled } = await import("../llm.ts");
         const setup = llmClient(analysis.config.agent, { root: this.state.root });
+
         if ("missing" in setup || flight.controller.signal.aborted) return;
         let variants: string[];
+
         try {
           variants = await ghostSuggestions(analysis, setup.client, buffer.path, text, line, this.host.contextPack(), flight.controller.signal);
         } catch (error) {
@@ -177,6 +187,7 @@ export class Assist {
           if (isCancelled(error)) return;
           throw error;
         }
+
         // The person typed on, moved, or a newer request was made meanwhile: a suggestion for older text is not shown.
         if (request !== this.ghostRequest || this.state.activeOperation !== null || !this.at(spot) || this.state.cursor.line !== line || variants.length === 0) return;
         this.state.ghost = { path: spot.path, version: spot.version, line, variants, index: 0, shown: Date.now() };
@@ -188,6 +199,7 @@ export class Assist {
         .finally(() => {
           if (this.ghostFlight === flight) this.ghostFlight = null;
         });
+
       this.host.track(work);
       // An agent CLI starts a process per request: it waits for a longer pause.
     }, analysis.config.ghost.delay ?? (isCliAgent(agent) ? 1500 : 400));
@@ -196,10 +208,13 @@ export class Assist {
   /** `Tab` on a ghost line: taken only into the text it was shown for. */
   acceptGhost(ghost: NonNullable<State["ghost"]>): void {
     const buffer = this.host.buffer();
+
     if (!buffer || buffer.path !== ghost.path || buffer.version !== ghost.version || this.state.mode !== "edit") {
       countSuggestion(this.state, "ghost", "rejected", ghost.shown);
+
       return;
     }
+
     const text = ghost.variants[ghost.index]!;
     this.host.edit((lines, cursor) => {
       lines[ghost.line] = text;
@@ -212,6 +227,7 @@ export class Assist {
   /** Anything but `Tab` and `Alt+]` drops a shown ghost line. */
   dropGhost(): void {
     const ghost = this.state.ghost;
+
     if (!ghost) return;
     this.state.ghost = null;
     countSuggestion(this.state, "ghost", "rejected", ghost.shown);
@@ -228,60 +244,82 @@ export class Assist {
    */
   voice(): void {
     const current = this.recording;
+
     if (current) {
       if (current.phase === "recognizing") {
         this.state.message = "voice: still recognizing the last recording";
+
         return;
       }
+
       current.stopped = true;
       current.mic?.stop();
       this.state.message = "voice: recognizing…";
+
       return;
     }
+
     const analysis = this.state.analysis;
     const buffer = this.host.buffer();
+
     if (!analysis || !buffer) {
       this.state.message = "analysis is still running";
+
       return;
     }
+
     const spot = this.spot(buffer);
     const line = this.state.cursor.line;
     // Set before the first `await`: a second Ctrl+R while the microphone opens stops this recording, not opens another.
     const recording: Recording = { phase: "starting", stopped: false, mic: null };
     this.recording = recording;
+
     const work = (async () => {
       const { localAvailable } = await import("../voice-local.ts");
       const engine = voiceEngine(analysis.config.voice, await localAvailable());
+
       if ("missing" in engine) throw new Error(engine.missing);
       const mic = await this.microphone();
+
       if (!mic) throw new Error("voice: no microphone: install the optional decibri, or speak in `keylang web`");
       recording.mic = mic;
       recording.phase = "recording";
+
       if (recording.stopped || this.host.closed) mic.stop();
       else {
         this.state.message = "● voice: recording… Ctrl+R stops";
         this.host.draw();
       }
+
       const chunks: Int16Array[] = [];
+
       for await (const chunk of mic.chunks) chunks.push(chunk);
       recording.phase = "recognizing";
       const pcm = new Int16Array(chunks.reduce((n, c) => n + c.length, 0));
       let at = 0;
+
       for (const c of chunks) {
         pcm.set(c, at);
         at += c.length;
       }
+
       if (pcm.length === 0) {
         this.state.message = "voice: nothing was recorded";
+
         return;
       }
+
       const terms = glossary(analysis, buffer.path, buffer.text, line);
       const text = engine.kind === "openrouter" ? await transcribeOpenRouter(engine, pcm, terms) : await (await import("../voice-local.ts")).transcribeLocal(engine.modelFile, pcm, terms);
+
       if (this.host.closed || text.trim() === "") return;
+
       if (!this.at(spot)) {
         this.state.message = `voice: «${text.trim()}» not inserted: ${buffer.path} changed or edit mode was left while recording`;
+
         return;
       }
+
       this.insertSpeech(text, line, analysis);
     })()
       .catch((error: unknown) => {
@@ -290,11 +328,13 @@ export class Assist {
       .finally(() => {
         if (this.recording === recording) this.recording = null;
       });
+
     this.host.track(work);
   }
 
   private insertSpeech(text: string, line: number, analysis: Analysis): void {
     const buffer = this.host.buffer();
+
     if (!buffer) return;
     const current = buffer.text.split("\n")[line] ?? "";
     const indent = /^\s*/.exec(current)![0];

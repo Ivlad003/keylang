@@ -29,6 +29,7 @@ export function lf(text: string): string {
 export function splitEol(raw: string): { text: string; eol: Eol } {
   const crlf = raw.split("\r\n").length - 1;
   const lfs = raw.split("\n").length - 1;
+
   return crlf > 0 && crlf === lfs ? { text: lf(raw), eol: "\r\n" } : { text: raw, eol: "\n" };
 }
 
@@ -43,7 +44,9 @@ export function withEol(text: string, eol: Eol): string {
  */
 export function landingPath(abs: string): string {
   const target = landing(abs);
+
   if (target === null) throw new Error(`${abs}: too many levels of symbolic links`);
+
   return target;
 }
 
@@ -64,6 +67,7 @@ function destination(abs: string, options: WriteOptions): string {
 /** Why a write to `abs` may not happen — it lands outside `boundary` — or null when it stays inside. */
 export function leavesBoundary(boundary: string, abs: string, options: WriteOptions = {}): string | null {
   if (within(destination(abs, options), landingPath(boundary))) return null;
+
   return `${abs} leads out of ${boundary} through a link`;
 }
 
@@ -74,6 +78,7 @@ export function leavesBoundary(boundary: string, abs: string, options: WriteOpti
  */
 export function writeInside(boundary: string, abs: string, text: string, options: WriteOptions = {}): void {
   const problem = leavesBoundary(boundary, abs, options);
+
   if (problem) throw new Error(`${problem}; nothing written`);
   // The one atomic write of the repository: a temporary file renamed over the target, permissions kept.
   writeAtomic(destination(abs, options), text);
@@ -82,6 +87,7 @@ export function writeInside(boundary: string, abs: string, text: string, options
 /** Removes the file a write to `abs` would change, when it is inside `boundary`; a missing file is no error. */
 export function removeInside(boundary: string, abs: string, options: WriteOptions = {}): void {
   const problem = leavesBoundary(boundary, abs, options);
+
   if (problem) throw new Error(`${problem}; nothing removed`);
   rmSync(destination(abs, options), { force: true });
 }

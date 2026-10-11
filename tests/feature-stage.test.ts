@@ -14,13 +14,16 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
 
 const LAYERS = { languages: ["typescript"], module: "file", layers: { app: ["src/app/**"], domain: ["src/domain/**"] } };
+
 const SHOP = "export function buy(id: string): void {\n  pay(id);\n}\nexport function pay(id: string): void {}\n";
 
 function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8" });
+
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
@@ -28,19 +31,24 @@ function repo(t: TestContext, features: Record<string, string>): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-feature-stage-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const files: Record<string, string> = { "keylang.json": `${JSON.stringify(LAYERS)}\n`, "src/app/shop.ts": SHOP, "src/domain/order.ts": "export type Order = { id: string };\n" };
+
   for (const [slug, text] of Object.entries(features)) files[`keylang/features/${slug}.md`] = text;
+
   for (const [path, text] of Object.entries(files)) {
     mkdirSync(join(dir, dirname(path)), { recursive: true });
     writeFileSync(join(dir, path), text);
   }
+
   return dir;
 }
 
 type Item = { kind: string; id: string; line: number; col: number; reason: string; stage: string };
+
 type Report = { done: boolean; stage: string; gaps: Item[]; hints: Item[] };
 
 function report(dir: string, slug: string): { status: number | null; body: Report } {
   const r = keylang(dir, ["feature", slug, "--format", "json"]);
+
   return { status: r.status, body: JSON.parse(r.stdout) as Report };
 }
 
@@ -60,6 +68,7 @@ test("feature: a line keylang cannot read is a diagnostic gap at its position, a
     unread: "# flow unread\n\n- trigger app.shop.buy\n  - foo bar\n  - step app.shop.pay\n",
     dangling: "# flow dangling\n\n- trigger app.shop.buy\n  - step app.shop.nothere\n",
   });
+
   const unread = report(dir, "unread");
   assert.equal(unread.status, 1);
   assert.deepEqual(
@@ -109,6 +118,7 @@ test("feature: only the implementation missing is ready; nothing missing is done
     refund: "# flow refund\n\n- planned fn app.shop.refund (id: string) → void\n- trigger app.shop.buy\n  - step app.shop.refund\n",
     buy: "# flow buy\n\n- trigger app.shop.buy\n  - step app.shop.pay\n",
   });
+
   const ready = report(dir, "refund");
   assert.equal(ready.status, 1);
   assert.deepEqual([ready.body.done, ready.body.stage, ready.body.hints], [false, "ready", []]);

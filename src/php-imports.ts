@@ -44,22 +44,27 @@ export class PhpResolver implements SourceResolver {
   constructor(root: string, sources: ReadonlySet<string> = new Set(), files: readonly FileFacts[] = []) {
     this.root = root;
     this.sources = sources;
+
     for (const facts of files) {
       for (const symbol of facts.symbols ?? []) {
         const key = asciiLowerCase(symbol.qualified);
         const table = this.declared[symbol.table];
         table.set(key, [...(table.get(key) ?? []), facts.path].sort());
         const parts = key.split("\\");
+
         for (let k = 1; k < parts.length; k++) this.namespaces.add(parts.slice(0, k).join("\\"));
       }
     }
+
     for (const lock of LOCKS) {
       const text = readText(join(root, lock));
       this.inputs.set(lock, text);
+
       if (text === null) continue;
       this.packages.push(...packagePrefixes(text));
       break;
     }
+
     this.packages.sort((a, b) => b.prefix.length - a.prefix.length || (a.prefix < b.prefix ? -1 : a.prefix > b.prefix ? 1 : 0));
   }
 
@@ -67,27 +72,38 @@ export class PhpResolver implements SourceResolver {
     if (spec.startsWith("include ")) return this.include(fromFile, spec.slice("include ".length));
     const kind = spec.startsWith("function ") ? "function" : spec.startsWith("const ") ? "const" : "class";
     const names = (kind === "class" ? spec : spec.slice(kind.length + 1)).split(" ?? ").map((name) => name.replace(/^\\/, ""));
+
     for (const name of names) {
       const files = this.declared[kind].get(asciiLowerCase(name));
+
       // A name declared twice (a polyfill, a conditional declaration) is the first file's, by path.
       if (files) return files[0] === fromFile ? { kind: "local" } : { kind: "internal", file: files[0]! };
     }
+
     const name = names[names.length - 1]!;
     const lower = asciiLowerCase(name);
+
     if (kind === "class" && this.namespaces.has(lower)) return { kind: "generated" };
     const pkg = this.packages.find((p) => lower.startsWith(p.prefix));
+
     if (pkg) return { kind: "external", pkg: pkg.name };
+
     // A global name nobody declares, or one of PHP's own namespaces: PHP itself (or a package's global function).
     if (!lower.includes("\\") || PHP_NAMESPACES.some((ns) => lower.startsWith(ns))) return { kind: "stdlib" };
+
     return { kind: "unresolved" };
   }
 
   /** `include <path>`: an analysed file, a file on disk keylang does not index, or nothing; composer's own files are generated. */
   private include(fromFile: string, path: string): Resolution {
     if (path.startsWith("/") || path.startsWith("../") || path === "..") return { kind: "unresolved" };
+
     if (path === "vendor" || path.startsWith("vendor/")) return { kind: "generated" };
+
     if (path === fromFile) return { kind: "local" };
+
     if (this.sources.has(path) || existsSync(join(this.root, path))) return { kind: "internal", file: path };
+
     return { kind: "unresolved" };
   }
 }
@@ -95,27 +111,35 @@ export class PhpResolver implements SourceResolver {
 /** Namespace prefixes of each package a composer lock or `installed.json` lists; none when it is no such JSON. */
 export function packagePrefixes(text: string): { prefix: string; name: string }[] {
   let value: unknown;
+
   try {
     value = JSON.parse(text);
   } catch {
     // A broken lock names no package: their imports stay unresolved, and so visible.
     return [];
   }
+
   // `composer.lock` and Composer 2's `installed.json` hold `packages`; Composer 1's `installed.json` is the list itself.
   const lists = Array.isArray(value) ? [value] : isRecord(value) ? [value.packages, value["packages-dev"]] : [];
   const out: { prefix: string; name: string }[] = [];
+
   for (const list of lists) {
     if (!Array.isArray(list)) continue;
+
     for (const pkg of list) {
       if (!isRecord(pkg) || typeof pkg.name !== "string" || !isRecord(pkg.autoload)) continue;
+
       for (const field of ["psr-4", "psr-0"]) {
         const map = pkg.autoload[field];
+
         if (!isRecord(map)) continue;
+
         // An empty prefix claims every name: no namespace can be told to be this package's.
         for (const prefix of Object.keys(map)) if (prefix !== "") out.push({ prefix: asciiLowerCase(prefix), name: pkg.name });
       }
     }
   }
+
   return out;
 }
 

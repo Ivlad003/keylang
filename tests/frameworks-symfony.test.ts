@@ -42,6 +42,7 @@ const FLOW = [
 ].join("\n");
 
 const iface = (ns: string, name: string, method: string): string => php([`namespace ${ns};`, "", `interface ${name}`, "{", `    public function ${method}(): void;`, "}"]);
+
 const impl = (name: string, contract: string, method: string): string => php(["namespace App\\Infra;", "", `use App\\Contract\\${contract};`, "", `class ${name} implements ${contract}`, "{", `    public function ${method}(): void`, "    {", "    }", "}"]);
 
 const SERVICES = [
@@ -248,12 +249,14 @@ const APP: Record<string, string> = {
 function app(t: TestContext, extra: Record<string, string> = {}): string {
   const dir = tempDir(t, "keylang-symfony-");
   writeTree(dir, { ...APP, ...extra });
+
   return dir;
 }
 
 function snapshotOf(dir: string): AnalysisSnapshot {
   const run = keylang(dir, ["map"]);
   assert.equal(run.status, 0, run.stderr);
+
   return JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as AnalysisSnapshot;
 }
 
@@ -309,6 +312,7 @@ test("symfony: a flow through the container and the dispatcher is static ok in b
   assert.match(behavior.stdout, /flows\.md:7:5: static ok subscribers\.OrderSubscriber\.OrderSubscriber\.onOrderPlaced: reachable from service\.OrderService\.OrderService\.place via events\.App-Event-OrderPlaced /);
   assert.match(behavior.stdout, /flows\.md:8:5: static ok handlers\.GenerateInvoiceHandler\.GenerateInvoiceHandler\.__invoke: reachable from [^\n]* via events\.App-Message-GenerateInvoice \([^\n]*the observer `handler GenerateInvoiceHandler`/);
   const shape = keylang(dir, ["check", "--static", "shape"]);
+
   for (const line of [5, 6, 7, 8]) assert.match(shape.stdout, new RegExp(`flows\\.md:${line}:5: static unverified `));
   assert.match(shape.stdout, /flows\.md:4:3: static ok service\.OrderService\.OrderService\.place/);
 
@@ -359,9 +363,11 @@ test("symfony: `frameworks: []` turns the adapter off — ok becomes unverified,
   const before = verdicts(on.stdout);
   const after = verdicts(r.stdout);
   assert.equal(before.size, 5);
+
   for (const [at, verdict] of before) {
     const now = after.get(at);
     assert.ok(now === verdict || now === "unverified", `${at}: ${verdict} → ${now}`);
   }
+
   for (const line of [5, 6, 7, 8]) assert.equal(after.get(`keylang/flows.md:${line}:5`), "unverified");
 });

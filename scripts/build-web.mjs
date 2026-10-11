@@ -28,12 +28,15 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 function parseOutdir(argv) {
   const at = argv.indexOf("--outdir");
+
   if (at === -1) return join(root, "dist/web");
   const value = argv[at + 1];
+
   if (!value) {
     process.stderr.write("usage: build-web.mjs [--outdir <dir>]\n");
     process.exit(2);
   }
+
   return resolve(value);
 }
 
@@ -41,8 +44,10 @@ function parseOutdir(argv) {
 function packageDir(input) {
   const parts = input.split(/[\\/]/);
   const at = parts.lastIndexOf("node_modules");
+
   if (at === -1) return null;
   const name = parts[at + 1]?.startsWith("@") ? parts.slice(at + 1, at + 3) : parts.slice(at + 1, at + 2);
+
   return join(root, ...parts.slice(0, at + 1), ...name);
 }
 
@@ -67,14 +72,18 @@ const leanOutline = {
       const source = readFileSync(args.path, "utf8");
       const imported = "import { getDefaultPlugins } from '../plugin/index.js';";
       const used = "plugins: getDefaultPlugins(),";
+
       if (!source.includes(imported) || !source.includes(used)) throw new Error(`build-web: ${args.path} changed; review the lean-outline patch`);
+
       return { contents: source.replace(imported, "").replace(used, "plugins: [],"), loader: "js" };
     });
   },
 };
 
 const require = createRequire(import.meta.url);
+
 const shims = join(root, "web/worker/shims");
+
 /** `node:<name>` → the worker's shim; a module the pipeline should never reach in the browser has none and fails the build. */
 const NODE_SHIMS = {
   fs: "fs.ts",
@@ -87,6 +96,7 @@ const NODE_SHIMS = {
   os: "unavailable.ts",
   zlib: "unavailable.ts",
 };
+
 /** Packages a model would need: never called in the browser. */
 const UNAVAILABLE_PACKAGES = new Set(["@anthropic-ai/sdk", "eventsource-parser"]);
 
@@ -96,7 +106,9 @@ const browserNode = {
     builder.onResolve({ filter: /^node:/ }, (args) => {
       const name = args.path.slice("node:".length).split("/")[0];
       const shim = NODE_SHIMS[name];
+
       if (!shim) return { errors: [{ text: `build-web: ${args.path} (imported by ${relative(root, args.importer)}) has no browser shim; the analysis in the browser must not reach it` }] };
+
       return { path: join(shims, shim) };
     });
     // A package that names a builtin without `node:` (`import { EOL } from "os"` of `@mrleebo/prisma-ast`) gets the same shim.
@@ -114,8 +126,10 @@ const browserNode = {
     // `import.meta.url` of keylang's own modules: a path under /keylang/ (not inside a string: the TypeScript extractor compares text with it).
     builder.onLoad({ filter: /[\\/]src[\\/].*\.ts$/ }, (args) => {
       const rel = relative(root, args.path).split(sep).join("/");
+
       if (!rel.startsWith("src/")) return undefined;
       const source = readFileSync(args.path, "utf8");
+
       return { contents: source.replace(/(?<!["'`])\bimport\.meta\.url\b/g, JSON.stringify(`file:///keylang/${rel}`)), loader: "ts" };
     });
   },
@@ -130,19 +144,28 @@ const browserNode = {
 function licenseOfManifest(dir) {
   const { name, license, author } = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
   const holder = typeof author === "string" ? author : (author?.name ?? name);
+
   if (license === "ISC") return `ISC License\n\nCopyright (c) ${holder}\n\nPermission to use, copy, modify, and/or distribute this software for any\npurpose with or without fee is hereby granted, provided that the above\ncopyright notice and this permission notice appear in all copies.\n\nTHE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES\nWITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF\nMERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR\nANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES\nWHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN\nACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF\nOR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.\n\n(${name}: no license file in the package; the text of its package.json \`license\`)\n`;
+
   if (license === "MIT") return `MIT License\n\nCopyright (c) ${holder}\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the "Software"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.\n\n(${name}: no license file in the package; the text of its package.json \`license\`)\n`;
+
   // Apache-2.0 is keylang's own license: its standard text is the repository's LICENSE.
   if (license === "Apache-2.0") return `${name}: Apache License 2.0 (no license file in the package; the text of its package.json \`license\`), by ${holder}\n\n${readFileSync(join(root, "LICENSE"), "utf8")}`;
   throw new Error(`build-web: ${name} has no license file to ship with the bundle (license: ${license ?? "none"})`);
 }
 
 const outdir = parseOutdir(process.argv.slice(2));
+
 mkdirSync(outdir, { recursive: true });
+
 const common = { absWorkingDir: root, bundle: true, format: "iife", platform: "browser", target: "es2022", minify: true, legalComments: "none", metafile: true, write: false, outdir, logLevel: "warning" };
+
 const page = await build({ ...common, entryPoints: [join(root, "web/src/diagrams.ts")], plugins: [leanOutline] });
+
 const { version } = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+
 const resources = Object.fromEntries(["data-logic.json", "integrations.json"].map((name) => [name, readFileSync(join(root, "resources", name), "utf8")]));
+
 const worker = await build({
   ...common,
   entryPoints: { analysis: join(root, "web/worker/analysis.ts") },
@@ -162,25 +185,37 @@ for (const file of [...page.outputFiles, ...worker.outputFiles]) writeAtomic(fil
 
 // The grammars and the tree-sitter runtime beside the worker, with the grammars' version (as scripts/copy-wasm.mjs writes it for dist/wasm).
 const wasmOut = join(outdir, "wasm");
+
 mkdirSync(wasmOut, { recursive: true });
+
 const grammarsManifest = require.resolve("@vscode/tree-sitter-wasm/package.json");
+
 const wasmFiles = [];
+
 for (const grammar of GRAMMARS) {
   writeAtomic(join(wasmOut, wasmFile(grammar)), readFileSync(join(dirname(grammarsManifest), "wasm", wasmFile(grammar))));
   wasmFiles.push(`wasm/${wasmFile(grammar)}`);
 }
+
 writeAtomic(join(wasmOut, "web-tree-sitter.wasm"), readFileSync(join(dirname(require.resolve("web-tree-sitter")), "web-tree-sitter.wasm")));
+
 const grammars = JSON.parse(readFileSync(grammarsManifest, "utf8"));
+
 writeAtomic(join(wasmOut, "grammars.json"), `${JSON.stringify({ package: grammars.name, version: grammars.version }, null, 2)}\n`);
+
 wasmFiles.push("wasm/web-tree-sitter.wasm", "wasm/grammars.json");
 
 // One license per bundled or copied package: the minified bundles drop the comments.
 const packages = new Set([dirname(grammarsManifest)]);
+
 for (const input of [...Object.keys(page.metafile.inputs), ...Object.keys(worker.metafile.inputs)]) {
   const dir = packageDir(input);
+
   if (dir) packages.add(dir);
 }
+
 const shipped = [];
+
 for (const dir of [...packages].sort()) {
   const { name } = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
   const license = readdirSync(dir).find((file) => /^(licen[cs]e|copying)(\.(md|txt))?$/i.test(file));
@@ -188,8 +223,12 @@ for (const dir of [...packages].sort()) {
   writeAtomic(join(outdir, target), license ? readFileSync(join(dir, license)) : licenseOfManifest(dir));
   shipped.push(target);
 }
+
 // What a static site of `web --export` copies into its assets/.
 const site = ["diagrams.js", "diagrams.css", "analysis.js", ...wasmFiles, ...shipped.sort()];
+
 writeAtomic(join(outdir, "site.json"), `${JSON.stringify(site, null, 2)}\n`);
+
 const sizes = [...page.outputFiles, ...worker.outputFiles].map((file) => `${relative(root, file.path).split(sep).join("/")} ${Math.round(file.contents.length / 1024)} KiB`);
+
 process.stderr.write(`build-web: ${sizes.join(", ")}; ${wasmFiles.length} wasm files; ${shipped.join(", ") || "no licenses"}\n`);

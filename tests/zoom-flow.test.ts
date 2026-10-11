@@ -14,6 +14,7 @@ import { checkoutRepo, KEY } from "./tui-fixture.ts";
 import { VirtualTerminal } from "./vt.ts";
 
 const sleep = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms));
+
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** A second flow through the domain: a static fail (create never calls save) and a planned step. */
@@ -26,6 +27,7 @@ test("flow overlay model: steps numbered in the order written on the level's uni
   const top = flowOverlay(analysis, "probe", ZOOM_ROOT, mark)!;
   assert.deepEqual([...top.steps], [["domain", [1, 3]], ["infrastructure", [2]]]);
   assert.deepEqual(top.sequence, [{ layer: "domain", first: 1, last: 1 }, { layer: "infrastructure", first: 2, last: 2 }, { layer: "domain", first: 3, last: 3 }]);
+
   // Each number carries the mark of its line, as the gutter shows it.
   for (const [n, step] of top.marks) assert.equal(step.mark, evidenceOf(analysis, "keylang/flows/probe.md").get(step.line)?.mark ?? null, `step ${n}`);
   // The trigger's trace is configured but absent: unverified, as its gutter says.
@@ -42,17 +44,20 @@ function session(root: string, cols = 140, rows = 32): { app: App; send: (keys: 
   const vt = new VirtualTerminal(cols, rows);
   const app = new App({ root, cols, rows });
   app.attach({ write: (ansi) => vt.feed(ansi) }, cols, rows);
+
   return { app, send: (keys) => app.input(keys), text: () => vt.text(), lines: () => vt.lines() };
 }
 
 function zoom(s: ReturnType<typeof session>): void {
   s.send(KEY.ctrlP);
+
   for (const ch of "zoom") s.send(ch);
   s.send(KEY.enter);
 }
 
 function pickFlow(s: ReturnType<typeof session>, name: string): void {
   s.send("f");
+
   for (const ch of name) s.send(ch);
   s.send(KEY.enter);
 }
@@ -90,6 +95,7 @@ test("tui zoom flow: f picks a flow, its marks are the gutter's, F goes to the n
   s.send("f");
   assert.equal(s.app.state.prompt?.kind, "flow");
   assert.deepEqual(s.app.state.prompt?.ids, ["checkout", "probe"]);
+
   for (const ch of "probe") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.zoom?.flow, "probe");

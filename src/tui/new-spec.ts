@@ -22,6 +22,7 @@ export const SPEC_KINDS: readonly { kind: SpecKind; label: string }[] = [
 /** The path the form starts with: under the spec directory (`specDir`, relative and POSIX; "" is the root). */
 export function defaultSpecPath(kind: SpecKind, specDir: string): string {
   const base = specDir === "" ? "" : `${specDir}/`;
+
   switch (kind) {
     case "flow":
       return `${base}flows/`;
@@ -39,12 +40,14 @@ export function defaultSpecPath(kind: SpecKind, specDir: string): string {
 /** The flow name a path suggests: its file name without `.md`, when that is a valid name; else "". */
 export function suggestedFlowName(path: string): string {
   const name = basename(path, ".md");
+
   return isSegment(name) ? name : "";
 }
 
 /** Why `name` cannot be a flow name, or null. The heading grammar takes one segment (format §Appendix A). */
 export function flowNameProblem(name: string): string | null {
   if (name === "") return "a flow needs a name";
+
   return isSegment(name) ? null : `\`${name}\` is not a flow name: a letter or _ first, then letters, digits, _ or -`;
 }
 
@@ -75,8 +78,11 @@ export function specTemplate(kind: SpecKind, name: string): string {
  */
 export function newSpecProblem(root: string, specDir: string, path: string, generated: (path: string) => boolean = () => false): string | null {
   if (path === "") return "type a path";
+
   if (path.includes("\\") || posix.isAbsolute(path) || win32.isAbsolute(path)) return "not a plain relative path";
+
   if (!path.endsWith(".md")) return "not a Markdown spec: the path ends with .md";
+
   try {
     // The proposal gate already refuses the explained map, saved explanations and a directory at the path.
     return proposalProblem(root, specDir, path, generated)?.replace("a proposal changes specs only", "new specs go there") ?? null;

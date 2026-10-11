@@ -8,6 +8,7 @@ import { Buffer as BufferPolyfill } from "buffer";
 const noop = (): boolean => true;
 
 export const Buffer = BufferPolyfill;
+
 export const process = {
   env: {} as Record<string, string | undefined>,
   platform: "linux",
@@ -28,6 +29,7 @@ export const process = {
   nextTick: (fn: (...args: unknown[]) => void, ...args: unknown[]): void => void queueMicrotask(() => fn(...args)),
   hrtime: Object.assign((): [number, number] => {
     const ms = performance.now();
+
     return [Math.floor(ms / 1000), Math.round((ms % 1000) * 1e6)];
   }, { bigint: (): bigint => BigInt(Math.round(performance.now() * 1e6)) }),
   memoryUsage: (): { heapUsed: number; rss: number } => ({ heapUsed: 0, rss: 0 }),

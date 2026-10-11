@@ -146,7 +146,9 @@ export interface DiagramProcess {
 export type Positions = Readonly<Record<string, { x: number; y: number; w?: number; h?: number }>>;
 
 export const DEFAULT_DEPTH = 2;
+
 export const MAX_DEPTH = 10;
+
 /** An entry's call tree stops growing here; `reason` says it was cut. */
 export const MAX_NODES = 400;
 
@@ -155,44 +157,61 @@ export const VIEW_KINDS = ["flow", "entry", "event", "layers", "process", "modul
 /** A view from the query of `GET /api/diagram`, or why it names none. */
 export function parseView(query: URLSearchParams): DiagramView | string {
   const view = query.get("view");
+
   const need = (name: string): string | null => {
     const value = query.get(name);
+
     return value === null || value === "" ? null : value;
   };
+
   switch (view) {
     case "flow":
     case "event": {
       const name = need("name");
+
       return name === null ? `view=${view} needs name=` : { kind: view, name };
     }
+
     case "entry": {
       const id = need("id");
+
       if (id === null) return "view=entry needs id=";
       const depth = query.get("depth");
+
       if (depth === null) return { kind: "entry", id };
       const n = /^\d+$/.test(depth) ? Number(depth) : NaN;
+
       return n >= 1 && n <= MAX_DEPTH ? { kind: "entry", id, depth: n } : `depth must be 1–${MAX_DEPTH}`;
     }
+
     case "layers":
       return { kind: "layers" };
     case "module": {
       const id = need("id");
+
       return id === null ? "view=module needs id=" : { kind: "module", id };
     }
+
     case "process": {
       const domain = need("domain") ?? need("name");
+
       return domain === null ? "view=process needs domain=" : { kind: "process", domain };
     }
+
     case "system":
     case "er": {
       const name = need("name");
+
       return name === null ? `view=${view} needs name=` : { kind: view, name };
     }
+
     case "sequence": {
       const name = need("name");
       const seq = need("seq");
+
       return name === null || seq === null ? "view=sequence needs name= and seq=" : { kind: "sequence", name, seq };
     }
+
     default:
       return `unknown view: expected one of ${VIEW_KINDS.join(", ")}`;
   }
@@ -206,19 +225,29 @@ export function parseView(query: URLSearchParams): DiagramView | string {
 export function viewOfKey(key: string): { view: DiagramView; discovered: boolean } | null {
   if (key === "layers") return { view: { kind: "layers" }, discovered: false };
   const at = key.indexOf(":");
+
   if (at === -1) return null;
   const kind = key.slice(0, at);
   const rest = key.slice(at + 1);
+
   if (rest === "") return null;
+
   if (kind === "flow" || kind === "discovered") return { view: { kind: "flow", name: rest }, discovered: kind === "discovered" };
+
   if (kind === "entry") return { view: { kind: "entry", id: rest }, discovered: false };
+
   if (kind === "process") return { view: { kind: "process", domain: rest }, discovered: false };
+
   if (kind === "module") return { view: { kind: "module", id: rest }, discovered: false };
+
   if (kind === "system" || kind === "er") return { view: { kind, name: rest }, discovered: false };
+
   if (kind === "sequence") {
     const slash = rest.indexOf("/");
+
     return slash > 0 && slash < rest.length - 1 ? { view: { kind: "sequence", name: rest.slice(0, slash), seq: rest.slice(slash + 1) }, discovered: false } : null;
   }
+
   return null;
 }
 
@@ -261,6 +290,7 @@ export function flowIds(flow: Flow): string[] {
     if (item.kind === "trigger" || item.kind === "step" || (item.kind === "then" && item.form === "ref")) ids.add(item.target.target);
     else if (item.kind === "calls") for (const ref of item.targets) ids.add(ref.target);
   });
+
   return [...ids];
 }
 
@@ -268,12 +298,14 @@ export function flowIds(flow: Flow): string[] {
 export function flowListing(snapshot: AnalysisSnapshot | null, spec: SpecIR): FlowListing[] {
   const seen = new Set<string>();
   const out: FlowListing[] = [];
+
   for (const flow of spec.flows) {
     if (seen.has(flow.name)) continue;
     seen.add(flow.name);
     const trigger = flow.triggers[0]?.target.target ?? null;
     out.push({ name: flow.name, file: flow.file, line: flow.span.start.line, trigger, layer: trigger === null ? null : (layerOf(snapshot, trigger) ?? null), ids: flowIds(flow) });
   }
+
   return out;
 }
 
@@ -296,8 +328,10 @@ function useIn(flow: Flow, id: string): number | null {
   walkFlow(flow, (item) => {
     if (line !== null) return;
     const targets = item.kind === "trigger" || item.kind === "step" || (item.kind === "then" && item.form === "ref") ? [item.target.target] : item.kind === "calls" ? item.targets.map((ref) => ref.target) : [];
+
     if (targets.some((target) => covers(id, target))) line = item.span.start.line;
   });
+
   return line;
 }
 
@@ -309,34 +343,46 @@ function useIn(flow: Flow, id: string): number | null {
  */
 export function usagesOf(snapshot: AnalysisSnapshot | null, spec: SpecIR, discovered: SpecIR | null, id: string): Usages {
   const routes = new Set<string>();
+
   const found = (flows: readonly Flow[]): { name: string; file: string; line: number }[] => {
     const out: { name: string; file: string; line: number }[] = [];
+
     for (const flow of flows) {
       const line = useIn(flow, id);
+
       if (line === null) continue;
       out.push({ name: flow.name, file: flow.file, line });
+
       for (const trigger of flow.triggers) routes.add(trigger.target.target);
     }
+
     return out;
   };
+
   const flows = found(spec.flows);
   const fromDiscovered = found(discovered?.flows ?? []);
   const entries = (snapshot?.entries ?? []).filter((entry) => covers(id, entry.id) || routes.has(entry.id)).map((entry) => ({ id: entry.id, kind: entry.kind, label: entry.label }));
+
   return { id, flows, discovered: fromDiscovered, entries };
 }
 
 export function diagramOf(input: DiagramInput): Diagram {
   const raw = unplaced(input);
+
   if (raw.placed) return input.saved ? { ...raw, nodes: raw.nodes.map((node) => {
     const manual = Object.hasOwn(input.saved!.shapes, node.id) ? input.saved!.shapes[node.id] : undefined;
+
     return manual ? { ...node, x: manual.x, y: manual.y, w: manual.w ?? node.w, h: manual.h ?? node.h } : node;
   }) } : raw;
+
   if (!input.saved) return layout(raw);
   // The layout file (business-flows/24): saved places of nodes, and of lanes, win.
   const placed = layout(raw, savedPositions(input.saved, raw));
   const lanes = input.saved.shapes;
+
   return { ...placed, groups: placed.groups.map((group) => {
     const box = Object.hasOwn(lanes, `lane:${group.id}`) ? lanes[`lane:${group.id}`]! : undefined;
+
     return box ? { ...group, x: box.x, y: box.y, w: box.w ?? group.w, h: box.h ?? group.h } : group;
   }) };
 }
@@ -344,24 +390,37 @@ export function diagramOf(input: DiagramInput): Diagram {
 /** The diagram of a view before `layout` places it. */
 function unplaced(input: DiagramInput): Diagram {
   const { view } = input;
+
   if (view.kind === "flow") return flowDiagram(input, view.name);
+
   if (view.kind === "system" || view.kind === "er" || view.kind === "sequence") {
     const system = systemNamed(input.snapshot, input.systems ?? [], view.name, input.schemas);
+
     if (system === null) return empty(view.name === CODE_SYSTEM ? "no snapshot: the system of the code needs the code" : `no system \`${view.name}\`: no \`# system ${view.name}\` in the specs`);
+
     if (view.kind === "system") return systemDiagram(system, input.results);
+
     if (view.kind === "er") {
       const er = erDiagram(system);
       // A schema file that did not parse is said where its tables would be.
       const problems = view.name === CODE_SYSTEM ? (input.schemas?.problems ?? []) : [];
+
       return problems.length === 0 ? er : { ...er, reason: `${er.reason ? `${er.reason}; ` : ""}not read: ${problems.join("; ")}` };
     }
+
     return sequenceDiagram(system, view.seq);
   }
+
   if (!input.snapshot) return empty("no snapshot: the specs were checked without code");
+
   if (view.kind === "event") return eventDiagram(input.snapshot, input.results, view.name);
+
   if (view.kind === "process") return processDiagram(input.snapshot, input.processes ?? [], input.results, view.domain);
+
   if (view.kind === "entry") return entryDiagram(input.snapshot, input.results, view.id, view.depth ?? DEFAULT_DEPTH);
+
   if (view.kind === "module") return moduleDiagram(input.snapshot, input.results, view.id);
+
   return layersDiagram(input.snapshot, input.spec, input.results);
 }
 
@@ -375,7 +434,9 @@ const RANK: Record<string, number> = { fail: 3, unverified: 2, ok: 1 };
 
 function worst(values: readonly string[]): DiagramVerdict {
   let best: DiagramVerdict = null;
+
   for (const value of values) if ((RANK[value] ?? 0) > (best === null ? 0 : RANK[best]!)) best = value as DiagramVerdict;
+
   return best;
 }
 
@@ -386,26 +447,31 @@ function messageOf(result: DiagramResult): string {
 /** Results by `file:line`. */
 function byLine(results: readonly DiagramResult[]): Map<string, DiagramResult[]> {
   const out = new Map<string, DiagramResult[]>();
+
   for (const result of results) {
     const key = `${result.file}:${result.line}`;
     const list = out.get(key) ?? [];
     list.push(result);
     out.set(key, list);
   }
+
   return out;
 }
 
 /** The worst verdict about each ID and every ID above it (`a.b.c` counts for `a.b` and `a`). */
 function byArea(results: readonly DiagramResult[]): Map<string, DiagramVerdict> {
   const out = new Map<string, DiagramVerdict>();
+
   for (const result of results) {
     if (!result.area || RANK[result.verdict] === undefined) continue;
     const parts = result.area.split(".");
+
     for (let i = 1; i <= parts.length; i++) {
       const id = parts.slice(0, i).join(".");
       out.set(id, worst([out.get(id) ?? "", result.verdict]));
     }
   }
+
   return out;
 }
 
@@ -415,16 +481,20 @@ function byArea(results: readonly DiagramResult[]): Map<string, DiagramVerdict> 
 function layerOrder(snapshot: AnalysisSnapshot): string[] {
   const configured = Object.keys(snapshot.manifest.config.layers).filter((layer) => snapshot.nodes[layer]?.kind === "layer");
   const own = new Set(configured);
+
   const others = Object.keys(snapshot.nodes)
     .filter((id) => snapshot.nodes[id]?.kind === "layer" && !own.has(id))
     .sort((a, b) => Number(a === EXTERNAL) - Number(b === EXTERNAL) || compareText(a, b));
+
   return [...configured, ...others];
 }
 
 function layerOf(snapshot: AnalysisSnapshot | null, id: string): string | undefined {
   const known = snapshot?.nodes[id]?.layer;
+
   if (known) return known;
   const first = id.split(".")[0]!;
+
   return snapshot?.nodes[first]?.kind === "layer" || !snapshot ? first : undefined;
 }
 
@@ -433,6 +503,7 @@ function lanes(snapshot: AnalysisSnapshot | null, nodes: readonly DiagramNode[])
   const used = new Set(nodes.flatMap((node) => (node.group ? [node.group] : [])));
   const order = snapshot ? layerOrder(snapshot) : [];
   const rest = [...used].filter((id) => !order.includes(id)).sort(compareText);
+
   return [...order, ...rest].filter((id) => used.has(id)).map((id) => ({ id, label: id, kind: "lane", x: 0, y: 0, w: 0, h: 0 }));
 }
 
@@ -440,6 +511,7 @@ function lanes(snapshot: AnalysisSnapshot | null, nodes: readonly DiagramNode[])
 
 function flowDiagram(input: DiagramInput, name: string): Diagram {
   const flow = input.spec.flows.find((f) => f.name === name);
+
   if (!flow) return empty(`no flow named \`${name}\``);
   const { snapshot } = input;
   const lines = byLine(input.results);
@@ -449,18 +521,24 @@ function flowDiagram(input: DiagramInput, name: string): Diagram {
 
   const at = (item: { span: { start: { line: number } } }): number => item.span.start.line;
   const resultsAt = (item: { span: { start: { line: number } } }): DiagramResult[] => lines.get(`${flow.file}:${at(item)}`) ?? [];
+
   const add = (node: Omit<DiagramNode, "x" | "y" | "w" | "h">): DiagramNode => {
     const placed = { ...node, x: 0, y: 0, w: 0, h: 0 };
     nodes.push(placed);
+
     return placed;
   };
+
   const link = (from: string | null, to: string, kind: DiagramEdge["kind"], extra: { label?: string; verdict?: DiagramVerdict } = {}): void => {
     if (from !== null) edges.push({ from, to, kind, ...(extra.label !== undefined ? { label: extra.label } : {}), ...(extra.verdict !== undefined ? { verdict: extra.verdict } : {}) });
   };
+
   const refOf = (id: string, line: number): NonNullable<DiagramNode["ref"]> => {
     const code = snapshot?.nodes[id];
+
     return { id, ...(code?.file ? { file: code.file } : {}), ...(code?.line ? { line: code.line } : {}), specFile: flow.file, specLine: line };
   };
+
   const isExternal = (id: string): boolean => id === EXTERNAL || id.startsWith(`${EXTERNAL}.`) || snapshot?.nodes[id]?.layer === EXTERNAL;
 
   /** A trigger, step or `then <id>`: its shape, and a hole before it when `check` left the route into it unverified. */
@@ -475,21 +553,26 @@ function flowDiagram(input: DiagramInput, name: string): Diagram {
     const group = layerOf(snapshot, id);
     let into = from;
     const unproven = isPlanned ? undefined : statics.find((r) => r.verdict === "unverified");
+
     if (unproven) {
       const hole = add({ id: `hole:${line}`, kind: "hole", label: "?", reason: stripLead(messageOf(unproven), id), ref: { specFile: flow.file, specLine: line }, verdict: "unverified" });
       link(into, hole.id, "sequence", label !== undefined ? { label } : {});
       into = hole.id;
       label = undefined;
     }
+
     const node = add({ id: `${item.kind}:${line}`, kind, label: id, ref: refOf(id, line), verdict, ...(group ? { group } : {}) });
     link(into, node.id, "sequence", { ...(label !== undefined ? { label } : {}), ...(routeVerdict !== null ? { verdict: routeVerdict } : {}) });
+
     return node.id;
   };
 
   /** Draws a block of items after `from`; returns the node the next item follows. */
   const block = (items: readonly (Trigger | FlowItem)[], from: string | null, group: string | undefined): string | null => {
     let tail = from;
+
     for (const item of items) tail = one(item, tail, group);
+
     return tail;
   };
 
@@ -498,8 +581,10 @@ function flowDiagram(input: DiagramInput, name: string): Diagram {
       case "trigger":
       case "step": {
         const id = target(item, item.target.target, from);
+
         return block(item.children, id, layerOf(snapshot, item.target.target));
       }
+
       case "when": {
         const line = at(item);
         const gateway = add({ id: `when:${line}`, kind: "gateway", label: item.condition, ref: { specFile: flow.file, specLine: line }, verdict: worst(resultsAt(item).map((r) => r.verdict)), ...(group ? { group } : {}) });
@@ -507,26 +592,34 @@ function flowDiagram(input: DiagramInput, name: string): Diagram {
         // The branch hangs off the gateway under its condition; the default path goes on from the gateway.
         let tail: string | null = gateway.id;
         let first = true;
+
         for (const child of item.children) {
           const before = edges.length;
           tail = one(child, tail, group);
+
           if (first && edges.length > before && edges[before]!.from === gateway.id) {
             edges[before] = { ...edges[before]!, label: item.condition };
             first = false;
           }
         }
+
         return gateway.id;
       }
+
       case "then": {
         if (item.form === "ref") {
           const id = target(item, item.target.target, from);
+
           return block(item.children, id, layerOf(snapshot, item.target.target));
         }
+
         const line = at(item);
         const task = add({ id: `then:${line}`, kind: "task", label: item.prose, ref: { specFile: flow.file, specLine: line }, verdict: worst(resultsAt(item).map((r) => r.verdict)), ...(group ? { group } : {}) });
         link(from, task.id, "sequence");
+
         return block(item.children, task.id, group);
       }
+
       case "emits": {
         const line = at(item);
         const name = item.body.replace(/^event\s+/, "").trim();
@@ -534,8 +627,10 @@ function flowDiagram(input: DiagramInput, name: string): Diagram {
         const ref = item.target !== null ? refOf(item.target.target, line) : { specFile: flow.file, specLine: line };
         const event = add({ id: `emits:${line}`, kind: "event", label: name, ref, verdict: worst(resultsAt(item).map((r) => r.verdict)) });
         link(from, event.id, "emits");
+
         return event.id;
       }
+
       case "calls": {
         // A call without order: the parent calls each target itself, beside the sequence.
         const line = at(item);
@@ -547,8 +642,10 @@ function flowDiagram(input: DiagramInput, name: string): Diagram {
           const node = add({ id: `calls:${line}:${i}`, kind: isExternal(id) ? "external" : "task", label: id, ref: refOf(id, line), verdict, ...(g ? { group: g } : {}) });
           link(from, node.id, "call", verdict !== null ? { verdict } : {});
         });
+
         return from;
       }
+
       case "parallel": {
         // A parallel gateway splits into one branch per step and joins them: the next item follows the join (ADR 0023).
         const line = at(item);
@@ -556,17 +653,22 @@ function flowDiagram(input: DiagramInput, name: string): Diagram {
         const split = add({ id: `parallel:${line}`, kind: "parallel", label: "parallel", ref, verdict: null, ...(group ? { group } : {}) });
         link(from, split.id, "sequence");
         const join = add({ id: `parallel:${line}:join`, kind: "parallel", label: "parallel", ref, verdict: null, ...(group ? { group } : {}) });
+
         for (const child of item.children) link(one(child, split.id, group), join.id, "sequence");
+
         return join.id;
       }
+
       case "after":
       case "every": {
         // An intermediate timer event beside the sequence, as `calls` sits beside it.
         const line = at(item);
         const timer = add({ id: `${item.kind}:${line}`, kind: "timer", label: `${item.kind} ${item.value}`, ref: { specFile: flow.file, specLine: line }, verdict: worst(resultsAt(item).map((r) => r.verdict)), ...(group ? { group } : {}) });
         link(from, timer.id, "sequence");
+
         return from;
       }
+
       // Claims without a shape of their own: invariants, reads, tests, open questions and `continues`.
       default:
         return from;
@@ -574,12 +676,14 @@ function flowDiagram(input: DiagramInput, name: string): Diagram {
   };
 
   block(flow.top, null, undefined);
+
   return { nodes, edges, groups: lanes(snapshot, nodes) };
 }
 
 /** `check`'s message without its `unverified <id>: ` lead. */
 function stripLead(message: string, id: string): string {
   const lead = `unverified ${id}: `;
+
   return message.startsWith(lead) ? message.slice(lead.length) : message;
 }
 
@@ -588,7 +692,9 @@ function stripLead(message: string, id: string): string {
 /** The event node a view names: its ID, `events.<literal>`, or the literal it is dispatched with. */
 export function eventNamed(snapshot: AnalysisSnapshot, name: string): string | null {
   if (snapshot.nodes[name]?.kind === "event") return name;
+
   if (snapshot.nodes[`events.${name}`]?.kind === "event") return `events.${name}`;
+
   return Object.keys(snapshot.nodes).find((id) => snapshot.nodes[id]?.kind === "event" && snapshot.nodes[id]?.name === name) ?? null;
 }
 
@@ -599,49 +705,62 @@ export function eventNamed(snapshot: AnalysisSnapshot, name: string): string | n
  */
 function eventDiagram(snapshot: AnalysisSnapshot, results: readonly DiagramResult[], name: string): Diagram {
   const id = eventNamed(snapshot, name);
+
   if (id === null) return empty(`no event \`${name}\` in the snapshot: events come from a framework adapter's dispatches and observers`);
   const event = snapshot.nodes[id]!;
   const areas = byArea(results);
   const nodes: DiagramNode[] = [];
   const edges: DiagramEdge[] = [];
+
   const fn = (target: string): string => {
     const nodeId = `fn:${target}`;
+
     if (nodes.some((n) => n.id === nodeId)) return nodeId;
     const code = snapshot.nodes[target];
     nodes.push({ id: nodeId, kind: code?.layer === EXTERNAL ? "external" : "fn", label: target, ref: { id: target, ...(code?.file ? { file: code.file } : {}), ...(code?.line ? { line: code.line } : {}) }, verdict: areas.get(target) ?? null, ...(code?.layer ? { group: code.layer } : {}), x: 0, y: 0, w: 0, h: 0 });
+
     return nodeId;
   };
+
   const center: DiagramNode = { id: `event:${id}`, kind: "event", label: event.name ?? id.slice(id.indexOf(".") + 1), ref: { id, ...(event.file ? { file: event.file } : {}), ...(event.line ? { line: event.line } : {}) }, verdict: areas.get(id) ?? null, group: event.layer, x: 0, y: 0, w: 0, h: 0 };
+
   for (const publisher of event.callers ?? []) edges.push({ from: fn(publisher), to: center.id, kind: "emits", label: "dispatch" });
   nodes.push(center);
+
   for (const edge of snapshot.edges) {
     if (edge.kind !== "call" || edge.source !== id || edge.resolution !== "resolved" || edge.target === null) continue;
     const observer = /observer `([^`]*)`/.exec(edge.binding ?? "")?.[1];
     edges.push({ from: center.id, to: fn(edge.target), kind: "call", label: `${observer ? `observer ${observer}` : (edge.via ?? "call")}${edge.scope && edge.scope !== "global" ? ` (${edge.scope})` : ""}` });
   }
+
   return { nodes, edges, groups: lanes(snapshot, nodes), ...(edges.length === 0 ? { reason: `\`${id}\` has neither a dispatch nor an observer keylang read` } : {}) };
 }
 
 function entryDiagram(snapshot: AnalysisSnapshot, results: readonly DiagramResult[], id: string, depth: number): Diagram {
   const entry = snapshot.entries.find((e) => e.id === id);
   const root = snapshot.nodes[id];
+
   if (!entry && root?.kind !== "fn") return empty(`no entry point or fn \`${id}\``);
   const areas = byArea(results);
   const nodes: DiagramNode[] = [];
   const edges: DiagramEdge[] = [];
   const shown = new Map<string, string>();
   const calls = new Map<string, AnalysisSnapshot["edges"]>();
+
   for (const edge of snapshot.edges) {
     if (edge.kind !== "call") continue;
     const list = calls.get(edge.source) ?? [];
     list.push(edge);
     calls.set(edge.source, list);
   }
+
   let cut = false;
   /** The unresolved calls of each opened fn, by the shape of the fn: drawn as one hole per fn. */
   const holes = new Map<string, { reasons: Map<string, string>; file: string | null; line: number }>();
+
   const place = (target: string): string => {
     const known = shown.get(target);
+
     if (known) return known;
     const code = snapshot.nodes[target];
     const layer = code?.layer;
@@ -659,8 +778,10 @@ function entryDiagram(snapshot: AnalysisSnapshot, results: readonly DiagramResul
       h: 0,
     });
     shown.set(target, nodeId);
+
     return nodeId;
   };
+
   const start: DiagramNode = {
     id: `entry:${id}`,
     kind: "start",
@@ -673,38 +794,50 @@ function entryDiagram(snapshot: AnalysisSnapshot, results: readonly DiagramResul
     w: 0,
     h: 0,
   };
+
   nodes.push(start);
   shown.set(id, start.id);
+
   // A script runs its module's top level, whose calls the snapshot does not record: what it imports stands for them, unopened.
   if (root?.kind === "module") {
     for (const edge of snapshot.edges) {
       if (edge.source !== id || (edge.kind !== "import" && edge.kind !== "reexport") || edge.resolution !== "resolved" || !edge.target) continue;
+
       if (shown.has(edge.target)) continue;
       edges.push({ from: start.id, to: place(edge.target), kind: "dependency", label: "import" });
     }
+
     return { nodes, edges, groups: lanes(snapshot, nodes) };
   }
+
   // Breadth first: a fn is opened (its calls drawn) when it is less than `depth` calls from the entry.
   let frontier = [id];
+
   for (let level = 0; level < depth && frontier.length > 0; level++) {
     const next: string[] = [];
+
     for (const source of frontier) {
       const from = shown.get(source)!;
       const seen = new Set<string>();
+
       for (const edge of calls.get(source) ?? []) {
         if (nodes.length >= MAX_NODES) {
           cut = true;
           break;
         }
+
         if (edge.resolution === "resolved" && edge.target) {
           const isNew = !shown.has(edge.target);
           const to = place(edge.target);
+
           if (seen.has(to)) continue;
           seen.add(to);
           edges.push({ from, to, kind: "call" });
+
           if (isNew && snapshot.nodes[edge.target]?.layer !== EXTERNAL) next.push(edge.target);
           continue;
         }
+
         const reason = edge.resolution === "ambiguous" ? `ambiguous call \`${edge.text}\` [${(edge.candidates ?? []).join(", ")}]` : (edge.reason ?? `unresolved call \`${edge.text}\``);
         const at = `${edge.file}:${edge.line}:${edge.col}`;
         const own = holes.get(from) ?? { reasons: new Map<string, string>(), file: edge.file, line: edge.line };
@@ -712,8 +845,10 @@ function entryDiagram(snapshot: AnalysisSnapshot, results: readonly DiagramResul
         holes.set(from, own);
       }
     }
+
     frontier = next;
   }
+
   // One hole per fn, in its lane: the places it calls through and keylang cannot follow, counted (`? 3`).
   for (const [from, own] of holes) {
     const caller = nodes.find((node) => node.id === from)!;
@@ -722,6 +857,7 @@ function entryDiagram(snapshot: AnalysisSnapshot, results: readonly DiagramResul
     nodes.push(hole);
     edges.push({ from, to: hole.id, kind: "call", verdict: "unverified" });
   }
+
   return { nodes, edges, groups: lanes(snapshot, nodes), ...(cut ? { reason: `cut at ${MAX_NODES} nodes` } : {}) };
 }
 
@@ -736,32 +872,41 @@ function processDiagram(snapshot: AnalysisSnapshot, processes: readonly DiagramP
   if (processes.length === 0) return empty("no business processes yet: `keylang flows discover --names` groups the discovered flows into processes");
   const chosen = processes.filter((p) => p.domain === domain);
   const shown = chosen.length > 0 ? chosen : processes.filter((p) => p.name === domain);
+
   if (shown.length === 0) return empty(`no process in domain \`${domain}\`; domains: ${[...new Set(processes.map((p) => p.domain))].join(", ")}`);
   const areas = byArea(results);
   const nodes: DiagramNode[] = [];
   const edges: DiagramEdge[] = [];
   const placed = new Set<string>();
+
   const codeRef = (id: string): NonNullable<DiagramNode["ref"]> => {
     const code = snapshot.nodes[id];
+
     return { id, ...(code?.file ? { file: code.file } : {}), ...(code?.line ? { line: code.line } : {}) };
   };
+
   const shape = (id: string, kind: DiagramNode["kind"], label: string, code: string): void => {
     placed.add(id);
     const layer = layerOf(snapshot, code);
     nodes.push({ id, kind, label, ref: codeRef(code), verdict: areas.get(code) ?? null, ...(layer ? { group: layer } : {}), x: 0, y: 0, w: 0, h: 0 });
   };
+
   for (const process of shown) {
     for (const flow of process.flows) {
       const start = `start:${flow.name}`;
+
       if (placed.has(start)) continue;
       shape(start, "start", flow.name, flow.trigger);
+
       for (const step of flow.steps) {
         const id = `fn:${step}`;
+
         if (!placed.has(id)) shape(id, snapshot.nodes[step]?.layer === EXTERNAL ? "external" : "task", step, step);
         edges.push({ from: start, to: id, kind: "call", label: process.name });
       }
     }
   }
+
   return { nodes, edges, groups: lanes(snapshot, nodes) };
 }
 
@@ -771,8 +916,10 @@ function processDiagram(snapshot: AnalysisSnapshot, processes: readonly DiagramP
 export function moduleOfId(snapshot: AnalysisSnapshot, id: string): string | null {
   for (let at = id; at !== ""; at = at.includes(".") ? at.slice(0, at.lastIndexOf(".")) : "") {
     const node = snapshot.nodes[at];
+
     if (node?.kind === "module" && node.class !== true) return at;
   }
+
   return null;
 }
 
@@ -784,18 +931,23 @@ export function moduleOfId(snapshot: AnalysisSnapshot, id: string): string | nul
  */
 function moduleDiagram(snapshot: AnalysisSnapshot, results: readonly DiagramResult[], id: string): Diagram {
   const root = moduleOfId(snapshot, id);
+
   if (root === null) return empty(`no module \`${id}\` (nor one above it) in the snapshot`);
   const areas = byArea(results);
   const counts = new Map<string, number>();
+
   for (const edge of snapshot.edges) {
     if ((edge.kind !== "import" && edge.kind !== "reexport") || edge.resolution !== "resolved" || !edge.target) continue;
     const from = moduleOfId(snapshot, edge.source) ?? edge.source;
     const to = edge.target.startsWith(`${EXTERNAL}.`) ? edge.target : (moduleOfId(snapshot, edge.target) ?? edge.target);
+
     if (from === to || (from !== root && to !== root)) continue;
     counts.set(`${from}\u0000${to}`, (counts.get(`${from}\u0000${to}`) ?? 0) + 1);
   }
+
   const nodes: DiagramNode[] = [];
   const shown = new Set<string>();
+
   const add = (moduleId: string): void => {
     if (shown.has(moduleId) || nodes.length >= MAX_NODES) return;
     shown.add(moduleId);
@@ -814,15 +966,19 @@ function moduleDiagram(snapshot: AnalysisSnapshot, results: readonly DiagramResu
       h: 0,
     });
   };
+
   add(root);
   const edges: DiagramEdge[] = [];
   const pairs = [...counts].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+
   for (const [key, count] of pairs) {
     const [from, to] = key.split("\u0000") as [string, string];
     add(from);
     add(to);
+
     if (shown.has(from) && shown.has(to)) edges.push({ from: `mod:${from}`, to: `mod:${to}`, kind: "dependency", label: String(count) });
   }
+
   return { nodes, edges, groups: lanes(snapshot, nodes), ...(nodes.length >= MAX_NODES ? { reason: `cut at ${MAX_NODES} nodes` } : {}) };
 }
 
@@ -834,30 +990,38 @@ function layersDiagram(snapshot: AnalysisSnapshot, spec: SpecIR, results: readon
   const nodes: DiagramNode[] = order.map((layer) => ({ id: `layer:${layer}`, kind: "layer", label: layer, ref: { id: layer }, verdict: areas.get(layer) ?? null, x: 0, y: 0, w: 0, h: 0 }));
   const edges: DiagramEdge[] = [];
   const counts = new Map<string, number>();
+
   for (const edge of snapshot.edges) {
     if (edge.target === null) continue;
     const from = snapshot.nodes[edge.source]?.layer;
     const to = snapshot.nodes[edge.target]?.layer;
+
     if (!from || !to || from === to) continue;
     const key = `${from}\u0000${to}`;
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
+
   const pairs = [...counts.keys()].map((key) => key.split("\u0000") as [string, string]);
   pairs.sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]) || order.indexOf(a[1]) - order.indexOf(b[1]));
+
   for (const [from, to] of pairs) edges.push({ from: `layer:${from}`, to: `layer:${to}`, kind: "dependency", label: String(counts.get(`${from}\u0000${to}`)) });
   // One edge per pair and effect: twenty `allow app external.<package>` are one allow of app to external.
   const rules = new Map<string, DiagramEdge & { count: number }>();
+
   for (const rule of spec.rules) {
     if (rule.kind !== "dependency") continue;
     const from = layerOf(snapshot, rule.from.target);
     const found = results.filter((r) => r.criterion === rule.text || (r.file === rule.file && r.line === rule.span.start.line));
     // A rule `check` says nothing against holds.
     const verdict: DiagramVerdict = worst(found.map((r) => r.verdict)) ?? "ok";
+
     for (const ref of rule.to) {
       const to = layerOf(snapshot, ref.target);
+
       if (!from || !to || !order.includes(from) || !order.includes(to)) continue;
       const key = `${from}\u0000${to}\u0000${rule.effect}`;
       const known = rules.get(key);
+
       if (!known) {
         const edge = { from: `layer:${from}`, to: `layer:${to}`, kind: rule.effect, label: rule.text, verdict, count: 1 };
         rules.set(key, edge);
@@ -869,6 +1033,7 @@ function layersDiagram(snapshot: AnalysisSnapshot, spec: SpecIR, results: readon
       }
     }
   }
+
   return { nodes, edges: edges.map((edge) => ("count" in edge ? (({ count: _count, ...rest }) => rest)(edge as DiagramEdge & { count: number }) : edge)), groups: [], direction: "down" };
 }
 
@@ -891,12 +1056,17 @@ const SIZE: Record<DiagramNode["kind"], { w: number; h: number }> = {
   participant: { w: 140, h: 44 },
   anchor: { w: 2, h: 2 },
 };
+
 /** One cell of the grid: the largest shape and the gaps around it. */
 const CELL_W = 200;
+
 const CELL_H = 90;
+
 const LANE_PAD = 20;
+
 /** At most this many shapes one above another in a lane's rank; more wrap into the next column. */
 const MAX_ROWS = 8;
+
 /** Edges that order shapes left to right; `allow` and `deny` only annotate. */
 const ORDERING: ReadonlySet<DiagramEdge["kind"]> = new Set(["sequence", "call", "dependency", "emits", "continues", "relation"]);
 
@@ -913,31 +1083,40 @@ export function layout(diagram: Diagram, positions: Positions = {}): Diagram {
   const index = new Map(diagram.nodes.map((node, i) => [node.id, i]));
   const out = new Map<string, string[]>();
   const indegree = new Map<string, number>();
+
   for (const edge of diagram.edges) {
     if (!ORDERING.has(edge.kind) || !index.has(edge.from) || !index.has(edge.to) || edge.from === edge.to) continue;
     out.set(edge.from, [...(out.get(edge.from) ?? []), edge.to]);
     indegree.set(edge.to, (indegree.get(edge.to) ?? 0) + 1);
   }
+
   // Depth first from every root in order, then from whatever a cycle left unreached: an edge back onto the stack is ignored.
   const rank = new Map<string, number>();
   const state = new Map<string, "open" | "done">();
   const order: string[] = [];
+
   const visit = (id: string): void => {
     if (state.get(id)) return;
     state.set(id, "open");
+
     for (const next of out.get(id) ?? []) visit(next);
     state.set(id, "done");
     order.push(id);
   };
+
   const roots = diagram.nodes.filter((node) => !indegree.get(node.id)).map((node) => node.id);
+
   for (const id of [...roots, ...diagram.nodes.map((node) => node.id)]) visit(id);
   // `order` is a reverse topological order of the edges kept; ranks follow it backwards.
   const forward = new Set<string>();
   const position = new Map(order.map((id, i) => [id, i]));
+
   for (const [from, list] of out) for (const to of list) if (position.get(from)! > position.get(to)!) forward.add(`${from}\u0000${to}`);
+
   for (const id of [...order].reverse()) {
     const own = rank.get(id) ?? 0;
     rank.set(id, own);
+
     for (const to of out.get(id) ?? []) if (forward.has(`${id}\u0000${to}`)) rank.set(to, Math.max(rank.get(to) ?? 0, own + 1));
   }
 
@@ -946,19 +1125,25 @@ export function layout(diagram: Diagram, positions: Positions = {}): Diagram {
   // Within a lane and a rank: spec-line order (a flow reads as its spec), then — for shapes of code —
   // next to what leads into them (the mean place of their predecessors, rank by rank), then diagram order.
   const preds = new Map<string, string[]>();
+
   for (const [from, list] of out) for (const to of list) if (forward.has(`${from}\u0000${to}`)) preds.set(to, [...(preds.get(to) ?? []), from]);
   const ordinal = new Map<string, number>();
   const byRank = new Map<number, DiagramNode[]>();
+
   for (const node of diagram.nodes) byRank.set(rank.get(node.id)!, [...(byRank.get(rank.get(node.id)!) ?? []), node]);
   const slot = new Map<string, number>();
   const count = new Map<string, number>();
+
   for (const r of [...byRank.keys()].sort((a, b) => a - b)) {
     const pull = (node: DiagramNode): number => {
       const known = (preds.get(node.id) ?? []).map((id) => ordinal.get(id)).filter((value): value is number => value !== undefined);
+
       return known.length === 0 ? Infinity : known.reduce((sum, value) => sum + value, 0) / known.length;
     };
+
     const keys = new Map(byRank.get(r)!.map((node) => [node.id, pull(node)]));
     const sorted = [...byRank.get(r)!].sort((a, b) => laneOf(a) - laneOf(b) || (a.ref?.specLine ?? Infinity) - (b.ref?.specLine ?? Infinity) || keys.get(a.id)! - keys.get(b.id)! || index.get(a.id)! - index.get(b.id)!);
+
     for (const node of sorted) {
       const key = `${laneOf(node)}:${r}`;
       const n = count.get(key) ?? 0;
@@ -967,45 +1152,58 @@ export function layout(diagram: Diagram, positions: Positions = {}): Diagram {
       ordinal.set(node.id, laneOf(node) * 100000 + n);
     }
   }
+
   // A lane's rank with many shapes wraps into columns of at most MAX_ROWS (filled top to bottom, then
   // the next column): a fn calling thirty others is a block, not a column taller than the screen.
   const columns = new Map<number, number>();
+
   const rowsOf = (key: string): number => {
     const n = count.get(key) ?? 0;
+
     return Math.ceil(n / Math.ceil(n / MAX_ROWS));
   };
+
   for (const [key, n] of count) {
     const r = Number(key.split(":")[1]);
     columns.set(r, Math.max(columns.get(r) ?? 1, Math.ceil(n / MAX_ROWS)));
   }
+
   const left = new Map<number, number>();
   let x = LANE_PAD;
+
   for (let r = 0; r <= Math.max(0, ...columns.keys()); r++) {
     left.set(r, x);
     x += (columns.get(r) ?? 1) * CELL_W;
   }
+
   const rows = new Map<number, number>();
+
   for (const key of count.keys()) {
     const lane = Number(key.split(":")[0]);
     rows.set(lane, Math.max(rows.get(lane) ?? 0, rowsOf(key)));
   }
+
   const top = new Map<number, number>();
   let y = 0;
   // A system's components outside every zone (a client, a CDN) stand above the zones; elsewhere shapes without a lane go last.
   const laneSeq = laneIds.map((_, i) => i);
+
   if (diagram.system) laneSeq.unshift(laneIds.length);
   else laneSeq.push(laneIds.length);
+
   for (const lane of laneSeq) {
     if (!rows.has(lane)) continue;
     top.set(lane, y);
     y += rows.get(lane)! * CELL_H + 2 * LANE_PAD;
   }
+
   const nodes = diagram.nodes.map((node): DiagramNode => {
     const size = SIZE[node.kind];
     const lane = laneOf(node);
     const r = rank.get(node.id)!;
     const height = rowsOf(`${lane}:${r}`);
     const n = slot.get(node.id)!;
+
     // A stack: one row per shape, in the diagram's order; the canvas draws its edges as arcs beside it.
     const placed =
       diagram.direction === "down"
@@ -1017,16 +1215,22 @@ export function layout(diagram: Diagram, positions: Positions = {}): Diagram {
             w: size.w,
             h: size.h,
           };
+
     const manual = Object.hasOwn(positions, node.id) ? positions[node.id] : undefined;
+
     return manual ? { ...placed, x: manual.x, y: manual.y, w: manual.w ?? placed.w, h: manual.h ?? placed.h } : placed;
   });
+
   const right = Math.max(0, ...nodes.map((node) => node.x + node.w)) + LANE_PAD;
+
   const groups = diagram.groups.map((group, lane): DiagramGroup => {
     const members = nodes.filter((node) => laneOf(node) === lane);
     const from = Math.min(top.get(lane) ?? 0, ...members.map((node) => node.y - LANE_PAD));
     const to = Math.max((top.get(lane) ?? 0) + (rows.get(lane) ?? 0) * CELL_H + 2 * LANE_PAD, ...members.map((node) => node.y + node.h + LANE_PAD));
+
     return { ...group, x: 0, y: from, w: right, h: to - from };
   });
+
   return { ...diagram, nodes, groups };
 }
 
@@ -1052,16 +1256,19 @@ function tableCount(system: SystemSpec): number {
 /** The systems of the specs in spec order, then the one of the code when there is a snapshot. */
 export function systemListing(snapshot: AnalysisSnapshot | null, systems: readonly SystemSpec[], schemas?: SchemaRead): SystemListing[] {
   const out: SystemListing[] = systems.map((system) => ({ name: system.name, file: system.file, line: system.line, sequences: system.sequences.map((seq) => seq.name), tables: tableCount(system), components: system.components.length }));
+
   if (snapshot) {
     const code = discoverSystem(snapshot, schemas?.schemas);
     out.push({ name: CODE_SYSTEM, file: null, line: null, sequences: code.sequences.map((seq) => seq.name), tables: tableCount(code), components: code.components.length });
   }
+
   return out;
 }
 
 /** The system a view names: a `# system` of the specs, or the one discovered from the code. */
 function systemNamed(snapshot: AnalysisSnapshot | null, systems: readonly SystemSpec[], name: string, schemas?: SchemaRead): SystemSpec | null {
   if (name === CODE_SYSTEM) return snapshot ? discoverSystem(snapshot, schemas?.schemas) : null;
+
   return systems.find((system) => system.name === name) ?? null;
 }
 
@@ -1081,21 +1288,31 @@ const ASYNC_VERBS = new Set(["publishes", "consumes", "replicates"]);
 function systemDiagram(system: SystemSpec, results: readonly DiagramResult[]): Diagram {
   const criterion = `system ${system.name}`;
   const verdictOf = new Map<string, DiagramVerdict>();
+
   for (const result of results) if (result.criterion === criterion && result.area !== undefined) verdictOf.set(result.area, worst([verdictOf.get(result.area) ?? "", result.verdict]));
   const zones = new Map(system.zones.map((zone) => [zone.name, zone]));
+
   const zonePath = (name: string | null): string | undefined => {
     const parts: string[] = [];
+
     for (let at = name; at !== null; at = zones.get(at)?.parent ?? null) parts.unshift(at);
+
     return parts.length === 0 ? undefined : parts.join(" / ");
   };
+
   const byComponent = new Map<string, DiagramVerdict[]>();
+
   const edges: DiagramEdge[] = system.relations.map((relation) => {
     const verdict = verdictOf.get(`${relation.from} ${relation.verb} ${relation.to}`) ?? null;
+
     if (verdict) byComponent.set(relation.from, [...(byComponent.get(relation.from) ?? []), verdict]);
+
     return { from: `component:${relation.from}`, to: `component:${relation.to}`, kind: "relation", label: relation.caption ? `${relation.verb}: ${relation.caption}` : relation.verb, ...(ASYNC_VERBS.has(relation.verb) ? { async: true } : {}), ...(verdict ? { verdict } : {}) };
   });
+
   const nodes: DiagramNode[] = system.components.map((component) => {
     const group = zonePath(component.zone);
+
     return {
       id: `component:${component.name}`,
       kind: "component",
@@ -1111,21 +1328,28 @@ function systemDiagram(system: SystemSpec, results: readonly DiagramResult[]): D
       h: 0,
     };
   });
+
   const groupIds = [...new Set(nodes.map((node) => node.group).filter((group): group is string => group !== undefined))];
   const groups: DiagramGroup[] = groupIds.map((id) => ({ id, label: id, kind: "lane", x: 0, y: 0, w: 0, h: 0 }));
+
   return { nodes, edges, groups, system: summaryOf(system), ...(nodes.length === 0 ? { reason: `system \`${system.name}\` has no components` } : {}) };
 }
 
 const TABLE_W = 230;
+
 const TABLE_HEAD = 30;
+
 const TABLE_ROW = 18;
+
 const TABLE_GAP = 50;
+
 const TABLES_PER_ROW = 4;
 
 /** A column as one line of its table: `🔑` for the key, `→ users.id` for a foreign key. */
 function columnLine(column: SystemSpec["components"][number]["tables"][number]["columns"][number]): string {
   const marks = [column.pk ? "🔑" : "", column.unique && !column.pk ? "◆" : ""].join("");
   const tail = [column.nullable ? "null" : "", column.fk ? `→ ${column.fk.table}.${column.fk.column}` : ""].filter((part) => part !== "").join(" ");
+
   return `${marks ? `${marks} ` : ""}${column.name}: ${column.type}${tail ? ` ${tail}` : ""}`;
 }
 
@@ -1141,15 +1365,18 @@ function erDiagram(system: SystemSpec): Diagram {
   const groups: DiagramGroup[] = [];
   const tableId = new Map<string, string>();
   let y = 0;
+
   for (const component of system.components) {
     if (component.tables.length === 0) continue;
     const laneTop = y;
     y += TABLE_HEAD + 10;
+
     for (let row = 0; row < component.tables.length; row += TABLES_PER_ROW) {
       const tables = component.tables.slice(row, row + TABLES_PER_ROW);
       let tallest = 0;
       tables.forEach((table, i) => {
         const id = `table:${component.name}.${table.name}`;
+
         if (!tableId.has(table.name)) tableId.set(table.name, id);
         const lines = table.columns.map(columnLine);
         const h = TABLE_HEAD + Math.max(1, lines.length) * TABLE_ROW + 8;
@@ -1158,27 +1385,36 @@ function erDiagram(system: SystemSpec): Diagram {
       });
       y += tallest + TABLE_GAP;
     }
+
     const label = `${component.name}${component.tech ? ` (${component.tech})` : ""}`;
     groups.push({ id: component.name, label, kind: "lane", x: 0, y: laneTop, w: 0, h: y - laneTop - TABLE_GAP / 2 });
   }
+
   const right = Math.max(0, ...nodes.map((node) => node.x + node.w)) + 20;
+
   for (const group of groups) group.w = right;
+
   for (const component of system.components) {
     for (const table of component.tables) {
       for (const column of table.columns) {
         if (column.fk === null) continue;
         const to = tableId.get(column.fk.table);
+
         if (!to) continue;
         edges.push({ from: `table:${component.name}.${table.name}`, to, kind: "fk", label: `${column.name} ${column.unique || column.pk ? "1:1" : "N:1"}` });
       }
     }
   }
+
   return { nodes, edges, groups, placed: true, system: summaryOf(system), ...(nodes.length === 0 ? { reason: `system \`${system.name}\` has no tables: add \`- table <name>\` under a data store` } : {}) };
 }
 
 const LIFELINE_GAP = 190;
+
 const MESSAGE_GAP = 46;
+
 const PARTICIPANT_W = 140;
+
 const PARTICIPANT_H = 44;
 
 /**
@@ -1189,15 +1425,20 @@ const PARTICIPANT_H = 44;
  */
 function sequenceDiagram(system: SystemSpec, name: string): Diagram {
   const sequence = system.sequences.find((seq) => seq.name === name);
+
   if (!sequence) return { ...empty(`no sequence \`${name}\` in system \`${system.name}\``), system: summaryOf(system) };
   const order: string[] = [];
+
   for (const message of sequence.messages) for (const who of [message.from, message.to]) if (!order.includes(who)) order.push(who);
   const kinds = new Map(system.components.map((component) => [component.name, component]));
   const center = (who: string): number => 20 + order.indexOf(who) * LIFELINE_GAP + PARTICIPANT_W / 2;
+
   const nodes: DiagramNode[] = order.map((who) => {
     const component = kinds.get(who);
+
     return { id: `participant:${who}`, kind: "participant", label: who, ...(component ? { component: component.kind, ...(component.tech ? { tech: component.tech } : {}) } : {}), x: center(who) - PARTICIPANT_W / 2, y: 0, w: PARTICIPANT_W, h: PARTICIPANT_H };
   });
+
   const edges: DiagramEdge[] = [];
   const top = PARTICIPANT_H + 30;
   sequence.messages.forEach((message, i) => {
@@ -1210,9 +1451,11 @@ function sequenceDiagram(system: SystemSpec, name: string): Diagram {
     edges.push({ from, to, kind: "message", label: `${i + 1}. ${message.text ?? ""}`.trim(), ...(message.async ? { async: true } : {}) });
   });
   const bottom = top + sequence.messages.length * MESSAGE_GAP;
+
   for (const who of order) {
     nodes.push({ id: `anchor:end:${who}`, kind: "anchor", label: "", x: center(who) - 1, y: bottom, w: 2, h: 2 });
     edges.unshift({ from: `participant:${who}`, to: `anchor:end:${who}`, kind: "lifeline" });
   }
+
   return { nodes, edges, groups: [], placed: true, system: summaryOf(system), ...(sequence.messages.length === 0 ? { reason: `sequence \`${name}\` has no messages` } : {}) };
 }

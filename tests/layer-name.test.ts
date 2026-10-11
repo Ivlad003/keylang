@@ -25,8 +25,10 @@ test("bracket path segments encode to distinct reversible ID segments; other nam
     assert.equal(layerName(raw), id, raw);
     assert.equal(isSegment(id), true, id);
     assert.equal(decodeLayerName(id), raw, raw);
+
     return id;
   });
+
   assert.equal(new Set(ids).size, ids.length);
   // A directory that is already the encoded spelling shares the ID with `(shop)`.
   assert.equal(layerName("$g-shop"), "$g-shop");

@@ -71,8 +71,11 @@ export async function modelSetup(mode: "algo" | "llm" | "hybrid", config: Pick<C
   if (mode === "algo") return { client: null, fallback: null };
   const { llmClient } = await import("../llm.ts");
   const setup = llmClient(config.agent, { root: config.root });
+
   if (!("missing" in setup)) return { client: setup.client, fallback: null };
+
   if (mode === "llm") return { error: `${command} --mode llm: ${setup.missing}` };
+
   return { client: null, fallback: `${setup.missing}; drafting from the snapshot only (--mode algo)` };
 }
 
@@ -84,13 +87,18 @@ export async function modelSetup(mode: "algo" | "llm" | "hybrid", config: Pick<C
  */
 export function proposalRefusal(root: string, candidate: { target: string; problem: string | null; pending: string | null }, pending: "refuse" | "replace" | undefined, command = "draft"): { exitCode: 1 | 2; error: string; refused: string[] } | null {
   const store = `${PROPOSALS_DIR}/${candidate.target}`;
+
   if (candidate.problem !== null) return { exitCode: 2, error: `${command}: ${candidate.target}: ${candidate.problem}`, refused: [] };
   const storeProblem = writeProblem(root, store, { under: PROPOSALS_DIR, generated: true });
+
   if (storeProblem !== null) return { exitCode: 2, error: `${store}: ${storeProblem}`, refused: [] };
+
   if ((pending ?? "refuse") === "refuse" && candidate.pending !== null) {
     const waiting = `${store}: a proposal for ${candidate.target} is waiting; merge it (m) or remove it before a new draft`;
+
     return { exitCode: 1, error: waiting, refused: [waiting] };
   }
+
   return null;
 }
 
@@ -119,14 +127,18 @@ export async function commitProposal(commit: ProposalCommit, context: OperationC
   const { root, target, expected } = commit;
   context.onProgress?.({ text: "waiting to write" });
   let gate: CommitGate;
+
   try {
     gate = await context.beforeCommit?.({ targets: [target] });
   } catch (error) {
     return { failed: errorText(error), writing: false };
   }
+
   if (context.signal?.aborted) return { cancelled: true };
+
   if (gate && gate.refused.length > 0) return { refused: gate.refused };
   let problems: string[];
+
   try {
     const problem = proposalProblem(root, commit.specDir, target, commit.generated);
     const written = problem !== null ? `${target}: ${problem}` : proposalWriteProblem(root, target, expected);
@@ -134,13 +146,16 @@ export async function commitProposal(commit: ProposalCommit, context: OperationC
   } catch (error) {
     return { failed: errorText(error), writing: false };
   }
+
   if (problems.length > 0) return { refused: problems };
   const store = `${PROPOSALS_DIR}/${target}`;
   context.onProgress?.({ text: `writing ${store}` });
+
   try {
     writeProposal(root, target, commit.text, expected);
   } catch (error) {
     return { failed: errorText(error), writing: true };
   }
+
   return { proposal: store };
 }

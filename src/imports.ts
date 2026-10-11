@@ -81,9 +81,11 @@ export interface SourceResolver {
  */
 export function assumedTarget(r: Resolution, wouldName: () => readonly string[], assumed: (path: string) => boolean): string | null {
   if (r.kind === "internal") return assumed(r.file) ? r.file : null;
+
   if (r.kind !== "unresolved") return null;
   // `src/gen/**` also matches the extensionless `src/gen/x`: the source file is the better name for it.
   const matches = wouldName().filter(assumed);
+
   return matches.find((path) => languageOf(path) !== undefined) ?? matches[0] ?? null;
 }
 
@@ -138,21 +140,27 @@ export class ImportResolver {
     this.sources = sources;
     this.pwaKit = options.pwaKit !== false;
     this.cartridgePath = options.cartridgePath ?? null;
+
     if (options.sfcc === false) this.layout = null;
     // The cartridge path is an input of the snapshot id whether or not a require asks for it.
     else this.cartridges();
     this.onDisk = exactExistence(root, fs);
+
     // One read per file: the text hashed into the snapshot id is the text parsed.
     const text = (file: string): string | null => {
       const known = this.inputs.get(file);
       const read = known !== undefined ? known : readText(join(root, file));
       this.inputs.set(file, read);
+
       return read;
     };
+
     const read = (file: string): unknown => {
       const known = text(file);
+
       return known === null ? null : parseJsonc(known);
     };
+
     this.text = text;
     this.read = read;
     // The root config is an input of the snapshot id whether or not a bare import asks for it.
@@ -177,20 +185,26 @@ export class ImportResolver {
    */
   verbatimModuleSyntax(file: string): boolean {
     const config = this.governingConfig(posix.dirname(file));
+
     if (config === null) return false;
     const known = this.verbatim.get(config);
+
     if (known !== undefined) return known;
     let held = this.verbatimSetting(config, 0);
     const raw = this.read(config);
+
     for (const ref of isObject(raw) && Array.isArray(raw.references) ? raw.references : []) {
       if (held === true || held === "unknown") break;
       const target = isObject(ref) && typeof ref.path === "string" ? posix.normalize(posix.join(posix.dirname(config), toPosix(ref.path))) : null;
+
       if (target === null) held = "unknown";
       // A project outside the root governs no file of this analysis.
       else if (!target.startsWith("../")) held = this.verbatimSetting(target.endsWith(".json") ? target : posix.join(target, "tsconfig.json"), 1);
     }
+
     const holds = held === true || held === "unknown";
     this.verbatim.set(config, holds);
+
     return holds;
   }
 
@@ -207,18 +221,23 @@ export class ImportResolver {
   private optionsFor(fromFile: string): Tsconfig {
     const dir = posix.dirname(fromFile);
     const known = this.options.get(dir);
+
     if (known !== undefined) return known;
     const config = this.governingConfig(dir);
     let result: Tsconfig = { baseUrl: null, paths: [] };
+
     if (config !== null) {
       let loaded = this.tsconfigs.get(config);
+
       if (loaded === undefined) {
         loaded = loadTsconfig(this.read, config);
         this.tsconfigs.set(config, loaded);
       }
+
       if (loaded.own.paths.length > 0) result = loaded.own;
       else {
         result = { baseUrl: loaded.own.baseUrl, paths: [] };
+
         for (const ref of loaded.references) {
           if (ref.dir !== "." && dir !== ref.dir && !dir.startsWith(`${ref.dir}/`)) continue;
           result.paths.push(...ref.options.paths);
@@ -226,20 +245,25 @@ export class ImportResolver {
         }
       }
     }
+
     this.options.set(dir, result);
+
     return result;
   }
 
   /** The tsconfig (else jsconfig) of `dir` or the nearest directory above it, up to the root; null without one. */
   private governingConfig(dir: string): string | null {
     const known = this.governing.get(dir);
+
     if (known !== undefined) return known;
     const at = (name: string): string => (dir === "." ? name : `${dir}/${name}`);
     let found: string | null = null;
+
     if (this.text(at("tsconfig.json")) !== null) found = at("tsconfig.json");
     else if (this.text(at("jsconfig.json")) !== null) found = at("jsconfig.json");
     else if (dir !== ".") found = this.governingConfig(posix.dirname(dir));
     this.governing.set(dir, found);
+
     return found;
   }
 
@@ -252,17 +276,23 @@ export class ImportResolver {
   private verbatimSetting(file: string, depth: number): boolean | "unset" | "unknown" {
     if (depth > 5) return "unknown";
     const raw = this.read(file);
+
     if (!isObject(raw)) return "unknown";
     const options = isObject(raw.compilerOptions) ? raw.compilerOptions : {};
     const own = options.verbatimModuleSyntax;
+
     if (typeof own === "boolean") return own;
+
     if (own !== undefined) return "unknown";
     const parents: unknown[] = raw.extends === undefined ? [] : Array.isArray(raw.extends) ? raw.extends : [raw.extends];
+
     for (const parent of [...parents].reverse()) {
       const target = typeof parent === "string" ? this.extendedConfig(posix.dirname(file), parent) : null;
       const setting = target === null ? "unknown" : this.verbatimSetting(target, depth + 1);
+
       if (setting !== "unset") return setting;
     }
+
     return "unset";
   }
 
@@ -276,18 +306,25 @@ export class ImportResolver {
    */
   private extendedConfig(dir: string, spec: string): string | null {
     const name = toPosix(spec);
+
     if (/^\.\.?(\/|$)/.test(name)) {
       const path = posix.normalize(posix.join(dir, name));
+
       if (path.startsWith("../")) return null;
+
       return this.text(path) !== null || path.endsWith(".json") ? path : `${path}.json`;
     }
+
     if (name === "" || name.startsWith("/") || /^[A-Za-z]:/.test(name)) return null;
+
     for (let at = dir; ; at = posix.dirname(at)) {
       const base = at === "." ? `node_modules/${name}` : `${at}/node_modules/${name}`;
       const field = name.endsWith(".json") ? null : (this.read(`${base}/package.json`) as { tsconfig?: unknown } | null)?.tsconfig;
       const candidates = name.endsWith(".json") ? [base] : [`${base}.json`, ...(typeof field === "string" ? [posix.normalize(posix.join(base, field))] : []), `${base}/tsconfig.json`];
       const found = candidates.find((candidate) => this.text(candidate) !== null);
+
       if (found !== undefined) return found;
+
       if (at === ".") return null;
     }
   }
@@ -301,29 +338,39 @@ export class ImportResolver {
    */
   private locate(pkg: string): Located {
     const known = this.located.get(pkg);
+
     if (known !== undefined) return known;
     let found: Located = null;
+
     for (let dir = this.root; ; ) {
       const installed = join(dir, "node_modules", pkg);
+
       if (existsSync(installed)) {
         const rel = inside(this.root, installed);
         found = rel !== null ? { kind: "workspace", dir: rel } : { kind: "installed" };
         break;
       }
+
       if (existsSync(join(dir, "node_modules/@types", pkg.replace(/^@/, "").replace("/", "__")))) {
         found = { kind: "installed" };
         break;
       }
+
       const parent = join(dir, "..");
+
       if (parent === dir) break;
       dir = parent;
     }
+
     if (found === null) {
       const dir = this.workspaceDirs().find((d) => (this.read(`${d}/package.json`) as { name?: unknown } | null)?.name === pkg);
+
       if (dir !== undefined) found = { kind: "workspace", dir };
     }
+
     this.located.set(pkg, found);
     this.inputs.set(`node_modules/${pkg}`, found === null ? null : found.kind === "installed" ? "installed" : `workspace ${found.dir}`);
+
     return found;
   }
 
@@ -334,17 +381,23 @@ export class ImportResolver {
    */
   private workspaceDirs(): string[] {
     const dirs: string[] = [];
+
     for (const pattern of this.workspaces) {
       const glob = pattern.startsWith("!") ? null : workspaceGlob(pattern);
+
       if (glob === null) continue;
+
       if (!isGlob(glob)) {
         dirs.push(glob);
         continue;
       }
+
       const listing = listWorkspaceGlob(this.root, glob);
       this.inputs.set(glob, listing);
+
       if (listing !== "") dirs.push(...listing.split("\n"));
     }
+
     return withoutNegated(dirs, this.workspaces);
   }
 
@@ -358,16 +411,19 @@ export class ImportResolver {
     const key = `.${subpath}`;
     const candidates: string[] = [];
     const exports = manifest?.exports;
+
     if (typeof exports === "string" || Array.isArray(exports)) {
       if (key === ".") candidates.push(...flattenTarget(exports));
     } else if (isObject(exports)) {
       const subpaths = Object.keys(exports).some((k) => k.startsWith("."));
+
       if (!subpaths) {
         if (key === ".") candidates.push(...flattenTarget(exports));
       } else if (key in exports) candidates.push(...flattenTarget(exports[key]));
       else {
         for (const [pattern, target] of Object.entries(exports)) {
           const m = matchPattern(pattern, key);
+
           if (m !== null && pattern.includes("*")) candidates.push(...flattenTarget(target).map((t) => t.replace("*", m)));
         }
       }
@@ -375,21 +431,26 @@ export class ImportResolver {
       for (const field of [manifest?.module, manifest?.main]) if (typeof field === "string") candidates.push(field);
       candidates.push("index");
     } else candidates.push(key);
+
     for (const target of candidates) {
       if (/\.d\.[cm]?ts$/.test(target)) continue;
       const f = this.probe(posix.join(dir, toPosix(target)));
+
       if (f && !/\.d\.[cm]?ts$/.test(f)) return f;
     }
+
     return null;
   }
 
   resolve(fromFile: string, spec: string): Resolution {
     const key = `${fromFile}\0${spec}`;
     let r = this.cache.get(key);
+
     if (!r) {
       r = this.resolveUncached(fromFile, spec);
       this.cache.set(key, r);
     }
+
     return r;
   }
 
@@ -400,41 +461,57 @@ export class ImportResolver {
   cartridges(): CartridgeLayout | null {
     if (this.layout === undefined) {
       this.layout = cartridgeLayout(this.root, this.sources, this.cartridgePath);
+
       if (this.layout !== null) this.inputs.set("sfcc:cartridge-path", JSON.stringify({ source: this.layout.source, path: this.layout.path.map((c) => c.name) }));
     }
+
     return this.layout;
   }
 
   private resolveUncached(fromFile: string, spec: string): Resolution {
     // Framework-generated type modules (React Router `./+types/route`).
     if (spec.includes("+types/")) return { kind: "generated" };
+
     if (spec.startsWith("./") || spec.startsWith("../") || spec === "." || spec === "..") {
       const f = this.probe(posix.join(posix.dirname(fromFile), spec));
+
       return f ? { kind: "internal", file: f } : { kind: "unresolved" };
     }
+
     const layout = this.cartridges();
     const answers = layout === null ? null : cartridgeAnswers(layout, fromFile, spec, (candidate) => this.probe(candidate));
+
     if (answers === "external") return { kind: "external", pkg: "dw" };
+
     if (answers !== null) return answers.length > 0 ? { kind: "internal", file: answers[0]! } : { kind: "unresolved" };
+
     // `module.superModule` outside SFCC names nothing keylang knows.
     if (spec === SUPER_MODULE) return { kind: "unresolved" };
     const template = this.pwaKit && (spec.startsWith("@") || spec.startsWith("^")) ? this.templateImport(fromFile, spec) : null;
+
     if (template !== null) return template;
+
     if (spec.startsWith("#")) return this.resolveSubpathImport(fromFile, spec);
     // `tsc` tries only the most specific `paths` pattern, then `baseUrl`, then built-ins and packages.
     const ts = this.optionsFor(fromFile);
     const matched = bestMatch(ts.paths, spec);
+
     if (matched) {
       for (const t of matched.rule.targets) {
         const f = this.probe(t.replace("*", matched.star));
+
         if (f) return { kind: "internal", file: f };
       }
     }
+
     if (ts.baseUrl) {
       const f = this.probe(posix.join(ts.baseUrl, spec));
+
       if (f) return { kind: "internal", file: f };
     }
+
     if (isNodeBuiltin(spec)) return { kind: "builtin" };
+
     return this.resolvePackage(fromFile, spec);
   }
 
@@ -447,13 +524,17 @@ export class ImportResolver {
    */
   private templateImport(fromFile: string, spec: string): Resolution | null {
     const project = this.extensibilityAt(posix.dirname(fromFile));
+
     if (project === null) return null;
     const { dir, cc } = project;
     const caret = spec.startsWith("^");
     const bare = caret ? spec.slice(1) : spec;
+
     if (bare !== cc.base && !bare.startsWith(`${cc.base}/`)) return null;
+
     if (caret || bare === cc.base || cc.overridesDir === "") return { kind: "external", pkg: cc.base };
     const overridden = this.probe(posix.join(dir === "" ? "." : dir, cc.overridesDir, bare.slice(cc.base.length + 1)));
+
     // An override that imports its own base path means the base file: the platform does not loop.
     return overridden !== null && overridden !== fromFile ? { kind: "internal", file: overridden } : { kind: "external", pkg: cc.base };
   }
@@ -462,14 +543,17 @@ export class ImportResolver {
   private extensibilityAt(dir: string): { dir: string; cc: Extensibility } | null {
     const key = dir === "." ? "" : dir;
     const known = this.extensibility.get(key);
+
     if (known !== undefined) return known;
     const manifest = this.text(key === "" ? "package.json" : `${key}/package.json`);
     let found: { dir: string; cc: Extensibility } | null;
+
     if (manifest !== null) {
       const cc = extensibilityOf(parseJsonc(manifest));
       found = cc === null ? null : { dir: key, cc };
     } else found = key === "" || key.startsWith("..") ? null : this.extensibilityAt(posix.dirname(key));
     this.extensibility.set(key, found);
+
     return found;
   }
 
@@ -482,20 +566,29 @@ export class ImportResolver {
     for (let dir = posix.dirname(fromFile); ; dir = posix.dirname(dir)) {
       const scope = dir === "." || dir === "" ? "" : dir;
       const rules = this.scopeImports(scope);
+
       if (rules !== null) {
         const matched = bestMatch(rules, spec);
+
         if (!matched) return { kind: "unresolved" };
+
         for (const t of matched.rule.targets) {
           const target = toPosix(t).replaceAll("*", matched.star);
+
           if (!target.startsWith(".")) {
             if (target.startsWith("#") || target.startsWith("/")) continue;
+
             return this.resolve(fromFile, target);
           }
+
           const f = this.probe(posix.normalize(posix.join(scope, target)));
+
           if (f) return { kind: "internal", file: f };
         }
+
         return { kind: "unresolved" };
       }
+
       if (scope === "") return { kind: "unresolved" };
     }
   }
@@ -503,11 +596,13 @@ export class ImportResolver {
   /** `imports` of `<dir>/package.json`; an empty list when it has none, null without the file. */
   private scopeImports(dir: string): PathRule[] | null {
     const known = this.scopes.get(dir);
+
     if (known !== undefined) return known;
     const manifest = this.read(dir === "" ? "package.json" : `${dir}/package.json`);
     const imports = isObject(manifest) && isObject(manifest.imports) ? manifest.imports : {};
     const rules = manifest === null ? null : Object.entries(imports).map(([pattern, t]) => ({ pattern, targets: flattenTarget(t) }));
     this.scopes.set(dir, rules);
+
     return rules;
   }
 
@@ -522,14 +617,18 @@ export class ImportResolver {
     const pkg = packageName(spec);
     const subpath = spec.slice(pkg.length);
     const located = this.locate(pkg);
+
     if (located?.kind === "workspace") return this.workspaceFile(located.dir, pkg, subpath);
+
     if (located !== null) return { kind: "external", pkg };
+
     return this.near(fromFile, pkg, subpath) ?? this.declaredDependency("", this.declared, pkg, subpath) ?? { kind: "unresolved" };
   }
 
   /** The file a workspace package in `dir` names for `subpath`; unresolved without one (a `dist/` entry keylang does not index). */
   private workspaceFile(dir: string, pkg: string, subpath: string): Resolution {
     const f = this.packageEntry(dir, subpath);
+
     return f ? { kind: "internal", file: f, workspace: pkg } : { kind: "unresolved" };
   }
 
@@ -545,19 +644,26 @@ export class ImportResolver {
   private near(fromFile: string, pkg: string, subpath: string): Resolution | null {
     for (let dir = posix.dirname(fromFile); dir !== "." && dir !== "" && !dir.startsWith(".."); dir = posix.dirname(dir)) {
       const installed = join(this.root, dir, "node_modules", pkg);
+
       if (existsSync(installed)) {
         const rel = inside(this.root, installed);
         this.inputs.set(`${dir}/node_modules/${pkg}`, rel === null ? "installed" : `workspace ${rel}`);
+
         return rel === null ? { kind: "external", pkg } : this.workspaceFile(rel, pkg, subpath);
       }
+
       let declared = this.nested.get(dir);
+
       if (declared === undefined) {
         declared = dependencies(this.read(`${dir}/package.json`));
         this.nested.set(dir, declared);
       }
+
       const r = this.declaredDependency(dir, declared, pkg, subpath);
+
       if (r !== null) return r;
     }
+
     return null;
   }
 
@@ -573,13 +679,19 @@ export class ImportResolver {
   private declaredDependency(dir: string, declared: ReadonlyMap<string, string | null>, pkg: string, subpath: string): Resolution | null {
     const types = `@types/${pkg.replace(/^@/, "").replace("/", "__")}`;
     const range = declared.has(pkg) ? declared.get(pkg)! : declared.has(types) ? declared.get(types)! : undefined;
+
     if (range === undefined) return null;
+
     if (range === null || !LOCAL_RANGE.test(range)) return { kind: "external", pkg };
+
     if (range.startsWith("workspace:")) return { kind: "unresolved" };
     const target = toPosix(range.replace(LOCAL_RANGE, ""));
+
     if (/\.(tgz|tar\.gz|tar)$/.test(target)) return { kind: "external", pkg };
     const at = posix.normalize(posix.join(dir === "" ? "." : dir, target));
+
     if (at === ".." || at.startsWith("../") || at.startsWith("/")) return { kind: "unresolved" };
+
     return this.workspaceFile(at, pkg, subpath);
   }
 
@@ -588,12 +700,15 @@ export class ImportResolver {
     for (const p of probeCandidates(candidate)) {
       if (this.sources.has(p)) return p;
       const abs = join(this.root, p);
+
       if (this.onDisk(p) && statSync(abs).isFile()) {
         // A file the analysis does not read (a `.d.ts`, a test, JSON) still decides the edge: an input of the snapshot id.
         this.text(p);
+
         return p;
       }
     }
+
     return null;
   }
 
@@ -605,28 +720,38 @@ export class ImportResolver {
   wouldName(fromFile: string, spec: string): string[] {
     if (spec.startsWith("./") || spec.startsWith("../") || spec === "." || spec === "..") return probeCandidates(posix.join(posix.dirname(fromFile), spec));
     const out: string[] = [];
+
     if (spec.startsWith("#")) {
       for (let dir = posix.dirname(fromFile); ; dir = posix.dirname(dir)) {
         const scope = dir === "." || dir === "" ? "" : dir;
         const rules = this.scopeImports(scope);
+
         if (rules !== null) {
           // Only relative targets name files; a target that is a package is not this repository's.
           const matched = bestMatch(rules, spec);
+
           if (matched) {
             for (const t of matched.rule.targets) {
               const target = toPosix(t).replaceAll("*", matched.star);
+
               if (target.startsWith(".")) out.push(...probeCandidates(posix.join(scope, target)));
             }
           }
+
           return out;
         }
+
         if (scope === "") return out;
       }
     }
+
     const ts = this.optionsFor(fromFile);
     const matched = bestMatch(ts.paths, spec);
+
     if (matched) for (const t of matched.rule.targets) out.push(...probeCandidates(t.replace("*", matched.star)));
+
     if (ts.baseUrl) out.push(...probeCandidates(posix.join(ts.baseUrl, spec)));
+
     return out;
   }
 }
@@ -639,10 +764,12 @@ export class ImportResolver {
  */
 export function probeCandidates(candidate: string): string[] {
   const c = posix.normalize(candidate);
+
   if (c.startsWith("../")) return [];
-  const swapped = /\.[cm]?js$/.test(c) ? [c.replace(/\.js$/, ".ts").replace(/\.mjs$/, ".mts").replace(/\.cjs$/, ".cts"), c.replace(/\.js$/, ".tsx"), c.replace(/\.js$/, ".jsx")] : /\.jsx$/.test(c) ? [c.replace(/\.jsx$/, ".tsx")] : [];
+  const swapped = /\.[cm]?js$/.test(c) ? [c.replace(/\.js$/, ".ts").replace(/\.mjs$/, ".mts").replace(/\.cjs$/, ".cts"), c.replace(/\.js$/, ".tsx"), c.replace(/\.js$/, ".jsx")] : c.endsWith('.jsx') ? [c.replace(/\.jsx$/, ".tsx")] : [];
   // A module that only has a declaration file is what tsc resolves to after the sources: `./types` → `types.d.ts`.
   const declared = /\.[cm]?js$/.test(c) ? [c.replace(/\.js$/, ".d.ts").replace(/\.mjs$/, ".d.mts").replace(/\.cjs$/, ".d.cts")] : [];
+
   return [c, ...swapped, ...EXTS.map((e) => c + e), ...declared, ...DTS.map((e) => c + e), ...EXTS.map((e) => posix.join(c, `index${e}`)), posix.join(c, "index.d.ts")];
 }
 
@@ -654,15 +781,19 @@ type Located = { kind: "workspace"; dir: string } | { kind: "installed" } | null
 export function inside(root: string, abs: string): string | null {
   let real: string;
   let base: string;
+
   try {
     real = realpathSync(abs);
     base = realpathSync(root);
   } catch {
     return null;
   }
+
   const rel = relative(base, real);
+
   if (rel === "" || rel.startsWith("..") || rel.startsWith(sep) || /^[A-Za-z]:/.test(rel)) return null;
   const posixRel = toPosix(rel);
+
   return posixRel.split("/").includes("node_modules") ? null : posixRel;
 }
 
@@ -676,17 +807,22 @@ const LOCAL_RANGE = /^(workspace|file|link|portal):/;
 /** The packages a manifest's dependency fields declare: name → range as written (null when it is no string); the first field that has a name wins. */
 function dependencies(manifest: unknown): Map<string, string | null> {
   const out = new Map<string, string | null>();
+
   for (const field of ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"]) {
     const deps = isObject(manifest) ? manifest[field] : undefined;
+
     if (!isObject(deps)) continue;
+
     for (const [name, range] of Object.entries(deps)) if (!out.has(name)) out.set(name, typeof range === "string" ? range : null);
   }
+
   return out;
 }
 
 /** A workspace pattern (`packages/*`, `./apps/web/`) as a root-relative POSIX glob; null when it leaves the root. */
 export function workspaceGlob(pattern: string): string | null {
   const clean = posix.normalize(toPosix(pattern)).replace(/\/$/, "");
+
   return clean === ".." || clean.startsWith("../") || clean.startsWith("/") ? null : clean;
 }
 
@@ -706,8 +842,10 @@ export function listWorkspaceGlob(root: string, glob: string): string {
   const segments = glob.split("/");
   const fixed = segments.findIndex((segment) => isGlob(segment));
   const base = segments.slice(0, fixed).join("/");
+
   const subdirs = (rel: string): string[] => {
     const abs = join(root, rel);
+
     try {
       return readdirSync(abs, { withFileTypes: true })
         .filter((e) => e.isDirectory() && e.name !== "node_modules" && !e.name.startsWith("."))
@@ -716,18 +854,23 @@ export function listWorkspaceGlob(root: string, glob: string): string {
       return [];
     }
   };
+
   if (fixed === segments.length - 1 && segments[fixed] === "*") return subdirs(base).sort().join("\n");
   const pattern = globToRegExp(glob);
   const out: string[] = [];
   const deep = segments.slice(fixed).includes("**") || glob.includes("{");
   const depth = segments.length - fixed;
+
   const walk = (rel: string, level: number): void => {
     for (const dir of subdirs(rel)) {
       if (pattern.test(dir)) out.push(dir);
+
       if (deep || level + 1 < depth) walk(dir, level + 1);
     }
   };
+
   walk(base, 0);
+
   return out.sort().join("\n");
 }
 
@@ -735,8 +878,10 @@ export function listWorkspaceGlob(root: string, glob: string): string {
 export function withoutNegated(dirs: readonly string[], patterns: readonly unknown[]): string[] {
   const negated = patterns.flatMap((pattern) => {
     const glob = typeof pattern === "string" && pattern.startsWith("!") ? workspaceGlob(pattern.slice(1)) : null;
+
     return glob === null ? [] : [globToRegExp(glob)];
   });
+
   return negated.length === 0 ? [...dirs] : dirs.filter((dir) => !negated.some((re) => re.test(dir)));
 }
 
@@ -748,23 +893,28 @@ export function withoutNegated(dirs: readonly string[], patterns: readonly unkno
  */
 export function pnpmWorkspacePackages(text: string): string[] {
   const lines = text.split(/\r?\n/);
-  const start = lines.findIndex((line) => /^packages:/.test(line));
+  const start = lines.findIndex((line) => line.startsWith('packages:'));
+
   if (start === -1) return [];
   const unquote = (item: string): string => item.trim().replace(/\s+#.*$/, "").trim().replace(/^(['"])(.*)\1$/, "$2");
   const inline = lines[start]!.slice("packages:".length).trim();
   const items: string[] = [];
+
   if (inline.startsWith("[")) {
     const end = inline.indexOf("]");
     items.push(...(end === -1 ? inline.slice(1) : inline.slice(1, end)).split(",").map(unquote));
   } else {
     for (let i = start + 1; i < lines.length; i++) {
       const line = lines[i]!;
+
       if (/^\s*(#|$)/.test(line)) continue;
       const item = /^\s*-\s*(.*)$/.exec(line);
+
       if (item === null) break;
       items.push(unquote(item[1]!));
     }
   }
+
   return items.filter((item) => item !== "" && !item.startsWith("!"));
 }
 
@@ -776,42 +926,55 @@ export function pnpmWorkspacePackages(text: string): string[] {
  */
 function bestMatch(rules: readonly PathRule[], spec: string): { rule: PathRule; star: string } | null {
   let best: { rule: PathRule; star: string; prefix: number } | null = null;
+
   for (const rule of rules) {
     const star = matchPattern(rule.pattern, spec);
+
     if (star === null) continue;
+
     if (!rule.pattern.includes("*")) return { rule, star };
     const prefix = rule.pattern.indexOf("*");
+
     if (!best || prefix > best.prefix || (prefix === best.prefix && rule.pattern.length > best.rule.pattern.length)) best = { rule, star, prefix };
   }
+
   return best && { rule: best.rule, star: best.star };
 }
 
 function matchPattern(pattern: string, spec: string): string | null {
   const star = pattern.indexOf("*");
+
   if (star === -1) return pattern === spec ? "" : null;
   const pre = pattern.slice(0, star);
   const post = pattern.slice(star + 1);
+
   if (spec.startsWith(pre) && spec.endsWith(post) && spec.length >= pre.length + post.length) {
     return spec.slice(pre.length, spec.length - post.length);
   }
+
   return null;
 }
 
 function flattenTarget(t: unknown): string[] {
   if (typeof t === "string") return [t];
+
   if (Array.isArray(t)) return t.flatMap(flattenTarget);
+
   if (t && typeof t === "object") return Object.values(t).flatMap(flattenTarget);
+
   return [];
 }
 
 export function packageName(spec: string): string {
   const parts = spec.split("/");
+
   return spec.startsWith("@") ? parts.slice(0, 2).join("/") : parts[0]!;
 }
 
 /** JSON with comments and trailing commas (tsconfig style). */
 export function readJsonc(path: string): unknown {
   const text = readText(path);
+
   return text === null ? null : parseJsonc(text);
 }
 
@@ -847,10 +1010,13 @@ function readText(path: string): string | null {
 function stripJsonc(source: string): string {
   const text = withoutBom(source);
   let out = "";
+
   for (let i = 0; i < text.length; i++) {
     const c = text[i]!;
+
     if (c === '"') {
       const start = i;
+
       for (i++; i < text.length && text[i] !== '"'; i++) if (text[i] === "\\") i++;
       out += text.slice(start, i + 1);
     } else if (c === "/" && text[i + 1] === "/") {
@@ -863,6 +1029,7 @@ function stripJsonc(source: string): string {
       out += c;
     }
   }
+
   return out.replace(/,(\s*[}\]])/g, "$1");
 }
 
@@ -897,44 +1064,56 @@ interface MergedOptions {
 function loadTsconfig(read: (file: string) => unknown, file: string): LoadedTsconfig {
   const own = mergedOptions(read, file, 0);
   const result: LoadedTsconfig = { own: { baseUrl: own.baseUrl, paths: placePaths(own) }, references: [] };
+
   // Own `paths` win outright, so the referenced configs are read (and become inputs) only when they can matter.
   if (result.own.paths.length > 0) return result;
   const raw = read(file);
   const references = isObject(raw) && Array.isArray(raw.references) ? raw.references : [];
   const dir = posix.dirname(toPosix(file));
+
   for (const ref of references) {
     if (!isObject(ref) || typeof ref.path !== "string") continue;
     const target = posix.normalize(posix.join(dir, toPosix(ref.path)));
     const refFile = target.endsWith(".json") ? target : posix.join(target, "tsconfig.json");
+
     if (refFile.startsWith("../")) continue;
     const referenced = mergedOptions(read, refFile, 1);
     result.references.push({ dir: posix.dirname(refFile), options: { baseUrl: referenced.baseUrl, paths: placePaths(referenced) } });
   }
+
   return result;
 }
 
 function mergedOptions(read: (file: string) => unknown, file: string, depth: number): MergedOptions {
   const raw = read(file);
   let result: MergedOptions = { baseUrl: null, paths: null };
+
   if (!isObject(raw) || depth > 5) return result;
   const dir = posix.dirname(toPosix(file));
   const parents = typeof raw.extends === "string" ? [raw.extends] : Array.isArray(raw.extends) ? raw.extends.filter((e): e is string => typeof e === "string") : [];
+
   for (const e of parents) {
     if (!e.startsWith(".")) continue; // package configs (`@tsconfig/node22`) carry no paths
     const parentFile = posix.normalize(posix.join(dir, e.endsWith(".json") ? e : `${e}.json`));
+
     if (parentFile.startsWith("../")) continue;
     const p = mergedOptions(read, parentFile, depth + 1);
     result = { baseUrl: p.baseUrl ?? result.baseUrl, paths: p.paths ?? result.paths };
   }
+
   const co = isObject(raw.compilerOptions) ? raw.compilerOptions : {};
+
   if (typeof co.baseUrl === "string" && co.baseUrl !== "") result.baseUrl = posix.normalize(posix.join(dir, toPosix(co.baseUrl)));
+
   if (isObject(co.paths)) result.paths = { rules: co.paths, dir };
+
   return result;
 }
 
 function placePaths(options: MergedOptions): PathRule[] {
   if (!options.paths) return [];
   const base = options.baseUrl ?? options.paths.dir;
+
   return Object.entries(options.paths.rules).map(([pattern, targets]) => ({
     pattern,
     targets: (Array.isArray(targets) ? targets : []).filter((t): t is string => typeof t === "string").map((t) => posix.normalize(posix.join(base, toPosix(t)))),

@@ -21,11 +21,13 @@ import { keylang, root } from "./cli-helpers.ts";
 import { checkoutRepo, CHECKOUT_FLOW } from "./tui-fixture.ts";
 
 const XSD_DIR = join(root, "node_modules/bpmn-moddle/resources/bpmn/xsd");
+
 const xsd = (name: string): { fileName: string; contents: string } => ({ fileName: name, contents: readFileSync(join(XSD_DIR, name), "utf8") });
 
 /** Errors of the BPMN 2.0 XSD (BPMN20.xsd with Semantic, BPMNDI, DI and DC) for a document; empty when it validates. */
 async function xsdErrors(xml: string): Promise<string[]> {
   const result = await validateXML({ xml: { fileName: "export.bpmn", contents: xml }, schema: xsd("BPMN20.xsd"), preload: ["Semantic.xsd", "BPMNDI.xsd", "DC.xsd", "DI.xsd"].map(xsd) });
+
   return result.errors.map((error) => error.message);
 }
 
@@ -34,6 +36,7 @@ function all(element: XmlElement, out: XmlElement[] = []): XmlElement[] {
     out.push(child);
     all(child, out);
   }
+
   return out;
 }
 
@@ -42,15 +45,20 @@ function referenceProblems(xml: string): string[] {
   const elements = all(parseXml(xml));
   const ids = new Set(elements.flatMap((e) => (e.attrs.id ? [e.attrs.id] : [])));
   const problems: string[] = [];
+
   for (const e of elements) {
     for (const attr of ["sourceRef", "targetRef", "bpmnElement", "processRef", "signalRef"]) if (e.attrs[attr] !== undefined && !ids.has(e.attrs[attr]!)) problems.push(`${e.name} ${e.attrs.id}: ${attr} ${e.attrs[attr]} is no element`);
+
     if (e.name === "bpmn:flowNodeRef" && !ids.has(e.text)) problems.push(`flowNodeRef ${e.text} is no element`);
     const flowNode = /^bpmn:(?:task|startEvent|exclusiveGateway|parallelGateway|intermediateThrowEvent|intermediateCatchEvent|participant|lane)$/.test(e.name);
+
     if (flowNode && (e.attrs["keylang:id"] === undefined || e.attrs["keylang:verdict"] === undefined)) problems.push(`${e.name} ${e.attrs.id}: no keylang:id / keylang:verdict`);
   }
+
   for (const e of elements.filter((x) => x.name === "bpmn:sequenceFlow" || x.name === "bpmn:messageFlow" || /^bpmn:(?:task|startEvent|exclusiveGateway|parallelGateway|intermediateThrowEvent|intermediateCatchEvent|participant|lane)$/.test(x.name))) {
     if (!elements.some((d) => (d.name === "bpmndi:BPMNShape" || d.name === "bpmndi:BPMNEdge") && d.attrs.bpmnElement === e.attrs.id)) problems.push(`${e.name} ${e.attrs.id}: not drawn`);
   }
+
   return problems;
 }
 
@@ -163,11 +171,13 @@ function withAddedTask(drawio: string, extra = ""): string {
     '        <mxCell id="new-edge" edge="1" parent="1" source="step:8" target="new-task"><mxGeometry relative="1" as="geometry" /></mxCell>',
     extra,
   ].join("\n");
+
   return drawio.replace("      </root>", `${cell}\n      </root>`);
 }
 
 test("import drawio: export → import of an unchanged drawing proposes nothing; an added task is one hunk; an unknown shape a note", (t) => {
   const repo = checkoutRepo(t, { "keylang/flows/refund.md": REFUND });
+
   for (const flow of ["checkout", "refund"]) {
     const exported = keylang(repo, ["export", "drawio", flow, "--out", `${flow}.drawio`]);
     assert.equal(exported.status, 0, exported.stderr);
@@ -251,6 +261,7 @@ function get(url: URL, path: string, headers: Record<string, string> = {}): Prom
       res.on("data", (chunk: Buffer) => (body += chunk.toString()));
       res.on("end", () => resolve({ status: res.statusCode ?? 0, body, headers: res.headers }));
     });
+
     req.on("error", reject);
     req.end();
   });
@@ -262,11 +273,13 @@ test("web: GET /api/export answers the file of `keylang export` with the token, 
   t.after(() => server.close());
   const url = new URL(server.url);
   const token = new URLSearchParams(url.hash.slice(1)).get("t") ?? "";
+
   for (const headers of [{}, { Authorization: "Bearer wrong" }, { Authorization: `Bearer ${token}`, Origin: "http://evil.example" }]) {
     const denied = await get(url, "/api/export?format=bpmn&view=flow&name=checkout", headers);
     assert.equal(denied.status, 403, JSON.stringify(headers));
     assert.doesNotMatch(denied.body, /checkout/);
   }
+
   const bearer = { Authorization: `Bearer ${token}` };
   const bpmn = await get(url, "/api/export?format=bpmn&view=flow&name=checkout", bearer);
   assert.equal(bpmn.status, 200, bpmn.body);

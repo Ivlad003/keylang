@@ -214,12 +214,14 @@ const REPO: Record<string, string> = {
 function shop(t: TestContext, extra: Record<string, string> = {}): string {
   const dir = tempDir(t, "keylang-web-");
   writeTree(dir, { ...REPO, ...extra });
+
   return dir;
 }
 
 function snapshotOf(dir: string): AnalysisSnapshot {
   const run = keylang(dir, ["map"]);
   assert.equal(run.status, 0, run.stderr);
+
   return JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as AnalysisSnapshot;
 }
 
@@ -232,7 +234,9 @@ function setConfig(dir: string, change: (raw: Record<string, unknown>) => void):
 /** `file:line:col id → verdict` of every `static` verdict `check` prints. */
 function verdicts(stdout: string): Map<string, string> {
   const out = new Map<string, string>();
+
   for (const m of stdout.matchAll(/^(\S+:\d+:\d+): static (ok|fail|unverified) (\S+?):/gm)) out.set(`${m[1]} ${m[3]}`, m[2]!);
+
   return out;
 }
 
@@ -354,9 +358,11 @@ test("web: `frameworks: []` turns the adapters off — the base route heuristic 
   assert.ok(off.coverage.some((c) => c.kind === "skipped-file" && c.file === "middleware.ts" && c.text === "framework:next"));
   const offVerdicts = verdicts(keylang(dir, ["check"]).stdout);
   assert.equal(offVerdicts.size, on.size);
+
   for (const [key, verdict] of on) {
     const now = offVerdicts.get(key);
     assert.ok(now === verdict || now === "unverified", `${key}: ${verdict} → ${now}`);
   }
+
   assert.ok(![...offVerdicts.values()].includes("fail"));
 });

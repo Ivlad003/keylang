@@ -11,6 +11,7 @@ export const EVENTS_LAYER = "events";
 
 /** A character an ID segment may hold after the first (docs/grammar.md, Додаток А: `segment`). */
 const SEGMENT_REST = /[\p{L}\p{M}\p{N}_$-]/u;
+
 const SEGMENT_FIRST = /[\p{L}_$]/u;
 
 /**
@@ -20,6 +21,7 @@ const SEGMENT_FIRST = /[\p{L}_$]/u;
  */
 export function eventSegment(name: string): string {
   const body = [...name.normalize("NFC")].map((ch) => (SEGMENT_REST.test(ch) ? ch : "-")).join("");
+
   return body !== "" && SEGMENT_FIRST.test([...body][0]!) ? body : `_${body}`;
 }
 
@@ -31,12 +33,15 @@ export function eventSegment(name: string): string {
 export function eventIds(names: Iterable<string>): Map<string, string> {
   const out = new Map<string, string>();
   const taken = new Set<string>();
+
   for (const name of [...new Set(names)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))) {
     const base = eventSegment(name);
     let segment = base;
+
     for (let n = 2; taken.has(segment); n++) segment = `${base}-${n}`;
     taken.add(segment);
     out.set(name, `${EVENTS_LAYER}.${segment}`);
   }
+
   return out;
 }

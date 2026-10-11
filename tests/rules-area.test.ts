@@ -11,6 +11,7 @@ import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
 
 function write(dir: string, path: string, text: string): void {
@@ -20,17 +21,21 @@ function write(dir: string, path: string, text: string): void {
 
 function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8" });
+
   if (r.error) throw r.error;
+
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
 function repo(t: TestContext, files: Record<string, string>): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-rules-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+
   for (const [path, text] of Object.entries(files)) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
     write(dir, path, text);
   }
+
   return dir;
 }
 
@@ -51,6 +56,7 @@ interface Row {
 function check(dir: string, args: string[] = []): { status: number | null; stderr: string; stdout: string; results: Row[] } {
   const run = keylang(dir, ["check", "--format", "json", ...args]);
   const parsed = JSON.parse(run.stdout) as { results: Row[] };
+
   return { status: run.status, stderr: run.stderr, stdout: run.stdout, results: parsed.results };
 }
 
@@ -115,6 +121,7 @@ test("a layers hole covers the connected order and not a disconnected one", (t) 
     "src/c/y.ts": "export function y(): void {}\n",
     "keylang/rules.md": "# rules\n\n- layers a < b\n- layers b < c\n",
   });
+
   const connected = check(dir);
   assert.equal(connected.status, 0, connected.stdout);
   const lines = connected.results.filter((row) => row.criterion.startsWith("layers"));
@@ -136,6 +143,7 @@ test("a layers hole covers the connected order and not a disconnected one", (t) 
 test("an excluded upward source is a layers hole, in a nested layer or outside every layer", (t) => {
   const layers = { domain: "src/domain/**", app: "src/app/**", infra: "src/infra/**" };
   const upward = 'import { y } from "../app/y.ts";\nexport function x(): void {\n  y();\n}\n';
+
   const dir = repo(t, {
     "keylang.json": config(layers),
     "src/domain/d.ts": "export function d(): void {}\n",
@@ -143,6 +151,7 @@ test("an excluded upward source is a layers hole, in a nested layer or outside e
     "src/infra/x.ts": upward,
     "keylang/rules.md": "# rules\n\n- layers domain < app\n  - infra\n",
   });
+
   const nested = check(dir);
   assert.equal(nested.status, 1, nested.stdout);
   assert.ok(nested.results.some((row) => row.code === "K101" && /src\/infra\/x\.ts/.test(`${row.file} ${row.evidence}`)), nested.stdout);
@@ -184,6 +193,7 @@ test("no-cycles under a module counts an excluded cycle file outside every layer
     "src/misc/b.ts": 'import { a } from "../app/a.ts";\nexport function b(): void {\n  a();\n}\n',
     "keylang/rules.md": "# rules\n\n- module app.a\n  - no-cycles\n",
   });
+
   const cycle = check(dir);
   assert.equal(cycle.status, 1, cycle.stdout);
   const fail = cycle.results.find((row) => row.code === "K105");
@@ -205,6 +215,7 @@ test("deny unassigned counts an excluded source outside every layer as a hole", 
     "src/misc/z.ts": 'import { y } from "../app/y.ts";\nexport function z(): void {\n  y();\n}\n',
     "keylang/rules.md": "# rules\n\n- deny unassigned app\n",
   });
+
   const denied = check(dir);
   assert.equal(denied.status, 1, denied.stdout);
   assert.ok(denied.results.some((row) => row.code === "K102"), denied.stdout);
@@ -223,6 +234,7 @@ test("two denies of equal depth each fail; a deeper deny is the only K102", (t) 
     "src/app/x.ts": 'import { save } from "../infra/db.ts";\nexport function x(): void {\n  save();\n}\n',
     "src/infra/db.ts": "export function save(): void {}\n",
   };
+
   const tied = repo(t, { ...files, "keylang/rules.md": "# rules\n\n- deny app.x infra\n- deny app infra.db\n" });
   const both = check(tied);
   assert.equal(both.status, 1, both.stdout);
@@ -248,6 +260,7 @@ test("an upward edge denied by deny is not also K101; an allow is named on the l
     "src/domain/x.ts": 'import { y } from "../app/y.ts";\nexport function x(): void {\n  y();\n}\n',
     "src/app/y.ts": "export function y(): void {}\n",
   };
+
   const denied = repo(t, { ...base, "keylang/rules.md": "# rules\n\n- layers domain < app\n- deny domain app\n" });
   const byDeny = check(denied);
   assert.equal(byDeny.results.filter((row) => row.code === "K102").length, 1, byDeny.stdout);
@@ -267,6 +280,7 @@ test("an upward edge denied by deny is not also K101; an allow is named on the l
     "src/domain/x.ts": "export function x(): void {}\n",
     "keylang/rules.md": "# rules\n\n- layers domain < app\n- deny app domain\n",
   });
+
   const down = check(downward);
   const order = down.results.find((row) => row.criterion === "layers domain < app");
   assert.equal(order?.verdict, "ok", down.stdout);
@@ -282,6 +296,7 @@ test("specHash is the rule line, and one hash for a connected order", (t) => {
     "src/c/y.ts": "export function y(): void {}\n",
     "keylang/rules.md": "# rules\n\n- layers a < b < c\n",
   });
+
   const one = check(dir);
   const k101 = one.results.find((row) => row.code === "K101");
   assert.ok(k101, one.stdout);
@@ -312,6 +327,7 @@ test("specHash is the rule line, and one hash for a connected order", (t) => {
     "src/infra/b.ts": "export function b(): void {}\n",
     "keylang/rules.md": "# rules\n\n- deny app.a infra\n",
   });
+
   const plain = check(linked).results.find((row) => row.criterion === "deny app.a infra");
   writeFileSync(join(linked, "keylang/rules.md"), "# rules\n\n- deny [app.a](x.md) infra\n");
   const asLink = check(linked).results.find((row) => row.criterion === "deny app.a infra");
@@ -341,6 +357,7 @@ test("a layers or entry line hashes its own text; K101, K103, and a module's ent
     "src/c/y.ts": 'import { x } from "../a/x.ts";\nexport function y(): void {\n  x();\n}\n',
     "keylang/rules.md": "# rules\n\n- layers a < b\n- layers b < c\n",
   });
+
   const down = check(dir);
   assert.equal(down.status, 0, down.stdout);
   const ab = down.results.find((row) => row.criterion === "layers a < b");
@@ -375,6 +392,7 @@ test("a layers or entry line hashes its own text; K101, K103, and a module's ent
     "src/domain/d.ts": "export function d(): void {}\n",
     "keylang/rules.md": "# rules\n\n- entry\n  - app.a\n- entry\n  - domain.d\n",
   });
+
   const reached = check(entered);
   assert.equal(reached.status, 0, reached.stdout);
   const appEntry = reached.results.find((row) => row.criterion === "entry" && row.line === 3);
@@ -409,6 +427,7 @@ test("a layers or entry line hashes its own text; K101, K103, and a module's ent
     "src/domain/d.ts": "export function d(): void {}\n",
     "keylang/rules.md": "# rules\n\n- entry\n  - app.a\n- entry\n  - domain.d\n",
   });
+
   const hidden = join(sealed, "src/app/sealed");
   mkdirSync(hidden);
   chmodSync(hidden, 0);
@@ -436,6 +455,7 @@ test("a broken manifest names the file and the field; a missing manifest is not 
     "keylang/rules.md": "# rules\n\n- module app.a\n",
     "package.json": "{ not json\n",
   });
+
   const json = keylang(dir, ["check", "keylang"]);
   assert.equal(json.status, 2, json.stderr);
   assert.match(json.stderr, /package\.json: invalid JSON/);
@@ -485,6 +505,7 @@ test("an opaque reference on a deny line shares that line's specHash", (t) => {
     "src/infra/b.ts": "export function b(): void {}\n",
     "keylang/rules.md": "# rules\n\n- deny app infra.b.save\n",
   });
+
   const rows = check(dir);
   const id = rows.results.find((row) => row.criterion === "ID" && row.evidence.includes("opaque module"));
   const deny = rows.results.find((row) => row.criterion === "deny app infra.b.save");
@@ -502,6 +523,7 @@ test("a declared package is not K001 when its only importer is excluded, and it 
     "src/infra/db.ts": 'import pg from "pg";\nexport function db(): void {\n  pg;\n}\n',
     "keylang/rules.md": "# rules\n\n- deny infra external\n- allow infra external.pg\n",
   });
+
   const hidden = check(dir);
   assert.equal(hidden.status, 0, hidden.stdout);
   assert.ok(!hidden.results.some((row) => row.code === "K001" && row.evidence.includes("external.pg")), hidden.stdout);
@@ -525,11 +547,13 @@ test("a declared package is not K001 when its only importer is excluded, and it 
   assert.equal(index.nodes["external.pg"], undefined);
   const mapFile = join(dir, "keylang/map/external.md");
   let mapText = "";
+
   try {
     mapText = readFileSync(mapFile, "utf8");
   } catch {
     mapText = "";
   }
+
   assert.doesNotMatch(mapText, /external\.pg/);
 });
 
@@ -541,6 +565,7 @@ test("a declared package with no import anywhere is not K001 and adds no snapsho
     "src/infra/db.ts": "export function db(): void {}\n",
     "keylang/rules.md": "# rules\n\n- allow infra external.pg\n",
   });
+
   const quiet = check(dir);
   assert.equal(quiet.status, 0, quiet.stdout);
   assert.ok(!quiet.results.some((row) => row.code === "K001"), quiet.stdout);
@@ -563,6 +588,7 @@ test("a manifest outside the analysed tree is not read: `exclude` keeps a bench 
     "keylang/rules.md": "# rules\n\n- allow infra external.pg\n",
     "keylang/flows/bench.md": "# flow bench\n\n- trigger app.a.a\n  - step external.junk\n",
   });
+
   const run = check(dir);
   assert.equal(run.status, 1, run.stdout);
   assert.ok(run.results.some((row) => row.code === "K001" && row.evidence.includes("external.junk")), run.stdout);
@@ -579,6 +605,7 @@ test("a manifest counts only on the path from an analysed file to the root, and 
     "src/infra/db.ts": "export function db(): void {}\n",
     "keylang/rules.md": "# rules\n\n- allow infra external.pg\n- allow infra external.redis\n- allow infra external.stray\n",
   });
+
   const run = check(dir);
   assert.equal(run.status, 1, run.stdout);
   const unknown = run.results.filter((row) => row.code === "K001").map((row) => row.evidence);
@@ -595,10 +622,13 @@ test("a workspace package is internal, not a known external: a `workspace:` rang
     "src/infra/db.ts": "export function db(): void {}\n",
     "keylang/rules.md": "# rules\n\n- allow infra external.wslib\n- allow infra external.named\n- allow infra external.local\n- allow infra external.node-fetch\n- allow infra external.babel-core\n",
   });
+
   const run = check(dir);
   assert.equal(run.status, 1, run.stdout);
   const unknown = run.results.filter((row) => row.code === "K001").map((row) => row.evidence).join("\n");
+
   for (const name of ["external.wslib", "external.named", "external.local"]) assert.match(unknown, new RegExp(name.replace(".", "\\.")), run.stdout);
+
   for (const name of ["external.node-fetch", "external.babel-core", "external.types"]) assert.doesNotMatch(unknown, new RegExp(name.replace(".", "\\.")), run.stdout);
 });
 
@@ -609,6 +639,7 @@ test("without languages only the root manifests declare packages", (t) => {
     "src/app/package.json": `${JSON.stringify({ dependencies: { redis: "4" } })}\n`,
     "keylang/rules.md": "# rules\n\n- allow app external.pg\n- allow app external.redis\n",
   });
+
   const run = check(dir);
   const unknown = run.results.filter((row) => row.code === "K001").map((row) => row.evidence).join("\n");
   assert.doesNotMatch(unknown, /external\.pg/, run.stdout);
@@ -624,6 +655,7 @@ test("a type or a planned event on deny is K005 scope and applies nowhere", (t) 
     "keylang/rules.md": "# rules\n\n- deny app domain.order.Order\n- deny app domain.order.paid\n",
     "keylang/wiring.md": "# wiring\n\n- wire app.main\n  - order domain.order.make\n",
   });
+
   const found = check(dir);
   assert.equal(found.status, 1, found.stdout);
   const scoped = found.results.filter((row) => row.code === "K005");
@@ -644,6 +676,7 @@ test("a fn deny applies nowhere: check, wire, and a deeper module deny still doe
     "keylang/rules.md": "# rules\n\n- deny app.checkout.checkout infra\n",
     "keylang/wiring.md": "# wiring\n\n- wire app.checkout.checkout\n  - db infra.db.save\n",
   });
+
   const member = check(dir);
   assert.equal(member.status, 1);
   assert.ok(member.results.some((row) => row.code === "K005"));
@@ -680,6 +713,7 @@ test("no-cycles and entry under a planned submodule of a file module do not stan
     "keylang/flows/feat.md": "# flow feat\n\n- planned module app.x.fresh\n",
     "keylang/rules.md": "# rules\n\n- module app.x.fresh\n  - no-cycles\n",
   });
+
   const cycles = keylang(cyclic, ["check"]);
   assert.equal(cycles.status, 0, cycles.stdout);
   assert.doesNotMatch(cycles.stdout, /K105/);
@@ -693,6 +727,7 @@ test("no-cycles and entry under a planned submodule of a file module do not stan
     "keylang/flows/feat.md": "# flow feat\n\n- planned module app.x.fresh\n",
     "keylang/rules.md": "# rules\n\n- entry\n  - app.main\n  - app.x.fresh\n",
   });
+
   const reached = keylang(entry, ["check"]).stdout;
   assert.match(reached, /K103 absence: module `app\.x` is not reachable from any `entry`/, reached);
   assert.match(reached, /K103 absence: module `app\.z` is not reachable from any `entry`/, reached);
@@ -704,11 +739,13 @@ test("exports on an opaque module (a parse error) whose partial table matches th
     "keylang/rules.md": "# rules\n\n- module app.m\n  - exports a\n",
     "src/app/m.ts": "export function a() { return 1; }\nconst x = ;;; )))) {{{\nexport function hidden() { return 3; }\n",
   });
+
   for (const args of [["check"], ["check", "--strict"]]) {
     const o = keylang(dir, args);
     assert.doesNotMatch(o.stdout, /the export table is exactly/, o.stdout);
     assert.match(o.stdout + o.stderr, /0 fail, 1 unverified, 0 ok/, o.stdout + o.stderr);
   }
+
   const json = JSON.parse(keylang(dir, ["check", "--format", "json"]).stdout) as { results: { criterion: string; verdict: string; evidence: string }[] };
   const row = json.results.find((r) => r.criterion.startsWith("exports"));
   assert.equal(row?.verdict, "unverified");

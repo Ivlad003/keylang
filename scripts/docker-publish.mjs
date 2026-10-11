@@ -21,6 +21,7 @@ function fail(text) {
 }
 
 let values;
+
 try {
   ({ values } = parseArgs({
     options: {
@@ -33,12 +34,21 @@ try {
 } catch (error) {
   fail(error.message);
 }
+
 if (!values.image || !/^[a-z0-9]+(?:[._-][a-z0-9]+)*(?:\/[a-z0-9]+(?:[._-][a-z0-9]+)*)+$/.test(values.image)) fail("--image <namespace/name> is required, e.g. --image ivlad003/keylang");
+
 const { version } = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+
 const tags = [`${values.image}:${version}`, ...(values["no-latest"] ? [] : [`${values.image}:latest`])];
+
 const args = ["buildx", "build", "--platform", values.platforms, ...tags.flatMap((tag) => ["--tag", tag]), "--label", `org.opencontainers.image.version=${version}`, "--label", "org.opencontainers.image.source=https://github.com/Ivlad003/keylang", "--push", root];
+
 process.stderr.write(`docker ${args.join(" ")}\n`);
+
 if (values["dry-run"]) process.exit(0);
+
 const run = spawnSync("docker", args, { stdio: "inherit" });
+
 if (run.error) fail(run.error.message);
+
 process.exit(run.status ?? 2);

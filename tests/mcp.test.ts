@@ -13,8 +13,11 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { HOOK_FLOW, HOOKS } from "./hooks-fixture.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
+
 const VERSION = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version as string;
+
 const FLOW = "# flow checkout\n\n- trigger app.checkout.checkout\n  - step domain.order.createOrder\n  - step infra.db.save\n";
 
 async function connect(t: TestContext, fixture = "repo"): Promise<{ dir: string; call(name: string, args?: Record<string, unknown>): Promise<{ text: string; isError: boolean }>; list(): Promise<string[]> }> {
@@ -22,18 +25,22 @@ async function connect(t: TestContext, fixture = "repo"): Promise<{ dir: string;
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   cpSync(join(root, "tests/fixtures", fixture), dir, { recursive: true });
   mkdirSync(join(dir, "keylang/flows"), { recursive: true });
+
   if (fixture === "repo") writeFileSync(join(dir, "keylang/flows/checkout.md"), FLOW);
   const client = new Client({ name: "keylang-test", version: "0" });
   await client.connect(new StdioClientTransport({ command: process.execPath, args: [bin, "mcp"], cwd: dir, stderr: "pipe" }));
   t.after(() => client.close());
+
   return {
     dir,
     async call(name, args = {}) {
       const r = (await client.callTool({ name, arguments: args })) as { content: { type: string; text: string }[]; isError?: boolean };
+
       return { text: r.content.map((c) => c.text).join(""), isError: r.isError === true };
     },
     async list() {
       const listed = await client.listTools();
+
       return listed.tools.map((tool) => tool.name);
     },
   };
@@ -42,15 +49,20 @@ async function connect(t: TestContext, fixture = "repo"): Promise<{ dir: string;
 /** Every file and its bytes but the local fact cache, which every analysis may save (mcp-lsp.md). */
 function treeBytes(dir: string): string {
   const out: string[] = [];
+
   const walk = (rel: string): void => {
     for (const name of readdirSync(join(dir, rel))) {
       const path = rel === "" ? name : `${rel}/${name}`;
+
       if (path === ".keylang/cache") continue;
+
       if (statSync(join(dir, path)).isDirectory()) walk(path);
       else out.push(`${path}\0${readFileSync(join(dir, path))}`);
     }
   };
+
   walk("");
+
   return out.sort().join("\n");
 }
 
@@ -125,7 +137,9 @@ test("mcp: each call sees sources, specs and evidence changed since the last one
   const mcp = await connect(t);
   const config = join(mcp.dir, "keylang.json");
   writeFileSync(config, JSON.stringify({ ...JSON.parse(readFileSync(config, "utf8")), check: { tests: ".keylang/reports/*.json" } }));
+
   type Check = { results: { code: string | null; verdict: string; evidence: string; reason?: string }[] };
+
   const check = async (): Promise<Check> => JSON.parse((await mcp.call("check")).text) as Check;
   const codes = (r: Check): (string | null)[] => r.results.filter((row) => row.verdict === "fail").map((row) => row.code);
   assert.deepEqual(codes(await check()), []);
@@ -151,14 +165,18 @@ test("mcp: check.static shape matches check, and editing the field is seen witho
   const layers = { domain: ["src/domain/**"], application: ["src/application/**"], presentation: ["src/presentation/**"] };
   const config = join(mcp.dir, "keylang.json");
   writeFileSync(config, `${JSON.stringify({ languages: ["typescript"], layers, check: { static: "shape" } }, null, 2)}\n`);
+
   for (const [path, text] of Object.entries(HOOKS)) {
     mkdirSync(dirname(join(mcp.dir, path)), { recursive: true });
     writeFileSync(join(mcp.dir, path), text);
   }
+
   writeFileSync(join(mcp.dir, "keylang/rules.md"), "# rules\n");
   writeFileSync(join(mcp.dir, "keylang/flows/hooks.md"), HOOK_FLOW);
   rmSync(join(mcp.dir, "keylang/flows/checkout.md"));
+
   type Row = { criterion: string; verdict: string; evidence: string; area: string };
+
   const listed = async (): Promise<Row[]> => (JSON.parse((await mcp.call("check")).text) as { results: Row[] }).results;
   const cli = spawnSync(process.execPath, [bin, "check", "--format", "json"], { cwd: mcp.dir, encoding: "utf8" });
   assert.equal(cli.status, 0, cli.stderr);
@@ -174,6 +192,7 @@ test("mcp: check.static shape matches check, and editing the field is seen witho
 });
 
 const STALE_BASELINE = "<!-- keylang:generated — не редагувати, `keylang baseline` -->\n\n# rules\n\n- deny ghost domain\n";
+
 const STALE_K001 = "dangling reference `ghost` in a generated file; run `keylang baseline`";
 
 test("mcp: check returns the results of `check --format json`", async (t) => {
@@ -243,9 +262,11 @@ test("mcp: scaffold of a class method is what spec-to-code --print gives: the me
 test("mcp: context, validate_spec, scaffold and feature_status", async (t) => {
   const mcp = await connect(t);
   const names = await mcp.list();
+
   for (const name of ["search", "node", "code", "flows", "check", "explain", "apply_diff", "context", "validate_spec", "scaffold", "feature_status"]) {
     assert.ok(names.includes(name), name);
   }
+
   mkdirSync(join(mcp.dir, "keylang/features"), { recursive: true });
   writeFileSync(join(mcp.dir, "keylang/features/refund.md"), "# flow refund\n\n- planned fn domain.order.refund (order: Order) → void\n- trigger app.checkout.checkout\n  - step domain.order.refund\n");
   const pack = JSON.parse((await mcp.call("context", { id: "domain.order.refund" })).text) as { items: { kind: string; planned?: true; incomplete?: true; label: string }[] };
@@ -295,10 +316,12 @@ test("mcp: feature_status compares the feature with its base commit; a rewritten
   const mcp = await connect(t);
   mkdirSync(join(mcp.dir, "keylang/features"), { recursive: true });
   writeFileSync(join(mcp.dir, "keylang/features/refund.md"), "# flow refund\n\n- planned fn domain.order.refund (order: Order) → void\n- trigger app.checkout.checkout\n  - step domain.order.refund\n");
+
   const git = (args: string[]): void => {
     const r = spawnSync("git", ["-c", "user.email=test@example.com", "-c", "user.name=Test", ...args], { cwd: mcp.dir, encoding: "utf8" });
     assert.equal(r.status, 0, r.stderr);
   };
+
   git(["-c", "init.defaultBranch=main", "init"]);
   git(["add", "."]);
   git(["commit", "-m", "plan"]);
@@ -338,6 +361,7 @@ test("mcp: the command .mcp.json pins starts a server that answers tools/list", 
   await client.connect(new StdioClientTransport({ command: process.execPath, args, cwd: dir, stderr: "pipe" }));
   t.after(() => client.close());
   const listed = await client.listTools();
+
   for (const name of ["search", "node", "code", "flows", "check", "explain", "apply_diff", "context", "validate_spec", "scaffold", "feature_status"]) {
     assert.ok(listed.tools.some((tool) => tool.name === name), name);
   }
@@ -445,7 +469,9 @@ test("mcp: an excluded or outside file that appears or goes changes snapshotId, 
   writeFileSync(join(mcp.dir, "keylang.json"), JSON.stringify({ languages: ["typescript"], layers: { app: ["src/app/**"], domain: ["src/domain/**"], infra: ["src/infra/**"], gen: ["src/gen/**"] }, exclude: ["src/gen/**"], outside: ["scripts/**"] }));
   writeFileSync(join(mcp.dir, "keylang/rules.md"), "# rules\n\n- deny app gen\n");
   writeFileSync(join(mcp.dir, "src/app/generated.ts"), 'import { api } from "../gen/api";\nimport { tool } from "../../scripts/tool";\nexport function run(): void {\n  api();\n  tool();\n}\n');
+
   type Report = { snapshotId: string; results: { verdict: string; code?: string; evidence: string }[] };
+
   const check = async (): Promise<Report> => JSON.parse((await mcp.call("check")).text) as Report;
   const verdicts = (report: Report): string[] => report.results.map((row) => `${row.verdict}${row.code ? ` ${row.code}` : ""}: ${row.evidence}`).filter((row) => /gen|scripts/.test(row));
 

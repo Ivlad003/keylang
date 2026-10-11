@@ -13,6 +13,7 @@ const SKIPPED = new Set(["node_modules", "target", ".git", "keylang", ".keylang"
 
 function parseArgs(argv: string[]): { work: string } {
   let work = join(tmpdir(), "keylang-bench");
+
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--work" && argv[i + 1]) work = resolve(argv[++i]!);
     else {
@@ -20,21 +21,29 @@ function parseArgs(argv: string[]): { work: string } {
       process.exit(2);
     }
   }
+
   return { work };
 }
 
 const lastLine = (text: string): string => text.trimEnd().split("\n").at(-1) ?? "";
 
 const { work } = parseArgs(process.argv.slice(2));
+
 const bin = join(import.meta.dirname, "../bin/keylang.js");
+
 const inject = join(import.meta.dirname, "inject.ts");
+
 const repos = join(import.meta.dirname, "repos");
+
 const node = (cwd: string, ...args: string[]) => spawnSync(process.execPath, args, { cwd, encoding: "utf8", maxBuffer: 1 << 28 });
 
 rmSync(work, { recursive: true, force: true });
+
 mkdirSync(work, { recursive: true });
+
 for (const name of readdirSync(repos).sort()) {
   const source = join(repos, name);
+
   if (!statSync(source).isDirectory()) continue;
   const copy = join(work, name);
   // `dereference` follows the voice-transcriber link to copy the real checkout.
@@ -43,10 +52,12 @@ for (const name of readdirSync(repos).sort()) {
   const map = node(copy, bin, "map");
   const ms = Number((process.hrtime.bigint() - start) / 1_000_000n);
   writeFileSync(join(work, `${name}.log`), map.stderr);
+
   if (map.status !== 0) {
     console.log(`${name} | — | ${lastLine(map.stderr)}`);
     continue;
   }
+
   const warnings = map.stderr.split("\n").filter((line) => line.startsWith("warning:")).length;
   const check = node(copy, bin, "check");
   writeFileSync(join(work, `${name}.check`), check.stdout + check.stderr);
@@ -55,7 +66,9 @@ for (const name of readdirSync(repos).sort()) {
   // The business-flows metrics (spec §6) of the same snapshot: resolved share, holes, entries, drafts — the same formatter as bench/magento.
   const index = join(copy, ".keylang", "index.json");
   const metrics = existsSync(index) ? collectMetrics(JSON.parse(readFileSync(index, "utf8"))) : null;
+
   if (metrics) writeFileSync(join(work, `${name}.metrics.md`), formatReport(metrics, { title: `${name}: метрики business-flows`, run: [["`map`", `${ms} ms`]] }));
   console.log(`${name} | ${ms} ms | ${lastLine(map.stderr)} | ${warnings} warning(s) | check: ${lastLine(check.stdout + check.stderr)} | probe: ${lastLine(probes.stdout + probes.stderr)}${metrics ? ` | ${summaryLine(metrics)}` : ""}`);
 }
+
 console.log(`logs and maps: ${work}`);

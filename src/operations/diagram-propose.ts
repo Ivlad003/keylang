@@ -50,6 +50,7 @@ export function specHash(root: string, docs: readonly Document[]): string {
     .map((doc) => doc.path)
     .sort(compareText)
     .map((path) => `${path}\u0000${sha256(readTextOrNull(join(root, path)) ?? "")}`);
+
   return sha256([`${CONFIG_FILE}\u0000${sha256(readTextOrNull(join(root, CONFIG_FILE)) ?? "")}`, ...files].join("\n"));
 }
 
@@ -107,9 +108,12 @@ function result(view: string, status: DiagramProposeResult["status"], exitCode: 
 function baseDiagram(analysis: Analysis, root: string, view: string): Diagram | string {
   if (view === "") return { nodes: [], edges: [], groups: [] };
   const wanted = viewOfKey(view);
+
   if (wanted === null) return `unknown view \`${view}\`: flow:<name>, discovered:<name>, entry:<id>, process:<domain> or layers`;
   const spec = wanted.discovered ? discoveredSpecOf(root, rootRelative(root, analysis.config.dir)) : analysis.spec;
+
   if (spec === null) return { nodes: [], edges: [], groups: [] };
+
   return diagramOf({ snapshot: analysis.snapshot, spec, results: [], view: wanted.view });
 }
 
@@ -121,31 +125,41 @@ function baseDiagram(analysis: Analysis, root: string, view: string): Diagram | 
  */
 export async function runDiagramPropose(request: DiagramProposeRequest, context: OperationContext = {}): Promise<DiagramProposeResult> {
   const { root, view } = request;
+
   if (!isAbsolute(root)) return result(view, "invalid", 2, "diagram propose: root must be an absolute path");
   const model = parseEditorModel(request.model);
+
   if (typeof model === "string") return result(view, "invalid", 2, model);
+
   if (model.view !== view && model.view !== "") return result(view, "invalid", 2, `the model draws \`${model.view}\`, not \`${view}\``);
   let analysis: Analysis;
+
   try {
     analysis = await (context.analyze ?? analyze)({ root, withoutEvidence: true });
   } catch (error) {
     return result(view, "failed", 2, errorText(error));
   }
+
   if (request.specHash !== undefined && request.specHash !== null && request.specHash !== specHash(root, analysis.docs)) {
     return result(view, "conflict", 1, "the specs changed since this diagram was opened: the view is drawn again from the specs as they are now; draw the change on it and propose again");
   }
+
   const specDir = rootRelative(root, analysis.config.dir);
   const system = /^system:(.+)$/.exec(view)?.[1] ?? null;
   const diagram = system !== null ? { nodes: [], edges: [], groups: [] } : baseDiagram(analysis, root, view);
+
   if (typeof diagram === "string") return result(view, "invalid", 2, diagram);
   const flowName = /^flow:(.+)$/.exec(view)?.[1] ?? null;
   const notes: string[] = [];
+
   if (view.startsWith("discovered:")) notes.push("a discovered flow is a view, not a spec: `keylang flows adopt <name>` proposes it; only rules and lanes of this drawing are proposed");
   let changes: DiagramChanges;
+
   try {
     if (system !== null) {
       // A system's view (system-design/08): the canvas is the `# system` section it draws.
       const spec = system === DISCOVERED ? (analysis.snapshot ? discoverSystem(analysis.snapshot, (await codeSchemas(analysis)).schemas) : null) : (analysis.systems.find((item) => item.name === system) ?? null);
+
       if (spec === null) return result(view, "invalid", 2, `no system \`${system}\``);
       const adoptAs = analysis.snapshot ? adoptedName(analysis.snapshot) : "app";
       const found = systemChanges({ model, system: spec, adoptAs, specDir, read: (path) => existingText(join(root, path)) });
@@ -165,25 +179,33 @@ export async function runDiagramPropose(request: DiagramProposeRequest, context:
   } catch (error) {
     return result(view, "failed", 2, errorText(error));
   }
+
   const out: DiagramProposeResult = { ...result(view, "nothing", 0), notes: [...notes, ...changes.notes] };
+
   if (changes.config !== null) {
     out.config = { target: changes.config.target, text: changes.config.text, diff: lineDiff(changes.config.before, changes.config.text), note: `${CONFIG_FILE} is not a spec: a proposal does not change it. Printed only, as \`keylang draft map\` prints a layout; a person applies the layers` };
   }
+
   if (changes.targets.length === 0) {
     out.notes.push("the drawing says nothing the specs do not already say: nothing to propose");
+
     return out;
   }
+
   // Each target through the gates of every proposal: a spec a proposal may change, a store that keeps the write policy, none waiting.
   const generated = generatedIn(analysis.docs);
   const candidates = [];
+
   for (const target of changes.targets) {
     const problem = proposalProblem(root, specDir, target.target, generated);
     const store = `${PROPOSALS_DIR}/${target.target}`;
     const pending = problem === null && writeProblem(root, store, { under: PROPOSALS_DIR, generated: true }) === null ? existingText(join(root, store)) : null;
     const refusal = proposalRefusal(root, { target: target.target, problem, pending }, "refuse", "diagram propose");
+
     if (refusal !== null) return { ...out, status: "refused", exitCode: refusal.exitCode, error: refusal.error };
     candidates.push({ ...target, pending });
   }
+
   // K108 of the proposed texts against the specs on disk.
   const docs = analysis.docs.filter((doc) => doc.generated === null);
   const baseDocs = docs.map((doc) => parse(doc.path, readTextOrNull(join(root, doc.path)) ?? ""));
@@ -200,36 +222,47 @@ export async function runDiagramPropose(request: DiagramProposeRequest, context:
     text: c.text,
     shapes: c.shapes,
   }));
+
   if (request.print === true) return { ...out, status: "printed" };
   const inputs = sourceInputs(analysis.config, analysis.snapshot?.manifest.files ?? []);
+
   for (const [i, c] of candidates.entries()) {
     const committed = await commitProposal({ root, specDir, generated, target: c.target, text: c.text, expected: { target: c.before, proposal: c.pending }, config: analysis.config, inputs }, context);
+
     if ("cancelled" in committed) return { ...out, status: "failed", exitCode: 2, error: "cancelled" };
+
     if ("refused" in committed) return { ...out, status: "refused", exitCode: 1, error: committed.refused.join("; ") };
+
     if ("failed" in committed) return { ...out, status: "failed", exitCode: 2, error: committed.failed };
     out.targets[i]!.proposal = committed.proposal;
   }
+
   out.status = "proposed";
   out.merge = `merge with MERGE in the TUI (\`keylang\`, m on a proposal), or a person runs ${out.targets.map((t) => `\`keylang proposals accept ${t.target}\``).join(", ")}`;
+
   // The drawn shapes the proposals took, in the view's layout: after a merge the editor shows which were not accepted.
   if (view !== "") {
     try {
       const marked: ClientLayout = {};
       const byKey = new Map(model.nodes.map((node) => [node.key, node]));
+
       for (const c of candidates) {
         for (const key of c.shapes) {
           const node = byKey.get(key);
+
           if (node) marked[key] = { x: node.x, y: node.y, w: node.w, h: node.h, id: node.id, kind: node.kind, label: node.label, proposed: c.target };
         }
       }
+
       if (Object.keys(marked).length > 0) {
         const saved = readLayout(root, specDir, view).file;
         const fresh = layoutToFile(view, marked, diagram);
-        writeLayout(root, specDir, { format: fresh.format, view, shapes: { ...(saved?.shapes ?? {}), ...fresh.shapes }, edges: saved?.edges ?? {} });
+        writeLayout(root, specDir, { format: fresh.format, view, shapes: { ...saved?.shapes, ...fresh.shapes }, edges: saved?.edges ?? {} });
       }
     } catch (error) {
       out.notes.push(`the layout of ${view} keeps no mark of the proposed shapes: ${errorText(error)}`);
     }
   }
+
   return out;
 }

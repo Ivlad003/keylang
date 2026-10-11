@@ -16,23 +16,32 @@ export function plan(nodes: readonly WireNode[]): Plan {
   const state = new Map<string, "visiting" | "done">();
   const order: string[] = [];
   const path: string[] = [];
+
   const visit = (id: string): string[] | null => {
     if (state.get(id) === "done") return null;
+
     if (state.get(id) === "visiting") return [...path.slice(path.indexOf(id)), id];
     state.set(id, "visiting");
     path.push(id);
+
     for (const dep of Object.values(byId.get(id)?.deps ?? {})) {
       const cycle = visit(dep);
+
       if (cycle) return cycle;
     }
+
     path.pop();
     state.set(id, "done");
     order.push(id);
+
     return null;
   };
+
   for (const n of nodes) {
     const cycle = visit(n.id);
+
     if (cycle) return { cycle };
   }
+
   return { order };
 }

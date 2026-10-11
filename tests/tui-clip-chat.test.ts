@@ -27,6 +27,7 @@ function say(s: ReturnType<typeof session>, text: string): void {
 function lastAnswer(s: ReturnType<typeof session>): string {
   const messages = s.app.state.clip.chat.messages;
   assert.equal(messages.at(-1)?.role, "clip", JSON.stringify(messages));
+
   return messages.at(-1)!.text;
 }
 
@@ -34,6 +35,7 @@ function lastAnswer(s: ReturnType<typeof session>): string {
 function statusCounts(s: ReturnType<typeof session>): string {
   const match = /✗ \d+  ◌ \d+  ✓ \d+/.exec(s.lines().at(-1)!);
   assert.ok(match, s.lines().at(-1));
+
   return match[0];
 }
 
@@ -114,6 +116,7 @@ test("tui-clip-chat: an open feature file gives the model its stage and gaps as 
   t.after(() => s.app.close());
   await s.app.idle();
   s.send(KEY.ctrlP);
+
   for (const ch of "open keylang/features/skip.md") s.send(ch);
   s.send(KEY.enter);
   await s.app.idle();
@@ -129,6 +132,7 @@ test("tui-clip-chat: an open feature file gives the model its stage and gaps as 
   assert.ok(model.prompts[0]!.includes(`The open feature: stage ${stage}; its gaps:\n${gaps.map((gap) => `- ${gap}`).join("\n")}\n\n`), model.prompts[0]);
   // Another file, the window still focused: no feature in the request.
   s.send(KEY.ctrlP);
+
   for (const ch of `open ${FLOW_PATH}`) s.send(ch);
   s.send(KEY.enter);
   await s.app.idle();
@@ -179,10 +183,13 @@ test("tui-clip-chat: a model error says why in the chat and nothing is written; 
   const model = await mockModel(t, "");
   let open!: () => void;
   const gate = new Promise<void>((resolve) => (open = resolve));
+
   const operations: NonNullable<AppOptions["operations"]> = async (request, context) => {
     if (request.kind === "map-check") await gate;
+
     return runOperation(request, context);
   };
+
   const s = session(root, { operations });
   t.after(() => s.app.close());
   await s.app.idle();
@@ -241,6 +248,7 @@ test("tui-clip-chat: an Enter that ends a chunk of typed keys sends the line, as
   assert.deepEqual(s.app.state.clip.chat.messages.map((m) => m.role), ["you", "clip"]);
   assert.equal(s.app.state.clip.chat.messages[0]!.text, "/check");
   assert.equal(s.app.state.clip.chat.input, "");
+
   // Keys typed one by one, the last letter coalesced with Enter.
   for (const ch of "/chec") s.send(ch);
   s.send("k\r");
@@ -314,6 +322,7 @@ test("tui-clip-chat: the prompt has the file around the cursor, the line and the
       "The conversation, oldest first. Answer the person's last message.\n\nPerson: що тут?\n\nClip: потік checkout.\n\nPerson: чому save позначено ◌?",
     ].join("\n\n"),
   );
+
   for (const rule of ["in the language the person writes in", "only about this repository", "Never invent a verdict, an edge or an id", "````keylang path=<file>", "longer than any run of backticks in the file", "under keylang/", "full new text of that file, never a diff", "Do not write code"]) assert.ok(asked.system.includes(rule), rule);
   // A feature and open questions when there are any; a fence longer than the file's own.
   const feature = assistantPrompt({ ...REQUEST, file: { ...REQUEST.file!, text: "```\ncode\n```\n" }, feature: { stage: "ready", gaps: ["keylang/features/skip.md:4:5: static infrastructure.store.save: no call"] }, questions: ["keylang/flows/checkout.md:7: хто платить?"], context: null }, "keylang");

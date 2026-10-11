@@ -23,22 +23,29 @@ import type { FormHost } from "./host.ts";
 function defaultExportPath(kind: OperationRecord["kind"], format: ExportFormat): string {
   const extension: Record<ExportFormat, string> = { human: "txt", json: "json", sarif: "sarif", github: "github.txt", tree: "txt" };
   const name = kind === "explain-edge" ? "edge" : kind === "parse" || kind === "trace-plan" ? kind : "check";
+
   return `.keylang/export/${name}.${extension[format]}`;
 }
 
 /** The typed report of a finished record in a format, or null when it has none. */
 function exportSourceOf(record: OperationRecord, format: ExportFormat): ExportSource | null {
   const result = record.result;
+
   if (result?.kind === "check" && result.payload !== null && isCheckFormat(format)) {
     const { results, snapshotId, coverage, lines } = result.payload;
+
     return { kind: "check", format, report: { results, snapshotId, coverage, lines } };
   }
+
   if (result?.kind === "explain-edge" && result.payload !== null) return { kind: "explain-edge", lines: result.payload.lines };
   // The documents as parsed then: the export renders them, it never parses again.
   const view = PARSE_FORMATS.find((candidate) => candidate === format);
+
   if (result?.kind === "parse" && result.payload !== null && view !== undefined) return { kind: "parse", format: view, documents: result.payload.documents };
+
   // The plan as it was computed: its snapshot and hashes, never a new plan.
   if (result?.kind === "trace-plan" && result.payload !== null && format === "json") return { kind: "trace-plan", plan: result.payload.plan };
+
   return null;
 }
 
@@ -84,13 +91,18 @@ export class ExportForms {
   openExportPrompt(): void {
     if (this.state.activeOperation !== null) {
       this.state.message = "export: an operation is already running";
+
       return;
     }
+
     const found = exportRecord(this.state);
+
     if ("reason" in found) {
       this.state.message = `export: ${found.reason}`;
+
       return;
     }
+
     const { record } = found;
     // A parse report is exported in the view it was shown in, unless another is chosen.
     // A trace plan has one format, the JSON the adapters read.
@@ -110,6 +122,7 @@ export class ExportForms {
   /** The bytes of the report in a format: exactly what the CLI prints, from the record's payload. */
   private exportBytes(record: OperationRecord, format: ExportFormat): number {
     const source = exportSourceOf(record, format);
+
     return source === null ? 0 : Buffer.byteLength(exportText(source), "utf8");
   }
 
@@ -117,13 +130,16 @@ export class ExportForms {
   private exportProblem(path: string): string | null {
     if (path === "") return "type the target path, relative to the root";
     let problem: string | null;
+
     try {
       problem = exportTargetProblem(this.state.root, path, this.host.specDir());
     } catch (error) {
       problem = errorText(error);
     }
+
     if (problem !== null) return problem;
     const buffer = this.state.buffers.get(path);
+
     return buffer && isDirty(buffer) ? "open with unsaved edits: save or undo them first; an export never writes under them" : null;
   }
 
@@ -131,6 +147,7 @@ export class ExportForms {
   private refreshExportPrompt(): void {
     const prompt = this.state.prompt;
     const form = prompt?.exportForm;
+
     if (prompt?.kind !== "export" || !form) return;
     const record = this.state.records.find((candidate) => candidate.id === form.record);
     const path = prompt.text.trim();
@@ -141,6 +158,7 @@ export class ExportForms {
     ];
     form.problem = this.exportProblem(path);
     let target: string;
+
     if (form.problem !== null) {
       form.expect = null;
       target = `refused: ${form.problem}`;
@@ -153,6 +171,7 @@ export class ExportForms {
           ? `exists, ${Buffer.byteLength(form.expect, "utf8")} bytes: replaced on Save`
           : `new file${parent !== "." && !existsSync(resolve(this.state.root, parent)) ? ` · creates ${parent}/` : ""}`;
     }
+
     prompt.details = [
       record ? `report #${record.id}: ${operationLabel(record.params)} · ${recordSummary(record)}` : "the report is gone",
       ...(record?.outdated != null ? [`outdated: ${record.outdated} · saved as it ran; nothing is checked again`] : []),
@@ -166,10 +185,13 @@ export class ExportForms {
   private changeExportFormat(delta: 1 | -1): void {
     const prompt = this.state.prompt;
     const form = prompt?.exportForm;
+
     if (!prompt || !form) return;
     const record = this.state.records.find((candidate) => candidate.id === form.record);
     form.format = cycle(form.formats, form.format, delta);
+
     if (!form.custom && record) prompt.text = defaultExportPath(record.kind, form.format);
+
     if (record) form.bytes = this.exportBytes(record, form.format);
     this.refreshExportPrompt();
   }
@@ -182,22 +204,29 @@ export class ExportForms {
   private submitExport(): void {
     const prompt = this.state.prompt;
     const form = prompt?.exportForm;
+
     if (prompt?.kind !== "export" || !form) return;
     const record = this.state.records.find((candidate) => candidate.id === form.record);
     const source = record ? exportSourceOf(record, form.format) : null;
+
     if (!record || source === null) {
       this.state.prompt = null;
       this.state.message = "export: the report is gone";
+
       return;
     }
+
     const path = prompt.text.trim();
     const problem = this.exportProblem(path);
+
     if (problem !== null || form.problem !== null) {
       // A target that became writable since the form showed a refusal is shown again first.
       this.refreshExportPrompt();
       this.state.message = problem === null ? "export: the target changed; check the form and press Enter again" : `export: ${problem}`;
+
       return;
     }
+
     this.state.prompt = null;
     this.host.startOperation("export", { kind: "export", root: this.state.root, path, expect: form.expect, source });
   }
@@ -231,6 +260,7 @@ export class ExportForms {
   private refreshC4Prompt(): void {
     const prompt = this.state.prompt;
     const form = prompt?.c4;
+
     if (prompt?.kind !== "export-c4" || !form) return;
     const out = prompt.text.trim();
     prompt.items = [
@@ -240,16 +270,22 @@ export class ExportForms {
       `out: ${prompt.text}▏`,
       `Run ${operationLabel(this.c4Request(form, out))}`,
     ];
+
     if (out === "") {
       prompt.note = "no file: the diagram shows in F6 and nothing is written · type a path to write it";
+
       return;
     }
+
     // The write policy first, as the operation checks it: a path outside or a link out of the repository is never read.
     const problem = c4OutProblem(this.state.root, toPosix(out));
+
     if (problem !== null) {
       prompt.note = problem;
+
       return;
     }
+
     const current = readText(resolve(this.state.root, out));
     prompt.note =
       current === null
@@ -263,8 +299,10 @@ export class ExportForms {
   private changeC4Choice(delta: 1 | -1): void {
     const prompt = this.state.prompt;
     const form = prompt?.c4;
+
     if (!prompt || !form) return;
     const row = prompt.ids?.[prompt.index];
+
     if (row === "format") form.format = cycle(C4_FORMATS, form.format, delta);
     else if (row === "level") form.level = cycle(C4_LEVELS, form.level, delta);
     else if (row === "layer" && form.level === "component") form.layer = cycle([null, ...form.layers], form.layer, delta);
@@ -276,6 +314,7 @@ export class ExportForms {
   private submitC4(): void {
     const prompt = this.state.prompt;
     const form = prompt?.c4;
+
     if (prompt?.kind !== "export-c4" || !form) return;
     const request = this.c4Request(form, prompt.text.trim());
     this.state.prompt = null;

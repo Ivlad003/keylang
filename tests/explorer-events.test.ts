@@ -18,6 +18,7 @@ async function shop(t: { after: (f: () => void) => void }): Promise<Analysis> {
   const dir = mkdtempSync(join(tmpdir(), "keylang-explorer-events-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   cpSync(join(root, "tests/fixtures/magento-shop"), dir, { recursive: true });
+
   return analyze({ root: dir });
 }
 

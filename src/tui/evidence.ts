@@ -30,12 +30,15 @@ const RANK: Record<Mark, number> = { fail: 4, unverified: 3, warning: 2, questio
 
 export function worse(a: Mark | null, b: Mark | null): Mark | null {
   if (a === null) return b;
+
   if (b === null) return a;
+
   return RANK[a] >= RANK[b] ? a : b;
 }
 
 function linesOf(doc: Document, kind: "planned" | "question"): Set<number> {
   const lines = new Set<number>();
+
   for (const section of doc.sections) {
     for (const top of sectionNodes(section)) {
       walk(top, (node) => {
@@ -43,6 +46,7 @@ function linesOf(doc: Document, kind: "planned" | "question"): Set<number> {
       });
     }
   }
+
   return lines;
 }
 
@@ -50,6 +54,7 @@ function linesOf(doc: Document, kind: "planned" | "question"): Set<number> {
 function pendingPlanned(analysis: Analysis): Set<string> {
   const ids = new Set<string>();
   const nodes = analysis.snapshot?.nodes ?? {};
+
   for (const doc of analysis.docs) {
     for (const section of doc.sections) {
       for (const top of sectionNodes(section)) {
@@ -59,6 +64,7 @@ function pendingPlanned(analysis: Analysis): Set<string> {
       }
     }
   }
+
   return ids;
 }
 
@@ -67,51 +73,69 @@ const cache = new WeakMap<Analysis, Map<string, Map<number, LineEvidence>>>();
 
 function allEvidence(analysis: Analysis): Map<string, Map<number, LineEvidence>> {
   const cached = cache.get(analysis);
+
   if (cached) return cached;
   const byPath = new Map<string, Map<number, LineEvidence>>();
+
   const entry = (path: string, line: number): LineEvidence => {
     let lines = byPath.get(path);
+
     if (!lines) byPath.set(path, (lines = new Map()));
     let found = lines.get(line);
+
     if (!found) {
       found = { mark: "ok", criteria: [], diagnostics: [], planned: false };
       lines.set(line, found);
     }
+
     return found;
   };
+
   for (const diag of analysis.diagnostics) entry(diag.file, diag.span.start.line).diagnostics.push(diag);
   const planned = pendingPlanned(analysis);
   const areas = new Map<LineEvidence["criteria"][number], string>();
+
   for (const verdict of analysis.verdicts) {
     const criterion = { criterion: verdict.criterion, verdict: verdict.verdict, message: verdict.message };
     areas.set(criterion, verdict.area);
     entry(verdict.file, verdict.line).criteria.push(criterion);
   }
+
   for (const doc of analysis.docs) {
     for (const line of linesOf(doc, "planned")) entry(doc.path, line).planned = true;
+
     for (const line of linesOf(doc, "question")) entry(doc.path, line).question = true;
   }
+
   const order = (criterion: string): number => {
     const at = (CHANNELS as readonly string[]).indexOf(criterion);
+
     return at === -1 ? CHANNELS.length : at;
   };
+
   for (const lines of byPath.values()) {
     for (const item of lines.values()) {
       item.criteria.sort((a, b) => order(a.criterion) - order(b.criterion));
       let mark: Mark | null = null;
+
       for (const diag of item.diagnostics) mark = worse(mark, diag.severity === "error" ? "fail" : "warning");
+
       for (const criterion of item.criteria) {
         // Evidence missing because the target is only planned is the planned state, not a gap.
         if (criterion.verdict === "unverified" && planned.has(areas.get(criterion) ?? "")) item.planned = true;
         else mark = worse(mark, criterion.verdict);
       }
+
       if (item.planned) mark = worse(mark, "planned");
+
       if (item.question) mark = worse(mark, "question");
       item.mark = mark ?? "ok";
     }
   }
+
   groupMarks(analysis, byPath);
   cache.set(analysis, byPath);
+
   return byPath;
 }
 
@@ -119,18 +143,23 @@ function allEvidence(analysis: Analysis): Map<string, Map<number, LineEvidence>>
 function groupMarks(analysis: Analysis, byPath: Map<string, Map<number, LineEvidence>>): void {
   for (const doc of analysis.docs) {
     const lines = byPath.get(doc.path);
+
     if (!lines) continue;
+
     for (const section of doc.sections) {
       for (const top of sectionNodes(section)) {
         walk(top, (node) => {
           const line = node.span.start.line;
+
           if (node.kind !== "parallel" || lines.has(line)) return;
           let mark: Mark | null = null;
+
           for (const child of node.children) {
             walk(child, (inner) => {
               mark = worse(mark, lines.get(inner.span.start.line)?.mark ?? null);
             });
           }
+
           if (mark !== null) lines.set(line, { mark, criteria: [], diagnostics: [], planned: false, group: true });
         });
       }
@@ -150,13 +179,16 @@ export const MARK_GLYPH: Record<Mark, string> = { ok: "✓", fail: "✗", unveri
 /** Totals for the status bar: failing, unverified and passing lines across all documents. */
 export function totals(analysis: Analysis): { fail: number; unverified: number; ok: number } {
   const counts = { fail: 0, unverified: 0, ok: 0 };
+
   for (const lines of allEvidence(analysis).values()) {
     for (const item of lines.values()) {
       if (item.group) continue;
+
       if (item.mark === "fail") counts.fail++;
       else if (item.mark === "unverified") counts.unverified++;
       else if (item.mark === "ok") counts.ok++;
     }
   }
+
   return counts;
 }

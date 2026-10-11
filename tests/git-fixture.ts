@@ -17,10 +17,12 @@ export const GIT_LAYERS = { languages: ["typescript"], module: "file", layers: {
 export function branchRepo(t: { after: (f: () => void) => void }): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-web-git-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+
   const write = (path: string, text: string): void => {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
     writeFileSync(join(dir, path), text);
   };
+
   write("keylang.json", `${JSON.stringify(GIT_LAYERS, null, 2)}\n`);
   write("keylang/rules.md", "# rules\n\n- deny domain app\n");
   write("src/app/pay.ts", "export function charge(): number {\n  return 1;\n}\n");
@@ -43,6 +45,7 @@ export function branchRepo(t: { after: (f: () => void) => void }): string {
   write("keylang/rules.md", "# rules\n\n- deny domain app\n- deny app domain\n");
   write("notes.txt", "untracked\n");
   write("docs/shot.png", "\u0000PNG untracked");
+
   return dir;
 }
 

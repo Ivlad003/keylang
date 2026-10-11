@@ -12,6 +12,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
 
 interface Run {
@@ -23,13 +24,16 @@ interface Run {
 /** Run `keylang` with `cwd` as working directory; `input` is stdin, `env` replaces the environment. */
 function keylang(cwd: string, args: string[], options: { input?: string; env?: NodeJS.ProcessEnv } = {}): Run {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, ...(options.input !== undefined ? { input: options.input } : {}), ...(options.env ? { env: options.env } : {}) });
+
   if (r.error) throw r.error;
+
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
 function tempDir(t: { after: (fn: () => void) => void }, prefix: string): string {
   const dir = mkdtempSync(join(tmpdir(), prefix));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+
   return dir;
 }
 
@@ -43,31 +47,41 @@ function writeTree(dir: string, files: Record<string, string>): void {
 /** Relative paths and their bytes, so a command that must not write can be compared. */
 function treeBytes(dir: string): Map<string, string> {
   const out = new Map<string, string>();
+
   const walk = (rel: string): void => {
     let names: string[];
+
     try {
       names = readdirSync(join(dir, rel));
     } catch {
       return;
     }
+
     for (const name of names) {
       const path = rel === "" ? name : `${rel}/${name}`;
+
       if (statSync(join(dir, path)).isDirectory()) walk(path);
       else out.set(path, readFileSync(join(dir, path), "utf8"));
     }
   };
+
   walk("");
+
   return out;
 }
 
 function git(dir: string, args: string[]): void {
   const r = spawnSync("git", ["-c", "user.email=test@example.com", "-c", "user.name=Test", ...args], { cwd: dir, encoding: "utf8" });
+
   if (r.status !== 0) throw new Error(r.stderr || r.stdout);
 }
 
 const LAYERS = { languages: ["typescript"], module: "file", layers: { app: ["src/app/**"], domain: ["src/domain/**"] } };
+
 const PAY = "export function charge(): number {\n  return 1;\n}\n";
+
 const ORDER = "export function price(): number {\n  return 2;\n}\n";
+
 const STOP = JSON.stringify({ hook_event_name: "Stop", stop_hook_active: false });
 
 /** A committed repository whose working tree adds an import the rules deny: `hook stop` blocks on it. */
@@ -78,6 +92,7 @@ function deniedRepo(t: { after: (fn: () => void) => void }): string {
   git(dir, ["add", "."]);
   git(dir, ["commit", "-qm", "base"]);
   writeFileSync(join(dir, "src/app/pay.ts"), 'import { price } from "../domain/order.ts";\nexport function charge(): number {\n  return price();\n}\n');
+
   return dir;
 }
 
@@ -88,6 +103,7 @@ function uncheckedLine(run: Run, what: string): string {
   const body = JSON.parse(run.stdout) as Record<string, unknown>;
   assert.deepEqual(Object.keys(body), ["systemMessage"], `${what}: a warning, never a decision`);
   assert.equal(run.stderr, `${String(body.systemMessage)}\n`, `${what}: the same line on stderr`);
+
   return String(body.systemMessage);
 }
 
@@ -126,6 +142,7 @@ test("hook stop: once started it prints one JSON object and exits 0; a turn it c
 
 test("hook: a bad invocation is still code 2, with nothing on stdout", (t) => {
   const dir = deniedRepo(t);
+
   for (const args of [["hook"], ["hook", "nope"], ["hook", "stop", "extra"], ["hook", "install", "extra"]]) {
     const bad = keylang(dir, args, { input: STOP });
     assert.equal(bad.status, 2, `${args.join(" ")}: ${bad.stdout}`);
@@ -158,18 +175,22 @@ test("the harness files follow `dir` of keylang.json: deny rules, the AGENTS.md 
   const before = treeBytes(dir);
   const stale = keylang(dir, ["agents", "--check"]);
   assert.equal(stale.status, 1, stale.stdout + stale.stderr);
+
   for (const path of ["AGENTS.md", ...skills, ".claude/settings.json"]) assert.match(stale.stdout, new RegExp(`^${escaped(path)}: stale`, "m"), path);
   assert.deepEqual(treeBytes(dir), before, "agents --check writes nothing");
 
   const agents = keylang(dir, ["agents"]);
   assert.equal(agents.status, 0, agents.stderr);
   assert.deepEqual(deny(), ["Read(secret)", ...config, ...proposals, ...rules("spec")], "keylang's entries for the old default dir go; the user's stays; the dir-free entries keep their place");
+
   for (const path of ["AGENTS.md", ...skills]) {
     const text = read(path);
+
     for (const named of ["spec/features/<slug>.md", "spec/rules.md", "spec/rules.baseline.md"]) assert.ok(text.includes(`\`${named}\``), `${path}: ${named}`);
     assert.doesNotMatch(text, /keylang\/(features|rules|map)/, path);
     assert.doesNotMatch(text, /<dir>/, path);
   }
+
   assert.equal(read(skills[0]!), read(skills[1]!));
   assert.equal(keylang(dir, ["agents", "--check"]).status, 0);
   const baseline = keylang(dir, ["baseline"]);
@@ -232,7 +253,9 @@ test("the AGENTS.md block teaches the grammar: its feature example parses and ch
   assert.ok(fence, block);
   const example = fence[1]!;
   assert.ok(example.split("\n").length - 1 <= 10, example);
+
   for (const shape of [/^# flow \S+$/m, /^- planned fn \S+ \(.*\) → \S+$/m, /^- trigger \S+$/m, /^ {2}- step \S+$/m, /^- \? \S/m]) assert.match(example, shape);
+
   for (const said of ["keylang/map/*.md", "`search`", "keylang@", " map` regenerates the map", "`- ? <question>`"]) assert.ok(block.includes(said), said);
 
   const spec = tempDir(t, "keylang-block-example-");
@@ -255,9 +278,11 @@ test("the AGENTS.md block teaches the grammar: its feature example parses and ch
 test("docs/cheatsheet.md: every keylang example parses alone and checks with the others against its map example, without K001–K005 or a fail", (t) => {
   const sheet = readFileSync(join(root, "docs/cheatsheet.md"), "utf8");
   assert.match(sheet, /\]\(grammar\.md\)/, "the cheatsheet names the normative grammar");
+
   for (const keyword of ["layers", "allow", "deny", "entry", "exports", "no-cycles", "trigger", "step", "calls", "when", "then", "invariant", "test", "planned", "?", "wire"]) {
     assert.ok(new RegExp(`^ *- ${escaped(keyword)}(?: |$)`, "m").test(sheet), `an example of \`${keyword}\``);
   }
+
   const examples = [...sheet.matchAll(/^```keylang\n([\s\S]*?)^```$/gm)].map((match) => match[1]!);
   assert.ok(examples.length >= 10 && examples.length <= 15, `${examples.length} examples`);
   const files = Object.fromEntries(examples.map((body, i) => [`keylang/example-${String(i + 1).padStart(2, "0")}.md`, body]));
@@ -265,9 +290,11 @@ test("docs/cheatsheet.md: every keylang example parses alone and checks with the
   writeTree(dir, files);
   const parsed = keylang(dir, ["parse", "--json", "keylang"]);
   assert.equal(parsed.status, 0, parsed.stderr);
+
   for (const doc of JSON.parse(parsed.stdout) as { path: string; diagnostics: { code: string; message: string }[] }[]) {
     assert.deepEqual(doc.diagnostics.filter((d) => ["K003", "K004", "K005"].includes(d.code)), [], doc.path);
   }
+
   const checked = keylang(dir, ["check"]);
   assert.doesNotMatch(checked.stdout, SPEC_ERRORS, checked.stdout);
   assert.match(checked.stderr, /^0 fail, /m, checked.stdout);
@@ -313,6 +340,7 @@ test("init lists .keylang/ in the root .gitignore: created when missing, appende
     assert.equal(readFileSync(join(dir, ".gitignore"), "utf8"), text, JSON.stringify(listed));
     assert.equal(keylang(dir, ["init", "--check", "--agents=none"]).status, 0, JSON.stringify(listed));
   }
+
   // A comment, a negation, a deeper path or the contents only is not the entry.
   for (const other of ["# .keylang/", "!.keylang/", "sub/.keylang/", ".keylang/*"]) {
     writeFileSync(join(dir, ".gitignore"), `${other}\n`);

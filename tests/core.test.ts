@@ -24,20 +24,24 @@ import { matchTest, type TestCase } from "../src/test-report.ts";
 import { totals } from "../src/tui/evidence.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
 
 function repo(t: { after: (f: () => void) => void }, files: Record<string, string>): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-core-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+
   for (const [path, text] of Object.entries(files)) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
     writeFileSync(join(dir, path), text);
   }
+
   return dir;
 }
 
 function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8" });
+
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
@@ -51,6 +55,7 @@ test("an alias keylang cannot resolve is a hole, not an external package: deny i
     "tsconfig.json": '{ "files": [], "references": [{ "path": "./tsconfig.app.json" }] }\n',
     "keylang/rules.md": "# rules\n\n- deny domain infra\n",
   });
+
   // The alias is in a referenced config: resolved, and the deny finds it.
   writeFileSync(join(dir, "tsconfig.app.json"), '{ "compilerOptions": { "paths": { "@/*": ["./src/*"] } } }\n');
   const found = keylang(dir, ["check"]);
@@ -72,6 +77,7 @@ test("a planned ID silences only the K001 of exactly that ID", (t) => {
     "keylang/flows/f.md": "# flow f\n\n- planned module planned\n- planned fn domain.order.pay\n",
     "keylang/rules.md": "# rules\n\n- deny domian infra\n- deny domain.order.payy infra\n",
   });
+
   const r = keylang(dir, ["check"]);
   assert.equal(r.status, 1);
   assert.match(r.stdout, /K001 dangling reference `domian`/);
@@ -86,6 +92,7 @@ test("rules: exports of an opaque module and no-cycles over a hole are unverifie
     "src/app/b.ts": 'export async function b(): Promise<void> {\n  const n = "./a.ts";\n  await import(n);\n}\n',
     "keylang/rules.md": "# rules\n\n- module app.util\n  - exports one\n- no-cycles\n- entry\n  - app\n",
   });
+
   const r = keylang(dir, ["check", "--format", "json"]);
   const verdicts = JSON.parse(r.stdout) as { results?: { verdict: string; criterion: string; message: string }[] };
   const results = verdicts.results ?? (JSON.parse(r.stdout) as { verdict: string; criterion: string; message: string }[]);
@@ -103,6 +110,7 @@ test("a directory module attributes each fn and import to its own file", (t) => 
     "src/infra/db.ts": "export function save(): void {}\n",
     "keylang/rules.md": "# rules\n\n- deny domain infra\n",
   });
+
   const r = keylang(dir, ["check"]);
   assert.match(r.stdout, /src\/domain\/order\/b\.ts:2:1: K102/);
   keylang(dir, ["map"]);
@@ -114,6 +122,7 @@ test("the snapshot id changes with tsconfig paths, which decide edges", (t) => {
     "keylang.json": config({ app: ["src/**"] }),
     "src/a.ts": "export function a(): void {}\n",
   });
+
   keylang(dir, ["map"]);
   const before = (JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as { snapshotId: string }).snapshotId;
   writeFileSync(join(dir, "tsconfig.json"), '{ "compilerOptions": { "paths": { "@/*": ["./src/*"] } } }\n');
@@ -124,6 +133,7 @@ test("the snapshot id changes with tsconfig paths, which decide edges", (t) => {
 
 test("config limits: dir outside the repository, a dotted layer name; brace globs; `$` names stay apart", (t) => {
   const dir = repo(t, { "src/a.ts": "export function $save(): void {}\nexport function _save(): void {}\n" });
+
   for (const [cfg, message] of [
     [{ dir: "../outside" }, /`dir` must be a directory inside the repository/],
     [{ layers: { "core.domain": ["src/**"] } }, /layer name `core\.domain` must be one ID segment/],
@@ -133,6 +143,7 @@ test("config limits: dir outside the repository, a dotted layer name; brace glob
     assert.equal(r.status, 2, r.stderr);
     assert.match(r.stderr, message);
   }
+
   writeFileSync(join(dir, "keylang.json"), config({ app: ["src/{a,b}.ts"] }));
   assert.equal(keylang(dir, ["map"]).status, 0);
   const map = readFileSync(join(dir, "keylang/map/app.md"), "utf8");
@@ -150,6 +161,7 @@ test("fmt keeps a heading comment; a BOM does not turn a flow into a map", (t) =
 
 test("no-cycles survives a chain of 5000 modules", (t) => {
   const files: Record<string, string> = { "keylang.json": config({ app: ["src/**"] }), "keylang/rules.md": "# rules\n\n- no-cycles\n" };
+
   for (let i = 0; i < 5000; i++) files[`src/m${i}.ts`] = i < 4999 ? `import "./m${i + 1}.ts";\nexport const v${i} = 1;\n` : "export const last = 1;\n";
   const dir = repo(t, files);
   const r = keylang(dir, ["check"]);
@@ -190,6 +202,7 @@ test("lsp: a malformed message is an error reply, not the end of the server", as
   child.stdin.write(frame(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "shutdown" })));
   child.stdin.write(frame(JSON.stringify({ jsonrpc: "2.0", id: 2, method: "textDocument/hover", params: { textDocument: { uri: "file:///x.md" }, position: { line: 0, character: 0 } } })));
   const started = Date.now();
+
   while (!/"id":2/.test(out) && Date.now() - started < 5000) await new Promise((done) => setTimeout(done, 20));
   assert.match(out, /"code":-32700/);
   assert.match(out, /"code":-32600,"message":"a message must be a JSON object"/);
@@ -213,14 +226,17 @@ test("trace: spans of two processes of one run never nest into each other; a sym
     "src/app/main.ts": "export function a(): number { return 1; }\nexport function c(): number { return 2; }\nexport function b(): number { return c(); }\n",
     "keylang/flows/f.md": "# flow f\n\n- trigger app.main.a\n  - step app.main.c\n",
   });
+
   const run = (fn: string, rootDir: string): void => {
     const r = spawnSync(process.execPath, ["--import", join(root, "src/adapters/trace.ts"), "--input-type=module", "-e", `const m = await import(${JSON.stringify(join(rootDir, "src/app/main.ts"))}); m.${fn}();`], {
       cwd: rootDir,
       encoding: "utf8",
       env: { ...process.env, KEYLANG_TRACE: join(dir, ".keylang/trace/f.jsonl"), KEYLANG_TRACE_FLOW: "f", KEYLANG_TRACE_TEST: "t1", KEYLANG_TRACE_RUN: "run1", KEYLANG_TRACE_ROOT: rootDir },
     });
+
     assert.equal(r.status, 0, r.stderr);
   };
+
   run("a", dir);
   run("b", dir);
   const r = keylang(dir, ["check"]);
@@ -243,6 +259,7 @@ type Result = { criterion: string; area: string; verdict: string; evidence: stri
 
 function results(dir: string, args: string[] = []): { status: number | null; results: Result[]; stderr: string } {
   const r = keylang(dir, ["check", "--format", "json", ...args]);
+
   return { status: r.status, results: (JSON.parse(r.stdout) as { results: Result[] }).results, stderr: r.stderr };
 }
 
@@ -264,12 +281,14 @@ test("headings: only a flow has a name; an empty heading says so; fmt writes one
 
 test("items: tabs matter only where they decide the tree, free text is canonical, `exports ,` names nothing, a decomposed letter is a letter", (t) => {
   const decomposed = "café";
+
   const dir = repo(t, {
     "prose.md": "\tA paragraph indented with a tab.\n\n```\n\tcode\n```\n\n# flow f\n\n- trigger a.b\n- invariant   stock   never,negative\n",
     "tab.md": "# map\n\n- a\n\t- b\n",
     "rules.md": "# rules\n\n- module a.b\n  - exports ,\n",
     "nfd.md": `# map\n\n- ${decomposed}\n  - module order\n`,
   });
+
   assert.equal(keylang(dir, ["parse", "prose.md"]).status, 0, "a tab in prose or code is text");
   const text = (file: string): string | undefined => (JSON.parse(keylang(dir, ["parse", "--json", file]).stdout) as { sections: { items: { text?: { value: string } | null }[] }[] }[])[0]!.sections.at(-1)!.items.at(-1)!.text?.value;
   const before = text("prose.md");
@@ -321,12 +340,14 @@ test("config: `./keylang/` is the spec directory; reserved layer names are rejec
   assert.equal(keylang(dir, ["map"]).status, 0);
   const files = (JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as { manifest: { files: { path: string }[] } }).manifest.files.map((f) => f.path);
   assert.deepEqual(files, ["src/a.ts"], "the spec directory is not code");
+
   for (const name of ["external", "unassigned", "module", "layer", "entry", "no-cycles"]) {
     writeFileSync(join(dir, "keylang.json"), config({ [name]: ["src/**"] }));
     const r = keylang(dir, ["check"]);
     assert.equal(r.status, 2, name);
     assert.match(r.stderr, new RegExp(`keylang\\.json: \`layers\\.${name}\`: \`${name}\` is (reserved|a keyword)`), r.stderr);
   }
+
   const guessed = repo(t, { "src/external/a.ts": "export const a = 1;\n", "src/module/b.ts": "export const b = 1;\n", "src/2fa/c.ts": "export const c = 1;\n", "src/_2fa/d.ts": "export const d = 1;\n" });
   const init = keylang(guessed, ["init"]);
   assert.equal(init.status, 0, init.stderr);
@@ -342,6 +363,7 @@ test("config: `./keylang/` is the spec directory; reserved layer names are rejec
 // `README.md` is the start page of the explained map: a layer of that name (in any case: one file on macOS and Windows) would lose its layer file to it.
 test("config: `README` in any case is a reserved layer name; init renames a guessed one", (t) => {
   const dir = repo(t, { "src/app/a.ts": "export const a = 1;\n", "src/docs/r.ts": "export function r(): void {}\n" });
+
   for (const name of ["README", "readme", "ReadMe"]) {
     writeFileSync(join(dir, "keylang.json"), `${JSON.stringify({ languages: ["typescript"], layers: { app: ["src/app/**"], [name]: ["src/docs/**"] }, explain: { map: true } })}\n`);
     const r = keylang(dir, ["map"]);
@@ -349,6 +371,7 @@ test("config: `README` in any case is a reserved layer name; init renames a gues
     assert.match(r.stderr, new RegExp(`keylang\\.json: \`layers\\.${name}\`: \`${name}\` is reserved: \`README\\.md\` is the start page of the explained map`), r.stderr);
     assert.equal(existsSync(join(dir, "keylang/map-explained")), false);
   }
+
   const guessed = repo(t, { "src/README/a.ts": "export const a = 1;\n", "src/app/b.ts": "export const b = 1;\n" });
   const init = keylang(guessed, ["init", "--agents=none"]);
   assert.equal(init.status, 0, init.stderr);
@@ -368,6 +391,7 @@ test("rules name a configured layer without modules, `external` and `unassigned`
     "src/app/checkout.ts": "export function checkout(): void {}\n",
     "keylang/rules.md": "# rules\n\n- deny app wiring\n- deny app external\n- allow unassigned app\n- layers app < wiring\n",
   });
+
   const r = results(dir);
   assert.equal(r.status, 0, JSON.stringify(r.results));
   assert.ok(!r.results.some((row) => row.code === "K001"), JSON.stringify(r.results));
@@ -383,12 +407,14 @@ test("layers: every line is part of one partial order; a layer twice, a contradi
     "src/c/w.ts": "export const w = 1;\n",
     "keylang/rules.md": "# rules\n\n- layers a < b\n- layers c < d\n",
   });
+
   const apart = results(dir);
   assert.equal(apart.status, 0, "`a < b` and `c < d` say nothing about `a` and `d`");
   assert.deepEqual(apart.results.map((row) => `${row.criterion}:${row.verdict}`), ["layers a < b:ok", "layers c < d:ok"]);
   writeFileSync(join(dir, "keylang/rules.md"), "# rules\n\n- layers a < b\n- layers b < d\n");
   const joined = keylang(dir, ["check"]);
   assert.match(joined.stdout, /src\/a\/x\.ts:1:1: K101 divergence: `a\.x` depends on `d\.y` \(layers say `a < d`/, "b < d over a < b puts d above a");
+
   for (const [rules, message] of [
     ["- layers d < a < d\n", /rules\.md:3:18: K005 layer `d` appears twice in one order/],
     ["- layers a < b\n- layers b < a\n", /rules\.md:4:1: K005 `layers b < a` contradicts an earlier `layers`, which puts `b` above `a`/],
@@ -410,6 +436,7 @@ test("layers and entry have their own ok; a hole in the area makes layers unveri
     "src/domain/s.ts": "export const s = 1;\n",
     "keylang/rules.md": "# rules\n\n- layers domain < app\n- entry\n  - app\n",
   });
+
   const clean = results(dir);
   assert.deepEqual(clean.results.map((row) => `${row.line}:${row.criterion}:${row.verdict}`), ["3:layers domain < app:ok", "4:entry:ok"]);
   writeFileSync(join(dir, "src/domain/s.ts"), 'import { gone } from "./gone.ts";\nexport const s = gone;\n');
@@ -426,6 +453,7 @@ test("rule specificity counts ID segments; an equal-sum cross pair is incomparab
     "src/domain/storefront.ts": "export const s = 1;\n",
     "keylang/rules.md": "# rules\n\n- deny app.x domain\n- allow app domain.storefront\n",
   });
+
   // 2 + 1 against 1 + 2: the sums are equal, and the rules are incomparable. Deny wins, and K102 names the allow.
   const tie = keylang(dir, ["check"]);
   assert.equal(tie.status, 1);
@@ -452,6 +480,7 @@ test("K106 warns when an allow beats an incomparable deny on depth sum", (t) => 
     "src/domain/storefront.ts": "export const s = 1;\n",
     "keylang/rules.md": "# rules\n\n- allow app.x.y domain\n- deny app domain.storefront\n",
   };
+
   const dir = repo(t, files);
   const human = keylang(dir, ["check"]);
   assert.equal(human.status, 0, human.stdout + human.stderr);
@@ -502,6 +531,7 @@ test("K106 is cleared by a rule on the intersection that has more than one targe
     "src/infra/db.ts": "export const d = 1;\n",
     "keylang/rules.md": "# rules\n",
   });
+
   const rules = (third: string): string => `# rules\n\n- allow app.x.y domain\n- deny app domain.storefront\n- ${third}\n`;
   writeFileSync(join(dir, "keylang/rules.md"), rules("deny app.x.y domain.storefront, infra.db"));
   const denied = keylang(dir, ["check"]);
@@ -521,6 +551,7 @@ test("allow and deny over a function are K005, not a vacuous ok", (t) => {
     "src/infra/db.ts": "export function save(): void {}\n",
     "keylang/rules.md": "# rules\n\n- deny app.checkout.checkout infra.db.save\n",
   });
+
   const r = keylang(dir, ["check"]);
   assert.equal(r.status, 1);
   assert.match(r.stdout, /rules\.md:3:8: K005 `deny` takes layers, modules and ID prefixes; `app\.checkout\.checkout` is a fn, name its module `app\.checkout`/);
@@ -536,6 +567,7 @@ test("a class is part of its file: one dependency is one K102, and entry reaches
     "src/infra/lonely.ts": "export const lonely = 1;\n",
     "keylang/rules.md": "# rules\n\n- deny app infra\n- entry\n  - app.main\n",
   });
+
   const r = keylang(dir, ["check"]);
   assert.equal(r.stdout.match(/K102/g)?.length, 1, r.stdout);
   assert.match(r.stdout, /src\/app\/main\.ts:1:1: K102 divergence: `app\.main` depends on `infra\.db`/);
@@ -562,6 +594,7 @@ test("a deny or exports over a module that exists only as planned is unverified,
     "keylang/rules.md": "# rules\n\n- deny app.refund infra\n- module app.refund\n  - exports refund\n",
     "keylang/flows/r.md": "# flow r\n\n- planned module app.refund\n",
   });
+
   const r = results(dir);
   assert.equal(r.status, 0, JSON.stringify(r.results));
   assert.deepEqual(r.results.map((row) => `${row.criterion}:${row.verdict}:${row.evidence}`), [
@@ -577,6 +610,7 @@ test("exports compares the module's own table, not the tables of its submodules"
     "src/app/purchase/buy.ts": "export function buy(): void {}\nexport default buy;\n",
     "keylang/rules.md": "# rules\n\n- module app.purchase\n  - exports purchaseNow\n",
   });
+
   const own = results(dir);
   assert.equal(own.status, 0, JSON.stringify(own.results));
   assert.equal(own.results.find((row) => row.criterion === "exports app.purchase")?.verdict, "ok");
@@ -593,6 +627,7 @@ test("a partly parsed module keeps an unknown member unverified, not K001, even 
     "src/app/util.ts": "export function one(): void {}\nexport function two( {\n",
     "keylang/flows/f.md": "# flow f\n\n- trigger app.util.one\n  - step app.util.three\n",
   });
+
   const r = keylang(dir, ["check"]);
   assert.doesNotMatch(r.stdout, /K001/, r.stdout);
   assert.match(r.stdout, /f\.md:4:3: ID unverified app\.util\.three: opaque module/);
@@ -606,8 +641,10 @@ test("a source directory keylang cannot read is a hole of its scope, not a crash
     "src/infra/db.ts": "export function save(): void {}\n",
     "src/domain/locked/sneaky.ts": 'import { save } from "../../infra/db.ts";\nexport function sneaky(): void {\n  save();\n}\n',
   });
+
   const locked = join(dir, "src/domain/locked");
   chmodSync(locked, 0o000);
+
   try {
     const map = keylang(dir, ["map"]);
     assert.equal(map.status, 0, map.stderr);
@@ -621,6 +658,7 @@ test("a source directory keylang cannot read is a hole of its scope, not a crash
     // Before the temporary copy is removed.
     chmodSync(locked, 0o755);
   }
+
   assert.match(keylang(dir, ["check"]).stdout, /K102 divergence: `domain\.locked\.sneaky` depends on `infra\.db`/, "readable again, the edge is there");
 });
 
@@ -632,8 +670,10 @@ test("a source file keylang cannot read is an opaque module and a hole, not code
     "src/infra/db.ts": "export function save(): void {}\n",
     "src/domain/secret.ts": 'import { save } from "../infra/db.ts";\nexport function sneaky(): void {\n  save();\n}\n',
   });
+
   const secret = join(dir, "src/domain/secret.ts");
   chmodSync(secret, 0o000);
+
   try {
     const map = keylang(dir, ["map"]);
     assert.equal(map.status, 0, map.stderr);
@@ -647,6 +687,7 @@ test("a source file keylang cannot read is an opaque module and a hole, not code
     // Before the temporary copy is removed.
     chmodSync(secret, 0o644);
   }
+
   assert.match(keylang(dir, ["check"]).stdout, /K102 divergence: `domain\.secret` depends on `infra\.db`/, "readable again, the edge is there");
 });
 
@@ -656,6 +697,7 @@ test("exports with no names is only parser K005, and an empty entry has no verdi
     "src/app/checkout.ts": "export function buy(): void {}\n",
     "keylang/rules.md": "# rules\n\n- module app.checkout\n  - exports\n",
   });
+
   const exported = keylang(exportsDir, ["check"]);
   assert.equal(exported.status, 1, exported.stdout);
   assert.match(exported.stdout, /`exports` needs at least one name/);
@@ -666,6 +708,7 @@ test("exports with no names is only parser K005, and an empty entry has no verdi
     "src/app/checkout.ts": "export function buy(): void {}\n",
     "keylang/rules.md": "# rules\n\n- entry\n  - app\n- entry\n",
   });
+
   const entered = keylang(entryDir, ["check", "--format", "json"]);
   assert.equal(entered.status, 0, entered.stderr + entered.stdout);
   const body = JSON.parse(entered.stdout) as { results: { criterion: string; line: number }[] };
@@ -699,35 +742,45 @@ test("compileSpec canonical text matches the spec-forms golden, and a line with 
   assert.equal(messages.some((message) => message.includes("takes layers") || message.includes("needs at least") || message.includes("deny")), false);
 
   for (const ref of assertionRefs(valid.spec)) assertRefInParse(validDocs, ref);
+
   for (const ref of assertionRefs(invalid.spec)) assertRefInParse(invalidDocs, ref);
 
   const golden = JSON.parse(readFileSync(join(root, "tests/fixtures/spec-forms/valid.expected/check.json"), "utf8")) as {
     results: { criterion: string; file: string; line: number; code: string | null; specHash: string; evidence: string }[];
   };
+
   const atoms = assertionTexts(valid.spec);
+
   const entryText = valid.spec.rules
     .filter((rule) => rule.kind === "entry")
     .map((rule) => rule.text)
     .join("\n");
+
   const layerText = valid.spec.rules
     .filter((rule) => rule.kind === "layers" && rule.layers.length > 0)
     .map((rule) => rule.text)
     .join("\n");
+
   for (const result of golden.results) {
     if (result.criterion === "K102") continue;
+
     if (result.criterion === "entry" || result.code === "K103") {
       assert.equal(result.specHash, sha256(entryText), result.evidence);
       continue;
     }
+
     if (result.code === "K101" || result.criterion.startsWith("layers ")) {
       assert.equal(result.specHash, sha256(layerText), result.evidence);
       continue;
     }
+
     const onLine = atoms.filter((atom) => atom.file === result.file && atom.line === result.line);
+
     if (onLine.length === 1) {
       assert.equal(result.specHash, sha256(onLine[0]!.text), result.evidence);
       continue;
     }
+
     const byText = atoms.filter((atom) => atom.text === result.criterion);
     assert.equal(byText.length, 1, result.evidence);
     assert.equal(result.specHash, sha256(byText[0]!.text), result.evidence);
@@ -744,6 +797,7 @@ test("compileSpec canonical text matches the spec-forms golden, and a line with 
     [invalidDocs, invalid.spec],
   ] as const) {
     const texts = assertionTexts(spec);
+
     for (const doc of docs) {
       for (const section of doc.sections) {
         for (const node of sectionNodes(section)) {
@@ -766,6 +820,7 @@ test("compileSpec canonical text matches the spec-forms golden, and a line with 
 function parsedDocs(dir: string): Document[] {
   const parsed = keylang(dir, ["parse", "--json", "keylang"]);
   assert.ok(parsed.stdout.startsWith("["), parsed.stderr);
+
   return JSON.parse(parsed.stdout) as Document[];
 }
 
@@ -780,92 +835,124 @@ function sameSpan(a: Span, b: Span): boolean {
 function assertRefInParse(docs: readonly Document[], ref: Ref & { file: string }): void {
   const found = docs.some((doc) => {
     if (doc.path !== ref.file) return false;
+
     return doc.sections.some((section) =>
       sectionNodes(section).some((node) => {
         let hit = false;
         walk(node, (item) => {
           if (item.refs.some((candidate) => candidate.target === ref.target && sameSpan(candidate.span, ref.span))) hit = true;
         });
+
         return hit;
       }),
     );
   });
+
   assert.equal(found, true, `${ref.file} ${ref.target} @ ${ref.span.start.line}:${ref.span.start.col}`);
 }
 
 function assertionRefs(spec: SpecIR): (Ref & { file: string })[] {
   const refs: (Ref & { file: string })[] = [];
+
   const add = (file: string, ref: Ref | null | undefined): void => {
     if (ref) refs.push({ ...ref, file });
   };
+
   for (const rule of spec.rules) {
     if (rule.kind === "layers") {
       for (const ref of rule.nested) add(rule.file, ref);
     } else if (rule.kind === "dependency") {
       add(rule.file, rule.from);
+
       for (const ref of rule.to) add(rule.file, ref);
     } else if (rule.kind === "entry") for (const ref of rule.entries) add(rule.file, ref);
     else if (rule.kind === "no-cycles") add(rule.file, rule.under);
     else {
       add(rule.file, rule.module);
+
       for (const ref of rule.names) add(rule.file, ref);
     }
   }
+
   const walkItems = (file: string, items: readonly FlowItem[]): void => {
     for (const item of items) {
       if (item.kind === "step") add(file, item.target);
+
       if (item.kind === "then" && item.form === "ref") add(file, item.target);
+
       if (item.kind === "reads" || item.kind === "emits" || item.kind === "invariant") add(file, item.target);
+
       if ("children" in item) walkItems(file, item.children);
     }
   };
+
   for (const flow of spec.flows) {
     for (const trigger of flow.triggers) {
       add(flow.file, trigger.target);
       walkItems(flow.file, trigger.children);
     }
+
     walkItems(flow.file, flow.items);
   }
+
   for (const wire of spec.wires) {
     add(wire.file, wire.target);
+
     for (const dep of wire.deps) {
       add(wire.file, dep.target);
+
       for (const when of dep.when) add(wire.file, when.target);
+
       for (const compose of dep.compose) add(wire.file, compose.target);
     }
   }
+
   return refs;
 }
 
 function assertionTexts(spec: SpecIR): { file: string; line: number; end: number; text: string }[] {
   const out: { file: string; line: number; end: number; text: string }[] = [];
+
   const add = (file: string, span: Span, text: string): void => {
     out.push({ file, line: span.start.line, end: span.end.offset, text });
   };
+
   const walkItems = (file: string, items: readonly FlowItem[]): void => {
     for (const item of items) {
       add(file, item.span, item.text);
+
       if ("children" in item) walkItems(file, item.children);
     }
   };
+
   for (const rule of spec.rules) add(rule.file, rule.span, rule.text);
+
   for (const flow of spec.flows) {
     for (const trigger of flow.triggers) {
       add(flow.file, trigger.span, trigger.text);
       walkItems(flow.file, trigger.children);
     }
+
     walkItems(flow.file, flow.items);
   }
+
   for (const item of spec.planned) add(item.file, item.span, item.text);
+
   return out;
 }
 
 function missingTarget(node: Node): boolean {
   if ((node.kind === "allow" || node.kind === "deny") && node.refs.length < 2) return true;
+
   if (node.kind === "exports" && node.refs.length === 0) return true;
+
   if (node.kind === "entry" && node.children.every((child) => child.refs.length === 0)) return true;
+
   if ((node.kind === "step" || node.kind === "trigger" || node.kind === "wire" || node.kind === "compose") && node.refs.length === 0) return true;
+
   if (node.kind === "planned" && node.id === null) return true;
+
   if (node.kind === "rule-module" && node.refs.length === 0) return true;
+
   return false;
 }

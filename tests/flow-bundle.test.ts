@@ -48,8 +48,10 @@ function run(t: { after: (fn: () => void) => void }, cwd: string, args: string[]
   mkdirSync(join(home, ".config"), { recursive: true });
   const base: Record<string, string | undefined> = { ...process.env, HOME: home, KEYLANG_AGENT: undefined, KEYLANG_NESTED: undefined, ANTHROPIC_API_KEY: undefined, OPENROUTER_API_KEY: undefined };
   const path = fake ? `${fake.bin}:${process.env.PATH ?? ""}` : (process.env.PATH ?? "");
-  const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8", env: { ...base, PATH: path, ...(fake?.env ?? {}), ...env } as NodeJS.ProcessEnv });
+  const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8", env: { ...base, PATH: path, ...fake?.env, ...env } as NodeJS.ProcessEnv });
+
   if (r.error) throw r.error;
+
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
@@ -67,6 +69,7 @@ function setup(t: { after: (fn: () => void) => void }): { a: string; b: string; 
   const r = run(t, a, ["flow", "export", "checkout", "report", "--with-callees", "1", "--out", bundle]);
   assert.equal(r.status, 0, r.stderr);
   assert.equal(r.stdout, "", "--out: the bundle goes to the file only");
+
   return { a, b, bundle, head };
 }
 
@@ -126,10 +129,12 @@ test("round trip: export from A (TypeScript) → import into B (Python) with --l
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stderr, /layer app → service \(flag\)/);
   assert.match(r.stderr, /imported 2 flow\(s\) from \S+@[0-9a-f]+: 4 id\(s\), 4 planned/);
+
   for (const target of ["keylang/features/checkout.md", "keylang/migration.md"]) {
     const accepted = run(t, b, ["proposals", "accept", target]);
     assert.equal(accepted.status, 0, accepted.stderr);
   }
+
   const feature = readFileSync(join(b, "keylang/features/checkout.md"), "utf8");
   assert.match(feature, new RegExp(`^# flow checkout\\n\\n<!-- keylang:import from=\\S+@${head} snapshot=[0-9a-f]{64} bundle=checkout\\.bundle\\.md layer-map=app=service,domain=core mode=algo -->\\n\\nThe shopper pays for the cart\\.\\n\\n- planned fn service\\.checkout\\.checkout \\(cart: string\\[\\]\\) → number\\n`));
   assert.match(feature, /^- planned fn core\.order\.placeOrder \(items: string\[\]\) → number$/m);
@@ -142,10 +147,12 @@ test("round trip: export from A (TypeScript) → import into B (Python) with --l
   assert.doesNotMatch(items, /\bapp\.|\bdomain\./, "no source ID is left on a line of the spec (comments keep where the words came from)");
   const migration = readFileSync(join(b, "keylang/migration.md"), "utf8");
   assert.match(migration, /^# migration checkout\n\n<!-- keylang:import from=/);
+
   for (const row of ["app.checkout.checkout → planned service.checkout.checkout", "domain.order.placeOrder → planned core.order.placeOrder", "domain.order.total → planned core.order.total", "app.report.report → planned service.report.report"]) assert.match(migration, new RegExp(`^- map ${row.replaceAll(".", "\\.")}$`, "m"));
   assert.deepEqual(parse("keylang/migration.md", migration).diagnostics, []);
   const status = run(t, b, ["feature", "checkout"]);
   assert.equal(status.status, 1, status.stderr);
+
   for (const id of ["service.checkout.checkout", "core.order.placeOrder", "core.order.total", "service.report.report"]) assert.match(status.stdout, new RegExp(`: planned ${id.replaceAll(".", "\\.")}: planned \`${id.replaceAll(".", "\\.")}\` is not implemented$`, "m"));
   assert.doesNotMatch(status.stdout, / diagnostic /, "the feature has no spec error");
   const checked = run(t, b, ["check"]);
@@ -222,6 +229,7 @@ test("flow import --mode llm: the model's layer map is checked; a layer it maps 
 
 test("bundle text: a signature with `|` and a doc with `<` survive the table; a `# migration` section parses, a malformed row is K005", () => {
   const header: BundleHeader = { format: 1, repo: "git@example.com:shop/a.git", commit: "n/a", snapshotId: "s", keylang: "0.0.0", flows: ["pay"], withCallees: 0 };
+
   const text = bundleText({
     header,
     layers: [{ name: "app", globs: ["src/app/**"], description: "The <web> layer | API." }],
@@ -230,6 +238,7 @@ test("bundle text: a signature with `|` and a doc with `<` survive the table; a 
     reached: [],
     flows: [{ name: "pay", origin: "spec", source: "keylang/flows/pay.md", text: "# flow pay\n\n- trigger app.pay.pay\n", process: { name: "Оплата кошика", domain: "Оплата", description: "Покупець платить <карткою>." } }],
   });
+
   assert.deepEqual(parse("b.md", text).diagnostics, []);
   const back = parseBundle(text);
   assert.ok(!("error" in back));
@@ -245,11 +254,13 @@ test("bundle text: a signature with `|` and a doc with `<` survive the table; a 
 
 test("the layout block of a copied fragment (business-flows/25): keyed like the layout files, read back leniently; a text that would close the fence or the model's untrusted tag stays data", () => {
   const header: BundleHeader = { format: 1, repo: "shop", commit: "n/a", snapshotId: "s", keylang: "0.0.0", flows: ["pay"], withCallees: 0 };
+
   const shapes = [
     { key: "step:6", id: "app.pay.pay", kind: "task", label: "pay ```\n```", layer: "app", x: 140, y: 90, w: 160, h: 60 },
     { key: "trigger:1", id: "app.pay.start", kind: "start", label: "start", layer: "app", x: 100, y: 100, w: 36, h: 36, trigger: "route" },
     { key: "draft:3", id: "planned:app.pay.pay", kind: "task", label: "twin", layer: "app", x: 400, y: 90, w: 160, h: 60 },
   ];
+
   const layout = clipLayout("flow:pay", shapes, [{ from: "trigger:1", to: "step:6", kind: "sequence" }, { from: "step:6", to: "nowhere", kind: "call" }]);
   assert.deepEqual(Object.keys(layout.shapes).sort(), ["step:app.pay.pay", "step:app.pay.pay#2", "trigger:app.pay.start"], "what a shape says; a twin gets #2");
   assert.deepEqual([layout.shapes["step:app.pay.pay"]!.x, layout.shapes["step:app.pay.pay"]!.y], [40, 0], "relative to the fragment's top-left");

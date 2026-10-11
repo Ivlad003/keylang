@@ -1,0 +1,46 @@
+<!-- keylang:generated — не редагувати, `keylang map` -->
+
+# map
+
+- unassigned
+  - module tools
+    - module oxlint
+      - module anti-slop
+        - module effect
+          - module [index](../../tools/oxlint/anti-slop/effect/index.ts#L1) <!-- excluded -->
+          - module rules
+            - module [no-manual-effect-error-tag](../../tools/oxlint/anti-slop/effect/rules/no-manual-effect-error-tag.ts#L1) <!-- excluded -->
+            - module [no-manual-tag-comparison](../../tools/oxlint/anti-slop/effect/rules/no-manual-tag-comparison.ts#L1) <!-- excluded -->
+            - module [no-manual-tagged-construction](../../tools/oxlint/anti-slop/effect/rules/no-manual-tagged-construction.ts#L1) <!-- excluded -->
+            - module [no-service-constructor-imports](../../tools/oxlint/anti-slop/effect/rules/no-service-constructor-imports.ts#L1) <!-- excluded -->
+            - module [prefer-effect-match](../../tools/oxlint/anti-slop/effect/rules/prefer-effect-match.ts#L1) <!-- excluded -->
+          - module shared
+            - module [tagged-values](../../tools/oxlint/anti-slop/effect/shared/tagged-values.ts#L1) <!-- excluded -->
+        - module [index](../../tools/oxlint/anti-slop/index.ts#L1) <!-- excluded -->
+        - module rules
+          - module [no-array-filter-map](../../tools/oxlint/anti-slop/rules/no-array-filter-map.ts#L1) <!-- excluded -->
+          - module [no-chained-type-assertions](../../tools/oxlint/anti-slop/rules/no-chained-type-assertions.ts#L1) <!-- excluded -->
+          - module [no-conditional-empty-object-spread](../../tools/oxlint/anti-slop/rules/no-conditional-empty-object-spread.ts#L1) <!-- excluded -->
+          - module [no-known-value-widening](../../tools/oxlint/anti-slop/rules/no-known-value-widening.ts#L1) <!-- excluded -->
+          - module [no-module-mocking](../../tools/oxlint/anti-slop/rules/no-module-mocking.ts#L1) <!-- excluded -->
+          - module [no-object-parameters](../../tools/oxlint/anti-slop/rules/no-object-parameters.ts#L1) <!-- excluded -->
+          - module [no-reduce-accumulator-copy](../../tools/oxlint/anti-slop/rules/no-reduce-accumulator-copy.ts#L1) <!-- excluded -->
+          - module [no-reflect-apply](../../tools/oxlint/anti-slop/rules/no-reflect-apply.ts#L1) <!-- excluded -->
+          - module [no-reflect-get](../../tools/oxlint/anti-slop/rules/no-reflect-get.ts#L1) <!-- excluded -->
+          - module [no-runtime-typeof](../../tools/oxlint/anti-slop/rules/no-runtime-typeof.ts#L1) <!-- excluded -->
+          - module [no-shape-in-symbol-names](../../tools/oxlint/anti-slop/rules/no-shape-in-symbol-names.ts#L1) <!-- excluded -->
+          - module [no-unknown-parameters](../../tools/oxlint/anti-slop/rules/no-unknown-parameters.ts#L1) <!-- excluded -->
+          - module [no-unknown-returns](../../tools/oxlint/anti-slop/rules/no-unknown-returns.ts#L1) <!-- excluded -->
+          - module [no-unknown-type-aliases](../../tools/oxlint/anti-slop/rules/no-unknown-type-aliases.ts#L1) <!-- excluded -->
+          - module [no-unsafe-dictionary-type](../../tools/oxlint/anti-slop/rules/no-unsafe-dictionary-type.ts#L1) <!-- excluded -->
+          - module [no-widen-then-assert](../../tools/oxlint/anti-slop/rules/no-widen-then-assert.ts#L1) <!-- excluded -->
+          - module [require-readable-spacing](../../tools/oxlint/anti-slop/rules/require-readable-spacing.ts#L1) <!-- excluded -->
+          - module [require-safety-comment-for-type-assertion](../../tools/oxlint/anti-slop/rules/require-safety-comment-for-type-assertion.ts#L1) <!-- excluded -->
+        - module shared
+          - module [array-method](../../tools/oxlint/anti-slop/shared/array-method.ts#L1) <!-- excluded -->
+          - module [dictionary-types](../../tools/oxlint/anti-slop/shared/dictionary-types.ts#L1) <!-- excluded -->
+          - module [function-parameters](../../tools/oxlint/anti-slop/shared/function-parameters.ts#L1) <!-- excluded -->
+          - module [lexical-type-parameters](../../tools/oxlint/anti-slop/shared/lexical-type-parameters.ts#L1) <!-- excluded -->
+          - module [reflect-method](../../tools/oxlint/anti-slop/shared/reflect-method.ts#L1) <!-- excluded -->
+          - module [scope](../../tools/oxlint/anti-slop/shared/scope.ts#L1) <!-- excluded -->
+          - module [type-alias-resolution](../../tools/oxlint/anti-slop/shared/type-alias-resolution.ts#L1) <!-- excluded -->

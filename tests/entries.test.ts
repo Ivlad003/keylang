@@ -210,10 +210,12 @@ test("tui: «Entry points» in the palette lists the entries of the saved code, 
     "src/presentation/handlers.ts": "export function listOrders(): string[] {\n  return [];\n}\n",
     "src/presentation/server.ts": 'import { listOrders } from "./handlers.ts";\nconst app = { get: (_p: string, _h: unknown) => 0 };\napp.get("/orders", listOrders);\n',
   });
+
   const s = session(root);
   t.after(() => s.app.close());
   await s.app.idle();
   s.send(KEY.ctrlP);
+
   for (const ch of "entry points") s.send(ch);
   assert.match(s.text(), /Entry points: where execution starts/);
   s.send(KEY.enter);

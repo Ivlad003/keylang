@@ -31,21 +31,27 @@ function pythonWebAdapter(spec: PythonWebSpec): FrameworkAdapter {
   const dependency = new RegExp(`(?:^|[^A-Za-z0-9_.-])${spec.pkg}(?:$|[^A-Za-z0-9_.-])`, "im");
   const imports = new RegExp(`^[ \\t]*(?:from|import)[ \\t]+${spec.pkg}\\b`, "m");
   const python = (context: FrameworkContext): string[] => context.sources.filter((path) => path.endsWith(".py"));
+
   return {
     name: spec.name,
     version: "1",
     detect(context) {
       if (MANIFESTS.some((path) => dependency.test(context.read(path) ?? ""))) return true;
+
       return python(context).some((path) => imports.test(context.read(path) ?? ""));
     },
     files(context) {
       const out: { path: string; owner: string | null }[] = [];
+
       for (const path of python(context)) {
         if (!context.analysed(path)) continue;
         const text = context.read(path);
+
         if (text === null) continue;
+
         if (imports.test(text) || spec.extra?.test(path) || spec.marker?.test(text)) out.push({ path, owner: posix.dirname(path) === "." ? null : posix.dirname(path) });
       }
+
       return out;
     },
     parse(path): ConfigFacts {
@@ -55,8 +61,11 @@ function pythonWebAdapter(spec: PythonWebSpec): FrameworkAdapter {
 }
 
 export const django = pythonWebAdapter({ name: "django", pkg: "django", extra: /(?:^|\/)(?:urls\.py|management\/commands\/(?!_)[^/]+\.py)$/ });
+
 export const fastapi = pythonWebAdapter({ name: "fastapi", pkg: "fastapi" });
+
 export const flask = pythonWebAdapter({ name: "flask", pkg: "flask" });
+
 export const celery = pythonWebAdapter({ name: "celery", pkg: "celery", marker: /beat_schedule/i });
 
 /** The names of the Python web adapters, for the graph step that reads their registrations. */

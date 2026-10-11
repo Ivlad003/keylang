@@ -27,12 +27,16 @@ import { bin, keylang } from "./cli-helpers.ts";
 function tempDir(t: { after: (f: () => void) => void }, name = "keylang-greenfield-"): string {
   const dir = mkdtempSync(join(tmpdir(), name));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+
   return dir;
 }
 
 type Node = EditorModel["nodes"][number];
+
 const lane = (key: string, name: string, y: number): EditorModel["lanes"][number] => ({ key, id: `planned:${name}`, label: name, x: 0, y, w: 720, h: 150 });
+
 const node = (key: string, kind: string, id: string, label: string, x: number, y: number, extra: Partial<Node> = {}): Node => ({ key, kind, id, label, layer: null, tests: [], x, y, w: 160, h: 60, ...extra });
+
 const edge = (key: string, kind: string, from: string, to: string): EditorModel["edges"][number] => ({ key, kind, from, to });
 
 /** Two lanes and a process: a route trigger, three steps (one with a signature and a test), an event; a loose module; a deny between the lanes. */
@@ -106,6 +110,7 @@ test("greenfield: an empty project's drawing becomes keylang.json, rules, a feat
   // `check`: no fail — every step planned, unverified until the agent writes it.
   const check = keylang(root, ["check"]);
   assert.equal(check.status, 0, check.stdout + check.stderr);
+
   for (const id of ["application.validate", "domain.price", "application.save"]) assert.match(check.stdout, new RegExp(`static unverified ${id.replace(".", "\\.")}: planned fn, not implemented`));
   assert.doesNotMatch(check.stdout, /K00\d/);
   // `feature`: the three steps (and the trigger's fn) planned, not implemented.
@@ -175,6 +180,7 @@ test("greenfield: what is not a project yet — no lane, no language, a shape ou
   const named = { ...model, nodes: model.nodes.map((n) => (n.key === "draft:3" ? { ...n, id: "planned:application.оформити" } : n)) };
   assert.match(runGreenfield({ root, model: named, languages: ["typescript"] }).error!, /process `оформити`: a feature's name is Latin letters/);
   assert.deepEqual(readdirSync(root), [], "nothing written");
+
   // The plan alone: hexagonal lanes, an external system as a planned fn of its lane, a dependency line as an allow.
   const plan = greenfieldPlan({
     specDir: "keylang",
@@ -187,6 +193,7 @@ test("greenfield: what is not a project yet — no lane, no language, a shape ou
       edges: [edge("e1", "sequence", "n1", "n2"), edge("e2", "dependency", "n3", "n4")],
     },
   });
+
   assert.ok(typeof plan !== "string", String(plan));
   const files = new Map(plan.files.map((f) => [f.path, f.text]));
   assert.equal(files.get("keylang/features/webhook.md"), "# flow webhook\n\n- trigger webhook adapters.webhook\n- step adapters.stripe\n- planned fn adapters.webhook\n- planned fn adapters.stripe\n");
@@ -201,6 +208,7 @@ function send(url: URL, method: string, path: string, headers: Record<string, st
       res.on("data", (chunk: Buffer) => (text += chunk.toString()));
       res.on("end", () => resolve({ status: res.statusCode ?? 0, body: text }));
     });
+
     req.on("error", reject);
     req.end(body);
   });
@@ -257,11 +265,14 @@ async function webNew(t: { after: (f: () => void | Promise<void>) => void }, cwd
   child.stderr.on("data", (chunk: Buffer) => (err += chunk.toString()));
   const exited = new Promise<number | null>((done) => child.once("exit", (code) => done(code)));
   const start = Date.now();
+
   while (!/keylang web: (\S+)/.test(out)) {
     if (child.exitCode !== null) return { url: null, code: await exited, stderr: err };
+
     if (Date.now() - start > 20000) throw new Error(`keylang web --new printed no URL: ${out}${err}`);
     await new Promise((done) => setTimeout(done, 50));
   }
+
   return { url: /keylang web: (\S+)/.exec(out)![1]!, code: null, stderr: err };
 }
 

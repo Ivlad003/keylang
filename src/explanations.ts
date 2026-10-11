@@ -36,7 +36,9 @@ export function isStoredExplanation(text: string): boolean {
 /** The saved form; null for a file keylang did not write, which is not an explanation it can date. */
 export function parseStoredExplanation(text: string): StoredExplanation | null {
   const m = HEADER.exec(text);
+
   if (!m) return null;
+
   return { agent: m[1]!, date: m[2]!, closure: m[3]!, lang: m[4]!, detail: m[5] as ExplanationDetail, text: text.slice(m[0].length).trimEnd() };
 }
 
@@ -65,6 +67,7 @@ export const OLD_EXPLAIN_DIR = ".keylang/explain";
  */
 export function explanationPath(config: Pick<Config, "dir"> & { root?: string }, id: string, detail: ExplanationDetail, also: Iterable<string> = []): string {
   const dir = detail === "brief" ? `${explainDir(config)}/brief` : explainDir(config);
+
   return `${dir}/${storeName(config.root === undefined ? [] : storeNames(config.root, dir), id, also)}`;
 }
 
@@ -72,10 +75,13 @@ export function explanationPath(config: Pick<Config, "dir"> & { root?: string },
 function storeName(names: readonly string[], id: string, also: Iterable<string>): string {
   const twinned = `${id}~${createHash("sha256").update(id).digest("hex").slice(0, 8)}.md`;
   const plain = `${id}.md`;
+
   if (names.includes(twinned)) return twinned;
+
   if (names.includes(plain)) return plain;
   const folded = id.toLowerCase();
   const twin = (other: string): boolean => other !== id && other.toLowerCase() === folded;
+
   return names.some((name) => twin(storedId(name))) || [...also].some(twin) ? twinned : plain;
 }
 
@@ -87,7 +93,9 @@ function storedId(name: string): string {
 /** Names of the `.md` files in `dir` (relative to the root), as the listing spells them. */
 function storeNames(root: string, dir: string): string[] {
   const abs = join(root, dir);
+
   if (!existsSync(abs)) return [];
+
   return readdirSync(abs, { withFileTypes: true })
     .filter((e) => e.isFile() && e.name.endsWith(".md"))
     .map((e) => e.name.normalize("NFC"));
@@ -95,6 +103,7 @@ function storeNames(root: string, dir: string): string[] {
 
 export function readStoredExplanation(root: string, rel: string): StoredExplanation | null {
   const file = join(root, rel);
+
   return existsSync(file) ? parseStoredExplanation(readFileSync(file, "utf8")) : null;
 }
 
@@ -108,10 +117,13 @@ export function loadBriefs(config: Config): Map<string, StoredExplanation> {
   const dir = `${explainDir(config)}/brief`;
   const names = storeNames(config.root, dir);
   const out = new Map<string, StoredExplanation>();
+
   for (const id of [...new Set(names.map(storedId))].sort()) {
     const e = readStoredExplanation(config.root, `${dir}/${storeName(names, id, [])}`);
+
     if (e?.detail === "brief") out.set(id, e);
   }
+
   return out;
 }
 
@@ -131,36 +143,49 @@ const sortedIds = new WeakMap<AnalysisSnapshot, string[]>();
  */
 export function snapshotBaseline(snapshot: AnalysisSnapshot, id: string): string | null {
   const node = snapshot.nodes[id];
+
   if (!node) return null;
+
   if (node.closure) return node.closure.fingerprint;
   let ids = sortedIds.get(snapshot);
+
   if (!ids) {
     ids = Object.keys(snapshot.nodes).sort();
     sortedIds.set(snapshot, ids);
   }
+
   const prefix = `${id}.`;
   const parts: string[] = [];
+
   for (let i = lowerBound(ids, prefix); i < ids.length && ids[i]!.startsWith(prefix); i++) {
     const other = ids[i]!;
     const n = snapshot.nodes[other];
     const print = n?.closure?.fingerprint ?? n?.fingerprint;
+
     if (print !== undefined) parts.push(`${other} ${print}`);
+
     if (n?.values !== undefined) parts.push(`${other} values ${n.values}`);
   }
+
   if (node.values !== undefined) parts.push(`values ${node.values}`);
   parts.sort();
+
   if (parts.length === 0 && (node.deps ?? []).length === 0) return "";
+
   return createHash("sha256").update([`deps ${(node.deps ?? []).join(",")}`, ...parts].join("\n")).digest("hex");
 }
 
 function lowerBound(sorted: readonly string[], key: string): number {
   let lo = 0;
   let hi = sorted.length;
+
   while (lo < hi) {
     const mid = (lo + hi) >> 1;
+
     if (sorted[mid]! < key) lo = mid + 1;
     else hi = mid;
   }
+
   return lo;
 }
 
@@ -186,6 +211,7 @@ export function ownLayers(snapshot: AnalysisSnapshot): string[] {
  */
 export function systemBaseline(snapshot: AnalysisSnapshot, briefs: ReadonlyMap<string, StoredExplanation>): string {
   const lines = ownLayers(snapshot).map((id) => `${id} ${explanationOf(snapshot, briefs, id)?.text ?? ""}`);
+
   return createHash("sha256").update(lines.join("\n")).digest("hex");
 }
 
@@ -211,18 +237,26 @@ export interface NodeExplanation {
 export function explanationOf(snapshot: AnalysisSnapshot, briefs: ReadonlyMap<string, StoredExplanation>, id: string): NodeExplanation | null {
   if (id === SYSTEM_ID) {
     const system = snapshot.system;
+
     if (system?.brief) return { text: system.brief, origin: "doc", stale: false, ...(system.source ? { source: system.source } : {}) };
+
     return briefExplanation(briefs.get(id), () => systemBaseline(snapshot, briefs));
   }
+
   const node = snapshot.nodes[id];
+
   if (!node) return null;
+
   if (node.doc) return { text: node.doc, origin: "doc", stale: false };
+
   return briefExplanation(briefs.get(id), () => snapshotBaseline(snapshot, id));
 }
 
 function briefExplanation(brief: StoredExplanation | undefined, baseline: () => string | null): NodeExplanation | null {
   const text = brief ? briefOf(brief.text) : null;
+
   if (!brief || text === null) return null;
+
   return { text, origin: "llm", stale: baseline() !== brief.closure, agent: brief.agent, date: brief.date };
 }
 

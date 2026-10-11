@@ -23,8 +23,10 @@ export const FEATURE_SLUG = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 /** The slug of `path` when it is a feature file `<dir>/features/<slug>.md`, else null. */
 export function featureSlugOf(path: string, dir: string): string | null {
   const prefix = specPath(dir, "features/");
+
   if (!path.startsWith(prefix) || !path.endsWith(".md")) return null;
   const slug = path.slice(prefix.length, -3);
+
   return FEATURE_SLUG.test(slug) ? slug : null;
 }
 
@@ -37,37 +39,50 @@ export function featureSlugOf(path: string, dir: string): string | null {
  */
 export async function runFeature(request: FeatureRequest, context: OperationContext): Promise<OperationEnvelope<"feature">> {
   if (!isAbsolute(request.root)) return empty("feature", "failed", 2, "feature: root must be an absolute path");
+
   if (request.slug === "") return empty("feature", "failed", 2, "feature: a slug is required");
+
   if (!FEATURE_SLUG.test(request.slug)) return empty("feature", "failed", 2, `feature: invalid slug \`${request.slug}\``);
+
   if (context.signal?.aborted) return empty("feature", "cancelled", null);
   let config: Config;
+
   try {
     config = loadConfig(request.root);
   } catch (error) {
     return empty("feature", "failed", 2, errorText(error));
   }
+
   const file = specPath(config.dir, `features/${request.slug}.md`);
+
   if (!existsSync(join(request.root, file))) return empty("feature", "failed", 2, `feature: ${file}: not found`);
   let analyzed: Analysis;
+
   try {
     analyzed = await (context.analyze ?? analyze)({ root: request.root, saveFacts: true });
   } catch (error) {
     return empty("feature", "failed", 2, errorText(error));
   }
+
   if (context.signal?.aborted) return empty("feature", "cancelled", null);
   let base: FeatureBase;
+
   try {
     base = readFeatureBase(request.root, file, request.since, "feature");
   } catch (error) {
     return empty("feature", "failed", 2, errorText(error));
   }
+
   const report = featureReportOf(analyzed, request.slug, base);
+
   if (report === null) return empty("feature", "failed", 2, `feature: ${file}: not a spec keylang read`);
+
   const messages: OperationMessage[] = [
     ...report.gaps.map((gap) => ({ level: "info" as const, text: gapLine(gap) })),
     ...report.hints.map((hint) => ({ level: "info" as const, text: hintLine(hint) })),
     { level: report.done ? "info" : "warning", text: featureSummary(report) },
   ];
+
   return {
     ...empty("feature", "completed", report.done ? 0 : 1),
     payload: { slug: request.slug, file, snapshot: analyzed.snapshot?.snapshotId ?? null, report },
@@ -86,6 +101,7 @@ export function featureReportOf(analyzed: Analysis, slug: string, base: FeatureB
   const changed = base.state === "unavailable" ? undefined : { files: new Set(base.changes.files), deleted: deletedModuleIds(config, base.changes.deleted) };
   // The spec weakened since the same base (K108): without git there is nothing to compare, and that is no gap.
   const weakened = base.state === "unavailable" ? [] : readWeakenings(config, base.ref, "feature", base.label).weakenings;
+
   return featureStatus(
     {
       dir: config.dir,
@@ -126,9 +142,10 @@ const MAX_QUESTIONS = 5;
 
 /** The model's answer as questions: its `- ? <text>` lines, at most `MAX_QUESTIONS`, and how many other lines were left out. */
 export function questionLines(answer: string): { questions: string[]; dropped: number } {
-  const lines = answer.split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== "" && !/^```/.test(line));
+  const lines = answer.split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== "" && !line.startsWith('```'));
   const questions = lines.filter((line) => /^[-*] \?\s+\S/.test(line)).map((line) => `- ? ${line.replace(/^[-*] \?\s+/, "").replace(/\s+/g, " ")}`);
   const kept = questions.slice(0, MAX_QUESTIONS);
+
   return { questions: kept, dropped: lines.length - kept.length };
 }
 
@@ -141,16 +158,23 @@ export function questionLines(answer: string): { questions: string[]; dropped: n
 export function withQuestions(text: string, questions: readonly string[], slug: string): string {
   const lines = text.split("\n");
   const heading = lines.findIndex((line) => /^#\s+flow\s+\S/.test(line));
+
   if (heading === -1) return `${text.replace(/\n*$/, "\n")}\n# flow ${slug}\n\n${questions.join("\n")}\n`;
   let at = heading + 1;
+
   while (at < lines.length && !/^#\s/.test(lines[at]!) && !/^[-*+] /.test(lines[at]!)) at++;
+
   if (at < lines.length && /^[-*+] /.test(lines[at]!)) {
     while (at < lines.length && /^[-*+] \?\s/.test(lines[at]!)) at++;
+
     return [...lines.slice(0, at), ...questions, ...lines.slice(at)].join("\n");
   }
+
   // No item in the flow: after its last non-blank line, before the next heading.
   let end = at;
+
   while (end > heading + 1 && lines[end - 1]!.trim() === "") end--;
+
   return [...lines.slice(0, end), "", ...questions, ...(at < lines.length ? [""] : []), ...lines.slice(at)].join("\n").replace(/\n*$/, "\n");
 }
 
@@ -164,21 +188,28 @@ export function withQuestions(text: string, questions: readonly string[], slug: 
  */
 export async function runFeatureQuestions(request: FeatureQuestionsRequest, context: OperationContext): Promise<OperationEnvelope<"feature-questions">> {
   const { root, slug } = request;
+
   if (!isAbsolute(root)) return empty("feature-questions", "failed", 2, "feature questions: root must be an absolute path");
+
   if (!FEATURE_SLUG.test(slug)) return empty("feature-questions", "failed", 2, `feature questions: invalid slug \`${slug}\``);
+
   if (context.signal?.aborted) return empty("feature-questions", "cancelled", null);
   let analyzed: Analysis;
+
   try {
     analyzed = await (context.analyze ?? analyze)({ root, withoutEvidence: true });
   } catch (error) {
     return empty("feature-questions", "failed", 2, errorText(error));
   }
+
   if (context.signal?.aborted) return empty("feature-questions", "cancelled", null);
   const config = analyzed.config;
   const file = specPath(config.dir, `features/${slug}.md`);
   const doc = analyzed.docs.find((item) => item.path === file);
+
   if (!doc) return empty("feature-questions", "failed", 2, `feature questions: ${file}: not found`);
   const setup = await modelSetup("llm", config, "feature questions");
+
   if ("error" in setup) return empty("feature-questions", "failed", 2, setup.error.replace(" --mode llm", ""));
   const client = setup.client!;
   const specDir = rootRelative(root, config.dir);
@@ -188,6 +219,7 @@ export async function runFeatureQuestions(request: FeatureQuestionsRequest, cont
   const before = problem === null ? existingText(join(root, file)) : null;
   const pending = problem === null && writeProblem(root, store, { under: PROPOSALS_DIR, generated: true }) === null ? existingText(join(root, store)) : null;
   const refusal = proposalRefusal(root, { target: file, problem, pending }, "refuse", "feature questions");
+
   if (refusal !== null) return { ...empty("feature-questions", "failed", refusal.exitCode, refusal.error) };
   const inputs = sourceInputs(config, analyzed.snapshot?.manifest.files ?? []);
   const text = before ?? "";
@@ -195,6 +227,7 @@ export async function runFeatureQuestions(request: FeatureQuestionsRequest, cont
   context.onProgress?.({ text: `asking ${client.agent}` });
   const { LlmCancelled } = await import("../llm.ts");
   let answer: string;
+
   try {
     answer = await client.complete(
       {
@@ -212,18 +245,25 @@ export async function runFeatureQuestions(request: FeatureQuestionsRequest, cont
     );
   } catch (error) {
     if (error instanceof LlmCancelled || context.signal?.aborted) return empty("feature-questions", "cancelled", null);
+
     return empty("feature-questions", "failed", 2, errorText(error));
   }
+
   if (context.signal?.aborted) return empty("feature-questions", "cancelled", null);
   const { questions, dropped } = questionLines(answer);
   const payload: FeatureQuestionsPayload = { file, agent: client.agent, questions, dropped, proposal: null };
   const droppedNote = dropped > 0 ? [{ level: "info" as const, text: `${dropped} line(s) of the answer were no \`- ? …\` question or past the fifth: left out` }] : [];
+
   if (questions.length === 0) return { ...empty("feature-questions", "completed", 0), payload, messages: [...droppedNote, { level: "info", text: `${client.agent} asked no question: nothing proposed` }] };
   const committed = await commitProposal({ root, specDir, generated, target: file, text: withQuestions(text, questions, slug), expected: { target: before, proposal: pending }, config, inputs }, context);
+
   if ("cancelled" in committed) return { ...empty("feature-questions", "cancelled", null), payload };
+
   if ("refused" in committed) return { ...empty("feature-questions", "failed", 1), payload, messages: [...committed.refused.map((text) => ({ level: "error" as const, text })), { level: "info", text: "nothing was written" }] };
+
   if ("failed" in committed) return { ...empty("feature-questions", "failed", 2), payload, messages: [{ level: "error", text: committed.failed }] };
   payload.proposal = committed.proposal;
+
   return {
     ...empty("feature-questions", "completed", 0),
     payload,

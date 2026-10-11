@@ -27,9 +27,11 @@ export default async function* keylangReporter(source: AsyncIterable<TestEvent>)
   const tests: JsonReport["tests"] = [];
   // Suites currently open in each file, by nesting level.
   const open = new Map<string, string[]>();
+
   for await (const event of source) {
     const { data } = event;
     const file = data.file ? toPosix(relative(root, data.file.startsWith("file:") ? fileURLToPath(data.file) : isAbsolute(data.file) ? data.file : join(root, data.file))) : "";
+
     if (event.type === "test:start") {
       const stack = open.get(file) ?? [];
       stack.length = data.nesting;
@@ -37,12 +39,15 @@ export default async function* keylangReporter(source: AsyncIterable<TestEvent>)
       open.set(file, stack);
       continue;
     }
+
     if (event.type !== "test:pass" && event.type !== "test:fail") continue;
+
     if (data.details?.type === "suite") continue;
     const suites = (open.get(file) ?? []).slice(0, data.nesting);
     const status: TestStatus = data.skip || data.todo ? "skip" : event.type === "test:pass" ? "pass" : "fail";
     tests.push({ file, ...(suites.length > 0 ? { suite: suites.join(" > ") } : {}), name: data.name, status });
   }
+
   const first = await before;
   const snapshotId = first === (await snapshotOf()) ? first : null;
   const report: JsonReport = { schemaVersion: REPORT_SCHEMA, snapshotId, runId: runId(), tests };

@@ -25,6 +25,7 @@ const VERDICT_COLOUR: Record<string, { stroke: string; fill: string }> = {
   unverified: { stroke: "#b26a00", fill: "#fff8e1" },
   planned: { stroke: "#757575", fill: "#f5f5f5" },
 };
+
 const NEUTRAL = { stroke: "#455a64", fill: "#eceff1" };
 
 function style(parts: Record<string, string | number>): string {
@@ -37,9 +38,11 @@ function style(parts: Record<string, string | number>): string {
 export function nodeStyle(node: Pick<DiagramNode, "kind" | "verdict">): string {
   const colour = (node.verdict && VERDICT_COLOUR[node.verdict]) || NEUTRAL;
   const base: Record<string, string | number> = { whiteSpace: "wrap", html: 1, strokeColor: colour.stroke, fillColor: colour.fill, fontColor: "#212121", fontSize: 11, strokeWidth: 1.5 };
+
   if (node.verdict === "planned") base.dashed = 1;
   // Small shapes carry their text below, as the canvas's captions.
   const below = { verticalLabelPosition: "bottom", verticalAlign: "top", labelPosition: "center", align: "center" };
+
   switch (node.kind) {
     case "start":
       return style({ ellipse: "", ...base, ...below, strokeWidth: 2, perimeter: "ellipsePerimeter" });
@@ -63,6 +66,7 @@ export function nodeStyle(node: Pick<DiagramNode, "kind" | "verdict">): string {
 function edgeStyle(edge: DiagramEdge): string {
   const colour = (edge.verdict && VERDICT_COLOUR[edge.verdict]) || NEUTRAL;
   const dashed = edge.kind === "deny" || edge.kind === "emits" || edge.kind === "continues" || edge.kind === "call" || edge.kind === "dependency";
+
   return style({ edgeStyle: "orthogonalEdgeStyle", rounded: 0, html: 1, strokeColor: colour.stroke, fontColor: "#424242", fontSize: 10, endArrow: edge.kind === "call" || edge.kind === "dependency" ? "open" : "classic", dashed: dashed ? 1 : 0, labelBackgroundColor: "#ffffff" });
 }
 
@@ -85,6 +89,7 @@ function labelOf(node: DiagramNode): string {
  */
 export function renderDrawio(input: DiagramInput, view: string): string {
   const diagram = diagramOf(input);
+
   if (diagram.nodes.length === 0) throw new Error(`export drawio: nothing to draw${diagram.reason ? `: ${diagram.reason}` : ""}`);
   const width = Math.max(800, ...diagram.nodes.map((node) => node.x + node.w + 40), ...diagram.groups.map((group) => group.x + group.w));
   const height = Math.max(600, ...diagram.nodes.map((node) => node.y + node.h + 40), ...diagram.groups.map((group) => group.y + group.h));
@@ -96,20 +101,24 @@ export function renderDrawio(input: DiagramInput, view: string): string {
   out.push("      <root>");
   out.push(`        <object id="0" label=""${attr("keylang_view", view)}>`, "          <mxCell />", "        </object>");
   out.push('        <mxCell id="1" parent="0" />');
+
   for (const group of diagram.groups) {
     out.push(`        <object id="${xmlEscape(`lane:${group.id}`)}"${attr("label", htmlText(group.label))}${attr("keylang_id", group.id)} keylang_kind="lane">`);
     out.push(`          <mxCell style="${LANE_STYLE}" vertex="1" parent="1">`, `            <mxGeometry x="${group.x}" y="${group.y}" width="${group.w}" height="${group.h}" as="geometry" />`, "          </mxCell>", "        </object>");
   }
+
   for (const node of diagram.nodes) {
     const ref = node.ref;
     out.push(`        <object id="${xmlEscape(node.id)}"${attr("label", labelOf(node))}${attr("keylang_id", ref?.id ?? (node.kind === "gateway" ? node.label : undefined))} keylang_kind="${node.kind}"${attr("keylang_line", ref?.specLine)}${attr("keylang_verdict", node.verdict ?? undefined)}${attr("keylang_reason", node.reason)}${attr("keylang_file", ref?.file)}>`);
     out.push(`          <mxCell style="${nodeStyle(node)}" vertex="1" parent="1">`, `            <mxGeometry x="${node.x}" y="${node.y}" width="${node.w}" height="${node.h}" as="geometry" />`, "          </mxCell>", "        </object>");
   }
+
   diagram.edges.forEach((edge, i) => {
     out.push(`        <object id="edge:${i}"${attr("label", edge.label === undefined ? undefined : htmlText(edge.label))} keylang_kind="${edge.kind}"${attr("keylang_verdict", edge.verdict ?? undefined)}>`);
     out.push(`          <mxCell style="${edgeStyle(edge)}" edge="1" parent="1"${attr("source", edge.from)}${attr("target", edge.to)}>`, '            <mxGeometry relative="1" as="geometry" />', "          </mxCell>", "        </object>");
   });
   out.push("      </root>", "    </mxGraphModel>", "  </diagram>", "</mxfile>");
+
   return `${out.join("\n")}\n`;
 }
 
@@ -127,7 +136,9 @@ const ENTITY: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', 
 function decode(text: string): string {
   return text.replace(/&(#x[0-9a-fA-F]+|#\d+|[a-zA-Z]+);/g, (whole, name: string) => {
     if (name.startsWith("#x")) return String.fromCodePoint(parseInt(name.slice(2), 16));
+
     if (name.startsWith("#")) return String.fromCodePoint(Number(name.slice(1)));
+
     return ENTITY[name] ?? whole;
   });
 }
@@ -142,53 +153,69 @@ export function parseXml(text: string): XmlElement {
   const root: XmlElement = { name: "#document", attrs: {}, children: [], text: "" };
   const stack: XmlElement[] = [root];
   let at = 0;
+
   const fail = (what: string): never => {
     throw new Error(`not well-formed XML at offset ${at}: ${what}`);
   };
+
   while (at < text.length) {
     const lt = text.indexOf("<", at);
+
     if (lt === -1) {
       stack.at(-1)!.text += decode(text.slice(at));
       break;
     }
+
     if (lt > at) stack.at(-1)!.text += decode(text.slice(at, lt));
     at = lt;
+
     if (text.startsWith("<!--", at)) {
       const end = text.indexOf("-->", at + 4);
+
       if (end === -1) fail("unclosed comment");
       at = end + 3;
     } else if (text.startsWith("<![CDATA[", at)) {
       const end = text.indexOf("]]>", at + 9);
+
       if (end === -1) fail("unclosed CDATA");
       stack.at(-1)!.text += text.slice(at + 9, end);
       at = end + 3;
     } else if (text.startsWith("<?", at)) {
       const end = text.indexOf("?>", at + 2);
+
       if (end === -1) fail("unclosed processing instruction");
       at = end + 2;
     } else if (text.startsWith("<!", at)) {
       const end = text.indexOf(">", at + 2);
+
       if (end === -1) fail("unclosed declaration");
       at = end + 1;
     } else if (text.startsWith("</", at)) {
       const end = text.indexOf(">", at);
+
       if (end === -1) fail("unclosed end tag");
       const name = text.slice(at + 2, end).trim();
       const open = stack.pop();
+
       if (!open || open === root || open.name !== name) fail(`</${name}> closes ${open && open !== root ? `<${open.name}>` : "nothing"}`);
       at = end + 1;
     } else {
       const tag = /^<([A-Za-z_][\w.:-]*)((?:\s+[A-Za-z_][\w.:-]*\s*=\s*(?:"[^"]*"|'[^']*'))*)\s*(\/?)>/.exec(text.slice(at));
+
       if (!tag) fail("a tag that cannot be read");
       const attrs: Record<string, string> = {};
+
       for (const m of tag![2]!.matchAll(/([A-Za-z_][\w.:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) attrs[m[1]!] = decode(m[2] ?? m[3] ?? "");
       const element: XmlElement = { name: tag![1]!, attrs, children: [], text: "" };
       stack.at(-1)!.children.push(element);
+
       if (tag![3] !== "/") stack.push(element);
       at += tag![0].length;
     }
   }
+
   if (stack.length > 1) throw new Error(`not well-formed XML: <${stack.at(-1)!.name}> is not closed`);
+
   return root;
 }
 
@@ -224,8 +251,10 @@ function find(element: XmlElement, name: string): XmlElement | null {
   for (const child of element.children) {
     if (child.name === name) return child;
     const deeper = find(child, name);
+
     if (deeper) return deeper;
   }
+
   return null;
 }
 
@@ -238,25 +267,32 @@ export function parseDrawio(text: string): DrawioModel {
   const doc = parseXml(text);
   const page = find(doc, "diagram");
   let model = page ? find(page, "mxGraphModel") : find(doc, "mxGraphModel");
+
   if (!model && page && page.text.trim() !== "") {
     let inner: string;
+
     try {
       inner = decodeURIComponent(inflateRawSync(Buffer.from(page.text.trim(), "base64")).toString("latin1"));
     } catch {
       throw new Error("a compressed draw.io page that cannot be read");
     }
+
     model = find(parseXml(inner), "mxGraphModel");
   }
+
   if (!model) throw new Error("no draw.io diagram: no <mxGraphModel>");
   const root = find(model, "root");
   const cells: DrawioCell[] = [];
   let view: string | null = null;
+
   for (const child of root?.children ?? []) {
     const wrapped = child.name === "object" || child.name === "UserObject";
     const cell = wrapped ? (child.children.find((c) => c.name === "mxCell") ?? null) : child.name === "mxCell" ? child : null;
+
     if (cell === null) continue;
     const attrs = wrapped ? child.attrs : {};
     const id = attrs.id ?? cell.attrs.id ?? "";
+
     if (id === "0" && attrs.keylang_view) view = attrs.keylang_view;
     cells.push({
       id,
@@ -269,6 +305,7 @@ export function parseDrawio(text: string): DrawioModel {
       style: cell.attrs.style ?? "",
     });
   }
+
   return { view: view ?? page?.attrs.name ?? null, cells };
 }
 
@@ -276,8 +313,10 @@ export function parseDrawio(text: string): DrawioModel {
 
 /** The kinds a new shape may have to become a line of the flow. */
 const NEW_KINDS = new Set(["start", "task", "external", "gateway", "parallel", "event", "timer"]);
+
 /** The kinds of entry point a trigger line names (`trigger route <id>`); any other is a plain trigger. */
 const TRIGGER_KINDS = new Set(["route", "cron", "consumer", "webhook"]);
+
 /** Ids of shapes the export makes for a flow but which no line edits: holes, `calls`, parallel gateways. */
 const DERIVED = /^(?:hole:\d+|calls:\d+:\d+|parallel:\d+(?::join)?)$/;
 
@@ -306,12 +345,16 @@ function commentSafe(text: string): string {
 function lineOf(cell: DrawioCell): string | null {
   const kind = cell.attrs.keylang_kind;
   const id = (cell.attrs.keylang_id ?? "").trim() || cell.label;
+
   if (id === "" && kind !== "parallel") return null;
+
   switch (kind) {
     case "start": {
       const trigger = cell.attrs.keylang_trigger ?? "";
+
       return `trigger ${TRIGGER_KINDS.has(trigger) ? `${trigger} ` : ""}${id}`;
     }
+
     case "parallel":
       // The split is the line; a join is where the group ends, no line of its own.
       return cell.attrs.keylang_role === "join" ? null : "parallel";
@@ -324,8 +367,10 @@ function lineOf(cell: DrawioCell): string | null {
       return `emits event ${cell.label || id}`;
     case "timer": {
       const text = cell.label || id;
+
       return /^(?:after|every)\s/.test(text) ? text : `after ${text}`;
     }
+
     default:
       return null;
   }
@@ -336,22 +381,29 @@ function rewritten(line: string, item: Trigger | FlowItem, cell: DrawioCell): st
   const swap = (from: string, to: string): string | null => {
     if (to === "" || to === from) return null;
     const at = line.indexOf(from);
+
     return at === -1 ? null : `${line.slice(0, at)}${to}${line.slice(at + from.length)}`;
   };
+
   // The property or the label, whichever was edited: draw.io users edit what they see.
   const renamed = (from: string): string => {
     const id = (cell.attrs.keylang_id ?? "").trim();
+
     return id !== "" && id !== from ? id : cell.label;
   };
+
   switch (item.kind) {
     case "trigger": {
       const named = swap(item.target.target, renamed(item.target.target)) ?? line;
       // A trigger whose kind of entry point changed (the editor of `keylang web` says so only then).
       const kind = cell.attrs.keylang_trigger;
+
       if (kind === undefined) return named === line ? null : named;
       const next = named.replace(/^(\s*- trigger)(?:\s+(?:route|cron|consumer|webhook))?(\s+)/, (_all, head: string, space: string) => `${head}${TRIGGER_KINDS.has(kind) ? ` ${kind}` : ""}${space}`);
+
       return next === line ? null : next;
     }
+
     case "step":
       return swap(item.target.target, renamed(item.target.target));
     case "then":
@@ -363,8 +415,10 @@ function rewritten(line: string, item: Trigger | FlowItem, cell: DrawioCell): st
     case "after":
     case "every": {
       const value = cell.label.startsWith(`${item.kind} `) ? cell.label.slice(item.kind.length + 1).trim() : cell.label;
+
       return swap(item.value, value);
     }
+
     default:
       return null;
   }
@@ -381,20 +435,25 @@ function rewritten(line: string, item: Trigger | FlowItem, cell: DrawioCell): st
 export function flowFromDrawio(model: DrawioModel, name: string, current: { text: string; flow: Flow; firstLine: number } | null): string {
   const lines = current ? current.text.replace(/\r\n/g, "\n").replace(/\n+$/, "").split("\n") : [`# flow ${name}`, ""];
   const items = new Map<string, Trigger | FlowItem>();
+
   if (current) {
     walkFlow(current.flow, (item) => {
       if (item.kind === "trigger" || item.kind === "step" || item.kind === "then" || item.kind === "when" || item.kind === "emits" || item.kind === "after" || item.kind === "every" || item.kind === "parallel") items.set(`${item.kind}:${item.span.start.line}`, item);
     });
   }
+
   const entries: Entry[] = lines.map((text) => ({ text, indent: indentOf(text), cell: null }));
   const entryOf = new Map<string, Entry>();
+
   for (const [id, item] of items) {
     const entry = entries[item.span.start.line - (current?.firstLine ?? 1)];
+
     if (entry) {
       entry.cell = id;
       entryOf.set(id, entry);
     }
   }
+
   const byId = new Map(model.cells.map((cell) => [cell.id, cell]));
   const vertices = model.cells.filter((cell) => cell.vertex && cell.id !== "0" && cell.id !== "1");
 
@@ -402,40 +461,54 @@ export function flowFromDrawio(model: DrawioModel, name: string, current: { text
   for (const [id, item] of items) {
     const entry = entryOf.get(id)!;
     const cell = byId.get(id);
+
     if (cell === undefined) {
       const at = entries.indexOf(entry);
+
       for (let i = at + 1; i < entries.length && entries[i]!.text.trim() !== "" && entries[i]!.indent > entry.indent; i++) {
         const below = entries[i]!;
         const less = Math.min(2, below.indent - entry.indent);
         below.text = below.text.slice(less);
         below.indent -= less;
       }
+
       entries.splice(at, 1);
       continue;
     }
+
     const line = rewritten(entry.text, item, cell);
+
     if (line !== null) entry.text = line;
   }
 
   // New shapes, each after the shape its first incoming edge leaves; a chain of new shapes in order.
   const incoming = (id: string): DrawioCell | null => {
     for (const cell of model.cells) if (cell.edge && cell.target === id && cell.source !== null && byId.get(cell.source)?.vertex) return cell;
+
     return null;
   };
+
   const fresh = vertices.filter((cell) => !items.has(cell.id) && !DERIVED.test(cell.id) && cell.attrs.keylang_kind !== undefined && NEW_KINDS.has(cell.attrs.keylang_kind) && lineOf(cell) !== null);
   const notes = vertices.filter((cell) => cell.attrs.keylang_kind === undefined && cell.label !== "" && !/(?:^|;)swimlane(?:;|$)/.test(cell.style));
   const pending = new Set(fresh.map((cell) => cell.id));
+
   const flowEnd = (): number => {
     let end = entries.length;
+
     while (end > 0 && entries[end - 1]!.text.trim() === "") end--;
+
     return end;
   };
+
   /** The end of an entry's nested lines. */
   const subtreeEnd = (at: number): number => {
     let end = at + 1;
+
     while (end < entries.length && entries[end]!.text.trim() !== "" && entries[end]!.indent > entries[at]!.indent) end++;
+
     return end;
   };
+
   /** A new step's `test` lines (`keylang_tests`, one per line) go right under it. */
   const testsOf = (cell: DrawioCell, indent: number): Entry[] =>
     (cell.attrs.keylang_tests ?? "")
@@ -443,8 +516,10 @@ export function flowFromDrawio(model: DrawioModel, name: string, current: { text
       .map((line) => line.trim())
       .filter((line) => /^test\s/.test(line))
       .map((line) => ({ text: listLine(indent + 2, line), indent: indent + 2, cell: null }));
+
   const place = (cell: DrawioCell, after: Entry | null, branch: boolean, sibling = false): void => {
     const body = lineOf(cell)!;
+
     if (after === null) {
       const end = flowEnd();
       const entry = { text: listLine(0, body), indent: 0, cell: cell.id };
@@ -453,8 +528,10 @@ export function flowFromDrawio(model: DrawioModel, name: string, current: { text
       const gap = before !== undefined && before.text.trim() !== "" && !/^\s*- /.test(before.text) ? [{ text: "", indent: 0, cell: null }] : [];
       entries.splice(end, 0, ...gap, entry, ...testsOf(cell, 0));
       entryOf.set(cell.id, entry);
+
       return;
     }
+
     const at = entries.indexOf(after);
     const end = subtreeEnd(at);
     const gateway = after.cell !== null && (after.cell.startsWith("when:") || byId.get(after.cell)?.attrs.keylang_kind === "gateway");
@@ -469,39 +546,51 @@ export function flowFromDrawio(model: DrawioModel, name: string, current: { text
     entries.splice(nested ? (parallel ? end : at + 1) : end, 0, entry, ...testsOf(cell, indent));
     entryOf.set(cell.id, entry);
   };
+
   /** The split of a parallel group a join closes: back along the edges into the join, to the first split. */
   const splitOf = (join: string): string | null => {
     const code = /^(parallel:\d+):join$/.exec(join);
+
     if (code) return code[1]!;
     let frontier = [join];
     const seen = new Set(frontier);
+
     for (let depth = 0; depth < 50 && frontier.length > 0; depth++) {
       const next: string[] = [];
+
       for (const id of frontier) {
         for (const edge of model.cells) {
           if (!edge.edge || edge.target !== id || edge.source === null || seen.has(edge.source)) continue;
           const source = byId.get(edge.source);
+
           if (source?.attrs.keylang_kind === "parallel" && source.attrs.keylang_role !== "join") return source.id;
           seen.add(edge.source);
           next.push(edge.source);
         }
       }
+
       frontier = next;
     }
+
     return null;
   };
+
   for (let progress = true; progress && pending.size > 0; ) {
     progress = false;
+
     for (const cell of fresh) {
       if (!pending.has(cell.id)) continue;
       const edge = incoming(cell.id);
       const from = edge?.source ?? null;
+
       if (from !== null && pending.has(from)) continue;
       // After the join of a parallel group: the next sibling of the group's line.
       const fromJoin = from !== null && (/^parallel:\d+:join$/.test(from) || byId.get(from)?.attrs.keylang_role === "join");
       const split = fromJoin ? splitOf(from!) : null;
+
       if (split !== null && pending.has(split)) continue;
       const anchor = from === null ? null : fromJoin ? (split === null ? null : (entryOf.get(split) ?? null)) : (entryOf.get(from) ?? null);
+
       if (fromJoin && anchor !== null) {
         place(cell, anchor, false, true);
       } else if (from !== null && anchor === null && !(cell.attrs.keylang_kind === "start")) {
@@ -511,6 +600,7 @@ export function flowFromDrawio(model: DrawioModel, name: string, current: { text
         const source = from === null ? undefined : byId.get(from);
         place(cell, anchor, edge !== null && source !== undefined && edge.label !== "" && edge.label === source.label);
       }
+
       pending.delete(cell.id);
       progress = true;
     }
@@ -519,20 +609,25 @@ export function flowFromDrawio(model: DrawioModel, name: string, current: { text
   // Notes: once each, after the flow's last line, with a blank line before them.
   const have = new Set(entries.map((entry) => entry.text.trim()));
   const added = notes.map((cell) => `<!-- keylang:drawio note ${commentSafe(cell.label)} -->`).filter((note, i, all) => !have.has(note) && all.indexOf(note) === i);
+
   if (added.length > 0) {
     const end = flowEnd();
-    entries.splice(end, 0, ...[{ text: "", indent: 0, cell: null }, ...added.map((text) => ({ text, indent: 0, cell: null }))]);
+    entries.splice(end, 0, { text: "", indent: 0, cell: null }, ...added.map((text) => ({ text, indent: 0, cell: null })));
   }
+
   const body = entries.map((entry) => entry.text).join("\n");
+
   if (!current) return `${body.replace(/\n+$/, "")}\n`;
   // The section ends as it ended: the same trailing newlines.
   const tail = /\n*$/.exec(current.text.replace(/\r\n/g, "\n"))![0];
+
   return `${body}${tail}`;
 }
 
 /** The flow a `.drawio` file draws: `flow:<name>` or `discovered:<name>` of its view, or null for any other view. */
 export function drawioFlowName(model: DrawioModel): string | null {
   const match = /^(?:flow|discovered):(.+)$/.exec(model.view ?? "");
+
   return match ? match[1]! : null;
 }
 
@@ -544,10 +639,12 @@ export function flowSection(text: string, name: string): { text: string; firstLi
   const normal = text.replace(/\r\n/g, "\n");
   const sections = parse("spec.md", normal).sections;
   const index = sections.findIndex((section) => section.kind === "flow" && section.name?.value === name && section.heading !== null);
+
   if (index === -1) return null;
   const lines = normal.split("\n");
   const start = sections[index]!.heading!.span.start.line - 1;
   const next = sections.slice(index + 1).find((section) => section.heading !== null);
   const end = next ? next.heading!.span.start.line - 1 : lines.length;
+
   return { text: lines.slice(start, end).join("\n"), firstLine: start + 1 };
 }

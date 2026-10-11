@@ -67,6 +67,7 @@ export function backspaced(text: string): string {
 /** Text typed or pasted into the prompt: into the selected row's field, then the prompt follows it. */
 export function typeInto(prompt: Prompt, keys: PromptKeys, text: string): void {
   const field = fieldIn(prompt, keys);
+
   if (field) field.set(field.value + (field.digits ? text.replace(/[^0-9]/g, "") : text));
   keys.typed?.();
 }
@@ -78,17 +79,24 @@ export function typeInto(prompt: Prompt, keys: PromptKeys, text: string): void {
 export function promptKey(prompt: Prompt, keys: PromptKeys, event: KeyEvent): void {
   if (event.name === "backspace") {
     const field = fieldIn(prompt, keys);
+
     if (field) field.set(backspaced(field.value));
     keys.typed?.();
+
     return;
   }
+
   if ((event.name === "left" || event.name === "right") && keys.change) return keys.change(event.name === "left" ? -1 : 1);
+
   if ((event.name === "up" || event.name === "down") && prompt.items.length > 0) {
     prompt.index = (prompt.index + (event.name === "up" ? -1 : 1) + prompt.items.length) % prompt.items.length;
     keys.moved?.();
+
     return;
   }
+
   if (event.name === "enter") return keys.submit();
+
   if (event.text !== undefined && !event.ctrl && !event.alt) typeInto(prompt, keys, event.text);
 }
 

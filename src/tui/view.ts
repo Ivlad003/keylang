@@ -48,11 +48,14 @@ export interface Layout {
 
 /** From this width on side panels sit beside each other; below it one is shown and overlays take the body. */
 export const WIDE_COLS = 100;
+
 /** Below this width no side panel fits next to the editor. */
 export const PANEL_MIN_COLS = 60;
 
 export const FILES_WIDTH = 24;
+
 export const NAV_WIDTH = 32;
+
 export const CONTEXT_WIDTH = 52;
 
 export function layout(state: Pick<State, "cols" | "rows" | "showFiles" | "showNav"> & { context?: State["context"]; focus?: State["focus"]; lastPanel?: State["lastPanel"] }): Layout {
@@ -61,12 +64,14 @@ export function layout(state: Pick<State, "cols" | "rows" | "showFiles" | "showN
   const wide = state.cols >= WIDE_COLS;
   let showFiles = state.showFiles && state.cols >= PANEL_MIN_COLS;
   let showNav = (state.showNav || state.context?.open === true) && state.cols >= PANEL_MIN_COLS;
+
   if (!wide && showFiles && showNav) {
     // One side panel on a narrow screen: the focused one, else the one opened last.
     const files = state.focus === "files" || (state.focus !== "nav" && state.focus !== "context" && state.lastPanel === "files");
     showFiles = files;
     showNav = !files;
   }
+
   const files = showFiles ? { x: 0, y: bodyTop, width: FILES_WIDTH, height: bodyHeight } : null;
   // The context panel (F4) takes the navigation's place, wider: its labels are IDs and paths.
   const width = state.context?.open === true ? Math.min(CONTEXT_WIDTH, Math.floor(state.cols / 2)) : NAV_WIDTH;
@@ -74,6 +79,7 @@ export function layout(state: Pick<State, "cols" | "rows" | "showFiles" | "showN
   const left = files ? files.width + 1 : 0;
   const right = nav ? nav.width + 1 : 0;
   const editor = { x: left, y: bodyTop, width: Math.max(10, state.cols - left - right), height: bodyHeight };
+
   return {
     files,
     editor,
@@ -100,10 +106,13 @@ export function editorRows(state: State, buffer: Buffer, height: number): Editor
   const count = lineCount(buffer);
   const evidence = state.analysis ? evidenceOf(state.analysis, buffer.path) : new Map<number, LineEvidence>();
   const rows: EditorRow[] = [];
+
   for (let line = state.top; line < count && rows.length < height; line++) {
     rows.push({ kind: "line", line });
+
     if (line === state.cursor.line && state.mode !== "edit" && evidence.has(line + 1) && rows.length < height) rows.push({ kind: "detail", line });
   }
+
   return rows;
 }
 
@@ -114,9 +123,11 @@ export function editorRows(state: State, buffer: Buffer, height: number): Editor
  */
 function drawRuns(grid: Grid, x: number, y: number, width: number, clusters: Iterable<{ cluster: string; point: number }>, runs: readonly Run[], base: Style): void {
   let col = x;
+
   for (const { cluster, point } of clusters) {
     if (col >= x + width) break;
     let style = base;
+
     for (const run of runs) if (point >= run.start && point < run.end) style = { ...base, ...run.style };
     col += grid.write(col, y, cluster, style, x + width - col);
   }
@@ -130,6 +141,7 @@ function* fromLayout(line: LineLayout, from: number): Generator<{ cluster: strin
 /** The clusters of `text` from the start, segmented only as far as they are read. */
 function* fromText(text: string): Generator<{ cluster: string; point: number }> {
   let point = 0;
+
   for (const cluster of clusters(text)) {
     yield { cluster, point };
     point += [...cluster].length;
@@ -139,12 +151,14 @@ function* fromText(text: string): Generator<{ cluster: string; point: number }> 
 /** Cells between clusters `from` and `to` of a laid-out line (0 when `to` is before `from`). */
 function cellsBetween(line: LineLayout, from: number, to: number): number {
   const n = line.clusters.length;
+
   return Math.max(0, line.cells[Math.min(to, n)]! - line.cells[Math.min(from, n)]!);
 }
 
 function markCell(item: LineEvidence | undefined, stale: boolean): { glyph: string; style: Style } {
   if (!item) return { glyph: " ", style: {} };
   const style = MARK_STYLE[item.mark];
+
   return { glyph: MARK_GLYPH[item.mark], style: stale ? { ...style, dim: true, bold: false } : style };
 }
 
@@ -155,6 +169,7 @@ export function detailText(item: LineEvidence, snapshotId: string | null): { tex
   const parts: { text: string; style: Style }[] = [];
   const reported = new Set(item.criteria.map((c) => c.criterion));
   const flowLine = CHANNELS.some((channel) => reported.has(channel));
+
   if (flowLine) {
     for (const channel of CHANNELS) {
       const hit = item.criteria.find((c) => c.criterion === channel);
@@ -162,13 +177,17 @@ export function detailText(item: LineEvidence, snapshotId: string | null): { tex
       parts.push(hit ? { text: `${VERDICT_GLYPH[hit.verdict]}  `, style: MARK_STYLE[hit.verdict] } : { text: "—  ", style: THEME.lineNumber });
     }
   }
+
   for (const criterion of item.criteria) {
     if ((CHANNELS as readonly string[]).includes(criterion.criterion)) continue;
     parts.push({ text: `${criterion.criterion} `, style: THEME.lineNumber }, { text: `${VERDICT_GLYPH[criterion.verdict]}  `, style: MARK_STYLE[criterion.verdict] });
   }
+
   for (const diag of item.diagnostics) parts.push({ text: `${diag.code} `, style: THEME.lineNumber }, { text: `${diag.severity === "error" ? "✗" : "!"}  `, style: MARK_STYLE[diag.severity === "error" ? "fail" : "warning"] });
   parts.push({ text: "planned ", style: THEME.lineNumber }, item.planned ? { text: "◇  ", style: MARK_STYLE.planned } : { text: "—  ", style: THEME.lineNumber });
+
   if (snapshotId) parts.push({ text: `· snapshot ${snapshotId.slice(0, 8)}`, style: THEME.lineNumber });
+
   return parts;
 }
 
@@ -176,13 +195,19 @@ export function detailText(item: LineEvidence, snapshotId: string | null): { tex
 export function lineMessage(item: LineEvidence | undefined): { text: string; style: Style } | null {
   if (!item) return null;
   const diag = item.diagnostics.find((d) => d.severity === "error") ?? item.diagnostics[0];
+
   if (diag) {
     const fix = explainCode(diag.code)?.split("\n").find((line) => line.startsWith("fix: "));
+
     return { text: `${diag.code} ${diag.message}${fix ? ` — ${fix}` : ""}`, style: diag.severity === "error" ? THEME.error : MARK_STYLE.warning };
   }
+
   const bad = item.criteria.find((c) => c.verdict === "fail") ?? item.criteria.find((c) => c.verdict === "unverified");
+
   if (bad) return { text: `${bad.criterion}: ${bad.message}`, style: bad.verdict === "fail" ? THEME.error : THEME.hint };
+
   if (item.planned) return { text: "planned: an intention, not a fact of the snapshot", style: MARK_STYLE.planned };
+
   return null;
 }
 
@@ -193,9 +218,11 @@ function runsOf(buffer: Buffer, layers: readonly string[]): Map<number, Run[]> {
   const key = layers.join(",");
   const owner = buffer.doc ?? buffer;
   const cached = highlights.get(owner);
+
   if (cached && cached.layers === key && owner !== buffer) return cached.runs;
   const runs = highlight(buffer.doc, buffer.text, layers);
   highlights.set(owner, { layers: key, runs });
+
   return runs;
 }
 
@@ -209,15 +236,19 @@ function drawEditor(grid: Grid, state: State, rect: Rect, buffer: Buffer): void 
   const selection = state.selection === null ? null : [Math.min(state.selection, state.cursor.line), Math.max(state.selection, state.cursor.line)] as const;
   editorRows(state, buffer, rect.height).forEach((row, index) => {
     const y = rect.y + index;
+
     if (row.kind === "detail") {
       const item = evidence.get(row.line + 1)!;
       let x = rect.x + gutter;
       grid.write(rect.x, y, " ".repeat(gutter), THEME.cursorLine);
       grid.fill(x, y, rect.width - gutter, 1, THEME.cursorLine);
       x += grid.write(x, y, "└ ", { ...THEME.lineNumber, ...THEME.cursorLine });
+
       for (const part of detailText(item, state.analysis?.snapshot?.snapshotId ?? null)) x += grid.write(x, y, part.text, { ...part.style, bg: THEME.cursorLine.bg!, ...(stale ? { dim: true } : {}) }, rect.x + rect.width - x);
+
       return;
     }
+
     const isCursor = row.line === state.cursor.line;
     const selected = selection !== null && row.line >= selection[0] && row.line <= selection[1];
     const base: Style = selected ? { ...THEME.text, bg: 24 } : isCursor ? { ...THEME.text, ...THEME.cursorLine } : THEME.text;
@@ -227,17 +258,21 @@ function drawEditor(grid: Grid, state: State, rect: Rect, buffer: Buffer): void 
     grid.write(rect.x + 2, y, String(row.line + 1).padStart(numberWidth), { ...base, fg: THEME.lineNumber.fg! });
     drawRuns(grid, rect.x + gutter, y, rect.width - gutter, fromLayout(lineLayout(buffer, row.line), state.left), runs.get(row.line + 1) ?? [], base);
   });
+
   if (state.ghost && state.mode === "edit" && state.ghost.path === buffer.path) {
     const rowIndex = state.ghost.line - state.top;
     const typed = lineLayout(buffer, state.ghost.line);
     const rest = graphemes(state.ghost.variants[state.ghost.index] ?? "").slice(typed.clusters.length).join("");
     const x = rect.x + gutter + cellsBetween(typed, state.left, typed.clusters.length);
     const more = state.ghost.variants.length > 1 ? `  (${state.ghost.index + 1}/${state.ghost.variants.length}, Alt+])` : "";
+
     if (rowIndex >= 0 && rowIndex < rect.height) grid.write(x, rect.y + rowIndex, `${rest}${more}`, { ...THEME.text, ...THEME.cursorLine, fg: 242, italic: true }, rect.x + rect.width - x);
   }
+
   if (state.mode === "edit" && state.focus === "editor") {
     const rowIndex = state.cursor.line - state.top;
     const x = rect.x + gutter + cellsBetween(lineLayout(buffer, state.cursor.line), state.left, state.cursor.col);
+
     if (rowIndex >= 0 && rowIndex < rect.height && x < rect.x + rect.width) grid.cursor = { x, y: rect.y + rowIndex };
   }
 }
@@ -247,6 +282,7 @@ const reading = new WeakMap<Buffer, { text: string; width: number; rows: ReadRow
 
 function readLayout(buffer: Buffer, width: number): { rows: ReadRow[]; firstRow: Map<number, number> } {
   const cached = reading.get(buffer);
+
   if (cached && cached.text === buffer.text && cached.width === width) return cached;
   const rows = renderMarkdown(buffer.text, width);
   const firstRow = new Map<number, number>();
@@ -255,6 +291,7 @@ function readLayout(buffer: Buffer, width: number): { rows: ReadRow[]; firstRow:
   });
   const entry = { text: buffer.text, width, rows, firstRow };
   reading.set(buffer, entry);
+
   return entry;
 }
 
@@ -264,12 +301,14 @@ function readRows(state: State, buffer: Buffer, rect: Rect): { rows: ReadRow[]; 
   const at = rows.findIndex((row) => row.source - 1 >= state.cursor.line);
   const cursorRow = at === -1 ? rows.length - 1 : at;
   const top = Math.max(0, Math.min(cursorRow - Math.floor(rect.height / 3), rows.length - rect.height));
+
   return { rows, firstRow, cursorRow, top };
 }
 
 /** The screen row (from the editor's top) where reading mode shows the cursor line: popups anchor there. */
 export function readCursorRow(state: State, buffer: Buffer, rect: Rect): number {
   const { cursorRow, top } = readRows(state, buffer, rect);
+
   return Math.max(0, cursorRow - top);
 }
 
@@ -277,18 +316,22 @@ function drawRead(grid: Grid, state: State, rect: Rect, buffer: Buffer): void {
   const stale = state.updating || state.outdated;
   const evidence = state.analysis ? evidenceOf(state.analysis, buffer.path) : new Map<number, LineEvidence>();
   const { rows, firstRow, top } = readRows(state, buffer, rect);
+
   for (let i = 0; i < rect.height && top + i < rows.length; i++) {
     const row = rows[top + i]!;
     const y = rect.y + i;
     const isCursor = row.source - 1 === state.cursor.line;
     const base = isCursor ? { ...THEME.text, ...THEME.cursorLine } : THEME.text;
     grid.fill(rect.x, y, rect.width, 1, base);
+
     // The gutter mark goes on the first row a source line renders to.
     if (firstRow.get(row.source) === top + i) {
       const mark = markCell(evidence.get(row.source), stale);
       grid.write(rect.x, y, mark.glyph, { ...base, ...mark.style });
     }
+
     let x = rect.x + 3;
+
     for (const segment of row.segments) x += grid.write(x, y, segment.text, { ...base, ...segment.style }, rect.x + rect.width - x);
   }
 }
@@ -301,8 +344,10 @@ function drawCode(grid: Grid, state: State, rect: Rect): void {
   grid.write(rect.x + rect.width - hint.length, rect.y, hint, THEME.panelTitle);
   const numberWidth = Math.max(3, String(code.lines.length).length);
   const runs = highlightCode(code.lines);
+
   for (let i = 0; i < rect.height - 1; i++) {
     const index = code.top + i;
+
     if (index >= code.lines.length) break;
     const y = rect.y + 1 + i;
     const target = index + 1 === code.line;
@@ -330,6 +375,7 @@ const ZOOM_KIND: Record<ZoomRow["kind"], string> = { layer: "layer", module: "mo
 /** Where an explanation's words come from, as the nav panel says it. */
 function originText(e: NodeExplanation): string {
   if (e.origin === "llm") return ` (llm · ${modelName(e.agent ?? "?")} · ${e.date ?? "?"}${e.stale ? " · stale" : ""})`;
+
   return e.source ? ` (${e.source})` : " (code)";
 }
 
@@ -337,8 +383,10 @@ function originText(e: NodeExplanation): string {
 export function fitCrumbs(labels: readonly string[], width: number): string {
   for (let from = 0; from < labels.length; from++) {
     const text = `${from > 0 ? "… › " : ""}${labels.slice(from).join(" › ")}`;
+
     if (stringWidth(text) <= width) return text;
   }
+
   return labels.at(-1) ?? "";
 }
 
@@ -351,9 +399,11 @@ export function zoomRowText(state: State, row: ZoomRow, width: number, overlay: 
   const right = `${mark ? MARK_GLYPH[mark] : " "} ↔ ${row.edges}`;
   const head = `${row.container ? "▸" : " "} ${ZOOM_KIND[row.kind].padEnd(6)} ${row.label}${away}`;
   const e = state.analysis?.snapshot ? explanationOf(state.analysis.snapshot, state.briefs, row.id) : null;
+
   if (state.cols < ZOOM_BRIEF_COLS) return { text: head, right };
   const room = width - stringWidth(head) - stringWidth(right) - 5;
   const brief = e === null ? "—" : e.text.replace(/\s+/g, " ");
+
   return { text: room > 4 ? `${head} · ${fitWidth(brief, room)}` : head, right };
 }
 
@@ -368,16 +418,21 @@ function endLabel(focus: string, id: string): string {
 export function zoomEdgeText(focus: string, edge: ZoomEdge, walked = false): { text: string; right: string } {
   if (edge.group === "unresolved") {
     const reasons = (edge.reasons ?? []).map((item) => `${item.reason} ×${item.count}`).join(", ");
+
     return { text: `◌ unresolved inside: ${reasons}`, right: `${edge.count}` };
   }
+
   const kinds = edge.kinds.map((item) => `${item.kind} ×${item.count}`).join(", ");
+
   return { text: `${walked ? "▶" : " "} ${EDGE_GROUP[edge.group].padEnd(8)} ${endLabel(focus, edge.from)} → ${endLabel(focus, edge.to)} · ${kinds}`, right: `${edge.count}` };
 }
 
 /** The worst gutter mark of the steps a row stands for: the same marks the flow's lines have. */
 function stepsMark(overlay: FlowOverlay, steps: readonly number[]): Mark | null {
   let mark: Mark | null = null;
+
   for (const step of steps) mark = worse(mark, overlay.marks.get(step)?.mark ?? null);
+
   return mark;
 }
 
@@ -416,14 +471,18 @@ export function zoomButtons(zoom: { depth: number; view: "nodes" | "edges"; flow
     { text: zoom.flow === null ? "[f flow ▾]" : `[f ${zoom.flow} ×]`, action: "flow" },
     { text: " " },
   ];
+
   const text = parts.map((part) => part.text).join("");
   let x = Math.max(0, width - stringWidth(text));
   const buttons: ZoomButton[] = [];
+
   for (const part of parts) {
     const cells = stringWidth(part.text);
+
     if (part.action) buttons.push({ action: part.action, x, width: cells });
     x += cells;
   }
+
   return { text, buttons };
 }
 
@@ -435,6 +494,7 @@ export function zoomButtons(zoom: { depth: number; view: "nodes" | "edges"; flow
 function drawZoom(grid: Grid, state: State, rect: Rect): void {
   const analysis = state.analysis;
   const zoom = state.zoom;
+
   if (!analysis?.snapshot || !zoom) return;
   const level = zoomLevel(analysis, zoom.focus, zoom.depth);
   grid.fill(rect.x, rect.y, rect.width, 1, THEME.panelTitle);
@@ -450,14 +510,19 @@ function drawZoom(grid: Grid, state: State, rect: Rect): void {
   const atLayers = zoom.focus === ZOOM_ROOT || analysis.snapshot.nodes[zoom.focus]?.kind === "layer";
   const flowRow = overlay === null ? null : atLayers ? `flow ${overlay.flow}: ${flowSequence(overlay)}` : `flow ${overlay.flow}: ${[...overlay.steps.values()].flat().length} step(s) on this level; numbers are the order written, a trace confirms the order run`;
   (flowRow === null ? about : [about[0]!]).forEach((line, i) => grid.write(rect.x + 2, rect.y + 1 + i, line, { ...THEME.hint, ...(e === null ? {} : { fg: 250 }) }, rect.width - 3));
+
   if (flowRow !== null) grid.write(rect.x + 2, rect.y + 2, flowRow, { ...THEME.hint, fg: 75 }, rect.width - 3);
   const height = zoomListHeight(state, rect);
+
   if (zoom.view === "edges") {
     const edges = zoomEdges(analysis, zoom.focus);
     const at = Math.max(0, Math.min(zoom.selected.get(zoomSelectKey(zoom)) ?? 0, edges.length - 1));
+
     if (edges.length === 0) grid.write(rect.x + 2, rect.y + ZOOM_HEAD, "no edges here: c goes back to the nodes", THEME.hint);
+
     for (let i = 0; i < height; i++) {
       const edge = edges[zoom.top + i];
+
       if (!edge) break;
       const y = rect.y + ZOOM_HEAD + i;
       const walked = overlay?.pairs.has(`${edge.from}\0${edge.to}`) === true;
@@ -467,13 +532,18 @@ function drawZoom(grid: Grid, state: State, rect: Rect): void {
       grid.write(rect.x + 1, y, text, style, rect.width - stringWidth(right) - 3);
       grid.write(rect.x + rect.width - stringWidth(right) - 1, y, right, style);
     }
+
     return;
   }
+
   const selected = Math.max(0, Math.min(zoom.selected.get(zoomSelectKey(zoom)) ?? 0, level.rows.length - 1));
+
   if (level.rows.length === 0) grid.write(rect.x + 2, rect.y + ZOOM_HEAD, "nothing inside: - goes up", THEME.hint);
+
   for (let i = 0; i < height; i++) {
     const index = zoom.top + i;
     const row = level.rows[index];
+
     if (!row) break;
     const y = rect.y + ZOOM_HEAD + i;
     const off = overlay !== null && row.kind !== "more" && !overlay.steps.has(row.id);
@@ -481,6 +551,7 @@ function drawZoom(grid: Grid, state: State, rect: Rect): void {
     grid.fill(rect.x, y, rect.width, 1, style);
     const { text, right } = zoomRowText(state, row, rect.width, overlay);
     grid.write(rect.x + 1, y, text, style, rect.width - stringWidth(right) - 3);
+
     if (right !== "") {
       const mark = overlay ? stepsMark(overlay, overlay.steps.get(row.id) ?? []) : row.mark;
       const markStyle = mark ? { ...style, ...MARK_STYLE[mark], bg: style.bg ?? THEME.text.bg! } : style;
@@ -497,16 +568,20 @@ function drawMerge(grid: Grid, state: State, rect: Rect): void {
   const rows = mergeRows(merge.base, merge.hunks);
   grid.fill(rect.x, rect.y, rect.width, 1, THEME.panelTitle);
   const counts = { accepted: 0, rejected: 0, pending: 0 };
+
   for (const decision of merge.decisions) counts[decision]++;
   const title = `MERGE ${merge.path} · ${merge.origin} · hunk ${merge.current + 1}/${merge.hunks.length} · ${counts.accepted} accepted, ${counts.rejected} rejected, ${counts.pending} pending`;
   grid.write(rect.x + 1, rect.y, title, THEME.panelTitle, rect.width - 2);
+
   for (let i = 0; i < rect.height - 1; i++) {
     const row = rows[merge.top + i];
+
     if (!row) break;
     const y = rect.y + 1 + i;
     const current = row.hunk === merge.current;
     const decision = row.hunk === null ? null : merge.decisions[row.hunk]!;
     let style: Style = row.kind === "added" ? THEME.added : row.kind === "removed" ? THEME.removed : THEME.text;
+
     // What the result will hold: a rejected addition and an accepted removal are shown struck out (dim).
     if ((row.kind === "added" && decision === "rejected") || (row.kind === "removed" && decision === "accepted")) style = { ...style, dim: true };
     grid.fill(rect.x, y, rect.width, 1, style);
@@ -520,13 +595,16 @@ function drawMerge(grid: Grid, state: State, rect: Rect): void {
 function drawPanelList(grid: Grid, rect: Rect, title: string, entries: { text: string; mark: { glyph: string; style: Style } | null; style?: Style }[], selected: number, focused: boolean, top: number): void {
   grid.fill(rect.x, rect.y, rect.width, rect.height, THEME.panel);
   grid.write(rect.x, rect.y, padWidth(` ${title}`, rect.width), THEME.panelTitle);
+
   for (let i = 0; i < rect.height - 1; i++) {
     const entry = entries[top + i];
+
     if (!entry) break;
     const y = rect.y + 1 + i;
-    const style = top + i === selected && focused ? THEME.selected : top + i === selected ? { ...THEME.panel, bg: 237 } : { ...THEME.panel, ...(entry.style ?? {}) };
+    const style = top + i === selected && focused ? THEME.selected : top + i === selected ? { ...THEME.panel, bg: 237 } : { ...THEME.panel, ...entry.style };
     grid.write(rect.x, y, padWidth(` ${entry.text}`, rect.width - 2), style);
     grid.write(rect.x + rect.width - 2, y, "  ", style);
+
     if (entry.mark) grid.write(rect.x + rect.width - 2, y, entry.mark.glyph, { ...style, ...entry.mark.style, ...(top + i === selected && focused ? { bg: THEME.selected.bg! } : {}) });
   }
 }
@@ -546,29 +624,35 @@ const NAV_NOTE_ROWS = 4;
 export function navNote(state: State, width: number): string[] {
   const item = navEntries(state)[state.navIndex];
   const snapshot = state.analysis?.snapshot;
+
   if (!item?.id || !snapshot || width < 8) return [];
   const e = explanationOf(snapshot, state.briefs, item.id);
+
   if (!e) return [];
   const origin = e.origin === "doc" ? "code" : `llm · ${e.agent ?? "?"} · ${e.date ?? "?"}${e.stale ? " · stale" : ""}`;
   const rows = wordRows(`${e.text} (${origin})`, width);
+
   return rows.length > NAV_NOTE_ROWS ? [...rows.slice(0, NAV_NOTE_ROWS - 1), `${rows[NAV_NOTE_ROWS - 1]!.slice(0, Math.max(0, width - 1))}…`] : rows;
 }
 
 /** An explanation as rows of `width` cells: its whitespace, line breaks included, one space between words; no words, no rows. */
 function wordRows(text: string, width: number): string[] {
   const words = text.split(/\s+/).filter((word) => word !== "").join(" ");
+
   return words === "" ? [] : wrapCells(words, width);
 }
 
 /** Rows of the nav panel's list: what the explanation of the selected node leaves. */
 export function navListHeight(state: State, rect: Rect): number {
   const note = navNote(state, rect.width - 2).length;
+
   return note === 0 ? rect.height : Math.max(2, rect.height - note - 1);
 }
 
 function drawNav(grid: Grid, state: State, rect: Rect): void {
   const note = navNote(state, rect.width - 2);
   const listHeight = navListHeight(state, rect);
+
   if (note.length > 0) {
     const y = rect.y + listHeight;
     grid.fill(rect.x, y, rect.width, rect.height - listHeight, THEME.panel);
@@ -576,15 +660,19 @@ function drawNav(grid: Grid, state: State, rect: Rect): void {
     note.forEach((row, i) => grid.write(rect.x + 1, y + 1 + i, row, { ...THEME.panel, fg: 250 }, rect.width - 2));
     rect = { ...rect, height: listHeight };
   }
+
   const stale = state.updating || state.outdated;
+
   const entries = navEntries(state).map((item) => {
     const arrow = item.parent ? (item.expanded ? "▾ " : "▸ ") : item.kind === "heading" ? "" : "  ";
+
     return {
       text: `${"  ".repeat(item.depth)}${arrow}${item.label}`,
       mark: item.mark ? { glyph: MARK_GLYPH[item.mark], style: stale ? { ...MARK_STYLE[item.mark], dim: true } : MARK_STYLE[item.mark] } : null,
       ...(item.kind === "heading" ? { style: { fg: 111, bold: true } } : {}),
     };
   });
+
   drawPanelList(grid, rect, "NAVIGATION", entries, state.navIndex, state.focus === "nav", state.navTop);
 }
 
@@ -592,10 +680,12 @@ function drawNav(grid: Grid, state: State, rect: Rect): void {
 function drawContext(grid: Grid, state: State, rect: Rect): void {
   const buffer = state.current ? state.buffers.get(state.current) : undefined;
   const pack = buffer && state.analysis ? contextPack(state.analysis, { path: buffer.path, text: buffer.text, line: state.cursor.line, added: state.context.added, removed: state.context.removed }) : null;
+
   const entries = (pack?.items ?? []).map((item) => ({
     text: `${item.kind.padEnd(8)} ${item.label} · ${item.tokens}`,
     mark: item.planned ? { glyph: "◇", style: { fg: 141 } } : item.incomplete ? { glyph: "?", style: { fg: 179 } } : null,
   }));
+
   drawPanelList(grid, rect, pack ? `CONTEXT · ${pack.tokens} tok · @ add · x drop` : "CONTEXT · analyzing…", entries, state.context.index, state.focus === "context", contextTop(state.context.index, rect));
 }
 
@@ -609,8 +699,10 @@ function drawFiles(grid: Grid, state: State, rect: Rect): void {
     const buffer = state.buffers.get(file);
     const dirty = buffer && isDirty(buffer) ? " +" : "";
     const proposal = state.proposals.includes(file) ? " ≈" : "";
+
     return { text: `${file}${dirty}${proposal}`, mark: null, ...(file === state.current ? { style: { fg: 231, bold: true } } : {}) };
   });
+
   drawPanelList(grid, rect, "FILES", entries, state.filesIndex, state.focus === "files", filesTop(state, rect));
 }
 
@@ -625,6 +717,7 @@ export function filesTop(state: Pick<State, "filesIndex">, rect: Rect): number {
 export function resultsSplit(state: State, height: number): { list: number; report: number } {
   const entries = state.records.length + 1; // the pinned current analysis, then the records
   const list = Math.max(1, Math.min(entries, Math.floor((height - 4) / 2)));
+
   return { list, report: height - list - 2 };
 }
 
@@ -635,18 +728,25 @@ export function resultsSplit(state: State, height: number): { list: number; repo
 export function findingStateRow(state: State): string | null {
   const unsaved = [...state.buffers.values()].filter((buffer) => !buffer.readOnly && isDirty(buffer)).map((buffer) => buffer.path);
   const parts: string[] = [];
+
   if (state.config.kind === "invalid-config") parts.push(`invalid keylang.json: ${state.config.reason}`);
+
   if (state.error !== null) parts.push(`outdated: ${state.error}`);
   else if (state.outdated && !state.updating) parts.push("outdated: changes since this analysis");
+
   if (state.updating) parts.push("updating…");
+
   if (unsaved.length > 0) parts.push(`unsaved inputs: ${unsaved.join(", ")}`);
   const note = configNote(state);
+
   if (note !== null) parts.push(note);
+
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
 /** Rows above the list for the full message of the selected finding and for its metadata. */
 const DETAIL_MESSAGE_ROWS = 3;
+
 const DETAIL_META_ROWS = 2;
 
 /**
@@ -657,11 +757,14 @@ const DETAIL_META_ROWS = 2;
  */
 export function findingDetailRows(state: State, width: number): string[] {
   const selected = visibleFindings(findingsOf(state.analysis), state.results.filter)[state.results.finding];
+
   if (!selected) {
     const why =
       state.analysis === null ? (state.error !== null ? "the analysis failed; no report yet" : (noSnapshotReason(state) ?? "analyzing…")) : "no findings match the filter";
+
     return padRows([why]);
   }
+
   return padRows([...clipRows(wrapCells(selected.evidence, width), DETAIL_MESSAGE_ROWS, width), ...clipRows(wrapCells(findingDetailText(selected), width), DETAIL_META_ROWS, width)]);
 }
 
@@ -678,6 +781,7 @@ function padRows(rows: string[]): string[] {
 export function findingsListRows(state: State, rect: Rect): number {
   const { report } = resultsSplit(state, rect.height);
   const detail = findingDetailRows(state, rect.width - 2).length;
+
   return Math.max(1, report - detail - (findingStateRow(state) === null ? 0 : 1));
 }
 
@@ -697,6 +801,7 @@ function drawResults(grid: Grid, state: State, rect: Rect): void {
   // Esc only folds the panel; x is the separate Cancel of the running operation (design §4).
   const proposed = (record?.result?.kind === "draft-flow" || record?.result?.kind === "draft-rules" || record?.result?.kind === "code-to-spec" || record?.result?.kind === "feature-questions") && record.result.payload?.proposal != null;
   const codeProposed = record?.result?.kind === "spec-to-code" && (record.result.payload?.proposals.length ?? 0) > 0;
+
   const hint = analysis
     ? " Enter open · Tab findings · Esc back "
     : record?.status === "running"
@@ -722,6 +827,7 @@ function drawResults(grid: Grid, state: State, rect: Rect): void {
           : exportable
             ? " Enter rerun · e export · Esc back "
             : " Enter rerun · Esc back ";
+
   // Sideways scrolling is named only where a row is cut.
   const wide = !analysis && results.scrollReport && reportOverflow(resultsReportRows(state), rect.width - 4) > 0;
   const shown = wide ? hint.replace(" · Esc back ", " · ←→ scroll · Esc back ") : hint;
@@ -733,12 +839,14 @@ function drawResults(grid: Grid, state: State, rect: Rect): void {
   const entryIndex = analysis ? 0 : results.index + 1;
   const first = Math.max(0, Math.min(entryIndex, records.length + 1 - listHeight));
   const counts = findingCounts(findingsOf(state.analysis));
+
   for (let i = 0; i < listHeight; i++) {
     const at = first + i;
     const y = rect.y + 1 + i;
     const selected = at === entryIndex && !results.scrollReport;
     const style = selected ? THEME.selected : i % 2 === 0 ? THEME.panel : { ...THEME.panel, bg: 234 };
     grid.fill(rect.x, y, rect.width, 1, style);
+
     if (at === 0) {
       // The pinned current analysis, with the full counts of the report (findings, not gutter lines).
       const summary = VERDICTS.map((verdict) => `${FINDING_GLYPH[verdict]} ${counts[verdict]}`).join(" ");
@@ -748,21 +856,26 @@ function drawResults(grid: Grid, state: State, rect: Rect): void {
       grid.write(rect.x + 1, y, `${at + 1}  ${recordLabel(record)}  ${recordStatus(record)}`, style, rect.width - 2);
     }
   }
+
   const dividerY = rect.y + 1 + listHeight;
   grid.fill(rect.x, dividerY, rect.width, 1, THEME.panel);
   grid.write(rect.x, dividerY, "─".repeat(rect.width), { ...THEME.panel, fg: 238 });
+
   if (analysis) return drawFindings(grid, state, rect, dividerY);
   const rows = resultsReportRows(state);
   // A long row is cut at the panel's edge with `…`; ←→ (after Tab) scroll the report sideways to read it whole.
   const left = Math.max(0, Math.min(results.left, reportOverflow(rows, rect.width - 4)));
+
   for (let i = 0; i < rect.height - listHeight - 2; i++) {
     const row = rows[results.top + i];
     const y = dividerY + 1 + i;
+
     // Below the report's end the panel stays a panel: the editor never shows through it.
     if (!row) {
       grid.fill(rect.x, y, rect.width, 1, THEME.panel);
       continue;
     }
+
     grid.fill(rect.x, y, rect.width, 1, row.style);
     grid.write(rect.x + 1, y, results.scrollReport ? "▌" : " ", { ...row.style, fg: 75 });
     grid.write(rect.x + 3, y, sliceCells(row.text, left, rect.width - 4), row.style, rect.width - 4);
@@ -776,7 +889,9 @@ function drawResults(grid: Grid, state: State, rect: Rect): void {
  */
 export function reportOverflow(rows: readonly { text: string }[], width: number): number {
   let widest = 0;
+
   for (const row of rows) widest = Math.max(widest, stringWidth(row.text));
+
   return widest > width ? widest - width + 1 : 0;
 }
 
@@ -789,9 +904,11 @@ function drawFindings(grid: Grid, state: State, rect: Rect, dividerY: number): v
   const hidden = all.length - visible.length;
   // The full counts and the filter never change the report; the hidden count is visible.
   const countsRow: { text: string; style: Style }[] = [];
+
   for (const verdict of VERDICTS) {
     countsRow.push({ text: `${FINDING_GLYPH[verdict]} ${counts[verdict]} `, style: { ...MARK_STYLE[verdict], ...(results.filter[verdict] ? {} : { dim: true, fg: 243 }) } });
   }
+
   countsRow.push(
     { text: `· ${all.length} findings`, style: { ...THEME.panel, fg: 243 } },
     { text: ` · ${hidden} hidden`, style: { ...THEME.panel, fg: hidden > 0 ? 179 : 243 } },
@@ -799,23 +916,29 @@ function drawFindings(grid: Grid, state: State, rect: Rect, dividerY: number): v
   );
   grid.fill(rect.x, dividerY, rect.width, 1, THEME.panel);
   let x = rect.x + 1;
+
   for (const part of countsRow) x += grid.write(x, dividerY, part.text, part.style, rect.x + rect.width - x);
   let y = dividerY + 1;
   const stateRow = findingStateRow(state);
+
   if (stateRow) {
     grid.fill(rect.x, y, rect.width, 1, THEME.panel);
     grid.write(rect.x + 1, y, stateRow, state.error !== null ? { ...THEME.panel, fg: 160 } : { ...THEME.panel, fg: 179 }, rect.width - 2);
     y++;
   }
+
   for (const detail of findingDetailRows(state, rect.width - 2)) {
     if (y >= rect.y + rect.height) break;
     grid.fill(rect.x, y, rect.width, 1, THEME.panel);
     grid.write(rect.x + 1, y, detail, { ...THEME.panel, fg: 250 }, rect.width - 2);
     y++;
   }
+
   const listTop = y;
+
   for (let i = 0; listTop + i < rect.y + rect.height; i++) {
     const result = visible[results.top + i];
+
     if (!result) break;
     const isSelected = results.top + i === results.finding && results.scrollReport;
     const style = isSelected ? THEME.selected : THEME.panel;
@@ -832,6 +955,7 @@ function hoverRect(hover: NonNullable<State["hover"]>, editor: Rect): Rect {
   const x = Math.max(editor.x, Math.min(hover.x, editor.x + editor.width - width));
   const below = hover.y + 1 + height <= editor.y + editor.height;
   const y = below ? hover.y + 1 : Math.max(editor.y, hover.y - height);
+
   return { x, y, width, height };
 }
 
@@ -856,6 +980,7 @@ function completionBox(state: State, editor: Rect, buffer: Buffer): { rect: Rect
   const rowY = editor.y + state.cursor.line - state.top;
   const height = visible.length + 2;
   const y = rowY + 1 + height <= editor.y + editor.height ? rowY + 1 : Math.max(editor.y, rowY - height);
+
   return { rect: { x, y, width, height }, visible, offset };
 }
 
@@ -969,14 +1094,17 @@ function keyRows(pairs: readonly [string, string][], width: number): string[] {
   const cells = pairs.map(([key, meaning]) => `${padWidth(key, 18)} ${meaning}`);
   const column = KEY_COLUMN;
   const rows: string[] = [];
+
   for (let i = 0; i < cells.length; i++) {
     const left = cells[i]!;
     const right = cells[i + 1];
+
     if (width >= column * 2 && stringWidth(left) < column && right !== undefined && stringWidth(right) <= column) {
       rows.push(`${padWidth(left, column)}${right}`);
       i++;
     } else rows.push(left);
   }
+
   return rows;
 }
 
@@ -992,31 +1120,39 @@ const KEY_COLUMN = 36;
 export function helpRows(state: State, width: number): string[] {
   const buffer = state.current ? (state.buffers.get(state.current) ?? null) : null;
   const lines: string[] = [];
+
   // The diagnostic of the cursor line comes first: it is why `?` was pressed there.
   if (buffer && state.analysis) {
     const item = evidenceOf(state.analysis, buffer.path).get(state.cursor.line + 1);
     const code = item?.diagnostics[0]?.code;
     const explained = code ? explainCode(code) : null;
+
     if (explained) lines.push(...explained.split("\n"), "");
   }
+
   lines.push(...keyRows(HELP[state.mode] ?? HELP.view!, width));
   const entries = catalog(state);
   lines.push("", `Actions · Ctrl+P${state.mode === "view" || state.mode === "read" ? " or :" : ""} finds each by its name or CLI alias:`);
   const groups = [...new Set(ACTIONS.map((action) => action.group))];
+
   for (const group of groups) {
     lines.push(`${group}:`);
+
     for (const entry of entries) {
       if (entry.action.group !== group || entry.action.id.startsWith("open:")) continue;
       const key = actionKey(entry.action, state.mode);
       lines.push(`  ${entry.action.label}${key !== null ? ` · ${key}` : ""}${entry.reason !== null ? ` — ${entry.reason}` : ""}`);
     }
   }
+
   const files = entries.filter((entry) => entry.action.id.startsWith("open:")).length;
   lines.push(`Files:`, `  Open <file> for each of the ${files} file(s) — type its name`);
+
   // A wrapped row goes on under its text, indented past the line's own indent.
   return lines.flatMap((line) => {
     const indent = " ".repeat((/^ */.exec(line)?.[0].length ?? 0) + 2);
     const [first, ...rest] = wrapCells(line, width);
+
     return [first!, ...rest.flatMap((row) => wrapCells(`${indent}${row}`, width))];
   });
 }
@@ -1029,12 +1165,14 @@ function helpBox(state: State): { rect: Rect; rows: string[]; visible: number } 
   const height = Math.min(panel.height, rows.length + 2);
   // A scrolled help keeps its last row for where it is and how to move.
   const visible = rows.length > height - 2 ? Math.max(1, height - 3) : height - 2;
+
   return { rect: { x: panel.x + Math.max(0, Math.floor((panel.width - width) / 2)), y: panel.y, width, height }, rows, visible };
 }
 
 /** The last first row the help can scroll to. */
 export function helpScrollMax(state: State): number {
   const box = helpBox(state);
+
   return Math.max(0, box.rows.length - box.visible);
 }
 
@@ -1043,6 +1181,7 @@ function drawHelp(grid: Grid, state: State): void {
   const top = Math.max(0, Math.min(state.helpTop, rows.length - visible));
   drawBox(grid, rect, `keys · ${state.mode}`, THEME.popup, THEME.popupTitle);
   rows.slice(top, top + visible).forEach((line, i) => grid.write(rect.x + 2, rect.y + 1 + i, line, THEME.popup, rect.width - 4));
+
   if (visible < rows.length) grid.write(rect.x + 2, rect.y + rect.height - 2, `${top + 1}–${top + visible} of ${rows.length} · ↑↓ PgUp PgDn scroll · any other key closes`, { ...THEME.popup, fg: 243 }, rect.width - 4);
 }
 
@@ -1093,7 +1232,9 @@ const PROMPT_LOOKS: { [K in Prompt["kind"]]: PromptLook } = {
     label: "code to spec: ",
     typed: (prompt) => {
       const form = prompt.codeDraft;
+
       if (!form) return null;
+
       return form.source === "since" ? `--since ${form.since || "?"}` : `${form.file || "?"}${form.line.trim() !== "" ? `:${form.line.trim()}` : ""}`;
     },
     title: (prompt) => `code to spec · ${prompt.codeDraft?.mode ?? "algo"}`,
@@ -1117,15 +1258,18 @@ function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   const noteX = rect.x + 2 + stringWidth(label) + stringWidth(typed);
   // A note cut by the screen's edge (a field's error, an unavailable action's reason) is also shown whole in the form's box.
   const noteCut = noted && stringWidth(`  ${noteText}`) > rect.width - noteX;
+
   if (noted) {
     // The selected action's group, or why it is unavailable; never a reason to hide it.
     grid.write(noteX, rect.y, `  ${noteText}`, { ...THEME.status, fg: state.message !== null ? 179 : 243 });
   }
+
   if (prompt.kind === "search" || prompt.kind === "context") return;
   // The list scrolls to keep the selected entry in view.
   const shown = Math.min(10, editor.height - 2);
   const first = Math.max(0, prompt.index - shown + 1);
   const items = prompt.items.slice(first, first + shown);
+
   if (items.length === 0) return;
   // Rows that describe the form (init: the root, the layout, the files) stand above its choices and are never selected.
   const noteRows = noteCut ? wrapCells(noteText, Math.max(8, editor.width - 4)) : [];
@@ -1160,10 +1304,12 @@ const HINTS: Record<string, { keys: string[]; tail: string }> = {
 export function footerHint(mode: State["mode"], width: number): string {
   const { keys, tail } = HINTS[mode] ?? HINTS.view!;
   const shown: string[] = [];
+
   for (const key of keys) {
     if (stringWidth([...shown, key, tail].join(" · ")) > width) break;
     shown.push(key);
   }
+
   return [...shown, tail].join(" · ");
 }
 
@@ -1174,9 +1320,12 @@ export function footerHint(mode: State["mode"], width: number): string {
  */
 export function configNote(state: State): string | null {
   const parts: string[] = [];
+
   if (state.config.kind === "missing-config" && state.analysis) parts.push("guessed configuration: no keylang.json, nothing written");
   const buffer = state.buffers.get(CONFIG_FILE);
+
   if (buffer && isDirty(buffer)) parts.push("keylang.json unsaved: the analysis uses the saved file");
+
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
@@ -1184,14 +1333,17 @@ export function configNote(state: State): string | null {
 function drawBarrier(grid: Grid, state: State, editor: Rect): void {
   const barrier = state.barrier!;
   const rows: { text: string; style: Style }[] = [];
+
   if (barrier.writes !== null) {
     rows.push({ text: barrier.writesNote ?? "Writes (generated files only; a manual file stops it):", style: THEME.popup });
     rows.push(...barrier.writes.map((file) => ({ text: `  ${file}`, style: THEME.popup })));
   }
+
   if (barrier.files.length > 0) {
     rows.push({ text: "The operation reads the files on disk. Unsaved:", style: THEME.popup });
     rows.push(...barrier.files.map((file) => ({ text: `  ${file}`, style: THEME.popup })));
   }
+
   if (barrier.error !== null) rows.push({ text: `not saved: ${barrier.error}`, style: { ...THEME.popup, ...THEME.error, bg: THEME.popup.bg! } });
   rows.push({ text: "", style: THEME.popup });
   const width = Math.min(editor.width, Math.max(44, ...rows.map((row) => stringWidth(row.text) + 4)));
@@ -1211,9 +1363,11 @@ function drawBarrier(grid: Grid, state: State, editor: Rect): void {
 /** The quit step while an operation runs (design §5), over the editor area. */
 function drawQuit(grid: Grid, state: State, editor: Rect): void {
   const step = state.quit!;
+
   const rows = step.waiting
     ? [`Cancelling ${step.label}: waiting for its current file step.`, "The session ends when it settles; unsaved buffers are asked about first."]
     : [`${step.label} is running.`, "Cancel and exit stops it after its current file step; what it wrote stays.", "Unsaved buffers are asked about after it."];
+
   const width = Math.min(editor.width, Math.max(44, ...rows.map((row) => stringWidth(row) + 4)));
   const height = Math.min(editor.height, rows.length + 5);
   const x = editor.x + Math.max(0, Math.floor((editor.width - width) / 2));
@@ -1221,11 +1375,14 @@ function drawQuit(grid: Grid, state: State, editor: Rect): void {
   drawBox(grid, { x, y, width, height }, "Quit while an operation runs", THEME.popup, THEME.popupTitle);
   rows.slice(0, height - 4).forEach((row, i) => grid.write(x + 2, y + 1 + i, row, THEME.popup, width - 4));
   const buttonsY = y + height - 3;
+
   if (step.waiting) {
     grid.write(x + 2, buttonsY, "cancelling…", { ...THEME.popup, fg: 179 }, width - 4);
     grid.write(x + 2, y + height - 2, "Esc stay in the session (the cancel goes on)", { ...THEME.popup, fg: 243 }, width - 4);
+
     return;
   }
+
   let bx = x + 2;
   bx += grid.write(bx, buttonsY, "[Stay]", step.choice === "stay" ? THEME.selected : THEME.popup, x + width - 2 - bx);
   bx += grid.write(bx, buttonsY, "    ", THEME.popup, x + width - 2 - bx);
@@ -1239,6 +1396,7 @@ function drawStart(grid: Grid, state: State, rect: Rect): void {
   const { languages, layers, notes } = state.config;
   grid.fill(rect.x, rect.y, rect.width, rect.height, {});
   const found = languages.length > 0 ? `Found: ${languages.join(", ")}${layers.length > 0 ? ` · layers: ${layers.join(", ")}` : ""}` : "Found: no supported source files (TypeScript, JavaScript, Python, Rust)";
+
   const rows: { text: string; style: Style }[] = [
     { text: "keylang.json is not here yet", style: THEME.heading },
     { text: `Root: ${state.root}`, style: THEME.text },
@@ -1246,6 +1404,7 @@ function drawStart(grid: Grid, state: State, rect: Rect): void {
     ...notes.map((note) => ({ text: `  ${note}`, style: THEME.comment })),
     { text: "", style: THEME.text },
   ];
+
   const labels = new Map(ACTIONS.map((action) => [action.id, action.label]));
   START_ACTIONS.forEach((id, index) => rows.push({ text: `${index === state.start ? ">" : " "} ${labels.get(id) ?? id}`, style: index === state.start ? THEME.selected : THEME.text }));
   rows.push({ text: "", style: THEME.text });
@@ -1263,7 +1422,9 @@ function hoverShown(state: State): boolean {
 function editorCursorCell(state: State, editor: Rect, buffer: Buffer | null): Cell | null {
   if (!buffer || (state.mode !== "view" && state.mode !== "edit")) return null;
   const row = state.cursor.line - state.top;
+
   if (row < 0 || row >= editor.height) return null;
+
   return { x: editor.x + gutterWidth(buffer) + cellsBetween(lineLayout(buffer, state.cursor.line), state.left, state.cursor.col), y: editor.y + row };
 }
 
@@ -1274,11 +1435,15 @@ function editorCursorCell(state: State, editor: Rect, buffer: Buffer | null): Ce
  */
 export function clipOnScreen(state: State, area: Layout = layout(state)): Rect | null {
   const rect = assistantShown(state) ? clipRect(state, area.editor) : null;
+
   if (rect === null) return null;
   const buffer = state.current ? (state.buffers.get(state.current) ?? null) : null;
   const popups: Rect[] = [];
+
   if (hoverShown(state)) popups.push(hoverRect(state.hover!, area.editor));
+
   if (state.completion && buffer && state.mode === "edit") popups.push(completionBox(state, area.editor, buffer).rect);
+
   return clipYields(rect, editorCursorCell(state, area.editor, buffer), popups) ? null : rect;
 }
 
@@ -1296,16 +1461,21 @@ export function render(state: State): Grid {
   // Body
   // The start screen takes the whole body: there are no panels to show before Browse.
   const start = state.start !== null && state.mode === "view";
+
   if (area.files && !start) {
     drawFiles(grid, state, area.files);
     grid.fill(area.files.x + area.files.width, area.files.y, 1, area.files.height, { fg: 238 });
+
     for (let y = area.files.y; y < area.files.y + area.files.height; y++) grid.write(area.files.x + area.files.width, y, "│", { fg: 238 });
   }
+
   if (area.nav && !start) {
     for (let y = area.nav.y; y < area.nav.y + area.nav.height; y++) grid.write(area.nav.x - 1, y, "│", { fg: 238 });
+
     if (state.context.open) drawContext(grid, state, area.nav);
     else drawNav(grid, state, area.nav);
   }
+
   if (start) drawStart(grid, state, { x: 0, y: area.editor.y, width: state.cols, height: area.editor.height });
   else if (state.mode === "code" && state.code) drawCode(grid, state, area.editor);
   else if (state.mode === "zoom" && state.zoom) drawZoom(grid, state, area.editor);
@@ -1317,6 +1487,7 @@ export function render(state: State): Grid {
   grid.fill(0, area.detail.y, state.cols, 1, {});
   const item = buffer && state.analysis && state.mode !== "merge" && state.mode !== "code" && state.mode !== "zoom" ? evidenceOf(state.analysis, buffer.path).get(state.cursor.line + 1) : undefined;
   const detail = state.message ? { text: state.message, style: THEME.hint } : lineMessage(item);
+
   if (detail) grid.write(1, area.detail.y, detail.text, detail.style, state.cols - 2);
   // Status bar
   grid.fill(0, area.status.y, state.cols, 1, THEME.status);
@@ -1324,11 +1495,14 @@ export function render(state: State): Grid {
   const tail = footerHint(state.mode, 0);
   const end = Math.max(1, state.cols - stringWidth(tail) - 2);
   let x = 1;
+
   const put = (text: string, style: Style): void => {
     x += grid.write(x, area.status.y, text, style, end - x);
   };
+
   // On a narrow terminal the clip is a badge at the start of the line: a click on it opens the chat.
   if (assistantShown(state) && badgeRect(state) !== null) put(`${badgeText(state.clip)}  `, BADGE_STYLE);
+
   if (state.analysis) {
     const count = totals(state.analysis);
     const stale = state.updating || state.outdated;
@@ -1336,10 +1510,13 @@ export function render(state: State): Grid {
     put(`  ◌ ${count.unverified}`, { ...THEME.status, ...MARK_STYLE.unverified, bg: THEME.status.bg!, ...(stale ? { dim: true } : {}) });
     put(`  ✓ ${count.ok}`, { ...THEME.status, ...MARK_STYLE.ok, bg: THEME.status.bg!, ...(stale ? { dim: true } : {}) });
   }
+
   // The open feature file's stage and open questions, as of its last save and analysis (c4-zoom/11).
   const feature = state.featureLine;
+
   if (feature !== null && feature.path === state.current) put(`  feature ${feature.stage} · questions ${feature.questions}`, { ...THEME.status, fg: 75 });
   const invalid = state.config.kind === "invalid-config" ? state.config.reason : null;
+
   const phase = state.updating
     ? "  updating… results shown are stale"
     : invalid !== null
@@ -1353,26 +1530,40 @@ export function render(state: State): Grid {
             : state.config.kind === "missing-config"
               ? "  no keylang.json: Browse (Enter) or F5 analyses with a guessed configuration"
               : "  analyzing…";
+
   // Where the settings come from goes first: a long failure reason must not cut it off.
   const note = configNote(state);
+
   if (note !== null) put(`  ${note}`, { ...THEME.status, fg: 179 });
   put(phase, { ...THEME.status, fg: (state.error || invalid !== null) && !state.updating ? 160 : 179 });
+
   // A snapshot is its own property: a valid config may find no sources.
   if (state.analysis && !state.analysis.snapshot) put("  no supported source files", { ...THEME.status, fg: 179 });
+
   if (state.proposals.length > 0 && state.mode !== "merge") put(`  ≈ ${state.proposals.length} proposal(s): m`, { ...THEME.status, fg: 141 });
   const hints = footerHint(state.mode, state.cols - x - 3);
   grid.write(Math.max(x + 2, state.cols - stringWidth(hints) - 1), area.status.y, hints, THEME.status);
+
   // Popups
   if (state.results.open && !state.results.viewing) drawResults(grid, state, area.panel);
   const clip = clipOnScreen(state, area);
+
   if (clip) drawClip(grid, clip, state.clip);
+
   if (hoverShown(state)) drawHover(grid, state, area.editor);
+
   if (state.completion && buffer && state.mode === "edit") drawCompletion(grid, state, area.editor, buffer);
+
   // The chat window is not modal: the help, a form and the modal steps draw over it.
   if (state.clip.chat.open && assistantShown(state)) drawChat(grid, state, chatRect(state, area.editor));
+
   if (state.help) drawHelp(grid, state);
+
   if (state.prompt) drawPrompt(grid, state, area.detail, area.panel);
+
   if (state.barrier) drawBarrier(grid, state, area.panel);
+
   if (state.quit) drawQuit(grid, state, area.panel);
+
   return grid;
 }

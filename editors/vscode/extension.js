@@ -3,8 +3,11 @@
 // lenses, signature help) comes from the server.
 
 const fs = require("node:fs");
+
 const path = require("node:path");
+
 const vscode = require("vscode");
+
 const { LanguageClient, TransportKind } = require("vscode-languageclient/node");
 
 let client;
@@ -12,17 +15,23 @@ let client;
 /** The spec directory of each workspace folder: `dir` of its keylang.json, `keylang` without one. */
 function specDirs() {
   const dirs = new Set();
+
   for (const folder of vscode.workspace.workspaceFolders ?? []) {
     let dir = "keylang";
+
     try {
       const config = JSON.parse(fs.readFileSync(path.join(folder.uri.fsPath, "keylang.json"), "utf8"));
+
       if (typeof config.dir === "string" && config.dir.trim() !== "") dir = config.dir.replace(/\\/g, "/").replace(/^\.\/+|\/+$/g, "");
     } catch {
       // No keylang.json, or one the server will report as invalid.
     }
+
     dirs.add(dir === "" || dir === "." ? "" : dir);
   }
+
   if (dirs.size === 0) dirs.add("keylang");
+
   return [...dirs];
 }
 
@@ -49,6 +58,7 @@ function activate(context) {
   // Code lenses `flows: …` carry the flow names; clicking one lists them.
   context.subscriptions.push(vscode.commands.registerCommand("keylang.flows", (flows) => vscode.window.showInformationMessage(`keylang flows: ${(flows ?? []).join(", ")}`)));
   context.subscriptions.push(client);
+
   return client.start();
 }
 

@@ -72,17 +72,20 @@ export const TECHNOLOGIES: readonly Technology[] = [
 ];
 
 const BY_WORD = new Map<string, Technology>();
+
 for (const tech of TECHNOLOGIES) for (const word of [tech.name, ...tech.aliases]) BY_WORD.set(word.toLowerCase(), tech);
 
 /** The technology a component's text starts with (`postgres 16`, `PostgreSQL`), or null when it names none of the catalog. */
 export function technologyOf(text: string | null | undefined): Technology | null {
   const word = text?.trim().split(/\s+/)[0]?.toLowerCase().replace(/[,;:]$/, "");
+
   return word ? (BY_WORD.get(word) ?? null) : null;
 }
 
 /** The external IDs whose import is evidence of talking to `tech`. */
 export function evidenceIds(tech: Technology): Set<string> {
   const packages = tech.sql ? [...tech.packages, ...SQL_CLIENTS] : tech.packages;
+
   return new Set(packages.map((pkg) => `${EXTERNAL}.${externalSegment(pkg)}`));
 }
 

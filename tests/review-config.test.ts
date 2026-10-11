@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { withLayers } from "../src/config.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
 
 function write(dir: string, path: string, text: string): void {
@@ -21,14 +22,18 @@ function write(dir: string, path: string, text: string): void {
 
 function keylang(cwd: string, args: string[], env: NodeJS.ProcessEnv = process.env): { status: number | null; stdout: string; stderr: string } {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8", env });
+
   if (r.error) throw r.error;
+
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
 function repo(t: TestContext, files: Record<string, string>): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-review-config-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+
   for (const [path, text] of Object.entries(files)) write(dir, path, text);
+
   return dir;
 }
 
@@ -57,11 +62,14 @@ test("the map lists modules in code-unit order, whatever the ICU of the Node bui
     "src/a_b.ts": "export function underscore(): void {}\n",
     "src/a-b.ts": "export function dash(): void {}\n",
   });
+
   const run = keylang(dir, ["map"]);
   assert.equal(run.status, 0, run.stderr);
+
   const modules = readFileSync(join(dir, "keylang/map/app.md"), "utf8")
     .split("\n")
     .flatMap((line) => /^ {2}- module \[([^\]]+)\]/.exec(line)?.slice(1) ?? []);
+
   assert.deepEqual(modules, ["Zeta", "a-b", "a_b", "alpha"]);
 });
 
@@ -70,10 +78,12 @@ test("the snapshot records the real versions of the tree-sitter runtime and gram
     "keylang.json": json({ languages: ["typescript"], layers: { app: ["src/**"] } }),
     "src/a.ts": "export function a(): void {}\n",
   });
+
   const run = keylang(dir, ["map"]);
   assert.equal(run.status, 0, run.stderr);
   const grammars = index(dir).manifest.grammars;
   assert.deepEqual(Object.keys(grammars).sort(), ["@vscode/tree-sitter-wasm", "web-tree-sitter"]);
+
   // `web-tree-sitter` does not export `./package.json`: reading it by name gave "unknown", and an upgrade changed no snapshot id.
   for (const [name, version] of Object.entries(grammars)) assert.match(version, /^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/, name);
   const installed = (name: string): string => (JSON.parse(readFileSync(join(root, "node_modules", name, "package.json"), "utf8")) as { version: string }).version;
@@ -84,19 +94,25 @@ test("the snapshot records the real versions of the tree-sitter runtime and gram
 test("every provider's model follows the rule that keeps the explanation header intact", (t) => {
   const files = { "src/a.ts": "export function a(): void {}\n" };
   const layers = { app: ["src/**"] };
+
   // No key, no agent CLI: an invalid value must stop the command before any request.
   const env = (home: string, agent?: string): NodeJS.ProcessEnv => {
     const out: NodeJS.ProcessEnv = { ...process.env, HOME: home, PATH: "" };
+
     for (const name of ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENROUTER_API_KEY", "KEYLANG_AGENT"]) delete out[name];
+
     if (agent !== undefined) out.KEYLANG_AGENT = agent;
+
     return out;
   };
+
   for (const agent of ["anthropic:a-->b", "anthropic:-x", "openrouter:a--b", "openrouter:x<y", "anthropic:a b"]) {
     const dir = repo(t, { ...files, "keylang.json": json({ languages: ["typescript"], layers, agent }) });
     const run = keylang(dir, ["explain", "app.a.a", "--llm"], env(dir));
     assert.equal(run.status, 2, `${agent}: ${run.stderr}`);
     assert.match(run.stderr, /keylang\.json: `agent` must be "anthropic:<model>", "openrouter:<model>" or "cli:<name>\[:<model>\]" \(a model has no spaces/, agent);
   }
+
   const dir = repo(t, { ...files, "keylang.json": json({ languages: ["typescript"], layers }) });
   const variable = keylang(dir, ["explain", "app.a.a", "--llm"], env(dir, "openrouter:a-->b"));
   assert.equal(variable.status, 2, variable.stderr);
@@ -116,6 +132,7 @@ test("every provider's model follows the rule that keeps the explanation header 
 test("IDs from file and directory names are NFC, whatever normalization the disk keeps", (t) => {
   const nfd = `cafe${String.fromCodePoint(0x301)}`; // as macOS stores it: `e` and a combining acute accent
   const nfc = `caf${String.fromCodePoint(0xe9)}`; // as a person types it: one precomposed `é`
+
   const dir = repo(t, {
     // The layer name typed in NFD too: one layer with the spec's spelling.
     "keylang.json": json({ languages: ["typescript"], layers: { [`${nfd}s`]: ["src/**"] } }),
@@ -123,6 +140,7 @@ test("IDs from file and directory names are NFC, whatever normalization the disk
     "src/main.ts": `import { order } from "./${nfd}/menu.ts";\nexport function main(): void {\n  order();\n}\n`,
     "keylang/flows/order.md": `# flow order\n\n- trigger ${nfc}s.main.main\n  - step ${nfc}s.${nfc}.menu.order\n`,
   });
+
   const run = keylang(dir, ["map"]);
   assert.equal(run.status, 0, run.stderr);
   const nodes = index(dir).nodes;
@@ -147,11 +165,13 @@ test("IDs from file and directory names are NFC, whatever normalization the disk
 
 test("map warns about layer globs that overlap or match nothing, and keeps its exit codes", (t) => {
   const warnings = (stderr: string): string[] => stderr.split("\n").filter((line) => line.startsWith("warning: "));
+
   const overlap = repo(t, {
     "keylang.json": json({ format: 2, languages: ["typescript"], layers: { app: ["src/**"], core: ["src/**", "src/core/**"] } }),
     "src/a.ts": "export function a(): void {}\n",
     "src/b.ts": "export function b(): void {}\n",
   });
+
   const run = keylang(overlap, ["map"]);
   assert.equal(run.status, 0, run.stderr);
   assert.deepEqual(warnings(run.stderr), [
@@ -167,6 +187,7 @@ test("map warns about layer globs that overlap or match nothing, and keeps its e
     "keylang.json": json({ format: 2, languages: ["typescript"], layers: { app: ["src/**"], ghost: ["lib/**"] } }),
     "src/a.ts": "export function a(): void {}\n",
   });
+
   const nomatch = keylang(ghost, ["map"]);
   assert.equal(nomatch.status, 0, nomatch.stderr);
   assert.deepEqual(warnings(nomatch.stderr), ["warning: keylang.json: `layers.ghost`: `lib/**` matches no source file"]);
@@ -178,6 +199,7 @@ test("map warns about layer globs that overlap or match nothing, and keeps its e
     "src/shell.ts": "export function shell(): void {}\n",
     "lib/x.ts": "export function x(): void {}\n",
   });
+
   const literal = keylang(next, ["map"]);
   assert.equal(literal.status, 0, literal.stderr);
   assert.deepEqual(warnings(literal.stderr), [
@@ -194,6 +216,7 @@ test("map warns about layer globs that overlap or match nothing, and keeps its e
 // The shop of the review: `src/infra/store.ts` imports `src/config.ts`, which git ignores,
 // so CI has no such file while a developer's checkout does.
 const SHOP_LAYERS = { app: ["src/app/**"], domain: ["src/domain/**"], infra: ["src/infra/**"], ui: ["src/ui/**"] };
+
 const SHOP = {
   "src/domain/order.ts": "export interface Order { total: number }\nexport function create(total: number): Order {\n  return { total };\n}\n",
   "src/infra/store.ts": 'import { settings } from "../config";\nimport type { Order } from "../domain/order.ts";\nconst db: Order[] = [];\nexport function save(order: Order): void {\n  if (settings.persist) db.push(order);\n}\n',
@@ -201,6 +224,7 @@ const SHOP = {
   "src/ui/cli.ts": 'import { buy } from "../app/purchase.ts";\nexport function main(): void {\n  buy(3);\n}\n',
   "keylang/rules.md": "# rules\n\n- layers domain < infra < app < ui\n- deny app external, unassigned\n- deny domain app, external, infra, ui, unassigned\n- deny infra app, external, ui, unassigned\n- no-cycles\n",
 };
+
 const CONFIG_TS = "export const settings = { persist: true };\n";
 
 interface Row {
@@ -212,6 +236,7 @@ interface Row {
 
 function verdicts(dir: string): { status: number | null; rows: Row[]; stdout: string } {
   const run = keylang(dir, ["check", "--format", "json"]);
+
   return { status: run.status, stdout: run.stdout, rows: (JSON.parse(run.stdout) as { results: Row[] }).results };
 }
 
@@ -243,6 +268,7 @@ test("assume: an import of a file keylang neither reads nor requires is no edge 
     // Rules see no hole: the same verdicts in CI and in a checkout that has the file.
     const run = verdicts(dir);
     assert.equal(run.status, 0, run.stdout);
+
     for (const row of run.rows) assert.notEqual(row.verdict, "unverified", `present: ${present}: ${row.criterion}: ${row.evidence}`);
     assert.equal(keylang(dir, ["check", "--strict"]).status, 0);
   }
@@ -250,11 +276,13 @@ test("assume: an import of a file keylang neither reads nor requires is no edge 
 
 test("assume: a path-mapped specifier names the path it would resolve to; `assume` is in the snapshot id and wins over `outside`", (t) => {
   const store = 'import { settings } from "@/generated/settings";\nexport function save(): boolean {\n  return settings.persist;\n}\n';
+
   const files = {
     ...SHOP,
     "src/infra/store.ts": store,
     "tsconfig.json": json({ compilerOptions: { baseUrl: ".", paths: { "@/*": ["src/*"] } } }),
   };
+
   const config = (extra: Record<string, unknown>): string => json({ format: 2, languages: ["typescript"], layers: SHOP_LAYERS, ...extra });
   const dir = repo(t, { ...files, "keylang.json": config({ assume: ["src/generated/**"] }) });
   assert.equal(keylang(dir, ["map"]).status, 0);
@@ -264,6 +292,7 @@ test("assume: a path-mapped specifier names the path it would resolve to; `assum
     ["assumed import `@/generated/settings` → `src/generated/settings.ts` (`assume` in keylang.json)"],
   );
   const run = verdicts(dir);
+
   for (const row of run.rows) assert.notEqual(row.verdict, "unverified", `${row.criterion}: ${row.evidence}`);
 
   // The same file `outside` names too: `assume` wins, so the import is no K107.
@@ -295,6 +324,7 @@ test("assume: names an assumed import binds are called outside the graph, like a
     "export function save(order: unknown): void {}",
     "",
   ].join("\n");
+
   const dir = repo(t, { ...SHOP, "src/infra/store.ts": store, "keylang.json": json({ format: 2, languages: ["typescript"], layers: SHOP_LAYERS, assume: ["src/config.ts"] }) });
   const map = keylang(dir, ["map"]);
   assert.equal(map.status, 0, map.stderr);
@@ -327,6 +357,7 @@ test("assume: explain-edge and explain count an assumed import as nothing they c
 
 test("assume is validated like exclude, and init and draft map do not write it", (t) => {
   const dir = repo(t, { ...SHOP });
+
   for (const [assume, error] of [
     ["src/config.ts", '`assume` must be an array of globs, got "src/config.ts"'],
     [["src/config.ts", 3], "`assume` must be an array of globs, got [\"src/config.ts\",3]"],
@@ -336,6 +367,7 @@ test("assume is validated like exclude, and init and draft map do not write it",
     assert.equal(run.status, 2, run.stderr);
     assert.ok(run.stderr.includes(`keylang.json: ${error}`), run.stderr);
   }
+
   write(dir, "keylang.json", json({ languages: ["typescript"], layers: SHOP_LAYERS, assume: ["src/config.ts"] }));
   const draft = keylang(dir, ["draft", "map"]);
   assert.equal(draft.status, 0, draft.stderr);
@@ -347,12 +379,14 @@ test("assume is validated like exclude, and init and draft map do not write it",
 
 test("keylang.json with a UTF-8 BOM reads as the same JSON: check, fmt --check and parse work, and withLayers keeps the fields", (t) => {
   const config = { format: 2, languages: ["typescript"], module: "file", layers: { app: ["src/app/**"], domain: ["src/domain/**"] } };
+
   const dir = repo(t, {
     "keylang.json": `\uFEFF${json(config)}`,
     "keylang/rules.md": "# rules\n\n- deny domain app\n",
     "src/app/a.ts": 'import { b } from "../domain/b.ts";\nexport function a(): number {\n  return b();\n}\n',
     "src/domain/b.ts": "export function b(): number {\n  return 1;\n}\n",
   });
+
   const check = keylang(dir, ["check"]);
   assert.equal(check.status, 0, check.stdout + check.stderr);
   assert.doesNotMatch(check.stderr, /invalid JSON/);
@@ -377,6 +411,7 @@ test("package.json and composer.json with a UTF-8 BOM read as Node and npm read 
     "src/a.ts": "export function a(): number {\n  return 1;\n}\n",
     "keylang/rules.md": "# rules\n\n- deny app external.left-pad\n- deny app external.is-odd\n- deny app external.monolog-monolog\n- deny app external.acme-ui\n",
   });
+
   const check = keylang(dir, ["check"]);
   assert.doesNotMatch(check.stderr, /invalid JSON/);
   assert.doesNotMatch(check.stdout, /external\.(left-pad|is-odd|monolog-monolog)`/, "declared packages are known IDs");

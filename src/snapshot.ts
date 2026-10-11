@@ -17,10 +17,12 @@ import { constructorName, LANGUAGES, languageOf } from "./languages.ts";
 import { components } from "./scc.ts";
 
 export const SNAPSHOT_SCHEMA = 9;
+
 /** Bump when extraction or resolution changes the facts that `snapshotId` covers. */
 export const EXTRACTOR_VERSION = "m1.24";
 
 export type Resolution = "resolved" | "ambiguous" | "unresolved";
+
 /**
  * `syntactic`: a fact of the code the language runs. `docblock`: a fact written
  * only in a documentation comment the language does not check (PHP `@var Foo`
@@ -28,6 +30,7 @@ export type Resolution = "resolved" | "ambiguous" | "unresolved";
  * so does keylang, naming it in the verdict.
  */
 export type Provenance = "syntactic" | "docblock";
+
 export type EdgeKind = "import" | "call" | "type" | "reexport";
 
 export interface SnapshotEdge {
@@ -269,6 +272,7 @@ export interface RepositoryDocs {
 
 /** Where execution starts, by what starts it (ADR 0022 п. 5). Without a framework adapter only `route`, `cli` and `main` occur. */
 export const ENTRY_KINDS = ["route", "rest", "graphql", "cron", "consumer", "cli", "observer", "webhook", "controller", "main"] as const;
+
 export type EntryKind = (typeof ENTRY_KINDS)[number];
 
 export function isEntryKind(value: string): value is EntryKind {
@@ -361,6 +365,7 @@ export function buildSnapshot(
 ): AnalysisSnapshot {
   const manifestFiles = [...files].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   const grammars = grammarVersions();
+
   const manifestConfig = {
     dir: config.dir,
     languages: [...config.languages],
@@ -372,7 +377,9 @@ export function buildSnapshot(
     ...(config.frameworks !== null ? { frameworks: [...config.frameworks] } : {}),
     guessed: config.guessed,
   };
+
   const frameworkFiles = frameworks.map((f) => ({ name: f.name, version: f.version, files: [...f.files].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)) }));
+
   const snapshotId = sha256(
     JSON.stringify({
       schema: SNAPSHOT_SCHEMA,
@@ -394,6 +401,7 @@ export function buildSnapshot(
   const nodes: Record<string, SnapshotNode> = {};
   // fns and types that read a value imported from another file: their closure cannot cover it.
   const readsImported = new Set<string>();
+
   const visit = (m: Module): void => {
     const moduleNode: SnapshotNode = {
       kind: "module",
@@ -407,11 +415,16 @@ export function buildSnapshot(
       deps: [...new Set(m.deps.map((d) => d.target))],
       dependents: [],
     };
+
     if (m.endLine !== null) moduleNode.endLine = m.endLine;
+
     if (m.endCol !== null) moduleNode.endCol = m.endCol;
+
     if (m.comment) moduleNode.comment = m.comment;
+
     if (m.values !== undefined) moduleNode.values = sha256(m.values);
     nodes[m.id] = moduleNode;
+
     for (const f of m.fns) {
       const fn: SnapshotNode = {
         kind: "fn",
@@ -429,12 +442,17 @@ export function buildSnapshot(
         calls: [...new Set(f.calls.filter((c) => c.via !== "injected").map((c) => c.target))],
         callers: [],
       };
+
       if (f.escapes) fn.escapes = f.escapes;
+
       if (f.interceptedBy && f.interceptedBy.length > 0) fn.interceptedBy = f.interceptedBy;
+
       if (f.fingerprint !== undefined) fn.fingerprint = sha256(`${f.signature ?? ""}\u0000${f.fingerprint}`);
+
       if (f.fingerprint !== undefined && readsImportedValue(f.fingerprint)) readsImported.add(f.id);
       nodes[f.id] = fn;
     }
+
     for (const t of m.types) {
       if (t.fingerprint !== undefined && readsImportedValue(t.fingerprint)) readsImported.add(t.id);
       nodes[t.id] = {
@@ -451,15 +469,21 @@ export function buildSnapshot(
         ...(t.fingerprint !== undefined ? { fingerprint: sha256(t.fingerprint) } : {}),
       };
     }
+
     for (const c of m.children) visit(c);
   };
+
   for (const l of graph.layers) {
     nodes[l.name] = { kind: "layer", layer: l.name, file: null, line: null, col: null, doc: docs.layers.get(l.name) ?? indexDoc(l.modules, globDirectory(config.layers.get(l.name) ?? [])) };
+
     for (const m of l.modules) visit(m);
   }
+
   // Events (ADR 0022 п. 6): a generated group of its own, whoever dispatches them.
   const events = graph.events ?? [];
+
   if (events.length > 0) nodes[EVENTS_LAYER] = { kind: "layer", layer: EVENTS_LAYER, file: null, line: null, col: null, doc: null };
+
   for (const e of events) {
     nodes[e.id] = {
       kind: "event",
@@ -473,22 +497,28 @@ export function buildSnapshot(
       callers: [],
     };
   }
+
   for (const [id, n] of Object.entries(nodes)) {
     for (const d of n.deps ?? []) nodes[d]?.dependents?.push(id);
+
     for (const c of n.calls ?? []) nodes[c]?.callers?.push(id);
   }
+
   for (const n of Object.values(nodes)) {
     n.dependents?.sort();
     n.callers?.sort();
   }
 
   const ordered: Record<string, SnapshotNode> = {};
+
   for (const id of Object.keys(nodes).sort()) {
     const node = nodes[id];
+
     if (node) ordered[id] = node;
   }
 
   const edges: SnapshotEdge[] = [];
+
   const visitEdges = (m: Module): void => {
     for (const d of m.deps) {
       edges.push({
@@ -508,6 +538,7 @@ export function buildSnapshot(
         ...(d.typeOnly ? { typeOnly: true as const } : {}),
       });
     }
+
     for (const f of m.fns) {
       for (const c of f.calls) {
         edges.push({
@@ -536,9 +567,12 @@ export function buildSnapshot(
         });
       }
     }
+
     for (const c of m.children) visitEdges(c);
   };
+
   for (const l of graph.layers) for (const m of l.modules) visitEdges(m);
+
   for (const e of events) {
     for (const c of e.calls) {
       edges.push({
@@ -561,6 +595,7 @@ export function buildSnapshot(
       });
     }
   }
+
   for (const open of graph.openEdges) {
     const edge: SnapshotEdge = {
       kind: open.kind,
@@ -575,13 +610,16 @@ export function buildSnapshot(
       resolution: open.resolution,
       provenance: "syntactic",
     };
+
     if (open.candidates.length > 0) edge.candidates = open.candidates;
     edges.push(edge);
   }
 
   const coverage: CoverageItem[] = [];
+
   for (const gap of graph.gaps) {
     coverage.push({ kind: gap.kind, file: gap.file, line: gap.line, col: gap.col, endLine: gap.endLine, endCol: gap.endCol, text: gap.text, reason: gap.reason, source: gap.source });
+
     if (gap.kind === "unresolved-import" || gap.kind === "dynamic-call" || gap.kind === "unresolved-call" || gap.kind === "ambiguous-binding") {
       edges.push({
         kind: gap.kind === "unresolved-import" ? "import" : "call",
@@ -600,9 +638,11 @@ export function buildSnapshot(
       });
     }
   }
+
   for (const { file, reason, source, kind, text } of skipped) {
     coverage.push({ kind: kind ?? "skipped-file", file, line: 1, col: 1, endLine: 1, endCol: 1, text: text ?? "", reason, source: source ?? graph.byPath.get(file)?.id ?? null });
   }
+
   for (const item of graph.assumed) coverage.push({ kind: "assumed-import", ...item });
   coverage.sort(compareCoverage);
   closures(ordered, coverage, readsImported);
@@ -630,28 +670,37 @@ export function buildSnapshot(
  */
 function closures(nodes: Record<string, SnapshotNode>, coverage: readonly CoverageItem[], readsImported: ReadonlySet<string>): void {
   const holes = new Set(coverage.filter((c) => c.kind === "dynamic-call" || c.kind === "unresolved-call" || c.kind === "ambiguous-binding").map((c) => c.source));
+
   for (const id of readsImported) holes.add(id);
+
   // A hole in a declaration itself (a decorator or attribute macro that may replace it): what a call of
   // it runs is not the body keylang read. For a class it is every member, the constructor included.
   for (const c of coverage) {
     if (c.kind !== "unsupported" || c.source === null) continue;
     const owner = nodes[c.source];
+
     if (owner?.kind === "fn") holes.add(c.source);
     else if (owner?.class) for (const id of Object.keys(nodes)) if (id.startsWith(`${c.source}.`) && nodes[id]?.kind === "fn") holes.add(id);
   }
+
   // `new C()` (Python `C()`) names the class; what runs is its constructor, named by the class's language.
   const runs = (target: string): string | null => {
     // A dispatched event runs its observers: it is a step of the closure, with no body of its own.
     if (nodes[target]?.kind === "fn" || nodes[target]?.kind === "event") return target;
     const constructor = `${target}.${constructorName(nodes[target]?.file) ?? "constructor"}`;
+
     return nodes[target]?.class && nodes[constructor]?.kind === "fn" ? constructor : null;
   };
+
   const adj = new Map<string, Set<string>>();
+
   for (const [id, node] of Object.entries(nodes)) {
     if (node.kind !== "fn" && node.kind !== "type" && node.kind !== "event") continue;
     adj.set(id, new Set((node.calls ?? []).map(runs).filter((target): target is string => target !== null)));
   }
+
   const done = new Map<string, { fingerprint: string; complete: boolean }>();
+
   // Tarjan emits a component after every component it reaches.
   for (const component of components(adj)) {
     const members = [...component].sort();
@@ -660,15 +709,20 @@ function closures(nodes: Record<string, SnapshotNode>, coverage: readonly Covera
     const own = (id: string): string | undefined => (nodes[id]?.kind === "event" ? `event ${nodes[id]?.name ?? id}` : nodes[id]?.fingerprint);
     let complete = members.every((id) => own(id) !== undefined && !holes.has(id));
     const parts = members.map((id) => `${id}=${own(id) ?? "?"}`);
+
     for (const id of outside) {
       const closure = done.get(id);
+
       if (!closure?.complete) complete = false;
       parts.push(`${id}>${closure?.fingerprint ?? "?"}`);
     }
+
     const closure = { fingerprint: sha256(parts.join("\n")), complete };
+
     for (const id of members) {
       done.set(id, closure);
       const node = nodes[id];
+
       if (node && node.kind !== "event") node.closure = closure;
     }
   }
@@ -695,12 +749,15 @@ function docBrief(doc: string | null | undefined): string | null {
  */
 function indexDoc(modules: readonly Module[], dir: string | null): string | null {
   if (dir === null) return null;
+
   for (const m of modules) {
     if (m.path === null || !m.doc || !m.path.startsWith(`${dir}/`) || m.path.slice(dir.length + 1).includes("/")) continue;
     const language = languageOf(m.path);
     const base = m.path.slice(dir.length + 1).replace(/\.[^.]+$/, "");
+
     if (language !== undefined && LANGUAGES[language].index.includes(base)) return docBrief(m.doc);
   }
+
   return null;
 }
 
@@ -740,6 +797,7 @@ export function grammarVersions(): Record<string, string> {
   // `require.resolve`, not `import.meta.resolve`: the trace adapter builds its snapshot on
   // Node's module hooks thread, which has no `import.meta.resolve`, and its id must match.
   const require = createRequire(import.meta.url);
+
   return {
     "web-tree-sitter": installedVersion("web-tree-sitter", () => require.resolve("web-tree-sitter")) ?? "unknown",
     "@vscode/tree-sitter-wasm": bundledGrammarsVersion() ?? installedVersion("@vscode/tree-sitter-wasm", () => require.resolve("@vscode/tree-sitter-wasm/package.json")) ?? "unknown",
@@ -749,6 +807,7 @@ export function grammarVersions(): Record<string, string> {
 /** The version prepack recorded beside the grammars in `dist/wasm`; null in a checkout. */
 function bundledGrammarsVersion(): string | null {
   const manifest = readJson(join(dirname(fileURLToPath(import.meta.url)), "wasm", GRAMMARS_MANIFEST));
+
   return typeof manifest?.version === "string" ? manifest.version : null;
 }
 
@@ -760,15 +819,19 @@ function bundledGrammarsVersion(): string | null {
  */
 function installedVersion(name: string, resolve: () => string): string | null {
   let dir: string;
+
   try {
     dir = dirname(resolve());
   } catch {
     return null;
   }
+
   for (;;) {
     const manifest = readJson(join(dir, "package.json"));
+
     if (manifest?.name === name) return typeof manifest.version === "string" ? manifest.version : null;
     const parent = dirname(dir);
+
     if (parent === dir) return null;
     dir = parent;
   }
@@ -777,6 +840,7 @@ function installedVersion(name: string, resolve: () => string): string | null {
 function readJson(file: string): Record<string, unknown> | null {
   try {
     const value: unknown = JSON.parse(readFileSync(file, "utf8"));
+
     return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
   } catch {
     return null;

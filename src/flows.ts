@@ -116,6 +116,7 @@ export function evaluateFlows(compiled: SpecIR, index: Index, input: FlowInput):
   const graph = callGraph(input);
   // The spec line a verdict is about, for its hash: set while a node is visited.
   let spec = "";
+
   const verdict = (channel: Channel, area: string, value: Verdict["verdict"], file: string, span: Span, message: string, evidence?: Verdict["evidence"]): void => {
     verdicts.push({
       verdict: value,
@@ -141,23 +142,31 @@ export function evaluateFlows(compiled: SpecIR, index: Index, input: FlowInput):
     const eventTrigger = triggerNode?.event && trigger !== null && input.nodes[trigger]?.kind === "event" ? trigger : null;
     let key = 0;
     const keys = new Map<FlowNode, number>();
+
     const shape = (nodes: readonly FlowItem[]): ShapeNode[] =>
       nodes.flatMap((node): ShapeNode[] => {
         if (node.kind === "when" || node.kind === "parallel") {
           keys.set(node, key);
+
           return [{ kind: node.kind, key: key++, children: shape(node.children) }];
         }
+
         if (node.kind !== "step") return [];
         const id = node.target.target;
+
         // A planned step is not expected in a trace; its children cannot be matched under it.
         if (planned.get(id)?.implemented === false) return [];
         keys.set(node, key);
+
         return [{ kind: "step", key: key++, id, children: shape(node.children) }];
       });
+
     // Steps may sit under the trigger or beside it; either way the trigger is their parent.
     const tree = shape([...(triggerNode?.children ?? []), ...flow.items]);
     const triggerKey = triggerNode && trigger ? key++ : null;
+
     if (triggerNode && triggerKey !== null) keys.set(triggerNode, triggerKey);
+
     const traced: Map<number, TraceEvidence> | null =
       input.traces === null ? null : traceFlow(input.traces, flow.name, trigger && triggerKey !== null ? { key: triggerKey, id: trigger } : null, tree, input.snapshotId);
 
@@ -166,6 +175,7 @@ export function evaluateFlows(compiled: SpecIR, index: Index, input: FlowInput):
       spec = node.text;
       const nodeKey = keys.get(node);
       const traceOf = (): TraceEvidence | undefined => (nodeKey === undefined ? undefined : traced?.get(nodeKey));
+
       if (node.kind === "step" || node.kind === "trigger") {
         const id = node.target.target;
         const laterTrigger = node.kind === "trigger" && node !== triggerNode;
@@ -175,21 +185,27 @@ export function evaluateFlows(compiled: SpecIR, index: Index, input: FlowInput):
         const isEvent = node.kind === "trigger" && node.event !== null;
         // An unknown event is K204 of resolution, not a dangling K001.
         const known = idVerdict(id, pending ? plan : undefined, node.span, file, index, input, verdict, isEvent ? "K204 unknown event" : undefined);
+
         if (isEvent && known !== "fail") {
           const declared = index.lookup(id);
           const code = input.nodes[id];
+
           // A fn, type or module is K205 of resolution.
           if (code?.kind === "event" || (code === undefined && declared.kind === "exact" && declared.decl.kind === "event")) {
             const subscribers = subscribersVerdict(graph, id, input);
             verdict("static", `event ${id}`, subscribers.verdict, file, node.span, subscribers.message, { provenance: "syntactic" });
           }
         }
+
         if (node.kind === "trigger" && node.entry !== null && known !== "fail") {
           const entry = entryVerdict(node.entry.kind, id, input.entries);
+
           if (entry.mismatch) diagnostics.push(diagnostic("K205", file, node.entry.span, entry.message));
           else verdict("static", `${node.entry.kind} ${id}`, entry.verdict, file, node.span, entry.message, { provenance: "syntactic" });
         }
+
         const parentPlanned = parent !== null && planned.get(parent)?.implemented === false;
+
         // A dangling id is K001 already; a static line would count it twice.
         if (node.kind === "step" && known !== "fail") {
           if (pending) verdict("static", id, "unverified", file, node.span, `planned ${plan.kind}, not implemented`);
@@ -199,26 +215,35 @@ export function evaluateFlows(compiled: SpecIR, index: Index, input: FlowInput):
             verdict("static", id, reach.verdict, file, node.span, reach.message, { provenance: "syntactic" });
           } else verdict("static", id, "unverified", file, node.span, "not in the snapshot (opaque module)");
         }
+
         if (traced !== null) {
           if (pending) verdict("trace", id, "unverified", file, node.span, `planned ${plan.kind}`);
           else if (ownBlock) verdict("trace", id, "unverified", file, node.span, ownBlock);
           else {
             const evidence = traceOf();
+
             if (evidence) verdict("trace", id, evidence.verdict, file, node.span, evidence.message, traceProvenance(evidence));
           }
         }
+
         const childBlock = pending ? `parent step \`${id}\` is planned` : laterTrigger ? "a flow is matched from its first trigger only" : blocked;
+
         for (const child of node.children) visit(child, id, claim, childBlock);
+
         return;
       }
+
       if (node.kind === "calls") {
         // A static proof without order: the parent fn calls each target itself.
         const parentPlanned = parent !== null && planned.get(parent)?.implemented === false;
+
         for (const ref of node.targets) {
           const id = ref.target;
           const plan = planned.get(id);
           const pending = plan !== undefined && !plan.implemented;
+
           if (idVerdict(id, pending ? plan : undefined, ref.span, file, index, input, verdict) === "fail") continue;
+
           if (pending) verdict("static", id, "unverified", file, ref.span, `planned ${plan.kind}, not implemented`);
           else if (parentPlanned) verdict("static", id, "unverified", file, ref.span, `parent \`${parent}\` is planned, not implemented`);
           else if (input.nodes[id] !== undefined) {
@@ -226,33 +251,47 @@ export function evaluateFlows(compiled: SpecIR, index: Index, input: FlowInput):
             verdict("static", id, call.verdict, file, ref.span, call.message, { provenance: "syntactic" });
           } else verdict("static", id, "unverified", file, ref.span, "not in the snapshot (opaque module)");
         }
+
         return;
       }
+
       // The steps of a group are checked from the group's parent, each on its own.
       if (node.kind === "parallel") {
         for (const child of node.children) visit(child, parent, claim, blocked);
+
         return;
       }
+
       // Both flows exist (K206 otherwise); one trace run is one request, so it cannot follow the other flow.
       if (node.kind === "continues") {
         const other = index.flows.get(node.flow);
+
         if (other === undefined) return;
         const area = `continues ${node.flow}`;
         verdict("ID", area, "ok", file, node.span, `flow \`${node.flow}\` at ${other.file}:${other.span.start.line}`);
+
         if (traced !== null) verdict("trace", area, "unverified", file, node.span, `crosses requests: \`${flow.name}\` starts in a later request than \`${node.flow}\`, and a trace run follows one request`);
+
         return;
       }
+
       if (node.kind === "after" || node.kind === "every") {
         const area = claimArea(node);
+
         if (node.kind === "every") {
           const schedule = scheduleVerdict(parent, node.value, input.entries);
           verdict("static", area, schedule.verdict, file, node.span, schedule.message, { provenance: "syntactic" });
         }
+
         const proofs = node.children.filter((child): child is TestItem => child.kind === "test");
+
         if (input.tests !== null && proofs.length === 0) verdict("tests", area, "unverified", file, node.span, "no test evidence: only a nested `test` checks a timer");
+
         for (const child of node.children) visit(child, parent, node, blocked);
+
         return;
       }
+
       // `reads` says only that the ID exists, until reads have evidence of their own.
       if (node.kind === "reads") {
         for (const ref of node.source.refs) {
@@ -260,15 +299,19 @@ export function evaluateFlows(compiled: SpecIR, index: Index, input: FlowInput):
           idVerdict(ref.target, plan !== undefined && !plan.implemented ? plan : undefined, ref.span, file, index, input, verdict);
         }
       }
+
       if (node.kind === "when") {
         const evidence = traceOf();
+
         if (evidence) verdict("trace", `when ${node.condition}`, evidence.verdict, file, node.span, evidence.message, traceProvenance(evidence));
       }
+
       // `emits event events.<name>` (ADR 0023 п. 1): a dispatch of the event in the code the parent reaches. A prose name has no static verdict.
       if (node.kind === "emits" && node.target !== null) {
         const id = node.target.target;
         const parentPlanned = parent !== null && planned.get(parent)?.implemented === false;
         const area = `emits ${id}`;
+
         // An unknown event is K204, a non-event K205 (resolution): no verdict would add to them.
         if (parentPlanned) verdict("static", area, "unverified", file, node.target.span, `parent \`${parent}\` is planned, not implemented`);
         else if (input.nodes[id]?.kind === "event") {
@@ -278,23 +321,30 @@ export function evaluateFlows(compiled: SpecIR, index: Index, input: FlowInput):
           verdict("static", area, "unverified", file, node.target.span, `\`${id}\` is not an event the snapshot records; run \`keylang map\` again`);
         }
       }
+
       // Without `check.tests` the channel is not asked for: nothing is printed and nothing counts.
       const tests = input.tests;
+
       if (node.kind === "invariant" || node.kind === "when" || node.kind === "then" || node.kind === "reads" || node.kind === "emits") {
         const area = claimArea(node);
         const proofs = node.children.filter((child): child is TestItem => child.kind === "test");
+
         if (tests !== null && proofs.length === 0 && node.kind !== "when") {
           const prose = node.kind === "then" ? (node.form === "text" ? node.prose : "") : node.kind === "reads" ? "" : node.body;
           verdict("tests", area, "unverified", file, node.span, quantitative(prose) ? "needs a separate predicate or test (quantitative or negative property)" : "no test evidence");
         }
+
         for (const child of node.children) visit(child, parent, node, blocked);
+
         return;
       }
+
       if (node.kind === "test") {
         // A dangling test file is checked with or without `check.tests`: no report can ever prove it.
         if (input.testFileExists && !input.testFileExists(node.path)) {
           diagnostics.push(diagnostic("K203", file, node.source.text?.span ?? node.span, `\`${node.path}\` does not exist`));
         }
+
         if (tests === null) return;
         const name = node.name ?? "";
         const matched = matchTest(tests, node.path, name, input.snapshotId);
@@ -302,15 +352,20 @@ export function evaluateFlows(compiled: SpecIR, index: Index, input: FlowInput):
         verdict("tests", area, matched.verdict, file, node.span, `${matched.message} (${node.path} "${name}")`, { provenance: "test-report", ...(matched.runId ? { runId: matched.runId } : {}) });
       }
     };
+
     for (const node of flow.top) visit(node, trigger, null, null);
   }
+
   return { diagnostics, verdicts };
 }
 
 function claimArea(node: ClaimItem | ThenItem | WhenItem | TimerItem): string {
   if (node.kind === "when") return `when ${node.condition}`;
+
   if (node.kind === "then") return node.form === "ref" ? `then ${node.target.target}` : `then ${node.prose}`;
+
   if ("value" in node) return `${node.kind} ${node.value}`;
+
   return `${node.kind} ${node.body}`.trim();
 }
 
@@ -324,11 +379,15 @@ function entryVerdict(kind: string, id: string, entries: readonly EntryView[] | 
   if (entries === undefined) return { verdict: "unverified", message: "the snapshot records no entry points; run `keylang map` again", mismatch: false };
   const own = entries.filter((entry) => entry.id === id);
   const match = own.find((entry) => entry.kind === kind);
+
   if (match) return { verdict: "ok", message: `entry point \`${match.label}\`${match.framework ? ` (${match.framework})` : ""}`, mismatch: false };
+
   if (own.length > 0) {
     const listed = own.map((entry) => `${entry.kind} \`${entry.label}\``).join(", ");
+
     return { verdict: "fail", message: `\`trigger ${kind}\` names \`${id}\`, which the snapshot records as an entry point of another kind: ${listed}`, mismatch: true };
   }
+
   return { verdict: "unverified", message: `\`${id}\` is not an entry point the snapshot records (\`keylang entries\`); a framework's ${kind} entry points need its adapter`, mismatch: false };
 }
 
@@ -346,7 +405,9 @@ const CRON_MACROS: Record<string, string> = {
 /** A schedule in a comparable form: cron fields (a macro expanded) or a duration. */
 function scheduleForm(text: string): { form: "cron" | "duration"; value: string } {
   const macro = CRON_MACROS[text];
+
   if (macro !== undefined) return { form: "cron", value: macro };
+
   return text.includes(" ") ? { form: "cron", value: text } : { form: "duration", value: text };
 }
 
@@ -357,6 +418,7 @@ function scheduleForm(text: string): { form: "cron" | "duration"; value: string 
  */
 function labelSchedule(label: string): string | null {
   const words = label.trim().split(/\s+/).filter((word) => word !== "");
+
   return scheduleText(words) ?? scheduleText(words.slice(-6)) ?? scheduleText(words.slice(-5));
 }
 
@@ -369,20 +431,29 @@ function labelSchedule(label: string): string | null {
  */
 function scheduleVerdict(parent: string | null, written: string, entries: readonly EntryView[] | undefined): { verdict: Verdict["verdict"]; message: string } {
   const only = "only a nested `test` checks it";
+
   if (parent === null) return { verdict: "unverified", message: `no trigger or step it schedules; ${only}` };
+
   if (entries === undefined) return { verdict: "unverified", message: `the snapshot records no entry points; ${only}` };
   const crons = entries.filter((entry) => entry.id === parent && entry.kind === "cron");
+
   if (crons.length === 0) return { verdict: "unverified", message: `\`${parent}\` is not a cron entry point the snapshot records; ${only}` };
   const want = scheduleForm(written);
+
   const known = crons.flatMap((entry) => {
     const text = labelSchedule(entry.label);
+
     return text === null ? [] : [{ entry, text, form: scheduleForm(text) }];
   });
+
   if (known.length === 0) return { verdict: "unverified", message: `the cron entry point \`${crons[0]!.label}\` does not say its schedule; ${only}` };
   const same = known.find((item) => item.form.form === want.form && item.form.value === want.value);
+
   if (same) return { verdict: "ok", message: `the cron entry point \`${same.entry.label}\` runs on \`${same.text}\`` };
   const comparable = known.filter((item) => item.form.form === want.form);
+
   if (comparable.length === known.length) return { verdict: "fail", message: `the cron entry point \`${known[0]!.entry.label}\` runs on \`${known[0]!.text}\`, not \`${written}\`` };
+
   return { verdict: "unverified", message: `\`${written}\` does not compare with the cron schedule \`${known[0]!.text}\`; ${only}` };
 }
 
@@ -407,11 +478,16 @@ function idVerdict(
 ): Verdict["verdict"] {
   const say = (value: Verdict["verdict"], message: string): Verdict["verdict"] => {
     verdict("ID", id, value, file, span, message);
+
     return value;
   };
+
   if (plan) return say("unverified", `planned ${plan.kind}`);
+
   if (input.nodes[id] !== undefined || index.lookup(id).kind === "exact") return say("ok", "exact");
+
   if (moduleMembers(input.nodes, id) === "opaque") return say("unverified", "opaque module");
+
   return say("fail", missing);
 }
 
@@ -423,6 +499,7 @@ function subscribersOf(graph: CallGraph, event: string): Step[] {
 /** A subscriber as a verdict names it: the fn and the line that subscribes it, with the area when it is not global. */
 function describeSubscriber(step: Step): string {
   const scope = step.edge.scope && step.edge.scope !== "global" ? `, scope ${step.edge.scope}` : "";
+
   return `\`${step.to}\` (${step.edge.site ?? at(step.edge)}${scope})`;
 }
 
@@ -434,7 +511,9 @@ function describeSubscriber(step: Step): string {
 function subscribersVerdict(graph: CallGraph, event: string, input: FlowInput): { verdict: Verdict["verdict"]; message: string } {
   if (input.nodes[event]?.kind !== "event") return { verdict: "unverified", message: `\`${event}\` is not an event the snapshot records; run \`keylang map\` again` };
   const subscribers = subscribersOf(graph, event);
+
   if (subscribers.length === 0) return { verdict: "unverified", message: `no subscriber of \`${event}\` in the code and config keylang read` };
+
   return { verdict: "ok", message: `subscribers: ${subscribers.map(describeSubscriber).join(", ")}` };
 }
 
@@ -446,14 +525,19 @@ function subscribersVerdict(graph: CallGraph, event: string, input: FlowInput): 
  */
 function subscriberReach(graph: CallGraph, input: FlowInput, event: string, target: string): { verdict: Verdict["verdict"]; message: string } {
   const subscribers = subscribersOf(graph, event);
+
   if (subscribers.length === 0) return { verdict: "unverified", message: `no subscriber of \`${event}\` to reach it from` };
   const own = subscribers.find((step) => step.to === target);
+
   if (own) return { verdict: "ok", message: `a subscriber of \`${event}\` through ${describeConfig(own.edge)}` };
   const results = subscribers.map((step) => ({ step, reach: reachability(graph, input, step.to, target) }));
   const ok = results.find((item) => item.reach.verdict === "ok");
+
   if (ok) return { verdict: "ok", message: `subscriber ${describeSubscriber(ok.step)}: ${ok.reach.message}` };
   const open = results.find((item) => item.reach.verdict === "unverified");
+
   if (open) return { verdict: "unverified", message: `subscriber ${describeSubscriber(open.step)}: ${open.reach.message}` };
+
   return { verdict: "fail", message: `absence: no subscriber of \`${event}\` reaches it: no call path from ${results.map((item) => `\`${item.step.to}\``).join(", ")}; add a call to \`${target}\` in a subscriber or in a function it reaches` };
 }
 
@@ -467,6 +551,7 @@ function subscriberReach(graph: CallGraph, input: FlowInput, event: string, targ
  */
 function emitsVerdict(graph: CallGraph, input: FlowInput, parent: string | null, event: string): { verdict: Verdict["verdict"]; message: string } {
   if (parent === null) return { verdict: "unverified", message: "no trigger or step that emits it" };
+
   return reachability(graph, input, parent, event);
 }
 
@@ -508,37 +593,48 @@ function callGraph(input: FlowInput): CallGraph {
   const resolved = new Map<string, Step[]>();
   const open = new Map<string, SnapshotEdge[]>();
   const callers = new Map<string, Step[]>();
+
   const add = <T>(map: Map<string, T[]>, key: string, item: T): void => {
     const list = map.get(key) ?? [];
     list.push(item);
     map.set(key, list);
   };
+
   // `new X()` (Python `X()`) names the class; what runs is its constructor (`__init__`).
   const constructorOf = (id: string): string => `${id}.${constructorName(input.nodes[id]?.file) ?? "constructor"}`;
   const callable = (id: string): string => (input.nodes[id]?.kind !== "fn" && input.nodes[constructorOf(id)]?.kind === "fn" ? constructorOf(id) : id);
+
   for (const edge of input.edges) {
     if (edge.kind !== "call") continue;
+
     if (edge.resolution === "resolved" && edge.target) {
       const step = { from: edge.source, to: callable(edge.target), edge };
       add(resolved, edge.source, step);
       add(callers, step.to, step);
     } else {
       add(open, edge.source, edge);
+
       for (const candidate of edge.candidates ?? []) add(callers, callable(candidate), { from: edge.source, to: callable(candidate), edge });
     }
   }
+
   const byName = new Map<string, string[]>();
   const byCaselessName = new Map<string, string[]>();
+
   for (const [id, node] of Object.entries(input.nodes)) {
     if (node.kind !== "fn") continue;
     add(byName, callName(id), id);
+
     if (caselessNames(node.file)) add(byCaselessName, asciiLowerCase(callName(id)), id);
   }
+
   const unsupported = new Map<string, NonNullable<FlowInput["coverage"]>>();
+
   for (const item of input.coverage ?? []) if (item.kind === "unsupported") add(unsupported, item.file, item);
   const opaque = Object.entries(input.nodes).find(([, node]) => node.kind === "module" && node.members === "opaque" && node.layer !== "external" && node.layer !== OUTSIDE_LAYER)?.[0] ?? null;
   // A framework's config keylang did not read (`frameworks` leaves it out, it does not parse): the framework may call any fn by it.
   const unreadConfig = (input.coverage ?? []).find((item) => item.kind === "skipped-file" && item.text?.startsWith("framework:")) ?? null;
+
   return { resolved, open, callers, byName, byCaselessName, unsupported, opaque, unreadConfig, callable, ...doubtfulBodies(input) };
 }
 
@@ -552,19 +648,25 @@ function doubtfulBodies(input: FlowInput): { replaced: Map<string, string>; unre
   const fns = Object.entries(input.nodes)
     .flatMap(([id, node]) => (node.kind === "fn" && node.file !== null && node.line !== null ? [{ id, file: node.file, line: node.line }] : []))
     .sort((a, b) => compareText(a.file, b.file) || a.line - b.line || compareText(a.id, b.id));
+
   const replaced = new Map<string, string>();
   const unreadable = new Map<string, string>();
+
   for (const item of input.coverage ?? []) {
     const where = `${item.file}:${item.line}:${item.col}`;
+
     if (item.kind === "parse-error") {
       for (const fn of fns) if (fn.file === item.file && !unreadable.has(fn.id)) unreadable.set(fn.id, `\`${fn.id}\` is in a module that does not parse: ${item.reason} at ${where}`);
       continue;
     }
+
     // A decorator (`@replace`) or an attribute macro (`#[replace]`) the extractor did not know.
     if (!item.text?.startsWith("@") && !item.text?.startsWith("#[")) continue;
     const owner = item.source && input.nodes[item.source]?.kind === "fn" ? item.source : fns.find((fn) => fn.file === item.file && fn.line >= item.line)?.id;
+
     if (owner && !replaced.has(owner)) replaced.set(owner, `\`${owner}\` may not run its own body: ${item.reason} at ${where}`);
   }
+
   return { replaced, unreadable };
 }
 
@@ -579,8 +681,10 @@ function lastSegment(text: string): string {
 function callName(id: string): string {
   const segment = lastSegment(id);
   const suffix = /-(static-private|private|static)$/.exec(segment);
+
   if (!suffix) return segment;
   const name = segment.slice(0, suffix.index);
+
   return suffix[1] === "static" ? name : `#${name}`;
 }
 
@@ -590,18 +694,26 @@ function callName(id: string): string {
  */
 function namedLike(graph: CallGraph, name: string): string[] {
   const named = (key: string): string[] => [...(graph.byName.get(key) ?? []), ...(graph.byCaselessName.get(asciiLowerCase(key)) ?? [])];
+
   return [...new Set([...named(name), ...(name.startsWith("#") ? named(name.slice(1)) : [])])];
 }
 
 /** A `via` edge in words. `where`: with the position of a passed callable (a hole's message adds the edge's position itself). */
 function describeVia(edge: SnapshotEdge, where = true): string {
   if (edge.via === "preference" || edge.via === "argument" || edge.via === "observer" || (edge.via === "dispatch" && edge.site !== undefined) || edge.via?.startsWith("plugin:")) return describeConfig(edge);
+
   if (edge.via === "dispatch") return `the dispatch \`${edge.text ?? ""}\`${where ? ` at ${at(edge)}` : ""}`;
+
   if (edge.via === "injected") return `\`${edge.hook ?? edge.text ?? ""}\` injected at ${edge.site ?? "?"}`;
+
   if (edge.via === "callable-arg") return `the callable \`${edge.text ?? ""}\` passed${where ? ` at ${at(edge)}` : " as an argument"}`;
+
   if (edge.via === "closure-arg") return `the closure passed at ${edge.site ?? at(edge)}`;
+
   if (edge.via === "generated-factory") return `the generated factory (${edge.binding ?? edge.text ?? ""})${where ? ` at ${at(edge)}` : ""}`;
+
   if (edge.via === "object-manager") return `the ObjectManager (${edge.binding ?? edge.text ?? ""})${where ? ` at ${at(edge)}` : ""}`;
+
   return `the default of the hook \`${edge.hook ?? edge.text ?? ""}\``;
 }
 
@@ -613,9 +725,13 @@ function describeVia(edge: SnapshotEdge, where = true): string {
 export function describeConfig(edge: Pick<SnapshotEdge, "via" | "binding" | "site" | "scope">): string {
   const where = edge.site ? ` in \`${edge.site.replace(/:\d+$/, "")}\`` : "";
   const scope = edge.scope && edge.scope !== "global" ? ` (scope ${edge.scope})` : "";
+
   if (edge.via === "preference") return `the preference ${edge.binding ?? ""}${where}${scope}`;
+
   if (edge.via === "argument") return `${edge.binding ?? "a constructor argument"}${where}${scope}`;
+
   if (edge.via === "observer") return `the ${edge.binding ?? "observer"}${where}${scope}`;
+
   return `the ${edge.binding ?? "plugin"} (${edge.via})${where}${scope}`;
 }
 
@@ -639,13 +755,17 @@ function closureOnly(edge: SnapshotEdge, behavior: boolean): boolean {
 
 function describeHole(edge: SnapshotEdge, target: string, input: FlowInput): string {
   if (edge.resolution === "ambiguous") return `ambiguous call \`${edge.text ?? edge.source}\` [${(edge.candidates ?? []).join(", ")}]`;
+
   if (edge.resolution === "resolved") {
     if (edge.via) {
       const by = input.staticSetBy === "config" ? "keylang.json check.static" : "--static";
+
       return `${describeVia(edge, false)} (not followed in static mode ${input.static}, set by ${by})`;
     }
+
     return `\`${edge.text ?? ""}\` may dispatch to another \`${lastSegment(edge.text ?? callName(target))}\``;
   }
+
   return edge.reason ?? `unresolved call \`${edge.text ?? ""}\``;
 }
 
@@ -679,12 +799,16 @@ function at(edge: SnapshotEdge): string {
 function reachability(graph: CallGraph, input: FlowInput, parent: string | null, target: string): { verdict: Verdict["verdict"]; message: string } {
   if (parent === null) return { verdict: "unverified", message: "no trigger to reach it from" };
   const from = input.nodes[parent];
+
   if (!from) return { verdict: "unverified", message: `parent \`${parent}\` is not in the snapshot` };
+
   if (from.kind !== "fn" && from.kind !== "event") return { verdict: "unverified", message: `parent \`${parent}\` is a ${from.kind}, not a callable` };
   const to = input.nodes[target];
+
   // A step to a package is the import from the parent fn's module, not a call.
   // An import in some other module does not prove this step.
   if (to?.kind === "module" && to.layer === "external") return externalImport(input, parent, target);
+
   // An event (ADR 0022 п. 6) is reached through a dispatch and reaches its observers: a step like a fn.
   if (to && to.kind !== "fn" && to.kind !== "event") return { verdict: "unverified", message: `\`${target}\` is a ${to.kind}, not a callable` };
   const behavior = input.static === "behavior";
@@ -694,45 +818,60 @@ function reachability(graph: CallGraph, input: FlowInput, parent: string | null,
   // 1. A proof: breadth-first over the edges this mode follows, through bodies that surely run.
   const doubt = (id: string): string | undefined => graph.replaced.get(id) ?? graph.unreadable.get(id);
   const sure = graph.unreadable.has(parent) ? null : search(graph, parent, target, (step) => proves(step) && doubt(step.to) === undefined).route;
+
   if (sure) return { verdict: "ok", message: routeMessage(parent, target, sure) };
   // A body that may not run still may: its calls are reachable code for what follows.
   const { route, depth } = search(graph, parent, target, proves);
+
   if (route) {
     const blocked = graph.unreadable.get(parent) ?? routeSteps(parent, target, route).map((step) => doubt(step.to)).find((reason) => reason !== undefined);
+
     return { verdict: "unverified", message: `${routeMessage(parent, target, route)}, but ${blocked ?? "a body on the route may not run"}` };
   }
 
   // 2. A possible route through calls keylang cannot pin to one target.
   const { edge: uncertain, seen: possible } = possibleRoute(graph, input, parent, target, proves);
   const holes = [...depth.keys()].flatMap((id) => (graph.open.get(id) ?? []).map((edge) => ({ edge, depth: depth.get(id)! })));
+
   const more = (shown: SnapshotEdge): string => {
     const others = holes.filter((hole) => hole.edge !== shown).length;
+
     return others > 0 ? ` (and ${others} more unresolved call${others === 1 ? "" : "s"} in reachable code)` : "";
   };
+
   if (uncertain && closureOnly(uncertain, behavior)) {
     return { verdict: "unverified", message: `no resolved path from ${parent}; reached only through a closure of ${uncertain.source}: \`${uncertain.text ?? ""}\` at ${at(uncertain)} runs only when that function value is called${more(uncertain)}` };
   }
+
   if (uncertain) return { verdict: "unverified", message: `no resolved path from ${parent}; ${describeHole(uncertain, target, input)} at ${at(uncertain)} may reach it${more(uncertain)}` };
 
   // 3. Code that may run a fn without naming it.
   const routes = callersOf(graph, target);
   // `eval` and computed calls count in code reached by a possible route too, not only by a proof.
   const blocker = escapeOf(graph, input, routes, new Set([...depth.keys(), ...possible]));
+
   if (blocker) {
     // Only an unresolved call in code the escaping value is handed to can be the missing link.
     const near = blocker.from === null ? null : holeNear(graph, holes, blocker.from);
     const lead = near ? `no resolved path from ${parent}; ${describeHole(near, target, input)} at ${at(near)} may reach it${more(near)}` : `no call path from ${parent} in the static graph`;
+
     return { verdict: "unverified", message: `${lead}; ${blocker.reason}` };
   }
+
   // A dispatch whose name is computed at run time in reachable code may publish the event.
   const dynamicEvent = to?.kind === "event" ? (input.coverage ?? []).find((item) => item.kind === "dynamic-event" && typeof item.source === "string" && depth.has(item.source)) : undefined;
+
   if (dynamicEvent) return { verdict: "unverified", message: `no dispatch of \`${target}\` from ${parent} in the static graph; ${dynamicEvent.reason} at ${dynamicEvent.file}:${dynamicEvent.line} may publish it` };
   const unseen = holes.length > 0 && graph.opaque ? graph.opaque : null;
+
   if (unseen) return { verdict: "unverified", message: `no call path from ${parent} in the static graph; \`${unseen}\` is opaque and may call it` };
   // Calls read from a file that does not parse may be missing: an absence there is not confirmed.
   const unread = [...depth.keys()].map((id) => graph.unreadable.get(id)).find((reason) => reason !== undefined);
+
   if (unread) return { verdict: "unverified", message: `no call path from ${parent} in the static graph; ${unread}` };
+
   if (to?.kind === "event") return { verdict: "fail", message: `absence: no dispatch of \`${target}\` in the code ${parent} reaches; its dispatchers are called only by name, and no call from ${parent}'s reachable code can reach them` };
+
   return { verdict: "fail", message: `absence: no call path from ${parent}; \`${target}\` and its callers are called only by name, and no call from ${parent}'s reachable code can reach them; add a call to \`${target}\` in \`${parent}\` or in a function it reaches` };
 }
 
@@ -748,10 +887,14 @@ function reachability(graph: CallGraph, input: FlowInput, parent: string | null,
 function directCall(graph: CallGraph, input: FlowInput, parent: string | null, target: string): { verdict: Verdict["verdict"]; message: string } {
   if (parent === null) return { verdict: "unverified", message: "no trigger or step to call it from" };
   const from = input.nodes[parent];
+
   if (!from) return { verdict: "unverified", message: `parent \`${parent}\` is not in the snapshot` };
+
   if (from.kind !== "fn" && from.kind !== "event") return { verdict: "unverified", message: `parent \`${parent}\` is a ${from.kind}, not a callable` };
   const to = input.nodes[target];
+
   if (to?.kind === "module" && to.layer === "external") return externalImport(input, parent, target);
+
   // An event (ADR 0022 п. 6) is reached through a dispatch and reaches its observers: a step like a fn.
   if (to && to.kind !== "fn" && to.kind !== "event") return { verdict: "unverified", message: `\`${target}\` is a ${to.kind}, not a callable` };
   const behavior = input.static === "behavior";
@@ -760,31 +903,43 @@ function directCall(graph: CallGraph, input: FlowInput, parent: string | null, t
   const unread = graph.unreadable.get(parent);
   const direct = own.filter((step) => step.to === target);
   const sure = direct.find(proves);
+
   if (sure) {
     const message = routeMessage(parent, target, new Map([[target, sure]]));
+
     return unread ? { verdict: "unverified", message: `${message}, but ${unread}` } : { verdict: "ok", message };
   }
+
   const weak = direct[0];
+
   if (weak && closureOnly(weak.edge, behavior)) return { verdict: "unverified", message: `\`${weak.edge.text ?? ""}\` at ${at(weak.edge)} is in a closure of ${parent} and runs only when that function value is called` };
+
   if (weak) return { verdict: "unverified", message: `${describeHole(weak.edge, target, input)} at ${at(weak.edge)}` };
   const lead = `no resolved call from ${parent}`;
+
   if (unread) return { verdict: "unverified", message: `${lead}; ${unread}` };
+
   // A call keylang cannot pin to one target may be the target itself.
   for (const edge of graph.open.get(parent) ?? []) {
     const names = edge.resolution === "ambiguous" ? (edge.candidates ?? []).map(graph.callable) : namedLike(graph, edge.name ?? lastSegment(edge.text ?? ""));
+
     if (names.includes(target)) return { verdict: "unverified", message: `${lead}; ${describeHole(edge, target, input)} at ${at(edge)} may be it` };
   }
+
   // An override has the name of the method the call resolved to; in PHP, in any ASCII case.
   const caseless = caselessNames(to?.file);
   const sameName = (id: string): boolean => callName(id) === callName(target) || (caseless && asciiLowerCase(callName(id)) === asciiLowerCase(callName(target)));
   const override = own.find((step) => step.edge.text?.includes(".") && !step.edge.via && step.to !== target && sameName(step.to));
+
   if (override) return { verdict: "unverified", message: `${lead}; ${describeHole(override.edge, target, input)} at ${at(override.edge)}` };
   const blocker = escapeOf(graph, input, new Set([target]), new Set([parent]));
+
   if (blocker) return { verdict: "unverified", message: `${lead}; ${blocker.reason}` };
   // A path through other calls is what `step` proves; say so, it is the likely intent.
   const { route } = search(graph, parent, target, proves);
   const via = route ? routeSteps(parent, target, route).slice(0, -1).map((step) => step.to) : [];
   const hint = via.length > 0 ? ` (it reaches it via ${via.join(" → ")}; \`step\` proves a path)` : "";
+
   return { verdict: "fail", message: `absence: \`${parent}\` does not call \`${target}\`${hint}; add a direct call in \`${parent}\`` };
 }
 
@@ -797,21 +952,27 @@ function search(graph: CallGraph, parent: string, target: string, follow: (step:
   const previous = new Map<string, Step>();
   const depth = new Map<string, number>([[parent, 0]]);
   const queue = [parent];
+
   while (queue.length > 0) {
     const id = queue.shift()!;
+
     for (const step of graph.resolved.get(id) ?? []) {
       if (!follow(step)) continue;
+
       // A step that is its own parent is reached by recursion.
       if (step.to === target) {
         previous.set(target, step);
+
         return { route: previous, depth };
       }
+
       if (depth.has(step.to)) continue;
       depth.set(step.to, depth.get(id)! + 1);
       previous.set(step.to, step);
       queue.push(step.to);
     }
   }
+
   return { route: null, depth };
 }
 
@@ -820,22 +981,27 @@ function routeSteps(parent: string, target: string, previous: Map<string, Step>)
   const steps: Step[] = [];
   // do-while: a recursive step (target = parent) still has its route.
   let id = target;
+
   do {
     const step = previous.get(id)!;
     steps.unshift(step);
     id = step.from;
   } while (id !== parent);
+
   return steps;
 }
 
 /** The file module of a fn: the nearest module that is not a class. */
 function fileModule(nodes: FlowInput["nodes"], id: string): string | null {
   let cur = id;
+
   for (;;) {
     const dot = cur.lastIndexOf(".");
+
     if (dot === -1) return null;
     cur = cur.slice(0, dot);
     const node = nodes[cur];
+
     if (node?.kind === "module" && node.class !== true) return cur;
   }
 }
@@ -847,12 +1013,16 @@ function fileModule(nodes: FlowInput["nodes"], id: string): string | null {
  */
 function externalImport(input: FlowInput, parent: string, target: string): { verdict: Verdict["verdict"]; message: string } {
   const moduleId = fileModule(input.nodes, parent);
+
   if (moduleId === null) return { verdict: "unverified", message: `no module of \`${parent}\` imports \`${target}\`` };
+
   const imports = input.edges.filter(
     (item) => (item.kind === "import" || item.kind === "reexport") && item.resolution === "resolved" && item.source === moduleId && item.target === target,
   );
+
   if (imports.some((edge) => !edge.typeOnly)) return { verdict: "ok", message: `imported by \`${moduleId}\`` };
   const erased = imports[0] ? `; the type-only import at ${at(imports[0])} is erased from the code that runs` : "";
+
   return { verdict: "unverified", message: `no import of \`${target}\` from \`${moduleId}\`${erased}` };
 }
 
@@ -871,9 +1041,11 @@ function routeMessage(parent: string, target: string, previous: Map<string, Step
   const label = (step: Step, note: string): string => (steps.length === 1 ? note : `${step.from} → ${step.to}: ${note}`);
   const hooks = steps.filter((step) => step.edge.via).map((step) => label(step, describeVia(step.edge)));
   const docblocks = steps.filter((step) => step.edge.provenance === "docblock").map((step) => label(step, describeDocblock(step.edge)));
+
   if (steps.length === 1) return `called from ${parent}${hooks.length > 0 ? ` through ${hooks[0]}` : ""}${docblocks.length > 0 ? `, ${docblocks[0]}` : ""}`;
   const notes = [...hooks, ...docblocks];
   const through = notes.length > 0 ? ` (${notes.join("; ")})` : "";
+
   return `reachable from ${parent} via ${steps.slice(0, -1).map((step) => step.to).join(" → ")}${through}`;
 }
 
@@ -885,27 +1057,35 @@ function routeMessage(parent: string, target: string, previous: Map<string, Step
 function possibleRoute(graph: CallGraph, input: FlowInput, parent: string, target: string, proves: (step: Step) => boolean): { edge: SnapshotEdge | null; seen: Set<string> } {
   const first = new Map<string, SnapshotEdge | null>([[parent, null]]);
   const queue = [parent];
+
   while (queue.length > 0) {
     const id = queue.shift()!;
     const lead = first.get(id) ?? null;
     const next: { to: string; edge: SnapshotEdge | null }[] = [];
+
     for (const step of graph.resolved.get(id) ?? []) {
       next.push({ to: step.to, edge: proves(step) ? null : step.edge });
+
       // A method call may run an override of the same name.
       if (step.edge.text?.includes(".") && !step.edge.via) for (const other of namedLike(graph, callName(step.to))) if (other !== step.to) next.push({ to: other, edge: step.edge });
     }
+
     for (const edge of graph.open.get(id) ?? []) {
       const names = edge.resolution === "ambiguous" ? (edge.candidates ?? []) : namedLike(graph, edge.name ?? lastSegment(edge.text ?? ""));
+
       for (const other of names) next.push({ to: input.nodes[other]?.kind === "fn" ? other : graph.callable(other), edge });
     }
+
     for (const item of next) {
       if (first.has(item.to)) continue;
       const via = lead ?? item.edge;
+
       if (item.to === target) return { edge: via, seen: new Set(first.keys()) };
       first.set(item.to, via);
       queue.push(item.to);
     }
   }
+
   return { edge: null, seen: new Set(first.keys()) };
 }
 
@@ -913,6 +1093,7 @@ function possibleRoute(graph: CallGraph, input: FlowInput, parent: string, targe
 function callersOf(graph: CallGraph, target: string): Set<string> {
   const seen = new Set([target]);
   const stack = [target];
+
   while (stack.length > 0) {
     for (const step of graph.callers.get(stack.pop()!) ?? []) {
       if (seen.has(step.from)) continue;
@@ -920,6 +1101,7 @@ function callersOf(graph: CallGraph, target: string): Set<string> {
       stack.push(step.from);
     }
   }
+
   return seen;
 }
 
@@ -931,35 +1113,49 @@ function callersOf(graph: CallGraph, target: string): Set<string> {
 function escapeOf(graph: CallGraph, input: FlowInput, routes: Set<string>, reachable: ReadonlySet<string>): { reason: string; from: string | null } | null {
   for (const id of [...routes].sort()) {
     const escapes = input.nodes[id]?.escapes;
+
     if (escapes) return { reason: `${escapes.reason} at ${escapes.file}:${escapes.line}:${escapes.col}, so code keylang cannot follow may call \`${id}\``, from: fnAt(input, escapes.file, escapes.line) };
   }
+
   for (const id of [...routes].sort()) {
     const closure = (graph.callers.get(id) ?? []).find((step) => step.edge.closure);
+
     if (closure) return { reason: `\`${id}\` is called from a closure in \`${closure.from}\` at ${at(closure.edge)}, which code keylang cannot follow may run`, from: closure.from };
   }
+
   // PHP names a fn in any ASCII case: `call_user_func('HELPER')` mentions `helper`.
   const patterns = new Map<string, RegExp>();
+
   for (const id of routes) {
     const name = callName(id).replace(/^#/, "");
     const caseless = caselessNames(input.nodes[id]?.file);
     const key = `${caseless ? "i" : ""}:${name}`;
+
     if (!patterns.has(key)) patterns.set(key, identifierPattern(name, caseless));
   }
+
   const names = [...patterns.values()];
+
   for (const [file, items] of [...graph.unsupported].sort(([a], [b]) => compareText(a, b))) {
     for (const item of items) {
       // `eval`, `new Function`, `obj[key]()`, `import(expr)` in reachable code may call anything.
       const inReachable = [...reachable].some((id) => {
         const node = input.nodes[id];
+
         return node?.file === file && node.line !== null && item.line >= node.line && item.line <= (node.endLine ?? node.line);
       });
+
       const text = item.text;
       const mentions = text !== undefined && names.some((name) => name.test(text));
+
       if (inReachable || mentions) return { reason: `${item.reason} at ${file}:${item.line}:${item.col} may call it`, from: null };
     }
   }
+
   const config = graph.unreadConfig;
+
   if (config) return { reason: `${config.reason}, and the framework may call \`${[...routes].sort()[0] ?? ""}\` by it`, from: null };
+
   return null;
 }
 
@@ -971,16 +1167,20 @@ function escapeOf(graph: CallGraph, input: FlowInput, routes: Set<string>, reach
 function identifierPattern(name: string, caseless = false): RegExp {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const body = caseless ? escaped.replace(/[A-Za-z]/g, (letter) => `[${letter.toLowerCase()}${letter.toUpperCase()}]`) : escaped;
+
   return new RegExp(`(?<![\\p{ID_Continue}$\\u200c\\u200d])${body}(?![\\p{ID_Continue}$\\u200c\\u200d])`, "u");
 }
 
 /** The innermost fn whose declaration holds `file:line`. */
 function fnAt(input: FlowInput, file: string, line: number): string | null {
   let best: { id: string; line: number } | null = null;
+
   for (const [id, node] of Object.entries(input.nodes)) {
     if (node.kind !== "fn" || node.file !== file || node.line === null || line < node.line || line > (node.endLine ?? node.line)) continue;
+
     if (best === null || node.line > best.line) best = { id, line: node.line };
   }
+
   return best?.id ?? null;
 }
 
@@ -992,26 +1192,33 @@ function fnAt(input: FlowInput, file: string, line: number): string | null {
 function holeNear(graph: CallGraph, holes: { edge: SnapshotEdge }[], from: string): SnapshotEdge | null {
   const distance = new Map<string, number>([[from, 0]]);
   const queue = [from];
+
   while (queue.length > 0) {
     const id = queue.shift()!;
+
     for (const step of graph.resolved.get(id) ?? []) {
       if (distance.has(step.to)) continue;
       distance.set(step.to, distance.get(id)! + 1);
       queue.push(step.to);
     }
   }
+
   const near = holes.filter((hole) => distance.has(hole.edge.source));
   near.sort((a, b) => distance.get(a.edge.source)! - distance.get(b.edge.source)! || compareText(a.edge.file ?? "", b.edge.file ?? "") || a.edge.line - b.edge.line || a.edge.col - b.edge.col);
+
   return near[0]?.edge ?? null;
 }
 
 function moduleMembers(nodes: FlowInput["nodes"], id: string): "complete" | "opaque" | null {
   let cur = id;
+
   for (;;) {
     const dot = cur.lastIndexOf(".");
+
     if (dot === -1) return null;
     cur = cur.slice(0, dot);
     const node = nodes[cur];
+
     if (node?.kind === "module" && (node.members === "complete" || node.members === "opaque")) return node.members;
   }
 }
@@ -1023,6 +1230,7 @@ function moduleMembers(nodes: FlowInput["nodes"], id: string): "complete" | "opa
  */
 function collectPlanned(spec: SpecIR, input: FlowInput, diagnostics: Diagnostic[]): Map<string, Planned> {
   const planned = new Map<string, Planned>();
+
   for (const item of spec.planned) {
     // A duplicate is K002 of resolution (`resolve.ts`), with or without a snapshot.
     if (planned.has(item.id)) continue;
@@ -1031,10 +1239,12 @@ function collectPlanned(spec: SpecIR, input: FlowInput, diagnostics: Diagnostic[
     const code = input.nodes[item.id];
     const entry: Planned = { kind, signature, file: item.file, span: item.span, implemented: false };
     planned.set(item.id, entry);
+
     if (!code) continue;
     entry.implemented = true;
     const where = codeLocation(item.id, code, input.edges);
     const mismatch = plannedMismatch(item, code);
+
     if (mismatch === "kind") {
       diagnostics.push(diagnostic("K201", item.file, item.span, `planned ${kind} \`${item.id}\` is implemented as a ${code.kind} (${where})`));
     } else if (mismatch === "signature") {
@@ -1043,6 +1253,7 @@ function collectPlanned(spec: SpecIR, input: FlowInput, diagnostics: Diagnostic[
       diagnostics.push(diagnostic("K202", item.file, item.span, `planned ${kind} \`${item.id}\` is implemented (${where}); remove the declaration`));
     }
   }
+
   return planned;
 }
 
@@ -1053,17 +1264,22 @@ function collectPlanned(spec: SpecIR, input: FlowInput, diagnostics: Diagnostic[
 function codeLocation(id: string, code: SnapshotNodeView, edges: readonly SnapshotEdge[]): string {
   if (code.file) return `${code.file}:${code.line ?? 1}`;
   let first: SnapshotEdge | null = null;
+
   for (const edge of edges) {
     if (edge.target !== id || edge.file === null || (edge.kind !== "import" && edge.kind !== "reexport")) continue;
+
     if (first === null || compareText(edge.file, first.file!) < 0 || (edge.file === first.file && edge.line < first.line)) first = edge;
   }
+
   return first === null ? "in the code" : `imported by ${first.file}:${first.line}`;
 }
 
 /** How the code differs from a `planned` declaration of the same id: K201 for a kind or a signature, null (K202) when it matches. */
 export function plannedMismatch(item: { decl: string; signature: string | null }, code: { kind: string; signature?: string | null; file?: string | null }): "kind" | "signature" | null {
   if (code.kind !== item.decl) return "kind";
+
   if (item.signature !== null && code.signature && !sameSignature(item.signature, code.signature, code.file ?? null)) return "signature";
+
   return null;
 }
 
@@ -1078,9 +1294,12 @@ function sameSignature(planned: string, code: string, file: string | null): bool
   const plan = normalizeSignature(planned);
   const written = normalizeSignature(code);
   const receiverless = (text: string): string => (file !== null && file.endsWith(".py") ? text.replace(/^\((?:self|cls)(?:,|(?=\)))/, "(") : text);
+
   if (plan === written || plan === receiverless(written)) return true;
+
   if (parameterList(plan) !== plan) return false;
   const params = parameterList(written);
+
   return params !== null && (plan === params || plan === receiverless(params));
 }
 
@@ -1088,10 +1307,12 @@ function sameSignature(planned: string, code: string, file: string | null): bool
 function parameterList(signature: string): string | null {
   if (!signature.startsWith("(")) return null;
   let depth = 0;
+
   for (let i = 0; i < signature.length; i++) {
     if (signature[i] === "(") depth++;
     else if (signature[i] === ")" && --depth === 0) return signature.slice(0, i + 1);
   }
+
   return null;
 }
 

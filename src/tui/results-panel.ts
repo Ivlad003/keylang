@@ -65,6 +65,7 @@ export class ResultsPanel {
   /** F6 or the palette: the pinned current analysis and the history of operation records. */
   openResults(): void {
     const results = this.state.results;
+
     // Already open: keep the current selection — re-entering must not capture a stale focus or reset the record.
     if (results.open) return;
     results.open = true;
@@ -92,44 +93,61 @@ export class ResultsPanel {
   /** Enter in the panel: reruns the selected record with its exact parameters. */
   private rerunRecord(): void {
     const record = this.state.records[this.state.results.index];
+
     if (!record) return;
+
     // MERGE holds the editor: a rerun would open another MERGE over the decided hunks, or write while they wait.
     // The same reason the palette gives for every action that is not read-only (`mergeOnly`).
     if (this.state.merge !== null) {
       this.state.message = MERGE_REASON;
+
       return;
     }
+
     if (record.status === "running") {
       this.state.message = "this operation is still running";
+
       return;
     }
+
     // The clip's reply belongs to its conversation: a rerun from here would answer no one.
     if (record.params.kind === "assistant-reply") {
       this.state.message = "a reply of the clip: ask again in its chat (F7)";
+
       return;
     }
+
     // An export was made from the target as its form showed it: a new one shows the target again first.
     if (record.params.kind === "export") {
       this.state.message = "export: select the report and press e: the form shows the target again before Save";
+
       return;
     }
+
     // A proposed draft: Enter opens its MERGE (checked again: a proposal merged or rewritten since is judged as it is now).
     if ((record.result?.kind === "draft-flow" || record.result?.kind === "draft-rules" || record.result?.kind === "code-to-spec") && record.result.payload?.proposal != null && record.result.payload.candidate !== null) {
       this.closeResults();
+
       return this.host.openMerge(record.result.payload.candidate.target);
     }
+
     // The model's questions: Enter opens MERGE of the feature file (checked again, as a draft's).
     if (record.result?.kind === "feature-questions" && record.result.payload?.proposal != null) {
       this.closeResults();
+
       return this.host.openMerge(record.result.payload.file);
     }
+
     // Spec-to-code proposes several files: Enter opens the proposals list on the first still waiting, so each merges on its own.
     if (record.result?.kind === "spec-to-code" && (record.result.payload?.proposals.length ?? 0) > 0) {
       this.closeResults();
+
       return this.host.openProposals(record.result.payload!.proposals.map((store) => store.slice(PROPOSALS_DIR.length + 1)));
     }
+
     // A current layout draft: Enter moves its layers into keylang.json's buffer; an outdated one drafts again.
     if (record.result?.kind === "draft-layout" && record.result.payload !== null && record.outdated === null) return this.host.moveLayers(record);
+
     // The same save step as the first run: a feature rerun reads the saved files; doctor reads no specs.
     return this.host.requestOperation(record.action, record.params);
   }
@@ -140,6 +158,7 @@ export class ResultsPanel {
     const results = this.state.results;
     const records = this.state.records;
     const page = Math.max(1, layout(this.state).panel.height - 4);
+
     const select = (next: number): void => {
       results.index = Math.max(0, Math.min(Math.max(0, records.length - 1), next));
       // Each record shows its report from the top; a selection change never keeps a scroll offset of another report.
@@ -147,6 +166,7 @@ export class ResultsPanel {
       results.left = 0;
       results.gap = 0;
     };
+
     switch (event.name) {
       case "left":
       case "right": {
@@ -154,37 +174,49 @@ export class ResultsPanel {
         if (!results.scrollReport) return;
         const max = reportOverflow(resultsReportRows(this.state), layout(this.state).panel.width - 4);
         results.left = Math.max(0, Math.min(max, results.left + (event.name === "left" ? -SIDE_STEP : SIDE_STEP)));
+
         return;
       }
+
       case "up":
       case "k":
         if (results.scrollReport) return this.scrollReport(-1);
+
         if (results.index === 0) {
           // The pinned current analysis sits above the records.
           results.entry = "analysis";
           results.top = 0;
+
           return this.clampFinding();
         }
+
         return select(results.index - 1);
       case "down":
       case "j":
         if (results.scrollReport) return this.scrollReport(1);
+
         return select(results.index + 1);
       case "pageup":
         if (results.scrollReport) return this.scrollReport(-page);
+
         return select(results.index - page);
       case "pagedown":
         if (results.scrollReport) return this.scrollReport(page);
+
         return select(results.index + page);
       case "tab":
         results.scrollReport = !results.scrollReport;
+
         if (results.scrollReport) this.showGapReason();
+
         return;
       case "enter":
         // Over the gaps of a feature record Enter opens the selected gap; over the entries it reruns.
         if (results.scrollReport && this.selectedGap()) return this.openGap();
+
         // Over a wire report: the generated file in the read-only viewer, or the first blocking error.
         if (results.scrollReport && this.wireTarget()) return this.openWireTarget();
+
         return this.rerunRecord();
       case "f5":
         return this.host.reanalyze();
@@ -200,17 +232,22 @@ export class ResultsPanel {
       case "g":
         // Over a planned gap of a feature report: the spec-to-code form for the same ID.
         if (results.scrollReport) return this.specCodeForGap();
+
         return;
       case "m": {
         // On a feature report: the model's open questions for that feature, as a proposal (c4-zoom/11).
         const record = records[results.index];
+
         if (record?.result?.kind === "feature" && record.params.kind === "feature") return this.host.askFeatureQuestions(record.params.slug);
+
         return;
       }
+
       case "q":
         return this.host.quit();
       case "?":
         this.state.help = true;
+
         return;
       default:
         return;
@@ -221,32 +258,39 @@ export class ResultsPanel {
   private findingsKey(event: KeyEvent): void {
     const results = this.state.results;
     const page = Math.max(1, findingsListRows(this.state, layout(this.state).panel));
+
     switch (event.name) {
       case "up":
       case "k":
         if (results.scrollReport) return this.moveFinding(-1);
+
         return; // The analysis entry is pinned at the top; nothing above it.
       case "down":
       case "j":
         if (results.scrollReport) return this.moveFinding(1);
+
         if (this.state.records.length > 0) {
           // Below the pinned entry come the records.
           results.entry = "record";
           results.index = 0;
           results.top = 0;
         }
+
         return;
       case "pageup":
       case "pagedown":
         if (results.scrollReport) return this.moveFinding(event.name === "pageup" ? -page : page);
+
         return;
       case "tab":
         // Tab switches the arrows between the entries and the findings.
         results.scrollReport = !results.scrollReport;
+
         return;
       case "enter":
         // Enter opens the selected finding straight away; back in the list the arrows select findings.
         results.scrollReport = true;
+
         return this.openFinding();
       case "f5":
         return this.host.reanalyze();
@@ -259,12 +303,15 @@ export class ResultsPanel {
         return this.host.quit();
       case "?":
         this.state.help = true;
+
         return;
       default: {
         // The filters hide verdicts; the report itself and its totals stay unchanged.
         const verdict = FILTER_KEYS.get(event.name);
+
         if (verdict === undefined) return;
         results.filter[verdict] = !results.filter[verdict];
+
         return this.clampFinding();
       }
     }
@@ -282,7 +329,9 @@ export class ResultsPanel {
     const visible = visibleFindings(findingsOf(this.state.analysis), results.filter);
     results.finding = Math.max(0, Math.min(results.finding, Math.max(0, visible.length - 1)));
     const rows = findingsListRows(this.state, layout(this.state).panel);
+
     if (results.finding < results.top) results.top = results.finding;
+
     if (results.finding >= results.top + rows) results.top = results.finding - rows + 1;
   }
 
@@ -299,19 +348,24 @@ export class ResultsPanel {
    */
   private openFinding(): void {
     const finding = this.selectedFinding();
+
     if (finding) this.openTarget(finding.file, finding.line, finding.col);
   }
 
   /** Shows a spec position (1-based line, code-point column) or a code line with the F6 panel hidden; the origin is kept for the way back. */
   private openTarget(file: string, targetLine: number, targetCol: number): void {
     const results = this.state.results;
+
     // Leaving MERGE for the target would drop the open hunk decisions.
     if (this.state.mode === "merge") {
       this.state.message = "finish the merge first: it opens after MERGE";
+
       return;
     }
+
     const origin = { path: this.state.current, cursor: { ...this.state.cursor }, top: this.state.top, mode: this.state.mode, code: this.state.code };
     const abs = resolve(this.state.root, file);
+
     if (extname(file) === ".md" && !file.startsWith("..")) {
       const lines = bufferLines(this.host.load(file));
       const line = Math.max(0, Math.min(targetLine - 1, lines.length - 1));
@@ -322,6 +376,7 @@ export class ResultsPanel {
     } else if (!this.host.showCode(file, abs, targetLine)) {
       return;
     }
+
     results.viewing = true;
     results.origin = origin;
     this.state.message = `Esc or Ctrl+O: back to the ${results.entry === "analysis" ? "findings list" : "report"} · F6: stay here`;
@@ -333,11 +388,14 @@ export class ResultsPanel {
     const origin = results.origin;
     results.viewing = false;
     results.origin = null;
+
     if (!origin) return;
+
     if (origin.path !== null) {
       this.host.load(origin.path);
       this.state.filesIndex = Math.max(0, this.state.files.indexOf(origin.path));
     }
+
     this.state.current = origin.path;
     this.state.cursor = { ...origin.cursor };
     this.state.mode = origin.mode;
@@ -358,15 +416,20 @@ export class ResultsPanel {
     // A parse or trace-plan report is long text under its items: ↑↓ select one, a page or the wheel scrolls the text.
     const kind = this.state.records[results.index]?.kind;
     const scrollText = (kind === "parse" || kind === "trace-plan") && Math.abs(delta) > 1;
+
     if (gaps.length > 0 && !scrollText) {
       // A feature report: the arrows select a gap, and the report scrolls to keep it in view.
       results.gap = Math.max(0, Math.min(results.gap + delta, gaps.length - 1));
       const row = rows.findIndex((item) => item.gap === results.gap);
       const height = Math.max(1, resultsSplit(this.state, layout(this.state).panel.height).report);
+
       if (row < results.top) results.top = row;
+
       if (row >= results.top + height) results.top = row - height + 1;
+
       return this.showGapReason();
     }
+
     // The last page ends at the report's last row: a page down never leaves a lone row on an empty panel.
     const height = Math.max(1, resultsSplit(this.state, layout(this.state).panel.height).report);
     results.top = Math.max(0, Math.min(results.top + delta, Math.max(0, rows.length - height)));
@@ -379,24 +442,30 @@ export class ResultsPanel {
   /** The report row cuts a long reason; the message line shows the selected item's whole reason. */
   private showGapReason(): void {
     const gap = this.selectedGap();
+
     if (gap) this.state.message = `${gap.file === "" ? `${gap.text} · no position in the code` : `${gap.text} · Enter opens ${gap.file}:${gap.line}`}${this.plannedGap() !== null ? " · g: spec-to-code" : ""}`;
   }
 
   /** The ID of the selected gap of a feature report when it is a planned fn no code implements yet, else null. */
   private plannedGap(): string | null {
     const result = this.state.records[this.state.results.index]?.result;
+
     if (result?.kind !== "feature" || result.payload === null) return null;
     const entry = featureItems(result.payload.report)[this.state.results.gap];
+
     return entry !== undefined && !entry.hint && entry.item.kind === "planned" && this.host.plannedFns().includes(entry.item.id) ? entry.item.id : null;
   }
 
   /** `g` on a planned gap: the spec-to-code form with its ID; the report stays in the history. */
   private specCodeForGap(): void {
     const id = this.plannedGap();
+
     if (id === null) {
       this.state.message = "g drafts code for a planned fn gap of a feature report";
+
       return;
     }
+
     this.closeResults();
     this.host.openSpecCode(id);
   }
@@ -404,21 +473,26 @@ export class ResultsPanel {
   /** Enter on a gap or a check result: its file and position, like a finding (Esc / Ctrl+O come back to the report). */
   private openGap(): void {
     const gap = this.selectedGap();
+
     if (gap && gap.file !== "") this.openTarget(gap.file, gap.line, gap.col);
   }
 
   /** What Enter over the selected wire report opens: the first blocking error, else the generated file when it is on disk. */
   private wireTarget(): { file: string; line: number; col: number } | null {
     const result = this.state.records[this.state.results.index]?.result;
+
     if (result?.kind !== "wire" || result.payload === null) return null;
     const first = result.payload.diagnostics[0];
+
     if (first) return { file: first.file, line: first.span.start.line, col: first.span.start.col };
+
     return existsSync(resolve(this.state.root, result.payload.file)) ? { file: result.payload.file, line: 1, col: 1 } : null;
   }
 
   /** The generated code opens in the read-only viewer, not as a writable buffer; Esc / Ctrl+O come back to the report. */
   private openWireTarget(): void {
     const target = this.wireTarget();
+
     if (target) this.openTarget(target.file, target.line, target.col);
   }
 }

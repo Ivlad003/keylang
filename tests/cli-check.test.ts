@@ -43,6 +43,7 @@ test("check finds the snapshot for any spelling of the spec path", (t) => {
   const dir = repoCopy();
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   appendFileSync(join(dir, "src/domain/order.ts"), 'import { save } from "../infra/db.ts";\nexport function again(o: Order): void { save(o); }\n');
+
   for (const [cwd, args] of [
     [dir, ["check", "keylang"]],
     [dir, ["check", "./keylang"]],
@@ -127,7 +128,7 @@ test("explain-edge lists import and call edges in a stable order, and holes when
   assert.equal(both.status, 0, both.stderr);
   const lines = both.stdout.trimEnd().split("\n");
   assert.ok(lines.some((line) => /^call resolved syntactic src\/app\/checkout\.ts:\d+:\d+-\d+:\d+ .* app\.checkout\.\w+ → domain\.order\.\w+$/.test(line)), both.stdout);
-  assert.ok(lines.some((line) => /^import resolved syntactic src\/app\/checkout\.ts:1:1-/.test(line)), both.stdout);
+  assert.ok(lines.some((line) => line.startsWith('import resolved syntactic src/app/checkout.ts:1:1-')), both.stdout);
   assert.deepEqual(lines, [...lines].sort((a, b) => (a.split(" ")[0]! < b.split(" ")[0]! ? -1 : a.split(" ")[0]! > b.split(" ")[0]! ? 1 : 0)));
   assert.equal(keylang(dir, ["check", "--explain-edge", "app", "domain"]).stdout, both.stdout);
   const small = mainRepo(t, { "src/a.ts": "export function a(): void {}\n", "src/b.ts": "export function b(): void {}\n" }, "");
@@ -208,10 +209,12 @@ function assertSarif(report: any): void {
   assert.equal(typeof run.tool.driver.name, "string");
   const ids = (run.tool.driver.rules as { id: string; shortDescription: { text: string } }[]).map((rule) => rule.id);
   assert.equal(new Set(ids).size, ids.length);
+
   for (const result of run.results) {
     assert.ok(["error", "warning", "note", "none"].includes(result.level), result.level);
     assert.equal(typeof result.message.text, "string");
     assert.equal(ids[result.ruleIndex], result.ruleId);
+
     for (const location of result.locations) {
       const physical = location.physicalLocation;
       assert.equal(typeof physical.artifactLocation.uri, "string");
@@ -238,10 +241,12 @@ test("formats carry fail, warning, unverified, and coverage; --strict exits alik
   const unverified = body.results.find((row) => row.verdict === "unverified" && row.criterion === "deny domain infra");
   assert.ok(unverified && unverified.snapshotId === body.snapshotId, json.stdout);
   assert.ok(body.coverage.some((item) => item.reason === "unresolved import `./missing.ts`"));
+
   for (const format of ["human", "json", "sarif", "github"]) {
     assert.equal(results(["--format", format]).status, 0, format);
     assert.equal(results(["--format", format, "--strict"]).status, 1, format);
   }
+
   const sarif = JSON.parse(results(["--format", "sarif"]).stdout);
   assertSarif(sarif);
   const levels = (sarif.runs[0].results as { level: string; ruleId: string }[]).map((result) => `${result.ruleId}:${result.level}`);
@@ -252,7 +257,7 @@ test("formats carry fail, warning, unverified, and coverage; --strict exits alik
   assert.match(github, /^::notice file=keylang\/rules\.md,line=5,col=1,title=unverified::unresolved import `\.\/missing\.ts` \(src\/domain\/lonely\.ts:1:1\)$/m);
   const denyOk = JSON.parse(results(["--format", "json"]).stdout).results as { criterion: string; verdict: string; evidence: string; specHash?: string }[];
   const convergence = denyOk.filter((row) => row.verdict === "ok");
-  assert.ok(convergence.every((row) => /^convergence: /.test(row.evidence) && /^[0-9a-f]{64}$/.test(row.specHash ?? "")), JSON.stringify(convergence));
+  assert.ok(convergence.every((row) => row.evidence.startsWith('convergence: ') && /^[0-9a-f]{64}$/.test(row.specHash ?? "")), JSON.stringify(convergence));
   const bad = keylang(dir, ["check", "--format", "xml"]);
   assert.equal(bad.status, 2);
   assert.match(bad.stderr, /unknown --format `xml`; expected human, json, sarif, github/);
@@ -262,6 +267,7 @@ test("keylang.json errors name the file and the field, exit 2", (t) => {
   const dir = repoCopy();
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const config = JSON.parse(readFileSync(join(dir, "keylang.json"), "utf8"));
+
   const cases: [unknown, RegExp][] = [
     [{ ...config, check: { tests: "reports/none.json" } }, /keylang\.json: check\.tests: no such file `reports\/none\.json`/],
     [{ ...config, check: { tests: 5 } }, /keylang\.json: `check\.tests` must be a path, got 5/],
@@ -269,12 +275,14 @@ test("keylang.json errors name the file and the field, exit 2", (t) => {
     [{ ...config, languages: ["cobol"] }, /keylang\.json: `languages\[0\]` must be one of "javascript", "php", "python", "rust", "typescript", got "cobol"/],
     [{ ...config, layers: { domain: 1 } }, /keylang\.json: `layers\.domain` must be a glob or an array of globs, got 1/],
   ];
+
   for (const [body, message] of cases) {
     writeFileSync(join(dir, "keylang.json"), JSON.stringify(body));
     const checked = keylang(dir, ["check"]);
     assert.equal(checked.status, 2, checked.stdout + checked.stderr);
     assert.match(checked.stderr, message);
   }
+
   writeFileSync(join(dir, "keylang.json"), "{ nope");
   const broken = keylang(dir, ["map"]);
   assert.equal(broken.status, 2);

@@ -14,10 +14,12 @@ import { fileURLToPath } from "node:url";
 import { briefOf } from "../src/brief.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
 
 function keylang(cwd: string, args: string[], env: Record<string, string | undefined> = {}): { status: number | null; stdout: string; stderr: string } {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8", env: { ...process.env, ...env } });
+
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
@@ -25,6 +27,7 @@ function copy(t: TestContext): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-explained-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   cpSync(join(root, "tests/fixtures/explained"), dir, { recursive: true });
+
   return dir;
 }
 
@@ -90,6 +93,7 @@ test("map: documentation comments reach the snapshot as `doc`; the canonical map
 function configure(dir: string, explain: Record<string, unknown> | undefined): void {
   const file = join(dir, "keylang.json");
   const config = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+
   if (explain === undefined) delete config.explain;
   else config.explain = explain;
   writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`);
@@ -185,6 +189,7 @@ interface Mock {
 /** A local stand-in for the Messages API: no network, answers with `mock.reply`. */
 async function mockAnthropic(t: TestContext): Promise<Mock> {
   const mock: Mock = { url: "", prompts: [], reply: () => "" };
+
   const server = createServer((req, res) => {
     let data = "";
     req.on("data", (chunk: Buffer) => (data += chunk.toString()));
@@ -193,18 +198,23 @@ async function mockAnthropic(t: TestContext): Promise<Mock> {
       const prompt = body.messages[0]?.content ?? "";
       mock.prompts.push({ system: body.system, prompt });
       const answer = mock.reply(prompt);
+
       if (answer instanceof Error) {
         res.writeHead(400, { "content-type": "application/json" });
         res.end(JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: answer.message } }));
+
         return;
       }
+
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ id: "msg_1", type: "message", role: "assistant", model: "claude-opus-5", content: [{ type: "text", text: answer }], stop_reason: "end_turn", stop_details: null, usage: { input_tokens: 10, output_tokens: 10 } }));
     });
   });
+
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(() => server.close());
   mock.url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
   return mock;
 }
 
@@ -223,6 +233,7 @@ function keylangAsync(cwd: string, args: string[], env: Record<string, string | 
 /** The node a prompt asks about: the first line of the summary is `<kind> <id> …`; the repository's prompt names it. */
 function askedId(prompt: string): string {
   if (prompt.startsWith("Repository: ")) return "@system";
+
   return /^Node:\n(?:planned )?\S+ (\S+)/.exec(prompt)?.[1] ?? "?";
 }
 
@@ -230,6 +241,7 @@ function withModel(dir: string, mock: Mock): Record<string, string | undefined> 
   configure(dir, { map: true });
   const file = join(dir, "keylang.json");
   writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), agent: "anthropic:claude-opus-5" }));
+
   return { ANTHROPIC_BASE_URL: mock.url, ANTHROPIC_API_KEY: "test-key", ANTHROPIC_AUTH_TOKEN: undefined, HOME: dir };
 }
 
@@ -418,17 +430,21 @@ test("explained map navigation: every link to a map file lands on an anchor, cod
   const text = (name: string): string => readFileSync(join(explainedDir, name), "utf8");
   const anchors = new Map(files.map((name) => [name, new Set([...text(name).matchAll(/<a id="([^"]+)"><\/a>/g)].map((m) => m[1]!))]));
   let links = 0;
+
   for (const name of files) {
     for (const [, file, anchor] of text(name).matchAll(/\]\(([\w-]*\.md)?(?:#([^)]*))?\)/g)) {
       const target = file ?? name;
       assert.ok(anchors.has(target), `${name}: link to a missing file ${target}`);
+
       if (anchor !== undefined) assert.ok(anchors.get(target)!.has(anchor), `${name}: #${anchor} is not an anchor of ${target}`);
       links++;
     }
   }
+
   assert.ok(links >= 15, `${links} links checked`);
   // Code links start from the explained map's directory and land on the lines the map links to.
   const codeLinks = (text: string): string[] => [...text.matchAll(/\]\((\.\.\/[^)]*#L\d+)\)/g)].map((m) => m[1]!).sort();
+
   for (const name of ["app.md", "domain.md"]) assert.deepEqual(codeLinks(text(name)), codeLinks(readFileSync(join(dir, "keylang/map", name), "utf8")), name);
   const app = text("app.md");
   assert.match(app, /^\[README\]\(README\.md\) · modules: \[checkout\]\(#app\.checkout\) · \[util\]\(#app\.util\)$/m);
@@ -461,26 +477,31 @@ test("explain --stale: a changed module constant or class field no fn reads make
   // Ticket review-2026-10-06/70: the baseline of a module or class saw only the fns and types under it.
   const dir = mkdtempSync(join(tmpdir(), "keylang-explained-values-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+
   const sources: Record<string, string> = {
     "src/config.ts": "export const LIMIT = 100;\n\nexport function twice(n: number): number {\n  return n * 2;\n}\n\nexport class Box {\n  size = 3;\n  constructor(private cap = 10) {}\n  area(): number {\n    return 1;\n  }\n}\n",
     "src/limits.py": "MAX = 100\n\n\ndef twice(n):\n    return n * 2\n\n\nclass Box:\n    def __init__(self):\n        self.size = 3\n\n    def area(self):\n        return 1\n",
     "src/box.php": "<?php\n\nconst MAX = 100;\n\nfunction twice($n) {\n    return $n * 2;\n}\n\nclass Box {\n    public $size = 3;\n\n    public function area() {\n        return 1;\n    }\n}\n",
     "src/plain.ts": "export function once(n: number): number {\n  return n;\n}\n",
   };
+
   writeFileSync(join(dir, "keylang.json"), JSON.stringify({ languages: ["typescript", "python", "php"], layers: { main: ["src/**"] } }));
   mkdirSync(join(dir, "src"));
+
   for (const [file, text] of Object.entries(sources)) writeFileSync(join(dir, file), text);
   const mock = await mockAnthropic(t);
   const env = withModel(dir, mock);
   mock.reply = (prompt) => `Brief of ${askedId(prompt)}.`;
   const run = await keylangAsync(dir, ["explain", "--missing", "--llm"], env);
   assert.equal(run.status, 0, run.stderr);
+
   const stale = (): string[] =>
     keylang(dir, ["explain", "--stale"])
       .stdout.split("\n")
       .filter((line) => line.includes(": stale"))
       .map((line) => line.split(" ")[0]!)
       .sort();
+
   assert.deepEqual(stale(), []);
   const edit = (file: string, from: string, to: string): void => writeFileSync(join(dir, file), sources[file]!.replace(from, to));
 

@@ -19,22 +19,29 @@ import type { IntegrationsRequest, OperationContext, OperationEnvelope } from ".
  */
 export async function runIntegrations(request: IntegrationsRequest, context: OperationContext): Promise<OperationEnvelope<"integrations">> {
   if (!isAbsolute(request.root)) return empty("integrations", "failed", 2, "integrations: root must be an absolute path");
+
   if (context.signal?.aborted) return empty("integrations", "cancelled", null);
   context.onProgress?.({ text: "reading a fresh snapshot of the saved code" });
   let analyzed: Analysis;
+
   try {
     analyzed = await (context.analyze ?? analyze)({ root: request.root, withoutEvidence: true, saveFacts: true });
   } catch (error) {
     return empty("integrations", "failed", 2, `integrations: ${errorText(error)}`);
   }
+
   if (context.signal?.aborted) return empty("integrations", "cancelled", null);
   const snapshot = analyzed.snapshot;
+
   if (snapshot === null) return empty("integrations", "failed", 2, "integrations: no code to read (`languages` in keylang.json is empty)");
   context.onProgress?.({ text: "matching calls against resources/integrations.json" });
+
   try {
     const report = await findIntegrations(analyzed.config, snapshot, loadIntegrations(), specifiedTriggers(analyzed.spec.flows));
+
     if (context.signal?.aborted) return empty("integrations", "cancelled", null);
     const text = integrationsText(report);
+
     return { ...empty("integrations", "completed", 0), payload: { ...report, text }, messages: text.trimEnd().split("\n").map((line) => ({ level: "info" as const, text: line })) };
   } catch (error) {
     return empty("integrations", "failed", 2, `integrations: ${errorText(error)}`);

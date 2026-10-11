@@ -12,15 +12,20 @@ import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
 
 const LAYERS = { languages: ["typescript"], module: "file", layers: { app: ["src/app/**"], domain: ["src/domain/**"] } };
+
 const SHOP = "export function buy(id: string): void {\n  pay(id);\n}\nexport function pay(id: string): void {}\n";
+
 const ORDER = "export function price(): number {\n  return 2;\n}\n";
+
 const REFUND = "# flow refund\n\n- planned fn domain.order.refund (id: string) → void\n- trigger app.shop.buy\n  - step domain.order.refund\n";
 
 function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8" });
+
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
@@ -28,6 +33,7 @@ function repo(t: TestContext, files: Record<string, string>): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-authoring-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   write(dir, { "keylang.json": `${JSON.stringify(LAYERS)}\n`, "src/app/shop.ts": SHOP, "src/domain/order.ts": ORDER, ...files });
+
   return dir;
 }
 
@@ -42,6 +48,7 @@ type Item = { kind: string; id: string; line: number; col: number; reason: strin
 
 function report(dir: string, slug: string): { status: number | null; done: boolean; stage: string; gaps: Item[]; hints: Item[] } {
   const r = keylang(dir, ["feature", slug, "--format", "json"]);
+
   return { status: r.status, ...(JSON.parse(r.stdout) as { done: boolean; stage: string; gaps: Item[]; hints: Item[] }) };
 }
 
@@ -79,6 +86,7 @@ test("feature: a planned id outside the layers and a planned fn without a signat
   const dir = repo(t, {
     "keylang/features/later.md": "# flow later\n\n- planned module nolayer.thing\n- planned module external.stripe\n- planned fn app.shop.later\n- trigger app.shop.buy\n  - step app.shop.pay\n",
   });
+
   const later = report(dir, "later");
   assert.equal(later.stage, "structure");
   assert.deepEqual(

@@ -46,20 +46,27 @@ export class Grid {
     if (y < 0 || y >= this.rows) return 0;
     const end = Math.min(this.cols, x + Math.max(0, limit));
     let col = x;
+
     for (const cluster of graphemes(text)) {
       const width = cluster === "\t" ? 1 : graphemeWidth(cluster);
+
       if (width === 0) continue;
+
       if (col + width > end) break;
+
       if (col >= 0) {
         this.clearWide(col, y);
         this.cells[y]![col] = { ch: cluster === "\t" ? " " : cluster, style };
+
         if (width === 2) {
           this.clearWide(col + 1, y);
           this.cells[y]![col + 1] = { ch: "", style };
         }
       }
+
       col += width;
     }
+
     return col - x;
   }
 
@@ -75,7 +82,9 @@ export class Grid {
   /** A wide character split by an overwrite leaves no half behind. */
   private clearWide(col: number, row: number): void {
     const line = this.cells[row]!;
+
     if (line[col]?.ch === "" && col > 0 && line[col - 1]) line[col - 1] = { ch: " ", style: line[col - 1]!.style };
+
     if (line[col + 1]?.ch === "" && line[col]) line[col + 1] = { ch: " ", style: line[col + 1]!.style };
   }
 
@@ -102,11 +111,14 @@ export function drawBox(grid: Grid, rect: { x: number; y: number; width: number;
   const [tl, tr, bl, br] = round ? ["╭", "╮", "╰", "╯"] : ["┌", "┐", "└", "┘"];
   grid.fill(rect.x, rect.y, rect.width, rect.height, style);
   grid.write(rect.x, rect.y, `${tl}${"─".repeat(Math.max(0, rect.width - 2))}${tr}`, style);
+
   for (let y = rect.y + 1; y < rect.y + rect.height - 1; y++) {
     grid.write(rect.x, y, "│", style);
     grid.write(rect.x + rect.width - 1, y, "│", style);
   }
+
   grid.write(rect.x, rect.y + rect.height - 1, `${bl}${"─".repeat(Math.max(0, rect.width - 2))}${br}`, style);
+
   if (title) grid.write(rect.x + 2, rect.y, ` ${title} `, titleStyle, rect.width - 4);
 }
 
@@ -114,13 +126,21 @@ const ESC = "\x1b";
 
 function sgr(style: Style): string {
   const codes = ["0"];
+
   if (style.bold) codes.push("1");
+
   if (style.dim) codes.push("2");
+
   if (style.italic) codes.push("3");
+
   if (style.underline) codes.push("4");
+
   if (style.inverse) codes.push("7");
+
   if (style.fg !== undefined) codes.push(`38;5;${style.fg}`);
+
   if (style.bg !== undefined) codes.push(`48;5;${style.bg}`);
+
   return `${ESC}[${codes.join(";")}m`;
 }
 
@@ -131,6 +151,7 @@ function sgr(style: Style): string {
  */
 export function safeLink(link: string | undefined): string | undefined {
   if (link === undefined || link === "" || /[\x00-\x1f\x7f-\x9f]/.test(link)) return undefined;
+
   return link;
 }
 
@@ -140,7 +161,9 @@ function sameStyle(a: Style, b: Style): boolean {
 
 function rowEqual(a: readonly Cell[], b: readonly Cell[]): boolean {
   if (a.length !== b.length) return false;
+
   for (let i = 0; i < a.length; i++) if (a[i]!.ch !== b[i]!.ch || !sameStyle(a[i]!.style, b[i]!.style)) return false;
+
   return true;
 }
 
@@ -148,31 +171,43 @@ function rowEqual(a: readonly Cell[], b: readonly Cell[]): boolean {
 export function renderDiff(prev: Grid | null, next: Grid): string {
   const full = prev === null || prev.cols !== next.cols || prev.rows !== next.rows;
   let out = `${ESC}[?25l`;
+
   if (full) out += `${ESC}[0m${ESC}[2J`;
+
   for (let y = 0; y < next.rows; y++) {
     const cells = next.row(y);
+
     if (!full && rowEqual(prev.row(y), cells)) continue;
     out += `${ESC}[${y + 1};1H`;
     let style: Style | null = null;
+
     for (const cell of cells) {
       if (cell.ch === "") continue;
+
       if (style === null || !sameStyle(style, cell.style)) {
         const link = safeLink(cell.style.link);
         const open = safeLink(style?.link);
+
         if (open && open !== link) out += `${ESC}]8;;${ESC}\\`;
         out += sgr(cell.style);
+
         if (link && link !== open) out += `${ESC}]8;;${link}${ESC}\\`;
         style = cell.style;
       }
+
       out += cell.ch;
     }
+
     if (safeLink(style?.link)) out += `${ESC}]8;;${ESC}\\`;
     out += `${ESC}[0m`;
   }
+
   if (next.cursor) out += `${ESC}[${next.cursor.y + 1};${next.cursor.x + 1}H${ESC}[?25h`;
+
   return out;
 }
 
 /** Entering and leaving the TUI: alternate screen, SGR mouse with motion, bracketed paste. */
 export const ENTER = `${ESC}[?1049h${ESC}[?25l${ESC}[?1000h${ESC}[?1002h${ESC}[?1003h${ESC}[?1006h${ESC}[?2004h`;
+
 export const LEAVE = `${ESC}[?2004l${ESC}[?1006l${ESC}[?1003l${ESC}[?1002l${ESC}[?1000l${ESC}[0m${ESC}[?25h${ESC}[?1049l`;

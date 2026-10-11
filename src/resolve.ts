@@ -64,13 +64,18 @@ export class Index {
 
   lookup(id: string): Lookup {
     const exact = this.decls.get(id);
+
     if (exact) return { kind: "exact", decl: exact };
     const prefix = this.longestPrefix(id);
+
     if (prefix?.kind !== "module") return { kind: "missing" };
     // The snapshot decides when it has the module: a partly parsed file is opaque even with members in the map.
     const members = this.members?.(prefix.id);
+
     if (members === "opaque") return { kind: "opaque", decl: prefix };
+
     if (members === "complete" || prefix.hasMembers) return { kind: "missing" };
+
     return { kind: "opaque", decl: prefix };
   }
 
@@ -81,11 +86,14 @@ export class Index {
 
   private longestPrefix(id: string): Decl | undefined {
     let end = id.length;
+
     for (;;) {
       const dot = id.lastIndexOf(".", end - 1);
+
       if (dot === -1) return undefined;
       end = dot;
       const d = this.decls.get(id.slice(0, end));
+
       if (d) return d;
     }
   }
@@ -95,17 +103,23 @@ export class Index {
     const prefix = this.longestPrefix(id)?.id;
     const rest = prefix === undefined ? id : id.slice(prefix.length + 1);
     const missing = rest.split(".")[0]?.toLowerCase();
+
     if (missing === undefined) return undefined;
     const depth = (prefix === undefined ? 0 : prefix.split(".").length) + 1;
     let best: [number, string] | undefined;
+
     for (const k of this.decls.keys()) {
       if (k.split(".").length !== depth) continue;
+
       if (prefix !== undefined && !k.startsWith(`${prefix}.`)) continue;
       const last = k.slice(k.lastIndexOf(".") + 1).toLowerCase();
       const score = similarity(last, missing);
+
       if (score === null) continue;
+
       if (!best || score < best[0] || (score === best[0] && k < best[1])) best = [score, k];
     }
+
     return best?.[1];
   }
 
@@ -122,9 +136,11 @@ export class Index {
 function similarity(a: string, b: string): number | null {
   const shorter = Math.min(codePoints(a), codePoints(b));
   const longer = Math.max(codePoints(a), codePoints(b));
+
   if (shorter >= 3 && (a.includes(b) || b.includes(a))) return 0;
   const allowed = longer <= 2 ? 0 : longer <= 5 ? 1 : 2;
   const distance = levenshtein(a, b);
+
   return distance <= allowed ? distance : null;
 }
 
@@ -135,11 +151,15 @@ function codePoints(s: string): number {
 /** The candidate closest to `word` for a «did you mean», or undefined when none is close enough. */
 export function nearestName(word: string, candidates: Iterable<string>): string | undefined {
   let best: [number, string] | undefined;
+
   for (const candidate of candidates) {
     const score = similarity(word.toLowerCase(), candidate.toLowerCase());
+
     if (score === null) continue;
+
     if (!best || score < best[0] || (score === best[0] && compareText(candidate, best[1]) < 0)) best = [score, candidate];
   }
+
   return best?.[1];
 }
 
@@ -158,6 +178,7 @@ export function check(docs: readonly Document[], context: ResolveContext = {}): 
           diags,
         );
       }
+
       for (const node of sectionNodes(section)) {
         walk(node, (n) => {
           if (isDecl(n.kind) && n.id !== null && n.name) {
@@ -170,6 +191,7 @@ export function check(docs: readonly Document[], context: ResolveContext = {}): 
       }
     }
   }
+
   // A configured layer the map does not print yet (no modules) is declared by `keylang.json`.
   for (const layer of context.layers ?? []) {
     if (!index.decls.has(layer)) index.decls.set(layer, { id: layer, kind: "layer", file: CONFIG_FILE, span: NO_SPAN, hasMembers: false });
@@ -179,27 +201,34 @@ export function check(docs: readonly Document[], context: ResolveContext = {}): 
     // A dependency alias is a member too (CONTEXT.md): a module of aliases only is not opaque.
     if (d.kind === "fn" || d.kind === "type" || d.kind === "event" || d.kind === "module" || d.kind === "dep") {
       const dot = d.id.lastIndexOf(".");
+
       if (dot === -1) continue;
       const parent = index.decls.get(d.id.slice(0, dot));
+
       if (parent) parent.hasMembers = true;
     }
   }
 
   const unverified: Unverified[] = [];
+
   for (const doc of docs) {
     for (const section of doc.sections) {
       for (const node of sectionNodes(section)) checkRefs(index, doc, node, diags, unverified, context.knownExternal ?? new Set());
     }
   }
+
   return { index, diagnostics: diags, unverified };
 }
 
 function insert(map: Map<string, Decl>, decl: Decl, what: string, diags: Diagnostic[]): void {
   const prev = map.get(decl.id);
+
   if (!prev) {
     map.set(decl.id, decl);
+
     return;
   }
+
   // A layer may be continued in several map files.
   if (prev.kind === "layer" && decl.kind === "layer") return;
   diags.push(
@@ -220,14 +249,20 @@ const THEN_KINDS = new Set(["fn", "type", "event", "module", "planned"]);
 /** Ids whose last segment is `word`: map declarations and `planned`, never a layer. */
 function thenCandidates(index: Index, word: string): string[] {
   const ids = new Set<string>();
+
   const take = (decl: Decl): void => {
     if (!THEN_KINDS.has(decl.kind)) return;
     const dot = decl.id.lastIndexOf(".");
+
     if (dot <= 0) return;
+
     if (decl.id.slice(dot + 1) === word) ids.add(decl.id);
   };
+
   for (const decl of index.decls.values()) take(decl);
+
   for (const decl of index.planned.values()) take(decl);
+
   return [...ids].sort(compareText);
 }
 
@@ -235,19 +270,23 @@ function thenCandidates(index: Index, word: string): string[] {
 function warnBareThen(index: Index, doc: Document, node: Node, diags: Diagnostic[]): void {
   // `tokens` includes the keyword. Р10 reads the arguments: exactly one, and not a dotted id.
   const args = node.tokens[0]?.text === "then" ? node.tokens.slice(1) : node.tokens;
+
   if (node.kind !== "then" || node.refs.length > 0 || args.length !== 1) return;
   const token = args[0]!;
   let word = "";
   let span = token.span;
+
   if (token.kind === "word") word = token.text;
   else if (token.kind === "link") {
     const close = token.text.indexOf("](");
     word = token.text.slice(1, close === -1 ? token.text.length : close);
     span = linkTextSpan(token);
   } else return;
+
   if (word.includes(".") || !isSegment(word)) return;
   // IDs are NFC; the word is as written.
   const ids = thenCandidates(index, word.normalize("NFC"));
+
   if (ids.length === 0) return;
   const listed = ids.map((id) => `\`then ${id}\``).join(", ");
   diags.push(diagnostic("K008", doc.path, span, `\`then ${word}\` is read as text, not a reference (did you mean ${listed}?)`));
@@ -260,21 +299,27 @@ function warnBareThen(index: Index, doc: Document, node: Node, diags: Diagnostic
 function danglingMessage(index: Index, doc: Document, target: string): string {
   if (doc.generated !== null) {
     const command = /`(keylang [^`]+)`/.exec(doc.generated)?.[1];
+
     return `dangling reference \`${target}\` in a generated file; ${command ? `run \`${command}\`` : "regenerate it"}`;
   }
+
   const near = index.suggest(target);
   const hint = near === undefined ? "" : ` (did you mean \`${near}\`?)`;
+
   return `dangling reference \`${target}\`${hint}; declare \`planned\` if this is an intention`;
 }
 
 /** K206: `continues <flow>` names a flow no `# flow` declares. */
 function checkContinues(index: Index, doc: Document, node: Node, diags: Diagnostic[]): void {
   const flow = node.kind === "continues" ? node.text : null;
+
   if (flow === null || index.flows.has(flow.value)) return;
+
   const near = [...index.flows.keys()]
     .map((name) => ({ name, distance: similarity(flow.value, name) }))
     .filter((item): item is { name: string; distance: number } => item.distance !== null)
     .sort((a, b) => a.distance - b.distance || compareText(a.name, b.name))[0];
+
   const hint = near === undefined ? "" : ` (did you mean \`${near.name}\`?)`;
   diags.push(diagnostic("K206", doc.path, flow.span, `\`continues\` names flow \`${flow.value}\`, which no \`# flow\` declares${hint}`));
 }
@@ -282,7 +327,9 @@ function checkContinues(index: Index, doc: Document, node: Node, diags: Diagnost
 /** The reference of `trigger event <id>` or of `emits [event] events.<name>` (ADR 0023 п. 1), null for any other line. */
 function eventRef(node: Node): Ref | null {
   if (node.kind === "trigger" && node.label?.value === TRIGGER_EVENT) return node.refs[0] ?? null;
+
   if (node.kind === "emits") return node.refs[0] ?? null;
+
   return null;
 }
 
@@ -293,23 +340,32 @@ function eventRef(node: Node): Ref | null {
  */
 function checkEventRef(index: Index, doc: Document, node: Node, ref: Ref, diags: Diagnostic[]): void {
   const what = node.kind === "trigger" ? "`trigger event`" : "`emits event`";
+
   if (index.planned.has(ref.target)) return;
   const hit = index.lookup(ref.target);
+
   if (hit.kind === "exact") {
     if (hit.decl.kind !== "event") diags.push(diagnostic("K205", doc.path, ref.span, `${what} names \`${ref.target}\`, a ${kindLabel(hit.decl.kind)}, not an event; an event ID is \`events.<name>\`, as \`keylang/map/events.md\` lists them`, ref.target));
+
     return;
   }
+
   if (hit.kind === "opaque") return;
+
   if (doc.generated !== null) {
     diags.push(diagnostic("K204", doc.path, ref.span, `unknown event \`${ref.target}\` in a generated file; regenerate it`, ref.target));
+
     return;
   }
+
   const tail = (id: string): string => id.slice(id.lastIndexOf(".") + 1);
+
   const near = [...index.decls.values()]
     .filter((decl) => decl.kind === "event")
     .map((decl) => ({ id: decl.id, distance: similarity(tail(ref.target), tail(decl.id)) }))
     .filter((item): item is { id: string; distance: number } => item.distance !== null)
     .sort((a, b) => a.distance - b.distance || compareText(a.id, b.id))[0];
+
   const hint = near === undefined ? "" : ` (did you mean \`${near.id}\`?)`;
   diags.push(diagnostic("K204", doc.path, ref.span, `unknown event \`${ref.target}\`${hint}: no code keylang read dispatches it and no config observes it`, ref.target));
 }
@@ -319,13 +375,16 @@ function checkRefs(index: Index, doc: Document, node: Node, diags: Diagnostic[],
   checkContinues(index, doc, node, diags);
   let ok = true;
   const event = eventRef(node);
+
   if (event !== null) checkEventRef(index, doc, node, event, diags);
   // `exports` lists public names (values, aliases, `default`), compared with the
   // snapshot's export table by the rule, not declarations of the map. An event reference is checked above.
   const refs = node.kind === "exports" || event !== null ? [] : node.refs;
+
   for (const r of refs) {
     if (SYNTHETIC.has(r.target)) continue;
     const hit = index.lookup(r.target);
+
     if (hit.kind === "missing") {
       if (knownExternal.has(r.target)) continue;
       ok = false;
@@ -340,6 +399,7 @@ function checkRefs(index: Index, doc: Document, node: Node, diags: Diagnostic[],
       });
     }
   }
+
   for (const child of node.children) {
     // `exports` of an unknown module would only repeat the error.
     if (ok || node.kind !== "rule-module") checkRefs(index, doc, child, diags, unverified, knownExternal);
@@ -350,6 +410,7 @@ function levenshtein(a: string, b: string): number {
   const bs = [...b];
   let prev = Array.from({ length: bs.length + 1 }, (_, i) => i);
   let i = 0;
+
   for (const ca of a) {
     const cur = [i + 1];
     bs.forEach((cb, j) => {
@@ -358,5 +419,6 @@ function levenshtein(a: string, b: string): number {
     prev = cur;
     i++;
   }
+
   return prev[bs.length]!;
 }

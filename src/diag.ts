@@ -105,10 +105,13 @@ export function diagnostic(code: Exclude<Code, "K005">, file: string, span: Span
 export function diagnostic(code: "K005", file: string, span: Span, message: string, reason: K005Reason): Diagnostic;
 export function diagnostic(code: Code, file: string, span: Span, message: string, extra?: string): Diagnostic {
   const diag: Diagnostic = { code, severity: severityOf(code), message, file, span };
+
   if (code === "K005") {
     const reason = K005_REASONS.find((item) => item === extra);
+
     if (reason !== undefined) diag.reason = reason;
   } else if (extra !== undefined) diag.target = extra;
+
   return diag;
 }
 
@@ -124,10 +127,14 @@ export function formatDiagnostic(d: Diagnostic): string {
 /** Stable order: file, position, code. */
 export function compareDiagnostics(a: Diagnostic, b: Diagnostic): number {
   if (a.file !== b.file) return a.file < b.file ? -1 : 1;
+
   // Line and column first: rule diagnostics built without a source offset still sort by position.
   if (a.span.start.line !== b.span.start.line) return a.span.start.line - b.span.start.line;
+
   if (a.span.start.col !== b.span.start.col) return a.span.start.col - b.span.start.col;
+
   if (a.span.start.offset !== b.span.start.offset) return a.span.start.offset - b.span.start.offset;
+
   return a.code < b.code ? -1 : a.code > b.code ? 1 : 0;
 }
 

@@ -27,6 +27,7 @@ import { VirtualTerminal } from "./vt.ts";
 function mapCheckOut(record: App["state"]["records"][number]): string {
   const result = record.result;
   assert.ok(result?.kind === "map-check" && result.payload !== null, JSON.stringify(result?.messages));
+
   return mapCheckLines(result.payload).map((line) => `${line}\n`).join("");
 }
 
@@ -36,6 +37,7 @@ test("tui: map check in the worker reports what the CLI reports for a fresh, sta
   const s = session(root);
   t.after(() => s.app.close());
   await s.app.idle();
+
   const cases: [string, () => void, number][] = [
     ["fresh", () => {}, 0],
     // New code: the generated domain map is stale.
@@ -43,6 +45,7 @@ test("tui: map check in the worker reports what the CLI reports for a fresh, sta
     // A manual file where a generated one belongs: a conflict, and the stale files are not listed.
     ["conflict", () => writeFileSync(join(root, "keylang/map/application.md"), "# notes\n\nWritten by hand.\n"), 1],
   ];
+
   for (const [name, change, code] of cases) {
     change();
     const before = treeBytes(root);
@@ -57,6 +60,7 @@ test("tui: map check in the worker reports what the CLI reports for a fresh, sta
     assert.equal(record.result!.exitCode, cli.status, name);
     assert.equal(mapCheckOut(record), cli.stdout, name);
   }
+
   const [fresh, stale, conflict] = s.app.state.records.map((record) => (record.result?.kind === "map-check" ? record.result.payload : null));
   assert.deepEqual([fresh?.stale, fresh?.conflicts], [[], []]);
   assert.deepEqual(stale?.stale, ["keylang/map/domain.md"]);
@@ -128,17 +132,21 @@ test("tui: a delayed map check in a real worker leaves keys and resize live; Esc
 test("tui: a result arriving after Cancel changes nothing in the history", async (t) => {
   const root = checkoutRepo(t);
   let release: (() => void) | null = null;
+
   const operations = async (request: OperationRequest): Promise<OperationResult> => {
     // Ignores the signal on purpose: the late result must still be dropped.
     await new Promise<void>((done) => (release = done));
+
     return runOperation(request);
   };
+
   const s = session(root, { operations });
   t.after(() => s.app.close());
   await s.app.idle();
   mapCheck(s.send);
   await sleep(20);
   s.send(KEY.ctrlP);
+
   for (const ch of "cancel") s.send(ch);
   s.send(KEY.enter);
   const record = s.app.state.records[0]!;
@@ -216,6 +224,7 @@ test("operation worker: every request settles once; close cancels what is pendin
 /** The palette's "Map: write": the step naming the targets opens; Enter in it starts the write. */
 function mapWrite(send: (keys: string) => void): void {
   send(KEY.ctrlP);
+
   for (const ch of "map write") send(ch);
   send(KEY.enter);
 }
@@ -223,6 +232,7 @@ function mapWrite(send: (keys: string) => void): void {
 function mapRecord(app: App): Extract<OperationResult, { kind: "map" }> & { payload: NonNullable<Extract<OperationResult, { kind: "map" }>["payload"]> } {
   const result = app.state.records.at(-1)?.result;
   assert.ok(result?.kind === "map" && result.payload !== null, JSON.stringify(result?.messages));
+
   return result as Extract<OperationResult, { kind: "map" }> & { payload: NonNullable<Extract<OperationResult, { kind: "map" }>["payload"]> };
 }
 
@@ -238,6 +248,7 @@ test("tui: Map: write names its targets first and writes what the CLI writes in 
   assert.deepEqual(treeBytes(root), before, "F5 writes nothing");
   // The generated map is open as a read-only buffer before it exists on disk.
   s.send(KEY.ctrlP);
+
   for (const ch of "open keylang/map/domain.md") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.current, "keylang/map/domain.md");
@@ -286,11 +297,13 @@ test("tui: a manual target or a changed source during the pause before the commi
   rmSync(join(root, "keylang/map/domain.md"));
   const manual = "# notes\n\nWritten by hand while the map was computed.\n";
   const source = "export function create(): void {}\nexport function cancel(): void {}\n";
+
   const pauses: (() => void)[] = [
     () => writeFileSync(join(root, "keylang/map/domain.md"), manual),
     () => writeFileSync(join(root, "src/domain/order.ts"), source),
     () => {},
   ];
+
   let calls = 0;
   const s = session(root, { operations: pausedRunner(() => pauses[calls++]!()) });
   t.after(() => s.app.close());
@@ -374,12 +387,15 @@ test("tui: Cancel during the commit lets the current file finish and names what 
   writeFileSync(join(root, "src/domain/order.ts"), "export function create(): void {}\nexport function cancel(): void {}\n");
   const cache = readFileSync(join(root, ".keylang/cache/facts.json"), "utf8");
   let cancel = (): void => {};
+
   const s = session(root, { operations: pausedRunner(() => {}, (text) => text === "writing .keylang/index.json" && cancel()) });
   cancel = () => {
     s.send(KEY.ctrlP);
+
     for (const ch of "cancel") s.send(ch);
     s.send(KEY.enter);
   };
+
   t.after(() => s.app.close());
   await s.app.idle();
   mapWrite(s.send);
@@ -408,19 +424,26 @@ test("tui: an analysis finishing during the commit is not adopted; the report af
   let dropped: Analysis | null = null;
   let committed = false;
   const reports: { analysis: Analysis; afterCommit: boolean; overlay: string[] }[] = [];
+
   const analyzer = async (request: AnalysisRequest): Promise<Analysis> => {
     const afterCommit = committed;
     // The map's own analysis (persistFacts) is not the editor's report.
     const gated = gateNext && request.persistFacts !== true;
+
     if (gated) {
       gateNext = false;
       await new Promise<void>((done) => (release = done));
     }
+
     const analysis = await analyze(request);
+
     if (gated) dropped = analysis;
+
     if (request.persistFacts !== true) reports.push({ analysis, afterCommit, overlay: [...(request.overlay?.keys() ?? [])] });
+
     return analysis;
   };
+
   const operations: NonNullable<AppOptions["operations"]> = async (request, context) => {
     const result = await pausedRunner(async () => {
       await context.beforeCommit?.();
@@ -428,9 +451,12 @@ test("tui: an analysis finishing during the commit is not adopted; the report af
       release!();
       await waitUntil(() => dropped !== null, "the analysis started before the commit");
     })(request, { ...context, beforeCommit: () => {} });
+
     committed = true;
+
     return result;
   };
+
   const s = session(root, { analyzer, operations });
   t.after(() => s.app.close());
   await s.app.idle();
@@ -536,6 +562,7 @@ test("operation worker: a map cancelled before its commit ends the worker with n
 function baselineRepo(t: { after: (f: () => void) => void }): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-tui-baseline-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+
   const files: Record<string, string> = {
     "package.json": `${JSON.stringify({ name: "shop", private: true, dependencies: { stripe: "1.0.0" } })}\n`,
     "keylang.json": `${JSON.stringify({ languages: ["typescript"], layers: { app: ["src/app/**"], domain: ["src/domain/**"] } }, null, 2)}\n`,
@@ -543,18 +570,22 @@ function baselineRepo(t: { after: (f: () => void) => void }): string {
     "src/app/pay.ts": 'import Stripe from "stripe";\nimport { price } from "../domain/order.ts";\nexport function charge(): number {\n  return Stripe ? price() : 0;\n}\n',
     "keylang/rules.md": "# rules\n\n- layers domain < app\n",
   };
+
   for (const [path, text] of Object.entries(files)) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
     writeFileSync(join(dir, path), text);
   }
+
   return dir;
 }
 
 /** The palette's baseline form, then the mode: `write` (the first item) or `check`. */
 function baselineForm(send: (keys: string) => void, mode: "write" | "check"): void {
   send(KEY.ctrlP);
+
   for (const ch of "baseline") send(ch);
   send(KEY.enter);
+
   if (mode === "check") send(KEY.down);
   send(KEY.enter);
 }
@@ -562,6 +593,7 @@ function baselineForm(send: (keys: string) => void, mode: "write" | "check"): vo
 function baselineRecord(app: App): Extract<OperationResult, { kind: "baseline" }> & { payload: NonNullable<Extract<OperationResult, { kind: "baseline" }>["payload"]> } {
   const result = app.state.records.at(-1)?.result;
   assert.ok(result?.kind === "baseline" && result.payload !== null, JSON.stringify(result?.messages));
+
   return result as Extract<OperationResult, { kind: "baseline" }> & { payload: NonNullable<Extract<OperationResult, { kind: "baseline" }>["payload"]> };
 }
 
@@ -582,6 +614,7 @@ test("tui: baseline write and check in the worker give the CLI's bytes and codes
   assert.deepEqual(treeBytes(root), before, "F5 writes nothing");
   // The human name finds it as the alias `baseline` does; the form names the mode and the target from the config's spec directory and explains the write.
   s.send(KEY.ctrlP);
+
   for (const ch of "baseline: write or check") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.prompt?.kind, "baseline");
@@ -625,6 +658,7 @@ test("tui: baseline write and check in the worker give the CLI's bytes and codes
   assert.equal(readFileSync(join(root, file), "utf8"), text);
   // The baseline opens read-only, named after its generator.
   s.send(KEY.ctrlP);
+
   for (const ch of `open ${file}`) s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.current, file);
@@ -713,6 +747,7 @@ test("tui: a manual baseline, an outside edit or a changed source before the com
   s.send(KEY.f6);
   // A dirty keylang.json opens the step, which names the target; Back writes nothing.
   s.send(KEY.ctrlP);
+
   for (const ch of "open keylang.json") s.send(ch);
   s.send(KEY.enter);
   s.send("i");
@@ -773,15 +808,19 @@ function agentsRepo(t: { after: (f: () => void) => void }): string {
   mkdirSync(join(dir, ".claude"));
   writeFileSync(join(dir, ".claude/settings.json"), `${JSON.stringify({ permissions: { allow: ["Bash"] }, theme: "dark" }, null, 2)}\n`);
   mkdirSync(join(dir, ".codex"));
+
   return dir;
 }
 
 /** The palette's agents form: the selection typed as in `--agents` (empty is auto), then the mode. */
 function agentsForm(send: (keys: string) => void, selection: string, mode: "write" | "check"): void {
   send(KEY.ctrlP);
+
   for (const ch of "agents set up") send(ch);
   send(KEY.enter);
+
   for (const ch of selection) send(ch);
+
   if (mode === "check") send(KEY.down);
   send(KEY.enter);
 }
@@ -789,6 +828,7 @@ function agentsForm(send: (keys: string) => void, selection: string, mode: "writ
 function agentsRecord(app: App): Extract<OperationResult, { kind: "agents" }> & { payload: NonNullable<Extract<OperationResult, { kind: "agents" }>["payload"]> } {
   const result = app.state.records.at(-1)?.result;
   assert.ok(result?.kind === "agents" && result.payload !== null, JSON.stringify(result?.messages));
+
   return result as Extract<OperationResult, { kind: "agents" }> & { payload: NonNullable<Extract<OperationResult, { kind: "agents" }>["payload"]> };
 }
 
@@ -805,6 +845,7 @@ test("tui: agents auto, an explicit list and none write what the CLI writes in a
   const before = treeBytes(root);
   // The form resolves the selection on the disk and names what it would change, with the pinned MCP version; nothing runs.
   s.send(KEY.ctrlP);
+
   for (const ch of "agents: set up or check integrations") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.prompt?.kind, "agents");
@@ -812,6 +853,7 @@ test("tui: agents auto, an explicit list and none write what the CLI writes in a
   assert.ok(s.app.state.prompt?.note?.includes(`keylang@${PACKAGE_VERSION} mcp`));
   assert.match(s.app.state.prompt?.note ?? "", /does not test the clients/);
   assert.match(s.app.state.prompt?.items[0] ?? "", /^Write 8 file\(s\): AGENTS\.md, CLAUDE\.md, \.mcp\.json, …$/);
+
   for (const ch of "nope") s.send(ch);
   assert.match(s.app.state.prompt?.note ?? "", /unknown agent `nope`; expected claude, codex, opencode, cursor, or none/);
   s.send(KEY.enter);
@@ -892,6 +934,7 @@ test("tui: invalid JSON blocks every write of the plan; an outside edit before t
   const root = agentsRepo(t);
   writeFileSync(join(root, ".mcp.json"), "{ broken");
   let pause: () => void = () => {};
+
   const s = session(root, { operations: pausedRunner(() => pause()) });
   t.after(() => s.app.close());
   await s.app.idle();
@@ -933,6 +976,7 @@ test("tui: invalid JSON blocks every write of the plan; an outside edit before t
   // A file where the skill directory must be: the steps before it land, it fails, the rest are not attempted; code 2.
   rmSync(join(root, ".cursor"), { recursive: true });
   pause = () => {};
+
   writeFileSync(join(root, ".agents"), "not a directory\n");
   agentsForm(s.send, "", "write");
   await s.app.idle();
@@ -962,12 +1006,16 @@ const INDENT = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "fixtu
 /** The palette's fmt form; `paths` replaces the default text when given, then the mode. */
 function fmtForm(send: (keys: string) => void, app: App, mode: "write" | "check", paths?: string): void {
   send(KEY.ctrlP);
+
   for (const ch of "format: write or check") send(ch);
   send(KEY.enter);
+
   if (paths !== undefined) {
     for (const _ of app.state.prompt!.text) send("\x7f");
+
     for (const ch of paths) send(ch);
   }
+
   if (mode === "check") send(KEY.down);
   send(KEY.enter);
 }
@@ -975,6 +1023,7 @@ function fmtForm(send: (keys: string) => void, app: App, mode: "write" | "check"
 function fmtRecord(app: App): Extract<OperationResult, { kind: "fmt" }> & { payload: NonNullable<Extract<OperationResult, { kind: "fmt" }>["payload"]> } {
   const result = app.state.records.at(-1)?.result;
   assert.ok(result?.kind === "fmt" && result.payload !== null, JSON.stringify(result?.messages));
+
   return result as Extract<OperationResult, { kind: "fmt" }> & { payload: NonNullable<Extract<OperationResult, { kind: "fmt" }>["payload"]> };
 }
 
@@ -996,6 +1045,7 @@ test("tui: fmt of the current spec writes the CLI's bytes and is idempotent; che
   t.after(() => s.app.close());
   await s.app.idle();
   s.send(KEY.ctrlP);
+
   for (const ch of `open ${file}`) s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.current, file);
@@ -1003,16 +1053,20 @@ test("tui: fmt of the current spec writes the CLI's bytes and is idempotent; che
   s.app.state.cursor.line = MESSY.split("\n").length - 2;
   // The form defaults to the current spec and shows the real set and both modes.
   s.send(KEY.ctrlP);
+
   for (const ch of "keylang fmt") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.prompt?.kind, "fmt");
   assert.equal(s.app.state.prompt?.text, file);
   assert.deepEqual(s.app.state.prompt?.items, ["Write: format 1 file(s)", "Check 1 file(s) (writes nothing)"]);
   assert.match(promptNote(s.app), new RegExp(`^${file} · saved explanations are skipped`));
+
   // A directory only when typed: the note lists what it expands to.
   for (const _ of file) s.send("\x7f");
+
   for (const ch of "keylang") s.send(ch);
   assert.match(promptNote(s.app), /^keylang\/flows\/checkout\.md, keylang\/notes\/messy\.md, keylang\/rules\.md/);
+
   for (const ch of "/nope") s.send(ch);
   assert.match(promptNote(s.app), /keylang\/nope: not found/);
   await esc(s.send);
@@ -1069,12 +1123,14 @@ test("tui: fmt over a directory with valid, invalid, unreadable, CRLF and explan
   const specs = { "keylang/notes/a-messy.md": MESSY, "keylang/notes/b-indent.md": INDENT, "keylang/notes/c-locked.md": MESSY, "keylang/notes/d-crlf.md": crlf, "keylang/explain/x.md": explanation };
   const root = checkoutRepo(t, specs);
   const twin = checkoutRepo(t, specs);
+
   for (const dir of [root, twin]) chmodSync(join(dir, "keylang/notes/c-locked.md"), 0o000);
   const s = session(root);
   t.after(() => s.app.close());
   await s.app.idle();
   // A clean CRLF buffer keeps CRLF: fmt writes a CRLF file in CRLF, so a later save keeps them.
   s.send(KEY.ctrlP);
+
   for (const ch of "open keylang/notes/d-crlf.md") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.buffers.get("keylang/notes/d-crlf.md")?.eol, "\r\n");
@@ -1096,10 +1152,12 @@ test("tui: fmt over a directory with valid, invalid, unreadable, CRLF and explan
   assert.equal(states["keylang/notes/d-crlf.md"], "formatted");
   assert.equal(states["keylang/explain/x.md"], "explanation");
   assert.deepEqual(result.written, ["keylang/notes/a-messy.md", "keylang/notes/d-crlf.md"], "the failures do not hide the written files");
+
   // The bytes are the CLI's: CRLF stays CRLF, Unicode stays; invalid and explanation files are untouched.
   for (const path of ["keylang/notes/a-messy.md", "keylang/notes/d-crlf.md", "keylang/notes/b-indent.md", "keylang/explain/x.md"]) {
     assert.equal(readFileSync(join(root, path), "utf8"), readFileSync(join(twin, path), "utf8"), path);
   }
+
   const crlfOut = readFileSync(join(root, "keylang/notes/d-crlf.md"), "utf8");
   assert.ok(crlfOut.split("\r\n").length === crlfOut.split("\n").length && crlfOut.includes("порядок 𝒳"), crlfOut);
   const crlfBuffer = s.app.state.buffers.get("keylang/notes/d-crlf.md")!;
@@ -1109,12 +1167,15 @@ test("tui: fmt over a directory with valid, invalid, unreadable, CRLF and explan
   assert.equal(readFileSync(join(root, "keylang/notes/b-indent.md"), "utf8"), INDENT);
   // A repeat: nothing more to write, the same failures; check writes nothing.
   const locked = join(root, "keylang/notes/c-locked.md");
+
   const readable = (): Map<string, string> => {
     chmodSync(locked, 0o644);
     const bytes = treeBytes(root);
     chmodSync(locked, 0o000);
+
     return bytes;
   };
+
   const before = readable();
   fmtForm(s.send, s.app, "check", "keylang");
   await s.app.idle();
@@ -1134,18 +1195,22 @@ test("tui: fmt saves the chosen dirty buffer first (Back writes nothing), leaves
   const other = "keylang/notes/other.md";
   const root = checkoutRepo(t, { [file]: MESSY, [other]: MESSY });
   let pause: () => void = () => {};
+
   const s = session(root, { operations: pausedRunner(() => pause()) });
   t.after(() => s.app.close());
   await s.app.idle();
+
   // Dirty edits in both files; fmt chooses only the first.
   for (const path of [other, file]) {
     s.send(KEY.ctrlP);
+
     for (const ch of `open ${path}`) s.send(ch);
     s.send(KEY.enter);
     s.send("i");
     s.send("*");
     await esc(s.send);
   }
+
   assert.equal(s.app.state.current, file);
   const before = treeBytes(root);
   fmtForm(s.send, s.app, "write");
@@ -1195,19 +1260,24 @@ function wireRepo(t: { after: (f: () => void) => void }): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-tui-wire-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   cpSync(WIRING_SHOP, dir, { recursive: true });
+
   return dir;
 }
 
 /** The palette's wire form, the output path replaced when given, then the mode: `write` (the first item) or `check`. */
 function wireForm(send: (keys: string) => void, app: App, mode: "write" | "check", out?: string): void {
   send(KEY.ctrlP);
+
   for (const ch of "wire: generate or check") send(ch);
   send(KEY.enter);
   assert.equal(app.state.prompt?.kind, "wire");
+
   if (out !== undefined) {
     for (const _ of app.state.prompt!.text) send("\x7f");
+
     for (const ch of out) send(ch);
   }
+
   if (mode === "check") send(KEY.down);
   send(KEY.enter);
 }
@@ -1215,6 +1285,7 @@ function wireForm(send: (keys: string) => void, app: App, mode: "write" | "check
 function wireRecord(app: App): Extract<OperationResult, { kind: "wire" }> & { payload: NonNullable<Extract<OperationResult, { kind: "wire" }>["payload"]> } {
   const result = app.state.records.at(-1)?.result;
   assert.ok(result?.kind === "wire" && result.payload !== null, JSON.stringify(result?.messages));
+
   return result as Extract<OperationResult, { kind: "wire" }> & { payload: NonNullable<Extract<OperationResult, { kind: "wire" }>["payload"]> };
 }
 
@@ -1225,6 +1296,7 @@ function cliWire(root: string, args: string[] = []): { status: number | null; st
 /** The CLI's two streams for a result: `info` to stdout, the rest to stderr. */
 function wireStreams(result: OperationResult): { stdout: string; stderr: string } {
   const lines = (level: (l: string) => boolean): string => result.messages.filter((m) => level(m.level)).map((m) => `${m.text}\n`).join("");
+
   return { stdout: lines((l) => l === "info"), stderr: lines((l) => l !== "info") };
 }
 
@@ -1241,6 +1313,7 @@ test("tui: wire write and check give the CLI's bytes, lines and codes; check wri
   assert.deepEqual(treeBytes(root), before, "F5 writes nothing");
   // The alias finds it; the form starts at the CLI's default file and names both modes.
   s.send(KEY.ctrlP);
+
   for (const ch of "keylang wire") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.prompt?.kind, "wire");
@@ -1326,6 +1399,7 @@ test("tui: a wiring error, a manual file, a path out of the repository or throug
   t.after(() => s.app.close());
   await s.app.idle();
   let before = treeBytes(root);
+
   // An error on a `# wiring` line: the CLI's diagnostics and summary, code 1, no file — in both modes.
   for (const mode of ["write", "check"] as const) {
     wireForm(s.send, s.app, mode);
@@ -1338,6 +1412,7 @@ test("tui: a wiring error, a manual file, a path out of the repository or throug
     assert.match(cli.stdout, /wiring\.md:4:4: K003 indentation must be a multiple of 2 spaces/);
     assert.match(cli.stdout, /K302 wire `app\.purchase` is a module/);
   }
+
   assert.deepEqual(treeBytes(root), before, "no generated file");
   // F6 → Tab → Enter opens the first error in the spec.
   s.send(KEY.f6);
@@ -1364,16 +1439,19 @@ test("tui: a wiring error, a manual file, a path out of the repository or throug
   const records = s.app.state.records.length;
   // The link exists only for these cases: the tree snapshot does not follow links.
   symlinkSync(outside, join(root, "gen-link"));
+
   const cases: [string, RegExp][] = [
     [`../${root.split("/").at(-1)}-escape.ts`, /not a plain relative path/],
     ["gen-link/linked.ts", /leads out of the repository through a link/],
     ["gen/wire.js", /must name a TypeScript file/],
   ];
+
   for (const [out, why] of cases) {
     wireForm(s.send, s.app, "write", out);
     assert.match(s.app.state.prompt?.note ?? "", why);
     assert.match(s.app.state.message ?? "", why);
     await esc(s.send);
+
     for (const check of [false, true]) {
       const result = await runOperation({ kind: "wire", root, out, check });
       assert.deepEqual([result.status, result.exitCode, result.payload], ["failed", 2, null]);
@@ -1383,6 +1461,7 @@ test("tui: a wiring error, a manual file, a path out of the repository or throug
       assert.match(cli.stderr, why);
     }
   }
+
   assert.equal(s.app.state.records.length, records, "a refused path starts nothing");
   assert.deepEqual(readdirSync(outside), [], "nothing lands outside");
   rmSync(join(root, "gen-link"));
@@ -1427,11 +1506,13 @@ test("tui: a spec or the target changed between the computation and the write re
   s.send(KEY.f6);
   // A dirty wiring buffer opens the save step naming the target; Back writes nothing; Save and continue generates from the saved text.
   s.send(KEY.ctrlP);
+
   for (const ch of "open keylang/wiring.md") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.current, "keylang/wiring.md");
   s.send("i");
   s.send(KEY.end);
+
   for (const ch of " <!-- saved first -->") s.send(ch);
   await esc(s.send);
   const generated = readFileSync(join(root, out), "utf8");
@@ -1456,6 +1537,7 @@ test("tui: a spec or the target changed between the computation and the write re
 function screenOf(out: readonly string[], cols = 100, rows = 30): string {
   const vt = new VirtualTerminal(cols, rows);
   vt.feed(out.join(""));
+
   return vt.text();
 }
 
@@ -1469,6 +1551,7 @@ test("terminal: q during a held read-only operation asks first; Stay keeps it; C
   await waitUntil(() => /✗ 0/.test(screenOf(term.out)), "the first analysis");
   const before = treeBytes(root);
   term.type(KEY.ctrlP);
+
   for (const ch of "map check") term.type(ch);
   term.type(KEY.enter);
   await waitUntil(() => /map check: running/.test(screenOf(term.out)), "the held check");
@@ -1501,6 +1584,7 @@ test("tui: Cancel and exit before the commit quits with nothing written; during 
   const early = checkoutRepo(t);
   let quits = 0;
   let resume = (): void => {};
+
   const held = session(early, { onQuit: () => quits++, operations: pausedRunner(() => new Promise<void>((done) => (resume = done))) });
   t.after(() => held.app.close());
   await held.app.idle();
@@ -1550,7 +1634,9 @@ test("tui: Cancel and exit before the commit quits with nothing written; during 
   assert.deepEqual(completed, ["keylang/map/domain.md", ".keylang/index.json"], "the current file finished; no later one started");
   assert.deepEqual(result.written, completed);
   const now = treeBytes(root);
+
   for (const [path, text] of disk) if (!completed.includes(path)) assert.equal(now.get(path), text, `${path} is as it was`);
+
   for (const path of completed) assert.notEqual(now.get(path), disk.get(path), `${path} was written`);
   assert.match(readFileSync(join(root, "keylang/map/domain.md"), "utf8"), /cancel/);
 });
@@ -1579,6 +1665,7 @@ test("tui: quitting during a brief batch with a brief written and a dirty spec n
   assert.match(s.text(), /explain .* is running/);
   s.send("q");
   await s.app.idle();
+
   for (let i = 0; i < 100 && model.dropped() === 0; i++) await sleep(10);
   assert.equal(record.status, "cancelled");
   assert.equal(quit, 0, "Cancel and exit is no leave to drop the unsaved text");
@@ -1611,6 +1698,7 @@ test("tui: a cancelled model draft answering late, with a ghost-eligible edit an
   // A new flow item while the draft runs: no ghost request is made.
   s.app.state.cursor = { line: 0, col: 0 };
   s.send("i");
+
   for (let i = 0; i < 7; i++) s.send(KEY.down);
   s.send(KEY.end);
   s.send(KEY.enter);
@@ -1619,6 +1707,7 @@ test("tui: a cancelled model draft answering late, with a ghost-eligible edit an
   await esc(s.send);
   const edited = s.app.state.buffers.get(FLOW_PATH)!.text;
   s.send(KEY.ctrlP);
+
   for (const ch of "open keylang/flows/refund.md") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.current, "keylang/flows/refund.md");
@@ -1650,6 +1739,7 @@ test("operation worker: close during a commit lets the current file finish and s
   const before = treeBytes(root);
   const worker = new OperationWorker();
   let closedAt: string | null = null;
+
   const result = await worker.run(
     { kind: "map", root },
     {
@@ -1662,6 +1752,7 @@ test("operation worker: close during a commit lets the current file finish and s
       },
     },
   );
+
   assert.ok(result.kind === "map" && result.payload !== null, `the report is kept: ${JSON.stringify(result)}`);
   assert.equal(result.status, "cancelled");
   const steps = result.payload.steps;
@@ -1669,7 +1760,9 @@ test("operation worker: close during a commit lets the current file finish and s
   assert.ok(completed.length >= 1 && steps.some((step) => step.state === "not-attempted"), JSON.stringify(steps));
   assert.deepEqual(result.written, completed);
   const now = treeBytes(root);
+
   for (const path of completed) assert.ok(now.has(path), `${path} landed`);
+
   for (const step of steps.filter((entry) => entry.state === "not-attempted")) assert.equal(now.get(step.path), before.get(step.path), `${step.path} not written`);
   const after = await worker.run({ kind: "map-check", root });
   assert.deepEqual([after.status, after.exitCode], ["failed", 2]);

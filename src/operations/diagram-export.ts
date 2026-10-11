@@ -25,6 +25,7 @@ import { commitProposal, generatedIn, proposalRefusal, rootRelative } from "./sh
 import type { OperationContext } from "./types.ts";
 
 export const DIAGRAM_FORMATS = ["bpmn", "drawio"] as const;
+
 export type DiagramFormat = (typeof DIAGRAM_FORMATS)[number];
 
 /** A view to export: what `diagramOf` draws, whether it comes from the discovered view, and its name (`flow:checkout`). */
@@ -42,8 +43,11 @@ export function parseExportView(text: string): ExportView | string {
   const at = text.indexOf(":");
   const kind = at === -1 ? (text === "layers" ? "layers" : "flow") : text.slice(0, at);
   const value = at === -1 ? text : text.slice(at + 1);
+
   if (kind === "layers") return { view: { kind: "layers" }, discovered: false, name: "layers" };
+
   if (value.trim() === "") return `a view needs a name: ${kind}:<name>`;
+
   switch (kind) {
     case "flow":
       return { view: { kind: "flow", name: value }, discovered: false, name: `flow:${value}` };
@@ -63,24 +67,33 @@ export function parseExportView(text: string): ExportView | string {
 export function exportViewOfQuery(query: URLSearchParams): ExportView | string {
   const need = (name: string): string | null => {
     const value = query.get(name);
+
     return value === null || value === "" ? null : value;
   };
+
   const view = query.get("view");
+
   if (view === "layers") return parseExportView("layers");
   const value = view === "process" ? (need("domain") ?? need("name")) : view === "entry" ? need("id") : need("name");
+
   if (view !== "flow" && view !== "discovered" && view !== "process" && view !== "entry") return "unknown view: expected one of flow, discovered, process, entry, layers";
+
   if (value === null) return `view=${view} needs ${view === "process" ? "domain" : view === "entry" ? "id" : "name"}=`;
+
   return parseExportView(`${view}:${value}`);
 }
 
 /** The discovered view (`<dir>/flows-discovered/*.md`, the README of the processes aside) parsed as specs, or null without it. */
 export function discoveredSpecOf(root: string, specDir: string): SpecIR | null {
   const dir = join(root, specDir, DISCOVERED_FLOWS_DIR);
+
   if (!existsSync(dir)) return null;
+
   const files = readdirSync(dir)
     .filter((name) => name.endsWith(".md") && name !== PROCESSES_FILE)
     .sort()
     .map((name) => join(dir, name));
+
   return compileSpec(files.map((file) => parse(toPosix(relative(root, file)), readFileSync(file, "utf8")))).spec;
 }
 
@@ -97,23 +110,28 @@ export interface ExportSources {
 export function exportSourcesOf(analysis: Analysis, discovered: SpecIR | null): ExportSources {
   const results = checkResults(analysis.verdicts, analysis.snapshot?.snapshotId ?? null, analysis.diagnostics);
   const processes = analysis.snapshot ? processViews(analysis.snapshot, analysis.spec, readProcesses(analysis.config.root, analysis.config.dir)) : [];
+
   return { snapshot: analysis.snapshot, spec: analysis.spec, discovered, results, processes };
 }
 
 /** The bytes of one export. A discovered flow is drawn from the discovered view, without verdicts (`check` does not judge it). Throws with the CLI's message. */
 export function diagramExportText(format: DiagramFormat, view: ExportView, sources: ExportSources): string {
   if (view.discovered && sources.discovered === null) throw new Error(`export ${format}: no discovered flows: run \`keylang flows discover\``);
+
   const input: DiagramInput = view.discovered
     ? { snapshot: sources.snapshot, spec: sources.discovered!, results: [], view: view.view }
     : { snapshot: sources.snapshot, spec: sources.spec, results: sources.results, view: view.view, processes: sources.processes };
+
   if (format === "drawio") return renderDrawio(input, view.name);
   const v = view.view;
+
   return renderBpmn(input, v.kind === "flow" ? v.name : v.kind === "process" ? v.domain : v.kind === "entry" ? v.id : view.name);
 }
 
 /** A file one of these exports wrote: `exporter="keylang"` (BPMN) or `<mxfile host="keylang"` (draw.io) near its start. */
 export function isDiagramExport(text: string): boolean {
   const head = text.slice(0, 2000);
+
   return /<bpmn:definitions\b[^>]*\bexporter="keylang"/.test(head) || /<mxfile\s+host="keylang"/.test(head);
 }
 
@@ -143,52 +161,70 @@ function failed(error: string): DiagramExportResult {
  */
 export async function runDiagramExport(request: DiagramExportRequest, context: OperationContext = {}): Promise<DiagramExportResult> {
   const { root } = request;
+
   if (!isAbsolute(root)) return failed("export: root must be an absolute path");
   const format = DIAGRAM_FORMATS.find((item) => item === request.format);
+
   if (format === undefined) return failed(`export: unknown format \`${request.format}\`; expected c4, ${DIAGRAM_FORMATS.join(", ")}`);
   const view = parseExportView(request.view);
+
   if (typeof view === "string") return failed(`export ${format}: ${view}`);
+
   if (request.out !== undefined && request.out.trim() === "") return failed(`export ${format}: --out needs a file path`);
+
   const outProblem = (): string | null => {
     if (request.out === undefined) return null;
+
     try {
       const problem = writeProblem(root, rootRelative(root, request.out), { generated: true });
+
       return problem === null ? null : `export ${format}: --out ${request.out}: ${problem}; nothing written`;
     } catch (error) {
       return `export ${format}: --out ${request.out}: ${errorText(error)}`;
     }
   };
+
   const before = outProblem();
+
   if (before !== null) return failed(before);
   let analyzed: Analysis;
+
   try {
     analyzed = await (context.analyze ?? analyze)({ root });
   } catch (error) {
     return failed(errorText(error));
   }
+
   let text: string;
+
   try {
     const discovered = view.discovered ? discoveredSpecOf(root, rootRelative(root, analyzed.config.dir)) : null;
     text = diagramExportText(format, view, exportSourcesOf(analyzed, discovered));
   } catch (error) {
     return failed(errorText(error));
   }
+
   if (request.out === undefined) return { exitCode: 0, text, out: null, error: null };
   const out = rootRelative(root, request.out);
   const again = outProblem();
+
   if (again !== null) return { ...failed(again), text };
   let current: string | null;
+
   try {
     current = existingText(join(root, out));
   } catch (error) {
     return { ...failed(`${out}: ${errorText(error)}`), text };
   }
+
   if (current !== null && !isDiagramExport(current)) return { ...failed(`${out}: not a diagram \`keylang export ${format}\` wrote; nothing written`), text };
+
   try {
     safeWrite(root, out, text, { generated: true, expect: current });
   } catch (error) {
     return { ...failed(errorText(error)), text };
   }
+
   return { exitCode: 0, text, out, error: null };
 }
 
@@ -226,40 +262,52 @@ export async function runImportDrawio(request: ImportDrawioRequest, context: Ope
   const { root } = request;
   const result: ImportDrawioResult = { exitCode: 2, flow: null, target: null, diff: null, proposal: null, messages: [] };
   const fail = (text: string, exitCode: 1 | 2 = 2): ImportDrawioResult => ({ ...result, exitCode, messages: [...result.messages, { level: "error", text }] });
+
   if (!isAbsolute(root) || !isAbsolute(request.file)) return fail("import drawio: root and file must be absolute paths");
   let model;
+
   try {
     model = parseDrawio(readFileSync(request.file, "utf8"));
   } catch (error) {
     return fail(`import drawio: ${request.file}: ${errorText(error)}`);
   }
+
   const name = drawioFlowName(model);
+
   if (name === null) return fail(`import drawio: ${request.file}: draws ${model.view === null ? "no keylang view" : `\`${model.view}\``}, not a flow; export a flow with \`keylang export drawio <flow>\``);
   result.flow = name;
   let analyzed: Analysis;
+
   try {
     analyzed = await (context.analyze ?? analyze)({ root, withoutEvidence: true });
   } catch (error) {
     return fail(errorText(error));
   }
+
   const specDir = rootRelative(root, analyzed.config.dir);
   const flow = analyzed.spec.flows.find((f) => f.name === name) ?? null;
   const into = request.into === undefined ? undefined : rootRelative(root, request.into);
   let target: string;
   let before: string | null;
   let text: string;
+
   try {
     if (flow !== null) {
       const own = existingText(join(root, flow.file));
       const section = own === null ? null : flowSection(own, name);
+
       if (own === null || section === null) return fail(`import drawio: ${flow.file}: flow \`${name}\` is no longer there; nothing written`);
       const edited = flowFromDrawio(model, name, { text: section.text, flow, firstLine: section.firstLine });
+
       // The guarantee of a round trip: the section as it is, and nothing to propose.
       if (edited === section.text && (into === undefined || into === flow.file)) {
         result.target = flow.file;
+
         return { ...result, exitCode: 0, messages: [{ level: "info", text: `${flow.file}: flow \`${name}\` already says what the drawing says; nothing to propose` }] };
       }
+
       target = into ?? flow.file;
+
       if (target === flow.file) {
         const lines = own.replace(/\r\n/g, "\n").split("\n");
         const sectionLines = section.text.split("\n").length;
@@ -278,13 +326,17 @@ export async function runImportDrawio(request: ImportDrawioRequest, context: Ope
   } catch (error) {
     return fail(`import drawio: ${errorText(error)}`);
   }
+
   result.target = target;
+
   if (before === text) return { ...result, exitCode: 0, messages: [{ level: "info", text: `${target}: nothing to propose` }] };
   result.diff = lineDiff(before ?? "", text);
+
   if (request.print === true) return { ...result, exitCode: 0 };
   const generated = generatedIn(analyzed.docs);
   const store = `${PROPOSALS_DIR}/${target}`;
   let candidate;
+
   try {
     const problem = proposalProblem(root, specDir, target, generated);
     const pending = problem === null && writeProblem(root, store, { under: PROPOSALS_DIR, generated: true }) === null ? existingText(join(root, store)) : null;
@@ -292,12 +344,18 @@ export async function runImportDrawio(request: ImportDrawioRequest, context: Ope
   } catch (error) {
     return fail(errorText(error));
   }
+
   const refusal = proposalRefusal(root, candidate, "refuse", "import drawio");
+
   if (refusal !== null) return fail(refusal.error, refusal.exitCode);
   const committed = await commitProposal({ root, specDir, generated, target, text, expected: { target: before, proposal: candidate.pending }, config: analyzed.config, inputs: sourceInputs(analyzed.config, analyzed.snapshot?.manifest.files ?? []) }, context);
+
   if ("cancelled" in committed) return fail("import drawio: cancelled", 2);
+
   if ("refused" in committed) return { ...result, exitCode: 1, messages: [...committed.refused.map((text) => ({ level: "error" as const, text })), { level: "info", text: "nothing was written" }] };
+
   if ("failed" in committed) return fail(committed.failed);
+
   return {
     ...result,
     exitCode: 0,

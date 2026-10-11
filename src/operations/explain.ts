@@ -29,32 +29,44 @@ import { empty, specHashes, specProblems } from "./shared.ts";
 export async function runExplain(request: ExplainRequest, context: OperationContext): Promise<OperationEnvelope<"explain">> {
   if (!isAbsolute(request.root)) return empty("explain", "failed", 2, "explain: root must be an absolute path");
   const subject = request.subject;
+
   if (subject === "") return empty("explain", "failed", 2, "explain: a code or an id is required");
+
   if (context.signal?.aborted) return empty("explain", "cancelled", null);
+
   if (isDiagnosticCode(subject)) {
     const found = codeExplanation(subject);
+
     if (found === null) return empty("explain", "failed", 2, `unknown code \`${subject}\``);
     const payload: ExplainPayload = { ...found, snapshotId: null, text: offlineExplanationText(found) };
+
     return { ...empty("explain", "completed", 0), payload, messages: [{ level: "info", text: `${found.code}: offline help` }] };
   }
+
   context.onProgress?.({ text: "reading the saved code and specs" });
   const analyzeSaved = context.analyze ?? analyze;
   let analyzed: Analysis;
+
   try {
     analyzed = await analyzeSaved({ root: request.root, withoutEvidence: true });
   } catch (error) {
     return empty("explain", "failed", 2, errorText(error));
   }
+
   if (context.signal?.aborted) return empty("explain", "cancelled", null);
   const old = oldExplanations(analyzed.config.root);
   const notes: OperationMessage[] = old > 0 ? [{ level: "warning", text: `note: ${moveHint(analyzed.config, old)}` }] : [];
   const found = nodeExplanation(analyzed, subject, request.detail ?? analyzed.config.explain.detail);
+
   if ("unknown" in found) {
     const failed = empty("explain", "failed", 2);
+
     return { ...failed, messages: [...notes, { level: "error", text: unknownIdMessage(subject, found.suggestion) }] };
   }
+
   const payload: ExplainPayload = { ...found, snapshotId: analyzed.snapshot?.snapshotId ?? null, text: offlineExplanationText(found) };
   const answer = found.saved === null ? "no saved answer" : `saved answer ${found.saved.fresh ? "fresh" : "stale"}`;
+
   return { ...empty("explain", "completed", 0), payload, messages: [...notes, { level: "info", text: `${found.summary.kind} ${found.id}: ${answer}` }] };
 }
 
@@ -76,23 +88,30 @@ export async function runExplain(request: ExplainRequest, context: OperationCont
  */
 export async function runExplainLlm(request: ExplainLlmRequest, context: OperationContext): Promise<OperationEnvelope<"explain-llm">> {
   const { root, id } = request;
+
   if (!isAbsolute(root)) return empty("explain-llm", "failed", 2, "explain: root must be an absolute path");
+
   if (id === "") return empty("explain-llm", "failed", 2, "explain: a code or an id is required");
+
   if (isDiagnosticCode(id)) return empty("explain-llm", "failed", 2, `explain --llm: \`${id}\` is a diagnostic code: its help is offline (explain ${id})`);
+
   if (context.signal?.aborted) return empty("explain-llm", "cancelled", null);
   context.onProgress?.({ text: "reading the saved code and specs" });
   let analyzed: Analysis;
+
   try {
     analyzed = await (context.analyze ?? analyze)({ root, withoutEvidence: true });
   } catch (error) {
     return empty("explain-llm", "failed", 2, errorText(error));
   }
+
   if (context.signal?.aborted) return empty("explain-llm", "cancelled", null);
   const config = analyzed.config;
   const old = oldExplanations(config.root);
   const notes: OperationMessage[] = old > 0 ? [{ level: "warning", text: `note: ${moveHint(config, old)}` }] : [];
   const detail = request.detail ?? config.explain.detail;
   const found = nodeExplanation(analyzed, id, detail);
+
   if ("unknown" in found) return { ...empty("explain-llm", "failed", 2), messages: [...notes, { level: "error", text: unknownIdMessage(id, found.suggestion) }] };
   const { lang } = config.explain;
   const file = explanationPath(config, id, detail);
@@ -101,6 +120,7 @@ export async function runExplainLlm(request: ExplainLlmRequest, context: Operati
   const saved = readExplanation(config, id, detail);
   const previous = saved === null ? null : savedAnswer(analyzed, id, saved);
   const reason = savedAnswerMiss(analyzed, id, saved, lang, detail);
+
   const payload: ExplainLlmPayload = {
     id,
     summary: found.summary,
@@ -119,19 +139,26 @@ export async function runExplainLlm(request: ExplainLlmRequest, context: Operati
     snapshotId: analyzed.snapshot?.snapshotId ?? null,
     text: "",
   };
+
   const what = `${found.summary.kind} ${id}`;
+
   if (reason === null && previous !== null) {
     payload.text = savedAnswerText(previous);
+
     return { ...empty("explain-llm", "completed", 0), payload, messages: [...notes, { level: "info", text: `${what}: the saved ${detail} answer is fresh; read, no request` }] };
   }
+
   const { answeringAgent, llmClient, LlmCancelled } = await import("../llm.ts");
   const setup = llmClient(config.agent, { root: config.root });
+
   if ("missing" in setup) {
     payload.source = "offline";
     payload.unavailable = setup.missing;
     payload.text = `${formatSummary(found.summary)}\n${previous === null ? "" : `\n${savedAnswerText(previous)}`}`;
+
     return { ...empty("explain-llm", "completed", 0), payload, messages: [...notes, { level: "warning", text: `${setup.missing}; showing what the snapshot says` }] };
   }
+
   const client = setup.client;
   payload.source = "model";
   payload.answer = null;
@@ -142,54 +169,73 @@ export async function runExplainLlm(request: ExplainLlmRequest, context: Operati
   context.onProgress?.({ text: `asking ${client.agent}` });
   let answer: string;
   let reported: string | null = null;
+
   try {
     answer = await client.complete(explanationRequest(analyzed, found.summary, { lang, detail, briefs: loadBriefs(config) }), { ...(context.signal ? { signal: context.signal } : {}), onModel: (model) => (reported = model) });
   } catch (error) {
     if (error instanceof LlmCancelled || context.signal?.aborted) return empty("explain-llm", "cancelled", null);
     payload.error = errorText(error);
+
     return failed(2, [{ level: "error", text: payload.error }]);
   }
+
   if (context.signal?.aborted) return empty("explain-llm", "cancelled", null);
   const text = detail === "brief" ? briefText(answer) : answerText(answer);
+
   if (text === "") {
     payload.error = `${client.agent} answered without text; nothing written`;
+
     return failed(2, [{ level: "error", text: payload.error }]);
   }
+
   const e: Explanation = { agent: answeringAgent(client, reported), date: new Date().toISOString().slice(0, 10), closure: currentBaseline(analyzed, id) ?? "", lang, detail, text };
   payload.answer = savedAnswer(analyzed, id, e);
   const keep = { level: "info" as const, text: previous === null ? "nothing was written" : `nothing was written; ${file} keeps the saved answer` };
   context.onProgress?.({ text: "waiting to write" });
   let gate: CommitGate;
+
   try {
     gate = await context.beforeCommit?.({ targets: [file] });
   } catch (error) {
     payload.error = errorText(error);
+
     return failed(2, [{ level: "error", text: payload.error }]);
   }
+
   if (context.signal?.aborted) return { ...empty("explain-llm", "cancelled", null), payload };
+
   const refuse = (reasons: string[]): OperationEnvelope<"explain-llm"> => {
     payload.refused = reasons;
+
     return failed(1, [...reasons.map((reason) => ({ level: "error" as const, text: reason })), keep]);
   };
+
   if (gate && gate.refused.length > 0) return refuse(gate.refused);
   let problems: string[];
+
   try {
     const target = writeProblem(root, file, { under: explainDir(config), expect: savedBytes });
     problems = [...(target === null ? [] : [`${file}: ${target}`]), ...sourceInputProblems(config, inputs, "the explanation"), ...specProblems(root, specs, "the explanation")];
   } catch (error) {
     payload.error = errorText(error);
+
     return failed(2, [{ level: "error", text: payload.error }]);
   }
+
   if (problems.length > 0) return refuse(problems);
   context.onProgress?.({ text: `writing ${file}` });
+
   try {
     writeAtomic(landing(resolve(root, file))!, formatStoredExplanation(e));
   } catch (error) {
     payload.error = errorText(error);
+
     return failed(2, [{ level: "error", text: payload.error }]);
   }
+
   payload.written = file;
   payload.text = savedAnswerText(payload.answer);
+
   return { ...empty("explain-llm", "completed", 0), payload, messages: [...notes, { level: "info", text: `${what}: ${client.agent} wrote the ${detail} answer to ${file}` }], written: [file] };
 }
 
@@ -202,34 +248,42 @@ export async function runExplainLlm(request: ExplainLlmRequest, context: Operati
  */
 export async function runExplainPlan(request: ExplainPlanRequest, context: OperationContext): Promise<OperationEnvelope<"explain-plan">> {
   if (!isAbsolute(request.root)) return empty("explain-plan", "failed", 2, "explain: root must be an absolute path");
+
   if (request.list === "briefs") {
     for (const [flag, value] of [["--limit", request.limit], ["--jobs", request.jobs]] as const) {
       if (value !== undefined && (!Number.isInteger(value) || value < 1)) return empty("explain-plan", "failed", 2, `${flag} must be a positive whole number, got \`${value}\``);
     }
   }
+
   if (context.signal?.aborted) return empty("explain-plan", "cancelled", null);
   context.onProgress?.({ text: "reading the saved code, specs and explanations" });
   const analyzeSaved = context.analyze ?? analyze;
   let analyzed: Analysis;
+
   try {
     analyzed = await analyzeSaved({ root: request.root, withoutEvidence: true });
   } catch (error) {
     return empty("explain-plan", "failed", 2, errorText(error));
   }
+
   if (context.signal?.aborted) return empty("explain-plan", "cancelled", null);
   const old = oldExplanations(analyzed.config.root);
   const notes: OperationMessage[] = old > 0 ? [{ level: "warning", text: `note: ${moveHint(analyzed.config, old)}` }] : [];
   const snapshotId = analyzed.snapshot?.snapshotId ?? null;
+
   if (request.list === "stale-saved") {
     const inventory = staleInventory(analyzed);
     const payload: ExplainPlanPayload = { list: "stale-saved", ...inventory, snapshotId, text: staleInventoryText(inventory) };
     const stale = inventory.entries.filter((entry) => entry.state === "stale").length;
+
     return { ...empty("explain-plan", "completed", 0), payload, messages: [...notes, { level: "info", text: `${stale} stale, ${inventory.entries.length - stale} gone of ${inventory.saved} saved explanation(s)` }] };
   }
+
   if (!analyzed.snapshot) return { ...empty("explain-plan", "failed", 2), messages: [...notes, { level: "error", text: "no snapshot: explain --missing needs a repository with sources" }] };
   const plan = briefPlan(analyzed, { batch: request.batch, limit: request.limit ?? null, jobs: request.jobs ?? defaultBriefJobs(selectedAgent(analyzed.config.agent)), estimate: request.estimate === true });
   const payload: ExplainPlanPayload = { list: "briefs", ...plan, snapshotId, text: briefPlanText(plan) };
   const summary = plan.plan.length === 0 ? "nothing to explain" : `${plan.plan.length} brief(s) planned${plan.estimate === null ? "" : `, ~${plan.estimate.input} in, ~${plan.estimate.output} out (approximate)`}`;
+
   return { ...empty("explain-plan", "completed", 0), payload, messages: [...notes, { level: "info", text: summary }] };
 }
 
@@ -259,26 +313,33 @@ function explainBatchText(payload: Pick<ExplainBatchPayload, "done" | "failed" |
  */
 export async function runExplainBatch(request: ExplainBatchRequest, context: OperationContext): Promise<OperationEnvelope<"explain-batch">> {
   const { root } = request;
+
   if (!isAbsolute(root)) return empty("explain-batch", "failed", 2, "explain: root must be an absolute path");
+
   for (const [flag, value] of [["--limit", request.limit], ["--jobs", request.jobs]] as const) {
     if (value !== undefined && (!Number.isInteger(value) || value < 1)) return empty("explain-batch", "failed", 2, `${flag} must be a positive whole number, got \`${value}\``);
   }
+
   if (context.signal?.aborted) return empty("explain-batch", "cancelled", null);
   context.onProgress?.({ text: "reading the saved code, specs and briefs" });
   let analyzed: Analysis;
+
   try {
     analyzed = await (context.analyze ?? analyze)({ root, withoutEvidence: true });
   } catch (error) {
     return empty("explain-batch", "failed", 2, errorText(error));
   }
+
   if (context.signal?.aborted) return empty("explain-batch", "cancelled", null);
   const config = analyzed.config;
   const old = oldExplanations(config.root);
   const notes: OperationMessage[] = old > 0 ? [{ level: "warning", text: `note: ${moveHint(config, old)}` }] : [];
+
   if (!analyzed.snapshot) return { ...empty("explain-batch", "failed", 2), messages: [...notes, { level: "error", text: "no snapshot: explain --missing needs a repository with sources" }] };
   const jobs = request.jobs ?? defaultBriefJobs(selectedAgent(config.agent));
   const { plan } = briefPlan(analyzed, { batch: request.batch, limit: request.limit ?? null, jobs, estimate: false });
   const { lang } = config.explain;
+
   const payload: ExplainBatchPayload = {
     batch: request.batch,
     limit: request.limit ?? null,
@@ -294,12 +355,16 @@ export async function runExplainBatch(request: ExplainBatchRequest, context: Ope
     snapshotId: analyzed.snapshot.snapshotId,
     text: "",
   };
+
   if (plan.length === 0) {
     payload.text = "nothing to explain\n";
+
     return { ...empty("explain-batch", "completed", 0), payload, messages: [...notes, { level: "info", text: "nothing to explain: zero work, no request" }] };
   }
+
   const { answeringAgent, llmClient, LlmCancelled } = await import("../llm.ts");
   const setup = llmClient(config.agent, { root: config.root });
+
   if ("missing" in setup) return { ...empty("explain-batch", "failed", 2), messages: [...notes, { level: "error", text: setup.missing }] };
   const client = setup.client;
   payload.agent = client.agent;
@@ -307,6 +372,7 @@ export async function runExplainBatch(request: ExplainBatchRequest, context: Ope
   // runs once per wave, not before each brief; each write still checks its own file (`expect`).
   const inputs = sourceInputs(config, analyzed.snapshot.manifest.files);
   const specs = specHashes(root, analyzed.docs);
+
   /** How keylang.json, the sources and the specs differ from the ones the plan read; a tree that cannot be read again is a reason too. */
   const inputsChanged = (): string[] => {
     try {
@@ -315,6 +381,7 @@ export async function runExplainBatch(request: ExplainBatchRequest, context: Ope
       return [`the sources could not be read again: ${errorText(error)}`];
     }
   };
+
   const planned = plan.map((entry) => entry.id);
   const files = new Map(planned.map((id) => [id, explanationPath(config, id, "brief", planned)]));
   const expected = new Map([...files.values()].map((file) => [file, readTextOrNull(resolve(root, file))]));
@@ -323,105 +390,140 @@ export async function runExplainBatch(request: ExplainBatchRequest, context: Ope
   const halt = new AbortController();
   const signal = context.signal ? AbortSignal.any([context.signal, halt.signal]) : halt.signal;
   const cancelled = (): boolean => context.signal?.aborted === true;
+
   const stop = (why: "cancelled" | "outdated" | "refused", reasons: string[] = []): void => {
     if (payload.stopped !== null) return;
     payload.stopped = why;
     payload.refused = reasons;
     halt.abort();
   };
+
   const notStarted = new Set<string>();
   const written: string[] = [];
   let gate: Promise<CommitGate> | null = null;
   /** The wave whose inputs were found unchanged before its first write. */
   let checkedWave: number | null = null;
   let finished = 0;
+
   const finish = (id: string, failed: string | null): void => {
     if (failed !== null) payload.failed.push({ id, reason: failed });
     finished++;
     context.onProgress?.({ text: `${finished}/${plan.length} · ${id}${failed === null ? "" : `: failed: ${failed}`}`, step: { done: finished, total: plan.length, id, failed } });
   };
+
   /** The brief of one node of `wave`: asked, checked, written; a stop leaves it not started. */
   const one = async (id: string, wave: number): Promise<void> => {
     if (cancelled()) stop("cancelled");
+
     if (payload.stopped !== null) return void notStarted.add(id);
     const request = briefRequest(analyzed, id, lang, briefs);
+
     if (request === null) return finish(id, "the id is gone from the snapshot");
     let answer: string;
     let reported: string | null = null;
+
     try {
       answer = await client.complete(request, { signal, onModel: (model) => (reported = model) });
     } catch (error) {
       if (cancelled()) stop("cancelled");
+
       if (error instanceof LlmCancelled || signal.aborted) return void notStarted.add(id);
+
       return finish(id, errorText(error));
     }
+
     if (cancelled()) stop("cancelled");
+
     if (payload.stopped !== null) return void notStarted.add(id);
     const text = briefText(answer);
+
     if (text === "") return finish(id, `${client.agent} answered without text; nothing written`);
     // Asked once, before the first write: from here on the session defers its own writes and Cancel stops between briefs.
     gate ??= Promise.resolve()
       .then(() => context.beforeCommit?.({ targets: [...files.values()] }))
       .catch((error: unknown) => ({ refused: [errorText(error)] }));
     const answered = await gate;
+
     if (cancelled()) stop("cancelled");
+
     if (answered && answered.refused.length > 0) stop("refused", answered.refused);
+
     if (payload.stopped !== null) return void notStarted.add(id);
+
     // The wave's first write checks the inputs (synchronously: no other brief writes in between).
     if (checkedWave !== wave) {
       const changed = inputsChanged();
+
       if (changed.length > 0) {
         stop("outdated", changed);
+
         return void notStarted.add(id);
       }
+
       checkedWave = wave;
     }
+
     const file = files.get(id)!;
     let target: string | null;
+
     try {
       target = writeProblem(root, file, { under: explainDir(config), expect: expected.get(file) ?? null });
     } catch (error) {
       return finish(id, errorText(error));
     }
+
     if (target !== null) return finish(id, `${file}: ${target}`);
     // The repository's baseline reads the layer briefs this batch just wrote.
     const closure = id === SYSTEM_ID ? systemBaseline(analyzed.snapshot!, briefs) : (currentBaseline(analyzed, id) ?? "");
     const e: Explanation = { agent: answeringAgent(client, reported), date: new Date().toISOString().slice(0, 10), closure, lang, detail: "brief", text };
+
     try {
       writeAtomic(landing(resolve(root, file))!, formatStoredExplanation(e));
     } catch (error) {
       return finish(id, errorText(error));
     }
+
     // A parent asked later reads this brief in its members.
     briefs.set(id, e);
     payload.done.push({ id, file });
     written.push(file);
     finish(id, null);
   };
+
   context.onProgress?.({ text: `asking ${client.agent}: ${plan.length} brief(s), ${jobs} at a time` });
   const waves = [...new Set(plan.map((entry) => entry.wave))];
+
   for (const [index, wave] of waves.entries()) {
     // From the second wave on, the inputs are checked before it asks: a change made during the last wave costs no request.
     if (index > 0 && payload.stopped === null && !cancelled()) {
       const changed = inputsChanged();
+
       if (changed.length > 0) stop("outdated", changed);
     }
+
     const queue = plan.filter((entry) => entry.wave === wave).map((entry) => entry.id);
+
     const workers = Array.from({ length: Math.min(jobs, queue.length) }, async () => {
       for (let id = queue.shift(); id !== undefined; id = queue.shift()) await one(id, wave);
     });
+
     await Promise.all(workers);
   }
+
   payload.failed.sort((a, b) => compareText(a.id, b.id));
   payload.notStarted = plan.map((entry) => entry.id).filter((id) => notStarted.has(id));
   payload.text = explainBatchText(payload);
   const counts = `${payload.done.length} of ${plan.length} brief(s) written${payload.failed.length > 0 ? `, ${payload.failed.length} failed` : ""}${payload.notStarted.length > 0 ? `, ${payload.notStarted.length} not started` : ""}`;
   const failures = payload.failed.map((f) => ({ level: "error" as const, text: `${f.id}: ${f.reason}` }));
   const result = (status: OperationStatus, exitCode: 0 | 1 | null, messages: OperationMessage[]): OperationEnvelope<"explain-batch"> => ({ ...empty("explain-batch", status, exitCode), payload, messages: [...notes, ...messages], written });
+
   if (payload.stopped === "cancelled") return result("cancelled", null, [...failures, { level: "info", text: `cancelled: ${counts}; the written briefs stay` }]);
+
   if (payload.stopped !== null) {
     const why = payload.stopped === "outdated" ? "the inputs changed while the batch ran: no further brief was asked for or written" : "the session refused the write";
+
     return result("failed", 1, [...payload.refused.map((text) => ({ level: "error" as const, text })), ...failures, { level: "info", text: `${why}; ${counts}; the written briefs stay` }]);
   }
+
   return result("completed", payload.failed.length > 0 ? 1 : 0, [...failures, { level: "info", text: counts }]);
 }

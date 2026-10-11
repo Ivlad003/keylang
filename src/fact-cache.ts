@@ -19,6 +19,7 @@ import { landing, writeAtomic, writeProblem } from "./safe-write.ts";
 import { compareText } from "./span.ts";
 
 const CACHE_SCHEMA = 1;
+
 /** Relative to the root, POSIX. */
 export const FACT_CACHE_FILE = ".keylang/cache/facts.json";
 
@@ -36,10 +37,12 @@ interface Stored {
 function storedConfigs(value: unknown, version: string): NonNullable<Stored["configs"]> {
   if (!isRecord(value) || value.schema !== CACHE_SCHEMA || value.version !== version || !isRecord(value.configs)) return {};
   const configs: NonNullable<Stored["configs"]> = {};
+
   for (const [path, entry] of Object.entries(value.configs)) {
     if (!isRecord(entry) || typeof entry.sha256 !== "string" || !isConfigFacts(entry.facts) || entry.facts.path !== path) continue;
     configs[path] = { sha256: entry.sha256, facts: entry.facts };
   }
+
   return configs;
 }
 
@@ -51,15 +54,18 @@ function storedConfigs(value: unknown, version: string): NonNullable<Stored["con
 function storedFiles(value: unknown, version: string): Stored["files"] {
   if (!isRecord(value) || value.schema !== CACHE_SCHEMA || value.version !== version || !isRecord(value.files)) return {};
   const files: Stored["files"] = {};
+
   for (const [path, entry] of Object.entries(value.files)) {
     if (!isRecord(entry) || typeof entry.sha256 !== "string" || !isStoredFacts(entry.facts) || entry.facts.path !== path) continue;
     files[path] = { sha256: entry.sha256, facts: entry.facts };
   }
+
   return files;
 }
 
 function isStoredFacts(value: unknown): value is StoredFacts {
   if (!isRecord(value)) return false;
+
   return (
     typeof value.path === "string" &&
     isPosition(value.endLine) &&
@@ -148,6 +154,7 @@ function isPass(value: unknown): boolean {
 }
 
 const ROW_KINDS = new Set(["fn", "value", "class", "type", "alias", "default", "reexport"]);
+
 const ROW_FORMS = new Set(["alias", "default", "reexport", "namespace"]);
 
 function isExportRow(value: unknown): boolean {
@@ -192,6 +199,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 const memory = new Map<string, { hash: string; facts: FileFacts }>();
+
 const configMemory = new Map<string, { hash: string; facts: ConfigFacts }>();
 
 export class FactCache {
@@ -217,6 +225,7 @@ export class FactCache {
     const file = join(root, FACT_CACHE_FILE);
     let disk: Stored["files"] = {};
     let configs: NonNullable<Stored["configs"]> = {};
+
     if (existsSync(file)) {
       try {
         const value: unknown = JSON.parse(readFileSync(file, "utf8"));
@@ -226,6 +235,7 @@ export class FactCache {
         // A damaged cache is rebuilt, never an error.
       }
     }
+
     return new FactCache(root, version, disk, configs);
   }
 
@@ -233,17 +243,22 @@ export class FactCache {
     const key = `${this.root}\0${this.version}\0${path}`;
     const hot = memory.get(key);
     let facts: FileFacts | undefined = hot && hot.hash === sha256 ? hot.facts : undefined;
+
     if (!facts) {
       const cold = this.disk[path];
+
       if (cold && cold.sha256 === sha256) facts = { ...cold.facts, exports: new Set(cold.facts.exports) };
     }
+
     if (facts) this.reused++;
     else {
       this.extracted++;
       facts = await extract();
     }
+
     memory.set(key, { hash: sha256, facts });
     this.used.set(path, { sha256, facts });
+
     return facts;
   }
 
@@ -257,17 +272,22 @@ export class FactCache {
     const key = `${this.root}\0${this.version}\0${path}`;
     const hot = configMemory.get(key);
     let facts: ConfigFacts | undefined = hot && hot.hash === hash ? hot.facts : undefined;
+
     if (!facts) {
       const cold = this.diskConfigs[path];
+
       if (cold && cold.sha256 === hash) facts = cold.facts;
     }
+
     if (facts) this.reused++;
     else {
       this.extracted++;
       facts = parse();
     }
+
     configMemory.set(key, { hash, facts });
     this.usedConfigs.set(path, { sha256: hash, facts });
+
     return facts;
   }
 
@@ -278,21 +298,29 @@ export class FactCache {
    */
   changed(): boolean {
     if (Object.keys(this.disk).length !== this.used.size) return true;
+
     for (const [path, entry] of this.used) if (this.disk[path]?.sha256 !== entry.sha256) return true;
+
     if (Object.keys(this.diskConfigs).length !== this.usedConfigs.size) return true;
+
     for (const [path, entry] of this.usedConfigs) if (this.diskConfigs[path]?.sha256 !== entry.sha256) return true;
+
     return false;
   }
 
   /** The text of `FACT_CACHE_FILE` with the facts of this run (and nothing else), for the next process. */
   serialize(): string {
     const files: Stored["files"] = {};
+
     for (const [path, entry] of [...this.used].sort(([a], [b]) => compareText(a, b))) {
       files[path] = { sha256: entry.sha256, facts: { ...entry.facts, exports: [...entry.facts.exports].sort() } };
     }
+
     const configs: NonNullable<Stored["configs"]> = {};
+
     for (const [path, entry] of [...this.usedConfigs].sort(([a], [b]) => compareText(a, b))) configs[path] = entry;
     const stored: Stored = { schema: CACHE_SCHEMA, version: this.version, files, ...(this.usedConfigs.size > 0 ? { configs } : {}) };
+
     return `${JSON.stringify(stored)}\n`;
   }
 }
@@ -316,6 +344,7 @@ export function saveFactCache(root: string, text: string): boolean {
   try {
     if (writeProblem(root, FACT_CACHE_FILE, { under: ".keylang", generated: true }) !== null) return false;
     writeAtomic(landing(join(root, FACT_CACHE_FILE))!, text, { exact: true });
+
     return true;
   } catch {
     return false;

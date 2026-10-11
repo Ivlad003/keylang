@@ -10,13 +10,16 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 export const bin = join(root, "bin/keylang.js");
 
 /** Run `keylang` with `cwd` as working directory. */
 export function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
   // `check --format json` on this repository is over the default 1 MiB buffer; a cut output must fail, not parse half.
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+
   if (r.error) throw r.error;
+
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
@@ -24,6 +27,7 @@ export function keylang(cwd: string, args: string[]): { status: number | null; s
 export function repoCopy(): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-repo-"));
   cpSync(join(root, "tests/fixtures/repo"), dir, { recursive: true });
+
   return dir;
 }
 
@@ -32,18 +36,22 @@ export function mainRepo(t: { after: (f: () => void) => void }, files: Record<st
   const dir = mkdtempSync(join(tmpdir(), "keylang-main-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   writeFileSync(join(dir, "keylang.json"), `${JSON.stringify({ languages: ["typescript"], layers: { main: ["src/**"] } }, null, 2)}\n`);
+
   for (const [path, text] of Object.entries(files)) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
     writeFileSync(join(dir, path), text);
   }
+
   mkdirSync(join(dir, "keylang"), { recursive: true });
   writeFileSync(join(dir, "keylang/rules.md"), `# rules\n\n${rules}`);
+
   return dir;
 }
 
 export function tempDir(t: { after: (fn: () => void) => void }, prefix: string): string {
   const dir = mkdtempSync(join(tmpdir(), prefix));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+
   return dir;
 }
 
@@ -57,28 +65,37 @@ export function writeTree(dir: string, files: Record<string, string>): void {
 /** Relative paths and their bytes, so a command that must not write can be compared. */
 export function treeBytes(dir: string): Map<string, string> {
   const out = new Map<string, string>();
+
   const walk = (rel: string): void => {
     let names: string[];
+
     try {
       names = readdirSync(join(dir, rel));
     } catch {
       return;
     }
+
     for (const name of names) {
       const path = rel === "" ? name : `${rel}/${name}`;
+
       if (statSync(join(dir, path)).isDirectory()) walk(path);
       else out.set(path, readFileSync(join(dir, path), "utf8"));
     }
   };
+
   walk("");
+
   return out;
 }
 
 export function git(dir: string, args: string[]): void {
   const r = spawnSync("git", ["-c", "user.email=test@example.com", "-c", "user.name=Test", ...args], { cwd: dir, encoding: "utf8" });
+
   if (r.status !== 0) throw new Error(r.stderr || r.stdout);
 }
 
 export const LAYERS = { languages: ["typescript"], module: "file", layers: { app: ["src/app/**"], domain: ["src/domain/**"] } };
+
 export const PAY = "export function charge(): number {\n  return 1;\n}\n";
+
 export const ORDER = "export function price(): number {\n  return 2;\n}\n";

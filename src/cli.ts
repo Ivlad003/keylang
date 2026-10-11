@@ -456,6 +456,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     return await run(argv);
   } catch (e) {
     process.stderr.write(`keylang: ${e instanceof Error ? e.message : String(e)}\n`);
+
     return 2;
   }
 }
@@ -467,25 +468,35 @@ async function run(argv: readonly string[]): Promise<number> {
     strict: true,
     options: OPTIONS,
   });
+
   if (values.help) {
     process.stdout.write(USAGE);
+
     return 0;
   }
+
   if (values.version) {
     const pkg = createRequire(import.meta.url)("../package.json") as { version: string };
     process.stdout.write(`keylang ${pkg.version}\n`);
+
     return 0;
   }
+
   const [cmd, ...paths] = positionals;
+
   if (cmd === undefined) {
     // Without a terminal there is nothing to draw on: usage, as before the TUI.
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
       process.stderr.write(USAGE);
+
       return 2;
     }
+
     const { runTerminal } = await import("./tui/terminal.ts");
+
     return runTerminal(findRoot(process.cwd()));
   }
+
   switch (cmd) {
     case "init":
       return cmdInit(paths[0] ?? ".", { agents: values.agents, check: values.check === true });
@@ -530,16 +541,20 @@ async function run(argv: readonly string[]): Promise<number> {
       });
     case "lsp": {
       const { serveLsp } = await import("./lsp.ts");
+
       return serveLsp();
     }
+
     case "doctor":
       return cmdDoctor();
     case "mcp": {
       // The MCP SDK loads only for this command.
       const { serveMcp } = await import("./mcp.ts");
       const pkg = createRequire(import.meta.url)("../package.json") as { version: string };
+
       return serveMcp(findRoot(process.cwd()), pkg.version);
     }
+
     case "draft":
       return cmdDraft(paths, { mode: values.mode ?? "hybrid", modeGiven: values.mode !== undefined, name: values.name, into: values.into, print: values.print === true, fromTrace: values["from-trace"], run: values.run });
     case "proposals":
@@ -576,33 +591,49 @@ async function run(argv: readonly string[]): Promise<number> {
       return (await prepareClone(paths[0], { dir: values.dir, explain: values.explain, dryRun: values["dry-run"] === true })).code;
     case "web": {
       const readOnly = values["read-only"] === true;
+
       if (values.hub === true) {
         if (paths[0] !== undefined || values.new !== undefined || values.export !== undefined) throw new Error("web --hub: the start page opens repositories itself; it takes no repository, --new or --export");
+
         return cmdHub(values.port ?? "7070", values.host ?? "127.0.0.1", readOnly);
       }
+
       if (values.export !== undefined) {
         if (values.new !== undefined) throw new Error("web: --export writes a site of an existing repository; --new makes a new project");
+
         if (values.port !== undefined || values.host !== undefined) throw new Error("web --export serves nothing: --port and --host go with a server");
+
         if (paths[0] === undefined) return cmdWebExport(findRoot(process.cwd()), values.export);
         const clone = await prepareClone(paths[0], { dir: values.dir, explain: values.explain, dryRun: false });
+
         if (clone.code !== 0 || clone.root === null) return clone.code;
+
         return cmdWebExport(clone.root, values.export);
       }
+
       if (values.new !== undefined) {
         if (paths[0] !== undefined) throw new Error("web: --new <dir> makes a new project; it takes no repository");
+
         if (readOnly) throw new Error("web: --new writes the new project's files; --read-only writes nothing");
+
         return cmdWebNew(values.new, values.port ?? "7070", values.host ?? "127.0.0.1");
       }
+
       if (paths[0] === undefined) return cmdWeb(findRoot(process.cwd()), values.port ?? "7070", values.host ?? "127.0.0.1", false, readOnly);
       const clone = await prepareClone(paths[0], { dir: values.dir, explain: values.explain, dryRun: false });
+
       if (clone.code !== 0 || clone.root === null) return clone.code;
+
       return cmdWeb(clone.root, values.port ?? "7070", values.host ?? "127.0.0.1", false, readOnly);
     }
+
     case "parse":
       needPaths(cmd, paths);
+
       return cmdParse(paths, values.json === true);
     case "fmt":
       needPaths(cmd, paths);
+
       return cmdFmt(paths, values.check === true);
     default:
       throw new Error(`unknown command \`${cmd}\`; see --help`);
@@ -617,9 +648,12 @@ async function run(argv: readonly string[]): Promise<number> {
 async function cmdWebNew(dirText: string, portText: string, host: string): Promise<number> {
   if (dirText === "") throw new Error("web --new: a directory is required");
   const root = resolve(process.cwd(), dirText);
+
   if (existsSync(root) && !statSync(root).isDirectory()) throw new Error(`web --new: ${dirText} is not a directory`);
+
   if (existsSync(join(root, CONFIG_FILE)) || isLink(join(root, CONFIG_FILE))) throw new Error(`web --new: ${join(dirText, CONFIG_FILE)} exists: the project is there already; run \`keylang web\` in it and «Запропонувати зміни»`);
   mkdirSync(root, { recursive: true });
+
   return cmdWeb(root, portText, host, true);
 }
 
@@ -634,6 +668,7 @@ function isLink(path: string): boolean {
 /** `web --hub`: the start page — clone a URL, reopen a clone, open a folder in the tab — and every repository opened from it under `/r/<id>/`, on one port. */
 async function cmdHub(portText: string, host: string, readOnly: boolean): Promise<number> {
   const port = Number(portText);
+
   if (!/^\d+$/.test(portText) || port > 65535) throw new Error(`web: --port must be a number from 0 to 65535, got \`${portText}\``);
   const { serveHub } = await import("./tui/hub.ts");
   const hub = await serveHub({ port, host, readOnly });
@@ -645,10 +680,12 @@ async function cmdHub(portText: string, host: string, readOnly: boolean): Promis
       process.off("SIGTERM", stop);
       resolve();
     };
+
     process.on("SIGINT", stop);
     process.on("SIGTERM", stop);
   });
   await hub.close();
+
   return 0;
 }
 
@@ -658,10 +695,13 @@ async function cmdWebExport(root: string, outText: string): Promise<number> {
   const out = resolve(process.cwd(), outText);
   const { exportSite, exportTargetProblem } = await import("./tui/web-export.ts");
   const problem = exportTargetProblem(root, out);
+
   if (problem !== null) {
     process.stderr.write(`keylang: web --export: ${outText}: ${problem}\n`);
+
     return 2;
   }
+
   process.stderr.write(`keylang: analysing ${root}\n`);
   // The repository is read, never written: no fact cache, no map on disk.
   const analysis = await analyze({ root, persistFacts: false, saveFacts: false });
@@ -669,40 +709,51 @@ async function cmdWebExport(root: string, outText: string): Promise<number> {
   const shown = toPosix(relative(process.cwd(), join(result.out, "index.html")));
   process.stdout.write(`${shown.startsWith("../") ? join(result.out, "index.html") : shown}: ${result.answers} answers in ${result.shards} data file(s)\n`);
   process.stderr.write(`open index.html in a browser (file:// works); app.html analyses a folder in the tab and needs http(s), e.g. \`npx serve ${outText}\`\n`);
+
   return 0;
 }
 
 async function cmdWeb(root: string, portText: string, host: string, greenfield = false, readOnly = false): Promise<number> {
   const port = Number(portText);
+
   if (!/^\d+$/.test(portText) || port > 65535) throw new Error(`web: --port must be a number from 0 to 65535, got \`${portText}\``);
   const { serveWeb } = await import("./tui/web.ts");
   const server = await serveWeb({ root, port, host, readOnly });
   // A new project opens on the diagram page, in the editor with the template dialog.
   process.stdout.write(`keylang web: ${greenfield ? `${server.url.replace("/#t=", "/diagrams#t=")}&new=1` : readOnly ? server.url.replace("/#t=", "/diagrams#t=") : server.url}\n`);
+
   if (greenfield) process.stderr.write(`a new project in ${root}: draw it, then «Створити специфікацію»\n`);
+
   if (readOnly) process.stderr.write(`read-only: the diagram page and the map of ${root}; nothing is written\n`);
   process.stderr.write("open the URL in a browser; Ctrl+C stops the server\n");
   await new Promise<void>((resolve) => {
     // Ctrl+C with unsaved buffers in a session asks once more, like `q` in the TUI; SIGTERM always stops.
     let armed = false;
+
     const onInterrupt = (): void => {
       const unsaved = server.unsaved();
+
       if (unsaved.length > 0 && !armed) {
         armed = true;
         process.stderr.write(`keylang web: unsaved changes in ${unsaved.join(", ")}; Ctrl+C again stops the server and drops them\n`);
+
         return;
       }
+
       stop();
     };
+
     const stop = (): void => {
       process.off("SIGINT", onInterrupt);
       process.off("SIGTERM", stop);
       resolve();
     };
+
     process.on("SIGINT", onInterrupt);
     process.on("SIGTERM", stop);
   });
   await server.close();
+
   return 0;
 }
 
@@ -719,35 +770,53 @@ interface ExplainOptions {
 
 async function cmdExplain(subject: string | undefined, opts: ExplainOptions): Promise<number> {
   if (opts.full && opts.brief) throw new Error("explain: --full and --brief are two details; pass one");
+
   if (opts.missing && opts.stale) throw new Error("explain: --missing already includes stale briefs; pass one of --missing and --stale");
+
   if (opts.missing || (opts.stale && (opts.llm || opts.dryRun || opts.limit !== undefined || opts.jobs !== undefined))) {
     if (subject !== undefined) throw new Error(`explain ${opts.missing ? "--missing" : "--stale"} explains every node it finds; it takes no id`);
+
     return cmdExplainBatch(findRoot(process.cwd()), opts.missing ? "missing" : "stale", opts);
   }
+
   if (opts.dryRun || opts.limit !== undefined || opts.jobs !== undefined) throw new Error("explain: --dry-run, --limit and --jobs need --missing or --stale");
+
   if (opts.stale) return explainPlanPrinter({ kind: "explain-plan", root: findRoot(process.cwd()), list: "stale-saved" });
+
   if (!subject) throw new Error("explain: a code or an id is required");
+
   // A code, and an ID without the model: a printer over the shared offline operation.
   if (!opts.llm || isDiagnosticCode(subject)) {
     const detail: ExplanationDetail | undefined = opts.brief ? "brief" : opts.full ? "full" : undefined;
     const result = await runOperation({ kind: "explain", root: findRoot(process.cwd()), subject, ...(detail !== undefined ? { detail } : {}) });
+
     for (const message of result.messages) if (message.level === "warning") process.stderr.write(`keylang: ${message.text}\n`);
+
     if (result.payload === null) throw new Error(result.messages.find((message) => message.level === "error")?.text ?? "explain failed");
     process.stdout.write(result.payload.text);
+
     return 0;
   }
+
   // An ID with the model: a printer over the shared operation (a fresh saved answer is read, not asked for again).
   const detail: ExplanationDetail | undefined = opts.brief ? "brief" : opts.full ? "full" : undefined;
   const result = await runOperation({ kind: "explain-llm", root: findRoot(process.cwd()), id: subject, ...(detail !== undefined ? { detail } : {}) });
+
   for (const message of result.messages) if (message.level === "warning") process.stderr.write(`keylang: ${message.text}\n`);
+
   if (result.status !== "completed" || result.payload === null) {
     const errors = result.messages.filter((message) => message.level === "error");
+
     if (result.exitCode !== 1 || errors.length === 0) throw new Error(errors[0]?.text ?? "explain failed");
+
     // Refused: the saved answer stays; every reason is named.
     for (const message of result.messages) if (message.level !== "warning") process.stderr.write(`keylang: ${message.text}\n`);
+
     return 1;
   }
+
   process.stdout.write(result.payload.text);
+
   return 0;
 }
 
@@ -760,27 +829,36 @@ async function cmdExplainBatch(root: string, batch: BriefBatch, opts: Pick<Expla
   const limit = opts.limit === undefined ? undefined : positiveInteger("--limit", opts.limit);
   // No --jobs: the operation takes the agent's default (4, or 2 for an agent CLI).
   const jobs = opts.jobs === undefined ? undefined : positiveInteger("--jobs", opts.jobs);
+
   // The list and the dry run: a printer over the shared read-only plan.
   if (opts.dryRun || !opts.llm) return explainPlanPrinter({ kind: "explain-plan", root, list: "briefs", batch, ...(limit !== undefined ? { limit } : {}), ...(jobs !== undefined ? { jobs } : {}), estimate: opts.dryRun });
+
   // The batch: a printer over the shared operation; a progress line per node on stderr.
   const result = await runOperation(
     { kind: "explain-batch", root, batch, ...(limit !== undefined ? { limit } : {}), ...(jobs !== undefined ? { jobs } : {}) },
     { onProgress: ({ step }) => step && process.stderr.write(`[${step.done}/${step.total}] ${step.id}${step.failed === null ? "" : `: failed: ${step.failed}`}\n`) },
   );
+
   for (const message of result.messages) if (message.level === "warning") process.stderr.write(`keylang: ${message.text}\n`);
+
   if (result.payload === null) throw new Error(result.messages.find((message) => message.level === "error")?.text ?? "explain failed");
   process.stdout.write(result.payload.text);
+
   // Stopped because an input changed: the reasons; the briefs written before stay.
   if (result.payload.stopped !== null) for (const reason of result.payload.refused) process.stderr.write(`keylang: ${reason}\n`);
+
   return result.exitCode === 0 ? 0 : 1;
 }
 
 /** `explain --stale`, and a brief plan without `--llm`: the note on stderr, the stdout of the shared operation; a failure is the CLI's error. */
 async function explainPlanPrinter(request: ExplainPlanRequest): Promise<number> {
   const result = await runOperation(request);
+
   for (const message of result.messages) if (message.level === "warning") process.stderr.write(`keylang: ${message.text}\n`);
+
   if (result.payload === null) throw new Error(result.messages.find((message) => message.level === "error")?.text ?? "explain failed");
   process.stdout.write(result.payload.text);
+
   return 0;
 }
 
@@ -793,75 +871,108 @@ async function explainPlanPrinter(request: ExplainPlanRequest): Promise<number> 
  */
 async function prepareClone(sourceText: string | undefined, opts: { dir: string | undefined; explain: string | undefined; dryRun: boolean }): Promise<{ code: number; root: string | null }> {
   const mode: CloneExplain | undefined = opts.explain === undefined ? "map-only" : isCloneExplain(opts.explain) ? opts.explain : undefined;
+
   if (mode === undefined) throw new Error(`clone: --explain is one of ${CLONE_EXPLAIN_MODES.join(", ")}, got \`${opts.explain}\``);
+
   if (opts.dryRun && mode === "map-only") throw new Error("clone: --dry-run estimates the model's part; pass --explain map-and-ai or all");
+
   if (sourceText === undefined) throw new Error("clone: a repository URL or path is required");
   const source = parseRepoSource(sourceText, process.cwd());
+
   if ("error" in source) throw new Error(source.error);
   const dir = opts.dir !== undefined ? resolve(process.cwd(), opts.dir) : join(cloneCacheRoot(process.env, homedir()), ...source.key);
   const synced = syncClone(source, dir);
   process.stdout.write(`${synced.dir}: ${synced.action} from ${source.displayUrl}\n`);
   const initialized = await cmdInit(dir, { agents: "none", check: false });
+
   if (initialized !== 0) return { code: initialized, root: null };
+
   if (mode === "map-only") return { code: 0, root: dir };
   const layers = [...loadConfig(dir).layers.keys()];
+
   // The estimate leaves keylang.json as init wrote it.
   if (opts.dryRun) {
     const code = await cmdExplainBatch(dir, "missing", { llm: true, dryRun: true, limit: undefined, jobs: undefined });
+
     if (mode === "all") process.stdout.write(`and ${layers.length} full layer explanation(s): ${layers.join(", ")}\n`);
+
     return { code, root: dir };
   }
+
   // The clone's keylang.json is keylang's own, so the model comes from the environment; say so before touching it.
   if (selectedAgent(loadConfig(dir).agent) === null) {
     process.stderr.write(`keylang: clone --explain ${mode}: no model configured; set KEYLANG_AGENT (e.g. cli:claude or anthropic:<model>) or "use" in ~/.config/keylang/agents.json; the map above is built\n`);
+
     return { code: 2, root: null };
   }
+
   const problem = enableExplainedMap(dir);
+
   if (problem !== null) {
     // A clone whose keylang.json keylang may not write is no place for --explain; it is keylang's own
     // (fresh or marked), so it goes the way a clone with an unwritable marker does.
     rmSync(dir, { recursive: true, force: true });
     process.stderr.write(`keylang: clone: ${problem}; the clone of ${source.displayUrl} was removed\n`);
+
     return { code: 2, root: null };
   }
+
   let code = await cmdExplainBatch(dir, "missing", { llm: true, dryRun: false, limit: undefined, jobs: undefined });
+
   if (mode === "all") {
     for (const layer of layers) {
       const result = await runOperation({ kind: "explain-llm", root: dir, id: layer, detail: "full" });
+
       for (const message of result.messages) process.stderr.write(`keylang: ${layer}: ${message.text}\n`);
       const written = result.payload?.written ?? null;
+
       if (written !== null) process.stdout.write(`${toPosix(relative(process.cwd(), join(dir, written)))}: written\n`);
       else if (result.status !== "completed") code = 1;
     }
   }
+
   // The briefs are in; the explained map is rendered from them.
   const mapped = printMap(await runOperation({ kind: "map", root: dir, label: dir }), dir);
+
   return { code: mapped !== 0 ? mapped : code, root: dir };
 }
 
 function positiveInteger(flag: string, text: string): number {
   const problem = positiveIntegerProblem(flag, text);
+
   if (problem !== null) throw new Error(problem);
+
   return Number(text);
 }
 
 async function cmdDraft(args: string[], opts: { mode: string; modeGiven: boolean; name: string | undefined; into: string | undefined; print: boolean; fromTrace: string | undefined; run: string | undefined }): Promise<number> {
   const [what, trigger] = args;
+
   if ((opts.fromTrace !== undefined || opts.run !== undefined) && what !== "flow") throw new Error("draft: --from-trace and --run go with `draft flow`");
+
   if (what === "rules" || what === "map") return cmdDraftLayout(what, opts);
+
   if (what !== "flow") throw new Error("draft: expected `draft flow <trigger>`, `draft rules` or `draft map`");
+
   if (opts.run !== undefined && opts.fromTrace === undefined) throw new Error("draft flow: --run goes with --from-trace <file.jsonl>");
+
   if (opts.fromTrace !== undefined) {
     // The steps are what the run observed: a trigger or a model would draft something else.
     if (trigger) throw new Error("draft flow: give a trigger or --from-trace <file.jsonl>, not both");
+
     if (opts.modeGiven) throw new Error("draft flow: --from-trace drafts what the run observed; --mode does not apply");
+
     if (opts.fromTrace === "") throw new Error("draft flow: --from-trace needs a JSONL file");
     const root = findRoot(process.cwd());
     const file = toPosix(relative(root, resolve(process.cwd(), opts.fromTrace)));
+
     return draftFlowPrinter(root, "", "algo", { ...opts, fromTrace: { file, ...(opts.run !== undefined ? { run: opts.run } : {}) } });
   }
+
   if (!trigger) throw new Error("draft flow: a trigger id is required");
+
   if (opts.mode !== "algo" && opts.mode !== "llm" && opts.mode !== "hybrid") throw new Error(`draft: --mode must be algo, llm or hybrid, got \`${opts.mode}\``);
+
   return draftFlowPrinter(findRoot(process.cwd()), trigger, opts.mode, { ...opts, fromTrace: undefined });
 }
 
@@ -883,27 +994,39 @@ async function draftFlowPrinter(root: string, trigger: string, mode: "algo" | "l
     output: opts.print ? "preview" : "proposal",
     pending: "replace",
   });
+
   const payload = result.payload;
+
   for (const message of result.messages) if (message.level === "warning") process.stderr.write(`keylang: ${message.text}\n`);
+
   if (result.status !== "completed" || payload === null) {
     for (const message of result.messages) if (message.level === "error") process.stderr.write(`keylang: ${message.text}\n`);
+
     return result.exitCode ?? 2;
   }
+
   if (payload.output === "preview") {
     process.stdout.write(payload.candidate.flow);
+
     return 0;
   }
+
   process.stdout.write(`${toPosix(relative(process.cwd(), join(root, payload.proposal!)))}: proposed flow \`${payload.candidate.name}\` for ${payload.candidate.target} (${payload.summary}); merge it with \`m\` in \`keylang\`\n`);
+
   return 0;
 }
 
 async function cmdSpecToCode(id: string | undefined, opts: { into: string | undefined; apply: boolean; print: boolean; mode: string }): Promise<number> {
   if (opts.apply && opts.print) throw new Error("spec-to-code: --apply writes the files, --print writes nothing; give one");
+
   if (!id) throw new Error("spec-to-code: a planned id is required");
+
   if (opts.mode !== "algo" && opts.mode !== "llm") throw new Error(`spec-to-code: --mode must be algo or llm, got \`${opts.mode}\``);
   const root = findRoot(process.cwd());
   const into = opts.into === undefined ? undefined : toPosix(opts.into);
+
   if (opts.apply) return specToCodeApplyPrinter(root, id, into, opts.mode);
+
   return specToCodePrinter(root, id, into, opts.print, opts.mode);
 }
 
@@ -920,22 +1043,32 @@ async function cmdSpecToCode(id: string | undefined, opts: { into: string | unde
 async function specToCodeApplyPrinter(root: string, id: string, into: string | undefined, mode: "algo" | "llm"): Promise<number> {
   const built = await runOperation({ kind: "spec-to-code", root, id, ...(into !== undefined ? { into } : {}), output: "preview", ...(mode === "llm" ? { mode } : {}) });
   const payload = built.payload;
+
   if (payload !== null) process.stdout.write(payload.candidate.print);
+
   for (const message of built.messages) if (message.level === "warning") process.stderr.write(`keylang: ${message.text}\n`);
+
   if (built.status !== "completed" || payload === null) {
     for (const message of built.messages) if (message.level === "error") process.stderr.write(`keylang: ${message.text}\n`);
+
     return built.exitCode ?? 2;
   }
+
   const applied = await runOperation({ kind: "apply-code", root, candidate: payload.candidate, mode, pending: "keep" });
+
   if (applied.status === "completed" && applied.payload !== null) {
     const next = mode === "llm" ? "review the body and the tests, then run them" : "write the body and its tests";
     process.stderr.write(`keylang: ${applied.written.join(", ")} written; run \`keylang map\`, then ${next}\n`);
+
     return 0;
   }
+
   for (const message of applied.messages) if (message.level === "error") process.stderr.write(`keylang: ${message.text}\n`);
+
   if (applied.payload?.error != null) {
     for (const file of applied.payload.files) if (file.state !== "failed") process.stderr.write(`keylang: ${file.file}: ${file.state === "completed" ? "written" : "not written"}\n`);
   }
+
   return applied.exitCode ?? 2;
 }
 
@@ -948,30 +1081,40 @@ async function specToCodeApplyPrinter(root: string, id: string, into: string | u
 async function specToCodePrinter(root: string, id: string, into: string | undefined, print: boolean, mode: "algo" | "llm"): Promise<number> {
   const result = await runOperation({ kind: "spec-to-code", root, id, ...(into !== undefined ? { into } : {}), output: print ? "preview" : "proposal", pending: "replace", ...(mode === "llm" ? { mode } : {}) });
   const payload = result.payload;
+
   if (payload !== null) process.stdout.write(payload.candidate.print);
+
   for (const message of result.messages) if (message.level === "warning") process.stderr.write(`keylang: ${message.text}\n`);
+
   if (result.status !== "completed" || payload === null) {
     for (const message of result.messages) if (message.level === "error") process.stderr.write(`keylang: ${message.text}\n`);
+
     return result.exitCode ?? 2;
   }
+
   if (print) process.stderr.write("keylang: nothing written; without --print the files become proposals, --apply writes them\n");
   else process.stderr.write(`keylang: proposed ${payload.proposals.join(", ")}; merge them hunk by hunk with \`m\` in \`keylang\` (--apply writes the files directly)\n`);
+
   return 0;
 }
 
 async function cmdCodeToSpec(at: string | undefined, opts: { into: string | undefined; print: boolean; mode: string; since: string | undefined }): Promise<number> {
   if (at !== undefined && opts.since !== undefined) throw new Error("code-to-spec: give a path or --since, not both");
+
   if (at === undefined && opts.since === undefined) throw new Error("code-to-spec: a path, optionally with :line, or --since <git-ref> is required");
   const root = findRoot(process.cwd());
   const analysis = await analyze({ root, withoutEvidence: true });
+
   if (!analysis.snapshot) throw new Error("code-to-spec: no supported source files; run `keylang init`");
   let source: CodeToSpecSource;
+
   if (at !== undefined) {
     const m = /^(.*?)(?::(\d+))?$/.exec(at)!;
     source = { file: toPosix(relative(root, resolve(process.cwd(), m[1]!))), ...(m[2] !== undefined ? { line: Number(m[2]) } : {}) };
   } else {
     source = { since: opts.since! };
   }
+
   return codeToSpecPrinter(root, source, analysis, opts);
 }
 
@@ -988,6 +1131,7 @@ async function cmdCodeToSpec(at: string | undefined, opts: { into: string | unde
  */
 async function codeToSpecPrinter(root: string, source: CodeToSpecSource, analysis: Analysis, opts: { into: string | undefined; print: boolean; mode: string }): Promise<number> {
   const mode = opts.mode === "algo" || opts.mode === "llm" || opts.mode === "hybrid" ? opts.mode : null;
+
   const result = await runOperation(
     {
       kind: "code-to-spec",
@@ -1000,29 +1144,40 @@ async function codeToSpecPrinter(root: string, source: CodeToSpecSource, analysi
     },
     { analyze: async () => analysis },
   );
+
   for (const message of result.messages) if (message.level === "warning") process.stderr.write(`keylang: ${message.text}\n`);
   const payload = result.payload;
+
   if (result.status !== "completed" || payload === null) {
     for (const message of result.messages) if (message.level === "error") process.stderr.write(`keylang: ${message.text}\n`);
+
     return result.exitCode ?? 2;
   }
+
   if (payload.candidate === null) {
     for (const message of result.messages) if (message.level === "info") process.stderr.write(`keylang: ${message.text}\n`);
+
     return 0;
   }
+
   if (mode === null) throw new Error(`code-to-spec: --mode must be algo, llm or hybrid, got \`${opts.mode}\``);
+
   if (payload.output === "preview") {
     process.stdout.write(payload.candidate.print);
+
     return 0;
   }
+
   const names = payload.candidate.flows.map((flow) => `\`${flow.name}\``).join(", ");
   process.stdout.write(`${toPosix(relative(process.cwd(), join(root, payload.proposal!)))}: proposed ${names} for ${payload.candidate.target}; merge it with \`m\` in \`keylang\`\n`);
+
   return 0;
 }
 
 async function cmdDraftLayout(what: "rules" | "map", opts: { mode: string; into: string | undefined; print: boolean }): Promise<number> {
   if (opts.mode !== "algo" && opts.mode !== "llm" && opts.mode !== "hybrid") throw new Error(`draft ${what}: --mode must be algo, llm or hybrid, got \`${opts.mode}\``);
   const root = findRoot(process.cwd());
+
   return what === "map" ? draftMapPrinter(root, opts.mode) : draftRulesPrinter(root, opts.mode, opts);
 }
 
@@ -1034,13 +1189,19 @@ async function cmdDraftLayout(what: "rules" | "map", opts: { mode: string; into:
  */
 async function draftMapPrinter(root: string, mode: "algo" | "llm" | "hybrid"): Promise<number> {
   const result = await runOperation({ kind: "draft-layout", root, mode });
+
   for (const message of result.messages) if (message.level === "warning") process.stderr.write(`keylang: ${message.text}\n`);
+
   if (result.status !== "completed" || result.payload === null) {
     for (const message of result.messages) if (message.level === "error") process.stderr.write(`keylang: ${message.text}\n`);
+
     return result.exitCode ?? 2;
   }
+
   process.stdout.write(result.payload.preview);
+
   for (const message of result.messages) if (message.level === "info") process.stderr.write(`keylang: ${message.text}\n`);
+
   return 0;
 }
 
@@ -1059,17 +1220,25 @@ async function draftRulesPrinter(root: string, mode: "algo" | "llm" | "hybrid", 
     output: opts.print ? "preview" : "proposal",
     pending: "replace",
   });
+
   const payload = result.payload;
+
   for (const message of result.messages) if (message.level === "warning") process.stderr.write(`keylang: ${message.text}\n`);
+
   if (result.status !== "completed" || payload === null) {
     for (const message of result.messages) if (message.level === "error") process.stderr.write(`keylang: ${message.text}\n`);
+
     return result.exitCode ?? 2;
   }
+
   if (payload.output === "preview") {
     process.stdout.write(payload.candidate.rules);
+
     return 0;
   }
+
   process.stdout.write(`${toPosix(relative(process.cwd(), join(root, payload.proposal!)))}: proposed rules for ${payload.candidate.target}; merge it with \`m\` in \`keylang\`\n`);
+
   return 0;
 }
 
@@ -1080,17 +1249,23 @@ async function draftRulesPrinter(root: string, mode: "algo" | "llm" | "hybrid", 
  */
 async function cmdExport(args: readonly string[], options: { format: string | undefined; level: string | undefined; layer: string | undefined; out: string | undefined }): Promise<number> {
   const [what, ...rest] = args;
+
   if (what === "bpmn" || what === "drawio") {
     if (rest.length !== 1) throw new Error(`export ${what}: ${rest.length === 0 ? "a view is required: a flow name, discovered:<name> or process:<domain>" : `unexpected argument \`${rest[1]}\``}`);
     const { runDiagramExport } = await import("./operations/diagram-export.ts");
     const result = await runDiagramExport({ root: findRoot(process.cwd()), format: what, view: rest[0]!, ...(options.out !== undefined ? { out: toPosix(options.out) } : {}) });
+
     if (result.error !== null) process.stderr.write(`keylang: ${result.error}\n`);
     else if (result.out !== null) process.stderr.write(`${result.out}: written\n`);
     else if (result.text !== null) process.stdout.write(result.text);
+
     return result.exitCode;
   }
+
   if (what !== "c4") throw new Error("export: expected `c4`, `bpmn` or `drawio`; see --help");
+
   if (rest.length > 0) throw new Error(`export c4: unexpected argument \`${rest[0]}\``);
+
   const result = await runOperation({
     kind: "export-c4",
     root: findRoot(process.cwd()),
@@ -1099,8 +1274,11 @@ async function cmdExport(args: readonly string[], options: { format: string | un
     ...(options.layer !== undefined ? { layer: options.layer } : {}),
     ...(options.out !== undefined ? { out: toPosix(options.out) } : {}),
   });
+
   for (const message of result.messages) process.stderr.write(message.level === "error" ? `keylang: ${message.text}\n` : `${message.text}\n`);
+
   if (result.exitCode === 0 && result.payload !== null && result.payload.out === null) process.stdout.write(result.payload.text);
+
   return result.exitCode ?? 2;
 }
 
@@ -1115,19 +1293,26 @@ async function cmdExport(args: readonly string[], options: { format: string | un
  */
 async function cmdDiagram(args: readonly string[], options: { from: string | undefined; print: boolean }): Promise<number> {
   const [what, view, ...rest] = args;
+
   if (what !== "propose") throw new Error("diagram: expected `diagram propose <view> --from <model.json>`; see --help");
+
   if (view === undefined) throw new Error("diagram propose: a view is required: flow:<name>, layers, entry:<id>, discovered:<name>, process:<domain>");
+
   if (rest.length > 0) throw new Error(`diagram propose: unexpected argument \`${rest[0]}\``);
+
   if (options.from === undefined) throw new Error("diagram propose: --from <model.json> is required (window.keylangEditor.currentModel() as JSON)");
   let model: unknown;
+
   try {
     model = JSON.parse(readFileSync(resolve(process.cwd(), options.from), "utf8"));
   } catch (error) {
     throw new Error(`diagram propose: --from ${options.from}: ${error instanceof Error ? error.message : String(error)}`);
   }
+
   // A saved request of the page (`{model, specHash}`) or the model alone.
   const wrapped = model !== null && typeof model === "object" && "model" in model ? (model as { model: unknown; specHash?: unknown }) : null;
   const { runDiagramPropose } = await import("./operations/diagram-propose.ts");
+
   const result = await runDiagramPropose({
     root: findRoot(process.cwd()),
     view: view === "empty" ? "" : view,
@@ -1135,15 +1320,22 @@ async function cmdDiagram(args: readonly string[], options: { from: string | und
     specHash: wrapped && typeof wrapped.specHash === "string" ? wrapped.specHash : null,
     print: options.print,
   });
+
   if (result.error !== null) process.stderr.write(`keylang: ${result.error}\n`);
+
   for (const target of result.targets) {
     if (options.print) process.stdout.write(`${target.target}${target.newFile ? " (new file)" : ""}\n${target.diff}\n`);
     else if (target.proposal !== null) process.stderr.write(`${target.proposal}: proposed for ${target.target} (${target.hunks.length} hunk${target.hunks.length === 1 ? "" : "s"})\n`);
   }
+
   for (const weakening of result.weakenings) process.stderr.write(`${weakening.file}:${weakening.line}:${weakening.col}: ${weakening.message}\n`);
+
   if (result.config !== null) process.stderr.write(`${result.config.note}:\n${result.config.diff}\n`);
+
   for (const note of result.notes) process.stderr.write(`${note}\n`);
+
   if (result.merge !== null) process.stderr.write(`${result.merge}\n`);
+
   return result.exitCode;
 }
 
@@ -1155,13 +1347,19 @@ async function cmdDiagram(args: readonly string[], options: { from: string | und
  */
 async function cmdImport(args: readonly string[], options: { into: string | undefined; print: boolean }): Promise<number> {
   const [what, file, ...rest] = args;
+
   if (what !== "drawio") throw new Error("import: expected `drawio`; see --help");
+
   if (file === undefined) throw new Error("import drawio: a .drawio file is required");
+
   if (rest.length > 0) throw new Error(`import drawio: unexpected argument \`${rest[0]}\``);
   const { runImportDrawio } = await import("./operations/diagram-export.ts");
   const result = await runImportDrawio({ root: findRoot(process.cwd()), file: resolve(process.cwd(), file), ...(options.into !== undefined ? { into: toPosix(options.into) } : {}), print: options.print });
+
   if (options.print && result.diff !== null) process.stdout.write(`${result.diff}\n`);
+
   for (const message of result.messages) process.stderr.write(message.level === "error" ? `keylang: ${message.text}\n` : `${message.text}\n`);
+
   return result.exitCode;
 }
 
@@ -1175,93 +1373,135 @@ async function cmdImport(args: readonly string[], options: { into: string | unde
 async function cmdProposals(args: readonly string[]): Promise<number> {
   const { acceptProposal, listProposals, proposalDiff, proposalTarget, PROPOSALS_DIR, rejectProposal } = await import("./proposals.ts");
   const [action, name, ...rest] = args;
+
   if (action !== undefined && action !== "show" && action !== "accept" && action !== "reject") throw new Error(`proposals: unknown \`${action}\`; expected show, accept or reject <target>`);
+
   if (action !== undefined && name === undefined) throw new Error(`proposals ${action}: a target is required, as \`keylang proposals\` lists it`);
+
   if (rest.length > 0) throw new Error(`proposals ${action}: unexpected \`${rest[0]}\`; one target at a time`);
   const root = findRoot(process.cwd());
   const specDir = toPosix(relative(root, resolve(root, loadConfig(root).dir)));
+
   if (action === undefined) {
     const pending = listProposals(root, specDir);
+
     for (const item of pending) {
       const what = item.problem !== null ? `cannot be accepted: ${item.problem}` : `+${item.added} -${item.removed}${item.newFile ? " (new file)" : ""}`;
       process.stdout.write(`${item.target}: ${what}\n`);
     }
+
     process.stderr.write(pending.length === 0 ? `no proposals under ${PROPOSALS_DIR}/\n` : `${pending.length} proposal(s); \`keylang proposals show <target>\` prints one; a person accepts or rejects it\n`);
+
     return 0;
   }
+
   const target = proposalTarget(name!);
+
   if (target === null) throw new Error(`proposals ${action}: \`${name}\` is not a plain relative path`);
   const store = `${PROPOSALS_DIR}/${target}`;
+
   const none = (): number => {
     process.stderr.write(`keylang: no proposal for ${target} under ${PROPOSALS_DIR}/\n`);
+
     return 1;
   };
+
   const refused = (reason: string, written: string): number => {
     process.stderr.write(`keylang: ${target}: cannot be accepted: ${reason}; ${written}\n`);
+
     return 1;
   };
+
   if (action === "show") {
     const diff = proposalDiff(root, specDir, target);
+
     if (diff.state === "none") return none();
+
     if (diff.state === "refused") return refused(diff.reason, "`keylang proposals reject` drops it");
     process.stdout.write(diff.text);
+
     return 0;
   }
+
   if (action === "reject") {
     const result = rejectProposal(root, specDir, target);
+
     if (result.state === "none") return none();
+
     if (result.state === "refused") {
       process.stderr.write(`keylang: ${result.reason}; nothing removed\n`);
+
       return 1;
     }
+
     process.stdout.write(`${store}: removed; ${target} is unchanged\n`);
+
     return 0;
   }
+
   const result = acceptProposal(root, specDir, target);
+
   if (result.state === "none") return none();
+
   if (result.state === "refused") return refused(result.reason, "nothing written");
+
   if (result.state === "unchanged") process.stdout.write(`${target}: the proposal matches the file; nothing written${result.kept === null ? ", the proposal is removed" : ""}\n`);
   else process.stdout.write(`${target}: written from ${store} (+${result.added} -${result.removed})${result.kept === null ? "; the proposal is removed" : ""}\n`);
+
   if (result.kept !== null) process.stderr.write(`keylang: ${result.kept}\n`);
+
   return 0;
 }
 
 async function cmdWire(out: string, checkOnly: boolean): Promise<number> {
   const result = await runOperation({ kind: "wire", root: findRoot(process.cwd()), out: toPosix(out), check: checkOnly });
   const payload = result.payload;
+
   // A usage, config or I/O failure is one `keylang:` line on stderr, as a thrown error always was.
   if (payload === null || result.exitCode === 2) {
     for (const message of result.messages) process.stderr.write(`keylang: ${message.text}\n`);
+
     return result.exitCode ?? 2;
   }
+
   // Diagnostics and file lines go to stdout; the summary of a blocked or refused run to stderr.
   for (const message of result.messages) (message.level === "info" && payload.refused.length === 0 ? process.stdout : process.stderr).write(`${message.text}\n`);
+
   return result.exitCode ?? 2;
 }
 
 /** What is set up. A problem it finds (a key file others can read, a native module without its binary) is a line of the report, not a failure: cli.md, code 0. The CLI is a printer over the shared doctor operation. */
 async function cmdDoctor(): Promise<number> {
   const result = await runOperation({ kind: "doctor", root: findRoot(process.cwd()) });
+
   if (result.status === "failed") {
     for (const message of result.messages) process.stderr.write(`keylang: ${message.text}\n`);
+
     return result.exitCode ?? 2;
   }
+
   if (result.status === "cancelled" || result.payload === null) return result.exitCode ?? 0;
+
   for (const message of result.messages) {
     if (message.level === "info") process.stdout.write(`${message.text}\n`);
     else process.stderr.write(`${message.text}\n`);
   }
+
   return result.exitCode ?? 0;
 }
 
 /** A printer over the shared trace-plan operation: the plan's JSON to stdout and nothing else. */
 async function cmdTracePlan(flow: string | undefined, entry: string | undefined, name: string | undefined): Promise<number> {
   if (entry !== undefined && flow !== undefined) throw new Error("trace-plan: give a flow or --entry <id>, not both");
+
   if (entry === undefined && name !== undefined) throw new Error("trace-plan: --name goes with --entry");
+
   if (entry === undefined && !flow) throw new Error("trace-plan: a flow name is required");
   const result = await runOperation({ kind: "trace-plan", root: findRoot(process.cwd()), flow: entry === undefined ? flow! : (name ?? ""), ...(entry !== undefined ? { entry } : {}) });
+
   if (result.payload === null) throw new Error(result.messages[0]?.text ?? "trace-plan failed");
   process.stdout.write(result.payload.text);
+
   return result.exitCode ?? 2;
 }
 
@@ -1269,62 +1509,81 @@ async function cmdTracePlan(flow: string | undefined, entry: string | undefined,
 async function cmdEntries(kind: string | undefined, json: boolean): Promise<number> {
   if (kind !== undefined && !isEntryKind(kind)) throw new Error(`entries: --kind is one of ${ENTRY_KINDS.join(", ")}, got \`${kind}\``);
   const result = await runOperation({ kind: "entries", root: findRoot(process.cwd()), ...(kind !== undefined ? { only: kind } : {}) });
+
   if (result.payload === null) throw new Error(result.messages[0]?.text ?? "entries failed");
   process.stdout.write(json ? `${JSON.stringify({ snapshotId: result.payload.snapshotId, kind: result.payload.kind, entries: result.payload.entries }, null, 2)}\n` : result.payload.text);
+
   return result.exitCode ?? 2;
 }
 
 /** `coverage [--json]`: the report of the shared operation, or its payload without the text as JSON; exit 0 with holes and orphans too. */
 async function cmdCoverage(json: boolean): Promise<number> {
   const result = await runOperation({ kind: "coverage", root: findRoot(process.cwd()) });
+
   if (result.payload === null) throw new Error(result.messages[0]?.text ?? "coverage failed");
   const { text, ...report } = result.payload;
   process.stdout.write(json ? `${JSON.stringify(report, null, 2)}\n` : text);
+
   return 0;
 }
 
 /** `migration status [--from <old>] [--json]`: the parity of the shared operation, or its payload without the text as JSON; exit 1 when a flow fails. */
 async function cmdMigration(args: readonly string[], from: string | undefined, json: boolean): Promise<number> {
   const [action, extra] = args;
+
   if (action !== "status") throw new Error(`migration: expected status${action === undefined ? "" : `, got \`${action}\``}`);
+
   if (extra !== undefined) throw new Error(`migration status: unexpected \`${extra}\``);
   const result = await runOperation({ kind: "migration-status", root: findRoot(process.cwd()), ...(from !== undefined ? { from: resolve(process.cwd(), from) } : {}) });
+
   if (result.payload === null) throw new Error(result.messages[0]?.text ?? "migration status failed");
   const { text, ...status } = result.payload;
   process.stdout.write(json ? `${JSON.stringify(status, null, 2)}\n` : text);
+
   return result.exitCode ?? 2;
 }
 
 /** `system list|show|discover|new`: the shared operation's text, or its payload without the text as JSON. */
 async function cmdSystem(args: readonly string[], json: boolean, interview: boolean): Promise<number> {
   const [action, name, extra] = args;
+
   if (action !== "list" && action !== "show" && action !== "discover" && action !== "new") throw new Error(`system: expected list, show, discover or new${action === undefined ? "" : `, got \`${action}\``}`);
+
   if (extra !== undefined || (action === "list" && name !== undefined)) throw new Error(`system ${action}: unexpected \`${extra ?? name}\``);
+
   if (interview && action !== "new") throw new Error("--interview goes with `system new`");
   const result = await runOperation({ kind: "system", root: findRoot(process.cwd()), action, ...(name !== undefined ? { name } : {}), ...(interview ? { interview } : {}) });
+
   if (result.payload === null) throw new Error(result.messages[0]?.text ?? `system ${action} failed`);
   const { text, ...payload } = result.payload;
   process.stdout.write(json ? `${JSON.stringify(payload, null, 2)}\n` : text);
+
   return result.exitCode ?? 2;
 }
 
 /** `integrations [--json]`: the inventory of the shared operation, or its payload without the text as JSON; exit 0. */
 async function cmdIntegrations(json: boolean): Promise<number> {
   const result = await runOperation({ kind: "integrations", root: findRoot(process.cwd()) });
+
   if (result.payload === null) throw new Error(result.messages[0]?.text ?? "integrations failed");
   const { text, ...report } = result.payload;
   process.stdout.write(json ? `${JSON.stringify(report, null, 2)}\n` : text);
+
   return 0;
 }
 
 /** `tour [--out f] [--json]`: the page on stdout, its data as JSON, or the page written to `f` (named on stderr). */
 async function cmdTour(out: string | undefined, json: boolean): Promise<number> {
   const result = await runOperation({ kind: "tour", root: findRoot(process.cwd()), ...(out !== undefined ? { out } : {}) });
+
   if (result.payload === null) throw new Error(result.messages[0]?.text ?? "tour failed");
   const { text, out: _written, ...tour } = result.payload;
+
   if (out !== undefined) for (const m of result.messages) process.stderr.write(`keylang: ${m.text}\n`);
+
   if (json) process.stdout.write(`${JSON.stringify(tour, null, 2)}\n`);
   else if (out === undefined) process.stdout.write(text);
+
   return result.exitCode ?? 2;
 }
 
@@ -1338,25 +1597,36 @@ async function cmdFlows(
   opts: { kind: string | undefined; layer: string | undefined; limit: string | undefined; depth: string | undefined; into: string | undefined; print: boolean; check: boolean; names: boolean; mode: string | undefined; dryRun: boolean; jobs: string | undefined; stale: boolean },
 ): Promise<number> {
   const [action, name, ...rest] = args;
+
   if (action !== "discover" && action !== "adopt") throw new Error(`flows: expected discover or adopt${action === undefined ? "" : `, got \`${action}\``}`);
   const depth = opts.depth === undefined ? undefined : wholeNumber("--depth", opts.depth, 0);
   const root = findRoot(process.cwd());
+
   const report = (messages: readonly { level: string; text: string }[]): void => {
     for (const m of messages) process.stderr.write(`keylang: ${m.text}\n`);
   };
+
   if (action === "adopt") {
     if (name === undefined) throw new Error("flows adopt: a discovered flow's name is required");
+
     if (rest.length > 0) throw new Error(`flows adopt: unexpected \`${rest[0]}\`; one flow at a time`);
     const result = await runOperation({ kind: "flows-adopt", root, name, ...(opts.into !== undefined ? { into: opts.into } : {}), ...(depth !== undefined ? { depth } : {}) });
     report(result.messages);
+
     return result.exitCode ?? 2;
   }
+
   if (name !== undefined) throw new Error(`flows discover: unexpected \`${name}\``);
+
   if (opts.print && opts.check) throw new Error("flows discover: --print and --check do not go together");
+
   if (opts.kind !== undefined && !isEntryKind(opts.kind)) throw new Error(`flows discover: --kind is one of ${ENTRY_KINDS.join(", ")}, got \`${opts.kind}\``);
+
   if (opts.names) return cmdFlowsNames(root, opts, depth);
+
   if (opts.mode !== undefined || opts.dryRun || opts.jobs !== undefined || opts.stale) throw new Error("flows discover: --mode, --dry-run, --jobs and --stale need --names");
   const limit = opts.limit === undefined ? undefined : wholeNumber("--limit", opts.limit, 1);
+
   const result = await runOperation({
     kind: "flows-discover",
     root,
@@ -1366,8 +1636,10 @@ async function cmdFlows(
     ...(limit !== undefined ? { limit } : {}),
     ...(depth !== undefined ? { depth } : {}),
   });
+
   if (opts.print && result.payload !== null) process.stdout.write(result.payload.files.map((file) => file.text).join("\n"));
   report(result.messages);
+
   return result.exitCode ?? 2;
 }
 
@@ -1379,11 +1651,14 @@ async function cmdFlows(
  */
 async function cmdFlowsNames(root: string, opts: { kind: string | undefined; layer: string | undefined; limit: string | undefined; print: boolean; check: boolean; mode: string | undefined; dryRun: boolean; jobs: string | undefined; stale: boolean }, depth: number | undefined): Promise<number> {
   if (opts.print || opts.check) throw new Error("flows discover: --names writes the view; it takes no --print or --check (--dry-run writes nothing)");
+
   if (opts.kind !== undefined) throw new Error("flows discover: --names groups the flows of whole layers; it takes no --kind");
   const mode = opts.mode ?? "hybrid";
+
   if (!isNameMode(mode)) throw new Error(`flows discover: --mode is one of ${NAME_MODES.join(", ")}, got \`${mode}\``);
   const limit = opts.limit === undefined ? undefined : positiveInteger("--limit", opts.limit);
   const jobs = opts.jobs === undefined ? undefined : positiveInteger("--jobs", opts.jobs);
+
   const result = await runOperation(
     {
       kind: "flows-discover",
@@ -1395,8 +1670,11 @@ async function cmdFlowsNames(root: string, opts: { kind: string | undefined; lay
     },
     { onProgress: ({ text }) => process.stderr.write(`keylang: ${text}\n`) },
   );
+
   if (opts.dryRun && result.payload?.names) process.stdout.write(result.payload.names.text);
+
   for (const m of result.messages) process.stderr.write(`keylang: ${m.text}\n`);
+
   return result.exitCode ?? 2;
 }
 
@@ -1409,27 +1687,39 @@ async function cmdFlowsNames(root: string, opts: { kind: string | undefined; lay
  */
 async function cmdFlow(args: readonly string[], opts: { withCallees: string | undefined; out: string | undefined; into: string | undefined; layerMap: string | undefined; mode: string | undefined; print: boolean }): Promise<number> {
   const [action, ...rest] = args;
+
   if (action !== "export" && action !== "import") throw new Error(`flow: expected export or import${action === undefined ? "" : `, got \`${action}\``}`);
   const root = findRoot(process.cwd());
+
   const report = (messages: readonly { level: string; text: string }[]): void => {
     for (const m of messages) process.stderr.write(`keylang: ${m.text}\n`);
   };
+
   if (action === "export") {
     if (rest.length === 0) throw new Error("flow export: at least one flow name is required");
+
     if (opts.into !== undefined || opts.layerMap !== undefined || opts.mode !== undefined || opts.print) throw new Error("flow export: --into, --layer-map, --mode and --print belong to flow import");
     const withCallees = opts.withCallees === undefined ? undefined : wholeNumber("--with-callees", opts.withCallees, 0);
     const pkg = createRequire(import.meta.url)("../package.json") as { version: string };
     const result = await runOperation({ kind: "flow-export", root, names: rest, version: pkg.version, ...(withCallees !== undefined ? { withCallees } : {}), ...(opts.out !== undefined ? { out: resolve(process.cwd(), opts.out) } : {}) });
+
     if (result.payload !== null && opts.out === undefined) process.stdout.write(result.payload.text);
     report(result.messages);
+
     return result.exitCode ?? 2;
   }
+
   const [bundle, extra] = rest;
+
   if (bundle === undefined) throw new Error("flow import: a bundle file is required");
+
   if (extra !== undefined) throw new Error(`flow import: unexpected \`${extra}\`; one bundle at a time`);
+
   if (opts.withCallees !== undefined || opts.out !== undefined) throw new Error("flow import: --with-callees and --out belong to flow export");
   const mode = opts.mode ?? "algo";
+
   if (mode !== "algo" && mode !== "llm" && mode !== "hybrid") throw new Error(`flow import: --mode must be algo, llm or hybrid, got \`${mode}\``);
+
   const result = await runOperation({
     kind: "flow-import",
     root,
@@ -1439,15 +1729,19 @@ async function cmdFlow(args: readonly string[], opts: { withCallees: string | un
     ...(opts.into !== undefined ? { into: toPosix(opts.into) } : {}),
     ...(opts.layerMap !== undefined ? { layerMap: opts.layerMap } : {}),
   });
+
   if (opts.print && result.payload !== null) process.stdout.write(`${result.payload.feature}\n<!-- ${result.payload.migrationTarget} -->\n\n${result.payload.migration}`);
   report(result.messages);
+
   return result.exitCode ?? 2;
 }
 
 /** A whole number flag at least `min`; anything else is a usage error. */
 function wholeNumber(flag: string, text: string, min: number): number {
   const n = Number(text);
+
   if (!/^\d+$/.test(text) || !Number.isInteger(n) || n < min) throw new Error(`${flag} must be a whole number of at least ${min}, got \`${text}\``);
+
   return n;
 }
 
@@ -1459,58 +1753,82 @@ function needPaths(cmd: string, paths: string[]): void {
 async function cmdInit(dir: string, opts: { agents: string | undefined; check: boolean }): Promise<number> {
   const root = resolve(process.cwd(), dir);
   let choice: HarnessChoice;
+
   try {
     choice = harnessChoice(opts.agents);
   } catch (error) {
     // No supported source (or a broken keylang.json) has always been named before an unknown harness.
     const sources = initSources(root, dir);
+
     if ("error" in sources) {
       process.stderr.write(`keylang: ${sources.error}\n`);
+
       return 2;
     }
+
     throw error;
   }
+
   const result = await runOperation({ kind: "init", root, harnesses: choice, check: opts.check, label: dir });
   const payload = result.payload;
+
   if (payload === null) {
     for (const message of result.messages) process.stderr.write(`keylang: ${message.text}\n`);
+
     return result.exitCode ?? 2;
   }
+
   if (payload.check) {
     if (payload.agents) printAgents(payload.agents);
+
     if (payload.baseline) printBaseline(payload.baseline);
+
     if (payload.gitignore) printGitignore(payload.gitignore);
+
     return result.exitCode ?? 2;
   }
+
   if (payload.preflight?.status === "failed") return printAgents(payload.preflight);
   const config = relative(process.cwd(), join(root, payload.config.file)) || CONFIG_FILE;
+
   if (payload.config.existed) process.stdout.write(`${config}: already exists, kept\n`);
   else {
     for (const note of payload.config.notes) process.stderr.write(`keylang: note: ${note}\n`);
+
     if (payload.config.error !== null) {
       process.stderr.write(`keylang: ${config}: ${payload.config.error}\n`);
+
       return result.exitCode ?? 2;
     }
+
     if (payload.config.written) process.stdout.write(`${config}: written (${payload.languages.join(", ")}; layers: ${payload.config.layers.join(", ")})\n`);
   }
+
   if (payload.gitignore) printGitignore(payload.gitignore);
+
   if (payload.map) printMap(payload.map, root);
+
   if (payload.baseline) printBaseline(payload.baseline);
+
   if (payload.agents) printAgents(payload.agents);
   // Auto found no harness: only the AGENTS.md block was written, and a person would not learn what else there is.
   const agents = payload.agents?.payload;
+
   if (payload.agents?.status === "completed" && agents?.choice === "auto" && agents.harnesses.length === 0) {
     process.stderr.write(
       "keylang: no harness detected (.claude/, .codex/, .cursor/, opencode.json), so only the AGENTS.md block was written; for MCP, the skill, deny rules and the Stop hook run `keylang agents --agents=claude,codex,cursor,opencode` with the ones you use\n",
     );
   }
+
   return result.exitCode ?? 2;
 }
 
 /** The `.gitignore` line of init: an I/O error to stderr; added, not listed, or a refusal's reason to stdout, as the file lines of the other stages. */
 function printGitignore(stage: GitignoreStage): void {
   const line = gitignoreMessage(stage);
+
   if (line === null) return;
+
   if (stage.error !== null) process.stderr.write(`keylang: ${line.text}\n`);
   else process.stdout.write(`${line.text}\n`);
 }
@@ -1523,19 +1841,25 @@ async function cmdAgents(root: string, harnesses: HarnessChoice, checkOnly: bool
 /** File lines to stdout (`stale`, `written`, `removed`, a refusal's reasons); failures to stderr. */
 function printAgents(result: OperationEnvelope<"agents">): number {
   const payload = result.payload;
+
   if (payload === null || payload.error !== null) {
     for (const message of result.messages) process.stderr.write(`keylang: ${message.text}\n`);
+
     return result.exitCode ?? 2;
   }
+
   if (payload.refused.length > 0) {
     for (const line of payload.refused) process.stdout.write(`${line}\n`);
     process.stderr.write("keylang: nothing was written; run `keylang agents` again\n");
+
     return result.exitCode ?? 2;
   }
+
   for (const message of result.messages) {
     if (message.level === "info") process.stdout.write(`${message.text}\n`);
     else process.stderr.write(`keylang: ${message.text}\n`);
   }
+
   return result.exitCode ?? 2;
 }
 
@@ -1546,40 +1870,54 @@ async function cmdBaseline(root: string, checkOnly: boolean): Promise<number> {
 
 function printBaseline(result: OperationEnvelope<"baseline">): number {
   const payload = result.payload;
+
   if (payload === null || payload.error !== null) {
     for (const message of result.messages) process.stderr.write(`keylang: ${message.text}\n`);
+
     return result.exitCode ?? 2;
   }
+
   for (const message of result.messages) {
     if (message.level === "error") process.stdout.write(`${message.text}\n`);
     else if (payload.refused.length > 0) process.stderr.write(`keylang: ${message.text}\n`);
     else process.stdout.write(`${message.text}\n`);
   }
+
   return result.exitCode ?? 2;
 }
 
 /** Whether a feature is done, on the saved files. The CLI is a printer over the shared feature operation. */
 async function cmdFeature(slug: string | undefined, format: string, since: string | undefined): Promise<number> {
   if (!slug) throw new Error("feature: a slug is required");
+
   if (format !== "human" && format !== "json") throw new Error(`feature: unknown --format \`${format}\`; expected human, json`);
   const result = await runOperation({ kind: "feature", root: findRoot(process.cwd()), slug, ...(since !== undefined ? { since } : {}) });
+
   if (result.payload === null) {
     for (const message of result.messages) process.stderr.write(`keylang: ${message.text}\n`);
+
     return result.exitCode ?? 2;
   }
+
   const { report } = result.payload;
+
   if (format === "json") process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
   else for (const line of [...report.gaps.map(gapLine), ...report.hints.map(hintLine)]) process.stdout.write(`${line}\n`);
   process.stderr.write(`${featureSummary(report)}\n`);
+
   return result.exitCode ?? 2;
 }
 
 /** `hook stop` and `hook install [--check]`. A missing or unknown subcommand and an extra argument are a bad invocation (2). */
 async function cmdHook(args: readonly string[], checkOnly: boolean): Promise<number> {
   const [name, ...rest] = args;
+
   if (name !== "stop" && name !== "install") throw new Error(`hook: expected \`stop\` or \`install\`${name === undefined ? "" : `, got \`${name}\``}`);
+
   if (rest.length > 0) throw new Error(`hook ${name}: unexpected argument \`${rest[0]}\``);
+
   if (name === "install") return cmdHookInstall(checkOnly);
+
   return cmdHookStop();
 }
 
@@ -1592,6 +1930,7 @@ async function cmdHook(args: readonly string[], checkOnly: boolean): Promise<num
  */
 async function cmdHookStop(): Promise<number> {
   let decision: string;
+
   try {
     decision = await stopDecision(await readStdin(), process.cwd());
   } catch (error) {
@@ -1599,26 +1938,32 @@ async function cmdHookStop(): Promise<number> {
     process.stderr.write(`${unchecked.line}\n`);
     decision = unchecked.decision;
   }
+
   process.stdout.write(decision);
+
   return 0;
 }
 
 /** The Stop decision for the event on stdin: the fails of `check --changed` in `cwd`'s repository. Throws when the turn cannot be checked. */
 async function stopDecision(input: string, cwd: string): Promise<string> {
   const event = parseHookEvent(input);
+
   if (event.stop_hook_active === true) return hookDecision(event, []);
   const root = findRoot(cwd);
   // The next turn's hook parses only what changed: the fact cache is saved best-effort.
   const analyzed = await analyze({ root, saveFacts: true });
   const gitChanged = gitChangedFiles(root, "HEAD", "hook stop");
   const changed = changedPathSet(root, gitChanged.paths, cwd);
+
   const filtered = filterChanged(
     { docs: analyzed.docs, spec: analyzed.spec, diagnostics: analyzed.diagnostics, verdicts: analyzed.verdicts, nodes: analyzed.snapshot?.nodes ?? {}, edges: analyzed.snapshot?.edges ?? [] },
     changed,
     deletedModuleIds(analyzed.config, gitChanged.deleted),
   );
+
   // A spec weakened in this turn blocks like a rule fail: the rule an agent switched off is still the person's.
   const weakened = readWeakenings(analyzed.config, "HEAD", "hook stop").weakenings.map((item) => ({ file: item.file, line: item.line, text: `K108 ${item.message}` }));
+
   return hookDecision(event, [...weakened, ...hookFails(filtered)]);
 }
 
@@ -1637,28 +1982,38 @@ async function cmdHookInstall(checkOnly: boolean): Promise<number> {
   // The hook is bound to the keylang root around `cwd`: git runs it from the top level, which may hold no `keylang.json`.
   const root = findRoot(cwd);
   const subdir = existsSync(join(root, CONFIG_FILE)) ? toPosix(relative(top, root)) : "";
+
   if (subdir.startsWith("..") || isAbsolute(subdir)) throw new Error(`hook install: the keylang root ${root} is outside the git work tree ${top}`);
   const where = subdir === "" ? "" : ` in ${subdir}`;
   const entry = existsSync(file) ? statSync(file) : null;
+
   if (entry !== null && !entry.isFile()) throw new Error(`hook install: ${shown}: not a file`);
   const current = entry === null ? null : readFileSync(file, "utf8");
   const state = preCommitState(current, entry !== null && (entry.mode & 0o111) !== 0, version, subdir);
   const foreign = `${shown}: a pre-commit hook keylang did not write; add \`${preCommitCommand(version)}\` to it`;
+
   if (checkOnly) {
     if (state === "current") {
       process.stdout.write(`${shown}: up to date\n`);
+
       return 0;
     }
+
     if (state === "foreign") process.stderr.write(`keylang: ${foreign}\n`);
     else process.stderr.write(`keylang: ${shown}: ${state === "missing" ? "no pre-commit hook" : "stale pre-commit hook"}; run \`keylang hook install\`\n`);
+
     return 1;
   }
+
   if (state === "foreign") throw new Error(`hook install: ${foreign}`);
+
   if (state !== "current") {
     writeAtomic(file, preCommitText(version, subdir), { exact: true });
     chmodSync(file, 0o755);
   }
+
   process.stdout.write(`${shown}: ${state === "current" ? "up to date" : "written"}; runs \`${preCommitCommand(version)}\`${where}\n`);
+
   return 0;
 }
 
@@ -1666,37 +2021,50 @@ async function cmdHookInstall(checkOnly: boolean): Promise<number> {
 async function cmdNew(args: readonly string[], layer: string | undefined): Promise<number> {
   const { defaultSpecPath, flowNameProblem, newSpecProblem, specTemplate } = await import("./tui/new-spec.ts");
   const [what, name, ...rest] = args;
+
   if (what !== "flow" && what !== "module") throw new Error("new: expected `new flow <name>` or `new module <name> --layer <layer>`");
+
   if (name === undefined) throw new Error(`new ${what}: a name is required`);
+
   if (rest.length > 0) throw new Error(`new ${what}: unexpected \`${rest.join(" ")}\``);
   const problem = flowNameProblem(name);
+
   if (problem !== null) throw new Error(`new ${what}: ${problem.replace("a flow name", `a ${what} name`)}`);
   const root = findRoot(process.cwd());
   const config = loadConfig(root);
   let path: string;
   let text: string;
+
   if (what === "flow") {
     if (layer !== undefined) throw new Error("new flow: --layer is for `new module`");
     path = `${defaultSpecPath("flow", config.dir)}${name}.md`;
     text = specTemplate("flow", name);
   } else {
     const layers = [...config.layers.keys()].join(", ");
+
     if (layer === undefined) throw new Error(`new module: --layer <layer> is required; layers in ${CONFIG_FILE}: ${layers}`);
+
     if (!config.layers.has(layer)) {
       // Without the file the guessed layers are not the user's to name; with it but without layers the list would be empty.
       if (!existsSync(join(root, CONFIG_FILE))) throw new Error(`new module: no ${CONFIG_FILE} here; add "layers" to ${CONFIG_FILE} (or run \`keylang init\` once there is code)`);
+
       if (config.guessed) throw new Error(`new module: no layers in ${CONFIG_FILE}`);
       throw new Error(`new module: unknown layer \`${layer}\`; layers in ${CONFIG_FILE}: ${layers}`);
     }
+
     path = `${defaultSpecPath("feature", config.dir)}${name}.md`;
     text = plannedModuleTemplate(layer, name);
   }
+
   const shown = toPosix(relative(process.cwd(), join(root, path)));
+
   if (existsSync(join(root, path))) throw new Error(`new ${what}: ${shown} exists; new never overwrites a file`);
   const refused = newSpecProblem(root, config.dir, path);
+
   if (refused !== null) throw new Error(`new ${what}: ${shown}: ${refused}`);
   safeWrite(root, path, text, { expect: null });
   process.stdout.write(`${shown}: created\n`);
+
   return 0;
 }
 
@@ -1709,15 +2077,18 @@ function plannedModuleTemplate(layer: string, name: string): string {
   const note =
     `A feature file: the planned declarations below are what to build; \`keylang feature ${name}\` says what is still missing. ` +
     "Add `- trigger` and `- step` lines to describe the flow.";
+
   return `# flow ${name}\n\n${note}\n\n- planned module ${layer}.${name}\n`;
 }
 
 /** `completions <shell>`: commands from the help text, flags from the parser's table. */
 async function cmdCompletions(shell: string | undefined): Promise<number> {
   const { SHELLS, completionScript, helpCommands, isShell } = await import("./completions.ts");
+
   if (shell === undefined || !isShell(shell)) throw new Error(`completions: expected a shell: ${SHELLS.join(", ")}${shell === undefined ? "" : `; got \`${shell}\``}`);
   const flags = Object.entries(OPTIONS).map(([long, option]) => ("short" in option ? { long, short: option.short } : { long }));
   process.stdout.write(completionScript(shell, { commands: helpCommands(USAGE), flags }));
+
   return 0;
 }
 
@@ -1727,32 +2098,44 @@ function packageVersion(): string {
 
 async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];
+
   for await (const chunk of process.stdin) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+
   return Buffer.concat(chunks).toString("utf8");
 }
 
 async function cmdMap(dir: string, checkOnly: boolean, exportIndex: string | undefined): Promise<number> {
   const root = resolve(process.cwd(), dir);
+
   if (exportIndex !== undefined) {
     if (checkOnly) throw new Error("map: --export-index writes a file; it does not go with --check");
     const code = printMap(await runOperation({ kind: "map", root, label: dir }), root);
+
     if (code !== 0) return code;
     const { writeMigrationExport } = await import("./migration-stack.ts");
     const written = await writeMigrationExport(root, exportIndex);
     process.stderr.write(`keylang: wrote ${toPosix(relative(process.cwd(), written))}: the snapshot with its flows, test results and integrations, for \`keylang migration status --from\` in another repository\n`);
+
     return 0;
   }
+
   // `map --check` is a printer over the shared read-only operation.
   if (checkOnly) {
     const result = await runOperation({ kind: "map-check", root, label: dir });
+
     if (result.payload === null) {
       for (const message of result.messages) process.stderr.write(`keylang: ${message.text}\n`);
+
       return result.exitCode ?? 2;
     }
+
     for (const w of result.payload.warnings) process.stderr.write(`warning: ${w}\n`);
+
     for (const line of mapCheckLines(result.payload, (file) => toPosix(relative(process.cwd(), join(root, file))))) process.stdout.write(`${line}\n`);
+
     return result.exitCode ?? 2;
   }
+
   // `map` is a printer over the shared operation, which also leaves the fact cache for the next run.
   return printMap(await runOperation({ kind: "map", root, label: dir }), root);
 }
@@ -1761,30 +2144,43 @@ async function cmdMap(dir: string, checkOnly: boolean, exportIndex: string | und
 function printMap(result: OperationEnvelope<"map">, root: string): number {
   const shown = (file: string): string => toPosix(relative(process.cwd(), join(root, file)));
   const payload = result.payload;
+
   if (payload === null) {
     for (const message of result.messages) process.stderr.write(`keylang: ${message.text}\n`);
+
     return result.exitCode ?? 2;
   }
+
   for (const w of payload.warnings) process.stderr.write(`warning: ${w}\n`);
+
   // A failure before the plan was checked (the map directory could not be read): only the messages name it.
   if (result.status === "failed" && payload.refused.length === 0 && payload.steps.length === 0) {
     for (const message of result.messages) if (message.level === "error") process.stderr.write(`keylang: ${message.text}\n`);
   }
+
   for (const line of mapConflictLines(payload.conflicts, shown)) process.stdout.write(`${line}\n`);
+
   for (const line of payload.refused) process.stdout.write(`${line}\n`);
+
   if (payload.conflicts.length > 0) return result.exitCode ?? 2;
+
   if (payload.refused.length > 0) {
     process.stderr.write("keylang: nothing was written; run `keylang map` again\n");
+
     return result.exitCode ?? 2;
   }
+
   for (const line of mapStepLines(payload.steps, shown)) process.stdout.write(`${line}\n`);
+
   // A failure part way: the steps that landed are listed above; the failed one and the rest are named here.
   for (const step of payload.steps) {
     if (step.state === "failed") process.stderr.write(`keylang: ${shown(step.path)}: ${step.error ?? "failed"}\n`);
     else if (step.state === "not-attempted") process.stderr.write(`keylang: ${shown(step.path)}: not written\n`);
   }
+
   if (result.status !== "completed") return result.exitCode ?? 2;
   process.stderr.write(`${mapSummary(payload)}\n`);
+
   return 0;
 }
 
@@ -1796,51 +2192,76 @@ function printMap(result: OperationEnvelope<"map">, root: string): number {
 async function cmdParse(paths: string[], json: boolean): Promise<number> {
   const cwd = process.cwd();
   const result = await runOperation({ kind: "parse", root: findRoot(cwd), base: cwd, paths, format: json ? "json" : "tree" });
+
   if (result.payload === null) throw new Error(result.messages[0]?.text ?? "parse failed");
   const { payload } = result;
+
   for (const file of payload.skipped) process.stderr.write(`keylang: note: ${file}: a saved explanation, not keylang Markdown; skipped\n`);
+
   for (const file of payload.unreadable) {
     const why = result.messages.find((message) => message.level === "error" && message.text.startsWith(`${file}: cannot read: `));
     process.stderr.write(`keylang: ${why?.text ?? `${file}: cannot read`}\n`);
   }
+
   process.stdout.write(payload.text);
+
   for (const d of payload.diagnostics) process.stderr.write(`${formatDiagnostic(d)}\n`);
+
   return result.exitCode ?? 2;
 }
 
 async function cmdCheck(paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined; stale: boolean; accept: boolean; acceptWeakening?: boolean }): Promise<number> {
   if (opts.accept && !opts.stale) throw new Error("check: --accept requires --stale");
+
   if (opts.stale) {
     const other = opts.explain ? "--explain-edge" : opts.changed ? "--changed" : opts.static !== undefined ? "--static" : opts.format !== "human" ? "--format" : null;
+
     if (other !== null) throw new Error(`check: --stale cannot be combined with ${other}`);
+
     if (opts.accept && opts.strict) throw new Error("check: --accept writes the baseline and --strict gates on it; pass one of them");
+
     return cmdCheckStale(paths, opts.accept, opts.strict);
   }
+
   const format = opts.format;
+
   if (!isCheckFormat(format)) throw new Error(`unknown --format \`${format}\`; expected ${CHECK_FORMATS.join(", ")}`);
   let staticMode: StaticMode | undefined;
+
   if (opts.static !== undefined) {
     staticMode = STATIC_MODES.find((mode) => mode === opts.static);
+
     if (!staticMode) throw new Error(`unknown --static \`${opts.static}\`; expected ${STATIC_MODES.join(", ")}`);
   }
+
   if (opts.since !== undefined && !opts.changed) throw new Error("check: --since requires --changed");
+
   if (opts.acceptWeakening === true && !opts.changed) throw new Error("check: --accept-weakening requires --changed");
+
   if (opts.changed && opts.explain) throw new Error("check: --changed cannot be combined with --explain-edge");
   const cwd = process.cwd();
+
   if (opts.explain) {
     const [from, to, extra] = paths;
     const root = findRoot(cwd);
+
     if (!from || !to || extra !== undefined) {
       // A broken keylang.json is reported first, as it always was.
       loadConfig(root);
       throw new Error("check --explain-edge needs exactly two ids: <from> <to>");
     }
+
     const explained = await runOperation({ kind: "explain-edge", root, from, to });
+
     if (explained.payload === null) throw new Error(explained.messages[0]?.text ?? "check --explain-edge failed");
+
     for (const line of explained.payload.lines) process.stdout.write(`${line}\n`);
+
     return explained.exitCode ?? 2;
   }
+
   const root = findRoot(cwd);
+
   const result = await runOperation({
     kind: "check",
     root,
@@ -1852,14 +2273,19 @@ async function cmdCheck(paths: string[], opts: { strict: boolean; format: string
     ...(opts.since !== undefined ? { since: opts.since } : {}),
     ...(opts.acceptWeakening === true ? { acceptWeakening: true } : {}),
   });
+
   if (result.payload === null) throw new Error(result.messages[0]?.text ?? "check failed");
   const { payload } = result;
+
   for (const path of payload.notSpecs) process.stderr.write(`keylang: ${checkSkipNote(path)}\n`);
+
   if (payload.changed?.weakening.note) process.stderr.write(`keylang: note: ${payload.changed.weakening.note}\n`);
+
   for (const line of payload.changed?.weakening.accepted ?? []) process.stderr.write(`keylang: accepted (--accept-weakening): ${line}\n`);
   // The format only shows the report: the verdicts and the code do not depend on it.
   process.stdout.write(checkReportText(format, payload));
   process.stderr.write(`${checkSummary(payload.counts)}\n`);
+
   return result.exitCode ?? 2;
 }
 
@@ -1874,11 +2300,15 @@ async function cmdCheckStale(paths: string[], accept: boolean, strict: boolean):
   const cwd = process.cwd();
   const { report, path, accepted } = await runStaleCheck({ root: findRoot(cwd), base: cwd, paths, accept });
   const toReview = report.findings.filter((f) => f.state !== "fresh" || f.incomplete.length > 0);
+
   for (const f of toReview) process.stdout.write(`${staleLine(f)}\n`);
+
   for (const o of report.obsolete) process.stdout.write(`${path}: obsolete \`${o.key}\` of ${o.file}: no such statement any more\n`);
   process.stderr.write(`${staleSummary(report)}\n`);
+
   if (accepted !== null) process.stderr.write(`keylang: accepted ${accepted} fingerprint${accepted === 1 ? "" : "s"} in ${path}\n`);
   else if (report.findings.some((f) => f.state !== "fresh") || report.obsolete.length > 0) process.stderr.write("keylang: after review, run `keylang check --stale --accept`\n");
+
   return strict && (toReview.length > 0 || report.obsolete.length > 0) ? 1 : 0;
 }
 
@@ -1893,15 +2323,20 @@ async function cmdCheckStale(paths: string[], accept: boolean, strict: boolean):
 async function cmdFmt(paths: string[], checkOnly: boolean): Promise<number> {
   const cwd = process.cwd();
   const result = await runOperation({ kind: "fmt", root: findRoot(cwd), base: cwd, paths, check: checkOnly });
+
   if (result.payload === null) {
     for (const message of result.messages) process.stderr.write(`keylang: ${message.text}\n`);
+
     return result.exitCode ?? 2;
   }
+
   for (const message of result.messages) {
     if (message.level === "info") process.stdout.write(`${message.text}\n`);
     else if (message.level === "error") process.stderr.write(`${message.text}\n`);
   }
+
   for (const file of result.payload.files) if (file.state === "generated") process.stderr.write(`keylang: note: ${fmtGeneratedNote(file)}\n`);
+
   return result.exitCode ?? 2;
 }
 

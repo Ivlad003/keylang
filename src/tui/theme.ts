@@ -47,8 +47,10 @@ const LAYER_COLORS = [39, 78, 214, 141, 203, 44, 179, 111, 168, 150];
 /** Colour of an ID by the layer it starts with, in the order of `keylang.json`. */
 export function idStyle(id: string, layers: readonly string[]): Style {
   const head = id.split(".")[0] ?? "";
+
   if (head === "external") return { fg: 245 };
   const at = layers.indexOf(head);
+
   return { fg: at === -1 ? 81 : LAYER_COLORS[at % LAYER_COLORS.length]! };
 }
 
@@ -63,20 +65,25 @@ export interface Run {
 export function highlight(doc: Document | null, text: string, layers: readonly string[]): Map<number, Run[]> {
   const out = new Map<number, Run[]>();
   const lines = text.split("\n");
+
   const add = (line: number, run: Run): void => {
     if (run.end <= run.start) return;
     let list = out.get(line);
+
     if (!list) out.set(line, (list = []));
     list.push(run);
   };
+
   const addSpan = (span: Span, style: Style): void => {
     if (span.start.line === span.end.line) add(span.start.line, { start: span.start.col - 1, end: span.end.col - 1, style });
     else add(span.start.line, { start: span.start.col - 1, end: [...(lines[span.start.line - 1] ?? "")].length, style });
   };
+
   let fence = false;
   lines.forEach((content, index) => {
     const line = index + 1;
     const width = [...content].length;
+
     if (/^\s*(```|~~~)/.test(content)) {
       add(line, { start: 0, end: width, style: THEME.code });
       fence = !fence;
@@ -85,18 +92,28 @@ export function highlight(doc: Document | null, text: string, layers: readonly s
     else if (/^\s*<!--/.test(content)) add(line, { start: 0, end: width, style: THEME.comment });
     else if (!/^\s*-\s/.test(content) && content.trim() !== "") add(line, { start: 0, end: width, style: THEME.prose });
   });
+
   if (!doc) return out;
+
   const visit = (node: Node): void => {
     if (node.keyword) addSpan(node.keyword, THEME.keyword);
+
     if (node.name) addSpan(node.name.span, { ...(node.id ? idStyle(node.id, layers) : THEME.text), bold: true });
+
     if (node.link) addSpan(node.link.span, THEME.link);
+
     if (node.name && node.link && node.id) addSpan(node.name.span, { ...idStyle(node.id, layers), bold: true, underline: true });
+
     for (const ref of node.refs) addSpan(ref.span, idStyle(ref.target, layers));
+
     if (node.comment) addSpan(node.comment.span, THEME.comment);
   };
+
   for (const section of doc.sections) {
     if (section.heading) addSpan(section.heading.span, THEME.heading);
+
     for (const top of sectionNodes(section)) walk(top, visit);
   }
+
   return out;
 }

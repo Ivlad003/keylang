@@ -38,9 +38,11 @@ export function skillFile(): string {
 }
 
 export const HARNESS_NAMES = ["claude", "codex", "opencode", "cursor"] as const;
+
 export type HarnessName = (typeof HARNESS_NAMES)[number];
 
 export const MARK_BEGIN = "<!-- keylang:begin -->";
+
 export const MARK_END = "<!-- keylang:end -->";
 
 /** Codex's per-file instruction budget is 32 KiB; this block stays under 4 KiB. */
@@ -80,11 +82,14 @@ function denyRules(dir: string): string[] {
 /** The spec directory of `keylang.json` under `root` (`dir`, normalized), or `keylang` without the file. A broken file throws, naming the file and the field. */
 function specDir(root: string): string {
   const file = join(root, CONFIG_FILE);
+
   if (!existsSync(file)) return DEFAULT_SPEC_DIR;
+
   return parseConfig(file, readFileSync(file, "utf8")).dir ?? DEFAULT_SPEC_DIR;
 }
 
 const SKILL_AGENTS = ".agents/skills/keylang-feature/SKILL.md";
+
 const SKILL_CLAUDE = ".claude/skills/keylang-feature/SKILL.md";
 
 export interface HarnessSelection {
@@ -108,13 +113,19 @@ export interface HarnessPlan {
 export function parseAgents(value: string): HarnessSelection {
   const names = value.split(",").map((part) => part.trim()).filter((part) => part !== "");
   const allowed = `${HARNESS_NAMES.join(", ")}, or none`;
+
   if (names.length === 0) throw new Error(`--agents needs a name; expected ${allowed}`);
+
   if (names.includes("none")) {
     if (names.length > 1) throw new Error(`--agents=none cannot be combined with other names; expected ${allowed}`);
+
     return { harnesses: [], instructions: false };
   }
+
   const unknown = names.find((name) => !HARNESS_NAMES.includes(name as HarnessName));
+
   if (unknown !== undefined) throw new Error(`unknown agent \`${unknown}\`; expected ${allowed}`);
+
   return { harnesses: HARNESS_NAMES.filter((name) => names.includes(name)), instructions: true };
 }
 
@@ -131,10 +142,15 @@ export interface HarnessProbe {
  */
 export function detectHarnesses(probe: HarnessProbe): HarnessName[] {
   const found: HarnessName[] = [];
+
   if (claudePresent(probe)) found.push("claude");
+
   if (probe.exists(".codex")) found.push("codex");
+
   if (probe.exists("opencode.json") || probe.exists("opencode.jsonc")) found.push("opencode");
+
   if (probe.exists(".cursor")) found.push("cursor");
+
   return found;
 }
 
@@ -142,28 +158,38 @@ const CLAUDE_SKILL = ".claude/skills/keylang-feature";
 
 function claudePresent(probe: HarnessProbe): boolean {
   const top = probe.list(".claude");
+
   if (top === null) return false;
+
   if (top.length === 0) return true;
+
   return claudeHasUserFile(probe, ".claude");
 }
 
 /** A file under `.claude` that is not the keylang skill copy. */
 function claudeHasUserFile(probe: HarnessProbe, dir: string): boolean {
   const names = probe.list(dir);
+
   if (names === null) return false;
+
   for (const name of names) {
     const path = `${dir}/${name}`;
+
     if (path === CLAUDE_SKILL || path.startsWith(`${CLAUDE_SKILL}/`)) continue;
     const children = probe.list(path);
+
     if (children === null) return true;
+
     if (claudeHasUserFile(probe, path)) return true;
   }
+
   return false;
 }
 
 /** The instruction body between the markers, without a trailing newline. The CLI fallback pins `version`; paths are under the spec directory `dir`. */
 export function agentsBody(version: string, dir: string): string {
   const cli = cliCommand(version);
+
   return [
     "keylang is the spec; you write the code.",
     "",
@@ -230,12 +256,15 @@ export function hookCommand(version: string): string {
 export function planHarness(input: { selection: HarnessSelection; version: string; dir: string; skill: string; files: ReadonlyMap<string, string | null> }): HarnessPlan {
   const body = agentsBody(input.version, input.dir);
   const block = `${MARK_BEGIN}\n${body}\n${MARK_END}\n`;
+
   if (Buffer.byteLength(block) > BLOCK_LIMIT) throw new Error(`AGENTS.md block is ${Buffer.byteLength(block)} bytes; the limit is ${BLOCK_LIMIT}`);
   const files: HarnessFile[] = [];
   const fail = (file: string, message: string): HarnessPlan => ({ files: [], error: { file, message } });
+
   const push = (path: string, result: { text: string | null } | { error: string }): HarnessPlan | null => {
     if ("error" in result) return fail(path, result.error);
     files.push({ path, text: result.text });
+
     return null;
   };
 
@@ -243,44 +272,55 @@ export function planHarness(input: { selection: HarnessSelection; version: strin
   const owned = input.selection.instructions && selected.size > 0;
   const agents = mergeMarked(input.files.get("AGENTS.md") ?? null, input.selection.instructions ? body : null);
   const stopped = push("AGENTS.md", agents);
+
   if (stopped) return stopped;
 
   if (input.selection.instructions && selected.has("claude")) {
     const claude = mergeClaude(input.files.get("CLAUDE.md") ?? null);
     const stoppedClaude = push("CLAUDE.md", claude);
+
     if (stoppedClaude) return stoppedClaude;
   } else if (!input.selection.instructions) {
     const claude = mergeMarked(input.files.get("CLAUDE.md") ?? null, null);
     const stoppedClaude = push("CLAUDE.md", claude);
+
     if (stoppedClaude) return stoppedClaude;
   }
 
   const mcp = (path: string, present: boolean): HarnessPlan | null => {
     if (!present && input.selection.instructions) return null;
+
     if (!present && !input.files.has(path) && (input.files.get(path) ?? null) === null) return null;
+
     return push(path, mergeMcpJson(input.files.get(path) ?? null, input.selection.instructions && present ? input.version : null));
   };
+
   // `present` is "this harness is selected". For `--agents=none`, strip a file that exists.
   const want = (name: HarnessName, path: string): boolean => (input.selection.instructions && selected.has(name)) || (!input.selection.instructions && input.files.get(path) != null);
+
   for (const [name, path] of [
     ["claude", ".mcp.json"],
     ["cursor", ".cursor/mcp.json"],
   ] as const) {
     if (!want(name, path)) continue;
     const result = mcp(path, selected.has(name));
+
     if (result) return result;
   }
 
   if (want("codex", ".codex/config.toml")) {
     const toml = mergeCodexToml(input.files.get(".codex/config.toml") ?? null, input.selection.instructions && selected.has("codex") ? input.version : null);
     const stoppedToml = push(".codex/config.toml", toml);
+
     if (stoppedToml) return stoppedToml;
   }
 
   const opencodePath = opencodeFile(input.files);
+
   if ((input.selection.instructions && selected.has("opencode")) || (!input.selection.instructions && input.files.get(opencodePath) != null)) {
     const open = mergeOpencode(input.files.get(opencodePath) ?? null, input.selection.instructions && selected.has("opencode") ? input.version : null, opencodePath.endsWith(".jsonc"));
     const stoppedOpen = push(opencodePath, open);
+
     if (stoppedOpen) return stoppedOpen;
   }
 
@@ -290,19 +330,24 @@ export function planHarness(input: { selection: HarnessSelection; version: strin
     files.push({ path: SKILL_AGENTS, text: skill }, { path: SKILL_CLAUDE, text: skill });
   } else if (!input.selection.instructions) {
     if (input.files.get(SKILL_AGENTS) != null) files.push({ path: SKILL_AGENTS, text: null });
+
     if (input.files.get(SKILL_CLAUDE) != null) files.push({ path: SKILL_CLAUDE, text: null });
   }
 
   if (want("claude", ".claude/settings.json")) {
     const settings = mergeSettings(input.files.get(".claude/settings.json") ?? null, input.selection.instructions && selected.has("claude") ? input.version : null, input.dir);
     const stoppedSettings = push(".claude/settings.json", settings);
+
     if (stoppedSettings) return stoppedSettings;
   }
+
   if (want("codex", ".codex/hooks.json")) {
     const hooks = mergeHooksFile(input.files.get(".codex/hooks.json") ?? null, input.selection.instructions && selected.has("codex") ? input.version : null);
     const stoppedHooks = push(".codex/hooks.json", hooks);
+
     if (stoppedHooks) return stoppedHooks;
   }
+
   return { files, error: null };
 }
 
@@ -313,32 +358,44 @@ export function planHarness(input: { selection: HarnessSelection; version: strin
  */
 export function mergeMarked(existing: string | null, body: string | null): { text: string | null } | { error: string } {
   const nl: "\n" | "\r\n" = existing !== null && allCrlf(existing) ? "\r\n" : "\n";
+
   if (existing !== null) {
     const begin = existing.indexOf(MARK_BEGIN);
     const end = existing.indexOf(MARK_END);
+
     if (begin !== -1 && (end === -1 || end < begin)) return { error: "broken markers: begin without end" };
+
     if (end !== -1 && begin === -1) return { error: "broken markers: end without begin" };
+
     if (begin !== -1 && existing.indexOf(MARK_BEGIN, begin + MARK_BEGIN.length) !== -1) return { error: "broken markers: more than one begin" };
+
     if (begin !== -1 && end !== -1) {
       const head = existing.slice(0, begin);
       const tail = existing.slice(end + MARK_END.length);
+
       if (body === null) {
         const next = `${head}${tail}`;
+
         return { text: next.trim() === "" ? null : next };
       }
+
       return { text: `${head}${marked(body, nl)}${tail}` };
     }
   }
+
   // No block to remove: the file, blank or not, is the person's and stays as it is.
   if (body === null) return { text: existing };
   const block = marked(body, nl);
+
   if (existing === null || existing === "") return { text: `${block}${nl}` };
   const sep = existing.endsWith("\n") ? "" : nl;
+
   return { text: `${existing}${sep}${block}${nl}` };
 }
 
 function marked(body: string, nl: "\n" | "\r\n"): string {
   const inner = body.replace(/\r?\n/g, nl);
+
   return `${MARK_BEGIN}${nl}${inner}${nl}${MARK_END}`;
 }
 
@@ -348,8 +405,11 @@ function marked(body: string, nl: "\n" | "\r\n"): string {
  */
 function mergeClaude(existing: string | null): { text: string | null } | { error: string } {
   const outside = outsideMarkers(existing);
+
   if (typeof outside !== "string") return outside;
+
   if (outside.includes("@AGENTS.md")) return mergeMarked(existing, null);
+
   return mergeMarked(existing, "@AGENTS.md");
 }
 
@@ -357,9 +417,13 @@ function outsideMarkers(existing: string | null): string | { error: string } {
   if (existing === null) return "";
   const begin = existing.indexOf(MARK_BEGIN);
   const end = existing.indexOf(MARK_END);
+
   if (begin !== -1 && (end === -1 || end < begin)) return { error: "broken markers: begin without end" };
+
   if (end !== -1 && begin === -1) return { error: "broken markers: end without begin" };
+
   if (begin === -1) return existing;
+
   return `${existing.slice(0, begin)}${existing.slice(end + MARK_END.length)}`;
 }
 
@@ -370,6 +434,7 @@ function mergeMcpJson(existing: string | null, version: string | null): { text: 
 /** `jsonc`: the file is `opencode.jsonc`, so comments and trailing commas parse; a rewrite is still plain JSON. */
 function mergeOpencode(existing: string | null, version: string | null, jsonc: boolean): { text: string | null } | { error: string } {
   const server = version === null ? null : { type: "local", command: ["npx", "-y", `keylang@${version}`, "mcp"] };
+
   return mergeJsonKey(existing, ["mcp"], server, jsonc);
 }
 
@@ -382,7 +447,9 @@ const CODEX_TOOLS_APPROVAL = "approve";
 
 /** The `[mcp_servers.keylang]` header line (a trailing comment allowed), a header of one of its sub-tables, and any table header. */
 const CODEX_TABLE = /^[ \t]*\[[ \t]*mcp_servers[ \t]*\.[ \t]*keylang[ \t]*\][ \t]*(?:#.*)?$/;
+
 const CODEX_SUBTABLE = /^[ \t]*\[[ \t]*mcp_servers[ \t]*\.[ \t]*keylang[ \t]*\./;
+
 const TOML_HEADER = /^[ \t]*\[/;
 
 /**
@@ -397,6 +464,7 @@ const TOML_HEADER = /^[ \t]*\[/;
 function mergeCodexToml(existing: string | null, version: string | null): { text: string | null } | { error: string } {
   const text = existing === null ? "" : existing.replace(/\r\n/g, "\n");
   let data: Record<string, unknown> = {};
+
   if (text.trim() !== "") {
     try {
       data = { ...(parseToml(text) as Record<string, unknown>) };
@@ -404,39 +472,53 @@ function mergeCodexToml(existing: string | null, version: string | null): { text
       return { error: `invalid TOML (${error instanceof Error ? error.message : String(error)})` };
     }
   }
+
   const current = data.mcp_servers;
+
   if (current !== undefined && !isRecord(current)) return { error: "mcp_servers is not a table" };
   const own = isRecord(current) ? current.keylang : undefined;
   const lines = text.split("\n");
   const region = codexTableRegion(lines);
+
   if (version === null) {
     if (own === undefined) return { text: existing };
+
     if (region === null) return rewriteCodexToml(data, null);
     let kept = withoutLines(lines, region).join("\n");
+
     if (kept.trim() === "") return { text: null };
+
     if (text.endsWith("\n") && !kept.endsWith("\n")) kept = `${kept}\n`;
+
     return codexEntryIs(kept, undefined) ? { text: kept } : rewriteCodexToml(data, null);
   }
+
   // A person's own keys of the entry (a timeout, a per-tool mode) stay; the command and the mode are keylang's.
   const entry = { ...(isRecord(own) ? own : {}), ...mcpCommand(version), default_tools_approval_mode: CODEX_TOOLS_APPROVAL };
   const table = stringifyToml({ mcp_servers: { keylang: entry } }).replace(/\n$/, "");
   let next: string;
+
   if (region !== null) next = [...lines.slice(0, region.start), ...table.split("\n"), ...lines.slice(region.end)].join("\n");
   else if (own !== undefined) return rewriteCodexToml(data, entry);
   else {
     const body = text.replace(/\n*$/, "");
     next = body === "" ? table : `${body}\n\n${table}`;
   }
+
   if (!next.endsWith("\n")) next = `${next}\n`;
+
   return codexEntryIs(next, entry) ? { text: next } : rewriteCodexToml(data, entry);
 }
 
 /** Lines `[start, end)` of the `[mcp_servers.keylang]` table and its sub-tables, or null without the header. */
 function codexTableRegion(lines: readonly string[]): { start: number; end: number } | null {
   const start = lines.findIndex((line) => CODEX_TABLE.test(line));
+
   if (start === -1) return null;
   let end = start + 1;
+
   while (end < lines.length && (!TOML_HEADER.test(lines[end]!) || CODEX_SUBTABLE.test(lines[end]!))) end += 1;
+
   return { start, end };
 }
 
@@ -444,10 +526,12 @@ function codexTableRegion(lines: readonly string[]): { start: number; end: numbe
 function withoutLines(lines: readonly string[], region: { start: number; end: number }): string[] {
   const out = [...lines.slice(0, region.start), ...lines.slice(region.end)];
   let at = region.start;
+
   while (at > 0 && out[at - 1]!.trim() === "" && (at >= out.length || out[at]!.trim() === "")) {
     out.splice(at - 1, 1);
     at -= 1;
   }
+
   return out;
 }
 
@@ -457,6 +541,7 @@ function codexEntryIs(text: string, entry: Record<string, unknown> | undefined):
     const parsed = parseToml(text) as Record<string, unknown>;
     const servers = parsed.mcp_servers;
     const found = isRecord(servers) ? servers.keylang : undefined;
+
     return JSON.stringify(found ?? null) === JSON.stringify(entry ?? null);
   } catch {
     return false;
@@ -466,39 +551,55 @@ function codexEntryIs(text: string, entry: Record<string, unknown> | undefined):
 /** The whole file re-serialized with `entry` as the keylang server (null: without one); empty data is no file. */
 function rewriteCodexToml(data: Record<string, unknown>, entry: Record<string, unknown> | null): { text: string | null } {
   const servers = { ...((data.mcp_servers as Record<string, unknown> | undefined) ?? {}) };
+
   if (entry === null) delete servers.keylang;
   else servers.keylang = entry;
+
   if (Object.keys(servers).length === 0) delete data.mcp_servers;
   else data.mcp_servers = servers;
+
   if (Object.keys(data).length === 0) return { text: null };
   const text = stringifyToml(data);
+
   return { text: text.endsWith("\n") ? text : `${text}\n` };
 }
 
 function mergeSettings(existing: string | null, version: string | null, dir: string): { text: string | null } | { error: string } {
   const parsed = parseObject(existing);
+
   if ("error" in parsed) return parsed;
   const data = parsed.value;
+
   if (version === null && !holdsKeylangSettings(data, dir)) return { text: existing };
   const denied = mergeDeny(data.permissions, version !== null, dir);
+
   if ("error" in denied) return denied;
+
   if (denied.value === undefined) delete data.permissions;
   else data.permissions = denied.value;
   const hooks = mergeHooksValue(data.hooks, version);
+
   if ("error" in hooks) return hooks;
+
   if (hooks.value === undefined) delete data.hooks;
   else data.hooks = hooks.value;
+
   return finishJson(data);
 }
 
 function mergeHooksFile(existing: string | null, version: string | null): { text: string | null } | { error: string } {
   const parsed = parseObject(existing);
+
   if ("error" in parsed) return parsed;
+
   if (version === null && !holdsOurHook(parsed.value.hooks)) return { text: existing };
   const hooks = mergeHooksValue(parsed.value.hooks, version);
+
   if ("error" in hooks) return hooks;
+
   if (hooks.value === undefined) delete parsed.value.hooks;
   else parsed.value.hooks = hooks.value;
+
   return finishJson(parsed.value);
 }
 
@@ -510,52 +611,70 @@ function mergeHooksFile(existing: string | null, version: string | null): { text
  */
 function mergeDeny(permissions: unknown, install: boolean, dir: string): { value: unknown } | { error: string } {
   if (permissions === undefined && !install) return { value: undefined };
+
   if (permissions !== undefined && !isRecord(permissions)) return { error: "permissions is not an object" };
-  const perms: Record<string, unknown> = { ...(permissions ?? {}) };
+  const perms: Record<string, unknown> = { ...permissions };
   const deny = perms.deny;
+
   if (deny !== undefined && !Array.isArray(deny)) return { error: "permissions.deny is not an array" };
+
   if (deny !== undefined && deny.some((item) => typeof item !== "string")) return { error: "permissions.deny must be strings" };
   const own = denyRules(dir);
   const old = new Set([...own, ...denyRules(DEFAULT_SPEC_DIR)].filter((rule) => !install || !own.includes(rule)));
   const list = ((deny ?? []) as string[]).filter((item) => !old.has(item));
+
   if (install) for (const rule of own) if (!list.includes(rule)) list.push(rule);
+
   if (list.length === 0) delete perms.deny;
   else perms.deny = list;
+
   return { value: Object.keys(perms).length === 0 ? undefined : perms };
 }
 
 function mergeHooksValue(hooks: unknown, version: string | null): { value: unknown } | { error: string } {
   if (hooks === undefined && version === null) return { value: undefined };
+
   if (hooks !== undefined && !isRecord(hooks)) return { error: "hooks is not an object" };
-  const value: Record<string, unknown> = { ...(hooks ?? {}) };
+  const value: Record<string, unknown> = { ...hooks };
   const stop = value.Stop;
+
   if (stop !== undefined && !Array.isArray(stop)) return { error: "hooks.Stop is not an array" };
   const groups = ((stop ?? []) as unknown[]).map((group) => rewriteGroup(group, version));
   const bad = groups.find((group): group is { error: string } => "error" in group);
+
   if (bad) return bad;
   let next = groups as Record<string, unknown>[];
+
   if (version !== null && !next.some((group) => JSON.stringify(group).includes(hookCommand(version)))) {
     next = [...next, { hooks: [{ type: "command", command: hookCommand(version) }] }];
   }
+
   next = next.filter((group) => !emptyGroup(group));
+
   if (next.length === 0) delete value.Stop;
   else value.Stop = next;
+
   return { value: Object.keys(value).length === 0 ? undefined : value };
 }
 
 function rewriteGroup(group: unknown, version: string | null): Record<string, unknown> | { error: string } {
   if (!isRecord(group)) return { error: "hooks.Stop entry is not an object" };
   const list = group.hooks;
+
   if (list === undefined) return { ...group };
+
   if (!Array.isArray(list)) return { error: "hooks.Stop hooks is not an array" };
   const hooks = [];
+
   for (const hook of list) {
     if (!isRecord(hook)) return { error: "hook is not an object" };
+
     if (typeof hook.command === "string" && isOurHook(hook.command)) {
       if (version === null) continue;
       hooks.push({ ...hook, command: hookCommand(version) });
     } else hooks.push(hook);
   }
+
   return { ...group, hooks };
 }
 
@@ -571,37 +690,49 @@ function isOurHook(command: string): boolean {
 function holdsKeylangSettings(data: Record<string, unknown>, dir: string): boolean {
   const deny = isRecord(data.permissions) ? data.permissions.deny : undefined;
   const rules = new Set([...denyRules(dir), ...denyRules(DEFAULT_SPEC_DIR)]);
+
   if (Array.isArray(deny) && deny.some((item) => typeof item === "string" && rules.has(item))) return true;
+
   return holdsOurHook(data.hooks);
 }
 
 function holdsOurHook(hooks: unknown): boolean {
   const stop = isRecord(hooks) ? hooks.Stop : undefined;
+
   return Array.isArray(stop) && stop.some((group) => isRecord(group) && Array.isArray(group.hooks) && group.hooks.some((hook) => isRecord(hook) && typeof hook.command === "string" && isOurHook(hook.command)));
 }
 
 function mergeJsonKey(existing: string | null, path: readonly string[], server: unknown, jsonc = false): { text: string | null } | { error: string } {
   const parsed = parseObject(existing, jsonc);
+
   if ("error" in parsed) return parsed;
   const key = path[0]!;
   const current = parsed.value[key];
+
   // Nothing of keylang's to strip: the file is the person's and stays byte for byte.
   if (server === null && !(isRecord(current) && "keylang" in current)) return { text: existing };
+
   if (current !== undefined && !isRecord(current)) return { error: `${key} is not an object` };
-  const table: Record<string, unknown> = { ...(current ?? {}) };
+  const table: Record<string, unknown> = { ...current };
+
   if (server === null) delete table.keylang;
   else table.keylang = server;
+
   if (Object.keys(table).length === 0) delete parsed.value[key];
   else parsed.value[key] = table;
+
   return finishJson(parsed.value);
 }
 
 /** The object in a JSON file; with `jsonc`, comments and trailing commas are allowed (`opencode.jsonc`). */
 function parseObject(existing: string | null, jsonc = false): { value: Record<string, unknown> } | { error: string } {
   if (existing === null || existing.trim() === "") return { value: {} };
+
   try {
     const value: unknown = jsonc ? parseJsoncStrict(existing) : JSON.parse(existing);
+
     if (!isRecord(value)) return { error: "expected a JSON object" };
+
     return { value: { ...value } };
   } catch (error) {
     return { error: `invalid JSON (${error instanceof Error ? error.message : String(error)})` };
@@ -610,12 +741,15 @@ function parseObject(existing: string | null, jsonc = false): { value: Record<st
 
 function finishJson(data: Record<string, unknown>): { text: string | null } {
   if (Object.keys(data).length === 0) return { text: null };
+
   return { text: `${JSON.stringify(data, null, 2)}\n` };
 }
 
 function opencodeFile(files: ReadonlyMap<string, string | null>): string {
   if (files.get("opencode.json") != null) return "opencode.json";
+
   if (files.get("opencode.jsonc") != null) return "opencode.jsonc";
+
   return "opencode.json";
 }
 
@@ -632,6 +766,7 @@ export type HarnessChoice = "auto" | "none" | readonly HarnessName[];
 export function harnessChoice(flag: string | undefined): HarnessChoice {
   if (flag === undefined) return "auto";
   const selection = parseAgents(flag);
+
   return selection.instructions ? selection.harnesses : "none";
 }
 
@@ -645,9 +780,13 @@ export type HarnessCategory = "instructions" | "mcp" | "skill" | "settings" | "h
 
 export function harnessCategory(path: string): HarnessCategory {
   if (path === "AGENTS.md" || path === "CLAUDE.md") return "instructions";
+
   if (path === SKILL_AGENTS || path === SKILL_CLAUDE) return "skill";
+
   if (path === ".claude/settings.json") return "settings";
+
   if (path === ".codex/hooks.json") return "hooks";
+
   return "mcp";
 }
 
@@ -657,6 +796,7 @@ export function diskProbe(root: string): HarnessProbe {
     exists: (path) => {
       try {
         const stat = statSync(join(root, path));
+
         return path.endsWith(".json") || path.endsWith(".jsonc") ? stat.isFile() : stat.isDirectory();
       } catch {
         return false;
@@ -675,10 +815,14 @@ export function diskProbe(root: string): HarnessProbe {
 /** The selection a choice resolves to on this disk: `auto` keeps the instruction block even when nothing is detected; `none` has none. */
 export function resolveChoice(choice: HarnessChoice, probe: HarnessProbe): HarnessSelection {
   if (choice === "auto") return { harnesses: detectHarnesses(probe), instructions: true };
+
   if (choice === "none") return { harnesses: [], instructions: false };
+
   if (choice.length === 0) throw new Error(`agents: name at least one harness; expected ${HARNESS_NAMES.join(", ")}, or none`);
   const unknown = choice.find((name) => !HARNESS_NAMES.includes(name));
+
   if (unknown !== undefined) throw new Error(`unknown agent \`${unknown}\`; expected ${HARNESS_NAMES.join(", ")}, or none`);
+
   return { harnesses: HARNESS_NAMES.filter((name) => choice.includes(name)), instructions: true };
 }
 
@@ -719,11 +863,13 @@ export function planAgents(root: string, choice: HarnessChoice): AgentsPlan {
   const version = keylangVersion();
   const plan = planHarness({ selection, version, dir, skill, files: inputs });
   const targets: HarnessTarget[] = [];
+
   for (const file of plan.files) {
     const current = inputs.get(file.path) ?? null;
     const same = current === null ? file.text === null : file.text !== null && current.replace(/\r\n/g, "\n") === file.text.replace(/\r\n/g, "\n");
     targets.push({ path: file.path, category: harnessCategory(file.path), action: same ? "keep" : file.text === null ? "remove" : "write", text: file.text });
   }
+
   return { root, choice, selection, version, dir, targets, error: plan.error, inputs };
 }
 
@@ -742,26 +888,36 @@ function readInputs(root: string): Map<string, string | null> {
 export function agentsPlanProblems(plan: AgentsPlan): string[] {
   const problems: string[] = [];
   const now = readInputs(plan.root);
+
   for (const path of HARNESS_PATHS) {
     const before = plan.inputs.get(path) ?? null;
     const after = now.get(path) ?? null;
+
     if (before === after) continue;
     problems.push(`${path}: ${before === null ? "created" : after === null ? "removed" : "changed"} on disk while the integrations were planned; nothing written`);
   }
+
   const dir = specDir(plan.root);
+
   if (dir !== plan.dir) problems.push(`${CONFIG_FILE}: \`dir\` changed on disk while the integrations were planned (${plan.dir} → ${dir}); nothing written`);
+
   if (problems.length > 0) return problems;
+
   for (const target of plan.targets) {
     if (target.action === "keep") continue;
     const problem = target.action === "write" ? writeProblem(plan.root, target.path, { expect: plan.inputs.get(target.path) ?? null }) : targetProblem(plan.root, target.path);
+
     if (problem !== null) problems.push(`${target.path}: ${problem}`);
   }
+
   if (plan.choice === "auto") {
     const detected = detectHarnesses(diskProbe(plan.root));
+
     if (detected.join(",") !== plan.selection.harnesses.join(",")) {
       problems.push(`auto: the detected harnesses changed (${plan.selection.harnesses.join(", ") || "none"} → ${detected.join(", ") || "none"}); nothing written`);
     }
   }
+
   return problems;
 }
 
@@ -789,29 +945,37 @@ export async function commitAgents(
 ): Promise<{ steps: HarnessStep[]; outcome: "completed" | "failed" | "cancelled" }> {
   const changed = plan.targets.filter((target) => target.action !== "keep");
   const steps: HarnessStep[] = changed.map((target) => ({ path: target.path, category: target.category, action: target.action === "remove" ? "remove" : "write", state: "not-attempted" }));
+
   for (const [i, target] of changed.entries()) {
     // One turn of the event loop between steps: a cancel sent to a worker arrives here.
     await new Promise<void>((done) => setImmediate(done));
+
     if (options.signal?.aborted) return { steps, outcome: "cancelled" };
     const step = steps[i]!;
     options.onStep?.({ path: step.path, action: step.action });
     const abs = join(plan.root, target.path);
+
     try {
       if (target.text === null) {
         const problem = targetProblem(plan.root, target.path);
+
         if (problem !== null) throw new Error(problem);
         rmSync(abs, { force: true });
       } else {
         const at = landing(abs);
+
         if (at === null) throw new Error("leads through a loop of links");
         writeAtomic(at, target.text);
       }
+
       step.state = "completed";
     } catch (error) {
       step.state = "failed";
       step.error = error instanceof Error ? error.message : String(error);
+
       return { steps, outcome: "failed" };
     }
   }
+
   return { steps, outcome: "completed" };
 }

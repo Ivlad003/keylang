@@ -12,10 +12,12 @@ import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
 
 function keylang(cwd: string, args: string[], env: Record<string, string | undefined> = {}): { status: number | null; stdout: string; stderr: string } {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8", env: { ...process.env, ...env } });
+
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
@@ -23,6 +25,7 @@ function copy(t: TestContext): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-explain-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   cpSync(join(root, "tests/fixtures/repo"), dir, { recursive: true });
+
   return dir;
 }
 
@@ -56,6 +59,7 @@ interface Mock {
 /** A local stand-in for the Messages API: no network, answers with `mock.reply`. */
 async function mockAnthropic(t: TestContext): Promise<Mock> {
   const mock: Mock = { url: "", requests: [], reply: "" };
+
   const server = createServer((req, res) => {
     let data = "";
     req.on("data", (chunk: Buffer) => (data += chunk.toString()));
@@ -65,9 +69,11 @@ async function mockAnthropic(t: TestContext): Promise<Mock> {
       res.end(JSON.stringify({ id: "msg_1", type: "message", role: "assistant", model: "claude-opus-5", content: [{ type: "text", text: mock.reply }], stop_reason: "end_turn", stop_details: null, usage: { input_tokens: 10, output_tokens: 10 } }));
     });
   });
+
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(() => server.close());
   mock.url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
   return mock;
 }
 
@@ -136,16 +142,19 @@ test("explain --llm through openrouter: streamed SSE deltas are joined into one 
   const file = join(dir, "keylang.json");
   writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), agent: "openrouter:some/model" }));
   const seen: { path: string; auth: string | undefined; body: { model: string; stream: boolean } }[] = [];
+
   const server = createServer((req, res) => {
     let data = "";
     req.on("data", (chunk: Buffer) => (data += chunk.toString()));
     req.on("end", () => {
       seen.push({ path: req.url ?? "", auth: req.headers.authorization, body: JSON.parse(data) });
       res.writeHead(200, { "content-type": "text/event-stream" });
+
       for (const piece of ["Builds an order ", "and saves it."]) res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: piece } }] })}\n\n`);
       res.end("data: [DONE]\n\n");
     });
   });
+
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(() => server.close());
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -163,11 +172,13 @@ async function mockOpenRouter(t: TestContext, respond: (res: import("node:http")
     req.resume();
     req.on("end", () => respond(res));
   });
+
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(() => {
     server.closeAllConnections();
     server.close();
   });
+
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 }
 
@@ -183,6 +194,7 @@ test("explain --llm: an answer without text, an OpenRouter error as plain JSON, 
   const file = join(dir, "keylang.json");
   writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), agent: "openrouter:some/model" }));
   const env = { OPENROUTER_API_KEY: "or-key", HOME: dir };
+
   // Only the stalled stream waits for the timeout; the others answer at once, so a loaded machine gets room.
   const cases: [string, (res: import("node:http").ServerResponse) => void, RegExp, string][] = [
     ["JSON error", (res) => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ error: { message: "model is overloaded" } })), /^keylang: openrouter: model is overloaded$/m, "20000"],
@@ -191,12 +203,14 @@ test("explain --llm: an answer without text, an OpenRouter error as plain JSON, 
     ["broken SSE", (res) => res.writeHead(200, { "content-type": "text/event-stream" }).end("data: {not json\n\n"), /^keylang: openrouter: invalid JSON in the stream: \{not json$/m, "20000"],
     ["stalled stream", (res) => res.writeHead(200, { "content-type": "text/event-stream" }).write(`data: ${JSON.stringify({ choices: [{ delta: { content: "Build" } }] })}\n\n`), /^keylang: openrouter: no answer within 300 ms \(KEYLANG_LLM_TIMEOUT_MS\)$/m, "300"],
   ];
+
   for (const [what, respond, message, timeout] of cases) {
     const url = await mockOpenRouter(t, respond);
     const o = await keylangAsync(dir, ["explain", "app.checkout.checkout", "--llm"], { ...env, OPENROUTER_BASE_URL: url, KEYLANG_LLM_TIMEOUT_MS: timeout });
     assert.equal(o.status, 2, `${what}: ${o.stdout}${o.stderr}`);
     assert.match(o.stderr, message, what);
   }
+
   assert.ok(!existsSync(join(dir, "keylang/explain")), "no empty explanation is kept as fresh");
   const bad = keylang(dir, ["explain", "app.checkout.checkout", "--llm"], { ...env, KEYLANG_LLM_TIMEOUT_MS: "soon" });
   assert.match(bad.stderr, /KEYLANG_LLM_TIMEOUT_MS must be a positive number of milliseconds/);
@@ -260,6 +274,7 @@ test("doctor: reports what is set up and what is optional, exit 0, nothing writt
   assert.match(o.stdout, /^agent: not configured/m);
   // Without a model file or a key there is no engine, whether the optional modules are installed or not.
   assert.match(o.stdout, /^voice: engine auto → (install the optional @fugood\/whisper\.node and put a model|put a model) .* or set OPENROUTER_API_KEY$/m);
+
   // Advice names only what is missing: an installed, loading whisper needs just a model.
   if (/^@fugood\/whisper\.node: installed$/m.test(o.stdout)) assert.match(o.stdout, /^voice: engine auto → put a model/m);
   assert.match(o.stdout, /^voice model: none in .*\.cache\/keylang\/models$/m);
@@ -273,6 +288,7 @@ test("explain --llm: an answer the token limit cut (stop_reason max_tokens, fini
   withAgent(dir);
   const saved = join(dir, "keylang/explain/app.checkout.checkout.md");
   const cutText = "Функція підсумовує ціни позицій замовлення і повертає загальну су";
+
   const anthropic = createServer((req, res) => {
     req.resume();
     req.on("end", () => {
@@ -280,6 +296,7 @@ test("explain --llm: an answer the token limit cut (stop_reason max_tokens, fini
       res.end(JSON.stringify({ id: "msg_1", type: "message", role: "assistant", model: "claude-opus-5", content: [{ type: "text", text: cutText }], stop_reason: "max_tokens", stop_details: null, usage: { input_tokens: 10, output_tokens: 4096 } }));
     });
   });
+
   await new Promise<void>((resolve) => anthropic.listen(0, "127.0.0.1", resolve));
   t.after(() => anthropic.close());
   const cut = await keylangAsync(dir, ["explain", "app.checkout.checkout", "--llm"], { ANTHROPIC_BASE_URL: `http://127.0.0.1:${(anthropic.address() as AddressInfo).port}`, ANTHROPIC_API_KEY: "k", HOME: dir });
@@ -291,10 +308,12 @@ test("explain --llm: an answer the token limit cut (stop_reason max_tokens, fini
   const file = join(dir, "keylang.json");
   writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), agent: "openrouter:some/model" }));
   const env = { OPENROUTER_API_KEY: "or-key", HOME: dir };
+
   const cases: [string, (res: import("node:http").ServerResponse) => void][] = [
     ["JSON", (res) => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ choices: [{ message: { content: cutText }, finish_reason: "length" }] }))],
     ["SSE", (res) => res.writeHead(200, { "content-type": "text/event-stream" }).end(`data: ${JSON.stringify({ choices: [{ delta: { content: cutText }, finish_reason: null }] })}\n\ndata: ${JSON.stringify({ choices: [{ delta: { content: "" }, finish_reason: "length" }] })}\n\ndata: [DONE]\n\n`)],
   ];
+
   for (const [name, respond] of cases) {
     const url = await mockOpenRouter(t, respond);
     const o = await keylangAsync(dir, ["explain", "app.checkout.checkout", "--llm"], { ...env, OPENROUTER_BASE_URL: url });
@@ -323,6 +342,7 @@ const CASE_TWINS: Record<string, string> = {
 /** A Messages API stand-in whose n-th answer is `replies[n]`. */
 async function mockReplies(t: TestContext, replies: string[]): Promise<string> {
   let n = 0;
+
   const server = createServer((req, res) => {
     req.resume();
     req.on("end", () => {
@@ -330,18 +350,22 @@ async function mockReplies(t: TestContext, replies: string[]): Promise<string> {
       res.end(JSON.stringify({ id: "msg_1", type: "message", role: "assistant", model: "claude-opus-5", content: [{ type: "text", text: replies[n++] ?? "?" }], stop_reason: "end_turn", stop_details: null, usage: { input_tokens: 10, output_tokens: 10 } }));
     });
   });
+
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(() => server.close());
+
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 }
 
 test("explain --llm: IDs that differ only in letter case get files whose names differ in more than case", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "keylang-explain-case-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+
   for (const [path, text] of Object.entries(CASE_TWINS)) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
     writeFileSync(join(dir, path), text);
   }
+
   const env = { ANTHROPIC_BASE_URL: await mockReplies(t, ["The function order builds an order.", "The interface Order is a purchase."]), ANTHROPIC_API_KEY: "k", ANTHROPIC_AUTH_TOKEN: undefined, HOME: dir };
   assert.equal((await keylangAsync(dir, ["explain", "domain.order.order", "--llm"], env)).status, 0);
   assert.equal((await keylangAsync(dir, ["explain", "domain.order.Order", "--llm"], env)).status, 0);
@@ -362,11 +386,14 @@ test("explain --llm on a case-insensitive file system (casefold tmpfs): a type a
     rmSync(fixture, { recursive: true, force: true });
     rmSync(mount, { recursive: true, force: true });
   });
+
   for (const [path, text] of Object.entries(CASE_TWINS)) {
     mkdirSync(dirname(join(fixture, path)), { recursive: true });
     writeFileSync(join(fixture, path), text);
   }
+
   const url = await mockReplies(t, ["The function order builds an order.", "The interface Order is a purchase."]);
+
   const script = [
     'mount -t tmpfs -o casefold tmpfs "$1" 2>/dev/null || { echo SKIP:mount; exit 0; }',
     'mkdir "$1/repo" && chattr +F "$1/repo" 2>/dev/null || { echo SKIP:chattr; exit 0; }',
@@ -377,6 +404,7 @@ test("explain --llm on a case-insensitive file system (casefold tmpfs): a type a
     'echo "=== fn"; "$3" "$4" explain domain.order.order',
     'echo "=== type"; "$3" "$4" explain domain.order.Order',
   ].join("\n");
+
   const run = await new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve) => {
     const env: Record<string, string | undefined> = { ...process.env };
     delete env.ANTHROPIC_AUTH_TOKEN;
@@ -387,7 +415,9 @@ test("explain --llm on a case-insensitive file system (casefold tmpfs): a type a
     child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
     child.on("close", (status) => resolve({ status, stdout, stderr }));
   });
+
   assert.equal(run.status, 0, run.stdout + run.stderr);
+
   if (/^SKIP:/m.test(run.stdout)) return t.skip("casefold tmpfs is not available here");
   const [fn, type] = run.stdout.split(/^=== type$/m);
   assert.match(fn!, /The function order builds an order\.\n+.* · fresh/, run.stdout);

@@ -9,6 +9,7 @@
  */
 export function isLicense(text: string): boolean {
   const body = text.replace(/^[\s/*!#]+/, "");
+
   return /^(?:SPDX-|copyright\b|\(c\)\s*\d|©)/i.test(body) || text.includes("SPDX-License-Identifier");
 }
 
@@ -33,10 +34,12 @@ export function lineCommentsBody(lines: readonly string[], marker: RegExp): stri
  */
 export function jsdocDescription(body: string): string {
   const lines: string[] = [];
+
   for (const line of body.split("\n")) {
     if (/^\s*@\w/.test(line)) break;
     lines.push(line);
   }
+
   return lines.join("\n").replace(/\{@link(?:code|plain)?\s+([^\s|}]+)(?:\s*\|\s*|\s+)?([^}]*)\}/g, (_, target: string, label: string) => (label.trim() !== "" ? label.trim() : target));
 }
 

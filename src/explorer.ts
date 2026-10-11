@@ -85,6 +85,7 @@ export interface Calls {
 
 /** At most this many entry points in `reachedFrom`. */
 export const MAX_REACHED_FROM = 50;
+
 /** The upward search stops after this many IDs. */
 const MAX_UPWARD = 20000;
 
@@ -106,32 +107,43 @@ const indexes = new WeakMap<AnalysisSnapshot, Index>();
 
 function indexOf(snapshot: AnalysisSnapshot): Index {
   const known = indexes.get(snapshot);
+
   if (known) return known;
+
   const push = (map: Map<string, SnapshotEdge[]>, key: string, edge: SnapshotEdge): void => {
     const list = map.get(key);
+
     if (list) list.push(edge);
     else map.set(key, [edge]);
   };
+
   const index: Index = { out: new Map(), in: new Map(), open: new Map(), coverage: new Map(), entries: new Map() };
+
   for (const edge of snapshot.edges) {
     if (edge.kind !== "call") continue;
+
     if (follows(edge)) {
       push(index.out, edge.source, edge);
       push(index.in, edge.target!, edge);
     } else if (edge.resolution !== "resolved") push(index.open, edge.source, edge);
   }
+
   for (const item of snapshot.coverage) {
     if (item.source === null || item.kind === "outside-file" || item.kind === "assumed-import" || item.kind === "skipped-file") continue;
     const list = index.coverage.get(item.source);
+
     if (list) list.push(item);
     else index.coverage.set(item.source, [item]);
   }
+
   for (const entry of snapshot.entries) {
     const list = index.entries.get(entry.id) ?? [];
     list.push({ kind: entry.kind, label: entry.label });
     index.entries.set(entry.id, list);
   }
+
   indexes.set(snapshot, index);
+
   return index;
 }
 
@@ -146,10 +158,13 @@ export function callsOf(snapshot: AnalysisSnapshot, id: string): Calls {
   const code = snapshot.nodes[id];
   const entries = index.entries.get(id) ?? [];
   const base: Calls = { id, node: code ? { kind: code.kind, file: code.file, line: code.line, layer: code.layer, doc: code.doc } : null, entries, callees: [], holes: [], callers: [], reachedFrom: [] };
+
   if (!code) return { ...base, reason: `no fn \`${id}\` in the snapshot` };
+
   const ref = (other: string, edges: readonly SnapshotEdge[]): CallRef => {
     const node = snapshot.nodes[other];
     const first = [...edges].sort((a, b) => byPosition(a, b))[0]!;
+
     return {
       id: other,
       kind: node?.kind ?? "unknown",
@@ -170,16 +185,21 @@ export function callsOf(snapshot: AnalysisSnapshot, id: string): Calls {
       entries: index.entries.get(other) ?? [],
     };
   };
+
   const group = (edges: readonly SnapshotEdge[], end: (edge: SnapshotEdge) => string): CallRef[] => {
     const by = new Map<string, SnapshotEdge[]>();
+
     for (const edge of edges) {
       const other = end(edge);
       const list = by.get(other);
+
       if (list) list.push(edge);
       else by.set(other, [edge]);
     }
+
     return [...by].map(([other, list]) => ref(other, list)).sort((a, b) => byPosition(a.at, b.at) || compareText(a.id, b.id));
   };
+
   return {
     ...base,
     callees: group(index.out.get(id) ?? [], (edge) => edge.target!),
@@ -193,20 +213,25 @@ export function callsOf(snapshot: AnalysisSnapshot, id: string): Calls {
 function holesOf(index: Index, id: string): CallHole[] {
   const out: CallHole[] = [];
   const seen = new Set<string>();
+
   for (const edge of index.open.get(id) ?? []) {
     const key = `${edge.file}:${edge.line}:${edge.col}`;
+
     if (seen.has(key)) continue;
     seen.add(key);
     const reason = edge.resolution === "ambiguous" ? `ambiguous call \`${edge.text}\`: ${(edge.candidates ?? []).join(", ")}` : (edge.reason ?? `unresolved call \`${edge.text}\``);
     out.push({ kind: edge.resolution, reason, text: edge.text, at: { file: edge.file, line: edge.line, col: edge.col }, ...(edge.candidates ? { candidates: edge.candidates } : {}) });
   }
+
   for (const item of index.coverage.get(id) ?? []) {
     // A dispatch of a computed name is a hole of its own beside the call itself, which may be one too.
     const key = `${item.kind === "dynamic-event" ? "event " : ""}${item.file}:${item.line}:${item.col}`;
+
     if (seen.has(key)) continue;
     seen.add(key);
     out.push({ kind: item.kind, reason: item.reason, text: item.text, at: { file: item.file, line: item.line, col: item.col } });
   }
+
   return out.sort((a, b) => byPosition(a.at, b.at));
 }
 
@@ -214,8 +239,10 @@ function holesOf(index: Index, id: string): CallHole[] {
 function reachedFrom(snapshot: AnalysisSnapshot, index: Index, id: string): Calls["reachedFrom"] {
   const steps = new Map<string, number>([[id, 0]]);
   let frontier = [id];
+
   while (frontier.length > 0 && steps.size < MAX_UPWARD) {
     const next: string[] = [];
+
     for (const at of frontier) {
       for (const edge of index.in.get(at) ?? []) {
         if (steps.has(edge.source)) continue;
@@ -223,13 +250,18 @@ function reachedFrom(snapshot: AnalysisSnapshot, index: Index, id: string): Call
         next.push(edge.source);
       }
     }
+
     frontier = next;
   }
+
   const out: Calls["reachedFrom"] = [];
+
   for (const entry of snapshot.entries) {
     const n = steps.get(entry.id);
+
     if (n !== undefined) out.push({ id: entry.id, kind: entry.kind, label: entry.label, steps: n });
   }
+
   return out.sort((a, b) => a.steps - b.steps || compareText(a.kind, b.kind) || compareText(a.label, b.label)).slice(0, MAX_REACHED_FROM);
 }
 
@@ -247,12 +279,15 @@ export function eventsOf(snapshot: AnalysisSnapshot | null): { events: EventList
   if (!snapshot) return { events: [], reason: "no snapshot: the specs were checked without code" };
   const index = indexOf(snapshot);
   const events: EventListing[] = [];
+
   for (const [id, node] of Object.entries(snapshot.nodes)) {
     // `event` is the node kind ADR 0022 п. 6 adds; older snapshots have none.
     if ((node.kind as string) !== "event") continue;
     events.push({ id, file: node.file, line: node.line, publishers: new Set((index.in.get(id) ?? []).map((e) => e.source)).size, subscribers: new Set((index.out.get(id) ?? []).map((e) => e.target)).size });
   }
+
   events.sort((a, b) => compareText(a.id, b.id));
+
   return events.length > 0 ? { events } : { events, reason: "no event nodes in the snapshot: events (`dispatch` → observers) come with a framework adapter, business-flows/08" };
 }
 
@@ -273,8 +308,10 @@ export const EXPLORER_MARK = "<!-- keylang:web explorer -->";
 
 /** A flow name the target `<dir>/flows/<name>.md` can carry: a word, hyphens and underscores. */
 const FLOW_NAME = /^[A-Za-z_][A-Za-z0-9_-]{0,79}$/;
+
 /** At most this many steps, this deep: a ticked tree, not a dump of the graph. */
 const MAX_STEPS = 500;
+
 const MAX_LEVEL = 30;
 
 /**
@@ -284,29 +321,42 @@ const MAX_LEVEL = 30;
 export function parseExplorerFlow(body: unknown): ExplorerFlowRequest | string {
   if (typeof body !== "object" || body === null || Array.isArray(body)) return "the body must be a JSON object {name, trigger, steps}";
   const { name, trigger, steps } = body as Record<string, unknown>;
+
   if (typeof name !== "string" || !FLOW_NAME.test(name)) return "name: a flow name of letters, digits, `-` and `_`, starting with a letter or `_`";
+
   if (typeof trigger !== "string" || trigger === "") return "trigger: the ID of a fn";
   let count = 0;
+
   const parse = (value: unknown, level: number, where: string): ExplorerStep[] | string => {
     if (value === undefined) return [];
+
     if (!Array.isArray(value)) return `${where}: an array of steps`;
+
     if (level > MAX_LEVEL) return `${where}: deeper than ${MAX_LEVEL} levels`;
     const out: ExplorerStep[] = [];
+
     for (const [i, item] of value.entries()) {
       if (++count > MAX_STEPS) return `more than ${MAX_STEPS} steps`;
+
       if (typeof item === "string" && item !== "") {
         out.push({ id: item });
         continue;
       }
+
       if (typeof item !== "object" || item === null || typeof (item as { id?: unknown }).id !== "string" || (item as { id: string }).id === "") return `${where}[${i}]: an ID or {id, steps}`;
       const children = parse((item as { steps?: unknown }).steps, level + 1, `${where}[${i}].steps`);
+
       if (typeof children === "string") return children;
       out.push({ id: (item as { id: string }).id, ...(children.length > 0 ? { steps: children } : {}) });
     }
+
     return out;
   };
+
   const parsed = parse(steps, 0, "steps");
+
   if (typeof parsed === "string") return parsed;
+
   return { name, trigger, steps: parsed };
 }
 
@@ -324,38 +374,52 @@ export function parseExplorerFlow(body: unknown): ExplorerFlowRequest | string {
 export function explorerFlow(snapshot: AnalysisSnapshot, request: ExplorerFlowRequest): FlowDraft | string {
   const index = indexOf(snapshot);
   const isFn = (id: string): boolean => snapshot.nodes[id]?.kind === "fn" && snapshot.nodes[id]?.layer !== EXTERNAL;
+
   if (!isFn(request.trigger)) return `trigger: \`${request.trigger}\` is not a fn of the repository`;
   const lines = [`# flow ${request.name}`, "", EXPLORER_MARK, ""];
   const steps: string[] = [];
+
   const comment = (id: string, parent: string | null): string => {
     let out = "";
+
     if (parent !== null) {
       const edge = (index.out.get(parent) ?? []).filter((e) => e.target === id).sort((a, b) => byPosition(a, b))[0];
+
       if (edge?.via === "callable-arg") out += " <!-- keylang:algo via callable -->";
       else if (edge?.via === "closure-arg") out += " <!-- keylang:algo via closure -->";
       else if (edge?.via) out += ` <!-- keylang:algo via ${edge.via} -->`;
     }
+
     const open = holesOf(index, id).map((hole) => `${hole.text || hole.reason} (${hole.at.file}:${hole.at.line})`);
+
     // Closing `-->` inside a comment would end it early.
     if (open.length > 0) out += ` <!-- keylang:algo unresolved: ${open.join("; ").replace(/-->/g, "-- >")} -->`;
+
     return out;
   };
+
   const walk = (list: readonly ExplorerStep[], parent: string, level: number): string | null => {
     for (const step of list) {
       if (!isFn(step.id)) return `step \`${step.id}\` is not a fn of the repository`;
+
       if (!(index.out.get(parent) ?? []).some((e) => e.target === step.id)) return `step \`${step.id}\`: \`${parent}\` does not call it (no resolved call edge)`;
       steps.push(step.id);
       lines.push(`${"  ".repeat(level)}- step ${step.id}${comment(step.id, parent)}`);
       const problem = walk(step.steps ?? [], step.id, level + 1);
+
       if (problem !== null) return problem;
     }
+
     return null;
   };
+
   steps.push(request.trigger);
   // An entry point of a kind the grammar names is a typed trigger, as `flows discover` writes it (ADR 0023 п. 3).
   const kind = snapshot.entries.find((entry) => entry.id === request.trigger)?.kind;
   lines.push(`- trigger ${kind !== undefined && isTriggerKind(kind) ? `${kind} ` : ""}${request.trigger}${comment(request.trigger, null)}`);
   const problem = walk(request.steps, request.trigger, 1);
+
   if (problem !== null) return problem;
+
   return { name: request.name, text: `${lines.join("\n")}\n`, steps };
 }

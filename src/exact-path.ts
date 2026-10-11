@@ -25,26 +25,34 @@ export const nodeFs: ExactFs = { existsSync, readdirSync: (path) => readdirSync(
  */
 export function exactExistence(root: string, fs: ExactFs = nodeFs): (file: string) => boolean {
   const listings = new Map<string, ReadonlySet<string> | null>();
+
   const entries = (dir: string): ReadonlySet<string> | null => {
     let names = listings.get(dir);
+
     if (names === undefined) {
       try {
         names = new Set(fs.readdirSync(join(root, dir)).map((name) => name.normalize("NFC")));
       } catch {
         names = null;
       }
+
       listings.set(dir, names);
     }
+
     return names;
   };
+
   return (file) => {
     if (!fs.existsSync(join(root, file))) return false;
     let dir = "";
+
     for (const segment of file.split("/")) {
       if (segment === "" || segment === ".") continue;
+
       if (segment === ".." || !entries(dir)?.has(segment.normalize("NFC"))) return false;
       dir = dir === "" ? segment : `${dir}/${segment}`;
     }
+
     return true;
   };
 }

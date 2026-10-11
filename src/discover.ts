@@ -68,16 +68,21 @@ export interface Discovery {
 export function specifiedTriggers(flows: readonly Flow[]): Map<string, { file: string; flow: string }> {
   const out = new Map<string, { file: string; flow: string }>();
   const sorted = [...flows].sort((a, b) => compareText(a.file, b.file) || compareText(a.name, b.name));
+
   const add = (id: string, flow: Flow): void => {
     if (!out.has(id)) out.set(id, { file: flow.file, flow: flow.name });
   };
+
   for (const flow of sorted) {
     for (const trigger of flow.triggers) {
       add(trigger.target.target, flow);
+
       if (trigger.event === null || trigger !== flow.triggers[0]) continue;
+
       for (const item of [...trigger.children, ...flow.items]) if (item.kind === "step") add(item.target.target, flow);
     }
   }
+
   return out;
 }
 
@@ -88,10 +93,13 @@ export function specifiedTriggers(flows: readonly Flow[]): Map<string, { file: s
  */
 function observedEvent(snapshot: AnalysisSnapshot, entry: EntryPoint): string | null {
   if (entry.kind !== "observer") return null;
+
   for (const edge of snapshot.edges) {
     if (edge.kind !== "call" || edge.via !== "observer" || edge.target !== entry.id || snapshot.nodes[edge.source]?.kind !== "event") continue;
+
     if (edge.site !== undefined && edge.site.replace(/:\d+$/, "") === entry.source) return edge.source;
   }
+
   return null;
 }
 
@@ -106,49 +114,65 @@ export function discoverFlows(snapshot: AnalysisSnapshot, specified: ReadonlyMap
   const notFns: EntryPoint[] = [];
   const skipped: Discovery["specified"] = [];
   const chosen: EntryPoint[] = [];
+
   for (const entry of snapshot.entries) {
     if (options.kind !== undefined && entry.kind !== options.kind) continue;
+
     if (seen.has(entry.id)) continue;
     seen.add(entry.id);
     const node = snapshot.nodes[entry.id];
+
     if (node?.kind !== "fn") {
       notFns.push(entry);
       continue;
     }
+
     if (options.layer !== undefined && node.layer !== options.layer) continue;
     const written = specified.get(entry.id);
+
     if (written !== undefined) {
       skipped.push({ trigger: entry.id, ...written });
       continue;
     }
+
     if (options.limit !== undefined && chosen.length >= options.limit) continue;
     chosen.push(entry);
   }
+
   const depth = options.depth ?? 4;
+
   // An entry point of a kind the grammar names is written as a typed trigger, which `check` compares with the entry;
   // an observer whose event the snapshot knows, as `trigger event <id>` with the observer as its first step.
   const drafts = distinctNames(
     chosen.map((entry) => {
       const event = observedEvent(snapshot, entry);
+
       return draftFlow(snapshot, entry.id, { depth, ...(isTriggerKind(entry.kind) ? { entry: entry.kind } : {}), ...(event !== null ? { event } : {}) });
     }),
   );
+
   const holes = holesBySource(snapshot);
+
   const flows = drafts.map((draft, i): DiscoveredFlow => {
     const entry = chosen[i]!;
     const layer = snapshot.nodes[entry.id]!.layer;
     const count = draft.steps.reduce((sum, id) => sum + (holes.get(id) ?? 0), 0);
     const described = offlineDescription(snapshot, entry.id, firstLevelSteps(draft.text));
     const flow = { name: draft.name, trigger: entry.id, entry: { kind: entry.kind, label: entry.label }, layer, file: `${layer}.md`, steps: draft.steps, holes: count, ...(described ? { description: described.text } : {}) };
+
     return { ...flow, text: withComment(draft.text, `keylang:discover entry=${entry.kind} label="${quoted(entry.label)}" steps=${draft.steps.length} holes=${count}`, described) };
   });
+
   const files = new Map<string, string>();
   const byFile = new Map<string, DiscoveredFlow[]>();
+
   for (const flow of flows) byFile.set(flow.file, [...(byFile.get(flow.file) ?? []), flow]);
+
   for (const file of [...byFile.keys()].sort(compareText)) {
     const sections = byFile.get(file)!.sort((a, b) => compareText(a.name, b.name)).map((flow) => flow.text);
     files.set(file, `${DISCOVER_MARK}\n\n${sections.join("\n")}`);
   }
+
   return { flows, specified: skipped, notFns, files };
 }
 
@@ -159,22 +183,26 @@ export function discoverFlows(snapshot: AnalysisSnapshot, specified: ReadonlyMap
 export function adoptedFlow(flow: DiscoveredFlow, specDir: string): FlowDraft {
   const from = `${specDir === "" ? "" : `${specDir}/`}${DISCOVERED_DIR}/${flow.file}`;
   const text = flow.text.replace("<!-- keylang:discover entry=", "<!-- keylang:discover adopted entry=").replace(/ -->\n/, ` from=${from} -->\n`);
+
   return { name: flow.name, text, steps: flow.steps };
 }
 
 /** `discovered N flows (M already specified), K with blind spots`. */
 export function discoverySummary(discovery: Pick<Discovery, "flows" | "specified">): string {
   const blind = discovery.flows.filter((flow) => flow.holes > 0).length;
+
   return `discovered ${discovery.flows.length} flows (${discovery.specified.length} already specified), ${blind} with blind spots`;
 }
 
 /** The unresolved and dynamic calls of each fn: what `draftFlow` writes as an `unresolved` comment. */
 function holesBySource(snapshot: AnalysisSnapshot): Map<string, number> {
   const out = new Map<string, number>();
+
   for (const c of snapshot.coverage) {
     if ((c.kind !== "dynamic-call" && c.kind !== "unresolved-call" && c.kind !== "ambiguous-binding") || c.source === null) continue;
     out.set(c.source, (out.get(c.source) ?? 0) + 1);
   }
+
   return out;
 }
 
@@ -182,6 +210,7 @@ function holesBySource(snapshot: AnalysisSnapshot): Map<string, number> {
 function withComment(text: string, comment: string, described: { text: string; ids: string[] } | null = null): string {
   const [heading, ...rest] = text.split("\n");
   const description = described ? ["", `<!-- keylang:discover doc=${described.ids.join(",")} -->`, "", proseLine(described.text)] : [];
+
   return [heading, "", `<!-- ${comment} -->`, ...description, ...rest].join("\n");
 }
 
@@ -193,7 +222,9 @@ function withComment(text: string, comment: string, described: { text: string; i
 export function firstLevelSteps(draftText: string): string[] {
   const out: string[] = [];
   const pattern = /^- trigger event /m.test(draftText) ? /^ {4}- step (\S+)/gm : /^ {2}- step (\S+)/gm;
+
   for (const m of draftText.matchAll(pattern)) out.push(m[1]!);
+
   return out;
 }
 
@@ -209,19 +240,23 @@ export function offlineDescription(snapshot: AnalysisSnapshot, trigger: string, 
   const ids: string[] = [];
   const parts: string[] = [];
   const own = snapshot.nodes[trigger]?.doc;
+
   if (own) {
     ids.push(trigger);
     parts.push(own.replace(/\s+/g, " ").trim());
   }
+
   for (const id of steps) {
     if (ids.includes(id)) continue;
     const doc = snapshot.nodes[id]?.doc;
     const sentence = doc ? firstSentence(doc) : null;
+
     // One sentence said twice (two steps with the same doc) is said once.
     if (sentence === null || parts.includes(sentence)) continue;
     ids.push(id);
     parts.push(sentence);
   }
+
   return parts.length === 0 ? null : { text: parts.join(" "), ids };
 }
 
@@ -237,8 +272,10 @@ export function proseLine(text: string): string {
     .split(/(`[^`]*`)/)
     .map((part, i) => (i % 2 === 1 ? part : part.replaceAll("<", "&lt;").replaceAll("-->", "--&gt;")))
     .join("");
+
   if (/^\d+[.)]/.test(out)) out = out.replace(/^(\d+)([.)])/, "$1\\$2");
   else if (/^(?:[-*+_=#>|]|~~~|```)/.test(out)) out = `\\${out}`;
+
   return out;
 }
 

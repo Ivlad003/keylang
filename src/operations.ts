@@ -30,13 +30,21 @@ import { runFlowExport, runFlowImport } from "./operations/flow-bundle.ts";
 import { runAssistantReply } from "./operations/assistant.ts";
 
 export * from "./operations/types.ts";
+
 export { resultWithout } from "./operations/shared.ts";
+
 export { gitignoreMessage, initSources, mapCheckLines, mapConflictLines, mapStepLines, mapSummary, wireOutProblem } from "./operations/generate.ts";
+
 export { checkSkipNote, checkSummary, fmtGeneratedNote, fmtMessages } from "./operations/spec.ts";
+
 export { FEATURE_SLUG, featureReportOf, featureSlugOf, featureSummary, gapLine, hintLine, questionLines, withQuestions } from "./operations/feature.ts";
+
 export { codeToSpecCandidate, flowCandidate, rulesCandidate } from "./operations/draft.ts";
+
 export { c4OutProblem, exportFormatOf, exportTargetProblem, exportText } from "./operations/export.ts";
+
 export { assistantPrompt, parseReply } from "./operations/assistant.ts";
+
 export { ENTRIES_HINT, entriesText } from "./operations/entries.ts";
 
 /** Runs one operation and returns its typed result: the payload type follows the request's kind. */

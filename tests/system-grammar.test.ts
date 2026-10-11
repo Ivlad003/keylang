@@ -42,12 +42,16 @@ interface Item {
 
 function flat(items: Item[]): string[] {
   const out: string[] = [];
+
   const walk = (item: Item, depth: number): void => {
     const parts = [item.kind, item.label?.value, item.name?.value, item.text?.value, ...(item.refs ?? []).map((ref) => `→${ref.target}`)].filter((part) => part !== undefined && part !== null);
     out.push(`${"  ".repeat(depth)}${parts.join(" ")}`);
+
     for (const child of item.children ?? []) walk(child, depth + 1);
   };
+
   for (const item of items) walk(item, 0);
+
   return out;
 }
 

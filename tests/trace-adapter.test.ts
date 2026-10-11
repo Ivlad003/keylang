@@ -13,13 +13,16 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const bin = join(root, "bin/keylang.js");
+
 const adapter = join(root, "src/adapters/trace.ts");
 
 type Context = { after: (f: () => void) => void };
 
 function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8", maxBuffer: 1 << 28 });
+
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
@@ -28,15 +31,18 @@ function repo(t: Context, config: object, files: Record<string, string>): string
   const dir = mkdtempSync(join(tmpdir(), "keylang-trace-adapter-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   writeFileSync(join(dir, "keylang.json"), `${JSON.stringify(config, null, 2)}\n`);
+
   for (const [path, text] of Object.entries(files)) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
     writeFileSync(join(dir, path), text);
   }
+
   return dir;
 }
 
 function snapshotOf(dir: string): string {
   assert.equal(keylang(dir, ["map"]).status, 0);
+
   return (JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as { snapshotId: string }).snapshotId;
 }
 
@@ -50,13 +56,16 @@ interface JsonResult {
 /** `check --format json` results; the exit code is 2 only when a trace file could not be read at all. */
 function check(dir: string): { status: number | null; rows: JsonResult[]; stderr: string } {
   const o = keylang(dir, ["check", "--format", "json"]);
+
   if (!o.stdout.startsWith("{")) return { status: o.status, rows: [], stderr: o.stderr };
+
   return { status: o.status, rows: (JSON.parse(o.stdout) as { results: JsonResult[] }).results, stderr: o.stderr };
 }
 
 /** `verdict evidence` of the trace line of `id`, for assertion messages that show what came instead. */
 const traceOf = (rows: JsonResult[], id: string): string => {
   const r = rows.find((row) => row.criterion === "trace" && row.area === id);
+
   return r ? `${r.verdict}: ${r.evidence}` : "none";
 };
 
@@ -87,6 +96,7 @@ function traced(dir: string, script: string): { status: number | null; stderr: s
   const env: Record<string, string | undefined> = { ...process.env, KEYLANG_TRACE: join(dir, ".keylang/trace/f.jsonl"), KEYLANG_TRACE_FLOW: "f", KEYLANG_TRACE_TEST: "t" };
   delete env.KEYLANG_TRACE_RUN;
   const r = spawnSync(process.execPath, ["--import", adapter, "run.mjs"], { cwd: dir, encoding: "utf8", env, timeout: 60_000 });
+
   return { status: r.status, stderr: r.stderr };
 }
 
@@ -97,6 +107,7 @@ test("trace adapter: a worker stopped by worker.terminate() leaves its step unve
     "src/app/w.ts": 'import { parentPort } from "node:worker_threads";\nexport function inWorker(): number {\n  return 2;\n}\ninWorker();\nparentPort!.postMessage("done");\nsetInterval(() => {}, 1000);\n',
     "keylang/flows/f.md": "# flow f\n\n- trigger app.main.main\n  - step app.w.inWorker\n",
   });
+
   snapshotOf(dir);
   const r = traced(dir, "const m = await import('./src/app/main.ts'); await m.main();");
   assert.equal(r.status, 0, r.stderr);
@@ -116,6 +127,7 @@ test("trace adapter: a child killed with SIGTERM flushes its spans and its run r
     "src/app/server.ts": 'export function handle(): number {\n  return 1;\n}\nhandle();\nprocess.send!("ready");\nsetInterval(() => {}, 1000);\n',
     "keylang/flows/f.md": "# flow f\n\n- trigger app.main.main\n  - step app.server.handle\n",
   });
+
   snapshotOf(dir);
   const r = traced(dir, "const m = await import('./src/app/main.ts'); await m.main();");
   assert.equal(r.status, 0, r.stderr);
@@ -138,6 +150,7 @@ test("trace adapter: a SIGTERM handler of the program keeps its turn; the adapte
     "src/app/server.ts": 'export function handle(): number {\n  return 1;\n}\nprocess.on("SIGTERM", () => {\n  handle();\n  process.exit(7);\n});\nprocess.send!("ready");\nsetInterval(() => {}, 1000);\n',
     "keylang/flows/f.md": "# flow f\n\n- trigger app.main.main\n  - step app.server.handle\n",
   });
+
   snapshotOf(dir);
   const r = traced(dir, "const m = await import('./src/app/main.ts'); await m.main();");
   assert.equal(r.status, 0, r.stderr);
@@ -192,6 +205,7 @@ test("trace adapter: overloads, CommonJS exports and `(…) satisfies T` are ins
     "keylang/flows/f.md":
       "# flow f\n\n- trigger app.main.main\n  - step app.legacy.a\n  - step app.legacy2.b\n  - step app.legacy2.c\n  - step app.main.typed\n  - step app.main.asd\n  - step app.main.plain\n  - step app.main.Svc.run\n    - step app.main.fmt\n  - step app.main.gen\n",
   });
+
   snapshotOf(dir);
   const r = traced(dir, "const m = await import('./src/app/main.ts'); m.main();");
   assert.equal(r.status, 0, r.stderr);
@@ -201,9 +215,11 @@ test("trace adapter: overloads, CommonJS exports and `(…) satisfies T` are ins
   assert.deepEqual(run.uninstrumented, { "app.main.gen": "a generator" });
   const c = check(dir);
   assert.notEqual(c.status, 2, c.stderr);
+
   for (const id of ["app.legacy.a", "app.legacy2.b", "app.legacy2.c", "app.main.typed", "app.main.asd", "app.main.plain", "app.main.Svc.run", "app.main.fmt"]) {
     assert.equal(traceOf(c.rows, id), `ok: ok ${id}: observed in t`, id);
   }
+
   assert.equal(traceOf(c.rows, "app.main.gen"), "unverified: unverified app.main.gen: `app.main.gen` is not instrumented (a generator)");
 });
 
@@ -213,8 +229,10 @@ test("trace evidence: a clock with spans but no run record of its own makes the 
     "src/app/w.ts": "export function inWorker(): number {\n  return 2;\n}\n",
     "keylang/flows/f.md": "# flow f\n\n- trigger app.main.main\n  - step app.main.never\n  - step app.w.inWorker\n",
   });
+
   const snapshotId = snapshotOf(dir);
   const base = { schemaVersion: 1, snapshotId, runId: "r1", testId: "t", flow: "f", traceId: "r1:t" };
+
   const lines: Record<string, unknown>[] = [
     { ...base, event: "start", spanId: "a:s1", parentSpanId: null, symbolId: "app.main.main", clockId: "a", seq: 1, ts: 1 },
     { ...base, event: "start", spanId: "b:s1", parentSpanId: null, symbolId: "app.w.inWorker", clockId: "b", seq: 1, ts: 2 },
@@ -222,6 +240,7 @@ test("trace evidence: a clock with spans but no run record of its own makes the 
     { ...base, event: "end", spanId: "a:s1", outcome: "ok", clockId: "a", seq: 2, ts: 4 },
     { ...base, event: "run", clockId: "a", complete: true, dropped: 0, instrumented: ["app.main.main", "app.main.never", "app.w.inWorker"], open: [] },
   ];
+
   mkdirSync(join(dir, ".keylang/trace"), { recursive: true });
   writeFileSync(join(dir, ".keylang/trace/f.jsonl"), `${lines.map((l) => JSON.stringify(l)).join("\n")}\n`);
   const c = check(dir);
@@ -238,6 +257,7 @@ test("trace evidence: a clock with spans but no run record of its own makes the 
 // ---------- the Python adapter ----------
 
 const python3 = spawnSync("python3", ["--version"], { encoding: "utf8" }).status === 0;
+
 const pythonAdapter = join(root, "adapters/python/keylang_trace.py");
 
 /** A Python repository whose `main()` runs `crunch` as `body` says, traced under the adapter for flow `crunch`. */
@@ -249,12 +269,14 @@ function pythonRun(t: Context, body: string): { dir: string; stdout: string; std
     "run.py": "from app.main import main\n\nprint(main())\n",
     "keylang/flows.md": "# flow crunch\n\n- trigger app.main.main\n  - step app.work.crunch\n",
   });
+
   const plan = keylang(dir, ["trace-plan", "crunch"]);
   assert.equal(plan.status, 0, plan.stderr);
   writeFileSync(join(dir, "plan.json"), plan.stdout);
   const env: Record<string, string | undefined> = { ...process.env, KEYLANG_TRACE: ".keylang/trace/crunch.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_TRACE_TEST: "run.py > @flow crunch" };
   delete env.KEYLANG_TRACE_RUN;
   const r = spawnSync("python3", [pythonAdapter, "run.py"], { cwd: dir, encoding: "utf8", env, timeout: 60_000 });
+
   return { dir, stdout: r.stdout, stderr: r.stderr, status: r.status };
 }
 
@@ -305,6 +327,7 @@ test("python: a process forked with os.fork() records only its own events, with 
 // ---------- the PHP adapter ----------
 
 const php = spawnSync("php", ["-r", 'echo extension_loaded("pcntl") ? "pcntl" : "no";'], { encoding: "utf8" });
+
 const pcntl = php.status === 0 && php.stdout === "pcntl";
 
 test("php: a process forked with pcntl_fork() records only its own events, with a clock and span ids of its own", { skip: pcntl ? false : php.status === 0 ? "php has no pcntl extension" : "php is not installed" }, (t) => {
@@ -313,6 +336,7 @@ test("php: a process forked with pcntl_fork() records only its own events, with 
     "run.php": "<?php\nrequire __DIR__ . '/src/App/Work.php';\necho (new Shop\\App\\Work())->main(), \"\\n\";\n",
     "keylang/flows.md": "# flow crunch\n\n- trigger app.Work.Work.main\n  - step app.Work.Work.crunch\n",
   });
+
   const plan = keylang(dir, ["trace-plan", "crunch"]);
   assert.equal(plan.status, 0, plan.stderr);
   writeFileSync(join(dir, "plan.json"), plan.stdout);
@@ -336,6 +360,7 @@ test("trace adapter: a relative KEYLANG_TRACE is the startup directory's, even a
     "work/.keep": "",
     "keylang/flows/f.md": "# flow f\n\n- trigger app.main.main\n  - step app.main.step\n",
   });
+
   snapshotOf(dir);
   writeFileSync(join(dir, "run.mjs"), "const m = await import('./src/app/main.ts'); m.main();");
   const env: Record<string, string | undefined> = { ...process.env, KEYLANG_TRACE: ".keylang/trace/f.jsonl", KEYLANG_TRACE_FLOW: "f", KEYLANG_TRACE_TEST: "t" };
@@ -353,6 +378,7 @@ const rustc = spawnSync("rustc", ["--version"], { encoding: "utf8" }).status ===
 
 test("rust: relative KEYLANG_TRACE and KEYLANG_TRACE_PLAN are the startup directory's, though main changes its directory before the first span", { skip: rustc ? false : "rustc is not installed" }, (t) => {
   const rust = join(root, "adapters/rust/keylang_trace.rs");
+
   const dir = repo(t, { languages: ["rust"], layers: { app: ["src/*.rs"] }, check: { trace: ".keylang/trace/*.jsonl" } }, {
     "Cargo.toml": '[package]\nname = "shop"\nversion = "0.1.0"\nedition = "2021"\n',
     "src/main.rs": `#[path = ${JSON.stringify(rust)}]
@@ -371,6 +397,7 @@ fn main() {
     "work/.keep": "",
     "keylang/flows.md": "# flow checkout\n\n- trigger app.main.checkout\n",
   });
+
   const plan = keylang(dir, ["trace-plan", "checkout"]);
   assert.equal(plan.status, 0, plan.stderr);
   writeFileSync(join(dir, "plan.json"), plan.stdout);
@@ -400,6 +427,7 @@ test("php: a relative KEYLANG_TRACE is the startup directory's, though the scrip
     "work/.keep": "",
     "keylang/flows.md": "# flow sum\n\n- trigger domain.Order.total\n",
   });
+
   const plan = keylang(dir, ["trace-plan", "sum"]);
   assert.equal(plan.status, 0, plan.stderr);
   writeFileSync(join(dir, "plan.json"), plan.stdout);

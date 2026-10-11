@@ -9,6 +9,7 @@ test("SCC includes the node the old DFS skipped", () => {
     ["c", new Set(["a"])],
     ["d", new Set(["c"])],
   ]);
+
   const components = stronglyConnected(adj);
   assert.equal(components.length, 1);
   assert.deepEqual(components[0], ["a", "b", "c", "d"]);

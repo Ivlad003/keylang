@@ -88,15 +88,20 @@ export function llmClient(configAgent: string | null, options: LlmClientOptions)
   const env = options.env ?? process.env;
   const home = options.home ?? homedir();
   const { agent } = resolveAgent(configAgent, env, home);
+
   if (agent === null) return { missing: "no model configured: set `agent` in keylang.json, e.g. \"anthropic:claude-opus-5\" or \"cli:claude\"" };
   const timeout = timeoutMs(env);
+
   if (typeof timeout === "string") return { missing: timeout };
+
   if (isCliAgent(agent)) {
     // An agent keylang started runs keylang with KEYLANG_NESTED: it never starts another agent.
     if (env.KEYLANG_NESTED !== undefined && env.KEYLANG_NESTED !== "") return { missing: `${agent}: cli agents are off inside an agent keylang started (KEYLANG_NESTED)` };
     const setup = cliClient(agent, { root: options.root, env, home });
+
     if ("missing" in setup) return setup;
     const cli = setup.client;
+
     const complete = async (request: LlmRequest, call?: LlmCallOptions): Promise<string> => {
       try {
         return await cli.complete(request, { ...deadline(timeout, call?.timeoutMs), ...(call?.signal ? { signal: call.signal } : {}), ...(call?.onModel ? { onModel: call.onModel } : {}) });
@@ -105,27 +110,36 @@ export function llmClient(configAgent: string | null, options: LlmClientOptions)
         throw error;
       }
     };
+
     return { client: { agent, model: cli.model, bin: cli.bin, complete } };
   }
+
   const colon = agent.indexOf(":");
   const provider = agent.slice(0, colon);
   const model = agent.slice(colon + 1);
   // An empty variable is no key: it would only fail later, as a 401.
   const fromEnv = (name: string): string | undefined => (env[name] === "" ? undefined : env[name]);
+
   if (provider === "anthropic") {
     const key = fromEnv("ANTHROPIC_API_KEY") ?? readKey(home, "anthropic");
     // The SDK also reads `ANTHROPIC_AUTH_TOKEN` and an `ant auth login` profile.
     const profile = fromEnv("ANTHROPIC_AUTH_TOKEN") !== undefined || existsSync(join(home, ".config/anthropic"));
+
     if (key === undefined && !profile) return { missing: "no Anthropic credentials: set ANTHROPIC_API_KEY, write ~/.config/keylang/anthropic.key (mode 0600), or run `ant auth login`" };
     const client = new Anthropic({ timeout, ...(key !== undefined ? { apiKey: key } : {}), ...(env.ANTHROPIC_BASE_URL ? { baseURL: env.ANTHROPIC_BASE_URL } : {}) });
+
     return { client: { agent, model, complete: (request, call) => anthropicComplete(client, model, request, deadline(timeout, call?.timeoutMs), call?.signal) } };
   }
+
   if (provider === "openrouter") {
     const key = fromEnv("OPENROUTER_API_KEY") ?? readKey(home, "openrouter");
+
     if (key === undefined) return { missing: "no OpenRouter key: set OPENROUTER_API_KEY or write ~/.config/keylang/openrouter.key (mode 0600)" };
     const base = env.OPENROUTER_BASE_URL ?? "https://openrouter.ai";
+
     return { client: { agent, model, complete: (request, call) => openrouterComplete(base, key, model, request, deadline(timeout, call?.timeoutMs), call?.signal) } };
   }
+
   return { missing: `unknown provider \`${provider}\` in agent \`${agent}\`` };
 }
 
@@ -143,9 +157,12 @@ const MAX_TIMEOUT_MS = 2 ** 31 - 1;
 /** `KEYLANG_LLM_TIMEOUT_MS`, a positive whole number of milliseconds a timer can hold; the reason when it is not one. */
 function timeoutMs(env: Env): number | string {
   const raw = env.KEYLANG_LLM_TIMEOUT_MS;
+
   if (raw === undefined || raw === "") return DEFAULT_TIMEOUT_MS;
+
   if (!/^[1-9]\d*$/.test(raw)) return `KEYLANG_LLM_TIMEOUT_MS must be a positive number of milliseconds, got \`${raw}\``;
   const ms = Number(raw);
+
   return ms <= MAX_TIMEOUT_MS ? ms : `KEYLANG_LLM_TIMEOUT_MS must be at most ${MAX_TIMEOUT_MS} milliseconds (about 24 days), got \`${raw}\``;
 }
 
@@ -177,15 +194,19 @@ function callSignal(timeout: number, outer: AbortSignal | undefined): { signal: 
   const controller = new AbortController();
   // What aborted the call first: a cancel after the deadline is still a timeout, and the other way round.
   let cause: "timeout" | "cancel" | null = null;
+
   const stop = (why: "timeout" | "cancel"): void => {
     cause ??= why;
     controller.abort();
   };
+
   const timer = setTimeout(() => stop("timeout"), timeout);
   timer.unref();
   const onAbort = (): void => stop("cancel");
+
   if (outer?.aborted) stop("cancel");
   else outer?.addEventListener("abort", onAbort, { once: true });
+
   return {
     signal: controller.signal,
     timedOut: () => cause === "timeout",
@@ -203,6 +224,7 @@ async function anthropicComplete(client: Anthropic, model: string, request: LlmR
   const call = callSignal(bound.ms, outer);
   const signal = call.signal;
   let response: Awaited<ReturnType<typeof client.beta.messages.create>>;
+
   try {
     response = await client.beta.messages.create(
       {
@@ -217,19 +239,25 @@ async function anthropicComplete(client: Anthropic, model: string, request: LlmR
     );
   } catch (error) {
     if (call.cancelled()) throw new LlmCancelled("anthropic");
+
     if (call.timedOut()) throw new Error(timeoutMessage("anthropic", bound));
     throw error;
   } finally {
     call.dispose();
   }
+
   if (response.stop_reason === "refusal") throw new Error(`${model} declined the request${response.stop_details?.category ? ` (${response.stop_details.category})` : ""}`);
+
   // A cut answer is not an answer: saved as fresh it would never be asked again, and cut code is not code.
   if (response.stop_reason === "max_tokens") throw new Error(truncatedMessage(model, "max_tokens"));
+
   const text = response.content
     .flatMap((block) => (block.type === "text" ? [block.text] : []))
     .join("")
     .trim();
+
   if (text === "") throw new Error(`${model} answered without text (stop reason: ${response.stop_reason ?? "none"})`);
+
   return text;
 }
 
@@ -237,6 +265,7 @@ async function openrouterComplete(base: string, key: string, model: string, requ
   // One deadline for the request and the whole stream: a stalled stream never hangs the CLI or the TUI.
   const call = callSignal(bound.ms, outer);
   const signal = call.signal;
+
   try {
     const response = await fetch(`${base.replace(/\/$/, "")}/api/v1/chat/completions`, {
       method: "POST",
@@ -252,42 +281,61 @@ async function openrouterComplete(base: string, key: string, model: string, requ
       }),
       signal,
     });
+
     if (!response.ok || !response.body) throw new Error(`openrouter: HTTP ${response.status}: ${(await response.text()).slice(0, 200)}`);
+
     // An error can come back as plain JSON with status 200 instead of a stream.
     if (!/text\/event-stream/.test(response.headers.get("content-type") ?? "")) {
       const body = await response.text();
       const parsed = parseJson(body) as { error?: { message?: string }; choices?: { message?: { content?: string }; finish_reason?: string | null }[] } | undefined;
+
       if (parsed?.error) throw new Error(`openrouter: ${parsed.error.message ?? "error without a message"}`);
+
       if (parsed?.choices?.[0]?.finish_reason === "length") throw new Error(`openrouter: ${truncatedMessage(model, "length")}`);
       const text = parsed?.choices?.[0]?.message?.content?.trim() ?? "";
+
       if (text === "") throw new Error(`openrouter: ${model} answered without text: ${body.slice(0, 200)}`);
+
       return text;
     }
+
     let text = "";
     let failure: string | null = null;
+
     const parser = createParser({
       onEvent(event) {
         if (event.data === "[DONE]" || failure !== null) return;
         const chunk = parseJson(event.data) as { choices?: { delta?: { content?: string }; finish_reason?: string | null }[]; error?: { message?: string } } | undefined;
+
         if (chunk === undefined) {
           failure = `invalid JSON in the stream: ${event.data.slice(0, 100)}`;
+
           return;
         }
+
         if (chunk.error) failure = chunk.error.message ?? "stream error";
+
         // The last chunk says why the stream ended: `length` is the token limit, and the text so far is a cut answer.
         if (chunk.choices?.[0]?.finish_reason === "length") failure = truncatedMessage(model, "length");
         text += chunk.choices?.[0]?.delta?.content ?? "";
       },
     });
+
     const decoder = new TextDecoder();
+
     for await (const bytes of response.body) parser.feed(decoder.decode(bytes as Uint8Array, { stream: true }));
+
     // A stream the caller cancelled may end quietly: what came until then is not an answer.
     if (signal.aborted) throw signal.reason;
+
     if (failure !== null) throw new Error(`openrouter: ${failure}`);
+
     if (text.trim() === "") throw new Error(`openrouter: ${model} answered without text`);
+
     return text.trim();
   } catch (error) {
     if (call.cancelled()) throw new LlmCancelled("openrouter");
+
     if (call.timedOut()) throw new Error(timeoutMessage("openrouter", bound));
     throw error;
   } finally {

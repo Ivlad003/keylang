@@ -70,18 +70,23 @@ export function assess(
   const spec: SpecIR = evidence.assessed === undefined ? whole : { ...whole, rules: rulesInScope, rejectedLayers: rejectedInScope, hasRules: whole.hasRules && (rulesInScope.length > 0 || rejectedInScope.length > 0), modules: own(whole.modules), flows: own(whole.flows), wires: own(whole.wires) };
   // The snapshot decides what the map alone cannot: configured layers without modules, and modules it could not read.
   const nodes = snapshot?.nodes;
+
   const members = (id: string): "complete" | "opaque" | undefined => {
     const node = nodes?.[id];
+
     return node?.kind !== "module" ? undefined : node.members === "opaque" ? "opaque" : "complete";
   };
+
   const refined = check(docs, {
     layers: Object.keys(snapshot?.manifest?.config.layers ?? {}),
     ...(nodes ? { members } : {}),
     ...(evidence.knownExternal ? { knownExternal: evidence.knownExternal } : {}),
   });
+
   const { index } = refined;
   const resolveDiags = own(refined.diagnostics);
   const rules = evaluateRules(spec, index, snapshot, ownDocs, format);
+
   const flows =
     snapshot === null
       ? { diagnostics: [] as Diagnostic[], verdicts: [] as Verdict[] }
@@ -97,18 +102,22 @@ export function assess(
           ...(evidence.staticSetBy ? { staticSetBy: evidence.staticSetBy } : {}),
           ...(evidence.testFileExists ? { testFileExists: evidence.testFileExists } : {}),
         });
+
   const planned = new Set(spec.planned.map((item) => item.id));
   const kindOf = dependencyKindOf(spec, index, snapshot?.nodes);
   const wiring = checkWiring(spec, snapshot === null ? null : { kinds: nodeKinds(snapshot.nodes), nodes: snapshot.nodes, exports: snapshot.exports }, kindOf, format);
   const migration = migrationCheck(ownDocs, evidence.migration ?? { state: "absent" }, snapshot?.snapshotId ?? null);
   const system = systemCheck(docs, snapshot);
+
   const diagnostics = [...ownDocs.flatMap((doc) => doc.diagnostics), ...specDiags, ...resolveDiags, ...rules.diagnostics, ...flows.diagnostics, ...wiring, ...migration.diagnostics, ...own(system.diagnostics)].filter(
     // A `planned` declaration answers a dangling reference to exactly its ID, not any message that mentions it.
     (diag) => diag.code !== "K001" || diag.target === undefined || !planned.has(diag.target),
   );
+
   diagnostics.sort(compareDiagnostics);
   // A flow step reports its own ID verdict for the same reference.
   const flowIds = new Set(flows.verdicts.filter((verdict) => verdict.criterion === "ID").map((verdict) => `${verdict.file}:${verdict.line}`));
+
   const refinedVerdicts: Verdict[] = own(refined.unverified).filter((item) => !flowIds.has(`${item.file}:${item.line}`)).map((item) => ({
     verdict: "unverified",
     criterion: "ID",
@@ -121,7 +130,9 @@ export function assess(
     code: null,
     message: item.message,
   }));
+
   const verdicts = afterRecovery([...rules.verdicts, ...refinedVerdicts, ...flows.verdicts, ...migration.verdicts, ...own(system.verdicts)], recoveredLines(docs));
+
   return { index, diagnostics, verdicts, spec: whole, systems: system.systems };
 }
 
@@ -132,33 +143,45 @@ export function assess(
  */
 function recoveredLines(docs: readonly Document[]): Map<string, string> {
   const recovered = new Map<string, string>();
+
   for (const doc of docs) {
     const k003 = new Map<number, string>();
+
     for (const diag of doc.diagnostics) {
       const line = diag.span.start.line;
+
       if (diag.code === "K003" && !k003.has(line)) k003.set(line, `${line}:${diag.span.start.col}`);
     }
+
     if (k003.size === 0) continue;
+
     const visit = (node: Node, inherited: string | undefined): void => {
       const at = k003.get(node.span.start.line) ?? inherited;
+
       if (at !== undefined) recovered.set(`${doc.path}:${node.span.start.line}`, at);
+
       for (const child of node.children) visit(child, at);
     };
+
     for (const section of doc.sections) for (const node of sectionNodes(section)) visit(node, undefined);
   }
+
   return recovered;
 }
 
 /** An `ok` on a recovered line is about a tree the file does not have: `unverified`. `fail` stays. */
 function afterRecovery(verdicts: Verdict[], recovered: ReadonlyMap<string, string>): Verdict[] {
   if (recovered.size === 0) return verdicts;
+
   return verdicts.map((verdict) => {
     const at = recovered.get(`${verdict.file}:${verdict.line}`);
+
     if (verdict.verdict !== "ok" || at === undefined) return verdict;
     // A flow verdict's message repeats the verdict and area (`ok <area>: <reason>`); a rule's is the reason alone.
     const prefix = `ok ${verdict.area}: `;
     const flow = verdict.message.startsWith(prefix);
     const reason = `structure recovered after K003 at ${at}; on that structure: ${flow ? verdict.message.slice(prefix.length) : verdict.message}`;
+
     return { ...verdict, verdict: "unverified", message: flow ? `unverified ${verdict.area}: ${reason}` : reason };
   });
 }
@@ -166,7 +189,9 @@ function afterRecovery(verdicts: Verdict[], recovered: ReadonlyMap<string, strin
 export function sameFinding(verdict: Verdict, diagnostics: readonly Diagnostic[]): boolean {
   return diagnostics.some((diag) => {
     if (diag.file !== verdict.file || diag.span.start.line !== verdict.line) return false;
+
     if (diag.message === verdict.message || verdict.message.includes(diag.message)) return true;
+
     return verdict.criterion === "ID" && verdict.verdict === "fail" && diag.code === "K001" && diag.target === verdict.area;
   });
 }
@@ -174,7 +199,9 @@ export function sameFinding(verdict: Verdict, diagnostics: readonly Diagnostic[]
 /** Snapshot kinds, with a class told apart by its marker. */
 function nodeKinds(nodes: SnapshotInput["nodes"]): Map<string, string> {
   const kinds = new Map<string, string>();
+
   for (const [id, node] of Object.entries(nodes)) kinds.set(id, node.kind === "module" && node.class === true ? "class" : node.kind);
+
   return kinds;
 }
 

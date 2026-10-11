@@ -8,6 +8,7 @@
 // so every module of a cycle gets every name the cycle exports.
 
 export type ExportKind = "fn" | "class" | "type" | "value";
+
 export type ExportForm = "alias" | "default" | "reexport" | "namespace";
 
 /** The name `export *` from a module with unknown contents contributes: any name. */
@@ -81,11 +82,14 @@ interface Result<T> {
 
 export function resolveExports(inputs: ReadonlyMap<string, ModuleExportsInput>, symbolKind: (id: string) => ExportKind | null, declared: (module: string, name: string) => string | null): ExportTables {
   const rows = new Map<string, Map<string, ExportRowInput>>();
+
   for (const [module, input] of inputs) {
     const byName = new Map<string, ExportRowInput>();
+
     for (const row of input.rows) if (row.name !== UNKNOWN_EXPORT && !byName.has(row.name)) byName.set(row.name, row);
     rows.set(module, byName);
   }
+
   const entryMemo = new Map<string, ExportEntry | null>();
   const namesMemo = new Map<string, string[]>();
   const onStack = new Map<string, number>();
@@ -95,16 +99,20 @@ export function resolveExports(inputs: ReadonlyMap<string, ModuleExportsInput>, 
   const guarded = <T>(key: string, memo: Map<string, T>, empty: T, compute: () => Result<T>): Result<T> => {
     if (memo.has(key)) return { value: memo.get(key) as T, low: Infinity };
     const at = onStack.get(key);
+
     if (at !== undefined) return { value: empty, low: at };
     const mine = depth++;
     onStack.set(key, mine);
     const result = compute();
     onStack.delete(key);
     depth--;
+
     if (result.low >= mine) {
       memo.set(key, result.value);
+
       return { value: result.value, low: Infinity };
     }
+
     return result;
   };
 
@@ -113,11 +121,14 @@ export function resolveExports(inputs: ReadonlyMap<string, ModuleExportsInput>, 
   const entry = (module: string, name: string): Result<ExportEntry | null> =>
     guarded(`${module}\0${name}`, entryMemo, null, () => {
       const input = inputs.get(module);
+
       if (!input) return { value: null, low: Infinity };
       const row = rows.get(module)?.get(name);
+
       if (row) {
         let low = Infinity;
         let symbol: string | null = null;
+
         if (row.target.kind === "symbol") symbol = row.target.id;
         else if (row.target.kind === "namespace") symbol = row.target.module;
         else if (row.target.kind === "name") {
@@ -125,48 +136,63 @@ export function resolveExports(inputs: ReadonlyMap<string, ModuleExportsInput>, 
           symbol = found.value;
           low = found.low;
         }
+
         const kind = row.target.kind === "namespace" ? "value" : symbol !== null ? (symbolKind(symbol) ?? row.kind) : row.kind;
+
         return { value: { module, name, symbol, kind, ...(row.form ? { form: row.form } : {}), ...(row.local !== undefined && row.local !== name ? { local: row.local } : {}), ...(row.from ? { from: row.from } : {}) }, low };
       }
+
       // `export *` re-exports every name of its source except `default`.
       if (name === "default") return { value: null, low: Infinity };
       let low = Infinity;
       const found: { entry: ExportEntry; star: string | null }[] = [];
+
       for (const star of input.stars) {
         if (star.target === null || !inputs.has(star.target)) {
           if (name === UNKNOWN_EXPORT) found.push({ entry: unknown(module, star.reason || `re-export from \`${star.target}\``), star: null });
           continue;
         }
+
         const from = entry(star.target, name);
         low = Math.min(low, from.low);
+
         if (from.value) found.push({ entry: from.value, star: star.target });
         else if (name === UNKNOWN_EXPORT && inputs.get(star.target)?.opaque) found.push({ entry: unknown(module, `re-export from \`${star.target}\`, whose contents keylang did not read`), star: null });
       }
+
       return { value: pickStar(module, name, found, input.lastStarWins === true), low };
     });
 
   const symbolFrom = (module: string, name: string): Result<string | null> => {
     const found = entry(module, name);
+
     if (found.value) return { value: found.value.symbol, low: found.low };
+
     return { value: declared(module, name), low: found.low };
   };
 
   const names = (module: string): Result<string[]> =>
     guarded(module, namesMemo, [], () => {
       const input = inputs.get(module);
+
       if (!input) return { value: [], low: Infinity };
       const out = new Set<string>(rows.get(module)?.keys() ?? []);
       let low = Infinity;
+
       for (const star of input.stars) {
         if (star.target === null || !inputs.has(star.target)) {
           out.add(UNKNOWN_EXPORT);
           continue;
         }
+
         const from = names(star.target);
         low = Math.min(low, from.low);
+
         for (const name of from.value) if (name !== "default") out.add(name);
+
         if (inputs.get(star.target)?.opaque) out.add(UNKNOWN_EXPORT);
       }
+
       return { value: [...out], low };
     });
 
@@ -175,12 +201,15 @@ export function resolveExports(inputs: ReadonlyMap<string, ModuleExportsInput>, 
     symbolOf: (module, name) => symbolFrom(module, name).value,
     entries: () => {
       const out: ExportEntry[] = [];
+
       for (const module of [...inputs.keys()].sort(compare)) {
         for (const name of [...names(module).value].sort(compare)) {
           const found = entry(module, name).value;
+
           if (found) out.push(found);
         }
       }
+
       return out;
     },
   };
@@ -194,19 +223,24 @@ export function resolveExports(inputs: ReadonlyMap<string, ModuleExportsInput>, 
  */
 function pickStar(module: string, name: string, found: readonly { entry: ExportEntry; star: string | null }[], lastWins = false): ExportEntry | null {
   const known = found.filter((f) => f.entry.name !== UNKNOWN_EXPORT || name === UNKNOWN_EXPORT);
+
   if (known.length === 0) return null;
   // A value (`export const V`) has no symbol: its origin is the module that declares it and its name
   // there. A name from no module of the snapshot (the standard library) has no origin to compare.
   const originOf = (e: ExportEntry): string | null => e.symbol ?? (e.from !== undefined ? `${e.from}\0${e.local ?? e.name}` : e.form === undefined ? `${e.module}\0${e.name}` : null);
   const origins = new Set(known.filter((f) => f.entry.name !== UNKNOWN_EXPORT).map((f) => originOf(f.entry)).filter((o) => o !== null));
+
   if (origins.size > 1 && !lastWins) return null;
   // Python binds names in statement order: the last `from .x import *` that has the name wins.
   const chosen = lastWins && origins.size > 1 ? known.at(-1)! : (known.find((f) => f.entry.symbol !== null) ?? known[0]!);
+
   if (chosen.entry.name === UNKNOWN_EXPORT) return { ...chosen.entry, module };
   // `from`: the module the name comes from, through a chain of re-exports.
   const from = chosen.entry.form === "reexport" && chosen.entry.from ? chosen.entry.from : chosen.star;
   const entry: ExportEntry = { module, name, symbol: chosen.entry.symbol, kind: chosen.entry.kind, form: "reexport" };
+
   if (from) entry.from = from;
+
   return entry;
 }
 

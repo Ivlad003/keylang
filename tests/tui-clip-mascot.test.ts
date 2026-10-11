@@ -16,8 +16,10 @@ const CLIP = ["╭─◕◕╮", "│╭─╮│", "╰╯ ╰╯"];
 function clipAt(lines: readonly string[]): { x: number; y: number } | null {
   for (let y = 0; y + 2 < lines.length; y++) {
     const x = lines[y]!.indexOf(CLIP[0]!);
+
     if (x !== -1 && lines[y + 1]!.slice(x, x + 5) === CLIP[1] && lines[y + 2]!.slice(x, x + 5) === CLIP[2]) return { x, y };
   }
+
   return null;
 }
 
@@ -67,6 +69,7 @@ test("tui-clip: a drag moves the clip and shows the text under it again; past an
   assert.notEqual(text(at.x, at.y, 5).trim(), "", "there is text under the clip");
   s.send(drag({ x: at.x + 2, y: at.y + 1 }, { x: at.x + 2 - 30, y: at.y + 1 - 10 }));
   assert.deepEqual(clipAt(s.lines()), { x: at.x - 30, y: at.y - 10 });
+
   for (let dy = 0; dy < 3; dy++) assert.equal(s.lines()[at.y + dy]!.slice(at.x, at.x + 5), text(at.x, at.y + dy, 5), "the text under the old place is back");
   assert.equal(s.app.state.clip.chat.open, false, "a drag is no click");
   // Past the bottom-right corner, onto the status line: the clip stops at the terminal's right edge, above the status line.
@@ -91,6 +94,7 @@ test("tui-clip: the editor's cursor under the clip is shown, and that frame draw
   await s.app.idle();
   assert.deepEqual(clipAt(s.lines()), corner);
   s.send("/");
+
   for (const ch of "MARK") s.send(ch);
   s.send(KEY.enter);
   assert.deepEqual(s.app.state.cursor, { line: corner.y - 1, col: corner.x + 1 - 6 });

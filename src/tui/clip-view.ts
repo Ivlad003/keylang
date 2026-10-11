@@ -10,6 +10,7 @@ import type { Rect } from "./view.ts";
 import { graphemes, stringWidth } from "./width.ts";
 
 const WIRE: Style = { fg: 110 };
+
 const EYES: Style = { fg: 231, bold: true };
 
 /** The badge in the status line of a narrow terminal. */
@@ -37,6 +38,7 @@ export function drawClip(grid: Grid, rect: Rect, clip: ClipState): void {
     });
   });
   const counter = counterText(clip.questions);
+
   if (counter === "") return;
   const right = rect.x + rect.width;
   const x = right + stringWidth(counter) <= grid.cols ? right : rect.x - stringWidth(counter);
@@ -46,6 +48,7 @@ export function drawClip(grid: Grid, rect: Rect, clip: ClipState): void {
 /** The background of a cell, so the clip stands on the line under it. */
 function bgAt(grid: Grid, x: number, y: number): Style {
   const bg = grid.styleAt(x, y).bg;
+
   return bg === undefined ? {} : { bg };
 }
 
@@ -68,5 +71,6 @@ export function drawChat(grid: Grid, state: State, rect: Rect): void {
   });
   const typed = inputTail(chat.input, input.width - 2);
   grid.write(input.x, input.y, `> ${typed}`, THEME.popup, input.width);
+
   if (focused) grid.cursor = { x: input.x + 2 + stringWidth(typed), y: input.y };
 }
