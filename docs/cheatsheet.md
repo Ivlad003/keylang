@@ -1,10 +1,10 @@
 # keylang grammar cheatsheet
 
-One page of the keylang language for agents: what to write where, with examples that `keylang check` reads without a spec error. The normative text is [grammar.md](grammar.md) and [semantics.md](semantics.md) (Ukrainian); where they disagree with this page, they win. Commands are in [cli.md](cli.md), MCP tools in [mcp-lsp.md](mcp-lsp.md).
+This page puts the keylang language on one screen for agents: what to write where, with examples that `keylang check` reads without a spec error. The normative text is [grammar.md](grammar.md) and [semantics.md](semantics.md) (Ukrainian), and they win wherever they disagree with this page. Commands are in [cli.md](cli.md), MCP tools in [mcp-lsp.md](mcp-lsp.md).
 
 ## Files
 
-Specs are Markdown under the spec directory: `dir` in `keylang.json`, `keylang/` by default. A level-one heading starts a section, and its kind decides how the list below it is read, whatever the file is called.
+Specs are Markdown under the spec directory: `dir` in `keylang.json`, `keylang/` by default. A level-one heading starts a section. Its kind, not the file name, decides how the list below it is read.
 
 | Heading | Section | Usual file |
 |---|---|---|
@@ -15,15 +15,15 @@ Specs are Markdown under the spec directory: `dir` in `keylang.json`, `keylang/`
 | `# migration <name>` | old-stack IDs mapped to this repository's; the name is required | `keylang/migration.md` (`keylang flow import` proposes rows) |
 | `# system <name>` | a system design: components, zones, relations, tables, sequences, interview notes; the name is required | `keylang/system/<name>.md` (`keylang system new`) |
 
-An item is a list line, `- <keyword> <arguments>`. A child is indented exactly two spaces more than its parent; any other indent or a tab is K003. Paragraphs, `##` headings, tables and code fences are prose without meaning. Text indented under an item is its description, and `<!-- … -->` at the end of an item is a comment.
+An item is a list line, `- <keyword> <arguments>`. A child is indented exactly two spaces more than its parent; any other indent or a tab is K003. Paragraphs, `##` headings, tables and code fences are prose and declare nothing. Text indented under an item is its description, and `<!-- … -->` at the end of an item is a comment.
 
 ## IDs
 
-An ID is a dotted path from the root of the map: layer, module, member. With layer `app` on `src/app/**`, the file `src/app/orders.ts` is the module `app.orders`; its function `place` is `app.orders.place`, a method of its class `Cart` is `app.orders.Cart.add`, and a package is `external.<pkg>`. Copy IDs from `keylang/map/*.md` or MCP `search` and never shorten one. Renaming or moving a file changes its IDs; `keylang map` writes the new map. An ID can be written as a link, `[app.orders.place](../map/app.md)`: the text is the ID, the target is not checked. Code that does not exist yet is a `planned` ID, not a dangling one.
+An ID is a dotted path from the root of the map: layer, module, member. With layer `app` on `src/app/**`, the file `src/app/orders.ts` is the module `app.orders`; its function `place` is `app.orders.place`, a method of its class `Cart` is `app.orders.Cart.add`, and a package is `external.<pkg>`. Copy IDs from `keylang/map/*.md` or MCP `search`, and never shorten one. Renaming or moving a file changes its IDs, and `keylang map` writes the new map. An ID can be written as a link, `[app.orders.place](../map/app.md)`: the text is the ID, the target is not checked. Code that does not exist yet is a `planned` ID, not a dangling one.
 
 ## Keywords by position
 
-A word is a keyword only where this table allows it; elsewhere the line falls back to the right column.
+A word is a keyword only where this table allows it. Elsewhere the line is read as the right column says.
 
 | Position | Keywords | A line without a keyword |
 |---|---|---|
@@ -93,7 +93,7 @@ Keywords are contextual: under a map module, `- test foo.bar` is a dependency na
 
 The examples describe one repository: every ID they name is declared in the map of the first one, or is `planned`.
 
-The map, as `keylang map` writes it (shortened). The first line is the generated marker: never edit such a file. A generated map writes a layer as its bare name; `- layer ui` means the same. A dependency line is `<alias> <module id>`:
+The map, as `keylang map` writes it (shortened). The first line is the generated marker, so never edit such a file. A generated map writes a layer as its bare name, which means the same as `- layer ui`. A dependency line is `<alias> <module id>`:
 
 ```keylang
 <!-- keylang:generated — не редагувати, `keylang map` -->
@@ -130,7 +130,7 @@ The map, as `keylang map` writes it (shortened). The first line is the generated
     - fn [wrap](../../src/infra/log.ts#L2) (db: Db) → Db
 ```
 
-Layer order: a dependency only goes down, so `ui` may use `app` and `domain`, `app` may use `domain`, and an upward one is K101. A layer nested under `layers` is outside the order: a dependency into `infra` is free unless a `deny` forbids it, one from `infra` into an ordered layer is K101 unless an `allow` permits it:
+Layer order: a dependency only goes down. `ui` may use `app` and `domain`, `app` may use `domain`, and an upward dependency is K101. A layer nested under `layers` is outside the order. A dependency into `infra` is free unless a `deny` forbids it, and one from `infra` into an ordered layer is K101 unless an `allow` permits it:
 
 ```keylang
 # rules
@@ -163,7 +163,7 @@ Reachability, public names and cycles:
 - no-cycles
 ```
 
-A flow: the trigger is a plain named function, each step a call from its parent, siblings in order. Prose under the heading is a description:
+A flow. The trigger is a plain named function, each step is a call from its parent, and siblings run in order. Prose under the heading is a description:
 
 ```keylang
 # flow checkout
@@ -210,7 +210,7 @@ A claim and the test that proves it:
     - test tests/orders.test.ts "total sums the lines"
 ```
 
-A feature file: what to build is `planned`, a package not imported yet is `planned module external.<pkg>`, and an open question waits for a person. `keylang feature refund` says what is still missing:
+A feature file. What to build is `planned`, a package not imported yet is `planned module external.<pkg>`, and an open question waits for a person. `keylang feature refund` says what is still missing:
 
 ```keylang
 # flow refund
@@ -223,7 +223,7 @@ A feature file: what to build is `planned`, a package not imported yet is `plann
 - ? Can an operator refund part of an order?
 ```
 
-A flow from an entry point. `keylang entries` lists `route  POST /orders  ui.http.placeOrder`, so the trigger names that kind and the fn, not the path. The two steps of `parallel` run in any order; `continues` says this flow goes on in a later request of `checkout`; `after` and `every` are timers:
+A flow from an entry point. `keylang entries` lists `route  POST /orders  ui.http.placeOrder`, so the trigger names that kind and the fn, not the path. The two steps of `parallel` run in any order. `continues` says this flow goes on in a later request of `checkout`. `after` and `every` are timers:
 
 ```keylang
 # flow order
@@ -238,7 +238,7 @@ A flow from an entry point. `keylang entries` lists `route  POST /orders  ui.htt
 - continues checkout
 ```
 
-A migration table, when this repository replaces an old one: the old IDs are checked against `migration.from` in `keylang.json`, and `keylang migration status` compares the flows of both stacks:
+A migration table, for when this repository replaces an old one. The old IDs are checked against `migration.from` in `keylang.json`, and `keylang migration status` compares the flows of both stacks:
 
 ```keylang
 # migration shop
@@ -299,4 +299,4 @@ Wiring: `wire` builds `app.orders.place` with a `db` from `infra.db.open`, or fr
 | K301 | error | a cycle between `wire` factories |
 | K302 | error | a `wire` target, dependency or `compose` the generated file cannot build |
 
-On a flow line, `check` prints one verdict per kind of evidence: `ID` (the symbol exists), `static` (a call path from the parent), and, when configured, `tests` and `trace`. A verdict is `ok`, `fail` or `unverified`: `unverified` is a gap keylang could not close, never a pass.
+On a flow line, `check` prints one verdict per kind of evidence: `ID` (the symbol exists), `static` (a call path from the parent), and, when configured, `tests` and `trace`. A verdict is `ok`, `fail` or `unverified`. `unverified` is a gap keylang could not close, never a pass.

@@ -2,7 +2,7 @@
 
 [Підготовчий курс](README.md) · [English](../04-reading.md) · **Українською**
 
-Це маршрут читання, який починається без жодних архітектурних слів і закінчується проєктом, що його можна пояснити й перевірити. Кожен пункт маршруту прив'язаний до слова з [частини 2](02-the-words.md) або до принципу з [частини 3](03-principles.md).
+Маршрут нижче починається без жодних архітектурних слів, а закінчується проєктом, який можна пояснити й перевірити. Кожен його пункт прив'язаний до слова з [частини 2](02-the-words.md) або до принципу з [частини 3](03-principles.md).
 
 Посилання на GitHub наведено лише там, де роботу виклав сам автор або видавець, а номери сторінок платних книжок ми не вказуємо. Читати все не обов'язково: зупиніться, щойно крамниця в `examples/shop` здасться очевидною, і поверніться, коли справжній репозиторій почне боліти так само.
 
@@ -22,7 +22,7 @@
 
 Прочитайте [частину 1](01-the-shop.md), а потім статтю Martin Fowler [Presentation Domain Data Layering](https://martinfowler.com/bliki/PresentationDomainDataLayering.html) (26 серпня 2015). Він ділить програму на подання, логіку предметної області й доступ до даних, щоб над предметною областю можна було працювати, не зважаючи на екран. Це принципи 1 і 3, тільки його словами.
 
-Його раніша нотатка [Presentation Domain Separation](https://martinfowler.com/bliki/PresentationDomainSeparation.html) (9 жовтня 2003) пояснює, чому такий поділ окупається: предметну область легше тестувати, другому екрану не доводиться копіювати правило, а веб-API — це просто ще одне подання. Зверніть увагу, що поділ логічний, а не «розкладіть шари по різних машинах».
+Його раніша нотатка [Presentation Domain Separation](https://martinfowler.com/bliki/PresentationDomainSeparation.html) (9 жовтня 2003) пояснює, чому такий поділ окупається: предметну область легше тестувати, другому екрану не доводиться копіювати правило, а веб-API — це просто ще одне подання. Поділ тут логічний: ніхто не просить розкладати шари по різних машинах.
 
 > Don't make the mistake that this is a client/server physical separation. Even if all your code is running on the same machine, it's well worth making this logical separation.
 >
@@ -91,7 +91,7 @@
 
 ### 5. Одна безкоштовна книжка, чотири розділи, і досить
 
-Книжку *Architecture Patterns with Python* (O'Reilly, 2020) написали Harry Percival і Bob Gregory, і її можна прочитати на [cosmicpython.com](https://www.cosmicpython.com/book/preface.html). Рукопис лежить на [github.com/cosmicpython/book](https://github.com/cosmicpython/book), а код прикладу — на [github.com/cosmicpython/code](https://github.com/cosmicpython/code), по гілці на кожен розділ. І онлайн-книжка, і код поширюються за CC BY-NC-ND: їх можна читати й поширювати некомерційно із зазначенням авторства, але публікувати переписану копію не можна.
+Книжку *Architecture Patterns with Python* (O'Reilly, 2020) написали Harry Percival і Bob Gregory; прочитати її можна на [cosmicpython.com](https://www.cosmicpython.com/book/preface.html). Рукопис лежить на [github.com/cosmicpython/book](https://github.com/cosmicpython/book), а код прикладу — на [github.com/cosmicpython/code](https://github.com/cosmicpython/code), по гілці на кожен розділ. І онлайн-книжка, і код поширюються за CC BY-NC-ND: їх можна читати й поширювати некомерційно із зазначенням авторства, але публікувати переписану копію не можна.
 
 > Don't be put off if you're not working with (or interested in) microservices. The vast majority of the patterns we discuss, including much of the event-driven architecture material, is absolutely applicable in a monolithic architecture.
 >

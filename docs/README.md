@@ -2,9 +2,9 @@
 
 **English** · [Українською](course/uk/README.md)
 
-The place to start is the [course](course/README.md). It exists in English and Ukrainian, and both versions say the same thing.
+Start with the [course](course/README.md). It exists in English and Ukrainian, and both versions say the same thing.
 
-The exact format spec (in Ukrainian), which the parser follows, is split into [`grammar.md`](grammar.md), [`semantics.md`](semantics.md) and [`snapshot.md`](snapshot.md); [`cheatsheet.md`](cheatsheet.md) is the grammar on one page in English. The commands are described in [`cli.md`](cli.md), MCP and LSP in [`mcp-lsp.md`](mcp-lsp.md), and the terminal UI and the browser UI in [`tui.md`](tui.md). [`design.md`](design.md) describes the target, so it still includes work the tool does not do yet; where that difference matters, the course points it out. [`research.md`](archive/research.md) is a survey of the background reading. Finally, the decisions that constrain the code are recorded as ADRs in [`adr/`](adr/).
+When you need the exact rules, the format spec that the parser follows is in Ukrainian and split into [`grammar.md`](grammar.md), [`semantics.md`](semantics.md) and [`snapshot.md`](snapshot.md). [`cheatsheet.md`](cheatsheet.md) puts the grammar on one page in English. The commands are described in [`cli.md`](cli.md), MCP and LSP in [`mcp-lsp.md`](mcp-lsp.md), and the terminal and browser UIs in [`tui.md`](tui.md). [`design.md`](design.md) describes the target, so it includes work the tool does not do yet; where the difference matters, the course points it out. [`research.md`](archive/research.md) surveys the background reading, and the decisions that constrain the code are recorded as ADRs in [`adr/`](adr/).
 
 | Document | Role |
 |---|---|
@@ -24,11 +24,11 @@ The exact format spec (in Ukrainian), which the parser follows, is split into [`
 | [tui.md](tui.md) | The terminal UI and `keylang web`, with the diagram page and its editor |
 | [tui-workspace.md](tui-workspace.md) | The design of the full workspace in the terminal UI (Ukrainian) |
 | [design.md](design.md) | Target design, including what is not built yet |
-| [research.md](archive/research.md) | Papers and a stack comparison |
-| [research-pl.md](archive/research-pl.md) | keylang through programming-language theory (Ukrainian) |
+| [archive/research.md](archive/research.md) | Papers and a stack comparison |
+| [archive/research-pl.md](archive/research-pl.md) | keylang through programming-language theory (Ukrainian) |
 | [talk-ai-development-problems.md](talk-ai-development-problems.md) | Slides and proofread transcript of the talk that motivates an executable architecture spec (Russian) |
 | [usability-probe.md](usability-probe.md) | The protocol of a usability session with a person (Ukrainian) |
-| [review-2026-10-05.md](review-2026-10-05.md), [review-2026-10-06.md](review-2026-10-06.md) | The latest reviews: bugs found, risks and the tickets they produced (Ukrainian) |
+| [review-2026-10-05.md](review-2026-10-05.md), [review-2026-10-06.md](review-2026-10-06.md), [review-2026-10-11.md](review-2026-10-11.md) | The latest reviews: bugs found, risks and the tickets they produced; the 2026-10-11 one lists unreproduced candidates (Ukrainian) |
 | [adr/](adr/) | Accepted decisions |
 | [archive/](archive/) | Earlier reviews, research notes and probe results |
 | [../llm.txt](../llm.txt) | A single file an agent fetches to install keylang, with rules on when to use it |

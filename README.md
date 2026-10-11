@@ -4,11 +4,11 @@
 
 ![Ключ до розробки і розуміння проєктів](docs/course/images/banner.png)
 
-keylang is Markdown that lives next to your code. In it you write the spec: which parts of the program may know about which, and which scenarios must keep working. You do not write the functions yourself — an agent generates the code from that spec. keylang does not run the agent either. Its job is to check that the generated code still matches what the spec says.
+keylang is Markdown that lives next to your code. In it you write the spec: which parts of the program may know about which, and which scenarios must keep working. An agent generates the code from that spec, so you do not write the functions yourself. keylang does not run the agent either. It checks that the generated code still matches what the spec says.
 
-Take an online shop as an example. The screen starts a purchase, and the purchase asks the order rules to build an order. The order rules, in turn, know nothing about the screen or the database. That last sentence is a rule, and keylang can enforce it: when the code breaks it, the check can fail the build.
+Take an online shop. The screen starts a purchase, and the purchase asks the order rules to build an order. The order rules know nothing about the screen or the database. That last sentence is a rule, and keylang can enforce it: when the code breaks it, the check can fail the build.
 
-Here is the terminal UI. Type `:`, then `rules`, then press Enter, and the cursor walks down to the `deny` lines:
+Here is the terminal UI. Type `:` and `rules`, press Enter, and the cursor walks down to the `deny` lines:
 
 ![Opening the rules and walking down](docs/course/images/tui-rules.gif)
 
@@ -16,17 +16,17 @@ Here is the terminal UI. Type `:`, then `rules`, then press Enter, and the curso
 
 ![Search, then K on the next step](docs/course/images/tui-flow.gif)
 
-`?` lists all the keys, and Esc closes the list again:
+`?` lists all the keys, and Esc closes the list:
 
 ![The key list, then Esc](docs/course/images/tui-keys.gif)
 
-These clips were recorded right after `npm test`. Because the trace from that run matches the code, nothing is left unverified, and the status line reads `✗ 0  ◌ 0  ✓ 34`.
+These clips were recorded right after `npm test`. The trace from that run matches the code, so nothing is left unverified, and the status line reads `✗ 0  ◌ 0  ✓ 34`.
 
-If these words are new to you, start with the [pre-course](docs/course/pre/README.md) ([українською](docs/course/pre/uk/README.md)). The main guide is the [course](docs/course/README.md) ([українською](docs/course/uk/README.md)). If you want to add a feature to a repository that already exists, follow [that track](docs/course/existing/README.md) ([українською](docs/course/existing/uk/README.md)); if you are starting a Telegram bot, a Python CRUD or a NestJS app from nothing, follow [this one](docs/course/from-scratch/README.md) ([українською](docs/course/from-scratch/uk/README.md)).
+If these words are new to you, start with the [pre-course](docs/course/pre/README.md) ([українською](docs/course/pre/uk/README.md)). The main guide is the [course](docs/course/README.md) ([українською](docs/course/uk/README.md)). To add a feature to a repository that already exists, follow [that track](docs/course/existing/README.md) ([українською](docs/course/existing/uk/README.md)). To start a Telegram bot, a Python CRUD or a NestJS app from nothing, follow [this one](docs/course/from-scratch/README.md) ([українською](docs/course/from-scratch/uk/README.md)).
 
-For reference, the exact grammar is in [`docs/format.md`](docs/format.md) (in Ukrainian), and the commands are in [`docs/tools.md`](docs/tools.md). An agent can install keylang from [`llm.txt`](llm.txt) ([raw](https://raw.githubusercontent.com/Ivlad003/keylang/master/llm.txt)), which also tells it when to use keylang and when not to. Where the project is heading, including work that is not built yet, is described in [`docs/design.md`](docs/design.md).
+The exact grammar is in [`docs/format.md`](docs/format.md) (in Ukrainian), and the commands are in [`docs/tools.md`](docs/tools.md). An agent can install keylang from [`llm.txt`](llm.txt) ([raw](https://raw.githubusercontent.com/Ivlad003/keylang/master/llm.txt)), which also tells it when to use keylang and when not to. [`docs/design.md`](docs/design.md) describes where the project is heading, including work that is not built yet.
 
-You need Node.js ≥ 22.18. Inside a clone of this repository, `node bin/keylang.js` runs the TypeScript sources directly, without a build step. The published package, by contrast, is plain JavaScript: before publishing, `prepack` compiles `src/` into `dist/`. Either way, nothing native gets compiled on your machine during install.
+You need Node.js ≥ 22.18. Inside a clone of this repository, `node bin/keylang.js` runs the TypeScript sources directly, without a build step. The published package is plain JavaScript: before publishing, `prepack` compiles `src/` into `dist/`. Either way, installing compiles nothing native on your machine.
 
 ## What you write
 
@@ -42,21 +42,21 @@ You need Node.js ≥ 22.18. Inside a clone of this repository, `node bin/keylang
 | `.keylang/proposals/` | an agent | A draft change to the spec, which a person merges piece by piece |
 | the program | an agent | The functions, generated from the spec. You do not write them, and keylang does not start the agent |
 
-Specs refer to code by id. An id looks like `application.purchase.buy`, and it names the layer, the module and the function in that order. Because an id is not a line number, the spec stays valid after edits that merely move code up or down.
+Specs refer to code by id. An id such as `application.purchase.buy` names the layer, the module and the function, in that order. An id is not a line number, so the spec stays valid when an edit only moves code up or down.
 
-If `keylang.json` contains `"explain": {"map": true}`, `keylang map` also writes `keylang/map-explained/`. That version of the map adds one or two sentences under each node, taken either from the doc comment in the code or from a saved note that names the model which wrote it and the date.
+If `keylang.json` contains `"explain": {"map": true}`, `keylang map` also writes `keylang/map-explained/`. That version of the map adds one or two sentences under each node. They come from the doc comment in the code, or from a saved note that names the model which wrote it and the date.
 
 ## Three answers
 
 Every check ends in one of three answers:
 
-- `ok` — the claim held everywhere keylang looked.
-- `fail` — keylang found and showed a concrete break. The exit code is 1.
-- `unverified` — neither of the above: keylang hit a hole, a missing file or an outdated trace, so it could not decide. This is not a pass, and `--strict` turns it into exit code 1.
+- `ok`: the claim held everywhere keylang looked.
+- `fail`: keylang found a concrete break and shows it. The exit code is 1.
+- `unverified`: keylang hit a hole, a missing file or an outdated trace, so it could not decide. This is not a pass, and `--strict` turns it into exit code 1.
 
-The exit codes are: `0` when nothing blocks, `1` for a violation (this includes a stale map under `map --check` and any `unverified` under `--strict`), and `2` for bad usage or a file error. To keep machine output clean, `parse --json` writes only JSON to stdout, while `check` writes its findings to stdout and the summary to stderr.
+The exit code is `0` when nothing blocks, `1` for a violation (including a stale map under `map --check` and any `unverified` under `--strict`), and `2` for bad usage or a file error. To keep machine output clean, `parse --json` writes only JSON to stdout, and `check` writes its findings to stdout and the summary to stderr.
 
-It is just as important to know what keylang does not do: it does not decide whether the program is correct, safe or finished. Its limits are these:
+keylang does not decide whether the program is correct, safe or finished. Knowing its limits matters as much as knowing what it checks:
 
 - A sentence written under a node is prose. keylang keeps it, but does not prove it.
 - A call keylang cannot name statically (`obj[k]()`, an unknown decorator, `eval`) is a hole, so the answer for it stays `unverified`.
@@ -64,7 +64,7 @@ It is just as important to know what keylang does not do: it does not decide whe
 - For PHP, it records imports, calls and the types from type hints and docblocks. A call through an interface is still a hole, unless a framework adapter names the implementation (a Magento `<preference>`, a Laravel or Symfony binding).
 - Wiring generates a TypeScript `wire()` function, but it does not stop the rest of the program from importing whatever it wants. Catching that is still the job of the rules.
 - keylang reads test reports and traces that already exist. It does not run the tests, typecheck the code or review security.
-- Go, Java, Ruby and other languages are simply absent from the snapshot. That absence does not prove they depend on nothing.
+- Go, Java, Ruby and other languages are absent from the snapshot. Their absence does not prove they depend on nothing.
 
 ## Try it
 
@@ -96,11 +96,15 @@ node bin/keylang.js                      # terminal UI (? lists keys, q quits)
 node bin/keylang.js web                  # the same UI in a browser; open the printed URL
 ```
 
-`keylang web` also serves a diagram page (`/diagrams`, linked from the terminal page): flows, discovered flows, entry points and the layers in a searchable list, the chosen one drawn as a BPMN-like diagram with lanes per layer and verdict colours, and a side panel with the clicked step's ID, `file:line` (a `vscode://` link), verdicts and where else the ID is used. The explorer walks the calls of an entry point before any flow exists, and «Сліпі зони» shows the `coverage` report. The editor tab draws a view the way diagrams.net does, with undo/redo, PNG and SVG export, and copy and paste between tabs and projects. The layout goes to `keylang/diagrams/`, and «Запропонувати зміни» turns the drawing into proposals for the specs rather than editing them. `keylang web --new <dir>` starts a new project from an empty canvas ([docs/tui.md](docs/tui.md#сторінка-діаграм-diagrams)). To show a repository without changing it, `keylang web --read-only` serves only the diagram page and its «Карта» tab, which holds the map and the explained map; nothing is written. `keylang web --export <dir>` writes the same pages as a static site that opens even from `file://`, plus `app.html`, which analyses a folder dropped into the browser with no server ([docs/tui.md](docs/tui.md#viewer)).
+`keylang web` also serves a diagram page at `/diagrams`, linked from the terminal page. It has a searchable list of flows, discovered flows, entry points and layers. The one you pick is drawn as a BPMN-like diagram, with a lane per layer and colours for the verdicts. Click a step, and a side panel shows its ID, `file:line` (a `vscode://` link), its verdicts and where else the ID is used. The explorer walks the calls of an entry point before any flow exists, and «Сліпі зони» shows the `coverage` report.
+
+The editor tab draws a view the way diagrams.net does, with undo/redo, PNG and SVG export, and copy and paste between tabs and projects. The layout goes to `keylang/diagrams/`, and «Запропонувати зміни» turns the drawing into proposals for the specs instead of editing them. `keylang web --new <dir>` starts a new project from an empty canvas ([docs/tui.md](docs/tui.md#сторінка-діаграм-diagrams)).
+
+To show a repository without changing it, run `keylang web --read-only`. It serves only the diagram page and its «Карта» tab, which holds the map and the explained map, and it writes nothing. `keylang web --export <dir>` writes the same pages as a static site that opens even from `file://`, plus `app.html`, which analyses a folder dropped into the browser with no server ([docs/tui.md](docs/tui.md#viewer)).
 
 ![The diagram page of keylang web: the checkout flow, a selected step and its panel](docs/course/images/diagrams-flow.png)
 
-`examples/shop` keeps a wrong id, `domain.aggregate`, on purpose, so that you can see an error. The example also has no code snapshot, which means the flow cannot be proved either. The check exits with code 1:
+`examples/shop` keeps a wrong id, `domain.aggregate`, on purpose, so that you can see an error. The example also has no code snapshot, so the flow cannot be proved either. The check exits with code 1:
 
 ![check examples/shop reports K001](docs/course/images/cli-shop-k001.png)
 
@@ -108,25 +112,25 @@ node bin/keylang.js web                  # the same UI in a browser; open the pr
 
 ![shop-fixed exits 0 with unverified evidence](docs/course/images/cli-shop-fixed.png)
 
-The still pictures below show `node bin/keylang.js web` running on this repository on 2026-09-28. At that moment the local trace and the `node:test` report were older than the code snapshot, so the marks that depend on them are `unverified` — which is the honest result, not a bug. The numbers also differ between the two views, and for a reason: the status line counts lines (each line gets its worst mark), while `keylang check` counts every single piece of evidence. So the same run prints `0 fail, 22 unverified, 43 ok`, while the UI shows `✗ 0  ◌ 22  ✓ 11`. The clips at the top of this page come from a later run.
+The still pictures below show `node bin/keylang.js web` running on this repository on 2026-09-28. That day the local trace and the `node:test` report were older than the code snapshot, so the marks that depend on them are `unverified`. That is the honest result, not a bug. The two views also count differently. The status line counts lines, and each line gets its worst mark, while `keylang check` counts every piece of evidence. So the same run prints `0 fail, 22 unverified, 43 ok`, and the UI shows `✗ 0  ◌ 22  ✓ 11`. The clips at the top of this page come from a later run.
 
 These are the rules of this repository itself. They say that the language core (`lang`, `base`) and the checker must not depend on the extractor or on tree-sitter:
 
 ![Rules with a passing gutter and the layer tree](docs/course/images/tui-rules.png)
 
-This is the `check` flow. Its id resolves exactly, and there is no static parent call to prove; the trace file, however, comes from an older snapshot:
+This is the `check` flow. Its id resolves exactly, and there is no static parent call to prove, but the trace file comes from an older snapshot:
 
 ![Flow check with the evidence gutter](docs/course/images/tui-flow.png)
 
-Pressing `K`, or hovering with the mouse, shows the function's signature, its file and the first few lines of the declaration:
+Press `K`, or hover with the mouse, to see the function's signature, its file and the first few lines of the declaration:
 
 ![Hover on cli.cli.main](docs/course/images/tui-hover.png)
 
-You will find more pictures in [lesson 8 of the course](docs/course/08-use-cases.md).
+[Lesson 8 of the course](docs/course/08-use-cases.md) has more pictures.
 
 ## Diving into someone else's project
 
-A few commands, no model, nothing written but generated views and the local cache:
+When you open a repository you have never seen, these commands show where it starts, what it talks to and where its blind spots are. They need no model and write nothing but generated views and the local cache:
 
 ```sh
 keylang entries          # where execution starts: routes, cron, consumers, observers, bin scripts, main
@@ -137,31 +141,33 @@ keylang tour             # one page: the system, layers, processes, integrations
 keylang web              # the same flows as diagrams; the «Огляд» tab is the tour
 ```
 
-`keylang tour --out keylang/tour.md` saves the page as a generated file that `check` does not read; `--json` gives the same data, and agents get it through the MCP tool `project_tour`. `keylang flows adopt <name>` turns one discovered flow into a proposed spec. See [`docs/cli.md`](docs/cli.md#tour).
+`keylang tour --out keylang/tour.md` saves the page as a generated file that `check` does not read. `--json` gives the same data, and agents get it through the MCP tool `project_tour`. `keylang flows adopt <name>` turns one discovered flow into a proposed spec. See [`docs/cli.md`](docs/cli.md#tour).
 
-Flows can also leave keylang and come back: `keylang export bpmn <flow>` writes BPMN 2.0 with its diagram, `keylang export drawio <view>` a draw.io file, and `keylang import drawio <file>` turns an edited drawing into one proposal ([`docs/cli.md`](docs/cli.md#export-bpmn)). When a system moves to another stack, `keylang flow export` packs its business flows into one Markdown file, `keylang flow import` proposes them in the new repository as `planned` steps, and `keylang migration status` compares every old flow with its counterpart: the steps and the same tests passing on both sides ([`docs/cli.md`](docs/cli.md#migration)).
+Flows can also leave keylang and come back. `keylang export bpmn <flow>` writes BPMN 2.0 with its diagram, `keylang export drawio <view>` writes a draw.io file, and `keylang import drawio <file>` turns an edited drawing into one proposal ([`docs/cli.md`](docs/cli.md#export-bpmn)).
+
+When a system moves to another stack, `keylang flow export` packs its business flows into one Markdown file, and `keylang flow import` proposes them in the new repository as `planned` steps. `keylang migration status` then compares every old flow with its counterpart: the steps, and the same tests passing on both sides ([`docs/cli.md`](docs/cli.md#migration)).
 
 ## Languages and frameworks
 
-keylang reads TypeScript, JavaScript, Python, Rust and PHP. A framework adapter turns what the framework runs from its configuration into facts: dependency bindings, routes, events and their observers, cron jobs and queue consumers. There are adapters for Magento, Salesforce Commerce Cloud (SFRA) and PWA Kit, Laravel, Symfony, NestJS, Django, FastAPI, Flask, Celery, Express, Fastify and Next.js. Each one switches on by itself when the manifests or the code name its framework, and `frameworks` in `keylang.json` overrides that ([`docs/snapshot.md`](docs/snapshot.md)).
+keylang reads TypeScript, JavaScript, Python, Rust and PHP. Frameworks often run code from configuration that no import shows, so a framework adapter turns that configuration into facts: dependency bindings, routes, events and their observers, cron jobs and queue consumers. There are adapters for Magento, Salesforce Commerce Cloud (SFRA) and PWA Kit, Laravel, Symfony, NestJS, Django, FastAPI, Flask, Celery, Express, Fastify and Next.js. Each one switches on by itself when the manifests or the code name its framework, and `frameworks` in `keylang.json` overrides that ([`docs/snapshot.md`](docs/snapshot.md)).
 
 ## What it costs
 
-The grammar is a small slice of Markdown, and a word means whatever its parent line allows it to mean. A full code fence inside a list item is not supported. When `keylang fmt` cannot trust a file's nesting, it refuses to reformat it, so that after `fmt` what GitHub renders and what `check` understands still agree.
+The grammar is a small slice of Markdown, and a word means whatever its parent line allows it to mean. A full code fence inside a list item is not supported. When `keylang fmt` cannot trust a file's nesting, it refuses to reformat it, so that what GitHub renders and what `check` understands still agree after `fmt`.
 
-When a module is renamed or moves to another layer, you have to update its ids by hand. Also keep in mind that the map shows only modules and dependencies: deployments, data shapes and the reasons behind a decision still belong in prose or in an ADR.
+When a module is renamed or moves to another layer, you update its ids by hand. The map shows only modules and dependencies; deployments, data shapes and the reasons behind a decision still belong in prose or in an ADR.
 
-Finally, exit code 0 only means that nothing blocks. Without `--strict`, a run can still exit 0 while some answers are `unverified`.
+Exit code 0 only means that nothing blocks. Without `--strict`, a run can exit 0 while some answers are `unverified`.
 
 ## What kind of language
 
-keylang is a structured list, not a programming language. It has no variables and no loops, so any file can be read from top to bottom without running anything. A bad line gets a diagnostic code (K001–K302), and parsing carries on past it; `keylang explain` tells you what each code means.
+keylang is a structured list, not a programming language. It has no variables and no loops, so you can read any file from top to bottom without running anything. A bad line gets a diagnostic code (K001–K302), and parsing carries on past it. `keylang explain` tells you what each code means.
 
-The language grew out of the Markdown form of Timur Shemsedinov's architecture language. How it compares with import-linter, ArchUnit, Structurizr and similar tools is discussed in [`docs/research-pl.md`](docs/archive/research-pl.md) (in Ukrainian).
+The language grew out of the Markdown form of Timur Shemsedinov's architecture language. How it compares with import-linter, ArchUnit, Structurizr and similar tools is discussed in [`docs/archive/research-pl.md`](docs/archive/research-pl.md) (in Ukrainian).
 
 ## What is built
 
-Below is the short list of milestones; the details are in [`docs/design.md`](docs/design.md) §9.
+The milestones, in short; the details are in [`docs/design.md`](docs/design.md) §9.
 
 - **M0.** The format, the parser, ids that resolve across files, codes K001–K006 and `fmt`. The language core does not import tree-sitter.
 - **M1.** The map and rules for TypeScript and JavaScript, with codes K101–K105. Running `keylang check` on this repository itself finds no violations.
@@ -170,12 +176,12 @@ Below is the short list of milestones; the details are in [`docs/design.md`](doc
 - **M5.** Rust and Python on the same graph, with the limits listed above. Trace adapters live in `adapters/python` and `adapters/rust`, and `keylang trace-plan <flow>` prints what to instrument.
 - **M6.** `# wiring` writes a typed `wire()` in `keylang.gen.ts` ([ADR 0003](docs/adr/0003-wiring-lifecycle.md)).
 - **M7.** `draft`, `code-to-spec`, `spec-to-code` and `explain <id> --llm` write proposals rather than editing the spec directly. Likewise, `apply_diff` in `keylang mcp` only writes a proposal. Voice input is optional (`Ctrl+R`). `keylang doctor` reports problems and changes nothing.
-- **M8.** `init` and `keylang agents` install a short block in `AGENTS.md`, the MCP server and a skill for Claude Code, Codex, Cursor or opencode ([ADR 0005](docs/adr/0005-harness-integration.md)). `keylang baseline` writes `keylang/rules.baseline.md`, which lists the layer dependencies the graph does not have yet. `check --changed` and `keylang hook stop` block an agent's turn only when a new violation appears, or when the spec was weakened since the last commit (K108: a removed `deny` or step, a new `allow`, a wider `exclude` in `keylang.json`). All of this is covered by the CLI and MCP tests, but it has not yet been tried end to end with Claude Code and Codex on an outside repository.
+- **M8.** `init` and `keylang agents` install a short block in `AGENTS.md`, the MCP server and a skill for Claude Code, Codex, Cursor or opencode ([ADR 0005](docs/adr/0005-harness-integration.md)). `keylang baseline` writes `keylang/rules.baseline.md`, which lists the layer dependencies the graph does not have yet. `check --changed` and `keylang hook stop` block an agent's turn only when a new violation appears, or when the spec was weakened since the last commit (K108: a removed `deny` or step, a new `allow`, a wider `exclude` in `keylang.json`). The CLI and MCP tests cover all of this, but nobody has yet tried it end to end with Claude Code and Codex on an outside repository.
 - **PHP.** Classes, functions, `use` and calls on the same graph ([ADR 0015](docs/adr/0015-php-imports-name-declarations.md)). Composer packages appear as `external.*`, while PHP's own built-in functions and classes do not become nodes at all. `spec-to-code` writes a PHP stub together with a failing PHPUnit test, and `adapters/php` holds a trace adapter and a PHPUnit extension.
 - **Business flows.** Entry points (`keylang entries`), a discovered flow per entry point and business processes named by the model (`flows discover`, `flows adopt`), the `coverage`, `integrations` and `tour` views, and the framework adapters above ([ADR 0022](docs/adr/0022-framework-facts.md)). Flows gained `parallel` groups, typed triggers (`trigger route|cron|consumer|webhook|event`), `continues`, the timers `after` and `every`, and an `emits event` that is checked against the code ([ADR 0023](docs/adr/0023-async-flows.md)). The diagram page and its editor ([ADR 0024](docs/adr/0024-diagram-editor.md)), BPMN and draw.io export, draw.io import, flow bundles and migration parity. A trace can follow one real request: `keylang trace-plan --entry <id>` instruments what an entry point reaches, and `draft flow --from-trace` proposes a flow from what a run observed ([`docs/cli.md`](docs/cli.md#trace-requests)).
-- **System design.** `# system <name>` describes a system the way a design interview draws it: clients, load balancers, services, databases, caches, queues, zones, relations with protocol and load, tables with keys, sequences, requirements, estimates and trade-offs. A component bound to code (`- code <id>`) is checked: `api reads db` (postgres) is `ok` when an import path from `api`'s code reaches a postgres driver. `keylang system discover` derives the same system from the code — entry points, imported drivers, Prisma and SQL schemas, call paths — and the diagram page draws the schema, ER and sequence views and edits them with a palette ([`docs/cli.md`](docs/cli.md#system), example: [`examples/system-interview`](examples/system-interview/url-shortener.md)).
+- **System design.** `# system <name>` describes a system the way a design interview draws it: clients, load balancers, services, databases, caches, queues, zones, relations with protocol and load, tables with keys, sequences, requirements, estimates and trade-offs. A component bound to code (`- code <id>`) is checked: `api reads db` (postgres) is `ok` when an import path from `api`'s code reaches a postgres driver. `keylang system discover` derives the same system from the code, using entry points, imported drivers, Prisma and SQL schemas and call paths. The diagram page draws the schema, ER and sequence views and edits them with a palette ([`docs/cli.md`](docs/cli.md#system), example: [`examples/system-interview`](examples/system-interview/url-shortener.md)).
 
-`bench/` runs the tool on eight repositories, and the resulting numbers are in [`bench/results.md`](bench/results.md); `bench/magento/` measures the PHP adapter on Magento 2.4.9.
+`bench/` runs the tool on eight repositories, with the numbers in [`bench/results.md`](bench/results.md). `bench/magento/` measures the PHP adapter on Magento 2.4.9.
 
 ## Tests
 
@@ -186,4 +192,9 @@ npm run typecheck   # tsc --noEmit
 
 The terminal UI is tested without a real terminal (`tests/tui-*.test.ts`), and `keylang web` is tested through the CLI and a WebSocket (`tests/web.test.ts`); the diagram page runs in headless Chromium with `npm run test:web` (not part of `npm test`).
 
-To publish, start from a clean clone: run `npm test && npm run typecheck`, then `npm version patch` (or minor, or major) and `npm publish`. `prepack` builds `dist/` for you. Before publishing, it is worth inspecting the tarball with `npm pack`.
+To publish, start from a clean clone:
+
+1. Run `npm test && npm run typecheck`.
+2. Run `npm version patch` (or minor, or major).
+3. Inspect the tarball with `npm pack`.
+4. Run `npm publish`. `prepack` builds `dist/` for you.

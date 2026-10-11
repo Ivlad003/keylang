@@ -2,7 +2,7 @@
 
 [Adding to a codebase](README.md) · **English** · [Українською](uk/01-the-first-hour.md)
 
-Do not redesign the repository on day one. Point the tool at it, read what it sees, and write down the few rules you are actually willing to keep. Those rules are the spec. The functions that appear later are written by the agent, not by you, and keylang does not start the agent: it only checks what comes out.
+Do not redesign the repository on day one. Point the tool at it, read what it sees, and write down the few rules you are actually willing to keep. Those rules are the spec. The agent writes the functions that come later; keylang does not start the agent, it only checks what comes out.
 
 ```sh
 npx keylang init .
@@ -10,9 +10,9 @@ npx keylang map
 npx keylang check
 ```
 
-`init` guesses a layer from each folder that has source code; if `src/` or `lib/` exists, it takes the folders inside it instead. It then writes `keylang.json`, a generated map, and `keylang/rules.baseline.md`. The baseline denies the layer dependencies the code does not have yet, so a new one that appears later will be flagged. Read it before you move on. If a deny forbids a call you still need, that is a conversation to have, not a bug in the tool.
+`init` makes a layer of each folder that has source code; if `src/` or `lib/` exists, it uses the folders inside it instead. It then writes `keylang.json`, a generated map and `keylang/rules.baseline.md`. The baseline denies every layer dependency the code does not have yet, so keylang flags a new one the moment it appears. Read the baseline before you move on. If a deny forbids a call you still need, that is a conversation for the team, not a bug in the tool.
 
-Open `keylang/map`. The id under each function is the name you will type later, so copy it from the map instead of inventing a shorter one.
+Next, open `keylang/map`. The id under each function is the name you will type later, so copy it from the map instead of inventing a shorter one.
 
 Before you write a rule, ask the snapshot what it sees. None of these commands writes a spec, and `check` reads none of their output:
 
@@ -23,13 +23,19 @@ npx keylang entries
 npx keylang coverage
 ```
 
-`flows discover` comes first: it writes a draft flow for every entry point into `keylang/flows-discovered/`, a generated view, so each flow on the tour has its file and its diagram link. `tour` prints one page for a newcomer, with no model: what the system says it is, the layers with their size and coupling, the business processes and their flows, the entry points, the integrations, the blind spots, and the ten functions to start reading with. `tour --out keylang/tour.md` keeps it as a generated file, and the «Огляд» tab of `keylang web` shows the same page. `entries` lists where execution starts: `bin` of `package.json`, a `main`, a route with a literal path, and the routes, cron jobs, consumers and observers of a framework keylang has an adapter for (Magento, Laravel, Symfony, NestJS, PWA Kit, SFCC, Django, FastAPI, Flask, Celery, Express, Fastify, Next.js). An adapter turns itself on when the repository shows its framework (a manifest, an import, a config file), and `frameworks` in `keylang.json` overrides that. `coverage` says where keylang does not see: functions no entry point reaches, the modules with the most holes, entry points without a flow, and settings that decide behavior in data.
+Run `flows discover` first. It writes a draft flow for every entry point into `keylang/flows-discovered/`, a generated view, so that each flow on the tour has its own file and diagram link.
 
-When one of the discovered flows is the scenario a newcomer asks about, `npx keylang flows adopt <name>` proposes it as `keylang/flows/<name>.md`, and you accept it with `npx keylang proposals accept keylang/flows/<name>.md`. From then on `check` holds it like a flow you wrote.
+`tour` prints one page for a newcomer, without calling a model. It covers what the system says it is, the layers with their size and coupling, the business processes and their flows, the entry points, the integrations, the blind spots, and the ten functions to start reading with. `tour --out keylang/tour.md` keeps the page as a generated file, and the «Огляд» tab of `keylang web` shows the same page.
 
-Edit `keylang.json` only where the guess is wrong. One thing to know: a folder named `external` is renamed (`external_`), because that word is reserved. `init` prints the new name when it runs.
+`entries` lists where execution starts: `bin` of `package.json`, a `main`, a route with a literal path, and the routes, cron jobs, consumers and observers of any framework keylang has an adapter for (Magento, Laravel, Symfony, NestJS, PWA Kit, SFCC, Django, FastAPI, Flask, Celery, Express, Fastify, Next.js). An adapter switches itself on when the repository shows signs of its framework, such as a manifest, an import or a config file. `frameworks` in `keylang.json` overrides that choice.
 
-Then write the rules you actually mean in `keylang/rules.md`, separately from the baseline. Two or three lines are enough to start:
+`coverage` shows where keylang is blind: functions no entry point reaches, the modules with the most holes, entry points without a flow, and settings that decide behavior in data.
+
+Some discovered flow will be the scenario every newcomer asks about. Keep that one: `npx keylang flows adopt <name>` proposes it as `keylang/flows/<name>.md`, and you accept it with `npx keylang proposals accept keylang/flows/<name>.md`. From then on `check` holds it like a flow you wrote.
+
+Edit `keylang.json` only where the guess is wrong. `init` renames a folder called `external` to `external_`, because that word is reserved, and prints the new name when it runs.
+
+With the picture in hand, write the rules you actually mean in `keylang/rules.md`, separately from the baseline. Two or three lines are enough to start:
 
 ```markdown
 # rules
@@ -40,11 +46,11 @@ Then write the rules you actually mean in `keylang/rules.md`, separately from th
 - deny domain external
 ```
 
-`infrastructure` sits beside the chain rather than under `domain`. In the chain, the left side of `<` is the inner layer. The two deny lines mean that domain may import neither the database nor a package. A need out of the side layer into the chain is K101 until you write it down: if the store saves the domain's objects, add `- allow infrastructure domain` with a sentence that says why.
+In the chain, the left side of `<` is the inner layer. `infrastructure` sits beside the chain rather than under `domain`. The two deny lines say that domain may import neither the database nor a package. A dependency from the side layer into the chain is K101 until you write it down: if the store saves the domain's objects, add `- allow infrastructure domain` with a sentence that says why.
 
-`keylang check` never writes files. Exit 0 means there is no blocking finding, and lines that are still `unverified` are allowed through. Exit 1 means a real break, or, if you ran `map --check`, a map that is out of date.
+`keylang check` never writes files. Exit 0 means there is no blocking finding; lines that are still `unverified` pass. Exit 1 means a real break, or, if you ran `map --check`, a map that is out of date.
 
-In CI, run both, so that broken rules and a stale map are both caught:
+Run both in CI, so that a broken rule and a stale map each fail the build:
 
 ```sh
 npx keylang check
@@ -53,7 +59,7 @@ npx keylang map --check
 
 ## Someone else's repository
 
-To read a repository before you work in it, you do not need to clone it yourself or write anything into it. `keylang clone` makes a shallow clone in keylang's cache (`~/.cache/keylang/repos/<host>/<path>`), runs `init` there without agent files, and builds the map:
+Sometimes the repository is not yours, and you only want to read it before you work in it. You do not need to clone it yourself or write anything into it: `keylang clone` makes a shallow clone in keylang's cache (`~/.cache/keylang/repos/<host>/<path>`), runs `init` there without agent files, and builds the map:
 
 ```sh
 npx keylang clone https://github.com/owner/repo
@@ -62,10 +68,12 @@ npx keylang clone https://github.com/owner/repo --explain map-and-ai
 npx keylang web https://github.com/owner/repo
 ```
 
-The first line of the output is where the clone lives; open its `keylang/map` like your own. Run the same command again to pick up new commits. `--explain map-and-ai` also asks the model for a short note on every node and writes `keylang/map-explained/`; `--explain all` adds a longer explanation of every layer. Both need a model in the environment, for example `KEYLANG_AGENT=cli:claude`, because the clone's `keylang.json` belongs to keylang. `--dry-run` prints the token estimate first and asks nothing. `web` with a URL does the clone and then opens the browser UI on it.
+The first line of the output tells you where the clone lives; open its `keylang/map` as you would your own. Run the same command again to pick up new commits.
+
+`--explain map-and-ai` also asks the model for a short note on every node and writes `keylang/map-explained/`; `--explain all` adds a longer explanation of every layer. Both need a model in the environment, for example `KEYLANG_AGENT=cli:claude`, because the clone's `keylang.json` belongs to keylang. `--dry-run` prints the token estimate first and asks the model nothing. `web` with a URL makes the clone and then opens the browser UI on it.
 
 Inside the clone, `keylang flows discover` and `keylang tour` work as above, and they are the fastest way in.
 
-If a fence around the code was all you wanted, you can stop here. The next part is for a change that does not exist in the code yet.
+If a fence around the code was all you wanted, you can stop here. The next lesson is about a change that does not exist in the code yet.
 
 Next: [a new feature](02-a-feature.md).

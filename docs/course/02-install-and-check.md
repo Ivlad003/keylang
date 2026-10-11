@@ -2,9 +2,9 @@
 
 [Course](README.md) · **English** · [Українською](uk/02-install-and-check.md)
 
-As before, you write the spec and an agent generates the functions, so you do not write them yourself. keylang does not start the agent; the commands in this lesson are what check the result.
+You write the spec, and an agent generates the functions. keylang doesn't start that agent. The commands in this lesson are how you check what it produced.
 
-You need Node.js ≥ 22.18. The package does not compile any native code during installation. Voice input is optional: the voice modules (`@fugood/whisper.node`, `decibri`) are not installed with keylang, and keylang works without them. To enable local voice, install them next to keylang; `keylang doctor` prints the command.
+You need Node.js ≥ 22.18. The package does not compile any native code during installation. Voice input is optional. The voice modules (`@fugood/whisper.node`, `decibri`) don't come with keylang, and keylang works fine without them. If you want local voice, install them next to keylang; `keylang doctor` prints the command.
 
 ```sh
 npx keylang init .     # layers, keylang.json, the map, a baseline, harness files
@@ -12,13 +12,13 @@ npx keylang check      # resolve ids and evaluate rules under keylang/
 npm i -g keylang       # afterwards: keylang check
 ```
 
-In this repository's own checkout, the entry point is `node bin/keylang.js`, which loads the TypeScript sources directly. A package installed from npm loads the compiled `dist/` instead.
+Inside a checkout of this repository you run `node bin/keylang.js`, which loads the TypeScript sources directly. The npm package loads the compiled `dist/` instead.
 
-`init` writes `keylang.json`, the map and `keylang/rules.baseline.md`. The baseline denies each layer every layer it does not already depend on. A layer that already imports packages is allowed those packages and denied the rest of `external`. Because the baseline describes the graph `init` has just seen, it adds no new `fail` right after `init`. Later, though, a new import across one of those gaps is reported as K102 until you change the rule or run `keylang baseline` again.
+`init` writes `keylang.json`, the map and `keylang/rules.baseline.md`. The baseline denies each layer every layer it does not already depend on. A layer that already imports packages is allowed those packages and denied the rest of `external`. The baseline describes the graph `init` has just seen, so it adds no `fail` right away. Its value comes later: a new import across one of those gaps is reported as K102 until you change the rule or run `keylang baseline` again.
 
-Unless you pass `--agents=none`, `init` also writes a managed block in `AGENTS.md` between `<!-- keylang:begin -->` and `<!-- keylang:end -->`, and leaves any text outside those markers as it was. If `.claude/`, `.codex/`, `.cursor/` or `opencode.json` already exists, the same run registers an MCP server named `keylang`, copies the `keylang-feature` skill, and, for Claude and Codex, adds a Stop hook. A skill directory that keylang created itself does not count as a sign that Claude is installed, so running `init` a second time does not keep adding adapters. `keylang agents` repeats that install on a repository that already has `keylang.json`. With `--check`, `init`, `agents` and `baseline` write nothing and exit 1 when the generated text is out of date.
+Unless you pass `--agents=none`, `init` also writes a managed block in `AGENTS.md` between `<!-- keylang:begin -->` and `<!-- keylang:end -->`, and leaves any text outside those markers as it was. If `.claude/`, `.codex/`, `.cursor/` or `opencode.json` already exists, the same run registers an MCP server named `keylang`, copies the `keylang-feature` skill, and, for Claude and Codex, adds a Stop hook. A skill directory that keylang created itself doesn't count as a sign of Claude, so a second `init` doesn't keep adding adapters. `keylang agents` repeats that install on a repository that already has `keylang.json`. With `--check`, `init`, `agents` and `baseline` write nothing and exit 1 when the generated text is out of date.
 
-A layer name must be a single id segment. Reserved names (`external`, `unassigned`, and the map keywords `layer`, `allow`, `deny`, `entry`, `module`, `no-cycles`) get a trailing `_`, and `init` reports the rename on stderr. If there is no `keylang.json`, later commands guess the layers from the directory structure.
+A layer name must be a single id segment. Reserved names (`external`, `unassigned`, and the map keywords `layer`, `allow`, `deny`, `entry`, `module`, `no-cycles`) get a trailing `_`, and `init` reports the rename on stderr. Without a `keylang.json`, later commands guess the layers from the directory structure.
 
 ## The commands you use first
 
@@ -38,7 +38,7 @@ A layer name must be a single id segment. Reserved names (`external`, `unassigne
 | `keylang tour` | No (`--out` writes `keylang/tour.md`) | One page for a newcomer: what the system is, layers and modules, flows, entry points, integrations, blind spots, and the functions to read first |
 | `keylang doctor` | No | Languages, the agent (an API key or an installed agent CLI), and voice support. Exits 0 even when it reports a problem |
 
-By default, `check` reads the spec directory named in `keylang.json`, usually `keylang/`. If you pass a path such as `examples/shop`, it checks that tree instead.
+By default `check` reads the spec directory named in `keylang.json`, usually `keylang/`. Pass a path such as `examples/shop` and it checks that tree instead. Its exit code tells CI what happened:
 
 | Code | Meaning |
 |---|---|
@@ -50,35 +50,35 @@ By default, `check` reads the spec directory named in `keylang.json`, usually `k
 
 ## A wrong name, then a clean one
 
-`examples/shop` contains one deliberate mistake: the purchase module depends on `domain.aggregate`, but the module that actually exists is `domain.orderAggregate`.
+To see a failure, run `check` on `examples/shop`. It has one deliberate mistake: the purchase module depends on `domain.aggregate`, but the module that exists is `domain.orderAggregate`.
 
 ![K001 on examples/shop, exit 1](images/cli-shop-k001.png)
 
-The output tells you three separate things:
+Read the output in three parts:
 
 1. `K001` is an error: the name does not resolve, and the exit code is 1. The hint suggests the nearest existing id. In a generated map file (one with the `keylang:generated` marker) it names the generator instead, because such a file is fixed by regenerating it; this example's map is hand-written.
 2. The second line is `unverified`, not another error. This example has no source files, so the rules have nothing to be checked against. `no snapshot` means "not proved," not "broken."
-3. One failure is enough to fail the whole process. The unverified line on its own would not, unless you pass `--strict`.
+3. One failure fails the whole process. The unverified line alone would not, unless you pass `--strict`.
 
 ![explain K001](images/cli-explain-k001.png)
 
-`examples/shop-fixed` spells the name correctly as `domain.orderAggregate`. There is still no code, so the rules stay unverified, but nothing is broken, and the process exits 0:
+`examples/shop-fixed` spells the name correctly as `domain.orderAggregate`. There is still no code, so the rules stay unverified, but nothing is broken and the process exits 0:
 
 ![shop-fixed exits 0](images/cli-shop-fixed.png)
 
-"No violation" and "every claim proved" are different things. Use `--strict` when a gap in the evidence must fail the pipeline. Keep the default when, for example, a fresh clone has no test reports yet and you only want structural failures to go red.
+"No violation" and "every claim proved" are different things. Use `--strict` when a gap in the evidence must fail the pipeline. Keep the default when you only want structural failures to go red, for example in a fresh clone that has no test reports yet.
 
-If the name is a real intention and the code simply has not been written yet, declare it as planned:
+Sometimes the name is right and the code just doesn't exist yet. Then declare it as planned:
 
 ```markdown
 - planned fn domain.orderAggregate.create (items: Item[]) → Order
 ```
 
-A reference to a `planned` id does not produce K001. Instead, its `ID` evidence is `unverified` with the reason `planned`. When the symbol later appears in the code with the same kind and signature, the declaration turns into warning K202, a reminder that the `planned` line can now be dropped. If the kind or signature differs, you get error K201.
+A reference to a `planned` id does not produce K001. Its `ID` evidence is `unverified` with the reason `planned`. Once the symbol appears in the code with the same kind and signature, the declaration becomes warning K202, a reminder to drop the `planned` line. If the kind or signature differs, you get error K201.
 
 ## This repository
 
-Running `keylang check` at the root of this repository rebuilds the snapshot and evaluates `keylang/rules.md`, without writing the map. The run in the screenshot printed no failures:
+The shop has no code. This repository does, so here `check` has something real to look at. `keylang check` at the root rebuilds the snapshot and evaluates `keylang/rules.md` without writing the map. The run in the screenshot printed no failures:
 
 ![check on this repository, middle omitted](images/cli-check-repo.png)
 
@@ -86,17 +86,17 @@ Running `keylang check` at the root of this repository rebuilds the snapshot and
 
 ![explain cli.cli.cmdCheck](images/cli-explain-id.png)
 
-`internal` means the function is not part of the module's public exports. `closure … (incomplete)` means that something reachable from the function is dynamic or unresolved, so the fingerprint is not a complete proof of its behavior.
+`internal` means the function is not part of the module's public exports. `closure … (incomplete)` means something reachable from the function is dynamic or unresolved, so the fingerprint doesn't fully prove its behavior.
 
 ## Formatting
 
-`keylang fmt` rewrites a file from its parse tree. Bullets become `-`, tokens are separated by a single space, and the file ends with exactly one newline. Running it a second time changes nothing. A file with a structural error (an odd indent, a tab, an empty item) is left untouched and reported as K003, because a formatter that guessed the intended tree could change the meaning.
+`keylang fmt` rewrites a file from its parse tree. Bullets become `-`, tokens are separated by a single space, and the file ends with exactly one newline. Running it a second time changes nothing. A file with a structural error, such as an odd indent, a tab or an empty item, is left untouched and reported as K003. A formatter that guessed the intended tree could change the meaning.
 
-`keylang parse --json file.md` outputs the IR for other tools to consume. Diagnostics go to stderr, so stdout piped into another program stays valid JSON.
+`keylang parse --json file.md` prints the IR for other tools. Diagnostics go to stderr, so stdout piped into another program stays valid JSON.
 
 ## The config you will open
 
-`keylang.json` at the repository root also marks where the root is.
+Sooner or later you will edit `keylang.json`. It sits at the repository root and also marks where the root is.
 
 | Field | Role |
 |---|---|
@@ -113,6 +113,6 @@ Running `keylang check` at the root of this repository rebuilds the snapshot and
 | `agent` | Optional. `anthropic:<model>` or `openrouter:<model>` with an API key, or `cli:<name>` for an installed agent CLI (`claude`, `codex`, `opencode`, `cursor`). Used by `explain --llm` and drafts; `KEYLANG_AGENT` overrides it |
 | `explain.map` | Optional. `true` also writes `keylang/map-explained/`. `check` does not read it |
 
-Without `check.tests` and `check.trace`, those kinds of evidence are not printed and do not affect `--strict`. This repository points both at `.keylang/`, which is gitignored, so CI that wants trace evidence has to produce those files within the job itself.
+Without `check.tests` and `check.trace`, keylang doesn't print those kinds of evidence, and they don't affect `--strict`. This repository points both at `.keylang/`, which is gitignored, so a CI job that wants trace evidence has to produce those files itself.
 
 Next: [the language](03-the-language.md).

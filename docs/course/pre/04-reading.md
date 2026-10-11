@@ -2,7 +2,7 @@
 
 [Pre-course](README.md) · **English** · [Українською](uk/04-reading.md)
 
-This is a reading path that starts with no architecture vocabulary at all and ends with a project you can explain and check. Each item on it ties back to a word from [part 2](02-the-words.md) or a principle from [part 3](03-principles.md).
+If the principles made you curious about where they come from, this reading path starts with no architecture vocabulary at all and ends with a project you can explain and check. Each item ties back to a word from [part 2](02-the-words.md) or a principle from [part 3](03-principles.md).
 
 A GitHub link appears only where the author or the publisher put the work there themselves, and page numbers of paid books are left out. You do not have to read everything: stop once the shop in `examples/shop` feels obvious, and come back when a real repository starts to hurt in the same way.
 
@@ -22,7 +22,7 @@ Start with the first row; the other two come later.
 
 Read [part 1](01-the-shop.md), then Martin Fowler's [Presentation Domain Data Layering](https://martinfowler.com/bliki/PresentationDomainDataLayering.html) (26 August 2015). He splits a program into presentation, domain logic, and data access, so that work on the domain can ignore the screen. That is principles 1 and 3 in his words.
 
-His earlier note [Presentation Domain Separation](https://martinfowler.com/bliki/PresentationDomainSeparation.html) (9 October 2003) explains why the split pays off: the domain becomes easier to test, a second screen does not have to copy the rule, and a web API is simply one more presentation. Note that the split is logical; it does not mean "put the layers on different machines."
+His earlier note [Presentation Domain Separation](https://martinfowler.com/bliki/PresentationDomainSeparation.html) (9 October 2003) explains why the split pays off. The domain becomes easier to test, a second screen does not have to copy the rule, and a web API is just one more presentation. The split is logical; it does not mean "put the layers on different machines."
 
 > Don't make the mistake that this is a client/server physical separation. Even if all your code is running on the same machine, it's well worth making this logical separation.
 >
@@ -46,7 +46,7 @@ Fowler's [Layering Principles](https://martinfowler.com/bliki/LayeringPrinciples
 | Layers are logical, not a deployment diagram | 11/0 | `keylang.json` groups files; it does not start processes |
 | A lower layer does not depend on an upper layer | 6/0 | `layers a < b`: need points down |
 
-The room rejected the following slogans, so do not take them as your default:
+The room rejected these slogans, so do not adopt them by default:
 
 | Slogan | Score | Why |
 |---|---|---|
@@ -55,13 +55,13 @@ The room rejected the following slogans, so do not take them as your default:
 | A process per layer | 0/18 | Same warning: logical is not deployment |
 | Rethrow exceptions at every layer boundary | 0/15 | Not a keylang concern |
 
-"Layers may talk only to their neighbors" split the room evenly (4/4). keylang's answer to it is the written exception: an `allow` together with a sentence explaining it. The shop's server is exactly that kind of exception.
+"Layers may talk only to their neighbors" split the room evenly (4/4). keylang answers it with the written exception: an `allow` plus a sentence explaining it. The shop's server is that kind of exception.
 
 ### 3. Needs point inward
 
 Next comes Robert C. Martin's [The Clean Architecture](https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html) (13 August 2012); the post's source is [in his site repository](https://github.com/unclebob/unclebob.github.io/blob/master/uncle-bob/_posts/2012-08-13-the-clean-architecture.md).
 
-The section **The Dependency Rule** says that source-code needs point inward: an inner circle never mentions a name from an outer circle. There is no rule that you must have exactly four circles. At runtime a call may well go outward, but the source-code need still points inward.
+Its section "The Dependency Rule" says that source-code needs point inward: an inner circle never mentions a name from an outer circle. Nothing says you must have exactly four circles. At runtime a call may well go outward, but the source-code need still points inward.
 
 > There's no rule that says you must always have just these four. However, The Dependency Rule always applies. Source code dependencies always point inwards. As you move inwards the level of abstraction increases. The outermost circle is low level concrete detail.
 >
@@ -69,23 +69,23 @@ The section **The Dependency Rule** says that source-code needs point inward: an
 
 `deny domain infrastructure` is that rule in keylang, while `entry` marks where control starts, on the outside.
 
-His book *Clean Architecture* (Prentice Hall, 2017) adds two more ideas: no cycles, and depend toward what changes less. Read the 2012 post first, and buy the book from the publisher when you want the longer argument.
+His book *Clean Architecture* (Prentice Hall, 2017) adds two ideas: no cycles, and depend on what changes less. Read the 2012 post first, and buy the book from the publisher when you want the longer argument.
 
-In plain speech, a thing that many others need should change rarely. The order's total is such a center, while the receipt layout is not, which is why the domain does not import the receipt.
+In plain words: a thing many others need should change rarely. The order's total is such a center and the receipt layout is not, which is why the domain does not import the receipt.
 
 ### 4. The database sits outside, next to the screen
 
-In [Hexagonal architecture](https://alistair.cockburn.us/hexagonal-architecture/) (2005), Alistair Cockburn drew the database outside the application, symmetric with the screen, so that people would stop treating storage as the bottom of a stack. The hexagon has no top and no bottom; its sides are ports. An adapter speaks a port in the dialect of a real device, such as HTTP, a database, or a test.
+In [Hexagonal architecture](https://alistair.cockburn.us/hexagonal-architecture/) (2005), Alistair Cockburn drew the database outside the application, opposite the screen, so that people would stop treating storage as the bottom of a stack. The hexagon has no top and no bottom; its sides are ports. An adapter speaks a port in the dialect of a real device, such as HTTP, a database, or a test.
 
 > Many applications have only two ports: the user-side dialog and the database-side dialog. This gives them an asymmetric appearance, which makes it seem natural to build the application in a one-dimensional, three-, four-, or five-layer stacked architecture. […] The hexagonal, or ports and adapters, architecture solves these problems by noting the symmetry in the situation: there is an application on the inside communicating over some number of ports with things on the outside.
 >
 > — Alistair Cockburn, [Hexagonal architecture](https://alistair.cockburn.us/hexagonal-architecture/), 2005
 
-In keylang words, `domain` and `application` are inside, while `presentation` and `infrastructure` are outside. An `allow` from infrastructure to presentation means one adapter is handed another, so write it down. You do not need to draw a hexagon in the spec.
+In keylang words, `domain` and `application` are inside, and `presentation` and `infrastructure` are outside. An `allow` from infrastructure to presentation means one adapter is handed another, which is worth writing down. You do not need to draw a hexagon in the spec.
 
 ### 5. One free book, four chapters, then stop
 
-Harry Percival and Bob Gregory wrote *Architecture Patterns with Python* (O'Reilly, 2020), and you can read it at [cosmicpython.com](https://www.cosmicpython.com/book/preface.html). The manuscript lives at [github.com/cosmicpython/book](https://github.com/cosmicpython/book), and the example code at [github.com/cosmicpython/code](https://github.com/cosmicpython/code), with one branch per chapter. Both the online book and the code are CC BY-NC-ND: you may read and share them for non-commercial use with attribution, but you may not republish a rewritten copy.
+Harry Percival and Bob Gregory wrote *Architecture Patterns with Python* (O'Reilly, 2020), which you can read at [cosmicpython.com](https://www.cosmicpython.com/book/preface.html). The manuscript lives at [github.com/cosmicpython/book](https://github.com/cosmicpython/book), and the example code at [github.com/cosmicpython/code](https://github.com/cosmicpython/code), with one branch per chapter. Both the online book and the code are CC BY-NC-ND: you may read and share them for non-commercial use with attribution, but you may not republish a rewritten copy.
 
 > Don't be put off if you're not working with (or interested in) microservices. The vast majority of the patterns we discuss, including much of the event-driven architecture material, is absolutely applicable in a monolithic architecture.
 >
@@ -100,13 +100,13 @@ Read only these chapters, in this order:
 | [4. Service Layer](https://www.cosmicpython.com/book/chapter_04_service_layer.html) | A use case as the entry: the shop's `application`, and why a flow has a trigger |
 | [7. Aggregates and Consistency Boundaries](https://www.cosmicpython.com/book/chapter_07_aggregate.html) | Why `orderAggregate` is one module; the shop's name comes from this word |
 
-Chapter 2 (repository) becomes worth reading when SQL starts leaking into the domain. Chapter 13 (dependency injection) is the idea behind `# wiring`, which comes later in the course. Their part 2, on events and microservices, can wait until a single program is clear to you. Do not split the shop into services as your first move.
+Chapter 2 (repository) is worth reading once SQL starts leaking into the domain. Chapter 13 (dependency injection) is the idea behind `# wiring`, which comes later in the course. Their part 2, on events and microservices, can wait until a single program is clear to you. Splitting the shop into services should not be your first move.
 
 ### 6. A dictionary, not a second tutorial
 
 Eric Evans's *Domain-Driven Design* (Addison-Wesley, 2004) is a commercial book: [InformIT, ISBN 978-0-13-305296-1](https://www.informit.com/title/0133052966).
 
-What you can read today for free is his [DDD Reference](https://www.domainlanguage.com/ddd/reference/), a PDF under Creative Commons Attribution. There is also a community typesetting of the same text at [github.com/ul/ddd-reference](https://github.com/ul/ddd-reference), but the author's PDF remains the source. He writes that the reference does not teach the ideas; it defines them for someone who has already met them.
+For free you can read his [DDD Reference](https://www.domainlanguage.com/ddd/reference/), a PDF under Creative Commons Attribution. A community typesetting of the same text lives at [github.com/ul/ddd-reference](https://github.com/ul/ddd-reference), but the author's PDF remains the source. He says himself that the reference does not teach the ideas; it defines them for someone who has already met them.
 
 > This document is meant as a convenient reference for those who know the principles of Domain-Driven Design (DDD). It does not contain full explanations of DDD or even of the terms and patterns covered.
 >
@@ -122,7 +122,7 @@ So use it after you have read chapters 1 and 7 above.
 | Repository | The infrastructure module that saves and finds orders |
 | Service | A task that is not a thing; `purchase.buy` is closer to this than to an entity |
 
-If a paragraph does not connect to the shop, skip it. Context maps, for example, are meant for several teams working together, so leave them for later than your first month.
+If a paragraph does not connect to the shop, skip it. Context maps, for example, are for several teams working together, so leave them past your first month.
 
 ### 7. One real program, one question
 
@@ -138,9 +138,9 @@ Read one chapter, and in the margin write down who needs whom, which need you wo
 
 ### 8. Drawings that are not a keylang file
 
-**C4** by Simon Brown lives at [c4model.com](https://c4model.com/), with its source at [github.com/simonbrowndotje/c4model](https://github.com/simonbrowndotje/c4model). It has four levels of zoom: the system in the world, the containers you deploy, the components inside one container, and the code. A keylang map is closest to the component and code levels of *one* repository; it is neither a picture of your company nor a deployment diagram.
+Simon Brown's **C4** lives at [c4model.com](https://c4model.com/), with its source at [github.com/simonbrowndotje/c4model](https://github.com/simonbrowndotje/c4model). It has four levels of zoom: the system in the world, the containers you deploy, the components inside one container, and the code. A keylang map is closest to the component and code levels of *one* repository; it is neither a picture of your company nor a deployment diagram.
 
-**arc42** by Gernot Starke and Peter Hruschka is at [arc42.org](https://arc42.org/), under the license at [arc42.org/license](https://arc42.org/license/) (CC BY-SA 4.0). Its building-block view is a cousin of the map, and its runtime view is a cousin of a flow. A statement like "checkout responds in this time" belongs in prose or an ADR, because a `deny` line cannot express it.
+Gernot Starke and Peter Hruschka's **arc42** is at [arc42.org](https://arc42.org/), under the license at [arc42.org/license](https://arc42.org/license/) (CC BY-SA 4.0). Its building-block view is close to the map, and its runtime view is close to a flow. A statement like "checkout responds in this time" belongs in prose or an ADR, because a `deny` line cannot express it.
 
 ## After the structure is dull
 
@@ -156,6 +156,6 @@ Read one chapter, and in the margin write down who needs whom, which need you wo
 - Do not start with microservices, event sourcing, or CQRS.
 - Do not invent a layer because a book had a box with that label. Invent a layer when you can say its job, and then write the `deny`.
 - Do not expect keylang to check whether the running shop stays up. It checks who may know whom and the steps of a scenario you have named.
-- Do not write the functions; write the spec, and let an agent generate the code. Keep in mind that keylang does not start the agent itself.
+- Do not write the functions. Write the spec, and let an agent generate the code; keylang does not start the agent itself.
 
 When the shop's wrong id, the `deny`, and one checkout flow have become boring, go on to [lesson 1](../01-what-it-is.md).
