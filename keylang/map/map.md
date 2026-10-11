@@ -167,58 +167,61 @@
     - spec-ir lang.spec-ir
     - span base.span
     - type [DiagramView](../../src/diagram.ts#L18)
-    - type [DiagramVerdict](../../src/diagram.ts#L25) = "ok" | "fail" | "unverified" | "planned" | null
-    - type [DiagramNode](../../src/diagram.ts#L27)
-    - type [DiagramEdge](../../src/diagram.ts#L44)
-    - type [DiagramGroup](../../src/diagram.ts#L53)
-    - type [Diagram](../../src/diagram.ts#L63)
-    - type [DiagramResult](../../src/diagram.ts#L72)
-    - type [DiagramInput](../../src/diagram.ts#L83)
-    - type [DiagramProcess](../../src/diagram.ts#L98)
-    - type [Positions](../../src/diagram.ts#L105)
-    - fn [parseView](../../src/diagram.ts#L115) (query: URLSearchParams) → DiagramView | string
-    - fn [viewOfKey](../../src/diagram.ts#L151) (key: string) → { view: DiagramView; discovered: boolean } | null
-    - fn [viewsOf](../../src/diagram.ts#L169) ( snapshot: AnalysisSnapshot | null, spec: SpecIR, processes: readonly DiagramProcess[] = [], ) → { flows: string[]; entries: { id: string; kind: string; label: string }[]; layers: string[]; domains: string[]; processes: { name: string; domain: string; flows: string[] }[] }
+    - type [DiagramVerdict](../../src/diagram.ts#L27) = "ok" | "fail" | "unverified" | "planned" | null
+    - type [DiagramNode](../../src/diagram.ts#L29)
+    - type [DiagramEdge](../../src/diagram.ts#L46)
+    - type [DiagramGroup](../../src/diagram.ts#L55)
+    - type [Diagram](../../src/diagram.ts#L65)
+    - type [DiagramResult](../../src/diagram.ts#L79)
+    - type [DiagramInput](../../src/diagram.ts#L90)
+    - type [DiagramProcess](../../src/diagram.ts#L105)
+    - type [Positions](../../src/diagram.ts#L112)
+    - fn [parseView](../../src/diagram.ts#L122) (query: URLSearchParams) → DiagramView | string
+    - fn [viewOfKey](../../src/diagram.ts#L162) (key: string) → { view: DiagramView; discovered: boolean } | null
+    - fn [viewsOf](../../src/diagram.ts#L181) ( snapshot: AnalysisSnapshot | null, spec: SpecIR, processes: readonly DiagramProcess[] = [], ) → { flows: string[]; entries: { id: string; kind: string; label: string }[]; layers: string[]; domains: string[]; processes: { name: string; domain: string; flows: string[] }[] }
       - calls map.diagram.layerOrder
-    - type [FlowListing](../../src/diagram.ts#L184)
-    - fn [flowIds](../../src/diagram.ts#L194) (flow: Flow) → string[]
+    - type [FlowListing](../../src/diagram.ts#L196)
+    - fn [flowIds](../../src/diagram.ts#L206) (flow: Flow) → string[]
       - calls lang.spec-ir.walkFlow
-    - fn [flowListing](../../src/diagram.ts#L204) (snapshot: AnalysisSnapshot | null, spec: SpecIR) → FlowListing[]
+    - fn [flowListing](../../src/diagram.ts#L216) (snapshot: AnalysisSnapshot | null, spec: SpecIR) → FlowListing[]
       - calls map.diagram.layerOf, map.diagram.flowIds
-    - type [Usages](../../src/diagram.ts#L217)
-    - fn [covers](../../src/diagram.ts#L225) (id: string, target: string) → boolean <!-- internal -->
-    - fn [useIn](../../src/diagram.ts#L230) (flow: Flow, id: string) → number | null <!-- internal -->
+    - type [Usages](../../src/diagram.ts#L229)
+    - fn [covers](../../src/diagram.ts#L237) (id: string, target: string) → boolean <!-- internal -->
+    - fn [useIn](../../src/diagram.ts#L242) (flow: Flow, id: string) → number | null <!-- internal -->
       - calls lang.spec-ir.walkFlow, map.diagram.covers
-    - fn [usagesOf](../../src/diagram.ts#L246) (snapshot: AnalysisSnapshot | null, spec: SpecIR, discovered: SpecIR | null, id: string) → Usages
+    - fn [usagesOf](../../src/diagram.ts#L258) (snapshot: AnalysisSnapshot | null, spec: SpecIR, discovered: SpecIR | null, id: string) → Usages
       - calls map.diagram.useIn, map.diagram.covers
-    - fn [diagramOf](../../src/diagram.ts#L264) (input: DiagramInput) → Diagram
+    - fn [diagramOf](../../src/diagram.ts#L276) (input: DiagramInput) → Diagram
       - calls map.diagram.unplaced, map.diagram.layout, map.diagram-layout.savedPositions
-    - fn [unplaced](../../src/diagram.ts#L277) (input: DiagramInput) → Diagram <!-- internal -->
-      - calls map.diagram.flowDiagram, map.diagram.empty, map.diagram.eventDiagram, map.diagram.processDiagram, map.diagram.entryDiagram, map.diagram.layersDiagram
-    - fn [empty](../../src/diagram.ts#L287) (reason: string) → Diagram <!-- internal -->
-    - fn [worst](../../src/diagram.ts#L295) (values: readonly string[]) → DiagramVerdict <!-- internal -->
-    - fn [messageOf](../../src/diagram.ts#L301) (result: DiagramResult) → string <!-- internal -->
-    - fn [byLine](../../src/diagram.ts#L306) (results: readonly DiagramResult[]) → Map<string, DiagramResult[]> <!-- internal -->
-    - fn [byArea](../../src/diagram.ts#L318) (results: readonly DiagramResult[]) → Map<string, DiagramVerdict> <!-- internal -->
+    - fn [unplaced](../../src/diagram.ts#L289) (input: DiagramInput) → Diagram <!-- internal -->
+      - calls map.diagram.flowDiagram, map.diagram.empty, map.diagram.eventDiagram, map.diagram.processDiagram, map.diagram.entryDiagram, map.diagram.moduleDiagram, map.diagram.layersDiagram
+    - fn [empty](../../src/diagram.ts#L300) (reason: string) → Diagram <!-- internal -->
+    - fn [worst](../../src/diagram.ts#L308) (values: readonly string[]) → DiagramVerdict <!-- internal -->
+    - fn [messageOf](../../src/diagram.ts#L314) (result: DiagramResult) → string <!-- internal -->
+    - fn [byLine](../../src/diagram.ts#L319) (results: readonly DiagramResult[]) → Map<string, DiagramResult[]> <!-- internal -->
+    - fn [byArea](../../src/diagram.ts#L331) (results: readonly DiagramResult[]) → Map<string, DiagramVerdict> <!-- internal -->
       - calls map.diagram.worst
-    - fn [layerOrder](../../src/diagram.ts#L334) (snapshot: AnalysisSnapshot) → string[] <!-- internal -->
+    - fn [layerOrder](../../src/diagram.ts#L347) (snapshot: AnalysisSnapshot) → string[] <!-- internal -->
       - calls base.span.compareText
-    - fn [layerOf](../../src/diagram.ts#L343) (snapshot: AnalysisSnapshot | null, id: string) → string | undefined <!-- internal -->
-    - fn [lanes](../../src/diagram.ts#L351) (snapshot: AnalysisSnapshot | null, nodes: readonly DiagramNode[]) → DiagramGroup[] <!-- internal -->
+    - fn [layerOf](../../src/diagram.ts#L356) (snapshot: AnalysisSnapshot | null, id: string) → string | undefined <!-- internal -->
+    - fn [lanes](../../src/diagram.ts#L364) (snapshot: AnalysisSnapshot | null, nodes: readonly DiagramNode[]) → DiagramGroup[] <!-- internal -->
       - calls map.diagram.layerOrder, base.span.compareText
-    - fn [flowDiagram](../../src/diagram.ts#L360) (input: DiagramInput, name: string) → Diagram <!-- internal -->
+    - fn [flowDiagram](../../src/diagram.ts#L373) (input: DiagramInput, name: string) → Diagram <!-- internal -->
       - calls map.diagram.empty, map.diagram.byLine, map.diagram.worst, map.diagram.layerOf, map.diagram.stripLead, map.diagram.messageOf, map.diagram.lanes
-    - fn [stripLead](../../src/diagram.ts#L500) (message: string, id: string) → string <!-- internal -->
-    - fn [eventNamed](../../src/diagram.ts#L508) (snapshot: AnalysisSnapshot, name: string) → string | null
-    - fn [eventDiagram](../../src/diagram.ts#L519) (snapshot: AnalysisSnapshot, results: readonly DiagramResult[], name: string) → Diagram <!-- internal -->
+    - fn [stripLead](../../src/diagram.ts#L513) (message: string, id: string) → string <!-- internal -->
+    - fn [eventNamed](../../src/diagram.ts#L521) (snapshot: AnalysisSnapshot, name: string) → string | null
+    - fn [eventDiagram](../../src/diagram.ts#L532) (snapshot: AnalysisSnapshot, results: readonly DiagramResult[], name: string) → Diagram <!-- internal -->
       - calls map.diagram.eventNamed, map.diagram.empty, map.diagram.byArea, map.diagram.lanes
-    - fn [entryDiagram](../../src/diagram.ts#L544) (snapshot: AnalysisSnapshot, results: readonly DiagramResult[], id: string, depth: number) → Diagram <!-- internal -->
+    - fn [entryDiagram](../../src/diagram.ts#L557) (snapshot: AnalysisSnapshot, results: readonly DiagramResult[], id: string, depth: number) → Diagram <!-- internal -->
       - calls map.diagram.empty, map.diagram.byArea, map.diagram.lanes
-    - fn [processDiagram](../../src/diagram.ts#L645) (snapshot: AnalysisSnapshot, processes: readonly DiagramProcess[], results: readonly DiagramResult[], domain: string) → Diagram <!-- internal -->
+    - fn [processDiagram](../../src/diagram.ts#L667) (snapshot: AnalysisSnapshot, processes: readonly DiagramProcess[], results: readonly DiagramResult[], domain: string) → Diagram <!-- internal -->
       - calls map.diagram.empty, map.diagram.byArea, map.diagram.layerOf, map.diagram.lanes
-    - fn [layersDiagram](../../src/diagram.ts#L680) (snapshot: AnalysisSnapshot, spec: SpecIR, results: readonly DiagramResult[]) → Diagram <!-- internal -->
+    - fn [moduleOfId](../../src/diagram.ts#L703) (snapshot: AnalysisSnapshot, id: string) → string | null
+    - fn [moduleDiagram](../../src/diagram.ts#L717) (snapshot: AnalysisSnapshot, results: readonly DiagramResult[], id: string) → Diagram <!-- internal -->
+      - calls map.diagram.moduleOfId, map.diagram.empty, map.diagram.byArea, map.diagram.lanes
+    - fn [layersDiagram](../../src/diagram.ts#L763) (snapshot: AnalysisSnapshot, spec: SpecIR, results: readonly DiagramResult[]) → Diagram <!-- internal -->
       - calls map.diagram.layerOrder, map.diagram.byArea, map.diagram.layerOf, map.diagram.worst
-    - fn [layout](../../src/diagram.ts#L741) (diagram: Diagram, positions: Positions = {}) → Diagram
+    - fn [layout](../../src/diagram.ts#L840) (diagram: Diagram, positions: Positions = {}) → Diagram
   - module [drawio](../../src/drawio.ts#L1)
     - node external.node
     - bpmn-export map.bpmn-export

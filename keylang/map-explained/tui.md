@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [actions](#tui.actions) · [analysis-worker](#tui.analysis-worker) · [app](#tui.app) · [assist](#tui.assist) · [background](#tui.background) · [buffer](#tui.buffer) · [clip-chat](#tui.clip-chat) · [clip-memory](#tui.clip-memory) · [clip-questions](#tui.clip-questions) · [clip-view](#tui.clip-view) · [clip](#tui.clip) · [code-highlight](#tui.code-highlight) · [disk](#tui.disk) · [evidence](#tui.evidence) · [findings](#tui.findings) · [forms](#tui.forms) · [forms.draft](#tui.forms.draft) · [forms.explain](#tui.forms.explain) · [forms.export](#tui.forms.export) · [forms.host](#tui.forms.host) · [forms.run](#tui.forms.run) · [input](#tui.input) · [markdown](#tui.markdown) · [merge-session](#tui.merge-session) · [merge](#tui.merge) · [nav](#tui.nav) · [new-spec](#tui.new-spec) · [operation-worker](#tui.operation-worker) · [prompt-keys](#tui.prompt-keys) · [read-api](#tui.read-api) · [reports](#tui.reports) · [reports.chat](#tui.reports.chat) · [reports.check](#tui.reports.check) · [reports.coverage](#tui.reports.coverage) · [reports.discover](#tui.reports.discover) · [reports.draft](#tui.reports.draft) · [reports.explain](#tui.reports.explain) · [reports.records](#tui.reports.records) · [reports.rows](#tui.reports.rows) · [reports.setup](#tui.reports.setup) · [results-panel](#tui.results-panel) · [screen](#tui.screen) · [state](#tui.state) · [terminal](#tui.terminal) · [text-to-spec](#tui.text-to-spec) · [theme](#tui.theme) · [view](#tui.view) · [web-export](#tui.web-export) · [web](#tui.web) · [width](#tui.width) · [zoom-screen](#tui.zoom-screen) · [zoom](#tui.zoom)
+[README](README.md) · modules: [actions](#tui.actions) · [analysis-worker](#tui.analysis-worker) · [app](#tui.app) · [assist](#tui.assist) · [background](#tui.background) · [buffer](#tui.buffer) · [clip-chat](#tui.clip-chat) · [clip-memory](#tui.clip-memory) · [clip-questions](#tui.clip-questions) · [clip-view](#tui.clip-view) · [clip](#tui.clip) · [code-highlight](#tui.code-highlight) · [disk](#tui.disk) · [evidence](#tui.evidence) · [findings](#tui.findings) · [forms](#tui.forms) · [forms.draft](#tui.forms.draft) · [forms.explain](#tui.forms.explain) · [forms.export](#tui.forms.export) · [forms.host](#tui.forms.host) · [forms.run](#tui.forms.run) · [hub](#tui.hub) · [input](#tui.input) · [markdown](#tui.markdown) · [merge-session](#tui.merge-session) · [merge](#tui.merge) · [nav](#tui.nav) · [new-spec](#tui.new-spec) · [operation-worker](#tui.operation-worker) · [prompt-keys](#tui.prompt-keys) · [read-api](#tui.read-api) · [reports](#tui.reports) · [reports.chat](#tui.reports.chat) · [reports.check](#tui.reports.check) · [reports.coverage](#tui.reports.coverage) · [reports.discover](#tui.reports.discover) · [reports.draft](#tui.reports.draft) · [reports.explain](#tui.reports.explain) · [reports.records](#tui.reports.records) · [reports.rows](#tui.reports.rows) · [reports.setup](#tui.reports.setup) · [results-panel](#tui.results-panel) · [screen](#tui.screen) · [state](#tui.state) · [terminal](#tui.terminal) · [text-to-spec](#tui.text-to-spec) · [theme](#tui.theme) · [tree-stamp](#tui.tree-stamp) · [view](#tui.view) · [web-export](#tui.web-export) · [web](#tui.web) · [width](#tui.width) · [zoom-screen](#tui.zoom-screen) · [zoom](#tui.zoom)
 
 # map
 
@@ -1702,6 +1702,31 @@
         - fn [submitTracePlan](../../src/tui/forms/run.ts#L604) () → void <!-- internal -->
           <a id="tui.forms.run.RunForms.submitTracePlan"></a><br>Enter in the trace-plan form: the flow runs as the session's operation; an empty name keeps the form.
           - calls [tui.forms.run.RunForms.tracePlanFlow](tui.md#tui.forms.run.RunForms.tracePlanFlow)
+  - module [hub](../../src/tui/hub.ts#L1)
+    <a id="tui.hub"></a><br>`keylang web --hub`: one port for many repositories. `/` is the start page: a repository URL to clone (into the clone cache, then `init`, as `keylang clone` does), the repositories cloned before, the folder the hub runs in, and «Відкрити теку з ПК» — app.html, which analyses a…
+    - node [external.node](external.md#external.node)
+    - analyze [map.analyze](map.md#map.analyze)
+    - clone [features.clone](features.md#features.clone)
+    - config [base.config](base.md#base.config)
+    - operations [operations.operations](operations.md#operations.operations)
+    - web [tui.web](tui.md#tui.web)
+    - type [HubOptions](../../src/tui/hub.ts#L27)
+      <a id="tui.hub.HubOptions"></a>
+    - type [HubServer](../../src/tui/hub.ts#L38)
+      <a id="tui.hub.HubServer"></a>
+    - type [Mounted](../../src/tui/hub.ts#L44) <!-- internal -->
+      <a id="tui.hub.Mounted"></a>
+    - fn [idOf](../../src/tui/hub.ts#L53) (cacheRoot: string, dir: string) → string <!-- internal -->
+      <a id="tui.hub.idOf"></a><br>A repository's place in the URL: its directory under the cache (`github.com~owner~repo`), or `here` for the hub's own folder.
+    - fn [reply](../../src/tui/hub.ts#L58) (response: ServerResponse, status: number, type: string, body: string | Buffer) → void <!-- internal -->
+      <a id="tui.hub.reply"></a>
+    - fn [readBody](../../src/tui/hub.ts#L63) (request: IncomingMessage) → Promise<string | null> <!-- internal -->
+      <a id="tui.hub.readBody"></a>
+    - fn [serveHub](../../src/tui/hub.ts#L76) (options: HubOptions) → Promise<HubServer>
+      <a id="tui.hub.serveHub"></a>
+      - calls [features.clone.cloneCacheRoot](features.md#features.clone.cloneCacheRoot), [map.analyze.findRoot](map.md#map.analyze.findRoot), [tui.web.createWebApp](tui.md#tui.web.createWebApp), [features.clone.listClones](features.md#features.clone.listClones), [tui.hub.idOf](tui.md#tui.hub.idOf), [features.clone.parseRepoSource](features.md#features.clone.parseRepoSource), [features.clone.syncClone](features.md#features.clone.syncClone), [operations.operations.runOperation](operations.md#operations.operations.runOperation), [tui.hub.readBody](tui.md#tui.hub.readBody), [tui.web.ensureClient](tui.md#tui.web.ensureClient), [tui.web.diagramsPage](tui.md#tui.web.diagramsPage), [tui.hub.hubPage](tui.md#tui.hub.hubPage), [tui.hub.reply](tui.md#tui.hub.reply), [tui.web.logUnhandled](tui.md#tui.web.logUnhandled), [tui.web.shownHost](tui.md#tui.web.shownHost)
+    - fn [hubPage](../../src/tui/hub.ts#L261) () → string <!-- internal -->
+      <a id="tui.hub.hubPage"></a><br>The start page: static markup and a small script over `/hub/api/`; the token comes in the fragment once.
   - module [input](../../src/tui/input.ts#L1)
     <a id="tui.input"></a><br>Terminal input as events: keys (with Ctrl/Alt/Shift), SGR mouse reports, and bracketed paste. xterm.js sends the same sequences as a terminal, so one decoder serves both. A chunk may end inside a sequence or a grapheme cluster; the rest waits for the next chunk, and on…
     - width [tui.width](tui.md#tui.width)
@@ -1976,20 +2001,20 @@
       <a id="tui.read-api.ReadAnswer"></a><br>One answer: a status, a media type, the body; `file` names an attachment.
     - type [ReadApiOptions](../../src/tui/read-api.ts#L40)
       <a id="tui.read-api.ReadApiOptions"></a>
-    - fn [requestKey](../../src/tui/read-api.ts#L60) (path: string, query: URLSearchParams) → string
+    - fn [requestKey](../../src/tui/read-api.ts#L63) (path: string, query: URLSearchParams) → string
       <a id="tui.read-api.requestKey"></a><br>A request as one string, the query in one order: a static export files its answers by it, and the page (`web/src/api.ts`, `requestKey`) spells it alike.
-    - fn [keyShard](../../src/tui/read-api.ts#L67) (key: string, shards: number) → number
+    - fn [keyShard](../../src/tui/read-api.ts#L70) (key: string, shards: number) → number
       <a id="tui.read-api.keyShard"></a><br>FNV-1a over the UTF-16 code units of a key: which data shard of a static export holds it (`web/src/api.ts`, `keyShard`).
-    - type [DocEntry](../../src/tui/read-api.ts#L80)
+    - type [DocEntry](../../src/tui/read-api.ts#L83)
       <a id="tui.read-api.DocEntry"></a><br>A spec Markdown file the «Карта» tab lists, with the group it is shown under.
-    - type [ReadApi](../../src/tui/read-api.ts#L85)
+    - type [ReadApi](../../src/tui/read-api.ts#L88)
       <a id="tui.read-api.ReadApi"></a>
-    - fn [createReadApi](../../src/tui/read-api.ts#L95) (options: ReadApiOptions) → ReadApi
+    - fn [createReadApi](../../src/tui/read-api.ts#L98) (options: ReadApiOptions) → ReadApi
       <a id="tui.read-api.createReadApi"></a>
       - calls [lang.parser.parse](lang.md#lang.parser.parse), [base.config.toPosix](base.md#base.config.toPosix), [lang.spec-ir.compileSpec](lang.md#lang.spec-ir.compileSpec), [features.discover-names.processViews](features.md#features.discover-names.processViews), [features.discover-names.readProcesses](features.md#features.discover-names.readProcesses), [map.diagram.viewOfKey](map.md#map.diagram.viewOfKey), [map.diagram.diagramOf](map.md#map.diagram.diagramOf), [operations.shared.rootRelative](operations.md#operations.shared.rootRelative), [lang.files.collectMdFiles](lang.md#lang.files.collectMdFiles), [map.map.explainedMapOf](map.md#map.map.explainedMapOf), [base.span.compareText](base.md#base.span.compareText), [features.tour.buildTour](features.md#features.tour.buildTour), [features.tour.tourMarkdown](features.md#features.tour.tourMarkdown), [features.git-changes.gitSummary](features.md#features.git-changes.gitSummary), [features.git-changes.featureBaseOrigin](features.md#features.git-changes.featureBaseOrigin), [features.clone.redactUrl](features.md#features.clone.redactUrl), [map.diagram-layout.readLayout](map.md#map.diagram-layout.readLayout), [features.proposals.pendingTargets](features.md#features.proposals.pendingTargets), [map.diagram-layout.layoutFromFile](map.md#map.diagram-layout.layoutFromFile), [map.diagram.usagesOf](map.md#map.diagram.usagesOf), [features.explorer.callsOf](features.md#features.explorer.callsOf), [operations.diagram-export.exportViewOfQuery](operations.md#operations.diagram-export.exportViewOfQuery), [operations.diagram-export.diagramExportText](operations.md#operations.diagram-export.diagramExportText), [operations.diagram-export.exportSourcesOf](operations.md#operations.diagram-export.exportSourcesOf), [operations.coverage.runCoverage](operations.md#operations.coverage.runCoverage), [map.diagram.parseView](map.md#map.diagram.parseView), [features.explorer.eventsOf](features.md#features.explorer.eventsOf), [map.diagram.viewsOf](map.md#map.diagram.viewsOf), [map.diagram.flowListing](map.md#map.diagram.flowListing), [operations.diagram-propose.specHash](operations.md#operations.diagram-propose.specHash), [features.check-results.checkResults](features.md#features.check-results.checkResults), [tui.read-api.withResults](tui.md#tui.read-api.withResults), [features.git-changes.gitChangedFiles](features.md#features.git-changes.gitChangedFiles), [features.git-changes.deletedModuleIds](features.md#features.git-changes.deletedModuleIds), [operations.spec.runCheck](operations.md#operations.spec.runCheck)
-    - type [NodeResult](../../src/tui/read-api.ts#L357) = { verdict: string; criterion: string; message: string } <!-- internal -->
+    - type [NodeResult](../../src/tui/read-api.ts#L393) = { verdict: string; criterion: string; message: string } <!-- internal -->
       <a id="tui.read-api.NodeResult"></a>
-    - fn [withResults](../../src/tui/read-api.ts#L364) (diagram: Diagram, results: readonly CheckResult[]) → Omit<Diagram, "nodes"> & { nodes: (DiagramNode & { results?: NodeResult[] })[] } <!-- internal -->
+    - fn [withResults](../../src/tui/read-api.ts#L400) (diagram: Diagram, results: readonly CheckResult[]) → Omit<Diagram, "nodes"> & { nodes: (DiagramNode & { results?: NodeResult[] })[] } <!-- internal -->
       <a id="tui.read-api.withResults"></a><br>Each shape with the check results behind its verdict, for the side panel of the diagram page: those on its spec line, or, for a shape of code alone (an entry's call tree), those about its ID.
   - module reports
     <a id="tui.reports"></a>
@@ -2456,6 +2481,16 @@
     - fn [highlight](../../src/tui/theme.ts#L63) (doc: Document | null, text: string, layers: readonly string[]) → Map<number, Run[]>
       <a id="tui.theme.highlight"></a><br>Highlight runs by 1-based line; later runs win where they overlap.
       - calls [tui.theme.idStyle](tui.md#tui.theme.idStyle), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)
+  - module [tree-stamp](../../src/tui/tree-stamp.ts#L1)
+    <a id="tui.tree-stamp"></a><br>The state of what an analysis read, as one string: the size and modification time of each file it read (sources, specs, keylang.json, the manifests, test reports and traces) and of each directory they lie in — a file added or removed changes its directory's time. Equal stamps…
+    - node [external.node](external.md#external.node)
+    - analyze [map.analyze](map.md#map.analyze)
+    - config [base.config](base.md#base.config)
+    - fn [inputsOf](../../src/tui/tree-stamp.ts#L19) (done: Analysis) → string[]
+      <a id="tui.tree-stamp.inputsOf"></a><br>The files an analysis read, relative to the root, and their directories.
+      - calls [base.config.evidenceFiles](base.md#base.config.evidenceFiles)
+    - fn [stampOf](../../src/tui/tree-stamp.ts#L45) (root: string, inputs: readonly string[]) → string
+      <a id="tui.tree-stamp.stampOf"></a>
   - module [view](../../src/tui/view.ts#L1)
     <a id="tui.view"></a><br>Drawing a TUI state into a `Grid`: pure, so a test reads the frame as text. Layout: title, [files] | editor with gutter | [navigation], a detail line and the status bar.
     - agent-cli [features.agent-cli](features.md#features.agent-cli)
@@ -2725,71 +2760,81 @@
     - app [tui.app](tui.md#tui.app)
     - background [tui.background](tui.md#tui.background)
     - read-api [tui.read-api](tui.md#tui.read-api)
+    - tree-stamp [tui.tree-stamp](tui.md#tui.tree-stamp)
     - screen [tui.screen](tui.md#tui.screen)
-    - type [AssetName](../../src/tui/web.ts#L62) = keyof typeof ASSETS <!-- internal -->
+    - type [AssetName](../../src/tui/web.ts#L63) = keyof typeof ASSETS <!-- internal -->
       <a id="tui.web.AssetName"></a><br>A string-literal union derived from the keys of `ASSETS`, so lookups into that asset table are restricted to names that actually exist. It gives web asset accessors compile-time checking instead of accepting arbitrary strings. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-    - type [BuiltName](../../src/tui/web.ts#L70) = keyof typeof BUILT <!-- internal -->
+    - type [BuiltName](../../src/tui/web.ts#L71) = keyof typeof BUILT <!-- internal -->
       <a id="tui.web.BuiltName"></a>
-    - fn [newestUnder](../../src/tui/web.ts#L79) (dir: string) → number <!-- internal -->
+    - fn [newestUnder](../../src/tui/web.ts#L80) (dir: string) → number <!-- internal -->
       <a id="tui.web.newestUnder"></a><br>The newest modification time under a directory, in ms.
-    - fn [clientStale](../../src/tui/web.ts#L88) () → boolean <!-- internal -->
+    - fn [clientStale](../../src/tui/web.ts#L89) () → boolean <!-- internal -->
       <a id="tui.web.clientStale"></a><br>Whether a built file is missing or older than the client's sources (the page's, the worker's and the keylang modules the worker bundles) or its build script.
       - calls [tui.web.newestUnder](tui.md#tui.web.newestUnder)
-    - fn [ensureClient](../../src/tui/web.ts#L101) () → Promise<void>
+    - fn [ensureClient](../../src/tui/web.ts#L102) () → Promise<void>
       <a id="tui.web.ensureClient"></a><br>In a checkout, builds the diagram client when it is missing or stale (esbuild takes about a second); concurrent requests share one build.
       - calls [tui.web.clientStale](tui.md#tui.web.clientStale)
-    - fn [assetPath](../../src/tui/web.ts#L114) (name: AssetName) → string | null
+    - fn [assetPath](../../src/tui/web.ts#L115) (name: AssetName) → string | null
       <a id="tui.web.assetPath"></a><br>The published package carries the assets in `dist/web/`; a checkout reads them from `node_modules`.
-    - type [WebServer](../../src/tui/web.ts#L128)
+    - type [WebServer](../../src/tui/web.ts#L129)
       <a id="tui.web.WebServer"></a><br>Handle returned for a running local web UI, exposing its `url` and `port`, listing specs that still have unsaved edits across sessions via `unsaved()`, and shutting the server down with `close()`. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Session](../../src/tui/web.ts#L140) <!-- internal -->
+    - type [Session](../../src/tui/web.ts#L141) <!-- internal -->
       <a id="tui.web.Session"></a><br>Holds the per-browser-tab state of the web TUI: the running `App`, the open WebSocket (or null when disconnected), a pending timer, and an `AudioQueue` that buffers PCM sent by the page while Ctrl+R recording is active. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [control](../../src/tui/web.ts#L149) (message: object) → string <!-- internal -->
+    - fn [control](../../src/tui/web.ts#L150) (message: object) → string <!-- internal -->
       <a id="tui.web.control"></a><br>A control message for the page: a frame that starts with NUL, which no ANSI frame does.
-    - module [AudioQueue](../../src/tui/web.ts#L157) <!-- internal -->
+    - module [AudioQueue](../../src/tui/web.ts#L158) <!-- internal -->
       <a id="tui.web.AudioQueue"></a><br>PCM chunks from the page, read by the session's recognizer as they arrive.
-      - fn [push](../../src/tui/web.ts#L164) (chunk: Int16Array) → void
+      - fn [push](../../src/tui/web.ts#L165) (chunk: Int16Array) → void
         <a id="tui.web.AudioQueue.push"></a><br>Appends a block of audio samples to the pending buffer, silently dropping it if the queue has ended or the total would exceed the sample cap. After enqueueing, it calls [`tui.web.AudioQueue.wake`](tui.md#tui.web.AudioQueue.wake) to resume playback. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
         - calls [tui.web.AudioQueue.wake](tui.md#tui.web.AudioQueue.wake)
-      - fn [end](../../src/tui/web.ts#L171) (failure: Error | null = null) → void
+      - fn [end](../../src/tui/web.ts#L172) (failure: Error | null = null) → void
         <a id="tui.web.AudioQueue.end"></a><br>Marks the queue as finished, records the given error only if none was stored earlier, and calls [`tui.web.AudioQueue.wake`](tui.md#tui.web.AudioQueue.wake) so any pending consumer notices the close. Used by [`tui.web.serveWeb`](tui.md#tui.web.serveWeb) to shut down audio streaming. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
         - calls [tui.web.AudioQueue.wake](tui.md#tui.web.AudioQueue.wake)
-      - fn [wake](../../src/tui/web.ts#L177) () → void <!-- internal -->
+      - fn [wake](../../src/tui/web.ts#L178) () → void <!-- internal -->
         <a id="tui.web.AudioQueue.wake"></a><br>Clears the stored waiter callback and, if one was set, invokes it so a consumer blocked on the queue resumes. Called by [`tui.web.AudioQueue.push`](tui.md#tui.web.AudioQueue.push) and [`tui.web.AudioQueue.end`](tui.md#tui.web.AudioQueue.end) whenever new data or completion arrives. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-      - fn [chunks](../../src/tui/web.ts#L184) () → AsyncGenerator<Int16Array>
+      - fn [chunks](../../src/tui/web.ts#L185) () → AsyncGenerator<Int16Array>
         <a id="tui.web.AudioQueue.chunks"></a><br>The chunks as they come, until `end`.
-    - fn [pcmOf](../../src/tui/web.ts#L199) (data: unknown) → Int16Array | null <!-- internal -->
+    - fn [pcmOf](../../src/tui/web.ts#L200) (data: unknown) → Int16Array | null <!-- internal -->
       <a id="tui.web.pcmOf"></a><br>s16le PCM from base64; an odd byte count or bad base64 is dropped, not trusted.
-    - fn [clampSize](../../src/tui/web.ts#L209) (value: unknown, fallback: number, max: number) → number
+    - fn [clampSize](../../src/tui/web.ts#L210) (value: unknown, fallback: number, max: number) → number
       <a id="tui.web.clampSize"></a><br>A size from the client: an integer within the grid limits, else the fallback.
-    - fn [sameSecret](../../src/tui/web.ts#L214) (given: string | null | undefined, token: string) → boolean <!-- internal -->
+    - fn [sameSecret](../../src/tui/web.ts#L215) (given: string | null | undefined, token: string) → boolean <!-- internal -->
       <a id="tui.web.sameSecret"></a><br>Checks whether a supplied credential matches the expected token using a constant-time byte comparison, returning false for non-string input or mismatched lengths. Used by [`tui.web.serveWeb`](tui.md#tui.web.serveWeb) to gate web requests. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [offeredToken](../../src/tui/web.ts#L222) (request: IncomingMessage) → string | null <!-- internal -->
+    - fn [offeredToken](../../src/tui/web.ts#L223) (request: IncomingMessage) → string | null <!-- internal -->
       <a id="tui.web.offeredToken"></a><br>The token a socket offers among its subprotocols.
-    - type [WebOptions](../../src/tui/web.ts#L230)
+    - type [WebOptions](../../src/tui/web.ts#L231)
       <a id="tui.web.WebOptions"></a><br>Configuration for starting the browser-served TUI: the repository root, listening port and optional host, plus an optional analyzer, a shared operation runner for all sessions, and how long a detached session is kept alive awaiting reconnect. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-    - fn [serveWeb](../../src/tui/web.ts#L247) (options: WebOptions) → Promise<WebServer>
+    - type [WebApp](../../src/tui/web.ts#L254)
+      <a id="tui.web.WebApp"></a><br>One repository's `keylang web` without a server of its own: the handlers of its requests and socket upgrades, for `serveWeb` and for the hub (`web --hub`), which mounts each repository under `/r/<id>/` of one port and passes requests on with the prefix taken off.
+    - fn [createWebApp](../../src/tui/web.ts#L265) (options: WebOptions) → WebApp
+      <a id="tui.web.createWebApp"></a>
+      - calls [tui.background.SnapshotWorker](tui.md#tui.background.SnapshotWorker), [map.analyze.analyze](map.md#map.analyze.analyze), [tui.web.sameSecret](tui.md#tui.web.sameSecret), [tui.web.offeredToken](tui.md#tui.web.offeredToken), [tui.tree-stamp.stampOf](tui.md#tui.tree-stamp.stampOf), [tui.tree-stamp.inputsOf](tui.md#tui.tree-stamp.inputsOf), [tui.read-api.createReadApi](tui.md#tui.read-api.createReadApi), [tui.web.reply](tui.md#tui.web.reply), [tui.web.jsonBody](tui.md#tui.web.jsonBody), [features.explorer.parseExplorerFlow](features.md#features.explorer.parseExplorerFlow), [features.explorer.explorerFlow](features.md#features.explorer.explorerFlow), [operations.shared.rootRelative](operations.md#operations.shared.rootRelative), [operations.shared.generatedIn](operations.md#operations.shared.generatedIn), [operations.draft.flowCandidate](operations.md#operations.draft.flowCandidate), [operations.shared.proposalRefusal](operations.md#operations.shared.proposalRefusal), [operations.shared.commitProposal](operations.md#operations.shared.commitProposal), [map.map.sourceInputs](map.md#map.map.sourceInputs), [tui.web.send](tui.md#tui.web.send), [map.diagram-layout.readLayout](map.md#map.diagram-layout.readLayout), [tui.web.parseClientLayout](tui.md#tui.web.parseClientLayout), [map.diagram-layout.layoutToFile](map.md#map.diagram-layout.layoutToFile), [map.diagram-layout.layoutText](map.md#map.diagram-layout.layoutText), [map.diagram-layout.writeLayout](map.md#map.diagram-layout.writeLayout), [operations.diagram-propose.runDiagramPropose](operations.md#operations.diagram-propose.runDiagramPropose), [operations.greenfield.greenfieldAvailability](operations.md#operations.greenfield.greenfieldAvailability), [operations.greenfield.runGreenfield](operations.md#operations.greenfield.runGreenfield), [features.diagram-clip.parseClipSelection](features.md#features.diagram-clip.parseClipSelection), [map.diagram.viewOfKey](map.md#map.diagram.viewOfKey), [operations.flow-bundle.exportFlows](operations.md#operations.flow-bundle.exportFlows), [features.diagram-clip.fragmentName](features.md#features.diagram-clip.fragmentName), [features.diagram-clip.fragmentFlow](features.md#features.diagram-clip.fragmentFlow), [features.diagram-clip.clipLayoutText](features.md#features.diagram-clip.clipLayoutText), [features.diagram-clip.clipLayout](features.md#features.diagram-clip.clipLayout), [operations.flow-bundle.exportBundle](operations.md#operations.flow-bundle.exportBundle), [features.harness.keylangVersion](features.md#features.harness.keylangVersion), [features.flow-bundle.parseBundle](features.md#features.flow-bundle.parseBundle), [operations.flow-bundle.gitOf](operations.md#operations.flow-bundle.gitOf), [features.diagram-clip.pastedShapes](features.md#features.diagram-clip.pastedShapes), [operations.flow-bundle.runFlowImport](operations.md#operations.flow-bundle.runFlowImport), [features.flow-bundle.usedLayers](features.md#features.flow-bundle.usedLayers), [tui.web.bearerToken](tui.md#tui.web.bearerToken), [tui.web.pathOf](tui.md#tui.web.pathOf), [tui.web.ensureClient](tui.md#tui.web.ensureClient), [tui.web.assetPath](tui.md#tui.web.assetPath), [tui.web.diagramsPage](tui.md#tui.web.diagramsPage), [tui.web.page](tui.md#tui.web.page), [tui.web.clampSize](tui.md#tui.web.clampSize), [tui.web.pcmOf](tui.md#tui.web.pcmOf), [tui.app.App](tui.md#tui.app.App), [tui.web.AudioQueue](tui.md#tui.web.AudioQueue), [tui.web.control](tui.md#tui.web.control), [tui.web.AudioQueue.chunks](tui.md#tui.web.AudioQueue.chunks), [tui.web.AudioQueue.end](tui.md#tui.web.AudioQueue.end), [tui.background.SnapshotWorker.close](tui.md#tui.background.SnapshotWorker.close)
+    - fn [logUnhandled](../../src/tui/web.ts#L777) () → () => void
+      <a id="tui.web.logUnhandled"></a><br>A rejection no session handled (a helper it did not track) would end the process, and every session's unsaved buffers with it: it is logged instead.
+    - fn [shownHost](../../src/tui/web.ts#L786) (host: string) → string
+      <a id="tui.web.shownHost"></a><br>The address in a printed URL: `localhost` for loopback, a bracketed IPv6 address.
+    - fn [serveWeb](../../src/tui/web.ts#L790) (options: WebOptions) → Promise<WebServer>
       <a id="tui.web.serveWeb"></a><br>Starts a token-guarded HTTP and WebSocket server that serves the static page and assets, and runs one [`tui.app.App`](tui.md#tui.app.App) session per tab, relaying keystrokes, resizes and microphone PCM through an [`tui.web.AudioQueue`](tui.md#tui.web.AudioQueue). _(llm · claude:claude-opus-5-5 · 2026-10-06 · stale)_
-      - calls [tui.background.SnapshotWorker](tui.md#tui.background.SnapshotWorker), [map.analyze.analyze](map.md#map.analyze.analyze), [tui.web.sameSecret](tui.md#tui.web.sameSecret), [tui.web.offeredToken](tui.md#tui.web.offeredToken), [tui.read-api.createReadApi](tui.md#tui.read-api.createReadApi), [tui.web.jsonBody](tui.md#tui.web.jsonBody), [features.explorer.parseExplorerFlow](features.md#features.explorer.parseExplorerFlow), [features.explorer.explorerFlow](features.md#features.explorer.explorerFlow), [operations.shared.rootRelative](operations.md#operations.shared.rootRelative), [operations.shared.generatedIn](operations.md#operations.shared.generatedIn), [operations.draft.flowCandidate](operations.md#operations.draft.flowCandidate), [operations.shared.proposalRefusal](operations.md#operations.shared.proposalRefusal), [operations.shared.commitProposal](operations.md#operations.shared.commitProposal), [map.map.sourceInputs](map.md#map.map.sourceInputs), [tui.web.send](tui.md#tui.web.send), [map.diagram-layout.readLayout](map.md#map.diagram-layout.readLayout), [tui.web.parseClientLayout](tui.md#tui.web.parseClientLayout), [map.diagram-layout.layoutToFile](map.md#map.diagram-layout.layoutToFile), [map.diagram-layout.layoutText](map.md#map.diagram-layout.layoutText), [map.diagram-layout.writeLayout](map.md#map.diagram-layout.writeLayout), [operations.diagram-propose.runDiagramPropose](operations.md#operations.diagram-propose.runDiagramPropose), [operations.greenfield.greenfieldAvailability](operations.md#operations.greenfield.greenfieldAvailability), [operations.greenfield.runGreenfield](operations.md#operations.greenfield.runGreenfield), [features.diagram-clip.parseClipSelection](features.md#features.diagram-clip.parseClipSelection), [map.diagram.viewOfKey](map.md#map.diagram.viewOfKey), [operations.flow-bundle.exportFlows](operations.md#operations.flow-bundle.exportFlows), [features.diagram-clip.fragmentName](features.md#features.diagram-clip.fragmentName), [features.diagram-clip.fragmentFlow](features.md#features.diagram-clip.fragmentFlow), [features.diagram-clip.clipLayoutText](features.md#features.diagram-clip.clipLayoutText), [features.diagram-clip.clipLayout](features.md#features.diagram-clip.clipLayout), [operations.flow-bundle.exportBundle](operations.md#operations.flow-bundle.exportBundle), [features.harness.keylangVersion](features.md#features.harness.keylangVersion), [features.flow-bundle.parseBundle](features.md#features.flow-bundle.parseBundle), [operations.flow-bundle.gitOf](operations.md#operations.flow-bundle.gitOf), [features.diagram-clip.pastedShapes](features.md#features.diagram-clip.pastedShapes), [operations.flow-bundle.runFlowImport](operations.md#operations.flow-bundle.runFlowImport), [features.flow-bundle.usedLayers](features.md#features.flow-bundle.usedLayers), [tui.web.bearerToken](tui.md#tui.web.bearerToken), [tui.web.ensureClient](tui.md#tui.web.ensureClient), [tui.web.assetPath](tui.md#tui.web.assetPath), [tui.web.diagramsPage](tui.md#tui.web.diagramsPage), [tui.web.page](tui.md#tui.web.page), [tui.web.reply](tui.md#tui.web.reply), [tui.web.pathOf](tui.md#tui.web.pathOf), [tui.web.clampSize](tui.md#tui.web.clampSize), [tui.web.pcmOf](tui.md#tui.web.pcmOf), [tui.app.App](tui.md#tui.app.App), [tui.web.AudioQueue](tui.md#tui.web.AudioQueue), [tui.web.control](tui.md#tui.web.control), [tui.web.AudioQueue.chunks](tui.md#tui.web.AudioQueue.chunks), [tui.web.AudioQueue.end](tui.md#tui.web.AudioQueue.end), [tui.background.SnapshotWorker.close](tui.md#tui.background.SnapshotWorker.close)
-    - fn [jsonBody](../../src/tui/web.ts#L772) (request: IncomingMessage, response: ServerResponse, name: string, method: string, max: number) → Promise<unknown> <!-- internal -->
+      - calls [tui.web.createWebApp](tui.md#tui.web.createWebApp), [tui.web.logUnhandled](tui.md#tui.web.logUnhandled), [tui.web.shownHost](tui.md#tui.web.shownHost)
+    - fn [jsonBody](../../src/tui/web.ts#L835) (request: IncomingMessage, response: ServerResponse, name: string, method: string, max: number) → Promise<unknown> <!-- internal -->
       <a id="tui.web.jsonBody"></a><br>The JSON body of a write, or `NO_BODY` once the refusal is sent: another method is 405, a content type that is not `application/json` 415 (an HTML form cannot send it), a body over `max` 413, no JSON 400.
       - calls [tui.web.reply](tui.md#tui.web.reply), [tui.web.readBody](tui.md#tui.web.readBody)
-    - fn [parseClientLayout](../../src/tui/web.ts#L792) (body: unknown) → ClientLayout | string <!-- internal -->
+    - fn [parseClientLayout](../../src/tui/web.ts#L855) (body: unknown) → ClientLayout | string <!-- internal -->
       <a id="tui.web.parseClientLayout"></a><br>The editor's layout from a `PUT /api/layout` body (`{layout: {key: {x, y, …}}}`), or what is wrong with it.
-    - fn [readBody](../../src/tui/web.ts#L818) (request: IncomingMessage, max: number) → Promise<string | null> <!-- internal -->
+    - fn [readBody](../../src/tui/web.ts#L881) (request: IncomingMessage, max: number) → Promise<string | null> <!-- internal -->
       <a id="tui.web.readBody"></a><br>A request's body as text, or null when it is larger than `max` bytes (the rest is not read).
-    - fn [bearerToken](../../src/tui/web.ts#L841) (request: IncomingMessage) → string | null <!-- internal -->
+    - fn [bearerToken](../../src/tui/web.ts#L904) (request: IncomingMessage) → string | null <!-- internal -->
       <a id="tui.web.bearerToken"></a><br>The token of an `Authorization: Bearer <token>` header.
-    - fn [pathOf](../../src/tui/web.ts#L847) (target: string | undefined) → string | null <!-- internal -->
+    - fn [pathOf](../../src/tui/web.ts#L910) (target: string | undefined) → string | null <!-- internal -->
       <a id="tui.web.pathOf"></a><br>The path of a request target, or null when it is not a URL at all.
-    - fn [send](../../src/tui/web.ts#L856) (response: ServerResponse, answer: ReadAnswer) → void <!-- internal -->
+    - fn [send](../../src/tui/web.ts#L919) (response: ServerResponse, answer: ReadAnswer) → void <!-- internal -->
       <a id="tui.web.send"></a><br>A read answer as the HTTP reply, an attachment with its file name.
       - calls [tui.web.reply](tui.md#tui.web.reply)
-    - fn [reply](../../src/tui/web.ts#L861) (response: ServerResponse, status: number, type: string, body: string | Buffer) → void <!-- internal -->
+    - fn [reply](../../src/tui/web.ts#L924) (response: ServerResponse, status: number, type: string, body: string | Buffer) → void <!-- internal -->
       <a id="tui.web.reply"></a><br>Writes a complete HTTP response for [`tui.web.serveWeb`](tui.md#tui.web.serveWeb): sets the given status and content type, adds `Cache-Control: no-store` and `X-Content-Type-Options: nosniff` headers, then ends the response with the body. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [diagramsPage](../../src/tui/web.ts#L873) (options: { readOnly?: boolean; source?: "server" | "static" | "local"; assets?: string; title?: string; shards?: number } = {}) → string
+    - fn [diagramsPage](../../src/tui/web.ts#L936) (options: { readOnly?: boolean; source?: "server" | "static" | "local"; assets?: string; title?: string; shards?: number } = {}) → string
       <a id="tui.web.diagramsPage"></a><br>The diagram page: markup only; `diagrams.js` fills it. Over HTTP it takes the token from the fragment and reads `/api/`; `source` names another transport: `static` reads the answers a static export wrote under `data/`, `local` analyses a folder the person opens in the tab…
-    - fn [page](../../src/tui/web.ts#L919) () → string <!-- internal -->
+    - fn [page](../../src/tui/web.ts#L984) () → string <!-- internal -->
       <a id="tui.web.page"></a><br>The page: xterm.js from `/assets/`, a WebSocket back to this server, reconnect with the same session.
   - module [width](../../src/tui/width.ts#L1)
     <a id="tui.width"></a><br>Terminal cell width of text: graphemes, not code units. A wide character (CJK, most emoji, a keycap) takes two cells; combining marks, joiners, the other invisible format characters (Default_Ignorable_Code_Point: ZWSP, soft hyphen, word joiner) and Hangul vowels and finals…

@@ -61,6 +61,7 @@
       - module [list](../../web/src/list.ts#L1) <!-- outside -->
       - module [local-protocol](../../web/src/local-protocol.ts#L1) <!-- outside -->
       - module [local](../../web/src/local.ts#L1) <!-- outside -->
+      - module [matrix](../../web/src/matrix.ts#L1) <!-- outside -->
       - module [properties](../../web/src/properties.ts#L1) <!-- outside -->
       - module [static](../../web/src/static.ts#L1) <!-- outside -->
       - module [tour](../../web/src/tour.ts#L1) <!-- outside -->

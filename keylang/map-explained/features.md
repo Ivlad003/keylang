@@ -407,13 +407,16 @@
     - fn [syncClone](../../src/clone.ts#L118) (source: RepoSource, dir: string) → CloneSync
       <a id="features.clone.syncClone"></a><br>Clones `source` into `dir`, or brings a clone keylang made there up to the remote's default branch. A directory keylang did not clone is never touched: the reset would drop its work.
       - calls [features.clone.git](features.md#features.clone.git), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite), [features.clone.readMarker](features.md#features.clone.readMarker), [features.clone.redactUrl](features.md#features.clone.redactUrl)
-    - fn [readMarker](../../src/clone.ts#L143) (dir: string) → { url: string; key: string[] } | undefined <!-- internal -->
+    - fn [listClones](../../src/clone.ts#L152) (cacheRoot: string, depth = 6) → { dir: string; url: string; key: string[] }[]
+      <a id="features.clone.listClones"></a><br>The clones keylang made under the cache root, by their marker: their directory, the URL they were cloned from (as shown, without credentials) and their key; sorted by key. A directory with a marker is not descended into further; links are not followed.
+      - calls [features.clone.readMarker](features.md#features.clone.readMarker), [features.clone.redactUrl](features.md#features.clone.redactUrl)
+    - fn [readMarker](../../src/clone.ts#L174) (dir: string) → { url: string; key: string[] } | undefined <!-- internal -->
       <a id="features.clone.readMarker"></a><br>The marker of `dir`, or undefined: absent, unreadable, or behind a link out of the directory — a file elsewhere is no proof keylang cloned `dir`.
       - calls [base.safe-write.targetProblem](base.md#base.safe-write.targetProblem), [base.config.withoutBom](base.md#base.config.withoutBom)
-    - fn [git](../../src/clone.ts#L158) (cwd: string, args: string[]) → void <!-- internal -->
+    - fn [git](../../src/clone.ts#L189) (cwd: string, args: string[]) → void <!-- internal -->
       <a id="features.clone.git"></a>
       - calls [features.git-changes.gitUnavailable](features.md#features.git-changes.gitUnavailable)
-    - fn [enableExplainedMap](../../src/clone.ts#L177) (root: string) → string | null
+    - fn [enableExplainedMap](../../src/clone.ts#L208) (root: string) → string | null
       <a id="features.clone.enableExplainedMap"></a><br>Turns on the explained map (`"explain": {"map": true}`) in the clone's keylang.json; the rest of the file stays. Returns an error to name, or null.
       - calls [base.safe-write.targetProblem](base.md#base.safe-write.targetProblem), [base.config.withoutBom](base.md#base.config.withoutBom), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite)
   - module [coverage-report](../../src/coverage-report.ts#L1)

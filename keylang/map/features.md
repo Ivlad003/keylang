@@ -253,11 +253,13 @@
     - type [CloneSync](../../src/clone.ts#L105)
     - fn [syncClone](../../src/clone.ts#L118) (source: RepoSource, dir: string) → CloneSync
       - calls features.clone.git, base.safe-write.safeWrite, features.clone.readMarker, features.clone.redactUrl
-    - fn [readMarker](../../src/clone.ts#L143) (dir: string) → { url: string; key: string[] } | undefined <!-- internal -->
+    - fn [listClones](../../src/clone.ts#L152) (cacheRoot: string, depth = 6) → { dir: string; url: string; key: string[] }[]
+      - calls features.clone.readMarker, features.clone.redactUrl
+    - fn [readMarker](../../src/clone.ts#L174) (dir: string) → { url: string; key: string[] } | undefined <!-- internal -->
       - calls base.safe-write.targetProblem, base.config.withoutBom
-    - fn [git](../../src/clone.ts#L158) (cwd: string, args: string[]) → void <!-- internal -->
+    - fn [git](../../src/clone.ts#L189) (cwd: string, args: string[]) → void <!-- internal -->
       - calls features.git-changes.gitUnavailable
-    - fn [enableExplainedMap](../../src/clone.ts#L177) (root: string) → string | null
+    - fn [enableExplainedMap](../../src/clone.ts#L208) (root: string) → string | null
       - calls base.safe-write.targetProblem, base.config.withoutBom, base.safe-write.safeWrite
   - module [coverage-report](../../src/coverage-report.ts#L1)
     - node external.node
