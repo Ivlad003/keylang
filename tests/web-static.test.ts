@@ -82,7 +82,7 @@ test("web --read-only: the diagram page with «Карта» and GET alone — th
 
   const home = await send(url, "GET", "/");
   assert.equal(home.status, 302);
-  assert.equal(home.location, "/diagrams");
+  assert.equal(home.location, "diagrams", "relative: the same server mounted under /r/<id>/ of web --hub");
   const page = await send(url, "GET", "/diagrams");
   assert.equal(page.status, 200);
   assert.match(page.body, /<body data-source="server" data-readonly="1">/);
@@ -106,6 +106,13 @@ test("web --read-only: the diagram page with «Карта» and GET alone — th
   assert.equal((await send(url, "GET", "/api/docs")).status, 403, "the token still guards the data");
 
   for (const path of ["/api/views", "/api/diagram?view=layers", "/api/coverage", "/api/tour", "/api/calls?id=presentation.orders.listOrders", "/api/layout?view=layers"]) assert.equal((await send(url, "GET", path, bearer)).status, 200, path);
+  // The search box finds the code by any part of an ID, the name that is the hit first.
+  const search = JSON.parse((await send(url, "GET", "/api/search?q=ORDER", bearer)).body) as { hits: { id: string; kind: string }[]; total: number };
+  assert.deepEqual(search.hits.slice(0, 2).map((hit) => hit.id), ["domain.order", "presentation.orders"], "the name that is the hit, the shorter first");
+  assert.ok(search.hits.some((hit) => hit.id === "presentation.orders.listOrders" && hit.kind === "fn"));
+  assert.equal((await send(url, "GET", "/api/search?q=o", bearer)).status, 400, "two characters at least");
+  const graph = JSON.parse((await send(url, "GET", "/api/diagram?view=module&id=presentation.orders", bearer)).body) as { nodes: { label: string }[] };
+  assert.ok(graph.nodes.some((n) => n.label === "domain.order"), "what the module imports");
   const json = { ...bearer, "Content-Type": "application/json" };
   const writes: [string, string, string][] = [
     ["PUT", "/api/layout?view=layers", JSON.stringify({ layout: {} })],

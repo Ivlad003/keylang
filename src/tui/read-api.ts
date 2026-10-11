@@ -48,7 +48,10 @@ export interface ReadApiOptions {
 }
 
 /** The GET paths this module answers; `/api/layout` also takes a PUT, which `web.ts` handles. */
-export const READ_PATHS: ReadonlySet<string> = new Set(["/api/views", "/api/diagram", "/api/usages", "/api/calls", "/api/ids", "/api/coverage", "/api/tour", "/api/export", "/api/layout", "/api/docs", "/api/doc", "/api/git", "/api/changes"]);
+export const READ_PATHS: ReadonlySet<string> = new Set(["/api/views", "/api/diagram", "/api/usages", "/api/calls", "/api/ids", "/api/coverage", "/api/tour", "/api/export", "/api/layout", "/api/docs", "/api/doc", "/api/git", "/api/changes", "/api/search"]);
+
+/** At most this many hits of `GET /api/search`. */
+const MAX_HITS = 100;
 
 /** At most this many branches in `GET /api/git`: the page offers them as bases. */
 const MAX_BRANCHES = 100;
@@ -159,7 +162,25 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
     return { dir, files, text };
   };
 
+  // Answers that cost seconds (coverage parses the files again) and depend on the analysis alone: one per analysis.
+  const memo = new WeakMap<Analysis, Map<string, Promise<ReadAnswer>>>();
+  const MEMOIZED = new Set(["/api/coverage", "/api/tour", "/api/docs"]);
   const answer = async (path: string, query: URLSearchParams): Promise<ReadAnswer> => {
+    if (!MEMOIZED.has(path)) return compute(path, query);
+    const done = await options.analysis();
+    let own = memo.get(done);
+    if (!own) memo.set(done, (own = new Map()));
+    const key = `${path}?${query.toString()}`;
+    let found = own.get(key);
+    if (!found) {
+      found = compute(path, query);
+      own.set(key, found);
+      found.catch(() => own.delete(key));
+    }
+    return found;
+  };
+
+  const compute = async (path: string, query: URLSearchParams): Promise<ReadAnswer> => {
     const json = (status: number, body: unknown): ReadAnswer => ({ status, type: "application/json", body: `${JSON.stringify(body)}\n` });
     if (!READ_PATHS.has(path)) return { status: 404, type: "text/plain", body: "not found\n" };
     // The project tour (business-flows/15): the data of `keylang tour --json` and its Markdown, for the «Огляд» tab.
@@ -189,6 +210,19 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
       });
     }
     if (path === "/api/changes") return changes(query.get("since"));
+    if (path === "/api/search") {
+      // The code by name: any part of an ID, case aside — `order` finds `components.account.order-details`.
+      const q = (query.get("q") ?? "").trim().toLowerCase();
+      if (q.length < 2) return json(400, { error: "search needs q= of two characters or more" });
+      const done = await options.analysis();
+      const nodes = done.snapshot?.nodes ?? {};
+      const found = Object.keys(nodes).filter((id) => id.toLowerCase().includes(q));
+      // A name that is the hit (`…order-details`) before one that only holds it, then the shorter.
+      const last = (id: string): string => id.slice(id.lastIndexOf(".") + 1).toLowerCase();
+      found.sort((a, b) => Number(last(b).includes(q)) - Number(last(a).includes(q)) || a.length - b.length || compareText(a, b));
+      const hits = found.slice(0, MAX_HITS).map((id) => ({ id, kind: nodes[id]!.kind, layer: nodes[id]!.layer, file: nodes[id]!.file, line: nodes[id]!.line }));
+      return json(200, { q, hits, total: found.length });
+    }
     if (path === "/api/docs") {
       const done = await options.analysis();
       const found = docs(done);
@@ -345,7 +379,9 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
     const gone = [...deleted].sort(compareText).map((file) => ({ path: file, modules: deletedModuleIds(done.config, [file]) }));
     // The findings of the slice, as `keylang check --changed --since <base> --format json` reports them.
     const check = await runCheck({ kind: "check", root, paths: [], strict: false, changed: true, since: base.ref }, { analyze: options.analyze });
-    return json(200, { base, unborn: changed.unborn, files, deleted: gone, check: check.payload, ...(check.payload === null ? { checkReason: check.messages.find((m) => m.level === "error")?.text ?? check.messages[0]?.text ?? "check failed" } : {}) });
+    // The slice's findings; `coverage` (every construct of the code, megabytes) is the CLI's `--format json`, not the page's.
+    const payload = check.payload === null ? null : (({ coverage: _coverage, ...rest }) => rest)(check.payload);
+    return json(200, { base, unborn: changed.unborn, files, deleted: gone, check: payload, ...(check.payload === null ? { checkReason: check.messages.find((m) => m.level === "error")?.text ?? check.messages[0]?.text ?? "check failed" } : {}) });
   };
 
   return { answer, keyedDiagram, discoveredSpec, docs };

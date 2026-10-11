@@ -23,6 +23,7 @@ import { Canvas, VERDICT_COLOUR, VERDICT_GLYPH } from "./canvas.ts";
 import { writeClipboard } from "./bundle-clip.ts";
 import { Changes, changeItems } from "./changes.ts";
 import { Docs, docItems } from "./docs.ts";
+import { MATRIX_FROM, renderMatrix } from "./matrix.ts";
 import { codeLink, element, make } from "./dom.ts";
 import { Editor } from "./editor.ts";
 import { FileLayoutStore, useLayoutStore } from "./layout-store.ts";
@@ -34,6 +35,10 @@ import { openLocal } from "./local.ts";
 import { StaticTransport } from "./static.ts";
 import { mountTour } from "./tour.ts";
 import "./diagrams.css";
+
+/** The call tree of an entry point: the server's default depth (src/diagram.ts) and the deepest the page offers. */
+const DEFAULT_DEPTH = 2;
+const MAX_DEPTH = 5;
 
 /** How often the page asks again, ms; a request that takes longer delays the next one. */
 const POLL_MS = 5000;
@@ -65,11 +70,16 @@ function readHash(): { query: PageQuery; node: string | null } | null {
   const name = params.get("name");
   const id = params.get("id");
   if ((view === "flow" || view === "discovered") && name) return { query: { view, name }, node };
-  if (view === "entry" && id) return { query: { view, id }, node };
+  const depth = params.get("depth");
+  if (view === "entry" && id) return { query: depth ? { view, id, depth } : { view, id }, node };
+  if (view === "module" && id) return { query: { view, id }, node };
   if (view === "layers") return { query: { view }, node };
   if (view === "explore") return { query: { view, id: id ?? "" }, node: null };
   if (view === "blind") return { query: { view }, node: null };
-  if (view === "docs") return { query: { view, path: params.get("path") ?? "" }, node: null };
+  if (view === "docs") {
+    const at = params.get("at");
+    return { query: at ? { view, path: params.get("path") ?? "", at } : { view, path: params.get("path") ?? "" }, node: null };
+  }
   if (view === "changes") return { query: { view, since: params.get("since") ?? "" }, node: null };
   if (view === "editor") return { query: { view, of: viewOfKey(params.get("of") ?? "") }, node: null };
   return null;
@@ -84,6 +94,7 @@ function viewOfKey(key: string): ViewQuery | null {
   if (at === -1 || rest === "") return null;
   if (kind === "flow" || kind === "discovered") return { view: kind, name: rest };
   if (kind === "entry") return { view: "entry", id: rest };
+  if (kind === "module") return { view: "module", id: rest };
   return null;
 }
 
@@ -94,6 +105,8 @@ function keyOf(query: PageQuery): string {
       return `${query.view}:${query.name}`;
     case "entry":
       return `entry:${query.id}`;
+    case "module":
+      return `module:${query.id}`;
     case "explore":
       return `explore:${query.id}`;
     case "blind":
@@ -186,6 +199,14 @@ class Page {
   private readonly editor: Editor;
   private readonly docs: Docs;
   private readonly changes: Changes;
+  private readonly depth = make("select");
+  /** The code the search box found (`GET /api/search`), listed after the views; null with no search. */
+  private codeHits: { q: string; items: ListItem[]; total: number } | null = null;
+  private searchTimer = 0;
+  /** The layers view as a matrix (true), a drawing (false), or as its size says (null). */
+  private matrixMode: boolean | null = null;
+  private readonly matrixToggle = make("button", { title: "Шари як матриця залежностей або як схема" });
+  private shownDiagram: Diagram | null = null;
   private docList: DocList | null = null;
   private node: string | null = null;
   private usages: Usages | null = null;
@@ -210,9 +231,13 @@ class Page {
       },
     });
     (window as unknown as { keylangEditor: unknown }).keylangEditor = this.editor;
-    this.blind = new BlindSpots(element("blind"), this.api, { ...host, discovered: (name: string) => void this.open({ view: "discovered", name }) });
-    this.docs = new Docs(element("docs"), this.api, { status: host.status, open: (path: string) => void this.open({ view: "docs", path }) });
-    this.changes = new Changes(element("changes"), this.api, { ...host, openDoc: (path: string) => void this.open({ view: "docs", path }), pick: (since: string) => void this.open({ view: "changes", since }) });
+    // An answer that arrives after the person moved to another mode leaves that mode's status alone.
+    const statusOf = (mode: Mode) => (text: string) => {
+      if (this.mode === mode) this.status.textContent = text;
+    };
+    this.blind = new BlindSpots(element("blind"), this.api, { ...host, status: statusOf("blind"), discovered: (name: string) => void this.open({ view: "discovered", name }) });
+    this.docs = new Docs(element("docs"), this.api, { status: statusOf("docs"), open: (path: string, at: string | null) => void this.open(at === null ? { view: "docs", path } : { view: "docs", path, at }) });
+    this.changes = new Changes(element("changes"), this.api, { ...host, status: statusOf("changes"), openDoc: (path: string) => void this.open({ view: "docs", path }), pick: (since: string) => void this.open({ view: "changes", since }) });
     for (const tab of document.querySelectorAll<HTMLButtonElement>("#modes button[data-mode]")) {
       tab.addEventListener("click", () => {
         const mode = tab.dataset["mode"] as Mode;
@@ -234,6 +259,9 @@ class Page {
       // Typing starts a new search: the usages of the last ID let go of the list.
       if (this.usages) this.clearUsages();
       this.list.setFilter(this.search.value);
+      // The code too, not only the views: modules and fns whose ID holds the text, once typing pauses.
+      window.clearTimeout(this.searchTimer);
+      this.searchTimer = window.setTimeout(() => void this.searchCode(this.search.value.trim()), 250);
     });
     this.search.addEventListener("keydown", (event) => {
       if (event.key !== "Enter") return;
@@ -253,6 +281,30 @@ class Page {
     copy.id = "copy-bundle";
     copy.addEventListener("click", () => void this.copyBundle(true));
     element("toolbar").append(copy);
+    // How deep an entry point's call tree opens: 2 by default (the server's), deeper on demand.
+    this.depth.id = "depth";
+    this.depth.title = "Глибина дерева викликів точки входу";
+    this.depth.hidden = true;
+    for (let n = 1; n <= MAX_DEPTH; n++) {
+      const option = make("option", { text: `глибина ${n}` });
+      option.value = String(n);
+      this.depth.append(option);
+    }
+    this.depth.addEventListener("change", () => {
+      const active = this.active;
+      if (active?.view !== "entry") return;
+      void this.open(this.depth.value === String(DEFAULT_DEPTH) ? { view: "entry", id: active.id } : { view: "entry", id: active.id, depth: this.depth.value });
+    });
+    element("toolbar").insertBefore(this.depth, element("zoom-out"));
+    this.matrixToggle.type = "button";
+    this.matrixToggle.id = "matrix-toggle";
+    this.matrixToggle.hidden = true;
+    this.matrixToggle.addEventListener("click", () => {
+      this.matrixMode = document.body.dataset["matrix"] !== "1";
+      // The drawing was put off while the matrix stood over it.
+      if (this.shownDiagram && !this.showMatrix(this.shownDiagram)) this.showDiagram(this.shownDiagram, false);
+    });
+    element("toolbar").insertBefore(this.matrixToggle, element("zoom-out"));
     document.addEventListener("keydown", (event) => {
       if (this.mode !== "diagrams" || readOnlyPage() || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "c" || event.shiftKey) return;
       const target = event.target as HTMLElement | null;
@@ -300,8 +352,37 @@ class Page {
     if (!this.views) return;
     const changed = this.changes.current();
     this.items = this.mode === "changes" ? (changed ? changeItems(changed.answer, changed.since) : []) : this.mode === "docs" ? (this.docList ? docItems(this.docList) : []) : this.mode === "diagrams" || this.mode === "editor" ? itemsOf(this.views) : exploreItemsOf(this.views);
+    // The code the search found, after the views: in the modes that open a module or a fn.
+    if ((this.mode === "diagrams" || this.mode === "explore") && this.codeHits) this.items = [...this.items, ...this.codeHits.items];
     this.list.setItems(this.items);
     this.markList();
+  }
+
+  /**
+   * The code whose ID holds the search text, listed under «Код · module|fn|type»: a module opens
+   * its dependency graph, a fn or type the explorer. A static export has no search: the views only.
+   */
+  private async searchCode(text: string): Promise<void> {
+    if (text.length < 2 || transport().kind === "static") {
+      if (this.codeHits) {
+        this.codeHits = null;
+        this.fillList();
+      }
+      return;
+    }
+    try {
+      const found = await this.api.search(text);
+      if (this.search.value.trim() !== text) return;
+      const items: ListItem[] = found.hits.map((hit) => {
+        const query: PageQuery = hit.kind === "module" ? { view: "module", id: hit.id } : { view: "explore", id: hit.id };
+        return { key: `code:${hit.id}`, label: hit.id, hint: hit.layer, group: `Код · ${hit.kind}`, search: hit.id.toLowerCase(), title: [hit.id, hit.file && `${hit.file}:${hit.line ?? ""}`, hit.kind === "module" ? "граф залежностей модуля" : "дерево викликів у досліднику"].filter(Boolean).join("\n"), query };
+      });
+      this.codeHits = { q: text, items, total: found.total };
+      this.fillList();
+      this.status.textContent = `«${text}»: ${found.total} у коді${found.total > items.length ? ` (показано ${items.length})` : ""}`;
+    } catch {
+      // A search that failed leaves the list as it was.
+    }
   }
 
   /** Shows one mode's pane; the list follows the mode. */
@@ -327,7 +408,8 @@ class Page {
     // Answers a static export wrote, or an analysis of files in memory, do not change.
     if (transport().kind !== "server") return;
     window.setTimeout(async () => {
-      if (!document.hidden) {
+      // Only the diagrams follow the code live; the other modes ask when opened or refreshed.
+      if (!document.hidden && this.mode === "diagrams") {
         try {
           await this.loadViews();
           const query = this.active;
@@ -369,17 +451,22 @@ class Page {
       }
       this.list.setActive(listKey);
       this.list.reveal(listKey);
-      return this.docs.show(wanted.path);
+      return this.docs.show(wanted.path, wanted.at ?? null);
     }
     if (wanted.view === "editor") return this.openEditor(wanted.of);
     const query: ViewQuery = wanted;
     this.lastDiagram = query;
+    // A static export holds each entry point at the default depth only.
+    this.depth.hidden = query.view !== "entry" || transport().kind === "static";
+    if (query.view === "entry") this.depth.value = query.depth ?? String(DEFAULT_DEPTH);
     this.status.textContent = `loading ${key}…`;
     try {
       const diagram = await this.api.diagram(query);
       if (this.active !== query) return;
       this.diagramText = "";
       this.showDiagram(diagram, false);
+      // A module's graph opens on the module itself: its shape marked, its panel shown.
+      if (node === null && query.view === "module" && diagram.nodes[0]) node = diagram.nodes[0].id;
       if (node !== null) {
         this.canvas.select(node);
         this.canvas.reveal(node);
@@ -405,8 +492,28 @@ class Page {
     }
   }
 
+  /** The layers view as the matrix when chosen, or when its edges are too many to draw; any other view as drawn. Whether the matrix is shown. */
+  private showMatrix(diagram: Diagram): boolean {
+    const layers = this.active?.view === "layers";
+    const matrix = layers && (this.matrixMode ?? diagram.edges.length > MATRIX_FROM);
+    this.matrixToggle.hidden = !layers;
+    this.matrixToggle.textContent = matrix ? "схема" : "матриця";
+    if (matrix) {
+      document.body.dataset["matrix"] = "1";
+      renderMatrix(element("matrix"), diagram, (node) => this.pick(node), this.node);
+    } else delete document.body.dataset["matrix"];
+    return matrix;
+  }
+
   private showDiagram(diagram: Diagram, keepView: boolean): void {
     const text = JSON.stringify(diagram);
+    this.shownDiagram = diagram;
+    // Under the matrix nothing is drawn: three hundred edges cost half a second the person does not see.
+    if (this.showMatrix(diagram)) {
+      this.diagramText = "";
+      this.status.textContent = `layers · ${diagram.nodes.length} shapes · ${diagram.edges.length} edges · matrix`;
+      return;
+    }
     if (text === this.diagramText) return;
     this.diagramText = text;
     this.canvas.show(diagram, keepView);
@@ -461,6 +568,8 @@ class Page {
     this.node = node?.id ?? null;
     if (write) this.writeHash();
     this.renderDetails(node);
+    // The matrix marks the picked layer's row.
+    if (document.body.dataset["matrix"] === "1" && this.shownDiagram) renderMatrix(element("matrix"), this.shownDiagram, (next) => this.pick(next), this.node);
   }
 
   private link(file: string, line: number | undefined): HTMLElement {
@@ -495,6 +604,14 @@ class Page {
         button.id = "node-usages";
         button.addEventListener("click", () => void this.findUsages(id));
         body.push(button);
+        // Its module's dependencies, the map as a graph: who imports it, what it imports.
+        if (node.kind !== "layer" && node.kind !== "hole" && !(this.active?.view === "module" && node.ref?.id === this.active.id)) {
+          const graph = make("button", { className: "usages-button", text: `dependencies of the module of ${id}` });
+          graph.type = "button";
+          graph.id = "node-module";
+          graph.addEventListener("click", () => void this.open({ view: "module", id }));
+          body.push(graph);
+        }
         // A fn or an entry point opens in the explorer: its call tree, both ways.
         if (node.kind === "start" || node.kind === "task" || node.kind === "fn") {
           const explore = make("button", { className: "usages-button", text: `explore the calls of ${id}` });

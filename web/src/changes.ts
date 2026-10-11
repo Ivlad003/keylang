@@ -45,6 +45,8 @@ export class Changes {
   private readonly host: ChangesHost;
   private git: GitAnswer | null = null;
   private shown: { since: string; answer: ChangesAnswer } | null = null;
+  /** The last request: the answer for an earlier base (picked, then another) is dropped. */
+  private request = 0;
 
   constructor(container: HTMLElement, api: Api, host: ChangesHost) {
     this.container = container;
@@ -58,6 +60,7 @@ export class Changes {
   }
 
   async show(since: string): Promise<ChangesAnswer | null> {
+    const request = ++this.request;
     this.host.status(`changes: reading git${since ? ` since ${since}` : ""}…`);
     if (this.container.childElementCount === 0) this.container.replaceChildren(make("p", { className: "empty", text: "loading…" }));
     try {
@@ -68,12 +71,14 @@ export class Changes {
         return null;
       }
       const answer = await this.api.changes(since);
+      if (request !== this.request) return null;
       this.shown = { since, answer };
       this.render(this.git, answer, since);
       const counts = answer.check?.counts;
       this.host.status(`changes since ${answer.base.label} · ${answer.files.length} changed · ${answer.deleted.length} deleted${counts ? ` · ✗ ${counts.fail} · ◌ ${counts.unverified}` : ""}`);
       return answer;
     } catch (error) {
+      if (request !== this.request) return null;
       const text = error instanceof ApiError && error.status === 404 && transport().kind === "static" ? `this export holds the changes since the base of a feature and since HEAD only (${error.message})` : error instanceof Error ? error.message : String(error);
       this.container.replaceChildren(make("h2", { text: "Зміни" }), this.picker(this.git, since), make("p", { className: "error", text }));
       this.host.status(text);

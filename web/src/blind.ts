@@ -16,6 +16,8 @@ export interface BlindHost {
   status(text: string): void;
 }
 
+/** More rows than this and a section is grouped (orphans by layer, entry points by kind). */
+const GROUP_FROM = 40;
 /** At most this many rows of a long section; the CLI's text keeps a top-10 too. */
 const MAX_ROWS = 200;
 
@@ -71,6 +73,27 @@ export class BlindSpots {
     return table;
   }
 
+  /**
+   * A long section as groups (a layer, a kind), largest first, each a `<details>` with its count:
+   * a list of 1600 orphans reads as «features 620, tui 410, …», opened one at a time. A short one
+   * stays one table.
+   */
+  private grouped<T>(items: readonly T[], keyOf: (item: T) => string, head: string[], row: (item: T) => (Node | string)[]): HTMLElement {
+    if (items.length <= GROUP_FROM) return this.table(head, items.map(row), items.length);
+    const groups = new Map<string, T[]>();
+    for (const item of items) groups.set(keyOf(item), [...(groups.get(keyOf(item)) ?? []), item]);
+    const box = make("div", { className: "blind-groups" });
+    for (const [key, list] of [...groups].sort((a, b) => b[1].length - a[1].length || (a[0] < b[0] ? -1 : 1))) {
+      const details = make("details", { className: "blind-group" }, make("summary", {}, make("b", { text: key }), ` — ${list.length}`));
+      // Opened on demand: the table is built when the group is.
+      details.addEventListener("toggle", () => {
+        if (details.open && details.childElementCount === 1) details.append(this.table(head, list.map(row), list.length));
+      });
+      box.append(details);
+    }
+    return box;
+  }
+
   private render(report: Coverage): void {
     const root = this.host.root();
     const { reach } = report;
@@ -84,11 +107,7 @@ export class BlindSpots {
       "blind-orphans",
       `2. Сироти (${report.orphans.length})`,
       "Fn, яких не досягає жодна точка входу: мертвий код або вхід, якого keylang не знає.",
-      this.table(
-        ["fn", "код", "викликачів", "втікає як значення", ""],
-        report.orphans.map((o) => [make("code", { text: o.id }), codeLink(root, o.file, o.line), String(o.callers), o.escapes ?? "—", this.explore(o.id)]),
-        report.orphans.length,
-      ),
+      this.grouped(report.orphans, (o) => o.id.split(".")[0] ?? o.id, ["fn", "код", "викликачів", "втікає як значення", ""], (o) => [make("code", { text: o.id }), codeLink(root, o.file, o.line), String(o.callers), o.escapes ?? "—", this.explore(o.id)]),
     );
     const reasons = make("ul", { className: "reasons" });
     for (const r of report.holes.reasons.slice(0, 20)) reasons.append(make("li", {}, make("b", { text: String(r.count) }), ` ${r.kind}: ${r.reason}`));
@@ -107,17 +126,18 @@ export class BlindSpots {
       "blind-unflowed",
       `4. Точки входу без флоу (${report.unflowed.length})`,
       "Жоден написаний флоу не має їх тригером; знайдений флоу (`flows discover`) — чернетка для старту.",
-      this.table(
+      this.grouped(
+        report.unflowed,
+        (u) => u.kind,
         ["вид", "мітка", "fn", "код", "знайдений флоу", ""],
-        report.unflowed.map((u) => [
+        (u) => [
           u.kind,
           u.label,
           make("code", { text: u.id }),
           codeLink(root, u.file, u.line),
           u.discovered ? (u.discovered.inView ? button(u.discovered.name, () => this.host.discovered(u.discovered!.name), { className: "link", title: u.discovered.file }) : `${u.discovered.name} (не в представленні: \`keylang flows discover\`)`) : "—",
           this.explore(u.id),
-        ]),
-        report.unflowed.length,
+        ],
       ),
     );
     const labels = new Map(report.dataLogic.signals.map((s) => [s.id, s.label]));

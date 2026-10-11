@@ -66,7 +66,8 @@ function item(...parts: (Node | string)[]): HTMLLIElement {
 /** A link to a diagram of this page: the fragment changes, the page opens the view, the tour closes. */
 function diagramLink(href: string, close: () => void): HTMLAnchorElement {
   const a = make("a", "diagram");
-  a.href = href;
+  // Relative: the page may sit under a prefix (`web --hub`).
+  a.href = href.replace(/^\//, "");
   a.addEventListener("click", (event) => {
     event.preventDefault();
     close();

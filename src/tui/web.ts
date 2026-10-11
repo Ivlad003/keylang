@@ -41,6 +41,7 @@ import { commitProposal, generatedIn, proposalRefusal, rootRelative } from "../o
 import { App, MAX_COLS, MAX_ROWS, type Analyzer, type OperationRunner } from "./app.ts";
 import { SnapshotWorker } from "./background.ts";
 import { createReadApi, READ_PATHS, type ReadAnswer } from "./read-api.ts";
+import { inputsOf, stampOf } from "./tree-stamp.ts";
 import { ENTER } from "./screen.ts";
 
 /** A detached session is kept this long for a reconnect. */
@@ -244,7 +245,24 @@ export interface WebOptions {
   readOnly?: boolean;
 }
 
-export async function serveWeb(options: WebOptions): Promise<WebServer> {
+/**
+ * One repository's `keylang web` without a server of its own: the handlers of
+ * its requests and socket upgrades, for `serveWeb` and for the hub
+ * (`web --hub`), which mounts each repository under `/r/<id>/` of one port
+ * and passes requests on with the prefix taken off.
+ */
+export interface WebApp {
+  /** The access token of this repository's page and API. */
+  readonly token: string;
+  handle(request: IncomingMessage, response: ServerResponse): void;
+  upgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void;
+  /** The port the requests arrive on: the Host header on loopback must name it. */
+  setPort(port: number): void;
+  unsaved(): string[];
+  close(): Promise<void>;
+}
+
+export function createWebApp(options: WebOptions): WebApp {
   const host = options.host ?? "127.0.0.1";
   const token = randomBytes(16).toString("hex");
   const worker = new SnapshotWorker();
@@ -268,15 +286,32 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
   const sameOrigin = (request: IncomingMessage): boolean => request.headers.origin === undefined || request.headers.origin === `http://${request.headers.host}`;
 
   // Concurrent API requests share one analysis; the next request after it ends analyses again (the code may have changed).
-  let pending: Promise<Analysis> | null = null;
+  // One analysis per state of the tree: a request reuses it while no file under the root changed
+  // (`treeStamp`: paths, sizes, modification times — tens of ms where an analysis takes seconds).
+  // Before, every request (a click, the page's poll every 5 s) analysed the repository again.
+  let cached: { inputs: string[] | null; stamp: string; done: Promise<Analysis> } | null = null;
   const analysis = (): Promise<Analysis> => {
-    pending ??= Promise.resolve()
-      .then(() => analyzer({ root: options.root }))
-      .finally(() => (pending = null));
-    return pending;
+    // While the first analysis runs its inputs are unknown: requests meanwhile share it.
+    if (cached !== null && (cached.inputs === null || stampOf(options.root, cached.inputs) === cached.stamp)) return cached.done;
+    const done = Promise.resolve().then(() => analyzer({ root: options.root }));
+    const entry: { inputs: string[] | null; stamp: string; done: Promise<Analysis> } = { inputs: null, stamp: "", done };
+    cached = entry;
+    done.then(
+      (result) => {
+        // Its inputs are known only now; a file saved while it ran is seen at its next save (the TUI saves through the same files).
+        entry.stamp = stampOf(options.root, inputsOf(result));
+        entry.inputs = inputsOf(result);
+      },
+      () => {
+        // A failed analysis is not kept: the next request tries again.
+        if (cached === entry) cached = null;
+      },
+    );
+    return done;
   };
 
-  const read = createReadApi({ root: options.root, analysis, analyze: analyzer });
+  // Coverage and `check --changed` take the same analysis: their own fresh one cost seconds a request.
+  const read = createReadApi({ root: options.root, analysis, analyze: () => analysis() });
 
   /**
    * `POST /api/flow-proposal` (business-flows/22): the branches a person ticked in the explorer as one proposal
@@ -557,7 +592,7 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
     if (path !== "/") return reply(response, 404, "text/plain", "not found\n");
     // No terminal in a viewer: the diagram page is the whole of it. The fragment (the token) survives a redirect.
     if (readOnly) {
-      response.setHeader("Location", "/diagrams");
+      response.setHeader("Location", "diagrams");
       return reply(response, 302, "text/plain", "/diagrams\n");
     }
     // The page is static and holds no data; everything goes through the socket, which needs the token.
@@ -565,7 +600,7 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
     return reply(response, 200, "text/html; charset=utf-8", page());
   };
 
-  const server: Server = createServer((request: IncomingMessage, response: ServerResponse) => {
+  const handle = (request: IncomingMessage, response: ServerResponse): void => {
     // One request failing (an asset that cannot be read) answers 500; the server and its sessions go on.
     try {
       serve(request, response);
@@ -574,13 +609,13 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
       if (!response.headersSent) reply(response, 500, "text/plain", "server error\n");
       else response.destroy();
     }
-  });
+  };
 
   const refuse = (socket: Duplex, status = "403 Forbidden"): void => {
     socket.end(`HTTP/1.1 ${status}\r\nConnection: close\r\n\r\n`);
   };
 
-  server.on("upgrade", (request: IncomingMessage, socket: Duplex, head: Buffer) => {
+  const upgrade = (request: IncomingMessage, socket: Duplex, head: Buffer): void => {
     // A reset from the client must not become an uncaught error of the server.
     socket.on("error", () => socket.destroy());
     const path = pathOf(request.url);
@@ -588,7 +623,7 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
     const origin = request.headers.origin;
     if (readOnly || path !== "/ws" || !authorized(request) || !allowedHost(request.headers.host) || (origin !== undefined && origin !== `http://${request.headers.host}`)) return refuse(socket);
     wss.handleUpgrade(request, socket, head, (connection) => connect(connection));
-  });
+  };
 
   const connect = (connection: WebSocket): void => {
     alive.set(connection, true);
@@ -716,24 +751,15 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
   }, PING_MS);
   heartbeat.unref();
 
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(options.port, host, () => resolve());
-  });
-  port = (server.address() as AddressInfo).port;
-  // A rejection no session handled (a helper it did not track) would make Node end the process, and with it
-  // every other session and its unsaved buffers: while the server runs it is logged instead.
-  const onRejection = (reason: unknown): void => {
-    process.stderr.write(`keylang web: unhandled rejection: ${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}\n`);
-  };
-  process.on("unhandledRejection", onRejection);
-  const shown = loopback ? "localhost" : host.includes(":") ? `[${host}]` : host;
   return {
-    url: `http://${shown}:${port}/#t=${token}`,
-    port,
+    token,
+    handle,
+    upgrade,
+    setPort: (value) => {
+      port = value;
+    },
     unsaved: () => [...sessions.values()].flatMap((session) => session.app.unsaved()),
     close: async () => {
-      process.off("unhandledRejection", onRejection);
       clearInterval(heartbeat);
       for (const session of sessions.values()) {
         session.app.close();
@@ -743,6 +769,43 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
       for (const connection of wss.clients) connection.terminate();
       wss.close();
       worker.close();
+    },
+  };
+}
+
+/** A rejection no session handled (a helper it did not track) would end the process, and every session's unsaved buffers with it: it is logged instead. */
+export function logUnhandled(): () => void {
+  const onRejection = (reason: unknown): void => {
+    process.stderr.write(`keylang web: unhandled rejection: ${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}\n`);
+  };
+  process.on("unhandledRejection", onRejection);
+  return () => process.off("unhandledRejection", onRejection);
+}
+
+/** The address in a printed URL: `localhost` for loopback, a bracketed IPv6 address. */
+export function shownHost(host: string): string {
+  return host === "127.0.0.1" || host === "::1" || host === "localhost" ? "localhost" : host.includes(":") ? `[${host}]` : host;
+}
+
+export async function serveWeb(options: WebOptions): Promise<WebServer> {
+  const host = options.host ?? "127.0.0.1";
+  const app = createWebApp(options);
+  const server: Server = createServer(app.handle);
+  server.on("upgrade", app.upgrade);
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(options.port, host, () => resolve());
+  });
+  const port = (server.address() as AddressInfo).port;
+  app.setPort(port);
+  const stopLogging = logUnhandled();
+  return {
+    url: `http://${shownHost(host)}:${port}/#t=${app.token}`,
+    port,
+    unsaved: app.unsaved,
+    close: async () => {
+      stopLogging();
+      await app.close();
       const closed = new Promise<void>((resolve) => server.close(() => resolve()));
       // Idle keep-alive sockets and upgrades that never finished would hold `close` open.
       server.closeAllConnections();
@@ -873,7 +936,8 @@ function reply(response: ServerResponse, status: number, type: string, body: str
 export function diagramsPage(options: { readOnly?: boolean; source?: "server" | "static" | "local"; assets?: string; title?: string; shards?: number } = {}): string {
   const source = options.source ?? "server";
   const readOnly = options.readOnly === true || source !== "server";
-  const assets = options.assets ?? "/assets/";
+  // Relative to the page, so a server mounted under `/r/<id>/` (`web --hub`) serves the same markup.
+  const assets = options.assets ?? "assets/";
   const title = options.title ?? "keylang · діаграми";
   const escape = (text: string): string => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   return `<!doctype html>
@@ -888,7 +952,7 @@ export function diagramsPage(options: { readOnly?: boolean; source?: "server" | 
 </head>
 <body data-source="${source}"${readOnly ? ' data-readonly="1"' : ""}${options.shards !== undefined ? ` data-shards="${options.shards}"` : ""}>
 <aside id="list">
-<header><span>Діаграми</span>${source === "server" && !readOnly ? '<a href="/">термінал</a>' : ""}</header>
+<header><span>Діаграми</span>${source === "server" && !readOnly ? '<a href="./">термінал</a>' : ""}</header>
 <nav id="modes" aria-label="Режим"><button type="button" data-mode="diagrams" aria-pressed="true">Діаграми</button><button type="button" data-mode="docs" aria-pressed="false">Карта</button><button type="button" data-mode="explore" aria-pressed="false">Дослідник</button><button type="button" data-mode="blind" aria-pressed="false">Сліпі зони</button><button type="button" data-mode="changes" aria-pressed="false">Зміни</button>${readOnly ? "" : '<button type="button" data-mode="editor" aria-pressed="false">Редактор</button>'}</nav>
 <div id="find">
 <input id="search" type="search" placeholder="Пошук: флоу, точка входу, ID" aria-label="Пошук">
@@ -902,6 +966,7 @@ export function diagramsPage(options: { readOnly?: boolean; source?: "server" | 
 <div id="graph"></div>
 <div id="legend" aria-label="Легенда"></div>
 <div id="minimap" aria-label="Мінікарта"></div>
+<div id="matrix" aria-label="Матриця залежностей шарів"></div>
 </div>
 <section id="docs" aria-label="Карта й специфікації"></section>
 <section id="changes" aria-label="Зміни від бази"></section>
@@ -924,7 +989,7 @@ function page(): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>keylang</title>
 <link rel="icon" href="data:,">
-<link rel="stylesheet" href="/assets/xterm.css">
+<link rel="stylesheet" href="assets/xterm.css">
 <style>
   html, body { margin: 0; height: 100%; background: #1c1c1c; }
   #term { position: absolute; inset: 0; padding: 4px; }
@@ -935,21 +1000,21 @@ function page(): string {
 </head>
 <body>
 <div id="term"></div>
-<a id="diagrams" href="/diagrams" target="_blank" rel="noopener">Діаграми</a>
+<a id="diagrams" href="diagrams" target="_blank" rel="noopener">Діаграми</a>
 <div id="state">reconnecting…</div>
-<script src="/assets/xterm.js"></script>
-<script src="/assets/addon-fit.js"></script>
+<script src="assets/xterm.js"></script>
+<script src="assets/addon-fit.js"></script>
 <script>
 (() => {
   // The token comes in the fragment once; the address bar and history keep only \`/\`.
   const fromUrl = new URLSearchParams(location.hash.slice(1)).get("t");
   if (fromUrl) {
     sessionStorage.setItem("keylang-token", fromUrl);
-    history.replaceState(null, "", "/");
+    history.replaceState(null, "", location.pathname);
   }
   const token = sessionStorage.getItem("keylang-token") || "";
   // The diagram page opens in a new tab, which has its own sessionStorage: the token goes along in the fragment.
-  if (token) document.getElementById("diagrams").href = "/diagrams#t=" + encodeURIComponent(token);
+  if (token) document.getElementById("diagrams").href = "diagrams#t=" + encodeURIComponent(token);
   let session = sessionStorage.getItem("keylang-session");
   if (!session) {
     session = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, "0")).join("");
@@ -974,7 +1039,7 @@ function page(): string {
   let failures = 0;
   const send = (message) => { if (socket && socket.readyState === 1) socket.send(JSON.stringify(message)); };
   const connect = () => {
-    socket = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws", ["${PROTOCOL}", "${TOKEN_PROTOCOL}" + token]);
+    socket = new WebSocket(new URL("ws", location.href).href.replace(/^http/, "ws").replace(/#.*$/, ""), ["${PROTOCOL}", "${TOKEN_PROTOCOL}" + token]);
     socket.onerror = () => {};
     socket.onopen = () => {
       delay = 250;

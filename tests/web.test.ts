@@ -19,6 +19,7 @@ import { App } from "../src/tui/app.ts";
 import { runOperation } from "../src/operations.ts";
 import type { OperationRunner } from "../src/tui/app.ts";
 import { serveWeb } from "../src/tui/web.ts";
+import { analyze } from "../src/analyze.ts";
 import { checkoutRepo, CHECKOUT_FILES, click, drag, KEY, locate, mouseMove, tempHome } from "./tui-fixture.ts";
 import { HOOK_FLOW, HOOKS } from "./hooks-fixture.ts";
 import { CYCLE_AUTHOR_CODE, CYCLE_FILES, refundCycle, type CycleStage } from "./cycle-fixture.ts";
@@ -137,10 +138,11 @@ test("web: the socket needs the token, which never leaves the fragment; xterm.js
   const page = await status(url, "/");
   assert.equal(page.status, 200);
   assert.equal(page.headers["set-cookie"], undefined);
-  assert.match(page.body, /<script src="\/assets\/xterm\.js"><\/script>/);
+  // Relative URLs: the same page serves at `/` and mounted under `/r/<id>/` of `web --hub`.
+  assert.match(page.body, /<script src="assets\/xterm\.js"><\/script>/);
   assert.doesNotMatch(page.body, /(src|href)="https?:/);
   assert.doesNotMatch(page.body, new RegExp(token));
-  assert.match(page.body, /history\.replaceState\(null, "", "\/"\)/, "the page drops the fragment from the address bar");
+  assert.match(page.body, /history\.replaceState\(null, "", location\.pathname\)/, "the page drops the fragment from the address bar");
   // OSC 8 links point at vscode://, which xterm.js ignores unless non-HTTP links are allowed.
   assert.match(page.body, /allowNonHttpProtocols: true/);
   // An icon of its own: a browser asks /favicon.ico otherwise, a 404 in its console.
@@ -1086,15 +1088,15 @@ test("web: /diagrams is a static page with no inline script; the bundled maxGrap
   const csp = String(page.headers["content-security-policy"]);
   assert.match(csp, /script-src 'self';/, "no inline script on the diagram page");
   assert.match(csp, /connect-src 'self'/);
-  assert.match(page.body, /<script src="\/assets\/diagrams\.js" defer><\/script>/);
-  assert.match(page.body, /<link rel="stylesheet" href="\/assets\/diagrams\.css">/);
+  assert.match(page.body, /<script src="assets\/diagrams\.js" defer><\/script>/);
+  assert.match(page.body, /<link rel="stylesheet" href="assets\/diagrams\.css">/);
   assert.doesNotMatch(page.body, /<script>/);
   assert.doesNotMatch(page.body, /(src|href)="https?:/);
   assert.doesNotMatch(page.body, new RegExp(token));
   // The terminal page links to it and hands the token over in the fragment, never in the query.
   const terminal = await status(url, "/");
-  assert.match(terminal.body, /<a id="diagrams" href="\/diagrams"[^>]*>Діаграми<\/a>/);
-  assert.match(terminal.body, /"\/diagrams#t=" \+ encodeURIComponent\(token\)/);
+  assert.match(terminal.body, /<a id="diagrams" href="diagrams"[^>]*>Діаграми<\/a>/);
+  assert.match(terminal.body, /"diagrams#t=" \+ encodeURIComponent\(token\)/);
   // In a checkout the bundle is built on demand when missing or older than web/src.
   const script = await status(url, "/assets/diagrams.js");
   assert.equal(script.status, 200, script.body);
@@ -1792,4 +1794,33 @@ test("web: POST /api/bundle puts the flow and the selection's layout in one text
   assert.equal(copies.sameRepo, true);
   assert.deepEqual(copies.shapes.map((s) => s.id), ["application.purchase.buy", "domain.order.create", "infrastructure.store.save", "presentation.terminal.checkout"]);
   assert.equal(existsSync(join(source, ".keylang/proposals")), false);
+});
+
+test("web: the API answers from one analysis while the files it read are as they were; a saved, added or removed file makes the next request analyse again", async (t) => {
+  const repo = diagramsRepo(t);
+  let analyses = 0;
+  const server = await serveWeb({
+    root: repo,
+    port: 0,
+    analyzer: (request) => {
+      analyses++;
+      return analyze(request);
+    },
+  });
+  t.after(() => server.close());
+  const url = new URL(server.url);
+  const bearer = { Authorization: `Bearer ${tokenOf(url)}` };
+  for (const path of ["/api/views", "/api/diagram?view=layers", "/api/docs", "/api/views", "/api/coverage", "/api/search?q=order"]) assert.equal((await status(url, path, bearer)).status, 200, path);
+  assert.equal(analyses, 1, "one analysis for six requests");
+  // A saved source.
+  writeFileSync(join(repo, "src/presentation/orders.ts"), `${readFileSync(join(repo, "src/presentation/orders.ts"), "utf8")}// saved\n`);
+  assert.equal((await status(url, "/api/views", bearer)).status, 200);
+  assert.equal(analyses, 2, "a saved file: analysed again");
+  assert.equal((await status(url, "/api/views", bearer)).status, 200);
+  assert.equal(analyses, 2);
+  // A new file in a directory the analysis read.
+  writeFileSync(join(repo, "src/presentation/extra.ts"), "export const extra = 1;\n");
+  const views = await status(url, "/api/search?q=extra", bearer);
+  assert.equal(analyses, 3, "an added file: analysed again");
+  assert.ok((JSON.parse(views.body) as { hits: { id: string }[] }).hits.some((hit) => hit.id === "presentation.extra"));
 });

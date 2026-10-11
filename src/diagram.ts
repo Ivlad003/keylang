@@ -20,7 +20,9 @@ export type DiagramView =
   | { kind: "entry"; id: string; depth?: number }
   | { kind: "event"; name: string }
   | { kind: "layers" }
-  | { kind: "process"; domain: string };
+  | { kind: "process"; domain: string }
+  /** A module's dependencies: what imports it, and what it imports (any ID: its module). */
+  | { kind: "module"; id: string };
 
 export type DiagramVerdict = "ok" | "fail" | "unverified" | "planned" | null;
 
@@ -66,6 +68,11 @@ export interface Diagram {
   groups: DiagramGroup[];
   /** Why the diagram is empty or cut short. */
   reason?: string;
+  /**
+   * `down`: a stack, one shape per row from the top in the diagram's order (the layers view: the
+   * declared layers, like an architecture drawing); else ranks as columns from the left.
+   */
+  direction?: "down";
 }
 
 /** What a diagram reads of a check result: `CheckResult` and `Verdict` both fit. */
@@ -104,12 +111,12 @@ export interface DiagramProcess {
 /** Positions that win over the automatic layout, by node id. */
 export type Positions = Readonly<Record<string, { x: number; y: number; w?: number; h?: number }>>;
 
-export const DEFAULT_DEPTH = 3;
+export const DEFAULT_DEPTH = 2;
 export const MAX_DEPTH = 10;
 /** An entry's call tree stops growing here; `reason` says it was cut. */
 export const MAX_NODES = 400;
 
-export const VIEW_KINDS = ["flow", "entry", "event", "layers", "process"] as const;
+export const VIEW_KINDS = ["flow", "entry", "event", "layers", "process", "module"] as const;
 
 /** A view from the query of `GET /api/diagram`, or why it names none. */
 export function parseView(query: URLSearchParams): DiagramView | string {
@@ -134,6 +141,10 @@ export function parseView(query: URLSearchParams): DiagramView | string {
     }
     case "layers":
       return { kind: "layers" };
+    case "module": {
+      const id = need("id");
+      return id === null ? "view=module needs id=" : { kind: "module", id };
+    }
     case "process": {
       const domain = need("domain") ?? need("name");
       return domain === null ? "view=process needs domain=" : { kind: "process", domain };
@@ -158,6 +169,7 @@ export function viewOfKey(key: string): { view: DiagramView; discovered: boolean
   if (kind === "flow" || kind === "discovered") return { view: { kind: "flow", name: rest }, discovered: kind === "discovered" };
   if (kind === "entry") return { view: { kind: "entry", id: rest }, discovered: false };
   if (kind === "process") return { view: { kind: "process", domain: rest }, discovered: false };
+  if (kind === "module") return { view: { kind: "module", id: rest }, discovered: false };
   return null;
 }
 
@@ -281,6 +293,7 @@ function unplaced(input: DiagramInput): Diagram {
   if (view.kind === "event") return eventDiagram(input.snapshot, input.results, view.name);
   if (view.kind === "process") return processDiagram(input.snapshot, input.processes ?? [], input.results, view.domain);
   if (view.kind === "entry") return entryDiagram(input.snapshot, input.results, view.id, view.depth ?? DEFAULT_DEPTH);
+  if (view.kind === "module") return moduleDiagram(input.snapshot, input.results, view.id);
   return layersDiagram(input.snapshot, input.spec, input.results);
 }
 
@@ -557,6 +570,8 @@ function entryDiagram(snapshot: AnalysisSnapshot, results: readonly DiagramResul
     calls.set(edge.source, list);
   }
   let cut = false;
+  /** The unresolved calls of each opened fn, by the shape of the fn: drawn as one hole per fn. */
+  const holes = new Map<string, { reasons: Map<string, string>; file: string | null; line: number }>();
   const place = (target: string): string => {
     const known = shown.get(target);
     if (known) return known;
@@ -623,14 +638,21 @@ function entryDiagram(snapshot: AnalysisSnapshot, results: readonly DiagramResul
           continue;
         }
         const reason = edge.resolution === "ambiguous" ? `ambiguous call \`${edge.text}\` [${(edge.candidates ?? []).join(", ")}]` : (edge.reason ?? `unresolved call \`${edge.text}\``);
-        const hole: DiagramNode = { id: `hole:${edge.file}:${edge.line}:${edge.col}`, kind: "hole", label: "?", reason: `${reason} at ${edge.file}:${edge.line}:${edge.col}`, ref: { ...(edge.file ? { file: edge.file } : {}), line: edge.line }, verdict: "unverified", x: 0, y: 0, w: 0, h: 0 };
-        if (shown.has(hole.id)) continue;
-        shown.set(hole.id, hole.id);
-        nodes.push(hole);
-        edges.push({ from, to: hole.id, kind: "call", verdict: "unverified" });
+        const at = `${edge.file}:${edge.line}:${edge.col}`;
+        const own = holes.get(from) ?? { reasons: new Map<string, string>(), file: edge.file, line: edge.line };
+        own.reasons.set(at, `${reason} at ${at}`);
+        holes.set(from, own);
       }
     }
     frontier = next;
+  }
+  // One hole per fn, in its lane: the places it calls through and keylang cannot follow, counted (`? 3`).
+  for (const [from, own] of holes) {
+    const caller = nodes.find((node) => node.id === from)!;
+    const count = own.reasons.size;
+    const hole: DiagramNode = { id: `hole:${caller.ref?.id ?? from}`, kind: "hole", label: count > 1 ? `? ${count}` : "?", reason: [...own.reasons.values()].join("\n"), ref: { ...(own.file ? { file: own.file } : {}), line: own.line }, verdict: "unverified", ...(caller.group ? { group: caller.group } : {}), x: 0, y: 0, w: 0, h: 0 };
+    nodes.push(hole);
+    edges.push({ from, to: hole.id, kind: "call", verdict: "unverified" });
   }
   return { nodes, edges, groups: lanes(snapshot, nodes), ...(cut ? { reason: `cut at ${MAX_NODES} nodes` } : {}) };
 }
@@ -675,6 +697,67 @@ function processDiagram(snapshot: AnalysisSnapshot, processes: readonly DiagramP
   return { nodes, edges, groups: lanes(snapshot, nodes) };
 }
 
+// ── module ──────────────────────────────────────────────────────────────────
+
+/** The module an ID lies in: itself, or the nearest module above it (`a.b.f` → `a.b`); null when none. */
+export function moduleOfId(snapshot: AnalysisSnapshot, id: string): string | null {
+  for (let at = id; at !== ""; at = at.includes(".") ? at.slice(0, at.lastIndexOf(".")) : "") {
+    const node = snapshot.nodes[at];
+    if (node?.kind === "module" && node.class !== true) return at;
+  }
+  return null;
+}
+
+/**
+ * A module's dependencies, one step each way (the map as a graph): the
+ * modules that import it on the left, the module, what it imports on the
+ * right — repository modules in the lanes of their layers, packages as
+ * `external`; an edge counts the imports. Any ID opens the module it lies in.
+ */
+function moduleDiagram(snapshot: AnalysisSnapshot, results: readonly DiagramResult[], id: string): Diagram {
+  const root = moduleOfId(snapshot, id);
+  if (root === null) return empty(`no module \`${id}\` (nor one above it) in the snapshot`);
+  const areas = byArea(results);
+  const counts = new Map<string, number>();
+  for (const edge of snapshot.edges) {
+    if ((edge.kind !== "import" && edge.kind !== "reexport") || edge.resolution !== "resolved" || !edge.target) continue;
+    const from = moduleOfId(snapshot, edge.source) ?? edge.source;
+    const to = edge.target.startsWith(`${EXTERNAL}.`) ? edge.target : (moduleOfId(snapshot, edge.target) ?? edge.target);
+    if (from === to || (from !== root && to !== root)) continue;
+    counts.set(`${from}\u0000${to}`, (counts.get(`${from}\u0000${to}`) ?? 0) + 1);
+  }
+  const nodes: DiagramNode[] = [];
+  const shown = new Set<string>();
+  const add = (moduleId: string): void => {
+    if (shown.has(moduleId) || nodes.length >= MAX_NODES) return;
+    shown.add(moduleId);
+    const code = snapshot.nodes[moduleId];
+    const layer = code?.layer ?? (moduleId.startsWith(`${EXTERNAL}.`) ? EXTERNAL : undefined);
+    nodes.push({
+      id: `mod:${moduleId}`,
+      kind: layer === EXTERNAL ? "external" : "module",
+      label: moduleId,
+      ref: { id: moduleId, ...(code?.file ? { file: code.file } : {}), ...(code?.line ? { line: code.line } : {}) },
+      verdict: areas.get(moduleId) ?? null,
+      ...(layer ? { group: layer } : {}),
+      x: 0,
+      y: 0,
+      w: 0,
+      h: 0,
+    });
+  };
+  add(root);
+  const edges: DiagramEdge[] = [];
+  const pairs = [...counts].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  for (const [key, count] of pairs) {
+    const [from, to] = key.split("\u0000") as [string, string];
+    add(from);
+    add(to);
+    if (shown.has(from) && shown.has(to)) edges.push({ from: `mod:${from}`, to: `mod:${to}`, kind: "dependency", label: String(count) });
+  }
+  return { nodes, edges, groups: lanes(snapshot, nodes), ...(nodes.length >= MAX_NODES ? { reason: `cut at ${MAX_NODES} nodes` } : {}) };
+}
+
 // ── layers ──────────────────────────────────────────────────────────────────
 
 function layersDiagram(snapshot: AnalysisSnapshot, spec: SpecIR, results: readonly DiagramResult[]): Diagram {
@@ -694,6 +777,8 @@ function layersDiagram(snapshot: AnalysisSnapshot, spec: SpecIR, results: readon
   const pairs = [...counts.keys()].map((key) => key.split("\u0000") as [string, string]);
   pairs.sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]) || order.indexOf(a[1]) - order.indexOf(b[1]));
   for (const [from, to] of pairs) edges.push({ from: `layer:${from}`, to: `layer:${to}`, kind: "dependency", label: String(counts.get(`${from}\u0000${to}`)) });
+  // One edge per pair and effect: twenty `allow app external.<package>` are one allow of app to external.
+  const rules = new Map<string, DiagramEdge & { count: number }>();
   for (const rule of spec.rules) {
     if (rule.kind !== "dependency") continue;
     const from = layerOf(snapshot, rule.from.target);
@@ -703,10 +788,20 @@ function layersDiagram(snapshot: AnalysisSnapshot, spec: SpecIR, results: readon
     for (const ref of rule.to) {
       const to = layerOf(snapshot, ref.target);
       if (!from || !to || !order.includes(from) || !order.includes(to)) continue;
-      edges.push({ from: `layer:${from}`, to: `layer:${to}`, kind: rule.effect, label: rule.text, verdict });
+      const key = `${from}\u0000${to}\u0000${rule.effect}`;
+      const known = rules.get(key);
+      if (!known) {
+        const edge = { from: `layer:${from}`, to: `layer:${to}`, kind: rule.effect, label: rule.text, verdict, count: 1 };
+        rules.set(key, edge);
+        edges.push(edge);
+      } else {
+        known.count++;
+        known.verdict = worst([known.verdict ?? "ok", verdict]) ?? "ok";
+        known.label = `${rule.effect} ${from} → ${to} (${known.count} rules)`;
+      }
     }
   }
-  return { nodes, edges, groups: [] };
+  return { nodes, edges: edges.map((edge) => ("count" in edge ? (({ count: _count, ...rest }) => rest)(edge as DiagramEdge & { count: number }) : edge)), groups: [], direction: "down" };
 }
 
 // ── layout ──────────────────────────────────────────────────────────────────
@@ -728,14 +823,18 @@ const SIZE: Record<DiagramNode["kind"], { w: number; h: number }> = {
 const CELL_W = 200;
 const CELL_H = 90;
 const LANE_PAD = 20;
+/** At most this many shapes one above another in a lane's rank; more wrap into the next column. */
+const MAX_ROWS = 8;
 /** Edges that order shapes left to right; `allow` and `deny` only annotate. */
 const ORDERING: ReadonlySet<DiagramEdge["kind"]> = new Set(["sequence", "call", "dependency", "emits", "continues"]);
 
 /**
  * Places the shapes: the rank of a node is its longest path from a node
- * without predecessors (back edges of a cycle ignored), its column; within a
- * lane and a rank, nodes go by spec line, then by their order in the
- * diagram. Lanes are horizontal bands as tall as their fullest rank.
+ * without predecessors (back edges of a cycle ignored), its column block;
+ * within a lane and a rank, nodes go by spec line, then next to their
+ * predecessors (their mean place), then by their order in the diagram; more
+ * than `MAX_ROWS` of them wrap into further columns of the block. Lanes are
+ * horizontal bands as tall as their fullest rank.
  * `positions` override the computed place of a node. Pure: a new diagram.
  */
 export function layout(diagram: Diagram, positions: Positions = {}): Diagram {
@@ -772,17 +871,51 @@ export function layout(diagram: Diagram, positions: Positions = {}): Diagram {
 
   const laneIds = diagram.groups.map((group) => group.id);
   const laneOf = (node: DiagramNode): number => (node.group !== undefined && laneIds.includes(node.group) ? laneIds.indexOf(node.group) : laneIds.length);
-  // Slots by lane and rank, in spec-line order.
-  const sorted = [...diagram.nodes].sort((a, b) => laneOf(a) - laneOf(b) || rank.get(a.id)! - rank.get(b.id)! || (a.ref?.specLine ?? Infinity) - (b.ref?.specLine ?? Infinity) || index.get(a.id)! - index.get(b.id)!);
+  // Within a lane and a rank: spec-line order (a flow reads as its spec), then — for shapes of code —
+  // next to what leads into them (the mean place of their predecessors, rank by rank), then diagram order.
+  const preds = new Map<string, string[]>();
+  for (const [from, list] of out) for (const to of list) if (forward.has(`${from}\u0000${to}`)) preds.set(to, [...(preds.get(to) ?? []), from]);
+  const ordinal = new Map<string, number>();
+  const byRank = new Map<number, DiagramNode[]>();
+  for (const node of diagram.nodes) byRank.set(rank.get(node.id)!, [...(byRank.get(rank.get(node.id)!) ?? []), node]);
   const slot = new Map<string, number>();
+  const count = new Map<string, number>();
+  for (const r of [...byRank.keys()].sort((a, b) => a - b)) {
+    const pull = (node: DiagramNode): number => {
+      const known = (preds.get(node.id) ?? []).map((id) => ordinal.get(id)).filter((value): value is number => value !== undefined);
+      return known.length === 0 ? Infinity : known.reduce((sum, value) => sum + value, 0) / known.length;
+    };
+    const keys = new Map(byRank.get(r)!.map((node) => [node.id, pull(node)]));
+    const sorted = [...byRank.get(r)!].sort((a, b) => laneOf(a) - laneOf(b) || (a.ref?.specLine ?? Infinity) - (b.ref?.specLine ?? Infinity) || keys.get(a.id)! - keys.get(b.id)! || index.get(a.id)! - index.get(b.id)!);
+    for (const node of sorted) {
+      const key = `${laneOf(node)}:${r}`;
+      const n = count.get(key) ?? 0;
+      count.set(key, n + 1);
+      slot.set(node.id, n);
+      ordinal.set(node.id, laneOf(node) * 100000 + n);
+    }
+  }
+  // A lane's rank with many shapes wraps into columns of at most MAX_ROWS (filled top to bottom, then
+  // the next column): a fn calling thirty others is a block, not a column taller than the screen.
+  const columns = new Map<number, number>();
+  const rowsOf = (key: string): number => {
+    const n = count.get(key) ?? 0;
+    return Math.ceil(n / Math.ceil(n / MAX_ROWS));
+  };
+  for (const [key, n] of count) {
+    const r = Number(key.split(":")[1]);
+    columns.set(r, Math.max(columns.get(r) ?? 1, Math.ceil(n / MAX_ROWS)));
+  }
+  const left = new Map<number, number>();
+  let x = LANE_PAD;
+  for (let r = 0; r <= Math.max(0, ...columns.keys()); r++) {
+    left.set(r, x);
+    x += (columns.get(r) ?? 1) * CELL_W;
+  }
   const rows = new Map<number, number>();
-  const used = new Map<string, number>();
-  for (const node of sorted) {
-    const key = `${laneOf(node)}:${rank.get(node.id)}`;
-    const n = used.get(key) ?? 0;
-    used.set(key, n + 1);
-    slot.set(node.id, n);
-    rows.set(laneOf(node), Math.max(rows.get(laneOf(node)) ?? 0, n + 1));
+  for (const key of count.keys()) {
+    const lane = Number(key.split(":")[0]);
+    rows.set(lane, Math.max(rows.get(lane) ?? 0, rowsOf(key)));
   }
   const top = new Map<number, number>();
   let y = 0;
@@ -794,13 +927,20 @@ export function layout(diagram: Diagram, positions: Positions = {}): Diagram {
   const nodes = diagram.nodes.map((node): DiagramNode => {
     const size = SIZE[node.kind];
     const lane = laneOf(node);
-    const placed = {
-      ...node,
-      x: LANE_PAD + rank.get(node.id)! * CELL_W + (CELL_W - size.w) / 2,
-      y: top.get(lane)! + LANE_PAD + slot.get(node.id)! * CELL_H + (CELL_H - size.h) / 2,
-      w: size.w,
-      h: size.h,
-    };
+    const r = rank.get(node.id)!;
+    const height = rowsOf(`${lane}:${r}`);
+    const n = slot.get(node.id)!;
+    // A stack: one row per shape, in the diagram's order; the canvas draws its edges as arcs beside it.
+    const placed =
+      diagram.direction === "down"
+        ? { ...node, x: LANE_PAD + (CELL_W - size.w) / 2, y: LANE_PAD + index.get(node.id)! * CELL_H + (CELL_H - size.h) / 2, w: size.w, h: size.h }
+        : {
+            ...node,
+            x: left.get(r)! + Math.floor(n / height) * CELL_W + (CELL_W - size.w) / 2,
+            y: top.get(lane)! + LANE_PAD + (n % height) * CELL_H + (CELL_H - size.h) / 2,
+            w: size.w,
+            h: size.h,
+          };
     const manual = Object.hasOwn(positions, node.id) ? positions[node.id] : undefined;
     return manual ? { ...placed, x: manual.x, y: manual.y, w: manual.w ?? placed.w, h: manual.h ?? placed.h } : placed;
   });

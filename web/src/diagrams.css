@@ -19,9 +19,10 @@ button { font: inherit; }
 #views .hint { display: inline-block; min-width: 54px; margin-right: 6px; color: #607d8b; font-size: 11px; }
 
 main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-#toolbar { display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-bottom: 1px solid #eceff1; }
+/* The buttons wrap below the status on a narrow window: the status never shrinks away. */
+#toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 4px 8px; border-bottom: 1px solid #eceff1; }
 #toolbar button { border: 1px solid #b0bec5; border-radius: 4px; background: #ffffff; cursor: pointer; min-width: 28px; height: 26px; }
-#status { flex: 1; color: #455a64; min-height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#status { flex: 1 1 260px; min-width: 200px; color: #455a64; min-height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #stage { flex: 1; position: relative; min-height: 0; }
 #graph { position: absolute; inset: 0; overflow: hidden; cursor: grab; background: #fbfcfc; }
 #graph:active { cursor: grabbing; }
@@ -70,9 +71,24 @@ body[data-mode="explore"] #toolbar button, body[data-mode="blind"] #toolbar butt
 #docs { display: none; flex: 1; overflow: auto; min-height: 0; padding: 10px 16px; background: #fbfcfc; }
 body[data-mode="docs"] #docs { display: block; }
 body[data-mode="docs"] #stage, body[data-mode="docs"] #details, body[data-mode="docs"] #toolbar button, body[data-mode="docs"] #find-usages { display: none; }
-#docs h2 { font-size: 13px; margin: 0 0 8px; color: #546e7a; font-weight: normal; word-break: break-all; }
+#docs .md-bar { position: sticky; top: -10px; z-index: 2; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: -10px -16px 8px; padding: 8px 16px; background: #fbfcfc; border-bottom: 1px solid #eceff1; }
+#docs .md-bar h2 { flex: 1 1 240px; font-size: 13px; margin: 0; color: #546e7a; font-weight: normal; word-break: break-all; }
+#docs .md-tool { border: 1px solid #b0bec5; border-radius: 4px; background: #ffffff; cursor: pointer; padding: 2px 8px; font-size: 12px; color: #37474f; }
+#docs .md-find { width: 200px; padding: 3px 6px; border: 1px solid #b0bec5; border-radius: 4px; font: 12px system-ui, sans-serif; }
+#docs .md-count { font-size: 12px; color: #607d8b; min-width: 48px; }
+#docs pre.md .line { white-space: pre-wrap; min-height: 1.5em; }
+/* A folded item keeps its line and its description; its nested items hide. */
+#docs .md-item.folded > .md-children > .md-item { display: none; }
+#docs .md-toggle { display: inline-block; width: 16px; margin-left: -16px; border: 0; background: none; padding: 0; cursor: pointer; color: #78909c; font: inherit; }
+#docs .md-toggle::before { content: "▾"; }
+#docs .md-item.folded > .line > .md-toggle::before { content: "▸"; color: #1565c0; }
+#docs .md-item.folded > .line { background: #f3f6f8; }
+#docs .md-html { color: #b0bec5; font-size: 11px; }
+#docs .md-hit { background: #fff8e1; }
+#docs .md-hit-now { background: #ffe082; }
+#docs .md-target { background: #e3f2fd; outline: 2px solid #90caf9; }
 #docs .empty { color: #78909c; }
-#docs pre.md { margin: 0; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; color: #263238; }
+#docs pre.md { margin: 0; padding-left: 16px; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; color: #263238; }
 #docs .md-heading { color: #0d47a1; font-weight: bold; }
 #docs .md-h1 { font-size: 15px; }
 #docs .md-marker { color: #b26a00; }
@@ -81,6 +97,30 @@ body[data-mode="docs"] #stage, body[data-mode="docs"] #details, body[data-mode="
 #docs code { color: #2e7d32; font: inherit; }
 #docs a { color: #1565c0; }
 #docs .md-link { color: #546e7a; }
+
+/* The depth of an entry point's call tree, on the toolbar of a diagram. */
+#toolbar #depth { padding: 3px 4px; border: 1px solid #b0bec5; border-radius: 4px; background: #ffffff; font: 12px system-ui, sans-serif; color: #37474f; }
+body:not([data-mode="diagrams"]) #toolbar #depth { display: none; }
+
+/* The layers view as a dependency matrix (matrix.ts), over the canvas. */
+#matrix { display: none; position: absolute; inset: 0; z-index: 3; overflow: auto; padding: 10px 16px; background: #fbfcfc; }
+body[data-mode="diagrams"][data-matrix="1"] #matrix { display: block; }
+body[data-mode="diagrams"][data-matrix="1"] #legend, body[data-mode="diagrams"][data-matrix="1"] #minimap, body[data-mode="diagrams"][data-matrix="1"] #zoom-in, body[data-mode="diagrams"][data-matrix="1"] #zoom-out, body[data-mode="diagrams"][data-matrix="1"] #zoom-fit { display: none; }
+#matrix .dsm-legend { margin: 0 0 8px; font-size: 12px; color: #546e7a; }
+#matrix .swatch { display: inline-block; padding: 0 6px; border-radius: 3px; border: 1px solid #cfd8dc; }
+#matrix table.dsm { border-collapse: collapse; font: 12px system-ui, sans-serif; }
+#matrix .dsm th, #matrix .dsm td { border: 1px solid #e0e6e9; }
+#matrix .dsm th.corner { position: sticky; top: 0; left: 0; z-index: 3; background: #f3f6f8; font-weight: normal; color: #78909c; font-size: 11px; padding: 4px 8px; white-space: nowrap; }
+#matrix .dsm th.col { position: sticky; top: 0; z-index: 2; background: #f3f6f8; height: 110px; vertical-align: bottom; padding: 4px 2px; }
+#matrix .dsm th.col span { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; font-weight: 600; color: #37474f; }
+#matrix .dsm th.row { position: sticky; left: 0; z-index: 1; background: #f3f6f8; text-align: left; padding: 4px 10px; white-space: nowrap; cursor: pointer; color: #37474f; }
+#matrix .dsm th.row:hover, #matrix .dsm th.row.selected { background: #e3f2fd; color: #0d47a1; }
+#matrix .dsm td { width: 34px; min-width: 34px; height: 28px; text-align: center; color: #263238; }
+#matrix .dsm td.self { background: #eceff1; }
+#matrix .dsm td.dep, #matrix .swatch.dep { background: #eef1f3; }
+#matrix .dsm td.allowed, #matrix .swatch.allowed { background: #e8f5e9; color: #1b5e20; }
+#matrix .dsm td.unverified, #matrix .swatch.unverified { background: #fff3e0; color: #e65100; font-weight: 600; }
+#matrix .dsm td.fail, #matrix .swatch.fail { background: #ffebee; color: #b71c1c; font-weight: 700; }
 
 /* «Зміни»: the files changed since a base and the findings over them. */
 #changes { display: none; flex: 1; overflow: auto; min-height: 0; padding: 10px 16px; background: #fbfcfc; }
@@ -116,6 +156,11 @@ body[data-readonly="1"] #save-flow-box, body[data-readonly="1"] #copy-bundle { d
 #explorer code, #blind code { font: 12px ui-monospace, monospace; }
 #explorer .code-link, #blind .code-link { font: 12px ui-monospace, monospace; color: #1565c0; margin-left: 6px; }
 #explorer .empty, #blind .empty, #explorer .none, #blind .none { color: #78909c; }
+#blind td:last-child, #blind button.link { white-space: nowrap; }
+#blind .blind-group { margin: 2px 0; border: 1px solid #eceff1; border-radius: 4px; background: #ffffff; }
+#blind .blind-group > summary { cursor: pointer; padding: 4px 8px; }
+#blind .blind-group[open] > summary { border-bottom: 1px solid #eceff1; }
+#blind .blind-group table { margin: 4px 8px; }
 #explorer .events-reason { color: #6d4c00; }
 #explorer .reached { margin: 4px 0; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 #explorer .orphan { color: #b26a00; }

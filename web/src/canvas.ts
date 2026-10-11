@@ -18,6 +18,7 @@ import {
   PanningHandler,
   Perimeter,
   PerimeterRegistry,
+  Point,
   RectangleShape,
   RhombusShape,
   ShapeRegistry,
@@ -48,6 +49,8 @@ const SMALL = new Set(["start", "event", "timer", "gateway", "parallel"]);
 /** A caption under a small shape. */
 const CAPTION_W = 140;
 const CAPTION_H = 30;
+/** More edges than this and they are drawn faint until a shape is picked. */
+const CROWDED = 60;
 /** Characters of a line of a task's label. */
 const LINE = 24;
 
@@ -107,7 +110,8 @@ function labelOf(node: DiagramNode): string {
     case "event":
       return "";
     case "hole":
-      return "?";
+      // `? 3`: one shape for the places a fn calls through that keylang cannot follow.
+      return node.label.startsWith("?") ? node.label : "?";
     default: {
       const glyph = glyphOf(node);
       return `${glyph ? `${glyph} ` : ""}${wrapLabel(node.label)}`;
@@ -145,6 +149,57 @@ function edgeStyle(edge: DiagramEdge): CellStyle {
   return { strokeColor: colour.stroke, fontColor: "#424242", fontSize: 10, endArrow: edge.kind === "call" || edge.kind === "dependency" ? "open" : "classic", dashed, labelBackgroundColor: "#ffffff" };
 }
 
+/**
+ * The text on an edge: a rule edge of the layers view says its effect and verdict (`deny ✓`), not
+ * the rule's whole text — between eleven layers fifty such texts are one smudge; the text stays in
+ * the model and the exported files.
+ */
+function edgeLabel(edge: DiagramEdge): string {
+  if (edge.kind === "allow" || edge.kind === "deny") return `${edge.kind}${edge.verdict ? ` ${VERDICT_GLYPH[edge.verdict] ?? ""}` : ""}`;
+  return edge.label ?? "";
+}
+
+interface Arc {
+  points: Point[];
+  style: CellStyle;
+}
+
+/**
+ * The edges of a stack (the layers view, top down) as arcs beside it: between two shapes of one
+ * column an edge leaves and enters on a side — dependencies on the right, rules on the left — and
+ * runs as far out as it spans, so a long arc passes outside a short one and none crosses a shape.
+ * An edge to a shape in another column stays straight.
+ */
+function stackArcs(diagram: Diagram): Map<DiagramEdge, Arc> {
+  const byId = new Map(diagram.nodes.map((node) => [node.id, node]));
+  const out = new Map<DiagramEdge, Arc>();
+  const used = new Map<string, number>();
+  const ordered = [...diagram.edges].sort((a, b) => span(a) - span(b));
+  function span(edge: DiagramEdge): number {
+    const from = byId.get(edge.from);
+    const to = byId.get(edge.to);
+    return from && to ? Math.abs(to.y - from.y) : 0;
+  }
+  for (const edge of ordered) {
+    const from = byId.get(edge.from);
+    const to = byId.get(edge.to);
+    if (!from || !to || Math.abs(from.x - to.x) > 1 || from.y === to.y) continue;
+    const rule = edge.kind === "allow" || edge.kind === "deny";
+    const side = rule ? from.x : from.x + from.w;
+    // Further out with the span, and a little further for each arc already at that span.
+    const key = `${rule}:${span(edge)}`;
+    const n = used.get(key) ?? 0;
+    used.set(key, n + 1);
+    const x = side + (rule ? -1 : 1) * (18 + span(edge) / 4 + n * 10);
+    const exitX = rule ? 0 : 1;
+    out.set(edge, {
+      points: [new Point(x, from.y + from.h / 2), new Point(x, to.y + to.h / 2)],
+      style: { exitX, exitY: 0.5, entryX: exitX, entryY: 0.5, exitPerimeter: false, entryPerimeter: false, rounded: true },
+    });
+  }
+  return out;
+}
+
 export interface CanvasEvents {
   /** A click on a shape, or on the background (null). */
   select(node: DiagramNode | null): void;
@@ -158,6 +213,8 @@ export class Canvas {
   /** Shapes and captions of each node; a click on either picks the node. */
   private readonly cells = new Map<string, Cell[]>();
   private readonly nodeOf = new Map<Cell, DiagramNode>();
+  /** The cell of each edge, for the focus on the selected shape. */
+  private readonly edgeCells: { cell: Cell; edge: DiagramEdge; arc?: CellStyle }[] = [];
   private selected: string | null = null;
   private used: (node: DiagramNode) => boolean = () => false;
   private downAt: { x: number; y: number } | null = null;
@@ -216,6 +273,7 @@ export class Canvas {
     this.diagram = diagram;
     this.cells.clear();
     this.nodeOf.clear();
+    this.edgeCells.length = 0;
     const parent = graph.getDefaultParent();
     graph.batchUpdate(() => {
       graph.removeCells(graph.getChildCells(parent, true, true), true);
@@ -248,10 +306,22 @@ export class Canvas {
         this.cells.set(node.id, own);
         byId.set(node.id, shape);
       }
+      const arcs = diagram.direction === "down" ? stackArcs(diagram) : new Map<DiagramEdge, Arc>();
+      // A crowded stack (a baseline's rule for every pair) draws the denies that hold no more: the order of the stack says them.
+      const quiet = diagram.direction === "down" && diagram.edges.length > CROWDED;
       for (const edge of diagram.edges) {
+        if (quiet && edge.kind === "deny" && (edge.verdict ?? "ok") === "ok") continue;
         const source = byId.get(edge.from);
         const target = byId.get(edge.to);
-        if (source && target) graph.insertEdge({ parent, value: edge.label ?? "", source, target, style: edgeStyle(edge) });
+        if (!source || !target) continue;
+        const arc = arcs.get(edge);
+        const cell = graph.insertEdge({ parent, value: edgeLabel(edge), source, target, style: { ...this.edgeStyleOf(edge), ...(arc?.style ?? {}) } });
+        if (arc && cell.geometry) {
+          const geometry = cell.geometry.clone();
+          geometry.points = arc.points;
+          cell.geometry = geometry;
+        }
+        this.edgeCells.push({ cell, edge, ...(arc ? { arc: arc.style } : {}) });
       }
     });
     if (!keepView) this.fit();
@@ -308,6 +378,19 @@ export class Canvas {
     return style;
   }
 
+  /**
+   * Focus: with a shape selected its own edges are drawn strong and the rest faint; a crowded
+   * diagram (a deep call tree) draws its edges faint until a shape is picked.
+   */
+  private edgeStyleOf(edge: DiagramEdge): CellStyle {
+    const style = edgeStyle(edge);
+    if (this.selected !== null) {
+      if (edge.from === this.selected || edge.to === this.selected) return { ...style, strokeColor: SELECTED, strokeWidth: 2.5, dashed: false, opacity: 100 };
+      return { ...style, opacity: 12, textOpacity: 12 };
+    }
+    return this.diagram.edges.length > CROWDED ? { ...style, opacity: 35 } : style;
+  }
+
   private restyle(): void {
     const model = this.graph.getDataModel();
     this.graph.batchUpdate(() => {
@@ -315,6 +398,7 @@ export class Canvas {
         const shape = this.cells.get(node.id)?.[0];
         if (shape) model.setStyle(shape, this.styleOf(node));
       }
+      for (const { cell, edge, arc } of this.edgeCells) model.setStyle(cell, { ...this.edgeStyleOf(edge), ...(arc ?? {}) });
     });
   }
 }

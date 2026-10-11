@@ -56,7 +56,9 @@ class HttpTransport implements Transport {
     const headers: Record<string, string> = { Authorization: `Bearer ${this.token}` };
     if (body !== undefined) headers["Content-Type"] = "application/json";
     const search = query.toString();
-    const response = await fetch(search === "" ? path : `${path}?${search}`, { method, headers, cache: "no-store", ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
+    // Relative to the page: the same server at `/` and mounted under `/r/<id>/` of `web --hub`.
+    const relative = path.replace(/^\//, "");
+    const response = await fetch(search === "" ? relative : `${relative}?${search}`, { method, headers, cache: "no-store", ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
     const file = /filename="([^"]+)"/.exec(response.headers.get("Content-Disposition") ?? "")?.[1];
     return { status: response.status, type: response.headers.get("Content-Type") ?? "text/plain", text: await response.text(), ...(file ? { file } : {}) };
   }
@@ -268,6 +270,8 @@ export interface Diagram {
   edges: DiagramEdge[];
   groups: DiagramGroup[];
   reason?: string;
+  /** `down`: ranks are rows from the top (the layers view); the canvas draws its edges as arcs beside the stack. */
+  direction?: "down";
   /** The specs the diagram was drawn from (business-flows/24): «Запропонувати зміни» sends it back. */
   specHash?: string;
 }
@@ -417,10 +421,10 @@ export interface ChangesAnswer {
 }
 
 /** A view as the query of `GET /api/diagram` names it. */
-export type ViewQuery = { view: "flow"; name: string } | { view: "discovered"; name: string } | { view: "entry"; id: string } | { view: "layers" } | { view: "process"; domain: string };
+export type ViewQuery = { view: "flow"; name: string } | { view: "discovered"; name: string } | { view: "entry"; id: string; depth?: string } | { view: "layers" } | { view: "process"; domain: string } | { view: "module"; id: string };
 
 /** What the page shows: a diagram, the explorer at an ID (`""`: none picked yet), the blind spots, or the editor on a view (`null`: an empty canvas). */
-export type PageQuery = ViewQuery | { view: "explore"; id: string } | { view: "blind" } | { view: "editor"; of: ViewQuery | null } | { view: "docs"; path: string } | { view: "changes"; since: string };
+export type PageQuery = ViewQuery | { view: "explore"; id: string } | { view: "blind" } | { view: "editor"; of: ViewQuery | null } | { view: "docs"; path: string; at?: string } | { view: "changes"; since: string };
 
 /** A refused or failed request, with the status the page explains. */
 export class ApiError extends Error {
@@ -464,6 +468,11 @@ export class Api {
 
   doc(path: string): Promise<{ path: string; text: string }> {
     return this.get("/api/doc", { path });
+  }
+
+  /** IDs of the code holding `q` (`GET /api/search`): the search box finds modules and fns, not only views. */
+  search(q: string): Promise<{ q: string; hits: { id: string; kind: string; layer: string; file: string | null; line: number | null }[]; total: number }> {
+    return this.get("/api/search", { q });
   }
 
   /** HEAD, the base of a feature and the branches (the «Зміни» tab). */

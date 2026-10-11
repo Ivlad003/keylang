@@ -203,6 +203,11 @@ test("diagram: layers with their dependencies, the allow and the deny with its v
   assert.equal(dep?.kind, "dependency");
   assert.ok(d.edges.some((e) => e.kind === "dependency" && e.from === id("domain") && e.to === id("infrastructure")));
   assert.equal(node(d, "layer", "domain").verdict, "fail");
+  // A stack in the declared order, one layer a row, like an architecture drawing: the canvas draws the edges as arcs beside it.
+  assert.equal(d.direction, "down");
+  assert.deepEqual(new Set(d.nodes.map((n) => n.x)).size, 1, "one column");
+  assert.deepEqual(d.nodes.map((n) => n.y), [...d.nodes.map((n) => n.y)].sort((a, b) => a - b), "rows in the declared order");
+  assert.equal(new Set(d.nodes.map((n) => n.y)).size, d.nodes.length, "one layer a row");
 });
 
 test("diagram: the same inputs give the same diagram; layout is pure and manual positions win", async (t) => {
@@ -240,4 +245,83 @@ test("diagram: views list the flows, entries, layers and processes; a query name
   for (const bad of ["", "view=nope", "view=flow", "view=entry", "view=entry&id=a&depth=x", "view=entry&id=a&depth=0", "view=entry&id=a&depth=99"]) {
     assert.equal(typeof q(bad), "string", bad);
   }
+});
+
+test("diagram: an entry point's tree draws one hole per fn in its lane, counted, with every reason; the default depth is 2", async (t) => {
+  const analysis = await analyzed(t, {
+    ...TS_SHOP,
+    "src/application/purchase.ts": 'import { create, reject } from "../domain/order.ts";\nexport function buy(gateway: any, mail: any): void {\n  create();\n  reject();\n  gateway.charge();\n  mail.send();\n}\n',
+  });
+  const tree = draw(analysis, { kind: "entry", id: "presentation.terminal.checkout" });
+  assert.deepEqual(tree, draw(analysis, { kind: "entry", id: "presentation.terminal.checkout", depth: 2 }), "depth 2 by default");
+  const holes = tree.nodes.filter((n) => n.kind === "hole");
+  assert.equal(holes.length, 1, "the two unresolved calls of buy are one shape");
+  const [hole] = holes;
+  assert.equal(hole!.label, "? 2");
+  assert.match(hole!.reason ?? "", /gateway\.charge[\s\S]*\n[\s\S]*mail\.send/);
+  assert.equal(hole!.group, "application", "in the lane of buy, not under the lanes");
+  const lane = tree.groups.find((g) => g.id === "application")!;
+  assert.ok(hole!.y >= lane.y && hole!.y + hole!.h <= lane.y + lane.h);
+  assert.ok(edge(tree, node(tree, "fn", "application.purchase.buy").id, hole!.id));
+});
+
+test("diagram: layout wraps a lane's rank of many shapes into columns of at most 8, each next to what leads into it", () => {
+  // A start calling twenty fns of one lane, and two callers whose callees come in the reverse order.
+  const at = { x: 0, y: 0, w: 0, h: 0 };
+  const fns = Array.from({ length: 20 }, (_, i) => ({ id: `fn:f${i}`, kind: "fn" as const, label: `f${i}`, group: "app", ...at }));
+  const wide = layout({
+    nodes: [{ id: "start", kind: "start", label: "start", group: "app", ...at }, ...fns],
+    edges: fns.map((fn) => ({ from: "start", to: fn.id, kind: "call" as const })),
+    groups: [{ id: "app", label: "app", kind: "lane", ...at }],
+  });
+  const placed = wide.nodes.filter((n) => n.kind === "fn");
+  assert.equal(new Set(placed.map((n) => n.y)).size, 7, "twenty in three columns of seven, not a column of twenty");
+  assert.equal(new Set(placed.map((n) => n.x)).size, 3);
+  const lane = wide.groups[0]!;
+  for (const n of placed) assert.ok(n.y + n.h <= lane.y + lane.h && n.x + n.w <= lane.x + lane.w, n.id);
+  // Callees follow their callers: a comes first, so its callee does too, though the diagram lists it last.
+  const pair = layout({
+    nodes: [
+      { id: "root", kind: "start", label: "root", group: "app", ...at },
+      { id: "a", kind: "fn", label: "a", group: "app", ...at },
+      { id: "b", kind: "fn", label: "b", group: "app", ...at },
+      { id: "b1", kind: "fn", label: "b1", group: "app", ...at },
+      { id: "a1", kind: "fn", label: "a1", group: "app", ...at },
+    ],
+    edges: [
+      { from: "root", to: "a", kind: "call" },
+      { from: "root", to: "b", kind: "call" },
+      { from: "a", to: "a1", kind: "call" },
+      { from: "b", to: "b1", kind: "call" },
+    ],
+    groups: [{ id: "app", label: "app", kind: "lane", ...at }],
+  });
+  const y = (id: string): number => pair.nodes.find((n) => n.id === id)!.y;
+  assert.ok(y("a") < y("b"));
+  assert.ok(y("a1") < y("b1"), "a's callee beside a, though the diagram lists it after b's");
+});
+
+test("diagram: the layers view keeps one rule edge per pair and effect — a baseline's allow for every package is one allow", async (t) => {
+  const analysis = await analyzed(t, {
+    ...TS_SHOP,
+    "keylang/rules.md": "# rules\n\n- layers domain < infrastructure < application < presentation\n- deny domain infrastructure\n- allow presentation application\n- allow presentation application.purchase\n- allow presentation application.purchase.buy\n",
+  });
+  const d = draw(analysis, { kind: "layers" });
+  const allows = d.edges.filter((e) => e.kind === "allow");
+  assert.equal(allows.length, 1, "three allows of one pair are one edge");
+  assert.equal(allows[0]!.label, "allow presentation → application (3 rules)");
+});
+
+test("diagram: a module's view is the map as a graph — who imports it on the left, what it imports on the right, in the lanes of their layers; any ID opens its module", async (t) => {
+  const analysis = await analyzed(t, TS_SHOP);
+  const d = draw(analysis, { kind: "module", id: "application.purchase.buy" });
+  assert.equal(d.nodes[0]?.label, "application.purchase", "a fn opens the module it lies in");
+  const id = (label: string): string => d.nodes.find((n) => n.label === label)!.id;
+  assert.equal(edge(d, id("presentation.terminal"), id("application.purchase"))?.kind, "dependency");
+  assert.equal(edge(d, id("application.purchase"), id("domain.order"))?.label, "1");
+  assert.equal(d.nodes.find((n) => n.label === "infrastructure.store"), undefined, "one step each way");
+  const x = (label: string): number => d.nodes.find((n) => n.label === label)!.x;
+  assert.ok(x("presentation.terminal") < x("application.purchase") && x("application.purchase") < x("domain.order"));
+  assert.deepEqual(d.groups.map((g) => g.id).sort(), ["application", "domain", "presentation"]);
+  assert.match(draw(analysis, { kind: "module", id: "nope" }).reason ?? "", /no module `nope`/);
 });
