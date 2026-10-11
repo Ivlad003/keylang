@@ -14,6 +14,9 @@ import { EXTERNAL } from "./external-ids.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
 import { walkFlow, type Flow, type FlowItem, type SpecIR, type Trigger } from "./spec-ir.ts";
 import { compareText } from "./span.ts";
+import type { SystemSpec } from "./system.ts";
+import type { SchemaRead } from "./schema-discover.ts";
+import { discoverSystem, DISCOVERED } from "./system-discover.ts";
 
 export type DiagramView =
   | { kind: "flow"; name: string }
@@ -22,13 +25,25 @@ export type DiagramView =
   | { kind: "layers" }
   | { kind: "process"; domain: string }
   /** A module's dependencies: what imports it, and what it imports (any ID: its module). */
-  | { kind: "module"; id: string };
+  | { kind: "module"; id: string }
+  /** A `# system` (system-design/03): components in zones and their relations; `@code` is the system discovered from the code. */
+  | { kind: "system"; name: string }
+  /** The tables of a system's data stores and their foreign keys. */
+  | { kind: "er"; name: string }
+  /** One sequence of a system: messages between components, top to bottom. */
+  | { kind: "sequence"; name: string; seq: string };
 
 export type DiagramVerdict = "ok" | "fail" | "unverified" | "planned" | null;
 
 export interface DiagramNode {
   id: string;
-  kind: "start" | "task" | "gateway" | "parallel" | "event" | "timer" | "external" | "hole" | "module" | "fn" | "layer";
+  kind: "start" | "task" | "gateway" | "parallel" | "event" | "timer" | "external" | "hole" | "module" | "fn" | "layer" | "component" | "table" | "participant" | "anchor";
+  /** A `component`: its kind in the system (`db`, `service`…), which decides its shape. */
+  component?: string;
+  /** A `component`: the technology as written. */
+  tech?: string;
+  /** A `table`: one line per column (`🔑 id bigint`). */
+  lines?: string[];
   label: string;
   /** The code (`id`, `file`, `line`) and the spec line (`specFile`, `specLine`) the shape stands for. */
   ref?: { id?: string; file?: string; line?: number; specFile?: string; specLine?: number };
@@ -46,8 +61,10 @@ export interface DiagramNode {
 export interface DiagramEdge {
   from: string;
   to: string;
-  kind: "sequence" | "call" | "dependency" | "allow" | "deny" | "emits" | "continues";
+  kind: "sequence" | "call" | "dependency" | "allow" | "deny" | "emits" | "continues" | "relation" | "message" | "lifeline" | "fk";
   label?: string;
+  /** A `relation` or `message` that does not wait for an answer (`publishes`, `consumes`, `⇢`). */
+  async?: boolean;
   verdict?: DiagramVerdict;
 }
 
@@ -73,6 +90,19 @@ export interface Diagram {
    * declared layers, like an architecture drawing); else ranks as columns from the left.
    */
   direction?: "down";
+  /** The shapes have their places already (ER, sequence): `layout` keeps them, only manual places win. */
+  placed?: true;
+  /** A system's view: its notes and what else there is to draw of it. */
+  system?: SystemSummary;
+}
+
+/** What the page shows beside a system's diagram: the interview notes and the other views of the system. */
+export interface SystemSummary {
+  name: string;
+  file: string | null;
+  notes: { kind: string; text: string; line: number }[];
+  sequences: string[];
+  tables: number;
 }
 
 /** What a diagram reads of a check result: `CheckResult` and `Verdict` both fit. */
@@ -96,6 +126,10 @@ export interface DiagramInput {
   processes?: readonly DiagramProcess[];
   /** The view's layout file (business-flows/24): its places win over the computed ones. */
   saved?: LayoutFile | null;
+  /** The `# system` sections (system-design/03): what the system, ER and sequence views draw. */
+  systems?: readonly SystemSpec[];
+  /** The repository's schemas (system-design/07): the tables of the system of the code. */
+  schemas?: SchemaRead;
 }
 
 /**
@@ -116,7 +150,7 @@ export const MAX_DEPTH = 10;
 /** An entry's call tree stops growing here; `reason` says it was cut. */
 export const MAX_NODES = 400;
 
-export const VIEW_KINDS = ["flow", "entry", "event", "layers", "process", "module"] as const;
+export const VIEW_KINDS = ["flow", "entry", "event", "layers", "process", "module", "system", "er", "sequence"] as const;
 
 /** A view from the query of `GET /api/diagram`, or why it names none. */
 export function parseView(query: URLSearchParams): DiagramView | string {
@@ -149,6 +183,16 @@ export function parseView(query: URLSearchParams): DiagramView | string {
       const domain = need("domain") ?? need("name");
       return domain === null ? "view=process needs domain=" : { kind: "process", domain };
     }
+    case "system":
+    case "er": {
+      const name = need("name");
+      return name === null ? `view=${view} needs name=` : { kind: view, name };
+    }
+    case "sequence": {
+      const name = need("name");
+      const seq = need("seq");
+      return name === null || seq === null ? "view=sequence needs name= and seq=" : { kind: "sequence", name, seq };
+    }
     default:
       return `unknown view: expected one of ${VIEW_KINDS.join(", ")}`;
   }
@@ -170,6 +214,11 @@ export function viewOfKey(key: string): { view: DiagramView; discovered: boolean
   if (kind === "entry") return { view: { kind: "entry", id: rest }, discovered: false };
   if (kind === "process") return { view: { kind: "process", domain: rest }, discovered: false };
   if (kind === "module") return { view: { kind: "module", id: rest }, discovered: false };
+  if (kind === "system" || kind === "er") return { view: { kind, name: rest }, discovered: false };
+  if (kind === "sequence") {
+    const slash = rest.indexOf("/");
+    return slash > 0 && slash < rest.length - 1 ? { view: { kind: "sequence", name: rest.slice(0, slash), seq: rest.slice(slash + 1) }, discovered: false } : null;
+  }
   return null;
 }
 
@@ -182,8 +231,11 @@ export function viewsOf(
   snapshot: AnalysisSnapshot | null,
   spec: SpecIR,
   processes: readonly DiagramProcess[] = [],
-): { flows: string[]; entries: { id: string; kind: string; label: string }[]; layers: string[]; domains: string[]; processes: { name: string; domain: string; flows: string[] }[] } {
+  systems: readonly SystemSpec[] = [],
+  schemas?: SchemaRead,
+): { flows: string[]; entries: { id: string; kind: string; label: string }[]; layers: string[]; domains: string[]; processes: { name: string; domain: string; flows: string[] }[]; systems: SystemListing[] } {
   return {
+    systems: systemListing(snapshot, systems, schemas),
     flows: [...new Set(spec.flows.map((flow) => flow.name))],
     entries: (snapshot?.entries ?? []).map((entry) => ({ id: entry.id, kind: entry.kind, label: entry.label })),
     layers: snapshot ? layerOrder(snapshot) : [],
@@ -275,6 +327,10 @@ export function usagesOf(snapshot: AnalysisSnapshot | null, spec: SpecIR, discov
 
 export function diagramOf(input: DiagramInput): Diagram {
   const raw = unplaced(input);
+  if (raw.placed) return input.saved ? { ...raw, nodes: raw.nodes.map((node) => {
+    const manual = Object.hasOwn(input.saved!.shapes, node.id) ? input.saved!.shapes[node.id] : undefined;
+    return manual ? { ...node, x: manual.x, y: manual.y, w: manual.w ?? node.w, h: manual.h ?? node.h } : node;
+  }) } : raw;
   if (!input.saved) return layout(raw);
   // The layout file (business-flows/24): saved places of nodes, and of lanes, win.
   const placed = layout(raw, savedPositions(input.saved, raw));
@@ -289,6 +345,18 @@ export function diagramOf(input: DiagramInput): Diagram {
 function unplaced(input: DiagramInput): Diagram {
   const { view } = input;
   if (view.kind === "flow") return flowDiagram(input, view.name);
+  if (view.kind === "system" || view.kind === "er" || view.kind === "sequence") {
+    const system = systemNamed(input.snapshot, input.systems ?? [], view.name, input.schemas);
+    if (system === null) return empty(view.name === CODE_SYSTEM ? "no snapshot: the system of the code needs the code" : `no system \`${view.name}\`: no \`# system ${view.name}\` in the specs`);
+    if (view.kind === "system") return systemDiagram(system, input.results);
+    if (view.kind === "er") {
+      const er = erDiagram(system);
+      // A schema file that did not parse is said where its tables would be.
+      const problems = view.name === CODE_SYSTEM ? (input.schemas?.problems ?? []) : [];
+      return problems.length === 0 ? er : { ...er, reason: `${er.reason ? `${er.reason}; ` : ""}not read: ${problems.join("; ")}` };
+    }
+    return sequenceDiagram(system, view.seq);
+  }
   if (!input.snapshot) return empty("no snapshot: the specs were checked without code");
   if (view.kind === "event") return eventDiagram(input.snapshot, input.results, view.name);
   if (view.kind === "process") return processDiagram(input.snapshot, input.processes ?? [], input.results, view.domain);
@@ -818,6 +886,10 @@ const SIZE: Record<DiagramNode["kind"], { w: number; h: number }> = {
   module: { w: 160, h: 60 },
   fn: { w: 160, h: 60 },
   layer: { w: 160, h: 60 },
+  component: { w: 150, h: 70 },
+  table: { w: 220, h: 60 },
+  participant: { w: 140, h: 44 },
+  anchor: { w: 2, h: 2 },
 };
 /** One cell of the grid: the largest shape and the gaps around it. */
 const CELL_W = 200;
@@ -826,7 +898,7 @@ const LANE_PAD = 20;
 /** At most this many shapes one above another in a lane's rank; more wrap into the next column. */
 const MAX_ROWS = 8;
 /** Edges that order shapes left to right; `allow` and `deny` only annotate. */
-const ORDERING: ReadonlySet<DiagramEdge["kind"]> = new Set(["sequence", "call", "dependency", "emits", "continues"]);
+const ORDERING: ReadonlySet<DiagramEdge["kind"]> = new Set(["sequence", "call", "dependency", "emits", "continues", "relation"]);
 
 /**
  * Places the shapes: the rank of a node is its longest path from a node
@@ -919,7 +991,11 @@ export function layout(diagram: Diagram, positions: Positions = {}): Diagram {
   }
   const top = new Map<number, number>();
   let y = 0;
-  for (let lane = 0; lane <= laneIds.length; lane++) {
+  // A system's components outside every zone (a client, a CDN) stand above the zones; elsewhere shapes without a lane go last.
+  const laneSeq = laneIds.map((_, i) => i);
+  if (diagram.system) laneSeq.unshift(laneIds.length);
+  else laneSeq.push(laneIds.length);
+  for (const lane of laneSeq) {
     if (!rows.has(lane)) continue;
     top.set(lane, y);
     y += rows.get(lane)! * CELL_H + 2 * LANE_PAD;
@@ -952,4 +1028,191 @@ export function layout(diagram: Diagram, positions: Positions = {}): Diagram {
     return { ...group, x: 0, y: from, w: right, h: to - from };
   });
   return { ...diagram, nodes, groups };
+}
+
+// ── system (system-design/03–05) ────────────────────────────────────────────
+
+/** The name of the system discovered from the code (system-design/06): not a section name (no `@` in a segment). */
+export const CODE_SYSTEM = DISCOVERED;
+
+/** A system as the page lists it: its name, file, sequences and whether it has tables. */
+export interface SystemListing {
+  name: string;
+  file: string | null;
+  line: number | null;
+  sequences: string[];
+  tables: number;
+  components: number;
+}
+
+function tableCount(system: SystemSpec): number {
+  return system.components.reduce((sum, component) => sum + component.tables.length, 0);
+}
+
+/** The systems of the specs in spec order, then the one of the code when there is a snapshot. */
+export function systemListing(snapshot: AnalysisSnapshot | null, systems: readonly SystemSpec[], schemas?: SchemaRead): SystemListing[] {
+  const out: SystemListing[] = systems.map((system) => ({ name: system.name, file: system.file, line: system.line, sequences: system.sequences.map((seq) => seq.name), tables: tableCount(system), components: system.components.length }));
+  if (snapshot) {
+    const code = discoverSystem(snapshot, schemas?.schemas);
+    out.push({ name: CODE_SYSTEM, file: null, line: null, sequences: code.sequences.map((seq) => seq.name), tables: tableCount(code), components: code.components.length });
+  }
+  return out;
+}
+
+/** The system a view names: a `# system` of the specs, or the one discovered from the code. */
+function systemNamed(snapshot: AnalysisSnapshot | null, systems: readonly SystemSpec[], name: string, schemas?: SchemaRead): SystemSpec | null {
+  if (name === CODE_SYSTEM) return snapshot ? discoverSystem(snapshot, schemas?.schemas) : null;
+  return systems.find((system) => system.name === name) ?? null;
+}
+
+function summaryOf(system: SystemSpec): SystemSummary {
+  return { name: system.name, file: system.name === CODE_SYSTEM ? null : system.file, notes: system.notes.map((note) => ({ ...note })), sequences: system.sequences.map((seq) => seq.name), tables: tableCount(system) };
+}
+
+/** Verbs whose sender does not wait for an answer. */
+const ASYNC_VERBS = new Set(["publishes", "consumes", "replicates"]);
+
+/**
+ * A system: one shape per component in the lane of its zone (the zone's
+ * path, `outer / inner`, as the lane's name), an edge per relation with its
+ * verb and caption, coloured by the `system` verdict of that relation; a
+ * component takes the worst verdict of its relations.
+ */
+function systemDiagram(system: SystemSpec, results: readonly DiagramResult[]): Diagram {
+  const criterion = `system ${system.name}`;
+  const verdictOf = new Map<string, DiagramVerdict>();
+  for (const result of results) if (result.criterion === criterion && result.area !== undefined) verdictOf.set(result.area, worst([verdictOf.get(result.area) ?? "", result.verdict]));
+  const zones = new Map(system.zones.map((zone) => [zone.name, zone]));
+  const zonePath = (name: string | null): string | undefined => {
+    const parts: string[] = [];
+    for (let at = name; at !== null; at = zones.get(at)?.parent ?? null) parts.unshift(at);
+    return parts.length === 0 ? undefined : parts.join(" / ");
+  };
+  const byComponent = new Map<string, DiagramVerdict[]>();
+  const edges: DiagramEdge[] = system.relations.map((relation) => {
+    const verdict = verdictOf.get(`${relation.from} ${relation.verb} ${relation.to}`) ?? null;
+    if (verdict) byComponent.set(relation.from, [...(byComponent.get(relation.from) ?? []), verdict]);
+    return { from: `component:${relation.from}`, to: `component:${relation.to}`, kind: "relation", label: relation.caption ? `${relation.verb}: ${relation.caption}` : relation.verb, ...(ASYNC_VERBS.has(relation.verb) ? { async: true } : {}), ...(verdict ? { verdict } : {}) };
+  });
+  const nodes: DiagramNode[] = system.components.map((component) => {
+    const group = zonePath(component.zone);
+    return {
+      id: `component:${component.name}`,
+      kind: "component",
+      component: component.kind,
+      ...(component.tech ? { tech: component.tech } : {}),
+      label: component.name,
+      ref: { ...(component.code[0] ? { id: component.code[0] } : {}), ...(system.name === CODE_SYSTEM ? {} : { specFile: system.file, specLine: component.line }) },
+      verdict: worst((byComponent.get(component.name) ?? []).filter((v): v is NonNullable<DiagramVerdict> => v !== null)),
+      ...(group ? { group } : {}),
+      x: 0,
+      y: 0,
+      w: 0,
+      h: 0,
+    };
+  });
+  const groupIds = [...new Set(nodes.map((node) => node.group).filter((group): group is string => group !== undefined))];
+  const groups: DiagramGroup[] = groupIds.map((id) => ({ id, label: id, kind: "lane", x: 0, y: 0, w: 0, h: 0 }));
+  return { nodes, edges, groups, system: summaryOf(system), ...(nodes.length === 0 ? { reason: `system \`${system.name}\` has no components` } : {}) };
+}
+
+const TABLE_W = 230;
+const TABLE_HEAD = 30;
+const TABLE_ROW = 18;
+const TABLE_GAP = 50;
+const TABLES_PER_ROW = 4;
+
+/** A column as one line of its table: `🔑` for the key, `→ users.id` for a foreign key. */
+function columnLine(column: SystemSpec["components"][number]["tables"][number]["columns"][number]): string {
+  const marks = [column.pk ? "🔑" : "", column.unique && !column.pk ? "◆" : ""].join("");
+  const tail = [column.nullable ? "null" : "", column.fk ? `→ ${column.fk.table}.${column.fk.column}` : ""].filter((part) => part !== "").join(" ");
+  return `${marks ? `${marks} ` : ""}${column.name}: ${column.type}${tail ? ` ${tail}` : ""}`;
+}
+
+/**
+ * The ER view: a table is a shape with a line per column, in a lane per data
+ * store, at most four tables in a row; a foreign key is an edge to the
+ * referenced table, `N:1` (`1:1` when the column is `unique` or the key).
+ * Placed here, not by `layout`: a table is as tall as its columns.
+ */
+function erDiagram(system: SystemSpec): Diagram {
+  const nodes: DiagramNode[] = [];
+  const edges: DiagramEdge[] = [];
+  const groups: DiagramGroup[] = [];
+  const tableId = new Map<string, string>();
+  let y = 0;
+  for (const component of system.components) {
+    if (component.tables.length === 0) continue;
+    const laneTop = y;
+    y += TABLE_HEAD + 10;
+    for (let row = 0; row < component.tables.length; row += TABLES_PER_ROW) {
+      const tables = component.tables.slice(row, row + TABLES_PER_ROW);
+      let tallest = 0;
+      tables.forEach((table, i) => {
+        const id = `table:${component.name}.${table.name}`;
+        if (!tableId.has(table.name)) tableId.set(table.name, id);
+        const lines = table.columns.map(columnLine);
+        const h = TABLE_HEAD + Math.max(1, lines.length) * TABLE_ROW + 8;
+        tallest = Math.max(tallest, h);
+        nodes.push({ id, kind: "table", label: table.name, lines, ...(system.name === CODE_SYSTEM ? {} : { ref: { specFile: system.file, specLine: table.line } }), group: component.name, x: 20 + i * (TABLE_W + TABLE_GAP), y, w: TABLE_W, h });
+      });
+      y += tallest + TABLE_GAP;
+    }
+    const label = `${component.name}${component.tech ? ` (${component.tech})` : ""}`;
+    groups.push({ id: component.name, label, kind: "lane", x: 0, y: laneTop, w: 0, h: y - laneTop - TABLE_GAP / 2 });
+  }
+  const right = Math.max(0, ...nodes.map((node) => node.x + node.w)) + 20;
+  for (const group of groups) group.w = right;
+  for (const component of system.components) {
+    for (const table of component.tables) {
+      for (const column of table.columns) {
+        if (column.fk === null) continue;
+        const to = tableId.get(column.fk.table);
+        if (!to) continue;
+        edges.push({ from: `table:${component.name}.${table.name}`, to, kind: "fk", label: `${column.name} ${column.unique || column.pk ? "1:1" : "N:1"}` });
+      }
+    }
+  }
+  return { nodes, edges, groups, placed: true, system: summaryOf(system), ...(nodes.length === 0 ? { reason: `system \`${system.name}\` has no tables: add \`- table <name>\` under a data store` } : {}) };
+}
+
+const LIFELINE_GAP = 190;
+const MESSAGE_GAP = 46;
+const PARTICIPANT_W = 140;
+const PARTICIPANT_H = 44;
+
+/**
+ * A sequence: the participants in a row in the order they first appear, a
+ * lifeline down from each, and each message an arrow between two lifelines
+ * at its own height, numbered in order; an asynchronous one is dashed. A
+ * message to itself steps down its own lifeline. Placed here.
+ */
+function sequenceDiagram(system: SystemSpec, name: string): Diagram {
+  const sequence = system.sequences.find((seq) => seq.name === name);
+  if (!sequence) return { ...empty(`no sequence \`${name}\` in system \`${system.name}\``), system: summaryOf(system) };
+  const order: string[] = [];
+  for (const message of sequence.messages) for (const who of [message.from, message.to]) if (!order.includes(who)) order.push(who);
+  const kinds = new Map(system.components.map((component) => [component.name, component]));
+  const center = (who: string): number => 20 + order.indexOf(who) * LIFELINE_GAP + PARTICIPANT_W / 2;
+  const nodes: DiagramNode[] = order.map((who) => {
+    const component = kinds.get(who);
+    return { id: `participant:${who}`, kind: "participant", label: who, ...(component ? { component: component.kind, ...(component.tech ? { tech: component.tech } : {}) } : {}), x: center(who) - PARTICIPANT_W / 2, y: 0, w: PARTICIPANT_W, h: PARTICIPANT_H };
+  });
+  const edges: DiagramEdge[] = [];
+  const top = PARTICIPANT_H + 30;
+  sequence.messages.forEach((message, i) => {
+    const y = top + i * MESSAGE_GAP;
+    const from = `anchor:${i}:from`;
+    const to = `anchor:${i}:to`;
+    const self = message.from === message.to;
+    nodes.push({ id: from, kind: "anchor", label: "", x: center(message.from) - 1, y, w: 2, h: 2 });
+    nodes.push({ id: to, kind: "anchor", label: "", x: center(message.to) - 1 + (self ? 0 : 0), y: y + (self ? MESSAGE_GAP / 2 : 0), w: 2, h: 2 });
+    edges.push({ from, to, kind: "message", label: `${i + 1}. ${message.text ?? ""}`.trim(), ...(message.async ? { async: true } : {}) });
+  });
+  const bottom = top + sequence.messages.length * MESSAGE_GAP;
+  for (const who of order) {
+    nodes.push({ id: `anchor:end:${who}`, kind: "anchor", label: "", x: center(who) - 1, y: bottom, w: 2, h: 2 });
+    edges.unshift({ from: `participant:${who}`, to: `anchor:end:${who}`, kind: "lifeline" });
+  }
+  return { nodes, edges, groups: [], placed: true, system: summaryOf(system), ...(sequence.messages.length === 0 ? { reason: `sequence \`${name}\` has no messages` } : {}) };
 }

@@ -227,6 +227,19 @@ Commands:
                             data»: calls into configuration readers listed in
                             resources/data-logic.json, to check by hand. --json: the
                             report as JSON. Exit 0; writes only the fact cache
+  system <list|show|discover|new> [<name>] [--interview] [--json]
+                            Systems of # system <name> (components in zones, relations,
+                            tables, sequences, interview notes). list: the sections;
+                            show: one as a tree with the verdict of each relation of
+                            a component bound to code (an import path to a driver of
+                            the target's technology or to its code: ok, else
+                            unverified), exit 1 on a spec error in its file;
+                            discover: the system of the code as # system on stdout
+                            (layers with entry points, drivers of databases, caches,
+                            queues, outside services, import paths, sequences of the
+                            entry points' calls); new: <dir>/system/<name>.md, a
+                            skeleton (--interview: requirements, estimates, trade-offs),
+                            never over a file (exit 2)
   integrations [--json]     What the code talks to, a view (nothing is contacted):
                             calls into HTTP, SOAP, SDK and queue clients listed in
                             resources/integrations.json, by integration → call site
@@ -389,6 +402,7 @@ const OPTIONS = {
   version: { type: "boolean", short: "V" },
   json: { type: "boolean" },
   check: { type: "boolean" },
+  interview: { type: "boolean" },
   out: { type: "string" },
   llm: { type: "boolean" },
   mode: { type: "string" },
@@ -544,6 +558,8 @@ async function run(argv: readonly string[]): Promise<number> {
       return cmdCoverage(values.json === true);
     case "integrations":
       return cmdIntegrations(values.json === true);
+    case "system":
+      return cmdSystem(paths, values.json === true, values.interview === true);
     case "tour":
       return cmdTour(values.out, values.json === true);
     case "flows":
@@ -1276,6 +1292,19 @@ async function cmdMigration(args: readonly string[], from: string | undefined, j
   if (result.payload === null) throw new Error(result.messages[0]?.text ?? "migration status failed");
   const { text, ...status } = result.payload;
   process.stdout.write(json ? `${JSON.stringify(status, null, 2)}\n` : text);
+  return result.exitCode ?? 2;
+}
+
+/** `system list|show|discover|new`: the shared operation's text, or its payload without the text as JSON. */
+async function cmdSystem(args: readonly string[], json: boolean, interview: boolean): Promise<number> {
+  const [action, name, extra] = args;
+  if (action !== "list" && action !== "show" && action !== "discover" && action !== "new") throw new Error(`system: expected list, show, discover or new${action === undefined ? "" : `, got \`${action}\``}`);
+  if (extra !== undefined || (action === "list" && name !== undefined)) throw new Error(`system ${action}: unexpected \`${extra ?? name}\``);
+  if (interview && action !== "new") throw new Error("--interview goes with `system new`");
+  const result = await runOperation({ kind: "system", root: findRoot(process.cwd()), action, ...(name !== undefined ? { name } : {}), ...(interview ? { interview } : {}) });
+  if (result.payload === null) throw new Error(result.messages[0]?.text ?? `system ${action} failed`);
+  const { text, ...payload } = result.payload;
+  process.stdout.write(json ? `${JSON.stringify(payload, null, 2)}\n` : text);
   return result.exitCode ?? 2;
 }
 

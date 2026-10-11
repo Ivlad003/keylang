@@ -132,6 +132,17 @@ function codePoints(s: string): number {
   return [...s].length;
 }
 
+/** The candidate closest to `word` for a «did you mean», or undefined when none is close enough. */
+export function nearestName(word: string, candidates: Iterable<string>): string | undefined {
+  let best: [number, string] | undefined;
+  for (const candidate of candidates) {
+    const score = similarity(word.toLowerCase(), candidate.toLowerCase());
+    if (score === null) continue;
+    if (!best || score < best[0] || (score === best[0] && compareText(candidate, best[1]) < 0)) best = [score, candidate];
+  }
+  return best?.[1];
+}
+
 /** Build the index over all documents and check every reference. */
 export function check(docs: readonly Document[], context: ResolveContext = {}): { index: Index; diagnostics: Diagnostic[]; unverified: Unverified[] } {
   const index = new Index(context.members);

@@ -166,62 +166,81 @@
     - snapshot map.snapshot
     - spec-ir lang.spec-ir
     - span base.span
-    - type [DiagramView](../../src/diagram.ts#L18)
-    - type [DiagramVerdict](../../src/diagram.ts#L27) = "ok" | "fail" | "unverified" | "planned" | null
-    - type [DiagramNode](../../src/diagram.ts#L29)
-    - type [DiagramEdge](../../src/diagram.ts#L46)
-    - type [DiagramGroup](../../src/diagram.ts#L55)
-    - type [Diagram](../../src/diagram.ts#L65)
-    - type [DiagramResult](../../src/diagram.ts#L79)
-    - type [DiagramInput](../../src/diagram.ts#L90)
-    - type [DiagramProcess](../../src/diagram.ts#L105)
-    - type [Positions](../../src/diagram.ts#L112)
-    - fn [parseView](../../src/diagram.ts#L122) (query: URLSearchParams) → DiagramView | string
-    - fn [viewOfKey](../../src/diagram.ts#L162) (key: string) → { view: DiagramView; discovered: boolean } | null
-    - fn [viewsOf](../../src/diagram.ts#L181) ( snapshot: AnalysisSnapshot | null, spec: SpecIR, processes: readonly DiagramProcess[] = [], ) → { flows: string[]; entries: { id: string; kind: string; label: string }[]; layers: string[]; domains: string[]; processes: { name: string; domain: string; flows: string[] }[] }
-      - calls map.diagram.layerOrder
-    - type [FlowListing](../../src/diagram.ts#L196)
-    - fn [flowIds](../../src/diagram.ts#L206) (flow: Flow) → string[]
+    - system check.system
+    - schema-discover map.schema-discover
+    - system-discover map.system-discover
+    - type [DiagramView](../../src/diagram.ts#L21)
+    - type [DiagramVerdict](../../src/diagram.ts#L36) = "ok" | "fail" | "unverified" | "planned" | null
+    - type [DiagramNode](../../src/diagram.ts#L38)
+    - type [DiagramEdge](../../src/diagram.ts#L61)
+    - type [DiagramGroup](../../src/diagram.ts#L72)
+    - type [Diagram](../../src/diagram.ts#L82)
+    - type [SystemSummary](../../src/diagram.ts#L100)
+    - type [DiagramResult](../../src/diagram.ts#L109)
+    - type [DiagramInput](../../src/diagram.ts#L120)
+    - type [DiagramProcess](../../src/diagram.ts#L139)
+    - type [Positions](../../src/diagram.ts#L146)
+    - fn [parseView](../../src/diagram.ts#L156) (query: URLSearchParams) → DiagramView | string
+    - fn [viewOfKey](../../src/diagram.ts#L206) (key: string) → { view: DiagramView; discovered: boolean } | null
+    - fn [viewsOf](../../src/diagram.ts#L230) ( snapshot: AnalysisSnapshot | null, spec: SpecIR, processes: readonly DiagramProcess[] = [], systems: readonly SystemSpec[] = [], schemas?: SchemaRead, ) → { flows: string[]; entries: { id: string; kind: string; label: string }[]; layers: string[]; domains: string[]; processes: { name: string; domain: string; flows: string[] }[]; systems: SystemListing[] }
+      - calls map.diagram.systemListing, map.diagram.layerOrder
+    - type [FlowListing](../../src/diagram.ts#L248)
+    - fn [flowIds](../../src/diagram.ts#L258) (flow: Flow) → string[]
       - calls lang.spec-ir.walkFlow
-    - fn [flowListing](../../src/diagram.ts#L216) (snapshot: AnalysisSnapshot | null, spec: SpecIR) → FlowListing[]
+    - fn [flowListing](../../src/diagram.ts#L268) (snapshot: AnalysisSnapshot | null, spec: SpecIR) → FlowListing[]
       - calls map.diagram.layerOf, map.diagram.flowIds
-    - type [Usages](../../src/diagram.ts#L229)
-    - fn [covers](../../src/diagram.ts#L237) (id: string, target: string) → boolean <!-- internal -->
-    - fn [useIn](../../src/diagram.ts#L242) (flow: Flow, id: string) → number | null <!-- internal -->
+    - type [Usages](../../src/diagram.ts#L281)
+    - fn [covers](../../src/diagram.ts#L289) (id: string, target: string) → boolean <!-- internal -->
+    - fn [useIn](../../src/diagram.ts#L294) (flow: Flow, id: string) → number | null <!-- internal -->
       - calls lang.spec-ir.walkFlow, map.diagram.covers
-    - fn [usagesOf](../../src/diagram.ts#L258) (snapshot: AnalysisSnapshot | null, spec: SpecIR, discovered: SpecIR | null, id: string) → Usages
+    - fn [usagesOf](../../src/diagram.ts#L310) (snapshot: AnalysisSnapshot | null, spec: SpecIR, discovered: SpecIR | null, id: string) → Usages
       - calls map.diagram.useIn, map.diagram.covers
-    - fn [diagramOf](../../src/diagram.ts#L276) (input: DiagramInput) → Diagram
+    - fn [diagramOf](../../src/diagram.ts#L328) (input: DiagramInput) → Diagram
       - calls map.diagram.unplaced, map.diagram.layout, map.diagram-layout.savedPositions
-    - fn [unplaced](../../src/diagram.ts#L289) (input: DiagramInput) → Diagram <!-- internal -->
-      - calls map.diagram.flowDiagram, map.diagram.empty, map.diagram.eventDiagram, map.diagram.processDiagram, map.diagram.entryDiagram, map.diagram.moduleDiagram, map.diagram.layersDiagram
-    - fn [empty](../../src/diagram.ts#L300) (reason: string) → Diagram <!-- internal -->
-    - fn [worst](../../src/diagram.ts#L308) (values: readonly string[]) → DiagramVerdict <!-- internal -->
-    - fn [messageOf](../../src/diagram.ts#L314) (result: DiagramResult) → string <!-- internal -->
-    - fn [byLine](../../src/diagram.ts#L319) (results: readonly DiagramResult[]) → Map<string, DiagramResult[]> <!-- internal -->
-    - fn [byArea](../../src/diagram.ts#L331) (results: readonly DiagramResult[]) → Map<string, DiagramVerdict> <!-- internal -->
+    - fn [unplaced](../../src/diagram.ts#L345) (input: DiagramInput) → Diagram <!-- internal -->
+      - calls map.diagram.flowDiagram, map.diagram.systemNamed, map.diagram.empty, map.diagram.systemDiagram, map.diagram.erDiagram, map.diagram.sequenceDiagram, map.diagram.eventDiagram, map.diagram.processDiagram, map.diagram.entryDiagram, map.diagram.moduleDiagram, map.diagram.layersDiagram
+    - fn [empty](../../src/diagram.ts#L368) (reason: string) → Diagram <!-- internal -->
+    - fn [worst](../../src/diagram.ts#L376) (values: readonly string[]) → DiagramVerdict <!-- internal -->
+    - fn [messageOf](../../src/diagram.ts#L382) (result: DiagramResult) → string <!-- internal -->
+    - fn [byLine](../../src/diagram.ts#L387) (results: readonly DiagramResult[]) → Map<string, DiagramResult[]> <!-- internal -->
+    - fn [byArea](../../src/diagram.ts#L399) (results: readonly DiagramResult[]) → Map<string, DiagramVerdict> <!-- internal -->
       - calls map.diagram.worst
-    - fn [layerOrder](../../src/diagram.ts#L347) (snapshot: AnalysisSnapshot) → string[] <!-- internal -->
+    - fn [layerOrder](../../src/diagram.ts#L415) (snapshot: AnalysisSnapshot) → string[] <!-- internal -->
       - calls base.span.compareText
-    - fn [layerOf](../../src/diagram.ts#L356) (snapshot: AnalysisSnapshot | null, id: string) → string | undefined <!-- internal -->
-    - fn [lanes](../../src/diagram.ts#L364) (snapshot: AnalysisSnapshot | null, nodes: readonly DiagramNode[]) → DiagramGroup[] <!-- internal -->
+    - fn [layerOf](../../src/diagram.ts#L424) (snapshot: AnalysisSnapshot | null, id: string) → string | undefined <!-- internal -->
+    - fn [lanes](../../src/diagram.ts#L432) (snapshot: AnalysisSnapshot | null, nodes: readonly DiagramNode[]) → DiagramGroup[] <!-- internal -->
       - calls map.diagram.layerOrder, base.span.compareText
-    - fn [flowDiagram](../../src/diagram.ts#L373) (input: DiagramInput, name: string) → Diagram <!-- internal -->
+    - fn [flowDiagram](../../src/diagram.ts#L441) (input: DiagramInput, name: string) → Diagram <!-- internal -->
       - calls map.diagram.empty, map.diagram.byLine, map.diagram.worst, map.diagram.layerOf, map.diagram.stripLead, map.diagram.messageOf, map.diagram.lanes
-    - fn [stripLead](../../src/diagram.ts#L513) (message: string, id: string) → string <!-- internal -->
-    - fn [eventNamed](../../src/diagram.ts#L521) (snapshot: AnalysisSnapshot, name: string) → string | null
-    - fn [eventDiagram](../../src/diagram.ts#L532) (snapshot: AnalysisSnapshot, results: readonly DiagramResult[], name: string) → Diagram <!-- internal -->
+    - fn [stripLead](../../src/diagram.ts#L581) (message: string, id: string) → string <!-- internal -->
+    - fn [eventNamed](../../src/diagram.ts#L589) (snapshot: AnalysisSnapshot, name: string) → string | null
+    - fn [eventDiagram](../../src/diagram.ts#L600) (snapshot: AnalysisSnapshot, results: readonly DiagramResult[], name: string) → Diagram <!-- internal -->
       - calls map.diagram.eventNamed, map.diagram.empty, map.diagram.byArea, map.diagram.lanes
-    - fn [entryDiagram](../../src/diagram.ts#L557) (snapshot: AnalysisSnapshot, results: readonly DiagramResult[], id: string, depth: number) → Diagram <!-- internal -->
+    - fn [entryDiagram](../../src/diagram.ts#L625) (snapshot: AnalysisSnapshot, results: readonly DiagramResult[], id: string, depth: number) → Diagram <!-- internal -->
       - calls map.diagram.empty, map.diagram.byArea, map.diagram.lanes
-    - fn [processDiagram](../../src/diagram.ts#L667) (snapshot: AnalysisSnapshot, processes: readonly DiagramProcess[], results: readonly DiagramResult[], domain: string) → Diagram <!-- internal -->
+    - fn [processDiagram](../../src/diagram.ts#L735) (snapshot: AnalysisSnapshot, processes: readonly DiagramProcess[], results: readonly DiagramResult[], domain: string) → Diagram <!-- internal -->
       - calls map.diagram.empty, map.diagram.byArea, map.diagram.layerOf, map.diagram.lanes
-    - fn [moduleOfId](../../src/diagram.ts#L703) (snapshot: AnalysisSnapshot, id: string) → string | null
-    - fn [moduleDiagram](../../src/diagram.ts#L717) (snapshot: AnalysisSnapshot, results: readonly DiagramResult[], id: string) → Diagram <!-- internal -->
+    - fn [moduleOfId](../../src/diagram.ts#L771) (snapshot: AnalysisSnapshot, id: string) → string | null
+    - fn [moduleDiagram](../../src/diagram.ts#L785) (snapshot: AnalysisSnapshot, results: readonly DiagramResult[], id: string) → Diagram <!-- internal -->
       - calls map.diagram.moduleOfId, map.diagram.empty, map.diagram.byArea, map.diagram.lanes
-    - fn [layersDiagram](../../src/diagram.ts#L763) (snapshot: AnalysisSnapshot, spec: SpecIR, results: readonly DiagramResult[]) → Diagram <!-- internal -->
+    - fn [layersDiagram](../../src/diagram.ts#L831) (snapshot: AnalysisSnapshot, spec: SpecIR, results: readonly DiagramResult[]) → Diagram <!-- internal -->
       - calls map.diagram.layerOrder, map.diagram.byArea, map.diagram.layerOf, map.diagram.worst
-    - fn [layout](../../src/diagram.ts#L840) (diagram: Diagram, positions: Positions = {}) → Diagram
+    - fn [layout](../../src/diagram.ts#L912) (diagram: Diagram, positions: Positions = {}) → Diagram
+    - type [SystemListing](../../src/diagram.ts#L1039)
+    - fn [tableCount](../../src/diagram.ts#L1048) (system: SystemSpec) → number <!-- internal -->
+    - fn [systemListing](../../src/diagram.ts#L1053) (snapshot: AnalysisSnapshot | null, systems: readonly SystemSpec[], schemas?: SchemaRead) → SystemListing[]
+      - calls map.system-discover.discoverSystem, map.diagram.tableCount
+    - fn [systemNamed](../../src/diagram.ts#L1063) (snapshot: AnalysisSnapshot | null, systems: readonly SystemSpec[], name: string, schemas?: SchemaRead) → SystemSpec | null <!-- internal -->
+      - calls map.system-discover.discoverSystem
+    - fn [summaryOf](../../src/diagram.ts#L1068) (system: SystemSpec) → SystemSummary <!-- internal -->
+      - calls map.diagram.tableCount
+    - fn [systemDiagram](../../src/diagram.ts#L1081) (system: SystemSpec, results: readonly DiagramResult[]) → Diagram <!-- internal -->
+      - calls map.diagram.worst, map.diagram.summaryOf
+    - fn [columnLine](../../src/diagram.ts#L1126) (column: SystemSpec["components"][number]["tables"][number]["columns"][number]) → string <!-- internal -->
+    - fn [erDiagram](../../src/diagram.ts#L1138) (system: SystemSpec) → Diagram <!-- internal -->
+      - calls map.diagram.columnLine, map.diagram.summaryOf
+    - fn [sequenceDiagram](../../src/diagram.ts#L1190) (system: SystemSpec, name: string) → Diagram <!-- internal -->
+      - calls map.diagram.empty, map.diagram.summaryOf
   - module [drawio](../../src/drawio.ts#L1)
     - node external.node
     - bpmn-export map.bpmn-export
@@ -544,6 +563,13 @@
     - fn [hasFacts](../../src/framework-code/php.ts#L177) (facts: ConfigFacts) → boolean
     - fn [dispatchesIn](../../src/framework-code/php.ts#L196) (code: PhpCode, file: FileFacts) → { symbol: string; call: CallFact; event: string }[]
       - calls map.php.callsOf, map.php.arg, map.php.PhpCode.get, map.php.PhpCode.qualified, map.php.PhpCode.method, map.php.str
+  - module [react-router](../../src/framework-code/react-router.ts#L1)
+    - entries map.entries
+    - adapter base.adapter
+    - react-router base.react-router
+    - snapshot map.snapshot
+    - fn [reactRouterEntries](../../src/framework-code/react-router.ts#L26) (scope: EntryScope, configs: readonly FrameworkConfig[]) → EntryPoint[]
+      - calls base.react-router.routeId, base.react-router.flatRoutePath, base.react-router.isLayout, map.entries.frameworkEntry
   - module [symfony](../../src/framework-code/symfony.ts#L1)
     - facts extract.facts
     - adapter base.adapter
@@ -612,6 +638,7 @@
     - facts extract.facts
     - adapter base.adapter
     - cartridges base.cartridges
+    - react-router map.react-router
     - web-entries map.web-entries
     - python-web base.python-web
     - web base.web
@@ -619,28 +646,28 @@
     - imports map.imports
     - python-web-entries map.python-web-entries
     - snapshot map.snapshot
-    - type [FrameworkEntryInputs](../../src/framework-entries.ts#L29)
-    - fn [frameworkEntries](../../src/framework-entries.ts#L37) ({ config, graph, facts, frameworks }: FrameworkEntryInputs) → { entries: EntryPoint[]; holes: Gap[]; warnings: string[]; supersedes: Set<string> }
-      - calls map.entries.entryScope, map.imports.probeCandidates, map.framework-entries.phpClassFiles, map.framework-entries.placeMethod, map.framework-entries.withExtras, map.entries.frameworkEntry, map.entries.fnIn, base.cartridges.cartridgeLayout, map.framework-entries.guessedOrder, map.framework-entries.controllerEntries, map.framework-entries.nestEntries, map.framework-entries.pwaEntries, map.python-web-entries.pythonWebEntries, map.web-entries.webEntries, map.entries.compareEntries
-    - fn [withExtras](../../src/framework-entries.ts#L110) (entry: EntryPoint, fact: EntryConfigFact) → EntryPoint <!-- internal -->
-    - fn [phpClassFiles](../../src/framework-entries.ts#L115) (facts: readonly FileFacts[]) → Map<string, { file: string; name: string; facts: FileFacts }> <!-- internal -->
+    - type [FrameworkEntryInputs](../../src/framework-entries.ts#L31)
+    - fn [frameworkEntries](../../src/framework-entries.ts#L39) ({ config, graph, facts, frameworks }: FrameworkEntryInputs) → { entries: EntryPoint[]; holes: Gap[]; warnings: string[]; supersedes: Set<string> }
+      - calls map.entries.entryScope, map.imports.probeCandidates, map.framework-entries.phpClassFiles, map.framework-entries.placeMethod, map.framework-entries.withExtras, map.entries.frameworkEntry, map.entries.fnIn, base.cartridges.cartridgeLayout, map.framework-entries.guessedOrder, map.framework-entries.controllerEntries, map.framework-entries.nestEntries, map.framework-entries.pwaEntries, map.react-router.reactRouterEntries, map.python-web-entries.pythonWebEntries, map.web-entries.webEntries, map.entries.compareEntries
+    - fn [withExtras](../../src/framework-entries.ts#L115) (entry: EntryPoint, fact: EntryConfigFact) → EntryPoint <!-- internal -->
+    - fn [phpClassFiles](../../src/framework-entries.ts#L120) (facts: readonly FileFacts[]) → Map<string, { file: string; name: string; facts: FileFacts }> <!-- internal -->
       - calls map.framework-entries.lower
-    - fn [lower](../../src/framework-entries.ts#L123) (name: string) → string <!-- internal -->
-    - fn [placeMethod](../../src/framework-entries.ts#L131) (scope: EntryScope, classes: ReadonlyMap<string, { file: string; name: string; facts: FileFacts }>, type: TypeName, method: string) → { id: string; at: { file: string; line: number } } | { reason: string } <!-- internal -->
+    - fn [lower](../../src/framework-entries.ts#L128) (name: string) → string <!-- internal -->
+    - fn [placeMethod](../../src/framework-entries.ts#L136) (scope: EntryScope, classes: ReadonlyMap<string, { file: string; name: string; facts: FileFacts }>, type: TypeName, method: string) → { id: string; at: { file: string; line: number } } | { reason: string } <!-- internal -->
       - calls map.framework-entries.lower, map.entries.fnIn
-    - fn [guessedOrder](../../src/framework-entries.ts#L159) (layout: CartridgeLayout, graph: Graph, facts: readonly FileFacts[], probe: (candidate: string) => string | null) → Gap[] <!-- internal -->
+    - fn [guessedOrder](../../src/framework-entries.ts#L164) (layout: CartridgeLayout, graph: Graph, facts: readonly FileFacts[], probe: (candidate: string) => string | null) → Gap[] <!-- internal -->
       - calls base.cartridges.cartridgeAnswers
-    - fn [controllerEntries](../../src/framework-entries.ts#L185) (graph: Graph, facts: readonly FileFacts[], scope: EntryScope) → EntryPoint[] <!-- internal -->
+    - fn [controllerEntries](../../src/framework-entries.ts#L190) (graph: Graph, facts: readonly FileFacts[], scope: EntryScope) → EntryPoint[] <!-- internal -->
       - calls map.entries.fnIn, map.entries.frameworkEntry
-    - fn [nestEntries](../../src/framework-entries.ts#L221) (facts: readonly FileFacts[], scope: EntryScope, files: ReadonlySet<string>) → EntryPoint[] <!-- internal -->
+    - fn [nestEntries](../../src/framework-entries.ts#L226) (facts: readonly FileFacts[], scope: EntryScope, files: ReadonlySet<string>) → EntryPoint[] <!-- internal -->
       - calls map.framework-entries.allCalls, map.framework-entries.pathsOf, map.entries.fnIn, map.entries.frameworkEntry, map.framework-entries.joinPath, map.framework-entries.argText
-    - fn [allCalls](../../src/framework-entries.ts#L273) (file: FileFacts) → CallFact[] <!-- internal -->
-    - fn [pathsOf](../../src/framework-entries.ts#L286) (arg: DecoratorArg | undefined, key: string) → string[] | null <!-- internal -->
-    - fn [joinPath](../../src/framework-entries.ts#L301) (...parts: string[]) → string <!-- internal -->
-    - fn [argText](../../src/framework-entries.ts#L309) (arg: DecoratorArg | undefined) → string <!-- internal -->
-    - fn [pwaEntries](../../src/framework-entries.ts#L337) (facts: readonly FileFacts[], scope: EntryScope, files: ReadonlySet<string>) → EntryPoint[] <!-- internal -->
+    - fn [allCalls](../../src/framework-entries.ts#L278) (file: FileFacts) → CallFact[] <!-- internal -->
+    - fn [pathsOf](../../src/framework-entries.ts#L291) (arg: DecoratorArg | undefined, key: string) → string[] | null <!-- internal -->
+    - fn [joinPath](../../src/framework-entries.ts#L306) (...parts: string[]) → string <!-- internal -->
+    - fn [argText](../../src/framework-entries.ts#L314) (arg: DecoratorArg | undefined) → string <!-- internal -->
+    - fn [pwaEntries](../../src/framework-entries.ts#L342) (facts: readonly FileFacts[], scope: EntryScope, files: ReadonlySet<string>) → EntryPoint[] <!-- internal -->
       - calls map.entries.fnIn, map.framework-entries.lazyDefault, map.entries.frameworkEntry
-    - fn [lazyDefault](../../src/framework-entries.ts#L374) (scope: EntryScope, module: { deps: readonly { file: string; text: string; target: string }[] }, file: string, source: string) → string | null <!-- internal -->
+    - fn [lazyDefault](../../src/framework-entries.ts#L379) (scope: EntryScope, module: { deps: readonly { file: string; text: string; target: string }[] }, file: string, source: string) → string | null <!-- internal -->
   - module [frontends](../../src/frontends.ts#L1)
     - config base.config
     - facts extract.facts
@@ -1090,6 +1117,38 @@
     - fn [insideRoot](../../src/rust-imports.ts#L305) (dir: string) → string | null <!-- internal -->
     - fn [readdirNames](../../src/rust-imports.ts#L310) (abs: string) → string[] <!-- internal -->
     - fn [isObject](../../src/rust-imports.ts#L314) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+  - module [schema-discover](../../src/schema-discover.ts#L1)
+    - node external.node
+    - pgsql-ast-parser external.pgsql-ast-parser
+    - analyze map.analyze
+    - config base.config
+    - diag base.diag
+    - glob base.glob
+    - parser lang.parser
+    - system check.system
+    - system-discover map.system-discover
+    - mrleebo-prisma-ast external.mrleebo-prisma-ast
+    - type [SchemaRead](../../src/schema-discover.ts#L21)
+    - fn [segment](../../src/schema-discover.ts#L30) (name: string) → string <!-- internal -->
+      - calls lang.parser.isSegment
+    - fn [unquote](../../src/schema-discover.ts#L38) (value: unknown) → string | null <!-- internal -->
+    - fn [arrayArg](../../src/schema-discover.ts#L43) (attribute: Attribute | BlockAttribute, key?: string) → string[] <!-- internal -->
+    - fn [prismaTables](../../src/schema-discover.ts#L56) (text: string) → Promise<DiscoveredSchema>
+      - calls map.schema-discover.unquote, map.schema-discover.segment, map.schema-discover.arrayArg
+    - fn [sqlTables](../../src/schema-discover.ts#L100) (text: string) → DiscoveredSchema
+      - calls map.schema-discover.segment, map.schema-discover.markColumn
+    - fn [markColumn](../../src/schema-discover.ts#L139) (table: SystemTable, name: string, change: (column: SystemColumn) => SystemColumn) → void <!-- internal -->
+      - calls map.schema-discover.segment
+    - fn [findSchemaFiles](../../src/schema-discover.ts#L154) (root: string, skip: readonly string[] = []) → string[]
+      - calls base.config.toPosix, base.glob.firstMatchingGlob
+    - fn [readSchemas](../../src/schema-discover.ts#L185) (root: string, files: readonly string[]) → Promise<SchemaRead>
+      - calls map.schema-discover.prismaTables, map.schema-discover.sqlTables, base.diag.errorText
+    - type [Done](../../src/schema-discover.ts#L199) = Pick<Analysis, "config" | "snapshot"> <!-- internal -->
+    - fn [schemaFiles](../../src/schema-discover.ts#L205) (done: Done) → string[]
+      - calls map.schema-discover.findSchemaFiles
+    - fn [codeSchemas](../../src/schema-discover.ts#L217) (done: Done) → Promise<SchemaRead>
+      - calls map.schema-discover.readSchemas, map.schema-discover.schemaFiles
+    - fn [readCodeSchemas](../../src/schema-discover.ts#L232) (done: Done) → SchemaRead | undefined
   - module [snapshot](../../src/snapshot.ts#L1)
     - node external.node
     - config base.config
@@ -1137,6 +1196,28 @@
     - fn [installedVersion](../../src/snapshot.ts#L761) (name: string, resolve: () => string) → string | null <!-- internal -->
       - calls map.snapshot.readJson
     - fn [readJson](../../src/snapshot.ts#L777) (file: string) → Record<string, unknown> | null <!-- internal -->
+  - module [system-discover](../../src/system-discover.ts#L1)
+    - external-ids base.external-ids
+    - parser lang.parser
+    - snapshot map.snapshot
+    - span base.span
+    - system-catalog check.system-catalog
+    - system check.system
+    - type [DiscoveredSchema](../../src/system-discover.ts#L31)
+    - fn [discoverSystem](../../src/system-discover.ts#L39) (snapshot: AnalysisSnapshot, schemas: readonly DiscoveredSchema[] = []) → SystemSpec
+      - calls map.system-discover.build
+    - fn [adoptedName](../../src/system-discover.ts#L48) (snapshot: Pick<AnalysisSnapshot, "system">) → string
+      - calls map.system-discover.segmentOf
+    - fn [segmentOf](../../src/system-discover.ts#L52) (text: string, fallback: string) → string <!-- internal -->
+      - calls lang.parser.isSegment
+    - fn [layerOfId](../../src/system-discover.ts#L57) (snapshot: AnalysisSnapshot, id: string) → string | null <!-- internal -->
+    - fn [component](../../src/system-discover.ts#L65) (name: string, kind: ComponentKind, tech: string | null, code: string[]) → SystemComponent <!-- internal -->
+    - fn [build](../../src/system-discover.ts#L69) (snapshot: AnalysisSnapshot, schemas: readonly DiscoveredSchema[]) → SystemSpec <!-- internal -->
+      - calls check.system.moduleGraph, map.system-discover.layerOfId, base.span.compareText, map.system-discover.component, map.system-discover.segmentOf, check.system-catalog.technologiesOfPackage, check.system-catalog.isSqlClient, check.system.modulesUnder, check.system.reach, check.system-catalog.evidenceIds, map.system-discover.sequencesOf
+    - fn [fnOf](../../src/system-discover.ts#L157) (snapshot: AnalysisSnapshot, id: string) → string | null <!-- internal -->
+    - fn [sequencesOf](../../src/system-discover.ts#L176) ( snapshot: AnalysisSnapshot, graph: ModuleGraph, entries: readonly EntryPoint[], services: readonly SystemComponent[], stores: readonly { tech: Technology; component: SystemComponent }[], client: string | null, ) → SystemSequence[] <!-- internal -->
+      - calls map.system-discover.fnOf, check.system-catalog.evidenceIds, base.span.compareText, base.external-ids.externalPackageId, map.system-discover.segmentOf
+    - fn [systemMarkdown](../../src/system-discover.ts#L263) (system: SystemSpec, name: string) → string
   - module [trace-plan](../../src/trace-plan.ts#L1)
     - node external.node
     - config base.config

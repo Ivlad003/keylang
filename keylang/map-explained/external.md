@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [anthropic-ai-sdk](#external.anthropic-ai-sdk) · [decibri](#external.decibri) · [eventsource-parser](#external.eventsource-parser) · [fugood-whisper_node](#external.fugood-whisper_node) · [modelcontextprotocol-sdk](#external.modelcontextprotocol-sdk) · [node](#external.node) · [saxes](#external.saxes) · [smol-toml](#external.smol-toml) · [web-tree-sitter](#external.web-tree-sitter) · [ws](#external.ws) · [yaml](#external.yaml) · [zod](#external.zod)
+[README](README.md) · modules: [anthropic-ai-sdk](#external.anthropic-ai-sdk) · [decibri](#external.decibri) · [eventsource-parser](#external.eventsource-parser) · [fugood-whisper_node](#external.fugood-whisper_node) · [modelcontextprotocol-sdk](#external.modelcontextprotocol-sdk) · [mrleebo-prisma-ast](#external.mrleebo-prisma-ast) · [node](#external.node) · [pgsql-ast-parser](#external.pgsql-ast-parser) · [saxes](#external.saxes) · [smol-toml](#external.smol-toml) · [web-tree-sitter](#external.web-tree-sitter) · [ws](#external.ws) · [yaml](#external.yaml) · [zod](#external.zod)
 
 # map
 
@@ -16,8 +16,12 @@
     <a id="external.fugood-whisper_node"></a>
   - module modelcontextprotocol-sdk <!-- @modelcontextprotocol/sdk -->
     <a id="external.modelcontextprotocol-sdk"></a>
+  - module mrleebo-prisma-ast <!-- @mrleebo/prisma-ast -->
+    <a id="external.mrleebo-prisma-ast"></a>
   - module node
     <a id="external.node"></a>
+  - module pgsql-ast-parser
+    <a id="external.pgsql-ast-parser"></a>
   - module saxes
     <a id="external.saxes"></a>
   - module smol-toml

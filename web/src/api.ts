@@ -129,6 +129,26 @@ export interface Views {
   /** Event nodes of the snapshot (business-flows/08); none yet, with `eventsReason`. */
   events?: EventListing[];
   eventsReason?: string;
+  /** The `# system` sections, then `@code`, the system of the code (system-design/03). */
+  systems?: SystemListing[];
+}
+
+export interface SystemListing {
+  name: string;
+  file: string | null;
+  line: number | null;
+  sequences: string[];
+  tables: number;
+  components: number;
+}
+
+/** What a system's diagram says beside its shapes: the interview notes and its other views. */
+export interface SystemSummary {
+  name: string;
+  file: string | null;
+  notes: { kind: string; text: string; line: number }[];
+  sequences: string[];
+  tables: number;
 }
 
 export interface EventListing {
@@ -241,6 +261,11 @@ export interface DiagramNode {
   reason?: string;
   group?: string;
   results?: NodeResult[];
+  /** A system's component: its kind (`db`, `service`…) and technology. */
+  component?: string;
+  tech?: string;
+  /** A table of the ER view: one line per column. */
+  lines?: string[];
   x: number;
   y: number;
   w: number;
@@ -253,6 +278,7 @@ export interface DiagramEdge {
   kind: string;
   label?: string;
   verdict?: Verdict;
+  async?: boolean;
 }
 
 export interface DiagramGroup {
@@ -274,6 +300,9 @@ export interface Diagram {
   direction?: "down";
   /** The specs the diagram was drawn from (business-flows/24): «Запропонувати зміни» sends it back. */
   specHash?: string;
+  /** Already placed (ER, sequence). */
+  placed?: true;
+  system?: SystemSummary;
 }
 
 /** One entry of `GET /api/layout`: a shape's box, an edge's bends, a note, a drawn shape a proposal took (src/diagram-layout.ts). */
@@ -421,7 +450,7 @@ export interface ChangesAnswer {
 }
 
 /** A view as the query of `GET /api/diagram` names it. */
-export type ViewQuery = { view: "flow"; name: string } | { view: "discovered"; name: string } | { view: "entry"; id: string; depth?: string } | { view: "layers" } | { view: "process"; domain: string } | { view: "module"; id: string };
+export type ViewQuery = { view: "flow"; name: string } | { view: "discovered"; name: string } | { view: "entry"; id: string; depth?: string } | { view: "layers" } | { view: "process"; domain: string } | { view: "module"; id: string } | { view: "system"; name: string } | { view: "er"; name: string } | { view: "sequence"; name: string; seq: string };
 
 /** What the page shows: a diagram, the explorer at an ID (`""`: none picked yet), the blind spots, or the editor on a view (`null`: an empty canvas). */
 export type PageQuery = ViewQuery | { view: "explore"; id: string } | { view: "blind" } | { view: "editor"; of: ViewQuery | null } | { view: "docs"; path: string; at?: string } | { view: "changes"; since: string };

@@ -124,6 +124,21 @@ export const EXPLANATIONS: Record<Code, { cause: string; example: string; fix: s
     example: "`wire application.purchase` where `purchase` is a file module, not its factory; `compose infra.db.Db` where `Db` is a type.",
     fix: "Name an exported factory function or class: `wire application.purchase.createPurchase`; export it if it is not.",
   },
+  K401: {
+    cause: "A relation (`calls`, `reads`, `writes`…) or a sequence message names a component its `# system` does not declare. Component names are local to their system.",
+    example: "`- reads orders-db` under `- service api` while the system declares `- db orders postgres`.",
+    fix: "Use the component's name as declared (`- reads orders`), or declare the component in the same `# system`.",
+  },
+  K402: {
+    cause: "A column's `fk <table>.<column>` names a table no data store of the system has, or a column that table does not have.",
+    example: "`- owner_id bigint fk user.id` while the table is `- table users`.",
+    fix: "Name the declared table and column (`fk users.id`), or add the table under a data store of the system.",
+  },
+  K403: {
+    cause: "The code a component is bound to (`- code <id>`) imports, directly or through other modules, a driver of a data store, cache, queue, search or file storage, and no relation of the component goes to a component of that technology: the design misses a dependency the code has.",
+    example: "`- service api` with `- code app` where `app` reaches `external.ioredis`, and the system has no `calls`/`reads` from `api` to a redis component.",
+    fix: "Add the component (`- cache cache redis`) and a relation from the bound component (`- calls cache`), or bind the component to the code that really is it.",
+  },
 };
 
 // Self-contained: the npm package ships no docs/, so each reason shows the right form here.

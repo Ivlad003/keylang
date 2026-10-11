@@ -8,7 +8,11 @@
 // default plugins, see scripts/build-web.mjs).
 
 import {
+  ActorShape,
   BaseGraph,
+  CloudShape,
+  CylinderShape,
+  HexagonShape,
   DoubleEllipseShape,
   EdgeMarker,
   EdgeMarkerRegistry,
@@ -66,6 +70,11 @@ export function register(): void {
   ShapeRegistry.add("rhombus", RhombusShape);
   ShapeRegistry.add("swimlane", SwimlaneShape);
   ShapeRegistry.add("connector", ConnectorShape);
+  ShapeRegistry.add("cylinder", CylinderShape);
+  ShapeRegistry.add("cloud", CloudShape);
+  ShapeRegistry.add("hexagon", HexagonShape);
+  ShapeRegistry.add("actor", ActorShape);
+  PerimeterRegistry.add("hexagonPerimeter", Perimeter.HexagonPerimeter);
   PerimeterRegistry.add("rectanglePerimeter", Perimeter.RectanglePerimeter);
   PerimeterRegistry.add("ellipsePerimeter", Perimeter.EllipsePerimeter);
   PerimeterRegistry.add("rhombusPerimeter", Perimeter.RhombusPerimeter);
@@ -97,9 +106,39 @@ export function glyphOf(node: { verdict?: string | null | undefined }): string {
   return node.verdict ? (VERDICT_GLYPH[node.verdict] ?? "") : "";
 }
 
+/** How a component of a system looks (system-design/03): a shape, an icon before its name and a fill. */
+export const COMPONENT_LOOK: Record<string, { shape: string; icon: string; fill: string; perimeter?: string }> = {
+  client: { shape: "rectangle", icon: "👤", fill: "#e3f2fd" },
+  cdn: { shape: "cloud", icon: "☁", fill: "#e1f5fe", perimeter: "ellipsePerimeter" },
+  dns: { shape: "cloud", icon: "🌐", fill: "#e1f5fe", perimeter: "ellipsePerimeter" },
+  lb: { shape: "hexagon", icon: "⇋", fill: "#ede7f6", perimeter: "hexagonPerimeter" },
+  gateway: { shape: "hexagon", icon: "⛩", fill: "#ede7f6", perimeter: "hexagonPerimeter" },
+  service: { shape: "rectangle", icon: "▢", fill: "#e8eaf6" },
+  worker: { shape: "rectangle", icon: "⚙", fill: "#f3e5f5" },
+  function: { shape: "rectangle", icon: "λ", fill: "#f3e5f5" },
+  db: { shape: "cylinder", icon: "⛁", fill: "#e0f2f1" },
+  warehouse: { shape: "cylinder", icon: "▦", fill: "#e0f2f1" },
+  cache: { shape: "cylinder", icon: "⚡", fill: "#fff3e0" },
+  storage: { shape: "cylinder", icon: "🪣", fill: "#efebe9" },
+  queue: { shape: "rectangle", icon: "☰", fill: "#fce4ec" },
+  search: { shape: "rectangle", icon: "🔍", fill: "#f1f8e9" },
+  auth: { shape: "hexagon", icon: "🔐", fill: "#fffde7", perimeter: "hexagonPerimeter" },
+  external: { shape: "cloud", icon: "⇗", fill: "#ffffff", perimeter: "ellipsePerimeter" },
+};
+
 /** The text inside a shape: the glyph of a small shape, or the verdict glyph and the label. */
 function labelOf(node: DiagramNode): string {
   switch (node.kind) {
+    case "component":
+    case "participant": {
+      const look = node.component ? COMPONENT_LOOK[node.component] : undefined;
+      const glyph = glyphOf(node);
+      return `${glyph ? `${glyph} ` : ""}${look ? `${look.icon} ` : ""}${node.label}${node.tech && node.kind === "component" && node.tech !== node.label ? `\n${node.tech}` : ""}`;
+    }
+    case "table":
+      return node.label;
+    case "anchor":
+      return "";
     case "parallel":
       return "+";
     case "gateway":
@@ -119,7 +158,7 @@ function labelOf(node: DiagramNode): string {
   }
 }
 
-export function nodeStyle(node: Pick<DiagramNode, "kind" | "verdict">): CellStyle {
+export function nodeStyle(node: Pick<DiagramNode, "kind" | "verdict"> & { component?: string | undefined }): CellStyle {
   const colour = (node.verdict && VERDICT_COLOUR[node.verdict]) || NEUTRAL;
   const style: CellStyle = { strokeColor: colour.stroke, fillColor: colour.fill, fontColor: "#212121", fontSize: 11, strokeWidth: 1.5 };
   if (node.verdict === "planned") style.dashed = true;
@@ -138,6 +177,15 @@ export function nodeStyle(node: Pick<DiagramNode, "kind" | "verdict">): CellStyl
       return { ...style, dashed: true, rounded: true, fillColor: "#ffffff" };
     case "layer":
       return { ...style, rounded: true, fontStyle: 1 };
+    case "component":
+    case "participant": {
+      const look = COMPONENT_LOOK[node.component ?? ""] ?? COMPONENT_LOOK["service"]!;
+      return { ...style, shape: look.shape, ...(look.perimeter ? { perimeter: look.perimeter } : {}), fillColor: node.verdict ? colour.fill : look.fill, rounded: look.shape === "rectangle", whiteSpace: "wrap", ...(look.shape === "cylinder" ? { verticalAlign: "bottom", spacingBottom: 8 } : {}) };
+    }
+    case "table":
+      return { ...style, shape: "swimlane", horizontal: true, startSize: 26, fillColor: "#e0f2f1", swimlaneFillColor: "#ffffff", fontStyle: 1, fontSize: 12, rounded: false };
+    case "anchor":
+      return { shape: "rectangle", fillColor: "none", strokeColor: "none" };
     default:
       return { ...style, rounded: true };
   }
@@ -145,6 +193,17 @@ export function nodeStyle(node: Pick<DiagramNode, "kind" | "verdict">): CellStyl
 
 function edgeStyle(edge: DiagramEdge): CellStyle {
   const colour = (edge.verdict && VERDICT_COLOUR[edge.verdict]) || NEUTRAL;
+  const base: CellStyle = { strokeColor: colour.stroke, fontColor: "#424242", fontSize: 10, labelBackgroundColor: "#ffffff" };
+  switch (edge.kind) {
+    case "relation":
+      return { ...base, endArrow: edge.async ? "open" : "classic", dashed: edge.async === true, strokeWidth: 1.5 };
+    case "message":
+      return { ...base, endArrow: edge.async ? "open" : "classic", dashed: edge.async === true, align: "center", verticalAlign: "bottom", labelBackgroundColor: "none", exitPerimeter: false, entryPerimeter: false };
+    case "lifeline":
+      return { strokeColor: "#b0bec5", dashed: true, endArrow: "none", strokeWidth: 1 };
+    case "fk":
+      return { ...base, endArrow: "classic", strokeColor: "#00695c", strokeWidth: 1.5 };
+  }
   const dashed = edge.kind === "deny" || edge.kind === "emits" || edge.kind === "continues" || edge.kind === "call" || edge.kind === "dependency";
   return { strokeColor: colour.stroke, fontColor: "#424242", fontSize: 10, endArrow: edge.kind === "call" || edge.kind === "dependency" ? "open" : "classic", dashed, labelBackgroundColor: "#ffffff" };
 }
@@ -290,6 +349,17 @@ export class Canvas {
       for (const node of diagram.nodes) {
         const shape = graph.insertVertex({ parent, value: labelOf(node), position: [node.x, node.y], size: [node.w, node.h], style: this.styleOf(node) });
         const own = [shape];
+        if (node.kind === "table" && node.lines) {
+          own.push(
+            graph.insertVertex({
+              parent,
+              value: node.lines.join("\n"),
+              position: [node.x + 6, node.y + 28],
+              size: [node.w - 12, node.h - 32],
+              style: { shape: "rectangle", fillColor: "none", strokeColor: "none", fontColor: "#263238", fontSize: 11, fontFamily: "ui-monospace, monospace", align: "left", verticalAlign: "top" },
+            }),
+          );
+        }
         if (SMALL.has(node.kind)) {
           const glyph = glyphOf(node);
           own.push(

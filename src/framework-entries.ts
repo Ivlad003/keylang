@@ -5,7 +5,8 @@
 // `route` `Cart-Show`) and a coverage note for a `*/cartridge` require that
 // only a guessed cartridge path decided; NestJS adds the methods its
 // decorators name (`@Get`, `@Cron`, `@OnEvent`, `@MessagePattern`, `@Query`),
-// PWA Kit the routes of `routes.jsx` and the server of `ssr.js`. A PHP
+// PWA Kit the routes of `routes.jsx` and the server of `ssr.js`, React Router
+// the `loader`/`action` of its file-system route modules. A PHP
 // framework (Laravel, Symfony) names a class and its method instead of a
 // script; its listeners, job and message handlers are observers of events the
 // graph places itself (`src/frameworks/entries.ts`). Express, Fastify and
@@ -18,6 +19,7 @@ import { compareEntries, entryScope, fnIn, frameworkEntry, type EntryScope } fro
 import type { CallFact, DeclFact, DecoratorArg, FileFacts } from "./extract/facts.ts";
 import type { EntryConfigFact, FrameworkInput, TypeName } from "./frameworks/adapter.ts";
 import { cartridgeAnswers, cartridgeLayout, SUPER_MODULE, type CartridgeLayout } from "./frameworks/cartridges.ts";
+import { reactRouterEntries } from "./framework-code/react-router.ts";
 import { webEntries } from "./framework-code/web-entries.ts";
 import { PYTHON_WEB_FRAMEWORKS } from "./frameworks/python-web.ts";
 import { WEB_FRAMEWORKS } from "./frameworks/web.ts";
@@ -87,6 +89,9 @@ export function frameworkEntries({ config, graph, facts, frameworks }: Framework
   if (nest !== undefined) entries.push(...nestEntries(facts, scope, new Set(nest.configs.map((c) => c.facts.path))));
   const pwa = frameworks.find((f) => f.name === "pwa-kit");
   if (pwa !== undefined) entries.push(...pwaEntries(facts, scope, new Set(pwa.configs.map((c) => c.facts.path))));
+  // React Router: the `loader`/`action` exports of file-system route modules (`src/framework-code/react-router.ts`).
+  const reactRouter = frameworks.find((f) => f.name === "react-router");
+  if (reactRouter !== undefined) entries.push(...reactRouterEntries(scope, reactRouter.configs));
   // Django, FastAPI, Flask, Celery: registrations written in the Python code (`src/python-web-entries.ts`).
   const python = frameworks.map((f) => f.name).filter((name) => PYTHON_WEB_FRAMEWORKS.includes(name));
   if (python.length > 0) {

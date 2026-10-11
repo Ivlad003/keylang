@@ -12,6 +12,7 @@ import { checkResults, type CheckResult } from "../check-results.ts";
 import { toPosix } from "../config.ts";
 import { diagramOf, flowListing, parseView, usagesOf, viewOfKey, viewsOf, type Diagram, type DiagramNode } from "../diagram.ts";
 import { layoutFromFile, readLayout, type LayoutFile } from "../diagram-layout.ts";
+import { codeSchemas, readCodeSchemas, type SchemaRead } from "../schema-discover.ts";
 import { PROCESSES_FILE, processViews, readProcesses } from "../discover-names.ts";
 import { callsOf, eventsOf } from "../explorer.ts";
 import { redactUrl } from "../clone.ts";
@@ -28,6 +29,9 @@ import { pendingTargets } from "../proposals.ts";
 import { compareText } from "../span.ts";
 import { compileSpec, type SpecIR } from "../spec-ir.ts";
 import { buildTour, tourMarkdown } from "../tour.ts";
+
+/** The schemas of the code as a diagram's input, once they are read (a keyed diagram does not wait for them). */
+const withSchemas = (schemas: SchemaRead | undefined): { schemas?: SchemaRead } => (schemas ? { schemas } : {});
 
 /** One answer: a status, a media type, the body; `file` names an attachment. */
 export interface ReadAnswer {
@@ -127,7 +131,7 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
     if (wanted === null) return `view: a view key such as flow:<name>, discovered:<name>, entry:<id>, process:<domain> or layers`;
     const spec = wanted.discovered ? discoveredSpec(done) : done.spec;
     if (spec === null) return { nodes: [], edges: [], groups: [] };
-    return diagramOf({ snapshot: done.snapshot, spec, results: [], view: wanted.view, processes: processesOf(done) });
+    return diagramOf({ snapshot: done.snapshot, spec, results: [], view: wanted.view, processes: processesOf(done), systems: done.systems, ...withSchemas(readCodeSchemas(done)) });
   };
 
   // The explained map of a snapshot that was rendered without it (`explain.map` off), once per snapshot.
@@ -309,7 +313,7 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
       const entries = new Map((done.snapshot?.entries ?? []).map((entry) => [entry.id, entry]));
       const events = eventsOf(done.snapshot);
       return json(200, {
-        ...viewsOf(done.snapshot, done.spec, processes),
+        ...viewsOf(done.snapshot, done.spec, processes, done.systems, await codeSchemas(done)),
         ...(options.showRoot === false ? {} : { root }),
         events: events.events,
         ...(events.reason ? { eventsReason: events.reason } : {}),
@@ -333,14 +337,21 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
     }
     const results = checkResults(done.verdicts, done.snapshot?.snapshotId ?? null, done.diagnostics);
     // The view's layout file places the shapes (business-flows/24); one that cannot be read leaves the computed places.
-    const key = view.kind === "flow" ? `flow:${view.name}` : view.kind === "entry" ? `entry:${view.id}` : view.kind === "process" ? `process:${view.domain}` : view.kind === "layers" ? "layers" : null;
+    const key =
+      view.kind === "flow" ? `flow:${view.name}`
+      : view.kind === "entry" ? `entry:${view.id}`
+      : view.kind === "process" ? `process:${view.domain}`
+      : view.kind === "layers" ? "layers"
+      : view.kind === "system" || view.kind === "er" ? `${view.kind}:${view.name}`
+      : view.kind === "sequence" ? `sequence:${view.name}/${view.seq}`
+      : null;
     let saved: LayoutFile | null = null;
     try {
       if (key !== null) saved = readLayout(root, specDir, key).file;
     } catch {
       saved = null;
     }
-    return json(200, { ...withResults(diagramOf({ snapshot: done.snapshot, spec: done.spec, results, view, processes, saved }), results), specHash: specHash(root, done.docs) });
+    return json(200, { ...withResults(diagramOf({ snapshot: done.snapshot, spec: done.spec, results, view, processes, saved, systems: done.systems, schemas: await codeSchemas(done) }), results), specHash: specHash(root, done.docs) });
   };
 
   /**
@@ -411,7 +422,13 @@ function withResults(diagram: Diagram, results: readonly CheckResult[]): Omit<Di
   }
   const nodes = diagram.nodes.map((node) => {
     const ref = node.ref;
-    const found = ref?.specFile !== undefined && ref.specLine !== undefined ? byLine.get(`${ref.specFile}:${ref.specLine}`) : ref?.id !== undefined ? byArea.get(ref.id) : undefined;
+    // A component's verdicts are those of its relations: `system <name>`, area `<component> <verb> <target>`.
+    const system = diagram.system ? `system ${diagram.system.name}` : null;
+    const found =
+      node.kind === "component" && system !== null ? results.filter((result) => result.criterion === system && result.area.startsWith(`${node.label} `))
+      : ref?.specFile !== undefined && ref.specLine !== undefined ? byLine.get(`${ref.specFile}:${ref.specLine}`)
+      : ref?.id !== undefined ? byArea.get(ref.id)
+      : undefined;
     if (!found || found.length === 0) return node;
     return { ...node, results: found.slice(0, MAX_NODE_RESULTS).map((result): NodeResult => ({ verdict: result.verdict, criterion: result.criterion, message: result.evidence })) };
   });

@@ -17,6 +17,7 @@ import { laravel } from "./laravel.ts";
 import { magento } from "./magento.ts";
 import { nestjs } from "./nestjs.ts";
 import { pwaKit } from "./pwa-kit.ts";
+import { reactRouter } from "./react-router.ts";
 import { celery, django, fastapi, flask } from "./python-web.ts";
 import { sfcc } from "./sfcc.ts";
 import { symfony } from "./symfony.ts";
@@ -393,7 +394,7 @@ export const EVERY_CLASS = "*";
 export const FRAMEWORK_CONFIG = "framework:";
 
 /** Adapters keylang has, by name. */
-export const FRAMEWORK_ADAPTERS: readonly FrameworkAdapter[] = [laravel, magento, nestjs, pwaKit, sfcc, symfony, django, fastapi, flask, celery, express, fastify, next];
+export const FRAMEWORK_ADAPTERS: readonly FrameworkAdapter[] = [laravel, magento, nestjs, pwaKit, reactRouter, sfcc, symfony, django, fastapi, flask, celery, express, fastify, next];
 
 export const FRAMEWORK_NAMES: readonly string[] = FRAMEWORK_ADAPTERS.map((a) => a.name).sort();
 

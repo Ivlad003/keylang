@@ -21,6 +21,9 @@ import { CONFIG_FILE } from "../config.ts";
 import { errorText } from "../diag.ts";
 import { layoutToFile, readLayout, writeLayout, type ClientLayout } from "../diagram-layout.ts";
 import { diagramChanges, parseEditorModel, type DiagramChanges } from "../diagram-proposal.ts";
+import { codeSchemas } from "../schema-discover.ts";
+import { adoptedName, discoverSystem, DISCOVERED } from "../system-discover.ts";
+import { systemChanges } from "../system-proposal.ts";
 import { diagramOf, viewOfKey, type Diagram } from "../diagram.ts";
 import { existingText, readTextOrNull } from "../files.ts";
 import type { Document } from "../ir.ts";
@@ -131,24 +134,34 @@ export async function runDiagramPropose(request: DiagramProposeRequest, context:
   if (request.specHash !== undefined && request.specHash !== null && request.specHash !== specHash(root, analysis.docs)) {
     return result(view, "conflict", 1, "the specs changed since this diagram was opened: the view is drawn again from the specs as they are now; draw the change on it and propose again");
   }
-  const diagram = baseDiagram(analysis, root, view);
-  if (typeof diagram === "string") return result(view, "invalid", 2, diagram);
   const specDir = rootRelative(root, analysis.config.dir);
+  const system = /^system:(.+)$/.exec(view)?.[1] ?? null;
+  const diagram = system !== null ? { nodes: [], edges: [], groups: [] } : baseDiagram(analysis, root, view);
+  if (typeof diagram === "string") return result(view, "invalid", 2, diagram);
   const flowName = /^flow:(.+)$/.exec(view)?.[1] ?? null;
   const notes: string[] = [];
   if (view.startsWith("discovered:")) notes.push("a discovered flow is a view, not a spec: `keylang flows adopt <name>` proposes it; only rules and lanes of this drawing are proposed");
   let changes: DiagramChanges;
   try {
-    changes = diagramChanges({
-      model,
-      diagram,
-      flow: flowName,
-      spec: analysis.spec,
-      snapshot: analysis.snapshot,
-      specDir,
-      read: (path) => existingText(join(root, path)),
-      config: { text: readTextOrNull(join(root, CONFIG_FILE)), layers: Object.fromEntries(analysis.config.layers) },
-    });
+    if (system !== null) {
+      // A system's view (system-design/08): the canvas is the `# system` section it draws.
+      const spec = system === DISCOVERED ? (analysis.snapshot ? discoverSystem(analysis.snapshot, (await codeSchemas(analysis)).schemas) : null) : (analysis.systems.find((item) => item.name === system) ?? null);
+      if (spec === null) return result(view, "invalid", 2, `no system \`${system}\``);
+      const adoptAs = analysis.snapshot ? adoptedName(analysis.snapshot) : "app";
+      const found = systemChanges({ model, system: spec, adoptAs, specDir, read: (path) => existingText(join(root, path)) });
+      changes = { targets: found.targets, config: null, notes: found.notes };
+    } else {
+      changes = diagramChanges({
+        model,
+        diagram,
+        flow: flowName,
+        spec: analysis.spec,
+        snapshot: analysis.snapshot,
+        specDir,
+        read: (path) => existingText(join(root, path)),
+        config: { text: readTextOrNull(join(root, CONFIG_FILE)), layers: Object.fromEntries(analysis.config.layers) },
+      });
+    }
   } catch (error) {
     return result(view, "failed", 2, errorText(error));
   }

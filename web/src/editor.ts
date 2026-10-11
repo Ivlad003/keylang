@@ -64,16 +64,16 @@ import {
 } from "@maxgraph/core";
 import type { Api, BundleImport, ClipEdge, ClipShape, Diagram, DiagramNode, DiagramProposal, Verdict, Views } from "./api.ts";
 import { askPasteText, isBundle, mapLayers, writeClipboard } from "./bundle-clip.ts";
-import { register, VERDICT_COLOUR, VERDICT_GLYPH, nodeStyle, wrapLabel } from "./canvas.ts";
+import { COMPONENT_LOOK, register, VERDICT_COLOUR, VERDICT_GLYPH, nodeStyle, wrapLabel } from "./canvas.ts";
 import { button, make } from "./dom.ts";
 import { layoutStore, type Layout, type Position } from "./layout-store.ts";
 import { Properties } from "./properties.ts";
 
 /** The kinds of shape the editor knows: those of the diagram model and those a person draws. */
-export type ShapeKind = "lane" | "layer" | "module" | "fn" | "type" | "start" | "task" | "gateway" | "parallel" | "event" | "timer" | "external" | "hole" | "note" | "group";
+export type ShapeKind = "lane" | "layer" | "module" | "fn" | "type" | "start" | "task" | "gateway" | "parallel" | "event" | "timer" | "external" | "hole" | "note" | "group" | "component";
 
 /** The kinds of connection: the edges of the diagram model, and an event's subscriber. */
-export type LinkKind = "sequence" | "call" | "dependency" | "allow" | "deny" | "emits" | "subscribes" | "continues";
+export type LinkKind = "sequence" | "call" | "dependency" | "allow" | "deny" | "emits" | "subscribes" | "continues" | "relation";
 
 /** «з коду»: the model's shapes, only the layout changes; «чернетка»: everything changes. */
 export type EditorMode = "code" | "draft";
@@ -95,6 +95,7 @@ export const SHAPE_NAMES: Record<string, string> = {
   hole: "дірка: маршрут не доведено",
   note: "примітка",
   group: "група",
+  component: "компонент системи",
 };
 
 /** The meanings of a connection, as the bar and the panel name them. */
@@ -107,7 +108,16 @@ export const LINK_NAMES: Record<LinkKind, string> = {
   emits: "emits: крок → подія",
   subscribes: "подія → підписник",
   continues: "continues: до тригера іншого флоу",
+  relation: "зв'язок системи: calls, reads, writes, publishes…",
 };
+
+/** The verbs of a system's relation (src/parser.ts `RELATION_VERBS`): the first word of its label. */
+export const RELATION_VERBS = ["calls", "reads", "writes", "publishes", "consumes", "replicates", "uses"] as const;
+
+/** A system's view in the editor (system-design/08): its palette, its connections. */
+export function isSystemView(view: string): boolean {
+  return view.startsWith("system:");
+}
 
 const FLOW: ReadonlySet<ShapeKind> = new Set(["start", "task", "gateway", "parallel", "event", "timer", "external", "hole", "fn"]);
 const STRUCTURE: ReadonlySet<ShapeKind> = new Set(["lane", "layer", "module", "fn", "type"]);
@@ -127,6 +137,8 @@ export function linkError(kind: LinkKind, source: Shape | null, target: Shape | 
     if (kind === "deny" || kind === "allow") return `${kind}: шар не може ${kind === "deny" ? "заборонити" : "дозволити"} залежність від самого себе`;
     return "фігура не з'єднується сама з собою";
   }
+  if (kind === "relation") return source.kind === "component" && target.kind === "component" ? null : "зв'язок системи — між компонентами системи";
+  if (source.kind === "component" || target.kind === "component") return "компонент системи з'єднується зв'язком системи (calls, reads, writes…)";
   switch (kind) {
     case "allow":
     case "deny":
@@ -191,6 +203,9 @@ export class Shape {
   proposed = "";
   /** A drawn shape a proposal took: its proposal waits, or a merge did not put it in the spec. */
   status: "pending" | "rejected" | null = null;
+  /** A component of a system: its kind (`db`, `service`…) and technology. */
+  component = "";
+  tech = "";
 
   constructor(key: string, kind: ShapeKind, id: string, label: string) {
     this.key = key;
@@ -231,6 +246,8 @@ export class Shape {
         return `«type» ${wrapLabel(this.label, 2)}`;
       case "note":
         return this.description || this.label;
+      case "component":
+        return `${glyph}${COMPONENT_LOOK[this.component]?.icon ?? "▢"} ${this.label}${this.tech && this.tech !== this.label ? `\n${this.tech}` : ""}`;
       default:
         return `${glyph}${wrapLabel(this.label)}`;
     }
@@ -276,6 +293,9 @@ export interface ModelNode {
   group?: string;
   /** A drawn shape a proposal took: its proposal waits, or was not merged. */
   status?: "pending" | "rejected";
+  /** A component of a system: its kind and technology. */
+  component?: string;
+  tech?: string;
   x: number;
   y: number;
   w: number;
@@ -332,6 +352,8 @@ export interface PaletteItem {
   trigger?: string;
   /** The shape carries a keylang ID (`planned:<layer>.<name>` until it is built). */
   named: boolean;
+  /** A system's component: its kind. */
+  component?: string;
 }
 
 export const PALETTE: readonly PaletteItem[] = [
@@ -347,6 +369,32 @@ export const PALETTE: readonly PaletteItem[] = [
   { item: "timer", text: "⏱ таймер", title: "Таймер (after / every)", kind: "timer", stem: "after 1h", size: [36, 36], named: false },
   { item: "webhook", text: "✉ вебхук", title: "Вебхук: стартова подія-повідомлення", kind: "start", stem: "webhook", size: [36, 36], trigger: "webhook", named: true },
   { item: "external", text: "┆▢┆ зовнішня система", title: "Зовнішня система чи пакет: окремий пул", kind: "external", stem: "system", size: [160, 60], named: true },
+  { item: "note", text: "✎ примітка", title: "Примітка (проза)", kind: "note", stem: "примітка", size: [170, 80], named: false },
+];
+
+/** The palette of a system's view: its components by kind, a zone, a note. A component's name is local to the system. */
+export const SYSTEM_PALETTE: readonly PaletteItem[] = [
+  ...(
+    [
+      ["client", "клієнт", "web"],
+      ["cdn", "CDN", "cdn"],
+      ["dns", "DNS", "dns"],
+      ["lb", "балансувальник", "lb"],
+      ["gateway", "API gateway", "gateway"],
+      ["service", "сервіс", "api"],
+      ["worker", "воркер", "worker"],
+      ["function", "функція (serverless)", "fn"],
+      ["db", "база даних", "db"],
+      ["cache", "кеш", "cache"],
+      ["queue", "черга / топік", "queue"],
+      ["storage", "файлове сховище", "files"],
+      ["search", "пошук", "search"],
+      ["warehouse", "сховище аналітики", "dwh"],
+      ["auth", "автентифікація", "auth"],
+      ["external", "зовнішній сервіс", "partner"],
+    ] as const
+  ).map(([component, title, stem]): PaletteItem => ({ item: `sys-${component}`, text: `${COMPONENT_LOOK[component]?.icon ?? "▢"} ${title}`, title: `${title} (\`- ${component} <ім'я>\`)`, kind: "component", stem, size: [150, 70], named: false, component })),
+  { item: "zone", text: "▭ зона", title: "Зона: регіон, VPC, межа довіри (`- zone <ім'я>`)", kind: "lane", stem: "zone", size: [720, 220], named: false },
   { item: "note", text: "✎ примітка", title: "Примітка (проза)", kind: "note", stem: "примітка", size: [170, 80], named: false },
 ];
 
@@ -366,6 +414,12 @@ export function shapeStyle(shape: Shape): CellStyle {
   if (shape.kind === "lane") return { ...LANE_STYLE };
   if (shape.kind === "group") return { shape: "rectangle", fillColor: "none", strokeColor: "#90a4ae", dashed: true, rounded: true, verticalAlign: "top", align: "left", fontColor: "#607d8b", fontSize: 10, spacingLeft: 4 };
   if (shape.kind === "note") return { shape: "rectangle", fillColor: "#fff9c4", strokeColor: "#f9a825", fontColor: "#5d4037", fontSize: 11, align: "left", verticalAlign: "top", spacing: 6, whiteSpace: "wrap" };
+  if (shape.kind === "component") {
+    const style: CellStyle = { ...nodeStyle({ kind: "component", component: shape.component, verdict: shape.verdict as Verdict }) };
+    if (shape.status !== null) Object.assign(style, { dashed: true, dashPattern: "4 3", strokeColor: shape.status === "rejected" ? "#9e9e9e" : "#b26a00" });
+    if (shape.colour) style.fillColor = shape.colour;
+    return style;
+  }
   const viewKind = shape.kind === "type" || shape.kind === "module" ? "fn" : shape.kind;
   const planned = shape.id.startsWith("planned:");
   const style: CellStyle = { ...nodeStyle({ kind: viewKind, verdict: (planned ? "planned" : shape.verdict) as Verdict }) };
@@ -398,13 +452,17 @@ export function linkStyle(link: Link): CellStyle {
       return { ...base, dashed: true, dashPattern: "2 3", strokeColor: "#00695c" };
     case "continues":
       return { ...base, dashed: true, dashPattern: "8 3 2 3", strokeColor: "#1565c0" };
+    case "relation": {
+      const verb = link.label.split(/[:\s]/)[0] ?? "";
+      return { ...base, ...(verb === "publishes" || verb === "consumes" || verb === "replicates" ? { dashed: true, endArrow: "open" } : {}) };
+    }
     default:
       return base;
   }
 }
 
-const NODE_KINDS: ReadonlySet<string> = new Set(["start", "task", "gateway", "parallel", "event", "timer", "external", "hole", "module", "fn", "layer"]);
-const LINK_KINDS: ReadonlySet<string> = new Set(["sequence", "call", "dependency", "allow", "deny", "emits", "subscribes", "continues"]);
+const NODE_KINDS: ReadonlySet<string> = new Set(["start", "task", "gateway", "parallel", "event", "timer", "external", "hole", "module", "fn", "layer", "component"]);
+const LINK_KINDS: ReadonlySet<string> = new Set(["sequence", "call", "dependency", "allow", "deny", "emits", "subscribes", "continues", "relation"]);
 
 /** The layer a lane stands for: its ID without `planned:`. */
 function layerOf(lane: Shape): string {
@@ -455,6 +513,8 @@ export class Editor {
   private pointer = { x: 0, y: 0 };
   /** The meaning of the next connection drawn. */
   private linkKind: LinkKind = "sequence";
+  /** The canvas listens for palette drops once, whichever palette it shows. */
+  private paletteListening = false;
   readonly undoManager = new UndoManager(200);
   /** Copied cells (clones, kept out of the model) and where they came from; pasted again and again, a step further each time. */
   private clipboard: { cells: Cell[]; parent: Cell | null; times: number } | null = null;
@@ -554,7 +614,7 @@ export class Editor {
     if (connect) {
       connect.connectImage = new ImageBox(CONNECT_ICON, 18, 18);
       connect.factoryMethod = (): Cell => {
-        const link = new Link(this.newKey(), this.linkKind);
+        const link = new Link(this.newKey(), this.linkKind, this.linkKind === "relation" ? "calls" : "");
         const edge = new Cell(link, new Geometry(), linkStyle(link));
         edge.setEdge(true);
         edge.getGeometry()!.relative = true;
@@ -691,9 +751,14 @@ export class Editor {
     );
   }
 
+  /** The palette of the open view: a system's components on a system's view, keylang's shapes elsewhere. */
+  private paletteItems(): readonly PaletteItem[] {
+    return isSystemView(this.viewKey) ? SYSTEM_PALETTE : PALETTE;
+  }
+
   private fillPalette(): void {
-    this.palette.append(make("div", { className: "palette-head", text: "Палітра" }));
-    for (const entry of PALETTE) {
+    this.palette.replaceChildren(make("div", { className: "palette-head", text: isSystemView(this.viewKey) ? "Палітра системи" : "Палітра" }));
+    for (const entry of this.paletteItems()) {
       const item = make("button", { className: "palette-item", text: entry.text, title: `${entry.title} — перетягніть на полотно або клацніть` });
       item.type = "button";
       item.draggable = true;
@@ -709,6 +774,8 @@ export class Editor {
       });
       this.palette.append(item);
     }
+    if (this.paletteListening) return;
+    this.paletteListening = true;
     this.canvas.addEventListener("dragover", (event) => {
       if (event.dataTransfer?.types.includes("text/plain")) {
         event.preventDefault();
@@ -717,7 +784,7 @@ export class Editor {
     });
     this.canvas.addEventListener("drop", (event) => {
       const data = event.dataTransfer?.getData("text/plain") ?? "";
-      const entry = PALETTE.find((p) => `keylang-palette:${p.item}` === data);
+      const entry = this.paletteItems().find((p) => `keylang-palette:${p.item}` === data);
       if (!entry) return;
       event.preventDefault();
       this.addFromPalette(entry, this.modelPoint(event.clientX, event.clientY));
@@ -751,6 +818,15 @@ export class Editor {
     return key;
   }
 
+  /** `stem`, `stem2`, … : the first label no shape of the canvas has (a system's names are local to it). */
+  private newLabel(stem: string): string {
+    const labels = new Set(this.allCells().map((cell) => shapeOf(cell)?.label));
+    for (let n = 1; ; n++) {
+      const name = n === 1 ? stem : `${stem}${n}`;
+      if (!labels.has(name)) return name;
+    }
+  }
+
   /** `stem`, `stem2`, … : the first name no shape of that layer uses. */
   private newName(layer: string | null, stem: string): string {
     const prefix = layer === null ? "planned:" : `planned:${layer}.`;
@@ -770,9 +846,16 @@ export class Editor {
     const graph = this.graph;
     const [w, h] = entry.size;
     let cell: Cell;
-    if (entry.kind === "lane") {
-      const name = this.newName(null, entry.stem);
-      const shape = new Shape(this.newKey(), "lane", `planned:${name}`, name);
+    if (entry.kind === "component") {
+      const lane = this.lanes().find((l) => at.x >= l.x && at.x <= l.x + l.w && at.y >= l.y && at.y <= l.y + l.h);
+      const shape = new Shape(this.newKey(), "component", "", this.newLabel(entry.stem));
+      shape.component = entry.component ?? "service";
+      const x = Math.round((at.x - w / 2 - (lane?.x ?? 0)) / GRID) * GRID;
+      const y = Math.round((at.y - h / 2 - (lane?.y ?? 0)) / GRID) * GRID;
+      cell = graph.insertVertex({ parent: lane?.cell ?? graph.getDefaultParent(), value: shape, position: [x, y], size: [w, h], style: shapeStyle(shape) });
+    } else if (entry.kind === "lane") {
+      const name = isSystemView(this.viewKey) ? this.newLabel(entry.stem) : this.newName(null, entry.stem);
+      const shape = new Shape(this.newKey(), "lane", isSystemView(this.viewKey) ? name : `planned:${name}`, name);
       cell = graph.insertVertex({ parent: graph.getDefaultParent(), value: shape, position: [Math.round(at.x / GRID) * GRID, Math.round(at.y / GRID) * GRID], size: [w, h], style: shapeStyle(shape) });
     } else {
       const lane = this.lanes().find((l) => at.x >= l.x && at.x <= l.x + l.w && at.y >= l.y && at.y <= l.y + l.h);
@@ -1292,7 +1375,7 @@ export class Editor {
   }
 
   /** The panel's change of a shape: one undoable value (and style, size) change; a refusal as text. */
-  updateShape(cell: Cell, patch: Partial<Pick<Shape, "id" | "label" | "kind" | "trigger" | "role" | "signature" | "tests" | "description" | "colour">>): string | null {
+  updateShape(cell: Cell, patch: Partial<Pick<Shape, "id" | "label" | "kind" | "trigger" | "role" | "signature" | "tests" | "description" | "colour" | "component" | "tech">>): string | null {
     const shape = shapeOf(cell);
     if (!shape) return "не фігура";
     // A colour is layout: «з коду» changes it too.
@@ -1345,6 +1428,15 @@ export class Editor {
     }
     const next = link.clone();
     Object.assign(next, patch);
+    // A system's relation is `<verb>[: caption]`: the verb is what the line of the spec starts with.
+    if (next.kind === "relation" && !(RELATION_VERBS as readonly string[]).includes(next.label.split(/[:\s]/)[0] ?? "")) {
+      if (patch.kind !== undefined && patch.label === undefined) next.label = "calls";
+      else {
+        const refused = `зв'язок системи починається дієсловом: ${RELATION_VERBS.join(", ")} (напр. «reads: SELECT»)`;
+        this.tip(refused);
+        return refused;
+      }
+    }
     const model = this.graph.getDataModel();
     this.graph.batchUpdate(() => {
       model.setValue(cell, next);
@@ -1483,8 +1575,16 @@ export class Editor {
   async openDiagram(key: string, diagram: Diagram, fresh = false): Promise<void> {
     // The view being left keeps its layout and its draft.
     await this.flush();
+    const wasSystem = isSystemView(this.viewKey);
     this.viewKey = key;
     this.source = diagram;
+    // A system's view draws components and relations; any other view keylang's shapes.
+    if (wasSystem !== isSystemView(key)) {
+      this.fillPalette();
+      this.linkKind = isSystemView(key) ? "relation" : "sequence";
+      const select = document.getElementById("editor-link-kind") as HTMLSelectElement | null;
+      if (select) select.value = this.linkKind;
+    }
     this.editMode = "code";
     const draft = fresh ? null : this.readDraft(key);
     const layout = draft ? null : await layoutStore().load(key);
@@ -1594,6 +1694,11 @@ export class Editor {
     if (kind === "start") shape.trigger = entries.get(id) ?? "fn";
     if (kind === "parallel") shape.role = node.id.endsWith(":join") ? "join" : "split";
     if (id.startsWith("planned:") || node.verdict === "planned") shape.signature = "";
+    if (kind === "component") {
+      shape.id = "";
+      shape.component = node.component ?? "service";
+      shape.tech = node.tech ?? "";
+    }
     return shape;
   }
 
@@ -1658,6 +1763,10 @@ export class Editor {
         if (shape.signature) node.signature = shape.signature;
         if (shape.description) node.description = shape.description;
         if (group !== undefined) node.group = group;
+        if (shape.kind === "component") {
+          node.component = shape.component;
+          if (shape.tech) node.tech = shape.tech;
+        }
         nodes.push(node);
       }
       const link = linkOf(cell);

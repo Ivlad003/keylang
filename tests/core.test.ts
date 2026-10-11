@@ -249,7 +249,7 @@ function results(dir: string, args: string[] = []): { status: number | null; res
 test("headings: only a flow has a name; an empty heading says so; fmt writes one space before a heading comment", (t) => {
   const dir = repo(t, { "a.md": "# rules foo\n\n- no-cycles\n\n# map extra\n\n- a\n\n# wiring x\n\n#\n\n#   <!-- c -->\n\n# flow f g\n\n- trigger a.b\n" });
   const r = keylang(dir, ["check", "a.md"]);
-  assert.match(r.stdout, /^a\.md:1:9: K005 unexpected words in heading; only `# flow` takes a name$/m);
+  assert.match(r.stdout, /^a\.md:1:9: K005 unexpected words in heading; only `# flow`, `# migration` and `# system` take a name$/m);
   assert.match(r.stdout, /^a\.md:5:7: K005 unexpected words in heading/m);
   assert.match(r.stdout, /^a\.md:9:10: K005 unexpected words in heading/m);
   assert.match(r.stdout, /^a\.md:11:1: K006 section heading without a kind;/m);

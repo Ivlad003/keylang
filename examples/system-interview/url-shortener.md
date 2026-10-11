@@ -1,0 +1,75 @@
+# system shortener
+
+A URL shortener in a system-design interview: requirements and estimates
+first, then the components, the schema and the request that matters most.
+`keylang check examples/system-interview` checks the names; `keylang web`
+draws it (Системи → shortener: схема, ER, redirect).
+
+- requirement a user turns a long URL into a short code
+- requirement a short code redirects to its long URL
+- requirement a user sees the clicks of their links
+- nfr redirect p99 under 50 ms, 99.99% available
+- nfr a code never points to two URLs
+- estimate 100M new URLs a month ≈ 40 writes/s; reads 100× ≈ 4k/s, peak 20k/s
+- estimate 500 bytes a row × 1.2B rows a year ≈ 600 GB a year
+- tradeoff base62 of a counter range per server: no collisions, but codes are guessable
+- tradeoff clicks go through a queue: analytics lag seconds behind, redirects never wait
+- ? custom aliases, and who may take one
+- client web browser
+  - calls cdn HTTPS
+  - calls lb HTTPS
+- cdn cdn CloudFront
+- zone region eu-central-1
+  - lb lb ALB
+    - calls api HTTP
+  - service api Node.js
+    - reads cache GET code
+    - reads db SELECT on a miss
+    - writes db INSERT
+    - calls ids next range
+    - publishes clicks click
+    - scale 6 instances behind the ALB, stateless
+  - service ids range allocator
+    - writes db UPDATE ranges
+  - worker stats
+    - consumes clicks
+    - writes warehouse batch insert
+  - cache cache redis
+    - scale 3 shards, LRU, 20 GB hot codes
+  - queue clicks kafka
+    - scale 12 partitions by code
+  - db db postgres
+    - replicates replica WAL streaming
+    - scale primary for writes, replica for reads
+    - table urls
+      - code text pk
+      - long_url text
+      - owner_id bigint null fk users.id
+      - created_at timestamptz
+      - index owner_id
+    - table users
+      - id bigint pk
+      - email text unique
+    - table ranges
+      - server text pk
+      - next bigint
+  - db replica postgres read replica
+  - warehouse warehouse clickhouse
+    - table clicks
+      - code text
+      - at timestamptz
+      - country text null
+      - index code, at
+- sequence redirect
+  - web → lb GET /abc
+  - lb → api GET /abc
+  - api → cache GET abc
+  - api → db SELECT long_url on a miss
+  - api ⇢ clicks click abc
+  - api → web 302 Location
+- sequence shorten
+  - web → lb POST /urls
+  - lb → api POST /urls
+  - api → ids next code
+  - api → db INSERT urls
+  - api → web 201 code

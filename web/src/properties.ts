@@ -11,7 +11,7 @@
 import type { Api, Views } from "./api.ts";
 import { make } from "./dom.ts";
 import type { Cell } from "@maxgraph/core";
-import { LINK_NAMES, SHAPE_NAMES, TRIGGERS, type Link, type LinkKind, type Shape, type ShapeKind } from "./editor.ts";
+import { LINK_NAMES, RELATION_VERBS, SHAPE_NAMES, SYSTEM_PALETTE, TRIGGERS, type Link, type LinkKind, type Shape, type ShapeKind } from "./editor.ts";
 
 /** A line of the tests field: `test <file> "<name>"`. */
 export const TEST_LINE = /^test\s+(\S+)\s+"([^"]+)"$/;
@@ -20,7 +20,7 @@ export const TEST_LINE = /^test\s+(\S+)\s+"([^"]+)"$/;
 export interface PanelEditor {
   mode(): "code" | "draft";
   /** Replaces a shape's keylang side (one undoable change); a refusal comes back as text. */
-  updateShape(cell: Cell, patch: Partial<Pick<Shape, "id" | "label" | "kind" | "trigger" | "role" | "signature" | "tests" | "description" | "colour">>): string | null;
+  updateShape(cell: Cell, patch: Partial<Pick<Shape, "id" | "label" | "kind" | "trigger" | "role" | "signature" | "tests" | "description" | "colour" | "component" | "tech">>): string | null;
   updateLink(cell: Cell, patch: Partial<Pick<Link, "kind" | "label">>): string | null;
 }
 
@@ -113,7 +113,28 @@ export class Properties {
       out.push(this.field(shape.kind === "gateway" ? "умова" : shape.kind === "timer" ? "after / every" : "мітка", label));
     }
 
-    if (shape.kind !== "lane" && shape.kind !== "group") {
+    if (shape.kind === "component") {
+      // A system's component: its kind decides its shape; the technology is what `check` matches drivers against.
+      const component = make("select");
+      component.id = "prop-component";
+      component.disabled = locked;
+      for (const entry of SYSTEM_PALETTE) {
+        if (!entry.component) continue;
+        const option = make("option", { text: `${entry.component} — ${entry.text}` });
+        option.value = entry.component;
+        option.selected = entry.component === shape.component;
+        component.append(option);
+      }
+      component.addEventListener("change", () => apply({ component: component.value }));
+      out.push(this.field("вид", component));
+      const tech = make("input");
+      tech.id = "prop-tech";
+      tech.value = shape.tech;
+      tech.disabled = locked;
+      tech.placeholder = "postgres, redis, kafka, express…";
+      tech.addEventListener("change", () => apply({ tech: tech.value.trim() }));
+      out.push(this.field("технологія", tech, "postgres, redis, kafka… звіряються з кодом"));
+    } else if (shape.kind !== "lane" && shape.kind !== "group") {
       const kind = make("select");
       kind.id = "prop-kind";
       kind.disabled = locked;
@@ -235,7 +256,7 @@ export class Properties {
     label.value = link.label;
     label.disabled = locked;
     label.addEventListener("change", () => apply({ label: label.value }));
-    out.push(this.field("мітка", label));
+    out.push(this.field("мітка", label, link.kind === "relation" ? `<дієслово>: <підпис> — ${RELATION_VERBS.join(", ")}` : undefined));
     const error = make("p", { className: "prop-error" });
     error.id = "prop-error";
     error.hidden = true;

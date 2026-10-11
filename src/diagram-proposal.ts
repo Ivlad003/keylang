@@ -39,6 +39,9 @@ export interface EditorNode {
   kind: string;
   label: string;
   layer: string | null;
+  /** A system's component (system-design/08): its kind and technology. */
+  component?: string;
+  tech?: string;
   trigger?: string;
   role?: "split" | "join";
   signature?: string;
@@ -107,6 +110,8 @@ export function parseEditorModel(value: unknown): EditorModel | string {
       ...(text(node.signature) ? { signature: node.signature } : {}),
       tests,
       ...(text(node.description) ? { description: node.description } : {}),
+      ...(text(node.component) ? { component: node.component } : {}),
+      ...(text(node.tech) ? { tech: node.tech } : {}),
       x: node.x as number,
       y: node.y as number,
       w: node.w as number,

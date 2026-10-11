@@ -70,6 +70,20 @@ export const INTEGRATIONS_REPORTS: { integrations: Report<"integrations"> } = {
   },
 };
 
+export const SYSTEM_REPORTS: { system: Report<"system"> } = {
+  system: {
+    label: (request) => `system ${request.action}${request.name ? ` ${request.name}` : ""}`,
+    summary: (_record, result) => `${result.payload.systems.length} system(s)${result.payload.verdicts.length > 0 ? ` · ${result.payload.verdicts.length} verdict(s)` : ""}${codeOf(result.exitCode)}`,
+    rows(_state, _record, result, view) {
+      return [
+        { text: `System · ${result.payload.action}`, style: BOLD },
+        outcomeRow(view.summary, result.exitCode === 0),
+        ...textRows(`keylang system ${result.payload.action} · stdout`, result.payload.text),
+      ];
+    },
+  },
+};
+
 /** The places of the tour: the fns to read first, then the modules with most holes. */
 export function tourPlaces(payload: TourPayload): ReportItem[] {
   return [

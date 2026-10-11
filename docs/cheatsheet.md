@@ -13,6 +13,7 @@ Specs are Markdown under the spec directory: `dir` in `keylang.json`, `keylang/`
 | `# flow <name>` | one scenario; the name is required and unique | `keylang/flows/*.md`, `keylang/features/<slug>.md` |
 | `# wiring` | factories for `keylang wire` | `keylang/wiring.md` |
 | `# migration <name>` | old-stack IDs mapped to this repository's; the name is required | `keylang/migration.md` (`keylang flow import` proposes rows) |
+| `# system <name>` | a system design: components, zones, relations, tables, sequences, interview notes; the name is required | `keylang/system/<name>.md` (`keylang system new`) |
 
 An item is a list line, `- <keyword> <arguments>`. A child is indented exactly two spaces more than its parent; any other indent or a tab is K003. Paragraphs, `##` headings, tables and code fences are prose without meaning. Text indented under an item is its description, and `<!-- … -->` at the end of an item is a comment.
 
@@ -31,6 +32,11 @@ A word is a keyword only where this table allows it; elsewhere the line falls ba
 | top of a flow section | `kind`, `trigger`, `continues`, `step`, `parallel`, `reads`, `emits`, `calls`, `invariant`, `when`, `after`, `every`, `test`, `planned`, `?` | K004 |
 | top of a wiring section | `wire` | K004 |
 | top of a migration section | `map`, `dropped` | K004 |
+| top of a system section | a component kind (`client`, `cdn`, `dns`, `lb`, `gateway`, `service`, `worker`, `function`, `db`, `cache`, `queue`, `storage`, `search`, `warehouse`, `auth`, `external`), `zone`, `sequence`, `requirement`, `nfr`, `estimate`, `tradeoff`, `?` | K004 |
+| under `zone` | a component kind, `zone` | K004 |
+| under a component | `code`, `calls`, `reads`, `writes`, `publishes`, `consumes`, `replicates`, `uses`, `scale`, `table` (data stores only) | K004 |
+| under `table` | `index` | `<name> <type> [pk] [unique] [null] [fk <table>.<column>]`: a column |
+| under `sequence` | none | `<from> → <to> [text]`: a message (`⇢` or `-->`: asynchronous) |
 | under `layer` | `module`, `event` (the generated `events` group) | `<name>`: a module |
 | under `module` (map) | `module`, `fn`, `type`, `event` | `<alias> <id>`: a dependency |
 | under `fn`, `event` | `calls` (under `event`: the observers the framework calls) | K004 |

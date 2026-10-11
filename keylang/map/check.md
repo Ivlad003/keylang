@@ -13,19 +13,20 @@
     - resolve check.resolve
     - rules check.rules
     - spec-ir lang.spec-ir
+    - system check.system
     - test-report check.test-report
     - trace-evidence check.trace-evidence
     - verdict check.verdict
     - wiring check.wiring
-    - type [SnapshotInput](../../src/assess.ts#L19)
-    - type [Assessment](../../src/assess.ts#L29)
-    - fn [assess](../../src/assess.ts#L37) ( docs: readonly Document[], snapshot: SnapshotInput | null, evidence: { tests: TestCase[] | null; traces: TraceRun[] | null; static?: StaticMode; staticSetBy?: StaticSource; knownExternal?: ReadonlySet<string>; testFileExists?: FlowInput["testFileExists"]; /** The old stack the old IDs of `# migration` rows resolve against; absent: none (they stay unverified). */ migration?: OldSnapshot; /** * The spec files whose claims are assessed (`check <file>`): the others are * context only — their declarations, `planned` and flow names resolve * references, but their rules, flows and diagnostics are not reported. * Absent: every file. */ assessed?: (file: string) => boolean; } = { tests: null, traces: null }, format: RuleFormat = 1, ) → Assessment
-      - calls lang.spec-ir.compileSpec, check.resolve.check, check.rules.evaluateRules, check.flows.evaluateFlows, check.rules.dependencyKindOf, check.wiring.checkWiring, check.assess.nodeKinds, check.migration.migrationCheck, base.diag.compareDiagnostics, check.rules.canonicalRuleSpec, check.assess.afterRecovery, check.assess.recoveredLines
-    - fn [recoveredLines](../../src/assess.ts#L129) (docs: readonly Document[]) → Map<string, string> <!-- internal -->
+    - type [SnapshotInput](../../src/assess.ts#L20)
+    - type [Assessment](../../src/assess.ts#L30)
+    - fn [assess](../../src/assess.ts#L40) ( docs: readonly Document[], snapshot: SnapshotInput | null, evidence: { tests: TestCase[] | null; traces: TraceRun[] | null; static?: StaticMode; staticSetBy?: StaticSource; knownExternal?: ReadonlySet<string>; testFileExists?: FlowInput["testFileExists"]; /** The old stack the old IDs of `# migration` rows resolve against; absent: none (they stay unverified). */ migration?: OldSnapshot; /** * The spec files whose claims are assessed (`check <file>`): the others are * context only — their declarations, `planned` and flow names resolve * references, but their rules, flows and diagnostics are not reported. * Absent: every file. */ assessed?: (file: string) => boolean; } = { tests: null, traces: null }, format: RuleFormat = 1, ) → Assessment
+      - calls lang.spec-ir.compileSpec, check.resolve.check, check.rules.evaluateRules, check.flows.evaluateFlows, check.rules.dependencyKindOf, check.wiring.checkWiring, check.assess.nodeKinds, check.migration.migrationCheck, check.system.systemCheck, base.diag.compareDiagnostics, check.rules.canonicalRuleSpec, check.assess.afterRecovery, check.assess.recoveredLines
+    - fn [recoveredLines](../../src/assess.ts#L133) (docs: readonly Document[]) → Map<string, string> <!-- internal -->
       - calls lang.ir.sectionNodes
-    - fn [afterRecovery](../../src/assess.ts#L149) (verdicts: Verdict[], recovered: ReadonlyMap<string, string>) → Verdict[] <!-- internal -->
-    - fn [sameFinding](../../src/assess.ts#L162) (verdict: Verdict, diagnostics: readonly Diagnostic[]) → boolean
-    - fn [nodeKinds](../../src/assess.ts#L171) (nodes: SnapshotInput["nodes"]) → Map<string, string> <!-- internal -->
+    - fn [afterRecovery](../../src/assess.ts#L153) (verdicts: Verdict[], recovered: ReadonlyMap<string, string>) → Verdict[] <!-- internal -->
+    - fn [sameFinding](../../src/assess.ts#L166) (verdict: Verdict, diagnostics: readonly Diagnostic[]) → boolean
+    - fn [nodeKinds](../../src/assess.ts#L175) (nodes: SnapshotInput["nodes"]) → Map<string, string> <!-- internal -->
   - module [flows](../../src/flows.ts#L1)
     - node external.node
     - config base.config
@@ -176,24 +177,26 @@
     - fn [similarity](../../src/resolve.ts#L122) (a: string, b: string) → number | null <!-- internal -->
       - calls check.resolve.codePoints, check.resolve.levenshtein
     - fn [codePoints](../../src/resolve.ts#L131) (s: string) → number <!-- internal -->
-    - fn [check](../../src/resolve.ts#L136) (docs: readonly Document[], context: ResolveContext = {}) → { index: Index; diagnostics: Diagnostic[]; unverified: Unverified[] }
+    - fn [nearestName](../../src/resolve.ts#L136) (word: string, candidates: Iterable<string>) → string | undefined
+      - calls check.resolve.similarity, base.span.compareText
+    - fn [check](../../src/resolve.ts#L147) (docs: readonly Document[], context: ResolveContext = {}) → { index: Index; diagnostics: Diagnostic[]; unverified: Unverified[] }
       - calls check.resolve.Index, check.resolve.insert, lang.ir.sectionNodes, lang.ir.walk, lang.ir.isDecl, check.resolve.checkRefs
-    - fn [insert](../../src/resolve.ts#L186) (map: Map<string, Decl>, decl: Decl, what: string, diags: Diagnostic[]) → void <!-- internal -->
+    - fn [insert](../../src/resolve.ts#L197) (map: Map<string, Decl>, decl: Decl, what: string, diags: Diagnostic[]) → void <!-- internal -->
       - calls base.diag.diagnostic
-    - fn [thenCandidates](../../src/resolve.ts#L210) (index: Index, word: string) → string[] <!-- internal -->
+    - fn [thenCandidates](../../src/resolve.ts#L221) (index: Index, word: string) → string[] <!-- internal -->
       - calls base.span.compareText
-    - fn [warnBareThen](../../src/resolve.ts#L224) (index: Index, doc: Document, node: Node, diags: Diagnostic[]) → void <!-- internal -->
+    - fn [warnBareThen](../../src/resolve.ts#L235) (index: Index, doc: Document, node: Node, diags: Diagnostic[]) → void <!-- internal -->
       - calls lang.parser.linkTextSpan, lang.parser.isSegment, check.resolve.thenCandidates, base.diag.diagnostic
-    - fn [danglingMessage](../../src/resolve.ts#L249) (index: Index, doc: Document, target: string) → string <!-- internal -->
+    - fn [danglingMessage](../../src/resolve.ts#L260) (index: Index, doc: Document, target: string) → string <!-- internal -->
       - calls check.resolve.Index.suggest
-    - fn [checkContinues](../../src/resolve.ts#L260) (index: Index, doc: Document, node: Node, diags: Diagnostic[]) → void <!-- internal -->
+    - fn [checkContinues](../../src/resolve.ts#L271) (index: Index, doc: Document, node: Node, diags: Diagnostic[]) → void <!-- internal -->
       - calls check.resolve.similarity, base.span.compareText, base.diag.diagnostic
-    - fn [eventRef](../../src/resolve.ts#L272) (node: Node) → Ref | null <!-- internal -->
-    - fn [checkEventRef](../../src/resolve.ts#L283) (index: Index, doc: Document, node: Node, ref: Ref, diags: Diagnostic[]) → void <!-- internal -->
+    - fn [eventRef](../../src/resolve.ts#L283) (node: Node) → Ref | null <!-- internal -->
+    - fn [checkEventRef](../../src/resolve.ts#L294) (index: Index, doc: Document, node: Node, ref: Ref, diags: Diagnostic[]) → void <!-- internal -->
       - calls check.resolve.Index.lookup, base.diag.diagnostic, lang.ir.kindLabel, check.resolve.similarity, base.span.compareText
-    - fn [checkRefs](../../src/resolve.ts#L306) (index: Index, doc: Document, node: Node, diags: Diagnostic[], unverified: Unverified[], knownExternal: ReadonlySet<string>) → void <!-- internal -->
+    - fn [checkRefs](../../src/resolve.ts#L317) (index: Index, doc: Document, node: Node, diags: Diagnostic[], unverified: Unverified[], knownExternal: ReadonlySet<string>) → void <!-- internal -->
       - calls check.resolve.warnBareThen, check.resolve.checkContinues, check.resolve.eventRef, check.resolve.checkEventRef, check.resolve.Index.lookup, base.diag.diagnostic, check.resolve.danglingMessage, check.resolve.Index.snapshotOpaque, lang.parser.renderMeaning
-    - fn [levenshtein](../../src/resolve.ts#L338) (a: string, b: string) → number <!-- internal -->
+    - fn [levenshtein](../../src/resolve.ts#L349) (a: string, b: string) → number <!-- internal -->
   - module [rules](../../src/rules.ts#L1)
     - node external.node
     - config base.config
@@ -279,6 +282,61 @@
       - calls check.scc.components
     - fn [components](../../src/scc.ts#L9) (adj: ReadonlyMap<string, ReadonlySet<string>>) → string[][]
     - fn [cycleThrough](../../src/scc.ts#L63) (adj: ReadonlyMap<string, ReadonlySet<string>>, members: ReadonlySet<string>, start: string) → string[]
+  - module [system-catalog](../../src/system-catalog.ts#L1)
+    - external-ids base.external-ids
+    - parser lang.parser
+    - type [Technology](../../src/system-catalog.ts#L10)
+    - fn [technologyOf](../../src/system-catalog.ts#L78) (text: string | null | undefined) → Technology | null
+    - fn [evidenceIds](../../src/system-catalog.ts#L84) (tech: Technology) → Set<string>
+      - calls base.external-ids.externalSegment
+    - fn [technologiesOfPackage](../../src/system-catalog.ts#L90) (externalId: string) → Technology[]
+      - calls base.external-ids.externalSegment
+    - fn [isSqlClient](../../src/system-catalog.ts#L95) (externalId: string) → boolean
+      - calls base.external-ids.externalSegment
+  - module [system](../../src/system.ts#L1)
+    - node external.node
+    - diag base.diag
+    - external-ids base.external-ids
+    - ir lang.ir
+    - parser lang.parser
+    - resolve check.resolve
+    - span base.span
+    - system-catalog check.system-catalog
+    - verdict check.verdict
+    - type [SystemZone](../../src/system.ts#L22)
+    - type [SystemColumn](../../src/system.ts#L30)
+    - type [SystemTable](../../src/system.ts#L40)
+    - type [SystemComponent](../../src/system.ts#L50)
+    - type [RelationVerb](../../src/system.ts#L66)
+    - type [SystemRelation](../../src/system.ts#L68)
+    - type [SystemMessage](../../src/system.ts#L79)
+    - type [SystemSequence](../../src/system.ts#L87)
+    - type [NoteKind](../../src/system.ts#L93) = "requirement" | "nfr" | "estimate" | "tradeoff" | "question"
+    - type [SystemSpec](../../src/system.ts#L95)
+    - fn [systemsOf](../../src/system.ts#L107) (docs: readonly Document[]) → { systems: SystemSpec[]; diagnostics: Diagnostic[] }
+      - calls base.diag.diagnostic, check.system.compileSystem, lang.ir.sectionNodes
+    - fn [compileSystem](../../src/system.ts#L125) (file: string, name: string, line: number, nodes: readonly Node[], diagnostics: Diagnostic[]) → SystemSpec <!-- internal -->
+      - calls check.system.compileTable, check.resolve.nearestName, base.diag.diagnostic, check.system.checkForeignKeys
+    - fn [compileTable](../../src/system.ts#L184) (file: string, component: string, node: Node, diagnostics: Diagnostic[]) → SystemTable <!-- internal -->
+      - calls base.diag.diagnostic
+    - fn [checkForeignKeys](../../src/system.ts#L215) (file: string, system: SystemSpec, diagnostics: Diagnostic[]) → void <!-- internal -->
+      - calls check.resolve.nearestName, base.diag.diagnostic
+    - type [SystemSnapshot](../../src/system.ts#L235)
+    - type [ModuleGraph](../../src/system.ts#L242)
+    - fn [moduleOf](../../src/system.ts#L249) (nodes: SystemSnapshot["nodes"], id: string) → string | null <!-- internal -->
+    - fn [moduleGraph](../../src/system.ts#L257) (snapshot: SystemSnapshot) → ModuleGraph
+      - calls check.system.moduleOf, base.external-ids.externalPackageId
+    - fn [modulesUnder](../../src/system.ts#L282) (graph: ModuleGraph, ids: readonly string[]) → string[]
+      - calls base.span.compareText
+    - fn [reach](../../src/system.ts#L290) (graph: ModuleGraph, start: readonly string[], hit: (module: string) => boolean) → string[] | null
+      - calls base.span.compareText
+    - fn [pathText](../../src/system.ts#L313) (path: readonly string[]) → string <!-- internal -->
+    - fn [systemCheck](../../src/system.ts#L318) (docs: readonly Document[], snapshot: SystemSnapshot | null) → { systems: SystemSpec[]; diagnostics: Diagnostic[]; verdicts: Verdict[] }
+      - calls check.system.systemsOf, check.system.moduleGraph, check.system.judge, check.system.undeclaredStores
+    - fn [judge](../../src/system.ts#L352) (graph: ModuleGraph, from: SystemComponent, to: SystemComponent) → { verdict: VerdictKind; reason: string } | null <!-- internal -->
+      - calls check.system.modulesUnder, check.system.reach, check.system.pathText, check.system-catalog.technologyOf, check.system-catalog.evidenceIds, base.span.compareText
+    - fn [undeclaredStores](../../src/system.ts#L370) (system: SystemSpec, component: SystemComponent, graph: ModuleGraph, diagnostics: Diagnostic[]) → void <!-- internal -->
+      - calls check.system.modulesUnder, check.system-catalog.technologyOf, base.span.compareText, check.system-catalog.technologiesOfPackage, base.diag.diagnostic
   - module [test-report](../../src/test-report.ts#L1)
     - node external.node
     - config base.config

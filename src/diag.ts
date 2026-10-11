@@ -53,7 +53,14 @@ export type Code =
   /** A cycle among `wire` factories. */
   | "K301"
   /** A `wire` factory or dependency that is not a fn or a class. */
-  | "K302";
+  | "K302"
+  // system (system-design/02)
+  /** A relation or a message names a component the `# system` does not have. */
+  | "K401"
+  /** `fk <table>.<column>` names a table or a column the system does not have. */
+  | "K402"
+  /** Code a component is bound to imports a data store's driver no relation of the component names (warning). */
+  | "K403";
 
 export type Severity = "error" | "warning";
 
@@ -61,7 +68,7 @@ export type Severity = "error" | "warning";
 export type K005Reason = "arguments" | "id" | "link" | "quote" | "layer" | "scope";
 
 export function severityOf(code: Code): Severity {
-  return code === "K006" || code === "K008" || code === "K103" || code === "K106" || code === "K202" || code === "K203" ? "warning" : "error";
+  return code === "K006" || code === "K008" || code === "K103" || code === "K106" || code === "K202" || code === "K203" || code === "K403" ? "warning" : "error";
 }
 
 export interface Diagnostic {

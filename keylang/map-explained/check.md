@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [assess](#check.assess) · [flows](#check.flows) · [migration](#check.migration) · [resolve](#check.resolve) · [rules](#check.rules) · [scc](#check.scc) · [test-report](#check.test-report) · [trace-evidence](#check.trace-evidence) · [verdict](#check.verdict) · [wiring](#check.wiring)
+[README](README.md) · modules: [assess](#check.assess) · [flows](#check.flows) · [migration](#check.migration) · [resolve](#check.resolve) · [rules](#check.rules) · [scc](#check.scc) · [system-catalog](#check.system-catalog) · [system](#check.system) · [test-report](#check.test-report) · [trace-evidence](#check.trace-evidence) · [verdict](#check.verdict) · [wiring](#check.wiring)
 
 # map
 
@@ -17,25 +17,26 @@
     - resolve [check.resolve](check.md#check.resolve)
     - rules [check.rules](check.md#check.rules)
     - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
+    - system [check.system](check.md#check.system)
     - test-report [check.test-report](check.md#check.test-report)
     - trace-evidence [check.trace-evidence](check.md#check.trace-evidence)
     - verdict [check.verdict](check.md#check.verdict)
     - wiring [check.wiring](check.md#check.wiring)
-    - type [SnapshotInput](../../src/assess.ts#L19)
+    - type [SnapshotInput](../../src/assess.ts#L20)
       <a id="check.assess.SnapshotInput"></a><br>The slice of the analysis snapshot that checks read; `check` does not import `map`.
-    - type [Assessment](../../src/assess.ts#L29)
-      <a id="check.assess.Assessment"></a><br>Bundles the result of running the checker over a repository: the `Index` it worked from, the `Diagnostic` list it produced, the per-rule `Verdict`s, and the `SpecIR` of assertions compiled once from the text IR so later consumers reuse it rather than re-parsing. The input shows… _(llm · claude · 2026-10-04)_
-    - fn [assess](../../src/assess.ts#L37) ( docs: readonly Document[], snapshot: SnapshotInput | null, evidence: { tests: TestCase[] | null; traces: TraceRun[] | null; static?: StaticMode; staticSetBy?: StaticSource; knownExternal?: ReadonlySet<string>; testFileExists?: FlowInput["testFileExists"]; /** The old stack the old IDs of `# migration` rows resolve against; absent: none (they stay unverified). */ migration?: OldSnapshot; /** * The spec files whose claims are assessed (`check <file>`): the others are * context only — their declarations, `planned` and flow names resolve * references, but their rules, flows and diagnostics are not reported. * Absent: every file. */ assessed?: (file: string) => boolean; } = { tests: null, traces: null }, format: RuleFormat = 1, ) → Assessment
+    - type [Assessment](../../src/assess.ts#L30)
+      <a id="check.assess.Assessment"></a><br>Bundles the result of running the checker over a repository: the `Index` it worked from, the `Diagnostic` list it produced, the per-rule `Verdict`s, and the `SpecIR` of assertions compiled once from the text IR so later consumers reuse it rather than re-parsing. The input shows… _(llm · claude · 2026-10-04 · stale)_
+    - fn [assess](../../src/assess.ts#L40) ( docs: readonly Document[], snapshot: SnapshotInput | null, evidence: { tests: TestCase[] | null; traces: TraceRun[] | null; static?: StaticMode; staticSetBy?: StaticSource; knownExternal?: ReadonlySet<string>; testFileExists?: FlowInput["testFileExists"]; /** The old stack the old IDs of `# migration` rows resolve against; absent: none (they stay unverified). */ migration?: OldSnapshot; /** * The spec files whose claims are assessed (`check <file>`): the others are * context only — their declarations, `planned` and flow names resolve * references, but their rules, flows and diagnostics are not reported. * Absent: every file. */ assessed?: (file: string) => boolean; } = { tests: null, traces: null }, format: RuleFormat = 1, ) → Assessment
       <a id="check.assess.assess"></a><br>Compiles the spec and resolves IDs against the snapshot, then runs rule, flow and wiring checks via [`check.rules.evaluateRules`](check.md#check.rules.evaluateRules), [`check.flows.evaluateFlows`](check.md#check.flows.evaluateFlows) and [`check.wiring.checkWiring`](check.md#check.wiring.checkWiring). Returns sorted diagnostics and merged verdicts. _(llm · claude:claude-opus-5-5 · 2026-10-06 · stale)_
-      - calls [lang.spec-ir.compileSpec](lang.md#lang.spec-ir.compileSpec), [check.resolve.check](check.md#check.resolve.check), [check.rules.evaluateRules](check.md#check.rules.evaluateRules), [check.flows.evaluateFlows](check.md#check.flows.evaluateFlows), [check.rules.dependencyKindOf](check.md#check.rules.dependencyKindOf), [check.wiring.checkWiring](check.md#check.wiring.checkWiring), [check.assess.nodeKinds](check.md#check.assess.nodeKinds), [check.migration.migrationCheck](check.md#check.migration.migrationCheck), [base.diag.compareDiagnostics](base.md#base.diag.compareDiagnostics), [check.rules.canonicalRuleSpec](check.md#check.rules.canonicalRuleSpec), [check.assess.afterRecovery](check.md#check.assess.afterRecovery), [check.assess.recoveredLines](check.md#check.assess.recoveredLines)
-    - fn [recoveredLines](../../src/assess.ts#L129) (docs: readonly Document[]) → Map<string, string> <!-- internal -->
+      - calls [lang.spec-ir.compileSpec](lang.md#lang.spec-ir.compileSpec), [check.resolve.check](check.md#check.resolve.check), [check.rules.evaluateRules](check.md#check.rules.evaluateRules), [check.flows.evaluateFlows](check.md#check.flows.evaluateFlows), [check.rules.dependencyKindOf](check.md#check.rules.dependencyKindOf), [check.wiring.checkWiring](check.md#check.wiring.checkWiring), [check.assess.nodeKinds](check.md#check.assess.nodeKinds), [check.migration.migrationCheck](check.md#check.migration.migrationCheck), [check.system.systemCheck](check.md#check.system.systemCheck), [base.diag.compareDiagnostics](base.md#base.diag.compareDiagnostics), [check.rules.canonicalRuleSpec](check.md#check.rules.canonicalRuleSpec), [check.assess.afterRecovery](check.md#check.assess.afterRecovery), [check.assess.recoveredLines](check.md#check.assess.recoveredLines)
+    - fn [recoveredLines](../../src/assess.ts#L133) (docs: readonly Document[]) → Map<string, string> <!-- internal -->
       <a id="check.assess.recoveredLines"></a><br>Item lines whose place in the tree the parser recovered after a K003 (an odd indent, a jump, a tab): the line itself and its subtree, keyed `file:line`, with the position of the nearest such K003.
       - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes)
-    - fn [afterRecovery](../../src/assess.ts#L149) (verdicts: Verdict[], recovered: ReadonlyMap<string, string>) → Verdict[] <!-- internal -->
+    - fn [afterRecovery](../../src/assess.ts#L153) (verdicts: Verdict[], recovered: ReadonlyMap<string, string>) → Verdict[] <!-- internal -->
       <a id="check.assess.afterRecovery"></a><br>An `ok` on a recovered line is about a tree the file does not have: `unverified`. `fail` stays.
-    - fn [sameFinding](../../src/assess.ts#L162) (verdict: Verdict, diagnostics: readonly Diagnostic[]) → boolean
+    - fn [sameFinding](../../src/assess.ts#L166) (verdict: Verdict, diagnostics: readonly Diagnostic[]) → boolean
       <a id="check.assess.sameFinding"></a><br>Returns true when any diagnostic in the list points at the same file and starting line as the verdict and either carries the same (or a contained) message, or is a K001 diagnostic whose target matches the verdict's area while the verdict is a failed "ID" criterion — so callers… _(llm · claude · 2026-10-04)_
-    - fn [nodeKinds](../../src/assess.ts#L171) (nodes: SnapshotInput["nodes"]) → Map<string, string> <!-- internal -->
+    - fn [nodeKinds](../../src/assess.ts#L175) (nodes: SnapshotInput["nodes"]) → Map<string, string> <!-- internal -->
       <a id="check.assess.nodeKinds"></a><br>Snapshot kinds, with a class told apart by its marker.
   - module [flows](../../src/flows.ts#L1)
     <a id="check.flows"></a><br>Evidence for flows: ID, static, tests, and trace are separate verdicts. A step is checked from its parent (the trigger for a top-level step), never from its siblings.
@@ -281,33 +282,36 @@
       - calls [check.resolve.codePoints](check.md#check.resolve.codePoints), [check.resolve.levenshtein](check.md#check.resolve.levenshtein)
     - fn [codePoints](../../src/resolve.ts#L131) (s: string) → number <!-- internal -->
       <a id="check.resolve.codePoints"></a><br>Counts the Unicode code points in a string by spreading it into an array, so surrogate pairs count once rather than twice as with `.length`. Used by [`check.resolve.similarity`](check.md#check.resolve.similarity) to size strings for comparison. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [check](../../src/resolve.ts#L136) (docs: readonly Document[], context: ResolveContext = {}) → { index: Index; diagnostics: Diagnostic[]; unverified: Unverified[] }
+    - fn [nearestName](../../src/resolve.ts#L136) (word: string, candidates: Iterable<string>) → string | undefined
+      <a id="check.resolve.nearestName"></a><br>The candidate closest to `word` for a «did you mean», or undefined when none is close enough.
+      - calls [check.resolve.similarity](check.md#check.resolve.similarity), [base.span.compareText](base.md#base.span.compareText)
+    - fn [check](../../src/resolve.ts#L147) (docs: readonly Document[], context: ResolveContext = {}) → { index: Index; diagnostics: Diagnostic[]; unverified: Unverified[] }
       <a id="check.resolve.check"></a><br>Build the index over all documents and check every reference.
       - calls [check.resolve.Index](check.md#check.resolve.Index), [check.resolve.insert](check.md#check.resolve.insert), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk), [lang.ir.isDecl](lang.md#lang.ir.isDecl), [check.resolve.checkRefs](check.md#check.resolve.checkRefs)
-    - fn [insert](../../src/resolve.ts#L186) (map: Map<string, Decl>, decl: Decl, what: string, diags: Diagnostic[]) → void <!-- internal -->
+    - fn [insert](../../src/resolve.ts#L197) (map: Map<string, Decl>, decl: Decl, what: string, diags: Diagnostic[]) → void <!-- internal -->
       <a id="check.resolve.insert"></a><br>Adds a declaration to the map keyed by its id, silently allowing two `layer` declarations with the same id. For any other collision it emits a K002 diagnostic via [`base.diag.diagnostic`](base.md#base.diag.diagnostic) pointing at the first declaration's location. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [base.diag.diagnostic](base.md#base.diag.diagnostic)
-    - fn [thenCandidates](../../src/resolve.ts#L210) (index: Index, word: string) → string[] <!-- internal -->
+    - fn [thenCandidates](../../src/resolve.ts#L221) (index: Index, word: string) → string[] <!-- internal -->
       <a id="check.resolve.thenCandidates"></a><br>Ids whose last segment is `word`: map declarations and `planned`, never a layer.
       - calls [base.span.compareText](base.md#base.span.compareText)
-    - fn [warnBareThen](../../src/resolve.ts#L224) (index: Index, doc: Document, node: Node, diags: Diagnostic[]) → void <!-- internal -->
+    - fn [warnBareThen](../../src/resolve.ts#L235) (index: Index, doc: Document, node: Node, diags: Diagnostic[]) → void <!-- internal -->
       <a id="check.resolve.warnBareThen"></a><br>`then save` is text (Р10). When `save` is the last segment of a real id, say so.
       - calls [lang.parser.linkTextSpan](lang.md#lang.parser.linkTextSpan), [lang.parser.isSegment](lang.md#lang.parser.isSegment), [check.resolve.thenCandidates](check.md#check.resolve.thenCandidates), [base.diag.diagnostic](base.md#base.diag.diagnostic)
-    - fn [danglingMessage](../../src/resolve.ts#L249) (index: Index, doc: Document, target: string) → string <!-- internal -->
+    - fn [danglingMessage](../../src/resolve.ts#L260) (index: Index, doc: Document, target: string) → string <!-- internal -->
       <a id="check.resolve.danglingMessage"></a><br>K001 text. A generated file is regenerated, not edited, so `did you mean` and `planned` would mislead there: the hint names the command from its marker.
       - calls [check.resolve.Index.suggest](check.md#check.resolve.Index.suggest)
-    - fn [checkContinues](../../src/resolve.ts#L260) (index: Index, doc: Document, node: Node, diags: Diagnostic[]) → void <!-- internal -->
+    - fn [checkContinues](../../src/resolve.ts#L271) (index: Index, doc: Document, node: Node, diags: Diagnostic[]) → void <!-- internal -->
       <a id="check.resolve.checkContinues"></a><br>K206: `continues <flow>` names a flow no `# flow` declares.
       - calls [check.resolve.similarity](check.md#check.resolve.similarity), [base.span.compareText](base.md#base.span.compareText), [base.diag.diagnostic](base.md#base.diag.diagnostic)
-    - fn [eventRef](../../src/resolve.ts#L272) (node: Node) → Ref | null <!-- internal -->
+    - fn [eventRef](../../src/resolve.ts#L283) (node: Node) → Ref | null <!-- internal -->
       <a id="check.resolve.eventRef"></a><br>The reference of `trigger event <id>` or of `emits [event] events.<name>` (ADR 0023 п. 1), null for any other line.
-    - fn [checkEventRef](../../src/resolve.ts#L283) (index: Index, doc: Document, node: Node, ref: Ref, diags: Diagnostic[]) → void <!-- internal -->
+    - fn [checkEventRef](../../src/resolve.ts#L294) (index: Index, doc: Document, node: Node, ref: Ref, diags: Diagnostic[]) → void <!-- internal -->
       <a id="check.resolve.checkEventRef"></a><br>K204 / K205 for an event reference: an ID nothing declares is an unknown event (did you mean the nearest event), an ID of a fn, type or module is not an event. `planned event` counts as declared.
       - calls [check.resolve.Index.lookup](check.md#check.resolve.Index.lookup), [base.diag.diagnostic](base.md#base.diag.diagnostic), [lang.ir.kindLabel](lang.md#lang.ir.kindLabel), [check.resolve.similarity](check.md#check.resolve.similarity), [base.span.compareText](base.md#base.span.compareText)
-    - fn [checkRefs](../../src/resolve.ts#L306) (index: Index, doc: Document, node: Node, diags: Diagnostic[], unverified: Unverified[], knownExternal: ReadonlySet<string>) → void <!-- internal -->
+    - fn [checkRefs](../../src/resolve.ts#L317) (index: Index, doc: Document, node: Node, diags: Diagnostic[], unverified: Unverified[], knownExternal: ReadonlySet<string>) → void <!-- internal -->
       <a id="check.resolve.checkRefs"></a><br>Recursively walks a node tree, reporting dangling reference targets as K001 errors via [`base.diag.diagnostic`](base.md#base.diag.diagnostic) and logging refs to opaque snapshot modules as unverified; children of a failing rule-module are skipped. _(llm · claude:claude-opus-5-5 · 2026-10-05 · stale)_
       - calls [check.resolve.warnBareThen](check.md#check.resolve.warnBareThen), [check.resolve.checkContinues](check.md#check.resolve.checkContinues), [check.resolve.eventRef](check.md#check.resolve.eventRef), [check.resolve.checkEventRef](check.md#check.resolve.checkEventRef), [check.resolve.Index.lookup](check.md#check.resolve.Index.lookup), [base.diag.diagnostic](base.md#base.diag.diagnostic), [check.resolve.danglingMessage](check.md#check.resolve.danglingMessage), [check.resolve.Index.snapshotOpaque](check.md#check.resolve.Index.snapshotOpaque), [lang.parser.renderMeaning](lang.md#lang.parser.renderMeaning)
-    - fn [levenshtein](../../src/resolve.ts#L338) (a: string, b: string) → number <!-- internal -->
+    - fn [levenshtein](../../src/resolve.ts#L349) (a: string, b: string) → number <!-- internal -->
       <a id="check.resolve.levenshtein"></a><br>Computes the edit distance between two strings using a two-row dynamic-programming table, iterating over Unicode code points rather than UTF-16 units. [`check.resolve.similarity`](check.md#check.resolve.similarity) uses the result to score how close two names are. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [rules](../../src/rules.ts#L1)
     <a id="check.rules"></a><br>Rules over a fresh analysis snapshot. Without a snapshot (a spec directory that has no code), rule results are unverified rather than a graph rebuilt from Markdown.
@@ -448,6 +452,92 @@
       <a id="check.scc.components"></a><br>Every strongly connected component, each after all components it reaches (Tarjan's order).
     - fn [cycleThrough](../../src/scc.ts#L63) (adj: ReadonlyMap<string, ReadonlySet<string>>, members: ReadonlySet<string>, start: string) → string[]
       <a id="check.scc.cycleThrough"></a><br>One cycle inside `members` that passes through `start`.
+  - module [system-catalog](../../src/system-catalog.ts#L1)
+    <a id="check.system-catalog"></a><br>Technologies a `# system` names (system-design §4): the component kind each one is and the packages that talk to it, in every ecosystem keylang reads (npm names, Python and Rust import names, Composer names). `check` takes a driver import as the evidence of a relation, and…
+    - external-ids [base.external-ids](base.md#base.external-ids)
+    - parser [lang.parser](lang.md#lang.parser)
+    - type [Technology](../../src/system-catalog.ts#L10)
+      <a id="check.system-catalog.Technology"></a>
+    - fn [technologyOf](../../src/system-catalog.ts#L78) (text: string | null | undefined) → Technology | null
+      <a id="check.system-catalog.technologyOf"></a><br>The technology a component's text starts with (`postgres 16`, `PostgreSQL`), or null when it names none of the catalog.
+    - fn [evidenceIds](../../src/system-catalog.ts#L84) (tech: Technology) → Set<string>
+      <a id="check.system-catalog.evidenceIds"></a><br>The external IDs whose import is evidence of talking to `tech`.
+      - calls [base.external-ids.externalSegment](base.md#base.external-ids.externalSegment)
+    - fn [technologiesOfPackage](../../src/system-catalog.ts#L90) (externalId: string) → Technology[]
+      <a id="check.system-catalog.technologiesOfPackage"></a><br>What a package's external ID means (`external.ioredis` → redis): the technologies whose own drivers include it.
+      - calls [base.external-ids.externalSegment](base.md#base.external-ids.externalSegment)
+    - fn [isSqlClient](../../src/system-catalog.ts#L95) (externalId: string) → boolean
+      <a id="check.system-catalog.isSqlClient"></a><br>A generic SQL client or ORM (`@prisma/client`, `typeorm`): evidence of some SQL database, not of which.
+      - calls [base.external-ids.externalSegment](base.md#base.external-ids.externalSegment)
+  - module [system](../../src/system.ts#L1)
+    <a id="check.system"></a><br>`# system <name>` (system-design/02): the sections compiled into a `SystemSpec` — components with their zones, relations, tables, sequences and interview notes — and what `check` says of them. Names are local to a system: an unknown component is K401, an `fk` to an unknown…
+    - node [external.node](external.md#external.node)
+    - diag [base.diag](base.md#base.diag)
+    - external-ids [base.external-ids](base.md#base.external-ids)
+    - ir [lang.ir](lang.md#lang.ir)
+    - parser [lang.parser](lang.md#lang.parser)
+    - resolve [check.resolve](check.md#check.resolve)
+    - span [base.span](base.md#base.span)
+    - system-catalog [check.system-catalog](check.md#check.system-catalog)
+    - verdict [check.verdict](check.md#check.verdict)
+    - type [SystemZone](../../src/system.ts#L22)
+      <a id="check.system.SystemZone"></a>
+    - type [SystemColumn](../../src/system.ts#L30)
+      <a id="check.system.SystemColumn"></a>
+    - type [SystemTable](../../src/system.ts#L40)
+      <a id="check.system.SystemTable"></a>
+    - type [SystemComponent](../../src/system.ts#L50)
+      <a id="check.system.SystemComponent"></a>
+    - type [RelationVerb](../../src/system.ts#L66)
+      <a id="check.system.RelationVerb"></a>
+    - type [SystemRelation](../../src/system.ts#L68)
+      <a id="check.system.SystemRelation"></a>
+    - type [SystemMessage](../../src/system.ts#L79)
+      <a id="check.system.SystemMessage"></a>
+    - type [SystemSequence](../../src/system.ts#L87)
+      <a id="check.system.SystemSequence"></a>
+    - type [NoteKind](../../src/system.ts#L93) = "requirement" | "nfr" | "estimate" | "tradeoff" | "question"
+      <a id="check.system.NoteKind"></a>
+    - type [SystemSpec](../../src/system.ts#L95)
+      <a id="check.system.SystemSpec"></a>
+    - fn [systemsOf](../../src/system.ts#L107) (docs: readonly Document[]) → { systems: SystemSpec[]; diagnostics: Diagnostic[] }
+      <a id="check.system.systemsOf"></a><br>Every `# system` section of the documents in file and line order, and the diagnostics of their names (K002, K401, K402).
+      - calls [base.diag.diagnostic](base.md#base.diag.diagnostic), [check.system.compileSystem](check.md#check.system.compileSystem), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes)
+    - fn [compileSystem](../../src/system.ts#L125) (file: string, name: string, line: number, nodes: readonly Node[], diagnostics: Diagnostic[]) → SystemSpec <!-- internal -->
+      <a id="check.system.compileSystem"></a>
+      - calls [check.system.compileTable](check.md#check.system.compileTable), [check.resolve.nearestName](check.md#check.resolve.nearestName), [base.diag.diagnostic](base.md#base.diag.diagnostic), [check.system.checkForeignKeys](check.md#check.system.checkForeignKeys)
+    - fn [compileTable](../../src/system.ts#L184) (file: string, component: string, node: Node, diagnostics: Diagnostic[]) → SystemTable <!-- internal -->
+      <a id="check.system.compileTable"></a>
+      - calls [base.diag.diagnostic](base.md#base.diag.diagnostic)
+    - fn [checkForeignKeys](../../src/system.ts#L215) (file: string, system: SystemSpec, diagnostics: Diagnostic[]) → void <!-- internal -->
+      <a id="check.system.checkForeignKeys"></a><br>K402: an `fk` names a table of no data store of the system, or a column that table does not have.
+      - calls [check.resolve.nearestName](check.md#check.resolve.nearestName), [base.diag.diagnostic](base.md#base.diag.diagnostic)
+    - type [SystemSnapshot](../../src/system.ts#L235)
+      <a id="check.system.SystemSnapshot"></a><br>What the system check reads of a snapshot.
+    - type [ModuleGraph](../../src/system.ts#L242)
+      <a id="check.system.ModuleGraph"></a><br>The repository's modules and their dependencies, module to module, and the packages each imports.
+    - fn [moduleOf](../../src/system.ts#L249) (nodes: SystemSnapshot["nodes"], id: string) → string | null <!-- internal -->
+      <a id="check.system.moduleOf"></a><br>The module an ID lies in: itself or the nearest module above it, never a package; null for none.
+    - fn [moduleGraph](../../src/system.ts#L257) (snapshot: SystemSnapshot) → ModuleGraph
+      <a id="check.system.moduleGraph"></a>
+      - calls [check.system.moduleOf](check.md#check.system.moduleOf), [base.external-ids.externalPackageId](base.md#base.external-ids.externalPackageId)
+    - fn [modulesUnder](../../src/system.ts#L282) (graph: ModuleGraph, ids: readonly string[]) → string[]
+      <a id="check.system.modulesUnder"></a><br>The modules of the repository the IDs name: each module equal to or under one of them.
+      - calls [base.span.compareText](base.md#base.span.compareText)
+    - fn [reach](../../src/system.ts#L290) (graph: ModuleGraph, start: readonly string[], hit: (module: string) => boolean) → string[] | null
+      <a id="check.system.reach"></a><br>The first module reached from `start` through imports for which `hit` holds, with the path to it (start first); breadth first, so the path is a shortest.
+      - calls [base.span.compareText](base.md#base.span.compareText)
+    - fn [pathText](../../src/system.ts#L313) (path: readonly string[]) → string <!-- internal -->
+      <a id="check.system.pathText"></a>
+    - fn [systemCheck](../../src/system.ts#L318) (docs: readonly Document[], snapshot: SystemSnapshot | null) → { systems: SystemSpec[]; diagnostics: Diagnostic[]; verdicts: Verdict[] }
+      <a id="check.system.systemCheck"></a><br>`check` of every `# system`: K002/K401/K402 of the names, the `system` verdicts of relations from bound code, K403.
+      - calls [check.system.systemsOf](check.md#check.system.systemsOf), [check.system.moduleGraph](check.md#check.system.moduleGraph), [check.system.judge](check.md#check.system.judge), [check.system.undeclaredStores](check.md#check.system.undeclaredStores)
+    - fn [judge](../../src/system.ts#L352) (graph: ModuleGraph, from: SystemComponent, to: SystemComponent) → { verdict: VerdictKind; reason: string } | null <!-- internal -->
+      <a id="check.system.judge"></a>
+      - calls [check.system.modulesUnder](check.md#check.system.modulesUnder), [check.system.reach](check.md#check.system.reach), [check.system.pathText](check.md#check.system.pathText), [check.system-catalog.technologyOf](check.md#check.system-catalog.technologyOf), [check.system-catalog.evidenceIds](check.md#check.system-catalog.evidenceIds), [base.span.compareText](base.md#base.span.compareText)
+    - fn [undeclaredStores](../../src/system.ts#L370) (system: SystemSpec, component: SystemComponent, graph: ModuleGraph, diagnostics: Diagnostic[]) → void <!-- internal -->
+      <a id="check.system.undeclaredStores"></a><br>K403: the code of a component reaches a driver of exactly one technology, and no relation of the component goes to a component of it.
+      - calls [check.system.modulesUnder](check.md#check.system.modulesUnder), [check.system-catalog.technologyOf](check.md#check.system-catalog.technologyOf), [base.span.compareText](base.md#base.span.compareText), [check.system-catalog.technologiesOfPackage](check.md#check.system-catalog.technologiesOfPackage), [base.diag.diagnostic](base.md#base.diag.diagnostic)
   - module [test-report](../../src/test-report.ts#L1)
     <a id="check.test-report"></a><br>Test-runner reports as evidence for `test <file> "<name>"` in a flow. A report proves the current code only when it names the snapshot it ran against; a third-party report without that link stays unverified.
     - node [external.node](external.md#external.node)

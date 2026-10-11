@@ -99,6 +99,10 @@ const browserNode = {
       if (!shim) return { errors: [{ text: `build-web: ${args.path} (imported by ${relative(root, args.importer)}) has no browser shim; the analysis in the browser must not reach it` }] };
       return { path: join(shims, shim) };
     });
+    // A package that names a builtin without `node:` (`import { EOL } from "os"` of `@mrleebo/prisma-ast`) gets the same shim.
+    builder.onResolve({ filter: /^(fs|path|os)$/ }, (args) => (args.importer.includes(`${sep}node_modules${sep}`) ? { path: join(shims, NODE_SHIMS[args.path]) } : undefined));
+    // `@mrleebo/prisma-ast` looks for a config file when it loads; the worker has none to read.
+    builder.onResolve({ filter: /^lilconfig$/ }, () => ({ path: join(shims, "lilconfig.ts") }));
     builder.onResolve({ filter: /^web-tree-sitter$/ }, () => ({ path: join(shims, "web-tree-sitter.ts") }));
     // keylang's git questions are answered from what isomorphic-git prepared (web/worker/git-changes.ts),
     // which takes the module's pure helpers by the name `keylang-git-changes`.

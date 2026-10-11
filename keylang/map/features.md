@@ -333,34 +333,34 @@
     - span base.span
     - spec-ir lang.spec-ir
     - type [EditorNode](../../src/diagram-proposal.ts#L36)
-    - type [EditorEdge](../../src/diagram-proposal.ts#L53)
-    - type [EditorLane](../../src/diagram-proposal.ts#L62)
-    - type [EditorModel](../../src/diagram-proposal.ts#L72)
-    - fn [isObject](../../src/diagram-proposal.ts#L83) (value: unknown) → value is Record<string, unknown> <!-- internal -->
-    - fn [text](../../src/diagram-proposal.ts#L84) (value: unknown) → value is string <!-- internal -->
-    - fn [finite](../../src/diagram-proposal.ts#L85) (value: unknown) → value is number <!-- internal -->
-    - fn [parseEditorModel](../../src/diagram-proposal.ts#L88) (value: unknown) → EditorModel | string
+    - type [EditorEdge](../../src/diagram-proposal.ts#L56)
+    - type [EditorLane](../../src/diagram-proposal.ts#L65)
+    - type [EditorModel](../../src/diagram-proposal.ts#L75)
+    - fn [isObject](../../src/diagram-proposal.ts#L86) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [text](../../src/diagram-proposal.ts#L87) (value: unknown) → value is string <!-- internal -->
+    - fn [finite](../../src/diagram-proposal.ts#L88) (value: unknown) → value is number <!-- internal -->
+    - fn [parseEditorModel](../../src/diagram-proposal.ts#L91) (value: unknown) → EditorModel | string
       - calls features.diagram-proposal.isObject, features.diagram-proposal.text, features.diagram-proposal.finite
-    - type [BaseDiagram](../../src/diagram-proposal.ts#L128)
-    - type [ChangeInput](../../src/diagram-proposal.ts#L133)
-    - type [ChangedTarget](../../src/diagram-proposal.ts#L150)
-    - type [DiagramChanges](../../src/diagram-proposal.ts#L158)
-    - fn [strip](../../src/diagram-proposal.ts#L165) (id: string) → string <!-- internal -->
-    - fn [flowNameOf](../../src/diagram-proposal.ts#L171) (id: string) → string <!-- internal -->
-    - module [Targets](../../src/diagram-proposal.ts#L177) <!-- internal -->
-      - fn [constructor](../../src/diagram-proposal.ts#L180) (read: (path: string) => string | null)
-      - fn [current](../../src/diagram-proposal.ts#L184) (target: string) → string | null
-      - fn [set](../../src/diagram-proposal.ts#L192) (target: string, text: string, shapes: Iterable<string> = []) → void
+    - type [BaseDiagram](../../src/diagram-proposal.ts#L133)
+    - type [ChangeInput](../../src/diagram-proposal.ts#L138)
+    - type [ChangedTarget](../../src/diagram-proposal.ts#L155)
+    - type [DiagramChanges](../../src/diagram-proposal.ts#L163)
+    - fn [strip](../../src/diagram-proposal.ts#L170) (id: string) → string <!-- internal -->
+    - fn [flowNameOf](../../src/diagram-proposal.ts#L176) (id: string) → string <!-- internal -->
+    - module [Targets](../../src/diagram-proposal.ts#L182) <!-- internal -->
+      - fn [constructor](../../src/diagram-proposal.ts#L185) (read: (path: string) => string | null)
+      - fn [current](../../src/diagram-proposal.ts#L189) (target: string) → string | null
+      - fn [set](../../src/diagram-proposal.ts#L197) (target: string, text: string, shapes: Iterable<string> = []) → void
         - calls features.diagram-proposal.Targets.current
-      - fn [changed](../../src/diagram-proposal.ts#L199) () → ChangedTarget[]
+      - fn [changed](../../src/diagram-proposal.ts#L204) () → ChangedTarget[]
         - calls base.span.compareText
-    - fn [replaceSection](../../src/diagram-proposal.ts#L208) (own: string, section: { text: string; firstLine: number }, edited: string) → string <!-- internal -->
-    - fn [appendToList](../../src/diagram-proposal.ts#L216) (section: string, added: readonly string[]) → string <!-- internal -->
-    - fn [withContinues](../../src/diagram-proposal.ts#L235) (section: string, from: string) → string <!-- internal -->
+    - fn [replaceSection](../../src/diagram-proposal.ts#L213) (own: string, section: { text: string; firstLine: number }, edited: string) → string <!-- internal -->
+    - fn [appendToList](../../src/diagram-proposal.ts#L221) (section: string, added: readonly string[]) → string <!-- internal -->
+    - fn [withContinues](../../src/diagram-proposal.ts#L240) (section: string, from: string) → string <!-- internal -->
       - calls features.diagram-proposal.appendToList
-    - fn [diagramChanges](../../src/diagram-proposal.ts#L248) (input: ChangeInput) → DiagramChanges
+    - fn [diagramChanges](../../src/diagram-proposal.ts#L253) (input: ChangeInput) → DiagramChanges
       - calls features.diagram-proposal.Targets, features.diagram-proposal.strip, features.diagram-proposal.flowNameOf, features.diagram-proposal.Targets.current, map.drawio.flowSection, map.drawio.flowFromDrawio, features.diagram-proposal.appendToList, features.diagram-proposal.Targets.set, features.diagram-proposal.replaceSection, features.draft.withFlow, features.diagram-proposal.withContinues, base.span.compareText, features.draft.withRules, features.diagram-proposal.globFor, base.config.withLayers, features.diagram-proposal.Targets.changed
-    - fn [globFor](../../src/diagram-proposal.ts#L481) (layer: string, layers: Readonly<Record<string, readonly string[]>>) → string <!-- internal -->
+    - fn [globFor](../../src/diagram-proposal.ts#L486) (layer: string, layers: Readonly<Record<string, readonly string[]>>) → string <!-- internal -->
   - module [discover-names](../../src/discover-names.ts#L1)
     - node external.node
     - config base.config
@@ -650,7 +650,7 @@
       - calls lang.spec-ir.plannedDeclaration
   - module [explain](../../src/explain.ts#L1)
     - diag base.diag
-    - fn [explainCode](../../src/explain.ts#L140) (code: string) → string | null
+    - fn [explainCode](../../src/explain.ts#L155) (code: string) → string | null
   - module [explorer](../../src/explorer.ts#L1)
     - external-ids base.external-ids
     - draft features.draft
@@ -1368,6 +1368,19 @@
       - calls features.stats.readStatsFile, base.safe-write.safeWrite
     - fn [statusesIn](../../src/stats.ts#L68) (lines: readonly string[]) → Record<string, number>
     - fn [addDrafts](../../src/stats.ts#L77) (stats: Stats, counts: Record<string, number>, field: keyof Tally) → void
+  - module [system-proposal](../../src/system-proposal.ts#L1)
+    - diagram-proposal features.diagram-proposal
+    - ir lang.ir
+    - parser lang.parser
+    - span base.span
+    - system check.system
+    - system-discover map.system-discover
+    - type [SystemChangeInput](../../src/system-proposal.ts#L19)
+    - fn [lastLine](../../src/system-proposal.ts#L30) (node: Node) → number <!-- internal -->
+    - fn [block](../../src/system-proposal.ts#L35) (lines: readonly string[], node: Node, indent: string) → string[] <!-- internal -->
+      - calls features.system-proposal.lastLine
+    - fn [systemChanges](../../src/system-proposal.ts#L43) (input: SystemChangeInput) → { targets: ChangedTarget[]; notes: string[] }
+      - calls lang.parser.isSegment, map.system-discover.systemMarkdown, lang.parser.parse, features.system-proposal.lastLine, lang.ir.sectionNodes, features.system-proposal.block, base.span.compareText
   - module [tour](../../src/tour.ts#L1)
     - node external.node
     - call-sites features.call-sites

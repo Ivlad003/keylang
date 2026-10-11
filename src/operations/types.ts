@@ -365,6 +365,22 @@ export interface IntegrationsRequest {
 }
 
 /**
+ * The systems of a repository (system-design/09): `list` the `# system`
+ * sections, `show` one as a tree with the `system` verdicts of its
+ * relations, `discover` the system of the code as a `# system` section,
+ * `new` write a skeleton (`interview`: with requirements, estimates and
+ * trade-offs) to `<dir>/system/<name>.md`, never over a file.
+ */
+export interface SystemRequest {
+  kind: "system";
+  root: string;
+  action: "list" | "show" | "discover" | "new";
+  /** `show` and `new`: the system; `discover`: the name of the section (default: the repository's). */
+  name?: string;
+  interview?: boolean;
+}
+
+/**
  * The project tour (`keylang tour`, MCP `project_tour`, «Project tour» in the
  * TUI, «Огляд» of the web page): what the system is, layers and modules,
  * business processes, entry points and events, integrations, blind spots and
@@ -814,7 +830,7 @@ export interface AssistantReplyRequest {
 }
 
 /** Every request `runOperation` takes: its `kind` names the operation and the payload of its result. */
-export type OperationRequest = DoctorRequest | FeatureRequest | FeatureQuestionsRequest | ExportC4Request | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | ExplainRequest | ExplainLlmRequest | ExplainPlanRequest | ExplainBatchRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | EntriesRequest | CoverageRequest | IntegrationsRequest | MigrationStatusRequest | TourRequest | FlowsDiscoverRequest | FlowsAdoptRequest | FlowExportRequest | FlowImportRequest | DraftFlowRequest | DraftRulesRequest | DraftLayoutRequest | CodeToSpecRequest | SpecToCodeRequest | ApplyCodeRequest | AssistantReplyRequest;
+export type OperationRequest = DoctorRequest | FeatureRequest | FeatureQuestionsRequest | ExportC4Request | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | ExplainRequest | ExplainLlmRequest | ExplainPlanRequest | ExplainBatchRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | EntriesRequest | CoverageRequest | IntegrationsRequest | SystemRequest | MigrationStatusRequest | TourRequest | FlowsDiscoverRequest | FlowsAdoptRequest | FlowExportRequest | FlowImportRequest | DraftFlowRequest | DraftRulesRequest | DraftLayoutRequest | CodeToSpecRequest | SpecToCodeRequest | ApplyCodeRequest | AssistantReplyRequest;
 
 /** The operation kinds that write files: they compute first and commit after `beforeCommit` (a check mode never calls it). */
 export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["feature-questions", "export-c4", "map", "baseline", "agents", "fmt", "wire", "init", "export", "flows-discover", "flows-adopt", "flow-export", "flow-import", "draft-flow", "draft-rules", "code-to-spec", "spec-to-code", "apply-code", "explain-llm", "explain-batch"]);
@@ -1143,6 +1159,18 @@ export interface EntriesPayload {
 
 /** The coverage report (`keylang coverage --json` is it without `text`). */
 export interface CoveragePayload extends CoverageReport {
+  /** The CLI's stdout. */
+  text: string;
+}
+
+/** What `keylang system` says (`--json` is it without `text`). */
+export interface SystemPayload {
+  action: SystemRequest["action"];
+  systems: { name: string; file: string | null; line: number | null; components: number; tables: number; sequences: string[] }[];
+  /** `discover`: the section; `new`: the file's text. */
+  markdown: string | null;
+  /** `show`: the verdicts of the system's relations. */
+  verdicts: { verdict: string; area: string; line: number; message: string }[];
   /** The CLI's stdout. */
   text: string;
 }
@@ -1718,6 +1746,7 @@ export interface OperationPayloads {
   entries: EntriesPayload;
   coverage: CoveragePayload;
   integrations: IntegrationsPayload;
+  system: SystemPayload;
   tour: TourPayload;
   "migration-status": MigrationStatusPayload;
   "flows-discover": FlowsDiscoverPayload;

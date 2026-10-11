@@ -70,6 +70,11 @@ type Ctx =
   | "flow-top"
   | "wiring-top"
   | "migration-top"
+  | "system-top"
+  | "zone"
+  | "component"
+  | "table"
+  | "sequence"
   | "layer"
   | "module"
   | "fn"
@@ -122,6 +127,11 @@ function ctxOf(section: SectionKind, parent: NodeKind | undefined): Ctx {
       return "wire";
     case "wire-dep":
       return "wire-dep";
+    case "zone":
+    case "component":
+    case "table":
+    case "sequence":
+      return section === "system" ? parent : `leaf:${parent}`;
     case "unknown":
       return "unknown";
     default:
@@ -183,6 +193,26 @@ export function scheduleText(words: readonly string[]): string | null {
 
 const RULES = ["layers", "allow", "deny", "entry", "module", "no-cycles"];
 
+/** What a component of `# system` is (system-design Р2): the first word of its line. */
+export const COMPONENT_KINDS = ["client", "cdn", "dns", "lb", "gateway", "service", "worker", "function", "db", "cache", "queue", "storage", "search", "warehouse", "auth", "external"] as const;
+export type ComponentKind = (typeof COMPONENT_KINDS)[number];
+
+/** Components that keep data: only they hold `table` lines. */
+export const DATA_STORES: ReadonlySet<string> = new Set(["db", "cache", "storage", "search", "warehouse"]);
+
+/** How a component talks to another (Р4): `<verb> <component> [caption…]`. */
+export const RELATION_VERBS = ["calls", "reads", "writes", "publishes", "consumes", "replicates", "uses"] as const;
+
+/** Flags of a column after its type (Р5); `fk` takes `<table>.<column>`. */
+export const COLUMN_FLAGS: ReadonlySet<string> = new Set(["pk", "unique", "null", "fk"]);
+
+/** Free-text lines of an interview at the top of `# system` (Р7). */
+const INTERVIEW = ["requirement", "nfr", "estimate", "tradeoff"] as const;
+
+function isSystemCtx(ctx: Ctx): boolean {
+  return ctx === "system-top" || ctx === "zone" || ctx === "component" || ctx === "table" || ctx === "sequence";
+}
+
 /** Keywords an item may start with under `parent` (none at the top of a section). */
 export function keywordsAt(section: SectionKind, parent: NodeKind | undefined): readonly string[] {
   return keywordsOf(ctxOf(section, parent));
@@ -200,6 +230,14 @@ function keywordsOf(ctx: Ctx): readonly string[] {
       return ["wire"];
     case "migration-top":
       return ["map", "dropped"];
+    case "system-top":
+      return [...COMPONENT_KINDS, "zone", "sequence", ...INTERVIEW, "?"];
+    case "zone":
+      return [...COMPONENT_KINDS, "zone"];
+    case "component":
+      return ["code", ...RELATION_VERBS, "scale", "table"];
+    case "table":
+      return ["index"];
     case "layer":
       return ["module", "event"];
     case "module":
@@ -233,6 +271,10 @@ const PLACES: readonly { ctx: Ctx; sections: readonly SectionKind[]; where: stri
   { ctx: "flow-top", sections: ["flow"], where: "at the top of `# flow`" },
   { ctx: "wiring-top", sections: ["wiring"], where: "at the top of `# wiring`" },
   { ctx: "migration-top", sections: ["migration"], where: "at the top of `# migration`" },
+  { ctx: "system-top", sections: ["system"], where: "at the top of `# system`" },
+  { ctx: "zone", sections: ["system"], where: "under `- zone`" },
+  { ctx: "component", sections: ["system"], where: "under a component of `# system`" },
+  { ctx: "table", sections: ["system"], where: "under `- table`" },
   { ctx: "layer", sections: ["map"], where: "under `- layer`" },
   { ctx: "module", sections: ["map"], where: "under `- module`" },
   { ctx: "fn", sections: ["map"], where: "under `- fn`" },
@@ -248,7 +290,7 @@ const PLACES: readonly { ctx: Ctx; sections: readonly SectionKind[]; where: stri
   { ctx: "wire-dep", sections: ["wiring"], where: "under a dependency of `- wire`" },
 ];
 
-const SECTION_NAMES: Record<SectionKind, string> = { map: "a map", rules: "`# rules`", flow: "`# flow`", wiring: "`# wiring`", migration: "`# migration`" };
+const SECTION_NAMES: Record<SectionKind, string> = { map: "a map", rules: "`# rules`", flow: "`# flow`", wiring: "`# wiring`", migration: "`# migration`", system: "`# system`" };
 
 /**
  * `; \`calls\` goes under \`- fn\`` when `word` is a keyword of other positions
@@ -280,6 +322,10 @@ const RULE_ROLES: Partial<Record<NodeKind, string>> = {
 };
 
 const TEST_ROLE = "a test that must pass in the `check.tests` report";
+
+const COMPONENT_ROLE = "a component of the system: its kind, name and technology; `check` reads the code a nested `code` line names";
+
+const ZONE_ROLE = "a boundary around components: a region, a network, a trust zone";
 
 const QUESTION_ROLE = "an open question: not a claim `check` judges; a feature with one is not done until a person answers it";
 
@@ -314,6 +360,25 @@ const ROLES: { readonly [C in Ctx]?: Partial<Record<NodeKind, string>> } = {
     question: QUESTION_ROLE,
   },
   "wiring-top": { wire: "the wiring of a module: how its dependencies are built" },
+  "system-top": {
+    component: COMPONENT_ROLE,
+    zone: ZONE_ROLE,
+    sequence: "a sequence: messages between components, top to bottom",
+    requirement: "a functional requirement of the system: text",
+    nfr: "a non-functional requirement (latency, availability, scale): text",
+    estimate: "a back-of-the-envelope estimate (users, QPS, storage): text",
+    tradeoff: "a trade-off the design makes: text",
+    question: QUESTION_ROLE,
+  },
+  zone: { component: COMPONENT_ROLE, zone: ZONE_ROLE },
+  component: {
+    code: "the map IDs this component is built from: `check` reads its dependencies there",
+    relation: "how this component talks to another: with `code`, `check` looks for the import that proves it",
+    scale: "how the component scales (replicas, shards): text",
+    table: "a table of this data store: its columns and indexes",
+  },
+  table: { column: "a column: name, type and flags `pk`, `unique`, `null`, `fk <table>.<column>`", index: "an index over columns of the table" },
+  sequence: { message: "a message from one component to another: `<from> → <to> [text]`, `⇢` for an asynchronous one" },
   "migration-top": {
     migrate: "an ID of the old stack and its counterpart in this repository (`planned` while it is not written yet)",
     dropped: "an ID of the old stack that is not carried over, with the reason",
@@ -368,6 +433,12 @@ export function roleAt(section: SectionKind, parent: NodeKind | undefined, kind:
 
 function keywordKind(ctx: Ctx, kw: string): NodeKind {
   if (ctx === "migration-top") return kw === "map" ? "migrate" : kw === "dropped" ? "dropped" : "unknown";
+  if (isSystemCtx(ctx)) {
+    if ((COMPONENT_KINDS as readonly string[]).includes(kw)) return "component";
+    if ((RELATION_VERBS as readonly string[]).includes(kw)) return "relation";
+    if (kw === "?") return "question";
+    return kw === "zone" || kw === "sequence" || kw === "code" || kw === "scale" || kw === "table" || kw === "index" || (INTERVIEW as readonly string[]).includes(kw) ? (kw as NodeKind) : "unknown";
+  }
   switch (kw) {
     case "layer":
       return "layer";
@@ -411,6 +482,8 @@ interface Parent {
   kind: NodeKind;
   id: string | null;
   target: string | null;
+  /** The keyword's value a line keeps (a component's kind). */
+  label: string | null;
 }
 
 class Parser {
@@ -585,24 +658,24 @@ class Parser {
     const first = tokens[0]?.text;
     let kind: SectionKind = "map";
     let known = true;
-    if (first === "map" || first === "rules" || first === "flow" || first === "wiring" || first === "migration") kind = first;
+    if (first === "map" || first === "rules" || first === "flow" || first === "wiring" || first === "migration" || first === "system") kind = first;
     else known = false;
     let name: Spanned<string> | null = null;
     if (!known) {
       const what = title === "" ? "section heading without a kind" : `unknown section \`# ${title}\``;
-      this.err("K006", full, `${what}; expected \`map\`, \`rules\`, \`flow <name>\`, \`wiring\` or \`migration <name>\` (treated as map)`);
+      this.err("K006", full, `${what}; expected \`map\`, \`rules\`, \`flow <name>\`, \`wiring\`, \`migration <name>\` or \`system <name>\` (treated as map)`);
     } else {
-      // Only a flow and a migration have a name (§2); any other word is a mistake, not a name.
-      const named = kind === "flow" || kind === "migration";
+      // Only a flow, a migration and a system have a name (§2); any other word is a mistake, not a name.
+      const named = kind === "flow" || kind === "migration" || kind === "system";
       const t = tokens[1];
       if (named && t) {
         if (isSegment(t.text)) name = { value: nfc(t.text), span: t.span };
         else this.err("K005", t.span, `invalid section name \`${t.text}\``, "id");
       } else if (named) {
-        this.err("K005", full, kind === "flow" ? "`# flow` needs a name, e.g. `# flow checkout`" : "`# migration` needs a name, e.g. `# migration checkout`", "arguments");
+        this.err("K005", full, `\`# ${kind}\` needs a name, e.g. \`# ${kind} ${kind === "system" ? "shop" : "checkout"}\``, "arguments");
       }
       const extra = tokens[named ? 2 : 1];
-      if (extra) this.err("K005", extra.span, named ? "unexpected words in heading" : `unexpected words in heading; only \`# flow\` takes a name`, "arguments");
+      if (extra) this.err("K005", extra.span, named ? "unexpected words in heading" : `unexpected words in heading; only \`# flow\`, \`# migration\` and \`# system\` take a name`, "arguments");
     }
     this.doc.sections.push({ kind, heading: { value: title, span: full }, name, ...(comment ? { comment } : {}), items: [] });
   }
@@ -636,6 +709,7 @@ class Parser {
       kind: top.kind,
       id: top.id,
       target: top.refs[0]?.target ?? null,
+      label: top.label?.value ?? null,
     };
     const errs: [Span, string][] = [];
     const { tokens, comment } = lex(l, head, errs);
@@ -828,6 +902,38 @@ class Parser {
       case "migrate":
         this.migrationRow(n, l, rest);
         break;
+      case "component":
+      case "zone":
+        if (n.kind === "component") n.label = spanned(first);
+        this.systemName(n, l, rest, true);
+        break;
+      case "sequence":
+      case "table":
+        if (n.kind === "table" && parent?.kind === "component" && parent.label !== null && !DATA_STORES.has(parent.label)) {
+          this.err("K005", first.span, `\`table\` goes under a data store (${[...DATA_STORES].join(", ")}), not under \`${parent.label}\``, "arguments");
+        }
+        this.systemName(n, l, rest, false);
+        break;
+      case "code":
+        this.refList(n, rest, 1);
+        break;
+      case "relation": {
+        n.label = spanned(first);
+        const [target, ...caption] = rest;
+        if (target && target.kind === "word" && isSegment(target.text)) {
+          n.name = { value: nfc(target.text), span: target.span };
+          if (caption.length > 0) this.freeText(n, l, caption);
+        } else this.err("K005", target?.span ?? n.span, `expected \`${first.text} <component> [caption]\``, target ? "id" : "arguments");
+        break;
+      }
+      case "scale":
+      case "index":
+      case "requirement":
+      case "nfr":
+      case "estimate":
+      case "tradeoff":
+        this.freeText(n, l, rest);
+        break;
       case "dropped": {
         const id = rest[0];
         if (id && id.kind === "word" && isId(id.text) && rest.length > 1) {
@@ -897,6 +1003,14 @@ class Parser {
       case "ref-list":
         n.kind = "ref";
         this.oneRef(n, tokens);
+        break;
+      case "table":
+        n.kind = "column";
+        this.column(n, tokens, hint);
+        break;
+      case "sequence":
+        n.kind = "message";
+        this.message(n, tokens, hint);
         break;
       case "unknown":
         break;
@@ -1048,6 +1162,59 @@ class Parser {
     if (rest.length === 0 || rest.length % 2 === 0) {
       this.err("K005", n.span, "expected `layers <a> < <b> …`", "arguments");
     }
+  }
+
+  /** `<kind|zone|table|sequence> <name> [text…]`: a name local to the system; `text` (a technology, a label) only where `withText`. */
+  private systemName(n: Node, l: Line, rest: Token[], withText: boolean): void {
+    const [name, ...tail] = rest;
+    if (!name || name.kind !== "word" || !isSegment(name.text)) {
+      this.err("K005", name?.span ?? n.span, name ? `invalid name \`${name.text}\`` : `\`${kindLabel(n.kind) === "component" ? (n.label?.value ?? "component") : kindLabel(n.kind)}\` needs a name`, name ? "id" : "arguments");
+      return;
+    }
+    n.name = { value: nfc(name.text), span: name.span };
+    if (tail.length === 0) return;
+    if (withText) this.freeText(n, l, tail);
+    else this.err("K005", tail[0]!.span, `unexpected arguments after ${kindLabel(n.kind)} \`${name.text}\``, "arguments");
+  }
+
+  /** `<name> <type> [pk] [unique] [null] [fk <table>.<column>]` under `table`. */
+  private column(n: Node, tokens: Token[], hint: () => string): void {
+    const [name, type, ...flags] = tokens;
+    if (!name || !type || name.kind !== "word" || !isSegment(name.text) || type.kind !== "word") {
+      this.err("K005", n.span, `expected a column \`<name> <type> [pk] [unique] [null] [fk <table>.<column>]\` or \`index <columns>\`${hint()}`, "arguments");
+      n.kind = "unknown";
+      return;
+    }
+    n.name = { value: nfc(name.text), span: name.span };
+    n.text = spanned(type);
+    for (let i = 0; i < flags.length; i++) {
+      const flag = flags[i]!;
+      if (flag.kind === "comma") continue;
+      if (!COLUMN_FLAGS.has(flag.text)) {
+        this.err("K005", flag.span, `unknown column flag \`${flag.text}\`; expected one of: ${[...COLUMN_FLAGS].join(", ")}`, "arguments");
+        continue;
+      }
+      if (flag.text !== "fk") continue;
+      const target = flags[i + 1];
+      if (!target || !/^[^.\s]+\.[^.\s]+$/.test(target.text) || !isId(target.text)) this.err("K005", target?.span ?? flag.span, "expected `fk <table>.<column>`", "arguments");
+      if (target) i++;
+    }
+  }
+
+  /** `<from> → <to> [text…]` under `sequence`; `->` is `→`, `-->` is `⇢`. */
+  private message(n: Node, tokens: Token[], hint: () => string): void {
+    const [from, arrow, to, ...text] = tokens;
+    const arrows = ["→", "->", "⇢", "-->"];
+    if (!from || !arrow || !to || !arrows.includes(arrow.text) || from.kind !== "word" || !isSegment(from.text) || to.kind !== "word" || !isSegment(to.text)) {
+      this.err("K005", n.span, `expected a message \`<from> → <to> [text]\`${hint()}`, "arguments");
+      n.kind = "unknown";
+      return;
+    }
+    n.name = { value: nfc(from.text), span: from.span };
+    n.label = { value: nfc(to.text), span: to.span };
+    const first = text[0];
+    const last = text.at(-1);
+    if (first && last) n.text = { value: renderTokens(text), span: { start: first.span.start, end: last.span.end } };
   }
 
   /**

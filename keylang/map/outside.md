@@ -73,6 +73,7 @@
         - module [crypto](../../web/worker/shims/crypto.ts#L1) <!-- outside -->
         - module [fs](../../web/worker/shims/fs.ts#L1) <!-- outside -->
         - module [globals](../../web/worker/shims/globals.ts#L1) <!-- outside -->
+        - module [lilconfig](../../web/worker/shims/lilconfig.ts#L1) <!-- outside -->
         - module [module](../../web/worker/shims/module.ts#L1) <!-- outside -->
         - module [path](../../web/worker/shims/path.ts#L1) <!-- outside -->
         - module [string_decoder](../../web/worker/shims/string_decoder.ts#L1) <!-- outside -->

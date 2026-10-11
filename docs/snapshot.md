@@ -101,7 +101,7 @@ Salesforce Commerce Cloud, SFRA ([ADR 0022](adr/0022-framework-facts.md); ада
 
 **Точки входу** (`framework: "sfcc"`). У `cartridges/<c>/cartridge/controllers/<Name>.js` виклик `server.get|post|use|append|prepend|replace('<Action>', …, handler)` з літеральною назвою — `route` з міткою `<Name>-<Action>`; `method` — `GET` для `get`, `POST` для `post` (у `use` і змін маршруту його немає). `id` — fn останнього аргументу, коли це ім'я, яке резолвиться у fn файла чи імпорту (`show`, `cartHelpers.addToCart`); обробник, написаний на місці (`function (req, res, next) {…}`), ID не має — тоді `id` — модуль контролера, `line` — рядок реєстрації, `note` це називає. `append`/`prepend`/`replace` змінюють маршрут, який оголошує картридж далі по шляху: окремий запис з тією самою міткою і `note`. `hooks.json` картриджа (файл, який називає поле `hooks` його `package.json`, інакше `cartridge/scripts/hooks.json` чи `hooks.json`) — `observer` на кожен хук: мітка — назва хука, `id` — fn скрипта з назвою останнього сегмента хука (`dw.order.calculate` → `calculate`), інакше модуль скрипта; скрипт пишеться від кореня картриджа (`./cartridge/scripts/…`) або від файла хуків. `steptypes.json` картриджа (у його корені чи в `cartridge/`) — `cron` на кожен тип кроку: мітка — `@type-id`, `id` — fn `function` (script-module-step) чи `process-function` (chunk-step) модуля `module` (`int_x/cartridge/scripts/steps/x`), інакше модуль. Скрипт хука чи кроку, якого немає серед файлів аналізу, — запис `unsupported` у файлі конфігу. `steptypes.xml`, `jobs.xml` і конфіги Business Manager не читаються.
 
-**Composable Storefront / PWA Kit** — звичайний TypeScript/React з власним адаптером `pwa-kit`: перекриття шаблону й маршрути — «Фреймворки: PWA Kit» нижче.
+**Composable Storefront / PWA Kit** — звичайний TypeScript/React з власним адаптером `pwa-kit`: перекриття шаблону й маршрути — «Фреймворки: PWA Kit» нижче. **Storefront Next** (React Router) — адаптер `react-router`, «Фреймворки: React Router».
 
 **Apex (B2B Commerce на Lightning)** не підтримується: keylang не читає `.cls`/`.trigger`, і такі файли не індексуються.
 
@@ -147,6 +147,24 @@ Salesforce Composable Storefront ([ADR 0022](adr/0022-framework-facts.md); ад�
 **Резолвінг.** Для файла під найближчим `package.json` з `ccExtensibility` імпорт `@salesforce/retail-react-app/app/x` (будь-який пакет з `extends`) — файл `<overridesDir>/app/x` проєкту (з тими самими пробами розширень і `index`), коли він є: перекриття замінює файл шаблону, і це звичайне ребро `import`, яке бачить `deny`; інакше — зовнішній пакет базового шаблону. `^@salesforce/retail-react-app/…` — базовий пакет завжди (перекриття в обхід себе), не нерезолвлений імпорт. Перекриття, що імпортує власний шлях без `^`, теж іде в базовий пакет. `package.json` проєкту входить до `snapshotId` як вхід резолвера, а наявність файла перекриття вирішує ребро: видалений файл перекриття дає новий знімок.
 
 **Точки входу** (`framework: "pwa-kit"`). Елемент `{ path: '/cart', component: Cart }` масиву у файлі `routes.{js,jsx,ts,tsx}` → `route` з міткою шляху: `id` — fn компонента (оголошеного у файлі чи імпортованого), а для лінивого `const Cart = loadable(() => import('./pages/cart'))` (чи `lazy`) — default-експорт модуля, який вантажить `import()`; компонент, якого keylang не резолвить (з пакета базового шаблону), — модуль `routes` з `note`. `app.get('*', runtime.render)` у `ssr.*` → `route` `GET *` на модулі сервера з `note` (рендер маршрутів робить runtime PWA Kit), експортований `get` (обробник Managed Runtime) → `route` `ssr handler` з `note`.
+
+### Фреймворки: React Router
+
+[ADR 0022](adr/0022-framework-facts.md); адаптер `react-router` у `src/frameworks/react-router.ts` (виявлення й перелік файлів), точки входу — `src/framework-code/react-router.ts`. Framework mode v7 з файловими маршрутами `@react-router/fs-routes`. Вмикається, коли кореневий `package.json` залежить від `@react-router/dev` чи `@react-router/fs-routes` і є тека застосунку: `app/` чи `src/`, або літеральний `appDirectory` з `react-router.config.*`, з `root.*` і `routes.*`. **Конфіги адаптера** — `routes.*` і модулі маршрутів, якщо `routes.*` викликає `flatRoutes()`. Модулі маршрутів — `<app>/routes/<name>.<ext>` і `<app>/routes/<name>/route.<ext>`; замість `routes/` береться літеральний `rootDirectory`, якщо його задано. Salesforce Storefront Next (`flatRoutes` з `@salesforce/storefront-next-runtime/routing`) додає ще `<app>/extensions/*/routes/`. Тести (`*.test.*`, `*.spec.*`) не вважаються маршрутами: обгортка Storefront Next їх пропускає, а `ignoredRouteFiles` keylang не читає.
+
+**Точки входу** (`framework: "react-router"`, `kind: "route"`). Мітка — URL з імені файла за правилами flat routes:
+- `.` розділяє сегменти (`[.]` екранує), тож `_shop.orders.$orderId` → `/orders/:orderId`, `sitemap[.]xml` → `/sitemap.xml`;
+- `_x` — сегмент без шляху, `x_` виходить з layout, але лишає `x`;
+- `_index` — індекс, `$x` — параметр, `$` — splat `*`, `(x)` — необов'язковий сегмент.
+
+Що дає модуль:
+- `loader` → `GET <url>`, `action` → `POST <url>`; `clientLoader`/`clientAction` — те саме з `(client)`; `method` — `GET`/`POST`;
+- default-експорт (компонент, який рендерить роутер) → `PAGE <url>`;
+- інші експорти, які викликає сам роутер, — `ErrorBoundary`, `HydrateFallback`, `Layout`, `headers`, `links`, `meta`, `middleware`, `clientMiddleware` (і `unstable_`-варіанти), `shouldRevalidate` — `<експорт> <url>`, якщо це fn: дані на кшталт `export const handle = {…}` точками входу не є;
+- маршрут, під яким вкладені інші, позначається `(layout)`: його loader виконується для кожного з них;
+- експорт, який keylang не резолвить у fn (`export const action = createBasketAction(…)`): `id` — модуль маршруту, `note` це називає, а `flows discover` пише «no fn to draft from».
+
+**Дірки.** `routes.*` без `flatRoutes()` (`route()`, `index()`, `layout()`) — `unsupported` з причиною: ці маршрути ще не читаються. Префікс мультисайту Storefront Next (`app.url.prefix`) до міток не додається.
 
 ### Фреймворки: Python web
 

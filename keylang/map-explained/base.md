@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [brief](#base.brief) · [config](#base.config) · [diag](#base.diag) · [external-ids](#base.external-ids) · [adapter](#base.adapter) · [bindings](#base.bindings) · [cartridges](#base.cartridges) · [entries](#base.entries) · [events](#base.events) · [laravel](#base.laravel) · [magento](#base.magento) · [nestjs](#base.nestjs) · [pwa-kit](#base.pwa-kit) · [python-web](#base.python-web) · [sfcc](#base.sfcc) · [symfony](#base.symfony) · [web](#base.web) · [glob](#base.glob) · [languages](#base.languages) · [line-diff](#base.line-diff) · [safe-write](#base.safe-write) · [span](#base.span)
+[README](README.md) · modules: [brief](#base.brief) · [config](#base.config) · [diag](#base.diag) · [external-ids](#base.external-ids) · [adapter](#base.adapter) · [bindings](#base.bindings) · [cartridges](#base.cartridges) · [entries](#base.entries) · [events](#base.events) · [laravel](#base.laravel) · [magento](#base.magento) · [nestjs](#base.nestjs) · [pwa-kit](#base.pwa-kit) · [python-web](#base.python-web) · [react-router](#base.react-router) · [sfcc](#base.sfcc) · [symfony](#base.symfony) · [web](#base.web) · [glob](#base.glob) · [languages](#base.languages) · [line-diff](#base.line-diff) · [safe-write](#base.safe-write) · [span](#base.span)
 
 # map
 
@@ -160,24 +160,24 @@
     - span [base.span](base.md#base.span)
     - type [Code](../../src/diag.ts#L5)
       <a id="base.diag.Code"></a><br>A string union of every diagnostic code keylang can emit, grouped by stage: parsing/resolution (K001–K008), rules (K101–K107), flows (K201–K203), and wiring (K301–K302). Each member carries a doc comment stating what it signals and whether it is a warning. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-    - type [Severity](../../src/diag.ts#L58) = "error" | "warning"
+    - type [Severity](../../src/diag.ts#L65) = "error" | "warning"
       <a id="base.diag.Severity"></a><br>A string-literal union naming the two levels a diagnostic can carry, `"error"` or `"warning"`, with no runtime value of its own; the input shows no callers or related types, so where it is consumed is not visible here. _(llm · claude · 2026-10-04)_
-    - type [K005Reason](../../src/diag.ts#L61) = "arguments" | "id" | "link" | "quote" | "layer" | "scope"
+    - type [K005Reason](../../src/diag.ts#L68) = "arguments" | "id" | "link" | "quote" | "layer" | "scope"
       <a id="base.diag.K005Reason"></a><br>Why a K005 is malformed. Other codes do not carry this.
-    - fn [severityOf](../../src/diag.ts#L63) (code: Code) → Severity
-      <a id="base.diag.severityOf"></a><br>Maps a diagnostic code to its severity: a fixed set of six codes (K006, K008, K103, K106, K202, K203) yields "warning", every other code yields "error". Used by [`base.diag.diagnostic`](base.md#base.diag.diagnostic) when constructing a diagnostic record. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Diagnostic](../../src/diag.ts#L67)
+    - fn [severityOf](../../src/diag.ts#L70) (code: Code) → Severity
+      <a id="base.diag.severityOf"></a><br>Maps a diagnostic code to its severity: a fixed set of six codes (K006, K008, K103, K106, K202, K203) yields "warning", every other code yields "error". Used by [`base.diag.diagnostic`](base.md#base.diag.diagnostic) when constructing a diagnostic record. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+    - type [Diagnostic](../../src/diag.ts#L74)
       <a id="base.diag.Diagnostic"></a><br>The shape of a single reported finding: a required code, severity, message, file and span, plus optional fields that only certain codes populate — `target` (K001, the dangling reference's ID), `criterion`/`area`/`specHash` (K103 warnings, which carry their own rule and hash… _(llm · claude · 2026-10-04)_
-    - fn [diagnostic](../../src/diag.ts#L97) (code: Exclude<Code, "K005">, file: string, span: Span, message: string, target?: string) → Diagnostic
+    - fn [diagnostic](../../src/diag.ts#L104) (code: Exclude<Code, "K005">, file: string, span: Span, message: string, target?: string) → Diagnostic
       <a id="base.diag.diagnostic"></a><br>Builds a `Diagnostic` record, deriving its severity from the code via [`base.diag.severityOf`](base.md#base.diag.severityOf). The optional fifth argument becomes `reason` for K005 (only if it matches a known reason) and `target` for any other code. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [base.diag.severityOf](base.md#base.diag.severityOf)
-    - fn [isError](../../src/diag.ts#L108) (d: Diagnostic) → boolean
+    - fn [isError](../../src/diag.ts#L115) (d: Diagnostic) → boolean
       <a id="base.diag.isError"></a><br>A tiny predicate that returns true only when a diagnostic's `severity` field equals the string `"error"`, so the result and status layers ([`features.check-results.checkResults`](features.md#features.check-results.checkResults), [`features.feature-status.featureStatus`](features.md#features.feature-status.featureStatus), `operations.operations.runParse`… _(llm · claude · 2026-10-04)_
-    - fn [formatDiagnostic](../../src/diag.ts#L113) (d: Diagnostic) → string
+    - fn [formatDiagnostic](../../src/diag.ts#L120) (d: Diagnostic) → string
       <a id="base.diag.formatDiagnostic"></a><br>`file:line:col: CODE message`
-    - fn [compareDiagnostics](../../src/diag.ts#L118) (a: Diagnostic, b: Diagnostic) → number
+    - fn [compareDiagnostics](../../src/diag.ts#L125) (a: Diagnostic, b: Diagnostic) → number
       <a id="base.diag.compareDiagnostics"></a><br>Stable order: file, position, code.
-    - fn [errorText](../../src/diag.ts#L128) (error: unknown) → string
+    - fn [errorText](../../src/diag.ts#L135) (error: unknown) → string
       <a id="base.diag.errorText"></a><br>The text of a thrown value: an `Error`'s message, anything else as a string.
   - module [external-ids](../../src/external-ids.ts#L1)
     <a id="base.external-ids"></a><br>IDs of external packages: `external.<segment>`, one ID space for every package name a repository imports or declares. The map, the rules and the language server all name a package by this ID, so they share this module.
@@ -196,90 +196,91 @@
     - magento [base.magento](base.md#base.magento)
     - nestjs [base.nestjs](base.md#base.nestjs)
     - pwa-kit [base.pwa-kit](base.md#base.pwa-kit)
+    - react-router [base.react-router](base.md#base.react-router)
     - python-web [base.python-web](base.md#base.python-web)
     - sfcc [base.sfcc](base.md#base.sfcc)
     - symfony [base.symfony](base.md#base.symfony)
     - web [base.web](base.md#base.web)
-    - type [TypeName](../../src/frameworks/adapter.ts#L30)
+    - type [TypeName](../../src/frameworks/adapter.ts#L31)
       <a id="base.adapter.TypeName"></a><br>A type the configuration names: a qualified name of a language whose declarations have one (PHP `Magento\Sales\Api\OrderManagementInterface`, without the leading `\`), or a name declared at the top of `file`.
-    - type [ConfigAt](../../src/frameworks/adapter.ts#L36)
+    - type [ConfigAt](../../src/frameworks/adapter.ts#L37)
       <a id="base.adapter.ConfigAt"></a><br>Where in the config file a fact is written: 1-based.
-    - type [BindingFact](../../src/frameworks/adapter.ts#L42) extends ConfigAt
+    - type [BindingFact](../../src/frameworks/adapter.ts#L43) extends ConfigAt
       <a id="base.adapter.BindingFact"></a><br>`I → C`: a value typed `from` is an instance of `to` (Magento `<preference>`).
-    - type [ArgumentFact](../../src/frameworks/adapter.ts#L52) extends ConfigAt
+    - type [ArgumentFact](../../src/frameworks/adapter.ts#L53) extends ConfigAt
       <a id="base.adapter.ArgumentFact"></a><br>The constructor parameter `param` of `type` receives an instance of `value` (Magento `<argument xsi:type="object">`). A `type` named `*` (`EVERY_CLASS`) is every class: Symfony `_defaults: bind: $p: '@C'`.
-    - type [AliasFact](../../src/frameworks/adapter.ts#L59) extends ConfigAt
+    - type [AliasFact](../../src/frameworks/adapter.ts#L60) extends ConfigAt
       <a id="base.adapter.AliasFact"></a><br>`name` stands for the class `type` with arguments of its own (Magento `<virtualType>`).
-    - type [InterceptFact](../../src/frameworks/adapter.ts#L65) extends ConfigAt
+    - type [InterceptFact](../../src/frameworks/adapter.ts#L66) extends ConfigAt
       <a id="base.adapter.InterceptFact"></a><br>A plugin `name` of the class `plugin` wraps the public methods of `target` (Magento `<plugin>`).
-    - type [ObserverFact](../../src/frameworks/adapter.ts#L82) extends ConfigAt
+    - type [ObserverFact](../../src/frameworks/adapter.ts#L83) extends ConfigAt
       <a id="base.adapter.ObserverFact"></a><br>An observer `name` of the event `event`: the framework calls `method` of `instance` when code dispatches the event (Magento `etc/events.xml` `<event name><observer name instance method? disabled?>`).
-    - type [ConfigEntryKind](../../src/frameworks/adapter.ts#L95) = "rest" | "graphql" | "cron" | "consumer" | "cli"
+    - type [ConfigEntryKind](../../src/frameworks/adapter.ts#L96) = "rest" | "graphql" | "cron" | "consumer" | "cli"
       <a id="base.adapter.ConfigEntryKind"></a><br>Entry kinds an adapter writes straight from a config line (`route` needs the controllers, `observer` the events).
-    - type [EntryFact](../../src/frameworks/adapter.ts#L102) extends ConfigAt
+    - type [EntryFact](../../src/frameworks/adapter.ts#L103) extends ConfigAt
       <a id="base.adapter.EntryFact"></a><br>An entry point the config names: the framework calls `method` of `target` from outside (a REST route, a GraphQL resolver, a cron job, a queue consumer, a console command). `label` is how the outside names it.
-    - type [RouteFact](../../src/frameworks/adapter.ts#L114) extends ConfigAt
+    - type [RouteFact](../../src/frameworks/adapter.ts#L115) extends ConfigAt
       <a id="base.adapter.RouteFact"></a><br>A router of the framework: URLs under `/<frontName>/` run the controllers of `modules` (Magento `etc/<area>/routes.xml` `<router id><route id frontName><module name/>`).
-    - type [EntryConfigFact](../../src/frameworks/adapter.ts#L131) extends ConfigAt
+    - type [EntryConfigFact](../../src/frameworks/adapter.ts#L132) extends ConfigAt
       <a id="base.adapter.EntryConfigFact"></a><br>An entry point a config file names (SFCC `hooks.json` → `observer`, `steptypes.json` → `cron`): the script it runs, as the paths the framework would try in order (each probed with the usual extensions and `index`), and the fn in it, if the config names one. A PHP framework…
-    - type [DispatchFact](../../src/frameworks/adapter.ts#L150) extends ConfigAt
+    - type [DispatchFact](../../src/frameworks/adapter.ts#L151) extends ConfigAt
       <a id="base.adapter.DispatchFact"></a><br>A call in the code that dispatches an event or a message object (`event(new X)`, `$bus->dispatch(new X)`), in the declaration `symbol` of the file: an edge `via: "dispatch"` from that fn to the event `event`, named by the class (or the string a Symfony dispatch passes as its…
-    - type [ConfigHole](../../src/frameworks/adapter.ts#L159) extends ConfigAt
+    - type [ConfigHole](../../src/frameworks/adapter.ts#L160) extends ConfigAt
       <a id="base.adapter.ConfigHole"></a><br>Something the config writes that keylang does not read (a binding to a closure, an expression): a hole of the file with the reason.
-    - type [RoutePrefixFact](../../src/frameworks/adapter.ts#L165) extends ConfigAt
+    - type [RoutePrefixFact](../../src/frameworks/adapter.ts#L166) extends ConfigAt
       <a id="base.adapter.RoutePrefixFact"></a><br>Symfony `config/routes.yaml`: the routes of the attributes of classes under `dir` have `prefix` before their path.
-    - type [TokenRef](../../src/frameworks/adapter.ts#L171)
+    - type [TokenRef](../../src/frameworks/adapter.ts#L172)
       <a id="base.adapter.TokenRef"></a><br>A provider token as the code writes it: a string, or a name (a const, a class) written in `file`.
-    - type [ProviderFact](../../src/frameworks/adapter.ts#L178) extends ConfigAt
+    - type [ProviderFact](../../src/frameworks/adapter.ts#L179) extends ConfigAt
       <a id="base.adapter.ProviderFact"></a><br>A module provides `token` (NestJS `providers`): a class (`useClass`, a class provider `[C]`), what another token provides (`useExisting`), or a value keylang cannot name (`useFactory`, `useValue`).
-    - type [InjectionFact](../../src/frameworks/adapter.ts#L184) extends ConfigAt
+    - type [InjectionFact](../../src/frameworks/adapter.ts#L185) extends ConfigAt
       <a id="base.adapter.InjectionFact"></a><br>The constructor parameter `param` of `type` receives what `token` provides (NestJS `@Inject(T)`).
-    - type [CodeDecorator](../../src/frameworks/adapter.ts#L196)
+    - type [CodeDecorator](../../src/frameworks/adapter.ts#L197)
       <a id="base.adapter.CodeDecorator"></a><br>A decorator as written: its name (`Get`, `Nest.Get`) and its arguments as values keylang reads without running code. `param`: a decorator of a constructor parameter — the parameter's position, its name (the field a parameter property declares) and its type as written.
-    - type [DecoratorArg](../../src/frameworks/adapter.ts#L210)
+    - type [DecoratorArg](../../src/frameworks/adapter.ts#L211)
       <a id="base.adapter.DecoratorArg"></a><br>A decorator argument: a string literal (a template without substitutions too), a number, a name (`ORDER_REPO`, `CronExpression.EVERY_HOUR`), an object or an array literal of those, a function (`() => String`), else `other` with the text.
-    - type [CodeDecl](../../src/frameworks/adapter.ts#L220)
+    - type [CodeDecl](../../src/frameworks/adapter.ts#L221)
       <a id="base.adapter.CodeDecl"></a><br>A declaration as `code` reads it: the extractor's `DeclFact`, of which a framework needs the decorators.
-    - type [CodeFacts](../../src/frameworks/adapter.ts#L228)
+    - type [CodeFacts](../../src/frameworks/adapter.ts#L229)
       <a id="base.adapter.CodeFacts"></a><br>What `code` reads of a source file: the extractor's `FileFacts`, structurally.
-    - type [ConfigFacts](../../src/frameworks/adapter.ts#L233)
+    - type [ConfigFacts](../../src/frameworks/adapter.ts#L234)
       <a id="base.adapter.ConfigFacts"></a><br>The facts of one config file. Depends only on its path and text, so the fact cache keeps it.
-    - type [FrameworkConfig](../../src/frameworks/adapter.ts#L264)
+    - type [FrameworkConfig](../../src/frameworks/adapter.ts#L265)
       <a id="base.adapter.FrameworkConfig"></a><br>One config file of an active adapter, with the directory of the module that declares it.
-    - type [FrameworkModule](../../src/frameworks/adapter.ts#L271)
+    - type [FrameworkModule](../../src/frameworks/adapter.ts#L272)
       <a id="base.adapter.FrameworkModule"></a><br>A module of the framework, by the name its config uses (`Magento_Checkout`), and its directory.
-    - type [FrameworkInput](../../src/frameworks/adapter.ts#L277)
+    - type [FrameworkInput](../../src/frameworks/adapter.ts#L278)
       <a id="base.adapter.FrameworkInput"></a><br>What the graph receives from one active adapter.
-    - type [ServiceLocator](../../src/frameworks/adapter.ts#L302)
+    - type [ServiceLocator](../../src/frameworks/adapter.ts#L303)
       <a id="base.adapter.ServiceLocator"></a><br>A service locator of the framework (Magento's ObjectManager, business-flows 40): a call of one of `methods` on a value of one of `types` (or of a class implementing one) whose first argument names a class as a literal (`X::class`, `'Vendor\X'`) gives an instance of that class…
-    - type [GeneratedClass](../../src/frameworks/adapter.ts#L315)
+    - type [GeneratedClass](../../src/frameworks/adapter.ts#L316)
       <a id="base.adapter.GeneratedClass"></a><br>A class the framework generates instead of the code declaring it, by a convention of names (Magento's ObjectManager: `XFactory` with `create(): X`, business-flows 40). keylang applies it only to a class no file it reads declares, whose stem (`X`) is a class or an interface it…
-    - type [FrameworkContext](../../src/frameworks/adapter.ts#L323)
+    - type [FrameworkContext](../../src/frameworks/adapter.ts#L324)
       <a id="base.adapter.FrameworkContext"></a><br>What an adapter sees of the repository: the analysed source files and a reader.
-    - type [FrameworkAdapter](../../src/frameworks/adapter.ts#L341)
+    - type [FrameworkAdapter](../../src/frameworks/adapter.ts#L342)
       <a id="base.adapter.FrameworkAdapter"></a>
-    - type [ControllerConvention](../../src/frameworks/adapter.ts#L379)
+    - type [ControllerConvention](../../src/frameworks/adapter.ts#L380)
       <a id="base.adapter.ControllerConvention"></a><br>Where a framework keeps the controllers of a route and how it names their URLs: a controller is a class in a file under `<module dir>/<dir>/`, whose `member` runs; the HTTP method comes from the interfaces it implements.
-    - fn [activeAdapters](../../src/frameworks/adapter.ts#L404) (frameworks: readonly string[] | null, context: FrameworkContext, available: readonly FrameworkAdapter[] = FRAMEWORK_ADAPTERS) → FrameworkAdapter[]
+    - fn [activeAdapters](../../src/frameworks/adapter.ts#L405) (frameworks: readonly string[] | null, context: FrameworkContext, available: readonly FrameworkAdapter[] = FRAMEWORK_ADAPTERS) → FrameworkAdapter[]
       <a id="base.adapter.activeAdapters"></a><br>The adapters of a repository: those `frameworks` names, or with the field absent those detected. `available` lets a test add an adapter of its own.
-    - fn [typeLabel](../../src/frameworks/adapter.ts#L410) (t: TypeName) → string
+    - fn [typeLabel](../../src/frameworks/adapter.ts#L411) (t: TypeName) → string
       <a id="base.adapter.typeLabel"></a><br>A label for a type the configuration names: its qualified name, or `file#name`.
-    - fn [isConfigFacts](../../src/frameworks/adapter.ts#L415) (value: unknown) → value is ConfigFacts
+    - fn [isConfigFacts](../../src/frameworks/adapter.ts#L416) (value: unknown) → value is ConfigFacts
       <a id="base.adapter.isConfigFacts"></a><br>Whether a cached value has the shape of `ConfigFacts`; a cache entry of another shape is parsed again.
       - calls [base.adapter.isRecord](base.md#base.adapter.isRecord), [base.adapter.every](base.md#base.adapter.every), [base.adapter.isAt](base.md#base.adapter.isAt), [base.adapter.isTypeName](base.md#base.adapter.isTypeName), [base.adapter.isToken](base.md#base.adapter.isToken)
-    - fn [isAt](../../src/frameworks/adapter.ts#L437) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isAt](../../src/frameworks/adapter.ts#L438) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       <a id="base.adapter.isAt"></a>
       - calls [base.adapter.isRecord](base.md#base.adapter.isRecord)
-    - fn [isToken](../../src/frameworks/adapter.ts#L441) (value: unknown) → boolean <!-- internal -->
+    - fn [isToken](../../src/frameworks/adapter.ts#L442) (value: unknown) → boolean <!-- internal -->
       <a id="base.adapter.isToken"></a>
       - calls [base.adapter.isRecord](base.md#base.adapter.isRecord)
-    - fn [isTypeName](../../src/frameworks/adapter.ts#L445) (value: unknown) → boolean <!-- internal -->
+    - fn [isTypeName](../../src/frameworks/adapter.ts#L446) (value: unknown) → boolean <!-- internal -->
       <a id="base.adapter.isTypeName"></a>
       - calls [base.adapter.isRecord](base.md#base.adapter.isRecord)
-    - fn [every](../../src/frameworks/adapter.ts#L449) (value: unknown, check: (item: Record<string, unknown>) => boolean) → boolean <!-- internal -->
+    - fn [every](../../src/frameworks/adapter.ts#L450) (value: unknown, check: (item: Record<string, unknown>) => boolean) → boolean <!-- internal -->
       <a id="base.adapter.every"></a>
       - calls [base.adapter.isRecord](base.md#base.adapter.isRecord)
-    - fn [isRecord](../../src/frameworks/adapter.ts#L453) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isRecord](../../src/frameworks/adapter.ts#L454) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       <a id="base.adapter.isRecord"></a>
   - module [bindings](../../src/frameworks/bindings.ts#L1)
     <a id="base.bindings"></a><br>What the graph does with framework facts (ADR 0022), the same for every language: a call through a type the config binds (an interface, or a class with a preference of its own) becomes a `call` edge to the bound class's member, `via: "preference"`; a call through a property the…
@@ -531,6 +532,34 @@
       <a id="base.python-web.PythonWebSpec"></a>
     - fn [pythonWebAdapter](../../src/frameworks/python-web.ts#L30) (spec: PythonWebSpec) → FrameworkAdapter <!-- internal -->
       <a id="base.python-web.pythonWebAdapter"></a>
+  - module [react-router](../../src/frameworks/react-router.ts#L1)
+    <a id="base.react-router"></a><br>The React Router adapter (framework mode, v7; ADR 0022): file-system routes of `@react-router/fs-routes`. An app directory is `app/` or `src/` (or the literal `appDirectory` of `react-router.config.*`) holding a `root.*` and a `routes.*` whose default export calls…
+    - node [external.node](external.md#external.node)
+    - adapter [base.adapter](base.md#base.adapter)
+    - type [App](../../src/frameworks/react-router.ts#L56) <!-- internal -->
+      <a id="base.react-router.App"></a><br>An app directory: its route config and the directories of its route modules.
+    - fn [apps](../../src/frameworks/react-router.ts#L61) (context: Pick<FrameworkContext, "sources" | "read" | "dirs" | "analysed">) → App[] <!-- internal -->
+      <a id="base.react-router.apps"></a>
+      - calls [base.react-router.normalize](base.md#base.react-router.normalize)
+    - fn [routeModules](../../src/frameworks/react-router.ts#L80) (sources: readonly string[], dir: string) → string[]
+      <a id="base.react-router.routeModules"></a><br>The route modules of a routes directory, sorted: `<name>.<ext>` and `<name>/route.<ext>`, tests left out.
+    - fn [routeId](../../src/frameworks/react-router.ts#L90) (dir: string, path: string) → string
+      <a id="base.react-router.routeId"></a><br>The route ID of a route module: its file name without the extension, or its folder.
+    - fn [flatRoutePath](../../src/frameworks/react-router.ts#L101) (id: string) → string
+      <a id="base.react-router.flatRoutePath"></a><br>The URL path of a flat route ID (`_app.orders.$orderNo` → `/orders/:orderNo`): `.` separates segments (`[.]` escapes), `_x` is pathless, `x_` opts out of the layout but keeps `x`, `_index` is the index, `$x` a parameter, `$` the splat, `(x)` optional.
+      - calls [base.react-router.splitSegments](base.md#base.react-router.splitSegments)
+    - fn [isLayout](../../src/frameworks/react-router.ts#L118) (id: string, ids: readonly string[]) → boolean
+      <a id="base.react-router.isLayout"></a><br>Whether another route ID nests under this one (`_app` of `_app.cart`).
+      - calls [base.react-router.splitSegments](base.md#base.react-router.splitSegments)
+    - fn [splitSegments](../../src/frameworks/react-router.ts#L127) (id: string) → string[] <!-- internal -->
+      <a id="base.react-router.splitSegments"></a>
+    - fn [normalize](../../src/frameworks/react-router.ts#L143) (dir: string) → string <!-- internal -->
+      <a id="base.react-router.normalize"></a>
+    - fn [depends](../../src/frameworks/react-router.ts#L147) (context: Pick<FrameworkContext, "read">) → boolean <!-- internal -->
+      <a id="base.react-router.depends"></a>
+      - calls [base.react-router.isRecord](base.md#base.react-router.isRecord)
+    - fn [isRecord](../../src/frameworks/react-router.ts#L157) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+      <a id="base.react-router.isRecord"></a>
   - module [sfcc](../../src/frameworks/sfcc.ts#L1)
     <a id="base.sfcc"></a><br>The Salesforce Commerce Cloud adapter (SFRA cartridges; ADR 0022 п. 2, 5). Detected from a cartridge among the analysed files (`…/cartridges/<c>/cartridge/…`) or a `dw.json`.
     - node [external.node](external.md#external.node)

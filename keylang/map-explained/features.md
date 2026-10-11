@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [agent-cli](#features.agent-cli) · [agent-context](#features.agent-context) · [baseline](#features.baseline) · [call-sites](#features.call-sites) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [clone](#features.clone) · [coverage-report](#features.coverage-report) · [diagram-clip](#features.diagram-clip) · [diagram-proposal](#features.diagram-proposal) · [discover-names](#features.discover-names) · [discover](#features.discover) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [explorer](#features.explorer) · [feature-status](#features.feature-status) · [flow-bundle](#features.flow-bundle) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [greenfield](#features.greenfield) · [harness](#features.harness) · [integrations](#features.integrations) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [migration-stack](#features.migration-stack) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stale](#features.stale) · [stats](#features.stats) · [tour](#features.tour) · [voice-local](#features.voice-local) · [voice](#features.voice) · [weakening](#features.weakening)
+[README](README.md) · modules: [agent-cli](#features.agent-cli) · [agent-context](#features.agent-context) · [baseline](#features.baseline) · [call-sites](#features.call-sites) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [clone](#features.clone) · [coverage-report](#features.coverage-report) · [diagram-clip](#features.diagram-clip) · [diagram-proposal](#features.diagram-proposal) · [discover-names](#features.discover-names) · [discover](#features.discover) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [explorer](#features.explorer) · [feature-status](#features.feature-status) · [flow-bundle](#features.flow-bundle) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [greenfield](#features.greenfield) · [harness](#features.harness) · [integrations](#features.integrations) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [migration-stack](#features.migration-stack) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stale](#features.stale) · [stats](#features.stats) · [system-proposal](#features.system-proposal) · [tour](#features.tour) · [voice-local](#features.voice-local) · [voice](#features.voice) · [weakening](#features.weakening)
 
 # map
 
@@ -530,56 +530,56 @@
     - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
     - type [EditorNode](../../src/diagram-proposal.ts#L36)
       <a id="features.diagram-proposal.EditorNode"></a><br>One shape of the editor's canvas, as `currentModel()` gives it (web/src/editor.ts).
-    - type [EditorEdge](../../src/diagram-proposal.ts#L53)
+    - type [EditorEdge](../../src/diagram-proposal.ts#L56)
       <a id="features.diagram-proposal.EditorEdge"></a>
-    - type [EditorLane](../../src/diagram-proposal.ts#L62)
+    - type [EditorLane](../../src/diagram-proposal.ts#L65)
       <a id="features.diagram-proposal.EditorLane"></a>
-    - type [EditorModel](../../src/diagram-proposal.ts#L72)
+    - type [EditorModel](../../src/diagram-proposal.ts#L75)
       <a id="features.diagram-proposal.EditorModel"></a>
-    - fn [isObject](../../src/diagram-proposal.ts#L83) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isObject](../../src/diagram-proposal.ts#L86) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       <a id="features.diagram-proposal.isObject"></a>
-    - fn [text](../../src/diagram-proposal.ts#L84) (value: unknown) → value is string <!-- internal -->
+    - fn [text](../../src/diagram-proposal.ts#L87) (value: unknown) → value is string <!-- internal -->
       <a id="features.diagram-proposal.text"></a>
-    - fn [finite](../../src/diagram-proposal.ts#L85) (value: unknown) → value is number <!-- internal -->
+    - fn [finite](../../src/diagram-proposal.ts#L88) (value: unknown) → value is number <!-- internal -->
       <a id="features.diagram-proposal.finite"></a>
-    - fn [parseEditorModel](../../src/diagram-proposal.ts#L88) (value: unknown) → EditorModel | string
+    - fn [parseEditorModel](../../src/diagram-proposal.ts#L91) (value: unknown) → EditorModel | string
       <a id="features.diagram-proposal.parseEditorModel"></a><br>The editor's model from JSON, or what is wrong with it.
       - calls [features.diagram-proposal.isObject](features.md#features.diagram-proposal.isObject), [features.diagram-proposal.text](features.md#features.diagram-proposal.text), [features.diagram-proposal.finite](features.md#features.diagram-proposal.finite)
-    - type [BaseDiagram](../../src/diagram-proposal.ts#L128)
+    - type [BaseDiagram](../../src/diagram-proposal.ts#L133)
       <a id="features.diagram-proposal.BaseDiagram"></a><br>The diagram of the view as `diagramOf` drew it: what the canvas is compared with.
-    - type [ChangeInput](../../src/diagram-proposal.ts#L133)
+    - type [ChangeInput](../../src/diagram-proposal.ts#L138)
       <a id="features.diagram-proposal.ChangeInput"></a>
-    - type [ChangedTarget](../../src/diagram-proposal.ts#L150)
+    - type [ChangedTarget](../../src/diagram-proposal.ts#L155)
       <a id="features.diagram-proposal.ChangedTarget"></a><br>The full new text of one spec, and the shapes of the canvas it came from.
-    - type [DiagramChanges](../../src/diagram-proposal.ts#L158)
+    - type [DiagramChanges](../../src/diagram-proposal.ts#L163)
       <a id="features.diagram-proposal.DiagramChanges"></a>
-    - fn [strip](../../src/diagram-proposal.ts#L165) (id: string) → string <!-- internal -->
+    - fn [strip](../../src/diagram-proposal.ts#L170) (id: string) → string <!-- internal -->
       <a id="features.diagram-proposal.strip"></a>
-    - fn [flowNameOf](../../src/diagram-proposal.ts#L171) (id: string) → string <!-- internal -->
+    - fn [flowNameOf](../../src/diagram-proposal.ts#L176) (id: string) → string <!-- internal -->
       <a id="features.diagram-proposal.flowNameOf"></a><br>A flow name from a trigger's ID: its last segment, what a name cannot hold as `-`.
-    - module [Targets](../../src/diagram-proposal.ts#L177) <!-- internal -->
+    - module [Targets](../../src/diagram-proposal.ts#L182) <!-- internal -->
       <a id="features.diagram-proposal.Targets"></a><br>Collects edits per target: each starts from the file on disk and takes edits in turn.
-      - fn [constructor](../../src/diagram-proposal.ts#L180) (read: (path: string) => string | null)
+      - fn [constructor](../../src/diagram-proposal.ts#L185) (read: (path: string) => string | null)
         <a id="features.diagram-proposal.Targets.constructor"></a>
-      - fn [current](../../src/diagram-proposal.ts#L184) (target: string) → string | null
+      - fn [current](../../src/diagram-proposal.ts#L189) (target: string) → string | null
         <a id="features.diagram-proposal.Targets.current"></a>
-      - fn [set](../../src/diagram-proposal.ts#L192) (target: string, text: string, shapes: Iterable<string> = []) → void
+      - fn [set](../../src/diagram-proposal.ts#L197) (target: string, text: string, shapes: Iterable<string> = []) → void
         <a id="features.diagram-proposal.Targets.set"></a>
         - calls [features.diagram-proposal.Targets.current](features.md#features.diagram-proposal.Targets.current)
-      - fn [changed](../../src/diagram-proposal.ts#L199) () → ChangedTarget[]
+      - fn [changed](../../src/diagram-proposal.ts#L204) () → ChangedTarget[]
         <a id="features.diagram-proposal.Targets.changed"></a>
         - calls [base.span.compareText](base.md#base.span.compareText)
-    - fn [replaceSection](../../src/diagram-proposal.ts#L208) (own: string, section: { text: string; firstLine: number }, edited: string) → string <!-- internal -->
+    - fn [replaceSection](../../src/diagram-proposal.ts#L213) (own: string, section: { text: string; firstLine: number }, edited: string) → string <!-- internal -->
       <a id="features.diagram-proposal.replaceSection"></a><br>The section of a flow in the text of its file replaced, the rest byte for byte (CRLF kept).
-    - fn [appendToList](../../src/diagram-proposal.ts#L216) (section: string, added: readonly string[]) → string <!-- internal -->
+    - fn [appendToList](../../src/diagram-proposal.ts#L221) (section: string, added: readonly string[]) → string <!-- internal -->
       <a id="features.diagram-proposal.appendToList"></a><br>Lines added at the end of a flow section's list (after its last list line), as more of the list.
-    - fn [withContinues](../../src/diagram-proposal.ts#L235) (section: string, from: string) → string <!-- internal -->
+    - fn [withContinues](../../src/diagram-proposal.ts#L240) (section: string, from: string) → string <!-- internal -->
       <a id="features.diagram-proposal.withContinues"></a><br>`- continues <flow>` as the first list line of a section (once).
       - calls [features.diagram-proposal.appendToList](features.md#features.diagram-proposal.appendToList)
-    - fn [diagramChanges](../../src/diagram-proposal.ts#L248) (input: ChangeInput) → DiagramChanges
+    - fn [diagramChanges](../../src/diagram-proposal.ts#L253) (input: ChangeInput) → DiagramChanges
       <a id="features.diagram-proposal.diagramChanges"></a><br>The texts the drawing asks for. `model` is the canvas, `diagram` the view as the code and the specs draw it now; nothing is read but through `read`.
       - calls [features.diagram-proposal.Targets](features.md#features.diagram-proposal.Targets), [features.diagram-proposal.strip](features.md#features.diagram-proposal.strip), [features.diagram-proposal.flowNameOf](features.md#features.diagram-proposal.flowNameOf), [features.diagram-proposal.Targets.current](features.md#features.diagram-proposal.Targets.current), [map.drawio.flowSection](map.md#map.drawio.flowSection), [map.drawio.flowFromDrawio](map.md#map.drawio.flowFromDrawio), [features.diagram-proposal.appendToList](features.md#features.diagram-proposal.appendToList), [features.diagram-proposal.Targets.set](features.md#features.diagram-proposal.Targets.set), [features.diagram-proposal.replaceSection](features.md#features.diagram-proposal.replaceSection), [features.draft.withFlow](features.md#features.draft.withFlow), [features.diagram-proposal.withContinues](features.md#features.diagram-proposal.withContinues), [base.span.compareText](base.md#base.span.compareText), [features.draft.withRules](features.md#features.draft.withRules), [features.diagram-proposal.globFor](features.md#features.diagram-proposal.globFor), [base.config.withLayers](base.md#base.config.withLayers), [features.diagram-proposal.Targets.changed](features.md#features.diagram-proposal.Targets.changed)
-    - fn [globFor](../../src/diagram-proposal.ts#L481) (layer: string, layers: Readonly<Record<string, readonly string[]>>) → string <!-- internal -->
+    - fn [globFor](../../src/diagram-proposal.ts#L486) (layer: string, layers: Readonly<Record<string, readonly string[]>>) → string <!-- internal -->
       <a id="features.diagram-proposal.globFor"></a><br>A glob for a new layer like the others' (`src/<layer>/**` when they are `src/<their name>/**`), else `src/<layer>/**`.
   - module [discover-names](../../src/discover-names.ts#L1)
     <a id="features.discover-names"></a><br>Business names of discovered flows (business-flows/12): a model groups the flows of one layer into business processes — name, a few sentences, a domain, the entities in and out, the flows that belong to it — in one request per layer group, never per flow. Offline first: each…
@@ -1026,7 +1026,7 @@
   - module [explain](../../src/explain.ts#L1)
     <a id="features.explain"></a><br>Short explanations for diagnostic codes. Every code in `diag.ts` has an entry.
     - diag [base.diag](base.md#base.diag)
-    - fn [explainCode](../../src/explain.ts#L140) (code: string) → string | null
+    - fn [explainCode](../../src/explain.ts#L155) (code: string) → string | null
       <a id="features.explain.explainCode"></a><br>Looks up a diagnostic code (case-insensitively) in the `EXPLANATIONS` table and formats its cause, example, and fix as a multi-line string, returning null for unknown codes. For `K005` it appends extra reason lines from `K005_REASON_LINES`. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
   - module [explorer](../../src/explorer.ts#L1)
     <a id="features.explorer"></a><br>The entry explorer of `keylang web` (business-flows/22): one level of the call graph around an ID at a time, for a person reading old code before any flow is written. `callsOf` gives the direct callees of a fn (with the edge's `via` and `site`), the calls keylang did not…
@@ -2148,6 +2148,24 @@
       <a id="features.stats.statusesIn"></a><br>`status=` of every `keylang:llm` / `keylang:algo` provenance comment in the lines.
     - fn [addDrafts](../../src/stats.ts#L77) (stats: Stats, counts: Record<string, number>, field: keyof Tally) → void
       <a id="features.stats.addDrafts"></a><br>Adds each per-status count into the matching tally of `stats.drafts`, creating a zeroed tally for statuses not yet present and incrementing only the given field. Used by `operations.operations.countProposed` and [`tui.merge-session.MergeSession.write`](tui.md#tui.merge-session.MergeSession.write) to accumulate draft totals. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+  - module [system-proposal](../../src/system-proposal.ts#L1)
+    <a id="features.system-proposal"></a><br>«Запропонувати зміни» on a system's view (system-design/08): the editor's canvas as the `# system` section it draws. Components and zones come from the canvas — a component's kind, name and technology from its shape, its zone from the lane it sits in, its relations from the…
+    - diagram-proposal [features.diagram-proposal](features.md#features.diagram-proposal)
+    - ir [lang.ir](lang.md#lang.ir)
+    - parser [lang.parser](lang.md#lang.parser)
+    - span [base.span](base.md#base.span)
+    - system [check.system](check.md#check.system)
+    - system-discover [map.system-discover](map.md#map.system-discover)
+    - type [SystemChangeInput](../../src/system-proposal.ts#L19)
+      <a id="features.system-proposal.SystemChangeInput"></a>
+    - fn [lastLine](../../src/system-proposal.ts#L30) (node: Node) → number <!-- internal -->
+      <a id="features.system-proposal.lastLine"></a><br>The last line of an item: its own, its description's and its children's.
+    - fn [block](../../src/system-proposal.ts#L35) (lines: readonly string[], node: Node, indent: string) → string[] <!-- internal -->
+      <a id="features.system-proposal.block"></a><br>The lines of an item and everything under it, re-indented to `indent`.
+      - calls [features.system-proposal.lastLine](features.md#features.system-proposal.lastLine)
+    - fn [systemChanges](../../src/system-proposal.ts#L43) (input: SystemChangeInput) → { targets: ChangedTarget[]; notes: string[] }
+      <a id="features.system-proposal.systemChanges"></a><br>The section's text with its components and zones as the canvas draws them; null when the canvas says nothing new.
+      - calls [lang.parser.isSegment](lang.md#lang.parser.isSegment), [map.system-discover.systemMarkdown](map.md#map.system-discover.systemMarkdown), [lang.parser.parse](lang.md#lang.parser.parse), [features.system-proposal.lastLine](features.md#features.system-proposal.lastLine), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [features.system-proposal.block](features.md#features.system-proposal.block), [base.span.compareText](base.md#base.span.compareText)
   - module [tour](../../src/tour.ts#L1)
     <a id="features.tour"></a><br>`keylang tour` (business-flows/15): one page for a newcomer and for an agent — what the system is, its layers and modules, the business processes with their diagrams, entry points and events, integrations, blind spots and «logic in data», and where to start reading. A view over…
     - node [external.node](external.md#external.node)

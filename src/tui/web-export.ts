@@ -59,6 +59,7 @@ async function requests(done: Analysis, answer: (path: string, query: URLSearchP
     layers: string[];
     domains?: string[];
     discovered?: { name: string }[];
+    systems?: { name: string; sequences: string[]; tables: number }[];
   };
   await ask("/api/coverage");
   await ask("/api/tour");
@@ -81,6 +82,12 @@ async function requests(done: Analysis, answer: (path: string, query: URLSearchP
     const diagram = await ask("/api/diagram", query);
     if (diagram.status === 200) for (const node of (JSON.parse(diagram.body) as { nodes: { ref?: { id?: string } }[] }).nodes) if (node.ref?.id) ids.add(node.ref.id);
     for (const format of ["bpmn", "drawio"]) await ask("/api/export", { ...query, format });
+  }
+  // A system's views have no BPMN or draw.io export.
+  for (const system of views.systems ?? []) {
+    await ask("/api/diagram", { view: "system", name: system.name });
+    if (system.tables > 0) await ask("/api/diagram", { view: "er", name: system.name });
+    for (const seq of system.sequences) await ask("/api/diagram", { view: "sequence", name: system.name, seq });
   }
   for (const id of [...ids].sort(compareText)) {
     await ask("/api/calls", { id });

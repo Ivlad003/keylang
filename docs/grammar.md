@@ -72,11 +72,12 @@ keylang/map.md:4:18: K001 dangling reference `b`; declare `planned` if this is a
 | `# flow <name>` | flow, `name` обов'язковий | `keylang/flows/*.md` |
 | `# wiring` | wiring | `keylang/wiring.md` |
 | `# migration <name>` | migration, `name` обов'язковий | `keylang/migration.md` (рядки дописує `flow import`) |
+| `# system <name>` | system, `name` обов'язковий | `keylang/system/<name>.md` ([§5 «Система»](#система-system)) |
 
 - **Р2. Вид визначає заголовок, а не шлях файлу.** Тому `rules.md` може лежати будь-де, а файл без жодного заголовка (як на слайдах) — це секція **map**.
 - **Р3. В одному файлі може бути кілька секцій**: кожен `# …` починає нову (наприклад, кілька `# flow` в одному файлі). Вміст до першого заголовка — неявна секція map.
 - Невідомий заголовок першого рівня (`# Shop`) — попередження **K006**, секція вважається map. Заголовок без виду (`#`, `# <!-- … -->`) — теж K006: «section heading without a kind».
-- Зайві слова в заголовку — K005 (закривні `#` — не слова, §1); `# flow` чи `# migration` без імені — K005. Ім'я мають лише `flow` і `migration` (таблиця відповідності ID між стеками, business-flows/26–27; як `check` судить її рядки — нижче, «Рядки migration»): слово після `# rules`, `# map` чи `# wiring` (`# rules foo`) — K005, а не ім'я секції.
+- Зайві слова в заголовку — K005 (закривні `#` — не слова, §1); `# flow`, `# migration` чи `# system` без імені — K005. Ім'я мають лише `flow`, `migration` і `system` (таблиця відповідності ID між стеками, business-flows/26–27; як `check` судить її рядки — нижче, «Рядки migration»): слово після `# rules`, `# map` чи `# wiring` (`# rules foo`) — K005, а не ім'я секції.
 - Імена потоків — окремий простір імен: `# flow checkout` не конфліктує з ID карти, але два потоки з однаковим ім'ям — K002.
 
 **Р2.** Файл у `keylang/flows/` із заголовком `# rules` — це правила, тож `layer` там невідомий. Файл без жодного заголовка — карта: голе ім'я є шаром.
@@ -303,6 +304,11 @@ Alias залежності не збігається з контекстним �
 | верх секції flow | `kind`, `trigger`, `continues`, `step`, `parallel`, `reads`, `emits`, `calls`, `invariant`, `when`, `after`, `every`, `test`, `planned`, `?` | K004 |
 | верх секції wiring | `wire` | K004 |
 | верх секції migration | `map`, `dropped` | K004 |
+| верх секції system | вид компонента (`client`, `cdn`, `dns`, `lb`, `gateway`, `service`, `worker`, `function`, `db`, `cache`, `queue`, `storage`, `search`, `warehouse`, `auth`, `external`), `zone`, `sequence`, `requirement`, `nfr`, `estimate`, `tradeoff`, `?` | K004 |
+| під `zone` | вид компонента, `zone` | K004 |
+| під компонентом | `code`, `calls`, `reads`, `writes`, `publishes`, `consumes`, `replicates`, `uses`, `scale`, `table` | K004 |
+| під `table` | `index` | `<name> <type> [прапорці]` — колонка |
+| під `sequence` | — | `<from> → <to> [текст]` — повідомлення |
 | під `layer` | `module`, `event` (згенерована група `events`, [semantics.md](semantics.md) §6) | `<name>` — модуль |
 | під `module` (map) | `module`, `fn`, `type`, `event` | `<alias> <id>` — залежність |
 | під `fn`, під `event` | `calls` (під `event` — observers, які викликає фреймворк) | K004 |
@@ -328,6 +334,48 @@ Alias залежності не збігається з контекстним �
 ```
 
 `module` означає різне за позицією: під шаром — оголошення модуля, на верхньому рівні — посилання на модуль, до якого застосовуються правила (`exports`, `no-cycles`).
+
+### Система (`# system`)
+
+Секція `# system <name>` описує систему як її малюють на дизайні: компоненти, зони, зв'язки, схему даних, послідовності запитів і нотатки інтерв'ю (spec `.scratch/system-design`). Імена компонентів, зон, таблиць і sequence — сегменти, **локальні для секції**: це не ID карти, і посилаються на них лише рядки тієї ж системи. Зв'язок із кодом дає `- code <id>` під компонентом — звичайне посилання на ID карти. Що з цього перевіряє `check`, описано в [semantics.md](semantics.md#система-system) (§7).
+
+- **Компонент** — `- <вид> <ім'я> [технологія…]`. Технологія — вільний текст; перше слово (`postgres`, `redis`, `kafka`) звіряється з каталогом технологій.
+- **Зона** — `- zone <ім'я> [підпис…]`: вкладені в неї компоненти й зони малюються всередині рамки.
+- **Під компонентом:** `code <id>[, <id>]`; зв'язок `<дієслово> <компонент> [підпис…]`, де дієслово — `calls`, `reads`, `writes`, `publishes`, `consumes`, `replicates` або `uses`, а підпис — протокол чи навантаження; `scale <текст>`; `table <ім'я>` — лише під сховищем (`db`, `cache`, `storage`, `search`, `warehouse`), інакше K005.
+- **Колонка** — `<ім'я> <тип> [pk] [unique] [null] [fk <таблиця>.<колонка>]`; невідомий прапорець — K005. `index <колонки…>` — індекс.
+- **Повідомлення** — `<від> → <до> [текст…]` під `sequence`; `->` означає те саме, `⇢` чи `-->` — асинхронне повідомлення.
+- **Інтерв'ю:** `requirement`, `nfr`, `estimate`, `tradeoff` і `?` на верху секції — вільний текст: вимоги, нефункціональні вимоги, оцінки, компроміси, відкриті питання.
+
+```keylang path=keylang/system/shortener.md
+# system shortener
+
+- requirement короткий URL веде на довгий
+- nfr p99 редиректу < 50 мс
+- client web браузер
+- zone private AWS VPC
+  - service api Node.js
+    - reads db SELECT
+    - writes db INSERT
+    - calls cache
+  - db db postgres
+    - table urls
+      - id bigint pk
+      - code text unique
+      - owner_id bigint null fk users.id
+      - index code
+    - table users
+      - id bigint pk
+  - cache cache redis
+    - table urls
+      - pal text maybe
+- sequence redirect
+  - web → api GET /abc
+  - api -> cache GET abc
+```
+
+```diagnostics
+keylang/system/shortener.md:21:18: K005 unknown column flag `maybe`; expected one of: pk, unique, null, fk
+```
 
 ### Аргументи
 
@@ -660,7 +708,7 @@ line = fence-line | html-block | blank | generated-marker | heading | fence-open
 
 heading = "#" ( " " | tab ) kind [ " " name ] [ closing ] ;
 closing = ( " " | tab ) "#" { "#" } ; (* CommonMark: до слів заголовка не входить *)
-kind = "map" | "rules" | "flow" | "wiring" ;
+kind = "map" | "rules" | "flow" | "wiring" | "migration" | "system" ;
 name = segment ;
 segment = ( letter | "_" | "$" ) ( letter | mark | digit | "_" | "$" | "-" )* ;
 id = segment ( "." segment )* ;
@@ -695,6 +743,11 @@ under-timer = "test" ;
 (* under-timer — під after і під every *)
 under-wire = (* гола залежність alias id, без ключових слів *) ;
 under-wire-dep = "when" | "compose" ;
+system-top = "client" -> component | "cdn" -> component | "dns" -> component | "lb" -> component | "gateway" -> component | "service" -> component | "worker" -> component | "function" -> component | "db" -> component | "cache" -> component | "queue" -> component | "storage" -> component | "search" -> component | "warehouse" -> component | "auth" -> component | "external" -> component | "zone" | "sequence" | "requirement" | "nfr" | "estimate" | "tradeoff" | "?" -> question ;
+under-zone = "client" -> component | "cdn" -> component | "dns" -> component | "lb" -> component | "gateway" -> component | "service" -> component | "worker" -> component | "function" -> component | "db" -> component | "cache" -> component | "queue" -> component | "storage" -> component | "search" -> component | "warehouse" -> component | "auth" -> component | "external" -> component | "zone" ;
+under-component = "code" | "calls" -> relation | "reads" -> relation | "writes" -> relation | "publishes" -> relation | "consumes" -> relation | "replicates" -> relation | "uses" -> relation | "scale" | "table" ;
+under-table = "index" ; (* інше — колонка, column-args *)
+under-sequence = (* повідомлення message-args, без ключових слів *) ;
 under-other = (* K004: батько не може мати вкладених елементів *) ;
 
 (* Форми аргументів, §5. *)
@@ -730,6 +783,15 @@ then-args = "then" ( id | text ) ;
 test-args = "test" file [ '"' name '"' ] ;
 wire-args = ( "wire" | "compose" ) id ;
 when-wiring-args = "when" condition "→" id ;
+component-args = component-kind segment [ text ] ; (* text — технологія *)
+zone-args = "zone" segment [ text ] ;
+code-args = "code" id ( "," id )* ;
+relation-args = relation-verb segment [ text ] ;
+table-args = ( "table" | "sequence" ) segment ;
+column-args = segment word { "pk" | "unique" | "null" | "fk" segment "." segment } ;
+index-args = "index" text ;
+message-args = segment ( "→" | "->" | "⇢" | "-->" ) segment [ text ] ;
+interview-args = ( "requirement" | "nfr" | "estimate" | "tradeoff" | "scale" ) text ;
 ```
 
 Побічні умови, яких EBNF не виражає:

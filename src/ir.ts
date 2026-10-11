@@ -16,7 +16,7 @@ export interface Document {
   diagnostics: Diagnostic[];
 }
 
-export type SectionKind = "map" | "rules" | "flow" | "wiring" | "migration";
+export type SectionKind = "map" | "rules" | "flow" | "wiring" | "migration" | "system";
 
 /** Content under one `# …` heading (or before the first heading). */
 export interface Section {
@@ -89,6 +89,29 @@ export type NodeKind =
   | "migrate"
   /** `dropped <id> <reason>`: an ID of the old stack that is not carried over. */
   | "dropped"
+  // system (system-design/01): names are local to the `# system` section, not IDs of the map
+  /** `<kind> <name> [tech…]`: a component; `label` is its kind (`db`, `service`…), `text` the technology. */
+  | "component"
+  /** `zone <name> [label…]`: a boundary (region, VPC) around components. */
+  | "zone"
+  /** `code <id>[, <id>]`: the map IDs a component is built from. */
+  | "code"
+  /** `<verb> <component> [caption…]`: `label` the verb (`calls`, `reads`…), `name` the target component. */
+  | "relation"
+  | "scale"
+  /** `table <name>` under a data store; its items are columns and `index` lines. */
+  | "table"
+  /** `<name> <type> [pk] [unique] [null] [fk <table>.<column>]` under a table. */
+  | "column"
+  | "index"
+  /** `sequence <name>`: messages between components in order. */
+  | "sequence"
+  /** `<from> → <to> [text…]` under `sequence`: `name` the sender, `label` the receiver; `⇢`/`-->` is asynchronous. */
+  | "message"
+  | "requirement"
+  | "nfr"
+  | "estimate"
+  | "tradeoff"
   /** Item that could not be interpreted (a diagnostic was reported). */
   | "unknown";
 

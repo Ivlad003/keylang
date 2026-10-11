@@ -11,6 +11,7 @@ import { readdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { Analysis } from "../analyze.ts";
 import { CONFIG_FILE, evidenceFiles } from "../config.ts";
+import { schemaFiles } from "../schema-discover.ts";
 
 /** Manifests an analysis reads at the root for declared packages. */
 const MANIFESTS = ["package.json", "pyproject.toml", "requirements.txt", "composer.json", "Cargo.toml"];
@@ -20,6 +21,8 @@ export function inputsOf(done: Analysis): string[] {
   const files = new Set<string>([CONFIG_FILE, ...MANIFESTS, done.config.dir]);
   for (const file of done.snapshot?.manifest.files ?? []) files.add(file.path);
   for (const doc of done.docs) files.add(doc.path);
+  // The schemas the system of the code reads its tables from.
+  for (const file of schemaFiles(done)) files.add(file);
   // The briefs the explained map is written from.
   const briefs = `${done.config.dir}/explain/brief`;
   try {

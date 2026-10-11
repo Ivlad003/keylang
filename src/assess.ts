@@ -10,6 +10,7 @@ import { check, type Index } from "./resolve.ts";
 import type { RuleFormat } from "./config.ts";
 import { canonicalRuleSpec, dependencyKindOf, evaluateRules } from "./rules.ts";
 import { compileSpec, type SpecIR } from "./spec-ir.ts";
+import { systemCheck, type SystemSpec } from "./system.ts";
 import type { TestCase } from "./test-report.ts";
 import type { TraceRun } from "./trace-evidence.ts";
 import type { Verdict } from "./verdict.ts";
@@ -32,6 +33,8 @@ export interface Assessment {
   verdicts: Verdict[];
   /** Assertions compiled once from the text IR. */
   spec: SpecIR;
+  /** The `# system` sections of every document (system-design/02). */
+  systems: SystemSpec[];
 }
 
 export function assess(
@@ -98,7 +101,8 @@ export function assess(
   const kindOf = dependencyKindOf(spec, index, snapshot?.nodes);
   const wiring = checkWiring(spec, snapshot === null ? null : { kinds: nodeKinds(snapshot.nodes), nodes: snapshot.nodes, exports: snapshot.exports }, kindOf, format);
   const migration = migrationCheck(ownDocs, evidence.migration ?? { state: "absent" }, snapshot?.snapshotId ?? null);
-  const diagnostics = [...ownDocs.flatMap((doc) => doc.diagnostics), ...specDiags, ...resolveDiags, ...rules.diagnostics, ...flows.diagnostics, ...wiring, ...migration.diagnostics].filter(
+  const system = systemCheck(docs, snapshot);
+  const diagnostics = [...ownDocs.flatMap((doc) => doc.diagnostics), ...specDiags, ...resolveDiags, ...rules.diagnostics, ...flows.diagnostics, ...wiring, ...migration.diagnostics, ...own(system.diagnostics)].filter(
     // A `planned` declaration answers a dangling reference to exactly its ID, not any message that mentions it.
     (diag) => diag.code !== "K001" || diag.target === undefined || !planned.has(diag.target),
   );
@@ -117,8 +121,8 @@ export function assess(
     code: null,
     message: item.message,
   }));
-  const verdicts = afterRecovery([...rules.verdicts, ...refinedVerdicts, ...flows.verdicts, ...migration.verdicts], recoveredLines(docs));
-  return { index, diagnostics, verdicts, spec: whole };
+  const verdicts = afterRecovery([...rules.verdicts, ...refinedVerdicts, ...flows.verdicts, ...migration.verdicts, ...own(system.verdicts)], recoveredLines(docs));
+  return { index, diagnostics, verdicts, spec: whole, systems: system.systems };
 }
 
 /**

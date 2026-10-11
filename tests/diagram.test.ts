@@ -229,6 +229,8 @@ test("diagram: the same inputs give the same diagram; layout is pure and manual 
 test("diagram: views list the flows, entries, layers and processes; a query names one view or is refused", async (t) => {
   const analysis = await analyzed(t, TS_SHOP);
   assert.deepEqual(viewsOf(analysis.snapshot, analysis.spec), {
+    // With a snapshot there is always the system of the code: here one service, no stores.
+    systems: [{ name: "@code", file: null, line: null, sequences: [], tables: 0, components: 1 }],
     flows: ["checkout"],
     entries: [{ id: "presentation.cli", kind: "cli", label: "shop" }],
     layers: ["domain", "infrastructure", "application", "presentation", "external"],

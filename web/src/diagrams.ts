@@ -73,6 +73,9 @@ function readHash(): { query: PageQuery; node: string | null } | null {
   const depth = params.get("depth");
   if (view === "entry" && id) return { query: depth ? { view, id, depth } : { view, id }, node };
   if (view === "module" && id) return { query: { view, id }, node };
+  if ((view === "system" || view === "er") && name) return { query: { view, name }, node };
+  const seq = params.get("seq");
+  if (view === "sequence" && name && seq) return { query: { view, name, seq }, node };
   if (view === "layers") return { query: { view }, node };
   if (view === "explore") return { query: { view, id: id ?? "" }, node: null };
   if (view === "blind") return { query: { view }, node: null };
@@ -95,6 +98,11 @@ function viewOfKey(key: string): ViewQuery | null {
   if (kind === "flow" || kind === "discovered") return { view: kind, name: rest };
   if (kind === "entry") return { view: "entry", id: rest };
   if (kind === "module") return { view: "module", id: rest };
+  if (kind === "system" || kind === "er") return { view: kind, name: rest };
+  if (kind === "sequence") {
+    const slash = rest.indexOf("/");
+    return slash > 0 ? { view: "sequence", name: rest.slice(0, slash), seq: rest.slice(slash + 1) } : null;
+  }
   return null;
 }
 
@@ -107,6 +115,11 @@ function keyOf(query: PageQuery): string {
       return `entry:${query.id}`;
     case "module":
       return `module:${query.id}`;
+    case "system":
+    case "er":
+      return `${query.view}:${query.name}`;
+    case "sequence":
+      return `sequence:${query.name}/${query.seq}`;
     case "explore":
       return `explore:${query.id}`;
     case "blind":
@@ -153,6 +166,19 @@ function itemsOf(views: Views): ListItem[] {
     items.push({ key: keyOf(query), label: entry.label, hint: entry.kind, group: `Точки входу · ${entry.kind}`, search: `${entry.label} ${entry.id} ${entry.kind}`.toLowerCase(), title: `${entry.label}\n${entry.id}`, query });
   }
   if (views.layers.length > 0) items.push({ key: "layers", label: views.layers.join(" · "), hint: "layers", group: "Шари", search: `layers шари ${views.layers.join(" ")}`.toLowerCase(), title: views.layers.join(" · "), query: { view: "layers" } });
+  // Systems (system-design/03): the `# system` sections, then the system of the code.
+  for (const system of views.systems ?? []) {
+    const code = system.name === CODE_SYSTEM;
+    const group = code ? "Система з коду" : `Система · ${system.name}`;
+    const where = system.file ? `${system.file}:${system.line ?? 1}` : "з точок входу, шарів і пакетів коду";
+    const label = code ? "система з коду" : system.name;
+    const add = (query: ViewQuery, text: string, hint: string): void => {
+      items.push({ key: keyOf(query), label: text, hint, group, search: `${system.name} ${text} system система ${hint}`.toLowerCase(), title: `${text}\n${where}`, query });
+    };
+    add({ view: "system", name: system.name }, `${label}: схема`, `${system.components} компон.`);
+    if (system.tables > 0) add({ view: "er", name: system.name }, `${label}: ER`, `${system.tables} табл.`);
+    for (const seq of system.sequences) add({ view: "sequence", name: system.name, seq }, `${label}: ${seq}`, "sequence");
+  }
   return items;
 }
 
@@ -166,7 +192,34 @@ function covers(id: string, target: string | undefined): boolean {
   return target !== undefined && (target === id || target.startsWith(`${id}.`));
 }
 
+/** The name of the system discovered from the code (src/system-discover.ts `DISCOVERED`). */
+const CODE_SYSTEM = "@code";
+
+const COMPONENT_NAME: Record<string, string> = {
+  client: "клієнт",
+  cdn: "CDN",
+  dns: "DNS",
+  lb: "балансувальник",
+  gateway: "API gateway",
+  service: "сервіс",
+  worker: "воркер",
+  function: "функція (serverless)",
+  db: "база даних",
+  cache: "кеш",
+  queue: "черга / топік",
+  storage: "файлове сховище",
+  search: "пошуковий індекс",
+  warehouse: "сховище аналітики",
+  auth: "автентифікація",
+  external: "зовнішній сервіс",
+};
+
+const NOTE_NAME: Record<string, string> = { requirement: "Вимоги", nfr: "Нефункціональні", estimate: "Оцінки", tradeoff: "Компроміси", question: "Відкриті питання" };
+
 const KIND_NAME: Record<string, string> = {
+  component: "компонент системи",
+  table: "таблиця",
+  participant: "учасник sequence",
   start: "start (trigger)",
   task: "task (step)",
   gateway: "gateway (when)",
@@ -206,6 +259,8 @@ class Page {
   /** The layers view as a matrix (true), a drawing (false), or as its size says (null). */
   private matrixMode: boolean | null = null;
   private readonly matrixToggle = make("button", { title: "Шари як матриця залежностей або як схема" });
+  /** Over the canvas of a system's view: its views to switch between and its interview notes. */
+  private readonly systemBar = make("div", { className: "system-bar" });
   private shownDiagram: Diagram | null = null;
   private docList: DocList | null = null;
   private node: string | null = null;
@@ -305,6 +360,9 @@ class Page {
       if (this.shownDiagram && !this.showMatrix(this.shownDiagram)) this.showDiagram(this.shownDiagram, false);
     });
     element("toolbar").insertBefore(this.matrixToggle, element("zoom-out"));
+    this.systemBar.id = "system-bar";
+    this.systemBar.hidden = true;
+    element("stage").append(this.systemBar);
     document.addEventListener("keydown", (event) => {
       if (this.mode !== "diagrams" || readOnlyPage() || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "c" || event.shiftKey) return;
       const target = event.target as HTMLElement | null;
@@ -516,6 +574,7 @@ class Page {
     }
     if (text === this.diagramText) return;
     this.diagramText = text;
+    this.renderSystemBar(diagram);
     this.canvas.show(diagram, keepView);
     this.canvas.select(this.node);
     this.markCanvas();
@@ -526,7 +585,10 @@ class Page {
       if (node.kind === "hole") counts.holes++;
     }
     const name = this.active ? keyOf(this.active) : "";
-    this.status.textContent = diagram.reason ?? `${name} · ${diagram.nodes.length} shapes · ${diagram.edges.length} edges · ✗ ${counts.fail} · ◌ ${counts.unverified} · ? ${counts.holes}`;
+    // A sequence's anchors and lifelines are no shapes or edges a person counts.
+    const shapes = diagram.nodes.filter((node) => node.kind !== "anchor").length;
+    const edges = diagram.edges.filter((edge) => edge.kind !== "lifeline").length;
+    this.status.textContent = diagram.reason ?? `${name} · ${shapes} shapes · ${edges} edges · ✗ ${counts.fail} · ◌ ${counts.unverified} · ? ${counts.holes}`;
     // A refresh keeps the panel on the same node with its new verdicts.
     if (keepView && this.node !== null) {
       const node = diagram.nodes.find((n) => n.id === this.node) ?? null;
@@ -580,7 +642,9 @@ class Page {
     const body: Node[] = [];
     if (node) {
       body.push(make("h2", { text: node.label }));
-      const rows: [string, Node | string][] = [["kind", KIND_NAME[node.kind] ?? node.kind]];
+      const rows: [string, Node | string][] = [["kind", node.component ? `${COMPONENT_NAME[node.component] ?? node.component} (${node.component})` : (KIND_NAME[node.kind] ?? node.kind)]];
+      if (node.tech) rows.push(["tech", node.tech]);
+      if (node.lines && node.lines.length > 0) rows.push(["columns", make("pre", { className: "columns", text: node.lines.join("\n") })]);
       if (node.ref?.id) rows.push(["ID", make("code", { text: node.ref.id })]);
       if (node.group) rows.push(["layer", node.group]);
       if (node.ref?.file) rows.push(["code", this.link(node.ref.file, node.ref.line)]);
@@ -624,6 +688,7 @@ class Page {
     }
     if (this.usages) body.push(this.usagesBlock(this.usages));
     // The panel keeps its width when empty, so the canvas does not change size (and lose its fit) on the first click.
+    if (body.length === 0) body.push(...this.systemNotes());
     if (body.length === 0) body.push(make("p", { className: "empty", text: "Click a shape: its ID, code, spec line and verdicts show here. «де ID?» finds where an ID is used." }));
     this.details.replaceChildren(...body);
   }
@@ -698,7 +763,49 @@ class Page {
     this.canvas.markUsed(id === undefined ? () => false : (node) => covers(id, node.ref?.id));
   }
 
-  private legend(): void {
+  /** The views of the open system (Схема · ER · each sequence) and its notes, over the canvas; hidden for any other view. */
+  private renderSystemBar(diagram: Diagram): void {
+    const system = diagram.system;
+    const active = this.active;
+    this.systemBar.hidden = !system || active === null || !isViewQuery(active);
+    this.legend(system !== undefined);
+    // BPMN and draw.io export flows and code views; a system has neither export nor bundle.
+    if (system) document.body.dataset["system"] = "1";
+    else delete document.body.dataset["system"];
+    if (this.node === null) this.renderDetails(null);
+    if (!system || active === null) return;
+    const views: ViewQuery[] = [{ view: "system", name: system.name }, ...(system.tables > 0 ? [{ view: "er" as const, name: system.name }] : []), ...system.sequences.map((seq): ViewQuery => ({ view: "sequence", name: system.name, seq }))];
+    const switcher = make("div", { className: "system-views" });
+    for (const query of views) {
+      const text = query.view === "system" ? "Схема" : query.view === "er" ? "ER" : query.view === "sequence" ? `↧ ${query.seq}` : "";
+      const button = make("button", { text, title: query.view === "sequence" ? `sequence ${query.seq}` : query.view === "er" ? "таблиці й зовнішні ключі" : "компоненти, зони й зв'язки" });
+      button.type = "button";
+      button.setAttribute("aria-pressed", String(keyOf(query) === keyOf(active)));
+      button.addEventListener("click", () => void this.open(query));
+      switcher.append(button);
+    }
+    this.systemBar.replaceChildren(switcher);
+  }
+
+  /** The interview notes of the open system, by kind: the panel with no shape picked. */
+  private systemNotes(): Node[] {
+    const system = this.shownDiagram?.system;
+    if (!system || this.mode !== "diagrams") return [];
+    const out: Node[] = [make("h2", { text: system.name === CODE_SYSTEM ? "Система з коду" : `Система ${system.name}` })];
+    if (system.file) out.push(make("p", {}, this.link(system.file, undefined)));
+    if (system.name === CODE_SYSTEM) out.push(make("p", { className: "empty", text: "Виведено з коду: шари з точками входу — сервіси й воркери, імпортовані драйвери — сховища, черги й зовнішні сервіси. `keylang system discover` друкує це як `# system`." }));
+    for (const kind of ["requirement", "nfr", "estimate", "tradeoff", "question"]) {
+      const own = system.notes.filter((note) => note.kind === kind);
+      if (own.length === 0) continue;
+      const list = make("ul", { className: "system-notes" });
+      for (const note of own) list.append(make("li", { text: note.text }));
+      out.push(make("h3", { text: NOTE_NAME[kind] ?? kind }), list);
+    }
+    out.push(make("p", { className: "empty", text: "Клацніть фігуру: її технологія, код і вердикти зв'язків." }));
+    return out;
+  }
+
+  private legend(system = false): void {
     const legend = element<HTMLElement>("legend");
     const rows: Node[] = [];
     for (const verdict of ["ok", "fail", "unverified", "warning", "planned"]) {
@@ -710,7 +817,7 @@ class Page {
       rows.push(make("div", {}, swatch, verdict));
     }
     rows.push(make("div", {}, make("span", { className: "swatch hole", text: "?" }), "hole"));
-    rows.push(make("div", { className: "shapes", text: "○ start · ▢ task · ◇× gateway · ◇+ parallel · ◎ event · ⏱ timer · ┆▢┆ external" }));
+    rows.push(make("div", { className: "shapes", text: system ? "👤 клієнт · ☁ CDN/зовнішній · ⬡ LB/gateway · ▢ сервіс · ⚙ воркер · ⛁ БД · ⚡ кеш · ☰ черга · 🪣 сховище · 🔍 пошук; пунктир — асинхронно" : "○ start · ▢ task · ◇× gateway · ◇+ parallel · ◎ event · ⏱ timer · ┆▢┆ external" }));
     legend.replaceChildren(...rows);
   }
 }

@@ -2188,6 +2188,7 @@ export class App {
       // The blind spots read the code, keylang.json and the hand-written flows (a trigger they name has a flow).
       case "coverage":
       case "integrations":
+      case "system":
       case "tour":
       // The parity reads the code, keylang.json, the specs (flows and `# migration` rows) and the old stack, read-only.
       case "migration-status":
