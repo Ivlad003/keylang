@@ -19,6 +19,10 @@ import { runDiagramPropose, specHash } from "../src/operations/diagram-propose.t
 import { bin } from "./cli-helpers.ts";
 import { editorModelOf, type FixtureModel } from "./diagrams-fixture.ts";
 import { checkoutRepo, CHECKOUT_FLOW } from "./tui-fixture.ts";
+import { parseJson, type JsonValue } from "../src/json.ts";
+
+/** The model as the server receives it: JSON text parsed back. */
+const wire = (model: FixtureModel): JsonValue => parseJson(JSON.stringify(model));
 
 /** The editor's model of the checkout flow «з коду», and the specs' hash. */
 async function opened(repo: string): Promise<{ model: FixtureModel; hash: string }> {
@@ -35,11 +39,15 @@ function node(key: string, kind: string, id: string, label: string, extra: Parti
 }
 
 function edge(key: string, kind: string, from: string, to: string, label?: string): FixtureModel["edges"][number] {
-  return { key, kind, from, to, ...(label !== undefined ? { label } : {}) };
+  const edge: FixtureModel["edges"][number] = { key, kind, from, to };
+
+  if (label !== undefined) edge.label = label;
+
+  return edge;
 }
 
 async function propose(repo: string, model: FixtureModel): Promise<Awaited<ReturnType<typeof runDiagramPropose>>> {
-  return runDiagramPropose({ root: repo, view: model.view, model, print: true });
+  return runDiagramPropose({ root: repo, view: model.view, model: wire(model), print: true });
 }
 
 test("diagram propose: a planned step with its signature and test lands after the step it follows, its declaration at the end of the flow — one hunk, prose kept", async (t) => {
@@ -130,7 +138,7 @@ test("diagram propose: a drawing opened before the specs changed is refused; not
   const repo = checkoutRepo(t);
   const { model, hash } = await opened(repo);
   writeFileSync(join(repo, "keylang/flows/checkout.md"), CHECKOUT_FLOW.replace("Checkout from the terminal.", "Checkout from the terminal, once."));
-  const out = await runDiagramPropose({ root: repo, view: "flow:checkout", model, specHash: hash });
+  const out = await runDiagramPropose({ root: repo, view: "flow:checkout", model: wire(model), specHash: hash });
   assert.deepEqual([out.status, out.exitCode], ["conflict", 1]);
   assert.match(out.error!, /specs changed since this diagram was opened/);
 });

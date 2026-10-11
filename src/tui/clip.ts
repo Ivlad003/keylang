@@ -244,8 +244,10 @@ function chatPart(rect: Rect, cell: Cell): ChatPart | null {
   return cell.y === rect.y + rect.height - 1 && cell.x === right ? "resize" : "window";
 }
 
+type ChatLayout = { history: Rect; input: Rect };
+
 /** The rows of a window: the history over the input line, one cell in from the frame. */
-export function chatLayout(rect: Rect): { history: Rect; input: Rect } {
+export function chatLayout(rect: Rect): ChatLayout {
   const width = Math.max(1, rect.width - 4);
 
   return {
@@ -362,7 +364,12 @@ interface Press {
   moved: boolean;
 }
 
-const ARROWS: Record<string, Cell> = { left: { x: -1, y: 0 }, right: { x: 1, y: 0 }, up: { x: 0, y: -1 }, down: { x: 0, y: 1 } };
+const ARROWS = new Map<string, Cell>([
+  ["left", { x: -1, y: 0 }],
+  ["right", { x: 1, y: 0 }],
+  ["up", { x: 0, y: -1 }],
+  ["down", { x: 0, y: 1 }],
+]);
 
 /**
  * The clip's pointer and keys: a click on it opens the chat, a drag moves it;
@@ -458,7 +465,7 @@ export class Clip {
   /** A key while the window has the focus (`chatTakesKeys`): its input line, its history and its place. */
   key(event: KeyEvent): void {
     const chat = this.state.clip.chat;
-    const arrow = ARROWS[event.name];
+    const arrow = ARROWS.get(event.name);
 
     if (arrow !== undefined && event.alt) return this.nudge(arrow, event.shift);
 

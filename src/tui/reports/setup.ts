@@ -2,7 +2,7 @@
 // files: doctor, map check, map, baseline, agents, init, fmt and wire.
 
 import { WIRE_OUT, type AgentsPayload, type AgentsRequest, type BaselinePayload, type FmtFile, type FmtPayload, type GitignoreStage, type InitPayload, type MapCheckPayload, type MapPayload, type OperationResult, type WirePayload } from "../../operations.ts";
-import type { OperationRecord } from "../state.ts";
+import type { OperationRecord, State } from "../state.ts";
 import { THEME } from "../theme.ts";
 import { BOLD, codeOf, ERROR, messageRow, MUTED, outcomeRow, WARNING, type Done, type Report, type ReportRow, type ReportView } from "./rows.ts";
 
@@ -15,7 +15,7 @@ function mode(check: boolean): string {
 
 /** `auto`, `none`, `claude, codex`: the selection as requested. */
 function choiceText(choice: AgentsRequest["harnesses"]): string {
-  return typeof choice === "string" ? choice : choice.join(", ");
+  return choice === "auto" || choice === "none" ? choice : choice.join(", ");
 }
 
 /** The map's warnings and its counts, under a map check or a map write. */
@@ -25,7 +25,7 @@ function mapTail(rows: ReportRow[], payload: MapCheckPayload | MapPayload): void
   rows.push({ text: `${stats.files} file(s), ${stats.modules} module(s), ${stats.fns} fn, ${stats.types} type(s), ${stats.deps} dep(s)`, style: MUTED });
 }
 
-export const SETUP_REPORTS: { [K in SetupKind]: Report<K> } = {
+export const SETUP_REPORTS = {
   doctor: {
     label: () => "doctor",
     rows: (_state, _record, result) => result.messages.map(messageRow),
@@ -211,10 +211,10 @@ export const SETUP_REPORTS: { [K in SetupKind]: Report<K> } = {
       return rows;
     },
   },
-};
+} satisfies { [K in SetupKind]: Report<K> };
 
 /** Init stage by stage, each with what it really did; a partial init is named as partial and nothing is rolled back. */
-function initRows(_state: unknown, record: OperationRecord, result: Done<"init">, view: ReportView): ReportRow[] {
+function initRows(_state: State, record: OperationRecord, result: Done<"init">, view: ReportView): ReportRow[] {
   const { payload } = result;
   const ok = record.status === "completed" && result.exitCode === 0;
 

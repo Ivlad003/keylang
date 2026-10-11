@@ -12,10 +12,11 @@ import { lstatSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 import { CONFIG_FILE } from "../config.ts";
 import { errorText } from "../diag.ts";
-import { parseEditorModel } from "../diagram-proposal.ts";
+import { parseEditorModel, type EditorModel } from "../diagram-proposal.ts";
 import { GREENFIELD_LANGUAGES, greenfieldPlan, type GreenfieldPlan } from "../greenfield.ts";
 import { safeWriteAll, targetProblem } from "../safe-write.ts";
 import { FEATURE_SLUG } from "./feature.ts";
+import type { JsonValue } from "../json.ts";
 
 /** The spec directory of a project without keylang.json: the default `dir`. */
 export const GREENFIELD_SPEC_DIR = "keylang";
@@ -27,7 +28,7 @@ export interface GreenfieldRequest {
   /** The project root (absolute). */
   root: string;
   /** `window.keylangEditor.currentModel()`, as JSON. */
-  model: unknown;
+  model: JsonValue | undefined;
   /** Keys of `GREENFIELD_LANGUAGES`: typescript, python, php, rust. */
   languages: unknown;
   /** The idea, prose for `keylang/README.md`. */
@@ -61,11 +62,28 @@ function exists(abs: string): boolean {
   }
 }
 
+type GreenfieldAvailability = { available: boolean; reason: string | null };
+
 /** Whether a new project may be drawn here: the root has no keylang.json (not even a link of that name). */
-export function greenfieldAvailability(root: string): { available: boolean; reason: string | null } {
+export function greenfieldAvailability(root: string): GreenfieldAvailability {
   if (exists(join(root, CONFIG_FILE))) return { available: false, reason: `${CONFIG_FILE} is there: the project exists; draw on a view and «Запропонувати зміни»` };
 
   return { available: true, reason: null };
+}
+
+/** Whether a field of the request is text. */
+function isText(value: unknown): value is string {
+  return typeof value === "string";
+}
+
+/** Whether `languages` of the request is a list of names. */
+function isNameList(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(isText);
+}
+
+/** Whether a parse gave its reason instead of the model or the plan. */
+function isProblemText(value: EditorModel | GreenfieldPlan | string): value is string {
+  return typeof value === "string";
 }
 
 /** Why `path` cannot be a new file of the project, or null: it exists, a link included, or a file stands where a directory of it goes. */
@@ -111,17 +129,17 @@ export function runGreenfield(request: GreenfieldRequest): GreenfieldResult {
   if (!available.available) return result("conflict", 1, available.reason, [CONFIG_FILE]);
   const model = parseEditorModel(request.model);
 
-  if (typeof model === "string") return result("invalid", 2, model);
+  if (isProblemText(model)) return result("invalid", 2, model);
 
-  if (!Array.isArray(request.languages) || !request.languages.every((name) => typeof name === "string")) return result("invalid", 2, `languages: an array of ${Object.keys(GREENFIELD_LANGUAGES).join(", ")}`);
+  if (!isNameList(request.languages)) return result("invalid", 2, `languages: an array of ${Object.keys(GREENFIELD_LANGUAGES).join(", ")}`);
   const idea = request.idea ?? "";
 
-  if (typeof idea !== "string") return result("invalid", 2, "idea: text");
+  if (!isText(idea)) return result("invalid", 2, "idea: text");
 
   if (idea.length > MAX_IDEA) return result("invalid", 2, `idea: at most ${MAX_IDEA} characters`);
-  const plan = greenfieldPlan({ model, languages: request.languages as string[], idea, specDir: GREENFIELD_SPEC_DIR });
+  const plan = greenfieldPlan({ model, languages: request.languages, idea, specDir: GREENFIELD_SPEC_DIR });
 
-  if (typeof plan === "string") return result("invalid", 2, plan);
+  if (isProblemText(plan)) return result("invalid", 2, plan);
   const badSlug = plan.features.find((feature) => !FEATURE_SLUG.test(feature.slug));
 
   if (badSlug) return result("invalid", 2, `process \`${badSlug.slug}\`: a feature's name is Latin letters, digits, . _ or - — rename its trigger (the last part of its ID names the process)`);

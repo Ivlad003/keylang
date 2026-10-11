@@ -82,7 +82,7 @@ const ROUTES = [
   "",
 ].join("\n");
 
-const APP: Record<string, string> = {
+const APP = {
   "composer.json": JSON.stringify({ name: "shop/app", require: { php: "^8.2", "symfony/framework-bundle": "^7.1", "symfony/messenger": "^7.1" }, autoload: { "psr-4": { "App\\": "src/" } } }, null, 2),
   "composer.lock": JSON.stringify({ packages: [{ name: "symfony/symfony", autoload: { "psr-4": { "Symfony\\": "src/Symfony/" } } }] }),
   "keylang.json": JSON.stringify({ languages: ["php"], layers: LAYERS }),
@@ -244,7 +244,7 @@ const APP: Record<string, string> = {
     "    }",
     "}",
   ]),
-};
+} satisfies Record<string, string>;
 
 function app(t: TestContext, extra: Record<string, string> = {}): string {
   const dir = tempDir(t, "keylang-symfony-");
@@ -257,6 +257,7 @@ function snapshotOf(dir: string): AnalysisSnapshot {
   const run = keylang(dir, ["map"]);
   assert.equal(run.status, 0, run.stderr);
 
+  // SAFETY: `keylang map` exited 0 above, so the index holds the AnalysisSnapshot it writes.
   return JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as AnalysisSnapshot;
 }
 

@@ -43,9 +43,9 @@ const readIndex = (): { nodes: Record<string, SnapshotNode>; edges: { source: st
 const index = readIndex();
 
 // File modules only: the snapshot marks a class module with `class: true`.
-const modules = Object.entries(index.nodes)
-  .filter(([, node]) => node.kind === "module" && !node.class && node.file && /\.([cm]?[jt]s|rs|py)$/.test(node.file))
-  .map(([id, node]) => ({ id, file: node.file as string, layer: node.layer }));
+const modules = Object.entries(index.nodes).flatMap(([id, node]) =>
+  node.kind === "module" && !node.class && node.file && /\.([cm]?[jt]s|rs|py)$/.test(node.file) ? [{ id, file: node.file, layer: node.layer }] : [],
+);
 
 /** A function declared directly in a file module. */
 const topFn = (m: { id: string; file: string }): string | undefined =>

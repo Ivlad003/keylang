@@ -22,7 +22,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 const bin = join(root, "bin/keylang.js");
 
-const SHOP: Record<string, string> = {
+const SHOP = {
   "keylang.json": `${JSON.stringify({ languages: ["typescript"], module: "file", layers: { app: ["src/app/**"], domain: ["src/domain/**"], infra: ["src/infra/**"] } })}\n`,
   "package.json": `${JSON.stringify({ name: "shop", version: "1.0.0" })}\n`,
   "README.md": "# Shop\n\nShop sells things to people online. It keeps orders and payments apart.\n",
@@ -42,7 +42,7 @@ const SHOP: Record<string, string> = {
   ].join("\n"),
   "src/domain/order.ts": "export function create(): void {}\n\nexport function total(prices: number[]): number {\n  return prices.reduce((sum, price) => sum + price, 0);\n}\n",
   "src/infra/store.ts": 'import { writeFileSync } from "node:fs";\nimport { create } from "../domain/order.ts";\n\nexport function save(): void {\n  create();\n  writeFileSync("orders.json", "[]");\n}\n',
-};
+} satisfies Record<string, string>;
 
 const COMPONENTS = `' keylang:generated — keylang export c4
 @startuml
@@ -68,7 +68,13 @@ Rel(n_infra_store, n_external_node, "import ×1")
 @enduml
 `;
 
-function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+interface Run {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+function keylang(cwd: string, args: string[]): Run {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8" });
 
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };

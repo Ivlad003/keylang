@@ -12,6 +12,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { gitChangedFiles } from "../src/git-changes.ts";
+import { parseJson } from "../src/json.ts";
 import { chatLogPath, dayOf, lastConversation, NOT_IGNORED, parsePlace, withExchange, withPlace, withSection } from "../src/tui/clip-memory.ts";
 import { checkoutRepo, drag, KEY, locate, tempHome } from "./tui-fixture.ts";
 import { BIN, cliMapCheck, committedCheckout, esc, FLOW_PATH, gitRun, mockModel, PAID, session, treeBytes, waitUntil, withConfig } from "./tui-helpers.ts";
@@ -49,10 +50,15 @@ function writeTui(home: string, text: string): void {
   writeFileSync(tuiJson(home), text);
 }
 
-const readTui = (home: string): unknown => JSON.parse(readFileSync(tuiJson(home), "utf8"));
+const readTui = (home: string) => parseJson(readFileSync(tuiJson(home), "utf8"));
+
+interface TodaysLog {
+  path: string;
+  text: string | null;
+}
 
 /** Today's log of a repository: its path, and its text or null. */
-function todaysLog(root: string): { path: string; text: string | null } {
+function todaysLog(root: string): TodaysLog {
   const path = join(root, chatLogPath(dayOf(new Date())));
 
   return { path, text: existsSync(path) ? readFileSync(path, "utf8") : null };
@@ -292,7 +298,12 @@ test("tui-clip-memory: Browse and a cancelled request write no log: .keylang/cha
 test("tui-clip-memory: check --changed and map do not see .keylang/chat/: the snapshot, the changed files and the map stay as they were", async (t) => {
   const root = committedCheckout(t, { ".gitignore": ".keylang/\n" });
 
-  const cli = (args: string[]): { status: number | null; stdout: string } => {
+  interface CliRun {
+    status: number | null;
+    stdout: string;
+  }
+
+  const cli = (args: string[]): CliRun => {
     const run = spawnSync(process.execPath, [BIN, ...args], { cwd: root, encoding: "utf8" });
 
     return { status: run.status, stdout: run.stdout };
@@ -302,6 +313,7 @@ test("tui-clip-memory: check --changed and map do not see .keylang/chat/: the sn
   gitRun(root, ["add", "."]);
   gitRun(root, ["commit", "-q", "-m", "map"]);
   const changed = cli(["check", "--changed", "--format", "json"]);
+  // SAFETY: `check --format json` prints a report with the snapshot's string `snapshotId` (docs/cli.md).
   const snapshot = (JSON.parse(cli(["check", "--format", "json"]).stdout) as { snapshotId: string }).snapshotId;
   const s = session(root);
   t.after(() => s.app.close());
@@ -311,6 +323,7 @@ test("tui-clip-memory: check --changed and map do not see .keylang/chat/: the sn
   say(s, "/help");
   assert.ok(todaysLog(root).text?.includes("**ти:** /help"), "the log is written");
   assert.deepEqual(cli(["check", "--changed", "--format", "json"]), changed);
+  // SAFETY: `check --format json` prints a report with the snapshot's string `snapshotId` (docs/cli.md).
   assert.equal((JSON.parse(cli(["check", "--format", "json"]).stdout) as { snapshotId: string }).snapshotId, snapshot);
   assert.equal(cliMapCheck(root).status, 0, "the map is current");
   // Where git does not ignore it, a log is still no change: keylang's own state under .keylang/.

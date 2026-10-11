@@ -21,6 +21,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { FileFacts } from "./extract/facts.ts";
 import type { Resolution, SourceResolver } from "./imports.ts";
+import { isJsonObject, isJsonString, parseJson, type JsonValue } from "./json.ts";
 import { asciiLowerCase } from "./languages.ts";
 
 /** Lock files that say which namespaces each installed package holds, in the order they are read. */
@@ -110,29 +111,29 @@ export class PhpResolver implements SourceResolver {
 
 /** Namespace prefixes of each package a composer lock or `installed.json` lists; none when it is no such JSON. */
 export function packagePrefixes(text: string): { prefix: string; name: string }[] {
-  let value: unknown;
+  let value: JsonValue;
 
   try {
-    value = JSON.parse(text);
+    value = parseJson(text);
   } catch {
     // A broken lock names no package: their imports stay unresolved, and so visible.
     return [];
   }
 
   // `composer.lock` and Composer 2's `installed.json` hold `packages`; Composer 1's `installed.json` is the list itself.
-  const lists = Array.isArray(value) ? [value] : isRecord(value) ? [value.packages, value["packages-dev"]] : [];
+  const lists = Array.isArray(value) ? [value] : isJsonObject(value) ? [value.packages, value["packages-dev"]] : [];
   const out: { prefix: string; name: string }[] = [];
 
   for (const list of lists) {
     if (!Array.isArray(list)) continue;
 
     for (const pkg of list) {
-      if (!isRecord(pkg) || typeof pkg.name !== "string" || !isRecord(pkg.autoload)) continue;
+      if (!isJsonObject(pkg) || !isJsonString(pkg.name) || !isJsonObject(pkg.autoload)) continue;
 
       for (const field of ["psr-4", "psr-0"]) {
         const map = pkg.autoload[field];
 
-        if (!isRecord(map)) continue;
+        if (!isJsonObject(map)) continue;
 
         // An empty prefix claims every name: no namespace can be told to be this package's.
         for (const prefix of Object.keys(map)) if (prefix !== "") out.push({ prefix: asciiLowerCase(prefix), name: pkg.name });
@@ -149,8 +150,4 @@ function readText(abs: string): string | null {
   } catch {
     return null;
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

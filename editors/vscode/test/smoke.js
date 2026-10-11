@@ -23,7 +23,8 @@ async function until(what, find, ms = 30000) {
 
 const keylangDiagnostics = (uri) => vscode.languages.getDiagnostics(uri).filter((d) => d.source === "keylang");
 
-const text = (contents) => contents.map((c) => (typeof c === "string" ? c : c.value)).join("\n");
+// A hover part is a MarkdownString / `{ language, value }` or a plain string, which has no `value`.
+const text = (contents) => contents.map((c) => c.value ?? c).join("\n");
 
 async function run() {
   const root = vscode.workspace.workspaceFolders[0].uri.fsPath;
@@ -33,7 +34,7 @@ async function run() {
   try {
     const rulesUri = vscode.Uri.file(path.join(root, "keylang/rules.md"));
     await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(rulesUri));
-    const rules = await until("rules diagnostics", () => (keylangDiagnostics(rulesUri).length > 0 ? keylangDiagnostics(rulesUri) : undefined));
+    await until("rules diagnostics", () => (keylangDiagnostics(rulesUri).length > 0 ? keylangDiagnostics(rulesUri) : undefined));
     // Let a second copy (push beside pull) arrive if the server sent one.
     await new Promise((done) => setTimeout(done, 1500));
     const shown = keylangDiagnostics(rulesUri).map((d) => `${d.range.start.line + 1}: ${d.message}`);
@@ -67,7 +68,8 @@ async function run() {
     await vscode.workspace.applyEdit(edit2);
     const last = flowDoc.lineCount - 1;
     const list = await vscode.commands.executeCommand("vscode.executeCompletionItemProvider", flowUri, new vscode.Position(last, flowDoc.lineAt(last).text.length));
-    const labels = list.items.map((item) => (typeof item.label === "string" ? item.label : item.label.label));
+    // A label is a string or a `CompletionItemLabel` whose own `label` is the text.
+    const labels = list.items.map((item) => item.label.label ?? item.label);
     step("completion after step offers callables only", labels.includes("domain.order.createOrder") && !labels.includes("domain.order"), labels);
 
     // Markdown's word ends at a dot: accepting the top suggestion after `domain.or` must give one whole id,

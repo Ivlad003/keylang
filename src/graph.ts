@@ -16,7 +16,7 @@ import { compareText } from "./span.ts";
 import type { FrameworkInput, TypeName } from "./frameworks/adapter.ts";
 import { FrameworkBindings, type BoundCall, type ResolvedType } from "./frameworks/bindings.ts";
 import { frameworkEntries, type ObserverEdge } from "./frameworks/entries.ts";
-import { eventIds, EVENTS_LAYER } from "./frameworks/events.ts";
+import { eventIds } from "./frameworks/events.ts";
 import type { EntryPoint, Interception } from "./snapshot.ts";
 
 export { EXTERNAL };
@@ -725,7 +725,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
 
     for (const { facts } of entries) {
       const listed: ExportRow[] = facts.exportRows.length > 0 ? facts.exportRows : [...facts.exports].sort().map((name) => ({ name, kind: "value", local: name }));
-      const own = listed.filter((row) => row.name !== "*").map((row) => exportInput(row, facts, fileDecls.get(facts.path)!, importTargets.get(facts.path)!));
+      const own = listed.flatMap((row) => (row.name === "*" ? [] : [exportInput(row, facts, fileDecls.get(facts.path)!, importTargets.get(facts.path)!)]));
       rows.push(...own);
 
       if (entries.length > 1) exportInputs.set(`${FILE_UNIT}${facts.path}`, { rows: own, stars: fileStars.get(facts.path)!, opaque, ...lastStar });
@@ -765,7 +765,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
    * reach a static member (Python, PHP). `last`: the base link the chain
    * ended at, null when the class has no base; an unread base may declare it.
    */
-  const findMember = (start: string, member: string, isStatic: boolean, staticToo: boolean): { target: string | null; last: BaseLink | null } => {
+  const findMember = (start: string, member: string, isStatic: boolean, staticToo: boolean): MemberLookup => {
     // PHP finds `total()` for `$o->TOTAL()`; its bases and traits are PHP too.
     const caseless = caselessNames(decls.classes.get(start)?.path);
     const keysOf = (name: string): string[] => [name === "constructor" ? "constructor" : memberKey(name, isStatic, caseless), ...(staticToo && !isStatic ? [memberKey(name, true, caseless)] : [])];
@@ -1164,7 +1164,13 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
 
         if (d.traitRules) {
           const named = (written: string | null): string | null => (written === null ? null : classNamed(written));
-          classTraitRules.set(id, d.traitRules.map((r) => ({ ...r, trait: named(r.trait), ...(r.insteadof ? { insteadof: r.insteadof.map(named).filter((t): t is string => t !== null) } : {}) })));
+          classTraitRules.set(id, d.traitRules.map((r) => {
+            const rule = { ...r, trait: named(r.trait) };
+
+            if (r.insteadof) rule.insteadof = r.insteadof.map(named).filter((t): t is string => t !== null);
+
+            return rule;
+          }));
         }
 
         if (!d.base) continue;
@@ -1172,7 +1178,11 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
         // Whether an unread base is a package's or the language's is known in the class's own file.
         // A base in a file `outside` the architecture: keylang reads its declarations, not its code.
         const outside = internal.length !== 1 && languageOf(facts.path) === "php" ? asciiLowerCase(qualifiedIn(facts, d.base)) : null;
-        classBase.set(id, internal.length === 1 ? { internal: internal[0]!, text: d.base, external: false } : { internal: null, text: d.base, external: external(d.base.split(".")[0]!), ...(outside !== null && outsideByName.has(outside) ? { outside } : {}) });
+        const link: BaseLink = internal.length === 1 ? { internal: internal[0]!, text: d.base, external: false } : { internal: null, text: d.base, external: external(d.base.split(".")[0]!) };
+
+        // `outside` is only computed for a base that resolved to no single class.
+        if (outside !== null && outsideByName.has(outside)) link.outside = outside;
+        classBase.set(id, link);
       }
     };
 
@@ -1184,7 +1194,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
    * its traits and the bases that do not declare it. `last`: the last base on
    * that chain, null when the class has none.
    */
-  const superTarget = (cls: Module, member: string, isStatic: boolean, staticToo: boolean): { target: string | null; last: BaseLink | null } => {
+  const superTarget = (cls: Module, member: string, isStatic: boolean, staticToo: boolean): MemberLookup => {
     const base = classBase.get(cls.id);
 
     if (!base?.internal) return { target: null, last: base ?? null };
@@ -1361,10 +1371,17 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
 
       if (!runs && !typed) return null;
 
-      return {
-        ...(runs ? { outside: { entry: runs.entry, name: runs.sig.name } } : {}),
-        ...(typed ? { result: typed.sig.result!, file: typed.entry.file, owner: { kind: "outside" as const, entry: typed.entry } } : {}),
-      };
+      const hit: MemberHit = {};
+
+      if (runs) hit.outside = { entry: runs.entry, name: runs.sig.name };
+
+      if (typed) {
+        hit.result = typed.sig.result!;
+        hit.file = typed.entry.file;
+        hit.owner = { kind: "outside", entry: typed.entry };
+      }
+
+      return hit;
     }
 
     const found = findMember(ty.id, member, false, true);
@@ -1455,7 +1472,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
 
     if (!ty) return null;
 
-    return { ty, indirect: true, ...(r.docblock && hit.file ? { doc: `${hit.file}:${r.docblock.line}:${r.docblock.col}` } : {}) };
+    return typedAs(ty, true, r.docblock && hit.file ? `${hit.file}:${r.docblock.line}:${r.docblock.col}` : null);
   };
 
   /** The class of a property of a class or one of its bases (`$this->_eventManager` a base declares with `@var`), by the declaring class's facts. */
@@ -1463,7 +1480,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
     const withDoc = (cls: string, element: boolean | undefined, docblock: { line: number; col: number } | undefined, file: string): Typed | null => {
       const ty = element ? null : tyOfQualified(cls);
 
-      return ty ? { ty, indirect: true, ...(docblock ? { doc: `${file}:${docblock.line}:${docblock.col}` } : {}) } : null;
+      return ty ? typedAs(ty, true, docblock ? `${file}:${docblock.line}:${docblock.col}` : null) : null;
     };
 
     const seen = new Set<string>();
@@ -1514,7 +1531,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
     if (c.receiver) {
       const ty = tyNamed(ctx.facts, c.receiver);
 
-      return ty ? { ty, ...(c.docblock ? { doc: `${ctx.facts.path}:${c.docblock.line}:${c.docblock.col}` } : {}) } : null;
+      return ty ? typedAs(ty, false, c.docblock ? `${ctx.facts.path}:${c.docblock.line}:${c.docblock.col}` : null) : null;
     }
 
     if (c.opaque || languageOf(ctx.facts.path) !== "php") return null;
@@ -1557,7 +1574,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
       // `$objectManager->get(X::class)`: the framework's locator gives an `X`.
       const located = recv && !v.element ? locatedTy(recv.ty, call.member, call.args) : null;
 
-      if (located) return { ty: located.ty, indirect: true, ...(recv!.doc ? { doc: recv!.doc } : {}) };
+      if (located) return typedAs(located.ty, true, recv!.doc);
       hit = recv ? memberHit(recv.ty, call.member) : null;
     }
 
@@ -1566,7 +1583,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
     if (!out) return null;
     const doc = recv?.doc ?? out.doc;
 
-    return { ty: out.ty, indirect: true, ...(doc ? { doc } : {}) };
+    return typedAs(out.ty, true, doc);
   };
 
   /** The name of a class for a hole's reason. */
@@ -1809,7 +1826,12 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
 
           if (seen.has(key)) return;
           seen.add(key);
-          out.push({ target: w.target, line: call.line, col: call.col, endLine: call.endLine, endCol: call.endCol, text: call.text, via: w.via, site: w.site, scope: w.scope, binding: w.binding, intercepts: call.target, ...(w.owner !== null ? { owner: w.owner } : {}), ...(call.closure ? { closure: true as const } : {}) });
+          const wrapped: Call = { target: w.target, line: call.line, col: call.col, endLine: call.endLine, endCol: call.endCol, text: call.text, via: w.via, site: w.site, scope: w.scope, binding: w.binding, intercepts: call.target };
+
+          if (w.owner !== null) wrapped.owner = w.owner;
+
+          if (call.closure) wrapped.closure = true;
+          out.push(wrapped);
         };
 
         for (const w of wraps) if (w.via !== "plugin:after") edge(w);
@@ -1903,7 +1925,10 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
           // A self-call stays an edge: recursion is a static path from a function to itself.
           // A call in a closure passed as an argument is a plain call of the code (counted as resolved) that the callee of the enclosing call may run.
           const inArg = c.closureArg ? { via: "closure-arg" as const, site: `${facts.path}:${c.closureArg.line}:${c.closureArg.col}` } : {};
-          const call: Call = { target, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, ...(c.closure ? { closure: true as const } : {}), ...inArg, ...extra };
+          const written: Call = { target, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee };
+
+          if (c.closure) written.closure = true;
+          const call: Call = { ...written, ...inArg, ...extra };
           const added = addCall(fn, call);
 
           if (receiver !== null) receiverOf.set(call, [receiver]);
@@ -1947,10 +1972,13 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
               site: e.site,
               scope: e.scope,
               binding: e.binding,
-              ...(e.owner !== null ? { owner: e.owner } : {}),
-              ...(c.closure && !c.closureArg ? { closure: true as const } : {}),
-              ...(c.docblock ? { docblock: `${facts.path}:${c.docblock.line}:${c.docblock.col}` } : {}),
             };
+
+            if (e.owner !== null) call.owner = e.owner;
+
+            if (c.closure && !c.closureArg) call.closure = true;
+
+            if (c.docblock) call.docblock = `${facts.path}:${c.docblock.line}:${c.docblock.col}`;
 
             if (addCall(fn, call)) receiverOf.set(call, through === null ? [e.impl] : [e.impl, through]);
           }
@@ -1982,7 +2010,8 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
             const value = single(pass, cls, isStatic);
 
             if (!value || decls.classes.has(value)) continue;
-            addCall(fn, {
+
+            const call: Call = {
               target: value,
               line: pass.line,
               col: pass.col,
@@ -1990,15 +2019,21 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
               endCol: pass.endCol,
               text: pass.text,
               via: "callable-arg",
-              ...(c.closure ? { closure: true as const } : {}),
-              ...(pass.docblock ? { docblock: `${facts.path}:${pass.docblock.line}:${pass.docblock.col}` } : {}),
-            });
+            };
+
+            if (c.closure) call.closure = true;
+
+            if (pass.docblock) call.docblock = `${facts.path}:${pass.docblock.line}:${pass.docblock.col}`;
+            addCall(fn, call);
           }
         };
 
         const dynamic = (c: CallFact, reason: string): void => {
           stats.callsDynamic++;
-          gaps.push({ kind: "dynamic-call", file: facts.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, reason, source: fn.id, ...(c.opaque && c.member ? { name: c.member } : {}) });
+          const gap: Gap = { kind: "dynamic-call", file: facts.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, reason, source: fn.id };
+
+          if (c.opaque && c.member) gap.name = c.member;
+          gaps.push(gap);
         };
 
         /**
@@ -2058,12 +2093,22 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
           const parts = c.callee.split(".");
           // PHP: the receiver's class from declarations — a call's result, a base's property, a class outside the architecture.
           const recv = php && (c.on || c.receiver || (parts[0] === "this" && parts.length === 3)) ? receiverTy(c, ctx, 0) : null;
-          const recvExtra: Partial<Call> = recv ? { ...(recv.doc ? { docblock: recv.doc } : {}), ...(recv.indirect ? { indirect: true as const } : {}) } : c.docblock ? { docblock: `${facts.path}:${c.docblock.line}:${c.docblock.col}` } : {};
+          const recvExtra: Partial<Call> = {};
+
+          if (recv) {
+            if (recv.doc) recvExtra.docblock = recv.doc;
+
+            if (recv.indirect) recvExtra.indirect = true;
+          } else if (c.docblock) recvExtra.docblock = `${facts.path}:${c.docblock.line}:${c.docblock.col}`;
           const dispatcher = c.nameArg && dispatchers.size > 0 && (c.receiver ? dispatching(c.receiver) || (recv !== null && dispatchingTy(recv.ty)) : recv !== null && dispatchingTy(recv.ty));
 
           if (c.nameArg && dispatcher) {
             if (c.nameArg.literal !== null) {
-              const call: Call = { target: "", line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, via: "dispatch", ...(c.closure ? { closure: true as const } : {}), ...(c.closureArg ? { site: `${facts.path}:${c.closureArg.line}:${c.closureArg.col}` } : {}) };
+              const call: Call = { target: "", line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, via: "dispatch" };
+
+              if (c.closure) call.closure = true;
+
+              if (c.closureArg) call.site = `${facts.path}:${c.closureArg.line}:${c.closureArg.col}`;
               fn.calls.push(call);
               dispatches.push({ call, name: c.nameArg.literal, file: facts.path });
             } else {
@@ -2135,7 +2180,11 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
 
             for (const k of runs) {
               // Not a dependency for rules: the literal `X::class` is one already, as a value the code reads.
-              const extra: Partial<Call> = { ...recvExtra, indirect: true, via: "object-manager", binding: `\`${member}(${located.written})\` gives a \`${tyName(k.ty)}\`${k.binding ? ` by the preference ${k.binding}` : ""}`, ...(k.site ? { site: k.site } : {}), ...(k.scope ? { scope: k.scope } : {}) };
+              const extra: Partial<Call> = { ...recvExtra, indirect: true, via: "object-manager", binding: `\`${member}(${located.written})\` gives a \`${tyName(k.ty)}\`${k.binding ? ` by the preference ${k.binding}` : ""}` };
+
+              if (k.site) extra.site = k.site;
+
+              if (k.scope) extra.scope = k.scope;
 
               if (k.ty.kind === "class") push(k.ty.id, c, extra);
               else if (k.ty.kind === "outside") pushOutside({ entry: k.ty.entry, name: "__construct" }, c, extra);
@@ -2209,7 +2258,9 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
               for (const k of preferred(recv.ty)) {
                 const hit = memberHit(k.ty, member);
                 // The class is written in the config, not in the call's file: flows follow the edge, rules do not.
-                const extra: Partial<Call> = { ...recvExtra, indirect: true, via: "preference", site: k.site, scope: k.scope, binding: k.binding, ...(k.owner !== null ? { owner: k.owner } : {}) };
+                const extra: Partial<Call> = { ...recvExtra, indirect: true, via: "preference", site: k.site, scope: k.scope, binding: k.binding };
+
+                if (k.owner !== null) extra.owner = k.owner;
 
                 if (hit?.target) push(hit.target, c, extra);
                 else if (hit?.outside) pushOutside(hit.outside, c, extra);
@@ -2466,7 +2517,10 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
       if (item.arg !== hook.param || item.path !== hook.path) continue;
 
       if (item.target === fn.id || fn.calls.some((c) => c.target === item.target)) continue;
-      fn.calls.push({ target: item.target, line: call.line, col: call.col, endLine: call.endLine, endCol: call.endCol, text: call.callee, via: "injected", hook: hook.name, site: item.site, ...(call.closure ? { closure: true as const } : {}) });
+      const injected: Call = { target: item.target, line: call.line, col: call.col, endLine: call.endLine, endCol: call.endCol, text: call.callee, via: "injected", hook: hook.name, site: item.site };
+
+      if (call.closure) injected.closure = true;
+      fn.calls.push(injected);
     }
   }
 
@@ -2522,7 +2576,13 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
     exports: exportTables
       .entries()
       .filter((e) => !e.module.startsWith(FILE_UNIT))
-      .map((e) => ({ ...e, symbol: e.symbol === null ? null : moduleOfUnit(e.symbol), ...(e.from !== undefined ? { from: moduleOfUnit(e.from) } : {}) })),
+      .map((e) => {
+        const entry = { ...e, symbol: e.symbol === null ? null : moduleOfUnit(e.symbol) };
+
+        if (e.from !== undefined) entry.from = moduleOfUnit(e.from);
+
+        return entry;
+      }),
     packages,
     events,
     frameworkEntries: called?.entries ?? [],
@@ -2550,7 +2610,10 @@ function eventNodes(dispatches: readonly { call: Call; name: string; file: strin
 
   for (const o of [...observers].sort((a, b) => compareText(a.file, b.file) || a.line - b.line || a.col - b.col)) {
     const id = ids.get(o.event)!;
-    nodes.get(id)!.calls.push({ target: o.target, line: o.line, col: o.col, endLine: o.line, endCol: o.col + 1, text: o.text, via: "observer", site: o.site, scope: o.scope, binding: o.binding, file: o.file, ...(o.owner !== null ? { owner: o.owner } : {}) });
+    const call: Call & { file: string } = { target: o.target, line: o.line, col: o.col, endLine: o.line, endCol: o.col + 1, text: o.text, via: "observer", site: o.site, scope: o.scope, binding: o.binding, file: o.file };
+
+    if (o.owner !== null) call.owner = o.owner;
+    nodes.get(id)!.calls.push(call);
   }
 
   // An event no code keylang read dispatches stands at its first observer declaration.
@@ -2641,6 +2704,12 @@ interface BaseLink {
   outside?: string;
 }
 
+/** A member looked up through a class's bases: the fn found (null: none), and the last base on the way (null: the class has none). */
+interface MemberLookup {
+  target: string | null;
+  last: BaseLink | null;
+}
+
 /** A class or interface of a file `outside` the architecture, read as declarations only. */
 interface OutsideEntry {
   decl: OutsideDeclFact;
@@ -2668,6 +2737,17 @@ interface Typed {
   doc?: string;
   /** The class is written in another declaration than the call's file: a method's result type, a base's property. */
   indirect?: true;
+}
+
+/** A value's class, with `indirect` and the docblock that writes it set only when there are. */
+function typedAs(ty: Ty, indirect: boolean, doc: string | null | undefined): Typed {
+  const out: Typed = { ty };
+
+  if (indirect) out.indirect = true;
+
+  if (doc) out.doc = doc;
+
+  return out;
 }
 
 /** A member a value's class has: the fn it runs (`target`) or the `outside` member, and its declared result type. */
@@ -2755,7 +2835,15 @@ function exportInput(row: ExportRow, facts: FileFacts, scope: ReadonlyMap<string
 
   if (target.kind === "namespace" && form !== "default") form = "namespace";
 
-  return { name, kind, ...(form ? { form } : {}), ...(row.local !== null && row.local !== name ? { local: row.local } : {}), ...(from ? { from } : {}), target };
+  const input: Omit<ExportRowInput, "target"> = { name, kind };
+
+  if (form) input.form = form;
+
+  if (row.local !== null && row.local !== name) input.local = row.local;
+
+  if (from) input.from = from;
+
+  return { ...input, target };
 }
 
 /** Names of the external packages (and `node` for built-ins) the files import. */
@@ -3033,7 +3121,9 @@ function addDecl(module: Module, d: DeclFact, names: Map<string, string>, declMo
 
   if (d.kind === "class") {
     const id = `${module.id}.${name}`;
-    const cls: Module = { id, layer: module.layer, name, path: file, line: d.line, col: d.col, endLine: d.endLine, endCol: d.endCol, synthetic: false, class: true, comment: d.exported ? null : "internal", doc: d.doc ?? null, deps: [], fns: [], types: [], children: [], members: "complete", starSources: [], ...(d.values !== undefined ? { values: d.values } : {}) };
+    const cls: Module = { id, layer: module.layer, name, path: file, line: d.line, col: d.col, endLine: d.endLine, endCol: d.endCol, synthetic: false, class: true, comment: d.exported ? null : "internal", doc: d.doc ?? null, deps: [], fns: [], types: [], children: [], members: "complete", starSources: [] };
+
+    if (d.values !== undefined) cls.values = d.values;
     module.children.push(cls);
     names.set(key, id);
     decls.ids.set(d, id);
@@ -3057,7 +3147,7 @@ function addDecl(module: Module, d: DeclFact, names: Map<string, string>, declMo
   decls.ids.set(d, id);
 
   if (d.kind === "fn") {
-    const fn: Fn = {
+    const declared: Omit<Fn, "calls"> = {
       id,
       name,
       file,
@@ -3067,18 +3157,28 @@ function addDecl(module: Module, d: DeclFact, names: Map<string, string>, declMo
       endCol: d.endCol,
       signature: d.signature,
       exported: d.exported,
-      ...(d.static ? { static: true as const } : {}),
-      ...(d.name !== name ? { written: d.name } : {}),
-      calls: [],
-      ...(d.fingerprint !== undefined ? { fingerprint: d.fingerprint } : {}),
-      ...(d.doc !== undefined ? { doc: d.doc } : {}),
     };
+
+    if (d.static) declared.static = true;
+
+    if (d.name !== name) declared.written = d.name;
+    // `calls` follows `static` and `written`, as the index writes a fn's fields.
+    const fn: Fn = { ...declared, calls: [] };
+
+    if (d.fingerprint !== undefined) fn.fingerprint = d.fingerprint;
+
+    if (d.doc !== undefined) fn.doc = d.doc;
 
     module.fns.push(fn);
     decls.fns.set(id, fn);
     stats.fns++;
   } else {
-    module.types.push({ id, name, file, line: d.line, col: d.col, endLine: d.endLine, endCol: d.endCol, signature: d.signature, exported: d.exported, ...(d.fingerprint !== undefined ? { fingerprint: d.fingerprint } : {}), ...(d.doc !== undefined ? { doc: d.doc } : {}) });
+    const type: TypeNode = { id, name, file, line: d.line, col: d.col, endLine: d.endLine, endCol: d.endCol, signature: d.signature, exported: d.exported };
+
+    if (d.fingerprint !== undefined) type.fingerprint = d.fingerprint;
+
+    if (d.doc !== undefined) type.doc = d.doc;
+    module.types.push(type);
     decls.types.add(id);
     stats.types++;
   }

@@ -20,6 +20,7 @@ type Edge = { source: string; target: string | null };
 
 /** Edges of `.keylang/index.json` with exactly one end inside `id`: what a row's `↔ n` counts. */
 function degree(root: string, id: string): number {
+  // SAFETY: `.keylang/index.json` is written by `keylang map` and always carries an `edges` array of {source, target}.
   const index = JSON.parse(readFileSync(join(root, ".keylang/index.json"), "utf8")) as { edges: Edge[] };
   const inside = (other: string): boolean => other === id || other.startsWith(`${id}.`);
 
@@ -84,12 +85,12 @@ test("zoom model: children, neighbors by depth, crumbs, the more row, and where 
   assert.equal(zoomTarget(analysis, "no.such.id"), null);
 });
 
-function session(root: string, cols = 120, rows = 30): { app: App; vt: VirtualTerminal; send: (keys: string) => void; text: () => string; lines: () => string[] } {
+function session(root: string, cols = 120, rows = 30) {
   const vt = new VirtualTerminal(cols, rows);
   const app = new App({ root, cols, rows });
   app.attach({ write: (ansi) => vt.feed(ansi) }, cols, rows);
 
-  return { app, vt, send: (keys) => app.input(keys), text: () => vt.text(), lines: () => vt.lines() };
+  return { app, vt, send: (keys: string) => app.input(keys), text: () => vt.text(), lines: () => vt.lines() };
 }
 
 async function esc(send: (keys: string) => void): Promise<void> {

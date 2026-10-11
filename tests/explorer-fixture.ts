@@ -10,7 +10,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-export const EXPLORER_FILES: Record<string, string> = {
+export const EXPLORER_FILES = {
   "keylang.json": `${JSON.stringify({ languages: ["typescript", "python"], module: "file", layers: { app: ["src/app/**"], billing: ["src/billing/**"], shop: ["src/shop/**"] } })}\n`,
   "package.json": `${JSON.stringify({ name: "shop" })}\n`,
   "src/app/server.ts": [
@@ -41,7 +41,7 @@ export const EXPLORER_FILES: Record<string, string> = {
   "src/shop/__init__.py": "",
   "src/shop/cli.py": "def apply(f):\n    return f()\n\n\ndef helper() -> int:\n    return store()\n\n\ndef store() -> int:\n    return 1\n\n\ndef main() -> int:\n    return apply(helper)\n",
   "keylang/rules.md": "# rules\n\n- layers billing < app\n",
-};
+} satisfies Record<string, string>;
 
 /** A temporary repository with the explorer's files (and `extra`), removed after the test. */
 export function explorerRepo(t: { after: (f: () => void) => void }, extra: Record<string, string> = {}): string {

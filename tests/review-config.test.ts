@@ -10,6 +10,7 @@ import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { withLayers } from "../src/config.ts";
+import type { JsonObject } from "../src/json.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -20,7 +21,13 @@ function write(dir: string, path: string, text: string): void {
   writeFileSync(join(dir, path), text);
 }
 
-function keylang(cwd: string, args: string[], env: NodeJS.ProcessEnv = process.env): { status: number | null; stdout: string; stderr: string } {
+interface Run {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+function keylang(cwd: string, args: string[], env: NodeJS.ProcessEnv = process.env): Run {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8", env });
 
   if (r.error) throw r.error;
@@ -37,11 +44,11 @@ function repo(t: TestContext, files: Record<string, string>): string {
   return dir;
 }
 
-const json = (value: unknown): string => `${JSON.stringify(value)}\n`;
+const json = <Value>(value: Value): string => `${JSON.stringify(value)}\n`;
 
 interface Index {
   snapshotId: string;
-  manifest: { grammars: Record<string, string>; config: Record<string, unknown> };
+  manifest: { grammars: Record<string, string>; config: JsonObject };
   nodes: Record<string, { kind: string; file: string | null }>;
   edges: { kind: string; source: string; target: string | null; resolution: string }[];
   coverage: { kind: string; file: string; line: number; col: number; text: string; reason: string; source: string | null }[];
@@ -50,6 +57,7 @@ interface Index {
 }
 
 function index(dir: string): Index {
+  // SAFETY: `keylang map` writes .keylang/index.json as a snapshot with these fields (docs/snapshot.md).
   return JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as Index;
 }
 
@@ -86,6 +94,7 @@ test("the snapshot records the real versions of the tree-sitter runtime and gram
 
   // `web-tree-sitter` does not export `./package.json`: reading it by name gave "unknown", and an upgrade changed no snapshot id.
   for (const [name, version] of Object.entries(grammars)) assert.match(version, /^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/, name);
+  // SAFETY: every installed npm package has a package.json with a string `version`.
   const installed = (name: string): string => (JSON.parse(readFileSync(join(root, "node_modules", name, "package.json"), "utf8")) as { version: string }).version;
   assert.equal(grammars["web-tree-sitter"], installed("web-tree-sitter"));
   assert.equal(grammars["@vscode/tree-sitter-wasm"], installed("@vscode/tree-sitter-wasm"));
@@ -152,6 +161,7 @@ test("IDs from file and directory names are NFC, whatever normalization the disk
   assert.ok(readFileSync(join(dir, `keylang/map/${nfc}s.md`), "utf8").includes(`- module ${nfc}`));
   const check = keylang(dir, ["check", "--format", "json"]);
   assert.equal(check.status, 0, check.stdout);
+  // SAFETY: `check --format json` prints a report whose `results` rows carry these fields (docs/cli.md).
   const rows = (JSON.parse(check.stdout) as { results: { criterion: string; verdict: string; code: string | null }[] }).results;
   assert.equal(rows.some((row) => row.code === "K001"), false, check.stdout);
   assert.ok(rows.some((row) => row.criterion === "ID" && row.verdict === "ok" && check.stdout.includes(id)), check.stdout);
@@ -234,21 +244,29 @@ interface Row {
   code: string | null;
 }
 
-function verdicts(dir: string): { status: number | null; rows: Row[]; stdout: string } {
+interface Verdicts {
+  status: number | null;
+  rows: Row[];
+  stdout: string;
+}
+
+function verdicts(dir: string): Verdicts {
   const run = keylang(dir, ["check", "--format", "json"]);
 
+  // SAFETY: `check --format json` prints a report whose `results` are rows (docs/cli.md).
   return { status: run.status, stdout: run.stdout, rows: (JSON.parse(run.stdout) as { results: Row[] }).results };
 }
 
 test("assume: an import of a file keylang neither reads nor requires is no edge and no hole, present or absent", (t) => {
-  const config = (extra: Record<string, unknown> = {}): string => json({ format: 2, languages: ["typescript"], layers: SHOP_LAYERS, ...extra });
+  const config = (extra: JsonObject = {}): string => json({ format: 2, languages: ["typescript"], layers: SHOP_LAYERS, ...extra });
   // Without `assume` the missing file is a dependency hole: `deny infra …` cannot say ok.
   const ci = repo(t, { ...SHOP, "keylang.json": config() });
   const hole = verdicts(ci);
   assert.equal(hole.rows.find((row) => row.criterion === "deny infra app external ui unassigned")?.verdict, "unverified", hole.stdout);
 
   for (const present of [false, true]) {
-    const dir = repo(t, { ...SHOP, ...(present ? { "src/config.ts": CONFIG_TS } : {}), "keylang.json": config({ assume: ["src/config.ts"] }) });
+    const assumed = config({ assume: ["src/config.ts"] });
+    const dir = repo(t, present ? { ...SHOP, "src/config.ts": CONFIG_TS, "keylang.json": assumed } : { ...SHOP, "keylang.json": assumed });
     const map = keylang(dir, ["map"]);
     assert.equal(map.status, 0, map.stderr);
     assert.doesNotMatch(map.stderr, /unresolved import|config/, `present: ${present}`);
@@ -283,7 +301,7 @@ test("assume: a path-mapped specifier names the path it would resolve to; `assum
     "tsconfig.json": json({ compilerOptions: { baseUrl: ".", paths: { "@/*": ["src/*"] } } }),
   };
 
-  const config = (extra: Record<string, unknown>): string => json({ format: 2, languages: ["typescript"], layers: SHOP_LAYERS, ...extra });
+  const config = (extra: JsonObject): string => json({ format: 2, languages: ["typescript"], layers: SHOP_LAYERS, ...extra });
   const dir = repo(t, { ...files, "keylang.json": config({ assume: ["src/generated/**"] }) });
   assert.equal(keylang(dir, ["map"]).status, 0);
   const assumed = index(dir);

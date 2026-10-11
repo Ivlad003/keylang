@@ -12,6 +12,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { findRoot } from "../src/analyze.ts";
+import { isJsonObject, parseJson } from "../src/json.ts";
 import { mapStepLines, type OperationResult } from "../src/operations.ts";
 import { App } from "../src/tui/app.ts";
 import { findingsOf } from "../src/tui/findings.ts";
@@ -657,7 +658,7 @@ test("tui: the proposals list shows why a target cannot be merged and writes not
   openProposalList(s);
   assert.deepEqual(listed(s), ["README.md", FLOW_PATH, "keylang/flows/out.md", "keylang/linked.md", "keylang/map/domain.md"]);
 
-  const reasons: Record<string, RegExp> = {
+  const reasons = {
     "README.md": /cannot merge: outside keylang\/: a proposal changes specs only/,
     [FLOW_PATH]: /cannot merge: unsaved changes: save \(Ctrl\+S\) or undo them before merging/,
     "keylang/flows/out.md": /cannot merge: leads out of keylang\/ through a link/,
@@ -1038,7 +1039,8 @@ test("tui: one session goes from a repository without keylang.json to a done fea
   let twinRuns = 0;
 
   for (const name of ["spawn", "spawnSync", "exec", "execSync", "execFile", "execFileSync", "fork"] as const) {
-    const original = childProcess[name] as (...args: unknown[]) => unknown;
+    // SAFETY: the mock passes the arguments it was called with to the same function unchanged, so any of its overloads holds.
+    const original = childProcess[name] as (...args: unknown[]) => ReturnType<(typeof childProcess)[typeof name]>;
     t.mock.method(childProcess, name, (...args: unknown[]) => {
       if (inCycle) spawned.push(`${name} ${String(args[0])}`);
       else twinRuns++;
@@ -1057,6 +1059,7 @@ test("tui: one session goes from a repository without keylang.json to a done fea
     const result = s.app.state.records.at(-1)?.result;
     assert.equal(result?.kind, kind, JSON.stringify(result?.messages));
 
+    // SAFETY: the assertion above checked that the last record's result has kind K.
     return result as Extract<OperationResult, { kind: K }>;
   };
 
@@ -1110,7 +1113,9 @@ test("tui: one session goes from a repository without keylang.json to a done fea
         writeFileSync(join(twin, "keylang/features/refund.md"), text);
         const cli = cliRun(twin, ["check", "--format", "json"]);
         assert.equal(cli.status, 0, cli.stderr);
-        assert.deepEqual(findingsOf(s.app.state.analysis), (JSON.parse(cli.stdout) as { results: unknown[] }).results, "the editor's findings are the CLI's once saved");
+        const report = parseJson(cli.stdout);
+        assert.ok(isJsonObject(report), cli.stdout);
+        assert.deepEqual(findingsOf(s.app.state.analysis), report.results, "the editor's findings are the CLI's once saved");
         break;
       }
 

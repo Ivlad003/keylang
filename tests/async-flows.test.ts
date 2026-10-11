@@ -14,6 +14,7 @@ import { analyze } from "../src/analyze.ts";
 import { checkResults } from "../src/check-results.ts";
 import { diagramOf } from "../src/diagram.ts";
 import { evaluateFlows, type FlowInput } from "../src/flows.ts";
+import { isJsonObject, parseJson, type JsonObject } from "../src/json.ts";
 import { parse } from "../src/parser.ts";
 import { check } from "../src/resolve.ts";
 import { compileSpec } from "../src/spec-ir.ts";
@@ -21,7 +22,7 @@ import { evidenceOf, totals } from "../src/tui/evidence.ts";
 import { keylang, tempDir, writeTree } from "./cli-helpers.ts";
 
 /** An Express-style app: `POST /orders` runs `placeOrder`, `POST /webhooks/payment` runs `paid` (literal routes, business-flows/09). */
-const SHOP: Record<string, string> = {
+const SHOP = {
   "keylang.json": JSON.stringify({ languages: ["typescript"], module: "file", layers: { app: ["src/app/**"] } }),
   "src/app/handlers.ts": [
     "export function reserve(): void {}",
@@ -74,9 +75,12 @@ interface Row {
   provenance?: string;
 }
 
-function repo(t: { after: (fn: () => void) => void }, flows: Record<string, string>, check: object = {}, files: Record<string, string> = SHOP): string {
+function repo(t: { after: (fn: () => void) => void }, flows: Record<string, string>, check: JsonObject = {}, files: Record<string, string> = SHOP): string {
   const dir = tempDir(t, "keylang-async-");
-  const config = { ...(JSON.parse(files["keylang.json"]!) as object), check };
+  const layout = parseJson(files["keylang.json"]!);
+
+  if (!isJsonObject(layout)) throw new Error("keylang.json of the test repository: expected an object");
+  const config = { ...layout, check };
   writeTree(dir, { ...files, "keylang.json": JSON.stringify(config), ...Object.fromEntries(Object.entries(flows).map(([path, text]) => [`keylang/flows/${path}`, text])) });
 
   return dir;
@@ -86,12 +90,14 @@ function snapshotOf(dir: string): string {
   const run = keylang(dir, ["map"]);
   assert.equal(run.status, 0, run.stderr);
 
+  // SAFETY: `map` writes `.keylang/index.json` in the snapshot format of docs/snapshot.md, which has a `snapshotId`.
   return (JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as { snapshotId: string }).snapshotId;
 }
 
-function results(dir: string): { status: number | null; rows: Row[]; diagnostics: { code: string; message: string; line: number; col: number }[] } {
+function results(dir: string) {
   const o = keylang(dir, ["check", "--format", "json"]);
   assert.ok(o.stdout.startsWith("{"), o.stdout + o.stderr);
+  // SAFETY: `check --format json` prints `{ snapshotId, results, coverage }` (docs/cli.md); each result row carries these fields.
   const rows = (JSON.parse(o.stdout) as { results: (Row & { col: number })[] }).results;
   const diagnostics = rows.filter((r) => /^K\d{3}$/.test(r.criterion)).map((r) => ({ code: r.criterion, message: r.evidence, line: r.line, col: r.col }));
 
@@ -145,6 +151,7 @@ test("async flows: unknown trigger kind, bad timers, an empty parallel and conti
   // Every new word was K004 before: nothing else in the file is reported.
   assert.doesNotMatch(o.stdout, /K004 unknown keyword `(parallel|continues|after|every)`/);
   // `parse` reports the parser's codes, the compile and resolve codes need `check`.
+  // SAFETY: `parse --json` prints one IR document per input file (src/ir.ts) with its diagnostics.
   const parsed = JSON.parse(keylang(dir, ["parse", "--json", "keylang/flows/broken.md"]).stdout) as { diagnostics: { code: string; span: { start: { line: number; col: number } } }[] }[];
   const codes = parsed[0]!.diagnostics.map((d) => `${d.span.start.line}:${d.span.start.col} ${d.code}`);
   assert.ok(codes.includes("3:11 K005"), codes.join(", "));
@@ -188,7 +195,7 @@ test("parallel: static — every step of the group is reached from the group's p
 });
 
 test("parallel: static under a nested step and in Python — the parent of the group is the step around it", (t) => {
-  const files: Record<string, string> = {
+  const files = {
     "keylang.json": JSON.stringify({ languages: ["python"], module: "file", layers: { shop: ["src/shop/**"] } }),
     "src/shop/__init__.py": "",
     "src/shop/jobs.py": "def notify() -> None:\n    pass\n\n\ndef reserve() -> None:\n    pass\n\n\ndef settle() -> None:\n    reserve()\n    notify()\n\n\ndef main() -> None:\n    settle()\n",
@@ -241,14 +248,14 @@ const CONFIRM = "app.handlers.confirm";
 
 const STEPS = [P, RESERVE, MAIL, ERP, CONFIRM];
 
-function traced(t: { after: (fn: () => void) => void }, flows: Record<string, string> = { "place.md": PLACE_ORDER }): { snapshot: string; write: (text: string) => Row[]; dir: string } {
+function traced(t: { after: (fn: () => void) => void }, flows: Record<string, string> = { "place.md": PLACE_ORDER }) {
   const dir = repo(t, flows, { trace: ".keylang/trace/*.jsonl" });
   const snapshot = snapshotOf(dir);
 
   return {
     dir,
     snapshot,
-    write: (text) => {
+    write: (text: string): Row[] => {
       mkdirSync(join(dir, ".keylang/trace"), { recursive: true });
       writeFileSync(join(dir, ".keylang/trace/t.jsonl"), text);
 
@@ -361,7 +368,7 @@ test("trigger: a kind the entry point does not have is K205 on the kind; a fn no
 });
 
 test("trigger: in Python a `main` entry point named as a route is K205; the plain trigger form is unchanged", (t) => {
-  const files: Record<string, string> = {
+  const files = {
     "keylang.json": JSON.stringify({ languages: ["python"], module: "file", layers: { shop: ["src/shop/**"] } }),
     "pyproject.toml": '[project]\nname = "shop"\n\n[project.scripts]\nshop-cli = "shop.cli:main"\n',
     "src/shop/__init__.py": "",
@@ -444,7 +451,11 @@ function evaluate(flow: string, nodes: string[], entries: FlowInput["entries"]):
   const { index } = check(docs);
   const view = Object.fromEntries(nodes.map((id) => [id, { kind: "fn", file: "src/jobs.ts", line: 1 }]));
 
-  return evaluateFlows(spec, index, { snapshotId: "s", nodes: view, edges: [], tests: null, traces: null, ...(entries ? { entries } : {}) });
+  const input: FlowInput = { snapshotId: "s", nodes: view, edges: [], tests: null, traces: null };
+
+  if (entries) input.entries = entries;
+
+  return evaluateFlows(spec, index, input);
 }
 
 test("every: static against a cron entry point's schedule — the same is ok, another fails, an unknown one is unverified; trigger cron/consumer", () => {

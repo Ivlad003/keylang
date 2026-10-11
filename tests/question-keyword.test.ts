@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import type { JsonValue } from "../src/json.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -28,7 +29,13 @@ const REFUND = `# flow refund
     - step app.shop.pay
 `;
 
-function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+interface Run {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+function keylang(cwd: string, args: string[]): Run {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8" });
 
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
@@ -43,11 +50,11 @@ function repo(t: TestContext, files: Record<string, string>): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-question-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
-  const all: Record<string, string> = {
+  const all = {
     "keylang.json": `${JSON.stringify({ languages: ["typescript"], module: "file", layers: { app: ["src/app/**"] } })}\n`,
     "src/app/shop.ts": SHOP,
     ...files,
-  };
+  } satisfies Record<string, string>;
 
   for (const [path, text] of Object.entries(all)) {
     mkdirSync(join(dir, dirname(path)), { recursive: true });
@@ -62,6 +69,7 @@ type Item = { kind: string; text?: { value: string }; span: { start: { line: num
 /** Every question of a parsed file: its text, line and column. */
 function questions(dir: string, path: string): [string, number, number][] {
   const r = keylang(dir, ["parse", "--json", path]);
+  // SAFETY: `parse --json` prints one IR document per file, whose sections hold the items of src/ir.ts.
   const [doc] = JSON.parse(r.stdout) as { sections: { items: Item[] }[] }[];
   const out: [string, number, number][] = [];
 
@@ -112,7 +120,9 @@ test("check: a question is no claim: no diagnostic and no verdict; fmt keeps it 
 test("feature: each open question is a gap until a person answers it in a commit; deleting it is a weakened plan", (t) => {
   const dir = repo(t, { "keylang/features/refund.md": REFUND });
 
-  const status = (): { status: number | null; body: { done: boolean; stage: string; gaps: { kind: string; id: string; line: number; col: number; reason: string; stage: string }[] } } => {
+  type FeatureRun = { status: number | null; body: { done: boolean; stage: string; gaps: { kind: string; id: string; line: number; col: number; reason: string; stage: string }[] } };
+
+  const status = (): FeatureRun => {
     const r = keylang(dir, ["feature", "refund", "--format", "json"]);
 
     return { status: r.status, body: JSON.parse(r.stdout) };
@@ -147,11 +157,16 @@ test("feature: each open question is a gap until a person answers it in a commit
   assert.deepEqual([done.status, done.body.done, done.body.stage], [0, true, "done"]);
 });
 
+/** Hover contents as plain text rather than a MarkupContent. */
+function isPlainHover(contents: { value: string } | string): contents is string {
+  return typeof contents === "string";
+}
+
 /** A minimal language client: framing, requests, and the first answer to each. */
 class Lsp {
   private readonly child: ChildProcessWithoutNullStreams;
   private buffer = Buffer.alloc(0);
-  private readonly answers = new Map<number, unknown>();
+  private readonly answers = new Map<number, JsonValue | undefined>();
   private next = 1;
 
   constructor(cwd: string) {
@@ -166,7 +181,8 @@ class Lsp {
         const length = Number(/Content-Length: (\d+)/i.exec(this.buffer.subarray(0, end).toString())?.[1]);
 
         if (this.buffer.length < end + 4 + length) return;
-        const message = JSON.parse(this.buffer.subarray(end + 4, end + 4 + length).toString()) as { id?: number; method?: string; result?: unknown };
+        // SAFETY: the server writes JSON-RPC 2.0 messages: an answer has an `id` and no `method`.
+        const message = JSON.parse(this.buffer.subarray(end + 4, end + 4 + length).toString()) as { id?: number; method?: string; result?: JsonValue };
 
         if (message.id !== undefined && message.method === undefined) this.answers.set(message.id, message.result);
         this.buffer = this.buffer.subarray(end + 4 + length);
@@ -174,12 +190,12 @@ class Lsp {
     });
   }
 
-  notify(method: string, params: unknown): void {
+  notify(method: string, params: JsonValue): void {
     const json = JSON.stringify({ jsonrpc: "2.0", method, params });
     this.child.stdin.write(`Content-Length: ${Buffer.byteLength(json)}\r\n\r\n${json}`);
   }
 
-  async request<T>(method: string, params: unknown): Promise<T> {
+  async request<T>(method: string, params: JsonValue): Promise<T> {
     const id = this.next++;
     const json = JSON.stringify({ jsonrpc: "2.0", id, method, params });
     this.child.stdin.write(`Content-Length: ${Buffer.byteLength(json)}\r\n\r\n${json}`);
@@ -189,6 +205,7 @@ class Lsp {
       await new Promise((done) => setTimeout(done, 25));
     }
 
+    // SAFETY: each caller names the result shape the LSP specification gives its method; its assertions check it.
     return this.answers.get(id) as T;
   }
 
@@ -217,6 +234,6 @@ test("lsp: completion after `- ` offers `?` under a trigger and under when; hove
   // Line 6 (0-based) is the new `  - ` under the trigger.
   assert.ok((await labels(6, 4)).includes("?"), "a question under a trigger");
   const hover = await lsp.request<{ contents: { value: string } | string }>("textDocument/hover", { textDocument: { uri }, position: { line: 2, character: 2 } });
-  const shown = typeof hover.contents === "string" ? hover.contents : hover.contents.value;
+  const shown = isPlainHover(hover.contents) ? hover.contents : hover.contents.value;
   assert.match(shown, /an open question/);
 });

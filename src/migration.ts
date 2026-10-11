@@ -16,6 +16,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { diagnostic, errorText, type Diagnostic } from "./diag.ts";
+import { isJsonObject, isJsonString, parseJson, type JsonObject, type JsonValue } from "./json.ts";
 import { sectionNodes, type Document } from "./ir.ts";
 import { compareText, type Span } from "./span.ts";
 import { matchTest, type TestCase, type TestEvidence } from "./test-report.ts";
@@ -91,40 +92,50 @@ export type OldSnapshot =
 
 /** An index file of the old stack as `check` and `migration status` read it: `.keylang/index.json` or the export of `map --export-index`. */
 export interface OldIndex {
-  schema: unknown;
+  /** As the file writes it; absent in a file without one. */
+  schema: JsonValue | undefined;
   snapshotId: string;
   nodes: Record<string, NodeView>;
   entries: { kind: string; label: string; id: string }[];
   /** The export's `migration` block; absent in a plain index. */
-  migration?: unknown;
+  migration?: JsonValue;
   /** The whole parsed file (a snapshot, to draft flows from). */
-  raw: Record<string, unknown>;
+  raw: JsonObject;
 }
 
 /** Reads an index file; a file that is not one is an error naming it. */
 export function readOldIndex(abs: string): OldIndex {
-  let body: unknown;
+  let value: JsonValue;
 
   try {
-    body = JSON.parse(readFileSync(abs, "utf8").replace(/^\uFEFF/, ""));
+    value = parseJson(readFileSync(abs, "utf8").replace(/^\uFEFF/, ""));
   } catch (error) {
     throw new Error(`${abs}: not a keylang index: ${errorText(error)}`);
   }
 
-  const value = body as Record<string, unknown> | null;
+  const snapshotId = isJsonObject(value) ? value.snapshotId : undefined;
+  const nodes = isJsonObject(value) ? value.nodes : undefined;
+  const entries = isJsonObject(value) ? (value.entries ?? []) : undefined;
 
-  if (typeof value !== "object" || value === null || typeof value.snapshotId !== "string" || typeof value.nodes !== "object" || value.nodes === null || !Array.isArray(value.entries ?? [])) {
+  if (!isJsonObject(value) || !isJsonString(snapshotId) || !isJsonObject(nodes) || !isNodeViews(nodes) || !Array.isArray(entries) || !isEntryRows(entries)) {
     throw new Error(`${abs}: not a keylang index (expected \`snapshotId\`, \`nodes\` and \`entries\` of .keylang/index.json)`);
   }
 
-  return {
-    schema: value.schema,
-    snapshotId: value.snapshotId,
-    nodes: value.nodes as Record<string, NodeView>,
-    entries: (value.entries as OldIndex["entries"] | undefined) ?? [],
-    ...(value.migration !== undefined ? { migration: value.migration } : {}),
-    raw: value,
-  };
+  const migration: Pick<OldIndex, "migration"> = {};
+
+  if (value.migration !== undefined) migration.migration = value.migration;
+
+  return { schema: value.schema, snapshotId, nodes, entries, ...migration, raw: value };
+}
+
+/** Every node of an index file has its `kind`, and `members` when it has one is a known value. */
+function isNodeViews(nodes: JsonObject): nodes is JsonObject & Record<string, NodeView> {
+  return Object.values(nodes).every((node) => isJsonObject(node) && isJsonString(node.kind) && (node.members === undefined || node.members === "complete" || node.members === "opaque"));
+}
+
+/** Every entry point of an index file has its `kind`, `label` and `id`. */
+function isEntryRows(entries: JsonValue[]): entries is (JsonObject & OldIndex["entries"][number])[] {
+  return entries.every((entry) => isJsonObject(entry) && isJsonString(entry.kind) && isJsonString(entry.label) && isJsonString(entry.id));
 }
 
 /**
@@ -149,6 +160,12 @@ export function lookupNode(nodes: Readonly<Record<string, NodeView>>, id: string
   }
 }
 
+/** What `# migration` rows yield in `check`: dangling old IDs and a verdict per row. */
+export interface MigrationFindings {
+  diagnostics: Diagnostic[];
+  verdicts: Verdict[];
+}
+
 /**
  * `check` of the migration rows' old side: each old ID is `ok` when the old
  * snapshot has it, K001 when the snapshot reads its area and lacks it,
@@ -156,7 +173,7 @@ export function lookupNode(nodes: Readonly<Record<string, NodeView>>, id: string
  * (`migration.from`) or when it cannot be read. The new side is a reference
  * the resolver checks (K001 unless the code has it or a `planned` declares it).
  */
-export function migrationCheck(docs: readonly Document[], old: OldSnapshot, snapshotId: string | null): { diagnostics: Diagnostic[]; verdicts: Verdict[] } {
+export function migrationCheck(docs: readonly Document[], old: OldSnapshot, snapshotId: string | null): MigrationFindings {
   const diagnostics: Diagnostic[] = [];
   const verdicts: Verdict[] = [];
 
@@ -386,7 +403,7 @@ export function migrationStatus(input: { from: string; old: Stack; current: Stac
 
     const reasons = verdict === "ok"
       ? [`${steps.filter((step) => step.status === "mapped").length} step(s) present, ${tests.length} test(s) pass in both stacks`]
-      : [...new Set(findings.filter((item) => item.verdict === verdict).map((item) => item.reason))];
+      : [...new Set(findings.flatMap((item) => (item.verdict === verdict ? [item.reason] : [])))];
 
     flows.push({
       name: flow.name,

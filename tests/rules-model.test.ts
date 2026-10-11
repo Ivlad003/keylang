@@ -10,6 +10,7 @@ import { dirname, join, posix } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import fc from "fast-check";
+import { isJsonObject, parseJson } from "../src/json.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -122,6 +123,14 @@ interface Row {
   file: string;
   line: number;
   code: string | null;
+}
+
+/** The keylang.json of a generated world. */
+interface FixtureConfig {
+  languages: string[];
+  module: string;
+  layers: Record<string, string[]>;
+  exclude?: string[];
 }
 
 function within(id: string, scope: string): boolean {
@@ -759,16 +768,17 @@ function realize(raw: Raw): Built {
   at(`- module ${under}`);
   const underLine = at("  - no-cycles");
 
-  const files: Record<string, string> = {
-    "package.json": `${JSON.stringify({ name: "model-fixture", private: true, dependencies: { "left-pad": "1.0.0" } })}\n`,
-    "keylang.json": `${JSON.stringify({
-      languages: ["typescript"],
-      module: "file",
-      layers: { base: ["src/base/**"], core: ["src/core/**"], app: ["src/app/**"], side: ["src/side/**"], extra: ["src/extra/**"] },
-      ...(excluded >= 0 ? { exclude: [selected[excluded]!.file] } : {}),
-    })}\n`,
-    [RULES]: `${spec.join("\n")}\n`,
+  const config: FixtureConfig = {
+    languages: ["typescript"],
+    module: "file",
+    layers: { base: ["src/base/**"], core: ["src/core/**"], app: ["src/app/**"], side: ["src/side/**"], extra: ["src/extra/**"] },
   };
+
+  if (excluded >= 0) config.exclude = [selected[excluded]!.file];
+  const files: Record<string, string> = {};
+  files["package.json"] = `${JSON.stringify({ name: "model-fixture", private: true, dependencies: { "left-pad": "1.0.0" } })}\n`;
+  files["keylang.json"] = `${JSON.stringify(config)}\n`;
+  files[RULES] = `${spec.join("\n")}\n`;
 
   const modules: Mod[] = [];
   const edges: FactEdge[] = [];
@@ -837,7 +847,13 @@ function relativeImport(from: string, to: string): string {
   return rel;
 }
 
-function cli(files: Record<string, string>, args: string[] = []): { status: number | null; rows: Row[]; stderr: string } {
+interface CheckRun {
+  status: number | null;
+  rows: Row[];
+  stderr: string;
+}
+
+function cli(files: Record<string, string>, args: string[] = []): CheckRun {
   const dir = mkdtempSync(join(tmpdir(), "keylang-model-"));
 
   try {
@@ -849,6 +865,7 @@ function cli(files: Record<string, string>, args: string[] = []): { status: numb
     const run = spawnSync(process.execPath, [bin, "check", "--format", "json", ...args], { cwd: dir, encoding: "utf8" });
 
     if (run.status === 2 || run.status === null) throw new Error(`check exit ${run.status}\n${run.stderr}`);
+    // SAFETY: `check --format json` prints a report whose `results` rows carry these fields (docs/cli.md).
     const parsed = JSON.parse(run.stdout) as { results: Row[] };
 
     return { status: run.status, rows: parsed.results, stderr: run.stderr };
@@ -880,18 +897,18 @@ function compare(expected: Prediction, rows: readonly Row[]): string | null {
     bad.push(`${label}\n  model: ${model.join(" | ") || "(none)"}\n  cli:   ${actual.join(" | ") || "(none)"}`);
   };
 
-  show("K101", expected.k101, rows.filter((row) => row.code === "K101").map((row) => pairOf(row.evidence) ?? row.evidence).sort());
-  show("K102", expected.k102, rows.filter((row) => row.code === "K102").map((row) => deniedKey(row) ?? row.evidence).sort());
-  show("K103", expected.k103, rows.filter((row) => row.code === "K103").map((row) => row.area).sort());
+  show("K101", expected.k101, rows.flatMap((row) => (row.code === "K101" ? [pairOf(row.evidence) ?? row.evidence] : [])).sort());
+  show("K102", expected.k102, rows.flatMap((row) => (row.code === "K102" ? [deniedKey(row) ?? row.evidence] : [])).sort());
+  show("K103", expected.k103, rows.flatMap((row) => (row.code === "K103" ? [row.area] : [])).sort());
   show(
     "K106",
     expected.k106,
-    rows.filter((row) => row.code === "K106").map((row) => `${row.file}:${row.line}\t${row.verdict}\t${row.evidence}`).sort(),
+    rows.flatMap((row) => (row.code === "K106" ? [`${row.file}:${row.line}\t${row.verdict}\t${row.evidence}`] : [])).sort(),
   );
   show(
     "entry unverified",
     expected.entryUnverified,
-    rows.filter((row) => row.criterion === "entry" && row.verdict === "unverified").map((row) => row.area).sort(),
+    rows.flatMap((row) => (row.criterion === "entry" && row.verdict === "unverified" ? [row.area] : [])).sort(),
   );
 
   if (expected.entryHoleFile !== null) {
@@ -947,11 +964,11 @@ function compare(expected: Prediction, rows: readonly Row[]): string | null {
 
 function ranked(world: World): Map<string, string> {
   const expected = predict(world);
-  const rank: Record<string, number> = { fail: 4, warning: 3, unverified: 2, ok: 1 };
+  const rank = new Map([["fail", 4], ["warning", 3], ["unverified", 2], ["ok", 1]]);
   const map = new Map<string, { verdict: string; rank: number }>();
 
   const put = (key: string, verdict: string): void => {
-    const value = rank[verdict] ?? 0;
+    const value = rank.get(verdict) ?? 0;
     const prev = map.get(key);
 
     if (!prev || value > prev.rank) map.set(key, { verdict, rank: value });
@@ -1173,9 +1190,10 @@ test("rules model: excluding a reached hole does not turn entry unverified into 
   assert.ok(after.some((row) => row.verdict === "unverified"));
 });
 
-function filesFor(files: Record<string, string>, format: 1 | 2): Record<string, string> {
+function filesFor(files: Record<string, string>, format: 1 | 2) {
   if (format === 1) return files;
-  const config = JSON.parse(files["keylang.json"] ?? "{}") as Record<string, unknown>;
+  const config = parseJson(files["keylang.json"] ?? "{}");
+  assert.ok(isJsonObject(config), "keylang.json is an object");
 
   return { ...files, "keylang.json": `${JSON.stringify({ format, ...config })}\n` };
 }

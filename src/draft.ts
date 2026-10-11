@@ -20,12 +20,20 @@ export interface FlowDraft {
   steps: string[];
 }
 
+/** How `draftFlow` names and bounds a draft. */
+export interface DraftFlowOptions {
+  name?: string;
+  depth?: number;
+  entry?: string;
+  event?: string;
+}
+
 /**
  * `entry`: the kind of entry point the trigger is (`trigger route <id>`).
  * `event`: the event whose subscriber the trigger is (ADR 0023 п. 1): the draft
  * starts with `trigger event <event>` and the fn is its first step.
  */
-export function draftFlow(snapshot: AnalysisSnapshot, trigger: string, options: { name?: string; depth?: number; entry?: string; event?: string } = {}): FlowDraft {
+export function draftFlow(snapshot: AnalysisSnapshot, trigger: string, options: DraftFlowOptions = {}): FlowDraft {
   const node = snapshot.nodes[trigger];
 
   if (node?.kind !== "fn") throw new Error(`\`${trigger}\` is not a fn of the snapshot`);
@@ -271,7 +279,7 @@ export function distinctNames(drafts: readonly FlowDraft[]): FlowDraft[] {
  */
 export function draftRules(snapshot: AnalysisSnapshot, cyclic: boolean): string {
   const layers = Object.entries(snapshot.nodes)
-    .filter(([, n]) => n.kind === "layer" && !(SYNTHETIC_LAYERS as readonly string[]).includes(n.layer))
+    .filter(([, n]) => n.kind === "layer" && !SYNTHETIC_LAYERS.some((synthetic) => synthetic === n.layer))
     .map(([id]) => id)
     .sort();
 
@@ -316,6 +324,12 @@ function layerOrder(layers: readonly string[], uses: ReadonlyMap<string, Readonl
   return order;
 }
 
+/** The functions a `code-to-spec` call drafts, and the name of the spec they go in. */
+export interface CodeToSpecTriggers {
+  name: string;
+  triggers: string[];
+}
+
 /**
  * `code-to-spec <path[:line]>`: the functions the code position names — the
  * innermost fn whose range holds the line, or every exported fn of the file
@@ -323,7 +337,7 @@ function layerOrder(layers: readonly string[], uses: ReadonlyMap<string, Readonl
  * the file's module's. Reads the snapshot only; a position that names no fn
  * throws the CLI's message.
  */
-export function codeToSpecTriggers(snapshot: AnalysisSnapshot, file: string, line: number | null): { name: string; triggers: string[] } {
+export function codeToSpecTriggers(snapshot: AnalysisSnapshot, file: string, line: number | null): CodeToSpecTriggers {
   const fns = Object.entries(snapshot.nodes).filter(([, n]) => n.kind === "fn" && n.file === file && n.line !== null);
 
   if (fns.length === 0) throw new Error(`${file}: no function of the snapshot is declared here`);
@@ -354,8 +368,14 @@ export function codeToSpecTriggers(snapshot: AnalysisSnapshot, file: string, lin
   return { name: moduleId.slice(moduleId.lastIndexOf(".") + 1), triggers: exported };
 }
 
+/** The spec `code-to-spec` drafts: its name and a flow draft per function. */
+export interface CodeToSpecDraft {
+  name: string;
+  drafts: FlowDraft[];
+}
+
 /** `code-to-spec <path[:line]>`: each fn `codeToSpecTriggers` names as a flow draft; same-named fns get distinct flow names. */
-export function codeToSpec(snapshot: AnalysisSnapshot, file: string, line: number | null): { name: string; drafts: FlowDraft[] } {
+export function codeToSpec(snapshot: AnalysisSnapshot, file: string, line: number | null): CodeToSpecDraft {
   const { name, triggers } = codeToSpecTriggers(snapshot, file, line);
   const drafts = triggers.map((id) => draftFlow(snapshot, id));
 
@@ -417,7 +437,19 @@ export function deletedDiffPaths(diff: string): string[] {
 /** A path as `git diff` prints it: C-quoted (`"b/\303\251.ts"`, `"b/a\"b.ts"`) when it holds a quote, a backslash or a control byte. */
 function gitPath(text: string): string {
   if (!text.startsWith('"') || !text.endsWith('"')) return text;
-  const escapes: Record<string, number> = { n: 10, t: 9, r: 13, a: 7, b: 8, f: 12, v: 11, '"': 34, "\\": 92 };
+
+  const escapes = new Map([
+    ["n", 10],
+    ["t", 9],
+    ["r", 13],
+    ["a", 7],
+    ["b", 8],
+    ["f", 12],
+    ["v", 11],
+    ['"', 34],
+    ["\\", 92],
+  ]);
+
   const chars = Array.from(text.slice(1, -1));
   const bytes: number[] = [];
 
@@ -435,11 +467,17 @@ function gitPath(text: string): string {
       bytes.push(parseInt(chars.slice(i, i + 3).join(""), 8));
       i += 2;
     } else {
-      bytes.push(escapes[next] ?? next.charCodeAt(0));
+      bytes.push(escapes.get(next) ?? next.charCodeAt(0));
     }
   }
 
   return Buffer.from(bytes).toString("utf8");
+}
+
+/** Flow drafts for changed code, and the changed functions some flow already names. */
+export interface ChangedFlowDrafts {
+  drafts: FlowDraft[];
+  named: string[];
 }
 
 /**
@@ -448,7 +486,7 @@ function gitPath(text: string): string {
  * its flow is the place to look. A fn that is a step of another changed fn's
  * draft is left inside that draft.
  */
-export function changedFlows(snapshot: AnalysisSnapshot, changed: ChangedLines, named: ReadonlySet<string>): { drafts: FlowDraft[]; named: string[] } {
+export function changedFlows(snapshot: AnalysisSnapshot, changed: ChangedLines, named: ReadonlySet<string>): ChangedFlowDrafts {
   const touched = Object.entries(snapshot.nodes)
     .filter(([, n]) => {
       if (n.kind !== "fn" || n.file === null || n.line === null) return false;

@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { binSource, binTargets, nextRoutePath, phpScript, pyprojectScripts, pythonModuleFile, rustBinTarget } from "../src/entries.ts";
+import { isJsonObject, parseJson } from "../src/json.ts";
 import { entriesText } from "../src/operations.ts";
 import { cpSync } from "node:fs";
 import { join } from "node:path";
@@ -15,7 +16,7 @@ import { session } from "./tui-helpers.ts";
 const TS_LAYERS = { languages: ["typescript"], module: "file", layers: { bin: ["bin/**"], app: ["src/app/**"], web: ["app/**"] } };
 
 /** TypeScript: a `bin` of package.json, Express-style registrations and a Next.js route handler file. */
-const TS_REPO: Record<string, string> = {
+const TS_REPO = {
   "keylang.json": JSON.stringify(TS_LAYERS),
   "package.json": JSON.stringify({ name: "@acme/shop", bin: { shop: "./bin/shop.js" } }),
   "bin/shop.ts": "export function main(): number {\n  return 0;\n}\n",
@@ -40,10 +41,10 @@ const TS_REPO: Record<string, string> = {
     "",
   ].join("\n"),
   "app/api/orders/route.ts": "export async function GET(): Promise<number> {\n  return 1;\n}\nexport function POST(): number {\n  return 2;\n}\nfunction helper(): number {\n  return 3;\n}\n",
-};
+} satisfies Record<string, string>;
 
 /** Python, Rust and PHP in one repository: `[project.scripts]`, `__main__` blocks, a bin crate and a front-controller script. */
-const MIXED_REPO: Record<string, string> = {
+const MIXED_REPO = {
   "keylang.json": JSON.stringify({ languages: ["python", "rust", "php"], module: "file", layers: { shop: ["src/shop/**"], tool: ["tool/src/**"], web: ["public/**", "bin/**"] } }),
   "pyproject.toml": '[project]\nname = "shop"\n\n[project.scripts]\nshop-cli = "shop.cli:main"\n',
   "src/shop/__init__.py": "",
@@ -54,9 +55,15 @@ const MIXED_REPO: Record<string, string> = {
   "tool/src/lib.rs": "pub fn main() {}\n",
   "public/index.php": '<?php\nrequire "bootstrap.php";\necho "hi";\n',
   "bin/Worker.php": "<?php\nclass Worker\n{\n    public function execute(): void\n    {\n    }\n}\n",
-};
+} satisfies Record<string, string>;
 
-function entries(dir: string, args: string[] = []): { status: number | null; stdout: string; stderr: string } {
+interface Run {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+function entries(dir: string, args: string[] = []): Run {
   return keylang(dir, ["entries", ...args]);
 }
 
@@ -87,6 +94,7 @@ test("entries: --json is only JSON, stable across two runs, and --kind narrows i
   const second = entries(dir, ["--json"]);
   assert.equal(first.status, 0, first.stderr);
   assert.equal(first.stdout, second.stdout);
+  // SAFETY: `entries --json` prints its report: the snapshot id, the kind filter and the entries (docs/cli.md).
   const parsed = JSON.parse(first.stdout) as { snapshotId: string; kind: string | null; entries: { kind: string; id: string; label: string; framework: null; file: string; line: number; source: string }[] };
   assert.match(parsed.snapshotId, /^[0-9a-f]{64}$/);
   assert.equal(parsed.kind, null);
@@ -97,6 +105,7 @@ test("entries: --json is only JSON, stable across two runs, and --kind narrows i
   assert.deepEqual(keys, [...keys].sort());
   const routes = entries(dir, ["--kind", "route", "--json"]);
   assert.equal(routes.status, 0, routes.stderr);
+  // SAFETY: `entries --json` prints its report with the kind filter and the entries (docs/cli.md).
   const narrowed = JSON.parse(routes.stdout) as { kind: string; entries: { kind: string }[] };
   assert.equal(narrowed.kind, "route");
   assert.equal(narrowed.entries.length, 5);
@@ -127,6 +136,7 @@ test("entries: Python main and scripts, a Rust bin crate and a PHP front control
   );
   // `pub fn main` of lib.rs is no bin target; a class in bin/ is a declaration, not a script (its framework decides, ticket 10).
   assert.doesNotMatch(run.stdout, /lib\.rs|Worker/);
+  // SAFETY: `entries --json` prints its report, whose entries carry a label and a source.
   const json = JSON.parse(entries(dir, ["--json"]).stdout) as { entries: { label: string; source: string }[] };
   assert.equal(json.entries.find((entry) => entry.label === "shop-cli")?.source, "pyproject.toml");
   assert.equal(json.entries.find((entry) => entry.label === "src/shop/cli.py")?.source, "src/shop/cli.py:8");
@@ -135,6 +145,7 @@ test("entries: Python main and scripts, a Rust bin crate and a PHP front control
 test("entries: a framework adapter adds its kinds (Magento: rest, graphql, cron, consumer, cli, observer, route); an unresolved one says why", (t) => {
   const dir = tempDir(t, "keylang-entries-magento-");
   cpSync(join(root, "tests/fixtures/magento-shop"), dir, { recursive: true });
+  // SAFETY: `entries --json` prints its report, whose entries carry these fields (docs/cli.md).
   const parsed = JSON.parse(entries(dir, ["--json"]).stdout) as { entries: { kind: string; label: string; framework: string | null; unresolved?: string }[] };
   assert.deepEqual([...new Set(parsed.entries.map((entry) => entry.kind))], ["cli", "consumer", "cron", "graphql", "observer", "rest", "route"]);
   assert.ok(parsed.entries.every((entry) => entry.framework === "magento"));
@@ -159,7 +170,8 @@ test("entries: nothing found is exit 0 with the note and a hint; --json gives an
   assert.equal(lines[0], "no entry points found");
   assert.match(lines[1] ?? "", /^hint: .*package\.json.*adapter$/);
   assert.equal(run.stderr, "");
-  const json = JSON.parse(entries(dir, ["--json"]).stdout) as { entries: unknown[] };
+  const json = parseJson(entries(dir, ["--json"]).stdout);
+  assert.ok(isJsonObject(json));
   assert.deepEqual(json.entries, []);
   const narrowed = entries(dir, ["--kind", "cron"]);
   assert.equal(narrowed.status, 0);
@@ -200,6 +212,7 @@ test("entries: the pure collectors read manifests and paths as written", () => {
   assert.equal(rustBinTarget("src/tools/run.rs", '[[bin]]\nname = "run"\npath = "src/tools/run.rs"\n', () => false), true);
   assert.equal(rustBinTarget("src/tools/run.rs", "[[bin\nbroken", () => false), false);
   assert.equal(phpScript({ path: "public/index.php", decls: [], moduleCalls: [] }), true);
+  // SAFETY: `phpScript` reads only `decls.length`, so the one placeholder declaration is never read.
   assert.equal(phpScript({ path: "bin/Worker.php", decls: [{} as never], moduleCalls: [] }), false);
   assert.equal(phpScript({ path: "src/index.php", decls: [], moduleCalls: [] }), false);
   assert.equal(entriesText([]), "no entry points found\nhint: keylang records entry points the code and its manifests write: `bin` of package.json, `[project.scripts]` of pyproject.toml, `fn main` of a Rust bin target, `if __name__ == \"__main__\"`, a script in bin/ or public/index.php, exported GET/POST of app/**/route.ts, app.get('/x', handler) with a literal path; a framework's routes, cron jobs and consumers need its adapter\n");

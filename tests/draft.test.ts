@@ -10,12 +10,19 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
+import { isJsonObject, parseJson, type JsonObject } from "../src/json.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 const bin = join(root, "bin/keylang.js");
 
-function keylang(cwd: string, args: string[], env: Record<string, string | undefined> = {}): { status: number | null; stdout: string; stderr: string } {
+interface Run {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+function keylang(cwd: string, args: string[], env: Record<string, string | undefined> = {}): Run {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8", env: { ...process.env, ...env } });
 
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
@@ -71,6 +78,7 @@ async function mockModel(t: TestContext, replies: string[], onRequest: (n: numbe
     let data = "";
     req.on("data", (chunk: Buffer) => (data += chunk.toString()));
     req.on("end", () => {
+      // SAFETY: the only client of this mock is the Anthropic SDK, which posts a Messages request.
       prompts.push((JSON.parse(data) as { messages: { content: string }[] }).messages[0]!.content);
       onRequest(prompts.length);
       const text = replies[Math.min(prompts.length - 1, replies.length - 1)]!;
@@ -82,6 +90,7 @@ async function mockModel(t: TestContext, replies: string[], onRequest: (n: numbe
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(() => server.close());
 
+  // SAFETY: the server listens on a TCP port, so its address is an AddressInfo, not a pipe name.
   return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, prompts };
 }
 
@@ -126,6 +135,7 @@ test("draft flow --mode hybrid: an unknown id goes back once; steps are reconcil
       "",
     ].join("\n"),
   );
+  // SAFETY: the draft just written counts its proposals by status in `.keylang/stats.json`.
   const stats = JSON.parse(readFileSync(join(dir, ".keylang/stats.json"), "utf8")) as { drafts: Record<string, { proposed: number }> };
   assert.deepEqual([stats.drafts.agree?.proposed, stats.drafts["llm-only"]?.proposed, stats.drafts["algo-only"]?.proposed], [2, 1, 2]);
 
@@ -168,7 +178,8 @@ test("draft map: prints the guessed layout and leaves keylang.json as it is", (t
   const before = readFileSync(join(dir, "keylang.json"), "utf8");
   const o = keylang(dir, ["draft", "map"]);
   assert.equal(o.status, 0);
-  assert.deepEqual(Object.keys((JSON.parse(o.stdout) as { layers: object }).layers), ["app", "domain", "infra"]);
+  // SAFETY: `draft map` exited 0, so stdout is the keylang.json it guesses, with its `layers` record.
+  assert.deepEqual(Object.keys((JSON.parse(o.stdout) as { layers: Record<string, string[]> }).layers), ["app", "domain", "infra"]);
   assert.match(o.stderr, /printed only; keylang\.json is unchanged/);
   assert.equal(readFileSync(join(dir, "keylang.json"), "utf8"), before);
   assert.ok(!existsSync(join(dir, ".keylang/proposals")));
@@ -183,7 +194,8 @@ test("draft map --mode algo: guesses as keylang does, without `exclude`, `outsid
 
   const o = keylang(dir, ["draft", "map", "--mode", "algo"]);
   assert.equal(o.status, 0, o.stderr);
-  const preview = JSON.parse(o.stdout) as { layers: Record<string, unknown>; outside?: string[]; assume?: string[] };
+  // SAFETY: `draft map` exited 0, so stdout is the keylang.json it guesses.
+  const preview = JSON.parse(o.stdout) as { layers: Record<string, string[]>; outside?: string[]; assume?: string[] };
   assert.deepEqual(Object.keys(preview.layers), ["app"], "the layers keylang itself guesses for this keylang.json");
   assert.deepEqual(preview.outside, ["src/infra/**"]);
   // ADR 0017: `assume` is the person's decision; draft map does not write it.
@@ -431,7 +443,9 @@ test("draft map --mode llm: the model's layout is validated and printed; keylang
   const good = await mockModel(t, ['{"core": ["src/domain/**"], "edge": ["src/app/**", "src/infra/**"]}']);
   const o = await run(dir, ["draft", "map", "--mode", "llm"], { ANTHROPIC_BASE_URL: good.url, ANTHROPIC_API_KEY: "k", HOME: dir });
   assert.equal(o.status, 0, o.stderr);
-  assert.deepEqual((JSON.parse(o.stdout) as { layers: object }).layers, { core: ["src/domain/**"], edge: ["src/app/**", "src/infra/**"] });
+  const preview = parseJson(o.stdout);
+  assert.ok(isJsonObject(preview), o.stdout);
+  assert.deepEqual(preview.layers, { core: ["src/domain/**"], edge: ["src/app/**", "src/infra/**"] });
   assert.equal(readFileSync(config, "utf8"), before);
   const bad = await mockModel(t, ['{"core.domain": ["src/domain/**"]}']);
   const invalid = await run(dir, ["draft", "map", "--mode", "llm"], { ANTHROPIC_BASE_URL: bad.url, ANTHROPIC_API_KEY: "k", HOME: dir });
@@ -580,8 +594,21 @@ test("spec-to-code: a Python stub keeps the declared annotations and result, so 
   assert.doesNotMatch(o.stdout, /K201/);
 });
 
+/** The error `call` rejects with; resolving instead fails the test. */
+async function rejectionOf<T>(call: Promise<T>): Promise<Error> {
+  try {
+    await call;
+  } catch (error) {
+    assert.ok(error instanceof Error, String(error));
+
+    return error;
+  }
+
+  assert.fail("the call resolved; a rejection was expected");
+}
+
 /** A repository in a temp dir: `keylang.json` and the given files. */
-function repoOf(t: TestContext, config: object, files: Record<string, string>): string {
+function repoOf(t: TestContext, config: JsonObject, files: Record<string, string>): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-draft-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   writeFileSync(join(dir, "keylang.json"), JSON.stringify(config));
@@ -875,6 +902,7 @@ async function stalledProvider(t: TestContext, kind: "anthropic" | "openrouter")
     server.close();
   });
 
+  // SAFETY: the server listens on a TCP port, so its address is an AddressInfo, not a pipe name.
   return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, requested: requestedP, closed: closedP };
 }
 
@@ -907,18 +935,18 @@ test("llm: a caller's Cancel is `cancelled`, a deadline is a timeout; both provi
     const call = clientOf(kind, cancelled.url, "60000").complete(request, { signal: controller.signal });
     await cancelled.requested;
     controller.abort();
-    const error = await call.then(() => null, (e: unknown) => e);
+    const error = await rejectionOf(call);
     assert.ok(error instanceof LlmCancelled, `${kind}: ${String(error)}`);
-    assert.equal((error as Error).message, `${kind}: cancelled`);
+    assert.equal(error.message, `${kind}: cancelled`);
     await cancelled.closed;
     // A signal aborted before the call: no answer either.
-    const early = await clientOf(kind, cancelled.url, "60000").complete(request, { signal: AbortSignal.abort() }).then(() => null, (e: unknown) => e);
+    const early = await rejectionOf(clientOf(kind, cancelled.url, "60000").complete(request, { signal: AbortSignal.abort() }));
     assert.ok(early instanceof LlmCancelled, `${kind} (aborted before): ${String(early)}`);
     // The deadline: a timeout, with its variable named, never `cancelled`.
     const stalled = await stalledProvider(t, kind);
-    const late = await clientOf(kind, stalled.url, "300").complete(request, { signal: new AbortController().signal }).then(() => null, (e: unknown) => e);
+    const late = await rejectionOf(clientOf(kind, stalled.url, "300").complete(request, { signal: new AbortController().signal }));
     assert.ok(late instanceof Error && !(late instanceof LlmCancelled), `${kind}: ${String(late)}`);
-    assert.match((late as Error).message, new RegExp(`^${kind}: no answer within 300 ms \\(KEYLANG_LLM_TIMEOUT_MS\\)`));
+    assert.match(late.message, new RegExp(`^${kind}: no answer within 300 ms \\(KEYLANG_LLM_TIMEOUT_MS\\)`));
     await stalled.closed;
   }
 });
@@ -935,19 +963,19 @@ test("llm: a call's own timeoutMs bounds it under KEYLANG_LLM_TIMEOUT_MS and is 
     const setup = llmClient(kind === "anthropic" ? "anthropic:claude-opus-5" : "openrouter:some/model", { root: home, env, home });
     assert.ok("client" in setup);
     const started = Date.now();
-    const late = await setup.client.complete(request, { timeoutMs: 300 }).then(() => null, (e: unknown) => e);
+    const late = await rejectionOf(setup.client.complete(request, { timeoutMs: 300 }));
     assert.ok(Date.now() - started < 30000, `${kind}: the call's own bound, not the variable's minute`);
-    assert.ok(late instanceof Error && !isCancelled(late), `${kind}: ${String(late)}`);
-    assert.equal((late as Error).message, `${kind}: no answer within 300 ms`);
+    assert.equal(isCancelled(late), false, `${kind}: ${String(late)}`);
+    assert.equal(late.message, `${kind}: no answer within 300 ms`);
     await stalled.closed;
     // The variable still wins when it is the tighter bound, and is named then.
     const tight = await stalledProvider(t, kind);
     const tightSetup = llmClient(kind === "anthropic" ? "anthropic:claude-opus-5" : "openrouter:some/model", { root: home, env: { ...env, ...(kind === "anthropic" ? { ANTHROPIC_BASE_URL: tight.url } : { OPENROUTER_BASE_URL: tight.url }), KEYLANG_LLM_TIMEOUT_MS: "300" }, home });
     assert.ok("client" in tightSetup);
-    const capped = await tightSetup.client.complete(request, { timeoutMs: 60000 }).then(() => null, (e: unknown) => e);
-    assert.match((capped as Error).message, new RegExp(`^${kind}: no answer within 300 ms \\(KEYLANG_LLM_TIMEOUT_MS\\)$`));
+    const capped = await rejectionOf(tightSetup.client.complete(request, { timeoutMs: 60000 }));
+    assert.match(capped.message, new RegExp(`^${kind}: no answer within 300 ms \\(KEYLANG_LLM_TIMEOUT_MS\\)$`));
     await tight.closed;
-    const cancelled = await setup.client.complete(request, { signal: AbortSignal.abort() }).then(() => null, (e: unknown) => e);
+    const cancelled = await rejectionOf(setup.client.complete(request, { signal: AbortSignal.abort() }));
     assert.ok(isCancelled(cancelled), `${kind}: ${String(cancelled)}`);
   }
 
@@ -993,6 +1021,7 @@ test("draft-flow operation: llm and hybrid through the shared operation; a Cance
   assert.deepEqual(done.payload?.candidate.steps, ["app.checkout.checkout", "domain.order.createOrder", "domain.order.total", "infra.db.save"]);
   assert.match(model.prompts[0]!, /Context chosen by the developer:\n\[node\] app\.checkout\.checkout\nchosen/);
   assert.equal(readFileSync(join(dir, ".keylang/proposals/keylang/flows/checkout.md"), "utf8"), done.payload!.candidate.text);
+  // SAFETY: the draft just written counts its proposals by status in `.keylang/stats.json`.
   const stats = JSON.parse(readFileSync(join(dir, ".keylang/stats.json"), "utf8")) as { drafts: Record<string, { proposed: number }> };
   assert.equal(stats.drafts.agree?.proposed, 3);
   // A preview of a model draft writes nothing new.

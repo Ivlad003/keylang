@@ -17,6 +17,7 @@ import { diagnostic, type Diagnostic } from "./diag.ts";
 import { planItems } from "./feature-status.ts";
 import { collectMdFiles } from "./files.ts";
 import { gitFileAt, gitSpecFilesAt } from "./git-changes.ts";
+import { isJsonObject, isJsonString, parseJson, type JsonObject, type JsonValue } from "./json.ts";
 import { placeFile } from "./graph.ts";
 import type { Document } from "./ir.ts";
 import { parse } from "./parser.ts";
@@ -53,32 +54,44 @@ interface ScopeFields {
 
 type ClassField = "exclude" | "outside" | "assume";
 
-const strings = (value: unknown): string[] | undefined => (Array.isArray(value) && value.every((item) => typeof item === "string") ? (value as string[]) : undefined);
+/** A JSON array of strings; anything else (a mixed array included) is undefined. */
+function strings(value: JsonValue | undefined): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const list = value.filter(isJsonString);
+
+  return list.length === value.length ? list : undefined;
+}
+
+/** The top-level object of a `keylang.json` text; an unreadable or non-object one reads as empty. */
+function configObject(text: string): JsonObject {
+  try {
+    const value = parseJson(withoutBom(text));
+
+    return isJsonObject(value) ? value : {};
+  } catch {
+    return {};
+  }
+}
 
 function scopeFields(text: string): ScopeFields {
-  let value: unknown;
-
-  try {
-    value = JSON.parse(withoutBom(text));
-  } catch {
-    value = {};
-  }
-
-  const raw = value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  const raw = configObject(text);
+  const rawLayers = raw.layers;
   let layers: Map<string, string[]> | null = null;
 
-  if (raw.layers !== null && typeof raw.layers === "object" && !Array.isArray(raw.layers)) {
+  if (isJsonObject(rawLayers)) {
     layers = new Map();
 
-    for (const [name, globs] of Object.entries(raw.layers as Record<string, unknown>)) {
-      const list = typeof globs === "string" ? [globs] : strings(globs);
+    for (const [name, globs] of Object.entries(rawLayers)) {
+      const list = isJsonString(globs) ? [globs] : strings(globs);
 
       if (list !== undefined) layers.set(name, list);
     }
   }
 
+  const dir = raw.dir;
+
   return {
-    dir: typeof raw.dir === "string" ? raw.dir.replace(/\/$/, "") : "keylang",
+    dir: isJsonString(dir) ? dir.replace(/\/$/, "") : "keylang",
     layers,
     exclude: strings(raw.exclude) ?? [],
     outside: strings(raw.outside) ?? [],
@@ -138,8 +151,9 @@ export function configWeakenings(input: {
 
     if (rule === null || layer === null) continue;
 
-    if (READ_RANK[after] > READ_RANK[before]) {
-      const field = FIELD_OF[after as keyof typeof FIELD_OF];
+    // `analysed` has the lowest rank, so a file read less now is never analysed.
+    if (after !== "analysed" && READ_RANK[after] > READ_RANK[before]) {
+      const field = FIELD_OF[after];
       unread.set(field, [...(unread.get(field) ?? []), { file, rule }]);
     } else if (after === before) {
       const to = input.place?.(file, now) ?? layer;
@@ -269,7 +283,7 @@ export function specWeakenings(baseDocs: readonly Document[], nowDocs: readonly 
 
   // A removed step or trigger of a hand-written flow; a generated one is rewritten by its command.
   const flowItems = (spec: SpecIR, docs: readonly Document[]) => {
-    const generated = new Set(docs.filter((doc) => doc.generated !== null).map((doc) => doc.path));
+    const generated = new Set(docs.flatMap((doc) => (doc.generated !== null ? [doc.path] : [])));
 
     return spec.flows
       .filter((flow) => !generated.has(flow.file))

@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { analyze, type Analysis, type AnalysisRequest } from "../src/analyze.ts";
+import type { JsonObject } from "../src/json.ts";
 import { runOperation, type OperationResult } from "../src/operations.ts";
 import { App, type AppOptions } from "../src/tui/app.ts";
 import { OperationWorker } from "../src/tui/background.ts";
@@ -20,12 +21,29 @@ import type { TerminalHost, TerminalSignal } from "../src/tui/terminal.ts";
 import { checkoutRepo, CHECKOUT_FLOW, KEY, tempHome } from "./tui-fixture.ts";
 import { VirtualTerminal } from "./vt.ts";
 
+export interface TuiSession {
+  app: App;
+  vt: VirtualTerminal;
+  send: (keys: string) => void;
+  lines: () => string[];
+  text: () => string;
+}
+
 /** `home`: the user's home of the session, for two sessions that share the clip's place; default: one of its own (`tempHome`). */
-export function session(root: string, options: { cols?: number; rows?: number; analyzer?: (request: AnalysisRequest) => Promise<Analysis>; operations?: AppOptions["operations"]; microphone?: AppOptions["microphone"]; onQuit?: AppOptions["onQuit"]; home?: string } = {}): { app: App; vt: VirtualTerminal; send: (keys: string) => void; lines: () => string[]; text: () => string } {
+export function session(root: string, options: { cols?: number; rows?: number; analyzer?: (request: AnalysisRequest) => Promise<Analysis>; operations?: AppOptions["operations"]; microphone?: AppOptions["microphone"]; onQuit?: AppOptions["onQuit"]; home?: string } = {}): TuiSession {
   const cols = options.cols ?? 110;
   const rows = options.rows ?? 30;
   const vt = new VirtualTerminal(cols, rows);
-  const app = new App({ root, cols, rows, home: options.home ?? tempHome(), ...(options.analyzer ? { analyzer: options.analyzer } : {}), ...(options.operations ? { operations: options.operations } : {}), ...(options.microphone ? { microphone: options.microphone } : {}), ...(options.onQuit ? { onQuit: options.onQuit } : {}) });
+  const appOptions: AppOptions = { root, cols, rows, home: options.home ?? tempHome() };
+
+  if (options.analyzer) appOptions.analyzer = options.analyzer;
+
+  if (options.operations) appOptions.operations = options.operations;
+
+  if (options.microphone) appOptions.microphone = options.microphone;
+
+  if (options.onQuit) appOptions.onQuit = options.onQuit;
+  const app = new App(appOptions);
   app.attach({ write: (ansi) => vt.feed(ansi) }, cols, rows);
 
   const send = (keys: string): void => {
@@ -63,14 +81,28 @@ export const FLOW_PATH = "keylang/flows/checkout.md";
 
 export const PAID = CHECKOUT_FLOW.replace("Checkout from the terminal.", "Checkout from the terminal, paid by card.");
 
+/** A mock model's answer: the same text every time, or one made from the prompt. */
+type ModelReply = string | ((prompt: string) => string);
+
+function isFixedReply(reply: ModelReply): reply is string {
+  return typeof reply === "string";
+}
+
+/** The prompt of a Messages API request body: the content of its first message. */
+function promptOf(body: string): string {
+  // SAFETY: the client posts a Messages API request, whose first message carries the prompt as text content.
+  return (JSON.parse(body) as { messages: { content: string }[] }).messages[0]!.content;
+}
+
 /**
  * A Messages API stand-in in this process: the TUI runs here too. `reply`
  * is the answer, or makes it from the prompt; `delay` holds each answer
  * back; `aborted` counts the requests whose connection the client dropped
  * before the answer.
  */
-export async function mockModel(t: { after: (f: () => void) => void }, reply: string | ((prompt: string) => string), delay = 0): Promise<{ prompts: string[]; aborted: number }> {
-  const model = { prompts: [] as string[], aborted: 0 };
+export async function mockModel(t: { after: (f: () => void) => void }, reply: ModelReply, delay = 0): Promise<{ prompts: string[]; aborted: number }> {
+  const prompts: string[] = [];
+  const model = { prompts, aborted: 0 };
 
   const server = createServer((req, res) => {
     let data = "";
@@ -83,9 +115,9 @@ export async function mockModel(t: { after: (f: () => void) => void }, reply: st
     });
     req.on("data", (chunk: Buffer) => (data += chunk.toString()));
     req.on("end", () => {
-      const prompt = (JSON.parse(data) as { messages: { content: string }[] }).messages[0]!.content;
+      const prompt = promptOf(data);
       model.prompts.push(prompt);
-      const text = typeof reply === "string" ? reply : reply(prompt);
+      const text = isFixedReply(reply) ? reply : reply(prompt);
       timer = setTimeout(() => {
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ id: "m", type: "message", role: "assistant", model: "claude-opus-5", content: [{ type: "text", text }], stop_reason: "end_turn", stop_details: null, usage: { input_tokens: 1, output_tokens: 1 } }));
@@ -95,6 +127,7 @@ export async function mockModel(t: { after: (f: () => void) => void }, reply: st
 
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const saved = { url: process.env.ANTHROPIC_BASE_URL, key: process.env.ANTHROPIC_API_KEY };
+  // SAFETY: a server listening on a TCP host and port reports an AddressInfo, not a pipe name.
   process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   process.env.ANTHROPIC_API_KEY = "test";
   t.after(() => {
@@ -119,22 +152,34 @@ export async function waitUntil(check: () => boolean, what: string, timeout = 10
   }
 }
 
-export function withConfig(root: string, extra: Record<string, unknown>): void {
+export function withConfig(root: string, extra: JsonObject): void {
   const config = join(root, "keylang.json");
   writeFileSync(config, JSON.stringify({ ...JSON.parse(readFileSync(config, "utf8")), ...extra }));
 }
 
 export const REFUND = "# flow refund\n\n- trigger application.purchase.buy\n";
 
+export interface FakeTerminal {
+  host: TerminalHost;
+  out: string[];
+  err: string[];
+  raw: () => boolean;
+  suspended: () => number;
+  type: (keys: string) => void;
+  signal: (signal: TerminalSignal) => void;
+  crash: (cause: unknown) => void;
+  resize: () => void;
+}
+
 /** A terminal and a process for `runTerminal`: what it writes, and a way to send it keys, signals and crashes. */
-export function fakeTerminal(env: NodeJS.ProcessEnv = {}): { host: TerminalHost; out: string[]; err: string[]; raw: () => boolean; suspended: () => number; type: (keys: string) => void; signal: (signal: TerminalSignal) => void; crash: (error: unknown) => void; resize: () => void } {
+export function fakeTerminal(env: NodeJS.ProcessEnv = {}): FakeTerminal {
   let raw = false;
   let suspended = 0;
   const out: string[] = [];
   const err: string[] = [];
   const stdin = Object.assign(new EventEmitter(), { isTTY: true, setRawMode: (value: boolean) => (raw = value), setEncoding: () => {}, pause: () => {}, resume: () => {} });
   const stdout = Object.assign(new EventEmitter(), { columns: 100, rows: 30, write: (text: string) => out.push(text) });
-  let handlers: { onSignal: (signal: TerminalSignal) => void; onCrash: (error: unknown) => void } | null = null;
+  let handlers: { onSignal: (signal: TerminalSignal) => void; onCrash: (cause: unknown) => void } | null = null;
 
   const host: TerminalHost = {
     stdin,
@@ -213,8 +258,13 @@ export function repoWith(t: { after: (f: () => void) => void }, files: Record<st
   return dir;
 }
 
+export interface CountingAnalyzer {
+  analyzer: (request: AnalysisRequest) => Promise<Analysis>;
+  calls: () => number;
+}
+
 /** The shared analyzer, counting its runs. */
-export function countingAnalyzer(): { analyzer: (request: AnalysisRequest) => Promise<Analysis>; calls: () => number } {
+export function countingAnalyzer(): CountingAnalyzer {
   let calls = 0;
 
   return {
@@ -227,14 +277,14 @@ export function countingAnalyzer(): { analyzer: (request: AnalysisRequest) => Pr
   };
 }
 
-export const FEATURES: Record<string, string> = {
+export const FEATURES = {
   // Every step statically ok: done (trace stays informational).
   "keylang/features/buy.md": "# flow buy\n\n- trigger presentation.terminal.checkout\n- step application.purchase.buy\n  - step domain.order.create\n",
   // A planned fn not yet in the code: a planned gap and its static gap.
   "keylang/features/refund.md": "# flow refund\n\n- planned fn application.purchase.refund () → void\n- trigger presentation.terminal.checkout\n  - step application.purchase.refund\n",
   // A step its trigger never calls: a static gap.
   "keylang/features/skip.md": "# flow skip\n\n- trigger domain.order.create\n  - step infrastructure.store.save\n",
-};
+} satisfies Record<string, string>;
 
 export const BIN = join(dirname(fileURLToPath(import.meta.url)), "../bin/keylang.js");
 
@@ -262,8 +312,13 @@ export async function esc(send: (keys: string) => void): Promise<void> {
 
 export const GATE_WORKER = new URL("./operation-worker-gate.ts", import.meta.url);
 
+export interface GatedWorker {
+  worker: OperationWorker;
+  open: () => void;
+}
+
 /** A worker entry blocked until `open()`: the real operation worker behind a shared gate. */
-export function gatedWorker(): { worker: OperationWorker; open: () => void } {
+export function gatedWorker(): GatedWorker {
   const gate = new SharedArrayBuffer(4);
 
   return {
@@ -328,7 +383,7 @@ export function checkPayload(record: App["state"]["records"][number] | undefined
 }
 
 /** What `keylang check --format json` prints, from a record's payload. */
-export function checkJson(record: App["state"]["records"][number] | undefined): unknown {
+export function checkJson(record: App["state"]["records"][number] | undefined) {
   const payload = checkPayload(record);
 
   return { snapshotId: payload.snapshotId, results: payload.results, coverage: payload.coverage };
@@ -427,7 +482,7 @@ export const BUY_ANSWER = "```markdown\n# flow buy\n\n- trigger application.purc
  * operation worker reaches it through the environment set here, before the
  * session starts. `dropped` counts requests the client closed unanswered.
  */
-export async function heldModel(t: { after: (f: () => void) => void }, reply: string | ((prompt: string) => string)): Promise<{ prompts: string[]; requested: (n: number) => Promise<void>; release: () => void; dropped: () => number }> {
+export async function heldModel(t: { after: (f: () => void) => void }, reply: ModelReply): Promise<{ prompts: string[]; requested: (n: number) => Promise<void>; release: () => void; dropped: () => number }> {
   const prompts: string[] = [];
   const held: (() => void)[] = [];
   const waiters: { n: number; resolve: () => void }[] = [];
@@ -437,11 +492,11 @@ export async function heldModel(t: { after: (f: () => void) => void }, reply: st
     let data = "";
     req.on("data", (chunk: Buffer) => (data += chunk.toString()));
     req.on("end", () => {
-      const prompt = (JSON.parse(data) as { messages: { content: string }[] }).messages[0]!.content;
+      const prompt = promptOf(data);
       prompts.push(prompt);
 
       for (const waiter of waiters) if (prompts.length >= waiter.n) waiter.resolve();
-      const text = typeof reply === "string" ? reply : reply(prompt);
+      const text = isFixedReply(reply) ? reply : reply(prompt);
       held.push(() => {
         if (res.destroyed) return;
         res.writeHead(200, { "content-type": "application/json" });
@@ -455,6 +510,7 @@ export async function heldModel(t: { after: (f: () => void) => void }, reply: st
 
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const saved = { url: process.env.ANTHROPIC_BASE_URL, key: process.env.ANTHROPIC_API_KEY };
+  // SAFETY: a server listening on a TCP host and port reports an AddressInfo, not a pipe name.
   process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   process.env.ANTHROPIC_API_KEY = "test";
   t.after(() => {

@@ -24,7 +24,11 @@ const createStore = ({ db }: { db: { query(q: string): string } }): { save(): st
   return { save: () => db.query("insert"), dispose: () => void log.push("dispose store") };
 };
 
-const createPurchase = ({ store }: { store: { save(): string } }): { buy(): string } => {
+interface Purchase {
+  buy(): string;
+}
+
+const createPurchase = ({ store }: { store: { save(): string } }): Purchase => {
   log.push("init purchase");
 
   return { buy: () => store.save() };
@@ -54,7 +58,7 @@ async function wire(options: { failPayments?: boolean } = {}) {
   const disposers: (() => void | Promise<void>)[] = [];
 
   const track = <T extends Disposable>(value: T): T => {
-    if (typeof value.dispose === "function") disposers.push(() => value.dispose!());
+    if (value.dispose !== undefined) disposers.push(() => value.dispose!());
 
     return value;
   };

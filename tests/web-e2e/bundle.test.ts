@@ -47,8 +47,26 @@ interface Model {
   lanes: { id: string }[];
 }
 
+/** The page globals these tests read inside the browser. */
+type EditorPage = typeof globalThis & {
+  keylangEditor: { currentModel(): Model };
+  navigator: { clipboard: { readText(): Promise<string> } };
+};
+
+interface Layout {
+  view: string;
+  shapes: Record<string, { id: string; kind: string; layer: string; x: number; y: number }>;
+  edges: Record<string, { kind: string }>;
+}
+
 function model(page: Page): Promise<Model> {
-  return page.evaluate(() => (globalThis as unknown as { keylangEditor: { currentModel(): unknown } }).keylangEditor.currentModel()) as Promise<Model>;
+  // SAFETY: the diagrams page script sets globalThis.keylangEditor before #status names a view, which editor() awaits.
+  return page.evaluate(() => (globalThis as EditorPage).keylangEditor.currentModel());
+}
+
+function readClipboard(page: Page): Promise<string> {
+  // SAFETY: Chromium exposes navigator.clipboard on the page, and the context was granted clipboard-read.
+  return page.evaluate(() => (globalThis as EditorPage).navigator.clipboard.readText());
 }
 
 /** The editor of a server's page, on a view of the list or on the empty canvas. */
@@ -91,7 +109,7 @@ test("copy a flow in one keylang web, paste it in another: the layer dialog, a f
   await viewer.locator("#status", { hasText: /flow:checkout · 4 shapes/ }).waitFor();
   await viewer.click("#copy-bundle");
   await viewer.locator("#status", { hasText: /copied as a bundle: checkout · 4 shape\(s\)/ }).waitFor();
-  const fromViewer = await viewer.evaluate(() => (globalThis as unknown as { navigator: { clipboard: { readText(): Promise<string> } } }).navigator.clipboard.readText());
+  const fromViewer = await readClipboard(viewer);
   assert.match(fromViewer, /^# flow checkout$/m);
   assert.match(fromViewer, /"trigger:presentation\.terminal\.checkout": \{/);
   assert.deepEqual(viewerProblems, []);
@@ -103,12 +121,13 @@ test("copy a flow in one keylang web, paste it in another: the layer dialog, a f
   await one.page.keyboard.press("Control+a");
   await one.page.keyboard.press("Control+c");
   await one.page.locator("#status", { hasText: /copied as a bundle: checkout · 4 shape\(s\)/ }).waitFor();
-  const copied = await one.page.evaluate(() => (globalThis as unknown as { navigator: { clipboard: { readText(): Promise<string> } } }).navigator.clipboard.readText());
+  const copied = await readClipboard(one.page);
   assert.match(copied, /^<!-- keylang:bundle format=1 repo=\S+ commit=n\/a snapshot=[0-9a-f]{64} keylang=\S+ flows=checkout with-callees=1 -->$/m);
   assert.match(copied, /^# flow checkout$/m);
   const block = /```keylang-layout\n([\s\S]*?)\n```\n$/.exec(copied);
   assert.ok(block, "the layout block closes the bundle");
-  const layout = JSON.parse(block[1]!) as { view: string; shapes: Record<string, { id: string; kind: string; layer: string; x: number; y: number }>; edges: Record<string, { kind: string }> };
+  // SAFETY: the layout block of a bundle is the JSON that `flow export` writes in the Layout shape.
+  const layout = JSON.parse(block[1]!) as Layout;
   assert.equal(layout.view, "flow:checkout");
   assert.deepEqual(Object.keys(layout.shapes).sort(), ["step:application.purchase.buy", "step:domain.order.create", "step:infrastructure.store.save", "trigger:presentation.terminal.checkout"]);
   assert.equal(Math.min(...Object.values(layout.shapes).map((s) => s.x)), 0, "places relative to the fragment");

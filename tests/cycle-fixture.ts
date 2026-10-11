@@ -8,9 +8,9 @@
 import { KEY } from "./tui-fixture.ts";
 
 /** One module, `app.order`, with the existing `checkout`; `refund` is only planned. */
-export const CYCLE_FILES: Record<string, string> = {
+export const CYCLE_FILES = {
   "src/app/order.ts": "export function checkout(): void {}\n",
-};
+} satisfies Record<string, string>;
 
 /** Typed into keylang.json after `{`: the tests are reported apart from readiness. */
 export const CYCLE_CONFIG_LINE = '  "check": { "tests": ".keylang/reports/*.json" },\n';

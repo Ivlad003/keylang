@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { isJsonObject, parseJson } from "../src/json.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -24,7 +25,13 @@ function repo(t: { after: (f: () => void) => void }, files: Record<string, strin
   return dir;
 }
 
-function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+interface Run {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+function keylang(cwd: string, args: string[]): Run {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8" });
 
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
@@ -39,8 +46,16 @@ const source = {
 
 const pair = "# rules\n\n- allow app.x.y domain\n- deny app domain.storefront\n";
 
+interface Config {
+  languages: string[];
+  layers: typeof layers;
+  format?: number;
+}
+
 function config(format?: number): string {
-  const body = { languages: ["typescript"], layers, ...(format === undefined ? {} : { format }) };
+  const body: Config = { languages: ["typescript"], layers };
+
+  if (format !== undefined) body.format = format;
 
   return `${JSON.stringify(body)}\n`;
 }
@@ -57,6 +72,7 @@ test("format 1 keeps the depth-sum winner; format 2 denies the same edge", (t) =
   writeFileSync(join(dir, "keylang.json"), config(2));
   const two = keylang(dir, ["check", "--format", "json"]);
   assert.equal(two.status, 1, two.stdout);
+  // SAFETY: `check --format json` prints its report object, whose `results` are the rows of docs/cli.md.
   const rows = (JSON.parse(two.stdout) as { results: { code: string | null; evidence: string; verdict: string }[] }).results;
   const k102 = rows.find((row) => row.code === "K102");
   assert.match(k102?.evidence ?? "", /denied by `deny app domain\.storefront`/);
@@ -132,13 +148,15 @@ test("init writes format 2 first and does not rewrite an existing file; draft ma
   const dir = repo(t, { "package.json": '{"name":"fmt","private":true}\n', "src/app/main.ts": "export const n = 1;\n" });
   const drafted = keylang(dir, ["draft", "map"]);
   assert.equal(drafted.status, 0, drafted.stderr);
-  const printed = JSON.parse(drafted.stdout) as { format: number };
+  const printed = parseJson(drafted.stdout);
+  assert.ok(isJsonObject(printed), drafted.stdout);
   assert.equal(printed.format, 2);
   assert.equal(Object.keys(printed)[0], "format");
   const init = keylang(dir, ["init", "--agents=none"]);
   assert.equal(init.status, 0, init.stderr);
   const written = readFileSync(join(dir, "keylang.json"), "utf8");
-  const body = JSON.parse(written) as { format: number };
+  const body = parseJson(written);
+  assert.ok(isJsonObject(body), written);
   assert.equal(body.format, 2);
   assert.equal(Object.keys(body)[0], "format");
   const again = keylang(dir, ["init", "--agents=none"]);
@@ -204,6 +222,7 @@ test("format is not part of snapshotId", (t) => {
   const b = repo(t, { "keylang.json": config(2), ...files });
   assert.equal(keylang(a, ["map"]).status, 0);
   assert.equal(keylang(b, ["map"]).status, 0);
+  // SAFETY: `keylang map` exited 0 in both, and every snapshot it writes carries a string `snapshotId`.
   const id = (dir: string): string => (JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as { snapshotId: string }).snapshotId;
   assert.equal(id(a), id(b));
 });

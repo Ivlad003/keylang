@@ -149,7 +149,12 @@ function addIdItems(analysis: Analysis, ids: readonly string[], removed: Readonl
     const plannedOnly = s.kind.startsWith("planned");
     // Code that changed on disk after the snapshot is left out: its lines no longer match the facts.
     const incomplete = plannedOnly || node?.members === "opaque" || node?.closure?.complete === false || (Boolean(node?.file) && node?.line !== null && source === null);
-    add({ key: `node:${id}`, kind: "node", label: id, text: formatSummary(s), ...(plannedOnly ? { planned: true as const } : {}), ...(incomplete ? { incomplete: true as const } : {}) });
+    const nodeItem: Omit<ContextItem, "tokens"> = { key: `node:${id}`, kind: "node", label: id, text: formatSummary(s) };
+
+    if (plannedOnly) nodeItem.planned = true;
+
+    if (incomplete) nodeItem.incomplete = true;
+    add(nodeItem);
 
     for (const other of [...s.calls, ...s.callers]) add({ key: `neighbor:${other}`, kind: "neighbor", label: other, text: `${nodes[other]?.kind ?? "fn"} ${other}${nodes[other]?.signature ? ` ${nodes[other]!.signature}` : ""}` });
 

@@ -111,12 +111,14 @@ async function agentState(config: Config, llmClient: (agent: string | null, opti
   }
 }
 
+type EngineState = { resolved: DoctorPayload["voice"]["resolved"]; missing: string | null; error: string | null };
+
 /** The engine the voice configuration resolves to now, without the key. */
 function engineState(
   config: Config,
   nativeAvailable: boolean,
   voiceEngine: (config: Config["voice"], localAvailable: boolean) => VoiceEngine,
-): { resolved: DoctorPayload["voice"]["resolved"]; missing: string | null; error: string | null } {
+): EngineState {
   try {
     const found = voiceEngine(config.voice, nativeAvailable);
 

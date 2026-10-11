@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
+import type { JsonObject } from "../src/json.ts";
 import { alive, fakeAgents, type FakeAgents } from "./agent-fixture.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -26,24 +27,24 @@ interface Run {
 
 /** keylang with only the fakes (and the system's basic tools) on PATH, HOME in the copy, no keys and no agent from the developer's env. */
 function keylang(dir: string, args: string[], fake: FakeAgents | null, env: Record<string, string | undefined> = {}): Promise<Run> {
+  const childEnv: NodeJS.ProcessEnv = {
+    ...process.env,
+    PATH: [...(fake ? [fake.bin] : []), "/usr/bin", "/bin"].join(":"),
+    HOME: join(dir, ".home"),
+    KEYLANG_AGENT: undefined,
+    KEYLANG_NESTED: undefined,
+    KEYLANG_LLM_TIMEOUT_MS: undefined,
+    ANTHROPIC_API_KEY: undefined,
+    ANTHROPIC_AUTH_TOKEN: undefined,
+    OPENROUTER_API_KEY: undefined,
+    OPENCODE_CONFIG_CONTENT: undefined,
+  };
+
+  if (fake) Object.assign(childEnv, fake.env);
+  Object.assign(childEnv, env);
+
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [bin, ...args], {
-      cwd: dir,
-      env: {
-        ...process.env,
-        PATH: [...(fake ? [fake.bin] : []), "/usr/bin", "/bin"].join(":"),
-        HOME: join(dir, ".home"),
-        KEYLANG_AGENT: undefined,
-        KEYLANG_NESTED: undefined,
-        KEYLANG_LLM_TIMEOUT_MS: undefined,
-        ANTHROPIC_API_KEY: undefined,
-        ANTHROPIC_AUTH_TOKEN: undefined,
-        OPENROUTER_API_KEY: undefined,
-        OPENCODE_CONFIG_CONTENT: undefined,
-        ...(fake ? fake.env : {}),
-        ...env,
-      },
-    });
+    const child = spawn(process.execPath, [bin, ...args], { cwd: dir, env: childEnv });
 
     let stdout = "";
     let stderr = "";
@@ -56,7 +57,7 @@ function keylang(dir: string, args: string[], fake: FakeAgents | null, env: Reco
   });
 }
 
-function copy(t: TestContext, fixture = "repo", config: Record<string, unknown> = {}): string {
+function copy(t: TestContext, fixture = "repo", config: JsonObject = {}): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-agent-cli-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   cpSync(join(root, "tests/fixtures", fixture), dir, { recursive: true });
@@ -67,9 +68,13 @@ function copy(t: TestContext, fixture = "repo", config: Record<string, unknown> 
   return dir;
 }
 
-function agentsJson(dir: string, value: unknown): void {
+function agentsJsonText(dir: string, text: string): void {
   mkdirSync(join(dir, ".home/.config/keylang"), { recursive: true });
-  writeFileSync(join(dir, ".home/.config/keylang/agents.json"), typeof value === "string" ? value : JSON.stringify(value));
+  writeFileSync(join(dir, ".home/.config/keylang/agents.json"), text);
+}
+
+function agentsJson(dir: string, value: JsonObject): void {
+  agentsJsonText(dir, JSON.stringify(value));
 }
 
 /** Files under `keylang/explain/`: none is written by a failed request. */
@@ -113,6 +118,7 @@ test("explain --llm through codex, opencode, cursor and a custom CLI: each gets 
     const [call] = fake.calls();
     const config = call!.args.filter((_, i) => call!.args[i - 1] === "-c");
     const instructions = config.find((c) => c.startsWith("developer_instructions="))!;
+    // SAFETY: codex receives `developer_instructions` as a JSON string literal (a TOML-compatible quoted string).
     assert.match(JSON.parse(instructions.slice("developer_instructions=".length)) as string, /Answer with text only/);
     const out = call!.args[call!.args.indexOf("-o") + 1]!;
     assert.deepEqual(call!.args, [
@@ -132,6 +138,7 @@ test("explain --llm through codex, opencode, cursor and a custom CLI: each gets 
     assert.doesNotMatch(o.stdout, /thinking aloud/);
     const [call] = fake.calls();
     assert.deepEqual(call!.args, ["run", "--standalone", "--format", "json", "--agent", "keylang", "--model", "anthropic/claude-sonnet-5"]);
+    // SAFETY: `OPENCODE_CONFIG_CONTENT` is the opencode config JSON with the `keylang` agent that the CLI builds.
     const config = JSON.parse(call!.env.OPENCODE_CONFIG_CONTENT!) as { agent: { keylang: { permission: string; prompt: string } } };
     assert.equal(config.agent.keylang.permission, "deny");
     assert.match(config.agent.keylang.prompt, /Answer with text only/);
@@ -316,21 +323,21 @@ test("agent selection: KEYLANG_AGENT > agents.json use > keylang.json; Cursor is
     assert.match(env.stderr, /KEYLANG_AGENT must be/);
   });
   await t.test("invalid agents.json", async (t) => {
-    const cases: [unknown, RegExp][] = [
+    const cases: [string, RegExp][] = [
       ["{", /agents\.json: invalid JSON/],
-      [{ use: "cli:-x" }, /agents\.json: `use` must be/],
-      [{ clis: { grok: { command: 3 } } }, /agents\.json: `clis\.grok\.command` must be a non-empty array of strings, got 3/],
-      [{ clis: { grok: { command: ["grok", "{prompt}"] } } }, /`clis\.grok\.command\[1\]`: unknown placeholder `\{prompt\}`/],
-      [{ clis: { claude: { command: ["x"] } } }, /`clis\.claude`: a preset takes only `bin`/],
-      [{ clis: { grok: { command: ["grok"], env: {} } } }, /unknown field `clis\.grok\.env`/],
-      [{ other: 1 }, /unknown field `other`/],
+      [JSON.stringify({ use: "cli:-x" }), /agents\.json: `use` must be/],
+      [JSON.stringify({ clis: { grok: { command: 3 } } }), /agents\.json: `clis\.grok\.command` must be a non-empty array of strings, got 3/],
+      [JSON.stringify({ clis: { grok: { command: ["grok", "{prompt}"] } } }), /`clis\.grok\.command\[1\]`: unknown placeholder `\{prompt\}`/],
+      [JSON.stringify({ clis: { claude: { command: ["x"] } } }), /`clis\.claude`: a preset takes only `bin`/],
+      [JSON.stringify({ clis: { grok: { command: ["grok"], env: {} } } }), /unknown field `clis\.grok\.env`/],
+      [JSON.stringify({ other: 1 }), /unknown field `other`/],
     ];
 
-    for (const [value, text] of cases) {
+    for (const [file, text] of cases) {
       const dir = copy(t);
-      agentsJson(dir, value);
+      agentsJsonText(dir, file);
       const o = await keylang(dir, ["explain", NODE, "--llm"], null, { KEYLANG_AGENT: undefined });
-      assert.equal(o.status, 2, `${JSON.stringify(value)}: ${o.stderr}`);
+      assert.equal(o.status, 2, `${file}: ${o.stderr}`);
       assert.match(o.stderr, text);
     }
   });

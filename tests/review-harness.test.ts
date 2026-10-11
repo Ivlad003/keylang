@@ -4,12 +4,13 @@
 // the real CLI on a temporary repository.
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawnSync, type SpawnSyncOptionsWithStringEncoding } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { isJsonObject, parseJson } from "../src/json.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -23,7 +24,12 @@ interface Run {
 
 /** Run `keylang` with `cwd` as working directory; `input` is stdin, `env` replaces the environment. */
 function keylang(cwd: string, args: string[], options: { input?: string; env?: NodeJS.ProcessEnv } = {}): Run {
-  const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, ...(options.input !== undefined ? { input: options.input } : {}), ...(options.env ? { env: options.env } : {}) });
+  const spawnOptions: SpawnSyncOptionsWithStringEncoding = { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 };
+
+  if (options.input !== undefined) spawnOptions.input = options.input;
+
+  if (options.env) spawnOptions.env = options.env;
+  const r = spawnSync(process.execPath, [bin, ...args], spawnOptions);
 
   if (r.error) throw r.error;
 
@@ -100,7 +106,8 @@ function deniedRepo(t: { after: (fn: () => void) => void }): string {
 function uncheckedLine(run: Run, what: string): string {
   assert.equal(run.status, 0, `${what}: ${run.stderr}`);
   assert.match(run.stdout, /^\{[^\n]*\}\n$/, `${what}: one JSON object on one line`);
-  const body = JSON.parse(run.stdout) as Record<string, unknown>;
+  const body = parseJson(run.stdout);
+  assert.ok(isJsonObject(body), `${what}: ${run.stdout}`);
   assert.deepEqual(Object.keys(body), ["systemMessage"], `${what}: a warning, never a decision`);
   assert.equal(run.stderr, `${String(body.systemMessage)}\n`, `${what}: the same line on stderr`);
 
@@ -111,6 +118,7 @@ test("hook stop: once started it prints one JSON object and exits 0; a turn it c
   const dir = deniedRepo(t);
   const blocked = keylang(dir, ["hook", "stop"], { input: STOP });
   assert.equal(blocked.status, 0, blocked.stderr);
+  // SAFETY: a Stop hook answer is the JSON object of Claude Code's hook output, with an optional decision.
   assert.equal((JSON.parse(blocked.stdout) as { decision?: string }).decision, "block");
   const before = treeBytes(dir);
 
@@ -162,6 +170,7 @@ test("the harness files follow `dir` of keylang.json: deny rules, the AGENTS.md 
     ".claude/settings.json": `${JSON.stringify({ permissions: { deny: ["Read(secret)"] } }, null, 2)}\n`,
   });
   const read = (path: string): string => readFileSync(join(dir, path), "utf8");
+  // SAFETY: the test writes .claude/settings.json and `init` keeps it Claude Code's settings shape.
   const deny = (): string[] => (JSON.parse(read(".claude/settings.json")) as { permissions?: { deny?: string[] } }).permissions?.deny ?? [];
   const rules = (spec: string): string[] => [`Edit(${spec}/rules.md)`, `Write(${spec}/rules.md)`, `Edit(${spec}/rules.baseline.md)`, `Write(${spec}/rules.baseline.md)`, `Edit(${spec}/rules*.md)`, `Write(${spec}/rules*.md)`];
   const config = ["Edit(keylang.json)", "Write(keylang.json)"];
@@ -267,6 +276,7 @@ test("the AGENTS.md block teaches the grammar: its feature example parses and ch
   });
   const parsed = keylang(spec, ["parse", "--json", "keylang/features/example.md"]);
   assert.equal(parsed.status, 0, parsed.stderr);
+  // SAFETY: `parse --json` prints an array of documents, each with its diagnostics (src/ir.ts).
   const diagnostics = (JSON.parse(parsed.stdout) as { diagnostics: { code: string }[] }[])[0]!.diagnostics.map((d) => d.code);
   assert.deepEqual(diagnostics.filter((code) => ["K003", "K004", "K005"].includes(code)), []);
   const checked = keylang(spec, ["check"]);
@@ -291,7 +301,10 @@ test("docs/cheatsheet.md: every keylang example parses alone and checks with the
   const parsed = keylang(dir, ["parse", "--json", "keylang"]);
   assert.equal(parsed.status, 0, parsed.stderr);
 
-  for (const doc of JSON.parse(parsed.stdout) as { path: string; diagnostics: { code: string; message: string }[] }[]) {
+  // SAFETY: `parse --json` prints an array of documents, each with its path and diagnostics (src/ir.ts).
+  const docs = JSON.parse(parsed.stdout) as { path: string; diagnostics: { code: string; message: string }[] }[];
+
+  for (const doc of docs) {
     assert.deepEqual(doc.diagnostics.filter((d) => ["K003", "K004", "K005"].includes(d.code)), [], doc.path);
   }
 

@@ -49,7 +49,7 @@ import { compareText } from "../span.ts";
 import { actionLabel, applyRecord, catalog, matchActions, MERGE_CLICK, MERGE_REASON, NO_AGENT_REASON, noSnapshotReason, START_ACTIONS } from "./actions.ts";
 import { Assist, countSuggestion, type Microphone } from "./assist.ts";
 import { OperationWorker } from "./background.ts";
-import { chatTakesKeys, Clip, newClip } from "./clip.ts";
+import { chatTakesKeys, Clip, newClip, type Cell } from "./clip.ts";
 import { ClipChat } from "./clip-chat.ts";
 import { newFailsAfter, openQuestions } from "./clip-questions.ts";
 import { placeClip, placeOf, readPlace, writePlace } from "./clip-memory.ts";
@@ -111,6 +111,11 @@ export interface AppOptions {
   /** The user's home: `~/.config/keylang/tui.json` there keeps the clip's place. Default: the home directory of the process's user; tests pass a temporary one. */
   home?: string;
 }
+
+type MapDirs = { map: string; explained: string };
+
+/** The save step of an operation, as `saveStep` names it. */
+type SaveStep = { inputs?: (path: string) => boolean; writes?: string[]; writesNote?: string };
 
 /** Changes typed together are analysed once. */
 const SETTLE_MS = 120;
@@ -271,13 +276,10 @@ export class App {
       reanalyze: () => this.reanalyze(),
       reanalyzeSoon: () => this.reanalyzeSoon(),
     });
-    const app = this;
     this.assist = new Assist(
       {
         state: this.state,
-        get closed() {
-          return app.closed;
-        },
+        closed: () => this.closed,
         buffer: () => this.buffer(),
         contextPack: () => this.contextPack(),
         edit: (change) => this.edit(change),
@@ -500,7 +502,7 @@ export class App {
 
   /** Files with unsaved changes. */
   unsaved(): string[] {
-    return [...this.state.buffers.values()].filter(isDirty).map((buffer) => buffer.path);
+    return [...this.state.buffers.values()].flatMap((buffer) => (isDirty(buffer) ? [buffer.path] : []));
   }
 
   /** Resolves when no analysis is running or waiting to start. */
@@ -588,7 +590,7 @@ export class App {
             this.state.message = `error: ${errorText(error)}`;
           }
         },
-        (error: unknown) => {
+        (error) => {
           if (generation !== this.generation || this.closed) return;
           // Keep the last useful report, but never let it pass as current again:
           // it stays outdated with the persistent reason until a new generation succeeds.
@@ -693,7 +695,7 @@ export class App {
   private track(work: Promise<void>): void {
     this.running++;
     void work
-      .catch((error: unknown) => {
+      .catch((error) => {
         if (!this.closed) this.state.message = `error: ${errorText(error)}`;
       })
       .finally(() => {
@@ -719,7 +721,7 @@ export class App {
   private adopt(analysis: Analysis): void {
     const explained = [...(analysis.map?.explained?.keys() ?? [])].map((name) => specPath(analysis.config.dir, `${EXPLAINED_MAP_DIR}/${name}`));
     // A new specification is listed from the moment its buffer opens, before any file exists.
-    const fresh = [...this.state.buffers.values()].filter((buffer) => buffer.newFile).map((buffer) => buffer.path);
+    const fresh = [...this.state.buffers.values()].flatMap((buffer) => (buffer.newFile ? [buffer.path] : []));
     const paths = new Set([...this.diskFiles(), ...analysis.docs.map((doc) => doc.path), ...explained, ...fresh]);
     this.state.files = sortFiles([...paths], analysis);
     this.state.briefs = loadBriefs(analysis.config);
@@ -1028,10 +1030,7 @@ export class App {
 
   /** The unsaved spec and config buffers, in path order: what an operation on the disk would not see. */
   private dirtyInputs(): string[] {
-    return [...this.state.buffers.values()]
-      .filter((buffer) => !buffer.readOnly && isDirty(buffer))
-      .map((buffer) => buffer.path)
-      .sort(compareText);
+    return [...this.state.buffers.values()].flatMap((buffer) => (!buffer.readOnly && isDirty(buffer) ? [buffer.path] : [])).sort(compareText);
   }
 
   /**
@@ -1245,7 +1244,7 @@ export class App {
   }
 
   /** Where a popup at the cursor line is anchored: the raw line in the editor, the rendered row in reading mode. */
-  private cursorAnchor(col: number): { x: number; y: number } {
+  private cursorAnchor(col: number): Cell {
     const editor = layout(this.state).editor;
     const buffer = this.buffer();
 
@@ -1334,14 +1333,18 @@ export class App {
     const doc = this.buffer()?.doc;
 
     if (!doc) return null;
-    let best: { id: string; line: number } | null = null;
+    const above: { id: string; line: number }[] = [];
     forNodes(doc, (node) => {
       const line = node.span.start.line - 1;
 
-      if (node.id && line <= this.state.cursor.line && (best === null || line >= best.line)) best = { id: node.id, line };
+      if (node.id && line <= this.state.cursor.line) above.push({ id: node.id, line });
     });
+    let best: (typeof above)[number] | null = null;
 
-    return (best as { id: string; line: number } | null)?.id ?? null;
+    // The last of the nearest lines, in the order the nodes are visited.
+    for (const item of above) if (best === null || item.line >= best.line) best = item;
+
+    return best?.id ?? null;
   }
 
   /** The 0-based line of the item that declares `id` in the file at `path`, or null. */
@@ -1355,7 +1358,7 @@ export class App {
   }
 
   /** The map directory of each variant, relative to the root. */
-  private mapDirs(analysis: Analysis): { map: string; explained: string } {
+  private mapDirs(analysis: Analysis): MapDirs {
     return { map: specPath(analysis.config.dir, "map/"), explained: specPath(analysis.config.dir, `${EXPLAINED_MAP_DIR}/`) };
   }
 
@@ -1552,7 +1555,7 @@ export class App {
 
     if (event.name === "f2") return this.toggleFiles(focusable);
 
-    if (event.name === "f3") return this.toggleNav(focusable);
+    if (event.name === "f3") return this.toggleNav();
 
     if (event.name === "f4") return this.toggleContext(focusable);
 
@@ -2165,7 +2168,7 @@ export class App {
     this.keepVisible();
   }
 
-  private toggleNav(focusable: boolean): void {
+  private toggleNav(): void {
     this.state.showNav = !this.state.showNav;
 
     if (this.state.showNav) this.state.lastPanel = "nav";
@@ -2531,11 +2534,11 @@ export class App {
    * when the step opens for dirty inputs anyway (the form already named the
    * target). Null: no step, it starts at once.
    */
-  private saveStep(request: OperationRequest): { inputs?: (path: string) => boolean; writes?: string[]; writesNote?: string } | null {
+  private saveStep(request: OperationRequest): SaveStep | null {
     const config = (path: string): boolean => path === CONFIG_FILE;
     const dir = `${this.specDir()}/`;
     const specs = (path: string): boolean => path === CONFIG_FILE || path.startsWith(dir);
-    const harness = (path: string): boolean => (HARNESS_PATHS as readonly string[]).includes(path);
+    const harness = (path: string): boolean => HARNESS_PATHS.some((item) => item === path);
 
     // The chosen files and directories, as the paths name them from the root, and keylang.json.
     const chosen = (paths: readonly string[]): ((path: string) => boolean) => {
@@ -2544,7 +2547,13 @@ export class App {
       return (path) => path === CONFIG_FILE || selected.some((item) => item === "" || path === item || path.startsWith(`${item}/`));
     };
 
-    const naming = (inputs: (path: string) => boolean, targets: string[] | null): { inputs: (path: string) => boolean; writes?: string[] } => ({ inputs, ...(targets !== null && this.dirtyInputs().some(inputs) ? { writes: targets } : {}) });
+    const naming = (inputs: (path: string) => boolean, targets: string[] | null): SaveStep => {
+      const step: SaveStep = { inputs };
+
+      if (targets !== null && this.dirtyInputs().some(inputs)) step.writes = targets;
+
+      return step;
+    };
 
     switch (request.kind) {
       // Doctor reads settings only; a layout draft writes nothing and moves its layers into keylang.json's
@@ -2858,12 +2867,15 @@ export class App {
         return this.commitGate(request, plan);
       };
 
-      work = this.operations(record.params, { analyze: this.analyzer, signal: controller.signal, onProgress, ...(WRITING_KINDS.has(request.kind) ? { beforeCommit } : {}) });
+      const operationContext: OperationContext = { analyze: this.analyzer, signal: controller.signal, onProgress };
+
+      if (WRITING_KINDS.has(request.kind)) operationContext.beforeCommit = beforeCommit;
+      work = this.operations(record.params, operationContext);
     } catch (error) {
       work = Promise.reject(error);
     }
 
-    this.track(work.then(settle, (error: unknown) => settle(resultWithout(request.kind, "failed", 2, errorText(error)))));
+    this.track(work.then(settle, (error) => settle(resultWithout(request.kind, "failed", 2, errorText(error)))));
     this.draw();
 
     return record;
@@ -3167,7 +3179,9 @@ export class App {
     }
 
     const pack = this.contextPack();
-    const request: DraftFlowRequest = { kind: "draft-flow", root: this.state.root, trigger, name, into: buffer.path, output: "proposal", pending: "refuse", mode: "hybrid", ...(pack ? { context: contextText(pack) } : {}) };
+    const request: DraftFlowRequest = { kind: "draft-flow", root: this.state.root, trigger, name, into: buffer.path, output: "proposal", pending: "refuse", mode: "hybrid" };
+
+    if (pack) request.context = contextText(pack);
     this.state.message = `agent: drafting flow ${name}…`;
 
     const work = (async () => {
@@ -3181,7 +3195,7 @@ export class App {
       }
 
       if (!this.closed) this.requestOperation(AGENT_DRAFT, request);
-    })().catch((error: unknown) => {
+    })().catch((error) => {
       this.state.message = `agent: ${errorText(error)}`;
     });
 
@@ -3470,7 +3484,7 @@ export class App {
     const form = prompt.form!;
 
     if (form.field === "kind") {
-      const kind = prompt.ids?.[prompt.index] as NewSpecForm["kind"] | undefined;
+      const kind = SPEC_KINDS.find((entry) => entry.kind === prompt.ids?.[prompt.index])?.kind;
 
       if (kind === undefined) return;
       form.kind = kind;
@@ -3914,7 +3928,7 @@ export class App {
       case "files":
         return this.toggleFiles(focusable);
       case "navigation":
-        return this.toggleNav(focusable);
+        return this.toggleNav();
       case "zoom":
         return this.zoomScreen.openZoom(null);
       case "context":
@@ -4225,6 +4239,12 @@ function pastedRun(run: readonly KeyEvent[], editing: boolean): boolean {
   return !held && (run.length > TYPED_KEYS || run.some((key) => key.name === "enter" || key.name === "tab"));
 }
 
+/** A terminal escape sequence: OSC (`ESC ]` … BEL or `ESC \\`), CSI (`ESC [` … final byte), or a two-byte escape. */
+const ESCAPE_SEQUENCE = new RegExp(String.raw`\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?|\x1b\[[0-9;?<=>]*[ -/]*[@-~]?|\x1b[@-_]?`, "g");
+
+/** A C0 or C1 control character other than a tab and a line break. */
+const CONTROL_CHARACTER = new RegExp(String.raw`[\x00-\x08\x0b-\x1f\x7f-\x9f]`, "g");
+
 /**
  * Text that may go into a spec: escape sequences (colored output pasted from a
  * terminal) and other control characters are removed; tabs and line breaks stay.
@@ -4232,16 +4252,18 @@ function pastedRun(run: readonly KeyEvent[], editing: boolean): boolean {
 function printable(text: string): string {
   return text
     .replace(/\r\n?/g, "\n")
-    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?|\x1b\[[0-9;?<=>]*[ -/]*[@-~]?|\x1b[@-_]?/g, "")
-    .replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, "");
+    .replace(ESCAPE_SEQUENCE, "")
+    .replace(CONTROL_CHARACTER, "");
 }
+
+type ConfigOnDisk = { config: ConfigState; clip: boolean | null };
 
 /**
  * `keylang.json` as it is on disk now: missing (with the guessed layout),
  * invalid (with the reason) or valid; and whether it shows the clip — null
  * when an invalid file cannot say, so the clip stays as it was.
  */
-function configState(root: string): { config: ConfigState; clip: boolean | null } {
+function configState(root: string): ConfigOnDisk {
   const file = join(root, CONFIG_FILE);
 
   if (!existsSync(file)) {
@@ -4303,6 +4325,7 @@ export function configErrorCursor(text: string, reason: string): Cursor {
 
 /** The package version, for the "About keylang" palette action. */
 function packageVersion(): string {
+  // SAFETY: the path is this package's own package.json, and npm requires its `version` to be a string.
   return (createRequire(import.meta.url)("../../package.json") as { version: string }).version;
 }
 

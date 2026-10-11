@@ -218,7 +218,7 @@ function noteDecorators(node: Node, symbol: string, member: boolean, facts: File
     const expr = decorator.node.namedChildren[0];
     (facts.decorators ??= []).push({ name: decorator.name, call: expr?.type === "call" ? argumentsOf(expr, { left: LITERAL_BUDGET }) : null, target: symbol, line: at.line, col: at.col });
     facts.unsupported.push({ ...unsupported(decorator.node, `decorator \`${decorator.name}\` may replace \`${symbol}\``), symbol });
-    facts.valueRefs.push({ name: member ? symbol.slice(symbol.lastIndexOf(".") + 1) : symbol, ...(member ? { member: true as const } : {}), line: at.line, col: at.col });
+    facts.valueRefs.push(member ? { name: symbol.slice(symbol.lastIndexOf(".") + 1), member: true, line: at.line, col: at.col } : { name: symbol, line: at.line, col: at.col });
   }
 }
 
@@ -268,7 +268,15 @@ function classDecl(def: Node, name: string, symbol: string, topLevel: boolean, f
   const doc = docstring(def.childForFieldName("body"));
   const values = valuesFingerprint(items.map(({ item }) => item), members);
 
-  return { kind: "class", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature: null, exported: false, calls: [], types: [], members, ...fingerprintFacts(def), ...(values !== undefined ? { values } : {}), ...(base ? { base } : {}), ...(doc !== undefined ? { doc } : {}) };
+  const decl: DeclFact = { kind: "class", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature: null, exported: false, calls: [], types: [], members, ...fingerprintFacts(def) };
+
+  if (values !== undefined) decl.values = values;
+
+  if (base) decl.base = base;
+
+  if (doc !== undefined) decl.doc = doc;
+
+  return decl;
 }
 
 /** The class a method belongs to: its name, its static and class methods (for a top-level class), and whether the first parameter is the receiver. */
@@ -291,7 +299,11 @@ function fnDecl(node: Node, name: string, owner: Owner | null): DeclFact {
   const calls = body ? bodyCalls(body, { receiver, owner, bound: boundNames(node), classes: typedValues(node) }) : [];
   const doc = docstring(body);
 
-  return { kind: "fn", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature, exported: false, calls, types: [], members: [], ...fingerprintFacts(node), ...(doc !== undefined ? { doc } : {}) };
+  const decl: DeclFact = { kind: "fn", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature, exported: false, calls, types: [], members: [], ...fingerprintFacts(node) };
+
+  if (doc !== undefined) decl.doc = doc;
+
+  return decl;
 }
 
 /**
@@ -484,6 +496,9 @@ function constructedClass(value: Node | null): string | null {
  */
 type ClosureState = null | "stored" | { line: number; col: number };
 
+/** A call fact before its position is known. */
+type UnplacedCall = Omit<CallFact, "line" | "col" | "endLine" | "endCol">;
+
 function bodyCalls(body: Node, scope: CallScope): CallFact[] {
   const out: CallFact[] = [];
 
@@ -491,16 +506,16 @@ function bodyCalls(body: Node, scope: CallScope): CallFact[] {
     if (node.type === "call") {
       const at = located(node);
       const passes = passesOf(node, scope);
-      out.push({
-        ...callOf(node.childForFieldName("function"), scope),
-        ...(passes.length > 0 ? { passes } : {}),
-        line: at.line,
-        col: at.col,
-        endLine: at.endLine,
-        endCol: at.endCol,
-        ...(closure ? { closure: true as const } : {}),
-        ...(closure && closure !== "stored" ? { closureArg: closure } : {}),
-      });
+      const unplaced: UnplacedCall = { ...callOf(node.childForFieldName("function"), scope) };
+
+      if (passes.length > 0) unplaced.passes = passes;
+      // Object.assign appends the position after `passes`, the key order of every call fact.
+      const call: CallFact = Object.assign(unplaced, { line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol });
+
+      if (closure) call.closure = true;
+
+      if (closure && closure !== "stored") call.closureArg = closure;
+      out.push(call);
     }
 
     let inner = closure;
@@ -543,7 +558,13 @@ function passesOf(call: Node, scope: CallScope): PassFact[] {
       // A value keylang cannot name, or a local of unknown class, resolves to nothing.
       if (fact.callee === "?" || (fact.bound && !fact.receiver)) return;
       const at = located(node);
-      out.push({ arg: index, path: "", callee: fact.callee, ...(fact.bound ? { bound: fact.bound } : {}), ...(fact.receiver ? { receiver: fact.receiver } : {}), text: at.text.replace(/\s+/g, " "), line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol });
+      const pass: Omit<PassFact, "text" | "line" | "col" | "endLine" | "endCol"> = { arg: index, path: "", callee: fact.callee };
+
+      if (fact.bound) pass.bound = fact.bound;
+
+      if (fact.receiver) pass.receiver = fact.receiver;
+      // Object.assign appends the text and position after the optional keys, in the key order of a pass fact.
+      out.push(Object.assign(pass, { text: at.text.replace(/\s+/g, " "), line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol }));
     });
 
   return out;
@@ -605,7 +626,13 @@ function callOf(fn: Node | null, scope: CallScope): Pick<CallFact, "callee" | "b
   // `repo.save()` with `repo: Repo` or `repo = Repo()`: the graph looks `save` up in `Repo`.
   const receiver = parts.length === 1 ? scope.classes.get(head) : undefined;
 
-  return { callee, ...(bound ? { bound } : {}), ...(receiver ? { receiver } : {}) };
+  const call: Pick<CallFact, "callee" | "bound" | "receiver"> = { callee };
+
+  if (bound) call.bound = bound;
+
+  if (receiver) call.receiver = receiver;
+
+  return call;
 }
 
 /**
@@ -685,7 +712,7 @@ function valueRefs(root: Node, names: ReadonlySet<string>, glob: boolean): Value
   const note = (name: string, node: Node, member: boolean): void => {
     const key = `${member ? "." : ""}${name}`;
 
-    if (!first.has(key)) first.set(key, { name, ...(member ? { member: true as const } : {}), line: node.startPosition.row + 1, col: node.startPosition.column + 1 });
+    if (!first.has(key)) first.set(key, member ? { name, member: true, line: node.startPosition.row + 1, col: node.startPosition.column + 1 } : { name, line: node.startPosition.row + 1, col: node.startPosition.column + 1 });
   };
 
   const walk = (node: Node, bound: ReadonlySet<string>): void => {
@@ -754,8 +781,12 @@ function collectDynamic(root: Node, facts: FileFacts): void {
       const callee = node.childForFieldName("function")?.text;
       const symbol = enclosingFn(node);
 
-      if (callee === "getattr") facts.unsupported.push({ ...unsupported(node, "`getattr` reads an attribute chosen at run time"), ...(symbol ? { symbol } : {}) });
-      else if (callee === "importlib.import_module" || callee === "import_module" || callee === "__import__") facts.unsupported.push(unsupported(node, "dynamic import"));
+      if (callee === "getattr") {
+        const fact = unsupported(node, "`getattr` reads an attribute chosen at run time");
+
+        if (symbol) fact.symbol = symbol;
+        facts.unsupported.push(fact);
+      } else if (callee === "importlib.import_module" || callee === "import_module" || callee === "__import__") facts.unsupported.push(unsupported(node, "dynamic import"));
       else if (callee === "exec" || callee === "eval") facts.unsupported.push(unsupported(node, `\`${callee}\` runs code keylang cannot read`));
     }
 
@@ -918,7 +949,9 @@ function statementsOf(topLevel: readonly Node[]): StatementFact[] {
     if (!left || !right || !dottedName(left) || !hasCall(right)) continue;
 
     if (expr.type === "augmented_assignment" && expr.childForFieldName("operator")?.text !== "+=") continue;
-    out.push({ target: left.text.replace(/\s+/g, ""), ...(expr.type === "augmented_assignment" ? { augmented: true as const } : {}), value: literalOf(right, { left: LITERAL_BUDGET }), line: at.line, col: at.col });
+    const target = left.text.replace(/\s+/g, "");
+    const value = literalOf(right, { left: LITERAL_BUDGET });
+    out.push(expr.type === "augmented_assignment" ? { target, augmented: true, value, line: at.line, col: at.col } : { target, value, line: at.line, col: at.col });
   }
 
   return out;
@@ -1030,7 +1063,12 @@ function literalOf(node: Node, budget: { left: number }): LiteralValue {
 }
 
 /** The positional and keyword arguments of a call; a `*xs` or `**kw` is an `other` positional. */
-function argumentsOf(call: Node, budget: { left: number }): { args: LiteralValue[]; kwargs: Kwarg[] } {
+interface CallArguments {
+  args: LiteralValue[];
+  kwargs: Kwarg[];
+}
+
+function argumentsOf(call: Node, budget: { left: number }): CallArguments {
   const args: LiteralValue[] = [];
   const kwargs: Kwarg[] = [];
   const list = call.childForFieldName("arguments");

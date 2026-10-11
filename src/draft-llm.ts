@@ -8,11 +8,12 @@
 // Each step line carries its provenance: `<!-- keylang:llm model=… status=… -->`.
 
 import type { Analysis } from "./analyze.ts";
-import { assess } from "./assess.ts";
+import { assess, type AssessEvidence } from "./assess.ts";
 import { parseConfig, resolveStatic } from "./config.ts";
 import { draftFlow } from "./draft.ts";
 import { formatDocument } from "./fmt.ts";
 import { sectionNodes, walk, type Document, type Node } from "./ir.ts";
+import { isJsonObject, parseJson, type JsonObject, type JsonValue } from "./json.ts";
 import type { LlmCallOptions, LlmClient } from "./llm.ts";
 import { isId, parse } from "./parser.ts";
 import { compileSpec, type FlowItem, type Trigger } from "./spec-ir.ts";
@@ -84,6 +85,13 @@ export async function draftFlowWithModel(analysis: Analysis, trigger: string, cl
   return { name: algo.name, text: reconciled.text, counts: reconciled.counts, unknown: unknownIn(analysis, reconciled.text), rounds, dropped: reconciled.dropped };
 }
 
+/** The model's draft merged with the algo projection: its text, the items by status, and the answer's lines left out. */
+interface ReconciledDraft {
+  text: string;
+  counts: Record<DraftStatus, number>;
+  dropped: string[];
+}
+
 /**
  * The model's flow judged on its IR. An item with a parse error other than
  * indentation (a step under an `invariant`, an unknown keyword) is dropped;
@@ -93,7 +101,7 @@ export async function draftFlowWithModel(analysis: Analysis, trigger: string, cl
  * `llm-only` otherwise. `hybrid` adds each algo step the model missed under
  * the nearest of its algo callers the draft has.
  */
-function reconcile(analysis: Analysis, text: string, algo: { text: string; steps: readonly string[] }, trigger: string, mode: "llm" | "hybrid", agent: string): { text: string; counts: Record<DraftStatus, number>; dropped: string[] } {
+function reconcile(analysis: Analysis, text: string, algo: { text: string; steps: readonly string[] }, trigger: string, mode: "llm" | "hybrid", agent: string): ReconciledDraft {
   const nodes = analysis.snapshot!.nodes;
   const counts: Record<DraftStatus, number> = { agree: 0, "llm-only": 0, "algo-only": 0, conflict: 0 };
   const doc = parse("draft.md", text);
@@ -299,10 +307,10 @@ function similarFlows(docs: readonly Document[], steps: readonly string[]): stri
   return flows.sort((a, b) => b.shared - a.shared).slice(0, 3).map((f) => f.text);
 }
 
-function lineTree(node: { tokens: { text: string }[]; children: unknown[] }, level: number): string[] {
+function lineTree(node: Pick<Node, "tokens" | "children">, level: number): string[] {
   const out = [`${"  ".repeat(level)}- ${node.tokens.map((t) => t.text).join(" ")}`];
 
-  for (const child of node.children as { tokens: { text: string }[]; children: unknown[] }[]) out.push(...lineTree(child, level + 1));
+  for (const child of node.children) out.push(...lineTree(child, level + 1));
 
   return out;
 }
@@ -386,7 +394,10 @@ function judgeRule(analysis: Analysis, others: readonly Document[], target: stri
 
   const key = (d: { code: string; file: string; span: { start: { line: number; col: number } }; message: string }): string => `${d.code}:${d.file}:${d.span.start.line}:${d.span.start.col}:${d.message}`;
   const mode = resolveStatic(undefined, analysis.config.check.static);
-  const evidence = { tests: null as null, traces: null as null, static: mode.mode, ...(mode.setBy ? { staticSetBy: mode.setBy } : {}) };
+  const evidence: AssessEvidence = { tests: null, traces: null, static: mode.mode };
+
+  if (mode.setBy) evidence.staticSetBy = mode.setBy;
+
   const base = assess(others, analysis.snapshot, evidence, analysis.config.format);
   const known = new Set(base.diagnostics.map(key));
   const knownVerdicts = new Set(base.verdicts.map((v) => `${v.criterion}:${v.file}:${v.line}:${v.message}`));
@@ -441,7 +452,7 @@ export async function draftLayoutWithModel(analysis: Analysis, client: LlmClient
  * brace in a JSON string does not count); null when there is none. Prose
  * around it and a second object after it are left out.
  */
-export function answerObject(answer: string): Record<string, unknown> | null {
+export function answerObject(answer: string): JsonObject | null {
   for (const block of answer.matchAll(/^[ \t]*```[ \t]*json[^\n]*\n([\s\S]*?)^[ \t]*```/gim)) {
     const value = jsonObject(block[1]!);
 
@@ -459,16 +470,16 @@ export function answerObject(answer: string): Record<string, unknown> | null {
 }
 
 /** `text` as a JSON object, or null: not JSON, or JSON of another shape. */
-function jsonObject(text: string): Record<string, unknown> | null {
-  let value: unknown;
+function jsonObject(text: string): JsonObject | null {
+  let value: JsonValue;
 
   try {
-    value = JSON.parse(text);
+    value = parseJson(text);
   } catch {
     return null;
   }
 
-  return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+  return isJsonObject(value) ? value : null;
 }
 
 /** Where the `{` at `start` closes (the index after its `}`), skipping JSON strings; null when it never does. */

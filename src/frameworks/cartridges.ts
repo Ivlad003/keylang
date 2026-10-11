@@ -11,6 +11,7 @@
 
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { isJsonObject, isJsonString, parseJson, type JsonValue } from "../json.ts";
 
 /** The specifier the extractor records for `module.superModule` (`src/extract/ts.ts` writes the same literal). */
 export const SUPER_MODULE = "module.superModule";
@@ -92,7 +93,13 @@ export function cartridgeLayout(root: string, sources: Iterable<string>, configu
 }
 
 /** The cartridge path `dw.json` or the root `package.json` writes, and whether `dw.json` exists. */
-function cartridgePathHint(root: string): { names: string[] | null; from: "dw.json" | "package.json" | null; dw: boolean } {
+interface CartridgePathHint {
+  names: string[] | null;
+  from: "dw.json" | "package.json" | null;
+  dw: boolean;
+}
+
+function cartridgePathHint(root: string): CartridgePathHint {
   const dw = readJson(join(root, "dw.json"));
   const fromDw = dw === undefined ? null : (names(field(dw, "cartridgePath")) ?? names(field(dw, "cartridge_path")) ?? names(field(dw, "cartridgesPath")) ?? names(field(dw, "cartridge")));
 
@@ -104,21 +111,21 @@ function cartridgePathHint(root: string): { names: string[] | null; from: "dw.js
 }
 
 /** `a:b:c` as Business Manager writes it, or a list of names. */
-function names(value: unknown): string[] | null {
-  const list = typeof value === "string" ? value.split(":") : Array.isArray(value) ? value : null;
+function names(value: JsonValue | undefined): string[] | null {
+  const list = isJsonString(value) ? value.split(":") : Array.isArray(value) ? value.filter(isJsonString) : null;
 
   if (list === null) return null;
-  const out = list.filter((name): name is string => typeof name === "string").map((name) => name.trim()).filter((name) => name !== "");
+  const out = list.map((name) => name.trim()).filter((name) => name !== "");
 
   return out.length > 0 ? out : null;
 }
 
-function field(value: unknown, key: string): unknown {
-  return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>)[key] : undefined;
+function field(value: JsonValue | undefined, key: string): JsonValue | undefined {
+  return isJsonObject(value) ? value[key] : undefined;
 }
 
 /** A JSON file's value; undefined when it is absent, null when it does not parse. */
-function readJson(path: string): unknown {
+function readJson(path: string): JsonValue | undefined {
   let text: string;
 
   try {
@@ -129,7 +136,7 @@ function readJson(path: string): unknown {
   }
 
   try {
-    return JSON.parse(text.replace(/^﻿/, ""));
+    return parseJson(text.replace(/^﻿/, ""));
   } catch {
     return null;
   }

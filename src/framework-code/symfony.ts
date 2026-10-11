@@ -6,7 +6,7 @@
 // The prefixes of `config/routes.yaml` apply to the attribute routes.
 
 import type { FileFacts, LiteralFact } from "../extract/facts.ts";
-import type { ConfigFacts, ConfigHole, FrameworkConfig, RoutePrefixFact } from "../frameworks/adapter.ts";
+import type { ConfigAt, ConfigFacts, ConfigHole, EntryConfigFact, FrameworkConfig, RoutePrefixFact } from "../frameworks/adapter.ts";
 import { arg, cls, codeFacts, dispatchesIn, eventName, hasFacts, key, PhpCode, str, strings, type, type PhpClass } from "./php.ts";
 
 const ROUTE = ["Symfony\\Component\\Routing\\Attribute\\Route", "Symfony\\Component\\Routing\\Annotation\\Route"];
@@ -73,7 +73,7 @@ function attributes(decl: { attributes?: { name: string; args: { name?: string; 
 
 /** `#[Route]` on the class (a prefix) and on its public methods; `__invoke` for one on an invokable class. */
 function routes(c: PhpClass, facts: ConfigFacts, prefixes: readonly RoutePrefixFact[]): void {
-  const prefix = prefixes.filter((p) => c.file === p.dir || c.file.startsWith(`${p.dir}/`)).map((p) => p.prefix).at(-1) ?? "";
+  const prefix = prefixes.flatMap((p) => (c.file === p.dir || c.file.startsWith(`${p.dir}/`) ? [p.prefix] : [])).at(-1) ?? "";
   const own = attributes(c.decl, ROUTE);
   const base = str(arg(own[0]?.args, "path", 0)) ?? "";
 
@@ -91,7 +91,12 @@ function routes(c: PhpClass, facts: ConfigFacts, prefixes: readonly RoutePrefixF
     const full = joinPath([prefix, base, path]);
     const methods = strings(arg(attribute.args, "methods", null)).map((m) => m.toUpperCase());
 
-    for (const m of methods.length > 0 ? methods : [null]) facts.entries!.push({ kind: "route", label: m === null ? full : `${m} ${full}`, files: [], fn: method, type: type(c.qualified), ...(m !== null ? { method: m } : {}), line: attribute.line, col: attribute.col });
+    for (const m of methods.length > 0 ? methods : [null]) {
+      const entry: Omit<EntryConfigFact, keyof ConfigAt> = { kind: "route", label: m === null ? full : `${m} ${full}`, files: [], fn: method, type: type(c.qualified) };
+
+      if (m !== null) entry.method = m;
+      facts.entries!.push({ ...entry, line: attribute.line, col: attribute.col });
+    }
   };
 
   for (const member of c.decl.members) for (const attribute of attributes(member, ROUTE)) add(attribute, member.name);

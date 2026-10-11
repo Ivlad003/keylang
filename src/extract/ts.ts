@@ -180,13 +180,19 @@ function docOf(node: Node): string | undefined {
   return undefined;
 }
 
+/** The module's doc comment and the comment nodes it is made of. */
+interface ModuleHeader {
+  doc: string | null;
+  nodes: Set<number>;
+}
+
 /**
  * The module's documentation: the first block of comments in the file (after
  * `#!`; license notices, `/// <reference>` directives and blocks without text
  * skipped), unless it sits right above the first statement that is not an
  * import or a directive (`"use strict"`): then it documents that statement. Comments on adjacent lines are one block.
  */
-function moduleHeader(root: Node): { doc: string | null; nodes: Set<number> } {
+function moduleHeader(root: Node): ModuleHeader {
   const leading: Node[] = [];
   let first: Node | null = null;
 
@@ -321,7 +327,7 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
           const req = value ? (requireSource(value, requires) ?? superModuleSource(value)) : null;
 
           if (req) {
-            facts.imports.push(importAt(d, req.source, [{ kind: "module", local: name, ...(req.namespace ? { namespace: true as const } : {}) }], false));
+            facts.imports.push(importAt(d, req.source, [req.namespace ? { kind: "module", local: name, namespace: true } : { kind: "module", local: name }], false));
             continue;
           }
 
@@ -681,7 +687,11 @@ function decl(kind: DeclFact["kind"], name: string, node: Node, signature: strin
   const at = located(node);
   const doc = docOf(node);
 
-  return { kind, name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature, exported, calls, types, members, ...fingerprintFacts(node), ...(doc !== undefined ? { doc } : {}) };
+  const fact: DeclFact = { kind, name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature, exported, calls, types, members, ...fingerprintFacts(node) };
+
+  if (doc !== undefined) fact.doc = doc;
+
+  return fact;
 }
 
 function boundCall(call: CallFact, bound: "parameter" | "local" | null): CallFact {
@@ -1223,7 +1233,11 @@ function initializer(name: "constructor" | "static", items: { node: Node; calls:
   const prints = items.map((item) => fingerprintFacts(item.node));
   const readsImports = [...new Set(prints.flatMap((p) => p.readsImports ?? []))].sort();
 
-  return { kind: "fn", name, line: first.line, col: first.col, endLine: last.endLine, endCol: last.endCol, signature: null, exported: true, calls: items.flatMap((item) => item.calls), types: [], members: [], fingerprint: prints.map((p) => p.fingerprint).join(":"), ...(readsImports.length > 0 ? { readsImports } : {}) };
+  const fact: DeclFact = { kind: "fn", name, line: first.line, col: first.col, endLine: last.endLine, endCol: last.endCol, signature: null, exported: true, calls: items.flatMap((item) => item.calls), types: [], members: [], fingerprint: prints.map((p) => p.fingerprint).join(":") };
+
+  if (readsImports.length > 0) fact.readsImports = readsImports;
+
+  return fact;
 }
 
 function memberName(node: Node): string {
@@ -1505,7 +1519,12 @@ function calleeFact(n: Node, stop: Node, cls: ClassScope | null): CallFact | nul
   if (field && type && classThis(n)) {
     const param = cls?.params.get(memberName(field));
 
-    return { ...callFact(`this.${field.text}.${prop.text}`, n), receiver: type, ...(param !== undefined ? { param } : {}) };
+    const fact = callFact(`this.${field.text}.${prop.text}`, n);
+    fact.receiver = type;
+
+    if (param !== undefined) fact.param = param;
+
+    return fact;
   }
 
   // `this.repo.save()` with `constructor(@Inject(T) private repo)` and no class keylang can name: a framework's config may set it.
@@ -1551,7 +1570,13 @@ function passesOf(call: Node, stop: Node, cls: ClassScope | null): PassFact[] {
       // A local value of unknown class names nothing the graph can resolve.
       if (!fact || (fact.bound && !fact.receiver)) return;
       const at = located(written);
-      out.push({ arg: index, path, callee: fact.callee, ...(fact.bound ? { bound: fact.bound } : {}), ...(fact.receiver ? { receiver: fact.receiver } : {}), text: collapse(at.text).slice(0, MAX_CALLEE), line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol });
+      const pass: Omit<PassFact, "text" | "line" | "col" | "endLine" | "endCol"> = { arg: index, path, callee: fact.callee };
+
+      if (fact.bound) pass.bound = fact.bound;
+
+      if (fact.receiver) pass.receiver = fact.receiver;
+      // Object.assign appends the text and position after the optional keys, in the key order of a pass fact.
+      out.push(Object.assign(pass, { text: collapse(at.text).slice(0, MAX_CALLEE), line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol }));
     };
 
     if (arg.type === "identifier" || arg.type === "member_expression") add(arg, "");
@@ -1842,7 +1867,7 @@ function collectValueRefs(root: Node, facts: FileFacts): void {
   const note = (name: string, node: Node, member: boolean): void => {
     const key = `${member ? "." : ""}${name}`;
 
-    if (!first.has(key)) first.set(key, { name, ...(member ? { member: true as const } : {}), line: node.startPosition.row + 1, col: startCol(node) });
+    if (!first.has(key)) first.set(key, member ? { name, member: true, line: node.startPosition.row + 1, col: startCol(node) } : { name, line: node.startPosition.row + 1, col: startCol(node) });
   };
 
   walkNamed(root, (node) => {
@@ -2510,8 +2535,13 @@ function firstParameter(fn: Node): string | null {
   return pattern?.type === "identifier" ? pattern.text : null;
 }
 
+interface FunctionName {
+  name: string | null;
+  top: boolean;
+}
+
 /** A function's name — its own, its declarator's, `default` for an anonymous default export — and whether it is a top-level declaration. */
-function functionName(fn: Node): { name: string | null; top: boolean } {
+function functionName(fn: Node): FunctionName {
   const parent = parentOf(fn);
   const topLevel = (n: Node | null): boolean => n?.type === "program" || (n?.type === "export_statement" && parentOf(n)?.type === "program");
 
@@ -2587,7 +2617,12 @@ function pageOf(node: Node, lazy: ReadonlyMap<string, string>): EntryFact | null
   const at = located(node);
   const source = lazy.get(component);
 
-  return { kind: "page", label: path, callee: component, ...(source !== undefined ? { source } : {}), line: at.line, col: at.col };
+  const entry: Omit<EntryFact, "line" | "col"> = { kind: "page", label: path, callee: component };
+
+  if (source !== undefined) entry.source = source;
+
+  // Object.assign appends the position after `source`, in the key order of an entry fact.
+  return Object.assign(entry, { line: at.line, col: at.col });
 }
 
 function signature(fn: Node): string {

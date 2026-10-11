@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
+import { isJsonObject, parseJson, type JsonObject } from "../src/json.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -19,7 +20,13 @@ function write(dir: string, path: string, text: string): void {
   writeFileSync(join(dir, path), text);
 }
 
-function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+interface Run {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+function keylang(cwd: string, args: string[]): Run {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8" });
 
   if (r.error) throw r.error;
@@ -39,7 +46,7 @@ function repo(t: TestContext, files: Record<string, string>): string {
   return dir;
 }
 
-const config = (layers: Record<string, string>, extra: Record<string, unknown> = {}): string => `${JSON.stringify({ languages: ["typescript"], layers, ...extra })}\n`;
+const config = (layers: Record<string, string>, extra: JsonObject = {}): string => `${JSON.stringify({ languages: ["typescript"], layers, ...extra })}\n`;
 
 interface Row {
   criterion: string;
@@ -53,8 +60,16 @@ interface Row {
   reason?: string;
 }
 
-function check(dir: string, args: string[] = []): { status: number | null; stderr: string; stdout: string; results: Row[] } {
+interface CheckRun {
+  status: number | null;
+  stderr: string;
+  stdout: string;
+  results: Row[];
+}
+
+function check(dir: string, args: string[] = []): CheckRun {
   const run = keylang(dir, ["check", "--format", "json", ...args]);
+  // SAFETY: `check --format json` prints a report whose `results` rows carry these fields (docs/cli.md).
   const parsed = JSON.parse(run.stdout) as { results: Row[] };
 
   return { status: run.status, stderr: run.stderr, stdout: run.stdout, results: parsed.results };
@@ -543,7 +558,8 @@ test("a declared package is not K001 when its only importer is excluded, and it 
   assert.equal(keylang(dir, ["map"]).status, 0);
   write(dir, "keylang.json", config({ app: "src/app/**", infra: "src/infra/**" }, { exclude: ["src/infra/db.ts"] }));
   assert.equal(keylang(dir, ["map"]).status, 0);
-  const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as { nodes: Record<string, unknown> };
+  const index = parseJson(readFileSync(join(dir, ".keylang/index.json"), "utf8"));
+  assert.ok(isJsonObject(index) && isJsonObject(index.nodes), "the snapshot has its nodes by ID");
   assert.equal(index.nodes["external.pg"], undefined);
   const mapFile = join(dir, "keylang/map/external.md");
   let mapText = "";
@@ -570,7 +586,8 @@ test("a declared package with no import anywhere is not K001 and adds no snapsho
   assert.equal(quiet.status, 0, quiet.stdout);
   assert.ok(!quiet.results.some((row) => row.code === "K001"), quiet.stdout);
   assert.equal(keylang(dir, ["map"]).status, 0);
-  const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as { nodes: Record<string, unknown> };
+  const index = parseJson(readFileSync(join(dir, ".keylang/index.json"), "utf8"));
+  assert.ok(isJsonObject(index) && isJsonObject(index.nodes), "the snapshot has its nodes by ID");
   assert.equal(index.nodes["external.pg"], undefined);
   const mapFile = join(dir, "keylang/map/external.md");
   const mapText = existsSync(mapFile) ? readFileSync(mapFile, "utf8") : "";
@@ -696,6 +713,7 @@ test("rust: serde declared in Cargo.toml is not K001 when its importer is exclud
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   cpSync(join(root, "tests/fixtures/rust-shop"), dir, { recursive: true });
   assert.equal(keylang(dir, ["init", "--agents=none"]).status, 0, "init");
+  // SAFETY: `init` writes keylang.json as a JSON object; `exclude`, when there, is a list of globs.
   const raw = JSON.parse(readFileSync(join(dir, "keylang.json"), "utf8")) as { exclude?: string[] };
   raw.exclude = ["src/infra/store.rs"];
   write(dir, "keylang.json", `${JSON.stringify(raw, null, 2)}\n`);
@@ -746,6 +764,7 @@ test("exports on an opaque module (a parse error) whose partial table matches th
     assert.match(o.stdout + o.stderr, /0 fail, 1 unverified, 0 ok/, o.stdout + o.stderr);
   }
 
+  // SAFETY: `check --format json` prints a report whose `results` rows carry these fields (docs/cli.md).
   const json = JSON.parse(keylang(dir, ["check", "--format", "json"]).stdout) as { results: { criterion: string; verdict: string; evidence: string }[] };
   const row = json.results.find((r) => r.criterion.startsWith("exports"));
   assert.equal(row?.verdict, "unverified");

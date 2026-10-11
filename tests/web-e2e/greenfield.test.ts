@@ -31,14 +31,27 @@ interface Model {
   mode: string;
 }
 
+/** The editor object the diagrams page exposes as `globalThis.keylangEditor`. */
+type EditorPage = typeof globalThis & {
+  keylangEditor: {
+    currentModel(): Model;
+    graph: {
+      getView(): { scale: number; translate: { x: number; y: number }; scaleAndTranslate(s: number, x: number, y: number): void };
+      container: { getBoundingClientRect(): { left: number; top: number } };
+    };
+  };
+};
+
 function model(page: Page): Promise<Model> {
-  return page.evaluate(() => (globalThis as unknown as { keylangEditor: { currentModel(): unknown } }).keylangEditor.currentModel()) as Promise<Model>;
+  // SAFETY: the page script sets globalThis.keylangEditor when the editor opens, before #greenfield appears.
+  return page.evaluate(() => (globalThis as EditorPage).keylangEditor.currentModel());
 }
 
 async function screenPoint(page: Page, x: number, y: number): Promise<{ x: number; y: number }> {
   return page.evaluate(
     ([mx, my]) => {
-      const editor = (globalThis as unknown as { keylangEditor: { graph: { getView(): { scale: number; translate: { x: number; y: number } }; container: { getBoundingClientRect(): { left: number; top: number } } } } }).keylangEditor;
+      // SAFETY: the page script sets globalThis.keylangEditor when the editor opens, before #greenfield appears.
+      const editor = (globalThis as EditorPage).keylangEditor;
       const view = editor.graph.getView();
       const box = editor.graph.container.getBoundingClientRect();
 
@@ -69,7 +82,8 @@ async function drag(page: Page, from: { x: number; y: number }, to: { x: number;
 
 /** The arrow that starts a connection: at a shape's right edge, outside a small one. */
 async function arrowOf(page: Page, node: { x: number; y: number; w: number; h: number }): Promise<{ x: number; y: number }> {
-  const scale = await page.evaluate(() => (globalThis as unknown as { keylangEditor: { graph: { getView(): { scale: number } } } }).keylangEditor.graph.getView().scale);
+  // SAFETY: the page script sets globalThis.keylangEditor when the editor opens, before #greenfield appears.
+  const scale = await page.evaluate(() => (globalThis as EditorPage).keylangEditor.graph.getView().scale);
   const at = await screenPoint(page, node.x + node.w, node.y + node.h / 2);
 
   return node.w > 80 ? { x: at.x - 12 * scale, y: at.y } : { x: at.x + 10, y: at.y };
@@ -126,7 +140,8 @@ test("web --new: the editor opens with the template's lanes; two lanes and a pro
 
   // `#new=1`: the editor on an empty canvas, «чернетка», the panel, and the lanes of «4 шари».
   await page.locator("#greenfield").waitFor();
-  await page.waitForFunction(() => (globalThis as unknown as { keylangEditor: { currentModel(): { lanes: unknown[] } } }).keylangEditor.currentModel().lanes.length === 4);
+  // SAFETY: the page script sets globalThis.keylangEditor when the editor opens, before #greenfield appears.
+  await page.waitForFunction(() => (globalThis as EditorPage).keylangEditor.currentModel().lanes.length === 4);
   let now = await model(page);
   assert.equal(now.mode, "draft");
   assert.deepEqual([...now.lanes].sort((a, b) => a.y - b.y).map((l) => l.id), ["planned:presentation", "planned:application", "planned:infrastructure", "planned:domain"]);
@@ -142,7 +157,8 @@ test("web --new: the editor opens with the template's lanes; two lanes and a pro
   await page.keyboard.press("Control+a");
   await page.keyboard.press("Delete");
   assert.equal((await model(page)).lanes.length, 0);
-  await page.evaluate(() => (globalThis as unknown as { keylangEditor: { graph: { getView(): { scaleAndTranslate(s: number, x: number, y: number): void } } } }).keylangEditor.graph.getView().scaleAndTranslate(1, 0, 0));
+  // SAFETY: the page script sets globalThis.keylangEditor when the editor opens, before #greenfield appears.
+  await page.evaluate(() => (globalThis as EditorPage).keylangEditor.graph.getView().scaleAndTranslate(1, 0, 0));
   await dropFromPalette(page, "layer", { x: 20, y: 20 });
   await rename(page, "planned:application");
   await dropFromPalette(page, "layer", { x: 20, y: 190 });
@@ -192,6 +208,7 @@ test("web --new: the editor opens with the template's lanes; two lanes and a pro
   // `feature`: the three steps planned (with the trigger's fn).
   const feature = spawnSync(process.execPath, [bin, "feature", "placeOrder", "--format", "json"], { cwd: dir, encoding: "utf8" });
   assert.equal(feature.status, 1, feature.stderr);
+  // SAFETY: `feature --format json` prints a report whose `gaps` entries carry a kind and an id.
   const planned = (JSON.parse(feature.stdout) as { gaps: { kind: string; id: string }[] }).gaps.filter((g) => g.kind === "planned").map((g) => g.id);
   assert.deepEqual(planned.filter((id) => id !== "application.placeOrder").sort(), ["application.step", "application.step2", "domain.step"]);
   assert.match(readFileSync(join(dir, "keylang/features/placeOrder.md"), "utf8"), /^- trigger route application\.placeOrder\n- step application\.step\n- step domain\.step\n- step application\.step2\n/m);

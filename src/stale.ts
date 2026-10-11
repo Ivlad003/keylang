@@ -14,6 +14,7 @@ import { loadConfig, specPath, toPosix, type Config } from "./config.ts";
 import { errorText } from "./diag.ts";
 import { snapshotBaseline } from "./explanations.ts";
 import { existingText } from "./files.ts";
+import { isJsonObject, isJsonString, parseJson, type JsonValue } from "./json.ts";
 import { sectionNodes, type Document, type Node, type Section } from "./ir.ts";
 import { safeWrite } from "./safe-write.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
@@ -123,12 +124,14 @@ function sectionRefs(section: Section): string[] {
   return sectionNodes(section).flatMap(subtreeRefs);
 }
 
+type StatementPrint = { fingerprint: string; incomplete: string[] };
+
 /**
  * The fingerprint of a statement's subjects in the snapshot, and what makes it
  * incomplete. A subject the snapshot lacks hashes as `?`, so it turning up
  * later is a change too.
  */
-export function statementPrint(snapshot: AnalysisSnapshot, subjects: readonly string[]): { fingerprint: string; incomplete: string[] } {
+export function statementPrint(snapshot: AnalysisSnapshot, subjects: readonly string[]): StatementPrint {
   const parts: string[] = [];
   const incomplete: string[] = [];
 
@@ -175,7 +178,7 @@ export function staleReport(docs: readonly Document[], snapshot: AnalysisSnapsho
     return { ...statement, state, fingerprint, incomplete };
   });
 
-  const checked = new Set(docs.filter((doc) => doc.generated === null).map((doc) => doc.path));
+  const checked = new Set(docs.flatMap((doc) => (doc.generated === null ? [doc.path] : [])));
   const present = new Set(findings.map((f) => `${f.file}\u0000${f.key}`));
   const obsolete: StaleReport["obsolete"] = [];
 
@@ -230,23 +233,23 @@ const FINGERPRINT = /^[0-9a-f]{64}$/;
 
 /** Reads a committed baseline; throws `path: problem` naming the field when it is not one. */
 export function parseBaseline(text: string, path: string): StaleBaseline {
-  let value: unknown;
+  let value: JsonValue;
 
   try {
-    value = JSON.parse(text);
+    value = parseJson(text);
   } catch (error) {
     throw new Error(`${path}: not valid JSON: ${errorText(error)}`);
   }
 
-  if (!isRecord(value)) throw new Error(`${path}: expected an object of spec files`);
+  if (!isJsonObject(value)) throw new Error(`${path}: expected an object of spec files`);
   const out = new Map<string, Map<string, string>>();
 
   for (const [file, entries] of Object.entries(value)) {
-    if (!isRecord(entries)) throw new Error(`${path}: \`${file}\`: expected an object of statement keys`);
+    if (!isJsonObject(entries)) throw new Error(`${path}: \`${file}\`: expected an object of statement keys`);
     const row = new Map<string, string>();
 
     for (const [key, print] of Object.entries(entries)) {
-      if (typeof print !== "string" || !FINGERPRINT.test(print)) throw new Error(`${path}: \`${file}\` → \`${key}\`: expected a SHA-256 fingerprint (64 hex digits)`);
+      if (!isJsonString(print) || !FINGERPRINT.test(print)) throw new Error(`${path}: \`${file}\` → \`${key}\`: expected a SHA-256 fingerprint (64 hex digits)`);
       row.set(key, print);
     }
 
@@ -254,10 +257,6 @@ export function parseBaseline(text: string, path: string): StaleBaseline {
   }
 
   return out;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** One report line: `file:line:col: stale invariant `…`: …`. */

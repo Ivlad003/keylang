@@ -12,33 +12,33 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { featureBaseOrigin, gitChangedFiles, gitChangedLines, gitFileAt, gitSpecFilesAt } from "../../src/git-changes.ts";
+import { isJsonString, parseJson, type JsonValue } from "../../src/json.ts";
 import { diffLines } from "../../src/line-diff.ts";
 import { compareText } from "../../src/span.ts";
 import * as memory from "../../web/worker/shims/fs.ts";
+import type { ReadOptions } from "../../web/worker/shims/fs.ts";
 
 const [libPath, reposArg] = process.argv.slice(2);
 
 if (!libPath || !reposArg) throw new Error("usage: prototype-isomorphic-git.ts <isomorphic-git/index.js> <repo>[,<repo>…]");
 
+// SAFETY: the usage names isomorphic-git's own index.js as the first argument.
 const git = (await import(libPath)) as typeof import("isomorphic-git");
 
 // One cache for every call: parsed packfiles and trees are reused (isomorphic-git's `cache` option).
 const cache = process.env["NO_CACHE"] ? undefined : {};
 
 // The line diff: keylang's LCS (src/line-diff.ts) or jsdiff's Myers, as git's default is.
+// SAFETY: the usage names jsdiff's libesm/index.js as the third argument; `diffArrays` is its export of this shape.
 const jsdiff = process.argv[4] ? ((await import(process.argv[4])) as { diffArrays: (a: string[], b: string[]) => { added?: boolean; removed?: boolean; count?: number; value: string[] }[] }) : null;
 
 // --- the fs isomorphic-git is given: the worker's, read-only, behind `promises` ---------------------
 const writes: string[] = [];
 
-const enoent = (error: unknown): never => {
-  throw error;
-};
-
 const fs = {
   promises: {
-    readFile: async (path: string, options?: unknown) => memory.readFileSync(path, options),
-    readdir: async (path: string) => memory.readdirSync(path) as string[],
+    readFile: async (path: string, options?: ReadOptions) => memory.readFileSync(path, options),
+    readdir: async (path: string) => memory.readdirSync(path),
     stat: async (path: string) => Object.assign(memory.statSync(path)!, { uid: 0, gid: 0 }),
     lstat: async (path: string) => Object.assign(memory.lstatSync(path)!, { uid: 0, gid: 0 }),
     readlink: async (path: string) => memory.readlinkSync(path),
@@ -46,16 +46,17 @@ const fs = {
     // copy in memory, never back to the person's folder. The writes are counted.
     writeFile: async (path: string, data: Uint8Array | string) => {
       writes.push(path);
-      memory.mountFile(path, typeof data === "string" ? data : new Uint8Array(data));
+      memory.mountFile(path, data instanceof Uint8Array ? new Uint8Array(data) : data);
     },
     mkdir: async (path: string) => {
       writes.push(`${path}/`);
       memory.mountDirectory(path);
     },
-    rmdir: async (path: string) => enoent(memory.rmdirSync(path)),
-    unlink: async (path: string) => enoent(memory.unlinkSync(path)),
-    symlink: async (path: string) => enoent(memory.writeFileSync(path)),
-    chmod: async (path: string) => enoent(memory.chmodSync(path)),
+    // Read-only: each of these throws EROFS.
+    rmdir: async (path: string) => memory.rmdirSync(path),
+    unlink: async (path: string) => memory.unlinkSync(path),
+    symlink: async (path: string) => memory.writeFileSync(path),
+    chmod: async (path: string) => memory.chmodSync(path),
   },
 };
 
@@ -91,7 +92,7 @@ async function commitOf(dir: string, ref: string): Promise<string | null> {
     // `^{commit}`: an annotated tag is peeled to its commit.
     const object = await git.readObject({ fs, dir, cache, oid });
 
-    if (object.type === "tag") return (object.object as { object: string }).object;
+    if (object.format === "parsed" && object.type === "tag") return object.object.object;
 
     return object.type === "commit" ? oid : null;
   } catch {
@@ -298,13 +299,24 @@ async function isoFeatureBaseOrigin(dir: string): Promise<{ ref: string; source:
 }
 
 // --- side by side ---------------------------------------------------------------------------------
-const rangesText = (map: ReadonlyMap<string, unknown>): string => JSON.stringify([...map].sort(([a], [b]) => compareText(a, b)));
+const rangesText = <T>(map: ReadonlyMap<string, T>): string => JSON.stringify([...map].sort(([a], [b]) => compareText(a, b)));
 
 let same = 0;
 
 let differ = 0;
 
-async function compare(name: string, cli: () => unknown, iso: () => Promise<unknown>): Promise<void> {
+function isText(value: unknown): value is string {
+  return typeof value === "string";
+}
+
+/** The pairs of a `rangesText` listing by path. */
+function listing(text: string): Map<string, JsonValue | undefined> {
+  const pairs = parseJson(text);
+
+  return new Map(Array.isArray(pairs) ? pairs.flatMap((pair) => (Array.isArray(pair) && isJsonString(pair[0]) ? [[pair[0], pair[1]] as const] : [])) : []);
+}
+
+async function compare<T>(name: string, cli: () => T, iso: () => Promise<T>): Promise<void> {
   const started = performance.now();
   const expected = cli();
   const cliMs = performance.now() - started;
@@ -321,9 +333,9 @@ async function compare(name: string, cli: () => unknown, iso: () => Promise<unkn
     differ++;
 
     // Two path → ranges listings: how many files differ, and which.
-    if (typeof expected === "string" && typeof actual === "string" && expected.startsWith("[[")) {
-      const want = new Map(JSON.parse(expected) as [string, unknown][]);
-      const got = new Map(JSON.parse(actual) as [string, unknown][]);
+    if (isText(expected) && isText(actual) && expected.startsWith("[[")) {
+      const want = listing(expected);
+      const got = listing(actual);
       const paths = [...new Set([...want.keys(), ...got.keys()])];
       const off = paths.filter((path) => JSON.stringify(want.get(path)) !== JSON.stringify(got.get(path)));
       console.log(`DIFF  ${name}  (${timing}): ${off.length} of ${paths.length} files`);
@@ -333,7 +345,7 @@ async function compare(name: string, cli: () => unknown, iso: () => Promise<unkn
       return;
     }
 
-    console.log(`DIFF  ${name}  (${timing})\n${String((error as Error).message).split("\n").slice(0, 24).join("\n")}`);
+    console.log(`DIFF  ${name}  (${timing})\n${(error instanceof Error ? error.message : String(error)).split("\n").slice(0, 24).join("\n")}`);
   }
 }
 

@@ -60,9 +60,10 @@ import {
   SvgCanvas2D,
   UndoManager,
   type EventObject,
+  type EventSource,
   type CellStyle,
 } from "@maxgraph/core";
-import type { Api, BundleImport, ClipEdge, ClipShape, Diagram, DiagramNode, DiagramProposal, Verdict, Views } from "./api.ts";
+import type { Api, BundleImport, ClipEdge, ClipShape, Diagram, DiagramNode, DiagramProposal, Views } from "./api.ts";
 import { askPasteText, isBundle, mapLayers, writeClipboard } from "./bundle-clip.ts";
 import { COMPONENT_LOOK, register, VERDICT_COLOUR, VERDICT_GLYPH, nodeStyle, wrapLabel } from "./canvas.ts";
 import { button, make } from "./dom.ts";
@@ -79,7 +80,7 @@ export type LinkKind = "sequence" | "call" | "dependency" | "allow" | "deny" | "
 export type EditorMode = "code" | "draft";
 
 /** The kinds as the panel names them. */
-export const SHAPE_NAMES: Record<string, string> = {
+export const SHAPE_NAMES: Record<ShapeKind, string> = {
   lane: "шар (доріжка)",
   layer: "шар",
   module: "модуль",
@@ -194,7 +195,7 @@ const CONNECT_ICON = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http:
 /** What a start event stands for: a trigger fn or an entry point's kind. */
 export const TRIGGERS = ["fn", "route", "cron", "webhook", "consumer", "cli", "event"] as const;
 
-const TRIGGER_GLYPH: Record<string, string> = { route: "⇥", cron: "⏱", webhook: "✉", consumer: "✉", cli: "›", event: "⚡" };
+const TRIGGER_GLYPH = new Map(Object.entries({ route: "⇥", cron: "⏱", webhook: "✉", consumer: "✉", cli: "›", event: "⚡" }));
 
 /** The keylang side of a vertex: its value in the maxGraph model. A class with `clone()`, so a copied cell gets its own. */
 export class Shape {
@@ -257,7 +258,7 @@ export class Shape {
       case "parallel":
         return this.role === "join" ? "+ join" : "+";
       case "start":
-        return `${TRIGGER_GLYPH[this.trigger ?? ""] ? `${TRIGGER_GLYPH[this.trigger ?? ""]} ` : ""}${glyph}${wrapLabel(this.label, 2)}`;
+        return `${TRIGGER_GLYPH.get(this.trigger ?? "") ? `${TRIGGER_GLYPH.get(this.trigger ?? "")} ` : ""}${glyph}${wrapLabel(this.label, 2)}`;
       case "timer":
         return `⏱ ${wrapLabel(this.label, 2)}`;
       case "event":
@@ -423,10 +424,22 @@ export const SYSTEM_PALETTE: readonly PaletteItem[] = [
   { item: "note", text: "✎ примітка", title: "Примітка (проза)", kind: "note", stem: "примітка", size: [170, 80], named: false },
 ];
 
-/** One cell of a draft: a shape or an edge with its parent, geometry relative to it, and its keylang side. */
+/** One cell of a draft: a shape or an edge with its parent, geometry relative to it, and its keylang side (the fields of a `Shape` or a `Link`). */
 type DraftCell =
-  | { type: "shape"; parent: string | null; shape: Record<string, unknown>; x: number; y: number; w: number; h: number }
-  | { type: "link"; parent: string | null; link: Record<string, unknown>; source: string; target: string; points: { x: number; y: number }[] };
+  | { type: "shape"; parent: string | null; shape: Partial<Shape>; x: number; y: number; w: number; h: number }
+  | { type: "link"; parent: string | null; link: Partial<Link>; source: string; target: string; points: ModelPoint[] };
+
+/** A point in model coordinates. */
+interface ModelPoint {
+  x: number;
+  y: number;
+}
+
+/** The shapes and edges of a fragment, in model coordinates. */
+export interface ClipFragment {
+  shapes: ClipShape[];
+  edges: ClipEdge[];
+}
 
 interface Draft {
   view: string;
@@ -443,7 +456,7 @@ export function shapeStyle(shape: Shape): CellStyle {
   if (shape.kind === "note") return { shape: "rectangle", fillColor: "#fff9c4", strokeColor: "#f9a825", fontColor: "#5d4037", fontSize: 11, align: "left", verticalAlign: "top", spacing: 6, whiteSpace: "wrap" };
 
   if (shape.kind === "component") {
-    const style: CellStyle = { ...nodeStyle({ kind: "component", component: shape.component, verdict: shape.verdict as Verdict }) };
+    const style: CellStyle = { ...nodeStyle({ kind: "component", component: shape.component, verdict: shape.verdict }) };
 
     if (shape.status !== null) Object.assign(style, { dashed: true, dashPattern: "4 3", strokeColor: shape.status === "rejected" ? "#9e9e9e" : "#b26a00" });
 
@@ -454,7 +467,7 @@ export function shapeStyle(shape: Shape): CellStyle {
 
   const viewKind = shape.kind === "type" || shape.kind === "module" ? "fn" : shape.kind;
   const planned = shape.id.startsWith("planned:");
-  const style: CellStyle = { ...nodeStyle({ kind: viewKind, verdict: (planned ? "planned" : shape.verdict) as Verdict }) };
+  const style: CellStyle = { ...nodeStyle({ kind: viewKind, verdict: planned ? "planned" : shape.verdict }) };
 
   if (planned) style.dashed = true;
 
@@ -498,7 +511,9 @@ export function linkStyle(link: Link): CellStyle {
     case "relation": {
       const verb = link.label.split(/[:\s]/)[0] ?? "";
 
-      return { ...base, ...(verb === "publishes" || verb === "consumes" || verb === "replicates" ? { dashed: true, endArrow: "open" } : {}) };
+      if (verb === "publishes" || verb === "consumes" || verb === "replicates") return { ...base, dashed: true, endArrow: "open" };
+
+      return { ...base };
     }
 
     default:
@@ -509,6 +524,20 @@ export function linkStyle(link: Link): CellStyle {
 const NODE_KINDS: ReadonlySet<string> = new Set(["start", "task", "gateway", "parallel", "event", "timer", "external", "hole", "module", "fn", "layer", "component"]);
 
 const LINK_KINDS: ReadonlySet<string> = new Set(["sequence", "call", "dependency", "allow", "deny", "emits", "subscribes", "continues", "relation"]);
+
+/** A kind of the diagram model the editor draws as a shape of that kind. */
+function isNodeKind(kind: string): kind is ShapeKind {
+  return NODE_KINDS.has(kind);
+}
+
+/** A shape kind a pasted fragment may hold: a node's, a note or a type. */
+function isPastedKind(kind: string): kind is ShapeKind {
+  return isNodeKind(kind) || kind === "note" || kind === "type";
+}
+
+function isLinkKind(kind: string): kind is LinkKind {
+  return LINK_KINDS.has(kind);
+}
 
 /** The layer a lane stands for: its ID without `planned:`. */
 function layerOf(lane: Shape): string {
@@ -719,7 +748,7 @@ export class Editor {
     graph.getDataModel().addListener(InternalEvent.CHANGE, () => this.changed());
 
     // Every change of the model and the view is a step of undo.
-    const undoable = (_sender: unknown, event: EventObject): void => {
+    const undoable = (_sender: EventSource, event: EventObject): void => {
       if (!this.loading) this.undoManager.undoableEditHappened(event.getProperty("edit"));
       this.undoButtons();
     };
@@ -768,7 +797,9 @@ export class Editor {
       kind.append(option);
     }
 
-    kind.addEventListener("change", () => (this.linkKind = kind.value as LinkKind));
+    kind.addEventListener("change", () => {
+      if (isLinkKind(kind.value)) this.linkKind = kind.value;
+    });
     const undo = button("↶", () => this.undo(), { title: "Скасувати (Ctrl+Z)" });
     undo.id = "editor-undo";
     const redo = button("↷", () => this.redo(), { title: "Повторити (Ctrl+Y, Ctrl+Shift+Z)" });
@@ -870,7 +901,7 @@ export class Editor {
   }
 
   /** A point of the page in model coordinates. */
-  private modelPoint(clientX: number, clientY: number): { x: number; y: number } {
+  private modelPoint(clientX: number, clientY: number): ModelPoint {
     const view = this.graph.getView();
     const box = this.canvas.getBoundingClientRect();
 
@@ -984,9 +1015,9 @@ export class Editor {
     this.graph.setDropEnabled(draft);
     this.graph.setConnectable(draft);
     this.graph.setCellsDisconnectable(draft);
-    const kind = document.getElementById("editor-link-kind") as HTMLSelectElement | null;
+    const kind = document.getElementById("editor-link-kind");
 
-    if (kind) kind.disabled = !draft;
+    if (kind instanceof HTMLSelectElement) kind.disabled = !draft;
     this.properties.show(this.graph.getSelectionCount() === 1 ? this.graph.getSelectionCell() : null);
 
     for (const id of ["editor-mode-code", "editor-mode-draft"]) document.getElementById(id)?.setAttribute("aria-pressed", String(id.endsWith(this.editMode)));
@@ -1006,21 +1037,21 @@ export class Editor {
   }
 
   private undoButtons(): void {
-    const undo = document.getElementById("editor-undo") as HTMLButtonElement | null;
-    const redo = document.getElementById("editor-redo") as HTMLButtonElement | null;
+    const undo = document.getElementById("editor-undo");
+    const redo = document.getElementById("editor-redo");
 
-    if (undo) undo.disabled = !this.undoManager.canUndo();
+    if (undo instanceof HTMLButtonElement) undo.disabled = !this.undoManager.canUndo();
 
-    if (redo) redo.disabled = !this.undoManager.canRedo();
+    if (redo instanceof HTMLButtonElement) redo.disabled = !this.undoManager.canRedo();
   }
 
   /** The keys of diagrams.net, while the editor is the page's mode and no field has the focus. */
   private keys(): void {
     document.addEventListener("keydown", (event) => {
       if (document.body.dataset["mode"] !== "editor") return;
-      const target = event.target as HTMLElement | null;
+      const target = event.target;
 
-      if (target && (target.closest("input, textarea, select") || target.isContentEditable)) return;
+      if (target instanceof Element && (target.closest("input, textarea, select") || (target instanceof HTMLElement && target.isContentEditable))) return;
       const mod = event.ctrlKey || event.metaKey;
       const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
       const done = (): void => event.preventDefault();
@@ -1061,8 +1092,8 @@ export class Editor {
       if (key === "Delete" || key === "Backspace") return done(), this.deleteSelection();
 
       if (key === "Escape") return this.graph.clearSelection();
-      const arrows: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
-      const arrow = arrows[key];
+      const arrows = new Map<string, [number, number]>([["ArrowLeft", [-1, 0]], ["ArrowRight", [1, 0]], ["ArrowUp", [0, -1]], ["ArrowDown", [0, 1]]]);
+      const arrow = arrows.get(key);
 
       if (arrow && !mod) {
         done();
@@ -1076,9 +1107,9 @@ export class Editor {
   private pasteEvents(): void {
     document.addEventListener("paste", (event) => {
       if (document.body.dataset["mode"] !== "editor") return;
-      const target = event.target as HTMLElement | null;
+      const target = event.target;
 
-      if (target && (target.closest("input, textarea, select") || target.isContentEditable)) return;
+      if (target instanceof Element && (target.closest("input, textarea, select") || (target instanceof HTMLElement && target.isContentEditable))) return;
       this.pasteDue++;
       event.preventDefault();
       void this.pasteText(event.clipboardData?.getData("text/plain") ?? "");
@@ -1194,7 +1225,7 @@ export class Editor {
   }
 
   /** The selection (or, with `all`, the whole canvas) as the shapes and edges of a fragment, in model coordinates. */
-  selectionClip(all: boolean): { shapes: ClipShape[]; edges: ClipEdge[] } {
+  selectionClip(all: boolean): ClipFragment {
     const model = this.currentModel();
     const chosen = new Set<string>();
 
@@ -1229,7 +1260,16 @@ export class Editor {
       return shape;
     });
 
-    const edges: ClipEdge[] = model.edges.filter((e) => keys.has(e.from) && keys.has(e.to)).map((e) => ({ from: e.from, to: e.to, kind: e.kind, ...(e.label ? { label: e.label } : {}), ...(e.points.length > 0 ? { points: e.points } : {}) }));
+    const edges = model.edges.flatMap((e) => {
+      if (!keys.has(e.from) || !keys.has(e.to)) return [];
+      const edge: ClipEdge = { from: e.from, to: e.to, kind: e.kind };
+
+      if (e.label) edge.label = e.label;
+
+      if (e.points.length > 0) edge.points = e.points;
+
+      return [edge];
+    });
 
     return { shapes, edges };
   }
@@ -1417,7 +1457,7 @@ export class Editor {
   insertBundle(answer: BundleImport, at: { x: number; y: number }, sameRepo: boolean): Cell[] {
     if (this.editMode !== "draft") this.setMode("draft");
     const graph = this.graph;
-    const shapes = answer.shapes.filter((s) => NODE_KINDS.has(s.kind) || s.kind === "note" || s.kind === "type");
+    const shapes = answer.shapes.filter((s) => isPastedKind(s.kind));
     const added: Cell[] = [];
     const byKey = new Map<string, Cell>();
     graph.batchUpdate(() => {
@@ -1459,7 +1499,8 @@ export class Editor {
           label = name;
         }
 
-        const shape = new Shape(this.newKey(), item.kind as ShapeKind, id, label);
+        // `shapes` holds pasted kinds only: the fallback never applies.
+        const shape = new Shape(this.newKey(), isPastedKind(item.kind) ? item.kind : "task", id, label);
 
         if (item.trigger) shape.trigger = item.trigger;
         else if (item.kind === "start") shape.trigger = "fn";
@@ -1486,7 +1527,7 @@ export class Editor {
         const target = byKey.get(edge.to);
 
         if (!source || !target) continue;
-        const link = new Link(this.newKey(), LINK_KINDS.has(edge.kind) ? (edge.kind as LinkKind) : "sequence", edge.label ?? "");
+        const link = new Link(this.newKey(), isLinkKind(edge.kind) ? edge.kind : "sequence", edge.label ?? "");
         added.push(graph.insertEdge({ parent: graph.getDefaultParent(), value: link, source, target, style: linkStyle(link) }));
       }
 
@@ -1650,7 +1691,7 @@ export class Editor {
     Object.assign(next, patch);
 
     // A system's relation is `<verb>[: caption]`: the verb is what the line of the spec starts with.
-    if (next.kind === "relation" && !(RELATION_VERBS as readonly string[]).includes(next.label.split(/[:\s]/)[0] ?? "")) {
+    if (next.kind === "relation" && !RELATION_VERBS.some((verb) => verb === next.label.split(/[:\s]/)[0])) {
       if (patch.kind !== undefined && patch.label === undefined) next.label = "calls";
       else {
         const refused = `зв'язок системи починається дієсловом: ${RELATION_VERBS.join(", ")} (напр. «reads: SELECT»)`;
@@ -1750,14 +1791,14 @@ export class Editor {
         const parent = (item.parent !== null ? byKey.get(item.parent) : undefined) ?? root;
 
         if (item.type === "shape") {
-          const shape = Object.assign(new Shape("", "task", "", ""), item.shape) as Shape;
+          const shape = Object.assign(new Shape("", "task", "", ""), item.shape);
           byKey.set(shape.key, graph.insertVertex({ parent, value: shape, position: [item.x, item.y], size: [item.w, item.h], style: shapeStyle(shape) }));
         } else {
           const source = byKey.get(item.source);
           const target = byKey.get(item.target);
 
           if (!source || !target) continue;
-          const link = Object.assign(new Link("", "sequence"), item.link) as Link;
+          const link = Object.assign(new Link("", "sequence"), item.link);
           const cell = graph.insertEdge({ parent, value: link, source, target, style: linkStyle(link) });
 
           if (item.points.length > 0) {
@@ -1777,6 +1818,7 @@ export class Editor {
       const text = sessionStorage.getItem(`${DRAFT_PREFIX}${view}`);
 
       if (!text) return null;
+      // SAFETY: only `writeDraft` of this page writes the key, as JSON of `draft()`; the view and the cells are checked below.
       const draft = JSON.parse(text) as Draft;
 
       return draft.view === view && Array.isArray(draft.cells) ? draft : null;
@@ -1827,9 +1869,9 @@ export class Editor {
     if (wasSystem !== isSystemView(key)) {
       this.fillPalette();
       this.linkKind = isSystemView(key) ? "relation" : "sequence";
-      const select = document.getElementById("editor-link-kind") as HTMLSelectElement | null;
+      const select = document.getElementById("editor-link-kind");
 
-      if (select) select.value = this.linkKind;
+      if (select instanceof HTMLSelectElement) select.value = this.linkKind;
     }
 
     this.editMode = "code";
@@ -1899,7 +1941,7 @@ export class Editor {
         const base = `edge:${edge.from}->${edge.to}`;
         const n = seen.get(base) ?? 0;
         seen.set(base, n + 1);
-        const link = new Link(n === 0 ? base : `${base}#${n}`, LINK_KINDS.has(edge.kind) ? (edge.kind as LinkKind) : "sequence", edge.label ?? "");
+        const link = new Link(n === 0 ? base : `${base}#${n}`, isLinkKind(edge.kind) ? edge.kind : "sequence", edge.label ?? "");
         const cell = graph.insertEdge({ parent, value: link, source, target, style: linkStyle(link) });
         const points = layout?.[link.key]?.points;
 
@@ -1934,7 +1976,8 @@ export class Editor {
 
   /** A note or a proposed shape of the layout file, at its place in model coordinates (inside its lane when it has one). */
   private insertSaved(key: string, at: Position, lane: Cell | null): void {
-    const kind = (at.kind ?? "note") as ShapeKind;
+    // The callers pass a note or a kind of the model.
+    const kind = at.kind !== undefined && isNodeKind(at.kind) ? at.kind : "note";
     const shape = new Shape(key, kind, at.id ?? "", at.label ?? "");
 
     if (kind === "note") shape.description = at.note ?? "";
@@ -1954,7 +1997,7 @@ export class Editor {
   }
 
   private shapeFromNode(node: DiagramNode, entries: Map<string, string>): Shape {
-    const kind: ShapeKind = NODE_KINDS.has(node.kind) ? (node.kind as ShapeKind) : "task";
+    const kind = isNodeKind(node.kind) ? node.kind : "task";
     const id = node.ref?.id ?? (kind === "layer" ? node.label : "");
     const shape = new Shape(node.id, kind, id, node.label);
     shape.origin = "code";
@@ -1977,7 +2020,7 @@ export class Editor {
   }
 
   /** The top-left of a cell in model coordinates: the sum of its ancestors' geometries. */
-  private origin(cell: Cell | null): { x: number; y: number } {
+  private origin(cell: Cell | null): ModelPoint {
     let x = 0;
     let y = 0;
 

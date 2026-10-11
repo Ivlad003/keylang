@@ -14,16 +14,16 @@ import { ApiError, type Api, type CallHole, type CallRef, type Calls, type FlowS
 import { button, codeLink, make } from "./dom.ts";
 
 /** The badge of an edge's `via`: short text and what it means. */
-export const VIA_BADGE: Record<string, { text: string; title: string }> = {
-  "callable-arg": { text: "callable", title: "a callable reference passed as an argument ([$this, 'm'], this.m.bind(this), self.m)" },
-  "closure-arg": { text: "closure", title: "a call inside a closure passed as an argument" },
-  injected: { text: "injected hook", title: "the value a caller passes for a hook (request.generate)" },
-  default: { text: "default hook", title: "the default of a hook (request.generate ?? generateMap)" },
-  preference: { text: "preference", title: "an interface bound to an implementation by the framework's config (Magento di.xml preference)" },
-  plugin: { text: "plugin", title: "an interceptor around the call (Magento plugin: before/around/after)" },
-  observer: { text: "observer", title: "a subscriber of the event (events.xml)" },
-  dispatch: { text: "dispatch", title: "publishes the event" },
-};
+export const VIA_BADGE = new Map([
+  ["callable-arg", { text: "callable", title: "a callable reference passed as an argument ([$this, 'm'], this.m.bind(this), self.m)" }],
+  ["closure-arg", { text: "closure", title: "a call inside a closure passed as an argument" }],
+  ["injected", { text: "injected hook", title: "the value a caller passes for a hook (request.generate)" }],
+  ["default", { text: "default hook", title: "the default of a hook (request.generate ?? generateMap)" }],
+  ["preference", { text: "preference", title: "an interface bound to an implementation by the framework's config (Magento di.xml preference)" }],
+  ["plugin", { text: "plugin", title: "an interceptor around the call (Magento plugin: before/around/after)" }],
+  ["observer", { text: "observer", title: "a subscriber of the event (events.xml)" }],
+  ["dispatch", { text: "dispatch", title: "publishes the event" }],
+]);
 
 type Direction = "down" | "up";
 
@@ -53,10 +53,10 @@ function node(id: string, ref: CallRef | null, direction: Direction, parent: Tre
   return { id, ref, direction, parent, open: false, loading: false, checked: false, calls: null, children: [], error: null };
 }
 
-function explain(error: unknown): string {
-  if (error instanceof ApiError && error.status === 403) return "No access: open the URL printed by `keylang web` (it carries the access token).";
+function explain(cause: unknown): string {
+  if (cause instanceof ApiError && cause.status === 403) return "No access: open the URL printed by `keylang web` (it carries the access token).";
 
-  return error instanceof Error ? error.message : String(error);
+  return cause instanceof Error ? cause.message : String(cause);
 }
 
 const byPosition = (a: { at: { file: string | null; line: number; col: number } }, b: { at: { file: string | null; line: number; col: number } }): number =>
@@ -359,7 +359,7 @@ export class Explorer {
 
     if (ref) {
       if (ref.via) {
-        const badge = VIA_BADGE[ref.via] ?? { text: ref.via, title: `via ${ref.via}` };
+        const badge = VIA_BADGE.get(ref.via) ?? { text: ref.via, title: `via ${ref.via}` };
         line.append(make("span", { className: `badge via via-${ref.via}`, text: badge.text, title: `${badge.title}${ref.site ? ` — ${ref.site}` : ""}${ref.hook ? ` (hook ${ref.hook})` : ""}` }));
       } else if (ref.closure) line.append(make("span", { className: "badge via via-closure", text: "in closure", title: "the call sits in a closure of the caller" }));
 

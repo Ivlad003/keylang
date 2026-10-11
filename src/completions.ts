@@ -8,7 +8,7 @@ export const SHELLS = ["bash", "zsh", "fish"] as const;
 export type Shell = (typeof SHELLS)[number];
 
 export function isShell(name: string): name is Shell {
-  return (SHELLS as readonly string[]).includes(name);
+  return SHELLS.some((shell) => shell === name);
 }
 
 /** What the script completes: commands in help order, each with its subcommands; long flags with an optional short one. */

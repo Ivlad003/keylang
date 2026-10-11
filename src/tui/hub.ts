@@ -21,6 +21,7 @@ import type { Duplex } from "node:stream";
 import { findRoot } from "../analyze.ts";
 import { cloneCacheRoot, listClones, parseRepoSource, syncClone } from "../clone.ts";
 import { CONFIG_FILE } from "../config.ts";
+import { isJsonObject, isJsonString, parseJson, type JsonValue } from "../json.ts";
 import { runOperation } from "../operations.ts";
 import { BUILT_DIR, createWebApp, diagramsPage, ensureClient, logUnhandled, shownHost, type WebApp } from "./web.ts";
 
@@ -142,7 +143,7 @@ export async function serveHub(options: HubOptions): Promise<HubServer> {
   };
 
   const api = async (request: IncomingMessage, response: ServerResponse, path: string): Promise<void> => {
-    const json = (status: number, body: unknown): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
+    const json = <Body>(status: number, body: Body): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
 
     if (!sameOrigin(request) || !authorized(request)) return reply(response, 403, "text/plain", "forbidden\n");
 
@@ -155,13 +156,16 @@ export async function serveHub(options: HubOptions): Promise<HubServer> {
 
     if (!/^application\/json\s*(;|$)/i.test(String(request.headers["content-type"] ?? ""))) return json(415, { error: "Content-Type: application/json" });
     const text = await readBody(request);
-    let body: { id?: unknown; source?: unknown };
+    let parsed: JsonValue;
 
     try {
-      body = text === null ? {} : (JSON.parse(text) as typeof body);
+      parsed = text === null ? {} : parseJson(text);
     } catch {
       return json(400, { error: "the body is no JSON" });
     }
+
+    // A body that is no object names no repository: its fields read as absent.
+    const body = isJsonObject(parsed) ? parsed : {};
 
     // Open a listed repository (the hub's folder, a clone made before) as it is.
     if (path === "/hub/api/open") {
@@ -173,8 +177,10 @@ export async function serveHub(options: HubOptions): Promise<HubServer> {
     }
 
     // Clone a URL or a local path, or update a clone: the source as typed, or a listed clone's.
-    const listed = typeof body.id === "string" ? repos().find((r) => r.id === body.id && r.cloned) : undefined;
-    const sourceText = listed?.source ?? (typeof body.source === "string" ? body.source.trim() : "");
+    const requestedId = body.id;
+    const requestedSource = body.source;
+    const listed = isJsonString(requestedId) ? repos().find((r) => r.id === requestedId && r.cloned) : undefined;
+    const sourceText = listed?.source ?? (isJsonString(requestedSource) ? requestedSource.trim() : "");
 
     if (sourceText === "") return json(400, { error: "source: a repository URL or a local path" });
 
@@ -189,7 +195,8 @@ export async function serveHub(options: HubOptions): Promise<HubServer> {
   const asset = async (response: ServerResponse, name: string): Promise<void> => {
     await ensureClient();
     const manifest = join(BUILT_DIR, "site.json");
-    const listed = existsSync(manifest) ? (JSON.parse(readFileSync(manifest, "utf8")) as string[]) : [];
+    const written = existsSync(manifest) ? parseJson(readFileSync(manifest, "utf8")) : [];
+    const listed = Array.isArray(written) ? written.filter(isJsonString) : [];
 
     if (!listed.includes(name)) return reply(response, 404, "text/plain", "not found\n");
     const type = name.endsWith(".js") ? "text/javascript" : name.endsWith(".css") ? "text/css" : name.endsWith(".wasm") ? "application/wasm" : name.endsWith(".json") ? "application/json" : "text/plain; charset=utf-8";
@@ -237,8 +244,8 @@ export async function serveHub(options: HubOptions): Promise<HubServer> {
     }
 
     if (path.startsWith("/hub/api/")) {
-      api(request, response, path).catch((error: unknown) => {
-        process.stderr.write(`keylang web --hub: ${error instanceof Error ? error.message : String(error)}\n`);
+      api(request, response, path).catch((cause: unknown) => {
+        process.stderr.write(`keylang web --hub: ${cause instanceof Error ? cause.message : String(cause)}\n`);
 
         if (!response.headersSent) reply(response, 500, "text/plain", "server error\n");
       });
@@ -290,6 +297,7 @@ export async function serveHub(options: HubOptions): Promise<HubServer> {
     server.once("error", reject);
     server.listen(options.port, host, () => resolve());
   });
+  // SAFETY: a server listening on a host and port reports an AddressInfo; a string comes only from a pipe or a Unix socket.
   port = (server.address() as AddressInfo).port;
   const stopLogging = logUnhandled();
 

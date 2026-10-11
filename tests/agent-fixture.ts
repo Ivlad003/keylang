@@ -45,7 +45,7 @@ export function fakeAgents(t: { after: (f: () => void) => void }, names: string[
     chmodSync(file, 0o755);
   }
 
-  const env: Record<string, string> = { FAKE_AGENT_LOG: log, FAKE_AGENT_MODES: options.modes ?? "ok" };
+  const env: FakeAgents["env"] = { FAKE_AGENT_LOG: log, FAKE_AGENT_MODES: options.modes ?? "ok" };
 
   if (options.reply !== undefined) env.FAKE_AGENT_REPLY = options.reply;
 
@@ -67,6 +67,7 @@ export function fakeAgents(t: { after: (f: () => void) => void }, names: string[
           if (text === "") return [];
           const done = join(log, `${n}.done`);
 
+          // SAFETY: the fake agent writes each call log as JSON of a `FakeCall` without `done`; the `.done` file carries that field.
           return [{ ...(JSON.parse(text) as Omit<FakeCall, "done">), done: existsSync(done) ? Number(readFileSync(done, "utf8")) : null }];
         }),
     pids: (n) => {

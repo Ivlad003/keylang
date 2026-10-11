@@ -66,11 +66,13 @@ test("K005 on `step planned <id>` points at the `planned` declaration", (t) => {
     "keylang/flows/p.md:6:12: K005 expected a single ID",
     `keylang/flows/p.md:7:8: ${hint("a.b.f", "step", "type")}`,
   ]);
+  // SAFETY: `check --format json` prints `{ snapshotId, results, coverage }` (docs/cli.md); each result row carries these fields.
   const json = JSON.parse(keylang(dir, ["check", "--format", "json", "keylang/flows/p.md"]).stdout) as { results: { line: number; code: string | null; evidence: string; reason?: string }[] };
   const row = json.results.find((r) => r.code === "K005" && r.line === 5);
   assert.equal(row?.evidence, hint("a.b.e").slice("K005 ".length));
   assert.equal(row?.reason, "arguments");
   const parsed = keylang(dir, ["parse", "--json", "keylang/flows/p.md"]);
+  // SAFETY: `parse --json` prints one IR document per input file (src/ir.ts) with its diagnostics.
   const diag = (JSON.parse(parsed.stdout) as { diagnostics: { message: string; reason?: string; span: { start: { line: number; col: number } } }[] }[])[0]!.diagnostics.find((d) => d.span.start.line === 3);
   assert.equal(diag?.message, hint("a.b.c", "trigger").slice("K005 ".length));
   assert.equal(diag?.span.start.col, 11);
@@ -318,6 +320,7 @@ test("K008 warns when one undotted then word matches a declared id", (t) => {
   assert.doesNotMatch(keylang(dir, ["check", "keylang/flows/quiet.md"]).stdout, /K008/);
 
   const json = keylang(dir, ["check", "--format", "json", "keylang/flows/link.md"]);
+  // SAFETY: `check --format json` prints `{ snapshotId, results, coverage }` (docs/cli.md); each result row carries these fields.
   const row = (JSON.parse(json.stdout) as { results: { code: string | null; verdict: string }[] }).results.find((item) => item.code === "K008");
   assert.equal(row?.verdict, "warning");
   const sarif = keylang(dir, ["check", "--format", "sarif", "keylang/flows/link.md"]);

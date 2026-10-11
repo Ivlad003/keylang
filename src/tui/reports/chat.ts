@@ -11,7 +11,7 @@ import { BOLD, codeOf, messageRow, outcomeRow, textRows, type Report } from "./r
 /** How long the F6 list shows the person's message. */
 const PARAMS_CELLS = 40;
 
-export const CHAT_REPORTS: { "assistant-reply": Report<"assistant-reply"> } = {
+export const CHAT_REPORTS = {
   "assistant-reply": {
     label: () => "clip",
     params: (request) => {
@@ -41,4 +41,4 @@ export const CHAT_REPORTS: { "assistant-reply": Report<"assistant-reply"> } = {
       return [...rows, ...textRows("system prompt", asked.system), ...textRows("prompt", asked.prompt)];
     },
   },
-};
+} satisfies { "assistant-reply": Report<"assistant-reply"> };

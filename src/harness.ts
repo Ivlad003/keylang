@@ -12,9 +12,10 @@ import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
+import { parse as parseToml, stringify as stringifyToml, type TomlTable, type TomlValue } from "smol-toml";
 import { CONFIG_FILE, parseConfig } from "./config.ts";
 import { parseJsoncStrict } from "./imports.ts";
+import { isJsonObject, isJsonString, parseJson, type JsonObject, type JsonValue } from "./json.ts";
 import { allCrlf, landing, targetProblem, writeAtomic, writeProblem } from "./safe-write.ts";
 
 /** Files `init` / `agents` may create or edit. The plan reads each one before it is computed. */
@@ -40,6 +41,14 @@ export function skillFile(): string {
 export const HARNESS_NAMES = ["claude", "codex", "opencode", "cursor"] as const;
 
 export type HarnessName = (typeof HARNESS_NAMES)[number];
+
+/** A harness file after a merge: its text, null when the file goes away. */
+interface MergedText {
+  text: string | null;
+}
+
+/** A merge, or why the file cannot be merged. */
+type MergeResult = MergedText | { error: string };
 
 export const MARK_BEGIN = "<!-- keylang:begin -->";
 
@@ -122,7 +131,7 @@ export function parseAgents(value: string): HarnessSelection {
     return { harnesses: [], instructions: false };
   }
 
-  const unknown = names.find((name) => !HARNESS_NAMES.includes(name as HarnessName));
+  const unknown = names.find((name) => !isHarnessName(name));
 
   if (unknown !== undefined) throw new Error(`unknown agent \`${unknown}\`; expected ${allowed}`);
 
@@ -223,8 +232,11 @@ export function agentsBody(version: string, dir: string): string {
   ].join("\n");
 }
 
+/** An MCP server's command line, split the way MCP configs store it. */
+export type McpCommand = { command: string; args: string[] };
+
 /** `npx -y keylang@<version> mcp`, split the way MCP configs store a command. */
-export function mcpCommand(version: string): { command: string; args: string[] } {
+export function mcpCommand(version: string): McpCommand {
   return { command: "npx", args: ["-y", `keylang@${version}`, "mcp"] };
 }
 
@@ -261,7 +273,7 @@ export function planHarness(input: { selection: HarnessSelection; version: strin
   const files: HarnessFile[] = [];
   const fail = (file: string, message: string): HarnessPlan => ({ files: [], error: { file, message } });
 
-  const push = (path: string, result: { text: string | null } | { error: string }): HarnessPlan | null => {
+  const push = (path: string, result: MergeResult): HarnessPlan | null => {
     if ("error" in result) return fail(path, result.error);
     files.push({ path, text: result.text });
 
@@ -356,7 +368,7 @@ export function planHarness(input: { selection: HarnessSelection; version: strin
  * `body` null removes the block. A begin without an end is an error.
  * The block uses CRLF when every newline of `existing` is CRLF.
  */
-export function mergeMarked(existing: string | null, body: string | null): { text: string | null } | { error: string } {
+export function mergeMarked(existing: string | null, body: string | null): MergeResult {
   const nl: "\n" | "\r\n" = existing !== null && allCrlf(existing) ? "\r\n" : "\n";
 
   if (existing !== null) {
@@ -403,14 +415,18 @@ function marked(body: string, nl: "\n" | "\r\n"): string {
  * `@AGENTS.md` lives in the managed block. A file that already says it
  * outside the block is left without a second copy (the block is removed).
  */
-function mergeClaude(existing: string | null): { text: string | null } | { error: string } {
+function mergeClaude(existing: string | null): MergeResult {
   const outside = outsideMarkers(existing);
 
-  if (typeof outside !== "string") return outside;
+  if (isMarkersError(outside)) return outside;
 
   if (outside.includes("@AGENTS.md")) return mergeMarked(existing, null);
 
   return mergeMarked(existing, "@AGENTS.md");
+}
+
+function isMarkersError(outside: string | { error: string }): outside is { error: string } {
+  return typeof outside !== "string";
 }
 
 function outsideMarkers(existing: string | null): string | { error: string } {
@@ -427,12 +443,12 @@ function outsideMarkers(existing: string | null): string | { error: string } {
   return `${existing.slice(0, begin)}${existing.slice(end + MARK_END.length)}`;
 }
 
-function mergeMcpJson(existing: string | null, version: string | null): { text: string | null } | { error: string } {
+function mergeMcpJson(existing: string | null, version: string | null): MergeResult {
   return mergeJsonKey(existing, ["mcpServers"], version === null ? null : mcpCommand(version));
 }
 
 /** `jsonc`: the file is `opencode.jsonc`, so comments and trailing commas parse; a rewrite is still plain JSON. */
-function mergeOpencode(existing: string | null, version: string | null, jsonc: boolean): { text: string | null } | { error: string } {
+function mergeOpencode(existing: string | null, version: string | null, jsonc: boolean): MergeResult {
   const server = version === null ? null : { type: "local", command: ["npx", "-y", `keylang@${version}`, "mcp"] };
 
   return mergeJsonKey(existing, ["mcp"], server, jsonc);
@@ -461,13 +477,13 @@ const TOML_HEADER = /^[ \t]*\[/;
  * not parse back (an inline `mcp_servers` cannot take a table header), falls
  * back to re-serializing the file, as every edit did before.
  */
-function mergeCodexToml(existing: string | null, version: string | null): { text: string | null } | { error: string } {
+function mergeCodexToml(existing: string | null, version: string | null): MergeResult {
   const text = existing === null ? "" : existing.replace(/\r\n/g, "\n");
-  let data: Record<string, unknown> = {};
+  let data: TomlTable = {};
 
   if (text.trim() !== "") {
     try {
-      data = { ...(parseToml(text) as Record<string, unknown>) };
+      data = { ...parseToml(text) };
     } catch (error) {
       return { error: `invalid TOML (${error instanceof Error ? error.message : String(error)})` };
     }
@@ -475,8 +491,8 @@ function mergeCodexToml(existing: string | null, version: string | null): { text
 
   const current = data.mcp_servers;
 
-  if (current !== undefined && !isRecord(current)) return { error: "mcp_servers is not a table" };
-  const own = isRecord(current) ? current.keylang : undefined;
+  if (current !== undefined && !isTomlTable(current)) return { error: "mcp_servers is not a table" };
+  const own = isTomlTable(current) ? current.keylang : undefined;
   const lines = text.split("\n");
   const region = codexTableRegion(lines);
 
@@ -494,7 +510,7 @@ function mergeCodexToml(existing: string | null, version: string | null): { text
   }
 
   // A person's own keys of the entry (a timeout, a per-tool mode) stay; the command and the mode are keylang's.
-  const entry = { ...(isRecord(own) ? own : {}), ...mcpCommand(version), default_tools_approval_mode: CODEX_TOOLS_APPROVAL };
+  const entry: TomlTable = { ...(isTomlTable(own) ? own : undefined), ...mcpCommand(version), default_tools_approval_mode: CODEX_TOOLS_APPROVAL };
   const table = stringifyToml({ mcp_servers: { keylang: entry } }).replace(/\n$/, "");
   let next: string;
 
@@ -536,11 +552,10 @@ function withoutLines(lines: readonly string[], region: { start: number; end: nu
 }
 
 /** Whether `text` parses and its `mcp_servers.keylang` is exactly `entry` (undefined: absent). */
-function codexEntryIs(text: string, entry: Record<string, unknown> | undefined): boolean {
+function codexEntryIs(text: string, entry: TomlTable | undefined): boolean {
   try {
-    const parsed = parseToml(text) as Record<string, unknown>;
-    const servers = parsed.mcp_servers;
-    const found = isRecord(servers) ? servers.keylang : undefined;
+    const servers = parseToml(text).mcp_servers;
+    const found = isTomlTable(servers) ? servers.keylang : undefined;
 
     return JSON.stringify(found ?? null) === JSON.stringify(entry ?? null);
   } catch {
@@ -549,8 +564,10 @@ function codexEntryIs(text: string, entry: Record<string, unknown> | undefined):
 }
 
 /** The whole file re-serialized with `entry` as the keylang server (null: without one); empty data is no file. */
-function rewriteCodexToml(data: Record<string, unknown>, entry: Record<string, unknown> | null): { text: string | null } {
-  const servers = { ...((data.mcp_servers as Record<string, unknown> | undefined) ?? {}) };
+function rewriteCodexToml(data: TomlTable, entry: TomlTable | null): MergedText {
+  const current = data.mcp_servers;
+  // The caller refused an `mcp_servers` that is no table, so a non-table here is absent.
+  const servers = { ...(isTomlTable(current) ? current : undefined) };
 
   if (entry === null) delete servers.keylang;
   else servers.keylang = entry;
@@ -564,7 +581,7 @@ function rewriteCodexToml(data: Record<string, unknown>, entry: Record<string, u
   return { text: text.endsWith("\n") ? text : `${text}\n` };
 }
 
-function mergeSettings(existing: string | null, version: string | null, dir: string): { text: string | null } | { error: string } {
+function mergeSettings(existing: string | null, version: string | null, dir: string): MergeResult {
   const parsed = parseObject(existing);
 
   if ("error" in parsed) return parsed;
@@ -587,7 +604,7 @@ function mergeSettings(existing: string | null, version: string | null, dir: str
   return finishJson(data);
 }
 
-function mergeHooksFile(existing: string | null, version: string | null): { text: string | null } | { error: string } {
+function mergeHooksFile(existing: string | null, version: string | null): MergeResult {
   const parsed = parseObject(existing);
 
   if ("error" in parsed) return parsed;
@@ -609,19 +626,19 @@ function mergeHooksFile(existing: string | null, version: string | null): { text
  * go once `dir` is another one, so a changed `dir` leaves no stale entry
  * behind. Any other entry is the person's and stays where it is.
  */
-function mergeDeny(permissions: unknown, install: boolean, dir: string): { value: unknown } | { error: string } {
+function mergeDeny(permissions: JsonValue | undefined, install: boolean, dir: string): { value: JsonObject | undefined } | { error: string } {
   if (permissions === undefined && !install) return { value: undefined };
 
-  if (permissions !== undefined && !isRecord(permissions)) return { error: "permissions is not an object" };
-  const perms: Record<string, unknown> = { ...permissions };
+  if (permissions !== undefined && !isJsonObject(permissions)) return { error: "permissions is not an object" };
+  const perms = { ...permissions };
   const deny = perms.deny;
 
   if (deny !== undefined && !Array.isArray(deny)) return { error: "permissions.deny is not an array" };
 
-  if (deny !== undefined && deny.some((item) => typeof item !== "string")) return { error: "permissions.deny must be strings" };
+  if (deny !== undefined && !deny.every(isJsonString)) return { error: "permissions.deny must be strings" };
   const own = denyRules(dir);
   const old = new Set([...own, ...denyRules(DEFAULT_SPEC_DIR)].filter((rule) => !install || !own.includes(rule)));
-  const list = ((deny ?? []) as string[]).filter((item) => !old.has(item));
+  const list = (deny ?? []).filter((item): item is string => isJsonString(item) && !old.has(item));
 
   if (install) for (const rule of own) if (!list.includes(rule)) list.push(rule);
 
@@ -631,19 +648,22 @@ function mergeDeny(permissions: unknown, install: boolean, dir: string): { value
   return { value: Object.keys(perms).length === 0 ? undefined : perms };
 }
 
-function mergeHooksValue(hooks: unknown, version: string | null): { value: unknown } | { error: string } {
+function mergeHooksValue(hooks: JsonValue | undefined, version: string | null): { value: JsonObject | undefined } | { error: string } {
   if (hooks === undefined && version === null) return { value: undefined };
 
-  if (hooks !== undefined && !isRecord(hooks)) return { error: "hooks is not an object" };
-  const value: Record<string, unknown> = { ...hooks };
+  if (hooks !== undefined && !isJsonObject(hooks)) return { error: "hooks is not an object" };
+  const value = { ...hooks };
   const stop = value.Stop;
 
   if (stop !== undefined && !Array.isArray(stop)) return { error: "hooks.Stop is not an array" };
-  const groups = ((stop ?? []) as unknown[]).map((group) => rewriteGroup(group, version));
-  const bad = groups.find((group): group is { error: string } => "error" in group);
+  let next: JsonObject[] = [];
 
-  if (bad) return bad;
-  let next = groups as Record<string, unknown>[];
+  for (const group of stop ?? []) {
+    const rewritten = rewriteGroup(group, version);
+
+    if ("error" in rewritten) return rewritten;
+    next.push(rewritten.value);
+  }
 
   if (version !== null && !next.some((group) => JSON.stringify(group).includes(hookCommand(version)))) {
     next = [...next, { hooks: [{ type: "command", command: hookCommand(version) }] }];
@@ -657,28 +677,28 @@ function mergeHooksValue(hooks: unknown, version: string | null): { value: unkno
   return { value: Object.keys(value).length === 0 ? undefined : value };
 }
 
-function rewriteGroup(group: unknown, version: string | null): Record<string, unknown> | { error: string } {
-  if (!isRecord(group)) return { error: "hooks.Stop entry is not an object" };
+function rewriteGroup(group: JsonValue, version: string | null): { value: JsonObject } | { error: string } {
+  if (!isJsonObject(group)) return { error: "hooks.Stop entry is not an object" };
   const list = group.hooks;
 
-  if (list === undefined) return { ...group };
+  if (list === undefined) return { value: { ...group } };
 
   if (!Array.isArray(list)) return { error: "hooks.Stop hooks is not an array" };
-  const hooks = [];
+  const hooks: JsonObject[] = [];
 
   for (const hook of list) {
-    if (!isRecord(hook)) return { error: "hook is not an object" };
+    if (!isJsonObject(hook)) return { error: "hook is not an object" };
 
-    if (typeof hook.command === "string" && isOurHook(hook.command)) {
+    if (isJsonString(hook.command) && isOurHook(hook.command)) {
       if (version === null) continue;
       hooks.push({ ...hook, command: hookCommand(version) });
     } else hooks.push(hook);
   }
 
-  return { ...group, hooks };
+  return { value: { ...group, hooks } };
 }
 
-function emptyGroup(group: Record<string, unknown>): boolean {
+function emptyGroup(group: JsonObject): boolean {
   return Array.isArray(group.hooks) && group.hooks.length === 0 && Object.keys(group).every((key) => key === "hooks" || key === "matcher");
 }
 
@@ -687,22 +707,22 @@ function isOurHook(command: string): boolean {
 }
 
 /** Whether Claude's settings hold anything of keylang's: a deny rule of the spec directory `dir` (or of the default one), or the Stop hook. */
-function holdsKeylangSettings(data: Record<string, unknown>, dir: string): boolean {
-  const deny = isRecord(data.permissions) ? data.permissions.deny : undefined;
+function holdsKeylangSettings(data: JsonObject, dir: string): boolean {
+  const deny = isJsonObject(data.permissions) ? data.permissions.deny : undefined;
   const rules = new Set([...denyRules(dir), ...denyRules(DEFAULT_SPEC_DIR)]);
 
-  if (Array.isArray(deny) && deny.some((item) => typeof item === "string" && rules.has(item))) return true;
+  if (Array.isArray(deny) && deny.some((item) => isJsonString(item) && rules.has(item))) return true;
 
   return holdsOurHook(data.hooks);
 }
 
-function holdsOurHook(hooks: unknown): boolean {
-  const stop = isRecord(hooks) ? hooks.Stop : undefined;
+function holdsOurHook(hooks: JsonValue | undefined): boolean {
+  const stop = isJsonObject(hooks) ? hooks.Stop : undefined;
 
-  return Array.isArray(stop) && stop.some((group) => isRecord(group) && Array.isArray(group.hooks) && group.hooks.some((hook) => isRecord(hook) && typeof hook.command === "string" && isOurHook(hook.command)));
+  return Array.isArray(stop) && stop.some((group) => isJsonObject(group) && Array.isArray(group.hooks) && group.hooks.some((hook) => isJsonObject(hook) && isJsonString(hook.command) && isOurHook(hook.command)));
 }
 
-function mergeJsonKey(existing: string | null, path: readonly string[], server: unknown, jsonc = false): { text: string | null } | { error: string } {
+function mergeJsonKey(existing: string | null, path: readonly string[], server: JsonValue, jsonc = false): MergeResult {
   const parsed = parseObject(existing, jsonc);
 
   if ("error" in parsed) return parsed;
@@ -710,10 +730,10 @@ function mergeJsonKey(existing: string | null, path: readonly string[], server: 
   const current = parsed.value[key];
 
   // Nothing of keylang's to strip: the file is the person's and stays byte for byte.
-  if (server === null && !(isRecord(current) && "keylang" in current)) return { text: existing };
+  if (server === null && !(isJsonObject(current) && "keylang" in current)) return { text: existing };
 
-  if (current !== undefined && !isRecord(current)) return { error: `${key} is not an object` };
-  const table: Record<string, unknown> = { ...current };
+  if (current !== undefined && !isJsonObject(current)) return { error: `${key} is not an object` };
+  const table = { ...current };
 
   if (server === null) delete table.keylang;
   else table.keylang = server;
@@ -725,13 +745,13 @@ function mergeJsonKey(existing: string | null, path: readonly string[], server: 
 }
 
 /** The object in a JSON file; with `jsonc`, comments and trailing commas are allowed (`opencode.jsonc`). */
-function parseObject(existing: string | null, jsonc = false): { value: Record<string, unknown> } | { error: string } {
+function parseObject(existing: string | null, jsonc = false): { value: JsonObject } | { error: string } {
   if (existing === null || existing.trim() === "") return { value: {} };
 
   try {
-    const value: unknown = jsonc ? parseJsoncStrict(existing) : JSON.parse(existing);
+    const value = jsonc ? parseJsoncStrict(existing) : parseJson(existing);
 
-    if (!isRecord(value)) return { error: "expected a JSON object" };
+    if (!isJsonObject(value)) return { error: "expected a JSON object" };
 
     return { value: { ...value } };
   } catch (error) {
@@ -739,7 +759,7 @@ function parseObject(existing: string | null, jsonc = false): { value: Record<st
   }
 }
 
-function finishJson(data: Record<string, unknown>): { text: string | null } {
+function finishJson(data: JsonObject): MergedText {
   if (Object.keys(data).length === 0) return { text: null };
 
   return { text: `${JSON.stringify(data, null, 2)}\n` };
@@ -753,8 +773,13 @@ function opencodeFile(files: ReadonlyMap<string, string | null>): string {
   return "opencode.json";
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
+function isHarnessName(name: string): name is HarnessName {
+  return HARNESS_NAMES.some((harness) => harness === name);
+}
+
+/** A TOML table; a date is an object too, but no table. */
+function isTomlTable(value: TomlValue | undefined): value is TomlTable {
+  return typeof value === "object" && !Array.isArray(value) && !(value instanceof Date);
 }
 
 // ---------- the plan and the commit of `keylang agents` ----------
@@ -772,6 +797,7 @@ export function harnessChoice(flag: string | undefined): HarnessChoice {
 
 /** The version the MCP command and the Stop hook pin: the running keylang's `package.json`, from `src` and from `dist`. */
 export function keylangVersion(): string {
+  // SAFETY: `../package.json` is keylang's own manifest, shipped with the package, and it always writes a string `version`.
   return (createRequire(import.meta.url)("../package.json") as { version: string }).version;
 }
 

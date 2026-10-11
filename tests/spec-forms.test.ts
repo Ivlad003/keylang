@@ -15,7 +15,13 @@ const bin = join(root, "bin/keylang.js");
 
 const forms = join(root, "tests/fixtures/spec-forms");
 
-function check(dir: string, json: boolean): { status: number | null; stdout: string; stderr: string } {
+interface Run {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+function check(dir: string, json: boolean): Run {
   const r = spawnSync(process.execPath, [bin, "check", ...(json ? ["--format", "json"] : [])], { cwd: dir, encoding: "utf8" });
 
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
@@ -23,6 +29,7 @@ function check(dir: string, json: boolean): { status: number | null; stdout: str
 
 /** Replace snapshot ids only. specHash stays, so the golden locks rule identity. */
 function scrub(stdout: string): string {
+  // SAFETY: `check --format json` prints a report with the snapshot id on it and on every row (docs/cli.md).
   const data = JSON.parse(stdout) as { snapshotId: string; results: { snapshotId: string }[] };
   assert.match(data.snapshotId, /^[0-9a-f]{64}$/);
 
@@ -46,6 +53,7 @@ for (const name of ["valid", "invalid"] as const) {
     assert.equal(human.stdout, readFileSync(join(expected, "check.stdout"), "utf8"));
     assert.equal(human.stderr, readFileSync(join(expected, "check.stderr"), "utf8"));
     assert.equal(/\/home\/|\/tmp\//.test(scrubbed + human.stdout), false);
+    // SAFETY: the scrubbed text is the JSON report of `check --format json`, whose rows carry these fields.
     const body = JSON.parse(scrubbed) as { results: { verdict: string; code: string | null; evidence: string; specHash: string; reason?: string; file: string; line: number; col: number }[]; coverage: unknown[] };
     assert.ok(Array.isArray(body.coverage));
 
@@ -98,8 +106,10 @@ test("spec forms: parse --json repeats parser K005 reasons, and test f.ts \"x is
   cpSync(join(forms, "invalid"), dir, { recursive: true });
   const parsed = spawnSync(process.execPath, [bin, "parse", "--json", "keylang"], { cwd: dir, encoding: "utf8" });
   assert.equal(parsed.status, 1, parsed.stderr);
+  // SAFETY: `parse --json` prints an array of documents with their diagnostics (src/ir.ts).
   const docs = JSON.parse(parsed.stdout) as { path: string; diagnostics: { code: string; message: string; reason?: string; span: { start: { line: number; col: number } } }[] }[];
   const checked = check(dir, true);
+  // SAFETY: `check --format json` prints a report whose `results` rows carry these fields (docs/cli.md).
   const results = (JSON.parse(checked.stdout) as { results: { code: string | null; evidence: string; reason?: string; file: string; line: number; col: number }[] }).results;
 
   for (const doc of docs) {
@@ -127,6 +137,7 @@ test("spec forms: sarif carries properties.reason only on K005; github and expla
   cpSync(join(forms, "invalid"), dir, { recursive: true });
   const sarif = spawnSync(process.execPath, [bin, "check", "--format", "sarif"], { cwd: dir, encoding: "utf8" });
   assert.equal(sarif.status, 1, sarif.stderr);
+  // SAFETY: `check --format sarif` prints a SARIF log: runs with their results, each with a rule id and properties.
   const results = (JSON.parse(sarif.stdout) as { runs: { results: { ruleId: string; properties: { reason?: string } }[] }[] }).runs[0]!.results;
   assert.ok(results.some((row) => row.ruleId === "K005"));
 

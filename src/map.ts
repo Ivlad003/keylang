@@ -3,7 +3,7 @@
 import { existsSync, readdirSync, readFileSync, rmdirSync, rmSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parse as parseToml } from "smol-toml";
+import { parse as parseToml, type TomlTable, type TomlValue } from "smol-toml";
 import { briefOf, readmeBrief } from "./brief.ts";
 import { classifySources, CONFIG_FILE, isAnalysed, isOutside, layerGlobWarnings, sourceTree, toPosix, type Config } from "./config.ts";
 import { globDirectory } from "./glob.ts";
@@ -18,7 +18,8 @@ import { buildGraph, directoryModule, placeFile, type Graph } from "./graph.ts";
 import { FRAMEWORK_CODE } from "./framework-code/index.ts";
 import { activeAdapters, FRAMEWORK_ADAPTERS, FRAMEWORK_CONFIG, type ConfigFacts, type FrameworkAdapter, type FrameworkContext, type FrameworkInput } from "./frameworks/adapter.ts";
 import { FACT_CACHE_FILE, FactCache } from "./fact-cache.ts";
-import { landing, writeAtomic, writeProblem } from "./safe-write.ts";
+import { landing, writeAtomic, writeProblem, type WriteOptions } from "./safe-write.ts";
+import { parseJson, type JsonObject, type JsonValue } from "./json.ts";
 import { collectEntries, compareEntries, ENTRY_MANIFESTS, type EntryManifests } from "./entries.ts";
 import { frameworkEntries } from "./framework-entries.ts";
 import { buildSnapshot, EXTRACTOR_VERSION, grammarVersions, sha256, type AnalysisSnapshot, type FrameworkManifest, type RepositoryDocs, type SystemDoc } from "./snapshot.ts";
@@ -53,10 +54,11 @@ export async function generateMap(config: Config, options: { persist?: boolean |
   const all = tree.analysed;
 
   // An unsaved or proposed file that is not on disk yet is a source too (`spec-to-code` candidates).
-  const added = [...(options.overlay?.keys() ?? [])].map((abs) => toPosix(relative(config.root, abs))).filter((rel) => {
+  const added = [...(options.overlay?.keys() ?? [])].flatMap((abs) => {
+    const rel = toPosix(relative(config.root, abs));
     const language = languageOf(rel);
 
-    return !rel.startsWith("../") && !all.includes(rel) && language !== undefined && config.languages.includes(language) && isAnalysed(rel, config);
+    return !rel.startsWith("../") && !all.includes(rel) && language !== undefined && config.languages.includes(language) && isAnalysed(rel, config) ? [rel] : [];
   });
 
   if (added.length > 0) {
@@ -70,11 +72,12 @@ export async function generateMap(config: Config, options: { persist?: boolean |
   // Files keylang may not read (EACCES/EPERM): opaque modules and holes, as an unreadable directory.
   const unreadableFiles: { file: string; reason: string }[] = [];
 
-  for (const p of [...all]) {
+  // A copy: the loop removes files it cannot read from `all`.
+  for (const p of all.slice()) {
     const abs = join(config.root, p);
     const src = options.overlay?.get(abs) ?? readAnalysedSource(abs);
 
-    if (src === null || typeof src !== "string") {
+    if (!isSourceText(src)) {
       // Removed between listing and reading: not part of this snapshot. Not readable: a hole, its module opaque.
       all.splice(all.indexOf(p), 1);
 
@@ -114,7 +117,7 @@ export async function generateMap(config: Config, options: { persist?: boolean |
 
     if (!frontend || languageOf(p) !== "php") continue;
     const abs = join(config.root, p);
-    let src: string | null | { unreadable: string };
+    let src: AnalysedSource;
 
     try {
       src = options.overlay?.get(abs) ?? readAnalysedSource(abs);
@@ -122,7 +125,7 @@ export async function generateMap(config: Config, options: { persist?: boolean |
       src = null;
     }
 
-    if (typeof src !== "string") continue;
+    if (!isSourceText(src)) continue;
     const hash = sha256(src);
     const text = src;
     declared.set(p, await cache.facts(p, `declarations\0${hash}`, async () => declarationsOnly(await extractGuarded(frontend.extract, p, text))));
@@ -217,6 +220,13 @@ export function explainedMapOf(config: Config, index: AnalysisSnapshot): Map<str
  * The config files of the framework adapters the repository uses, parsed (or
  * reused from the fact cache by content), and what the manifest lists of them.
  */
+/** The framework adapters' inputs to the graph, their manifest in the snapshot, and the config files they could not read. */
+interface FrameworkReading {
+  inputs: FrameworkInput[];
+  manifest: FrameworkManifest[];
+  unread: { path: string; owner: string | null; reason: string; framework: string }[];
+}
+
 function readFrameworks(
   config: Config,
   sources: readonly string[],
@@ -226,7 +236,7 @@ function readFrameworks(
   available: readonly FrameworkAdapter[] | undefined,
   facts: readonly FileFacts[],
   outside: readonly string[],
-): { inputs: FrameworkInput[]; manifest: FrameworkManifest[]; unread: { path: string; owner: string | null; reason: string; framework: string }[] } {
+): FrameworkReading {
   const text = (path: string): string | null => read.get(path)?.text ?? overlay?.get(join(config.root, path)) ?? readSource(join(config.root, path));
 
   const context: FrameworkContext = {
@@ -275,15 +285,18 @@ function readFrameworks(
     const reader = FRAMEWORK_CODE.get(adapter.name);
 
     if (reader) configs.push(...reader(facts, configs.map((c) => c.facts)));
-    inputs.push({
-      name: adapter.name,
-      configs,
-      ...(adapter.modules ? { modules: adapter.modules(context) } : {}),
-      ...(adapter.dispatchers ? { dispatchers: [...adapter.dispatchers] } : {}),
-      ...(adapter.controllers ? { controllers: adapter.controllers } : {}),
-      ...(adapter.generated ? { generated: [...adapter.generated] } : {}),
-      ...(adapter.locators ? { locators: adapter.locators.map((l) => ({ types: [...l.types], methods: [...l.methods] })) } : {}),
-    });
+    const input: FrameworkInput = { name: adapter.name, configs };
+
+    if (adapter.modules) input.modules = adapter.modules(context);
+
+    if (adapter.dispatchers) input.dispatchers = [...adapter.dispatchers];
+
+    if (adapter.controllers) input.controllers = adapter.controllers;
+
+    if (adapter.generated) input.generated = [...adapter.generated];
+
+    if (adapter.locators) input.locators = adapter.locators.map((l) => ({ types: [...l.types], methods: [...l.methods] }));
+    inputs.push(input);
     manifest.push({ name: adapter.name, version: adapter.version, files });
   }
 
@@ -299,12 +312,17 @@ function preferencesOnly(facts: ConfigFacts): ConfigFacts {
   return { path: facts.path, scope: facts.scope, bindings: facts.error === null ? facts.bindings : [], arguments: [], aliases: [], intercepts: [], error: null };
 }
 
+/** The `source` field of a framework config's hole; absent when no module owns the file. */
+interface OwnerSource {
+  source?: string;
+}
+
 /**
  * The module a config file of `owner`'s directory belongs to, for a hole of its own: the
  * directory's module, or the module of a file in it when the directory is a whole layer (a rule's
  * area holds that module, not the layer node).
  */
-function ownerSource(config: Config, graph: Graph, owner: string | null): { source?: string } {
+function ownerSource(config: Config, graph: Graph, owner: string | null): OwnerSource {
   const id = owner === null ? null : directoryModule(config, owner, graph);
 
   if (id === null || graph.modules.has(id)) return id === null ? {} : { source: id };
@@ -374,30 +392,48 @@ function readReadme(root: string, dir: string): { path: string; text: string } |
   return text === null ? null : { path: dir === "" ? name : `${dir}/${name}`, text };
 }
 
+/** What a root manifest says the repository is called and what it does. */
+interface ManifestAbout {
+  name: string | null;
+  description: string | null;
+}
+
+/** A value of a parsed root manifest: JSON (`package.json`, `composer.json`) or TOML (`Cargo.toml`, `pyproject.toml`). */
+type ManifestValue = JsonValue | TomlValue;
+
+function isManifestTable(value: ManifestValue | undefined): value is JsonObject | TomlTable {
+  // A TOML date is an object too, but no table.
+  return value !== null && typeof value === "object" && !Array.isArray(value) && !(value instanceof Date);
+}
+
+function isManifestText(value: ManifestValue | undefined): value is string {
+  return typeof value === "string";
+}
+
 /**
  * `name` and `description` of a root manifest: `package.json` and
  * `composer.json` at the top, `[package]` (or `[workspace.package]`) of
  * `Cargo.toml`, `[project]` of `pyproject.toml`. A manifest that does not parse gives neither: the
  * analysis reports it where it reads the manifest's packages.
  */
-function manifestAbout(file: (typeof ROOT_MANIFESTS)[number], text: string | null): { name: string | null; description: string | null } {
+function manifestAbout(file: (typeof ROOT_MANIFESTS)[number], text: string | null): ManifestAbout {
   if (text === null) return { name: null, description: null };
-  let data: unknown;
+  let data: ManifestValue;
 
   try {
-    data = file === "package.json" || file === "composer.json" ? JSON.parse(text) : parseToml(text);
+    data = file === "package.json" || file === "composer.json" ? parseJson(text) : parseToml(text);
   } catch {
     return { name: null, description: null };
   }
 
-  const field = (value: unknown, key: string): unknown => (value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>)[key] : undefined);
+  const field = (value: ManifestValue | undefined, key: string): ManifestValue | undefined => (isManifestTable(value) ? value[key] : undefined);
   const sections = file === "Cargo.toml" ? [field(data, "package"), field(field(data, "workspace"), "package")] : file === "pyproject.toml" ? [field(data, "project")] : [data];
 
   const pick = (key: string): string | null => {
     for (const section of sections) {
       const value = field(section, key);
 
-      if (typeof value === "string" && value.trim() !== "") return value.trim();
+      if (isManifestText(value) && value.trim() !== "") return value.trim();
     }
 
     return null;
@@ -432,8 +468,15 @@ function readSource(abs: string): string | null {
   }
 }
 
+/** A source file's text, null when it is gone, or why keylang may not read it. */
+type AnalysedSource = string | null | { unreadable: string };
+
+function isSourceText(src: AnalysedSource): src is string {
+  return typeof src === "string";
+}
+
 /** A source file's text as {@link readSource}, or the reason when keylang may not read it (EACCES/EPERM): a hole, not an I/O error. */
-function readAnalysedSource(abs: string): string | null | { unreadable: string } {
+function readAnalysedSource(abs: string): AnalysedSource {
   try {
     return readSource(abs);
   } catch (error) {
@@ -701,7 +744,10 @@ export function mapPlanProblems(plan: MapPlan): string[] {
   const problems: string[] = [];
 
   for (const step of plan.steps) {
-    const problem = writeProblem(plan.root, step.path, { generated: true, ...(step.expect === undefined ? {} : { expect: step.expect }) });
+    const writeOptions: WriteOptions = { generated: true };
+
+    if (step.expect !== undefined) writeOptions.expect = step.expect;
+    const problem = writeProblem(plan.root, step.path, writeOptions);
 
     if (problem !== null) problems.push(`${step.path}: ${problem}`);
   }

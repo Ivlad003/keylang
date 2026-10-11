@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
+import { isJsonObject, parseJson, type JsonObject } from "../src/json.ts";
 import type { AnalysisSnapshot } from "../src/snapshot.ts";
 import { keylang, tempDir, writeTree } from "./cli-helpers.ts";
 
@@ -36,7 +37,7 @@ const MANIFEST = {
   dependencies: { "@nestjs/common": "^10.0.0", "@nestjs/core": "^10.0.0", "@nestjs/event-emitter": "^2.0.0", "@nestjs/graphql": "^12.0.0", "@nestjs/microservices": "^10.0.0", "@nestjs/schedule": "^4.0.0" },
 };
 
-const REPO: Record<string, string> = {
+const REPO = {
   "keylang.json": `${JSON.stringify(CONFIG, null, 2)}\n`,
   "package.json": `${JSON.stringify(MANIFEST, null, 2)}\n`,
   "keylang/flows.md": [
@@ -228,7 +229,7 @@ const REPO: Record<string, string> = {
     "}",
     "",
   ].join("\n"),
-};
+} satisfies Record<string, string>;
 
 function shop(t: TestContext, extra: Record<string, string> = {}): string {
   const dir = tempDir(t, "keylang-nest-");
@@ -241,11 +242,13 @@ function snapshotOf(dir: string): AnalysisSnapshot {
   const run = keylang(dir, ["map"]);
   assert.equal(run.status, 0, run.stderr);
 
+  // SAFETY: `keylang map` exited 0 just above, so the index holds the snapshot it writes.
   return JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as AnalysisSnapshot;
 }
 
-function setConfig(dir: string, change: (raw: Record<string, unknown>) => void): void {
-  const raw = JSON.parse(readFileSync(join(dir, "keylang.json"), "utf8")) as Record<string, unknown>;
+function setConfig(dir: string, change: (raw: JsonObject) => void): void {
+  const raw = parseJson(readFileSync(join(dir, "keylang.json"), "utf8"));
+  assert.ok(isJsonObject(raw), "keylang.json is an object");
   change(raw);
   writeFileSync(join(dir, "keylang.json"), `${JSON.stringify(raw, null, 2)}\n`);
 }

@@ -27,7 +27,7 @@ export const LANGUAGES = {
   python: { extensions: [".py"], module: "file", index: ["__init__"], constructor: "__init__", implicit: (name) => /^__.+__$/.test(name) && name !== "__init__", caselessNames: false, interfaceTypes: false },
   // PHP: magic methods other than `__construct` run through syntax: `__toString`, `__get`, `__call`, `__invoke`, `__destruct`…
   // A file is no directory's module: `index.php` is an entry script, not an index.
-  php: { extensions: [".php"], module: "file", index: [] as string[], constructor: "__construct", implicit: (name) => name.startsWith("__") && asciiLowerCase(name) !== "__construct", caselessNames: true, interfaceTypes: true },
+  php: { extensions: [".php"], module: "file", index: new Array<string>(), constructor: "__construct", implicit: (name) => name.startsWith("__") && asciiLowerCase(name) !== "__construct", caselessNames: true, interfaceTypes: true },
   // Rust: the extractor marks the methods of `impl Drop`, `impl Display`, … (a name alone does not say it).
   rust: { extensions: [".rs"], module: "file", index: ["mod"], constructor: null, implicit: () => false, caselessNames: false, interfaceTypes: false },
   typescript: { extensions: [".ts", ".tsx", ".mts", ".cts"], module: "file", index: ["index"], constructor: "constructor", implicit: (name) => JS_IMPLICIT.has(name), caselessNames: false, interfaceTypes: false },
@@ -35,7 +35,7 @@ export const LANGUAGES = {
 
 export type Language = keyof typeof LANGUAGES;
 
-export const LANGUAGE_NAMES = (Object.keys(LANGUAGES) as Language[]).sort();
+export const LANGUAGE_NAMES = Object.keys(LANGUAGES).filter(isLanguage).sort();
 
 export function isLanguage(name: unknown): name is Language {
   return typeof name === "string" && Object.hasOwn(LANGUAGES, name);

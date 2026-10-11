@@ -6,6 +6,7 @@ import { existsSync, readdirSync, readFileSync, statSync, type Dirent } from "no
 import { join, posix, relative } from "node:path";
 import { FRAMEWORK_NAMES } from "./frameworks/adapter.ts";
 import { firstMatchingGlob, globPrefix, globToRegExp, matchesGlob } from "./glob.ts";
+import { isJsonBoolean, isJsonNumber, isJsonObject, isJsonString, parseJson, type JsonValue } from "./json.ts";
 import { isLanguage, LANGUAGE_NAMES, LANGUAGES, languageOf, type Language } from "./languages.ts";
 
 
@@ -27,8 +28,14 @@ export const STATIC_MODES: readonly StaticMode[] = ["behavior", "shape"];
 /** Who chose the static mode. Absent when nobody set it and the mode is `behavior`. */
 export type StaticSource = "flag" | "config";
 
+/** The static mode in effect and who chose it. */
+export interface StaticChoice {
+  mode: StaticMode;
+  setBy?: StaticSource;
+}
+
 /** Flag, then `check.static`, then `behavior`. */
-export function resolveStatic(flag: StaticMode | undefined, configured: StaticMode | undefined): { mode: StaticMode; setBy?: StaticSource } {
+export function resolveStatic(flag: StaticMode | undefined, configured: StaticMode | undefined): StaticChoice {
   if (flag !== undefined) return { mode: flag, setBy: "flag" };
 
   if (configured !== undefined) return { mode: configured, setBy: "config" };
@@ -285,15 +292,15 @@ export function withoutBom(text: string): string {
 
 /** Parse and validate `keylang.json`. Errors name the file and the field. */
 export function parseConfig(file: string, text: string): RawConfig {
-  let value: unknown;
+  let value: JsonValue;
 
   try {
-    value = JSON.parse(withoutBom(text));
+    value = parseJson(withoutBom(text));
   } catch (e) {
     throw new Error(`${file}: invalid JSON: ${e instanceof Error ? e.message : String(e)}`);
   }
 
-  const fail = (field: string, expected: string, got: unknown): never => {
+  const fail = (field: string, expected: string, got: JsonValue | undefined): never => {
     throw new Error(`${file}: \`${field}\` must be ${expected}, got ${JSON.stringify(got)}`);
   };
 
@@ -307,7 +314,7 @@ export function parseConfig(file: string, text: string): RawConfig {
     return glob;
   };
 
-  if (!isObject(value)) return fail("(root)", "an object", value);
+  if (!isJsonObject(value)) return fail("(root)", "an object", value);
   const known = new Set(["$schema", "format", "dir", "languages", "module", "layers", "exclude", "outside", "assume", "frameworks", "check", "agent", "explain", "ghost", "assistant", "voice", "integrations", "sfcc", "migration"]);
 
   for (const key of Object.keys(value)) if (!known.has(key)) throw new Error(`${file}: unknown field \`${key}\``);
@@ -316,7 +323,7 @@ export function parseConfig(file: string, text: string): RawConfig {
   if (value.format !== undefined) raw.format = acceptFormat(file, value.format);
 
   if (value.dir !== undefined) {
-    const dir = typeof value.dir === "string" && value.dir !== "" ? value.dir : fail("dir", "a non-empty string", value.dir);
+    const dir = isJsonString(value.dir) && value.dir !== "" ? value.dir : fail("dir", "a non-empty string", value.dir);
     // `map` writes under `dir`: it must not lead out of the repository.
     const normal = posix.normalize(dir.replace(/\\/g, "/"));
 
@@ -329,16 +336,13 @@ export function parseConfig(file: string, text: string): RawConfig {
     const list = value.languages;
 
     if (!Array.isArray(list)) return fail("languages", "an array", list);
-    list.forEach((item, i) => {
-      if (!isLanguage(item)) fail(`languages[${i}]`, `one of ${LANGUAGE_NAMES.map((name) => JSON.stringify(name)).join(", ")}`, item);
-    });
-    raw.languages = list as Language[];
+    raw.languages = list.map((item, i) => (isLanguage(item) ? item : fail(`languages[${i}]`, `one of ${LANGUAGE_NAMES.map((name) => JSON.stringify(name)).join(", ")}`, item)));
   }
 
   if (value.module !== undefined) raw.module = value.module === "file" || value.module === "dir" ? value.module : fail("module", '"file" or "dir"', value.module);
 
   if (value.layers !== undefined) {
-    if (!isObject(value.layers)) return fail("layers", "an object of layer → glob or globs", value.layers);
+    if (!isJsonObject(value.layers)) return fail("layers", "an object of layer → glob or globs", value.layers);
     const layers: Record<string, string | string[]> = {};
     const written = new Map<string, string>();
 
@@ -355,8 +359,8 @@ export function parseConfig(file: string, text: string): RawConfig {
 
       if (isReservedLayerName(name)) throw new Error(`${file}: \`layers.${name}\`: ${reservedReason(name)}; rename the layer, e.g. \`${name}_\``);
 
-      if (typeof globs === "string") layers[name] = validGlob(`layers.${name}`, globs);
-      else if (Array.isArray(globs) && globs.every((glob) => typeof glob === "string")) layers[name] = (globs as string[]).map((glob, i) => validGlob(`layers.${name}[${i}]`, glob));
+      if (isJsonString(globs)) layers[name] = validGlob(`layers.${name}`, globs);
+      else if (Array.isArray(globs) && globs.every(isJsonString)) layers[name] = globs.map((glob, i) => validGlob(`layers.${name}[${i}]`, glob));
       else fail(`layers.${name}`, "a glob or an array of globs", globs);
     }
 
@@ -364,33 +368,38 @@ export function parseConfig(file: string, text: string): RawConfig {
   }
 
   if (value.exclude !== undefined) {
-    if (!Array.isArray(value.exclude) || !value.exclude.every((glob) => typeof glob === "string")) return fail("exclude", "an array of globs", value.exclude);
-    raw.exclude = (value.exclude as string[]).map((glob, i) => validGlob(`exclude[${i}]`, glob));
+    const globs = value.exclude;
+
+    if (!Array.isArray(globs) || !globs.every(isJsonString)) return fail("exclude", "an array of globs", globs);
+    raw.exclude = globs.map((glob, i) => validGlob(`exclude[${i}]`, glob));
   }
 
   if (value.outside !== undefined) {
-    if (!Array.isArray(value.outside) || !value.outside.every((glob) => typeof glob === "string")) return fail("outside", "an array of globs", value.outside);
-    raw.outside = (value.outside as string[]).map((glob, i) => validGlob(`outside[${i}]`, glob));
+    const globs = value.outside;
+
+    if (!Array.isArray(globs) || !globs.every(isJsonString)) return fail("outside", "an array of globs", globs);
+    raw.outside = globs.map((glob, i) => validGlob(`outside[${i}]`, glob));
   }
 
   if (value.assume !== undefined) {
-    if (!Array.isArray(value.assume) || !value.assume.every((glob) => typeof glob === "string")) return fail("assume", "an array of globs", value.assume);
-    raw.assume = (value.assume as string[]).map((glob, i) => validGlob(`assume[${i}]`, glob));
+    const globs = value.assume;
+
+    if (!Array.isArray(globs) || !globs.every(isJsonString)) return fail("assume", "an array of globs", globs);
+    raw.assume = globs.map((glob, i) => validGlob(`assume[${i}]`, glob));
   }
 
   if (value.frameworks !== undefined) {
     const list = value.frameworks;
 
     if (!Array.isArray(list)) return fail("frameworks", `an array of framework names (${FRAMEWORK_NAMES.map((name) => JSON.stringify(name)).join(", ")})`, list);
-    list.forEach((item, i) => {
-      if (typeof item !== "string" || !FRAMEWORK_NAMES.includes(item)) fail(`frameworks[${i}]`, `one of ${FRAMEWORK_NAMES.map((name) => JSON.stringify(name)).join(", ")}`, item);
-    });
-    raw.frameworks = [...new Set(list as string[])];
+    const names = list.map((item, i) => (isJsonString(item) && FRAMEWORK_NAMES.includes(item) ? item : fail(`frameworks[${i}]`, `one of ${FRAMEWORK_NAMES.map((name) => JSON.stringify(name)).join(", ")}`, item)));
+
+    raw.frameworks = [...new Set(names)];
   }
 
   if (value.check !== undefined) {
-    if (!isObject(value.check)) return fail("check", "an object", value.check);
-    const check: { tests?: string; trace?: string; static?: StaticMode } = {};
+    if (!isJsonObject(value.check)) return fail("check", "an object", value.check);
+    const check: NonNullable<RawConfig["check"]> = {};
 
     for (const [key, path] of Object.entries(value.check)) {
       if (key === "static") {
@@ -401,7 +410,7 @@ export function parseConfig(file: string, text: string): RawConfig {
 
       if (key !== "tests" && key !== "trace") throw new Error(`${file}: unknown field \`check.${key}\``);
 
-      if (typeof path === "string" && path !== "") check[key] = path;
+      if (isJsonString(path) && path !== "") check[key] = path;
       else fail(`check.${key}`, "a path", path);
     }
 
@@ -409,40 +418,40 @@ export function parseConfig(file: string, text: string): RawConfig {
   }
 
   if (value.agent !== undefined) {
-    raw.agent = typeof value.agent === "string" && isAgent(value.agent) ? value.agent : fail("agent", AGENT_FORMS, value.agent);
+    raw.agent = isJsonString(value.agent) && isAgent(value.agent) ? value.agent : fail("agent", AGENT_FORMS, value.agent);
   }
 
   if (value.ghost !== undefined) {
-    if (!isObject(value.ghost)) return fail("ghost", "an object", value.ghost);
+    if (!isJsonObject(value.ghost)) return fail("ghost", "an object", value.ghost);
+    const ghost: NonNullable<RawConfig["ghost"]> = {};
 
     for (const [key, v] of Object.entries(value.ghost)) {
       if (key !== "delay") throw new Error(`${file}: unknown field \`ghost.${key}\``);
-
-      if (v !== null && (typeof v !== "number" || !Number.isInteger(v) || v < 0 || v > 10000)) fail("ghost.delay", "milliseconds from 0 to 10000, or null for the default", v);
+      ghost.delay = v === null || (isJsonNumber(v) && Number.isInteger(v) && v >= 0 && v <= 10000) ? v : fail("ghost.delay", "milliseconds from 0 to 10000, or null for the default", v);
     }
 
-    raw.ghost = value.ghost as { delay?: number | null };
+    raw.ghost = ghost;
   }
 
   if (value.assistant !== undefined) {
-    if (!isObject(value.assistant)) return fail("assistant", "an object", value.assistant);
+    if (!isJsonObject(value.assistant)) return fail("assistant", "an object", value.assistant);
     const assistant: NonNullable<RawConfig["assistant"]> = {};
 
     for (const [key, v] of Object.entries(value.assistant)) {
       if (key !== "clip") throw new Error(`${file}: unknown field \`assistant.${key}\``);
-      assistant.clip = typeof v === "boolean" ? v : fail("assistant.clip", "true or false", v);
+      assistant.clip = isJsonBoolean(v) ? v : fail("assistant.clip", "true or false", v);
     }
 
     raw.assistant = assistant;
   }
 
   if (value.voice !== undefined) {
-    if (!isObject(value.voice)) return fail("voice", "an object", value.voice);
+    if (!isJsonObject(value.voice)) return fail("voice", "an object", value.voice);
     const voice: NonNullable<RawConfig["voice"]> = {};
 
     for (const [key, v] of Object.entries(value.voice)) {
       if (key === "engine") voice.engine = v === "local" || v === "openrouter" || v === "auto" ? v : fail("voice.engine", '"local", "openrouter" or "auto"', v);
-      else if (key === "model") voice.model = typeof v === "string" && v !== "" ? v : fail("voice.model", "a model name", v);
+      else if (key === "model") voice.model = isJsonString(v) && v !== "" ? v : fail("voice.model", "a model name", v);
       else throw new Error(`${file}: unknown field \`voice.${key}\``);
     }
 
@@ -450,13 +459,13 @@ export function parseConfig(file: string, text: string): RawConfig {
   }
 
   if (value.explain !== undefined) {
-    if (!isObject(value.explain)) return fail("explain", "an object", value.explain);
+    if (!isJsonObject(value.explain)) return fail("explain", "an object", value.explain);
     const explain: NonNullable<RawConfig["explain"]> = {};
 
     for (const [key, v] of Object.entries(value.explain)) {
-      if (key === "lang") explain.lang = typeof v === "string" && /^[a-z]{2,3}(-[A-Za-z0-9]+)?$/.test(v) ? v : fail("explain.lang", "a language code such as \"uk\"", v);
+      if (key === "lang") explain.lang = isJsonString(v) && /^[a-z]{2,3}(-[A-Za-z0-9]+)?$/.test(v) ? v : fail("explain.lang", "a language code such as \"uk\"", v);
       else if (key === "detail") explain.detail = v === "short" || v === "full" ? v : fail("explain.detail", '"short" or "full"', v);
-      else if (key === "map") explain.map = typeof v === "boolean" ? v : fail("explain.map", "true or false", v);
+      else if (key === "map") explain.map = isJsonBoolean(v) ? v : fail("explain.map", "true or false", v);
       else throw new Error(`${file}: unknown field \`explain.${key}\``);
     }
 
@@ -464,42 +473,42 @@ export function parseConfig(file: string, text: string): RawConfig {
   }
 
   if (value.integrations !== undefined) {
-    if (!isObject(value.integrations)) return fail("integrations", "an object", value.integrations);
+    if (!isJsonObject(value.integrations)) return fail("integrations", "an object", value.integrations);
     const integrations: NonNullable<RawConfig["integrations"]> = {};
 
     for (const [key, v] of Object.entries(value.integrations)) {
       if (key !== "webhooks") throw new Error(`${file}: unknown field \`integrations.${key}\``);
 
-      if (!Array.isArray(v) || !v.every((glob) => typeof glob === "string")) return fail("integrations.webhooks", "an array of globs", v);
-      integrations.webhooks = (v as string[]).map((glob, i) => validGlob(`integrations.webhooks[${i}]`, glob));
+      if (!Array.isArray(v) || !v.every(isJsonString)) return fail("integrations.webhooks", "an array of globs", v);
+      integrations.webhooks = v.map((glob, i) => validGlob(`integrations.webhooks[${i}]`, glob));
     }
 
     raw.integrations = integrations;
   }
 
   if (value.sfcc !== undefined) {
-    if (!isObject(value.sfcc)) return fail("sfcc", "an object", value.sfcc);
+    if (!isJsonObject(value.sfcc)) return fail("sfcc", "an object", value.sfcc);
     const sfcc: NonNullable<RawConfig["sfcc"]> = {};
 
     for (const [key, v] of Object.entries(value.sfcc)) {
       if (key !== "cartridgePath") throw new Error(`${file}: unknown field \`sfcc.${key}\``);
 
       // Business Manager writes the path as `a:b:c`; keylang.json keeps it a list, first cartridge first.
-      if (!Array.isArray(v) || !v.every((name) => typeof name === "string" && /^[A-Za-z0-9_.-]+$/.test(name))) return fail("sfcc.cartridgePath", "an array of cartridge names", v);
-      sfcc.cartridgePath = v as string[];
+      if (!Array.isArray(v) || !v.every(isCartridgeName)) return fail("sfcc.cartridgePath", "an array of cartridge names", v);
+      sfcc.cartridgePath = v;
     }
 
     raw.sfcc = sfcc;
   }
 
   if (value.migration !== undefined) {
-    if (!isObject(value.migration)) return fail("migration", "an object", value.migration);
+    if (!isJsonObject(value.migration)) return fail("migration", "an object", value.migration);
     const migration: NonNullable<RawConfig["migration"]> = {};
 
     for (const [key, v] of Object.entries(value.migration)) {
       if (key !== "from") throw new Error(`${file}: unknown field \`migration.${key}\``);
 
-      if (typeof v !== "string" || v.trim() === "") return fail("migration.from", "a path to the old repository or its exported index.json", v);
+      if (!isJsonString(v) || v.trim() === "") return fail("migration.from", "a path to the old repository or its exported index.json", v);
       migration.from = v;
     }
 
@@ -509,13 +518,14 @@ export function parseConfig(file: string, text: string): RawConfig {
   return raw;
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+/** A cartridge of `sfcc.cartridgePath`: Business Manager names them with letters, digits, `_`, `.` and `-`. */
+function isCartridgeName(value: JsonValue): value is string {
+  return isJsonString(value) && /^[A-Za-z0-9_.-]+$/.test(value);
 }
 
 /** `format` when it is present: a positive integer this keylang can read. */
-export function acceptFormat(file: string, got: unknown): RuleFormat {
-  if (typeof got !== "number" || !Number.isInteger(got) || got < 1) {
+export function acceptFormat(file: string, got: JsonValue): RuleFormat {
+  if (!isJsonNumber(got) || !Number.isInteger(got) || got < 1) {
     throw new Error(`${file}: \`format\` must be a positive integer, got ${JSON.stringify(got)}`);
   }
 
@@ -523,6 +533,7 @@ export function acceptFormat(file: string, got: unknown): RuleFormat {
     throw new Error(`${file}: \`format\` ${got} is newer than this keylang reads (${CURRENT_FORMAT}); upgrade keylang`);
   }
 
+  // SAFETY: `got` is an integer from 1 to CURRENT_FORMAT, and RuleFormat lists exactly those editions.
   return got as RuleFormat;
 }
 
@@ -531,15 +542,15 @@ export function acceptFormat(file: string, got: unknown): RuleFormat {
  * or a non-object root cannot tell them the edition, so they stop.
  */
 export function assertFormatOnly(file: string, text: string): void {
-  let value: unknown;
+  let value: JsonValue;
 
   try {
-    value = JSON.parse(withoutBom(text));
+    value = parseJson(withoutBom(text));
   } catch (e) {
     throw new Error(`${file}: cannot determine \`format\`: invalid JSON: ${e instanceof Error ? e.message : String(e)}`);
   }
 
-  if (!isObject(value)) throw new Error(`${file}: cannot determine \`format\`: the file is not a JSON object`);
+  if (!isJsonObject(value)) throw new Error(`${file}: cannot determine \`format\`: the file is not a JSON object`);
 
   if (value.format !== undefined) acceptFormat(file, value.format);
 }
@@ -572,15 +583,15 @@ export function configToJson(c: Config): string {
  * by guessing: its reason, named as `parseConfig` names it.
  */
 export function withLayers(file: string, text: string, layers: Readonly<Record<string, readonly string[]>>): { text: string } | { error: string } {
-  let value: unknown;
+  let value: JsonValue;
 
   try {
-    value = JSON.parse(withoutBom(text));
+    value = parseJson(withoutBom(text));
   } catch (e) {
     return { error: `${file}: invalid JSON: ${e instanceof Error ? e.message : String(e)}` };
   }
 
-  if (!isObject(value)) return { error: `${file}: \`(root)\` must be an object, got ${JSON.stringify(value)}` };
+  if (!isJsonObject(value)) return { error: `${file}: \`(root)\` must be an object, got ${JSON.stringify(value)}` };
   // Assigning keeps the key's place when it exists; JSON.parse makes even `__proto__` an own key, so nothing is lost.
   value.layers = Object.fromEntries(Object.entries(layers).map(([name, globs]) => [name, [...globs]]));
 
@@ -596,7 +607,12 @@ export function sourceFiles(c: Config): string[] {
  * The indexable source files and the directories that could not be listed
  * (no permission): their files are unknown, which is a hole, not an absence.
  */
-export function sourceTree(c: Config): { files: string[]; unreadable: { dir: string; reason: string }[] } {
+export interface SourceTree {
+  files: string[];
+  unreadable: SourceClasses["unreadable"];
+}
+
+export function sourceTree(c: Config): SourceTree {
   const sources = classifySources(c);
 
   return { files: sources.analysed, unreadable: sources.unreadable };
@@ -862,7 +878,12 @@ export function guessLayers(root: string, exclude: readonly string[]): Map<strin
  * change: a reserved name (`src/external/` → `external_`) or one that another
  * directory already sanitizes to (`2fa` and `_2fa` → `_2fa`, `_2fa_2`).
  */
-export function guessLayout(root: string, exclude: readonly string[]): { layers: Map<string, string[]>; notes: string[] } {
+export interface GuessedLayout {
+  layers: Map<string, string[]>;
+  notes: string[];
+}
+
+export function guessLayout(root: string, exclude: readonly string[]): GuessedLayout {
   const srcRoot = sourceRoot(root, exclude);
   const layers = new Map<string, string[]>();
   const owners = new Map<string, string>();
@@ -919,23 +940,23 @@ function sourceRoot(root: string, exclude: readonly string[]): string {
 
 /** The single directory of the root `composer.json`'s `autoload.psr-4`, when it maps every namespace there; null otherwise. */
 function composerSourceRoot(root: string): string | null {
-  let manifest: unknown;
+  let manifest: JsonValue;
 
   try {
-    manifest = JSON.parse(withoutBom(readFileSync(join(root, "composer.json"), "utf8")));
+    manifest = parseJson(withoutBom(readFileSync(join(root, "composer.json"), "utf8")));
   } catch {
     return null;
   }
 
-  const autoload = manifest !== null && typeof manifest === "object" ? (manifest as Record<string, unknown>).autoload : undefined;
-  const psr4 = autoload !== null && typeof autoload === "object" ? (autoload as Record<string, unknown>)["psr-4"] : undefined;
+  const autoload = isJsonObject(manifest) ? manifest.autoload : undefined;
+  const psr4 = isJsonObject(autoload) ? autoload["psr-4"] : undefined;
 
-  if (psr4 === null || typeof psr4 !== "object" || Array.isArray(psr4)) return null;
+  if (!isJsonObject(psr4)) return null;
   const dirs = new Set<string>();
 
   for (const value of Object.values(psr4)) {
     for (const dir of Array.isArray(value) ? value : [value]) {
-      if (typeof dir !== "string") return null;
+      if (!isJsonString(dir)) return null;
       dirs.add(toPosix(dir).replace(/^\.\//, "").replace(/\/+$/, ""));
     }
   }

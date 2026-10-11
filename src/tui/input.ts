@@ -41,8 +41,21 @@ const PASTE_START = "\x1b[200~";
 
 const PASTE_END = "\x1b[201~";
 
-function key(name: string, mods: { ctrl?: boolean; alt?: boolean; shift?: boolean } = {}, text?: string): KeyEvent {
-  return { type: "key", name, ctrl: mods.ctrl === true, alt: mods.alt === true, shift: mods.shift === true, ...(text !== undefined ? { text } : {}) };
+// ESC-led patterns are built from strings: the control character is the point.
+const SGR_MOUSE = new RegExp(String.raw`^\x1b\[<(\d+);(\d+);(\d+)([Mm])`);
+
+const CSI = new RegExp(String.raw`^\x1b\[([?>=<]?)([\d;]*)([\x20-\x2f]*)([\x40-\x7e])`);
+
+const CSI_PREFIX = new RegExp(String.raw`^\x1b\[[?>=<]?[\d;]*[\x20-\x2f]*$`);
+
+type Modifiers = Pick<KeyEvent, "ctrl" | "alt" | "shift">;
+
+function key(name: string, mods: Partial<Modifiers> = {}, text?: string): KeyEvent {
+  const event: KeyEvent = { type: "key", name, ctrl: mods.ctrl === true, alt: mods.alt === true, shift: mods.shift === true };
+
+  if (text !== undefined) event.text = text;
+
+  return event;
 }
 
 /** The key that types one grapheme cluster: named by it, `space` for a blank. */
@@ -50,14 +63,14 @@ function typed(cluster: string): KeyEvent {
   return key(cluster === " " ? "space" : cluster, { shift: cluster !== cluster.toLowerCase() }, cluster);
 }
 
-const TILDE: Record<string, string> = {
+const TILDE = new Map(Object.entries({
   "1": "home", "2": "insert", "3": "delete", "4": "end", "5": "pageup", "6": "pagedown", "7": "home", "8": "end",
   "11": "f1", "12": "f2", "13": "f3", "14": "f4", "15": "f5", "17": "f6", "18": "f7", "19": "f8", "20": "f9", "21": "f10", "23": "f11", "24": "f12",
-};
+}));
 
-const FINAL: Record<string, string> = { A: "up", B: "down", C: "right", D: "left", H: "home", F: "end", P: "f1", Q: "f2", R: "f3", S: "f4" };
+const FINAL = new Map(Object.entries({ A: "up", B: "down", C: "right", D: "left", H: "home", F: "end", P: "f1", Q: "f2", R: "f3", S: "f4" }));
 
-function modifiers(param: string | undefined): { ctrl: boolean; alt: boolean; shift: boolean } {
+function modifiers(param: string | undefined): Modifiers {
   const m = Math.max(1, Number(param ?? "1")) - 1;
 
   return { shift: (m & 1) !== 0, alt: (m & 2) !== 0, ctrl: (m & 4) !== 0 };
@@ -192,30 +205,30 @@ export class InputDecoder {
     const second = text[1]!;
 
     if (second === "[") {
-      const mouse = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])/.exec(text);
+      const mouse = SGR_MOUSE.exec(text);
 
       if (mouse) return { length: mouse[0].length, event: this.mouse(Number(mouse[1]), Number(mouse[2]), Number(mouse[3]), mouse[4] === "M") };
       // A control sequence (ECMA-48 §5.4): a private marker, parameters, intermediates, a final byte.
-      const csi = /^\x1b\[([?>=<]?)([\d;]*)([\x20-\x2f]*)([\x40-\x7e])/.exec(text);
+      const csi = CSI.exec(text);
 
-      if (!csi) return /^\x1b\[[?>=<]?[\d;]*[\x20-\x2f]*$/.test(text) ? null : { length: 2, event: key("[", { alt: true }, "[") };
+      if (!csi) return CSI_PREFIX.test(text) ? null : { length: 2, event: key("[", { alt: true }, "[") };
       const [whole, marker, params = "", intermediates, final] = csi;
 
       // A report the terminal sends by itself (DECRPM `\x1b[?2004;1$y`, device attributes) is one sequence and no key.
       if (marker !== "" || intermediates !== "") return { length: whole.length, event: null };
       const parts = params.split(";");
 
-      if (final === "~") return { length: whole.length, event: key(TILDE[parts[0] ?? ""] ?? "unknown", modifiers(parts[1])) };
+      if (final === "~") return { length: whole.length, event: key(TILDE.get(parts[0] ?? "") ?? "unknown", modifiers(parts[1])) };
 
       if (final === "Z") return { length: whole.length, event: key("tab", { shift: true }) };
-      const name = FINAL[final!];
+      const name = FINAL.get(final!);
 
       return { length: whole.length, event: name ? key(name, modifiers(parts[1])) : null };
     }
 
     if (second === "O") {
       if (text.length < 3) return null;
-      const name = FINAL[text[2]!];
+      const name = FINAL.get(text[2]!);
 
       return { length: 3, event: name ? key(name) : null };
     }

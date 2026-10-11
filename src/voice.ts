@@ -10,6 +10,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Analysis } from "./analyze.ts";
 import { sectionNodes, walk } from "./ir.ts";
+import { isJsonObject, isJsonString, parseJson, type JsonValue } from "./json.ts";
 import { readKey } from "./keys.ts";
 import { parse } from "./parser.ts";
 
@@ -124,7 +125,13 @@ function seamWord(word: string): string {
 export function joinWindows(texts: readonly string[]): string {
   let out = "";
 
-  for (const text of texts.map((t) => t.trim()).filter((t) => t !== "")) {
+  const trimmed = texts.flatMap((t) => {
+    const text = t.trim();
+
+    return text === "" ? [] : [text];
+  });
+
+  for (const text of trimmed) {
     if (out === "") {
       out = text;
       continue;
@@ -235,20 +242,28 @@ export function speechToSpec(text: string, ids: readonly string[], indent = ""):
 
 /** The text of an OpenRouter chat completion; anything else (not JSON, an error with status 200) is an error that says so. */
 function transcriptOf(reply: string): string {
-  let body: unknown;
+  let body: JsonValue;
 
   try {
-    body = JSON.parse(reply);
+    body = parseJson(reply);
   } catch {
     throw new Error(`voice: openrouter answered with something other than JSON: ${reply.slice(0, 200)}`);
   }
 
-  const answer = body as { choices?: { message?: { content?: unknown } }[]; error?: { message?: unknown } } | null;
+  const answer = isJsonObject(body) ? body : undefined;
+  const error = answer?.error;
 
-  if (answer?.error !== undefined) throw new Error(`voice: openrouter: ${typeof answer.error?.message === "string" ? answer.error.message : JSON.stringify(answer.error)}`);
-  const content = answer?.choices?.[0]?.message?.content;
+  if (error !== undefined) {
+    const message = isJsonObject(error) ? error.message : undefined;
+    throw new Error(`voice: openrouter: ${isJsonString(message) ? message : JSON.stringify(error)}`);
+  }
 
-  if (typeof content !== "string") throw new Error(`voice: openrouter returned no transcript: ${reply.slice(0, 200)}`);
+  const choices = answer?.choices;
+  const choice = Array.isArray(choices) ? choices[0] : undefined;
+  const message = isJsonObject(choice) ? choice.message : undefined;
+  const content = isJsonObject(message) ? message.content : undefined;
+
+  if (!isJsonString(content)) throw new Error(`voice: openrouter returned no transcript: ${reply.slice(0, 200)}`);
 
   return content;
 }

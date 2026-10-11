@@ -10,7 +10,7 @@ import { keylang, tempDir, treeBytes, writeTree } from "./cli-helpers.ts";
 import { checkoutRepo, KEY } from "./tui-fixture.ts";
 import { session } from "./tui-helpers.ts";
 
-const MIXED: Record<string, string> = {
+const MIXED = {
   "keylang.json": JSON.stringify({ languages: ["typescript", "python", "php"], module: "file", layers: { app: ["src/app/**"], shop: ["src/py/**"], web: ["src/php/**"] }, integrations: { webhooks: ["src/php/Webhook/**"] } }),
   "src/app/pay.ts": [
     'import axios from "axios";',
@@ -70,7 +70,7 @@ const MIXED: Record<string, string> = {
   ].join("\n"),
   "src/php/Webhook/Notify.php": "<?php\nnamespace Shop\\Webhook;\nclass Notify\n{\n    public function execute(): void\n    {\n    }\n}\n",
   "keylang/flows/checkout.md": "# flow checkout\n\n- trigger app.server.checkout\n",
-};
+} satisfies Record<string, string>;
 
 interface Site {
   file: string;
@@ -90,7 +90,13 @@ interface Report {
   notes: string[];
 }
 
-function integrations(dir: string, args: string[] = []): { status: number | null; stdout: string; stderr: string } {
+interface Run {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+function integrations(dir: string, args: string[] = []): Run {
   return keylang(dir, ["integrations", ...args]);
 }
 
@@ -99,6 +105,7 @@ test("integrations: call sites of TS, Python and PHP clients with the literal ho
   writeTree(dir, MIXED);
   const r = integrations(dir, ["--json"]);
   assert.equal(r.status, 0, r.stderr);
+  // SAFETY: `integrations --json` exited 0 above, so stdout is its report; `Report` names the fields asserted here.
   const report = JSON.parse(r.stdout) as Report;
   assert.equal("text" in report, false);
   const byId = new Map(report.outgoing.map((integration) => [integration.id, integration]));
@@ -157,7 +164,7 @@ test("integrations: --json is the same bytes for the same inputs and only the fa
   assert.equal(second.stdout, first.stdout);
   const after = treeBytes(dir);
 
-  for (const map of [before, after]) for (const path of [...map.keys()]) if (path.startsWith(".keylang/cache/")) map.delete(path);
+  for (const map of [before, after]) for (const path of Array.from(map.keys())) if (path.startsWith(".keylang/cache/")) map.delete(path);
   assert.deepEqual(after, before);
 });
 

@@ -7,8 +7,8 @@
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
-import type { Attribute, BlockAttribute, Field, Model } from "@mrleebo/prisma-ast";
-import { parse, type CreateTableStatement, type Statement } from "pgsql-ast-parser";
+import type { Attribute, AttributeArgument, BlockAttribute, Field, Func, KeyValue, Model, ObjectValue, RelationArray } from "@mrleebo/prisma-ast";
+import { parse, type Statement } from "pgsql-ast-parser";
 import type { Analysis } from "./analyze.ts";
 import { toPosix } from "./config.ts";
 import { errorText } from "./diag.ts";
@@ -34,19 +34,39 @@ function segment(name: string): string {
   return isSegment(cleaned) ? cleaned : `_${cleaned}`;
 }
 
-const PROVIDERS: Readonly<Record<string, string>> = { postgresql: "postgres", postgres: "postgres", cockroachdb: "postgres", mysql: "mysql", sqlite: "sqlite", sqlserver: "mssql", mongodb: "mongodb" };
+const PROVIDERS = new Map([
+  ["postgresql", "postgres"],
+  ["postgres", "postgres"],
+  ["cockroachdb", "postgres"],
+  ["mysql", "mysql"],
+  ["sqlite", "sqlite"],
+  ["sqlserver", "mssql"],
+  ["mongodb", "mongodb"],
+]);
 
-function unquote(value: unknown): string | null {
-  return typeof value === "string" ? value.replace(/^"|"$/g, "") : null;
+/** What an attribute argument or an assignment holds in the Prisma AST. */
+type PrismaValue = AttributeArgument["value"];
+
+function isText(value: PrismaValue | undefined): value is string {
+  return typeof value === "string";
+}
+
+/** A node of the Prisma AST (it has a `type`), not a literal or a list. */
+function isPrismaNode(value: PrismaValue | undefined): value is KeyValue | Func | RelationArray | ObjectValue {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function unquote(value: PrismaValue | undefined): string | null {
+  return isText(value) ? value.replace(/^"|"$/g, "") : null;
 }
 
 /** The names of an attribute argument that is an array (`[a, b]`), or of a `key: [a, b]` argument. */
 function arrayArg(attribute: Attribute | BlockAttribute, key?: string): string[] {
   for (const arg of attribute.args ?? []) {
-    const value = arg.value as unknown;
-    const array = key === undefined ? value : typeof value === "object" && value !== null && (value as { type?: string; key?: string }).type === "keyValue" && (value as { key: string }).key === key ? (value as { value: unknown }).value : undefined;
+    const value = arg.value;
+    const array = key === undefined ? value : isPrismaNode(value) && value.type === "keyValue" && value.key === key ? value.value : undefined;
 
-    if (typeof array === "object" && array !== null && (array as { type?: string }).type === "array") return ((array as { args: unknown[] }).args ?? []).map((item) => String(item).replace(/^"|"$/g, ""));
+    if (isPrismaNode(array) && array.type === "array") return (array.args ?? []).map((item) => String(item).replace(/^"|"$/g, ""));
   }
 
   return [];
@@ -64,7 +84,7 @@ export async function prismaTables(text: string): Promise<DiscoveredSchema> {
   for (const block of schema.list) {
     if (block.type !== "datasource") continue;
 
-    for (const assignment of block.assignments) if (assignment.type === "assignment" && assignment.key === "provider") tech = PROVIDERS[unquote(assignment.value) ?? ""] ?? tech;
+    for (const assignment of block.assignments) if (assignment.type === "assignment" && assignment.key === "provider") tech = PROVIDERS.get(unquote(assignment.value) ?? "") ?? tech;
   }
 
   const models = schema.list.filter((block): block is Model => block.type === "model");
@@ -119,7 +139,7 @@ export function sqlTables(text: string): DiscoveredSchema {
 
   for (const statement of statements) {
     if (statement.type === "create table") {
-      const create = statement as CreateTableStatement;
+      const create = statement;
       const table: SystemTable = { name: segment(create.name.name), component: "", columns: [], indexes: [], description: "", line: 0 };
 
       for (const column of create.columns) {

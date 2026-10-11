@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import type { JsonObject, JsonValue } from "../src/json.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -18,14 +19,20 @@ const adapter = join(root, "src/adapters/trace.ts");
 
 type Context = { after: (f: () => void) => void };
 
-function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+interface Run {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+function keylang(cwd: string, args: string[]): Run {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8", maxBuffer: 1 << 28 });
 
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
 /** A temp repository of `files`; `config` is `keylang.json`. */
-function repo(t: Context, config: object, files: Record<string, string>): string {
+function repo(t: Context, config: JsonObject, files: Record<string, string>): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-evidence-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   writeFileSync(join(dir, "keylang.json"), `${JSON.stringify(config, null, 2)}\n`);
@@ -41,6 +48,7 @@ function repo(t: Context, config: object, files: Record<string, string>): string
 function snapshotOf(dir: string): string {
   assert.equal(keylang(dir, ["map"]).status, 0);
 
+  // SAFETY: `keylang map` writes .keylang/index.json as a snapshot with a string `snapshotId` (docs/snapshot.md).
   return (JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as { snapshotId: string }).snapshotId;
 }
 
@@ -56,6 +64,7 @@ function results(dir: string): JsonResult[] {
   const o = keylang(dir, ["check", "--format", "json"]);
   assert.ok(o.stdout.startsWith("{"), o.stdout + o.stderr);
 
+  // SAFETY: `check --format json` prints a report whose `results` rows carry these fields (docs/cli.md).
   return (JSON.parse(o.stdout) as { results: JsonResult[] }).results;
 }
 
@@ -69,7 +78,7 @@ const traceOf = (rows: JsonResult[], id: string): string => {
 };
 
 // The checkout fixture of design §3.4: `checkout() { buy() }`, `buy() { validate(); create(); save(); }`.
-const CHECKOUT: Record<string, string> = {
+const CHECKOUT = {
   "src/domain/order.ts": "export function create(): void {}\n",
   "src/infrastructure/store.ts": "export function save(): void {}\n",
   "src/application/purchase.ts": 'import { create } from "../domain/order.ts";\nimport { save } from "../infrastructure/store.ts";\nfunction validate(): void {}\nexport function buy(): void {\n  validate();\n  create();\n  save();\n}\n',
@@ -92,7 +101,12 @@ const ALL = [T, BUY, CREATE, SAVE];
 
 const AREA = "invariant total is the sum of the lines";
 
-function checkout(t: Context, check: Record<string, string>): { dir: string; snapshot: string } {
+interface Checkout {
+  dir: string;
+  snapshot: string;
+}
+
+function checkout(t: Context, check: Record<string, string>): Checkout {
   const dir = repo(t, { languages: ["typescript"], layers: LAYERS, check }, { ...CHECKOUT, "keylang/flows/checkout.md": CHECKOUT_FLOW, "tests/purchase.test.ts": "" });
 
   return { dir, snapshot: snapshotOf(dir) };
@@ -155,6 +169,7 @@ test("trace: a run of 60 000 spans loads in linear time", (t) => {
 test("trace: an end in a file read before the file with its start closes that start", (t) => {
   const { dir, snapshot } = checkout(t, { trace: ".keylang/trace/*.jsonl" });
   const lines = traceRun(snapshot, nested()).trim().split("\n");
+  // SAFETY: every trace JSONL line is an event object with a string `event` (docs/semantics.md, trace format).
   const isEnd = (line: string): boolean => (JSON.parse(line) as { event: string }).event === "end";
   // `a.jsonl` is read first: one process of the run wrote its ends there.
   writeTrace(dir, "a.jsonl", `${lines.filter(isEnd).join("\n")}\n`);
@@ -226,7 +241,7 @@ const testsOf = (rows: JsonResult[]): string => {
 
 test("tests: snapshotId and runId of another type are errors naming the field; missing or null is unbound", (t) => {
   const { dir, snapshot } = checkout(t, { tests: ".keylang/reports/*" });
-  const report = (fields: object, row: object = {}): string => JSON.stringify({ schemaVersion: 1, runId: "r", ...fields, tests: [{ file: "tests/purchase.test.ts", name: "computes total", status: "pass", ...row }] });
+  const report = (fields: JsonObject, row: JsonObject = {}): string => JSON.stringify({ schemaVersion: 1, runId: "r", ...fields, tests: [{ file: "tests/purchase.test.ts", name: "computes total", status: "pass", ...row }] });
 
   for (const [fields, rowFields, message] of [
     [{ snapshotId: 123 }, {}, /\.keylang\/reports\/r\.json: `snapshotId` must be a string or null, got 123/],
@@ -279,10 +294,15 @@ test("tests: a JUnit file attribute with the absolute path under the root matche
 
 const JS_LAYERS = { languages: ["typescript", "javascript"], layers: { app: "src/app/**" }, exclude: ["run.mjs"], check: { trace: ".keylang/trace/*.jsonl" } };
 
+interface TracedRun {
+  status: number | null;
+  stderr: string;
+}
+
 /** `script` (an ES module, a file so that a worker can inherit the flags) under the adapter, recording flow `flow`; no run id is given. */
-function traced(dir: string, script: string, flow = "f"): { status: number | null; stderr: string } {
+function traced(dir: string, script: string, flow = "f"): TracedRun {
   writeFileSync(join(dir, "run.mjs"), script);
-  const env: Record<string, string | undefined> = { ...process.env, KEYLANG_TRACE: join(dir, `.keylang/trace/${flow}.jsonl`), KEYLANG_TRACE_FLOW: flow, KEYLANG_TRACE_TEST: "t" };
+  const env: NodeJS.ProcessEnv = { ...process.env, KEYLANG_TRACE: join(dir, `.keylang/trace/${flow}.jsonl`), KEYLANG_TRACE_FLOW: flow, KEYLANG_TRACE_TEST: "t" };
   delete env.KEYLANG_TRACE_RUN;
   const r = spawnSync(process.execPath, ["--import", adapter, "run.mjs"], { cwd: dir, encoding: "utf8", env });
 
@@ -290,6 +310,7 @@ function traced(dir: string, script: string, flow = "f"): { status: number | nul
 }
 
 function runEvents(dir: string): { runId: string; instrumented: string[]; complete: boolean }[] {
+  // SAFETY: the adapter writes trace JSONL, one event object per line; its `run` events carry these fields.
   return readFileSync(join(dir, ".keylang/trace/f.jsonl"), "utf8")
     .trim()
     .split("\n")
@@ -371,10 +392,11 @@ test("python: a child process under the adapter shares the run id, so a step it 
   const plan = keylang(dir, ["trace-plan", "f"]);
   assert.equal(plan.status, 0, plan.stderr);
   writeFileSync(join(dir, "plan.json"), plan.stdout);
-  const env: Record<string, string | undefined> = { ...process.env, KEYLANG_TRACE: ".keylang/trace/f.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_TRACE_TEST: "run.py > @flow f" };
+  const env: NodeJS.ProcessEnv = { ...process.env, KEYLANG_TRACE: ".keylang/trace/f.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_TRACE_TEST: "run.py > @flow f" };
   delete env.KEYLANG_TRACE_RUN;
   const r = spawnSync("python3", [python, "run.py", python], { cwd: dir, encoding: "utf8", env });
   assert.equal(r.status, 0, r.stderr);
+  // SAFETY: the Python adapter writes trace JSONL, one event object per line with an `event` and a `runId`.
   const runs = readFileSync(join(dir, ".keylang/trace/f.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line) as { event: string; runId: string }).filter((e) => e.event === "run");
   assert.equal(new Set(runs.map((e) => e.runId)).size, 1, JSON.stringify(runs));
   // In its own run the child's `work` would leave the parent's run without it: a missing step.
@@ -430,6 +452,7 @@ fn main() {
   assert.equal(build.status, 0, build.stderr);
   const exec = spawnSync(join(dir, "shop"), [], { cwd: dir, encoding: "utf8", env: { ...process.env, KEYLANG_TRACE: ".keylang/trace/a.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_TRACE_TEST: "shop > @flow a" } });
   assert.equal(exec.status, 0, exec.stderr);
+  // SAFETY: the Rust adapter writes trace JSONL, one event object per line with an `event`.
   const events = readFileSync(join(dir, ".keylang/trace/a.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line) as { event: string; instrumented?: string[] });
   assert.deepEqual(events.find((e) => e.event === "run")?.instrumented, ["app.main.run", "app.main.spawner"]);
   const rows = results(dir);
@@ -475,6 +498,7 @@ fn main() {
   assert.equal(build.status, 0, build.stderr);
   const exec = spawnSync(join(dir, "shop"), [], { cwd: dir, encoding: "utf8", env: { ...process.env, KEYLANG_TRACE: ".keylang/trace/checkout.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_TRACE_TEST: "shop > @flow checkout" } });
   assert.equal(exec.status, 0, exec.stderr);
+  // SAFETY: the Rust adapter writes trace JSONL, one event object per line with an `event`.
   const events = readFileSync(join(dir, ".keylang/trace/checkout.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line) as { event: string; instrumented?: string[] });
   assert.deepEqual(events.find((e) => e.event === "run")?.instrumented, ["app.main.checkout", "app.main.digest", "app.main.save"]);
   const rows = results(dir);
@@ -521,6 +545,7 @@ test("php: a generator whose body has an arrow function before its `yield` is st
   const r = spawnSync("php", [join(root, "adapters/php/keylang_trace.php"), "run.php"], { cwd: dir, encoding: "utf8", env: { ...process.env, KEYLANG_TRACE: ".keylang/trace/sum.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_TRACE_TEST: "run.php > @flow sum" } });
   assert.equal(r.status, 0, r.stderr);
   assert.equal(r.stdout, "6\n");
+  // SAFETY: the PHP adapter writes trace JSONL, one event object per line with an `event`.
   const run = readFileSync(join(dir, ".keylang/trace/sum.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line) as { event: string; complete?: boolean; instrumented?: string[] }).find((e) => e.event === "run");
   // Instrumented, the generator's suspended frames would interleave the spans and leave the run incomplete.
   assert.equal(run?.complete, true);
@@ -559,6 +584,7 @@ class Session {
         const length = Number(/Content-Length: (\d+)/i.exec(this.buffer.subarray(0, end).toString())?.[1]);
 
         if (this.buffer.length < end + 4 + length) return;
+        // SAFETY: the LSP server frames JSON-RPC messages, whose fields Message lists.
         this.messages.push(JSON.parse(this.buffer.subarray(end + 4, end + 4 + length).toString()) as Message);
         this.buffer = this.buffer.subarray(end + 4 + length);
       }
@@ -574,11 +600,11 @@ class Session {
     }).join(""));
   }
 
-  notify(method: string, params: unknown): void {
+  notify(method: string, params: JsonValue): void {
     this.write({ method, params });
   }
 
-  send(method: string, params: unknown): number {
+  send(method: string, params: JsonValue): number {
     const id = this.next++;
     this.write({ id, method, params });
 
@@ -590,11 +616,12 @@ class Session {
     return this.next++;
   }
 
-  async request<T>(method: string, params: unknown): Promise<T> {
+  async request<T>(method: string, params: JsonValue): Promise<T> {
     const response = await this.response(this.send(method, params));
 
     if (response.error) throw new Error(`${method}: ${response.error.message}`);
 
+    // SAFETY: each caller names the result type the LSP specification gives for its method.
     return response.result as T;
   }
 
@@ -661,7 +688,7 @@ test("lsp: a ranged didChange from a client that ignores full sync is applied, w
   const text = "# flow draft\n\n- step domain.order.total\n";
   s.notify("textDocument/didOpen", { textDocument: { uri: flowUri, languageId: "markdown", version: 1, text } });
   // `total` → `missingFn` on line 2, then a second edit appends a line: both are ranges, in UTF-16 characters.
-  const range = (line: number, from: number, to: number): object => ({ start: { line, character: from }, end: { line, character: to } });
+  const range = (line: number, from: number, to: number) => ({ start: { line, character: from }, end: { line, character: to } });
   s.notify("textDocument/didChange", { textDocument: { uri: flowUri, version: 2 }, contentChanges: [{ range: range(2, 20, 25), text: "missingFn" }] });
   s.notify("textDocument/didChange", { textDocument: { uri: flowUri, version: 3 }, contentChanges: [{ range: range(3, 0, 0), text: "- step domain.order.ghost\n" }] });
   const items = (await s.request<{ items: { code?: string; message: string }[] }>("textDocument/diagnostic", { textDocument: { uri: flowUri } })).items;
@@ -699,6 +726,7 @@ test("lsp: one analysis runs at a time, and the changes made meanwhile are analy
   await s.request("shutdown", null);
   s.notify("exit", null);
   assert.equal(await s.exited, 0, s.stderr);
+  // SAFETY: the adapter writes trace JSONL, one event object per line; span events carry these fields.
   const events = readFileSync(trace, "utf8").trim().split("\n").map((line) => JSON.parse(line) as { event: string; spanId?: string; symbolId?: string; seq?: number; clockId?: string });
   const starts = events.filter((e) => e.event === "start" && e.symbolId === "map.analyze.analyze");
   const ends = new Map(events.filter((e) => e.event === "end").map((e) => [e.spanId, e]));

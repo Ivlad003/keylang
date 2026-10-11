@@ -10,6 +10,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } fr
 import { basename, dirname, join, resolve } from "node:path";
 import { withoutBom } from "./config.ts";
 import { gitUnavailable } from "./git-changes.ts";
+import { isJsonObject, isJsonString, parseJson, type JsonValue } from "./json.ts";
 import { safeWrite, targetProblem } from "./safe-write.ts";
 
 /** What to clone and where it sits under the cache root. */
@@ -28,7 +29,7 @@ export type CloneExplain = "map-only" | "map-and-ai" | "all";
 export const CLONE_EXPLAIN_MODES: readonly CloneExplain[] = ["map-only", "map-and-ai", "all"];
 
 export function isCloneExplain(text: string): text is CloneExplain {
-  return (CLONE_EXPLAIN_MODES as readonly string[]).includes(text);
+  return CLONE_EXPLAIN_MODES.some((mode) => mode === text);
 }
 
 /** Marks a directory keylang cloned: only such a directory is ever reset to the remote. */
@@ -212,10 +213,11 @@ function readMarker(dir: string): { url: string; key: string[] } | undefined {
   if (!existsSync(marker)) return undefined;
 
   try {
-    const parsed: unknown = JSON.parse(withoutBom(readFileSync(marker, "utf8")));
+    const parsed = parseJson(withoutBom(readFileSync(marker, "utf8")));
 
-    if (typeof parsed !== "object" || parsed === null || !("url" in parsed) || typeof parsed.url !== "string") return undefined;
-    const key = "key" in parsed && Array.isArray(parsed.key) && parsed.key.every((segment) => typeof segment === "string") ? (parsed.key as string[]) : undefined;
+    if (!isJsonObject(parsed) || !isJsonString(parsed.url)) return undefined;
+    const segments = parsed.key;
+    const key = Array.isArray(segments) && segments.every(isJsonString) ? segments : undefined;
 
     return { url: parsed.url, key: key ?? [parsed.url] };
   } catch {
@@ -251,25 +253,24 @@ export function enableExplainedMap(root: string): string | null {
 
   if (place !== null) return `keylang.json: ${place}`;
   const file = join(root, "keylang.json");
-  let config: unknown;
+  let config: JsonValue;
 
   try {
-    config = JSON.parse(withoutBom(readFileSync(file, "utf8")));
+    config = parseJson(withoutBom(readFileSync(file, "utf8")));
   } catch (error) {
     return `keylang.json: ${error instanceof Error ? error.message : String(error)}`;
   }
 
-  if (typeof config !== "object" || config === null || Array.isArray(config)) return "keylang.json: not a JSON object";
-  const record = config as Record<string, unknown>;
-  const explain = record.explain;
+  if (!isJsonObject(config)) return "keylang.json: not a JSON object";
+  const explain = config.explain;
 
-  if (explain !== undefined && (typeof explain !== "object" || explain === null || Array.isArray(explain))) return "keylang.json: `explain` is not an object";
+  if (explain !== undefined && !isJsonObject(explain)) return "keylang.json: `explain` is not an object";
 
-  if ((explain as Record<string, unknown> | undefined)?.map === true) return null;
-  record.explain = { ...(explain as Record<string, unknown> | undefined), map: true };
+  if (explain?.map === true) return null;
+  config.explain = { ...explain, map: true };
 
   try {
-    safeWrite(root, "keylang.json", `${JSON.stringify(record, null, 2)}\n`);
+    safeWrite(root, "keylang.json", `${JSON.stringify(config, null, 2)}\n`);
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
   }

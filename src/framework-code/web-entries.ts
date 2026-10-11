@@ -31,6 +31,24 @@ import type { EntryPoint } from "../snapshot.ts";
 
 type Arg = DecoratorArg & { line: number; col: number };
 
+/** A top-level name of a file. */
+interface TopName {
+  file: string;
+  name: string;
+}
+
+/** A router key split: its file, and its name (null for a file's own router). */
+interface KeyParts {
+  file: string;
+  name: string | null;
+}
+
+/** The fn a handler argument names, else why there is none. */
+interface HandlerRef {
+  id: string | null;
+  note: string | null;
+}
+
 export interface WebEntries {
   entries: EntryPoint[];
   holes: Gap[];
@@ -240,7 +258,17 @@ function routerEntries(facts: readonly FileFacts[], scope: EntryScope, active: r
       const label = `${method} ${p.prefix === "" && path === "*" ? "*" : joinPath(p.prefix, path)}`;
       const place = { file: r.file, line: at.line };
       const entry = frameworkEntry(scope, fw, "route", id ?? module.id, label, `${r.file}:${r.call.line}`, place);
-      out.entries.push({ ...entry, ...(id === null ? place : {}), method, ...(notes.length > 0 ? { note: notes.join("; ") } : {}) });
+      const point: EntryPoint = { ...entry };
+
+      if (id === null) {
+        point.file = place.file;
+        point.line = place.line;
+      }
+
+      point.method = method;
+
+      if (notes.length > 0) point.note = notes.join("; ");
+      out.entries.push(point);
     }
   };
 
@@ -306,7 +334,7 @@ class Values {
   }
 
   /** The file and top-level name a name written in `file` stands for. */
-  value(file: string, name: string, depth = 0): { file: string; name: string } {
+  value(file: string, name: string, depth = 0): TopName {
     const facts = this.scope.facts.get(file);
 
     if (facts === undefined || depth > 8) return { file, name };
@@ -331,7 +359,7 @@ class Values {
   }
 
   /** The top-level name `file` exports as `name`. */
-  exported(file: string, name: string, depth: number): { file: string; name: string } | null {
+  exported(file: string, name: string, depth: number): TopName | null {
     const facts = this.scope.facts.get(file);
     const row = facts?.exportRows.find((r) => r.name === name);
 
@@ -362,7 +390,7 @@ class Values {
 
   /** The router key an argument of `use` (a value) or `register` (a plugin fn) mounts; null when keylang cannot follow it. */
   mounted(file: string, arg: Arg, as: "value" | "fn"): string | null {
-    let at: { file: string; name: string } | null = null;
+    let at: TopName | null = null;
 
     if (arg.kind === "name" && !arg.name.includes(".")) at = this.value(file, arg.name);
     else if (arg.kind === "function") return as === "fn" ? fnKey(file, null, arg) : null;
@@ -389,7 +417,14 @@ function fnKey(file: string, name: string | null, at: { line: number; col: numbe
   return name !== null ? `f\0${file}\0${name}` : `p\0${file}\0${at?.line ?? 0}:${at?.col ?? 0}`;
 }
 
-function keyParts(key: string): { file: string; name: string | null } {
+/** The strings of a list whose items are all string literals; null when one is not. */
+function literalStrings(items: readonly DecoratorArg[]): string[] | null {
+  const strings = items.flatMap((item) => (item.kind === "string" ? [item.value] : []));
+
+  return strings.length === items.length ? strings : null;
+}
+
+function keyParts(key: string): KeyParts {
   const [kind, file, name] = key.split("\0");
 
   return { file: file ?? "", name: kind === "p" ? null : (name ?? null) };
@@ -420,7 +455,7 @@ function hooksOf(opts: DecoratorArg): DecoratorArg[] {
 }
 
 /** The fn a handler argument names, or why there is none. */
-function handlerOf(scope: EntryScope, file: string, handler: DecoratorArg | undefined): { id: string | null; note: string | null } {
+function handlerOf(scope: EntryScope, file: string, handler: DecoratorArg | undefined): HandlerRef {
   if (handler === undefined) return { id: null, note: "no handler keylang reads: the registering module stands for it" };
 
   if (handler.kind === "function") return { id: null, note: "handler written in place: the registering module stands for it" };
@@ -507,7 +542,7 @@ function nextEntries(facts: readonly FileFacts[], scope: EntryScope, out: WebEnt
     if (MIDDLEWARE.test(file.path)) {
       const id = exportedFn("middleware") ?? exportedFn("default");
       const matcher = file.web?.config === undefined ? undefined : prop(file.web.config, "matcher");
-      const paths = matcher?.kind === "string" ? [matcher.value] : matcher?.kind === "array" && matcher.items.every((i) => i.kind === "string") ? matcher.items.map((i) => (i as { value: string }).value) : null;
+      const paths = matcher?.kind === "string" ? [matcher.value] : matcher?.kind === "array" ? literalStrings(matcher.items) : null;
       const notes = [id === null ? "no exported `middleware` fn keylang resolves: the module stands for it" : null, matcher !== undefined && paths === null ? `the matcher is no literal: \`${argText(matcher)}\`` : null].filter((n): n is string => n !== null);
       const label = paths === null ? "middleware" : `middleware ${paths.join(", ")}`;
       const entry = frameworkEntry(scope, "next", "route", id ?? module.id, label, `${file.path}:${top.line}`, top);
@@ -524,7 +559,15 @@ function nextEntries(facts: readonly FileFacts[], scope: EntryScope, out: WebEnt
       seen.add(`${name}\0${id}`);
       const place = { file: file.path, line };
       const entry = frameworkEntry(scope, "next", "route", id ?? module.id, `action ${name}`, `${file.path}:${line}`, place);
-      out.entries.push({ ...entry, ...(id === null ? place : {}), ...(note !== null ? { note } : {}) });
+      const point: EntryPoint = { ...entry };
+
+      if (id === null) {
+        point.file = place.file;
+        point.line = place.line;
+      }
+
+      if (note !== null) point.note = note;
+      out.entries.push(point);
     };
 
     // `'use server'` at the top of the file: every exported fn is an action.

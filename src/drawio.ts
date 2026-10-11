@@ -14,21 +14,24 @@
 
 import { inflateRawSync } from "node:zlib";
 import { xmlEscape } from "./bpmn-export.ts";
-import { diagramOf, type DiagramEdge, type DiagramInput, type DiagramNode } from "./diagram.ts";
+import { diagramOf, type DiagramEdge, type DiagramInput, type DiagramNode, type DiagramVerdict } from "./diagram.ts";
 import { parse } from "./parser.ts";
 import { walkFlow, type Flow, type FlowItem, type Trigger } from "./spec-ir.ts";
 
 /** Colours by verdict, as the web canvas (`web/src/canvas.ts`) draws them. */
-const VERDICT_COLOUR: Record<string, { stroke: string; fill: string }> = {
+const VERDICT_COLOUR = {
   ok: { stroke: "#2e7d32", fill: "#e8f5e9" },
   fail: { stroke: "#c62828", fill: "#ffebee" },
   unverified: { stroke: "#b26a00", fill: "#fff8e1" },
   planned: { stroke: "#757575", fill: "#f5f5f5" },
-};
+} satisfies Record<NonNullable<DiagramVerdict>, { stroke: string; fill: string }>;
 
 const NEUTRAL = { stroke: "#455a64", fill: "#eceff1" };
 
-function style(parts: Record<string, string | number>): string {
+/** draw.io style keys and their values, written `key=value;`. */
+type StyleParts = Record<string, string | number>;
+
+function style(parts: StyleParts): string {
   return `${Object.entries(parts)
     .map(([key, value]) => `${key}=${value}`)
     .join(";")};`;
@@ -37,9 +40,8 @@ function style(parts: Record<string, string | number>): string {
 /** The style of a shape: the canvas's shape, colours and dashes, in draw.io's names. */
 export function nodeStyle(node: Pick<DiagramNode, "kind" | "verdict">): string {
   const colour = (node.verdict && VERDICT_COLOUR[node.verdict]) || NEUTRAL;
-  const base: Record<string, string | number> = { whiteSpace: "wrap", html: 1, strokeColor: colour.stroke, fillColor: colour.fill, fontColor: "#212121", fontSize: 11, strokeWidth: 1.5 };
-
-  if (node.verdict === "planned") base.dashed = 1;
+  const shape = { whiteSpace: "wrap", html: 1, strokeColor: colour.stroke, fillColor: colour.fill, fontColor: "#212121", fontSize: 11, strokeWidth: 1.5 };
+  const base = node.verdict === "planned" ? { ...shape, dashed: 1 } : shape;
   // Small shapes carry their text below, as the canvas's captions.
   const below = { verticalLabelPosition: "bottom", verticalAlign: "top", labelPosition: "center", align: "center" };
 
@@ -131,7 +133,13 @@ export interface XmlElement {
   text: string;
 }
 
-const ENTITY: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
+const ENTITY = new Map([
+  ["amp", "&"],
+  ["lt", "<"],
+  ["gt", ">"],
+  ["quot", '"'],
+  ["apos", "'"],
+]);
 
 function decode(text: string): string {
   return text.replace(/&(#x[0-9a-fA-F]+|#\d+|[a-zA-Z]+);/g, (whole, name: string) => {
@@ -139,7 +147,7 @@ function decode(text: string): string {
 
     if (name.startsWith("#")) return String.fromCodePoint(Number(name.slice(1)));
 
-    return ENTITY[name] ?? whole;
+    return ENTITY.get(name) ?? whole;
   });
 }
 

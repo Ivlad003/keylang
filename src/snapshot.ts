@@ -11,6 +11,7 @@ import type { Config } from "./config.ts";
 import type { ExportEntry } from "./exports.ts";
 import { briefOf } from "./brief.ts";
 import { globDirectory } from "./glob.ts";
+import { isJsonObject, isJsonString, parseJson, type JsonObject } from "./json.ts";
 import { EVENTS_LAYER } from "./frameworks/events.ts";
 import type { Gap, Graph, Module, Via } from "./graph.ts";
 import { constructorName, LANGUAGES, languageOf } from "./languages.ts";
@@ -276,7 +277,7 @@ export const ENTRY_KINDS = ["route", "rest", "graphql", "cron", "consumer", "cli
 export type EntryKind = (typeof ENTRY_KINDS)[number];
 
 export function isEntryKind(value: string): value is EntryKind {
-  return (ENTRY_KINDS as readonly string[]).includes(value);
+  return ENTRY_KINDS.some((kind) => kind === value);
 }
 
 /**
@@ -366,7 +367,7 @@ export function buildSnapshot(
   const manifestFiles = [...files].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   const grammars = grammarVersions();
 
-  const manifestConfig = {
+  const configBase = {
     dir: config.dir,
     languages: [...config.languages],
     module: config.module,
@@ -374,38 +375,42 @@ export function buildSnapshot(
     exclude: [...config.exclude],
     outside: [...config.outside],
     assume: [...config.assume],
-    ...(config.frameworks !== null ? { frameworks: [...config.frameworks] } : {}),
-    guessed: config.guessed,
   };
+
+  // `frameworks` sits before `guessed`: `snapshotId` hashes the keys in this order.
+  const manifestConfig: AnalysisSnapshot["manifest"]["config"] =
+    config.frameworks === null ? { ...configBase, guessed: config.guessed } : { ...configBase, frameworks: [...config.frameworks], guessed: config.guessed };
 
   const frameworkFiles = frameworks.map((f) => ({ name: f.name, version: f.version, files: [...f.files].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)) }));
 
-  const snapshotId = sha256(
-    JSON.stringify({
-      schema: SNAPSHOT_SCHEMA,
-      extractor: EXTRACTOR_VERSION,
-      grammars,
-      config: manifestConfig,
-      files: manifestFiles,
-      // An excluded or outside file is a module whatever it holds, and a skipped one a target left out on purpose.
-      skipped: skipped.map(({ file, kind }) => `${kind ?? "skipped-file"} ${file}`).sort(),
-      // `paths`, `references` and declared packages decide edges as much as the sources do.
-      resolution: [...graph.resolverInputs].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([path, text]) => [path, text === null ? null : sha256(text)]),
-      // The manifests entry points come from (`bin`, `[project.scripts]`, `[[bin]]`) decide them as the sources do.
-      entries: [...entries.inputs].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([path, text]) => [path, text === null ? null : sha256(text)]),
-      // A framework's config (`etc/di.xml`) decides edges as the code does (ADR 0022).
-      ...(frameworkFiles.length > 0 ? { frameworks: frameworkFiles } : {}),
-    }),
-  );
+  const identity = {
+    schema: SNAPSHOT_SCHEMA,
+    extractor: EXTRACTOR_VERSION,
+    grammars,
+    config: manifestConfig,
+    files: manifestFiles,
+    // An excluded or outside file is a module whatever it holds, and a skipped one a target left out on purpose.
+    skipped: skipped.map(({ file, kind }) => `${kind ?? "skipped-file"} ${file}`).sort(),
+    // `paths`, `references` and declared packages decide edges as much as the sources do.
+    resolution: [...graph.resolverInputs].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([path, text]) => [path, text === null ? null : sha256(text)]),
+    // The manifests entry points come from (`bin`, `[project.scripts]`, `[[bin]]`) decide them as the sources do.
+    entries: [...entries.inputs].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([path, text]) => [path, text === null ? null : sha256(text)]),
+  };
+
+  // A framework's config (`etc/di.xml`) decides edges as the code does (ADR 0022).
+  const snapshotId = sha256(JSON.stringify(frameworkFiles.length > 0 ? { ...identity, frameworks: frameworkFiles } : identity));
 
   const nodes: Record<string, SnapshotNode> = {};
   // fns and types that read a value imported from another file: their closure cannot cover it.
   const readsImported = new Set<string>();
 
   const visit = (m: Module): void => {
+    const moduleHead: Pick<SnapshotNode, "kind" | "class"> = { kind: "module" };
+
+    if (m.class) moduleHead.class = true;
+
     const moduleNode: SnapshotNode = {
-      kind: "module",
-      ...(m.class ? { class: true as const } : {}),
+      ...moduleHead,
       layer: m.layer,
       file: m.path,
       line: m.line,
@@ -426,6 +431,12 @@ export function buildSnapshot(
     nodes[m.id] = moduleNode;
 
     for (const f of m.fns) {
+      const fnFlags: Pick<SnapshotNode, "static" | "name"> = {};
+
+      if (f.static) fnFlags.static = true;
+
+      if (f.written !== undefined) fnFlags.name = f.written;
+
       const fn: SnapshotNode = {
         kind: "fn",
         layer: m.layer,
@@ -436,8 +447,7 @@ export function buildSnapshot(
         endCol: f.endCol,
         signature: f.signature,
         exported: f.exported,
-        ...(f.static ? { static: true as const } : {}),
-        ...(f.written !== undefined ? { name: f.written } : {}),
+        ...fnFlags,
         doc: docBrief(f.doc),
         calls: [...new Set(f.calls.filter((c) => c.via !== "injected").map((c) => c.target))],
         callers: [],
@@ -455,7 +465,8 @@ export function buildSnapshot(
 
     for (const t of m.types) {
       if (t.fingerprint !== undefined && readsImportedValue(t.fingerprint)) readsImported.add(t.id);
-      nodes[t.id] = {
+
+      const typeNode: SnapshotNode = {
         kind: "type",
         layer: m.layer,
         file: t.file ?? m.path,
@@ -466,8 +477,10 @@ export function buildSnapshot(
         signature: t.signature,
         exported: t.exported,
         doc: docBrief(t.doc),
-        ...(t.fingerprint !== undefined ? { fingerprint: sha256(t.fingerprint) } : {}),
       };
+
+      if (t.fingerprint !== undefined) typeNode.fingerprint = sha256(t.fingerprint);
+      nodes[t.id] = typeNode;
     }
 
     for (const c of m.children) visit(c);
@@ -485,13 +498,16 @@ export function buildSnapshot(
   if (events.length > 0) nodes[EVENTS_LAYER] = { kind: "layer", layer: EVENTS_LAYER, file: null, line: null, col: null, doc: null };
 
   for (const e of events) {
+    const eventName: Pick<SnapshotNode, "name"> = {};
+
+    if (e.id.slice(EVENTS_LAYER.length + 1) !== e.name) eventName.name = e.name;
     nodes[e.id] = {
       kind: "event",
       layer: EVENTS_LAYER,
       file: e.file,
       line: e.file === null ? null : e.line,
       col: e.file === null ? null : e.col,
-      ...(e.id.slice(EVENTS_LAYER.length + 1) !== e.name ? { name: e.name } : {}),
+      ...eventName,
       doc: null,
       calls: [...new Set(e.calls.map((c) => c.target))],
       callers: [],
@@ -521,7 +537,7 @@ export function buildSnapshot(
 
   const visitEdges = (m: Module): void => {
     for (const d of m.deps) {
-      edges.push({
+      const edge: SnapshotEdge = {
         kind: d.reexport ? "reexport" : "import",
         source: m.id,
         target: d.target,
@@ -534,14 +550,17 @@ export function buildSnapshot(
         text: d.text,
         resolution: "resolved",
         provenance: d.docblock ? "docblock" : "syntactic",
-        ...(d.docblock ? { docblock: `${d.file}:${d.line}:${d.col}` } : {}),
-        ...(d.typeOnly ? { typeOnly: true as const } : {}),
-      });
+      };
+
+      if (d.docblock) edge.docblock = `${d.file}:${d.line}:${d.col}`;
+
+      if (d.typeOnly) edge.typeOnly = true;
+      edges.push(edge);
     }
 
     for (const f of m.fns) {
       for (const c of f.calls) {
-        edges.push({
+        const edge: SnapshotEdge = {
           kind: "call",
           source: f.id,
           target: c.target,
@@ -553,18 +572,30 @@ export function buildSnapshot(
           text: c.text,
           resolution: "resolved",
           provenance: c.docblock ? "docblock" : "syntactic",
-          ...(c.docblock ? { docblock: c.docblock } : {}),
-          ...(c.member ? { member: c.member } : {}),
-          ...(c.indirect ? { indirect: true as const } : {}),
-          ...(c.via ? { via: c.via } : {}),
-          ...(c.hook ? { hook: c.hook } : {}),
-          ...(c.site ? { site: c.site } : {}),
-          ...(c.scope ? { scope: c.scope } : {}),
-          ...(c.owner ? { owner: c.owner } : {}),
-          ...(c.binding ? { binding: c.binding } : {}),
-          ...(c.intercepts ? { intercepts: c.intercepts } : {}),
-          ...(c.closure ? { closure: true as const } : {}),
-        });
+        };
+
+        if (c.docblock) edge.docblock = c.docblock;
+
+        if (c.member) edge.member = c.member;
+
+        if (c.indirect) edge.indirect = true;
+
+        if (c.via) edge.via = c.via;
+
+        if (c.hook) edge.hook = c.hook;
+
+        if (c.site) edge.site = c.site;
+
+        if (c.scope) edge.scope = c.scope;
+
+        if (c.owner) edge.owner = c.owner;
+
+        if (c.binding) edge.binding = c.binding;
+
+        if (c.intercepts) edge.intercepts = c.intercepts;
+
+        if (c.closure) edge.closure = true;
+        edges.push(edge);
       }
     }
 
@@ -575,7 +606,7 @@ export function buildSnapshot(
 
   for (const e of events) {
     for (const c of e.calls) {
-      edges.push({
+      const edge: SnapshotEdge = {
         kind: "call",
         source: e.id,
         target: c.target,
@@ -587,12 +618,18 @@ export function buildSnapshot(
         text: c.text,
         resolution: "resolved",
         provenance: "syntactic",
-        ...(c.via ? { via: c.via } : {}),
-        ...(c.site ? { site: c.site } : {}),
-        ...(c.scope ? { scope: c.scope } : {}),
-        ...(c.owner ? { owner: c.owner } : {}),
-        ...(c.binding ? { binding: c.binding } : {}),
-      });
+      };
+
+      if (c.via) edge.via = c.via;
+
+      if (c.site) edge.site = c.site;
+
+      if (c.scope) edge.scope = c.scope;
+
+      if (c.owner) edge.owner = c.owner;
+
+      if (c.binding) edge.binding = c.binding;
+      edges.push(edge);
     }
   }
 
@@ -621,7 +658,7 @@ export function buildSnapshot(
     coverage.push({ kind: gap.kind, file: gap.file, line: gap.line, col: gap.col, endLine: gap.endLine, endCol: gap.endCol, text: gap.text, reason: gap.reason, source: gap.source });
 
     if (gap.kind === "unresolved-import" || gap.kind === "dynamic-call" || gap.kind === "unresolved-call" || gap.kind === "ambiguous-binding") {
-      edges.push({
+      const edge: SnapshotEdge = {
         kind: gap.kind === "unresolved-import" ? "import" : "call",
         source: gap.source ?? gap.file,
         target: null,
@@ -634,8 +671,10 @@ export function buildSnapshot(
         resolution: "unresolved",
         provenance: "syntactic",
         reason: gap.reason,
-        ...(gap.name ? { name: gap.name } : {}),
-      });
+      };
+
+      if (gap.name) edge.name = gap.name;
+      edges.push(edge);
     }
   }
 
@@ -646,13 +685,16 @@ export function buildSnapshot(
   for (const item of graph.assumed) coverage.push({ kind: "assumed-import", ...item });
   coverage.sort(compareCoverage);
   closures(ordered, coverage, readsImported);
+  const manifest: AnalysisSnapshot["manifest"] = { extractor: EXTRACTOR_VERSION, grammars, config: manifestConfig, files: manifestFiles };
+
+  if (frameworkFiles.length > 0) manifest.frameworks = frameworkFiles;
 
   return {
     schema: SNAPSHOT_SCHEMA,
     snapshotId,
     generated: new Date().toISOString(),
     system: docs.system,
-    manifest: { extractor: EXTRACTOR_VERSION, grammars, config: manifestConfig, files: manifestFiles, ...(frameworkFiles.length > 0 ? { frameworks: frameworkFiles } : {}) },
+    manifest,
     nodes: ordered,
     edges,
     exports: graph.exports.map(exportRow),
@@ -669,7 +711,7 @@ export function buildSnapshot(
  * terminates and every member of it changes together.
  */
 function closures(nodes: Record<string, SnapshotNode>, coverage: readonly CoverageItem[], readsImported: ReadonlySet<string>): void {
-  const holes = new Set(coverage.filter((c) => c.kind === "dynamic-call" || c.kind === "unresolved-call" || c.kind === "ambiguous-binding").map((c) => c.source));
+  const holes = new Set(coverage.flatMap((c) => (c.kind === "dynamic-call" || c.kind === "unresolved-call" || c.kind === "ambiguous-binding" ? [c.source] : [])));
 
   for (const id of readsImported) holes.add(id);
 
@@ -763,16 +805,17 @@ function indexDoc(modules: readonly Module[], dir: string | null): string | null
 
 /** A row of the graph's export table, with its fields in a fixed order. */
 function exportRow(entry: ExportEntry): SnapshotExport {
-  return {
-    module: entry.module,
-    name: entry.name,
-    symbol: entry.symbol,
-    kind: entry.kind,
-    ...(entry.form ? { form: entry.form } : {}),
-    ...(entry.local !== undefined ? { local: entry.local } : {}),
-    ...(entry.from !== undefined ? { from: entry.from } : {}),
-    ...(entry.reason !== undefined ? { reason: entry.reason } : {}),
-  };
+  const row: SnapshotExport = { module: entry.module, name: entry.name, symbol: entry.symbol, kind: entry.kind };
+
+  if (entry.form) row.form = entry.form;
+
+  if (entry.local !== undefined) row.local = entry.local;
+
+  if (entry.from !== undefined) row.from = entry.from;
+
+  if (entry.reason !== undefined) row.reason = entry.reason;
+
+  return row;
 }
 
 function compareCoverage(a: CoverageItem, b: CoverageItem): number {
@@ -793,7 +836,7 @@ export const GRAMMARS_MANIFEST = "grammars.json";
  * prepack writes beside them, else from the installed
  * `@vscode/tree-sitter-wasm` of a checkout. `unknown` when neither is found.
  */
-export function grammarVersions(): Record<string, string> {
+export function grammarVersions() {
   // `require.resolve`, not `import.meta.resolve`: the trace adapter builds its snapshot on
   // Node's module hooks thread, which has no `import.meta.resolve`, and its id must match.
   const require = createRequire(import.meta.url);
@@ -808,7 +851,9 @@ export function grammarVersions(): Record<string, string> {
 function bundledGrammarsVersion(): string | null {
   const manifest = readJson(join(dirname(fileURLToPath(import.meta.url)), "wasm", GRAMMARS_MANIFEST));
 
-  return typeof manifest?.version === "string" ? manifest.version : null;
+  const version = manifest?.version;
+
+  return isJsonString(version) ? version : null;
 }
 
 /**
@@ -829,7 +874,7 @@ function installedVersion(name: string, resolve: () => string): string | null {
   for (;;) {
     const manifest = readJson(join(dir, "package.json"));
 
-    if (manifest?.name === name) return typeof manifest.version === "string" ? manifest.version : null;
+    if (manifest?.name === name) return isJsonString(manifest.version) ? manifest.version : null;
     const parent = dirname(dir);
 
     if (parent === dir) return null;
@@ -837,11 +882,11 @@ function installedVersion(name: string, resolve: () => string): string | null {
   }
 }
 
-function readJson(file: string): Record<string, unknown> | null {
+function readJson(file: string): JsonObject | null {
   try {
-    const value: unknown = JSON.parse(readFileSync(file, "utf8"));
+    const value = parseJson(readFileSync(file, "utf8"));
 
-    return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+    return isJsonObject(value) ? value : null;
   } catch {
     return null;
   }

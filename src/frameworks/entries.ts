@@ -136,8 +136,14 @@ export function frameworkEntries(inputs: readonly FrameworkInput[], deps: EntryD
   return out;
 }
 
+/** The fn an entry runs, and why keylang is not sure of it. */
+interface EntryTarget {
+  id: string;
+  unresolved: string | null;
+}
+
 /** The fn a config's class and method stand for: through a preference of the area when the class is an interface the config binds. */
-function target(deps: EntryDeps, type: TypeName, method: string, area: string): { id: string; unresolved: string | null } {
+function target(deps: EntryDeps, type: TypeName, method: string, area: string): EntryTarget {
   const written = `${typeLabel(type)}::${method}`;
   const resolved = deps.resolve(deps.unalias(type, area));
 
@@ -164,10 +170,13 @@ function target(deps: EntryDeps, type: TypeName, method: string, area: string): 
   return { id: resolved.id, unresolved: `\`${typeLabel(type)}\` has no method \`${method}\` keylang read` };
 }
 
-function entryOf(deps: EntryDeps, framework: string, kind: ConfigEntry["kind"], found: { id: string; unresolved: string | null }, label: string, at: { file: string; line: number }): ConfigEntry {
+function entryOf(deps: EntryDeps, framework: string, kind: ConfigEntry["kind"], found: EntryTarget, label: string, at: { file: string; line: number }): ConfigEntry {
   const place = deps.place(found.id) ?? at;
+  const entry: ConfigEntry = { kind, id: found.id, label, framework, file: place.file, line: place.line, source: `${at.file}:${at.line}` };
 
-  return { kind, id: found.id, label, framework, file: place.file, line: place.line, source: `${at.file}:${at.line}`, ...(found.unresolved !== null ? { unresolved: found.unresolved } : {}) };
+  if (found.unresolved !== null) entry.unresolved = found.unresolved;
+
+  return entry;
 }
 
 /**

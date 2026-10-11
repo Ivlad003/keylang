@@ -233,6 +233,7 @@ function mapRecord(app: App): Extract<OperationResult, { kind: "map" }> & { payl
   const result = app.state.records.at(-1)?.result;
   assert.ok(result?.kind === "map" && result.payload !== null, JSON.stringify(result?.messages));
 
+  // SAFETY: the assertion above checked this record's kind and that its payload is not null.
   return result as Extract<OperationResult, { kind: "map" }> & { payload: NonNullable<Extract<OperationResult, { kind: "map" }>["payload"]> };
 }
 
@@ -481,6 +482,7 @@ test("tui: an analysis finishing during the commit is not adopted; the report af
   assert.deepEqual(s.app.unsaved(), ["keylang/flows/checkout.md"]);
   assert.equal(s.app.state.buffers.get("keylang/flows/checkout.md")!.text, typed);
   assert.deepEqual(current.overlay, [join(root, "keylang/flows/checkout.md")], "the dirty buffer is the overlay");
+  // SAFETY: `keylang map` writes .keylang/index.json as a snapshot with a string `snapshotId` (docs/snapshot.md).
   assert.equal(current.analysis.snapshot?.snapshotId, (JSON.parse(readFileSync(join(root, ".keylang/index.json"), "utf8")) as { snapshotId: string }).snapshotId);
   assert.equal(cliMapCheck(root).status, 0);
 });
@@ -563,7 +565,7 @@ function baselineRepo(t: { after: (f: () => void) => void }): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-tui-baseline-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
-  const files: Record<string, string> = {
+  const files = {
     "package.json": `${JSON.stringify({ name: "shop", private: true, dependencies: { stripe: "1.0.0" } })}\n`,
     "keylang.json": `${JSON.stringify({ languages: ["typescript"], layers: { app: ["src/app/**"], domain: ["src/domain/**"] } }, null, 2)}\n`,
     "src/domain/order.ts": "export function price(): number {\n  return 1;\n}\n",
@@ -594,6 +596,7 @@ function baselineRecord(app: App): Extract<OperationResult, { kind: "baseline" }
   const result = app.state.records.at(-1)?.result;
   assert.ok(result?.kind === "baseline" && result.payload !== null, JSON.stringify(result?.messages));
 
+  // SAFETY: the assertion above checked this record's kind and that its payload is not null.
   return result as Extract<OperationResult, { kind: "baseline" }> & { payload: NonNullable<Extract<OperationResult, { kind: "baseline" }>["payload"]> };
 }
 
@@ -799,6 +802,7 @@ test("baseline: without supported sources the TUI and the CLI give a reason with
 
 // ---------- agents: harness integrations (ticket 11) ----------
 
+// SAFETY: the package's own package.json has a string `version`.
 const PACKAGE_VERSION = (JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../package.json"), "utf8")) as { version: string }).version;
 
 /** The baseline repository with Claude and Codex in use: foreign CRLF text in AGENTS.md and a foreign Claude setting. */
@@ -829,6 +833,7 @@ function agentsRecord(app: App): Extract<OperationResult, { kind: "agents" }> & 
   const result = app.state.records.at(-1)?.result;
   assert.ok(result?.kind === "agents" && result.payload !== null, JSON.stringify(result?.messages));
 
+  // SAFETY: the assertion above checked this record's kind and that its payload is not null.
   return result as Extract<OperationResult, { kind: "agents" }> & { payload: NonNullable<Extract<OperationResult, { kind: "agents" }>["payload"]> };
 }
 
@@ -882,6 +887,7 @@ test("tui: agents auto, an explicit list and none write what the CLI writes in a
   assert.deepEqual(treeBytes(root), treeBytes(twin));
   assert.equal(result.payload.version, PACKAGE_VERSION);
   assert.ok(readFileSync(join(root, "AGENTS.md"), "utf8").startsWith("Чужий заголовок\r\n\r\nНе чіпати.\r\n"));
+  // SAFETY: the test wrote .claude/settings.json with a theme, and `agents` keeps Claude Code's settings shape.
   const settings = JSON.parse(readFileSync(join(root, ".claude/settings.json"), "utf8")) as { theme: string; permissions: { allow: string[]; deny: string[] } };
   assert.deepEqual([settings.theme, settings.permissions.allow], ["dark", ["Bash"]]);
   assert.match(readFileSync(join(root, ".codex/config.toml"), "utf8"), new RegExp(`keylang@${PACKAGE_VERSION.replace(/\./g, "\\.")}`));
@@ -906,6 +912,7 @@ test("tui: agents auto, an explicit list and none write what the CLI writes in a
   assert.deepEqual([result.exitCode, result.payload.choice, result.payload.harnesses], [0, "list", ["cursor"]]);
   assert.equal(stdoutOf(result), cliCursor.stdout);
   assert.deepEqual(treeBytes(root), treeBytes(twin));
+  // SAFETY: `agents` writes .cursor/mcp.json in Cursor's shape, with keylang under `mcpServers`.
   assert.deepEqual((JSON.parse(readFileSync(join(root, ".cursor/mcp.json"), "utf8")) as { mcpServers: { keylang: { args: string[] } } }).mcpServers.keylang.args, ["-y", `keylang@${PACKAGE_VERSION}`, "mcp"]);
   // None: keylang's harness files are stripped as the CLI strips them; the foreign text and setting stay.
   agentsForm(s.send, "none", "write");
@@ -920,6 +927,7 @@ test("tui: agents auto, an explicit list and none write what the CLI writes in a
   assert.ok(readFileSync(join(root, "AGENTS.md"), "utf8").startsWith("Чужий заголовок\r\n\r\nНе чіпати.\r\n"));
   assert.doesNotMatch(readFileSync(join(root, "AGENTS.md"), "utf8"), /keylang:begin/);
   assert.equal(existsSync(join(root, ".agents/skills/keylang-feature/SKILL.md")), false);
+  // SAFETY: the test wrote .claude/settings.json with a string `theme`, which `agents` keeps.
   assert.equal((JSON.parse(readFileSync(join(root, ".claude/settings.json"), "utf8")) as { theme: string }).theme, "dark");
   agentsForm(s.send, "none", "check");
   await s.app.idle();
@@ -1024,6 +1032,7 @@ function fmtRecord(app: App): Extract<OperationResult, { kind: "fmt" }> & { payl
   const result = app.state.records.at(-1)?.result;
   assert.ok(result?.kind === "fmt" && result.payload !== null, JSON.stringify(result?.messages));
 
+  // SAFETY: the assertion above checked this record's kind and that its payload is not null.
   return result as Extract<OperationResult, { kind: "fmt" }> & { payload: NonNullable<Extract<OperationResult, { kind: "fmt" }>["payload"]> };
 }
 
@@ -1031,8 +1040,14 @@ function cliFmt(root: string, args: string[]): { status: number | null; stdout: 
   return spawnSync(process.execPath, [BIN, "fmt", ...args], { cwd: root, encoding: "utf8" });
 }
 
+/** What the CLI prints on its two streams. */
+interface Streams {
+  stdout: string;
+  stderr: string;
+}
+
 /** What the CLI would print for the same result: stdout lines, stderr lines. */
-const fmtStreams = (result: OperationResult): { stdout: string; stderr: string } => ({
+const fmtStreams = (result: OperationResult): Streams => ({
   stdout: result.messages.filter((m) => m.level === "info").map((m) => `${m.text}\n`).join(""),
   stderr: result.messages.filter((m) => m.level === "error").map((m) => `${m.text}\n`).join(""),
 });
@@ -1286,6 +1301,7 @@ function wireRecord(app: App): Extract<OperationResult, { kind: "wire" }> & { pa
   const result = app.state.records.at(-1)?.result;
   assert.ok(result?.kind === "wire" && result.payload !== null, JSON.stringify(result?.messages));
 
+  // SAFETY: the assertion above checked this record's kind and that its payload is not null.
   return result as Extract<OperationResult, { kind: "wire" }> & { payload: NonNullable<Extract<OperationResult, { kind: "wire" }>["payload"]> };
 }
 
@@ -1294,7 +1310,7 @@ function cliWire(root: string, args: string[] = []): { status: number | null; st
 }
 
 /** The CLI's two streams for a result: `info` to stdout, the rest to stderr. */
-function wireStreams(result: OperationResult): { stdout: string; stderr: string } {
+function wireStreams(result: OperationResult): Streams {
   const lines = (level: (l: string) => boolean): string => result.messages.filter((m) => level(m.level)).map((m) => `${m.text}\n`).join("");
 
   return { stdout: lines((l) => l === "info"), stderr: lines((l) => l !== "info") };

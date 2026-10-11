@@ -81,7 +81,7 @@ function fallback(payload: { fallback: unknown }): string {
 /** The model's statuses next to the snapshot's: provenance, not evidence. */
 const PROVENANCE = "  the statuses are provenance, not evidence: only check decides a verdict";
 
-export const DRAFT_REPORTS: { [K in DraftKind]: Report<K> } = {
+export const DRAFT_REPORTS = {
   "feature-questions": {
     label: (request) => `feature ${request.slug} questions`,
     params: (request) => request.slug,
@@ -312,4 +312,4 @@ export const DRAFT_REPORTS: { [K in DraftKind]: Report<K> } = {
       ];
     },
   },
-};
+} satisfies { [K in DraftKind]: Report<K> };

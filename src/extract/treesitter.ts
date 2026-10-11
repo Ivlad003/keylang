@@ -105,8 +105,16 @@ export function grammarFor(path: string): Grammar {
   return "javascript";
 }
 
+export interface Located {
+  line: number;
+  col: number;
+  endLine: number;
+  endCol: number;
+  text: string;
+}
+
 /** 1-based range and text of a node; columns count code points, and `endCol` is the column after it. */
-export function located(node: Node): { line: number; col: number; endLine: number; endCol: number; text: string } {
+export function located(node: Node): Located {
   return {
     line: node.startPosition.row + 1,
     col: startCol(node),
@@ -198,14 +206,23 @@ export function fingerprint(node: Node): string {
  * fingerprint like {@link READS_IMPORTED_VALUE} when one of them binds a
  * module of the repository.
  */
-export function fingerprintFacts(node: Node): { fingerprint: string; readsImports?: string[] } {
+export function fingerprintFacts(node: Node): FingerprintFacts {
   const hash = createHash("sha256");
   const reads = hashSyntax(node, hash);
 
   for (const value of valuesRead(node, reads)) hash.update(`=${value.print}\u0002`);
   const imported = importedValueReads(node, reads);
 
-  return { fingerprint: hash.digest("hex") + (imported.relative ? READS_IMPORTED_VALUE : ""), ...(imported.other.length > 0 ? { readsImports: imported.other } : {}) };
+  const facts: FingerprintFacts = { fingerprint: hash.digest("hex") + (imported.relative ? READS_IMPORTED_VALUE : "") };
+
+  if (imported.other.length > 0) facts.readsImports = imported.other;
+
+  return facts;
+}
+
+export interface FingerprintFacts {
+  fingerprint: string;
+  readsImports?: string[];
 }
 
 /**
@@ -575,14 +592,19 @@ function patternNames(target: Node | null): string[] {
 const MEMBER_CHAINS = new Set(["member_expression", "attribute", "scoped_identifier", "field_expression", "subscript_expression", "subscript"]);
 
 /** Calls by their callee field: an imported fn that is called is the call graph's to follow, not a read. */
-const CALLEES: Record<string, string> = { call_expression: "function", call: "function", new_expression: "constructor", macro_invocation: "macro", scoped_call_expression: "scope", function_call_expression: "function" };
+const CALLEES = new Map([["call_expression", "function"], ["call", "function"], ["new_expression", "constructor"], ["macro_invocation", "macro"], ["scoped_call_expression", "scope"], ["function_call_expression", "function"]]);
 
 /**
  * The names `node` reads as values that an import binds: `relative` when one
  * of them is bound by an import whose syntax places it in another file of the
  * repository, `other` those bound by an import whose syntax does not tell.
  */
-function importedValueReads(node: Node, reads: ReadonlySet<string>): { relative: boolean; other: string[] } {
+interface ImportedValueReads {
+  relative: boolean;
+  other: string[];
+}
+
+function importedValueReads(node: Node, reads: ReadonlySet<string>): ImportedValueReads {
   const imported = importedValueNames(node.tree);
 
   if (![...reads].some((name) => imported.relative.has(name) || imported.other.has(name))) return { relative: false, other: [] };
@@ -620,7 +642,7 @@ function isCallee(leaf: Node): boolean {
 
   // PHP `new Limits()`: the class is named, not read.
   if (call?.type === "object_creation_expression") return true;
-  const field = call ? CALLEES[call.type] : undefined;
+  const field = call ? CALLEES.get(call.type) : undefined;
 
   return call !== null && field !== undefined && call.childForFieldName(field)?.id === top.id;
 }

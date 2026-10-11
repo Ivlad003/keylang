@@ -29,9 +29,12 @@ const GAP = 40;
 
 const COLLAPSED_H = 60;
 
+/** Control characters XML 1.0 does not allow anywhere: every code unit below U+0020 except tab, LF and CR. */
+const XML_FORBIDDEN = /[^\t\n\r\u0020-\uffff]/g;
+
 /** Text in an XML attribute or element. */
 export function xmlEscape(text: string): string {
-  return text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[c]!).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "");
+  return text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[c]!).replace(XML_FORBIDDEN, "");
 }
 
 /** NCName ids for the document: distinct even where two keys map to one. */
@@ -68,7 +71,13 @@ export function startKindOf(kind: string | null | undefined): StartKind {
 }
 
 /** What the diagram does not keep of a flow: the kind of each trigger (by node id) and the flows it continues. */
-function flowFacts(input: DiagramInput): { triggers: Map<string, string | null>; continues: string[]; flow: Flow | null } {
+interface FlowFacts {
+  triggers: Map<string, string | null>;
+  continues: string[];
+  flow: Flow | null;
+}
+
+function flowFacts(input: DiagramInput): FlowFacts {
   const triggers = new Map<string, string | null>();
   const view = input.view;
 
@@ -77,7 +86,7 @@ function flowFacts(input: DiagramInput): { triggers: Map<string, string | null>;
   const continues: string[] = [];
 
   if (flow) {
-    const entries = new Map((input.snapshot?.entries ?? []).map((entry) => [entry.id, entry.kind as string]));
+    const entries = new Map<string, string>((input.snapshot?.entries ?? []).map((entry) => [entry.id, entry.kind]));
     walkFlow(flow, (item) => {
       if (item.kind === "trigger") triggers.set(`trigger:${item.span.start.line}`, item.event !== null ? "event" : (item.entry?.kind ?? entries.get(item.target.target) ?? null));
       else if (item.kind === "continues") continues.push(item.flow);
@@ -92,6 +101,23 @@ interface Box {
   y: number;
   w: number;
   h: number;
+}
+
+interface SequenceFlow {
+  key: string;
+  from: string;
+  to: string;
+  label?: string;
+  condition?: string;
+}
+
+interface MessageFlow {
+  key: string;
+  from: string;
+  to: string;
+  fromBox: Box;
+  toBox: Box;
+  label?: string;
 }
 
 /** Waypoints from one box to another: out of the right side, across, into the left side; down or up when the target is not to the right. */
@@ -133,7 +159,7 @@ export function renderBpmn(input: DiagramInput, name: string): string {
 function bpmnOf(diagram: Diagram, input: DiagramInput, name: string): string {
   const id = ids();
   const facts = flowFacts(input);
-  const entries = new Map((input.snapshot?.entries ?? []).map((entry) => [entry.id, entry.kind as string]));
+  const entries = new Map<string, string>((input.snapshot?.entries ?? []).map((entry) => [entry.id, entry.kind]));
   const nodes = new Map(diagram.nodes.map((node) => [node.id, node]));
   const external = (node: DiagramNode): boolean => node.kind === "external" || (node.group === EXTERNAL && node.kind !== "start");
   const inside = diagram.nodes.filter((node) => !external(node));
@@ -186,8 +212,8 @@ function bpmnOf(diagram: Diagram, input: DiagramInput, name: string): string {
   const nodeKey = (node: DiagramNode): string => node.ref?.id ?? node.id;
 
   // Sequence flows inside the pool; an edge to or from a package is a message flow to or from its pool, and the sequence goes around it.
-  const sequence: { key: string; from: string; to: string; label?: string; condition?: string }[] = [];
-  const messages: { key: string; from: string; to: string; fromBox: Box; toBox: Box; label?: string }[] = [];
+  const sequence: SequenceFlow[] = [];
+  const messages: MessageFlow[] = [];
   const outsideIds = new Set(outside.map((node) => node.id));
   const collapsedBox = new Map(collapsed.map((pool) => [pool.key, pool.box]));
   const seen = new Set<string>();
@@ -200,7 +226,10 @@ function bpmnOf(diagram: Diagram, input: DiagramInput, name: string): string {
       if (fromOut && toOut) return;
       const own = fromOut ? edge.to : edge.from;
       const pool = fromOut ? edge.from : edge.to;
-      messages.push({ key: `m${i}`, from: fromOut ? `pool:${pool}` : own, to: fromOut ? own : `pool:${pool}`, fromBox: fromOut ? collapsedBox.get(pool)! : box.get(own)!, toBox: fromOut ? box.get(own)! : collapsedBox.get(pool)!, ...(edge.label !== undefined ? { label: edge.label } : {}) });
+      const message: MessageFlow = { key: `m${i}`, from: fromOut ? `pool:${pool}` : own, to: fromOut ? own : `pool:${pool}`, fromBox: fromOut ? collapsedBox.get(pool)! : box.get(own)!, toBox: fromOut ? box.get(own)! : collapsedBox.get(pool)! };
+
+      if (edge.label !== undefined) message.label = edge.label;
+      messages.push(message);
 
       if (toOut) {
         // A → package → B stays a sequence A → B in the pool.
@@ -223,7 +252,12 @@ function bpmnOf(diagram: Diagram, input: DiagramInput, name: string): string {
     seen.add(key);
     const from = nodes.get(edge.from)!;
     const condition = from.kind === "gateway" && edge.label === from.label ? from.label : undefined;
-    sequence.push({ key: `s${i}`, from: edge.from, to: edge.to, ...(edge.label !== undefined ? { label: edge.label } : {}), ...(condition !== undefined ? { condition } : {}) });
+    const flow: SequenceFlow = { key: `s${i}`, from: edge.from, to: edge.to };
+
+    if (edge.label !== undefined) flow.label = edge.label;
+
+    if (condition !== undefined) flow.condition = condition;
+    sequence.push(flow);
   });
 
   for (const flow of facts.continues) {

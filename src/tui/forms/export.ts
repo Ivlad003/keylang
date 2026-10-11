@@ -246,14 +246,13 @@ export class ExportForms {
 
   /** The request the form would run: the CLI's flags, a layer only at the component level. */
   private c4Request(form: C4Form, out: string): ExportC4Request {
-    return {
-      kind: "export-c4",
-      root: this.state.root,
-      format: form.format,
-      level: form.level,
-      ...(form.level === "component" && form.layer !== null ? { layer: form.layer } : {}),
-      ...(out !== "" ? { out: toPosix(out) } : {}),
-    };
+    const request: ExportC4Request = { kind: "export-c4", root: this.state.root, format: form.format, level: form.level };
+
+    if (form.level === "component" && form.layer !== null) request.layer = form.layer;
+
+    if (out !== "") request.out = toPosix(out);
+
+    return request;
   }
 
   /** The rows of the form, and what Enter would do with the file as it is now. Reading only. */

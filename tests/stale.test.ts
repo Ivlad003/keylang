@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
+import { isJsonObject, parseJson } from "../src/json.ts";
 
 const bin = join(dirname(fileURLToPath(import.meta.url)), "..", "bin/keylang.js");
 
@@ -17,7 +18,14 @@ interface Run {
   stderr: string;
 }
 
-function repo(t: TestContext, files: Record<string, string>): { dir: string; write(file: string, text: string): void; run(...args: string[]): Run; read(file: string): string | null } {
+interface StaleRepo {
+  dir: string;
+  write(file: string, text: string): void;
+  run(...args: string[]): Run;
+  read(file: string): string | null;
+}
+
+function repo(t: TestContext, files: Record<string, string>): StaleRepo {
   const dir = mkdtempSync(join(tmpdir(), "keylang-stale-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -73,6 +81,7 @@ test("check --stale: a changed operator makes the fn's description, its invarian
   const accept = r.run("check", "--stale", "--accept");
   assert.equal(accept.status, 0, accept.stderr);
   assert.match(accept.stderr, /accepted 4 fingerprints in keylang\/baseline\.json/);
+  // SAFETY: `check --stale --accept` writes keylang/baseline.json as fingerprints by ID, grouped by spec file.
   const baseline = JSON.parse(r.read("keylang/baseline.json")!) as Record<string, Record<string, string>>;
   assert.deepEqual(Object.keys(baseline), ["keylang/flows/order.md"]);
   assert.deepEqual(Object.keys(baseline["keylang/flows/order.md"]!), ["invariant:total is positive", "main.order.describe", "main.order.label", "main.order.valid"]);
@@ -147,6 +156,7 @@ test("check --stale: an edited statement is new and its old entry obsolete; path
   assert.match(edited.stdout, /keylang\/baseline\.json: obsolete `invariant:total is positive` of keylang\/flows\/order\.md/);
   assert.doesNotMatch(edited.stdout, /never empty/, "only the named file is checked");
   assert.equal(r.run("check", "--stale", "--accept", "keylang/flows/order.md").status, 0);
+  // SAFETY: `check --stale --accept` writes keylang/baseline.json as fingerprints by ID, grouped by spec file.
   const baseline = JSON.parse(r.read("keylang/baseline.json")!) as Record<string, Record<string, string>>;
   assert.ok(baseline["keylang/flows/order.md"]!["invariant:total is above zero"]);
   assert.equal(baseline["keylang/flows/order.md"]!["invariant:total is positive"], undefined);
@@ -157,7 +167,9 @@ test("check --stale: an edited statement is new and its old entry obsolete; path
   const gone = r.run("check", "--stale");
   assert.match(gone.stdout, /obsolete `main\.order\.label` of keylang\/flows\/label\.md/);
   assert.equal(r.run("check", "--stale", "--accept").status, 0);
-  assert.deepEqual(Object.keys(JSON.parse(r.read("keylang/baseline.json")!) as object), ["keylang/flows/order.md"]);
+  const accepted = parseJson(r.read("keylang/baseline.json")!);
+  assert.ok(isJsonObject(accepted), "the baseline is an object");
+  assert.deepEqual(Object.keys(accepted), ["keylang/flows/order.md"]);
 });
 
 test("check --stale: a bad baseline or invocation is exit 2 and writes nothing", (t) => {

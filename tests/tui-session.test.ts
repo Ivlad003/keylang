@@ -19,6 +19,7 @@ import type { AddressInfo } from "node:net";
 import { test } from "node:test";
 import { analyze, type Analysis, type AnalysisRequest } from "../src/analyze.ts";
 import { formatSource } from "../src/fmt.ts";
+import { isJsonObject, parseJson } from "../src/json.ts";
 import { runOperation, type OperationContext, type OperationRequest, type OperationResult } from "../src/operations.ts";
 import { App, type AppOptions } from "../src/tui/app.ts";
 import { findingsOf } from "../src/tui/findings.ts";
@@ -67,9 +68,14 @@ test("tui: planned is its own state, not a gap", async (t) => {
   assert.equal(lineOf(s.lines(), "- step application.purchase.refund")[0], "◇");
 });
 
+/** Holds the background reindex until a test releases it. */
+interface ReindexGate {
+  release: (() => void) | null;
+}
+
 test("tui: F5 reindexes in the background; old marks are dimmed and keys still work", async (t) => {
   const root = checkoutRepo(t);
-  const gate: { release: (() => void) | null } = { release: null };
+  const gate: ReindexGate = { release: null };
   let calls = 0;
 
   const analyzer = async (request: AnalysisRequest): Promise<Analysis> => {
@@ -406,6 +412,7 @@ test("tui: MERGE decisions on model lines are counted in .keylang/stats.json", a
   s.send("r");
   s.send("w");
   await s.app.idle();
+  // SAFETY: the session writes .keylang/stats.json with the draft counts by kind under `drafts`.
   const stats = JSON.parse(readFileSync(join(root, ".keylang/stats.json"), "utf8")) as { drafts: Record<string, { accepted: number; rejected: number }> };
   assert.deepEqual(stats.drafts["llm-only"], { proposed: 0, accepted: 1, rejected: 0 });
   assert.deepEqual(stats.drafts["algo-only"], { proposed: 0, accepted: 0, rejected: 1 });
@@ -832,7 +839,8 @@ test("tui: the findings list equals `check --format json` results on the same sa
   const bin = join(dirname(fileURLToPath(import.meta.url)), "../bin/keylang.js");
   const cli = spawnSync(process.execPath, [bin, "check", "--format", "json"], { cwd: root, encoding: "utf8" });
   assert.equal(cli.status, 1, cli.stderr);
-  const json = JSON.parse(cli.stdout) as { results: unknown[] };
+  const json = parseJson(cli.stdout);
+  assert.ok(isJsonObject(json), cli.stdout);
   assert.deepEqual(findingsOf(s.app.state.analysis), json.results);
 });
 
@@ -883,7 +891,8 @@ test("tui: findings of a dirty buffer equal `check --format json` once it is sav
   await s.app.idle();
   const bin = join(dirname(fileURLToPath(import.meta.url)), "../bin/keylang.js");
   const cli = spawnSync(process.execPath, [bin, "check", "--format", "json"], { cwd: root, encoding: "utf8" });
-  const json = JSON.parse(cli.stdout) as { results: unknown[] };
+  const json = parseJson(cli.stdout);
+  assert.ok(isJsonObject(json), cli.stdout);
   assert.deepEqual(findingsOf(s.app.state.analysis), json.results);
   assert.deepEqual(dirty, json.results, "the dirty analysis already reported what the CLI sees after the save");
 });
@@ -1140,12 +1149,12 @@ test("screen: widths, wide characters, and row diffs", () => {
   b.write(0, 1, "row two");
   const full = renderDiff(null, b);
   const same = renderDiff(b, b);
-  assert.match(full, /\x1b\[2J/);
+  assert.ok(full.includes("\x1b[2J"), "a full frame clears the screen");
   assert.doesNotMatch(same, /row two/);
   const c = new Grid(10, 2);
   c.write(0, 1, "row 2");
-  assert.match(renderDiff(b, c), /\x1b\[2;1H/);
-  assert.doesNotMatch(renderDiff(b, c), /\x1b\[1;1H/);
+  assert.ok(renderDiff(b, c).includes("\x1b[2;1H"), "the changed row is drawn");
+  assert.ok(!renderDiff(b, c).includes("\x1b[1;1H"), "the same row is not");
 });
 
 // ---------- review 2026-09-28: data loss, crashes, and limits ----------
@@ -1550,7 +1559,7 @@ test("screen: an OSC 8 target with control characters is dropped", () => {
   grid.write(5, 0, "good", { link: "https://example.com/a" });
   const ansi = renderDiff(null, grid);
   assert.doesNotMatch(ansi, /pwned/);
-  assert.match(ansi, /\x1b\]8;;https:\/\/example\.com\/a\x1b\\/);
+  assert.ok(ansi.includes("\x1b]8;;https://example.com/a\x1b\\"), ansi);
   assert.deepEqual(inline("[x](https://a/\x1b[31m)", {}).map((segment) => segment.style.link), [undefined]);
 });
 
@@ -1581,6 +1590,7 @@ test("tui: keylang.json opens in the same editor and a saved change reaches the 
   assert.match(s.lines()[0]!, /keylang · keylang\.json /);
   assert.doesNotMatch(s.lines()[0]!, /read-only/);
   // Drop the `presentation` layer: its module becomes unassigned and the flow trigger no longer resolves.
+  // SAFETY: the checkout fixture's keylang.json has `layers` as an object of glob lists.
   const config = JSON.parse(readFileSync(join(root, "keylang.json"), "utf8")) as { layers: Record<string, string[]> };
   delete config.layers.presentation;
   s.send("i");
@@ -1639,7 +1649,8 @@ test("tui: undo closes the completion list, so Tab cannot splice into other text
 
 test("tui: with `dir: \".\"` a proposal still changes only files that are specs", async (t) => {
   const root = checkoutRepo(t);
-  const config = JSON.parse(readFileSync(join(root, "keylang.json"), "utf8")) as Record<string, unknown>;
+  const config = parseJson(readFileSync(join(root, "keylang.json"), "utf8"));
+  assert.ok(isJsonObject(config), "the fixture's keylang.json is an object");
   writeFileSync(join(root, "keylang.json"), JSON.stringify({ ...config, dir: "." }));
   writeFileSync(join(root, "README.md"), "# readme\n");
   propose(root, "node_modules/pkg/README.md", "# overwritten\n");
@@ -1744,6 +1755,7 @@ test("tui: Ctrl+Space in a flow asks the agent with the context pack and opens t
   s.send("w");
   await s.app.idle();
   assert.match(readFileSync(join(root, "keylang/flows/checkout.md"), "utf8"), /- step domain\.order\.create <!-- keylang:llm model=anthropic:claude-opus-5 status=agree -->/);
+  // SAFETY: the session writes .keylang/stats.json with the draft counts by kind under `drafts`.
   const stats = JSON.parse(readFileSync(join(root, ".keylang/stats.json"), "utf8")) as { drafts: Record<string, { proposed: number; accepted: number }> };
   assert.equal(stats.drafts.agree?.proposed, 4);
   assert.equal(stats.drafts.agree?.accepted, 4);
@@ -1815,6 +1827,7 @@ test("tui: ghost text appears only on a new flow item, never with an unknown id;
   s.send("\x1b");
   await sleep(60);
   assert.equal(s.app.state.ghost, null);
+  // SAFETY: the session writes .keylang/stats.json with the suggestion counts by kind under `suggestions`.
   const stats = JSON.parse(readFileSync(join(root, ".keylang/stats.json"), "utf8")) as { suggestions: Record<string, { proposed: number; accepted: number; rejected: number }> };
   assert.equal(stats.suggestions.ghost?.proposed, 2);
   assert.equal(stats.suggestions.ghost?.accepted, 1);
@@ -1837,6 +1850,7 @@ async function mockOpenRouter(t: { after: (f: () => void) => void }, replies: st
 
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const saved = { url: process.env.OPENROUTER_BASE_URL, key: process.env.OPENROUTER_API_KEY };
+  // SAFETY: a server listening on a TCP host and port reports an AddressInfo, not a pipe name.
   process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   process.env.OPENROUTER_API_KEY = "test";
   t.after(() => {
@@ -2129,6 +2143,7 @@ test("tui: two ghost requests for the same text show and count one line", async 
   await s.app.idle();
   assert.equal(model.prompts.length, 2);
   assert.ok(s.app.state.ghost);
+  // SAFETY: the session writes .keylang/stats.json with the suggestion counts by kind under `suggestions`.
   const stats = JSON.parse(readFileSync(join(root, ".keylang/stats.json"), "utf8")) as { suggestions: Record<string, { proposed: number }> };
   assert.equal(stats.suggestions.ghost?.proposed, 1, "the superseded answer is not shown or counted");
 });
@@ -2475,7 +2490,7 @@ test("terminal: nothing is drawn while $EDITOR or a Ctrl+Z stop has the screen; 
   term.signal("SIGINT");
   assert.deepEqual(term.out.slice(handed + 1), [], "no frame over the editor");
   await waitUntil(() => term.out.slice(handed + 1).includes(ENTER), "the screen back after the editor");
-  assert.match(term.out.slice(handed + 1).join(""), /\x1b\[2J/, "a full repaint");
+  assert.ok(term.out.slice(handed + 1).join("").includes("\x1b[2J"), "a full repaint");
   // Ctrl+Z: the screen is restored and the process stops; a resize while stopped draws nothing.
   term.signal("SIGTSTP");
   assert.equal(term.suspended(), 1);
@@ -2484,7 +2499,7 @@ test("terminal: nothing is drawn while $EDITOR or a Ctrl+Z stop has the screen; 
   assert.deepEqual(term.out.slice(stopped + 1), []);
   term.signal("SIGCONT");
   assert.equal(term.out[stopped + 1], ENTER);
-  assert.match(term.out.slice(stopped + 1).join(""), /\x1b\[2J/);
+  assert.ok(term.out.slice(stopped + 1).join("").includes("\x1b[2J"), "a full repaint");
   term.signal("SIGTERM");
   assert.equal(await running, 0);
 });
@@ -2509,7 +2524,11 @@ function explainedRepo(t: { after: (f: () => void) => void }, on: boolean): stri
   });
 
   const file = join(root, "keylang.json");
-  writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), ...(on ? { explain: { map: true } } : {}) }, null, 2));
+  const config = parseJson(readFileSync(file, "utf8"));
+  assert.ok(isJsonObject(config), "the fixture's keylang.json is an object");
+
+  if (on) config.explain = { map: true };
+  writeFileSync(file, JSON.stringify(config, null, 2));
 
   return root;
 }

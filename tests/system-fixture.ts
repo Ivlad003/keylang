@@ -4,7 +4,7 @@
 // hand-written design of it with zones, tables, a sequence and interview notes.
 
 /** An Express route through a repository module to `pg` and `kafkajs`, a NestJS cron to `ioredis`, and a hand-written design of it. */
-export const SHOP: Record<string, string> = {
+export const SHOP = {
   "keylang.json": `${JSON.stringify({ languages: ["typescript"], layers: { app: ["src/app/**"], infra: ["src/infra/**"], worker: ["src/worker/**"] } })}\n`,
   "package.json": `${JSON.stringify({ name: "shop", dependencies: { express: "4.0.0", pg: "8.0.0", ioredis: "5.0.0", kafkajs: "2.0.0", "@nestjs/schedule": "4.0.0", "@nestjs/common": "10.0.0" } })}\n`,
   "src/app/server.ts": 'import express from "express";\nimport { find } from "./links.ts";\nimport { send } from "../infra/bus.ts";\nconst app = express();\nexport function redirect(req: { params: { code: string } }, res: { send(s: string): void }): void {\n  send(req.params.code);\n  res.send(find(req.params.code));\n}\napp.get("/l/:code", redirect);\n',

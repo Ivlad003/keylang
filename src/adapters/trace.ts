@@ -27,6 +27,7 @@ import { createRequire, register } from "node:module";
 import { dirname, relative, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { isMainThread, MessageChannel, receiveMessageOnPort } from "node:worker_threads";
+import { isJsonObject, isJsonString, parseJson, type JsonValue } from "../json.ts";
 import { TRACE_SCHEMA } from "../trace-evidence.ts";
 import { runId } from "./run-id.ts";
 import type { TracePlanMessage } from "./trace-hooks.ts";
@@ -53,11 +54,35 @@ type Plan = Extract<TracePlanMessage, { kind: "plan" }>;
 /** What the adapter puts on `globalThis`: the wrappers' entry and the request scopes. */
 interface TraceApi {
   run<T>(symbolId: string, isAsync: boolean, body: () => T): T;
-  own(module: object): void;
+  own(module: NodeModule): void;
   withFlow<T>(flow: string, body: () => T, testId?: string): T;
 }
 
-const api = (): TraceApi | undefined => (globalThis as { __keylangTrace?: TraceApi }).__keylangTrace;
+declare global {
+  // The wrapped sources call `globalThis.__keylangTrace`; set while this adapter records.
+  var __keylangTrace: TraceApi | undefined;
+}
+
+/**
+ * Fields of one JSONL event after the common ones. An optional field set to
+ * `undefined` is left out of the line by `JSON.stringify`.
+ */
+type TraceEvent =
+  | { event: "start"; spanId: string; parentSpanId: string | null; symbolId: string; clockId: string; seq: number; ts: number; links: string[] | undefined }
+  | { event: "end"; spanId: string; outcome: "ok" | "error"; clockId: string; seq: number; ts: number }
+  | {
+      event: "run";
+      clockId: string;
+      complete: boolean;
+      dropped: number;
+      instrumented: string[];
+      uninstrumented: Record<string, string> | undefined;
+      exitCode: number | undefined;
+      open: string[];
+      error: string | undefined;
+    };
+
+const api = (): TraceApi | undefined => globalThis.__keylangTrace;
 
 /**
  * Runs `fn` as a run of `flow`: the spans it makes, in its async continuations
@@ -111,6 +136,7 @@ function record(given: string): void {
   /** Reads what the hooks thread sent so far: the plan, then the files it was applied to or left alone. */
   const planned = (): Plan | null => {
     for (;;) {
+      // SAFETY: port2 went only to the trace hooks, which post nothing but `satisfies TracePlanMessage` values.
       const message = receiveMessageOnPort(port1)?.message as TracePlanMessage | undefined;
 
       if (!message) break;
@@ -149,7 +175,7 @@ function record(given: string): void {
     appendFileSync(file, text);
   };
 
-  const write = (scope: Scope, event: Record<string, unknown>): void => {
+  const write = (scope: Scope, event: TraceEvent): void => {
     lines.push(JSON.stringify({ schemaVersion: TRACE_SCHEMA, snapshotId: planned()?.snapshotId ?? null, runId: scope.runId, testId: scope.testId, flow: scope.flow, traceId: `${scope.runId}:${scope.testId}`, ...event }));
   };
 
@@ -159,7 +185,7 @@ function record(given: string): void {
     const outer = context.getStore();
     const parent = outer?.scope === scope ? outer : null;
     const span: Span = { spanId: `${scope.clockId}:s${++scope.spans}`, ended: false, scope };
-    write(scope, { event: "start", spanId: span.spanId, parentSpanId: parent?.spanId ?? null, symbolId, clockId: scope.clockId, seq: ++scope.seq, ts: performance.now(), ...(parent?.ended ? { links: [parent.spanId] } : {}) });
+    write(scope, { event: "start", spanId: span.spanId, parentSpanId: parent?.spanId ?? null, symbolId, clockId: scope.clockId, seq: ++scope.seq, ts: performance.now(), links: parent?.ended ? [parent.spanId] : undefined });
     scope.open.add(span.spanId);
 
     if (lines.length >= BUFFER) flush();
@@ -185,10 +211,10 @@ function record(given: string): void {
       complete: !cut.killed && info !== null && !info.error && scope.open.size === 0 && !cut.crashed,
       dropped: 0,
       instrumented: left?.ids ?? [],
-      ...(left && Object.keys(left.reasons).length > 0 ? { uninstrumented: left.reasons } : {}),
-      ...(cut.code !== null && cut.code !== 0 ? { exitCode: cut.code } : {}),
+      uninstrumented: left && Object.keys(left.reasons).length > 0 ? left.reasons : undefined,
+      exitCode: cut.code !== null && cut.code !== 0 ? cut.code : undefined,
       open: [...scope.open],
-      ...(info?.error ? { error: info.error } : {}),
+      error: info?.error || undefined,
     });
     flush();
   };
@@ -206,13 +232,14 @@ function record(given: string): void {
       }
 
       if (isAsync && result instanceof Promise) {
+        // SAFETY: `result` is a promise of type T, and `then` returns a promise of the same value.
         return result.then(
           (value) => {
             finish(span, "ok");
 
             return value;
           },
-          (error: unknown) => {
+          (error) => {
             finish(span, "error");
             throw error;
           },
@@ -224,7 +251,7 @@ function record(given: string): void {
       return result;
     },
     /** A planned CommonJS file ran from the wrapped source: `module` is that copy. */
-    own(module: object): void {
+    own(module: NodeModule): void {
       loads.own.add(module);
     },
     withFlow<T>(name: string, body: () => T, scopeTest?: string): T {
@@ -242,13 +269,14 @@ function record(given: string): void {
       }
 
       if (result instanceof Promise) {
+        // SAFETY: `result` is a promise of type T, and `then` returns a promise of the same value.
         return result.then(
           (value) => {
             done(false);
 
             return value;
           },
-          (error: unknown) => {
+          (error) => {
             done(true);
             throw error;
           },
@@ -261,7 +289,7 @@ function record(given: string): void {
     },
   };
 
-  (globalThis as { __keylangTrace?: TraceApi }).__keylangTrace = traceApi;
+  globalThis.__keylangTrace = traceApi;
 
   // A process that crashed did not run the flow to its end: its spans are not complete evidence.
   // A non-zero exit code alone is not a crash (`keylang check` exits 1 on findings); it is recorded.
@@ -311,15 +339,17 @@ function record(given: string): void {
 
 /** The flow a plan file names; a file that is no plan stops the process with its path. */
 function planFlow(path: string): string {
-  let flow: unknown;
+  let plan: JsonValue;
 
   try {
-    flow = (JSON.parse(readFileSync(path, "utf8")) as { flow?: unknown }).flow;
+    plan = parseJson(readFileSync(path, "utf8"));
   } catch (e) {
     throw new Error(`keylang trace: ${path}: ${e instanceof Error ? e.message : String(e)}`);
   }
 
-  if (typeof flow !== "string" || flow === "") throw new Error(`keylang trace: ${path}: not a plan of schema 1 from \`keylang trace-plan\``);
+  const flow = isJsonObject(plan) ? plan.flow : undefined;
+
+  if (!isJsonString(flow) || flow === "") throw new Error(`keylang trace: ${path}: not a plan of schema 1 from \`keylang trace-plan\``);
 
   return flow;
 }
@@ -338,7 +368,7 @@ interface Loads {
   /** Planned functions of files that loaded with other content than the snapshot saw. */
   skipped: Set<string>;
   /** Module objects of planned CommonJS files that ran from the wrapped source. */
-  own: WeakSet<object>;
+  own: WeakSet<NodeModule>;
 }
 
 /**
@@ -350,10 +380,16 @@ interface Loads {
  * hooks (a `require` from a module they never saw), or an ES module that
  * `require` loaded before any `import` did.
  */
-function instrumented(plan: Plan, loads: Loads): { ids: string[]; reasons: Record<string, string> } {
+interface Instrumented {
+  ids: string[];
+  /** Each planned function left out, with the reason. */
+  reasons: Record<string, string>;
+}
+
+function instrumented(plan: Plan, loads: Loads): Instrumented {
   const cache = createRequire(import.meta.url).cache;
   // Each function of the flow left out, with the reason: the run record names them for `check`.
-  const reasons: Record<string, string> = { ...plan.unplanned };
+  const reasons = { ...plan.unplanned };
 
   for (const id of loads.skipped) reasons[id] = "its file loaded with other content than the snapshot saw";
 

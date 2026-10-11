@@ -17,8 +17,9 @@
 // `config/bundles.php`.
 
 import { posix } from "node:path";
-import { isMap, isScalar, isSeq, LineCounter, parseDocument, type Node as YamlNode, type Pair } from "yaml";
-import type { ConfigFacts, FrameworkAdapter, TypeName } from "./adapter.ts";
+import { isMap, isNode, isScalar, isSeq, LineCounter, parseDocument, type Node as YamlNode, type Pair, type Scalar, type YAMLMap } from "yaml";
+import { isJsonObject, isJsonString, parseJson, type JsonObject, type JsonValue } from "../json.ts";
+import type { ConfigAt, ConfigFacts, EntryConfigFact, FrameworkAdapter, TypeName } from "./adapter.ts";
 
 /** `EVERY_CLASS` of `./adapter.ts`, written out: the adapter imports this module, so it imports no value back. */
 const EVERY_CLASS = "*";
@@ -36,12 +37,12 @@ export const symfony: FrameworkAdapter = {
   name: "symfony",
   version: "1",
   detect(context) {
-    const composer = parseJson(context.read("composer.json"));
+    const composer = readJson(context.read("composer.json"));
 
     for (const field of ["require", "require-dev"]) {
-      const deps = composer !== null && typeof composer === "object" ? (composer as Record<string, unknown>)[field] : null;
+      const deps = isJsonObject(composer) ? composer[field] : undefined;
 
-      if (deps !== null && typeof deps === "object" && ("symfony/framework-bundle" in deps || "symfony/symfony" in deps)) return true;
+      if (isJsonObject(deps) && ("symfony/framework-bundle" in deps || "symfony/symfony" in deps)) return true;
     }
 
     return context.read("config/bundles.php") !== null;
@@ -58,11 +59,11 @@ export const symfony: FrameworkAdapter = {
   parse: parseSymfonyConfig,
 };
 
-function parseJson(text: string | null): unknown {
+function readJson(text: string | null): JsonValue {
   if (text === null) return null;
 
   try {
-    return JSON.parse(text.replace(/^\uFEFF/, ""));
+    return parseJson(text.replace(/^\uFEFF/, ""));
   } catch {
     return null;
   }
@@ -95,8 +96,8 @@ export function parseSymfonyConfig(path: string, text: string): ConfigFacts {
     return { ...facts, error: { line: first.linePos?.[0]?.line ?? 1, reason: `\`${path}\` is no YAML: ${first.message.split("\n")[0]}` } };
   }
 
-  const at = (node: YamlNode | Pair | null | undefined): { line: number; col: number } => {
-    const range = node && "range" in node ? node.range : node && "key" in node && node.key && typeof node.key === "object" && "range" in node.key ? (node.key as YamlNode).range : null;
+  const at = (node: YamlNode | Pair | null | undefined): ConfigAt => {
+    const range = node && "range" in node ? node.range : node && "key" in node && isNode(node.key) ? node.key.range : null;
     const pos = range ? counter.linePos(range[0]) : { line: 1, col: 1 };
 
     return { line: pos.line, col: pos.col };
@@ -116,11 +117,11 @@ export function parseSymfonyConfig(path: string, text: string): ConfigFacts {
     if (!isMap(services)) return facts;
 
     for (const pair of services.items) {
-      const id = isScalar(pair.key) ? String(pair.key.value) : null;
+      const keyNode = isScalar(pair.key) ? pair.key : null;
 
-      if (id === null) continue;
-      const value = pair.value as YamlNode | null;
-      const keyNode = pair.key as YamlNode;
+      if (keyNode === null) continue;
+      const id = String(keyNode.value);
+      const value = isNode(pair.value) ? pair.value : null;
 
       if (id === "_defaults") {
         const bind = isMap(value) ? value.items.find((p) => isScalar(p.key) && p.key.value === "bind")?.value : null;
@@ -132,7 +133,7 @@ export function parseSymfonyConfig(path: string, text: string): ConfigFacts {
       if (id.startsWith("_") || id.endsWith("\\")) continue;
 
       // `I: '@C'`: an alias.
-      if (isScalar(value) && typeof value.value === "string") {
+      if (isTextScalar(value)) {
         const target = serviceRef(value.value);
 
         if (target !== null && CLASS_NAME.test(id)) facts.bindings.push({ from: type(className(id)), to: type(target), ...at(keyNode) });
@@ -140,13 +141,19 @@ export function parseSymfonyConfig(path: string, text: string): ConfigFacts {
       }
 
       if (!isMap(value)) continue;
-      const field = (name: string): YamlNode | null => (value.items.find((p) => isScalar(p.key) && p.key.value === name)?.value as YamlNode | null) ?? null;
+
+      const field = (name: string): YamlNode | null => {
+        const found = value.items.find((p) => isScalar(p.key) && p.key.value === name)?.value;
+
+        return isNode(found) ? found : null;
+      };
+
       const alias = field("alias");
       const klass = field("class");
 
-      if (isScalar(alias) && typeof alias.value === "string" && CLASS_NAME.test(id)) facts.bindings.push({ from: type(className(id)), to: type(className(alias.value.replace(/^@/, ""))), ...at(keyNode) });
-      else if (isScalar(klass) && typeof klass.value === "string" && CLASS_NAME.test(id) && key(className(klass.value)) !== key(className(id))) facts.bindings.push({ from: type(className(id)), to: type(className(klass.value)), ...at(keyNode) });
-      const owner = isScalar(klass) && typeof klass.value === "string" ? className(klass.value) : CLASS_NAME.test(id) ? className(id) : null;
+      if (isTextScalar(alias) && CLASS_NAME.test(id)) facts.bindings.push({ from: type(className(id)), to: type(className(alias.value.replace(/^@/, ""))), ...at(keyNode) });
+      else if (isTextScalar(klass) && CLASS_NAME.test(id) && key(className(klass.value)) !== key(className(id))) facts.bindings.push({ from: type(className(id)), to: type(className(klass.value)), ...at(keyNode) });
+      const owner = isTextScalar(klass) ? className(klass.value) : CLASS_NAME.test(id) ? className(id) : null;
 
       if (owner === null) continue;
       const args = field("arguments");
@@ -165,15 +172,16 @@ export function parseSymfonyConfig(path: string, text: string): ConfigFacts {
 
   // routes.yaml: `name: { path, controller, methods }`; `name: { resource, type: attribute, prefix }`.
   for (const pair of root.items) {
-    const name = isScalar(pair.key) ? String(pair.key.value) : null;
+    const keyNode = isScalar(pair.key) ? pair.key : null;
 
-    if (name === null || !isMap(pair.value)) continue;
-    const route = pair.value.toJSON() as Record<string, unknown>;
-    const position = at(pair.key as YamlNode);
+    if (keyNode === null || !isMap(pair.value)) continue;
+    const name = String(keyNode.value);
+    const route = mapJson(pair.value);
+    const position = at(keyNode);
 
-    if (typeof route.path === "string" || (route.path !== null && typeof route.path === "object" && !("resource" in route))) {
-      const routePath = typeof route.path === "string" ? route.path : null;
-      const controller = typeof route.controller === "string" ? route.controller : typeof (route.defaults as Record<string, unknown> | undefined)?._controller === "string" ? ((route.defaults as Record<string, unknown>)._controller as string) : null;
+    if (isJsonString(route.path) || (isStructured(route.path) && !("resource" in route))) {
+      const routePath = isJsonString(route.path) ? route.path : null;
+      const controller = isJsonString(route.controller) ? route.controller : isJsonObject(route.defaults) && isJsonString(route.defaults._controller) ? route.defaults._controller : null;
 
       if (routePath === null || controller === null) {
         hole(pair, name, `route \`${name}\`: its path or controller is written in a form keylang does not read`);
@@ -181,25 +189,28 @@ export function parseSymfonyConfig(path: string, text: string): ConfigFacts {
       }
 
       const [klass, method] = controller.split("::");
-      const methods = Array.isArray(route.methods) ? route.methods.filter((m): m is string => typeof m === "string") : typeof route.methods === "string" ? route.methods.split("|") : [];
+      const methods = Array.isArray(route.methods) ? route.methods.filter(isJsonString) : isJsonString(route.methods) ? route.methods.split("|") : [];
 
       for (const m of methods.length > 0 ? methods.map((x) => x.toUpperCase()) : [null]) {
-        facts.entries!.push({ kind: "route", label: m === null ? routePath : `${m} ${routePath}`, files: [], fn: method || "__invoke", type: type(className(klass!)), ...(m !== null ? { method: m } : {}), ...position });
+        const entry: Omit<EntryConfigFact, keyof ConfigAt> = { kind: "route", label: m === null ? routePath : `${m} ${routePath}`, files: [], fn: method || "__invoke", type: type(className(klass!)) };
+
+        if (m !== null) entry.method = m;
+        facts.entries!.push({ ...entry, ...position });
       }
 
       continue;
     }
 
     const resource = route.resource;
-    const dir = typeof resource === "string" ? resource : resource !== null && typeof resource === "object" && typeof (resource as Record<string, unknown>).path === "string" ? ((resource as Record<string, unknown>).path as string) : null;
+    const dir = isJsonString(resource) ? resource : isJsonObject(resource) && isJsonString(resource.path) ? resource.path : null;
 
     if (dir === null) continue;
-    const prefix = typeof route.prefix === "string" ? route.prefix : "";
+    const prefix = isJsonString(route.prefix) ? route.prefix : "";
 
     if (route.type === "attribute" || route.type === "annotation") {
       if (dir.endsWith(".php") || dir.startsWith("@")) continue;
       facts.routePrefixes!.push({ dir: posix.normalize(posix.join(posix.dirname(path), dir)).replace(/\/$/, ""), prefix, ...position });
-    } else if (route.prefix !== null && typeof route.prefix === "object") hole(pair, name, `route import \`${name}\`: a prefix per locale is not read`);
+    } else if (isStructured(route.prefix)) hole(pair, name, `route import \`${name}\`: a prefix per locale is not read`);
   }
 
   return facts;
@@ -215,13 +226,14 @@ function serviceRef(value: string): string | null {
 
 /** `$param: '@C'` (or `I $param: '@C'`) of `arguments` or `bind`: the constructor argument `param` of `owner` is a `C`. */
 function argument(facts: ConfigFacts, owner: string, pair: Pair, at: (node: YamlNode | Pair | null | undefined) => { line: number; col: number }, hole: (node: YamlNode | Pair | null | undefined, text: string, reason: string) => void): void {
-  const name = isScalar(pair.key) ? String(pair.key.value) : null;
+  const keyNode = isScalar(pair.key) ? pair.key : null;
+  const name = keyNode === null ? null : String(keyNode.value);
   const param = name === null ? null : /(?:^|\s)\$([A-Za-z_][A-Za-z0-9_]*)$/.exec(name)?.[1] ?? null;
 
   if (param === null) return;
-  const value = pair.value as YamlNode | null;
+  const value = isNode(pair.value) ? pair.value : null;
 
-  if (!isScalar(value) || typeof value.value !== "string" || !value.value.startsWith("@")) return;
+  if (!isTextScalar(value) || !value.value.startsWith("@")) return;
   const target = serviceRef(value.value);
 
   if (target === null) {
@@ -230,5 +242,21 @@ function argument(facts: ConfigFacts, owner: string, pair: Pair, at: (node: Yaml
     return;
   }
 
-  facts.arguments.push({ type: type(owner), param, value: type(target), ...at(pair.key as YamlNode) });
+  facts.arguments.push({ type: type(owner), param, value: type(target), ...at(keyNode) });
+}
+
+/** A YAML scalar whose value is a string: a class name, a service reference. */
+function isTextScalar(node: YamlNode | null): node is Scalar<string> {
+  return isScalar(node) && typeof node.value === "string";
+}
+
+/** A route field written as a map or a list: a form keylang does not read where it expects a string. */
+function isStructured(value: JsonValue | undefined): boolean {
+  return isJsonObject(value) || Array.isArray(value);
+}
+
+/** A route of `routes.yaml` as plain data. */
+function mapJson(map: YAMLMap): JsonObject {
+  // SAFETY: `toJSON` of a YAML map under the default core schema yields a plain object of strings, numbers, booleans, nulls, lists and objects.
+  return map.toJSON() as JsonObject;
 }

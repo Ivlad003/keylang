@@ -49,5 +49,12 @@
     "anti-slop/no-widen-then-assert": "error",
     "anti-slop/require-readable-spacing": "error",
     "anti-slop/require-safety-comment-for-type-assertion": "error"
-  }
+  },
+  "overrides": [
+    {
+      // design/scripts/run.py prepends lib.js to each NN_*.js script; its helpers are used there.
+      "files": ["design/scripts/lib.js"],
+      "rules": { "no-unused-vars": "off" }
+    }
+  ]
 }

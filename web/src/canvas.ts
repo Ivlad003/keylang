@@ -28,14 +28,26 @@ import {
   ShapeRegistry,
   SwimlaneShape,
   ConnectorShape,
-  type Cell,
+  Cell,
   type CellStyle,
   type EventObject,
+  type EventSource,
 } from "@maxgraph/core";
 import type { Diagram, DiagramEdge, DiagramNode } from "./api.ts";
 
+/** The stroke and fill of a shape by its verdict. */
+export interface VerdictColour {
+  stroke: string;
+  fill: string;
+}
+
+/** A look by the verdict the API sends; a verdict the page does not know has none. */
+export interface ByVerdict<Look> {
+  [verdict: string]: Look;
+}
+
 /** Colours by verdict, the same meaning as in the terminal: ok, fail, unproven, not yet built. */
-export const VERDICT_COLOUR: Record<string, { stroke: string; fill: string }> = {
+export const VERDICT_COLOUR: ByVerdict<VerdictColour> = {
   ok: { stroke: "#2e7d32", fill: "#e8f5e9" },
   fail: { stroke: "#c62828", fill: "#ffebee" },
   unverified: { stroke: "#b26a00", fill: "#fff8e1" },
@@ -46,7 +58,7 @@ export const VERDICT_COLOUR: Record<string, { stroke: string; fill: string }> = 
 const NEUTRAL = { stroke: "#455a64", fill: "#eceff1" };
 
 /** The terminal's glyphs (src/tui/evidence.ts `MARK_GLYPH`). */
-export const VERDICT_GLYPH: Record<string, string> = { ok: "✓", fail: "✗", unverified: "◌", warning: "!", planned: "◇" };
+export const VERDICT_GLYPH: ByVerdict<string> = { ok: "✓", fail: "✗", unverified: "◌", warning: "!", planned: "◇" };
 
 const SELECTED = "#1565c0";
 
@@ -121,7 +133,19 @@ export function glyphOf(node: { verdict?: string | null | undefined }): string {
 }
 
 /** How a component of a system looks (system-design/03): a shape, an icon before its name and a fill. */
-export const COMPONENT_LOOK: Record<string, { shape: string; icon: string; fill: string; perimeter?: string }> = {
+export interface ComponentLook {
+  shape: string;
+  icon: string;
+  fill: string;
+  perimeter?: string;
+}
+
+/** Looks by the component kind the specs name; an unknown kind looks like `service`. */
+export interface ComponentLooks {
+  [component: string]: ComponentLook;
+}
+
+export const COMPONENT_LOOK: ComponentLooks = {
   client: { shape: "rectangle", icon: "👤", fill: "#e3f2fd" },
   cdn: { shape: "cloud", icon: "☁", fill: "#e1f5fe", perimeter: "ellipsePerimeter" },
   dns: { shape: "cloud", icon: "🌐", fill: "#e1f5fe", perimeter: "ellipsePerimeter" },
@@ -175,7 +199,14 @@ function labelOf(node: DiagramNode): string {
   }
 }
 
-export function nodeStyle(node: Pick<DiagramNode, "kind" | "verdict"> & { component?: string | undefined }): CellStyle {
+/** What the look of a shape depends on: a diagram node, or a shape of the editor (whose verdict is any the layout kept). */
+export interface NodeLook {
+  kind: string;
+  verdict?: string | null | undefined;
+  component?: string | undefined;
+}
+
+export function nodeStyle(node: NodeLook): CellStyle {
   const colour = (node.verdict && VERDICT_COLOUR[node.verdict]) || NEUTRAL;
   const style: CellStyle = { strokeColor: colour.stroke, fillColor: colour.fill, fontColor: "#212121", fontSize: 11, strokeWidth: 1.5 };
 
@@ -200,7 +231,19 @@ export function nodeStyle(node: Pick<DiagramNode, "kind" | "verdict"> & { compon
     case "participant": {
       const look = COMPONENT_LOOK[node.component ?? ""] ?? COMPONENT_LOOK["service"]!;
 
-      return { ...style, shape: look.shape, ...(look.perimeter ? { perimeter: look.perimeter } : {}), fillColor: node.verdict ? colour.fill : look.fill, rounded: look.shape === "rectangle", whiteSpace: "wrap", ...(look.shape === "cylinder" ? { verticalAlign: "bottom", spacingBottom: 8 } : {}) };
+      const component: CellStyle = { ...style, shape: look.shape };
+
+      if (look.perimeter) component.perimeter = look.perimeter;
+      component.fillColor = node.verdict ? colour.fill : look.fill;
+      component.rounded = look.shape === "rectangle";
+      component.whiteSpace = "wrap";
+
+      if (look.shape === "cylinder") {
+        component.verticalAlign = "bottom";
+        component.spacingBottom = 8;
+      }
+
+      return component;
     }
 
     case "table":
@@ -294,6 +337,13 @@ export interface CanvasEvents {
   select(node: DiagramNode | null): void;
 }
 
+/** The cell of a drawn edge, with the style of its arc when it was routed around shapes. */
+interface EdgeCell {
+  cell: Cell;
+  edge: DiagramEdge;
+  arc?: CellStyle;
+}
+
 export class Canvas {
   readonly graph: BaseGraph;
   private readonly container: HTMLElement;
@@ -303,7 +353,7 @@ export class Canvas {
   private readonly cells = new Map<string, Cell[]>();
   private readonly nodeOf = new Map<Cell, DiagramNode>();
   /** The cell of each edge, for the focus on the selected shape. */
-  private readonly edgeCells: { cell: Cell; edge: DiagramEdge; arc?: CellStyle }[] = [];
+  private readonly edgeCells: EdgeCell[] = [];
   private selected: string | null = null;
   private used: (node: DiagramNode) => boolean = () => false;
   private downAt: { x: number; y: number } | null = null;
@@ -331,12 +381,12 @@ export class Canvas {
 
     // A click picks the node under it; the end of a drag (panning) is no click.
     container.addEventListener("pointerdown", (event) => (this.downAt = { x: event.clientX, y: event.clientY }));
-    graph.addListener(InternalEvent.CLICK, (_sender: unknown, event: EventObject) => {
-      const native = event.getProperty("event") as MouseEvent | undefined;
+    graph.addListener(InternalEvent.CLICK, (_sender: EventSource, event: EventObject) => {
+      const native = event.getProperty("event");
 
-      if (native && this.downAt && Math.hypot(native.clientX - this.downAt.x, native.clientY - this.downAt.y) > 4) return;
-      const cell = event.getProperty("cell") as Cell | null;
-      const node = cell ? (this.nodeOf.get(cell) ?? null) : null;
+      if (native instanceof MouseEvent && this.downAt && Math.hypot(native.clientX - this.downAt.x, native.clientY - this.downAt.y) > 4) return;
+      const cell = event.getProperty("cell");
+      const node = cell instanceof Cell ? (this.nodeOf.get(cell) ?? null) : null;
       this.select(node?.id ?? null);
       this.events.select(node);
     });
@@ -434,7 +484,10 @@ export class Canvas {
           cell.geometry = geometry;
         }
 
-        this.edgeCells.push({ cell, edge, ...(arc ? { arc: arc.style } : {}) });
+        const drawn: EdgeCell = { cell, edge };
+
+        if (arc) drawn.arc = arc.style;
+        this.edgeCells.push(drawn);
       }
     });
 

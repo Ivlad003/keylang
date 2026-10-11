@@ -9,6 +9,7 @@
 // Detected from `laravel/framework` in the root `composer.json`, or an
 // `artisan` beside `bootstrap/app.php`.
 
+import { isJsonObject, parseJson, type JsonValue } from "../json.ts";
 import type { FrameworkAdapter } from "./adapter.ts";
 
 const CONFIG_FILE = /^(?:routes\/[^/]+\.php|app\/Providers\/.+\.php|bootstrap\/(?:app|providers)\.php|app\/Console\/Kernel\.php)$/;
@@ -17,12 +18,12 @@ export const laravel: FrameworkAdapter = {
   name: "laravel",
   version: "1",
   detect(context) {
-    const composer = parseJson(context.read("composer.json"));
+    const composer = readJson(context.read("composer.json"));
 
     for (const field of ["require", "require-dev"]) {
-      const deps = composer !== null && typeof composer === "object" ? (composer as Record<string, unknown>)[field] : null;
+      const deps = isJsonObject(composer) ? composer[field] : undefined;
 
-      if (deps !== null && typeof deps === "object" && "laravel/framework" in deps) return true;
+      if (isJsonObject(deps) && "laravel/framework" in deps) return true;
     }
 
     return context.read("artisan") !== null && context.read("bootstrap/app.php") !== null;
@@ -36,11 +37,11 @@ export const laravel: FrameworkAdapter = {
   },
 };
 
-function parseJson(text: string | null): unknown {
+function readJson(text: string | null): JsonValue {
   if (text === null) return null;
 
   try {
-    return JSON.parse(text.replace(/^\uFEFF/, ""));
+    return parseJson(text.replace(/^\uFEFF/, ""));
   } catch {
     return null;
   }

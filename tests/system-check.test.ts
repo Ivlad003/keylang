@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { keylang, tempDir, writeTree } from "./cli-helpers.ts";
 
-const FILES: Record<string, string> = {
+const FILES = {
   "keylang.json": `${JSON.stringify({ languages: ["typescript"], layers: { app: ["src/app/**"], infra: ["src/infra/**"], worker: ["src/worker/**"] } })}\n`,
   "package.json": `${JSON.stringify({ name: "shop", dependencies: { pg: "8.0.0", ioredis: "5.0.0" } })}\n`,
   "src/app/links.ts": 'import { query } from "../infra/db.ts";\nexport function find(code: string): string {\n  return query(code);\n}\n',
@@ -59,6 +59,7 @@ test("check of a system: K401/K402/K002 on names, ok and unverified for relation
   ]);
 
   const json = keylang(dir, ["check", "--format", "json"]);
+  // SAFETY: `check --format json` prints the report that Json describes (docs/cli.md).
   const report = JSON.parse(json.stdout) as Json;
   const system = report.results.filter((result) => result.criterion === "system shop").map((result) => [result.verdict, result.area, result.line]);
   assert.deepEqual(system, [
@@ -78,8 +79,9 @@ test("check of a system: a relation that names a declared component and a bound 
   });
   const r = keylang(dir, ["check", "--format", "json"]);
   assert.equal(r.status, 0, r.stdout);
+  // SAFETY: `check --format json` prints the report that Json describes (docs/cli.md).
   const report = JSON.parse(r.stdout) as Json;
-  assert.deepEqual(report.results.filter((result) => /^K4/.test(result.code ?? "")), []);
+  assert.deepEqual(report.results.filter((result) => (result.code ?? "").startsWith("K4")), []);
   assert.deepEqual(report.results.filter((result) => result.criterion === "system shop").map((result) => [result.verdict, result.area]), [
     ["ok", "api calls worker"],
     ["ok", "api reads db"],

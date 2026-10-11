@@ -11,7 +11,7 @@ import { contextText } from "../../agent-context.ts";
 import type { Analysis } from "../../analyze.ts";
 import { CONFIG_FILE, toPosix } from "../../config.ts";
 import { codeToSpecTriggers } from "../../draft.ts";
-import type { CodeToSpecRequest, CodeToSpecSource, DraftLayoutRequest, DraftRulesRequest, SpecToCodeRequest } from "../../operations.ts";
+import type { CodeToSpecRequest, CodeToSpecSource, DraftFlowRequest, DraftLayoutRequest, DraftRulesRequest, SpecToCodeRequest } from "../../operations.ts";
 import { PROPOSALS_DIR, proposalProblem } from "../../proposals.ts";
 import { plannedCodeTarget } from "../../spec-to-code.ts";
 import { compareText } from "../../span.ts";
@@ -70,8 +70,10 @@ function problemOn(problem: Problem | null, row: string): string | null {
   return problem !== null && (problem.field === row || row === "run" || row === "output") ? problem.text : null;
 }
 
+type FlowDraftTarget = { name: string; target: string };
+
 /** The name and target a flow draft would use: the typed ones, else the CLI's defaults. `specDir` is relative to the root, POSIX. */
-export function flowDraftTarget(specDir: string, form: { trigger: string; name: string; into: string }): { name: string; target: string } {
+export function flowDraftTarget(specDir: string, form: { trigger: string; name: string; into: string }): FlowDraftTarget {
   const trigger = form.trigger.trim();
   const name = form.name.trim() !== "" ? form.name.trim() : trigger.slice(trigger.lastIndexOf(".") + 1);
   const into = form.into.trim();
@@ -374,17 +376,16 @@ export class DraftForms {
     // The model sees the context pack as F4 shows it now: taken once, before anything else opens.
     const pack = form.mode === "algo" ? null : this.host.contextPack();
     this.state.prompt = null;
-    this.host.requestOperation("draft-flow", {
-      kind: "draft-flow",
-      root: this.state.root,
-      trigger: form.trigger.trim(),
-      ...(name !== "" ? { name } : {}),
-      ...(into !== "" ? { into: toPosix(into) } : {}),
-      output: form.output,
-      pending: "refuse",
-      ...(form.mode !== "algo" ? { mode: form.mode } : {}),
-      ...(pack ? { context: contextText(pack) } : {}),
-    });
+    const request: DraftFlowRequest = { kind: "draft-flow", root: this.state.root, trigger: form.trigger.trim(), output: form.output, pending: "refuse" };
+
+    if (name !== "") request.name = name;
+
+    if (into !== "") request.into = toPosix(into);
+
+    if (form.mode !== "algo") request.mode = form.mode;
+
+    if (pack) request.context = contextText(pack);
+    this.host.requestOperation("draft-flow", request);
   }
 
   // ---------- draft rules (algo, hybrid, llm) ----------
@@ -466,14 +467,11 @@ export class DraftForms {
     const into = form.into.trim();
     this.state.prompt = null;
 
-    const request: DraftRulesRequest = {
-      kind: "draft-rules",
-      root: this.state.root,
-      ...(into !== "" ? { into: toPosix(into) } : {}),
-      output: form.output,
-      pending: "refuse",
-      ...(form.mode !== "algo" ? { mode: form.mode } : {}),
-    };
+    const request: DraftRulesRequest = { kind: "draft-rules", root: this.state.root, output: form.output, pending: "refuse" };
+
+    if (into !== "") request.into = toPosix(into);
+
+    if (form.mode !== "algo") request.mode = form.mode;
 
     this.host.requestOperation("draft-rules", request);
   }
@@ -632,18 +630,16 @@ export class DraftForms {
     const line = form.line.trim();
     const into = form.into.trim();
     const pack = form.mode === "algo" ? null : this.host.contextPack();
-    const source: CodeToSpecSource = form.source === "since" ? { since: form.since.trim() } : { file: toPosix(form.file.trim()), ...(line !== "" ? { line: Number(line) } : {}) };
+    const source: CodeToSpecSource = form.source === "since" ? { since: form.since.trim() } : line !== "" ? { file: toPosix(form.file.trim()), line: Number(line) } : { file: toPosix(form.file.trim()) };
+    const request: CodeToSpecRequest = { kind: "code-to-spec", root: this.state.root, ...source, output: form.output, pending: "refuse" };
 
-    return {
-      kind: "code-to-spec",
-      root: this.state.root,
-      ...source,
-      ...(into !== "" ? { into: toPosix(into) } : {}),
-      output: form.output,
-      pending: "refuse",
-      ...(form.mode !== "algo" ? { mode: form.mode } : {}),
-      ...(pack ? { context: contextText(pack) } : {}),
-    };
+    if (into !== "") request.into = toPosix(into);
+
+    if (form.mode !== "algo") request.mode = form.mode;
+
+    if (pack) request.context = contextText(pack);
+
+    return request;
   }
 
   /**
@@ -811,7 +807,11 @@ export class DraftForms {
     if (problem !== null) return this.refuse(prompt, problem, "spec-to-code", () => this.refreshSpecCode());
     const into = form.into.trim();
     this.state.prompt = null;
-    const request: SpecToCodeRequest = { kind: "spec-to-code", root: this.state.root, id: form.id.trim(), ...(into !== "" ? { into: toPosix(into) } : {}), output: form.output, pending: "refuse", ...(form.mode === "llm" ? { mode: "llm" as const } : {}) };
+    const request: SpecToCodeRequest = { kind: "spec-to-code", root: this.state.root, id: form.id.trim(), output: form.output, pending: "refuse" };
+
+    if (into !== "") request.into = toPosix(into);
+
+    if (form.mode === "llm") request.mode = "llm";
     this.host.requestOperation("spec-to-code", request);
   }
 
@@ -866,7 +866,9 @@ export class DraftForms {
 
     if (problem !== null) return this.refuse(prompt, { field: "mode", text: problem }, "draft map", () => this.refreshLayout());
     this.state.prompt = null;
-    const request: DraftLayoutRequest = { kind: "draft-layout", root: this.state.root, ...(form.mode !== "algo" ? { mode: form.mode } : {}) };
+    const request: DraftLayoutRequest = { kind: "draft-layout", root: this.state.root };
+
+    if (form.mode !== "algo") request.mode = form.mode;
     this.host.requestOperation("draft-layout", request);
   }
 }

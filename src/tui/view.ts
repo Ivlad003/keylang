@@ -20,7 +20,7 @@ import { navItems, type NavItem } from "./nav.ts";
 import { itemNoun, recordLabel, recordStatus, reportItems, resultsReportRows } from "./reports/records.ts";
 import { circled, flowOverlay, zoomEdges, zoomLevel, zoomSelectKey, ZOOM_ROOT, type FlowOverlay, type ZoomEdge, type ZoomRow } from "./zoom.ts";
 import { drawBox, Grid, type Style } from "./screen.ts";
-import type { Buffer, Prompt, State } from "./state.ts";
+import type { Buffer, Mode, Prompt, State } from "./state.ts";
 import { highlight, MARK_STYLE, THEME, type Run } from "./theme.ts";
 import { bufferLines, isDirty, lineLayout } from "./buffer.ts";
 import { clusters, fitWidth, graphemes, padWidth, sliceCells, stringWidth, wrapCells, type LineLayout } from "./width.ts";
@@ -155,11 +155,33 @@ function cellsBetween(line: LineLayout, from: number, to: number): number {
   return Math.max(0, line.cells[Math.min(to, n)]! - line.cells[Math.min(from, n)]!);
 }
 
-function markCell(item: LineEvidence | undefined, stale: boolean): { glyph: string; style: Style } {
+/** A glyph in the gutter or a panel row, with its style. */
+interface StyledGlyph {
+  glyph: string;
+  style: Style;
+}
+
+/** A row of a side panel: its text, its mark at the right edge, and its own style over the panel's. */
+interface PanelEntry {
+  text: string;
+  mark: StyledGlyph | null;
+  style?: Style;
+}
+
+/** A style dimmed for evidence that is stale. */
+function dimmedIf(style: Style, dim: boolean): Style {
+  return dim ? { ...style, dim: true } : style;
+}
+
+function markCell(item: LineEvidence | undefined, stale: boolean): StyledGlyph {
   if (!item) return { glyph: " ", style: {} };
   const style = MARK_STYLE[item.mark];
 
   return { glyph: MARK_GLYPH[item.mark], style: stale ? { ...style, dim: true, bold: false } : style };
+}
+
+function isChannel(criterion: string): criterion is (typeof CHANNELS)[number] {
+  return CHANNELS.some((channel) => channel === criterion);
 }
 
 const VERDICT_GLYPH = { ok: "✓", fail: "✗", unverified: "◌" } as const;
@@ -179,7 +201,7 @@ export function detailText(item: LineEvidence, snapshotId: string | null): { tex
   }
 
   for (const criterion of item.criteria) {
-    if ((CHANNELS as readonly string[]).includes(criterion.criterion)) continue;
+    if (isChannel(criterion.criterion)) continue;
     parts.push({ text: `${criterion.criterion} `, style: THEME.lineNumber }, { text: `${VERDICT_GLYPH[criterion.verdict]}  `, style: MARK_STYLE[criterion.verdict] });
   }
 
@@ -244,7 +266,7 @@ function drawEditor(grid: Grid, state: State, rect: Rect, buffer: Buffer): void 
       grid.fill(x, y, rect.width - gutter, 1, THEME.cursorLine);
       x += grid.write(x, y, "└ ", { ...THEME.lineNumber, ...THEME.cursorLine });
 
-      for (const part of detailText(item, state.analysis?.snapshot?.snapshotId ?? null)) x += grid.write(x, y, part.text, { ...part.style, bg: THEME.cursorLine.bg!, ...(stale ? { dim: true } : {}) }, rect.x + rect.width - x);
+      for (const part of detailText(item, state.analysis?.snapshot?.snapshotId ?? null)) x += grid.write(x, y, part.text, dimmedIf({ ...part.style, bg: THEME.cursorLine.bg }, stale), rect.x + rect.width - x);
 
       return;
     }
@@ -278,9 +300,14 @@ function drawEditor(grid: Grid, state: State, rect: Rect, buffer: Buffer): void 
 }
 
 /** The rendered rows of a buffer per text and width, and the first row of each source line: a frame asks for them more than once. */
-const reading = new WeakMap<Buffer, { text: string; width: number; rows: ReadRow[]; firstRow: Map<number, number> }>();
+interface ReadLayout {
+  rows: ReadRow[];
+  firstRow: Map<number, number>;
+}
 
-function readLayout(buffer: Buffer, width: number): { rows: ReadRow[]; firstRow: Map<number, number> } {
+const reading = new WeakMap<Buffer, ReadLayout & { text: string; width: number }>();
+
+function readLayout(buffer: Buffer, width: number): ReadLayout {
   const cached = reading.get(buffer);
 
   if (cached && cached.text === buffer.text && cached.width === width) return cached;
@@ -296,7 +323,7 @@ function readLayout(buffer: Buffer, width: number): { rows: ReadRow[]; firstRow:
 }
 
 /** Reading mode: the rendered rows, the first row of each source line, the row of the cursor line, and the first row shown. */
-function readRows(state: State, buffer: Buffer, rect: Rect): { rows: ReadRow[]; firstRow: Map<number, number>; cursorRow: number; top: number } {
+function readRows(state: State, buffer: Buffer, rect: Rect): ReadLayout & { cursorRow: number; top: number } {
   const { rows, firstRow } = readLayout(buffer, rect.width - 3);
   const at = rows.findIndex((row) => row.source - 1 >= state.cursor.line);
   const cursorRow = at === -1 ? rows.length - 1 : at;
@@ -391,7 +418,13 @@ export function fitCrumbs(labels: readonly string[], width: number): string {
 }
 
 /** The text of a zoom row: zoom mark, kind, name, distance, and the brief when there is room. */
-export function zoomRowText(state: State, row: ZoomRow, width: number, overlay: FlowOverlay | null = null): { text: string; right: string } {
+/** A row of the zoom screen: its text, and what stands at its right edge. */
+export interface ZoomRowText {
+  text: string;
+  right: string;
+}
+
+export function zoomRowText(state: State, row: ZoomRow, width: number, overlay: FlowOverlay | null = null): ZoomRowText {
   if (row.kind === "more") return { text: `  … ${row.more} more at depth ${row.distance}: > shows them`, right: "" };
   const steps = overlay?.steps.get(row.id) ?? [];
   const away = `${row.distance > 0 ? ` ·${row.distance}` : ""}${steps.length > 0 ? ` ${steps.map(circled).join("")}` : ""}`;
@@ -415,7 +448,7 @@ function endLabel(focus: string, id: string): string {
 }
 
 /** The text of an edges-view row: group, `from → to`, the kinds with counts, and the count. */
-export function zoomEdgeText(focus: string, edge: ZoomEdge, walked = false): { text: string; right: string } {
+export function zoomEdgeText(focus: string, edge: ZoomEdge, walked = false): ZoomRowText {
   if (edge.group === "unresolved") {
     const reasons = (edge.reasons ?? []).map((item) => `${item.reason} ×${item.count}`).join(", ");
 
@@ -449,13 +482,19 @@ export interface ZoomButton {
   width: number;
 }
 
+/** The zoom screen's header row and the buttons on it. */
+export interface ZoomButtonRow {
+  text: string;
+  buttons: ZoomButton[];
+}
+
 /**
  * The header's buttons, right-aligned, and their text: `[−] [+] [depth N ▾▴]
  * [c edges] [f flow ▾]`. Each does what its key does; the crumbs get what
  * is left of the row, so on a narrow terminal the crumbs are cut, never a
  * button. `▾` and `▴` are buttons of their own inside the depth one.
  */
-export function zoomButtons(zoom: { depth: number; view: "nodes" | "edges"; flow: string | null }, width: number): { text: string; buttons: ZoomButton[] } {
+export function zoomButtons(zoom: { depth: number; view: "nodes" | "edges"; flow: string | null }, width: number): ZoomButtonRow {
   const parts: { text: string; action?: ZoomButton["action"] }[] = [
     { text: "[−]", action: "up" },
     { text: " " },
@@ -509,7 +548,7 @@ function drawZoom(grid: Grid, state: State, rect: Rect): void {
   // A flow over the level takes the second row: its layers in the order written at the top and on a layer, else its steps here.
   const atLayers = zoom.focus === ZOOM_ROOT || analysis.snapshot.nodes[zoom.focus]?.kind === "layer";
   const flowRow = overlay === null ? null : atLayers ? `flow ${overlay.flow}: ${flowSequence(overlay)}` : `flow ${overlay.flow}: ${[...overlay.steps.values()].flat().length} step(s) on this level; numbers are the order written, a trace confirms the order run`;
-  (flowRow === null ? about : [about[0]!]).forEach((line, i) => grid.write(rect.x + 2, rect.y + 1 + i, line, { ...THEME.hint, ...(e === null ? {} : { fg: 250 }) }, rect.width - 3));
+  (flowRow === null ? about : [about[0]!]).forEach((line, i) => grid.write(rect.x + 2, rect.y + 1 + i, line, e === null ? THEME.hint : { ...THEME.hint, fg: 250 }, rect.width - 3));
 
   if (flowRow !== null) grid.write(rect.x + 2, rect.y + 2, flowRow, { ...THEME.hint, fg: 75 }, rect.width - 3);
   const height = zoomListHeight(state, rect);
@@ -547,14 +586,14 @@ function drawZoom(grid: Grid, state: State, rect: Rect): void {
     if (!row) break;
     const y = rect.y + ZOOM_HEAD + i;
     const off = overlay !== null && row.kind !== "more" && !overlay.steps.has(row.id);
-    const style = index === selected ? THEME.selected : off ? { ...THEME.text, fg: 240 } : row.kind === "more" || row.distance > 0 ? { ...THEME.text, fg: 245 } : THEME.text;
+    const style: Style = index === selected ? THEME.selected : off ? { ...THEME.text, fg: 240 } : row.kind === "more" || row.distance > 0 ? { ...THEME.text, fg: 245 } : THEME.text;
     grid.fill(rect.x, y, rect.width, 1, style);
     const { text, right } = zoomRowText(state, row, rect.width, overlay);
     grid.write(rect.x + 1, y, text, style, rect.width - stringWidth(right) - 3);
 
     if (right !== "") {
       const mark = overlay ? stepsMark(overlay, overlay.steps.get(row.id) ?? []) : row.mark;
-      const markStyle = mark ? { ...style, ...MARK_STYLE[mark], bg: style.bg ?? THEME.text.bg! } : style;
+      const markStyle = mark ? { ...style, ...MARK_STYLE[mark] } : style;
       grid.write(rect.x + rect.width - stringWidth(right) - 1, y, right.slice(0, 1), markStyle);
       grid.write(rect.x + rect.width - stringWidth(right) - 1 + 1, y, right.slice(1), style);
     }
@@ -592,7 +631,7 @@ function drawMerge(grid: Grid, state: State, rect: Rect): void {
   }
 }
 
-function drawPanelList(grid: Grid, rect: Rect, title: string, entries: { text: string; mark: { glyph: string; style: Style } | null; style?: Style }[], selected: number, focused: boolean, top: number): void {
+function drawPanelList(grid: Grid, rect: Rect, title: string, entries: PanelEntry[], selected: number, focused: boolean, top: number): void {
   grid.fill(rect.x, rect.y, rect.width, rect.height, THEME.panel);
   grid.write(rect.x, rect.y, padWidth(` ${title}`, rect.width), THEME.panelTitle);
 
@@ -605,7 +644,12 @@ function drawPanelList(grid: Grid, rect: Rect, title: string, entries: { text: s
     grid.write(rect.x, y, padWidth(` ${entry.text}`, rect.width - 2), style);
     grid.write(rect.x + rect.width - 2, y, "  ", style);
 
-    if (entry.mark) grid.write(rect.x + rect.width - 2, y, entry.mark.glyph, { ...style, ...entry.mark.style, ...(top + i === selected && focused ? { bg: THEME.selected.bg! } : {}) });
+    if (entry.mark) {
+      const markStyle: Style = { ...style, ...entry.mark.style };
+
+      if (top + i === selected && focused) markStyle.bg = THEME.selected.bg;
+      grid.write(rect.x + rect.width - 2, y, entry.mark.glyph, markStyle);
+    }
   }
 }
 
@@ -666,11 +710,14 @@ function drawNav(grid: Grid, state: State, rect: Rect): void {
   const entries = navEntries(state).map((item) => {
     const arrow = item.parent ? (item.expanded ? "▾ " : "▸ ") : item.kind === "heading" ? "" : "  ";
 
-    return {
+    const entry: PanelEntry = {
       text: `${"  ".repeat(item.depth)}${arrow}${item.label}`,
       mark: item.mark ? { glyph: MARK_GLYPH[item.mark], style: stale ? { ...MARK_STYLE[item.mark], dim: true } : MARK_STYLE[item.mark] } : null,
-      ...(item.kind === "heading" ? { style: { fg: 111, bold: true } } : {}),
     };
+
+    if (item.kind === "heading") entry.style = { fg: 111, bold: true };
+
+    return entry;
   });
 
   drawPanelList(grid, rect, "NAVIGATION", entries, state.navIndex, state.focus === "nav", state.navTop);
@@ -700,7 +747,11 @@ function drawFiles(grid: Grid, state: State, rect: Rect): void {
     const dirty = buffer && isDirty(buffer) ? " +" : "";
     const proposal = state.proposals.includes(file) ? " ≈" : "";
 
-    return { text: `${file}${dirty}${proposal}`, mark: null, ...(file === state.current ? { style: { fg: 231, bold: true } } : {}) };
+    const entry: PanelEntry = { text: `${file}${dirty}${proposal}`, mark: null };
+
+    if (file === state.current) entry.style = { fg: 231, bold: true };
+
+    return entry;
   });
 
   drawPanelList(grid, rect, "FILES", entries, state.filesIndex, state.focus === "files", filesTop(state, rect));
@@ -713,8 +764,14 @@ export function filesTop(state: Pick<State, "filesIndex">, rect: Rect): number {
 
 // ---------- F6 results panel ----------
 
+/** Rows of the F6 panel: the entries list and the report under it. */
+export interface ResultsSplit {
+  list: number;
+  report: number;
+}
+
 /** How the F6 panel splits: the entries list on top, the content of the selected entry below. */
-export function resultsSplit(state: State, height: number): { list: number; report: number } {
+export function resultsSplit(state: State, height: number): ResultsSplit {
   const entries = state.records.length + 1; // the pinned current analysis, then the records
   const list = Math.max(1, Math.min(entries, Math.floor((height - 4) / 2)));
 
@@ -726,7 +783,7 @@ export function resultsSplit(state: State, height: number): { list: number; repo
  * in flight, changes since the analysis, or unsaved buffers taken as overlay.
  */
 export function findingStateRow(state: State): string | null {
-  const unsaved = [...state.buffers.values()].filter((buffer) => !buffer.readOnly && isDirty(buffer)).map((buffer) => buffer.path);
+  const unsaved = [...state.buffers.values()].flatMap((buffer) => (!buffer.readOnly && isDirty(buffer) ? [buffer.path] : []));
   const parts: string[] = [];
 
   if (state.config.kind === "invalid-config") parts.push(`invalid keylang.json: ${state.config.reason}`);
@@ -906,7 +963,7 @@ function drawFindings(grid: Grid, state: State, rect: Rect, dividerY: number): v
   const countsRow: { text: string; style: Style }[] = [];
 
   for (const verdict of VERDICTS) {
-    countsRow.push({ text: `${FINDING_GLYPH[verdict]} ${counts[verdict]} `, style: { ...MARK_STYLE[verdict], ...(results.filter[verdict] ? {} : { dim: true, fg: 243 }) } });
+    countsRow.push({ text: `${FINDING_GLYPH[verdict]} ${counts[verdict]} `, style: results.filter[verdict] ? MARK_STYLE[verdict] : { ...MARK_STYLE[verdict], dim: true, fg: 243 } });
   }
 
   countsRow.push(
@@ -971,7 +1028,13 @@ function drawHover(grid: Grid, state: State, editor: Rect): void {
 }
 
 /** The completion's box and the items it shows: under the cursor line where it fits, else above. */
-function completionBox(state: State, editor: Rect, buffer: Buffer): { rect: Rect; visible: CompletionItem[]; offset: number } {
+interface CompletionBox {
+  rect: Rect;
+  visible: CompletionItem[];
+  offset: number;
+}
+
+function completionBox(state: State, editor: Rect, buffer: Buffer): CompletionBox {
   const completion = state.completion!;
   const offset = Math.max(0, completion.index - 7);
   const visible = completion.items.slice(offset, offset + 8);
@@ -998,7 +1061,7 @@ function drawCompletion(grid: Grid, state: State, editor: Rect, buffer: Buffer):
 }
 
 /** The keys of each mode as key and meaning; the help lays them out in two columns where they fit. */
-const HELP: Record<string, [string, string][]> = {
+const HELP: Record<Mode, [string, string][]> = {
   zoom: [
     ["↑↓ PgUp PgDn g G", "move"],
     ["+ / Enter", "zoom into a layer, module or class"],
@@ -1130,7 +1193,7 @@ export function helpRows(state: State, width: number): string[] {
     if (explained) lines.push(...explained.split("\n"), "");
   }
 
-  lines.push(...keyRows(HELP[state.mode] ?? HELP.view!, width));
+  lines.push(...keyRows(HELP[state.mode], width));
   const entries = catalog(state);
   lines.push("", `Actions · Ctrl+P${state.mode === "view" || state.mode === "read" ? " or :" : ""} finds each by its name or CLI alias:`);
   const groups = [...new Set(ACTIONS.map((action) => action.group))];
@@ -1158,7 +1221,13 @@ export function helpRows(state: State, width: number): string[] {
 }
 
 /** Where the help popup draws, its rows and how many of them show at once. */
-function helpBox(state: State): { rect: Rect; rows: string[]; visible: number } {
+interface HelpBox {
+  rect: Rect;
+  rows: string[];
+  visible: number;
+}
+
+function helpBox(state: State): HelpBox {
   const panel = layout(state).panel;
   const width = Math.max(10, Math.min(panel.width, 96));
   const rows = helpRows(state, width - 4);
@@ -1199,7 +1268,7 @@ interface PromptLook {
   noted: boolean;
 }
 
-const PROMPT_LOOKS: { [K in Prompt["kind"]]: PromptLook } = {
+const PROMPT_LOOKS: Record<Prompt["kind"], PromptLook> = {
   search: { label: "/", noted: false },
   context: { label: "@", noted: false },
   node: { label: "node: ", title: (prompt) => `${prompt.items.length} node(s)`, noted: false },
@@ -1244,11 +1313,15 @@ const PROMPT_LOOKS: { [K in Prompt["kind"]]: PromptLook } = {
   "export-c4": { label: "export c4: ", title: () => "C4 diagram of the map · no model", noted: true },
 };
 
+function isFixedLabel(label: PromptLook["label"]): label is string {
+  return typeof label === "string";
+}
+
 function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   const prompt = state.prompt!;
   const look = PROMPT_LOOKS[prompt.kind];
   grid.fill(rect.x, rect.y, rect.width, 1, THEME.status);
-  const label = typeof look.label === "string" ? look.label : look.label(prompt);
+  const label = isFixedLabel(look.label) ? look.label : look.label(prompt);
   const typed = look.typed?.(prompt) ?? prompt.text;
   grid.write(rect.x, rect.y, `${label}${typed}`, THEME.statusKey);
   grid.cursor = { x: Math.min(rect.width - 1, stringWidth(label) + stringWidth(typed)), y: rect.y };
@@ -1286,12 +1359,17 @@ function newSpecLabel(field: "kind" | "path" | "name" | undefined): string {
   return field === "path" ? "new spec path: " : field === "name" ? "flow name: " : "new spec kind: ";
 }
 
+interface FooterHint {
+  keys: string[];
+  tail: string;
+}
+
 /**
  * The footer keys of each mode: `keys` as many as fit, then `tail`, which
  * always shows — the way to the help and the palette on any width. In editing
  * `?` is typed text, so the tail names Ctrl+P there.
  */
-const HINTS: Record<string, { keys: string[]; tail: string }> = {
+const HINTS: Record<Mode, FooterHint> = {
   view: { keys: ["Enter code", "Alt+Enter spec", "/ search", "s node", "F7 chat", "F5 check", "F6 results", "i edit"], tail: "? keys · Ctrl+P actions" },
   edit: { keys: ["Ctrl+S save", "Ctrl+Space complete", "Ctrl+G text→spec", "Esc view", "F7 chat"], tail: "Ctrl+P actions, help" },
   read: { keys: ["Enter code", "v raw", "F7 chat", "F5 check"], tail: "? keys · Ctrl+P actions" },
@@ -1302,7 +1380,7 @@ const HINTS: Record<string, { keys: string[]; tail: string }> = {
 
 /** The footer hint of the mode that fits in `width` cells: the leading keys that fit, and the tail. */
 export function footerHint(mode: State["mode"], width: number): string {
-  const { keys, tail } = HINTS[mode] ?? HINTS.view!;
+  const { keys, tail } = HINTS[mode];
   const shown: string[] = [];
 
   for (const key of keys) {
@@ -1506,9 +1584,9 @@ export function render(state: State): Grid {
   if (state.analysis) {
     const count = totals(state.analysis);
     const stale = state.updating || state.outdated;
-    put(`✗ ${count.fail}`, { ...THEME.status, ...MARK_STYLE.fail, bg: THEME.status.bg!, ...(stale ? { dim: true } : {}) });
-    put(`  ◌ ${count.unverified}`, { ...THEME.status, ...MARK_STYLE.unverified, bg: THEME.status.bg!, ...(stale ? { dim: true } : {}) });
-    put(`  ✓ ${count.ok}`, { ...THEME.status, ...MARK_STYLE.ok, bg: THEME.status.bg!, ...(stale ? { dim: true } : {}) });
+    put(`✗ ${count.fail}`, dimmedIf({ ...THEME.status, ...MARK_STYLE.fail, bg: THEME.status.bg }, stale));
+    put(`  ◌ ${count.unverified}`, dimmedIf({ ...THEME.status, ...MARK_STYLE.unverified, bg: THEME.status.bg }, stale));
+    put(`  ✓ ${count.ok}`, dimmedIf({ ...THEME.status, ...MARK_STYLE.ok, bg: THEME.status.bg }, stale));
   }
 
   // The open feature file's stage and open questions, as of its last save and analysis (c4-zoom/11).

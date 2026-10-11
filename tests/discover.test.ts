@@ -15,7 +15,7 @@ import { checkoutRepo, KEY } from "./tui-fixture.ts";
 import { session } from "./tui-helpers.ts";
 
 /** Two kinds of entry points in two languages: `bin` and `[project.scripts]` are `cli`, Express-style registrations are `route`. */
-const REPO: Record<string, string> = {
+const REPO = {
   "keylang.json": JSON.stringify({ languages: ["typescript", "python"], module: "file", layers: { bin: ["bin/**"], app: ["src/app/**"], shop: ["src/shop/**"] } }),
   "package.json": JSON.stringify({ name: "shop", bin: { shop: "./bin/shop.js" } }),
   "bin/shop.ts": 'import { listOrders } from "../src/app/handlers.ts";\nexport function main(): number {\n  listOrders();\n  return 0;\n}\n',
@@ -25,7 +25,7 @@ const REPO: Record<string, string> = {
   "pyproject.toml": '[project]\nname = "shop"\n\n[project.scripts]\nshop-py = "shop.cli:main"\n',
   "src/shop/__init__.py": "",
   "src/shop/cli.py": "def helper() -> int:\n    return 1\n\n\ndef main() -> int:\n    return helper()\n",
-};
+} satisfies Record<string, string>;
 
 const VIEW = "keylang/flows-discovered";
 

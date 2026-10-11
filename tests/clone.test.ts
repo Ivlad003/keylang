@@ -23,23 +23,23 @@ interface Run {
 
 /** keylang in `cwd` with the cache and HOME in the sandbox, and no model from the developer's env. */
 function keylang(sandbox: string, args: string[], fake: FakeAgents | null = null, env: Record<string, string | undefined> = {}): Promise<Run> {
+  const childEnv: NodeJS.ProcessEnv = {
+    ...process.env,
+    PATH: [...(fake ? [fake.bin] : []), ...(process.env.PATH ?? "/usr/bin:/bin").split(":")].join(":"),
+    HOME: join(sandbox, "home"),
+    XDG_CACHE_HOME: join(sandbox, "cache"),
+    KEYLANG_AGENT: undefined,
+    KEYLANG_NESTED: undefined,
+    ANTHROPIC_API_KEY: undefined,
+    ANTHROPIC_AUTH_TOKEN: undefined,
+    OPENROUTER_API_KEY: undefined,
+  };
+
+  if (fake) Object.assign(childEnv, fake.env);
+  Object.assign(childEnv, env);
+
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [bin, ...args], {
-      cwd: sandbox,
-      env: {
-        ...process.env,
-        PATH: [...(fake ? [fake.bin] : []), ...(process.env.PATH ?? "/usr/bin:/bin").split(":")].join(":"),
-        HOME: join(sandbox, "home"),
-        XDG_CACHE_HOME: join(sandbox, "cache"),
-        KEYLANG_AGENT: undefined,
-        KEYLANG_NESTED: undefined,
-        ANTHROPIC_API_KEY: undefined,
-        ANTHROPIC_AUTH_TOKEN: undefined,
-        OPENROUTER_API_KEY: undefined,
-        ...(fake ? fake.env : {}),
-        ...env,
-      },
-    });
+    const child = spawn(process.execPath, [bin, ...args], { cwd: sandbox, env: childEnv });
 
     let stdout = "";
     let stderr = "";
@@ -55,7 +55,7 @@ function git(cwd: string, args: string[]): void {
 }
 
 /** A sandbox with `origin/`, a two-layer TypeScript repository with one commit. */
-function sandbox(t: TestContext): { dir: string; origin: string } {
+function sandbox(t: TestContext) {
   const dir = mkdtempSync(join(tmpdir(), "keylang-clone-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const origin = join(dir, "origin");

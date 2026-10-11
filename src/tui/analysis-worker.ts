@@ -7,6 +7,6 @@ import { generateMap } from "../map.ts";
 parentPort?.on("message", (message: { id: number; config: Config; overlay: [string, string][] }) => {
   generateMap(message.config, { overlay: new Map(message.overlay) }).then(
     (result) => parentPort?.postMessage({ id: message.id, result }),
-    (error: unknown) => parentPort?.postMessage({ id: message.id, error: error instanceof Error ? error.message : String(error) }),
+    (error) => parentPort?.postMessage({ id: message.id, error: error instanceof Error ? error.message : String(error) }),
   );
 });

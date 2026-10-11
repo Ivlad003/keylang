@@ -11,7 +11,7 @@ import type { Span } from "./span.ts";
 
 /** Configured names that are layers even when `keylang.json` does not list them. Assertion checks use this later; compilation does not reject them. */
 export function syntheticLayer(name: string): boolean {
-  return (SYNTHETIC_LAYERS as readonly string[]).includes(name);
+  return SYNTHETIC_LAYERS.some((layer) => layer === name);
 }
 
 export type NonEmpty<T> = readonly [T, ...T[]];
@@ -245,7 +245,9 @@ interface PlacedRule {
   rule: RuleAssertion;
 }
 
-export function compileSpec(docs: readonly Document[]): { spec: SpecIR; diagnostics: Diagnostic[] } {
+type CompiledSpec = { spec: SpecIR; diagnostics: Diagnostic[] };
+
+export function compileSpec(docs: readonly Document[]): CompiledSpec {
   const placed: PlacedRule[] = [];
   const candidates: LayerCandidate[] = [];
   const modules: SpecModule[] = [];
@@ -346,12 +348,14 @@ function considerLayers(file: string, node: Node, diagnostics: Diagnostic[]): Om
   return { file, span: node.span, text, order: node.refs, nested, source: node, valid };
 }
 
+type SettledLayers = { orders: PlacedRule[]; rejectedLayers: RejectedLayers[] };
+
 /**
  * One partial order across every document, in encounter order. A line that
  * contradicts an earlier order is K005 and not an order. A nested name that
  * is also ordered is K005; the line itself may still be an order.
  */
-function settleLayers(candidates: readonly LayerCandidate[], diagnostics: Diagnostic[]): { orders: PlacedRule[]; rejectedLayers: RejectedLayers[] } {
+function settleLayers(candidates: readonly LayerCandidate[], diagnostics: Diagnostic[]): SettledLayers {
   const direct = new Map<string, Set<string>>();
   let above = new Map<string, Set<string>>();
   const surviving: LayerCandidate[] = [];
@@ -409,9 +413,7 @@ function settleLayers(candidates: readonly LayerCandidate[], diagnostics: Diagno
     },
   }));
 
-  const rejectedLayers = candidates
-    .filter((chain) => !chain.valid)
-    .map((chain) => ({ file: chain.file, span: chain.span, text: chain.text, order: chain.order, nested: chain.nested, source: chain.source }));
+  const rejectedLayers = candidates.flatMap((chain) => (chain.valid ? [] : [{ file: chain.file, span: chain.span, text: chain.text, order: chain.order, nested: chain.nested, source: chain.source }]));
 
   return { orders, rejectedLayers };
 }

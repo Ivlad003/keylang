@@ -10,7 +10,7 @@ function unavailable(what: string): () => never {
 }
 
 // node:child_process: a process that cannot start, the way `spawnSync` reports one.
-export function spawnSync(command: string): { status: null; signal: null; stdout: string; stderr: string; pid: 0; output: []; error: Error } {
+export function spawnSync(command: string) {
   return { status: null, signal: null, stdout: "", stderr: "", pid: 0, output: [], error: Object.assign(new Error(`spawnSync ${command} ENOENT (no processes in the browser)`), { code: "ENOENT" }) };
 }
 

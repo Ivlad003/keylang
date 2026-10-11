@@ -14,16 +14,42 @@ import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { analyze, findRoot, within, type Analysis } from "./analyze.ts";
 import { toPosix } from "./config.ts";
+import { isJsonNumber, isJsonObject, isJsonString, parseJson, type JsonObject, type JsonValue } from "./json.ts";
 import { codeLenses, completions, definition, diagnosticsFor, documentSymbols, hover, references, signatureHelp, workspace, workspaceSymbols, type LspPosition, type Workspace } from "./lsp-features.ts";
 import { loadBriefs } from "./explanations.ts";
 
-interface Rpc {
-  jsonrpc?: string;
+/** An answer to a request, as the features give it. */
+type LspResult =
+  | ReturnType<typeof serverCapabilities>
+  | null
+  | { kind: "full"; items: ReturnType<typeof diagnosticsFor> }
+  | ReturnType<typeof hover>
+  | ReturnType<typeof definition>
+  | ReturnType<typeof references>
+  | ReturnType<typeof documentSymbols>
+  | { isIncomplete: false; items: ReturnType<typeof completions> }
+  | ReturnType<typeof signatureHelp>
+  | ReturnType<typeof codeLenses>
+  | ReturnType<typeof workspaceSymbols>;
+
+/** The params of what the server sends on its own: diagnostics, a message the editor shows, or none (a refresh request). */
+type OutgoingParams = { uri: string; version?: number; diagnostics: ReturnType<typeof diagnosticsFor> } | { type: number; message: string } | null;
+
+/** A message the server sends: a response, a notification or a request of its own. */
+interface Outgoing {
+  jsonrpc: "2.0";
   id?: number | string | null;
   method?: string;
-  params?: Record<string, unknown>;
-  result?: unknown;
+  params?: OutgoingParams;
+  result?: LspResult;
   error?: { code: number; message: string };
+}
+
+/** The `textDocument` of a message, with the fields of the expected types. */
+interface TextDocumentParams {
+  uri?: string;
+  version?: number;
+  text?: string;
 }
 
 const ERRORS = { parse: -32700, invalidRequest: -32600, methodNotFound: -32601, internal: -32603, notInitialized: -32002, cancelled: -32800 } as const;
@@ -40,7 +66,7 @@ export async function serveLsp(read: NodeJS.ReadableStream = process.stdin, writ
   let buffer = Buffer.alloc(0);
 
   for await (const chunk of read) {
-    buffer = Buffer.concat([buffer, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string)]);
+    buffer = Buffer.concat([buffer, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)]);
 
     for (;;) {
       const headerEnd = buffer.indexOf("\r\n\r\n");
@@ -64,21 +90,21 @@ export async function serveLsp(read: NodeJS.ReadableStream = process.stdin, writ
       const body = buffer.subarray(start, start + length).toString("utf8");
       buffer = buffer.subarray(start + length);
       // One malformed message is answered as an error; the session goes on.
-      let message: unknown;
+      let message: JsonValue;
 
       try {
-        message = JSON.parse(body);
+        message = parseJson(body);
       } catch (error) {
         server.reject(null, ERRORS.parse, `parse error: ${error instanceof Error ? error.message : String(error)}`);
         continue;
       }
 
-      if (typeof message !== "object" || message === null || Array.isArray(message)) {
+      if (!isJsonObject(message)) {
         server.reject(null, ERRORS.invalidRequest, "a message must be a JSON object");
         continue;
       }
 
-      server.receive(message as Rpc);
+      server.receive(message);
 
       if (server.exitCode !== null) {
         await server.drain();
@@ -105,7 +131,7 @@ class Server {
   private readonly cancelled = new Set<number | string>();
   private readonly pending = new Set<Promise<void>>();
   private readonly published = new Set<string>();
-  private readonly send: (message: Rpc) => void;
+  private readonly send: (message: Outgoing) => void;
   private generation = 0;
   /** The newest analysis that has finished, and the one running now (at most one). */
   private finished: Finished | null = null;
@@ -123,7 +149,7 @@ class Server {
   /** A ranged `didChange` despite full sync was logged: once is enough. */
   private rangedLogged = false;
 
-  constructor(send: (message: Rpc) => void) {
+  constructor(send: (message: Outgoing) => void) {
     this.send = send;
   }
 
@@ -131,17 +157,19 @@ class Server {
     this.send({ jsonrpc: "2.0", id, error: { code, message } });
   }
 
-  receive(message: Rpc): void {
+  receive(message: JsonObject): void {
     const id = message.id;
 
     // JSON-RPC: an id is a string, a number or null; any other cannot be echoed in a reply.
-    if (id !== undefined && id !== null && typeof id !== "string" && typeof id !== "number") {
+    if (!isMessageId(id)) {
       this.reject(null, ERRORS.invalidRequest, "`id` must be a string, a number or null");
 
       return;
     }
 
-    if (message.method === undefined) {
+    const method = message.method;
+
+    if (method === undefined) {
       // A response to one of our requests (`workspace/diagnostic/refresh`) needs nothing.
       if ("result" in message || "error" in message) return;
       this.reject(id ?? null, ERRORS.invalidRequest, "a message needs `method` (a request or notification) or `result` or `error` (a response)");
@@ -149,18 +177,21 @@ class Server {
       return;
     }
 
-    if (typeof message.method !== "string") {
+    if (!isJsonString(method)) {
       this.reject(id ?? null, ERRORS.invalidRequest, "`method` must be a string");
 
       return;
     }
 
+    // Params that are no object carry no field a method reads.
+    const params = isJsonObject(message.params) ? message.params : {};
+
     if (id === undefined || id === null) {
       // A notification has no reply channel: a failure (a URI that is not a local file) is logged.
       try {
-        this.notify(message.method, message.params ?? {});
+        this.notify(method, params);
       } catch (error) {
-        process.stderr.write(`keylang lsp: ${message.method}: ${error instanceof Error ? error.message : String(error)}\n`);
+        process.stderr.write(`keylang lsp: ${method}: ${error instanceof Error ? error.message : String(error)}\n`);
       }
 
       return;
@@ -168,15 +199,17 @@ class Server {
 
     this.open.add(id);
 
-    const task = this.request(message.method, message.params ?? {}, () => this.cancelled.has(id))
-      .then(
-        (result): Rpc => ({ jsonrpc: "2.0", id, result }),
-        (error: unknown): Rpc => {
-          const code = error instanceof LspError ? error.code : ERRORS.internal;
+    const answer = async (): Promise<Outgoing> => {
+      try {
+        return { jsonrpc: "2.0", id, result: await this.request(method, params, () => this.cancelled.has(id)) };
+      } catch (error) {
+        const code = error instanceof LspError ? error.code : ERRORS.internal;
 
-          return { jsonrpc: "2.0", id, error: { code, message: error instanceof Error ? error.message : String(error) } };
-        },
-      )
+        return { jsonrpc: "2.0", id, error: { code, message: error instanceof Error ? error.message : String(error) } };
+      }
+    };
+
+    const task = answer()
       .then((response) => {
         this.open.delete(id);
 
@@ -194,7 +227,7 @@ class Server {
     if (this.timer) clearTimeout(this.timer);
   }
 
-  private notify(method: string, params: Record<string, unknown>): void {
+  private notify(method: string, params: JsonObject): void {
     if (method === "exit") {
       this.exitCode = this.shutdown ? 0 : 1;
 
@@ -203,7 +236,7 @@ class Server {
 
     // A notification before `initialize` has no reply. Drop it, including `didOpen`, so the overlay stays empty.
     if (!this.initialized) return;
-    const doc = params.textDocument as { uri?: string; version?: number; text?: string } | undefined;
+    const doc = textDocumentOf(params);
 
     switch (method) {
       case "textDocument/didOpen":
@@ -237,7 +270,7 @@ class Server {
       case "$/cancelRequest": {
         const id = params.id;
 
-        if ((typeof id === "number" || typeof id === "string") && this.open.has(id) && !this.cancelled.has(id)) {
+        if ((isJsonNumber(id) || isJsonString(id)) && this.open.has(id) && !this.cancelled.has(id)) {
           this.cancelled.add(id);
           this.send({ jsonrpc: "2.0", id, error: { code: ERRORS.cancelled, message: "request cancelled" } });
         }
@@ -255,11 +288,11 @@ class Server {
    * text (`change: 1`); a client that sends ranges anyway gets them applied in
    * order to the text it has (an unopened buffer has none) and a note in stderr, once.
    */
-  private edited(text: string | null, changes: unknown): string | null {
+  private edited(text: string | null, changes: JsonValue | undefined): string | null {
     let out = text;
 
-    for (const change of Array.isArray(changes) ? (changes as { text?: unknown; range?: unknown }[]) : []) {
-      if (typeof change?.text !== "string") continue;
+    for (const change of Array.isArray(changes) ? changes : []) {
+      if (!isJsonObject(change) || !isJsonString(change.text)) continue;
 
       if (change.range === undefined) {
         out = change.text;
@@ -289,21 +322,20 @@ class Server {
   }
 
   /** Starts an analysis of the buffers as they are now; one runs at a time. */
-  private analyse(): Promise<void> {
+  private async analyse(): Promise<void> {
     const generation = this.generation;
     const overlay = new Map([...this.buffers].map(([path, buffer]) => [path, buffer.text]));
+    const running = analyze({ root: this.root, overlay });
 
-    return analyze({ root: this.root, overlay }).then(
-      (analysis) => {
-        this.finished = { generation, overlay, analysis };
-        this.failure = null;
-      },
-      (error: unknown) => {
-        this.finished = { generation, overlay, analysis: null, error };
-        // A failure (an invalid keylang.json) would otherwise reach the client only as errors of later requests.
-        this.report(error instanceof Error ? error.message : String(error));
-      },
-    );
+    try {
+      const analysis = await running;
+      this.finished = { generation, overlay, analysis };
+      this.failure = null;
+    } catch (error) {
+      this.finished = { generation, overlay, analysis: null, error };
+      // A failure (an invalid keylang.json) would otherwise reach the client only as errors of later requests.
+      this.report(error instanceof Error ? error.message : String(error));
+    }
   }
 
   /**
@@ -350,7 +382,7 @@ class Server {
 
     if (this.pulls) {
       // Ask the client to pull again: a change in one file can change another's findings.
-      if (this.refreshes) this.send({ jsonrpc: "2.0", id: `keylang-${++this.serverRequests}`, method: "workspace/diagnostic/refresh", params: null as unknown as Record<string, unknown> });
+      if (this.refreshes) this.send({ jsonrpc: "2.0", id: `keylang-${++this.serverRequests}`, method: "workspace/diagnostic/refresh", params: null });
 
       return;
     }
@@ -380,7 +412,7 @@ class Server {
     this.send({ jsonrpc: "2.0", method: "window/showMessage", params: { type: 1, message: `keylang: ${message}` } });
   }
 
-  private async request(method: string, params: Record<string, unknown>, cancelled: () => boolean): Promise<unknown> {
+  private async request(method: string, params: JsonObject, cancelled: () => boolean): Promise<LspResult> {
     if (method === "initialize") {
       // LSP: `initialize` is sent once. It counts only when it succeeds: a failed one may be sent again.
       if (this.initialized) throw new LspError(ERRORS.invalidRequest, "the server is already initialized");
@@ -402,7 +434,7 @@ class Server {
       return null;
     }
 
-    const doc = params.textDocument as { uri?: string; text?: string } | undefined;
+    const doc = textDocumentOf(params);
 
     // A request may carry the buffer text itself (older clients and tests).
     if (doc?.uri !== undefined && doc.text !== undefined) {
@@ -418,7 +450,7 @@ class Server {
     const needed = this.generation;
     const ready = (): Promise<Workspace> => this.current(needed, cancelled);
     const path = doc?.uri ? this.relative(filePath(doc.uri)) : "";
-    const position = params.position as LspPosition | undefined;
+    const position = positionOf(params.position);
 
     switch (method) {
       case "textDocument/diagnostic":
@@ -428,7 +460,7 @@ class Server {
       case "textDocument/definition":
         return position ? definition(await ready(), path, position) : null;
       case "textDocument/references":
-        return position ? references(await ready(), path, position, (params.context as { includeDeclaration?: unknown } | undefined)?.includeDeclaration !== false) : [];
+        return position ? references(await ready(), path, position, !isJsonObject(params.context) || params.context.includeDeclaration !== false) : [];
       case "textDocument/documentSymbol":
         return documentSymbols(await ready(), path);
       case "textDocument/completion":
@@ -440,17 +472,22 @@ class Server {
       case "workspace/symbol":
         const ws = await ready();
 
-        return workspaceSymbols(ws, loadBriefs(ws.analysis.config), typeof params.query === "string" ? params.query : "");
+        return workspaceSymbols(ws, loadBriefs(ws.analysis.config), isJsonString(params.query) ? params.query : "");
       default:
         throw new LspError(ERRORS.methodNotFound, `unsupported method \`${method}\``);
     }
   }
 
   /** The capabilities; the server's state changes only once everything else succeeded. */
-  private initialize(params: Record<string, unknown>): unknown {
-    const capabilities = (params.capabilities ?? {}) as { textDocument?: { diagnostic?: unknown }; workspace?: { diagnostics?: { refreshSupport?: boolean } } };
-    const folders = params.workspaceFolders as { uri?: string }[] | null | undefined;
-    const hinted = typeof params.rootUri === "string" ? params.rootUri : (folders?.[0]?.uri ?? (typeof params.rootPath === "string" ? pathToFileURL(params.rootPath).href : null));
+  private initialize(params: JsonObject): ReturnType<typeof serverCapabilities> {
+    const capabilities = isJsonObject(params.capabilities) ? params.capabilities : {};
+    const textDocument = isJsonObject(capabilities.textDocument) ? capabilities.textDocument : {};
+    const workspaceCapabilities = isJsonObject(capabilities.workspace) ? capabilities.workspace : {};
+    const diagnostics = isJsonObject(workspaceCapabilities.diagnostics) ? workspaceCapabilities.diagnostics : {};
+    const folders = params.workspaceFolders;
+    const folder = Array.isArray(folders) ? folders[0] : undefined;
+    const folderUri = isJsonObject(folder) && isJsonString(folder.uri) ? folder.uri : undefined;
+    const hinted = isJsonString(params.rootUri) ? params.rootUri : (folderUri ?? (isJsonString(params.rootPath) ? pathToFileURL(params.rootPath).href : null));
     let root = this.root;
 
     if (hinted) {
@@ -463,26 +500,31 @@ class Server {
     }
 
     this.root = root;
-    this.pulls = capabilities.textDocument?.diagnostic !== undefined;
-    this.refreshes = capabilities.workspace?.diagnostics?.refreshSupport === true;
+    this.pulls = textDocument.diagnostic !== undefined;
+    this.refreshes = diagnostics.refreshSupport === true;
 
-    return {
-      capabilities: {
-        positionEncoding: "utf-16",
-        textDocumentSync: { openClose: true, change: 1, save: { includeText: false } },
-        diagnosticProvider: { interFileDependencies: true, workspaceDiagnostics: false },
-        hoverProvider: true,
-        definitionProvider: true,
-        referencesProvider: true,
-        documentSymbolProvider: true,
-        workspaceSymbolProvider: true,
-        completionProvider: { triggerCharacters: [" ", "."] },
-        signatureHelpProvider: { triggerCharacters: [" ", "("] },
-        codeLensProvider: { resolveProvider: false },
-      },
-      serverInfo: { name: "keylang" },
-    };
+    return serverCapabilities();
   }
+}
+
+/** What `initialize` answers: the capabilities and the server's name. */
+function serverCapabilities() {
+  return {
+    capabilities: {
+      positionEncoding: "utf-16",
+      textDocumentSync: { openClose: true, change: 1, save: { includeText: false } },
+      diagnosticProvider: { interFileDependencies: true, workspaceDiagnostics: false },
+      hoverProvider: true,
+      definitionProvider: true,
+      referencesProvider: true,
+      documentSymbolProvider: true,
+      workspaceSymbolProvider: true,
+      completionProvider: { triggerCharacters: [" ", "."] },
+      signatureHelpProvider: { triggerCharacters: [" ", "("] },
+      codeLensProvider: { resolveProvider: false },
+    },
+    serverInfo: { name: "keylang" },
+  };
 }
 
 class LspError extends Error {
@@ -502,10 +544,38 @@ interface LspRange {
   end: LspPosition;
 }
 
-function isRange(value: unknown): value is LspRange {
-  const position = (p: unknown): boolean => typeof p === "object" && p !== null && Number.isInteger((p as LspPosition).line) && Number.isInteger((p as LspPosition).character);
+function isRange(value: JsonValue | undefined): value is JsonObject & LspRange {
+  return isJsonObject(value) && isPosition(value.start) && isPosition(value.end);
+}
 
-  return typeof value === "object" && value !== null && position((value as LspRange).start) && position((value as LspRange).end);
+function isPosition(value: JsonValue | undefined): value is JsonObject & LspPosition {
+  return isJsonObject(value) && Number.isInteger(value.line) && Number.isInteger(value.character);
+}
+
+/** A request's `position`; undefined when it has none of the right shape. */
+function positionOf(value: JsonValue | undefined): LspPosition | undefined {
+  return isPosition(value) ? value : undefined;
+}
+
+/** JSON-RPC: an id is a string, a number or null (or absent, in a notification). */
+function isMessageId(value: JsonValue | undefined): value is string | number | null | undefined {
+  return value === undefined || value === null || isJsonString(value) || isJsonNumber(value);
+}
+
+/** A message's `textDocument`, with the fields that have the types LSP gives them. */
+function textDocumentOf(params: JsonObject): TextDocumentParams | undefined {
+  const doc = params.textDocument;
+
+  if (!isJsonObject(doc)) return undefined;
+  const out: TextDocumentParams = {};
+
+  if (isJsonString(doc.uri)) out.uri = doc.uri;
+
+  if (isJsonNumber(doc.version)) out.version = doc.version;
+
+  if (isJsonString(doc.text)) out.text = doc.text;
+
+  return out;
 }
 
 /** `text` with `range` replaced by `insert`. Characters are UTF-16 code units, as JavaScript counts them. */

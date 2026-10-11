@@ -9,7 +9,7 @@ import { Parser as PackageParser } from "web-tree-sitter-package";
 export * from "web-tree-sitter-package";
 
 export class Parser extends PackageParser {
-  static override init(options: Record<string, unknown> = {}): Promise<void> {
+  static override init(options: Parameters<typeof PackageParser.init>[0] = {}): Promise<void> {
     return PackageParser.init({ locateFile: (name: string) => new URL(`wasm/${name}`, self.location.href).href, ...options });
   }
 }

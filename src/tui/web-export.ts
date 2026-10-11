@@ -11,6 +11,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statS
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Analysis } from "../analyze.ts";
 import { keylangVersion } from "../harness.ts";
+import { isJsonString, parseJson } from "../json.ts";
 import { compareText } from "../span.ts";
 import { createReadApi, keyShard, requestKey, type ReadAnswer } from "./read-api.ts";
 import { BUILT_DIR, diagramsPage, ensureClient } from "./web.ts";
@@ -63,6 +64,7 @@ async function requests(done: Analysis, answer: (path: string, query: URLSearchP
     return got;
   };
 
+  // SAFETY: read-api answers `/api/views` with the JSON of `viewsOf` (`DiagramViews`) and the discovered flows, on every path; these fields are a subset of it.
   const views = JSON.parse((await ask("/api/views")).body) as {
     flows: string[];
     entries: { id: string }[];
@@ -76,11 +78,15 @@ async function requests(done: Analysis, answer: (path: string, query: URLSearchP
   await ask("/api/tour");
 
   // «Зміни»: the base of a feature and HEAD; another base is not in the export.
-  if ((JSON.parse((await ask("/api/git")).body) as { available: boolean }).available) {
+  // SAFETY: read-api answers `/api/git` with `available` on both paths: true with the summary, false with the reason.
+  const git = JSON.parse((await ask("/api/git")).body) as { available: boolean };
+
+  if (git.available) {
     await ask("/api/changes");
     await ask("/api/changes", { since: "HEAD" });
   }
 
+  // SAFETY: read-api answers `/api/docs` with the `files` its `docs()` lists, on every path.
   const docs = JSON.parse((await ask("/api/docs")).body) as { files: { path: string }[] };
 
   for (const file of docs.files) await ask("/api/doc", { path: file.path });
@@ -98,6 +104,7 @@ async function requests(done: Analysis, answer: (path: string, query: URLSearchP
   for (const query of queries) {
     const diagram = await ask("/api/diagram", query);
 
+    // SAFETY: a 200 answer of `/api/diagram` is the JSON of a `Diagram`, whose nodes may carry a `ref` with an `id`.
     if (diagram.status === 200) for (const node of (JSON.parse(diagram.body) as { nodes: { ref?: { id?: string } }[] }).nodes) if (node.ref?.id) ids.add(node.ref.id);
 
     for (const format of ["bpmn", "drawio"]) await ask("/api/export", { ...query, format });
@@ -136,11 +143,12 @@ function siteAssets(): string[] {
   const manifest = join(BUILT_DIR, SITE_MANIFEST);
 
   if (!existsSync(manifest)) throw new Error(`the diagram client is not built (no ${manifest}): run \`npm run web:build\``);
-  const files = JSON.parse(readFileSync(manifest, "utf8")) as unknown;
+  const files = parseJson(readFileSync(manifest, "utf8"));
+  const names = Array.isArray(files) ? files.filter(isJsonString) : [];
 
-  if (!Array.isArray(files) || !files.every((file) => typeof file === "string" && /^[\w.@/-]+$/.test(file) && !file.includes(".."))) throw new Error(`${manifest}: a list of file names`);
+  if (!Array.isArray(files) || names.length !== files.length || !names.every((file) => /^[\w.@/-]+$/.test(file) && !file.includes(".."))) throw new Error(`${manifest}: a list of file names`);
 
-  return files as string[];
+  return names;
 }
 
 /**

@@ -10,7 +10,7 @@ import { join, relative } from "node:path";
 import type { Analysis, AnalysisRequest } from "../analyze.ts";
 import { checkResults, type CheckResult } from "../check-results.ts";
 import { toPosix } from "../config.ts";
-import { diagramOf, flowListing, parseView, usagesOf, viewOfKey, viewsOf, type Diagram, type DiagramNode } from "../diagram.ts";
+import { diagramOf, flowListing, parseView, usagesOf, viewOfKey, viewsOf, type Diagram, type DiagramNode, type FlowListing } from "../diagram.ts";
 import { layoutFromFile, readLayout, type LayoutFile } from "../diagram-layout.ts";
 import { codeSchemas, readCodeSchemas, type SchemaRead } from "../schema-discover.ts";
 import { PROCESSES_FILE, processViews, readProcesses } from "../discover-names.ts";
@@ -92,6 +92,22 @@ export interface DocEntry {
   group: "map" | "map-explained" | "explain" | "flows" | "flows-discovered" | "spec";
 }
 
+/** The spec Markdown files of a repository: the rendered map and explained map among them. */
+export interface SpecDocs {
+  dir: string;
+  files: DocEntry[];
+  /** `null`: read the file from disk when it is asked for. */
+  text: Map<string, string | null>;
+}
+
+/** A discovered flow in the views listing: its trigger's kind and label when the snapshot has that entry. */
+type DiscoveredListing = Omit<FlowListing, "ids"> & { kind?: string; label?: string };
+
+/** A parser's answer: the parsed value, or the text of what is wrong with the input. */
+export function isRefusal<Parsed>(answer: Parsed | string): answer is string {
+  return typeof answer === "string";
+}
+
 export interface ReadApi {
   answer(path: string, query: URLSearchParams): Promise<ReadAnswer>;
   /** The diagram of a view key (`flow:checkout`, `discovered:<name>`, `layers`…) before any layout file; a string says why there is none. */
@@ -99,7 +115,7 @@ export interface ReadApi {
   /** The discovered view (`<dir>/flows-discovered/*.md`) parsed as specs, or null when there is none. */
   discoveredSpec(done: Analysis): SpecIR | null;
   /** The Markdown files of the specs, the rendered map and the explained map among them. */
-  docs(done: Analysis): { dir: string; files: DocEntry[]; text: Map<string, string | null> };
+  docs(done: Analysis): SpecDocs;
 }
 
 export function createReadApi(options: ReadApiOptions): ReadApi {
@@ -150,7 +166,7 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
   // The explained map of a snapshot that was rendered without it (`explain.map` off), once per snapshot.
   const explained = new WeakMap<object, Map<string, string>>();
 
-  const docs = (done: Analysis): { dir: string; files: DocEntry[]; text: Map<string, string | null> } => {
+  const docs = (done: Analysis): SpecDocs => {
     const dir = rootRelative(root, done.config.dir);
     // `null`: read the file from disk when it is asked for.
     const text = new Map<string, string | null>();
@@ -211,7 +227,7 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
   };
 
   const compute = async (path: string, query: URLSearchParams): Promise<ReadAnswer> => {
-    const json = (status: number, body: unknown): ReadAnswer => ({ status, type: "application/json", body: `${JSON.stringify(body)}\n` });
+    const json = <Body>(status: number, body: Body): ReadAnswer => ({ status, type: "application/json", body: `${JSON.stringify(body)}\n` });
 
     if (!READ_PATHS.has(path)) return { status: 404, type: "text/plain", body: "not found\n" };
 
@@ -290,7 +306,7 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
       const done = await options.analysis();
       const diagram = keyedDiagram(done, view);
 
-      if (typeof diagram === "string") return json(400, { error: diagram });
+      if (isRefusal(diagram)) return json(400, { error: diagram });
       let saved: { path: string; file: LayoutFile | null };
 
       try {
@@ -347,7 +363,7 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
       if (format === undefined) return json(400, { error: `export needs format=${DIAGRAM_FORMATS.join("|")}` });
       const wanted = exportViewOfQuery(query);
 
-      if (typeof wanted === "string") return json(400, { error: wanted });
+      if (isRefusal(wanted)) return json(400, { error: wanted });
       const done = await options.analysis();
       let text: string;
 
@@ -374,7 +390,7 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
     const discovered = path === "/api/diagram" && query.get("view") === "discovered";
     const view = path !== "/api/diagram" ? null : parseView(discovered ? new URLSearchParams({ view: "flow", name: query.get("name") ?? "" }) : query);
 
-    if (typeof view === "string") return json(400, { error: discovered ? "view=discovered needs name=" : view });
+    if (isRefusal(view)) return json(400, { error: discovered ? "view=discovered needs name=" : view });
     const done = await options.analysis();
     // The business processes `flows discover --names` saved, with their flows found again in this snapshot.
     const processes = processesOf(done);
@@ -386,14 +402,22 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
 
       return json(200, {
         ...viewsOf(done.snapshot, done.spec, processes, done.systems, await codeSchemas(done)),
-        ...(options.showRoot === false ? {} : { root }),
+        // JSON.stringify leaves an undefined field out: no `root` when it is hidden, no `eventsReason` without one.
+        root: options.showRoot === false ? undefined : root,
         events: events.events,
-        ...(events.reason ? { eventsReason: events.reason } : {}),
+        eventsReason: events.reason ? events.reason : undefined,
         flowList: flowListing(done.snapshot, done.spec),
         discovered: (found ? flowListing(done.snapshot, found) : []).map(({ ids: _ids, ...flow }) => {
           const entry = flow.trigger === null ? undefined : entries.get(flow.trigger);
 
-          return { ...flow, ...(entry ? { kind: entry.kind, label: entry.label } : {}) };
+          const listed: DiscoveredListing = { ...flow };
+
+          if (entry) {
+            listed.kind = entry.kind;
+            listed.label = entry.label;
+          }
+
+          return listed;
         }),
       });
     }
@@ -442,7 +466,7 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
    * know is the caller's error (400); no git or no repository is a state (409).
    */
   const changes = async (since: string | null): Promise<ReadAnswer> => {
-    const json = (status: number, body: unknown): ReadAnswer => ({ status, type: "application/json", body: `${JSON.stringify(body)}\n` });
+    const json = <Body>(status: number, body: Body): ReadAnswer => ({ status, type: "application/json", body: `${JSON.stringify(body)}\n` });
     let base;
 
     try {
@@ -484,7 +508,8 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
     // The slice's findings; `coverage` (every construct of the code, megabytes) is the CLI's `--format json`, not the page's.
     const payload = check.payload === null ? null : (({ coverage: _coverage, ...rest }) => rest)(check.payload);
 
-    return json(200, { base, unborn: changed.unborn, files, deleted: gone, check: payload, ...(check.payload === null ? { checkReason: check.messages.find((m) => m.level === "error")?.text ?? check.messages[0]?.text ?? "check failed" } : {}) });
+    // JSON.stringify leaves an undefined `checkReason` out: there is one only when the check gave no payload.
+    return json(200, { base, unborn: changed.unborn, files, deleted: gone, check: payload, checkReason: check.payload === null ? (check.messages.find((m) => m.level === "error")?.text ?? check.messages[0]?.text ?? "check failed") : undefined });
   };
 
   return { answer, keyedDiagram, discoveredSpec, docs };

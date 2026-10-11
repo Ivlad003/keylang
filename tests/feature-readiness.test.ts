@@ -11,6 +11,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
+import { isJsonObject, parseJson } from "../src/json.ts";
 import { App } from "../src/tui/app.ts";
 import { checkoutRepo, KEY } from "./tui-fixture.ts";
 import { VirtualTerminal } from "./vt.ts";
@@ -46,7 +47,8 @@ function repo(t: TestContext, agent: string | null = null): string {
   const root = checkoutRepo(t, { [FEATURE]: REFUND });
 
   if (agent !== null) {
-    const config = JSON.parse(readFileSync(join(root, "keylang.json"), "utf8")) as Record<string, unknown>;
+    const config = parseJson(readFileSync(join(root, "keylang.json"), "utf8"));
+    assert.ok(isJsonObject(config), "keylang.json is an object");
     writeFileSync(join(root, "keylang.json"), `${JSON.stringify({ ...config, agent }, null, 2)}\n`);
   }
 
@@ -218,6 +220,7 @@ async function mockModel(t: TestContext, answer: string): Promise<{ requests: { 
     let data = "";
     req.on("data", (chunk: Buffer) => (data += chunk.toString()));
     req.on("end", () => {
+      // SAFETY: the only client of this mock is the Anthropic SDK, which posts a Messages request.
       const body = JSON.parse(data) as { system: string; messages: { content: string }[] };
       requests.push({ system: body.system, prompt: body.messages[0]?.content ?? "" });
       res.writeHead(200, { "content-type": "application/json" });
@@ -227,6 +230,7 @@ async function mockModel(t: TestContext, answer: string): Promise<{ requests: { 
 
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const saved = { url: process.env.ANTHROPIC_BASE_URL, key: process.env.ANTHROPIC_API_KEY, token: process.env.ANTHROPIC_AUTH_TOKEN };
+  // SAFETY: the server listens on a TCP port, so its address is an AddressInfo, not a pipe name.
   process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   process.env.ANTHROPIC_API_KEY = "test";
   delete process.env.ANTHROPIC_AUTH_TOKEN;

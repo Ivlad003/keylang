@@ -148,10 +148,11 @@ export async function runMap(request: MapRequest, context: OperationContext): Pr
 
   context.onProgress?.({ text: "writing the map" });
 
-  const commit = await commitMap(plan, {
-    ...(context.signal ? { signal: context.signal } : {}),
-    onStep: (step) => context.onProgress?.({ text: `${step.action === "write" ? "writing" : "removing"} ${step.path}` }),
-  });
+  const commitOptions: NonNullable<Parameters<typeof commitMap>[1]> = {};
+
+  if (context.signal) commitOptions.signal = context.signal;
+  commitOptions.onStep = (step) => context.onProgress?.({ text: `${step.action === "write" ? "writing" : "removing"} ${step.path}` });
+  const commit = await commitMap(plan, commitOptions);
 
   payload.steps = commit.steps;
   const done = commit.steps.filter((step) => step.state === "completed");
@@ -185,7 +186,7 @@ export function mapConflictLines(conflicts: readonly string[], path: (file: stri
 export function mapStepLines(steps: readonly CommittedStep[], path: (file: string) => string = (file) => file): string[] {
   const shown = steps.filter((step) => step.state === "completed" && (step.artifact === "map" || step.artifact === "explained"));
 
-  return [...shown.filter((step) => step.action === "write").map((step) => `${path(step.path)}: written`), ...shown.filter((step) => step.action === "remove").map((step) => `${path(step.path)}: removed`)];
+  return [...shown.flatMap((step) => (step.action === "write" ? [`${path(step.path)}: written`] : [])), ...shown.flatMap((step) => (step.action === "remove" ? [`${path(step.path)}: removed`] : []))];
 }
 
 /** The summary `keylang map` writes to stderr after a commit. */
@@ -385,10 +386,11 @@ export async function runAgents(request: AgentsRequest, context: OperationContex
     };
   }
 
-  const commit = await commitAgents(plan, {
-    ...(context.signal ? { signal: context.signal } : {}),
-    onStep: (step) => context.onProgress?.({ text: `${step.action === "write" ? "writing" : "removing"} ${step.path}` }),
-  });
+  const commitOptions: NonNullable<Parameters<typeof commitAgents>[1]> = {};
+
+  if (context.signal) commitOptions.signal = context.signal;
+  commitOptions.onStep = (step) => context.onProgress?.({ text: `${step.action === "write" ? "writing" : "removing"} ${step.path}` });
+  const commit = await commitAgents(plan, commitOptions);
 
   payload.steps = commit.steps;
   const done = commit.steps.filter((step) => step.state === "completed");
@@ -562,11 +564,16 @@ export async function runInit(request: InitRequest, context: OperationContext): 
   };
 
   // The stages report their progress under their own name; they never see `beforeCommit`, it is init's.
-  const stage = (name: string): OperationContext => ({
-    ...(context.signal ? { signal: context.signal } : {}),
-    ...(context.analyze ? { analyze: context.analyze } : {}),
-    onProgress: ({ text }) => context.onProgress?.({ text: `${name}: ${text}` }),
-  });
+  const stage = (name: string): OperationContext => {
+    const staged: OperationContext = {};
+
+    if (context.signal) staged.signal = context.signal;
+
+    if (context.analyze) staged.analyze = context.analyze;
+    staged.onProgress = ({ text }) => context.onProgress?.({ text: `${name}: ${text}` });
+
+    return staged;
+  };
 
   if (request.check) {
     payload.agents = await runAgents({ kind: "agents", root, harnesses: request.harnesses, check: true }, stage("agents"));
@@ -655,7 +662,10 @@ export async function runInit(request: InitRequest, context: OperationContext): 
   };
 
   const stopped = (): OperationEnvelope<"init"> => ({ ...empty("init", "cancelled", null), payload, messages, written, removed });
-  payload.map = await runMap({ kind: "map", root, ...(request.label !== undefined ? { label: request.label } : {}) }, stage("map"));
+  const mapRequest: MapRequest = { kind: "map", root };
+
+  if (request.label !== undefined) mapRequest.label = request.label;
+  payload.map = await runMap(mapRequest, stage("map"));
   collect(payload.map);
 
   if (payload.map.status === "cancelled" || context.signal?.aborted) return stopped();

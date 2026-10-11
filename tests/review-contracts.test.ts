@@ -7,7 +7,7 @@
 // afterwards.
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawnSync, type SpawnSyncOptionsWithStringEncoding } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -15,6 +15,7 @@ import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { isJsonObject, parseJson, type JsonObject, type JsonValue } from "../src/json.ts";
 import { App } from "../src/tui/app.ts";
 import { KEY } from "./tui-fixture.ts";
 import { VirtualTerminal } from "./vt.ts";
@@ -35,7 +36,10 @@ interface Run {
  */
 function keylang(cwd: string, args: string[], input?: string): Run {
   const env = { ...process.env, GIT_CEILING_DIRECTORIES: tmpdir() };
-  const r = spawnSync(process.execPath, [bin, ...args], { cwd, env, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, ...(input !== undefined ? { input } : {}) });
+  const options: SpawnSyncOptionsWithStringEncoding = { cwd, env, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 };
+
+  if (input !== undefined) options.input = input;
+  const r = spawnSync(process.execPath, [bin, ...args], options);
 
   if (r.error) throw r.error;
 
@@ -82,7 +86,8 @@ test("hook stop: a turn outside any git repository is a systemMessage for the pe
   const outside = keylang(dir, ["hook", "stop"], STOP);
   assert.equal(outside.status, 0, outside.stderr);
   assert.match(outside.stdout, /^\{[^\n]*\}\n$/, "one JSON object on one line");
-  const body = JSON.parse(outside.stdout) as Record<string, unknown>;
+  const body = parseJson(outside.stdout);
+  assert.ok(isJsonObject(body), outside.stdout);
   assert.deepEqual(Object.keys(body), ["systemMessage"], "a warning, not a decision: the agent is not blocked");
   assert.match(String(body.systemMessage), /^keylang: this turn was not checked: git \S+: .*not a git repository/i);
   assert.equal(outside.stderr, `${String(body.systemMessage)}\n`);
@@ -94,6 +99,7 @@ test("hook stop: a turn outside any git repository is a systemMessage for the pe
   writeFileSync(join(dir, "src/app/pay.ts"), 'import { price } from "../domain/order.ts";\nexport function charge(): number {\n  return price();\n}\n');
   const blocked = keylang(dir, ["hook", "stop"], STOP);
   assert.equal(blocked.status, 0, blocked.stderr);
+  // SAFETY: a Stop hook answer is the JSON object of Claude Code's hook output, with an optional decision and reason.
   const decision = JSON.parse(blocked.stdout) as { decision?: string; reason?: string };
   assert.equal(decision.decision, "block");
   assert.match(decision.reason ?? "", /^src\/app\/pay\.ts:1: K102 divergence: `app\.pay` depends on `domain\.order`/m);
@@ -107,12 +113,18 @@ interface FeatureJson {
   stage: string;
   gaps: { kind: string; id: string; file: string; line: number; reason: string }[];
   hints: { kind: string; id: string; file: string; reason: string }[];
-  info: { rules: { id: string; file: string }[] | null; base: Record<string, unknown> | null };
+  info: { rules: { id: string; file: string }[] | null; base: JsonObject | null };
 }
 
-function featureJson(dir: string, slug: string, args: string[] = []): { status: number | null; report: FeatureJson } {
+interface FeatureRun {
+  status: number | null;
+  report: FeatureJson;
+}
+
+function featureJson(dir: string, slug: string, args: string[] = []): FeatureRun {
   const r = keylang(dir, ["feature", slug, "--format", "json", ...args]);
 
+  // SAFETY: `feature --format json` prints the feature report with these fields (docs/cli.md).
   return { status: r.status, report: JSON.parse(r.stdout) as FeatureJson };
 }
 
@@ -151,14 +163,15 @@ function refundBranch(t: TestContext, extra: Record<string, string> = {}): strin
   return dir;
 }
 
-async function mcpFeature(t: TestContext, dir: string, slug: string): Promise<unknown> {
+async function mcpFeature(t: TestContext, dir: string, slug: string): Promise<JsonValue> {
   const client = new Client({ name: "keylang-test", version: "0" });
   await client.connect(new StdioClientTransport({ command: process.execPath, args: [bin, "mcp"], cwd: dir, stderr: "pipe" }));
   t.after(() => client.close());
+  // SAFETY: keylang's MCP tools answer with text content only, and an error flag on failure.
   const r = (await client.callTool({ name: "feature_status", arguments: { slug } })) as { content: { text: string }[]; isError?: boolean };
   assert.notEqual(r.isError, true, r.content.map((c) => c.text).join(""));
 
-  return JSON.parse(r.content.map((c) => c.text).join(""));
+  return parseJson(r.content.map((c) => c.text).join(""));
 }
 
 test("feature: without --since the base is the merge-base with the main branch, so a rule fail committed on the branch is this change's gap; MCP and the TUI take the same base; --since HEAD and a merged main keep HEAD", async (t) => {
@@ -335,6 +348,7 @@ interface IndexEdge {
 /** The import and re-export edges between modules, as `kind[ typeOnly] source → target`. */
 function moduleEdges(dir: string): string[] {
   assert.equal(keylang(dir, ["map"]).status, 0);
+  // SAFETY: `keylang map` writes .keylang/index.json as a snapshot whose edges have these fields (docs/snapshot.md).
   const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as { edges: IndexEdge[] };
 
   return index.edges
@@ -353,6 +367,7 @@ test("typescript: `import { type A }` with every name `type` is type-only unless
   assert.equal(cycle(dir), "erased");
 
   // The fact cache keeps what the syntax says, not what the tsconfig decides.
+  // SAFETY: .keylang/cache/facts.json holds each file's FileFacts, whose imports carry these fields (src/extract/facts.ts).
   const cached = (): { source: string; typeOnly?: true; inlineTypeOnly?: true }[] | undefined =>
     (JSON.parse(readFileSync(join(dir, ".keylang/cache/facts.json"), "utf8")) as { files: Record<string, { facts: { imports: { source: string; typeOnly?: true; inlineTypeOnly?: true }[] } }> }).files["src/app/order.ts"]?.facts.imports;
 

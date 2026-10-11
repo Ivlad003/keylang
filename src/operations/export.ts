@@ -4,7 +4,7 @@
 import { readFileSync, realpathSync } from "node:fs";
 import { isAbsolute, join, posix, relative, resolve } from "node:path";
 import { analyze, type Analysis } from "../analyze.ts";
-import { C4_FORMATS, C4_LEVELS, isC4Diagram, renderC4 } from "../c4-export.ts";
+import { C4_FORMATS, C4_LEVELS, isC4Diagram, renderC4, type C4Request } from "../c4-export.ts";
 import { checkReportText } from "../check-format.ts";
 import { CONFIG_FILE, parseConfig, toPosix } from "../config.ts";
 import { errorText } from "../diag.ts";
@@ -212,9 +212,12 @@ export async function runExportC4(request: ExportC4Request, context: OperationCo
   };
 
   let text: string;
+  const c4: C4Request = { format, level };
+
+  if (request.layer !== undefined) c4.layer = request.layer;
 
   try {
-    text = renderC4(snapshot, brief, { format, level, ...(request.layer !== undefined ? { layer: request.layer } : {}) });
+    text = renderC4(snapshot, brief, c4);
   } catch (error) {
     return empty("export-c4", "failed", 2, errorText(error));
   }

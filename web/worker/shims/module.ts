@@ -14,8 +14,14 @@ export const WEB_TREE_SITTER = "/keylang/node_modules/web-tree-sitter/web-tree-s
 
 export const builtinModules: readonly string[] = KEYLANG_BUILTINS;
 
-export function createRequire(_from: string | URL): ((id: string) => unknown) & { resolve: (id: string) => string } {
-  const require = (id: string): unknown => {
+/** The one module `require` answers: keylang's own package.json. */
+interface OwnPackage {
+  name: string;
+  version: string;
+}
+
+export function createRequire(_from: string | URL): ((id: string) => OwnPackage) & { resolve: (id: string) => string } {
+  const require = (id: string): OwnPackage => {
     if (id.endsWith("package.json")) return { name: "keylang", version: KEYLANG_VERSION };
     throw new Error(`require: ${id} is not available in the browser`);
   };

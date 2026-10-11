@@ -14,6 +14,7 @@
 // package; Next.js also from a `next.config.*`.
 
 import { posix } from "node:path";
+import { isJsonObject, parseJson, type JsonValue } from "../json.ts";
 import type { ConfigFacts, FrameworkAdapter, FrameworkContext } from "./adapter.ts";
 
 const DEPENDENCY_FIELDS = ["dependencies", "devDependencies", "peerDependencies"];
@@ -27,9 +28,9 @@ const REGISTRATION = /\.(?:get|post|put|patch|delete|all|head|options|use|route)
 export const WEB_FRAMEWORKS: readonly string[] = ["express", "fastify", "next"];
 
 function depends(context: FrameworkContext, pkg: string): boolean {
-  const manifest = parseJson(context.read("package.json"));
+  const manifest = readJson(context.read("package.json"));
 
-  return DEPENDENCY_FIELDS.some((field) => isRecord(manifest) && isRecord(manifest[field]) && pkg in manifest[field]);
+  return DEPENDENCY_FIELDS.some((field) => isJsonObject(manifest) && isJsonObject(manifest[field]) && pkg in manifest[field]);
 }
 
 function owner(path: string): string | null {
@@ -100,16 +101,12 @@ export const next: FrameworkAdapter = {
   parse: emptyFacts,
 };
 
-function parseJson(text: string | null): unknown {
+function readJson(text: string | null): JsonValue {
   if (text === null) return null;
 
   try {
-    return JSON.parse(text.replace(/^﻿/, ""));
+    return parseJson(text.replace(/^\uFEFF/, ""));
   } catch {
     return null;
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -231,20 +231,26 @@ export function diagnosticsFor(ws: Workspace, path: string): LspDiagnostic[] {
 
   for (const diag of diagnostics) {
     if (diag.file !== path) continue;
+    const data: LspDiagnostic["data"] = { verdict: diag.severity === "error" ? "fail" : "warning" };
+
+    if (diag.code === "K005" && diag.reason !== undefined) data.reason = diag.reason;
     items.push({
       range: fromSpan(text, diag.span),
       severity: diag.severity === "error" ? 1 : 2,
       code: diag.code,
       message: diag.message,
       source: "keylang",
-      data: { verdict: diag.severity === "error" ? "fail" : "warning", ...(diag.code === "K005" && diag.reason !== undefined ? { reason: diag.reason } : {}) },
+      data,
     });
   }
 
   for (const verdict of verdicts) {
     if (verdict.file !== path || sameFinding(verdict, diagnostics)) continue;
     const severity = verdict.verdict === "fail" ? 1 : verdict.verdict === "unverified" ? 2 : 4;
-    items.push({ range: lineRange(text, verdict.line, verdict.col), severity, ...(verdict.code ? { code: verdict.code } : {}), message: verdict.message, source: "keylang", data: { verdict: verdict.verdict } });
+    const head: Pick<LspDiagnostic, "range" | "severity" | "code"> = { range: lineRange(text, verdict.line, verdict.col), severity };
+
+    if (verdict.code) head.code = verdict.code;
+    items.push({ ...head, message: verdict.message, source: "keylang", data: { verdict: verdict.verdict } });
   }
 
   return items;
@@ -434,7 +440,18 @@ export function definition(ws: Workspace, path: string, position: LspPosition): 
   return { uri: uriOf(ws.root, info.file), range: { start, end: start } };
 }
 
-export function signatureHelp(ws: Workspace, path: string, position: LspPosition): { signatures: { label: string; documentation?: string }[]; activeSignature: 0; activeParameter: 0 } | null {
+export interface SignatureInformation {
+  label: string;
+  documentation?: string;
+}
+
+export interface SignatureHelp {
+  signatures: SignatureInformation[];
+  activeSignature: 0;
+  activeParameter: 0;
+}
+
+export function signatureHelp(ws: Workspace, path: string, position: LspPosition): SignatureHelp | null {
   const text = ws.text(path);
 
   if (text === null) return null;
@@ -445,7 +462,11 @@ export function signatureHelp(ws: Workspace, path: string, position: LspPosition
 
   if (!info || !info.signature) return null;
 
-  return { signatures: [{ label: `${info.id} ${info.signature}`, ...(info.file ? { documentation: `${info.file}:${info.line}` } : {}) }], activeSignature: 0, activeParameter: 0 };
+  const signature: SignatureInformation = { label: `${info.id} ${info.signature}` };
+
+  if (info.file) signature.documentation = `${info.file}:${info.line}`;
+
+  return { signatures: [signature], activeSignature: 0, activeParameter: 0 };
 }
 
 // ---------- references ----------
@@ -505,7 +526,10 @@ export function workspaceSymbols(ws: Workspace, briefs: ReadonlyMap<string, Stor
     const parent = dot === -1 ? "" : hit.id.slice(0, dot);
     const brief = hit.by === "explanation" && hit.explanation ? capText(hit.explanation.text, CONTAINER_BRIEF) : null;
     const container = [parent, brief].filter((part) => part !== null && part !== "").join(" — ");
-    out.push({ name: hit.id.slice(dot + 1), kind: symbolKind(hit.kind), location, ...(container !== "" ? { containerName: container } : {}) });
+    const symbol: SymbolInformation = { name: hit.id.slice(dot + 1), kind: symbolKind(hit.kind), location };
+
+    if (container !== "") symbol.containerName = container;
+    out.push(symbol);
   }
 
   return out;
@@ -636,14 +660,13 @@ export function documentSymbols(ws: Workspace, path: string): DocumentSymbol[] {
     const children = node.children.map(symbolOf).filter((item): item is DocumentSymbol => item !== null);
     const status = statusIn(node);
 
-    const make = (name: string, kind: number, detail?: string): DocumentSymbol => ({
-      name,
-      kind,
-      ...(detail ?? status ? { detail: [detail, status].filter(Boolean).join(" · ") } : {}),
-      range: fromSpan(text, lastLine(node)),
-      selectionRange: fromSpan(text, node.name?.span ?? node.span),
-      children,
-    });
+    const make = (name: string, kind: number, detail?: string): DocumentSymbol => {
+      const head: Pick<DocumentSymbol, "name" | "kind" | "detail"> = { name, kind };
+
+      if (detail ?? status) head.detail = [detail, status].filter(Boolean).join(" · ");
+
+      return { ...head, range: fromSpan(text, lastLine(node)), selectionRange: fromSpan(text, node.name?.span ?? node.span), children };
+    };
 
     switch (node.kind) {
       case "layer":
@@ -810,7 +833,10 @@ export function completions(ws: Workspace, path: string, position: LspPosition):
 
     if (from && blocksDependency(ws.analysis.spec, from, id, kindOf, ws.analysis.config.format)) continue;
     const kind = node.kind === "fn" ? COMPLETION.function : node.kind === "type" ? COMPLETION.struct : node.kind === "event" ? COMPLETION.event : COMPLETION.module;
-    labels.set(id, { label: id, kind, ...(node.signature ? { detail: node.signature } : {}), sortText: `1${id}`, ...replacing(id) });
+    const head: Pick<CompletionItem, "label" | "kind" | "detail"> = { label: id, kind };
+
+    if (node.signature) head.detail = node.signature;
+    labels.set(id, { ...head, sortText: `1${id}`, ...replacing(id) });
   }
 
   for (const item of ws.analysis.spec.planned) {

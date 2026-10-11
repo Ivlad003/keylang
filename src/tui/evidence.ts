@@ -108,7 +108,7 @@ function allEvidence(analysis: Analysis): Map<string, Map<number, LineEvidence>>
   }
 
   const order = (criterion: string): number => {
-    const at = (CHANNELS as readonly string[]).indexOf(criterion);
+    const at = CHANNELS.findIndex((channel) => channel === criterion);
 
     return at === -1 ? CHANNELS.length : at;
   };
@@ -176,8 +176,10 @@ export function evidenceOf(analysis: Analysis, path: string): Map<number, LineEv
 
 export const MARK_GLYPH: Record<Mark, string> = { ok: "✓", fail: "✗", unverified: "◌", planned: "◇", warning: "!", question: "?" };
 
+type EvidenceTotals = { fail: number; unverified: number; ok: number };
+
 /** Totals for the status bar: failing, unverified and passing lines across all documents. */
-export function totals(analysis: Analysis): { fail: number; unverified: number; ok: number } {
+export function totals(analysis: Analysis): EvidenceTotals {
   const counts = { fail: 0, unverified: 0, ok: 0 };
 
   for (const lines of allEvidence(analysis).values()) {

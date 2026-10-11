@@ -5,6 +5,9 @@
 // carries it as `Authorization: Bearer`. The types mirror src/diagram.ts and
 // src/tui/web.ts; the client checks only what it draws.
 
+import { isJsonObject, isJsonString, parseJson } from "../../src/json.ts";
+import type { EditorModel } from "./editor.ts";
+
 const TOKEN_KEY = "keylang-token";
 
 /** One answer of the API, whatever carried it. `file` is an attachment's name. */
@@ -23,7 +26,8 @@ export interface Reply {
  */
 export interface Transport {
   readonly kind: "server" | "static" | "local";
-  send(method: "GET" | "POST" | "PUT", path: string, query: URLSearchParams, body?: unknown): Promise<Reply>;
+  /** `body` goes as JSON: a request type of this module, or the editor's model. */
+  send<Body>(method: "GET" | "POST" | "PUT", path: string, query: URLSearchParams, body?: Body): Promise<Reply>;
 }
 
 /** The query in one order: a static export files its answers by `path?query`, so the page spells it as `src/tui/read-api.ts` does. */
@@ -55,17 +59,23 @@ class HttpTransport implements Transport {
     this.token = token;
   }
 
-  async send(method: "GET" | "POST" | "PUT", path: string, query: URLSearchParams, body?: unknown): Promise<Reply> {
-    const headers: Record<string, string> = { Authorization: `Bearer ${this.token}` };
+  async send<Body>(method: "GET" | "POST" | "PUT", path: string, query: URLSearchParams, body?: Body): Promise<Reply> {
+    const headers = new Headers({ Authorization: `Bearer ${this.token}` });
 
-    if (body !== undefined) headers["Content-Type"] = "application/json";
+    if (body !== undefined) headers.set("Content-Type", "application/json");
     const search = query.toString();
     // Relative to the page: the same server at `/` and mounted under `/r/<id>/` of `web --hub`.
     const relative = path.replace(/^\//, "");
-    const response = await fetch(search === "" ? relative : `${relative}?${search}`, { method, headers, cache: "no-store", ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
-    const file = /filename="([^"]+)"/.exec(response.headers.get("Content-Disposition") ?? "")?.[1];
+    const init: RequestInit = { method, headers, cache: "no-store" };
 
-    return { status: response.status, type: response.headers.get("Content-Type") ?? "text/plain", text: await response.text(), ...(file ? { file } : {}) };
+    if (body !== undefined) init.body = JSON.stringify(body);
+    const response = await fetch(search === "" ? relative : `${relative}?${search}`, init);
+    const file = /filename="([^"]+)"/.exec(response.headers.get("Content-Disposition") ?? "")?.[1];
+    const reply: Reply = { status: response.status, type: response.headers.get("Content-Type") ?? "text/plain", text: await response.text() };
+
+    if (file) reply.file = file;
+
+    return reply;
   }
 }
 
@@ -92,6 +102,7 @@ export function readOnlyPage(): boolean {
 export function replyJson<T>(reply: Reply): T {
   if (reply.status < 200 || reply.status >= 300) throw new ApiError(reply.status, errorOf(reply.text));
 
+  // SAFETY: T is the documented answer of the route asked (the types mirror src/diagram.ts and src/tui/web.ts); the page trusts its own server.
   return JSON.parse(reply.text) as T;
 }
 
@@ -525,7 +536,7 @@ export class Api {
 
   /** One proposal of the ticked branches; a refusal (a generated target, a proposal waiting) is an `ApiError` with the server's reason. */
   flowProposal(body: { name: string; trigger: string; steps: FlowStep[] }): Promise<FlowProposal> {
-    return this.post<FlowProposal>("/api/flow-proposal", body);
+    return this.post("/api/flow-proposal", body);
   }
 
   /** The layout file of a view (`flow:checkout`), in the keys of the editor's canvas. */
@@ -539,25 +550,28 @@ export class Api {
   }
 
   /** The drawing as proposals; a conflict or a refusal (409) is an answer too, with its `status` and `error`. */
-  async diagramProposal(model: unknown, specHash: string | null): Promise<DiagramProposal> {
+  async diagramProposal(model: EditorModel, specHash: string | null): Promise<DiagramProposal> {
     const reply = await transport().send("POST", "/api/diagram-proposal", new URLSearchParams(), { model, specHash });
 
-    if (reply.status === 409) return JSON.parse(reply.text) as DiagramProposal;
+    if (reply.status === 409) {
+      // SAFETY: a 409 of /api/diagram-proposal is a DiagramProposal with its `status` and `error` (docs/tui.md «Діаграми (API)»).
+      return JSON.parse(reply.text) as DiagramProposal;
+    }
 
     return replyJson<DiagramProposal>(reply);
   }
 
   /** «Копіювати як пакет» (business-flows/25): the bundle of the flows (or the selection) with the selection in its layout block. */
   bundle(body: BundleRequest): Promise<BundleCopy> {
-    return this.post<BundleCopy>("/api/bundle", body);
+    return this.post("/api/bundle", body);
   }
 
   /** A pasted bundle: the preview (layer choices for the dialog) or the import (proposals), and the shapes to draw. */
   bundleImport(body: { text: string; layerMap?: Record<string, string>; mode?: "algo" | "hybrid"; output?: "preview" | "proposal" }): Promise<BundleImport> {
-    return this.post<BundleImport>("/api/bundle-import", body);
+    return this.post("/api/bundle-import", body);
   }
 
-  private async post<T>(path: string, body: unknown): Promise<T> {
+  private async post<T, Body>(path: string, body: Body): Promise<T> {
     return replyJson<T>(await transport().send("POST", path, new URLSearchParams(), body));
   }
 
@@ -571,9 +585,10 @@ export function errorOf(body: string): string {
   const text = body.trim();
 
   try {
-    const parsed = JSON.parse(text) as { error?: unknown };
+    const parsed = parseJson(text);
+    const error = isJsonObject(parsed) ? parsed["error"] : undefined;
 
-    if (typeof parsed.error === "string") return parsed.error;
+    if (isJsonString(error)) return error;
   } catch {
     // Not JSON: the text itself.
   }

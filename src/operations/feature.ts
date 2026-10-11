@@ -9,7 +9,7 @@ import { loadConfig, specPath, type Config } from "../config.ts";
 import { errorText } from "../diag.ts";
 import { existingText } from "../files.ts";
 import { PROPOSALS_DIR, proposalProblem } from "../proposals.ts";
-import { featureStatus, idsIn, type FeatureBase, type FeatureReport, type Gap, type Hint } from "../feature-status.ts";
+import { featureStatus, idsIn, type FeatureBase, type FeatureInput, type FeatureReport, type Gap, type Hint } from "../feature-status.ts";
 import { sourceInputs } from "../map.ts";
 import { writeProblem } from "../safe-write.ts";
 import { deletedModuleIds, readFeatureBase } from "../git-changes.ts";
@@ -102,24 +102,24 @@ export function featureReportOf(analyzed: Analysis, slug: string, base: FeatureB
   // The spec weakened since the same base (K108): without git there is nothing to compare, and that is no gap.
   const weakened = base.state === "unavailable" ? [] : readWeakenings(config, base.ref, "feature", base.label).weakenings;
 
-  return featureStatus(
-    {
-      dir: config.dir,
-      docs: analyzed.docs,
-      spec: analyzed.spec,
-      diagnostics: analyzed.diagnostics,
-      verdicts: analyzed.verdicts,
-      nodes: analyzed.snapshot?.nodes ?? {},
-      edges: analyzed.snapshot?.edges ?? [],
-      base,
-      ...(changed !== undefined ? { changed } : {}),
-      index: analyzed.index,
-      format: config.format,
-      layers: [...config.layers.keys()],
-      weakened,
-    },
-    slug,
-  );
+  const input: FeatureInput = {
+    dir: config.dir,
+    docs: analyzed.docs,
+    spec: analyzed.spec,
+    diagnostics: analyzed.diagnostics,
+    verdicts: analyzed.verdicts,
+    nodes: analyzed.snapshot?.nodes ?? {},
+    edges: analyzed.snapshot?.edges ?? [],
+    base,
+  };
+
+  if (changed !== undefined) input.changed = changed;
+  input.index = analyzed.index;
+  input.format = config.format;
+  input.layers = [...config.layers.keys()];
+  input.weakened = weakened;
+
+  return featureStatus(input, slug);
 }
 
 /** One gap as the CLI prints it: `file:line:col: kind id: reason`. */
@@ -140,8 +140,10 @@ export function featureSummary(report: FeatureReport): string {
 /** Most questions one request proposes: a person answers them in one sitting. */
 const MAX_QUESTIONS = 5;
 
+type QuestionLines = { questions: string[]; dropped: number };
+
 /** The model's answer as questions: its `- ? <text>` lines, at most `MAX_QUESTIONS`, and how many other lines were left out. */
-export function questionLines(answer: string): { questions: string[]; dropped: number } {
+export function questionLines(answer: string): QuestionLines {
   const lines = answer.split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== "" && !line.startsWith('```'));
   const questions = lines.filter((line) => /^[-*] \?\s+\S/.test(line)).map((line) => `- ? ${line.replace(/^[-*] \?\s+/, "").replace(/\s+/g, " ")}`);
   const kept = questions.slice(0, MAX_QUESTIONS);

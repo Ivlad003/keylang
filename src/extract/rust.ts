@@ -17,7 +17,7 @@ const KNOWN_MACROS = new Set(
 /** Primitive types: `u64::from()` is the language's, not a module path. */
 const PRIMITIVES = new Set("bool char str f32 f64 i8 i16 i32 i64 i128 isize u8 u16 u32 u64 u128 usize".split(" "));
 
-const TYPE_ITEMS: Record<string, DeclFact["kind"]> = { struct_item: "class", enum_item: "class", union_item: "class", trait_item: "type", type_item: "type" };
+const TYPE_ITEMS = new Map<string, DeclFact["kind"]>([["struct_item", "class"], ["enum_item", "class"], ["union_item", "class"], ["trait_item", "type"], ["type_item", "type"]]);
 
 /** Attributes of the language and its tools, and attribute macros that keep the fn and run its body when it is called by name. */
 const KEEPING_ATTRIBUTES = new Set(
@@ -83,10 +83,13 @@ function extractTree(path: string, root: Node): FileFacts {
       case "trait_item":
       case "type_item": {
         if (!name) break;
-        const kind = TYPE_ITEMS[node.type]!;
+        const kind = TYPE_ITEMS.get(node.type)!;
         const at = located(node);
         const doc = itemDoc(node);
-        facts.decls.push({ kind, name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature: null, exported: exported(node), calls: [], types: [], members: [], ...fingerprintFacts(node), ...(doc !== undefined ? { doc } : {}) });
+        const decl: DeclFact = { kind, name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature: null, exported: exported(node), calls: [], types: [], members: [], ...fingerprintFacts(node) };
+
+        if (doc !== undefined) decl.doc = doc;
+        facts.decls.push(decl);
 
         if (exported(node)) exportRow(facts, name, kind === "class" ? "class" : "type");
 
@@ -250,7 +253,7 @@ function noteAttributes(node: Node, symbol: string, member: boolean, facts: File
     if (KEEPING_ATTRIBUTES.has(path) || /^(clippy|rustfmt|diagnostic)::/.test(path)) continue;
     facts.unsupported.push({ ...unsupported(prev, `attribute \`${path}\` may replace \`${symbol}\``), symbol });
     const at = located(prev);
-    facts.valueRefs.push({ name: member ? symbol.slice(symbol.lastIndexOf(".") + 1) : symbol, ...(member ? { member: true as const } : {}), line: at.line, col: at.col });
+    facts.valueRefs.push(member ? { name: symbol.slice(symbol.lastIndexOf(".") + 1), member: true, line: at.line, col: at.col } : { name: symbol, line: at.line, col: at.col });
   }
 }
 
@@ -343,7 +346,9 @@ function fnDecl(node: Node, name: string, exported: boolean, owner: string | nul
   const body = node.childForFieldName("body");
   const calls = body ? bodyCalls(body, { owner, self, bound: boundNames(node), names, imports: true }, facts) : [];
   const doc = itemDoc(node);
-  const decl: DeclFact = { kind: "fn", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature, exported, calls, types: [], members: [], ...fingerprintFacts(node), ...(doc !== undefined ? { doc } : {}) };
+  const decl: DeclFact = { kind: "fn", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature, exported, calls, types: [], members: [], ...fingerprintFacts(node) };
+
+  if (doc !== undefined) decl.doc = doc;
 
   // An associated function without `self` is called on the type: `S::new()`.
   if (owner !== null && !self) decl.static = true;
@@ -429,6 +434,9 @@ interface CallScope {
  */
 type ClosureState = null | "stored" | { line: number; col: number };
 
+/** A call fact before its position is known. */
+type UnplacedCall = Omit<CallFact, "line" | "col" | "endLine" | "endCol">;
+
 function bodyCalls(body: Node, scope: CallScope, facts: FileFacts): CallFact[] {
   const out: CallFact[] = [];
 
@@ -439,16 +447,16 @@ function bodyCalls(body: Node, scope: CallScope, facts: FileFacts): CallFact[] {
       if (fact) {
         const at = located(node);
         const passes = passesOf(node, scope, facts);
-        out.push({
-          ...fact,
-          ...(passes.length > 0 ? { passes } : {}),
-          line: at.line,
-          col: at.col,
-          endLine: at.endLine,
-          endCol: at.endCol,
-          ...(closure ? { closure: true as const } : {}),
-          ...(closure && closure !== "stored" ? { closureArg: closure } : {}),
-        });
+        const unplaced: UnplacedCall = { ...fact };
+
+        if (passes.length > 0) unplaced.passes = passes;
+        // Object.assign appends the position after `passes`, the key order of every call fact.
+        const call: CallFact = Object.assign(unplaced, { line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol });
+
+        if (closure) call.closure = true;
+
+        if (closure && closure !== "stored") call.closureArg = closure;
+        out.push(call);
       }
     } else if (node.type === "macro_invocation") {
       const name = macroName(node);
@@ -511,7 +519,7 @@ type Callee = Pick<CallFact, "callee" | "bound">;
  */
 function callOf(fn: Node | null, scope: CallScope, facts: FileFacts): Callee | null {
   if (!fn) return null;
-  const { owner, self, bound, names } = scope;
+  const { owner, self, bound } = scope;
 
   switch (fn.type) {
     case "generic_function": {
@@ -636,7 +644,7 @@ function valueRefs(items: Node[], names: ReadonlySet<string>, facts: FileFacts):
   const note = (name: string, node: Node, member: boolean): void => {
     const key = `${member ? "." : ""}${name}`;
 
-    if (!first.has(key)) first.set(key, { name, ...(member ? { member: true as const } : {}), line: node.startPosition.row + 1, col: node.startPosition.column + 1 });
+    if (!first.has(key)) first.set(key, member ? { name, member: true, line: node.startPosition.row + 1, col: node.startPosition.column + 1 } : { name, line: node.startPosition.row + 1, col: node.startPosition.column + 1 });
   };
 
   const walk = (node: Node, scope: CallScope): void => {

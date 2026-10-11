@@ -51,6 +51,9 @@ export interface Unverified {
 
 const NO_SPAN: Span = { start: { offset: 0, line: 1, col: 1 }, end: { offset: 0, line: 1, col: 1 } };
 
+/** An index as JSON: declarations and flows by their name. */
+type IndexJson = { decls: Record<string, Decl>; flows: Record<string, Decl> };
+
 export class Index {
   readonly decls = new Map<string, Decl>();
   readonly flows = new Map<string, Decl>();
@@ -123,7 +126,7 @@ export class Index {
     return best?.[1];
   }
 
-  toJSON(): { decls: Record<string, Decl>; flows: Record<string, Decl> } {
+  toJSON(): IndexJson {
     return { decls: Object.fromEntries(this.decls), flows: Object.fromEntries(this.flows) };
   }
 }
@@ -163,8 +166,10 @@ export function nearestName(word: string, candidates: Iterable<string>): string 
   return best?.[1];
 }
 
+type Resolved = { index: Index; diagnostics: Diagnostic[]; unverified: Unverified[] };
+
 /** Build the index over all documents and check every reference. */
-export function check(docs: readonly Document[], context: ResolveContext = {}): { index: Index; diagnostics: Diagnostic[]; unverified: Unverified[] } {
+export function check(docs: readonly Document[], context: ResolveContext = {}): Resolved {
   const index = new Index(context.members);
   const diags: Diagnostic[] = [];
 
@@ -316,8 +321,11 @@ function checkContinues(index: Index, doc: Document, node: Node, diags: Diagnost
   if (flow === null || index.flows.has(flow.value)) return;
 
   const near = [...index.flows.keys()]
-    .map((name) => ({ name, distance: similarity(flow.value, name) }))
-    .filter((item): item is { name: string; distance: number } => item.distance !== null)
+    .flatMap((name) => {
+      const distance = similarity(flow.value, name);
+
+      return distance === null ? [] : [{ name, distance }];
+    })
     .sort((a, b) => a.distance - b.distance || compareText(a.name, b.name))[0];
 
   const hint = near === undefined ? "" : ` (did you mean \`${near.name}\`?)`;
@@ -361,9 +369,11 @@ function checkEventRef(index: Index, doc: Document, node: Node, ref: Ref, diags:
   const tail = (id: string): string => id.slice(id.lastIndexOf(".") + 1);
 
   const near = [...index.decls.values()]
-    .filter((decl) => decl.kind === "event")
-    .map((decl) => ({ id: decl.id, distance: similarity(tail(ref.target), tail(decl.id)) }))
-    .filter((item): item is { id: string; distance: number } => item.distance !== null)
+    .flatMap((decl) => {
+      const distance = decl.kind === "event" ? similarity(tail(ref.target), tail(decl.id)) : null;
+
+      return distance === null ? [] : [{ id: decl.id, distance }];
+    })
     .sort((a, b) => a.distance - b.distance || compareText(a.id, b.id))[0];
 
   const hint = near === undefined ? "" : ` (did you mean \`${near.id}\`?)`;

@@ -23,8 +23,14 @@ const HANDLERS: readonly { name: string; method: string; client: boolean }[] = [
 /** Route module exports the router calls itself, besides the handlers and the default export. */
 const ROUTE_EXPORTS = ["ErrorBoundary", "HydrateFallback", "Layout", "headers", "links", "meta", "middleware", "clientMiddleware", "unstable_middleware", "unstable_clientMiddleware", "shouldRevalidate"];
 
+/** Whether a route module exports a name, and the fn keylang resolves it to. */
+interface RouteExport {
+  found: boolean;
+  id: string | null;
+}
+
 export function reactRouterEntries(scope: EntryScope, configs: readonly FrameworkConfig[]): EntryPoint[] {
-  const modules = configs.filter((c) => c.owner !== null).map((c) => ({ path: c.facts.path, id: routeId(c.owner!, c.facts.path) }));
+  const modules = configs.flatMap((c) => (c.owner === null ? [] : [{ path: c.facts.path, id: routeId(c.owner, c.facts.path) }]));
   const ids = modules.map((m) => m.id);
   const out: EntryPoint[] = [];
 
@@ -35,7 +41,7 @@ export function reactRouterEntries(scope: EntryScope, configs: readonly Framewor
     const top = { file: path, line: module.line ?? 1 };
     const url = `${flatRoutePath(id)}${isLayout(id, ids) ? " (layout)" : ""}`;
 
-    const exported = (name: string): { found: boolean; id: string | null } => {
+    const exported = (name: string): RouteExport => {
       const row = scope.graph.exports.find((e) => e.module === module.id && e.name === name);
 
       return { found: row !== undefined, id: row?.symbol != null && scope.fns.has(row.symbol) ? row.symbol : null };
@@ -43,7 +49,12 @@ export function reactRouterEntries(scope: EntryScope, configs: readonly Framewor
 
     const add = (fn: string | null, label: string, method: string | null, what: string): void => {
       const entry = frameworkEntry(scope, "react-router", "route", fn ?? module.id, label, `${path}:${top.line}`, top);
-      out.push({ ...entry, ...(method !== null ? { method } : {}), ...(fn === null ? { note: `the exported \`${what}\` is no fn keylang resolves: the route module stands for it` } : {}) });
+      const point: EntryPoint = { ...entry };
+
+      if (method !== null) point.method = method;
+
+      if (fn === null) point.note = `the exported \`${what}\` is no fn keylang resolves: the route module stands for it`;
+      out.push(point);
     };
 
     for (const handler of HANDLERS) {

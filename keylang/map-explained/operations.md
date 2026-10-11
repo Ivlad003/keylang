@@ -40,29 +40,33 @@
     - llm [features.llm](features.md#features.llm)
     - fn [assistantSystem](../../src/operations/assistant.ts#L31) (specDir: string) → string
       <a id="operations.assistant.assistantSystem"></a><br>What the clip is and may do (spec §4.3): short answers in the person's language, about this repository only, no invented verdicts or edges, a spec change as one block with the whole file, no code.
-    - fn [recentTurns](../../src/operations/assistant.ts#L49) (history: readonly ChatTurn[], budget = HISTORY_CHARS) → { turns: ChatTurn[]; dropped: number }
+    - type [RecentTurns](../../src/operations/assistant.ts#L44) = { turns: ChatTurn[]; dropped: number } <!-- internal -->
+      <a id="operations.assistant.RecentTurns"></a>
+    - fn [recentTurns](../../src/operations/assistant.ts#L51) (history: readonly ChatTurn[], budget = HISTORY_CHARS) → RecentTurns
       <a id="operations.assistant.recentTurns"></a><br>The newest messages whose texts take at most `budget` characters together, oldest first, and how many older ones were left out. The last one — the person's new message — is kept however long it is.
-    - fn [fileWindow](../../src/operations/assistant.ts#L69) (text: string, line: number, count = FILE_LINES) → { first: number; last: number; total: number; text: string }
+    - type [FileWindow](../../src/operations/assistant.ts#L66) = { first: number; last: number; total: number; text: string } <!-- internal -->
+      <a id="operations.assistant.FileWindow"></a>
+    - fn [fileWindow](../../src/operations/assistant.ts#L73) (text: string, line: number, count = FILE_LINES) → FileWindow
       <a id="operations.assistant.fileWindow"></a><br>At most `count` lines of `text` around the 0-based `line`, the cursor's line in their middle where the file allows; `first` and `last` are 1-based and inclusive.
-    - fn [assistantPrompt](../../src/operations/assistant.ts#L87) (request: AssistantReplyRequest, specDir: string) → LlmRequest
+    - fn [assistantPrompt](../../src/operations/assistant.ts#L91) (request: AssistantReplyRequest, specDir: string) → LlmRequest
       <a id="operations.assistant.assistantPrompt"></a><br>The request as the model reads it: the system prompt, and one prompt with the open file around the cursor, the cursor's line and the ID under it, the open feature, the open questions, the F4 pack and the conversation, the person's new message last.
       - calls [operations.assistant.fileWindow](operations.md#operations.assistant.fileWindow), [operations.assistant.fenced](operations.md#operations.assistant.fenced), [operations.assistant.listOf](operations.md#operations.assistant.listOf), [operations.assistant.recentTurns](operations.md#operations.assistant.recentTurns), [operations.assistant.assistantSystem](operations.md#operations.assistant.assistantSystem)
-    - fn [listOf](../../src/operations/assistant.ts#L111) (lines: readonly string[]) → string <!-- internal -->
+    - fn [listOf](../../src/operations/assistant.ts#L115) (lines: readonly string[]) → string <!-- internal -->
       <a id="operations.assistant.listOf"></a>
-    - fn [fenced](../../src/operations/assistant.ts#L116) (text: string) → string <!-- internal -->
+    - fn [fenced](../../src/operations/assistant.ts#L120) (text: string) → string <!-- internal -->
       <a id="operations.assistant.fenced"></a><br>`text` in a fence longer than any run of backticks in it, so a spec's own code blocks stay inside.
-    - fn [parseReply](../../src/operations/assistant.ts#L140) (answer: string) → Pick<AssistantReplyPayload, "reply" | "proposal" | "dropped">
+    - fn [parseReply](../../src/operations/assistant.ts#L144) (answer: string) → Pick<AssistantReplyPayload, "reply" | "proposal" | "dropped">
       <a id="operations.assistant.parseReply"></a><br>The model's answer as the chat shows it and the candidate it proposes: the first `keylang path=<file>` block the answer closes is the candidate, its lines the file's full text. The answer's other such blocks are left out by path, and so is one it never closes: an answer cut at…
       - calls [operations.assistant.candidateEnd](operations.md#operations.assistant.candidateEnd), [operations.assistant.closes](operations.md#operations.assistant.closes)
-    - fn [candidateEnd](../../src/operations/assistant.ts#L186) (lines: readonly string[], from: number, fence: string) → number <!-- internal -->
+    - fn [candidateEnd](../../src/operations/assistant.ts#L190) (lines: readonly string[], from: number, fence: string) → number <!-- internal -->
       <a id="operations.assistant.candidateEnd"></a><br>The line that closes a candidate opened by `fence`, from `from` on, or `lines.length`. A fence of the same character at least as long with an info string opens a block of the file's own (CommonMark would close the candidate at its end): the next fence that closes that block is…
       - calls [operations.assistant.closes](operations.md#operations.assistant.closes)
-    - fn [closes](../../src/operations/assistant.ts#L207) (line: string, fence: string) → boolean <!-- internal -->
+    - fn [closes](../../src/operations/assistant.ts#L211) (line: string, fence: string) → boolean <!-- internal -->
       <a id="operations.assistant.closes"></a><br>Whether `line` closes a block opened by `fence`: the same character, at least as many, nothing after.
-    - fn [runAssistantReply](../../src/operations/assistant.ts#L220) (request: AssistantReplyRequest, context: OperationContext) → Promise<OperationEnvelope<"assistant-reply">>
+    - fn [runAssistantReply](../../src/operations/assistant.ts#L224) (request: AssistantReplyRequest, context: OperationContext) → Promise<OperationEnvelope<"assistant-reply">>
       <a id="operations.assistant.runAssistantReply"></a><br>Asks the model of `agent` once and reads its answer: the reply for the chat and the candidate block, if any. Nothing is written.
       - calls [operations.shared.empty](operations.md#operations.shared.empty), [base.config.loadConfig](base.md#base.config.loadConfig), [base.diag.errorText](base.md#base.diag.errorText), [operations.assistant.assistantPrompt](operations.md#operations.assistant.assistantPrompt), [operations.shared.rootRelative](operations.md#operations.shared.rootRelative), [operations.assistant.parseReply](operations.md#operations.assistant.parseReply), [operations.assistant.replyMessages](operations.md#operations.assistant.replyMessages)
-    - fn [replyMessages](../../src/operations/assistant.ts#L266) (payload: AssistantReplyPayload) → OperationMessage[] <!-- internal -->
+    - fn [replyMessages](../../src/operations/assistant.ts#L275) (payload: AssistantReplyPayload) → OperationMessage[] <!-- internal -->
       <a id="operations.assistant.replyMessages"></a><br>The record's report: who answered, the candidate and what was left out.
   - module [code](../../src/operations/code.ts#L1)
     <a id="operations.code"></a><br>Code from a planned spec: `spec-to-code` builds a candidate (a stub or the model's code, with failing tests) and proposes it file by file; `spec-to-code --apply` writes a candidate already built.
@@ -84,10 +88,12 @@
     - fn [runSpecToCode](../../src/operations/code.ts#L66) (request: SpecToCodeRequest, context: OperationContext) → Promise<OperationEnvelope<"spec-to-code">>
       <a id="operations.code.runSpecToCode"></a><br>`keylang spec-to-code <id> [--into]`, template mode. Compute: the analysis of the saved files (nothing persisted; no snapshot is 2), then `specToCode` — an ID not planned, implemented (named with its place), a `deny` its flow breaks or a file not of its module is 2 with the…
       - calls [operations.shared.empty](operations.md#operations.shared.empty), [base.diag.errorText](base.md#base.diag.errorText), [map.map.sourceInputs](map.md#map.map.sourceInputs), [operations.shared.specHashes](operations.md#operations.shared.specHashes), [base.config.toPosix](base.md#base.config.toPosix), [operations.shared.modelSetup](operations.md#operations.shared.modelSetup), [features.spec-to-code.plannedCodeTarget](features.md#features.spec-to-code.plannedCodeTarget), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [lang.files.existingText](lang.md#lang.files.existingText), [operations.code.specToCodeCandidate](operations.md#operations.code.specToCodeCandidate), [features.spec-to-code.specToCode](features.md#features.spec-to-code.specToCode), [features.proposals.codeProposalProblem](features.md#features.proposals.codeProposalProblem), [features.proposals.proposalWriteProblem](features.md#features.proposals.proposalWriteProblem), [map.map.sourceInputProblems](map.md#map.map.sourceInputProblems), [operations.shared.specProblems](operations.md#operations.shared.specProblems), [features.proposals.writeProposal](features.md#features.proposals.writeProposal)
-    - fn [applyProblems](../../src/operations/code.ts#L261) (request: ApplyCodeRequest) → { policy: string | null; refused: string[] } <!-- internal -->
+    - type [ApplyProblems](../../src/operations/code.ts#L252) = { policy: string | null; refused: string[] } <!-- internal -->
+      <a id="operations.code.ApplyProblems"></a>
+    - fn [applyProblems](../../src/operations/code.ts#L263) (request: ApplyCodeRequest) → ApplyProblems <!-- internal -->
       <a id="operations.code.applyProblems"></a><br>Why the candidate may not be applied now. `policy`: a file no code proposal may change, or one the write protocol refuses (a link out, a generated file, a directory) — the first such, as `--apply` always named it. `refused`: every file that no longer holds the text the…
       - calls [features.proposals.codeProposalProblem](features.md#features.proposals.codeProposalProblem), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [lang.files.readTextOrNull](lang.md#lang.files.readTextOrNull), [map.map.sourceInputProblems](map.md#map.map.sourceInputProblems), [base.config.loadConfig](base.md#base.config.loadConfig), [operations.shared.specProblems](operations.md#operations.shared.specProblems)
-    - fn [runApplyCode](../../src/operations/code.ts#L313) (request: ApplyCodeRequest, context: OperationContext) → Promise<OperationEnvelope<"apply-code">>
+    - fn [runApplyCode](../../src/operations/code.ts#L315) (request: ApplyCodeRequest, context: OperationContext) → Promise<OperationEnvelope<"apply-code">>
       <a id="operations.code.runApplyCode"></a><br>`keylang spec-to-code <id> --apply` on a candidate already built (see `ApplyCodeRequest`). A file of the candidate no code proposal may change is 2; a file, a waiting proposal (under `refuse`) or an input changed since the candidate is 1 with each named, nothing written.
       - calls [operations.shared.empty](operations.md#operations.shared.empty), [operations.code.applyProblems](operations.md#operations.code.applyProblems), [base.diag.errorText](base.md#base.diag.errorText), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic), [base.safe-write.landing](base.md#base.safe-write.landing)
   - module [coverage](../../src/operations/coverage.ts#L1)
@@ -128,38 +134,40 @@
       <a id="operations.diagram-export.DiagramFormat"></a>
     - type [ExportView](../../src/operations/diagram-export.ts#L32)
       <a id="operations.diagram-export.ExportView"></a><br>A view to export: what `diagramOf` draws, whether it comes from the discovered view, and its name (`flow:checkout`).
-    - fn [parseExportView](../../src/operations/diagram-export.ts#L42) (text: string) → ExportView | string
+    - fn [isViewProblem](../../src/operations/diagram-export.ts#L39) (view: ExportView | string) → view is string <!-- internal -->
+      <a id="operations.diagram-export.isViewProblem"></a><br>Whether `parseExportView` gave a reason instead of a view.
+    - fn [parseExportView](../../src/operations/diagram-export.ts#L47) (text: string) → ExportView | string
       <a id="operations.diagram-export.parseExportView"></a><br>A view as the CLI names it: `<flow>` or `flow:<name>`, `discovered:<name>`, `process:<domain>`, `entry:<id>`, `layers`; or why it names none.
-    - fn [exportViewOfQuery](../../src/operations/diagram-export.ts#L67) (query: URLSearchParams) → ExportView | string
+    - fn [exportViewOfQuery](../../src/operations/diagram-export.ts#L72) (query: URLSearchParams) → ExportView | string
       <a id="operations.diagram-export.exportViewOfQuery"></a><br>A view from the query of `GET /api/export` — the query `/api/diagram` takes (`view=flow&name=…`, `view=discovered&name=…`, `view=process&domain=…`, `view=entry&id=…`, `view=layers`) — or why it names none.
       - calls [operations.diagram-export.parseExportView](operations.md#operations.diagram-export.parseExportView)
-    - fn [discoveredSpecOf](../../src/operations/diagram-export.ts#L87) (root: string, specDir: string) → SpecIR | null
+    - fn [discoveredSpecOf](../../src/operations/diagram-export.ts#L92) (root: string, specDir: string) → SpecIR | null
       <a id="operations.diagram-export.discoveredSpecOf"></a><br>The discovered view (`<dir>/flows-discovered/*.md`, the README of the processes aside) parsed as specs, or null without it.
       - calls [lang.spec-ir.compileSpec](lang.md#lang.spec-ir.compileSpec), [lang.parser.parse](lang.md#lang.parser.parse), [base.config.toPosix](base.md#base.config.toPosix)
-    - type [ExportSources](../../src/operations/diagram-export.ts#L101)
+    - type [ExportSources](../../src/operations/diagram-export.ts#L106)
       <a id="operations.diagram-export.ExportSources"></a><br>What a diagram is drawn from, as the API and the CLI read it.
-    - fn [exportSourcesOf](../../src/operations/diagram-export.ts#L110) (analysis: Analysis, discovered: SpecIR | null) → ExportSources
+    - fn [exportSourcesOf](../../src/operations/diagram-export.ts#L115) (analysis: Analysis, discovered: SpecIR | null) → ExportSources
       <a id="operations.diagram-export.exportSourcesOf"></a><br>The sources of an analysis: check results as verdicts, the saved business processes found again in its snapshot.
       - calls [features.check-results.checkResults](features.md#features.check-results.checkResults), [features.discover-names.processViews](features.md#features.discover-names.processViews), [features.discover-names.readProcesses](features.md#features.discover-names.readProcesses)
-    - fn [diagramExportText](../../src/operations/diagram-export.ts#L118) (format: DiagramFormat, view: ExportView, sources: ExportSources) → string
+    - fn [diagramExportText](../../src/operations/diagram-export.ts#L123) (format: DiagramFormat, view: ExportView, sources: ExportSources) → string
       <a id="operations.diagram-export.diagramExportText"></a><br>The bytes of one export. A discovered flow is drawn from the discovered view, without verdicts (`check` does not judge it).
       - calls [map.drawio.renderDrawio](map.md#map.drawio.renderDrawio), [map.bpmn-export.renderBpmn](map.md#map.bpmn-export.renderBpmn)
-    - fn [isDiagramExport](../../src/operations/diagram-export.ts#L132) (text: string) → boolean
+    - fn [isDiagramExport](../../src/operations/diagram-export.ts#L137) (text: string) → boolean
       <a id="operations.diagram-export.isDiagramExport"></a><br>A file one of these exports wrote: `exporter="keylang"` (BPMN) or `<mxfile host="keylang"` (draw.io) near its start.
-    - type [DiagramExportRequest](../../src/operations/diagram-export.ts#L138)
+    - type [DiagramExportRequest](../../src/operations/diagram-export.ts#L143)
       <a id="operations.diagram-export.DiagramExportRequest"></a>
-    - type [DiagramExportResult](../../src/operations/diagram-export.ts#L146)
+    - type [DiagramExportResult](../../src/operations/diagram-export.ts#L151)
       <a id="operations.diagram-export.DiagramExportResult"></a>
-    - fn [failed](../../src/operations/diagram-export.ts#L153) (error: string) → DiagramExportResult <!-- internal -->
+    - fn [failed](../../src/operations/diagram-export.ts#L158) (error: string) → DiagramExportResult <!-- internal -->
       <a id="operations.diagram-export.failed"></a>
-    - fn [runDiagramExport](../../src/operations/diagram-export.ts#L162) (request: DiagramExportRequest, context: OperationContext = {}) → Promise<DiagramExportResult>
+    - fn [runDiagramExport](../../src/operations/diagram-export.ts#L167) (request: DiagramExportRequest, context: OperationContext = {}) → Promise<DiagramExportResult>
       <a id="operations.diagram-export.runDiagramExport"></a><br>`keylang export bpmn|drawio <view> [--out f]`: the diagram of the saved code and specs, no model. `--out` must pass the write policy and be new or a file one of these exports wrote; otherwise 2 with nothing written.
-      - calls [operations.diagram-export.failed](operations.md#operations.diagram-export.failed), [operations.diagram-export.parseExportView](operations.md#operations.diagram-export.parseExportView), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [base.diag.errorText](base.md#base.diag.errorText), [operations.diagram-export.discoveredSpecOf](operations.md#operations.diagram-export.discoveredSpecOf), [operations.shared.rootRelative](operations.md#operations.shared.rootRelative), [operations.diagram-export.diagramExportText](operations.md#operations.diagram-export.diagramExportText), [operations.diagram-export.exportSourcesOf](operations.md#operations.diagram-export.exportSourcesOf), [lang.files.existingText](lang.md#lang.files.existingText), [operations.diagram-export.isDiagramExport](operations.md#operations.diagram-export.isDiagramExport), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite)
-    - type [ImportDrawioRequest](../../src/operations/diagram-export.ts#L231)
+      - calls [operations.diagram-export.failed](operations.md#operations.diagram-export.failed), [operations.diagram-export.parseExportView](operations.md#operations.diagram-export.parseExportView), [operations.diagram-export.isViewProblem](operations.md#operations.diagram-export.isViewProblem), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [base.diag.errorText](base.md#base.diag.errorText), [operations.diagram-export.discoveredSpecOf](operations.md#operations.diagram-export.discoveredSpecOf), [operations.shared.rootRelative](operations.md#operations.shared.rootRelative), [operations.diagram-export.diagramExportText](operations.md#operations.diagram-export.diagramExportText), [operations.diagram-export.exportSourcesOf](operations.md#operations.diagram-export.exportSourcesOf), [lang.files.existingText](lang.md#lang.files.existingText), [operations.diagram-export.isDiagramExport](operations.md#operations.diagram-export.isDiagramExport), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite)
+    - type [ImportDrawioRequest](../../src/operations/diagram-export.ts#L236)
       <a id="operations.diagram-export.ImportDrawioRequest"></a>
-    - type [ImportDrawioResult](../../src/operations/diagram-export.ts#L241)
+    - type [ImportDrawioResult](../../src/operations/diagram-export.ts#L246)
       <a id="operations.diagram-export.ImportDrawioResult"></a>
-    - fn [runImportDrawio](../../src/operations/diagram-export.ts#L261) (request: ImportDrawioRequest, context: OperationContext = {}) → Promise<ImportDrawioResult>
+    - fn [runImportDrawio](../../src/operations/diagram-export.ts#L266) (request: ImportDrawioRequest, context: OperationContext = {}) → Promise<ImportDrawioResult>
       <a id="operations.diagram-export.runImportDrawio"></a><br>`keylang import drawio <file> [--into spec.md] [--print]`: the drawing as ONE proposal for the flow it draws (`keylang_view` `flow:<name>` or `discovered:<name>`). The flow's section is edited as the drawing asks (`flowFromDrawio`) and compared with the section as it is: no…
       - calls [map.drawio.parseDrawio](map.md#map.drawio.parseDrawio), [base.diag.errorText](base.md#base.diag.errorText), [map.drawio.drawioFlowName](map.md#map.drawio.drawioFlowName), [operations.shared.rootRelative](operations.md#operations.shared.rootRelative), [lang.files.existingText](lang.md#lang.files.existingText), [map.drawio.flowSection](map.md#map.drawio.flowSection), [map.drawio.flowFromDrawio](map.md#map.drawio.flowFromDrawio), [features.draft.withFlow](features.md#features.draft.withFlow), [features.proposals.lineDiff](features.md#features.proposals.lineDiff), [operations.shared.generatedIn](operations.md#operations.shared.generatedIn), [features.proposals.proposalProblem](features.md#features.proposals.proposalProblem), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [operations.shared.proposalRefusal](operations.md#operations.shared.proposalRefusal), [operations.shared.commitProposal](operations.md#operations.shared.commitProposal), [map.map.sourceInputs](map.md#map.map.sourceInputs), [base.config.toPosix](base.md#base.config.toPosix)
   - module [diagram-propose](../../src/operations/diagram-propose.ts#L1)
@@ -187,7 +195,8 @@
     - diagram-export [operations.diagram-export](operations.md#operations.diagram-export)
     - shared [operations.shared](operations.md#operations.shared)
     - types [operations.types](operations.md#operations.types)
-    - fn [specHash](../../src/operations/diagram-propose.ts#L47) (root: string, docs: readonly Document[]) → string
+    - json [base.json](base.md#base.json)
+    - fn [specHash](../../src/operations/diagram-propose.ts#L48) (root: string, docs: readonly Document[]) → string
       <a id="operations.diagram-propose.specHash"></a><br>The specs a diagram was drawn from, as one hash: every hand-written spec (its path and the SHA-256 of its text on disk) and keylang.json. The page keeps it from `/api/diagram` and sends it back with the drawing.
       - calls [base.span.compareText](base.md#base.span.compareText), [map.snapshot.sha256](map.md#map.snapshot.sha256), [lang.files.readTextOrNull](lang.md#lang.files.readTextOrNull)
     - type [DiagramProposeRequest](../../src/operations/diagram-propose.ts#L57)
@@ -200,12 +209,14 @@
       <a id="operations.diagram-propose.DiagramProposeResult"></a>
     - fn [result](../../src/operations/diagram-propose.ts#L103) (view: string, status: DiagramProposeResult["status"], exitCode: 0 | 1 | 2, error: string | null = null) → DiagramProposeResult <!-- internal -->
       <a id="operations.diagram-propose.result"></a>
-    - fn [baseDiagram](../../src/operations/diagram-propose.ts#L108) (analysis: Analysis, root: string, view: string) → Diagram | string <!-- internal -->
+    - fn [isProblemText](../../src/operations/diagram-propose.ts#L108) (value: EditorModel | Diagram | string) → value is string <!-- internal -->
+      <a id="operations.diagram-propose.isProblemText"></a><br>Whether a parse gave its reason instead of the model or the diagram.
+    - fn [baseDiagram](../../src/operations/diagram-propose.ts#L113) (analysis: Analysis, root: string, view: string) → Diagram | string <!-- internal -->
       <a id="operations.diagram-propose.baseDiagram"></a><br>The diagram of a view the drawing is compared with: the specs' flow, a discovered flow, an entry, the layers; empty for the empty canvas.
       - calls [map.diagram.viewOfKey](map.md#map.diagram.viewOfKey), [operations.diagram-export.discoveredSpecOf](operations.md#operations.diagram-export.discoveredSpecOf), [operations.shared.rootRelative](operations.md#operations.shared.rootRelative), [map.diagram.diagramOf](map.md#map.diagram.diagramOf)
-    - fn [runDiagramPropose](../../src/operations/diagram-propose.ts#L126) (request: DiagramProposeRequest, context: OperationContext = {}) → Promise<DiagramProposeResult>
+    - fn [runDiagramPropose](../../src/operations/diagram-propose.ts#L131) (request: DiagramProposeRequest, context: OperationContext = {}) → Promise<DiagramProposeResult>
       <a id="operations.diagram-propose.runDiagramPropose"></a><br>The drawing as proposals. 2: the model or the view is not one; 1: the specs changed since the drawing was opened (`conflict`), or a proposal is already waiting for a target, or a write was refused (`refused`); 0: proposed, printed, or nothing to propose.
-      - calls [operations.diagram-propose.result](operations.md#operations.diagram-propose.result), [features.diagram-proposal.parseEditorModel](features.md#features.diagram-proposal.parseEditorModel), [base.diag.errorText](base.md#base.diag.errorText), [operations.diagram-propose.specHash](operations.md#operations.diagram-propose.specHash), [operations.shared.rootRelative](operations.md#operations.shared.rootRelative), [operations.diagram-propose.baseDiagram](operations.md#operations.diagram-propose.baseDiagram), [map.system-discover.discoverSystem](map.md#map.system-discover.discoverSystem), [map.schema-discover.codeSchemas](map.md#map.schema-discover.codeSchemas), [map.system-discover.adoptedName](map.md#map.system-discover.adoptedName), [features.system-proposal.systemChanges](features.md#features.system-proposal.systemChanges), [features.diagram-proposal.diagramChanges](features.md#features.diagram-proposal.diagramChanges), [lang.files.readTextOrNull](lang.md#lang.files.readTextOrNull), [features.proposals.lineDiff](features.md#features.proposals.lineDiff), [operations.shared.generatedIn](operations.md#operations.shared.generatedIn), [features.proposals.proposalProblem](features.md#features.proposals.proposalProblem), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [lang.files.existingText](lang.md#lang.files.existingText), [operations.shared.proposalRefusal](operations.md#operations.shared.proposalRefusal), [lang.parser.parse](lang.md#lang.parser.parse), [features.weakening.specWeakenings](features.md#features.weakening.specWeakenings), [base.line-diff.diffLines](base.md#base.line-diff.diffLines), [map.map.sourceInputs](map.md#map.map.sourceInputs), [operations.shared.commitProposal](operations.md#operations.shared.commitProposal), [map.diagram-layout.readLayout](map.md#map.diagram-layout.readLayout), [map.diagram-layout.layoutToFile](map.md#map.diagram-layout.layoutToFile), [map.diagram-layout.writeLayout](map.md#map.diagram-layout.writeLayout)
+      - calls [operations.diagram-propose.result](operations.md#operations.diagram-propose.result), [features.diagram-proposal.parseEditorModel](features.md#features.diagram-proposal.parseEditorModel), [operations.diagram-propose.isProblemText](operations.md#operations.diagram-propose.isProblemText), [base.diag.errorText](base.md#base.diag.errorText), [operations.diagram-propose.specHash](operations.md#operations.diagram-propose.specHash), [operations.shared.rootRelative](operations.md#operations.shared.rootRelative), [operations.diagram-propose.baseDiagram](operations.md#operations.diagram-propose.baseDiagram), [map.system-discover.discoverSystem](map.md#map.system-discover.discoverSystem), [map.schema-discover.codeSchemas](map.md#map.schema-discover.codeSchemas), [map.system-discover.adoptedName](map.md#map.system-discover.adoptedName), [features.system-proposal.systemChanges](features.md#features.system-proposal.systemChanges), [features.diagram-proposal.diagramChanges](features.md#features.diagram-proposal.diagramChanges), [lang.files.readTextOrNull](lang.md#lang.files.readTextOrNull), [features.proposals.lineDiff](features.md#features.proposals.lineDiff), [operations.shared.generatedIn](operations.md#operations.shared.generatedIn), [features.proposals.proposalProblem](features.md#features.proposals.proposalProblem), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [lang.files.existingText](lang.md#lang.files.existingText), [operations.shared.proposalRefusal](operations.md#operations.shared.proposalRefusal), [lang.parser.parse](lang.md#lang.parser.parse), [features.weakening.specWeakenings](features.md#features.weakening.specWeakenings), [base.line-diff.diffLines](base.md#base.line-diff.diffLines), [map.map.sourceInputs](map.md#map.map.sourceInputs), [operations.shared.commitProposal](operations.md#operations.shared.commitProposal), [map.diagram-layout.readLayout](map.md#map.diagram-layout.readLayout), [map.diagram-layout.layoutToFile](map.md#map.diagram-layout.layoutToFile), [map.diagram-layout.writeLayout](map.md#map.diagram-layout.writeLayout)
   - module [discover-names](../../src/operations/discover-names.ts#L1)
     <a id="operations.discover-names"></a><br>`keylang flows discover --names` (business-flows/12): the model's part of the discovery. One request per layer group (`planNames`), at most `jobs` at a time; each answer is checked (`parseNamesAnswer`) and the processes of the groups that answered replace their saved ones, the…
     - analyze [map.analyze](map.md#map.analyze)
@@ -217,9 +228,9 @@
     - agent-cli [features.agent-cli](features.md#features.agent-cli)
     - types [operations.types](operations.md#operations.types)
     - llm [features.llm](features.md#features.llm)
-    - type [NamesOutcome](../../src/operations/discover-names.ts#L18)
+    - type [NamesOutcome](../../src/operations/discover-names.ts#L19)
       <a id="operations.discover-names.NamesOutcome"></a>
-    - fn [nameProcesses](../../src/operations/discover-names.ts#L20) (analyzed: Analysis, discovery: Discovery, specDir: string, names: NonNullable<FlowsDiscoverRequest["names"]>, layer: string | undefined, context: OperationContext) → Promise<NamesOutcome>
+    - fn [nameProcesses](../../src/operations/discover-names.ts#L21) (analyzed: Analysis, discovery: Discovery, specDir: string, names: NonNullable<FlowsDiscoverRequest["names"]>, layer: string | undefined, context: OperationContext) → Promise<NamesOutcome>
       <a id="operations.discover-names.nameProcesses"></a>
       - calls [features.discover-names.readProcesses](features.md#features.discover-names.readProcesses), [features.discover-names.planNames](features.md#features.discover-names.planNames), [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs), [features.discover-names.namesRequest](features.md#features.discover-names.namesRequest), [features.discover-names.estimateNameTokens](features.md#features.discover-names.estimateNameTokens), [base.diag.errorText](base.md#base.diag.errorText), [features.explain-inventory.defaultBriefJobs](features.md#features.explain-inventory.defaultBriefJobs), [features.agent-cli.selectedAgent](features.md#features.agent-cli.selectedAgent), [features.discover-names.parseNamesAnswer](features.md#features.discover-names.parseNamesAnswer), [features.discover-names.processBaseline](features.md#features.discover-names.processBaseline), [features.discover-names.processesPath](features.md#features.discover-names.processesPath), [features.discover-names.renderProcesses](features.md#features.discover-names.renderProcesses)
   - module [discover](../../src/operations/discover.ts#L1)
@@ -241,13 +252,13 @@
     - fn [runFlowsDiscover](../../src/operations/discover.ts#L44) (request: FlowsDiscoverRequest, context: OperationContext) → Promise<OperationEnvelope<"flows-discover">>
       <a id="operations.discover.runFlowsDiscover"></a><br>`flows discover`. 0: written, current (`check`) or printed; 1: `check` found the view stale, or a file where the view goes has no generated marker (nothing written); 2: a broken keylang.json, no code, an I/O error.
       - calls [operations.shared.empty](operations.md#operations.shared.empty), [operations.discover.discoveryOf](operations.md#operations.discover.discoveryOf), [operations.discover-names.nameProcesses](operations.md#operations.discover-names.nameProcesses), [operations.discover.extraGenerated](operations.md#operations.discover.extraGenerated), [operations.discover.readOrNull](operations.md#operations.discover.readOrNull), [base.safe-write.isGeneratedText](base.md#base.safe-write.isGeneratedText), [features.discover.discoverySummary](features.md#features.discover.discoverySummary), [base.diag.errorText](base.md#base.diag.errorText), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic), [base.safe-write.landing](base.md#base.safe-write.landing)
-    - fn [runFlowsAdopt](../../src/operations/discover.ts#L163) (request: FlowsAdoptRequest, context: OperationContext) → Promise<OperationEnvelope<"flows-adopt">>
+    - fn [runFlowsAdopt](../../src/operations/discover.ts#L168) (request: FlowsAdoptRequest, context: OperationContext) → Promise<OperationEnvelope<"flows-adopt">>
       <a id="operations.discover.runFlowsAdopt"></a><br>`flows adopt <name> [--into <spec.md>]`. 0: the proposal is written; 1: a proposal for the target is waiting (`pending: refuse`) or the inputs changed meanwhile; 2: no discovered flow of that name, a flow already specified by hand, a target a proposal may not change, an I/O…
       - calls [operations.shared.empty](operations.md#operations.shared.empty), [operations.discover.discoveryOf](operations.md#operations.discover.discoveryOf), [features.discover.adoptedFlow](features.md#features.discover.adoptedFlow), [operations.shared.generatedIn](operations.md#operations.shared.generatedIn), [map.map.sourceInputs](map.md#map.map.sourceInputs), [operations.draft.flowCandidate](operations.md#operations.draft.flowCandidate), [base.diag.errorText](base.md#base.diag.errorText), [operations.shared.proposalRefusal](operations.md#operations.shared.proposalRefusal), [operations.shared.commitProposal](operations.md#operations.shared.commitProposal)
-    - fn [extraGenerated](../../src/operations/discover.ts#L222) (dir: string, files: ReadonlyMap<string, string>) → string[] <!-- internal -->
+    - fn [extraGenerated](../../src/operations/discover.ts#L227) (dir: string, files: ReadonlyMap<string, string>) → string[] <!-- internal -->
       <a id="operations.discover.extraGenerated"></a><br>Generated `.md` files in `dir` the view no longer has: never the README of the processes, which only `--names` writes. Sorted.
       - calls [base.safe-write.isGeneratedText](base.md#base.safe-write.isGeneratedText), [operations.discover.readOrNull](operations.md#operations.discover.readOrNull)
-    - fn [readOrNull](../../src/operations/discover.ts#L230) (abs: string) → string | null <!-- internal -->
+    - fn [readOrNull](../../src/operations/discover.ts#L235) (abs: string) → string | null <!-- internal -->
       <a id="operations.discover.readOrNull"></a>
   - module [doctor](../../src/operations/doctor.ts#L1)
     <a id="operations.doctor"></a><br>`keylang doctor`: the environment report — languages, the agent and its credentials, the agent CLIs, saved explanations, voice — never a key value.
@@ -267,10 +278,12 @@
     - fn [agentState](../../src/operations/doctor.ts#L85) (config: Config, llmClient: (agent: string | null, options: LlmClientOptions) => LlmSetup) → Promise<DoctorPayload["agent"]> <!-- internal -->
       <a id="operations.doctor.agentState"></a><br>The effective agent, its source and its credential or binary state, without the key value.
       - calls [features.agent-cli.resolveAgent](features.md#features.agent-cli.resolveAgent), [base.diag.errorText](base.md#base.diag.errorText), [features.agent-cli.cliVersion](features.md#features.agent-cli.cliVersion)
-    - fn [engineState](../../src/operations/doctor.ts#L115) ( config: Config, nativeAvailable: boolean, voiceEngine: (config: Config["voice"], localAvailable: boolean) => VoiceEngine, ) → { resolved: DoctorPayload["voice"]["resolved"]; missing: string | null; error: string | null } <!-- internal -->
+    - type [EngineState](../../src/operations/doctor.ts#L114) <!-- internal -->
+      <a id="operations.doctor.EngineState"></a>
+    - fn [engineState](../../src/operations/doctor.ts#L117) ( config: Config, nativeAvailable: boolean, voiceEngine: (config: Config["voice"], localAvailable: boolean) => VoiceEngine, ) → EngineState <!-- internal -->
       <a id="operations.doctor.engineState"></a><br>The engine the voice configuration resolves to now, without the key.
       - calls [base.diag.errorText](base.md#base.diag.errorText)
-    - fn [doctorLines](../../src/operations/doctor.ts#L134) (payload: DoctorPayload) → string[] <!-- internal -->
+    - fn [doctorLines](../../src/operations/doctor.ts#L136) (payload: DoctorPayload) → string[] <!-- internal -->
       <a id="operations.doctor.doctorLines"></a><br>The report lines, exactly as the CLI prints them; the payload carries the data.
   - module [draft](../../src/operations/draft.ts#L1)
     <a id="operations.draft"></a><br>Drafts of specs from the code, by the snapshot's edges or by a model, written only as proposals: `draft flow`, `draft rules`, `draft map` (printed only) and `code-to-spec`.
@@ -331,22 +344,22 @@
     - fn [modelFlows](../../src/operations/draft.ts#L662) ( request: CodeToSpecRequest, mode: "llm" | "hybrid", analyzed: Analysis, client: LlmClient, algo: readonly FlowDraft[], notes: OperationMessage[], context: OperationContext, ) → Promise<{ drafts: FlowDraft[]; model: CodeModelInfo } | { error: string } | { cancelled: true }> <!-- internal -->
       <a id="operations.draft.modelFlows"></a><br>The model's draft of each flow in turn, judged against the snapshot. The notes of each answer (unknown IDs, dropped lines) join `notes` as it comes, as the CLI prints them.
       - calls [operations.draft.flowSteps](operations.md#operations.draft.flowSteps), [base.diag.errorText](base.md#base.diag.errorText)
-    - fn [rulesCountText](../../src/operations/draft.ts#L704) (rules: string) → string <!-- internal -->
+    - fn [rulesCountText](../../src/operations/draft.ts#L705) (rules: string) → string <!-- internal -->
       <a id="operations.draft.rulesCountText"></a><br>`2 rule(s)`: the list items of a drafted `# rules` section.
-    - fn [countProposed](../../src/operations/draft.ts#L709) (root: string, counts: Record<DraftStatus, number>) → string | null <!-- internal -->
+    - fn [countProposed](../../src/operations/draft.ts#L710) (root: string, counts: Record<DraftStatus, number>) → string | null <!-- internal -->
       <a id="operations.draft.countProposed"></a><br>The drafted lines count as proposed once the proposal exists; a count that cannot be written never fails the draft: its error, or null.
       - calls [features.stats.updateStats](features.md#features.stats.updateStats), [features.stats.addDrafts](features.md#features.stats.addDrafts), [base.diag.errorText](base.md#base.diag.errorText)
-    - fn [modelDraft](../../src/operations/draft.ts#L720) (request: DraftFlowRequest, mode: "llm" | "hybrid", analyzed: Analysis, client: LlmClient, context: OperationContext) → Promise<{ draft: FlowDraft; model: DraftModelInfo } | { error: string } | { cancelled: true }> <!-- internal -->
+    - fn [modelDraft](../../src/operations/draft.ts#L721) (request: DraftFlowRequest, mode: "llm" | "hybrid", analyzed: Analysis, client: LlmClient, context: OperationContext) → Promise<{ draft: FlowDraft; model: DraftModelInfo } | { error: string } | { cancelled: true }> <!-- internal -->
       <a id="operations.draft.modelDraft"></a><br>The model's draft, judged against the snapshot; a Cancel during its answer is `cancelled`, never an error.
       - calls [operations.draft.flowSteps](operations.md#operations.draft.flowSteps), [base.diag.errorText](base.md#base.diag.errorText)
-    - fn [flowSteps](../../src/operations/draft.ts#L742) (text: string, trigger: string) → string[] <!-- internal -->
+    - fn [flowSteps](../../src/operations/draft.ts#L743) (text: string, trigger: string) → string[] <!-- internal -->
       <a id="operations.draft.flowSteps"></a><br>The IDs of a drafted flow's trigger and steps in the order they stand, the requested trigger first.
       - calls [lang.parser.parse](lang.md#lang.parser.parse), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)
-    - fn [draftCountsText](../../src/operations/draft.ts#L757) (counts: Record<string, number>) → string <!-- internal -->
+    - fn [draftCountsText](../../src/operations/draft.ts#L758) (counts: Record<string, number>) → string <!-- internal -->
       <a id="operations.draft.draftCountsText"></a><br>`2 agree, 1 llm-only`: the statuses that occur, as the CLI names a model draft.
-    - fn [draftNotes](../../src/operations/draft.ts#L762) (payload: DraftFlowPayload) → OperationMessage[] <!-- internal -->
+    - fn [draftNotes](../../src/operations/draft.ts#L763) (payload: DraftFlowPayload) → OperationMessage[] <!-- internal -->
       <a id="operations.draft.draftNotes"></a><br>What the draft's text does not show, as the CLI's stderr notes: the fallback, unknown IDs, dropped lines.
-    - fn [traceDraft](../../src/operations/draft.ts#L781) (root: string, snapshot: AnalysisSnapshot, fromTrace: { file: string; run?: string }, name: string | undefined) → { draft: FlowDraft; notes: OperationMessage[] } | { error: string } <!-- internal -->
+    - fn [traceDraft](../../src/operations/draft.ts#L782) (root: string, snapshot: AnalysisSnapshot, fromTrace: { file: string; run?: string }, name: string | undefined) → { draft: FlowDraft; notes: OperationMessage[] } | { error: string } <!-- internal -->
       <a id="operations.draft.traceDraft"></a><br>The draft of one run of `fromTrace.file` (`draftFlowFromTrace`): the run `fromTrace.run` names (its `runId`), else the file's one run with spans. A file with several, a run id that matches none or several runs, or an unreadable trace is an error naming what there is to choose…
       - calls [check.trace-evidence.loadTraces](check.md#check.trace-evidence.loadTraces), [base.diag.errorText](base.md#base.diag.errorText), [features.draft.draftFlowFromTrace](features.md#features.draft.draftFlowFromTrace)
   - module [entries](../../src/operations/entries.ts#L1)
@@ -380,18 +393,18 @@
     - types [operations.types](operations.md#operations.types)
     - shared [operations.shared](operations.md#operations.shared)
     - llm [features.llm](features.md#features.llm)
-    - fn [runExplain](../../src/operations/explain.ts#L29) (request: ExplainRequest, context: OperationContext) → Promise<OperationEnvelope<"explain">>
+    - fn [runExplain](../../src/operations/explain.ts#L30) (request: ExplainRequest, context: OperationContext) → Promise<OperationEnvelope<"explain">>
       <a id="operations.explain.runExplain"></a><br>`keylang explain <code|id>` offline. A code needs no analysis: its help, or failed 2 `unknown code`.
       - calls [operations.shared.empty](operations.md#operations.shared.empty), [features.explain-offline.isDiagnosticCode](features.md#features.explain-offline.isDiagnosticCode), [features.explain-offline.codeExplanation](features.md#features.explain-offline.codeExplanation), [features.explain-offline.offlineExplanationText](features.md#features.explain-offline.offlineExplanationText), [map.analyze.analyze](map.md#map.analyze.analyze), [base.diag.errorText](base.md#base.diag.errorText), [features.explain-llm.oldExplanations](features.md#features.explain-llm.oldExplanations), [features.explain-llm.moveHint](features.md#features.explain-llm.moveHint), [features.explain-offline.nodeExplanation](features.md#features.explain-offline.nodeExplanation), [features.explain-offline.unknownIdMessage](features.md#features.explain-offline.unknownIdMessage)
-    - fn [runExplainLlm](../../src/operations/explain.ts#L89) (request: ExplainLlmRequest, context: OperationContext) → Promise<OperationEnvelope<"explain-llm">>
+    - fn [runExplainLlm](../../src/operations/explain.ts#L90) (request: ExplainLlmRequest, context: OperationContext) → Promise<OperationEnvelope<"explain-llm">>
       <a id="operations.explain.runExplainLlm"></a><br>`keylang explain <id> --llm`. The analysis of the saved files (no evidence, nothing persisted); an unknown ID is 2 with the CLI's message.
       - calls [operations.shared.empty](operations.md#operations.shared.empty), [features.explain-offline.isDiagnosticCode](features.md#features.explain-offline.isDiagnosticCode), [base.diag.errorText](base.md#base.diag.errorText), [features.explain-llm.oldExplanations](features.md#features.explain-llm.oldExplanations), [features.explain-llm.moveHint](features.md#features.explain-llm.moveHint), [features.explain-offline.nodeExplanation](features.md#features.explain-offline.nodeExplanation), [features.explain-offline.unknownIdMessage](features.md#features.explain-offline.unknownIdMessage), [map.explanations.explanationPath](map.md#map.explanations.explanationPath), [lang.files.readTextOrNull](lang.md#lang.files.readTextOrNull), [features.explain-llm.readExplanation](features.md#features.explain-llm.readExplanation), [features.explain-offline.savedAnswer](features.md#features.explain-offline.savedAnswer), [features.explain-offline.savedAnswerMiss](features.md#features.explain-offline.savedAnswerMiss), [features.agent-cli.selectedAgent](features.md#features.agent-cli.selectedAgent), [features.explain-offline.savedAnswerText](features.md#features.explain-offline.savedAnswerText), [features.explain-node.formatSummary](features.md#features.explain-node.formatSummary), [map.map.sourceInputs](map.md#map.map.sourceInputs), [operations.shared.specHashes](operations.md#operations.shared.specHashes), [features.explain-llm.explanationRequest](features.md#features.explain-llm.explanationRequest), [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs), [features.explain-llm.briefText](features.md#features.explain-llm.briefText), [features.explain-llm.answerText](features.md#features.explain-llm.answerText), [features.explain-llm.currentBaseline](features.md#features.explain-llm.currentBaseline), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [map.explanations.explainDir](map.md#map.explanations.explainDir), [map.map.sourceInputProblems](map.md#map.map.sourceInputProblems), [operations.shared.specProblems](operations.md#operations.shared.specProblems), [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic), [base.safe-write.landing](base.md#base.safe-write.landing), [map.explanations.formatStoredExplanation](map.md#map.explanations.formatStoredExplanation)
-    - fn [runExplainPlan](../../src/operations/explain.ts#L249) (request: ExplainPlanRequest, context: OperationContext) → Promise<OperationEnvelope<"explain-plan">>
+    - fn [runExplainPlan](../../src/operations/explain.ts#L255) (request: ExplainPlanRequest, context: OperationContext) → Promise<OperationEnvelope<"explain-plan">>
       <a id="operations.explain.runExplainPlan"></a><br>`explain --stale` and the plan of `explain --missing|--stale` (with `--dry-run` its estimate) on a fresh analysis of the saved code and specs (no evidence, no fact cache written). A brief plan needs a snapshot: failed 2 with the CLI's message without one.
       - calls [operations.shared.empty](operations.md#operations.shared.empty), [map.analyze.analyze](map.md#map.analyze.analyze), [base.diag.errorText](base.md#base.diag.errorText), [features.explain-llm.oldExplanations](features.md#features.explain-llm.oldExplanations), [features.explain-llm.moveHint](features.md#features.explain-llm.moveHint), [features.explain-inventory.staleInventory](features.md#features.explain-inventory.staleInventory), [features.explain-inventory.staleInventoryText](features.md#features.explain-inventory.staleInventoryText), [features.explain-inventory.briefPlan](features.md#features.explain-inventory.briefPlan), [features.explain-inventory.defaultBriefJobs](features.md#features.explain-inventory.defaultBriefJobs), [features.agent-cli.selectedAgent](features.md#features.agent-cli.selectedAgent), [features.explain-inventory.briefPlanText](features.md#features.explain-inventory.briefPlanText)
-    - fn [explainBatchText](../../src/operations/explain.ts#L291) (payload: Pick<ExplainBatchPayload, "done" | "failed" | "plan">) → string <!-- internal -->
+    - fn [explainBatchText](../../src/operations/explain.ts#L297) (payload: Pick<ExplainBatchPayload, "done" | "failed" | "plan">) → string <!-- internal -->
       <a id="operations.explain.explainBatchText"></a><br>`explained 5 of 6 node(s)` and `failed: <id>: <reason>` lines: the CLI's stdout of a batch.
-    - fn [runExplainBatch](../../src/operations/explain.ts#L314) (request: ExplainBatchRequest, context: OperationContext) → Promise<OperationEnvelope<"explain-batch">>
+    - fn [runExplainBatch](../../src/operations/explain.ts#L320) (request: ExplainBatchRequest, context: OperationContext) → Promise<OperationEnvelope<"explain-batch">>
       <a id="operations.explain.runExplainBatch"></a><br>`explain --missing|--stale --llm`. Compute: limit and jobs as the CLI checks them (2), a fresh analysis of the saved files (no snapshot is 2 with the CLI's message), the plan (`briefPlan`; empty is `nothing to explain`, 0, no model needed), the model (none is 2).
       - calls [operations.shared.empty](operations.md#operations.shared.empty), [base.diag.errorText](base.md#base.diag.errorText), [features.explain-llm.oldExplanations](features.md#features.explain-llm.oldExplanations), [features.explain-llm.moveHint](features.md#features.explain-llm.moveHint), [features.explain-inventory.defaultBriefJobs](features.md#features.explain-inventory.defaultBriefJobs), [features.agent-cli.selectedAgent](features.md#features.agent-cli.selectedAgent), [features.explain-inventory.briefPlan](features.md#features.explain-inventory.briefPlan), [map.map.sourceInputs](map.md#map.map.sourceInputs), [operations.shared.specHashes](operations.md#operations.shared.specHashes), [map.map.sourceInputProblems](map.md#map.map.sourceInputProblems), [operations.shared.specProblems](operations.md#operations.shared.specProblems), [map.explanations.explanationPath](map.md#map.explanations.explanationPath), [lang.files.readTextOrNull](lang.md#lang.files.readTextOrNull), [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs), [features.explain-llm.briefRequest](features.md#features.explain-llm.briefRequest), [features.explain-llm.briefText](features.md#features.explain-llm.briefText), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [map.explanations.explainDir](map.md#map.explanations.explainDir), [map.explanations.systemBaseline](map.md#map.explanations.systemBaseline), [features.explain-llm.currentBaseline](features.md#features.explain-llm.currentBaseline), [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic), [base.safe-write.landing](base.md#base.safe-write.landing), [map.explanations.formatStoredExplanation](map.md#map.explanations.formatStoredExplanation), [base.span.compareText](base.md#base.span.compareText), [operations.explain.explainBatchText](operations.md#operations.explain.explainBatchText)
   - module [export](../../src/operations/export.ts#L1)
@@ -464,11 +477,13 @@
       <a id="operations.feature.hintLine"></a><br>One hint as the CLI prints it after the gaps: `hint: file:line:col: kind id: reason`.
     - fn [featureSummary](../../src/operations/feature.ts#L136) (report: FeatureReport) → string
       <a id="operations.feature.featureSummary"></a><br>The CLI's closing line on stderr: `done`, or `N gap(s) · stage <stage>`.
-    - fn [questionLines](../../src/operations/feature.ts#L144) (answer: string) → { questions: string[]; dropped: number }
+    - type [QuestionLines](../../src/operations/feature.ts#L143) = { questions: string[]; dropped: number } <!-- internal -->
+      <a id="operations.feature.QuestionLines"></a>
+    - fn [questionLines](../../src/operations/feature.ts#L146) (answer: string) → QuestionLines
       <a id="operations.feature.questionLines"></a><br>The model's answer as questions: its `- ? <text>` lines, at most `MAX_QUESTIONS`, and how many other lines were left out.
-    - fn [withQuestions](../../src/operations/feature.ts#L158) (text: string, questions: readonly string[], slug: string) → string
+    - fn [withQuestions](../../src/operations/feature.ts#L160) (text: string, questions: readonly string[], slug: string) → string
       <a id="operations.feature.withQuestions"></a><br>`text` with `questions` at the top level of its first flow: after the questions its item list starts with, else before its first item (after the heading and prose); a file with no flow yet gets a `# flow <slug>` with them. The rest of the file is kept as written.
-    - fn [runFeatureQuestions](../../src/operations/feature.ts#L189) (request: FeatureQuestionsRequest, context: OperationContext) → Promise<OperationEnvelope<"feature-questions">>
+    - fn [runFeatureQuestions](../../src/operations/feature.ts#L191) (request: FeatureQuestionsRequest, context: OperationContext) → Promise<OperationEnvelope<"feature-questions">>
       <a id="operations.feature.runFeatureQuestions"></a><br>«Ask the model for questions» on the feature readiness screen (c4-zoom/11): one request with the feature file and what keylang knows around its ids; the answer's `- ? …` lines, at most five, become a proposal for the file that a person accepts hunk by hunk in MERGE. Nothing is…
       - calls [operations.shared.empty](operations.md#operations.shared.empty), [base.diag.errorText](base.md#base.diag.errorText), [base.config.specPath](base.md#base.config.specPath), [operations.shared.modelSetup](operations.md#operations.shared.modelSetup), [operations.shared.rootRelative](operations.md#operations.shared.rootRelative), [operations.shared.generatedIn](operations.md#operations.shared.generatedIn), [features.proposals.proposalProblem](features.md#features.proposals.proposalProblem), [lang.files.existingText](lang.md#lang.files.existingText), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [operations.shared.proposalRefusal](operations.md#operations.shared.proposalRefusal), [map.map.sourceInputs](map.md#map.map.sourceInputs), [features.agent-context.contextText](features.md#features.agent-context.contextText), [features.agent-context.contextForIds](features.md#features.agent-context.contextForIds), [features.feature-status.idsIn](features.md#features.feature-status.idsIn), [operations.feature.questionLines](operations.md#operations.feature.questionLines), [operations.shared.commitProposal](operations.md#operations.shared.commitProposal), [operations.feature.withQuestions](operations.md#operations.feature.withQuestions)
   - module [flow-bundle](../../src/operations/flow-bundle.ts#L1)
@@ -508,10 +523,12 @@
     - fn [sectionText](../../src/operations/flow-bundle.ts#L207) (root: string, analyzed: Analysis, file: string, name: string) → string | null <!-- internal -->
       <a id="operations.flow-bundle.sectionText"></a><br>The `# flow <name>` section of a spec file as written, heading to the next heading; null when it is not there.
       - calls [lang.files.existingText](lang.md#lang.files.existingText)
-    - fn [gitOf](../../src/operations/flow-bundle.ts#L224) (root: string) → { repo: string; commit: string }
+    - type [GitOrigin](../../src/operations/flow-bundle.ts#L223) = { repo: string; commit: string } <!-- internal -->
+      <a id="operations.flow-bundle.GitOrigin"></a>
+    - fn [gitOf](../../src/operations/flow-bundle.ts#L226) (root: string) → GitOrigin
       <a id="operations.flow-bundle.gitOf"></a><br>The repository as git names it (the `origin` URL without credentials, else the directory) and HEAD; `n/a` without git.
       - calls [features.clone.redactUrl](features.md#features.clone.redactUrl)
-    - fn [runFlowImport](../../src/operations/flow-bundle.ts#L246) (request: FlowImportRequest, context: OperationContext) → Promise<OperationEnvelope<"flow-import">>
+    - fn [runFlowImport](../../src/operations/flow-bundle.ts#L248) (request: FlowImportRequest, context: OperationContext) → Promise<OperationEnvelope<"flow-import">>
       <a id="operations.flow-bundle.runFlowImport"></a><br>`flow import <bundle.md>`. 0: the proposals are written, or the preview; 1: a proposal for a target is waiting (`pending: refuse`) or an input changed meanwhile; 2: no bundle, a bad --layer-map, `--mode llm` without a model, a target a proposal may not change, an I/O error.
       - calls [operations.shared.empty](operations.md#operations.shared.empty), [base.diag.errorText](base.md#base.diag.errorText), [features.flow-bundle.parseBundle](features.md#features.flow-bundle.parseBundle), [base.brief.firstSentence](base.md#base.brief.firstSentence), [features.flow-bundle.usedLayers](features.md#features.flow-bundle.usedLayers), [features.flow-bundle.parseLayerMap](features.md#features.flow-bundle.parseLayerMap), [operations.shared.modelSetup](operations.md#operations.shared.modelSetup), [features.flow-bundle.layerMapRequest](features.md#features.flow-bundle.layerMapRequest), [features.flow-bundle.parseLayerMapAnswer](features.md#features.flow-bundle.parseLayerMapAnswer), [features.flow-bundle.algoLayers](features.md#features.flow-bundle.algoLayers), [operations.shared.rootRelative](operations.md#operations.shared.rootRelative), [base.config.toPosix](base.md#base.config.toPosix), [features.flow-bundle.importPlan](features.md#features.flow-bundle.importPlan), [lang.files.existingText](lang.md#lang.files.existingText), [features.draft.withFlow](features.md#features.draft.withFlow), [features.flow-bundle.withMigration](features.md#features.flow-bundle.withMigration), [operations.shared.generatedIn](operations.md#operations.shared.generatedIn), [features.proposals.proposalProblem](features.md#features.proposals.proposalProblem), [operations.shared.proposalRefusal](operations.md#operations.shared.proposalRefusal), [map.map.sourceInputs](map.md#map.map.sourceInputs), [operations.shared.commitProposal](operations.md#operations.shared.commitProposal)
   - module [generate](../../src/operations/generate.ts#L1)
@@ -535,59 +552,59 @@
     - fn [runMap](../../src/operations/generate.ts#L78) (request: MapRequest, context: OperationContext) → Promise<OperationEnvelope<"map">>
       <a id="operations.generate.runMap"></a><br>`keylang map` in two phases. Compute: the analysis (the fact cache is prepared, not written) and a plan with the expected bytes of every target.
       - calls [operations.shared.empty](operations.md#operations.shared.empty), [base.diag.errorText](base.md#base.diag.errorText), [map.map.planMap](map.md#map.map.planMap), [operations.generate.mapConflictLines](operations.md#operations.generate.mapConflictLines), [map.map.mapPlanProblems](map.md#map.map.mapPlanProblems), [map.map.commitMap](map.md#map.map.commitMap), [operations.generate.mapStepLines](operations.md#operations.generate.mapStepLines)
-    - fn [mapConflictLines](../../src/operations/generate.ts#L176) (conflicts: readonly string[], path: (file: string) => string = (file) => file) → string[]
+    - fn [mapConflictLines](../../src/operations/generate.ts#L177) (conflicts: readonly string[], path: (file: string) => string = (file) => file) → string[]
       <a id="operations.generate.mapConflictLines"></a><br>The conflict lines `keylang map` prints: nothing is written while any exists.
-    - fn [mapStepLines](../../src/operations/generate.ts#L185) (steps: readonly CommittedStep[], path: (file: string) => string = (file) => file) → string[]
+    - fn [mapStepLines](../../src/operations/generate.ts#L186) (steps: readonly CommittedStep[], path: (file: string) => string = (file) => file) → string[]
       <a id="operations.generate.mapStepLines"></a><br>The lines `keylang map` prints for its completed steps of both maps: writes, then removals. The index and the fact cache are written silently, as they always were; the payload lists them.
-    - fn [mapSummary](../../src/operations/generate.ts#L192) (payload: MapPayload) → string
+    - fn [mapSummary](../../src/operations/generate.ts#L193) (payload: MapPayload) → string
       <a id="operations.generate.mapSummary"></a><br>The summary `keylang map` writes to stderr after a commit.
-    - fn [mapCheckLines](../../src/operations/generate.ts#L210) (diff: { conflicts: readonly string[]; stale: readonly string[] }, path: (file: string) => string = (file) => file) → string[]
+    - fn [mapCheckLines](../../src/operations/generate.ts#L211) (diff: { conflicts: readonly string[]; stale: readonly string[] }, path: (file: string) => string = (file) => file) → string[]
       <a id="operations.generate.mapCheckLines"></a><br>The lines `map --check` prints, paths as given (the CLI makes them relative to its working directory). A manual file blocks `map` itself, so with a conflict "run keylang map" would not refresh the rest: stale files are then not listed.
       - calls [operations.generate.mapConflictLines](operations.md#operations.generate.mapConflictLines)
-    - fn [runBaseline](../../src/operations/generate.ts#L230) (request: BaselineRequest, context: OperationContext) → Promise<OperationEnvelope<"baseline">>
+    - fn [runBaseline](../../src/operations/generate.ts#L231) (request: BaselineRequest, context: OperationContext) → Promise<OperationEnvelope<"baseline">>
       <a id="operations.generate.runBaseline"></a><br>`keylang baseline [--check]`: the rules of the current layer graph (the rule algorithm of `baselineText`) against `<dir>/rules.baseline.md`. The analysis reads the code and the saved `keylang.json`, not the specs, and writes no fact cache.
       - calls [operations.shared.empty](operations.md#operations.shared.empty), [base.diag.errorText](base.md#base.diag.errorText), [features.baseline.planBaseline](features.md#features.baseline.planBaseline), [features.baseline.baselinePlanProblems](features.md#features.baseline.baselinePlanProblems), [features.baseline.commitBaseline](features.md#features.baseline.commitBaseline)
-    - fn [runAgents](../../src/operations/generate.ts#L330) (request: AgentsRequest, context: OperationContext) → Promise<OperationEnvelope<"agents">>
+    - fn [runAgents](../../src/operations/generate.ts#L331) (request: AgentsRequest, context: OperationContext) → Promise<OperationEnvelope<"agents">>
       <a id="operations.generate.runAgents"></a><br>`keylang agents [--check]`: the managed harness files of the chosen harnesses (the unchanged adapters of `harness.ts`) against the disk. The whole plan is built first: a broken marker or invalid JSON/TOML fails it with code 2 naming the file, and nothing is written.
       - calls [operations.shared.empty](operations.md#operations.shared.empty), [features.harness.planAgents](features.md#features.harness.planAgents), [base.diag.errorText](base.md#base.diag.errorText), [features.harness.agentsPlanProblems](features.md#features.harness.agentsPlanProblems), [features.harness.commitAgents](features.md#features.harness.commitAgents)
-    - fn [initSources](../../src/operations/generate.ts#L419) (root: string, label = ".") → { config: Config } | { error: string }
+    - fn [initSources](../../src/operations/generate.ts#L421) (root: string, label = ".") → { config: Config } | { error: string }
       <a id="operations.generate.initSources"></a><br>The configuration `keylang init` describes: the saved keylang.json, else the guess. An error (a broken keylang.json, no supported sources) is the reason init stops with code 2 before anything else, the harness selection included.
       - calls [base.config.loadConfig](base.md#base.config.loadConfig), [base.diag.errorText](base.md#base.diag.errorText)
-    - fn [ignoresKeylangCache](../../src/operations/generate.ts#L441) (text: string) → boolean <!-- internal -->
+    - fn [ignoresKeylangCache](../../src/operations/generate.ts#L443) (text: string) → boolean <!-- internal -->
       <a id="operations.generate.ignoresKeylangCache"></a><br>A line that ignores the root `.keylang` directory: `.keylang`, `.keylang/`, `/.keylang` or `/.keylang/`, with trailing spaces as git ignores them.
-    - fn [withKeylangCacheIgnored](../../src/operations/generate.ts#L450) (current: string | null) → string <!-- internal -->
+    - fn [withKeylangCacheIgnored](../../src/operations/generate.ts#L452) (current: string | null) → string <!-- internal -->
       <a id="operations.generate.withKeylangCacheIgnored"></a><br>`current` (null: no file) with the comment and `.keylang/` appended after one blank line. The bytes before stay as they are; the new lines end in CRLF only when every line of the file does.
       - calls [base.safe-write.allCrlf](base.md#base.safe-write.allCrlf)
-    - type [GitignorePlan](../../src/operations/generate.ts#L462) <!-- internal -->
+    - type [GitignorePlan](../../src/operations/generate.ts#L464) <!-- internal -->
       <a id="operations.generate.GitignorePlan"></a><br>The `.gitignore` stage before the commit: the bytes read (null: no file), and the text to write (null: nothing to write).
-    - fn [planGitignore](../../src/operations/generate.ts#L469) (root: string) → GitignorePlan <!-- internal -->
+    - fn [planGitignore](../../src/operations/generate.ts#L471) (root: string) → GitignorePlan <!-- internal -->
       <a id="operations.generate.planGitignore"></a><br>Reads the root `.gitignore` under the write rules (never through a link out of the repository) and plans the entry. Writes nothing.
       - calls [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [base.safe-write.landing](base.md#base.safe-write.landing), [lang.files.existingText](lang.md#lang.files.existingText), [base.diag.errorText](base.md#base.diag.errorText), [operations.generate.ignoresKeylangCache](operations.md#operations.generate.ignoresKeylangCache), [operations.generate.withKeylangCacheIgnored](operations.md#operations.generate.withKeylangCacheIgnored)
-    - fn [commitGitignore](../../src/operations/generate.ts#L489) (root: string, plan: GitignorePlan) → string | null <!-- internal -->
+    - fn [commitGitignore](../../src/operations/generate.ts#L491) (root: string, plan: GitignorePlan) → string | null <!-- internal -->
       <a id="operations.generate.commitGitignore"></a><br>Appends the entry while the file still holds the bytes the plan read; the reason when it may not be written. Throws on an I/O error.
       - calls [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [base.safe-write.landing](base.md#base.safe-write.landing), [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic)
-    - fn [gitignoreCode](../../src/operations/generate.ts#L503) (stage: GitignoreStage) → 0 | 1 | 2 <!-- internal -->
+    - fn [gitignoreCode](../../src/operations/generate.ts#L505) (stage: GitignoreStage) → 0 | 1 | 2 <!-- internal -->
       <a id="operations.generate.gitignoreCode"></a><br>The code of the `.gitignore` stage: 2 an I/O error, 1 refused or (in a check) not listed, else 0.
-    - fn [gitignoreMessage](../../src/operations/generate.ts#L510) (stage: GitignoreStage) → OperationMessage | null
+    - fn [gitignoreMessage](../../src/operations/generate.ts#L512) (stage: GitignoreStage) → OperationMessage | null
       <a id="operations.generate.gitignoreMessage"></a><br>The line init prints for the `.gitignore` stage; null when it was already listed.
-    - fn [runInit](../../src/operations/generate.ts#L540) (request: InitRequest, context: OperationContext) → Promise<OperationEnvelope<"init">>
+    - fn [runInit](../../src/operations/generate.ts#L542) (request: InitRequest, context: OperationContext) → Promise<OperationEnvelope<"init">>
       <a id="operations.generate.runInit"></a><br>`keylang init [--check]`: an orchestration of the shared config, map, baseline and agents steps, not a call of the CLI commands. Before anything: the configuration (2 when it is broken or there is no supported source), then the harness plan (a broken harness file is 2 and…
       - calls [operations.shared.empty](operations.md#operations.shared.empty), [operations.generate.initSources](operations.md#operations.generate.initSources), [base.config.guessLayout](base.md#base.config.guessLayout), [operations.generate.runAgents](operations.md#operations.generate.runAgents), [operations.generate.runBaseline](operations.md#operations.generate.runBaseline), [operations.generate.planGitignore](operations.md#operations.generate.planGitignore), [operations.generate.gitignoreMessage](operations.md#operations.generate.gitignoreMessage), [operations.generate.gitignoreCode](operations.md#operations.generate.gitignoreCode), [base.diag.errorText](base.md#base.diag.errorText), [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic), [base.config.configToJson](base.md#base.config.configToJson), [operations.generate.commitGitignore](operations.md#operations.generate.commitGitignore), [operations.generate.runMap](operations.md#operations.generate.runMap)
-    - fn [runWire](../../src/operations/generate.ts#L690) (request: WireRequest, context: OperationContext) → Promise<OperationEnvelope<"wire">>
+    - fn [runWire](../../src/operations/generate.ts#L700) (request: WireRequest, context: OperationContext) → Promise<OperationEnvelope<"wire">>
       <a id="operations.generate.runWire"></a><br>`keylang wire [--check]` in two phases. The path policy of `out` is checked before anything is read: a plain relative TypeScript path that stays inside the repository through links (code 2 otherwise).
       - calls [operations.shared.empty](operations.md#operations.shared.empty), [operations.generate.wireOutProblem](operations.md#operations.generate.wireOutProblem), [operations.generate.wireSpecInputs](operations.md#operations.generate.wireSpecInputs), [base.config.loadConfig](base.md#base.config.loadConfig), [base.diag.errorText](base.md#base.diag.errorText), [operations.generate.wiringErrors](operations.md#operations.generate.wiringErrors), [base.diag.formatDiagnostic](base.md#base.diag.formatDiagnostic), [map.wire-gen.generateWire](map.md#map.wire-gen.generateWire), [base.safe-write.landing](base.md#base.safe-write.landing), [lang.files.existingText](lang.md#lang.files.existingText), [map.map.sourceInputs](map.md#map.map.sourceInputs), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [map.map.sourceInputProblems](map.md#map.map.sourceInputProblems), [operations.generate.wireSpecProblems](operations.md#operations.generate.wireSpecProblems), [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic)
-    - fn [wireOutProblem](../../src/operations/generate.ts#L807) (root: string, out: string) → string | null
+    - fn [wireOutProblem](../../src/operations/generate.ts#L817) (root: string, out: string) → string | null
       <a id="operations.generate.wireOutProblem"></a><br>Why `out` cannot be the generated file (the CLI's message), or null: the path policy of every write — plain, relative, inside the repository through links — and a TypeScript extension. Reads nothing outside the repository and writes nothing; a form may call it as the path is…
       - calls [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [base.diag.errorText](base.md#base.diag.errorText)
-    - fn [wiringErrors](../../src/operations/generate.ts#L820) (analysis: Analysis) → Diagnostic[] <!-- internal -->
+    - fn [wiringErrors](../../src/operations/generate.ts#L830) (analysis: Analysis) → Diagnostic[] <!-- internal -->
       <a id="operations.generate.wiringErrors"></a><br>Error diagnostics on the lines of a `# wiring` section, whatever their code: any of them can change what is generated.
       - calls [base.diag.isError](base.md#base.diag.isError)
-    - type [WireSpecInputs](../../src/operations/generate.ts#L835) <!-- internal -->
+    - type [WireSpecInputs](../../src/operations/generate.ts#L845) <!-- internal -->
       <a id="operations.generate.WireSpecInputs"></a><br>What the generated text depends on besides the snapshot: every saved spec (a `# wiring` section may be in any) and `tsconfig.json` (the import form).
-    - fn [wireSpecInputs](../../src/operations/generate.ts#L841) (config: Config) → WireSpecInputs <!-- internal -->
+    - fn [wireSpecInputs](../../src/operations/generate.ts#L851) (config: Config) → WireSpecInputs <!-- internal -->
       <a id="operations.generate.wireSpecInputs"></a><br>The saved specs by path (relative, POSIX) with their hash, and the root `tsconfig.json`.
       - calls [lang.files.collectMdFiles](lang.md#lang.files.collectMdFiles), [map.analyze.within](map.md#map.analyze.within), [lang.files.readTextOrNull](lang.md#lang.files.readTextOrNull), [base.config.toPosix](base.md#base.config.toPosix), [map.snapshot.sha256](map.md#map.snapshot.sha256)
-    - fn [wireSpecProblems](../../src/operations/generate.ts#L861) (config: Config, before: WireSpecInputs) → string[] <!-- internal -->
+    - fn [wireSpecProblems](../../src/operations/generate.ts#L871) (config: Config, before: WireSpecInputs) → string[] <!-- internal -->
       <a id="operations.generate.wireSpecProblems"></a><br>How the specs and `tsconfig.json` differ from the ones the wiring was computed from (`path: reason` lines).
       - calls [operations.generate.wireSpecInputs](operations.md#operations.generate.wireSpecInputs)
   - module [greenfield](../../src/operations/greenfield.ts#L1)
@@ -599,23 +616,33 @@
     - greenfield [features.greenfield](features.md#features.greenfield)
     - safe-write [base.safe-write](base.md#base.safe-write)
     - feature [operations.feature](operations.md#operations.feature)
-    - type [GreenfieldRequest](../../src/operations/greenfield.ts#L26)
+    - json [base.json](base.md#base.json)
+    - type [GreenfieldRequest](../../src/operations/greenfield.ts#L27)
       <a id="operations.greenfield.GreenfieldRequest"></a>
-    - type [GreenfieldResult](../../src/operations/greenfield.ts#L37)
+    - type [GreenfieldResult](../../src/operations/greenfield.ts#L38)
       <a id="operations.greenfield.GreenfieldResult"></a>
-    - fn [result](../../src/operations/greenfield.ts#L50) (status: GreenfieldResult["status"], exitCode: 0 | 1 | 2, error: string | null, files: string[] = []) → GreenfieldResult <!-- internal -->
+    - fn [result](../../src/operations/greenfield.ts#L51) (status: GreenfieldResult["status"], exitCode: 0 | 1 | 2, error: string | null, files: string[] = []) → GreenfieldResult <!-- internal -->
       <a id="operations.greenfield.result"></a>
-    - fn [exists](../../src/operations/greenfield.ts#L54) (abs: string) → boolean <!-- internal -->
+    - fn [exists](../../src/operations/greenfield.ts#L55) (abs: string) → boolean <!-- internal -->
       <a id="operations.greenfield.exists"></a>
-    - fn [greenfieldAvailability](../../src/operations/greenfield.ts#L65) (root: string) → { available: boolean; reason: string | null }
+    - type [GreenfieldAvailability](../../src/operations/greenfield.ts#L65) = { available: boolean; reason: string | null } <!-- internal -->
+      <a id="operations.greenfield.GreenfieldAvailability"></a>
+    - fn [greenfieldAvailability](../../src/operations/greenfield.ts#L68) (root: string) → GreenfieldAvailability
       <a id="operations.greenfield.greenfieldAvailability"></a><br>Whether a new project may be drawn here: the root has no keylang.json (not even a link of that name).
       - calls [operations.greenfield.exists](operations.md#operations.greenfield.exists)
-    - fn [newFileProblem](../../src/operations/greenfield.ts#L72) (root: string, path: string) → string | null <!-- internal -->
+    - fn [isText](../../src/operations/greenfield.ts#L75) (value: unknown) → value is string <!-- internal -->
+      <a id="operations.greenfield.isText"></a><br>Whether a field of the request is text.
+    - fn [isNameList](../../src/operations/greenfield.ts#L80) (value: unknown) → value is string[] <!-- internal -->
+      <a id="operations.greenfield.isNameList"></a><br>Whether `languages` of the request is a list of names.
+      - calls [operations.greenfield.isText](operations.md#operations.greenfield.isText)
+    - fn [isProblemText](../../src/operations/greenfield.ts#L85) (value: EditorModel | GreenfieldPlan | string) → value is string <!-- internal -->
+      <a id="operations.greenfield.isProblemText"></a><br>Whether a parse gave its reason instead of the model or the plan.
+    - fn [newFileProblem](../../src/operations/greenfield.ts#L90) (root: string, path: string) → string | null <!-- internal -->
       <a id="operations.greenfield.newFileProblem"></a><br>Why `path` cannot be a new file of the project, or null: it exists, a link included, or a file stands where a directory of it goes.
       - calls [operations.greenfield.exists](operations.md#operations.greenfield.exists), [base.safe-write.targetProblem](base.md#base.safe-write.targetProblem)
-    - fn [runGreenfield](../../src/operations/greenfield.ts#L98) (request: GreenfieldRequest) → GreenfieldResult
+    - fn [runGreenfield](../../src/operations/greenfield.ts#L116) (request: GreenfieldRequest) → GreenfieldResult
       <a id="operations.greenfield.runGreenfield"></a><br>The drawing as the first files of the project. 2: the request is not one (no lane, no language, a shape outside every lane); 1: the project has keylang.json or a target is already there — nothing written; 0: written.
-      - calls [operations.greenfield.result](operations.md#operations.greenfield.result), [base.diag.errorText](base.md#base.diag.errorText), [operations.greenfield.greenfieldAvailability](operations.md#operations.greenfield.greenfieldAvailability), [features.diagram-proposal.parseEditorModel](features.md#features.diagram-proposal.parseEditorModel), [features.greenfield.greenfieldPlan](features.md#features.greenfield.greenfieldPlan), [operations.greenfield.newFileProblem](operations.md#operations.greenfield.newFileProblem), [base.safe-write.safeWriteAll](base.md#base.safe-write.safeWriteAll)
+      - calls [operations.greenfield.result](operations.md#operations.greenfield.result), [base.diag.errorText](base.md#base.diag.errorText), [operations.greenfield.greenfieldAvailability](operations.md#operations.greenfield.greenfieldAvailability), [features.diagram-proposal.parseEditorModel](features.md#features.diagram-proposal.parseEditorModel), [operations.greenfield.isProblemText](operations.md#operations.greenfield.isProblemText), [operations.greenfield.isNameList](operations.md#operations.greenfield.isNameList), [operations.greenfield.isText](operations.md#operations.greenfield.isText), [features.greenfield.greenfieldPlan](features.md#features.greenfield.greenfieldPlan), [operations.greenfield.newFileProblem](operations.md#operations.greenfield.newFileProblem), [base.safe-write.safeWriteAll](base.md#base.safe-write.safeWriteAll)
   - module [integrations](../../src/operations/integrations.ts#L1)
     <a id="operations.integrations"></a><br>`keylang integrations [--json]`, the MCP tool `list_integrations` and the TUI's «Integrations» (business-flows/14): outgoing clients, incoming webhooks and queues of the current snapshot, read-only. One text for the CLI and the F6 report, one JSON shape for `--json` and MCP.
     - node [external.node](external.md#external.node)
@@ -722,17 +749,17 @@
     - fn [runCheck](../../src/operations/spec.ts#L219) (request: CheckRequest, context: OperationContext) → Promise<OperationEnvelope<"check">>
       <a id="operations.spec.runCheck"></a><br>`keylang check` on the saved files: the paths (the spec directory by default), the static mode (request, then keylang.json, then `behavior`) and `strict`. Code 1 for a failure, or with `strict` for an unverified verdict; an unverified one without `strict` is code 0 and stays in…
       - calls [operations.shared.empty](operations.md#operations.shared.empty), [base.config.loadConfig](base.md#base.config.loadConfig), [base.diag.errorText](base.md#base.diag.errorText), [features.git-changes.gitChangedFiles](features.md#features.git-changes.gitChangedFiles), [map.analyze.within](map.md#map.analyze.within), [base.config.toPosix](base.md#base.config.toPosix), [map.analyze.analyze](map.md#map.analyze.analyze), [features.check-results.checkReport](features.md#features.check-results.checkReport), [features.git-changes.deletedModuleIds](features.md#features.git-changes.deletedModuleIds), [features.changed.filterChanged](features.md#features.changed.filterChanged), [features.git-changes.changedPathSet](features.md#features.git-changes.changedPathSet), [features.weakening.readWeakenings](features.md#features.weakening.readWeakenings), [features.weakening.weakeningDiagnostic](features.md#features.weakening.weakeningDiagnostic), [base.span.compareText](base.md#base.span.compareText), [base.diag.formatDiagnostic](base.md#base.diag.formatDiagnostic), [base.config.resolveStatic](base.md#base.config.resolveStatic), [operations.spec.checkSkipNote](operations.md#operations.spec.checkSkipNote), [operations.spec.checkSummary](operations.md#operations.spec.checkSummary), [features.check-results.checkExitCode](features.md#features.check-results.checkExitCode)
-    - fn [checkSkipNote](../../src/operations/spec.ts#L346) (path: string) → string
+    - fn [checkSkipNote](../../src/operations/spec.ts#L348) (path: string) → string
       <a id="operations.spec.checkSkipNote"></a><br>The note on a path that holds no specs, as the CLI writes it after `keylang: `.
-    - fn [checkSummary](../../src/operations/spec.ts#L356) (counts: CheckCounts) → string
+    - fn [checkSummary](../../src/operations/spec.ts#L358) (counts: CheckCounts) → string
       <a id="operations.spec.checkSummary"></a><br>The CLI's closing line on stderr: `0 fail, 2 unverified, 5 ok`. Once two unverified verdicts name one hole, the line says how many holes they come from: `0 fail, 8 unverified (from 2 holes), 71 ok`, and `9 unverified (8 from 2 holes)` when the others name no hole.
-    - fn [runExplainEdge](../../src/operations/spec.ts#L371) (request: ExplainEdgeRequest, context: OperationContext) → Promise<OperationEnvelope<"explain-edge">>
+    - fn [runExplainEdge](../../src/operations/spec.ts#L373) (request: ExplainEdgeRequest, context: OperationContext) → Promise<OperationEnvelope<"explain-edge">>
       <a id="operations.spec.runExplainEdge"></a><br>`keylang check --explain-edge <from> <to>` on the saved code: a fresh analysis without specs, then the edges between the ids. Code 0 whether or not there is an edge; code 2 for a broken config, no snapshot or an unknown id (an unknown tail under a known module included).
       - calls [operations.shared.empty](operations.md#operations.shared.empty), [map.analyze.analyze](map.md#map.analyze.analyze), [base.diag.errorText](base.md#base.diag.errorText), [features.explain-edge.edgeIdKnown](features.md#features.explain-edge.edgeIdKnown), [features.explain-edge.explainEdge](features.md#features.explain-edge.explainEdge), [features.explain-edge.edgeExplanationLines](features.md#features.explain-edge.edgeExplanationLines)
-    - fn [runParse](../../src/operations/spec.ts#L414) (request: ParseRequest, context: OperationContext) → Promise<OperationEnvelope<"parse">>
+    - fn [runParse](../../src/operations/spec.ts#L416) (request: ParseRequest, context: OperationContext) → Promise<OperationEnvelope<"parse">>
       <a id="operations.spec.runParse"></a><br>`keylang parse`: every Markdown file under the paths, in their order, into the Text IR. The parser alone runs — no snapshot of the code, no rules.
       - calls [operations.shared.empty](operations.md#operations.shared.empty), [base.config.assertFormatOnly](base.md#base.config.assertFormatOnly), [lang.files.collectMdFiles](lang.md#lang.files.collectMdFiles), [base.diag.errorText](base.md#base.diag.errorText), [map.explanations.isStoredExplanation](map.md#map.explanations.isStoredExplanation), [lang.parser.parse](lang.md#lang.parser.parse), [base.diag.isError](base.md#base.diag.isError), [base.diag.formatDiagnostic](base.md#base.diag.formatDiagnostic), [lang.parse-format.parseReportText](lang.md#lang.parse-format.parseReportText)
-    - fn [runTracePlan](../../src/operations/spec.ts#L477) (request: TracePlanRequest, context: OperationContext) → Promise<OperationEnvelope<"trace-plan">>
+    - fn [runTracePlan](../../src/operations/spec.ts#L479) (request: TracePlanRequest, context: OperationContext) → Promise<OperationEnvelope<"trace-plan">>
       <a id="operations.spec.runTracePlan"></a><br>`keylang trace-plan <flow>`: the flow's `trigger` and `step` IDs from the saved specs, then a fresh snapshot of the saved code — never the session's or a cached index. With `entry` (`trace-plan --entry <id>`): the fns reachable from that fn (`reachableFrom`), named `flow` or…
       - calls [operations.shared.empty](operations.md#operations.shared.empty), [map.trace-plan.tracePlan](map.md#map.trace-plan.tracePlan), [base.config.loadConfig](base.md#base.config.loadConfig), [map.trace-plan.entryTracePlan](map.md#map.trace-plan.entryTracePlan), [base.diag.errorText](base.md#base.diag.errorText), [map.trace-plan.tracePlanText](map.md#map.trace-plan.tracePlanText)
   - module [system](../../src/operations/system.ts#L1)
@@ -748,13 +775,18 @@
     - system [check.system](check.md#check.system)
     - shared [operations.shared](operations.md#operations.shared)
     - types [operations.types](operations.md#operations.types)
-    - fn [listing](../../src/operations/system.ts#L21) (systems: readonly SystemSpec[]) → SystemPayload["systems"] <!-- internal -->
+    - type [CountedVerdict](../../src/operations/system.ts#L25) = "ok" | "unverified" | "fail" <!-- internal -->
+      <a id="operations.system.CountedVerdict"></a>
+    - fn [isCountedVerdict](../../src/operations/system.ts#L27) (verdict: string) → verdict is CountedVerdict <!-- internal -->
+      <a id="operations.system.isCountedVerdict"></a>
+    - fn [listing](../../src/operations/system.ts#L31) (systems: readonly SystemSpec[]) → SystemPayload["systems"] <!-- internal -->
       <a id="operations.system.listing"></a>
-    - fn [systemText](../../src/operations/system.ts#L33) (system: SystemSpec, verdicts: SystemPayload["verdicts"]) → string
+    - fn [systemText](../../src/operations/system.ts#L43) (system: SystemSpec, verdicts: SystemPayload["verdicts"]) → string
       <a id="operations.system.systemText"></a><br>A system as a tree: zones and their components, each with its code, relations and verdicts, tables; then sequences and notes.
-    - fn [systemTemplate](../../src/operations/system.ts#L81) (name: string, interview: boolean) → string
+      - calls [operations.system.isCountedVerdict](operations.md#operations.system.isCountedVerdict)
+    - fn [systemTemplate](../../src/operations/system.ts#L91) (name: string, interview: boolean) → string
       <a id="operations.system.systemTemplate"></a><br>The skeleton of a new system; `interview` adds the sections an interview asks for. Every line checks without a finding.
-    - fn [runSystem](../../src/operations/system.ts#L114) (request: SystemRequest, context: OperationContext) → Promise<OperationEnvelope<"system">>
+    - fn [runSystem](../../src/operations/system.ts#L124) (request: SystemRequest, context: OperationContext) → Promise<OperationEnvelope<"system">>
       <a id="operations.system.runSystem"></a>
       - calls [lang.parser.isSegment](lang.md#lang.parser.isSegment), [operations.shared.rootRelative](operations.md#operations.shared.rootRelative), [base.config.loadConfig](base.md#base.config.loadConfig), [base.diag.errorText](base.md#base.diag.errorText), [operations.system.systemTemplate](operations.md#operations.system.systemTemplate), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite), [operations.shared.empty](operations.md#operations.shared.empty), [operations.system.listing](operations.md#operations.system.listing), [map.system-discover.adoptedName](map.md#map.system-discover.adoptedName), [map.schema-discover.codeSchemas](map.md#map.schema-discover.codeSchemas), [map.system-discover.systemMarkdown](map.md#map.system-discover.systemMarkdown), [map.system-discover.discoverSystem](map.md#map.system-discover.discoverSystem), [operations.system.systemText](operations.md#operations.system.systemText)
   - module [tour](../../src/operations/tour.ts#L1)

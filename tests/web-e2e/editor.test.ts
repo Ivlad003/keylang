@@ -42,25 +42,44 @@ interface Box {
   tests: string[];
   signature?: string;
   description?: string;
+  group?: string;
 }
 
 interface Model {
   view: string;
   mode: string;
   nodes: Box[];
-  edges: { key: string; kind: string; from: string; to: string; fromId: string; toId: string }[];
+  edges: { key: string; kind: string; from: string; to: string; fromId: string; toId: string; label?: string }[];
   lanes: { key: string; id: string; label: string; x: number; y: number; w: number; h: number }[];
 }
 
+/** A shape's box in the editor's layout, by key, in model coordinates. */
+type CanvasLayout = Record<string, { x: number; y: number; w?: number; h?: number; note?: string; proposed?: string }>;
+
+/** The editor object the diagrams page exposes as `globalThis.keylangEditor`. */
+type EditorPage = typeof globalThis & {
+  keylangEditor: {
+    currentModel(): Model;
+    layout(): CanvasLayout;
+    graph: {
+      getSelectionCount(): number;
+      getView(): { scale: number; translate: { x: number; y: number } };
+      container: { getBoundingClientRect(): { left: number; top: number } };
+    };
+  };
+};
+
 function model(page: Page): Promise<Model> {
-  return page.evaluate(() => (globalThis as unknown as { keylangEditor: { currentModel(): unknown } }).keylangEditor.currentModel()) as Promise<Model>;
+  // SAFETY: the diagrams page script sets globalThis.keylangEditor before the editor reports its view in #status.
+  return page.evaluate(() => (globalThis as EditorPage).keylangEditor.currentModel());
 }
 
 /** The page point of a model point: the canvas's offset, the view's scale and translate. */
 async function screenPoint(page: Page, x: number, y: number): Promise<{ x: number; y: number }> {
   return page.evaluate(
     ([mx, my]) => {
-      const editor = (globalThis as unknown as { keylangEditor: { graph: { getView(): { scale: number; translate: { x: number; y: number } }; container: { getBoundingClientRect(): { left: number; top: number } } } } }).keylangEditor;
+      // SAFETY: the diagrams page script sets globalThis.keylangEditor before the editor reports its view in #status.
+      const editor = (globalThis as EditorPage).keylangEditor;
       const view = editor.graph.getView();
       const box = editor.graph.container.getBoundingClientRect();
 
@@ -234,7 +253,8 @@ test("editor «чернетка»: the palette draws a lane and steps with plann
 
 /** Where the arrow that starts a connection shows when the pointer is over a shape: at its right edge (outside a small one). */
 async function arrowOf(page: Page, node: { x: number; y: number; w: number; h: number }): Promise<{ x: number; y: number }> {
-  const scale = await page.evaluate(() => (globalThis as unknown as { keylangEditor: { graph: { getView(): { scale: number } } } }).keylangEditor.graph.getView().scale);
+  // SAFETY: the diagrams page script sets globalThis.keylangEditor before the editor reports its view in #status.
+  const scale = await page.evaluate(() => (globalThis as EditorPage).keylangEditor.graph.getView().scale);
   const at = await screenPoint(page, node.x + node.w, node.y + node.h / 2);
 
   return node.w > 80 ? { x: at.x - 12 * scale, y: at.y } : { x: at.x + 10, y: at.y };
@@ -316,7 +336,7 @@ test("editor properties and connections: a palette shape gets its ID (suggested 
   await page.fill("#prop-link-label", "charge");
   await page.press("#prop-link-label", "Enter");
   const edge = (await model(page)).edges.find((e) => e.key === added[0]!.key)!;
-  assert.deepEqual([edge.kind, (edge as { label?: string }).label], ["call", "charge"]);
+  assert.deepEqual([edge.kind, edge.label], ["call", "charge"]);
 
   // The screenshot of the docs: the new step selected, its panel on the right.
   await page.selectOption("#editor-link-kind", "sequence");
@@ -333,7 +353,8 @@ test("editor properties and connections: a palette shape gets its ID (suggested 
 /** How many cells are selected, and the view's scale. */
 function selection(page: Page): Promise<{ count: number; scale: number }> {
   return page.evaluate(() => {
-    const graph = (globalThis as unknown as { keylangEditor: { graph: { getSelectionCount(): number; getView(): { scale: number } } } }).keylangEditor.graph;
+    // SAFETY: the diagrams page script sets globalThis.keylangEditor before the editor reports its view in #status.
+    const graph = (globalThis as EditorPage).keylangEditor.graph;
 
     return { count: graph.getSelectionCount(), scale: graph.getView().scale };
   });
@@ -344,7 +365,7 @@ test("editor keys of diagrams.net: a move undone and redone (Ctrl+Z, Ctrl+Y, Ctr
   const before = await model(page);
   const buy = before.nodes.find((n) => n.id === "application.purchase.buy")!;
 
-  const x = (key: string, m: Model): { x: number; y: number } => {
+  const x = (key: string, m: Model) => {
     const node = m.nodes.find((n) => n.key === key)!;
 
     return { x: node.x, y: node.y };
@@ -419,11 +440,11 @@ test("editor keys of diagrams.net: a move undone and redone (Ctrl+Z, Ctrl+Y, Ctr
   await page.keyboard.up("Shift");
   await page.keyboard.press("Control+g");
   now = await model(page);
-  const groups = new Set(now.nodes.filter((n) => n.key === second.key || n.key === third.key).map((n) => (n as { group?: string }).group));
+  const groups = new Set(now.nodes.filter((n) => n.key === second.key || n.key === third.key).map((n) => n.group));
   assert.equal(groups.size, 1);
   assert.ok([...groups][0], "both in one group");
   await page.keyboard.press("Control+Shift+u");
-  assert.ok((await model(page)).nodes.every((n) => (n as { group?: string }).group === undefined));
+  assert.ok((await model(page)).nodes.every((n) => n.group === undefined));
   await page.keyboard.press("Control+z");
   await page.keyboard.press("Control+z");
   await page.keyboard.press("Control+z");
@@ -471,8 +492,9 @@ async function reopen(browser: Browser, url: URL): Promise<{ page: Page; problem
 }
 
 /** The layout of the canvas (`layout()` of the editor): every shape's box by key, in model coordinates. */
-function canvasLayout(page: Page): Promise<Record<string, { x: number; y: number; w?: number; h?: number; note?: string; proposed?: string }>> {
-  return page.evaluate(() => (globalThis as unknown as { keylangEditor: { layout(): unknown } }).keylangEditor.layout()) as Promise<Record<string, { x: number; y: number }>>;
+function canvasLayout(page: Page): Promise<CanvasLayout> {
+  // SAFETY: the diagrams page script sets globalThis.keylangEditor before the editor reports its view in #status.
+  return page.evaluate(() => (globalThis as EditorPage).keylangEditor.layout());
 }
 
 test("editor layout file: a moved step and a note go to keylang/diagrams/flow--checkout.layout.json; another browser, with no tab draft, opens the view with them in place (business-flows/24)", { skip, timeout: 120000 }, async (t) => {
@@ -494,6 +516,7 @@ test("editor layout file: a moved step and a note go to keylang/diagrams/flow--c
     await page.waitForTimeout(100);
   }
 
+  // SAFETY: the editor writes the layout file as JSON with the view and its shapes by key.
   const saved = JSON.parse(readFileSync(file, "utf8")) as { view: string; shapes: Record<string, { x: number; note?: string }> };
   assert.equal(saved.view, "flow:checkout");
   assert.equal(saved.shapes["step:application.purchase.buy"]?.x, Math.round(moved.x * 100) / 100);

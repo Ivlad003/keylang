@@ -16,10 +16,16 @@ import { EXPLAIN_REPORTS } from "./explain.ts";
 import { messageRow, MUTED, WARNING, type Done, type Kind, type Report, type ReportItem, type ReportRow, type RequestOf } from "./rows.ts";
 import { SETUP_REPORTS } from "./setup.ts";
 
-const REPORTS: { [K in Kind]: Report<K> } = { ...SETUP_REPORTS, ...CHECK_REPORTS, ...EXPLAIN_REPORTS, ...DRAFT_REPORTS, ...DISCOVER_REPORTS, ...COVERAGE_REPORTS, ...INTEGRATIONS_REPORTS, ...SYSTEM_REPORTS, ...TOUR_REPORTS, ...MIGRATION_REPORTS, ...CHAT_REPORTS };
+const REPORTS = { ...SETUP_REPORTS, ...CHECK_REPORTS, ...EXPLAIN_REPORTS, ...DRAFT_REPORTS, ...DISCOVER_REPORTS, ...COVERAGE_REPORTS, ...INTEGRATIONS_REPORTS, ...SYSTEM_REPORTS, ...TOUR_REPORTS, ...MIGRATION_REPORTS, ...CHAT_REPORTS } satisfies { [K in Kind]: Report<K> };
+
+/** The report of one kind; the table is checked against this shape, but indexing it with a generic kind loses the pairing. */
+function reportOf<K extends Kind>(kind: K): Report<K> {
+  // SAFETY: REPORTS satisfies { [P in Kind]: Report<P> }, so its entry under `kind` is the report of that kind.
+  return REPORTS[kind] as Report<K>;
+}
 
 /** The records whose action is no palette action: a key or the clip's chat asked for them. */
-const SESSION_ACTIONS: Readonly<Record<string, string>> = { "agent-draft": "Ctrl+Space: the agent's flow draft", "clip-reply": "Clip: the model's reply" };
+const SESSION_ACTIONS: ReadonlyMap<string, string> = new Map([["agent-draft", "Ctrl+Space: the agent's flow draft"], ["clip-reply", "Clip: the model's reply"]]);
 
 /** A result that has its payload: the report of its kind can show it. */
 function isDone(result: OperationResult): result is Done<Kind> {
@@ -28,17 +34,17 @@ function isDone(result: OperationResult): result is Done<Kind> {
 
 /** How messages name an operation: `doctor`, `feature pay`, `map write`. */
 export function operationLabel<K extends Kind>(request: RequestOf<K>): string {
-  return REPORTS[request.kind].label(request);
+  return reportOf(request.kind).label(request);
 }
 
 function paramsOf<K extends Kind>(request: RequestOf<K>): string | null {
-  return REPORTS[request.kind].params?.(request) ?? null;
+  return reportOf(request.kind).params?.(request) ?? null;
 }
 
 /** The registry label of a record's action, with its parameters (`Feature readiness · pay`), or its id. */
 export function recordLabel(record: OperationRecord): string {
-  const label = ACTIONS.find((action) => action.id === record.action)?.label ?? SESSION_ACTIONS[record.action] ?? record.action;
-  const params = paramsOf(record.params as RequestOf<Kind>);
+  const label = ACTIONS.find((action) => action.id === record.action)?.label ?? SESSION_ACTIONS.get(record.action) ?? record.action;
+  const params = paramsOf<Kind>(record.params);
 
   return params === null ? label : `${label} · ${params}`;
 }
@@ -52,7 +58,7 @@ export function recordStatus(record: OperationRecord): string {
 }
 
 function summaryOf<K extends Kind>(record: OperationRecord, result: Done<K>): string {
-  return REPORTS[result.kind].summary?.(record, result) ?? recordStatus(record);
+  return reportOf(result.kind).summary?.(record, result) ?? recordStatus(record);
 }
 
 /** The status with the domain outcome when there is one: `done · code 0`, `2 gap(s) · code 1`. */
@@ -65,7 +71,7 @@ export function recordSummary(record: OperationRecord): string {
 function rowsOf<K extends Kind>(state: State, record: OperationRecord, result: Done<K>): ReportRow[] {
   const view = { selected: state.results.scrollReport ? state.results.gap : -1, summary: summaryOf(record, result) };
 
-  return REPORTS[result.kind].rows(state, record, result, view);
+  return reportOf(result.kind).rows(state, record, result, view);
 }
 
 function timeStr(ms: number): string {
@@ -96,7 +102,7 @@ export function resultsReportRows(state: State): ReportRow[] {
 }
 
 function itemsOf<K extends Kind>(state: State, result: Done<K>): ReportItem[] {
-  return REPORTS[result.kind].items?.of(state, result) ?? [];
+  return reportOf(result.kind).items?.of(state, result) ?? [];
 }
 
 /**
@@ -114,5 +120,5 @@ export function reportItems(state: State): ReportItem[] {
 
 /** What the panel's keys call the items of a kind: `evidence`, `diagnostic`, `node`; `finding` by default. */
 export function itemNoun(kind: OperationRequest["kind"]): string {
-  return REPORTS[kind].items?.noun ?? "finding";
+  return reportOf(kind).items?.noun ?? "finding";
 }

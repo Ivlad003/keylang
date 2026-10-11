@@ -11,7 +11,8 @@
 // (`./pwa-kit.ts`); Apex (B2B Commerce) is not read.
 
 import { posix } from "node:path";
-import type { ConfigFacts, EntryConfigFact, FrameworkAdapter, FrameworkContext } from "./adapter.ts";
+import { isJsonObject, isJsonString, parseJson, type JsonValue } from "../json.ts";
+import type { ConfigAt, ConfigFacts, EntryConfigFact, FrameworkAdapter, FrameworkContext } from "./adapter.ts";
 import { cartridgeDirs } from "./cartridges.ts";
 
 export const sfcc: FrameworkAdapter = {
@@ -44,9 +45,9 @@ export const sfcc: FrameworkAdapter = {
 
 /** The hooks file a cartridge's `package.json` names in `hooks`, relative to the cartridge; null when it names none. */
 function hooksFileOf(dir: string, context: Pick<FrameworkContext, "read">): string | null {
-  const hooks = field(parseJson(context.read(`${dir}/package.json`)).value, "hooks");
+  const hooks = field(readJson(context.read(`${dir}/package.json`)).value, "hooks");
 
-  return typeof hooks === "string" ? posix.normalize(posix.join(dir, hooks)) : null;
+  return isJsonString(hooks) ? posix.normalize(posix.join(dir, hooks)) : null;
 }
 
 const CARTRIDGE_ROOT = /^((?:.*\/)?cartridges)\/([^/]+)(?:\/|$)/;
@@ -64,14 +65,14 @@ const CARTRIDGE_ROOT = /^((?:.*\/)?cartridges)\/([^/]+)(?:\/|$)/;
  */
 export function parseSfccConfig(path: string, text: string): ConfigFacts {
   const facts: ConfigFacts = { path, scope: "global", bindings: [], arguments: [], aliases: [], intercepts: [], entries: [], error: null };
-  const parsed = parseJson(text);
+  const parsed = readJson(text);
 
   if (parsed.error !== null) return { ...facts, error: { line: 1, reason: `\`${path}\` is no JSON: ${parsed.error}` } };
   const root = CARTRIDGE_ROOT.exec(path);
   const cartridges = root === null ? posix.dirname(path) : root[1]!;
   const cartridge = root === null ? posix.dirname(path) : `${root[1]}/${root[2]}`;
 
-  const at = (needle: string): { line: number; col: number } => {
+  const at = (needle: string): ConfigAt => {
     const offset = text.indexOf(needle);
 
     if (offset === -1) return { line: 1, col: 1 };
@@ -85,14 +86,14 @@ export function parseSfccConfig(path: string, text: string): ConfigFacts {
   if (posix.basename(path) === "steptypes.json") {
     const kinds = field(parsed.value, "step-types");
 
-    for (const steps of kinds !== null && typeof kinds === "object" ? Object.values(kinds) : []) {
+    for (const steps of isJsonObject(kinds) ? Object.values(kinds) : Array.isArray(kinds) ? kinds : []) {
       for (const step of Array.isArray(steps) ? steps : []) {
         const id = field(step, "@type-id");
         const module = field(step, "module");
 
-        if (typeof id !== "string" || typeof module !== "string") continue;
+        if (!isJsonString(id) || !isJsonString(module)) continue;
         const fn = field(step, "function") ?? field(step, "process-function");
-        entries.push({ kind: "cron", label: id, files: [posix.normalize(posix.join(cartridges, module)), posix.normalize(posix.join(cartridge, module))], fn: typeof fn === "string" ? fn : null, ...at(`"${id}"`) });
+        entries.push({ kind: "cron", label: id, files: [posix.normalize(posix.join(cartridges, module)), posix.normalize(posix.join(cartridge, module))], fn: isJsonString(fn) ? fn : null, ...at(`"${id}"`) });
       }
     }
   } else if (posix.basename(path) !== "package.json") {
@@ -102,7 +103,7 @@ export function parseSfccConfig(path: string, text: string): ConfigFacts {
       const name = field(hook, "name");
       const script = field(hook, "script");
 
-      if (typeof name !== "string" || typeof script !== "string") continue;
+      if (!isJsonString(name) || !isJsonString(script)) continue;
       const files = [posix.normalize(posix.join(cartridge, script)), posix.normalize(posix.join(posix.dirname(path), script))];
       entries.push({ kind: "observer", label: name, files: [...new Set(files)], fn: name.slice(name.lastIndexOf(".") + 1), ...at(`"${name}"`) });
     }
@@ -111,15 +112,21 @@ export function parseSfccConfig(path: string, text: string): ConfigFacts {
   return facts;
 }
 
-function field(value: unknown, key: string): unknown {
-  return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>)[key] : undefined;
+function field(value: JsonValue | undefined, key: string): JsonValue | undefined {
+  return isJsonObject(value) ? value[key] : undefined;
 }
 
-function parseJson(text: string | null): { value: unknown; error: string | null } {
+/** A config file's JSON, or why it does not parse; an absent file is `null` without an error. */
+interface ParsedConfig {
+  value: JsonValue;
+  error: string | null;
+}
+
+function readJson(text: string | null): ParsedConfig {
   if (text === null) return { value: null, error: null };
 
   try {
-    return { value: JSON.parse(text.replace(/^﻿/, "")), error: null };
+    return { value: parseJson(text.replace(/^﻿/, "")), error: null };
   } catch (e) {
     return { value: null, error: e instanceof Error ? e.message : String(e) };
   }

@@ -5,10 +5,12 @@
 // source of those files only.
 
 import { readFileSync, realpathSync } from "node:fs";
+import type { LoadFnOutput, LoadHookContext } from "node:module";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { MessagePort } from "node:worker_threads";
 import { loadConfig } from "../config.ts";
+import { isJsonNumber, isJsonObject, isJsonString, parseJson, type JsonValue } from "../json.ts";
 import { functionBodies, parsesCleanly, type FunctionBody } from "../extract/bodies.ts";
 import { generateMap } from "../map.ts";
 import { sha256 } from "../snapshot.ts";
@@ -148,32 +150,41 @@ async function flowPlan(root: string, flow: string): Promise<{ snapshotId: strin
   return { snapshotId: index.snapshotId, symbols };
 }
 
+/** A plan read from a `keylang trace-plan` file. */
+interface TracePlanFile {
+  snapshotId: string;
+  flow: string;
+  symbols: PlannedSymbol[];
+}
+
 /** A `keylang trace-plan` file (schema 1): its snapshot, flow and symbols; anything else is an error naming the file. */
-export function readPlan(path: string): { snapshotId: string; flow: string; symbols: PlannedSymbol[] } {
-  let plan: unknown;
+export function readPlan(path: string): TracePlanFile {
+  let plan: JsonValue;
 
   try {
-    plan = JSON.parse(readFileSync(path, "utf8"));
+    plan = parseJson(readFileSync(path, "utf8"));
   } catch (e) {
     throw new Error(`${path}: ${e instanceof Error ? e.message : String(e)}`);
   }
 
-  const value = (typeof plan === "object" && plan !== null ? plan : {}) as { schemaVersion?: unknown; snapshotId?: unknown; flow?: unknown; symbols?: unknown };
+  const value = isJsonObject(plan) ? plan : {};
+  const { snapshotId, flow, symbols: items } = value;
 
-  if (value.schemaVersion !== 1 || typeof value.snapshotId !== "string" || typeof value.flow !== "string" || !Array.isArray(value.symbols)) {
+  if (value.schemaVersion !== 1 || !isJsonString(snapshotId) || !isJsonString(flow) || !Array.isArray(items)) {
     throw new Error(`${path}: not a plan of schema 1 from \`keylang trace-plan\``);
   }
 
   const symbols: PlannedSymbol[] = [];
 
-  for (const item of value.symbols as unknown[]) {
-    const s = (typeof item === "object" && item !== null ? item : {}) as Record<string, unknown>;
+  for (const item of items) {
+    const s = isJsonObject(item) ? item : {};
+    const { id, file, line, col, sha256: hash } = s;
 
-    if (typeof s.id !== "string" || typeof s.file !== "string" || typeof s.line !== "number" || typeof s.col !== "number" || typeof s.sha256 !== "string") continue;
-    symbols.push({ id: s.id, file: s.file, line: s.line, col: s.col, sha256: s.sha256 });
+    if (!isJsonString(id) || !isJsonString(file) || !isJsonNumber(line) || !isJsonNumber(col) || !isJsonString(hash)) continue;
+    symbols.push({ id, file, line, col, sha256: hash });
   }
 
-  return { snapshotId: value.snapshotId, flow: value.flow, symbols };
+  return { snapshotId, flow, symbols };
 }
 
 /** Text inserted at an offset of the original source. */
@@ -211,9 +222,20 @@ function applyEdits(src: string, edits: readonly Edit[]): string {
   return out;
 }
 
-type LoadResult = { format?: string | null; source?: string | ArrayBuffer | Uint8Array | null; shortCircuit?: boolean };
+type ModuleSource = NonNullable<LoadFnOutput["source"]>;
 
-export async function load(url: string, context: unknown, nextLoad: (url: string, context: unknown) => Promise<LoadResult>): Promise<LoadResult> {
+function isSourceText(source: ModuleSource): source is string {
+  return typeof source === "string";
+}
+
+// Keeps a leading BOM, so the hash covers the file's exact text.
+const utf8 = new TextDecoder("utf-8", { ignoreBOM: true });
+
+export async function load(
+  url: string,
+  context: LoadHookContext,
+  nextLoad: (url: string, context?: Partial<LoadHookContext>) => LoadFnOutput | Promise<LoadFnOutput>,
+): Promise<LoadFnOutput> {
   const result = await nextLoad(url, context);
   // `?query` and `#hash` load the same file as another module instance: it gets the wrappers too.
   const plan = plans.get(url.replace(/[?#].*$/s, ""));
@@ -222,7 +244,7 @@ export async function load(url: string, context: unknown, nextLoad: (url: string
   const commonjs = result.format === "commonjs" || result.format === "commonjs-typescript";
   // Node leaves a CommonJS file to its CommonJS loader (no source here), which would read it past the wrappers.
   const original = result.source ?? (commonjs ? readFileSync(fileURLToPath(url)) : null);
-  const source = original === null ? null : typeof original === "string" ? original : Buffer.from(original as Uint8Array).toString("utf8");
+  const source = original === null ? null : isSourceText(original) ? original : utf8.decode(original);
 
   // The plan was made for the snapshot's copy of the file; a different file is left alone.
   if (source === null || sha256(source) !== plan.sha256) {

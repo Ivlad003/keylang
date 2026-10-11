@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import type { JsonObject } from "../src/json.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -20,14 +21,20 @@ const adapter = join(root, "src/adapters/trace.ts");
 
 type Context = { after: (f: () => void) => void };
 
-function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+interface Run {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+function keylang(cwd: string, args: string[]): Run {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8", maxBuffer: 1 << 28 });
 
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
 /** A temp repository of `files`; `config` is `keylang.json`. */
-function repo(t: Context, config: object, files: Record<string, string>): string {
+function repo(t: Context, config: JsonObject, files: Record<string, string>): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-trace-adapter-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   writeFileSync(join(dir, "keylang.json"), `${JSON.stringify(config, null, 2)}\n`);
@@ -43,6 +50,7 @@ function repo(t: Context, config: object, files: Record<string, string>): string
 function snapshotOf(dir: string): string {
   assert.equal(keylang(dir, ["map"]).status, 0);
 
+  // SAFETY: `keylang map` writes .keylang/index.json as a snapshot with a string `snapshotId` (docs/snapshot.md).
   return (JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as { snapshotId: string }).snapshotId;
 }
 
@@ -53,12 +61,19 @@ interface JsonResult {
   evidence: string;
 }
 
+interface CheckRun {
+  status: number | null;
+  rows: JsonResult[];
+  stderr: string;
+}
+
 /** `check --format json` results; the exit code is 2 only when a trace file could not be read at all. */
-function check(dir: string): { status: number | null; rows: JsonResult[]; stderr: string } {
+function check(dir: string): CheckRun {
   const o = keylang(dir, ["check", "--format", "json"]);
 
   if (!o.stdout.startsWith("{")) return { status: o.status, rows: [], stderr: o.stderr };
 
+  // SAFETY: `check --format json` prints a report whose `results` rows carry these fields (docs/cli.md).
   return { status: o.status, rows: (JSON.parse(o.stdout) as { results: JsonResult[] }).results, stderr: o.stderr };
 }
 
@@ -79,6 +94,7 @@ interface Event {
 }
 
 function events(dir: string, name: string): Event[] {
+  // SAFETY: the adapters write trace JSONL, one event object per line with these fields.
   return readFileSync(join(dir, ".keylang/trace", name), "utf8")
     .trim()
     .split("\n")
@@ -90,10 +106,15 @@ function events(dir: string, name: string): Event[] {
 
 const JS_LAYERS = { languages: ["typescript", "javascript"], layers: { app: "src/app/**" }, exclude: ["run.mjs"], check: { trace: ".keylang/trace/*.jsonl" } };
 
+interface TracedRun {
+  status: number | null;
+  stderr: string;
+}
+
 /** `script` (an ES module, a file so that a worker or child can inherit the flags) under the adapter, recording flow `f`; no run id is given. */
-function traced(dir: string, script: string): { status: number | null; stderr: string } {
+function traced(dir: string, script: string): TracedRun {
   writeFileSync(join(dir, "run.mjs"), script);
-  const env: Record<string, string | undefined> = { ...process.env, KEYLANG_TRACE: join(dir, ".keylang/trace/f.jsonl"), KEYLANG_TRACE_FLOW: "f", KEYLANG_TRACE_TEST: "t" };
+  const env: NodeJS.ProcessEnv = { ...process.env, KEYLANG_TRACE: join(dir, ".keylang/trace/f.jsonl"), KEYLANG_TRACE_FLOW: "f", KEYLANG_TRACE_TEST: "t" };
   delete env.KEYLANG_TRACE_RUN;
   const r = spawnSync(process.execPath, ["--import", adapter, "run.mjs"], { cwd: dir, encoding: "utf8", env, timeout: 60_000 });
 
@@ -209,6 +230,7 @@ test("trace adapter: overloads, CommonJS exports and `(…) satisfies T` are ins
   snapshotOf(dir);
   const r = traced(dir, "const m = await import('./src/app/main.ts'); m.main();");
   assert.equal(r.status, 0, r.stderr);
+  // SAFETY: a completed traced run writes its `run` record, which lists the instrumented and uninstrumented ids.
   const run = events(dir, "f.jsonl").find((e) => e.event === "run") as Event & { instrumented: string[]; uninstrumented?: Record<string, string> };
   assert.deepEqual(run.instrumented, ["app.legacy.a", "app.legacy2.b", "app.legacy2.c", "app.main.Svc.run", "app.main.asd", "app.main.fmt", "app.main.main", "app.main.plain", "app.main.typed"]);
   // The one function left out is named with the reason, in the run record and in the verdict.
@@ -233,7 +255,7 @@ test("trace evidence: a clock with spans but no run record of its own makes the 
   const snapshotId = snapshotOf(dir);
   const base = { schemaVersion: 1, snapshotId, runId: "r1", testId: "t", flow: "f", traceId: "r1:t" };
 
-  const lines: Record<string, unknown>[] = [
+  const lines: JsonObject[] = [
     { ...base, event: "start", spanId: "a:s1", parentSpanId: null, symbolId: "app.main.main", clockId: "a", seq: 1, ts: 1 },
     { ...base, event: "start", spanId: "b:s1", parentSpanId: null, symbolId: "app.w.inWorker", clockId: "b", seq: 1, ts: 2 },
     { ...base, event: "end", spanId: "b:s1", outcome: "ok", clockId: "b", seq: 2, ts: 3 },
@@ -260,8 +282,15 @@ const python3 = spawnSync("python3", ["--version"], { encoding: "utf8" }).status
 
 const pythonAdapter = join(root, "adapters/python/keylang_trace.py");
 
+interface PythonRun {
+  dir: string;
+  stdout: string;
+  stderr: string;
+  status: number | null;
+}
+
 /** A Python repository whose `main()` runs `crunch` as `body` says, traced under the adapter for flow `crunch`. */
-function pythonRun(t: Context, body: string): { dir: string; stdout: string; stderr: string; status: number | null } {
+function pythonRun(t: Context, body: string): PythonRun {
   const dir = repo(t, { languages: ["python"], layers: { app: ["app/**"] }, exclude: ["run.py"], check: { trace: ".keylang/trace/*.jsonl" } }, {
     "app/__init__.py": "",
     "app/work.py": "def crunch(x):\n    return x * 2\n",
@@ -273,7 +302,7 @@ function pythonRun(t: Context, body: string): { dir: string; stdout: string; std
   const plan = keylang(dir, ["trace-plan", "crunch"]);
   assert.equal(plan.status, 0, plan.stderr);
   writeFileSync(join(dir, "plan.json"), plan.stdout);
-  const env: Record<string, string | undefined> = { ...process.env, KEYLANG_TRACE: ".keylang/trace/crunch.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_TRACE_TEST: "run.py > @flow crunch" };
+  const env: NodeJS.ProcessEnv = { ...process.env, KEYLANG_TRACE: ".keylang/trace/crunch.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_TRACE_TEST: "run.py > @flow crunch" };
   delete env.KEYLANG_TRACE_RUN;
   const r = spawnSync("python3", [pythonAdapter, "run.py"], { cwd: dir, encoding: "utf8", env, timeout: 60_000 });
 
@@ -363,7 +392,7 @@ test("trace adapter: a relative KEYLANG_TRACE is the startup directory's, even a
 
   snapshotOf(dir);
   writeFileSync(join(dir, "run.mjs"), "const m = await import('./src/app/main.ts'); m.main();");
-  const env: Record<string, string | undefined> = { ...process.env, KEYLANG_TRACE: ".keylang/trace/f.jsonl", KEYLANG_TRACE_FLOW: "f", KEYLANG_TRACE_TEST: "t" };
+  const env: NodeJS.ProcessEnv = { ...process.env, KEYLANG_TRACE: ".keylang/trace/f.jsonl", KEYLANG_TRACE_FLOW: "f", KEYLANG_TRACE_TEST: "t" };
   delete env.KEYLANG_TRACE_RUN;
   delete env.KEYLANG_TRACE_ROOT;
   const r = spawnSync(process.execPath, ["--import", adapter, "run.mjs"], { cwd: dir, encoding: "utf8", env, timeout: 60_000 });
@@ -403,7 +432,7 @@ fn main() {
   writeFileSync(join(dir, "plan.json"), plan.stdout);
   const build = spawnSync("rustc", ["--edition", "2021", "-A", "warnings", "-o", join(dir, "shop"), "src/main.rs"], { cwd: dir, encoding: "utf8" });
   assert.equal(build.status, 0, build.stderr);
-  const env: Record<string, string | undefined> = { ...process.env, KEYLANG_TRACE: ".keylang/trace/checkout.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_TRACE_TEST: "shop > @flow checkout" };
+  const env: NodeJS.ProcessEnv = { ...process.env, KEYLANG_TRACE: ".keylang/trace/checkout.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_TRACE_TEST: "shop > @flow checkout" };
   delete env.KEYLANG_TRACE_ROOT;
   const exec = spawnSync(join(dir, "shop"), [], { cwd: dir, encoding: "utf8", env });
   assert.equal(exec.status, 0, exec.stderr);
@@ -431,7 +460,7 @@ test("php: a relative KEYLANG_TRACE is the startup directory's, though the scrip
   const plan = keylang(dir, ["trace-plan", "sum"]);
   assert.equal(plan.status, 0, plan.stderr);
   writeFileSync(join(dir, "plan.json"), plan.stdout);
-  const env: Record<string, string | undefined> = { ...process.env, KEYLANG_TRACE: ".keylang/trace/sum.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_TRACE_TEST: "run.php > @flow sum" };
+  const env: NodeJS.ProcessEnv = { ...process.env, KEYLANG_TRACE: ".keylang/trace/sum.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_TRACE_TEST: "run.php > @flow sum" };
   delete env.KEYLANG_TRACE_ROOT;
   const r = spawnSync("php", [join(root, "adapters/php/keylang_trace.php"), "run.php"], { cwd: dir, encoding: "utf8", env });
   assert.equal(r.status, 0, r.stderr);

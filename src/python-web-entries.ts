@@ -113,7 +113,7 @@ class PythonWeb {
     this.graph = graph;
     this.scope = scope;
     this.active = active;
-    this.files = new Map(facts.filter((f) => f.path.endsWith(".py")).map((f) => [f.path, f]));
+    this.files = new Map(facts.flatMap((f) => (f.path.endsWith(".py") ? [[f.path, f] as const] : [])));
     this.resolver = new PythonResolver(config.root, new Set(facts.map((f) => f.path)));
 
     const visit = (module: Module): void => {
@@ -481,8 +481,8 @@ class PythonWeb {
     if (view?.kind !== "call" || !this.isDjango(file, view.callee, ["include"])) return;
     const target = this.includedFile(file, view.args[0]);
 
-    if (typeof target === "string") found(target);
-    else if (target !== null) for (const item of target) this.includes(file, item, found);
+    if (Array.isArray(target)) for (const item of target) this.includes(file, item, found);
+    else if (target !== null) found(target);
   }
 
   /** What `include(x)` includes: a urls module's file, an inline list of patterns, or null. */
@@ -542,8 +542,8 @@ class PythonWeb {
     if (view.kind === "call" && this.isDjango(file.path, view.callee, ["include"])) {
       const target = this.includedFile(file.path, view.args[0]);
 
-      if (typeof target === "string") this.walkUrls(target, url, seen);
-      else if (target !== null) for (const item of target) this.urlPattern(file, item, url, seen);
+      if (Array.isArray(target)) for (const item of target) this.urlPattern(file, item, url, seen);
+      else if (target !== null) this.walkUrls(target, url, seen);
       else this.hole(file.path, view.line, view.col, view.callee, `\`include(${view.args[0] ? text(view.args[0]) : ""})\` names no urls module keylang reads`, module);
 
       return;
@@ -687,7 +687,10 @@ class PythonWeb {
         const known = fn === null ? undefined : this.tasks.get(fn);
 
         if (fn !== null && known !== undefined) {
-          this.edge(caller, { target: fn, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, via: "dispatch", site: known.site, binding: `Celery task \`${known.name}\``, ...(c.closure ? { closure: true as const } : {}) });
+          const call: Call = { target: fn, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, via: "dispatch", site: known.site, binding: `Celery task \`${known.name}\`` };
+
+          if (c.closure) call.closure = true;
+          this.edge(caller, call);
           this.answered.add(`${file.path}:${c.line}:${c.col}`);
         }
 
@@ -700,7 +703,12 @@ class PythonWeb {
         const key = this.signalKey(file.path, send[1]!);
         const receivers = key === null ? [] : (this.receivers.get(key) ?? []);
 
-        for (const r of receivers) this.edge(caller, { target: r.fn, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, via: "observer", site: r.site, binding: `receiver of the signal \`${r.signal}\``, ...(c.closure ? { closure: true as const } : {}) });
+        for (const r of receivers) {
+          const call: Call = { target: r.fn, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, via: "observer", site: r.site, binding: `receiver of the signal \`${r.signal}\`` };
+
+          if (c.closure) call.closure = true;
+          this.edge(caller, call);
+        }
 
         if (key !== null) {
           this.answered.add(`${file.path}:${c.line}:${c.col}`);
@@ -754,7 +762,12 @@ class PythonWeb {
 
       events.push({ id, name: name(key), ...place, calls });
 
-      for (const s of sends) this.edge(s.caller, { target: id, line: s.call.line, col: s.call.col, endLine: s.call.endLine, endCol: s.call.endCol, text: s.call.callee, via: "dispatch", ...(s.call.closure ? { closure: true as const } : {}) });
+      for (const s of sends) {
+        const call: Call = { target: id, line: s.call.line, col: s.call.col, endLine: s.call.endLine, endCol: s.call.endCol, text: s.call.callee, via: "dispatch" };
+
+        if (s.call.closure) call.closure = true;
+        this.edge(s.caller, call);
+      }
     }
 
     events.sort((a, b) => compare(a.id, b.id));
@@ -856,7 +869,7 @@ function strings(value: LiteralValue | undefined): string[] | undefined {
   if (value?.kind !== "list") return undefined;
   const out = value.items.map(str);
 
-  return out.every((s) => s !== undefined) ? (out as string[]) : undefined;
+  return out.every((s): s is string => s !== undefined) ? out : undefined;
 }
 
 /** A value in words: a literal as written, a call by its callee. */

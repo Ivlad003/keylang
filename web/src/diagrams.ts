@@ -17,7 +17,7 @@
 // a flow as `keylang flow export` writes it, its shapes in the layout block —
 // in the clipboard for another keylang web (business-flows/25).
 
-import { Api, ApiError, readOnlyPage, transport, useTransport, type ClipShape, type Diagram, type DiagramNode, type DocList, type PageQuery, type Usages, type ViewQuery, type Views } from "./api.ts";
+import { Api, ApiError, readOnlyPage, transport, useTransport, type ClipEdge, type ClipShape, type Diagram, type DiagramNode, type DocList, type PageQuery, type Usages, type ViewQuery, type Views } from "./api.ts";
 import { BlindSpots } from "./blind.ts";
 import { Canvas, VERDICT_COLOUR, VERDICT_GLYPH } from "./canvas.ts";
 import { writeClipboard } from "./bundle-clip.ts";
@@ -219,10 +219,10 @@ function itemsOf(views: Views): ListItem[] {
   return items;
 }
 
-function explain(error: unknown): string {
-  if (error instanceof ApiError && error.status === 403 && transport().kind === "server" && !readOnlyPage()) return "No access: open the URL printed by `keylang web` (it carries the access token).";
+function explain(cause: unknown): string {
+  if (cause instanceof ApiError && cause.status === 403 && transport().kind === "server" && !readOnlyPage()) return "No access: open the URL printed by `keylang web` (it carries the access token).";
 
-  return error instanceof Error ? error.message : String(error);
+  return cause instanceof Error ? cause.message : String(cause);
 }
 
 /** An ID or one under it: `a.b` covers `a.b` and `a.b.c`. */
@@ -233,7 +233,7 @@ function covers(id: string, target: string | undefined): boolean {
 /** The name of the system discovered from the code (src/system-discover.ts `DISCOVERED`). */
 const CODE_SYSTEM = "@code";
 
-const COMPONENT_NAME: Record<string, string> = {
+const COMPONENT_NAME = new Map(Object.entries({
   client: "клієнт",
   cdn: "CDN",
   dns: "DNS",
@@ -250,11 +250,11 @@ const COMPONENT_NAME: Record<string, string> = {
   warehouse: "сховище аналітики",
   auth: "автентифікація",
   external: "зовнішній сервіс",
-};
+}));
 
-const NOTE_NAME: Record<string, string> = { requirement: "Вимоги", nfr: "Нефункціональні", estimate: "Оцінки", tradeoff: "Компроміси", question: "Відкриті питання" };
+const NOTE_NAME = new Map(Object.entries({ requirement: "Вимоги", nfr: "Нефункціональні", estimate: "Оцінки", tradeoff: "Компроміси", question: "Відкриті питання" }));
 
-const KIND_NAME: Record<string, string> = {
+const KIND_NAME = new Map(Object.entries({
   component: "компонент системи",
   table: "таблиця",
   participant: "учасник sequence",
@@ -269,7 +269,7 @@ const KIND_NAME: Record<string, string> = {
   module: "module",
   fn: "fn",
   layer: "layer",
-};
+}));
 
 class Page {
   private readonly api: Api;
@@ -287,7 +287,7 @@ class Page {
   private mode: Mode = "diagrams";
   private readonly explorer: Explorer;
   private readonly blind: BlindSpots;
-  private readonly editor: Editor;
+  readonly editor: Editor;
   private readonly docs: Docs;
   private readonly changes: Changes;
   private readonly depth = make("select");
@@ -324,7 +324,8 @@ class Page {
         if (query) await this.editor.openDiagram(key, await this.api.diagram(query), true);
       },
     });
-    (window as unknown as { keylangEditor: unknown }).keylangEditor = this.editor;
+    // The browser tests read the editor's model through it.
+    Object.assign(window, { keylangEditor: this.editor });
 
     // An answer that arrives after the person moved to another mode leaves that mode's status alone.
     const statusOf = (mode: Mode) => (text: string) => {
@@ -337,7 +338,7 @@ class Page {
 
     for (const tab of document.querySelectorAll<HTMLButtonElement>("#modes button[data-mode]")) {
       tab.addEventListener("click", () => {
-        const mode = tab.dataset["mode"] as Mode;
+        const mode = tab.dataset["mode"];
 
         if (mode === "explore") void this.open({ view: "explore", id: this.explorer.current() });
         else if (mode === "blind") void this.open({ view: "blind" });
@@ -415,9 +416,9 @@ class Page {
     element("stage").append(this.systemBar);
     document.addEventListener("keydown", (event) => {
       if (this.mode !== "diagrams" || readOnlyPage() || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "c" || event.shiftKey) return;
-      const target = event.target as HTMLElement | null;
+      const target = event.target;
 
-      if (target && (target.closest("input, textarea, select") || target.isContentEditable)) return;
+      if (target instanceof Element && (target.closest("input, textarea, select") || (target instanceof HTMLElement && target.isContentEditable))) return;
 
       // Text the person selected is theirs to copy.
       if (!(window.getSelection()?.isCollapsed ?? true)) return;
@@ -539,8 +540,8 @@ class Page {
           await this.loadViews();
           const query = this.active;
 
-          if (query && modeOf(query) === "diagrams") {
-            const diagram = await this.api.diagram(query as ViewQuery);
+          if (query && isViewQuery(query)) {
+            const diagram = await this.api.diagram(query);
 
             if (this.active === query) this.showDiagram(diagram, true);
           }
@@ -712,7 +713,14 @@ class Page {
 
     const diagram = this.canvas.current();
     const shapes: ClipShape[] = diagram.nodes.map((n) => ({ key: n.id, id: n.ref?.id ?? "", kind: n.kind, label: n.label, layer: n.group ?? null, x: n.x, y: n.y, w: n.w, h: n.h }));
-    const edges = diagram.edges.map((e) => ({ from: e.from, to: e.to, kind: e.kind, ...(e.label ? { label: e.label } : {}) }));
+
+    const edges = diagram.edges.map((e) => {
+      const edge: ClipEdge = { from: e.from, to: e.to, kind: e.kind };
+
+      if (e.label) edge.label = e.label;
+
+      return edge;
+    });
 
     try {
       const answer = await this.api.bundle({ view: keyOf(query), shapes, edges });
@@ -750,7 +758,7 @@ class Page {
 
     if (node) {
       body.push(make("h2", { text: node.label }));
-      const rows: [string, Node | string][] = [["kind", node.component ? `${COMPONENT_NAME[node.component] ?? node.component} (${node.component})` : (KIND_NAME[node.kind] ?? node.kind)]];
+      const rows: [string, Node | string][] = [["kind", node.component ? `${COMPONENT_NAME.get(node.component) ?? node.component} (${node.component})` : (KIND_NAME.get(node.kind) ?? node.kind)]];
 
       if (node.tech) rows.push(["tech", node.tech]);
 
@@ -945,7 +953,7 @@ class Page {
       const list = make("ul", { className: "system-notes" });
 
       for (const note of own) list.append(make("li", { text: note.text }));
-      out.push(make("h3", { text: NOTE_NAME[kind] ?? kind }), list);
+      out.push(make("h3", { text: NOTE_NAME.get(kind) ?? kind }), list);
     }
 
     out.push(make("p", { className: "empty", text: "Клацніть фігуру: її технологія, код і вердикти зв'язків." }));
@@ -980,12 +988,13 @@ async function main(): Promise<void> {
 
   if (source === "local") useTransport(await openLocal());
   // The browser tests ask the page's transport directly, as the page does.
-  (window as unknown as { keylangTransport: unknown }).keylangTransport = transport();
-  void new Page().start();
+  Object.assign(window, { keylangTransport: transport() });
+  const page = new Page();
+  void page.start();
   // «Огляд»: the project tour over the canvas (business-flows/15).
   mountTour();
   // «Новий проєкт»: a project drawn before its code, when the root has no keylang.json (business-flows/29).
-  void mountGreenfield((window as unknown as { keylangEditor: Editor }).keylangEditor, (text) => (element("status").textContent = text));
+  void mountGreenfield(page.editor, (text) => (element("status").textContent = text));
 }
 
 void main();

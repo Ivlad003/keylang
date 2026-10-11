@@ -5,7 +5,7 @@
 // keep from done, and `validate_spec` paths. Through the real CLI and MCP.
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawnSync, type SpawnSyncOptionsWithStringEncoding } from "node:child_process";
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -13,6 +13,7 @@ import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { isJsonObject, parseJson, type JsonObject } from "../src/json.ts";
 import { runOperation } from "../src/operations.ts";
 import { codeProposalProblem, landsIn, proposalProblem } from "../src/proposals.ts";
 import { App } from "../src/tui/app.ts";
@@ -25,8 +26,17 @@ const bin = join(root, "bin/keylang.js");
 
 const CACHE = ".keylang/cache/facts.json";
 
-function keylang(cwd: string, args: string[], input?: string): { status: number | null; stdout: string; stderr: string } {
-  const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, ...(input !== undefined ? { input } : {}) });
+interface Run {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+function keylang(cwd: string, args: string[], input?: string): Run {
+  const options: SpawnSyncOptionsWithStringEncoding = { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 };
+
+  if (input !== undefined) options.input = input;
+  const r = spawnSync(process.execPath, [bin, ...args], options);
 
   if (r.error) throw r.error;
 
@@ -84,12 +94,13 @@ function repoCopy(t: TestContext): string {
 
 const CHECKOUT = "# flow checkout\n\n- trigger app.checkout.checkout\n  - step domain.order.createOrder\n  - step infra.db.save\n";
 
-async function mcpClient(t: TestContext, dir: string): Promise<(name: string, args?: Record<string, unknown>) => Promise<{ text: string; isError: boolean }>> {
+async function mcpClient(t: TestContext, dir: string): Promise<(name: string, args?: JsonObject) => Promise<{ text: string; isError: boolean }>> {
   const client = new Client({ name: "keylang-test", version: "0" });
   await client.connect(new StdioClientTransport({ command: process.execPath, args: [bin, "mcp"], cwd: dir, stderr: "pipe" }));
   t.after(() => client.close());
 
   return async (name, args = {}) => {
+    // SAFETY: keylang's MCP tools answer with text content only, and an error flag on failure.
     const r = (await client.callTool({ name, arguments: args })) as { content: { type: string; text: string }[]; isError?: boolean };
 
     return { text: r.content.map((c) => c.text).join(""), isError: r.isError === true };
@@ -165,6 +176,7 @@ test("proposals: a CRLF target and an LF proposal show the real hunks in the lis
   const call = await mcpClient(t, dir);
   const r = await call("apply_diff", { path: "keylang/flows/checkout.md", text: `${CHECKOUT}  - invariant an order is saved once\n` });
   assert.equal(r.isError, false, r.text);
+  // SAFETY: the apply_diff tool answers with a JSON object whose `diff` is a string.
   assert.equal((JSON.parse(r.text) as { diff: string }).diff, "@@ line 6 @@\n+  - invariant an order is saved once");
   propose(dir, "keylang/flows/refund.md", `${refund.replace(/\r\n/g, "\n")}  - step domain.order.createOrder\n`);
 
@@ -334,7 +346,8 @@ test("check, feature and hook stop leave the fact cache for the next run; map --
   assert.equal(json.status, 0, json.stdout);
   JSON.parse(json.stdout);
   assert.equal(json.stderr.includes("cache"), false);
-  const stored = JSON.parse(readFileSync(cache, "utf8")) as { files: Record<string, unknown> };
+  const stored = parseJson(readFileSync(cache, "utf8"));
+  assert.ok(isJsonObject(stored) && isJsonObject(stored.files), "the cache is an object of files");
   assert.deepEqual(Object.keys(stored.files).sort(), ["src/app/checkout.ts", "src/domain/order.ts", "src/infra/db.ts"]);
   // Nothing changed: the next run reads the cache and leaves the file as it is.
   const mtime = statSync(cache).mtimeMs;
@@ -414,10 +427,17 @@ function inheritedRepo(t: TestContext, feature: string): string {
 
 const REFUND = "# flow refund\n\n- planned fn app.pay.refund (n: number) → number\n- trigger app.pay.charge\n  - step app.pay.refund\n";
 
-function feature(dir: string, slug: string, args: string[] = []): { status: number | null; body: Report; human: string } {
+interface FeatureRun {
+  status: number | null;
+  body: Report;
+  human: string;
+}
+
+function feature(dir: string, slug: string, args: string[] = []): FeatureRun {
   const r = keylang(dir, ["feature", slug, "--format", "json", ...args]);
   const human = keylang(dir, ["feature", slug, ...args]);
 
+  // SAFETY: `feature --format json` prints the feature report that Report describes (docs/cli.md).
   return { status: r.status, body: JSON.parse(r.stdout) as Report, human: human.stdout };
 }
 
@@ -447,6 +467,7 @@ test("feature: an inherited rule fail is a hint and info.rules, not a gap; a fai
   const blocked = feature(dir, "refund");
   assert.equal(blocked.status, 1);
   const changed = keylang(dir, ["check", "--changed", "--format", "json"]);
+  // SAFETY: `check --format json` prints a report whose `results` rows carry these fields (docs/cli.md).
   const reported = (JSON.parse(changed.stdout) as { results: { verdict: string; file: string; area: string }[] }).results.filter((row) => row.verdict === "fail");
   assert.deepEqual(
     blocked.body.gaps.filter((gap) => gap.kind === "rule").map((gap) => [gap.id, gap.file]).sort(),
@@ -524,6 +545,7 @@ test("validate_spec takes a spec directory whose name starts with two dots; a pa
   const call = await mcpClient(t, dir);
   const r = await call("validate_spec", { path: "..specs/flows/x.md", text: "# flow x\n\n- trigger app.checkout.nope\n" });
   assert.equal(r.isError, false, r.text);
+  // SAFETY: the validate_spec tool answers with the file and its diagnostics as JSON.
   const body = JSON.parse(r.text) as { file: string; diagnostics: { code: string; line: number }[] };
   assert.equal(body.file, "..specs/flows/x.md");
   assert.deepEqual(body.diagnostics.map((diag) => [diag.code, diag.line]), [["K001", 3]]);

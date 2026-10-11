@@ -50,6 +50,7 @@ test("voice: an empty recording is no window and no request", async (t) => {
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
   t.after(() => server.close());
   assert.deepEqual(windows(new Int16Array(0)), []);
+  // SAFETY: a server listening on a TCP host and port reports an AddressInfo, not a pipe name.
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   assert.equal(await transcribeOpenRouter({ kind: "openrouter", key: "k", base, model: "m" }, new Int16Array(0), []), "");
   assert.equal(requests, 0);
@@ -65,6 +66,7 @@ test("voice: an OpenRouter answer that is not a transcript is an error that says
 
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
   t.after(() => server.close());
+  // SAFETY: a server listening on a TCP host and port reports an AddressInfo, not a pipe name.
   const engine = { kind: "openrouter" as const, key: "k", base: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, model: "m" };
   const pcm = new Int16Array(1600);
   await assert.rejects(transcribeOpenRouter(engine, pcm, []), /^Error: voice: openrouter answered with something other than JSON: <html>/);

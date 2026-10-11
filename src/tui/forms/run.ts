@@ -12,7 +12,7 @@ import { CONFIG_FILE, guessLayout, loadConfig, resolveStatic, STATIC_MODES, toPo
 import { edgeIdKnown } from "../../explain-edge.ts";
 import { collectMdFiles } from "../../files.ts";
 import { harnessChoice, planAgents, type HarnessChoice } from "../../harness.ts";
-import { FEATURE_SLUG, initSources, wireOutProblem, WIRE_OUT } from "../../operations.ts";
+import { FEATURE_SLUG, initSources, wireOutProblem, WIRE_OUT, type CheckRequest } from "../../operations.ts";
 import { PARSE_FORMATS, type ParseFormat } from "../../parse-format.ts";
 import { compareText } from "../../span.ts";
 import { WIRE_MARKER } from "../../wire-gen.ts";
@@ -22,6 +22,16 @@ import { errorText } from "../merge-session.ts";
 import { caretAt, cycle, fieldOf, noteOfSelection, promptText, selectedRow, type PromptKeys } from "../prompt-keys.ts";
 import type { Prompt, State } from "../state.ts";
 import type { FormHost } from "./host.ts";
+
+/** Why a typed selection or path is not one, in the CLI's words. */
+type Refusal = { error: string };
+
+function isRefusal<T>(value: T | Refusal): value is Refusal {
+  return typeof value === "object" && value !== null && "error" in value;
+}
+
+/** What an agents selection would write now, and the form's note about it. */
+type AgentsPreview = { changed: string[]; note: string };
 
 export class RunForms {
   private readonly host: FormHost;
@@ -178,7 +188,7 @@ export class RunForms {
   }
 
   /** What a selection would do now: the read-only plan of the shared operation, or why it cannot be planned. */
-  private agentsPreview(choice: HarnessChoice): { changed: string[]; note: string } {
+  private agentsPreview(choice: HarnessChoice): AgentsPreview {
     try {
       const plan = planAgents(this.state.root, choice);
 
@@ -202,7 +212,7 @@ export class RunForms {
   }
 
   /** The typed selection as a choice, or why it is not one (the CLI's message for `--agents`). */
-  private agentsChoice(): HarnessChoice | { error: string } {
+  private agentsChoice(): HarnessChoice | Refusal {
     const text = this.state.prompt?.text.trim() ?? "";
 
     try {
@@ -218,7 +228,7 @@ export class RunForms {
     if (prompt?.kind !== "agents") return;
     const choice = this.agentsChoice();
 
-    if (typeof choice === "object" && "error" in choice) {
+    if (isRefusal(choice)) {
       prompt.items = ["Write the harness files", "Check the harness files (writes nothing)"];
       prompt.note = `${choice.error} · type auto (empty), none, or claude,codex,opencode,cursor`;
 
@@ -236,7 +246,7 @@ export class RunForms {
     const prompt = this.state.prompt!;
     const choice = this.agentsChoice();
 
-    if (typeof choice === "object" && "error" in choice) {
+    if (isRefusal(choice)) {
       this.state.message = `agents: ${choice.error}`;
 
       return;
@@ -277,7 +287,7 @@ export class RunForms {
     }
 
     const choice = this.agentsChoice();
-    const harness = typeof choice === "object" && "error" in choice ? `${choice.error} · type auto (empty), none, or claude,codex,opencode,cursor` : this.agentsPreview(choice).note;
+    const harness = isRefusal(choice) ? `${choice.error} · type auto (empty), none, or claude,codex,opencode,cursor` : this.agentsPreview(choice).note;
     const baseline = baselinePath({ dir: this.host.specDir() });
     prompt.details = [
       `Root: ${root}`,
@@ -297,7 +307,7 @@ export class RunForms {
     const prompt = this.state.prompt!;
     const choice = this.agentsChoice();
 
-    if (typeof choice === "object" && "error" in choice) {
+    if (isRefusal(choice)) {
       this.state.message = `init: ${choice.error}`;
 
       return;
@@ -439,7 +449,7 @@ export class RunForms {
   }
 
   /** The typed output path (POSIX, relative to the root), or why it cannot be the generated file. */
-  private wireOut(): string | { error: string } {
+  private wireOut(): string | Refusal {
     const out = (this.state.prompt?.text ?? "").trim();
 
     if (out === "") return { error: "type the generated file, relative to the root (keylang.gen.ts)" };
@@ -455,7 +465,7 @@ export class RunForms {
     if (prompt?.kind !== "wire") return;
     const out = this.wireOut();
 
-    if (typeof out !== "string") {
+    if (isRefusal(out)) {
       prompt.items = ["Write: generate the container", "Check the container (writes nothing)"];
       prompt.note = out.error;
 
@@ -474,7 +484,7 @@ export class RunForms {
     const prompt = this.state.prompt!;
     const out = this.wireOut();
 
-    if (typeof out !== "string") {
+    if (isRefusal(out)) {
       this.state.message = `wire: ${out.error}`;
 
       return;
@@ -586,8 +596,17 @@ export class RunForms {
 
     this.state.prompt = null;
     // The ref goes with changed only, as `--since` needs `--changed`; HEAD is the default and is not repeated.
-    const slice = options.changed ? { changed: true, ...(since !== "HEAD" ? { since } : {}) } : {};
-    this.host.requestOperation("full-check", { kind: "check", root: this.state.root, paths, strict: options.strict, ...(options.static !== null ? { static: options.static } : {}), ...slice });
+    const request: CheckRequest = { kind: "check", root: this.state.root, paths, strict: options.strict };
+
+    if (options.static !== null) request.static = options.static;
+
+    if (options.changed) {
+      request.changed = true;
+
+      if (since !== "HEAD") request.since = since;
+    }
+
+    this.host.requestOperation("full-check", request);
   }
 
   // ---------- explain edge ----------

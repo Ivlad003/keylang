@@ -22,6 +22,7 @@ test("system list and show: the sections, and one as a tree with the verdicts of
   assert.match(show.stdout, /^ {6}◌ calls cache GET — no import from the code of `api` reaches a redis client/m);
   assert.match(show.stdout, /^ {4}5\. api ⇢ clicks click$/m);
   assert.match(show.stdout, /0 fail, 2 unverified, 4 ok\n$/);
+  // SAFETY: `system show --json` prints the system view with a `verdicts` row per area (docs/cli.md).
   const json = JSON.parse(keylang(dir, ["system", "show", "shortener", "--json"]).stdout) as { verdicts: { verdict: string; area: string }[] };
   assert.deepEqual(json.verdicts.map((verdict) => `${verdict.verdict} ${verdict.area}`), ["ok api reads db", "ok api writes db", "unverified api calls cache", "ok api publishes clicks", "unverified stats consumes clicks", "ok stats writes cache"]);
   const unknown = keylang(dir, ["system", "show", "nope"]);
@@ -64,6 +65,7 @@ test("system discover: the system of the code as a # system that parses and chec
   writeTree(dir, { "keylang/system/shop.md": found.stdout });
   const checked = keylang(dir, ["check", "--format", "json"]);
   assert.equal(checked.status, 0, checked.stdout);
+  // SAFETY: `check --format json` prints `{ snapshotId, results, coverage }` (docs/cli.md); each result row carries these fields.
   const results = (JSON.parse(checked.stdout) as { results: { verdict: string; criterion: string; code: string | null }[] }).results;
   assert.deepEqual(results.filter((result) => result.criterion === "system shop").map((result) => result.verdict), ["ok", "ok", "ok"]);
   assert.deepEqual(results.filter((result) => (result.code ?? "").startsWith("K")), []);

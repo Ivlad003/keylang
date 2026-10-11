@@ -17,6 +17,7 @@ import { landing, writeAtomic, writeProblem } from "../safe-write.ts";
 import { compareText } from "../span.ts";
 import type { CommitGate, ExplainBatchPayload, ExplainBatchRequest, ExplainLlmPayload, ExplainLlmRequest, ExplainPayload, ExplainPlanPayload, ExplainPlanRequest, ExplainRequest, OperationContext, OperationEnvelope, OperationMessage, OperationStatus } from "./types.ts";
 import { empty, specHashes, specProblems } from "./shared.ts";
+import type { LlmCallOptions } from "../llm.ts";
 
 /**
  * `keylang explain <code|id>` offline. A code needs no analysis: its help, or
@@ -170,8 +171,13 @@ export async function runExplainLlm(request: ExplainLlmRequest, context: Operati
   let answer: string;
   let reported: string | null = null;
 
+  const options: LlmCallOptions = {};
+
+  if (context.signal) options.signal = context.signal;
+  options.onModel = (model) => (reported = model);
+
   try {
-    answer = await client.complete(explanationRequest(analyzed, found.summary, { lang, detail, briefs: loadBriefs(config) }), { ...(context.signal ? { signal: context.signal } : {}), onModel: (model) => (reported = model) });
+    answer = await client.complete(explanationRequest(analyzed, found.summary, { lang, detail, briefs: loadBriefs(config) }), options);
   } catch (error) {
     if (error instanceof LlmCancelled || context.signal?.aborted) return empty("explain-llm", "cancelled", null);
     payload.error = errorText(error);
@@ -441,7 +447,7 @@ export async function runExplainBatch(request: ExplainBatchRequest, context: Ope
     // Asked once, before the first write: from here on the session defers its own writes and Cancel stops between briefs.
     gate ??= Promise.resolve()
       .then(() => context.beforeCommit?.({ targets: [...files.values()] }))
-      .catch((error: unknown) => ({ refused: [errorText(error)] }));
+      .catch((error) => ({ refused: [errorText(error)] }));
     const answered = await gate;
 
     if (cancelled()) stop("cancelled");

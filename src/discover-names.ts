@@ -20,6 +20,7 @@ import type { DiagramProcess } from "./diagram.ts";
 import { DISCOVER_MARK, DISCOVERED_DIR, discoverFlows, firstLevelSteps, proseLine, specifiedTriggers, unproseLine, type DiscoveredFlow } from "./discover.ts";
 import { explanationOf, snapshotBaseline, type StoredExplanation } from "./explanations.ts";
 import { EXTERNAL } from "./graph.ts";
+import { isJsonObject, isJsonString, parseJson, type JsonValue } from "./json.ts";
 import type { LlmRequest } from "./llm.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
 import type { SpecIR } from "./spec-ir.ts";
@@ -31,7 +32,7 @@ export const NAME_MODES = ["algo", "llm", "hybrid"] as const;
 export type NameMode = (typeof NAME_MODES)[number];
 
 export function isNameMode(value: string): value is NameMode {
-  return (NAME_MODES as readonly string[]).includes(value);
+  return NAME_MODES.some((mode) => mode === value);
 }
 
 /** The domains a model picks from, in the README's order; it may propose another, which goes before `Інше`. */
@@ -90,11 +91,15 @@ export function processBaseline(snapshot: AnalysisSnapshot, flows: readonly Pick
 
 /** A saved process whose flows are gone or whose baseline changed. */
 export function isStaleProcess(snapshot: AnalysisSnapshot, byName: ReadonlyMap<string, DiscoveredFlow>, process: BusinessProcess): boolean {
-  const flows = process.flows.map((name) => byName.get(name));
+  const flows = process.flows.flatMap((name) => {
+    const flow = byName.get(name);
 
-  if (flows.some((flow) => flow === undefined)) return true;
+    return flow === undefined ? [] : [flow];
+  });
 
-  return processBaseline(snapshot, flows as DiscoveredFlow[]) !== process.closure;
+  if (flows.length !== process.flows.length) return true;
+
+  return processBaseline(snapshot, flows) !== process.closure;
 }
 
 /** What a `--names` run asks: the groups, and the saved processes that are stale. */
@@ -165,8 +170,14 @@ export function namesRequest(snapshot: AnalysisSnapshot, group: NameGroup, optio
   return { system, prompt, maxTokens: 4096 };
 }
 
+/** Tokens the requests are expected to send and receive. */
+export interface NameTokenEstimate {
+  input: number;
+  output: number;
+}
+
 /** A rough size of the requests for `--dry-run`: about four characters a token, about 300 tokens out per process group. */
-export function estimateNameTokens(requests: readonly LlmRequest[]): { input: number; output: number } {
+export function estimateNameTokens(requests: readonly LlmRequest[]): NameTokenEstimate {
   const chars = requests.reduce((sum, r) => sum + r.system.length + r.prompt.length, 0);
 
   return { input: Math.ceil(chars / 4), output: requests.length * 300 };
@@ -184,7 +195,7 @@ export type AnsweredProcess = Omit<BusinessProcess, "agent" | "date" | "closure"
  */
 export function parseNamesAnswer(snapshot: AnalysisSnapshot, group: NameGroup, answer: string): { processes: AnsweredProcess[]; dropped: string[]; unknownIds: string[] } | { error: string } {
   const value = jsonOf(answer);
-  const list = Array.isArray(value) ? value : isRecord(value) && Array.isArray(value.processes) ? value.processes : null;
+  const list = Array.isArray(value) ? value : isJsonObject(value) && Array.isArray(value.processes) ? value.processes : null;
 
   if (list === null) return { error: "the answer is not JSON with a `processes` list" };
   const names = new Set(group.flows.map((flow) => flow.name));
@@ -194,14 +205,14 @@ export function parseNamesAnswer(snapshot: AnalysisSnapshot, group: NameGroup, a
   const texts: string[] = [];
 
   for (const item of list) {
-    if (!isRecord(item)) continue;
+    if (!isJsonObject(item)) continue;
     const name = oneLine(item.name);
 
     if (name === "") continue;
     const flows: string[] = [];
 
     for (const raw of Array.isArray(item.flows) ? item.flows : []) {
-      const flow = typeof raw === "string" ? raw.trim() : "";
+      const flow = isJsonString(raw) ? raw.trim() : "";
 
       if (!names.has(flow)) {
         if (flow !== "") dropped.add(flow);
@@ -244,7 +255,7 @@ function unknownIdsIn(snapshot: AnalysisSnapshot, text: string): string[] {
   return [...out].sort(compareText);
 }
 
-function jsonOf(answer: string): unknown {
+function jsonOf(answer: string): JsonValue | undefined {
   const text = answer.trim().replace(/^```[a-z]*\s*\n([\s\S]*)\n```$/i, "$1");
   const from = Math.min(...[text.indexOf("{"), text.indexOf("[")].filter((i) => i >= 0));
   const to = Math.max(text.lastIndexOf("}"), text.lastIndexOf("]"));
@@ -252,23 +263,19 @@ function jsonOf(answer: string): unknown {
   if (!Number.isFinite(from) || to < from) return undefined;
 
   try {
-    return JSON.parse(text.slice(from, to + 1)) as unknown;
+    return parseJson(text.slice(from, to + 1));
   } catch {
     return undefined;
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 /** A string of the answer on one line, without a comment it could open. */
-function oneLine(value: unknown): string {
-  return typeof value === "string" ? value.replace(/\s+/g, " ").replaceAll("<!--", "&lt;!--").trim() : "";
+function oneLine(value: JsonValue | undefined): string {
+  return isJsonString(value) ? value.replace(/\s+/g, " ").replaceAll("<!--", "&lt;!--").trim() : "";
 }
 
 /** Entities as the README lists them: one line each, no `, ` inside (the list's separator). */
-function entities(value: unknown): string[] {
+function entities(value: JsonValue | undefined): string[] {
   return (Array.isArray(value) ? value : [])
     .map((item) => oneLine(item).replace(/,\s*/g, "; "))
     .filter((item) => item !== "" && item !== "—");
@@ -286,9 +293,10 @@ const PROVENANCE = /^<!-- keylang:llm model=(\S+) date=(\S+) closure=(\S*) layer
 
 /** Domains in the README's order: the known ones, then others by name, `Інше` last. */
 function domainOrder(a: string, b: string): number {
-  const rank = (d: string): number => (d === OTHER ? 2 : (DOMAINS as readonly string[]).includes(d) ? 0 : 1);
+  const position = (d: string): number => DOMAINS.findIndex((domain) => domain === d);
+  const rank = (d: string): number => (d === OTHER ? 2 : position(d) >= 0 ? 0 : 1);
 
-  return rank(a) - rank(b) || (DOMAINS as readonly string[]).indexOf(a) - (DOMAINS as readonly string[]).indexOf(b) || compareText(a, b);
+  return rank(a) - rank(b) || position(a) - position(b) || compareText(a, b);
 }
 
 /**

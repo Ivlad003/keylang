@@ -26,8 +26,9 @@ import { positiveIntegerProblem } from "./explain-inventory.ts";
 import { isNameMode, NAME_MODES } from "./discover-names.ts";
 import { ENTRY_KINDS, isEntryKind } from "./snapshot.ts";
 import type { ExplanationDetail } from "./explanations.ts";
+import { isJsonObject, isJsonString, parseJson, type JsonValue } from "./json.ts";
 import { changedPathSet, deletedModuleIds, gitChangedFiles } from "./git-changes.ts";
-import { checkSkipNote, checkSummary, featureSummary, fmtGeneratedNote, gapLine, gitignoreMessage, hintLine, initSources, mapCheckLines, mapConflictLines, mapStepLines, mapSummary, runOperation, type CodeToSpecSource, type ExplainPlanRequest, type GitignoreStage, type OperationEnvelope } from "./operations.ts";
+import { checkSkipNote, checkSummary, featureSummary, fmtGeneratedNote, gapLine, gitignoreMessage, hintLine, initSources, mapCheckLines, mapConflictLines, mapStepLines, mapSummary, runOperation, type CheckRequest, type CodeToSpecRequest, type CodeToSpecSource, type DraftFlowRequest, type DraftRulesRequest, type EntriesRequest, type ExplainBatchRequest, type ExplainLlmRequest, type ExplainPlanRequest, type ExplainRequest, type ExportC4Request, type FeatureRequest, type FlowExportRequest, type FlowImportRequest, type FlowsAdoptRequest, type FlowsDiscoverRequest, type GitignoreStage, type MigrationStatusRequest, type OperationEnvelope, type SpecToCodeRequest, type SystemRequest, type TourRequest, type TracePlanRequest } from "./operations.ts";
 
 const USAGE = `keylang: architecture description bound to a repository
 
@@ -476,8 +477,7 @@ async function run(argv: readonly string[]): Promise<number> {
   }
 
   if (values.version) {
-    const pkg = createRequire(import.meta.url)("../package.json") as { version: string };
-    process.stdout.write(`keylang ${pkg.version}\n`);
+    process.stdout.write(`keylang ${packageVersion()}\n`);
 
     return 0;
   }
@@ -550,9 +550,8 @@ async function run(argv: readonly string[]): Promise<number> {
     case "mcp": {
       // The MCP SDK loads only for this command.
       const { serveMcp } = await import("./mcp.ts");
-      const pkg = createRequire(import.meta.url)("../package.json") as { version: string };
 
-      return serveMcp(findRoot(process.cwd()), pkg.version);
+      return serveMcp(findRoot(process.cwd()), packageVersion());
     }
 
     case "draft":
@@ -757,6 +756,15 @@ async function cmdWeb(root: string, portText: string, host: string, greenfield =
   return 0;
 }
 
+/** The brief batch's plan (`explain --missing|--stale` without `--llm`). */
+type BriefsPlanRequest = Extract<ExplainPlanRequest, { list: "briefs" }>;
+
+/** `draft flow --from-trace <file> [--run <id>]`. */
+type TraceSource = NonNullable<DraftFlowRequest["fromTrace"]>;
+
+/** `code-to-spec <path[:line]>`. */
+type CodePosition = Extract<CodeToSpecSource, { file: string }>;
+
 interface ExplainOptions {
   llm: boolean;
   full: boolean;
@@ -788,7 +796,10 @@ async function cmdExplain(subject: string | undefined, opts: ExplainOptions): Pr
   // A code, and an ID without the model: a printer over the shared offline operation.
   if (!opts.llm || isDiagnosticCode(subject)) {
     const detail: ExplanationDetail | undefined = opts.brief ? "brief" : opts.full ? "full" : undefined;
-    const result = await runOperation({ kind: "explain", root: findRoot(process.cwd()), subject, ...(detail !== undefined ? { detail } : {}) });
+    const request: ExplainRequest = { kind: "explain", root: findRoot(process.cwd()), subject };
+
+    if (detail !== undefined) request.detail = detail;
+    const result = await runOperation(request);
 
     for (const message of result.messages) if (message.level === "warning") process.stderr.write(`keylang: ${message.text}\n`);
 
@@ -800,7 +811,10 @@ async function cmdExplain(subject: string | undefined, opts: ExplainOptions): Pr
 
   // An ID with the model: a printer over the shared operation (a fresh saved answer is read, not asked for again).
   const detail: ExplanationDetail | undefined = opts.brief ? "brief" : opts.full ? "full" : undefined;
-  const result = await runOperation({ kind: "explain-llm", root: findRoot(process.cwd()), id: subject, ...(detail !== undefined ? { detail } : {}) });
+  const request: ExplainLlmRequest = { kind: "explain-llm", root: findRoot(process.cwd()), id: subject };
+
+  if (detail !== undefined) request.detail = detail;
+  const result = await runOperation(request);
 
   for (const message of result.messages) if (message.level === "warning") process.stderr.write(`keylang: ${message.text}\n`);
 
@@ -831,11 +845,26 @@ async function cmdExplainBatch(root: string, batch: BriefBatch, opts: Pick<Expla
   const jobs = opts.jobs === undefined ? undefined : positiveInteger("--jobs", opts.jobs);
 
   // The list and the dry run: a printer over the shared read-only plan.
-  if (opts.dryRun || !opts.llm) return explainPlanPrinter({ kind: "explain-plan", root, list: "briefs", batch, ...(limit !== undefined ? { limit } : {}), ...(jobs !== undefined ? { jobs } : {}), estimate: opts.dryRun });
+  if (opts.dryRun || !opts.llm) {
+    const plan: BriefsPlanRequest = { kind: "explain-plan", root, list: "briefs", batch };
+
+    if (limit !== undefined) plan.limit = limit;
+
+    if (jobs !== undefined) plan.jobs = jobs;
+    plan.estimate = opts.dryRun;
+
+    return explainPlanPrinter(plan);
+  }
 
   // The batch: a printer over the shared operation; a progress line per node on stderr.
+  const request: ExplainBatchRequest = { kind: "explain-batch", root, batch };
+
+  if (limit !== undefined) request.limit = limit;
+
+  if (jobs !== undefined) request.jobs = jobs;
+
   const result = await runOperation(
-    { kind: "explain-batch", root, batch, ...(limit !== undefined ? { limit } : {}), ...(jobs !== undefined ? { jobs } : {}) },
+    request,
     { onProgress: ({ step }) => step && process.stderr.write(`[${step.done}/${step.total}] ${step.id}${step.failed === null ? "" : `: failed: ${step.failed}`}\n`) },
   );
 
@@ -966,7 +995,11 @@ async function cmdDraft(args: string[], opts: { mode: string; modeGiven: boolean
     const root = findRoot(process.cwd());
     const file = toPosix(relative(root, resolve(process.cwd(), opts.fromTrace)));
 
-    return draftFlowPrinter(root, "", "algo", { ...opts, fromTrace: { file, ...(opts.run !== undefined ? { run: opts.run } : {}) } });
+    const fromTrace: TraceSource = { file };
+
+    if (opts.run !== undefined) fromTrace.run = opts.run;
+
+    return draftFlowPrinter(root, "", "algo", { ...opts, fromTrace });
   }
 
   if (!trigger) throw new Error("draft flow: a trigger id is required");
@@ -982,18 +1015,16 @@ async function cmdDraft(args: string[], opts: { mode: string; modeGiven: boolean
  * CLI always did. On stderr: the fallback of a hybrid without a model, IDs
  * the model left unknown, lines it dropped, a stats file not updated.
  */
-async function draftFlowPrinter(root: string, trigger: string, mode: "algo" | "llm" | "hybrid", opts: { name: string | undefined; into: string | undefined; print: boolean; fromTrace: { file: string; run?: string } | undefined }): Promise<number> {
-  const result = await runOperation({
-    kind: "draft-flow",
-    root,
-    trigger,
-    mode,
-    ...(opts.fromTrace !== undefined ? { fromTrace: opts.fromTrace } : {}),
-    ...(opts.name !== undefined ? { name: opts.name } : {}),
-    ...(opts.into !== undefined ? { into: opts.into } : {}),
-    output: opts.print ? "preview" : "proposal",
-    pending: "replace",
-  });
+async function draftFlowPrinter(root: string, trigger: string, mode: "algo" | "llm" | "hybrid", opts: { name: string | undefined; into: string | undefined; print: boolean; fromTrace: TraceSource | undefined }): Promise<number> {
+  const request: DraftFlowRequest = { kind: "draft-flow", root, trigger, mode, output: opts.print ? "preview" : "proposal" };
+
+  if (opts.fromTrace !== undefined) request.fromTrace = opts.fromTrace;
+
+  if (opts.name !== undefined) request.name = opts.name;
+
+  if (opts.into !== undefined) request.into = opts.into;
+  request.pending = "replace";
+  const result = await runOperation(request);
 
   const payload = result.payload;
 
@@ -1041,7 +1072,12 @@ async function cmdSpecToCode(id: string | undefined, opts: { into: string | unde
  * was not.
  */
 async function specToCodeApplyPrinter(root: string, id: string, into: string | undefined, mode: "algo" | "llm"): Promise<number> {
-  const built = await runOperation({ kind: "spec-to-code", root, id, ...(into !== undefined ? { into } : {}), output: "preview", ...(mode === "llm" ? { mode } : {}) });
+  const request: SpecToCodeRequest = { kind: "spec-to-code", root, id, output: "preview" };
+
+  if (into !== undefined) request.into = into;
+
+  if (mode === "llm") request.mode = mode;
+  const built = await runOperation(request);
   const payload = built.payload;
 
   if (payload !== null) process.stdout.write(payload.candidate.print);
@@ -1079,7 +1115,13 @@ async function specToCodeApplyPrinter(root: string, id: string, into: string | u
  * written. The proposals replace ones already waiting, as the CLI always did.
  */
 async function specToCodePrinter(root: string, id: string, into: string | undefined, print: boolean, mode: "algo" | "llm"): Promise<number> {
-  const result = await runOperation({ kind: "spec-to-code", root, id, ...(into !== undefined ? { into } : {}), output: print ? "preview" : "proposal", pending: "replace", ...(mode === "llm" ? { mode } : {}) });
+  const request: SpecToCodeRequest = { kind: "spec-to-code", root, id, output: print ? "preview" : "proposal" };
+
+  if (into !== undefined) request.into = into;
+  request.pending = "replace";
+
+  if (mode === "llm") request.mode = mode;
+  const result = await runOperation(request);
   const payload = result.payload;
 
   if (payload !== null) process.stdout.write(payload.candidate.print);
@@ -1110,7 +1152,10 @@ async function cmdCodeToSpec(at: string | undefined, opts: { into: string | unde
 
   if (at !== undefined) {
     const m = /^(.*?)(?::(\d+))?$/.exec(at)!;
-    source = { file: toPosix(relative(root, resolve(process.cwd(), m[1]!))), ...(m[2] !== undefined ? { line: Number(m[2]) } : {}) };
+    const position: CodePosition = { file: toPosix(relative(root, resolve(process.cwd(), m[1]!))) };
+
+    if (m[2] !== undefined) position.line = Number(m[2]);
+    source = position;
   } else {
     source = { since: opts.since! };
   }
@@ -1132,16 +1177,14 @@ async function cmdCodeToSpec(at: string | undefined, opts: { into: string | unde
 async function codeToSpecPrinter(root: string, source: CodeToSpecSource, analysis: Analysis, opts: { into: string | undefined; print: boolean; mode: string }): Promise<number> {
   const mode = opts.mode === "algo" || opts.mode === "llm" || opts.mode === "hybrid" ? opts.mode : null;
 
+  const request: CodeToSpecRequest = { kind: "code-to-spec", root, ...source, output: opts.print || mode === null ? "preview" : "proposal" };
+
+  if (opts.into !== undefined) request.into = toPosix(opts.into);
+  request.mode = mode ?? "algo";
+  request.pending = "replace";
+
   const result = await runOperation(
-    {
-      kind: "code-to-spec",
-      root,
-      ...source,
-      ...(opts.into !== undefined ? { into: toPosix(opts.into) } : {}),
-      output: opts.print || mode === null ? "preview" : "proposal",
-      mode: mode ?? "algo",
-      pending: "replace",
-    },
+    request,
     { analyze: async () => analysis },
   );
 
@@ -1212,14 +1255,11 @@ async function draftMapPrinter(root: string, mode: "algo" | "llm" | "hybrid"): P
  * without a model, each conflict with its evidence, a stats file not updated.
  */
 async function draftRulesPrinter(root: string, mode: "algo" | "llm" | "hybrid", opts: { into: string | undefined; print: boolean }): Promise<number> {
-  const result = await runOperation({
-    kind: "draft-rules",
-    root,
-    mode,
-    ...(opts.into !== undefined ? { into: toPosix(opts.into) } : {}),
-    output: opts.print ? "preview" : "proposal",
-    pending: "replace",
-  });
+  const request: DraftRulesRequest = { kind: "draft-rules", root, mode, output: opts.print ? "preview" : "proposal" };
+
+  if (opts.into !== undefined) request.into = toPosix(opts.into);
+  request.pending = "replace";
+  const result = await runOperation(request);
 
   const payload = result.payload;
 
@@ -1253,7 +1293,10 @@ async function cmdExport(args: readonly string[], options: { format: string | un
   if (what === "bpmn" || what === "drawio") {
     if (rest.length !== 1) throw new Error(`export ${what}: ${rest.length === 0 ? "a view is required: a flow name, discovered:<name> or process:<domain>" : `unexpected argument \`${rest[1]}\``}`);
     const { runDiagramExport } = await import("./operations/diagram-export.ts");
-    const result = await runDiagramExport({ root: findRoot(process.cwd()), format: what, view: rest[0]!, ...(options.out !== undefined ? { out: toPosix(options.out) } : {}) });
+    const request: Parameters<typeof runDiagramExport>[0] = { root: findRoot(process.cwd()), format: what, view: rest[0]! };
+
+    if (options.out !== undefined) request.out = toPosix(options.out);
+    const result = await runDiagramExport(request);
 
     if (result.error !== null) process.stderr.write(`keylang: ${result.error}\n`);
     else if (result.out !== null) process.stderr.write(`${result.out}: written\n`);
@@ -1266,14 +1309,12 @@ async function cmdExport(args: readonly string[], options: { format: string | un
 
   if (rest.length > 0) throw new Error(`export c4: unexpected argument \`${rest[0]}\``);
 
-  const result = await runOperation({
-    kind: "export-c4",
-    root: findRoot(process.cwd()),
-    format: options.format ?? "plantuml",
-    level: options.level ?? "component",
-    ...(options.layer !== undefined ? { layer: options.layer } : {}),
-    ...(options.out !== undefined ? { out: toPosix(options.out) } : {}),
-  });
+  const request: ExportC4Request = { kind: "export-c4", root: findRoot(process.cwd()), format: options.format ?? "plantuml", level: options.level ?? "component" };
+
+  if (options.layer !== undefined) request.layer = options.layer;
+
+  if (options.out !== undefined) request.out = toPosix(options.out);
+  const result = await runOperation(request);
 
   for (const message of result.messages) process.stderr.write(message.level === "error" ? `keylang: ${message.text}\n` : `${message.text}\n`);
 
@@ -1301,23 +1342,24 @@ async function cmdDiagram(args: readonly string[], options: { from: string | und
   if (rest.length > 0) throw new Error(`diagram propose: unexpected argument \`${rest[0]}\``);
 
   if (options.from === undefined) throw new Error("diagram propose: --from <model.json> is required (window.keylangEditor.currentModel() as JSON)");
-  let model: unknown;
+  let model: JsonValue;
 
   try {
-    model = JSON.parse(readFileSync(resolve(process.cwd(), options.from), "utf8"));
+    model = parseJson(readFileSync(resolve(process.cwd(), options.from), "utf8"));
   } catch (error) {
     throw new Error(`diagram propose: --from ${options.from}: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   // A saved request of the page (`{model, specHash}`) or the model alone.
-  const wrapped = model !== null && typeof model === "object" && "model" in model ? (model as { model: unknown; specHash?: unknown }) : null;
+  const wrapped = isJsonObject(model) && "model" in model ? model : null;
+  const specHash = wrapped?.["specHash"];
   const { runDiagramPropose } = await import("./operations/diagram-propose.ts");
 
   const result = await runDiagramPropose({
     root: findRoot(process.cwd()),
     view: view === "empty" ? "" : view,
-    model: wrapped ? wrapped.model : model,
-    specHash: wrapped && typeof wrapped.specHash === "string" ? wrapped.specHash : null,
+    model: wrapped ? wrapped["model"] : model,
+    specHash: isJsonString(specHash) ? specHash : null,
     print: options.print,
   });
 
@@ -1354,7 +1396,11 @@ async function cmdImport(args: readonly string[], options: { into: string | unde
 
   if (rest.length > 0) throw new Error(`import drawio: unexpected argument \`${rest[0]}\``);
   const { runImportDrawio } = await import("./operations/diagram-export.ts");
-  const result = await runImportDrawio({ root: findRoot(process.cwd()), file: resolve(process.cwd(), file), ...(options.into !== undefined ? { into: toPosix(options.into) } : {}), print: options.print });
+  const request: Parameters<typeof runImportDrawio>[0] = { root: findRoot(process.cwd()), file: resolve(process.cwd(), file) };
+
+  if (options.into !== undefined) request.into = toPosix(options.into);
+  request.print = options.print;
+  const result = await runImportDrawio(request);
 
   if (options.print && result.diff !== null) process.stdout.write(`${result.diff}\n`);
 
@@ -1497,7 +1543,10 @@ async function cmdTracePlan(flow: string | undefined, entry: string | undefined,
   if (entry === undefined && name !== undefined) throw new Error("trace-plan: --name goes with --entry");
 
   if (entry === undefined && !flow) throw new Error("trace-plan: a flow name is required");
-  const result = await runOperation({ kind: "trace-plan", root: findRoot(process.cwd()), flow: entry === undefined ? flow! : (name ?? ""), ...(entry !== undefined ? { entry } : {}) });
+  const request: TracePlanRequest = { kind: "trace-plan", root: findRoot(process.cwd()), flow: entry === undefined ? flow! : (name ?? "") };
+
+  if (entry !== undefined) request.entry = entry;
+  const result = await runOperation(request);
 
   if (result.payload === null) throw new Error(result.messages[0]?.text ?? "trace-plan failed");
   process.stdout.write(result.payload.text);
@@ -1508,7 +1557,10 @@ async function cmdTracePlan(flow: string | undefined, entry: string | undefined,
 /** `entries [--kind k] [--json]`: the table of the shared operation, or its payload as JSON; exit 0 with an empty list too. */
 async function cmdEntries(kind: string | undefined, json: boolean): Promise<number> {
   if (kind !== undefined && !isEntryKind(kind)) throw new Error(`entries: --kind is one of ${ENTRY_KINDS.join(", ")}, got \`${kind}\``);
-  const result = await runOperation({ kind: "entries", root: findRoot(process.cwd()), ...(kind !== undefined ? { only: kind } : {}) });
+  const request: EntriesRequest = { kind: "entries", root: findRoot(process.cwd()) };
+
+  if (kind !== undefined) request.only = kind;
+  const result = await runOperation(request);
 
   if (result.payload === null) throw new Error(result.messages[0]?.text ?? "entries failed");
   process.stdout.write(json ? `${JSON.stringify({ snapshotId: result.payload.snapshotId, kind: result.payload.kind, entries: result.payload.entries }, null, 2)}\n` : result.payload.text);
@@ -1534,7 +1586,10 @@ async function cmdMigration(args: readonly string[], from: string | undefined, j
   if (action !== "status") throw new Error(`migration: expected status${action === undefined ? "" : `, got \`${action}\``}`);
 
   if (extra !== undefined) throw new Error(`migration status: unexpected \`${extra}\``);
-  const result = await runOperation({ kind: "migration-status", root: findRoot(process.cwd()), ...(from !== undefined ? { from: resolve(process.cwd(), from) } : {}) });
+  const request: MigrationStatusRequest = { kind: "migration-status", root: findRoot(process.cwd()) };
+
+  if (from !== undefined) request.from = resolve(process.cwd(), from);
+  const result = await runOperation(request);
 
   if (result.payload === null) throw new Error(result.messages[0]?.text ?? "migration status failed");
   const { text, ...status } = result.payload;
@@ -1552,7 +1607,12 @@ async function cmdSystem(args: readonly string[], json: boolean, interview: bool
   if (extra !== undefined || (action === "list" && name !== undefined)) throw new Error(`system ${action}: unexpected \`${extra ?? name}\``);
 
   if (interview && action !== "new") throw new Error("--interview goes with `system new`");
-  const result = await runOperation({ kind: "system", root: findRoot(process.cwd()), action, ...(name !== undefined ? { name } : {}), ...(interview ? { interview } : {}) });
+  const request: SystemRequest = { kind: "system", root: findRoot(process.cwd()), action };
+
+  if (name !== undefined) request.name = name;
+
+  if (interview) request.interview = interview;
+  const result = await runOperation(request);
 
   if (result.payload === null) throw new Error(result.messages[0]?.text ?? `system ${action} failed`);
   const { text, ...payload } = result.payload;
@@ -1574,7 +1634,10 @@ async function cmdIntegrations(json: boolean): Promise<number> {
 
 /** `tour [--out f] [--json]`: the page on stdout, its data as JSON, or the page written to `f` (named on stderr). */
 async function cmdTour(out: string | undefined, json: boolean): Promise<number> {
-  const result = await runOperation({ kind: "tour", root: findRoot(process.cwd()), ...(out !== undefined ? { out } : {}) });
+  const request: TourRequest = { kind: "tour", root: findRoot(process.cwd()) };
+
+  if (out !== undefined) request.out = out;
+  const result = await runOperation(request);
 
   if (result.payload === null) throw new Error(result.messages[0]?.text ?? "tour failed");
   const { text, out: _written, ...tour } = result.payload;
@@ -1610,7 +1673,12 @@ async function cmdFlows(
     if (name === undefined) throw new Error("flows adopt: a discovered flow's name is required");
 
     if (rest.length > 0) throw new Error(`flows adopt: unexpected \`${rest[0]}\`; one flow at a time`);
-    const result = await runOperation({ kind: "flows-adopt", root, name, ...(opts.into !== undefined ? { into: opts.into } : {}), ...(depth !== undefined ? { depth } : {}) });
+    const request: FlowsAdoptRequest = { kind: "flows-adopt", root, name };
+
+    if (opts.into !== undefined) request.into = opts.into;
+
+    if (depth !== undefined) request.depth = depth;
+    const result = await runOperation(request);
     report(result.messages);
 
     return result.exitCode ?? 2;
@@ -1627,15 +1695,16 @@ async function cmdFlows(
   if (opts.mode !== undefined || opts.dryRun || opts.jobs !== undefined || opts.stale) throw new Error("flows discover: --mode, --dry-run, --jobs and --stale need --names");
   const limit = opts.limit === undefined ? undefined : wholeNumber("--limit", opts.limit, 1);
 
-  const result = await runOperation({
-    kind: "flows-discover",
-    root,
-    output: opts.print ? "print" : opts.check ? "check" : "write",
-    ...(opts.kind !== undefined ? { only: opts.kind } : {}),
-    ...(opts.layer !== undefined ? { layer: opts.layer } : {}),
-    ...(limit !== undefined ? { limit } : {}),
-    ...(depth !== undefined ? { depth } : {}),
-  });
+  const request: FlowsDiscoverRequest = { kind: "flows-discover", root, output: opts.print ? "print" : opts.check ? "check" : "write" };
+
+  if (opts.kind !== undefined) request.only = opts.kind;
+
+  if (opts.layer !== undefined) request.layer = opts.layer;
+
+  if (limit !== undefined) request.limit = limit;
+
+  if (depth !== undefined) request.depth = depth;
+  const result = await runOperation(request);
 
   if (opts.print && result.payload !== null) process.stdout.write(result.payload.files.map((file) => file.text).join("\n"));
   report(result.messages);
@@ -1659,15 +1728,20 @@ async function cmdFlowsNames(root: string, opts: { kind: string | undefined; lay
   const limit = opts.limit === undefined ? undefined : positiveInteger("--limit", opts.limit);
   const jobs = opts.jobs === undefined ? undefined : positiveInteger("--jobs", opts.jobs);
 
+  const request: FlowsDiscoverRequest = { kind: "flows-discover", root, output: "write" };
+
+  if (opts.layer !== undefined) request.layer = opts.layer;
+
+  if (depth !== undefined) request.depth = depth;
+  const names: NonNullable<FlowsDiscoverRequest["names"]> = { mode, dryRun: opts.dryRun, stale: opts.stale };
+
+  if (limit !== undefined) names.limit = limit;
+
+  if (jobs !== undefined) names.jobs = jobs;
+  request.names = names;
+
   const result = await runOperation(
-    {
-      kind: "flows-discover",
-      root,
-      output: "write",
-      ...(opts.layer !== undefined ? { layer: opts.layer } : {}),
-      ...(depth !== undefined ? { depth } : {}),
-      names: { mode, dryRun: opts.dryRun, stale: opts.stale, ...(limit !== undefined ? { limit } : {}), ...(jobs !== undefined ? { jobs } : {}) },
-    },
+    request,
     { onProgress: ({ text }) => process.stderr.write(`keylang: ${text}\n`) },
   );
 
@@ -1700,8 +1774,12 @@ async function cmdFlow(args: readonly string[], opts: { withCallees: string | un
 
     if (opts.into !== undefined || opts.layerMap !== undefined || opts.mode !== undefined || opts.print) throw new Error("flow export: --into, --layer-map, --mode and --print belong to flow import");
     const withCallees = opts.withCallees === undefined ? undefined : wholeNumber("--with-callees", opts.withCallees, 0);
-    const pkg = createRequire(import.meta.url)("../package.json") as { version: string };
-    const result = await runOperation({ kind: "flow-export", root, names: rest, version: pkg.version, ...(withCallees !== undefined ? { withCallees } : {}), ...(opts.out !== undefined ? { out: resolve(process.cwd(), opts.out) } : {}) });
+    const request: FlowExportRequest = { kind: "flow-export", root, names: rest, version: packageVersion() };
+
+    if (withCallees !== undefined) request.withCallees = withCallees;
+
+    if (opts.out !== undefined) request.out = resolve(process.cwd(), opts.out);
+    const result = await runOperation(request);
 
     if (result.payload !== null && opts.out === undefined) process.stdout.write(result.payload.text);
     report(result.messages);
@@ -1720,15 +1798,12 @@ async function cmdFlow(args: readonly string[], opts: { withCallees: string | un
 
   if (mode !== "algo" && mode !== "llm" && mode !== "hybrid") throw new Error(`flow import: --mode must be algo, llm or hybrid, got \`${mode}\``);
 
-  const result = await runOperation({
-    kind: "flow-import",
-    root,
-    bundle: resolve(process.cwd(), bundle),
-    mode,
-    output: opts.print ? "preview" : "proposal",
-    ...(opts.into !== undefined ? { into: toPosix(opts.into) } : {}),
-    ...(opts.layerMap !== undefined ? { layerMap: opts.layerMap } : {}),
-  });
+  const request: FlowImportRequest = { kind: "flow-import", root, bundle: resolve(process.cwd(), bundle), mode, output: opts.print ? "preview" : "proposal" };
+
+  if (opts.into !== undefined) request.into = toPosix(opts.into);
+
+  if (opts.layerMap !== undefined) request.layerMap = opts.layerMap;
+  const result = await runOperation(request);
 
   if (opts.print && result.payload !== null) process.stdout.write(`${result.payload.feature}\n<!-- ${result.payload.migrationTarget} -->\n\n${result.payload.migration}`);
   report(result.messages);
@@ -1891,7 +1966,10 @@ async function cmdFeature(slug: string | undefined, format: string, since: strin
   if (!slug) throw new Error("feature: a slug is required");
 
   if (format !== "human" && format !== "json") throw new Error(`feature: unknown --format \`${format}\`; expected human, json`);
-  const result = await runOperation({ kind: "feature", root: findRoot(process.cwd()), slug, ...(since !== undefined ? { since } : {}) });
+  const request: FeatureRequest = { kind: "feature", root: findRoot(process.cwd()), slug };
+
+  if (since !== undefined) request.since = since;
+  const result = await runOperation(request);
 
   if (result.payload === null) {
     for (const message of result.messages) process.stderr.write(`keylang: ${message.text}\n`);
@@ -2093,6 +2171,7 @@ async function cmdCompletions(shell: string | undefined): Promise<number> {
 }
 
 function packageVersion(): string {
+  // SAFETY: the package's own package.json ships with the code and always carries a string `version`.
   return (createRequire(import.meta.url)("../package.json") as { version: string }).version;
 }
 
@@ -2262,17 +2341,16 @@ async function cmdCheck(paths: string[], opts: { strict: boolean; format: string
 
   const root = findRoot(cwd);
 
-  const result = await runOperation({
-    kind: "check",
-    root,
-    paths,
-    base: cwd,
-    strict: opts.strict,
-    ...(staticMode ? { static: staticMode } : {}),
-    ...(opts.changed ? { changed: true } : {}),
-    ...(opts.since !== undefined ? { since: opts.since } : {}),
-    ...(opts.acceptWeakening === true ? { acceptWeakening: true } : {}),
-  });
+  const request: CheckRequest = { kind: "check", root, paths, base: cwd, strict: opts.strict };
+
+  if (staticMode) request.static = staticMode;
+
+  if (opts.changed) request.changed = true;
+
+  if (opts.since !== undefined) request.since = opts.since;
+
+  if (opts.acceptWeakening === true) request.acceptWeakening = true;
+  const result = await runOperation(request);
 
   if (result.payload === null) throw new Error(result.messages[0]?.text ?? "check failed");
   const { payload } = result;

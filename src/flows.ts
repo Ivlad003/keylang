@@ -109,7 +109,48 @@ type Channel = "ID" | "static" | "tests" | "trace";
 
 type FlowNode = Trigger | FlowItem;
 
-export function evaluateFlows(compiled: SpecIR, index: Index, input: FlowInput): { diagnostics: Diagnostic[]; verdicts: Verdict[] } {
+/** The flows' diagnostics and a verdict per checked channel. */
+export interface FlowEvaluation {
+  diagnostics: Diagnostic[];
+  verdicts: Verdict[];
+}
+
+/** One channel's outcome for a flow line, before it becomes a `Verdict`. */
+interface ChannelVerdict {
+  verdict: Verdict["verdict"];
+  message: string;
+}
+
+/** An entry-point outcome; `mismatch` when the ID is an entry point of another kind only. */
+interface EntryVerdict extends ChannelVerdict {
+  mismatch: boolean;
+}
+
+/** A schedule in a comparable form. */
+interface ScheduleForm {
+  form: "cron" | "duration";
+  value: string;
+}
+
+/** Fns whose body a proof cannot pass through, by fn ID, with the reason: replaced by a decorator, or unreadable. */
+interface DoubtfulBodies {
+  replaced: Map<string, string>;
+  unreadable: Map<string, string>;
+}
+
+/** A breadth-first search: the route to the target (null when none) and the depth of every fn reached. */
+interface RouteSearch {
+  route: Map<string, Step> | null;
+  depth: Map<string, number>;
+}
+
+/** The first ambiguous or closure call on the shortest possible route (null when none), and every fn reached. */
+interface PossibleRoute {
+  edge: SnapshotEdge | null;
+  seen: Set<string>;
+}
+
+export function evaluateFlows(compiled: SpecIR, index: Index, input: FlowInput): FlowEvaluation {
   const diagnostics: Diagnostic[] = [];
   const verdicts: Verdict[] = [];
   const planned = collectPlanned(compiled, input, diagnostics);
@@ -118,7 +159,7 @@ export function evaluateFlows(compiled: SpecIR, index: Index, input: FlowInput):
   let spec = "";
 
   const verdict = (channel: Channel, area: string, value: Verdict["verdict"], file: string, span: Span, message: string, evidence?: Verdict["evidence"]): void => {
-    verdicts.push({
+    const outcome: Verdict = {
       verdict: value,
       criterion: channel,
       area,
@@ -129,8 +170,10 @@ export function evaluateFlows(compiled: SpecIR, index: Index, input: FlowInput):
       col: span.start.col,
       code: channel,
       message: `${value} ${area}: ${message}`,
-      ...(evidence ? { evidence } : {}),
-    });
+    };
+
+    if (evidence) outcome.evidence = evidence;
+    verdicts.push(outcome);
   };
 
   for (const flow of compiled.flows) {
@@ -349,7 +392,10 @@ export function evaluateFlows(compiled: SpecIR, index: Index, input: FlowInput):
         const name = node.name ?? "";
         const matched = matchTest(tests, node.path, name, input.snapshotId);
         const area = claim ? claimArea(claim) : `test ${node.path} "${name}"`;
-        verdict("tests", area, matched.verdict, file, node.span, `${matched.message} (${node.path} "${name}")`, { provenance: "test-report", ...(matched.runId ? { runId: matched.runId } : {}) });
+        const evidence: NonNullable<Verdict["evidence"]> = { provenance: "test-report" };
+
+        if (matched.runId) evidence.runId = matched.runId;
+        verdict("tests", area, matched.verdict, file, node.span, `${matched.message} (${node.path} "${name}")`, evidence);
       }
     };
 
@@ -375,7 +421,7 @@ function claimArea(node: ClaimItem | ThenItem | WhenItem | TimerItem): string {
  * is an entry of other kinds only; `unverified` when no entry names it, since
  * an adapter keylang lacks may know it.
  */
-function entryVerdict(kind: string, id: string, entries: readonly EntryView[] | undefined): { verdict: Verdict["verdict"]; message: string; mismatch: boolean } {
+function entryVerdict(kind: string, id: string, entries: readonly EntryView[] | undefined): EntryVerdict {
   if (entries === undefined) return { verdict: "unverified", message: "the snapshot records no entry points; run `keylang map` again", mismatch: false };
   const own = entries.filter((entry) => entry.id === id);
   const match = own.find((entry) => entry.kind === kind);
@@ -392,19 +438,19 @@ function entryVerdict(kind: string, id: string, entries: readonly EntryView[] | 
 }
 
 /** The cron fields of `@hourly` and the other macros. */
-const CRON_MACROS: Record<string, string> = {
-  "@yearly": "0 0 1 1 *",
-  "@annually": "0 0 1 1 *",
-  "@monthly": "0 0 1 * *",
-  "@weekly": "0 0 * * 0",
-  "@daily": "0 0 * * *",
-  "@midnight": "0 0 * * *",
-  "@hourly": "0 * * * *",
-};
+const CRON_MACROS = new Map([
+  ["@yearly", "0 0 1 1 *"],
+  ["@annually", "0 0 1 1 *"],
+  ["@monthly", "0 0 1 * *"],
+  ["@weekly", "0 0 * * 0"],
+  ["@daily", "0 0 * * *"],
+  ["@midnight", "0 0 * * *"],
+  ["@hourly", "0 * * * *"],
+]);
 
 /** A schedule in a comparable form: cron fields (a macro expanded) or a duration. */
-function scheduleForm(text: string): { form: "cron" | "duration"; value: string } {
-  const macro = CRON_MACROS[text];
+function scheduleForm(text: string): ScheduleForm {
+  const macro = CRON_MACROS.get(text);
 
   if (macro !== undefined) return { form: "cron", value: macro };
 
@@ -429,7 +475,7 @@ function labelSchedule(label: string): string | null {
  * same form, else `unverified` (no cron entry, no schedule in its label, or a
  * duration against cron fields).
  */
-function scheduleVerdict(parent: string | null, written: string, entries: readonly EntryView[] | undefined): { verdict: Verdict["verdict"]; message: string } {
+function scheduleVerdict(parent: string | null, written: string, entries: readonly EntryView[] | undefined): ChannelVerdict {
   const only = "only a nested `test` checks it";
 
   if (parent === null) return { verdict: "unverified", message: `no trigger or step it schedules; ${only}` };
@@ -458,7 +504,13 @@ function scheduleVerdict(parent: string | null, written: string, entries: readon
 }
 
 function traceProvenance(evidence: TraceEvidence): Verdict["evidence"] {
-  return { provenance: "trace", ...(evidence.runId ? { runId: evidence.runId } : {}), ...(evidence.testId ? { testId: evidence.testId } : {}) };
+  const provenance: NonNullable<Verdict["evidence"]> = { provenance: "trace" };
+
+  if (evidence.runId) provenance.runId = evidence.runId;
+
+  if (evidence.testId) provenance.testId = evidence.testId;
+
+  return provenance;
 }
 
 /** A count, a bound, or a negation: a subsequence of calls cannot prove it. */
@@ -508,7 +560,7 @@ function describeSubscriber(step: Step): string {
  * the config lines that subscribe them. None is `unverified`: a subscriber
  * keylang did not read (another module, a config it skips) may still exist.
  */
-function subscribersVerdict(graph: CallGraph, event: string, input: FlowInput): { verdict: Verdict["verdict"]; message: string } {
+function subscribersVerdict(graph: CallGraph, event: string, input: FlowInput): ChannelVerdict {
   if (input.nodes[event]?.kind !== "event") return { verdict: "unverified", message: `\`${event}\` is not an event the snapshot records; run \`keylang map\` again` };
   const subscribers = subscribersOf(graph, event);
 
@@ -523,7 +575,7 @@ function subscribersVerdict(graph: CallGraph, event: string, input: FlowInput): 
  * otherwise `unverified` when some subscriber may reach it, `fail` when every
  * one is a confirmed absence.
  */
-function subscriberReach(graph: CallGraph, input: FlowInput, event: string, target: string): { verdict: Verdict["verdict"]; message: string } {
+function subscriberReach(graph: CallGraph, input: FlowInput, event: string, target: string): ChannelVerdict {
   const subscribers = subscribersOf(graph, event);
 
   if (subscribers.length === 0) return { verdict: "unverified", message: `no subscriber of \`${event}\` to reach it from` };
@@ -549,7 +601,7 @@ function subscriberReach(graph: CallGraph, input: FlowInput, event: string, targ
  * dispatch of a computed name lies on the way, `fail` when the area is read in
  * full and holds no dispatch of it.
  */
-function emitsVerdict(graph: CallGraph, input: FlowInput, parent: string | null, event: string): { verdict: Verdict["verdict"]; message: string } {
+function emitsVerdict(graph: CallGraph, input: FlowInput, parent: string | null, event: string): ChannelVerdict {
   if (parent === null) return { verdict: "unverified", message: "no trigger or step that emits it" };
 
   return reachability(graph, input, parent, event);
@@ -644,7 +696,7 @@ function callGraph(input: FlowInput): CallGraph {
  * or, when its source is the module, to the first fn declared at or after it.
  * A file with a syntax error makes every fn in it unreadable.
  */
-function doubtfulBodies(input: FlowInput): { replaced: Map<string, string>; unreadable: Map<string, string> } {
+function doubtfulBodies(input: FlowInput): DoubtfulBodies {
   const fns = Object.entries(input.nodes)
     .flatMap(([id, node]) => (node.kind === "fn" && node.file !== null && node.line !== null ? [{ id, file: node.file, line: node.line }] : []))
     .sort((a, b) => compareText(a.file, b.file) || a.line - b.line || compareText(a.id, b.id));
@@ -796,7 +848,7 @@ function at(edge: SnapshotEdge): string {
  * - otherwise the target is reachable only by name and no name matches:
  *   `fail`, a confirmed absence.
  */
-function reachability(graph: CallGraph, input: FlowInput, parent: string | null, target: string): { verdict: Verdict["verdict"]; message: string } {
+function reachability(graph: CallGraph, input: FlowInput, parent: string | null, target: string): ChannelVerdict {
   if (parent === null) return { verdict: "unverified", message: "no trigger to reach it from" };
   const from = input.nodes[parent];
 
@@ -859,7 +911,7 @@ function reachability(graph: CallGraph, input: FlowInput, parent: string | null,
   }
 
   // A dispatch whose name is computed at run time in reachable code may publish the event.
-  const dynamicEvent = to?.kind === "event" ? (input.coverage ?? []).find((item) => item.kind === "dynamic-event" && typeof item.source === "string" && depth.has(item.source)) : undefined;
+  const dynamicEvent = to?.kind === "event" ? (input.coverage ?? []).find((item) => item.kind === "dynamic-event" && item.source != null && depth.has(item.source)) : undefined;
 
   if (dynamicEvent) return { verdict: "unverified", message: `no dispatch of \`${target}\` from ${parent} in the static graph; ${dynamicEvent.reason} at ${dynamicEvent.file}:${dynamicEvent.line} may publish it` };
   const unseen = holes.length > 0 && graph.opaque ? graph.opaque : null;
@@ -884,7 +936,7 @@ function reachability(graph: CallGraph, input: FlowInput, parent: string | null,
  * what keylang read, and nothing keylang cannot follow may call the target.
  * Anything else is `unverified`.
  */
-function directCall(graph: CallGraph, input: FlowInput, parent: string | null, target: string): { verdict: Verdict["verdict"]; message: string } {
+function directCall(graph: CallGraph, input: FlowInput, parent: string | null, target: string): ChannelVerdict {
   if (parent === null) return { verdict: "unverified", message: "no trigger or step to call it from" };
   const from = input.nodes[parent];
 
@@ -948,7 +1000,7 @@ function directCall(graph: CallGraph, input: FlowInput, parent: string | null, t
  * `target` (null when there is none) and the depth of every fn reached. The
  * search stops at the target, so `depth` is complete only without a route.
  */
-function search(graph: CallGraph, parent: string, target: string, follow: (step: Step) => boolean): { route: Map<string, Step> | null; depth: Map<string, number> } {
+function search(graph: CallGraph, parent: string, target: string, follow: (step: Step) => boolean): RouteSearch {
   const previous = new Map<string, Step>();
   const depth = new Map<string, number>([[parent, 0]]);
   const queue = [parent];
@@ -1011,7 +1063,7 @@ function fileModule(nodes: FlowInput["nodes"], id: string): string | null {
  * loads the package. A type-only one (`import type`, `export type … from`) is erased from the
  * code that runs, so it proves nothing.
  */
-function externalImport(input: FlowInput, parent: string, target: string): { verdict: Verdict["verdict"]; message: string } {
+function externalImport(input: FlowInput, parent: string, target: string): ChannelVerdict {
   const moduleId = fileModule(input.nodes, parent);
 
   if (moduleId === null) return { verdict: "unverified", message: `no module of \`${parent}\` imports \`${target}\`` };
@@ -1054,7 +1106,7 @@ function routeMessage(parent: string, target: string, previous: Map<string, Step
  * target and calls in closures. Returns the first such call on the shortest
  * route (null when there is none) and every fn the search reached.
  */
-function possibleRoute(graph: CallGraph, input: FlowInput, parent: string, target: string, proves: (step: Step) => boolean): { edge: SnapshotEdge | null; seen: Set<string> } {
+function possibleRoute(graph: CallGraph, input: FlowInput, parent: string, target: string, proves: (step: Step) => boolean): PossibleRoute {
   const first = new Map<string, SnapshotEdge | null>([[parent, null]]);
   const queue = [parent];
 

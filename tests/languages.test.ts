@@ -13,7 +13,13 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 const bin = join(root, "bin/keylang.js");
 
-function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+interface Run {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+function keylang(cwd: string, args: string[]): Run {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8" });
 
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
@@ -48,6 +54,7 @@ interface Snapshot {
 }
 
 function snapshot(dir: string): Snapshot {
+  // SAFETY: callers run `keylang init` or `keylang map` in `dir` first, which write this snapshot.
   return JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as Snapshot;
 }
 
@@ -115,7 +122,7 @@ test("rust: a workspace member's crate name resolves to its root; `crate::` in b
   const dir = mkdtempSync(join(tmpdir(), "keylang-rust-ws-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
-  const files: Record<string, string> = {
+  const files = {
     "Cargo.toml": '[workspace]\nmembers = ["crates/*"]\n',
     "crates/shop-core/Cargo.toml": '[package]\nname = "shop-core"\nversion = "0.1.0"\n',
     "crates/shop-core/src/lib.rs": "pub fn place() {}\n",
@@ -123,7 +130,7 @@ test("rust: a workspace member's crate name resolves to its root; `crate::` in b
     "crates/shop-app/src/main.rs": "use shop_core::place;\n\nfn main() {\n    place();\n}\n",
     "crates/shop-app/build.rs": "fn main() {\n    crate::gen::run();\n}\n",
     "keylang.json": JSON.stringify({ languages: ["rust"], layers: { core: ["crates/shop-core/**"], app: ["crates/shop-app/**"] } }),
-  };
+  } satisfies Record<string, string>;
 
   for (const [file, text] of Object.entries(files)) {
     mkdirSync(dirname(join(dir, file)), { recursive: true });
@@ -143,7 +150,7 @@ test("rust: a workspace member's crate name resolves to its root; `crate::` in b
 test("rust: a workspace under a subdirectory and `path` dependencies resolve to the crate's library, so `deny app core` is K102", (t) => {
   const core = { "Cargo.toml": '[package]\nname = "shop-core"\nversion = "0.1.0"\n', "src/lib.rs": "pub fn place() {}\n" };
 
-  const app = (dep: string, call: string): Record<string, string> => ({
+  const app = (dep: string, call: string) => ({
     "Cargo.toml": `[package]\nname = "shop-app"\nversion = "0.1.0"\n\n[dependencies]\n${dep}\n`,
     "src/main.rs": `fn main() {\n    ${call}::place();\n}\n`,
   });
@@ -157,12 +164,13 @@ test("rust: a workspace under a subdirectory and `path` dependencies resolve to 
     "keylang/rules.md": "# rules\n\n- deny app core\n",
   };
 
-  const cases: Record<string, Record<string, string>> = {
+  const cases = {
     "workspace under backend/ with a glob": { "backend/Cargo.toml": '[workspace]\nmembers = ["crates/*"]\n', ...under("backend/crates/app", app('shop-core = { path = "../core" }', "shop_core")) },
     "workspace under backend/ with explicit members": { "backend/Cargo.toml": '[workspace]\nmembers = ["crates/core", "crates/app"]\n', ...under("backend/crates/app", app('shop-core = { path = "../core" }', "shop_core")) },
     "path dependency renamed through `package`": { "backend/Cargo.toml": '[workspace]\nmembers = ["crates/*"]\n', ...under("backend/crates/app", app('domain = { package = "shop-core", path = "../core" }', "domain")) },
     "path dependency without a workspace": under("backend/crates/app", app('shop-core = { path = "../core" }', "shop_core")),
-  };
+  } satisfies Record<string, Record<string, string>>;
+
 
   for (const [name, files] of Object.entries(cases)) {
     const dir = repo(t, { ...polyglot, ...under("backend/crates/core", core), ...files });
@@ -224,6 +232,7 @@ test("python: `keylang trace-plan` + the Python adapter give trace evidence; a f
   const plan = keylang(dir, ["trace-plan", "save"]);
   assert.equal(plan.status, 0, plan.stderr);
   writeFileSync(join(dir, "plan.json"), plan.stdout);
+  // SAFETY: `trace-plan` exited 0 above, so stdout is the plan whose `symbols` carry ids.
   assert.deepEqual((JSON.parse(plan.stdout) as { symbols: { id: string }[] }).symbols.map((s) => s.id), ["app.main.main", "domain.order.Order.total", "domain.order.place", "infra.store.save"]);
 
   const trace = (): number | null =>
@@ -244,6 +253,7 @@ test("python: `keylang trace-plan` + the Python adapter give trace evidence; a f
   rmSync(join(dir, ".keylang/trace"), { recursive: true, force: true });
   writeFileSync(join(dir, "shop/infra/store.py"), `${readFileSync(join(dir, "shop/infra/store.py"), "utf8")}\n# changed\n`);
   assert.equal(trace(), 0);
+  // SAFETY: the trace runtime writes one JSON event object per line, with these optional fields.
   const events = readFileSync(join(dir, ".keylang/trace/save.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line) as { event: string; symbolId?: string; instrumented?: string[] });
   assert.ok(!events.some((e) => e.symbolId === "infra.store.save"));
   assert.ok(!events.find((e) => e.event === "run")!.instrumented!.includes("infra.store.save"));
@@ -285,9 +295,12 @@ test("rust: explicit spans give trace evidence; a step without a span is unobser
 
 const cargoToml = '[package]\nname = "shop"\nversion = "0.1.0"\nedition = "2021"\n';
 
+type VerdictLines = { status: number | null; lines: string[] };
+
 /** Verdicts of `check --format json` as `<criterion> <verdict> <area>: <reason>` lines. */
-function verdicts(dir: string, args: string[] = []): { status: number | null; lines: string[] } {
+function verdicts(dir: string, args: string[] = []): VerdictLines {
   const o = keylang(dir, ["check", "--format", "json", ...args]);
+  // SAFETY: `check --format json` prints its report object, whose `results` are the rows of docs/cli.md.
   const results = (JSON.parse(o.stdout) as { results: { criterion: string; evidence: string }[] }).results;
 
   return { status: o.status, lines: results.map((r) => `${r.criterion} ${r.evidence}`) };
@@ -603,6 +616,7 @@ function mapWithoutLines(dir: string, name: string): string {
 }
 
 function docs(dir: string): Record<string, string | null> {
+  // SAFETY: every caller runs `keylang map` first, whose snapshot has a `doc` on each node.
   const nodes = (JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as { nodes: Record<string, { doc: string | null }> }).nodes;
 
   return Object.fromEntries(Object.entries(nodes).filter(([id]) => !id.startsWith("external")).map(([id, n]) => [id, n.doc]));
@@ -715,6 +729,7 @@ test("python: the trace adapter records a function by file, name and first line;
   assert.match(o.stdout, /flows\.md:6:3: trace unverified app\.main\.fetch: `app\.main\.fetch` is not instrumented/);
   rmSync(join(dir, ".keylang/trace"), { recursive: true, force: true });
   assert.equal(trace("exit"), 3);
+  // SAFETY: the trace runtime writes one JSON event object per line; a `run` event carries `complete`.
   const run = readFileSync(join(dir, ".keylang/trace/a.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line) as { event: string; complete?: boolean }).find((e) => e.event === "run");
   assert.equal(run?.complete, false);
 });
@@ -797,6 +812,7 @@ test("rust: a span in async code comes from `instrument`, not a guard; a span in
   assert.equal(build.status, 0, build.stderr);
   const exec = spawnSync(join(dir, "shop"), [], { cwd: dir, encoding: "utf8", env: { ...process.env, KEYLANG_TRACE: ".keylang/trace/a.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_TRACE_TEST: "shop > @flow a" } });
   assert.equal(exec.status, 0, exec.stderr);
+  // SAFETY: the trace runtime writes one JSON event object per line, with these optional fields.
   const events = readFileSync(join(dir, ".keylang/trace/a.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line) as { event: string; spanId?: string; parentSpanId?: string | null; symbolId?: string; instrumented?: string[] });
   const start = (id: string): { spanId?: string; parentSpanId?: string | null } | undefined => events.find((e) => e.event === "start" && e.symbolId === id);
   assert.equal(start("app.main.slow"), undefined, "a guard in async code is not recorded");
@@ -810,7 +826,7 @@ test("rust: a span in async code comes from `instrument`, not a guard; a span in
 });
 
 test("python: init on a single package in the repository root makes a layer of each subpackage, so the baseline denies between them", (t) => {
-  const pkg = (dir: string): Record<string, string> => ({ [`app/${dir}/__init__.py`]: "", [`app/${dir}/mod.py`]: "x = 1\n" });
+  const pkg = (dir: string) => ({ [`app/${dir}/__init__.py`]: "", [`app/${dir}/mod.py`]: "x = 1\n" });
   const dir = repo(t, { "pyproject.toml": "[project]\n", "app/__init__.py": "", "app/main.py": "from app.api import mod\n", ...pkg("api"), ...pkg("services"), ...pkg("db"), ...pkg("core") });
   const o = keylang(dir, ["init", "--agents=none"]);
   assert.equal(o.status, 0, o.stderr);

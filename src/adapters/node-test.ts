@@ -45,7 +45,8 @@ export default async function* keylangReporter(source: AsyncIterable<TestEvent>)
     if (data.details?.type === "suite") continue;
     const suites = (open.get(file) ?? []).slice(0, data.nesting);
     const status: TestStatus = data.skip || data.todo ? "skip" : event.type === "test:pass" ? "pass" : "fail";
-    tests.push({ file, ...(suites.length > 0 ? { suite: suites.join(" > ") } : {}), name: data.name, status });
+    const name = data.name;
+    tests.push(suites.length > 0 ? { file, suite: suites.join(" > "), name, status } : { file, name, status });
   }
 
   const first = await before;
@@ -54,4 +55,6 @@ export default async function* keylangReporter(source: AsyncIterable<TestEvent>)
   const out = resolve(root, process.env.KEYLANG_TEST_REPORT ?? ".keylang/reports/node-test.json");
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, `${JSON.stringify(report, null, 2)}\n`);
+  // node:test consumes a reporter as a generator of console chunks; this one emits none.
+  yield* [];
 }

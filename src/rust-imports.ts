@@ -13,7 +13,7 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, posix } from "node:path";
-import { parse as parseToml } from "smol-toml";
+import { parse as parseToml, TomlDate, type TomlTable, type TomlValue } from "smol-toml";
 import type { Resolution, SourceResolver } from "./imports.ts";
 import { exactExistence, nodeFs, type ExactFs } from "./exact-path.ts";
 import { globToRegExp } from "./glob.ts";
@@ -36,7 +36,7 @@ interface Crate {
 
 export class RustResolver implements SourceResolver {
   private readonly root: string;
-  private readonly manifests = new Map<string, Record<string, unknown> | null>();
+  private readonly manifests = new Map<string, TomlTable | null>();
   private readonly crates = new Map<string, Crate | null>();
   /** Workspace root directory → members by crate name (the root package included). */
   private readonly workspaces = new Map<string, Map<string, Crate>>();
@@ -205,27 +205,27 @@ export class RustResolver implements SourceResolver {
     const manifest = this.manifestAt(dir);
     let crate: Crate | null = null;
 
-    if (manifest && isObject(manifest.package)) {
+    if (manifest && isTable(manifest.package)) {
       const pkg = manifest.package;
-      const name = typeof pkg.name === "string" ? pkg.name.replace(/-/g, "_") : null;
+      const name = isText(pkg.name) ? pkg.name.replace(/-/g, "_") : null;
       const at = (path: string): string => posix.normalize(posix.join(dir, path));
       const deps = new Map<string, { pkg: string; path: string | null }>();
       // `[target.'cfg(…)'.dependencies]` add platform-specific ones.
-      const targets = isObject(manifest.target) ? Object.values(manifest.target).filter(isObject) : [];
+      const targets = isTable(manifest.target) ? Object.values(manifest.target).filter(isTable) : [];
       const tables = [manifest, ...targets].flatMap((t) => [t.dependencies, t["dev-dependencies"], t["build-dependencies"]]);
 
       for (const table of tables) {
-        if (!isObject(table)) continue;
+        if (!isTable(table)) continue;
 
         for (const [key, value] of Object.entries(table)) {
-          const renamed = isObject(value) && typeof value.package === "string" ? value.package : key;
-          const path = isObject(value) && typeof value.path === "string" ? insideRoot(at(value.path)) : null;
+          const renamed = isTable(value) && isText(value.package) ? value.package : key;
+          const path = isTable(value) && isText(value.path) ? insideRoot(at(value.path)) : null;
           deps.set(key.replace(/-/g, "_"), { pkg: renamed, path });
         }
       }
 
       const exists = (path: string): boolean => this.sources.has(path) || existsSync(join(this.root, path));
-      const libPath = isObject(manifest.lib) && typeof manifest.lib.path === "string" ? at(manifest.lib.path) : at("src/lib.rs");
+      const libPath = isTable(manifest.lib) && isText(manifest.lib.path) ? at(manifest.lib.path) : at("src/lib.rs");
       const bins = new Set<string>();
 
       if (exists(at("src/main.rs"))) bins.add(at("src/main.rs"));
@@ -238,7 +238,7 @@ export class RustResolver implements SourceResolver {
         }
       }
 
-      for (const bin of Array.isArray(manifest.bin) ? manifest.bin.filter(isObject) : []) if (typeof bin.path === "string") bins.add(at(bin.path));
+      for (const bin of Array.isArray(manifest.bin) ? manifest.bin.filter(isTable) : []) if (isText(bin.path)) bins.add(at(bin.path));
       crate = { dir, name, lib: exists(libPath) ? libPath : null, bins: [...bins].sort(), deps };
     }
 
@@ -266,7 +266,7 @@ export class RustResolver implements SourceResolver {
       const at = dir === "." ? "" : dir;
       const manifest = this.manifestAt(at);
 
-      if (manifest && isObject(manifest.workspace)) {
+      if (manifest && isTable(manifest.workspace)) {
         workspace = at;
         break;
       }
@@ -293,8 +293,8 @@ export class RustResolver implements SourceResolver {
   /** `[workspace] members` of the manifest in `dir`, root-relative, globs expanded one directory level at a time. */
   private workspaceMembers(dir: string): string[] {
     const manifest = this.manifestAt(dir);
-    const workspace = manifest && isObject(manifest.workspace) ? manifest.workspace : null;
-    const members = Array.isArray(workspace?.members) ? workspace.members.filter((m): m is string => typeof m === "string") : [];
+    const workspace = manifest && isTable(manifest.workspace) ? manifest.workspace : null;
+    const members = Array.isArray(workspace?.members) ? workspace.members.filter(isText) : [];
     const out: string[] = [];
 
     for (const member of members) {
@@ -322,7 +322,7 @@ export class RustResolver implements SourceResolver {
   }
 
   /** The parsed `Cargo.toml` of a directory (root-relative, "" for the root), read once; null without one. */
-  private manifestAt(dir: string): Record<string, unknown> | null {
+  private manifestAt(dir: string): TomlTable | null {
     const cached = this.manifests.get(dir);
 
     if (cached !== undefined) return cached;
@@ -332,7 +332,7 @@ export class RustResolver implements SourceResolver {
     return manifest;
   }
 
-  private readToml(file: string): Record<string, unknown> | null {
+  private readToml(file: string): TomlTable | null {
     const abs = join(this.root, file);
 
     if (!existsSync(abs)) {
@@ -345,7 +345,7 @@ export class RustResolver implements SourceResolver {
     this.inputs.set(file, text);
 
     try {
-      return parseToml(text) as Record<string, unknown>;
+      return parseToml(text);
     } catch (e) {
       throw new Error(`${file}: invalid TOML: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -374,6 +374,11 @@ function readdirNames(abs: string): string[] {
   return readdirSync(abs, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort();
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+/** A Cargo.toml table: neither a list nor a date, the other values TOML gives as objects. */
+function isTable(value: TomlValue | undefined): value is TomlTable {
+  return typeof value === "object" && !Array.isArray(value) && !(value instanceof TomlDate);
+}
+
+function isText(value: TomlValue | undefined): value is string {
+  return typeof value === "string";
 }

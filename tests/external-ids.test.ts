@@ -45,7 +45,13 @@ function repo(t: TestContext, files: Record<string, string>): string {
   return dir;
 }
 
-function check(dir: string): { status: number | null; stdout: string; stderr: string } {
+interface Run {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+function check(dir: string): Run {
   const r = spawnSync(process.execPath, [bin, "check"], { cwd: dir, encoding: "utf8" });
 
   if (r.error) throw r.error;

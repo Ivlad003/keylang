@@ -70,6 +70,7 @@ test("baseline is a lower rule layer: a manual allow over the same layers lifts 
     const denied = keylang(dir, ["check"]);
     assert.equal(denied.status, 1, denied.stdout);
     assert.match(denied.stdout, /K102 divergence: `article\.post` depends on `mail\.send`, which is denied by `deny article external mail unassigned` \(keylang\/rules\.baseline\.md:\d+\)/);
+    // SAFETY: the hook prints a Claude Code hook decision object `{ decision?, reason? }` on stdout.
     assert.equal((JSON.parse(hook()) as { decision?: string }).decision, "block");
   }
 });
@@ -85,6 +86,7 @@ test("feature: planned, static and rule gaps, then done; JSON is the only stdout
   assert.equal(keylang(dir, ["baseline"]).status, 0);
   const gap = keylang(dir, ["feature", "pay", "--format", "json"]);
   assert.equal(gap.status, 1, gap.stdout);
+  // SAFETY: `feature --format json` prints the feature status object of docs/cli.md with these fields.
   const body = JSON.parse(gap.stdout) as { done: boolean; gaps: { kind: string; id: string }[] };
   assert.equal(body.done, false);
   assert.ok(body.gaps.some((item) => item.kind === "planned" && item.id === "app.pay.refund"));
@@ -96,12 +98,14 @@ test("feature: planned, static and rule gaps, then done; JSON is the only stdout
   writeFileSync(join(dir, "src/app/pay.ts"), 'import { price } from "../domain/order.ts";\nexport function charge(): number {\n  return refund(price());\n}\nexport function refund(n: number): number {\n  return n;\n}\n');
   const ruled = keylang(dir, ["feature", "pay", "--format", "json"]);
   assert.equal(ruled.status, 1, ruled.stdout);
+  // SAFETY: `feature --format json` prints the feature status object of docs/cli.md with these fields.
   const ruledBody = JSON.parse(ruled.stdout) as { gaps: { kind: string }[] };
   assert.ok(ruledBody.gaps.some((item) => item.kind === "rule"));
   assert.match(keylang(dir, ["check"]).stdout, /K102/);
   assert.equal(keylang(dir, ["baseline"]).status, 0);
   const done = keylang(dir, ["feature", "pay", "--format", "json"]);
   assert.equal(done.status, 0, done.stdout + done.stderr);
+  // SAFETY: `feature --format json` prints the feature status object of docs/cli.md with these fields.
   const doneBody = JSON.parse(done.stdout) as { done: boolean; info: { base: { ref: string; state: string; reason?: string } } };
   assert.equal(doneBody.done, true);
   // Without git the plan is not compared: an informational field, not a gap.
@@ -117,10 +121,11 @@ test("feature: a plan weakened since the base commit is a spec gap; planned remo
   git(dir, ["add", "."]);
   git(dir, ["commit", "-m", "plan"]);
 
-  const status = (args: string[] = []): { status: number | null; body: { done: boolean; gaps: { kind: string; id: string; line: number; reason: string }[]; info: { base: { ref: string; state: string } } } } => {
+  const status = (args: string[] = []) => {
     const r = keylang(dir, ["feature", "remind", "--format", "json", ...args]);
 
-    return { status: r.status, body: JSON.parse(r.stdout || "null") };
+    // SAFETY: `feature --format json` prints the feature status object of docs/cli.md with these fields; the test reads `body` only after runs that print it.
+    return { status: r.status, body: JSON.parse(r.stdout || "null") as { done: boolean; gaps: { kind: string; id: string; line: number; reason: string }[]; info: { base: { ref: string; state: string } } } };
   };
 
   assert.equal(status().body.info.base.state, "compared");
@@ -216,6 +221,7 @@ test("planned module external.<pkg> is static ok only from the importing parent 
   assert.match(other.stdout, /K202 planned module `external\.stripe` is implemented \(imported by src\/domain\/order\.ts:1\); remove the declaration/);
   assert.doesNotMatch(other.stdout, /\?:1/);
   assert.match(other.stdout, /static unverified external\.stripe: no import of `external\.stripe` from `app\.pay`/);
+  // SAFETY: `feature --format json` prints the feature status object of docs/cli.md with these fields.
   const status = JSON.parse(keylang(dir, ["feature", "pay", "--format", "json"]).stdout) as { gaps: { kind: string; id: string; line: number }[] };
   assert.ok(status.gaps.some((gap) => gap.kind === "static" && gap.id === "external.stripe" && gap.line === 5));
   writeFileSync(join(dir, "src/domain/order.ts"), ORDER);
@@ -284,6 +290,7 @@ test("check --changed and hook stop report K001 when the step's source file was 
   });
 
   assert.equal(hook.status, 0, hook.stderr);
+  // SAFETY: the hook prints a Claude Code hook decision object `{ decision?, reason? }` on stdout.
   const decision = JSON.parse(hook.stdout) as { decision?: string; reason?: string };
   assert.equal(decision.decision, "block");
   assert.match(decision.reason ?? "", /keylang\/flows\/price\.md:\d+/);
@@ -337,6 +344,7 @@ test("check --changed, hook stop and feature keep K104 of an `exports` rule when
   assert.match(changed.stdout, k104);
   const hook = spawnSync(process.execPath, [bin, "hook", "stop"], { cwd: dir, input: "{}", encoding: "utf8" });
   assert.equal(hook.status, 0, hook.stderr);
+  // SAFETY: the hook prints a Claude Code hook decision object `{ decision?, reason? }` on stdout.
   const decision = JSON.parse(hook.stdout) as { decision?: string; reason?: string };
   assert.equal(decision.decision, "block", hook.stdout);
   assert.match(decision.reason ?? "", /K104/);
@@ -355,6 +363,7 @@ test("check --changed, hook stop and feature keep K104 of an `exports` rule when
 
   const feature = keylang(dir, ["feature", "leak", "--format", "json"]);
   assert.equal(feature.status, 1, feature.stdout);
+  // SAFETY: `feature --format json` prints the feature status object of docs/cli.md, described by `Body`.
   const body = JSON.parse(feature.stdout) as Body;
   assert.equal(body.done, false);
   assert.ok(body.gaps.some((gap) => gap.kind === "rule" && gap.id === "domain.b" && /exports `leaked`/.test(gap.reason)), JSON.stringify(body.gaps));
@@ -366,11 +375,13 @@ test("check --changed, hook stop and feature keep K104 of an `exports` rule when
   git(dir, ["merge", "-q", "feat"]);
   const merged = keylang(dir, ["feature", "leak", "--format", "json"]);
   assert.equal(merged.status, 1, merged.stdout);
+  // SAFETY: `feature --format json` prints the feature status object of docs/cli.md, described by `Body`.
   const after = JSON.parse(merged.stdout) as Body;
   assert.ok(after.gaps.some((gap) => gap.kind === "rule" && gap.id === "domain.b"), JSON.stringify(after.gaps));
   assert.ok(!after.hints.some((hint) => hint.kind === "rule"), JSON.stringify(after.hints));
   const use = keylang(dir, ["feature", "use", "--format", "json"]);
   assert.equal(use.status, 0, use.stdout);
+  // SAFETY: `feature --format json` prints the feature status object of docs/cli.md, described by `Body`.
   const other = JSON.parse(use.stdout) as Body;
   assert.ok(!other.gaps.some((gap) => gap.kind === "rule"), JSON.stringify(other.gaps));
   assert.ok(other.hints.some((hint) => hint.kind === "rule" && /inherited/.test(hint.reason)), JSON.stringify(other.hints));
@@ -403,11 +414,13 @@ test("check --changed, hook stop and feature keep K105 of `no-cycles` under a mo
   assert.match(changed.stdout, k105);
   const hook = spawnSync(process.execPath, [bin, "hook", "stop"], { cwd: dir, input: "{}", encoding: "utf8" });
   assert.equal(hook.status, 0, hook.stderr);
+  // SAFETY: the hook prints a Claude Code hook decision object `{ decision?, reason? }` on stdout.
   const decision = JSON.parse(hook.stdout) as { decision?: string; reason?: string };
   assert.equal(decision.decision, "block", hook.stdout);
   assert.match(decision.reason ?? "", /K105/);
   const feature = keylang(dir, ["feature", "pay", "--format", "json"]);
   assert.equal(feature.status, 1, feature.stdout);
+  // SAFETY: `feature --format json` prints the feature status object of docs/cli.md with these fields.
   const body = JSON.parse(feature.stdout) as { done: boolean; gaps: { kind: string; id: string; reason: string }[]; info: { rules: unknown[] | null } };
   assert.ok(body.gaps.some((gap) => gap.kind === "rule" && gap.id === "app" && /dependency cycle/.test(gap.reason)), JSON.stringify(body.gaps));
   assert.deepEqual(body.info.rules, []);
@@ -453,6 +466,7 @@ test("check --changed and hook stop find a file renamed by case only when git ha
   assert.match(changed.stdout, k102);
   const hook = spawnSync(process.execPath, [bin, "hook", "stop"], { cwd: dir, input: "{}", encoding: "utf8" });
   assert.equal(hook.status, 0, hook.stderr);
+  // SAFETY: the hook prints a Claude Code hook decision object `{ decision?, reason? }` on stdout.
   const decision = JSON.parse(hook.stdout) as { decision?: string; reason?: string };
   assert.equal(decision.decision, "block", hook.stdout);
   assert.match(decision.reason ?? "", /K102/);

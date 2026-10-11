@@ -249,6 +249,8 @@ export async function runSpecToCode(request: SpecToCodeRequest, context: Operati
   };
 }
 
+type ApplyProblems = { policy: string | null; refused: string[] };
+
 /**
  * Why the candidate may not be applied now. `policy`: a file no code
  * proposal may change, or one the write protocol refuses (a link out, a
@@ -258,7 +260,7 @@ export async function runSpecToCode(request: SpecToCodeRequest, context: Operati
  * input changed since — a source that is one of the files is named once, as
  * that file.
  */
-function applyProblems(request: ApplyCodeRequest): { policy: string | null; refused: string[] } {
+function applyProblems(request: ApplyCodeRequest): ApplyProblems {
   const { root, candidate } = request;
 
   for (const target of candidate.targets) {

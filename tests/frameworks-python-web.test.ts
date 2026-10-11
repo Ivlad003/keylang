@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
+import { isJsonObject, parseJson } from "../src/json.ts";
 import type { AnalysisSnapshot } from "../src/snapshot.ts";
 import { keylang, tempDir, writeTree } from "./cli-helpers.ts";
 import { DJANGO, FASTAPI, FLASK } from "./fixtures-python-web.ts";
@@ -25,6 +26,7 @@ function map(dir: string): AnalysisSnapshot {
   const run = keylang(dir, ["map"]);
   assert.equal(run.status, 0, run.stderr);
 
+  // SAFETY: `keylang map` exited 0 above, so the index holds the AnalysisSnapshot it writes.
   return JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as AnalysisSnapshot;
 }
 
@@ -38,7 +40,8 @@ function viaEdges(snapshot: AnalysisSnapshot): string[] {
 
 function setFrameworks(dir: string, frameworks: string[] | undefined): void {
   const path = join(dir, "keylang.json");
-  const raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+  const raw = parseJson(readFileSync(path, "utf8"));
+  assert.ok(isJsonObject(raw), path);
 
   if (frameworks === undefined) delete raw.frameworks;
   else raw.frameworks = frameworks;

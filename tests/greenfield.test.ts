@@ -19,10 +19,14 @@ import { analyze } from "../src/analyze.ts";
 import { readLayout } from "../src/diagram-layout.ts";
 import { diagramOf } from "../src/diagram.ts";
 import type { EditorModel } from "../src/diagram-proposal.ts";
-import { greenfieldPlan } from "../src/greenfield.ts";
+import { greenfieldPlan, type GreenfieldPlan } from "../src/greenfield.ts";
 import { runGreenfield } from "../src/operations/greenfield.ts";
 import { serveWeb } from "../src/tui/web.ts";
 import { bin, keylang } from "./cli-helpers.ts";
+import { parseJson, type JsonValue } from "../src/json.ts";
+
+/** The model as the server receives it: JSON text parsed back. */
+const wire = (model: EditorModel): JsonValue => parseJson(JSON.stringify(model));
 
 function tempDir(t: { after: (f: () => void) => void }, name = "keylang-greenfield-"): string {
   const dir = mkdtempSync(join(tmpdir(), name));
@@ -38,6 +42,11 @@ const lane = (key: string, name: string, y: number): EditorModel["lanes"][number
 const node = (key: string, kind: string, id: string, label: string, x: number, y: number, extra: Partial<Node> = {}): Node => ({ key, kind, id, label, layer: null, tests: [], x, y, w: 160, h: 60, ...extra });
 
 const edge = (key: string, kind: string, from: string, to: string): EditorModel["edges"][number] => ({ key, kind, from, to });
+
+/** `greenfieldPlan` answers a drawing it cannot plan with the reason text. */
+function isRefusal(plan: GreenfieldPlan | string): plan is string {
+  return typeof plan === "string";
+}
 
 /** Two lanes and a process: a route trigger, three steps (one with a signature and a test), an event; a loose module; a deny between the lanes. */
 function drawing(): EditorModel {
@@ -82,7 +91,7 @@ function tree(dir: string, prefix = ""): string[] {
 
 test("greenfield: an empty project's drawing becomes keylang.json, rules, a feature per process, the idea, the layout and layer folders; check exits 0 with the planned steps unverified; feature lists them planned", async (t) => {
   const root = tempDir(t);
-  const out = runGreenfield({ root, model: drawing(), languages: ["typescript"], idea: "Книжкова крамниця.\n\n- кошик\n# не заголовок" });
+  const out = runGreenfield({ root, model: wire(drawing()), languages: ["typescript"], idea: "Книжкова крамниця.\n\n- кошик\n# не заголовок" });
   assert.equal(out.status, "written", out.error ?? "");
   assert.deepEqual(tree(root), [
     "keylang.json",
@@ -116,6 +125,7 @@ test("greenfield: an empty project's drawing becomes keylang.json, rules, a feat
   // `feature`: the three steps (and the trigger's fn) planned, not implemented.
   const feature = keylang(root, ["feature", "placeOrder", "--format", "json"]);
   assert.equal(feature.status, 1, feature.stderr);
+  // SAFETY: `feature --format json` prints its report, whose `gaps` carry a kind and an id (docs/cli.md).
   const report = JSON.parse(feature.stdout) as { gaps: { kind: string; id: string }[] };
   const planned = report.gaps.filter((gap) => gap.kind === "planned").map((gap) => gap.id);
   assert.deepEqual(planned.filter((id) => id !== "application.placeOrder"), ["application.validate", "domain.price", "application.save"]);
@@ -133,7 +143,7 @@ test("greenfield: a project with keylang.json, a target already there, a target 
   // keylang.json: the project exists.
   const existing = tempDir(t);
   writeFileSync(join(existing, "keylang.json"), "{}\n");
-  const refused = runGreenfield({ root: existing, model: drawing(), languages: ["typescript"], idea: "" });
+  const refused = runGreenfield({ root: existing, model: wire(drawing()), languages: ["typescript"], idea: "" });
   assert.deepEqual([refused.status, refused.exitCode], ["conflict", 1]);
   assert.match(refused.error!, /keylang\.json is there/);
   assert.deepEqual(tree(existing), ["keylang.json"]);
@@ -142,7 +152,7 @@ test("greenfield: a project with keylang.json, a target already there, a target 
   const taken = tempDir(t);
   mkdirSync(join(taken, "keylang"));
   writeFileSync(join(taken, "keylang/rules.md"), "# rules\n");
-  const blocked = runGreenfield({ root: taken, model: drawing(), languages: ["typescript"], idea: "" });
+  const blocked = runGreenfield({ root: taken, model: wire(drawing()), languages: ["typescript"], idea: "" });
   assert.deepEqual([blocked.status, blocked.exitCode, blocked.files], ["conflict", 1, ["keylang/rules.md"]]);
   assert.match(blocked.error!, /nothing written: keylang\/rules\.md: already exists/);
   assert.deepEqual(tree(taken), ["keylang/rules.md"]);
@@ -152,7 +162,7 @@ test("greenfield: a project with keylang.json, a target already there, a target 
   const outside = tempDir(t, "keylang-greenfield-outside-");
   mkdirSync(join(linked, "keylang"));
   symlinkSync(join(outside, "readme.md"), join(linked, "keylang/README.md"));
-  const link = runGreenfield({ root: linked, model: drawing(), languages: ["typescript"], idea: "an idea" });
+  const link = runGreenfield({ root: linked, model: wire(drawing()), languages: ["typescript"], idea: "an idea" });
   assert.deepEqual([link.status, link.files], ["conflict", ["keylang/README.md"]]);
   assert.equal(existsSync(join(outside, "readme.md")), false, "nothing written through the link");
   assert.equal(existsSync(join(linked, "keylang.json")), false);
@@ -160,7 +170,7 @@ test("greenfield: a project with keylang.json, a target already there, a target 
   // A directory on the way that leads out of the project.
   const out = tempDir(t);
   symlinkSync(outside, join(out, "src"));
-  const away = runGreenfield({ root: out, model: drawing(), languages: ["typescript"], idea: "" });
+  const away = runGreenfield({ root: out, model: wire(drawing()), languages: ["typescript"], idea: "" });
   assert.equal(away.status, "conflict");
   assert.match(away.error!, /src\/application\/\.gitkeep: leads out of the repository through a link/);
   assert.deepEqual(readdirSync(outside), []);
@@ -170,15 +180,15 @@ test("greenfield: a project with keylang.json, a target already there, a target 
 test("greenfield: what is not a project yet — no lane, no language, a shape outside every lane, a process name a feature cannot have", (t) => {
   const root = tempDir(t);
   const model = drawing();
-  assert.match(runGreenfield({ root, model: { ...model, lanes: [] }, languages: ["typescript"] }).error!, /draw at least one lane/);
-  assert.match(runGreenfield({ root, model, languages: [] }).error!, /pick a language/);
-  assert.match(runGreenfield({ root, model, languages: ["cobol"] }).error!, /languages: `cobol`/);
+  assert.match(runGreenfield({ root, model: wire({ ...model, lanes: [] }), languages: ["typescript"] }).error!, /draw at least one lane/);
+  assert.match(runGreenfield({ root, model: wire(model), languages: [] }).error!, /pick a language/);
+  assert.match(runGreenfield({ root, model: wire(model), languages: ["cobol"] }).error!, /languages: `cobol`/);
   const loose = { ...model, nodes: [...model.nodes, node("draft:20", "task", "planned:step", "step", 900, 600)] };
-  assert.match(runGreenfield({ root, model: loose, languages: ["typescript"] }).error!, /task `step` is in no lane/);
+  assert.match(runGreenfield({ root, model: wire(loose), languages: ["typescript"] }).error!, /task `step` is in no lane/);
   const reserved = { ...model, lanes: [...model.lanes, lane("draft:21", "external", 340)] };
-  assert.match(runGreenfield({ root, model: reserved, languages: ["typescript"] }).error!, /lane `external`: a reserved name/);
+  assert.match(runGreenfield({ root, model: wire(reserved), languages: ["typescript"] }).error!, /lane `external`: a reserved name/);
   const named = { ...model, nodes: model.nodes.map((n) => (n.key === "draft:3" ? { ...n, id: "planned:application.оформити" } : n)) };
-  assert.match(runGreenfield({ root, model: named, languages: ["typescript"] }).error!, /process `оформити`: a feature's name is Latin letters/);
+  assert.match(runGreenfield({ root, model: wire(named), languages: ["typescript"] }).error!, /process `оформити`: a feature's name is Latin letters/);
   assert.deepEqual(readdirSync(root), [], "nothing written");
 
   // The plan alone: hexagonal lanes, an external system as a planned fn of its lane, a dependency line as an allow.
@@ -194,7 +204,7 @@ test("greenfield: what is not a project yet — no lane, no language, a shape ou
     },
   });
 
-  assert.ok(typeof plan !== "string", String(plan));
+  assert.ok(!isRefusal(plan), String(plan));
   const files = new Map(plan.files.map((f) => [f.path, f.text]));
   assert.equal(files.get("keylang/features/webhook.md"), "# flow webhook\n\n- trigger webhook adapters.webhook\n- step adapters.stripe\n- planned fn adapters.webhook\n- planned fn adapters.stripe\n");
   assert.equal(files.get("keylang/rules.md"), "# rules\n\n- layers domain < ports < adapters\n- allow ports.billing domain.money\n");
@@ -222,6 +232,7 @@ test("web: GET /api/greenfield says whether a new project may be drawn; POST wri
   const bearer = { Authorization: `Bearer ${new URLSearchParams(url.hash.slice(1)).get("t")}` };
   const json = { "Content-Type": "application/json" };
   const body = JSON.stringify({ model: drawing(), languages: ["typescript"], idea: "Книжкова крамниця." });
+  // SAFETY: `GET /api/greenfield` answers JSON with `available` and `languages` (src/tui/web.ts).
   const before = JSON.parse((await send(url, "GET", "/api/greenfield", bearer, "")).body) as { available: boolean; languages: string[] };
   assert.deepEqual([before.available, before.languages], [true, ["typescript", "python", "php", "rust"]]);
 
@@ -235,17 +246,21 @@ test("web: GET /api/greenfield says whether a new project may be drawn; POST wri
 
   const made = await send(url, "POST", "/api/greenfield", { ...json, ...bearer }, body);
   assert.equal(made.status, 200, made.body);
+  // SAFETY: the POST answered 200, whose body is the written result of src/tui/web.ts.
   const answer = JSON.parse(made.body) as { status: string; files: string[]; features: { slug: string }[] };
   assert.equal(answer.status, "written");
   assert.ok(answer.files.includes("keylang.json"));
   assert.equal(readFileSync(join(root, "keylang/features/placeOrder.md"), "utf8"), FEATURE);
   // The project exists now: no more drawing it from scratch, and its flow is a view.
+  // SAFETY: `GET /api/greenfield` answers JSON with `available` (src/tui/web.ts).
   assert.equal((JSON.parse((await send(url, "GET", "/api/greenfield", bearer, "")).body) as { available: boolean }).available, false);
   const again = await send(url, "POST", "/api/greenfield", { ...json, ...bearer }, body);
   assert.equal(again.status, 409);
   assert.match(JSON.parse(again.body).error, /keylang\.json is there/);
+  // SAFETY: `GET /api/views` answers the view list, whose `flows` are names.
   const views = JSON.parse((await send(url, "GET", "/api/views", bearer, "")).body) as { flows: string[] };
   assert.deepEqual(views.flows.sort(), ["placeOrder", "structure"]);
+  // SAFETY: `GET /api/diagram` answers a diagram whose nodes may carry a `ref` and a `verdict`.
   const diagram = JSON.parse((await send(url, "GET", "/api/diagram?view=flow&name=placeOrder", bearer, "")).body) as { nodes: { ref?: { id?: string }; verdict?: string | null }[] };
   assert.equal(diagram.nodes.find((n) => n.ref?.id === "domain.price")?.verdict, "planned");
 });

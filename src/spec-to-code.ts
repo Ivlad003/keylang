@@ -14,6 +14,7 @@ import { toPosix, type Config } from "./config.ts";
 import { errorText, formatDiagnostic, type Diagnostic } from "./diag.ts";
 import { existingText } from "./files.ts";
 import { globPrefix } from "./glob.ts";
+import { isJsonObject, isJsonString, parseJson, type JsonObject, type JsonValue } from "./json.ts";
 import { languageOf } from "./languages.ts";
 import { placeFile } from "./graph.ts";
 import { codeProposalProblem, lineDiff } from "./proposals.ts";
@@ -43,7 +44,13 @@ export interface CodeCandidate extends FileCandidate {
   diagnostics: Diagnostic[];
 }
 
-const EXTENSIONS: Record<string, string> = { typescript: ".ts", javascript: ".js", python: ".py", rust: ".rs", php: ".php" };
+const EXTENSIONS = new Map([
+  ["typescript", ".ts"],
+  ["javascript", ".js"],
+  ["python", ".py"],
+  ["rust", ".rs"],
+  ["php", ".php"],
+]);
 
 /**
  * `model`: the body comes from the model instead of the stub — the whole
@@ -218,8 +225,10 @@ export function fileDiffText(file: FileCandidate): string {
   return `${file.file}${file.before === null ? " (new file)" : ""}\n${lineDiff(file.before ?? "", file.after)}`;
 }
 
+type Introduced = { verdicts: Verdict[]; diagnostics: Diagnostic[] };
+
 /** Findings `next` has that `base` does not: what a candidate would change, wherever it lands (a K102 in the new file too). */
-function introduced(base: Analysis, next: Analysis): { verdicts: Verdict[]; diagnostics: Diagnostic[] } {
+function introduced(base: Analysis, next: Analysis): Introduced {
   const diagnosticKey = (d: Diagnostic): string => [d.code, d.file, d.span.start.line, d.span.start.col, d.message].join("\u0000");
   const verdictKey = (v: Verdict): string => [v.criterion, v.verdict, v.area, v.file, v.line, v.col, v.message].join("\u0000");
   const knownDiagnostics = new Set(base.diagnostics.map(diagnosticKey));
@@ -406,15 +415,15 @@ function phpFileHead(analysis: Analysis, file: string): string {
 
 /** The PSR-4 namespace of `dir` by the root `composer.json` (`autoload`, then `autoload-dev`); null when no prefix maps it. */
 function composerNamespace(root: string, dir: string): string | null {
-  let manifest: unknown;
+  let manifest: JsonValue;
 
   try {
-    manifest = JSON.parse(readFileSync(join(root, "composer.json"), "utf8"));
+    manifest = parseJson(readFileSync(join(root, "composer.json"), "utf8"));
   } catch {
     return null;
   }
 
-  const record = (value: unknown): Record<string, unknown> | null => (value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null);
+  const record = (value: JsonValue | undefined): JsonObject | null => (isJsonObject(value) ? value : null);
   let best: { prefix: string; base: string } | null = null;
 
   for (const section of ["autoload", "autoload-dev"]) {
@@ -422,7 +431,7 @@ function composerNamespace(root: string, dir: string): string | null {
 
     for (const [prefix, value] of Object.entries(psr4 ?? {})) {
       for (const path of Array.isArray(value) ? value : [value]) {
-        if (typeof path !== "string") continue;
+        if (!isJsonString(path)) continue;
         const base = toPosix(path).replace(/^\.\//, "").replace(/\/+$/, "");
         const inside = base === "" || base === "." || dir === base || dir.startsWith(`${base}/`);
 
@@ -561,7 +570,7 @@ function newModuleFile(analysis: Analysis, moduleId: string): string {
   const sources = (analysis.snapshot?.manifest.files ?? []).map((f) => f.path).filter((path) => languageOf(path) !== undefined);
   const layerFiles = sources.filter((path) => placeFile(config, path)?.layer === layer);
   const language = mostWritten(layerFiles, config.languages) ?? mostWritten(sources, config.languages) ?? config.languages[0] ?? "typescript";
-  const ext = EXTENSIONS[language] ?? ".ts";
+  const ext = EXTENSIONS.get(language) ?? ".ts";
   const dir = [prefixes[0]!, ...segments.slice(0, -1)].filter((part) => part !== "").join("/");
   const inDir = layerFiles.filter((path) => posix.dirname(path) === (dir === "" ? "." : dir));
   const at = (stem: string): string => `${dir === "" ? "" : `${dir}/`}${stem}${ext}`;
@@ -640,8 +649,10 @@ function stubFor(target: CodeTarget, id: string): string {
   return `${owner ? "" : "export "}${isAsync ? "async " : ""}${owner ? "" : "function "}${name}(${params})${result ? `: ${result}` : ""} {\n  throw new Error(${message});\n}\n`;
 }
 
+type DeclaredSignature = { params: string; result: string | null };
+
 /** The parameters and result of a declared signature, as written. */
-function declared(signature: string | null): { params: string; result: string | null } {
+function declared(signature: string | null): DeclaredSignature {
   const m = /^\s*\((.*)\)\s*(?:(?:→|->)\s*(.+))?$/.exec(signature ?? "()");
 
   return { params: m?.[1]?.trim() ?? "", result: m?.[2]?.trim() ?? null };

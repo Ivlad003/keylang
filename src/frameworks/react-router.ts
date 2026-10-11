@@ -18,6 +18,7 @@
 // `src/framework-code/react-router.ts`.
 
 import { posix } from "node:path";
+import { isJsonObject, parseJson, type JsonValue } from "../json.ts";
 import type { ConfigFacts, FrameworkAdapter, FrameworkContext } from "./adapter.ts";
 
 const DEPENDENCY_FIELDS = ["dependencies", "devDependencies", "peerDependencies"];
@@ -177,17 +178,17 @@ function normalize(dir: string): string {
 }
 
 function depends(context: Pick<FrameworkContext, "read">): boolean {
-  let manifest: unknown = null;
+  let manifest: JsonValue;
 
   try {
-    manifest = JSON.parse((context.read("package.json") ?? "null").replace(/^﻿/, ""));
+    manifest = parseJson((context.read("package.json") ?? "null").replace(/^﻿/, ""));
   } catch {
     return false;
   }
 
-  return DEPENDENCY_FIELDS.some((field) => isRecord(manifest) && isRecord(manifest[field]) && PACKAGES.some((pkg) => pkg in (manifest[field] as Record<string, unknown>)));
-}
+  return DEPENDENCY_FIELDS.some((field) => {
+    const deps = isJsonObject(manifest) ? manifest[field] : undefined;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+    return isJsonObject(deps) && PACKAGES.some((pkg) => pkg in deps);
+  });
 }

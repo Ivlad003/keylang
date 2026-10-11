@@ -19,7 +19,7 @@ import { keepLineEndings } from "../safe-write.ts";
 import { lf, readText, removeInside, splitEol, withEol, writeInside } from "./disk.ts";
 import type { KeyEvent } from "./input.ts";
 import { applyHunks, diffLines, type Decision } from "./merge.ts";
-import type { Buffer, Cursor, MergeState, State } from "./state.ts";
+import type { Buffer, Cursor, LastMerge, MergeState, State } from "./state.ts";
 
 /** What MERGE needs from the session around it. */
 export interface MergeHost {
@@ -411,7 +411,10 @@ export class MergeSession {
 
     // 3. The session.
     state.proposals = this.scan();
-    state.lastMerge = { path: merge.path, before, after: buffer?.text ?? "", disk, proposal: merge.proposal === null ? null : { abs: proposalAbs, before: merge.proposal, after: readText(proposalAbs) }, ...(code ? { code: true as const } : {}) };
+    const lastMerge: LastMerge = { path: merge.path, before, after: buffer?.text ?? "", disk, proposal: merge.proposal === null ? null : { abs: proposalAbs, before: merge.proposal, after: readText(proposalAbs) } };
+
+    if (code) lastMerge.code = true;
+    state.lastMerge = lastMerge;
     const written = accepted > 0 ? ` and written to ${merge.path}` : "";
     this.leave(merge, `merge: ${accepted} of ${merge.hunks.length} hunk(s) applied${written}${note}; u undoes`);
     this.host.reanalyze();
@@ -510,6 +513,6 @@ function proposalKind(path: string): ProposalEntry["kind"] {
   return path.endsWith(".md") ? "spec" : "code";
 }
 
-export function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+export function errorText(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }

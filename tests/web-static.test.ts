@@ -32,7 +32,12 @@ function send(url: URL, method: string, path: string, headers: Record<string, st
     const req = request({ host: url.hostname, port: url.port, path, method, headers }, (res) => {
       let text = "";
       res.on("data", (chunk: Buffer) => (text += chunk.toString()));
-      res.on("end", () => resolve({ status: res.statusCode ?? 0, type: String(res.headers["content-type"] ?? ""), body: text, ...(res.headers.location ? { location: res.headers.location } : {}) }));
+      res.on("end", () => {
+        const answer: Answer = { status: res.statusCode ?? 0, type: String(res.headers["content-type"] ?? ""), body: text };
+
+        if (res.headers.location) answer.location = res.headers.location;
+        resolve(answer);
+      });
     });
 
     req.on("upgrade", (res, socket) => {
@@ -95,6 +100,7 @@ test("web --read-only: the diagram page with «Карта» and GET alone — th
   assert.match(page.body, /data-mode="docs"/);
   assert.doesNotMatch(page.body, /data-mode="editor"|href="\/">термінал/, "no editor, no terminal");
 
+  // SAFETY: /api/docs answers {dir, files: {path, group}[]}; the asserts below check the fields read
   const docs = JSON.parse((await send(url, "GET", "/api/docs", bearer)).body) as { dir: string; files: { path: string; group: string }[] };
   assert.equal(docs.dir, "keylang");
   const groups = new Map(docs.files.map((file) => [file.path, file.group]));
@@ -103,9 +109,11 @@ test("web --read-only: the diagram page with «Карта» and GET alone — th
   assert.ok([...groups].some(([path, group]) => group === "flows-discovered" && path.startsWith("keylang/flows-discovered/")), "the discovered view");
   assert.ok([...groups].some(([path, group]) => group === "map" && path === "keylang/map/presentation.md"), "the map, rendered: the repository has none on disk");
   assert.ok([...groups].some(([path, group]) => group === "map-explained" && path === "keylang/map-explained/README.md"), "the explained map, though `explain.map` is off");
+  // SAFETY: /api/doc answers {path, text} for a document it lists
   const map = JSON.parse((await send(url, "GET", "/api/doc?path=keylang/map/presentation.md", bearer)).body) as { path: string; text: string };
   assert.match(map.text, /^<!-- keylang:generated/);
   assert.match(map.text, /- module \[orders\]\(\.\.\/\.\.\/src\/presentation\/orders\.ts#L1\)/);
+  // SAFETY: /api/doc answers {path, text} for a document it lists
   const flow = JSON.parse((await send(url, "GET", "/api/doc?path=keylang/flows/checkout.md", bearer)).body) as { text: string };
   assert.equal(flow.text, readFileSync(join(repo, "keylang/flows/checkout.md"), "utf8"));
 
@@ -114,10 +122,12 @@ test("web --read-only: the diagram page with «Карта» and GET alone — th
 
   for (const path of ["/api/views", "/api/diagram?view=layers", "/api/coverage", "/api/tour", "/api/calls?id=presentation.orders.listOrders", "/api/layout?view=layers"]) assert.equal((await send(url, "GET", path, bearer)).status, 200, path);
   // The search box finds the code by any part of an ID, the name that is the hit first.
+  // SAFETY: /api/search answers {hits: {id, kind}[], total}; the asserts below check the hits
   const search = JSON.parse((await send(url, "GET", "/api/search?q=ORDER", bearer)).body) as { hits: { id: string; kind: string }[]; total: number };
   assert.deepEqual(search.hits.slice(0, 2).map((hit) => hit.id), ["domain.order", "presentation.orders"], "the name that is the hit, the shorter first");
   assert.ok(search.hits.some((hit) => hit.id === "presentation.orders.listOrders" && hit.kind === "fn"));
   assert.equal((await send(url, "GET", "/api/search?q=o", bearer)).status, 400, "two characters at least");
+  // SAFETY: /api/diagram answers a graph whose nodes carry a label
   const graph = JSON.parse((await send(url, "GET", "/api/diagram?view=module&id=presentation.orders", bearer)).body) as { nodes: { label: string }[] };
   assert.ok(graph.nodes.some((n) => n.label === "domain.order"), "what the module imports");
   const json = { ...bearer, "Content-Type": "application/json" };
@@ -171,8 +181,10 @@ test("web --export <dir>: a static site of the read-only page — the answers of
   const answers = exportedAnswers(site);
   const url = await startReadOnly(t, repo);
   const bearer = { Authorization: `Bearer ${new URLSearchParams(url.hash.slice(1)).get("t")}` };
+  // SAFETY: an exported /api/views answer is the server views payload, compared field by field with the served one below
   const views = JSON.parse(answers.get("/api/views")!.body) as { root?: string; flows: string[]; entries: { id: string }[]; discovered: { name: string }[] };
   assert.equal(views.root, undefined);
+  // SAFETY: /api/views answers the views payload; only its optional root is touched before the deepEqual
   const served = JSON.parse((await send(url, "GET", "/api/views", bearer)).body) as { root?: string };
   delete served.root;
   assert.deepEqual(views, served);

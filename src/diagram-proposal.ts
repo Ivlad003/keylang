@@ -28,6 +28,7 @@
 import { withLayers } from "./config.ts";
 import { flowFromDrawio, flowSection, type DrawioCell, type DrawioModel } from "./drawio.ts";
 import { withFlow, withRules } from "./draft.ts";
+import { isJsonNumber, isJsonObject, isJsonString, type JsonObject, type JsonValue } from "./json.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
 import { compareText } from "./span.ts";
 import type { Flow, SpecIR } from "./spec-ir.ts";
@@ -83,57 +84,66 @@ export interface EditorModel {
 /** At most this many shapes and connections in one model. */
 export const MAX_MODEL_ITEMS = 5000;
 
-const isObject = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
+const finite = (value: JsonValue | undefined): value is number => isJsonNumber(value) && Number.isFinite(value);
 
-const text = (value: unknown): value is string => typeof value === "string";
+type Box = Pick<EditorNode, "x" | "y" | "w" | "h">;
 
-const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
+/** x, y, w and h of a shape or lane, when all four are finite numbers. */
+function boxOf(item: JsonObject): Box | null {
+  const { x, y, w, h } = item;
+
+  return finite(x) && finite(y) && finite(w) && finite(h) ? { x, y, w, h } : null;
+}
 
 /** The editor's model from JSON, or what is wrong with it. */
-export function parseEditorModel(value: unknown): EditorModel | string {
-  if (!isObject(value)) return "model: an object `{view, nodes, edges, lanes}` (window.keylangEditor.currentModel())";
+export function parseEditorModel(value: JsonValue | undefined): EditorModel | string {
+  if (!isJsonObject(value)) return "model: an object `{view, nodes, edges, lanes}` (window.keylangEditor.currentModel())";
   const { view, nodes, edges, lanes } = value;
 
-  if (!text(view)) return "model.view: a view key such as `flow:checkout`";
+  if (!isJsonString(view)) return "model.view: a view key such as `flow:checkout`";
 
   if (!Array.isArray(nodes) || !Array.isArray(edges) || !Array.isArray(lanes)) return "model: `nodes`, `edges` and `lanes` must be arrays";
 
   if (nodes.length + edges.length + lanes.length > MAX_MODEL_ITEMS) return `model: more than ${MAX_MODEL_ITEMS} shapes and connections`;
-  const out: EditorModel = { view, nodes: [], edges: [], lanes: [], ...(text(value.mode) ? { mode: value.mode } : {}) };
+  const out: EditorModel = { view, nodes: [], edges: [], lanes: [] };
+
+  if (isJsonString(value.mode)) out.mode = value.mode;
 
   for (const [i, node] of nodes.entries()) {
-    if (!isObject(node) || !text(node.key) || !text(node.id) || !text(node.kind) || !text(node.label)) return `model.nodes[${i}]: needs key, id, kind and label`;
+    if (!isJsonObject(node) || !isJsonString(node.key) || !isJsonString(node.id) || !isJsonString(node.kind) || !isJsonString(node.label)) return `model.nodes[${i}]: needs key, id, kind and label`;
+    const box = boxOf(node);
 
-    if (![node.x, node.y, node.w, node.h].every(finite)) return `model.nodes[${i}]: needs x, y, w and h`;
-    const tests = Array.isArray(node.tests) ? node.tests.filter(text) : [];
-    out.nodes.push({
-      key: node.key,
-      id: node.id,
-      kind: node.kind,
-      label: node.label,
-      layer: text(node.layer) ? node.layer : null,
-      ...(text(node.trigger) ? { trigger: node.trigger } : {}),
-      ...(node.role === "split" || node.role === "join" ? { role: node.role } : {}),
-      ...(text(node.signature) ? { signature: node.signature } : {}),
-      tests,
-      ...(text(node.description) ? { description: node.description } : {}),
-      ...(text(node.component) ? { component: node.component } : {}),
-      ...(text(node.tech) ? { tech: node.tech } : {}),
-      x: node.x as number,
-      y: node.y as number,
-      w: node.w as number,
-      h: node.h as number,
-    });
+    if (box === null) return `model.nodes[${i}]: needs x, y, w and h`;
+    const shape: Omit<EditorNode, keyof Box> = { key: node.key, id: node.id, kind: node.kind, label: node.label, layer: isJsonString(node.layer) ? node.layer : null };
+
+    if (isJsonString(node.trigger)) shape.trigger = node.trigger;
+
+    if (node.role === "split" || node.role === "join") shape.role = node.role;
+
+    if (isJsonString(node.signature)) shape.signature = node.signature;
+    shape.tests = Array.isArray(node.tests) ? node.tests.filter(isJsonString) : [];
+
+    if (isJsonString(node.description)) shape.description = node.description;
+
+    if (isJsonString(node.component)) shape.component = node.component;
+
+    if (isJsonString(node.tech)) shape.tech = node.tech;
+    out.nodes.push({ ...shape, ...box });
   }
 
   for (const [i, edge] of edges.entries()) {
-    if (!isObject(edge) || !text(edge.key) || !text(edge.kind) || !text(edge.from) || !text(edge.to)) return `model.edges[${i}]: needs key, kind, from and to`;
-    out.edges.push({ key: edge.key, kind: edge.kind, from: edge.from, to: edge.to, ...(text(edge.label) ? { label: edge.label } : {}) });
+    if (!isJsonObject(edge) || !isJsonString(edge.key) || !isJsonString(edge.kind) || !isJsonString(edge.from) || !isJsonString(edge.to)) return `model.edges[${i}]: needs key, kind, from and to`;
+    const parsed: EditorEdge = { key: edge.key, kind: edge.kind, from: edge.from, to: edge.to };
+
+    if (isJsonString(edge.label)) parsed.label = edge.label;
+    out.edges.push(parsed);
   }
 
   for (const [i, lane] of lanes.entries()) {
-    if (!isObject(lane) || !text(lane.key) || !text(lane.id) || ![lane.x, lane.y, lane.w, lane.h].every(finite)) return `model.lanes[${i}]: needs key, id, x, y, w and h`;
-    out.lanes.push({ key: lane.key, id: lane.id, label: text(lane.label) ? lane.label : lane.id, x: lane.x as number, y: lane.y as number, w: lane.w as number, h: lane.h as number });
+    const box = isJsonObject(lane) ? boxOf(lane) : null;
+
+    if (!isJsonObject(lane) || !isJsonString(lane.key) || !isJsonString(lane.id) || box === null) return `model.lanes[${i}]: needs key, id, x, y, w and h`;
+    out.lanes.push({ key: lane.key, id: lane.id, label: isJsonString(lane.label) ? lane.label : lane.id, ...box });
   }
 
   return out;
@@ -183,7 +193,14 @@ const FLOW_EDGES: ReadonlySet<string> = new Set(["sequence", "emits"]);
 
 const STRUCTURE: ReadonlySet<string> = new Set(["lane", "layer", "module", "fn", "type"]);
 
-const PLANNED_DECL: Readonly<Record<string, "fn" | "module" | "type">> = { task: "fn", fn: "fn", start: "fn", module: "module", type: "type" };
+/** The declaration a `planned:` shape of each kind gets. */
+const PLANNED_DECL: ReadonlyMap<string, "fn" | "module" | "type"> = new Map([
+  ["task", "fn"],
+  ["fn", "fn"],
+  ["start", "fn"],
+  ["module", "module"],
+  ["type", "type"],
+]);
 
 /** A flow name from a trigger's ID: its last segment, what a name cannot hold as `-`. */
 function flowNameOf(id: string): string {
@@ -220,8 +237,7 @@ class Targets {
 
   changed(): ChangedTarget[] {
     return [...this.texts]
-      .filter(([, entry]) => entry.text !== null && entry.text !== entry.before)
-      .map(([target, entry]) => ({ target, before: entry.before, text: entry.text!, shapes: [...entry.shapes].sort(compareText) }))
+      .flatMap(([target, entry]) => (entry.text !== null && entry.text !== entry.before ? [{ target, before: entry.before, text: entry.text, shapes: [...entry.shapes].sort(compareText) }] : []))
       .sort((a, b) => compareText(a.target, b.target));
   }
 }
@@ -351,7 +367,7 @@ export function diagramChanges(input: ChangeInput): DiagramChanges {
   }
 
   const cellOf = (node: EditorNode): DrawioCell => {
-    const attrs: Record<string, string> = { keylang_kind: STRUCTURE.has(node.kind) && node.kind !== "lane" && node.kind !== "layer" ? "task" : node.kind, keylang_id: strip(node.id) };
+    const attrs: DrawioCell["attrs"] = { keylang_kind: STRUCTURE.has(node.kind) && node.kind !== "lane" && node.kind !== "layer" ? "task" : node.kind, keylang_id: strip(node.id) };
 
     if (node.kind === "start" && node.trigger !== undefined) {
       if (!isCode(node.key)) attrs.keylang_trigger = node.trigger;
@@ -406,7 +422,7 @@ export function diagramChanges(input: ChangeInput): DiagramChanges {
   for (const node of model.nodes) {
     if (!node.id.startsWith("planned:")) continue;
     const id = strip(node.id);
-    const decl = PLANNED_DECL[node.kind];
+    const decl = PLANNED_DECL.get(node.kind);
 
     if (decl === undefined || id === "" || !id.includes(".") || declared.has(id) || known(id) || seenPlanned.has(id)) continue;
     seenPlanned.add(id);
@@ -554,7 +570,7 @@ export function diagramChanges(input: ChangeInput): DiagramChanges {
   let config: DiagramChanges["config"] = null;
 
   if (newLanes.length > 0 && input.config.text !== null) {
-    const layers: Record<string, readonly string[]> = { ...input.config.layers };
+    const layers = { ...input.config.layers };
 
     for (const lane of newLanes) layers[strip(lane.id)] = [globFor(strip(lane.id), input.config.layers)];
     const done = withLayers("keylang.json", input.config.text, layers);

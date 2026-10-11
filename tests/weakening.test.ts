@@ -10,6 +10,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { bin, git, keylang, LAYERS, ORDER, PAY, tempDir, writeTree } from "./cli-helpers.ts";
+import type { JsonObject } from "../src/json.ts";
 import { configWeakenings } from "../src/weakening.ts";
 
 const DENY = "# rules\n\n- deny domain app\n";
@@ -43,10 +44,11 @@ function hook(dir: string): { decision?: string; reason?: string; systemMessage?
   const r = spawnSync(process.execPath, [bin, "hook", "stop"], { cwd: dir, input: JSON.stringify({ hook_event_name: "Stop", stop_hook_active: false }), encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
 
+  // SAFETY: `hook stop` prints Claude Code's hook output object, with these optional fields.
   return JSON.parse(r.stdout) as { decision?: string; reason?: string; systemMessage?: string };
 }
 
-function setConfig(dir: string, patch: Record<string, unknown>): void {
+function setConfig(dir: string, patch: JsonObject): void {
   writeFileSync(join(dir, "keylang.json"), `${JSON.stringify({ ...LAYERS, ...patch }, null, 2)}\n`);
 }
 
@@ -156,6 +158,7 @@ test("weakening: feature reports a weakened spec since its base as a `weakened` 
   setConfig(dir, { assume: ["src/app/**"] });
   const out = keylang(dir, ["feature", "pay", "--format", "json"]);
   assert.equal(out.status, 1, out.stdout + out.stderr);
+  // SAFETY: `feature --format json` prints the feature report with `done` and its gaps (docs/cli.md).
   const report = JSON.parse(out.stdout) as { done: boolean; gaps: { kind: string; file: string; reason: string }[] };
   const gap = report.gaps.find((item) => item.kind === "weakened");
   assert.ok(gap, out.stdout);

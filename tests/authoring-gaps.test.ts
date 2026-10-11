@@ -23,7 +23,7 @@ const ORDER = "export function price(): number {\n  return 2;\n}\n";
 
 const REFUND = "# flow refund\n\n- planned fn domain.order.refund (id: string) → void\n- trigger app.shop.buy\n  - step domain.order.refund\n";
 
-function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+function keylang(cwd: string, args: string[]) {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8" });
 
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
@@ -46,9 +46,10 @@ function write(dir: string, files: Record<string, string>): void {
 
 type Item = { kind: string; id: string; line: number; col: number; reason: string; stage: string };
 
-function report(dir: string, slug: string): { status: number | null; done: boolean; stage: string; gaps: Item[]; hints: Item[] } {
+function report(dir: string, slug: string) {
   const r = keylang(dir, ["feature", slug, "--format", "json"]);
 
+  // SAFETY: `feature --format json` prints the feature status object of docs/cli.md with these fields.
   return { status: r.status, ...(JSON.parse(r.stdout) as { done: boolean; stage: string; gaps: Item[]; hints: Item[] }) };
 }
 

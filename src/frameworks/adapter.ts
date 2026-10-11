@@ -13,6 +13,7 @@
 // A framework that wires in code (Laravel, Symfony attributes) also has a
 // reader of the extractor's facts in `src/framework-code/`, beside the graph.
 
+import { isJsonBoolean, isJsonNumber, isJsonObject, isJsonString, type JsonObject, type JsonValue } from "../json.ts";
 import { laravel } from "./laravel.ts";
 import { magento } from "./magento.ts";
 import { nestjs } from "./nestjs.ts";
@@ -415,44 +416,49 @@ export function typeLabel(t: TypeName): string {
 
 /** Whether a cached value has the shape of `ConfigFacts`; a cache entry of another shape is parsed again. */
 export function isConfigFacts(value: unknown): value is ConfigFacts {
-  if (!isRecord(value)) return false;
+  if (!isCachedObject(value)) return false;
 
   return (
-    typeof value.path === "string" &&
-    typeof value.scope === "string" &&
+    isJsonString(value.path) &&
+    isJsonString(value.scope) &&
     every(value.bindings, (b) => isAt(b) && isTypeName(b.from) && isTypeName(b.to)) &&
-    every(value.arguments, (a) => isAt(a) && isTypeName(a.type) && typeof a.param === "string" && isTypeName(a.value)) &&
-    every(value.aliases, (a) => isAt(a) && typeof a.name === "string" && isTypeName(a.type)) &&
-    every(value.intercepts, (i) => isAt(i) && isTypeName(i.target) && typeof i.name === "string" && (i.plugin === null || isTypeName(i.plugin)) && (i.sortOrder === null || typeof i.sortOrder === "number") && typeof i.disabled === "boolean") &&
-    (value.observers === undefined || every(value.observers, (o) => isAt(o) && typeof o.event === "string" && typeof o.name === "string" && (o.instance === null || isTypeName(o.instance)) && (o.method === null || typeof o.method === "string") && typeof o.disabled === "boolean")) &&
-    (value.classEntries === undefined || every(value.classEntries, (e) => isAt(e) && typeof e.kind === "string" && typeof e.label === "string" && isTypeName(e.target) && typeof e.method === "string")) &&
-    (value.routes === undefined || every(value.routes, (r) => isAt(r) && typeof r.router === "string" && typeof r.id === "string" && typeof r.frontName === "string" && Array.isArray(r.modules) && r.modules.every((m) => typeof m === "string"))) &&
-    (value.entries === undefined || every(value.entries, (e) => isAt(e) && (ENTRY_CONFIG_KINDS as readonly unknown[]).includes(e.kind) && typeof e.label === "string" && Array.isArray(e.files) && e.files.every((f) => typeof f === "string") && (e.fn === null || typeof e.fn === "string") && (e.type === undefined || isTypeName(e.type)) && (e.method === undefined || typeof e.method === "string") && (e.note === undefined || typeof e.note === "string"))) &&
-    (value.dispatches === undefined || every(value.dispatches, (d) => isAt(d) && typeof d.symbol === "string" && typeof d.event === "string" && typeof d.text === "string")) &&
-    (value.holes === undefined || every(value.holes, (h) => isAt(h) && typeof h.text === "string" && typeof h.reason === "string")) &&
-    (value.routePrefixes === undefined || every(value.routePrefixes, (r) => isAt(r) && typeof r.dir === "string" && typeof r.prefix === "string")) &&
-    (value.providers === undefined || every(value.providers, (p) => isAt(p) && isToken(p.token) && isRecord(p.use) && typeof p.use.kind === "string")) &&
-    (value.injections === undefined || every(value.injections, (i) => isAt(i) && isTypeName(i.type) && typeof i.param === "string" && isToken(i.token))) &&
-    (value.error === null || (isRecord(value.error) && typeof value.error.line === "number" && typeof value.error.reason === "string"))
+    every(value.arguments, (a) => isAt(a) && isTypeName(a.type) && isJsonString(a.param) && isTypeName(a.value)) &&
+    every(value.aliases, (a) => isAt(a) && isJsonString(a.name) && isTypeName(a.type)) &&
+    every(value.intercepts, (i) => isAt(i) && isTypeName(i.target) && isJsonString(i.name) && (i.plugin === null || isTypeName(i.plugin)) && (i.sortOrder === null || isJsonNumber(i.sortOrder)) && isJsonBoolean(i.disabled)) &&
+    (value.observers === undefined || every(value.observers, (o) => isAt(o) && isJsonString(o.event) && isJsonString(o.name) && (o.instance === null || isTypeName(o.instance)) && (o.method === null || isJsonString(o.method)) && isJsonBoolean(o.disabled))) &&
+    (value.classEntries === undefined || every(value.classEntries, (e) => isAt(e) && isJsonString(e.kind) && isJsonString(e.label) && isTypeName(e.target) && isJsonString(e.method))) &&
+    (value.routes === undefined || every(value.routes, (r) => isAt(r) && isJsonString(r.router) && isJsonString(r.id) && isJsonString(r.frontName) && isStringList(r.modules))) &&
+    (value.entries === undefined || every(value.entries, (e) => isAt(e) && ENTRY_CONFIG_KINDS.some((kind) => kind === e.kind) && isJsonString(e.label) && isStringList(e.files) && (e.fn === null || isJsonString(e.fn)) && (e.type === undefined || isTypeName(e.type)) && (e.method === undefined || isJsonString(e.method)) && (e.note === undefined || isJsonString(e.note)))) &&
+    (value.dispatches === undefined || every(value.dispatches, (d) => isAt(d) && isJsonString(d.symbol) && isJsonString(d.event) && isJsonString(d.text))) &&
+    (value.holes === undefined || every(value.holes, (h) => isAt(h) && isJsonString(h.text) && isJsonString(h.reason))) &&
+    (value.routePrefixes === undefined || every(value.routePrefixes, (r) => isAt(r) && isJsonString(r.dir) && isJsonString(r.prefix))) &&
+    (value.providers === undefined || every(value.providers, (p) => isAt(p) && isToken(p.token) && isJsonObject(p.use) && isJsonString(p.use.kind))) &&
+    (value.injections === undefined || every(value.injections, (i) => isAt(i) && isTypeName(i.type) && isJsonString(i.param) && isToken(i.token))) &&
+    (value.error === null || (isJsonObject(value.error) && isJsonNumber(value.error.line) && isJsonString(value.error.reason)))
   );
 }
 
-function isAt(value: unknown): value is Record<string, unknown> {
-  return isRecord(value) && Number.isInteger(value.line) && Number.isInteger(value.col);
-}
-
-function isToken(value: unknown): boolean {
-  return isRecord(value) && ((value.kind === "string" && typeof value.value === "string") || (value.kind === "name" && typeof value.name === "string" && typeof value.file === "string"));
-}
-
-function isTypeName(value: unknown): boolean {
-  return isRecord(value) && typeof value.name === "string" && (value.file === undefined || typeof value.file === "string");
-}
-
-function every(value: unknown, check: (item: Record<string, unknown>) => boolean): boolean {
-  return Array.isArray(value) && value.every((item) => isRecord(item) && check(item));
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
+/** The fact cache is read with `JSON.parse`, so an object in it holds only JSON values. */
+function isCachedObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isAt(value: JsonObject): boolean {
+  return Number.isInteger(value.line) && Number.isInteger(value.col);
+}
+
+function isToken(value: JsonValue | undefined): boolean {
+  return isJsonObject(value) && ((value.kind === "string" && isJsonString(value.value)) || (value.kind === "name" && isJsonString(value.name) && isJsonString(value.file)));
+}
+
+function isTypeName(value: JsonValue | undefined): boolean {
+  return isJsonObject(value) && isJsonString(value.name) && (value.file === undefined || isJsonString(value.file));
+}
+
+function isStringList(value: JsonValue | undefined): boolean {
+  return Array.isArray(value) && value.every(isJsonString);
+}
+
+function every(value: JsonValue | undefined, check: (item: JsonObject) => boolean): boolean {
+  return Array.isArray(value) && value.every((item) => isJsonObject(item) && check(item));
 }

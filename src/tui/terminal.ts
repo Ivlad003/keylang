@@ -69,20 +69,20 @@ export function splitCommand(value: string, exists: (path: string) => boolean = 
 /** The terminal's input: a TTY in raw mode, or a stand-in in a test. */
 export interface TerminalInput {
   readonly isTTY?: boolean;
-  setRawMode?(raw: boolean): unknown;
-  setEncoding(encoding: BufferEncoding): unknown;
-  on(event: "data", listener: (chunk: string) => void): unknown;
-  off(event: "data", listener: (chunk: string) => void): unknown;
-  pause(): unknown;
-  resume(): unknown;
+  setRawMode?(raw: boolean): void;
+  setEncoding(encoding: BufferEncoding): void;
+  on(event: "data", listener: (chunk: string) => void): void;
+  off(event: "data", listener: (chunk: string) => void): void;
+  pause(): void;
+  resume(): void;
 }
 
 export interface TerminalOutput {
   readonly columns?: number;
   readonly rows?: number;
-  write(text: string): unknown;
-  on(event: "resize", listener: () => void): unknown;
-  off(event: "resize", listener: () => void): unknown;
+  write(text: string): void;
+  on(event: "resize", listener: () => void): void;
+  off(event: "resize", listener: () => void): void;
 }
 
 export type TerminalSignal = "SIGTERM" | "SIGHUP" | "SIGINT" | "SIGQUIT" | "SIGTSTP" | "SIGCONT";
@@ -94,7 +94,7 @@ export interface TerminalHost {
   stderr(text: string): void;
   env: NodeJS.ProcessEnv;
   /** Delivers signals and crashes (an uncaught exception or rejection) until the returned function is called. */
-  listen(onSignal: (signal: TerminalSignal) => void, onCrash: (error: unknown) => void): () => void;
+  listen(onSignal: (signal: TerminalSignal) => void, onCrash: (cause: unknown) => void): () => void;
   /** Stops the process until SIGCONT: what `Ctrl+Z` does once the screen is restored. */
   suspend(): void;
 }
@@ -241,7 +241,11 @@ export async function runTerminal(root: string, host: TerminalHost = processHost
     host.suspend();
   };
 
-  const surface: Surface = { write: (ansi) => stdout.write(ansi), ...(editorCommand(host.env, "", 1) ? { openEditor } : {}), ...(JOB_CONTROL ? { suspend: stop } : {}) };
+  const surface: Surface = { write: (ansi) => stdout.write(ansi) };
+
+  if (editorCommand(host.env, "", 1)) surface.openEditor = openEditor;
+
+  if (JOB_CONTROL) surface.suspend = stop;
 
   const onSignal = (signal: TerminalSignal): void => {
     if (signal === "SIGTSTP") return stop();
@@ -258,10 +262,10 @@ export async function runTerminal(root: string, host: TerminalHost = processHost
     end(0);
   };
 
-  const onCrash = (error: unknown): void => {
+  const onCrash = (cause: unknown): void => {
     // Leave first, so the message lands on the normal screen, not on the alternate one that disappears.
     leave();
-    host.stderr(`keylang: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`);
+    host.stderr(`keylang: ${cause instanceof Error ? (cause.stack ?? cause.message) : String(cause)}\n`);
     end(2);
   };
 

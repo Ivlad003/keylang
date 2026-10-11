@@ -22,7 +22,7 @@ import { checkoutRepo, CHECKOUT_FLOW } from "./tui-fixture.ts";
 
 const XSD_DIR = join(root, "node_modules/bpmn-moddle/resources/bpmn/xsd");
 
-const xsd = (name: string): { fileName: string; contents: string } => ({ fileName: name, contents: readFileSync(join(XSD_DIR, name), "utf8") });
+const xsd = (name: string) => ({ fileName: name, contents: readFileSync(join(XSD_DIR, name), "utf8") });
 
 /** Errors of the BPMN 2.0 XSD (BPMN20.xsd with Semantic, BPMNDI, DI and DC) for a document; empty when it validates. */
 async function xsdErrors(xml: string): Promise<string[]> {

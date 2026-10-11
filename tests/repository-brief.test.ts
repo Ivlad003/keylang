@@ -14,6 +14,7 @@ import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { readmeBrief } from "../src/brief.ts";
 import { globDirectory } from "../src/glob.ts";
+import { isJsonObject, parseJson } from "../src/json.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -21,14 +22,20 @@ const bin = join(root, "bin/keylang.js");
 
 const today = new Date().toISOString().slice(0, 10);
 
-function keylang(cwd: string, args: string[], env: Record<string, string | undefined> = {}): { status: number | null; stdout: string; stderr: string } {
+interface Run {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+function keylang(cwd: string, args: string[], env: Record<string, string | undefined> = {}): Run {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8", env: { ...process.env, ...env } });
 
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
 /** `keylang` without blocking this process: the mock server answers while the CLI waits. */
-function keylangAsync(cwd: string, args: string[], env: Record<string, string | undefined>): Promise<{ status: number | null; stdout: string; stderr: string }> {
+function keylangAsync(cwd: string, args: string[], env: Record<string, string | undefined>): Promise<Run> {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [bin, ...args], { cwd, env: { ...process.env, ...env } });
     let stdout = "";
@@ -44,7 +51,8 @@ function repo(t: TestContext, files: Record<string, string> = {}): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-repository-brief-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   cpSync(join(root, "tests/fixtures/explained"), dir, { recursive: true });
-  const config = JSON.parse(readFileSync(join(dir, "keylang.json"), "utf8")) as Record<string, unknown>;
+  const config = parseJson(readFileSync(join(dir, "keylang.json"), "utf8"));
+  assert.ok(isJsonObject(config), "the fixture's keylang.json is an object");
   writeFileSync(join(dir, "keylang.json"), `${JSON.stringify({ ...config, explain: { map: true } }, null, 2)}\n`);
 
   for (const [path, text] of Object.entries(files)) {
@@ -69,6 +77,7 @@ function systemSection(dir: string): string {
 type Snapshot = { snapshotId: string; system: { name: string | null; brief: string | null; source: string | null }; nodes: Record<string, { doc: string | null }> };
 
 function snapshot(dir: string): Snapshot {
+  // SAFETY: `keylang map` writes .keylang/index.json as a snapshot with these fields (docs/snapshot.md).
   return JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as Snapshot;
 }
 
@@ -190,6 +199,7 @@ test("map: a layer's own directory describes the layer: its README, else the doc
   assert.match(readFileSync(join(dir, "keylang/map-explained/domain.md"), "utf8"), /^- domain\n {2}<a id="domain"><\/a><br>The rules of the shop: orders and money\. Nothing here does I\/O\.$/m);
   // A layer listed by files owns no directory, so a README beside its files does not speak for it.
   const listed = repo(t, { "src/domain/README.md": "# Domain\n\nThe rules of the shop: orders and money. Nothing here does I/O.\n" });
+  // SAFETY: the explained fixture's keylang.json has a `layers` object of globs.
   const config = JSON.parse(readFileSync(join(listed, "keylang.json"), "utf8")) as { layers: Record<string, string | string[]> };
   config.layers.domain = ["src/domain/money.ts", "src/domain/order.ts"];
   writeFileSync(join(listed, "keylang.json"), JSON.stringify(config));
@@ -211,6 +221,7 @@ async function mockAnthropic(t: TestContext): Promise<Mock> {
     let data = "";
     req.on("data", (chunk: Buffer) => (data += chunk.toString()));
     req.on("end", () => {
+      // SAFETY: the CLI posts a Messages API request, which carries `system` and `messages`.
       const body = JSON.parse(data) as { system: string; messages: { content: string }[] };
       const prompt = body.messages[0]?.content ?? "";
       mock.prompts.push({ system: body.system, prompt });
@@ -221,12 +232,13 @@ async function mockAnthropic(t: TestContext): Promise<Mock> {
 
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(() => server.close());
+  // SAFETY: a server listening on a TCP host and port reports an AddressInfo, not a pipe name.
   mock.url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
   return mock;
 }
 
-function withModel(dir: string, mock: Mock): Record<string, string | undefined> {
+function withModel(dir: string, mock: Mock) {
   const file = join(dir, "keylang.json");
   writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), agent: "anthropic:claude-opus-5" }));
 
@@ -283,6 +295,7 @@ test("explain --missing --llm: the repository is asked last, through its layers'
 
 test("explain --stale: the repository's brief goes stale with its layers' briefs, never gone, beside a layer named system", (t) => {
   const dir = repo(t);
+  // SAFETY: the explained fixture's keylang.json has a `layers` object, replaced whole here.
   const config = JSON.parse(readFileSync(join(dir, "keylang.json"), "utf8")) as { layers: Record<string, string> };
   config.layers = { system: "src/domain/**", app: "src/app/**" };
   writeFileSync(join(dir, "keylang.json"), JSON.stringify(config));

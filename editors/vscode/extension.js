@@ -12,6 +12,9 @@ const { LanguageClient, TransportKind } = require("vscode-languageclient/node");
 
 let client;
 
+/** Whether a parsed JSON value is a string: only a primitive string converts to itself. */
+const isText = (value) => String(value) === value;
+
 /** The spec directory of each workspace folder: `dir` of its keylang.json, `keylang` without one. */
 function specDirs() {
   const dirs = new Set();
@@ -22,7 +25,7 @@ function specDirs() {
     try {
       const config = JSON.parse(fs.readFileSync(path.join(folder.uri.fsPath, "keylang.json"), "utf8"));
 
-      if (typeof config.dir === "string" && config.dir.trim() !== "") dir = config.dir.replace(/\\/g, "/").replace(/^\.\/+|\/+$/g, "");
+      if (isText(config.dir) && config.dir.trim() !== "") dir = config.dir.replace(/\\/g, "/").replace(/^\.\/+|\/+$/g, "");
     } catch {
       // No keylang.json, or one the server will report as invalid.
     }

@@ -20,7 +20,7 @@ import { fakeAgents, type FakeAgents } from "./agent-fixture.ts";
 import { bin, git, tempDir, treeBytes, writeTree } from "./cli-helpers.ts";
 
 /** A: TypeScript, layers `app` and `domain`; one hand-written flow with a test and an event, one route only `flows discover` drafts; a `fetch` to a payment host. */
-const A: Record<string, string> = {
+const A = {
   "keylang.json": JSON.stringify({ languages: ["typescript"], module: "file", layers: { app: ["src/app/**"], domain: ["src/domain/**"] } }),
   "src/app/server.ts":
     'import { checkout } from "./checkout.ts";\nimport { report } from "./report.ts";\nconst app = { post: (_p: string, ..._h: unknown[]) => 0, get: (_p: string, ..._h: unknown[]) => 0 };\napp.post("/checkout", checkout);\napp.get("/report", report);\n',
@@ -29,16 +29,16 @@ const A: Record<string, string> = {
   "src/domain/order.ts":
     '/** Places an order for the items. */\nexport function placeOrder(items: string[]): number {\n  void fetch("https://pay.example.com/charge");\n  return total(items);\n}\n/** Sums the items. */\nexport function total(items: string[]): number {\n  return items.length;\n}\n',
   "keylang/flows/checkout.md": '# flow checkout\n\nThe shopper pays for the cart.\n\n- trigger app.checkout.checkout\n  - step domain.order.placeOrder\n    - emits event order.placed\n    - test src/app/checkout.test.ts "places an order"\n',
-};
+} satisfies Record<string, string>;
 
 /** B: Python, layers `service` and `core`, one module of code already there. */
-const B: Record<string, string> = {
+const B = {
   "keylang.json": JSON.stringify({ languages: ["python"], module: "file", layers: { service: ["shop/service/**"], core: ["shop/core/**"] } }),
   "shop/__init__.py": "",
   "shop/service/__init__.py": "",
   "shop/core/__init__.py": "",
   "shop/core/util.py": 'def helper() -> int:\n    """Helps."""\n    return 1\n',
-};
+} satisfies Record<string, string>;
 
 type Run = { status: number | null; stdout: string; stderr: string };
 
@@ -46,17 +46,24 @@ type Run = { status: number | null; stdout: string; stderr: string };
 function run(t: { after: (fn: () => void) => void }, cwd: string, args: string[], fake: FakeAgents | null = null, env: Record<string, string> = {}): Run {
   const home = tempDir(t, "keylang-bundle-home-");
   mkdirSync(join(home, ".config"), { recursive: true });
-  const base: Record<string, string | undefined> = { ...process.env, HOME: home, KEYLANG_AGENT: undefined, KEYLANG_NESTED: undefined, ANTHROPIC_API_KEY: undefined, OPENROUTER_API_KEY: undefined };
+  const base = { ...process.env, HOME: home, KEYLANG_AGENT: undefined, KEYLANG_NESTED: undefined, ANTHROPIC_API_KEY: undefined, OPENROUTER_API_KEY: undefined };
   const path = fake ? `${fake.bin}:${process.env.PATH ?? ""}` : (process.env.PATH ?? "");
-  const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8", env: { ...base, PATH: path, ...fake?.env, ...env } as NodeJS.ProcessEnv });
+  const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8", env: { ...base, PATH: path, ...fake?.env, ...env } });
 
   if (r.error) throw r.error;
 
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
+interface Setup {
+  a: string;
+  b: string;
+  bundle: string;
+  head: string;
+}
+
 /** A committed, its bundle of `checkout` (hand-written) and `report` (discovered) with callees to depth 1, and B. */
-function setup(t: { after: (fn: () => void) => void }): { a: string; b: string; bundle: string; head: string } {
+function setup(t: { after: (fn: () => void) => void }): Setup {
   const a = tempDir(t, "keylang-bundle-a-");
   writeTree(a, A);
   git(a, ["init", "-q"]);
@@ -76,6 +83,7 @@ function setup(t: { after: (fn: () => void) => void }): { a: string; b: string; 
 test("flow export: a self-contained bundle with provenance, nodes, tests, events, integrations and the reserved layout block; parse reads it without a diagnostic", (t) => {
   const { a, bundle, head } = setup(t);
   const text = readFileSync(bundle, "utf8");
+  // SAFETY: the package manifest always names its string `version`.
   const version = (JSON.parse(readFileSync(join(import.meta.dirname, "..", "package.json"), "utf8")) as { version: string }).version;
   const first = text.split("\n")[0]!;
   assert.match(first, new RegExp(`^<!-- keylang:bundle format=1 repo=\\S+ commit=${head} snapshot=[0-9a-f]{64} keylang=${version.replaceAll(".", "\\.")} flows=checkout,report with-callees=1 -->$`));

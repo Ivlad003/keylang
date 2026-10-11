@@ -79,95 +79,100 @@
     - fn [isDuration](../../src/parser.ts#L182) (text: string) → boolean
     - fn [scheduleText](../../src/parser.ts#L191) (words: readonly string[]) → string | null
     - type [ComponentKind](../../src/parser.ts#L212) = (typeof COMPONENT_KINDS)[number]
-    - fn [isSystemCtx](../../src/parser.ts#L226) (ctx: Ctx) → boolean <!-- internal -->
-    - fn [keywordsAt](../../src/parser.ts#L231) (section: SectionKind, parent: NodeKind | undefined) → readonly string[]
+    - fn [isComponentKind](../../src/parser.ts#L214) (word: string) → word is ComponentKind
+    - fn [isRelationVerb](../../src/parser.ts#L224) (word: string) → word is (typeof RELATION_VERBS)[number]
+    - fn [isInterviewKind](../../src/parser.ts#L234) (word: string) → word is (typeof INTERVIEW)[number] <!-- internal -->
+    - fn [isSystemCtx](../../src/parser.ts#L238) (ctx: Ctx) → boolean <!-- internal -->
+    - fn [keywordsAt](../../src/parser.ts#L243) (section: SectionKind, parent: NodeKind | undefined) → readonly string[]
       - calls lang.parser.keywordsOf, lang.parser.ctxOf
-    - fn [keywordsOf](../../src/parser.ts#L235) (ctx: Ctx) → readonly string[] <!-- internal -->
-    - fn [placeHint](../../src/parser.ts#L315) (word: string, ctx: Ctx, section: SectionKind) → string <!-- internal -->
+    - fn [keywordsOf](../../src/parser.ts#L247) (ctx: Ctx) → readonly string[] <!-- internal -->
+    - fn [placeHint](../../src/parser.ts#L327) (word: string, ctx: Ctx, section: SectionKind) → string <!-- internal -->
       - calls lang.parser.keywordsOf
-    - fn [roleAt](../../src/parser.ts#L446) (section: SectionKind, parent: NodeKind | undefined, kind: NodeKind) → string | null
+    - fn [roles](../../src/parser.ts#L368) (entries: readonly (readonly [NodeKind, string])[]) → ReadonlyMap<NodeKind, string> <!-- internal -->
+    - fn [roleAt](../../src/parser.ts#L463) (section: SectionKind, parent: NodeKind | undefined, kind: NodeKind) → string | null
       - calls lang.parser.ctxOf
-    - fn [keywordKind](../../src/parser.ts#L452) (ctx: Ctx, kw: string) → NodeKind <!-- internal -->
-      - calls lang.parser.isSystemCtx
-    - type [Parent](../../src/parser.ts#L504) <!-- internal -->
-    - module [Parser](../../src/parser.ts#L512) <!-- internal -->
-      - fn [constructor](../../src/parser.ts#L527) (path: string)
-      - fn [err](../../src/parser.ts#L532) (code: Exclude<Code, "K005">, span: Span, msg: string) → void <!-- internal -->
+    - fn [keywordKind](../../src/parser.ts#L469) (ctx: Ctx, kw: string) → NodeKind <!-- internal -->
+      - calls lang.parser.isSystemCtx, lang.parser.isComponentKind, lang.parser.isRelationVerb, lang.parser.isInterviewKind
+    - type [Parent](../../src/parser.ts#L521) <!-- internal -->
+    - module [Parser](../../src/parser.ts#L529) <!-- internal -->
+      - fn [constructor](../../src/parser.ts#L544) (path: string)
+      - fn [err](../../src/parser.ts#L549) (code: Exclude<Code, "K005">, span: Span, msg: string) → void <!-- internal -->
         - calls base.diag.diagnostic
-      - fn [section](../../src/parser.ts#L539) () → Section <!-- internal -->
-      - fn [sectionKind](../../src/parser.ts#L547) () → SectionKind <!-- internal -->
-      - fn [flushProse](../../src/parser.ts#L551) () → void <!-- internal -->
+      - fn [section](../../src/parser.ts#L556) () → Section <!-- internal -->
+      - fn [sectionKind](../../src/parser.ts#L564) () → SectionKind <!-- internal -->
+      - fn [flushProse](../../src/parser.ts#L568) () → void <!-- internal -->
         - calls lang.parser.Parser.section
-      - fn [pushDescription](../../src/parser.ts#L559) (l: Line, text: string, lead: Lead, depth: number) → void <!-- internal -->
+      - fn [pushDescription](../../src/parser.ts#L576) (l: Line, text: string, lead: Lead, depth: number) → void <!-- internal -->
         - calls lang.parser.Parser.err, lang.parser.Line.span
-      - fn [closeList](../../src/parser.ts#L566) (depth: number) → void <!-- internal -->
+      - fn [closeList](../../src/parser.ts#L583) (depth: number) → void <!-- internal -->
         - calls lang.parser.Parser.section
-      - fn [finish](../../src/parser.ts#L576) () → Document
+      - fn [finish](../../src/parser.ts#L593) () → Document
         - calls lang.parser.Parser.section, lang.parser.Parser.flushProse, lang.parser.Parser.closeList
-      - fn [line](../../src/parser.ts#L588) (l: Line) → void
+      - fn [line](../../src/parser.ts#L605) (l: Line) → void
         - calls lang.parser.closesFence, lang.parser.Parser.section, lang.parser.leadingWhitespace, lang.parser.Parser.pushDescription, lang.parser.Parser.flushProse, lang.parser.Parser.err, lang.parser.htmlBlockStart, lang.parser.Parser.closeList, lang.parser.Parser.heading, lang.parser.opensFence, lang.parser.openFence, lang.parser.isBullet, lang.parser.Parser.item, lang.parser.Line.span
-      - fn [heading](../../src/parser.ts#L699) (l: Line) → void <!-- internal -->
+      - fn [heading](../../src/parser.ts#L716) (l: Line) → void <!-- internal -->
         - calls lang.parser.Parser.flushProse, lang.parser.Parser.closeList, lang.parser.lex, lang.parser.Line, lang.parser.headingEnd, lang.parser.renderTokens, lang.parser.Line.span, lang.parser.Parser.err, lang.parser.isSegment, lang.parser.nfc
-      - fn [item](../../src/parser.ts#L737) (l: Line, wsLen: number, indent: number) → void <!-- internal -->
+      - fn [item](../../src/parser.ts#L756) (l: Line, wsLen: number, indent: number) → void <!-- internal -->
         - calls lang.parser.Parser.flushProse, lang.parser.Line.span, lang.parser.Parser.err, lang.parser.Parser.closeList, lang.parser.Parser.section, lang.parser.lex, lang.parser.ctxOf, lang.parser.Parser.sectionKind, lang.parser.Parser.interpret
-      - fn [interpret](../../src/parser.ts#L803) (n: Node, l: Line, ctx: Ctx, parent: Parent | undefined) → void <!-- internal -->
+      - fn [interpret](../../src/parser.ts#L822) (n: Node, l: Line, ctx: Ctx, parent: Parent | undefined) → void <!-- internal -->
         - calls lang.parser.Parser.err, lang.parser.keywordsOf, lang.parser.Parser.bare, lang.parser.keywordKind, lang.parser.Parser.decl, lang.parser.Parser.refList, lang.parser.isSegment, lang.parser.nfc, lang.parser.Parser.layers, lang.ir.kindLabel, lang.parser.Parser.plannedModifier, lang.parser.Parser.typedTrigger, lang.parser.Parser.oneRef, lang.parser.isDuration, lang.parser.spanned, lang.parser.scheduleText, lang.parser.renderTokens, lang.parser.parseLink, lang.parser.isEventId, lang.parser.Parser.makeRef, lang.parser.Parser.freeText, lang.parser.isId, lang.parser.Parser.migrationRow, lang.parser.Parser.systemName
-      - fn [bare](../../src/parser.ts#L1087) (n: Node, ctx: Ctx, parent: Parent | undefined) → void <!-- internal -->
+      - fn [bare](../../src/parser.ts#L1106) (n: Node, ctx: Ctx, parent: Parent | undefined) → void <!-- internal -->
         - calls lang.parser.placeHint, lang.parser.Parser.sectionKind, lang.parser.Parser.decl, lang.parser.isSegment, lang.parser.nfc, lang.parser.Parser.oneRef, lang.parser.Parser.err, lang.parser.Parser.column, lang.parser.Parser.message, lang.ir.kindLabel, lang.parser.keywordsOf
-      - fn [decl](../../src/parser.ts#L1157) (n: Node, rest: Token[], parentId: string | null, sig: boolean, hint: () => string = () => "") → void <!-- internal -->
+      - fn [decl](../../src/parser.ts#L1177) (n: Node, rest: Token[], parentId: string | null, sig: boolean, hint: () => string = () => "") → void <!-- internal -->
         - calls lang.parser.Parser.err, lang.ir.kindLabel, lang.parser.parseLink, lang.parser.isSegment, lang.parser.linkTextSpan, lang.parser.nfc, lang.parser.renderTokens
-      - fn [makeRef](../../src/parser.ts#L1203) (t: Token) → Ref | null <!-- internal -->
+      - fn [makeRef](../../src/parser.ts#L1223) (t: Token) → Ref | null <!-- internal -->
         - calls lang.parser.isId, lang.parser.nfc, lang.parser.parseLink, lang.parser.linkTextSpan, lang.parser.Parser.err
-      - fn [plannedModifier](../../src/parser.ts#L1230) (n: Node, rest: Token[]) → boolean <!-- internal -->
+      - fn [plannedModifier](../../src/parser.ts#L1250) (n: Node, rest: Token[]) → boolean <!-- internal -->
         - calls lang.parser.isId, lang.ir.kindLabel, lang.parser.Parser.err
-      - fn [typedTrigger](../../src/parser.ts#L1255) (n: Node, rest: Token[]) → boolean <!-- internal -->
+      - fn [typedTrigger](../../src/parser.ts#L1275) (n: Node, rest: Token[]) → boolean <!-- internal -->
         - calls lang.parser.isTriggerKind, lang.parser.Parser.err, lang.parser.Parser.oneRef
-      - fn [oneRef](../../src/parser.ts#L1272) (n: Node, rest: Token[]) → void <!-- internal -->
+      - fn [oneRef](../../src/parser.ts#L1292) (n: Node, rest: Token[]) → void <!-- internal -->
         - calls lang.parser.Parser.makeRef, lang.parser.Parser.err
-      - fn [refList](../../src/parser.ts#L1284) (n: Node, rest: Token[], min: number) → void <!-- internal -->
+      - fn [refList](../../src/parser.ts#L1304) (n: Node, rest: Token[], min: number) → void <!-- internal -->
         - calls lang.parser.Parser.makeRef, lang.parser.Parser.err, lang.ir.kindLabel
-      - fn [layers](../../src/parser.ts#L1301) (n: Node, rest: Token[]) → void <!-- internal -->
+      - fn [layers](../../src/parser.ts#L1321) (n: Node, rest: Token[]) → void <!-- internal -->
         - calls lang.parser.Parser.makeRef, lang.parser.Parser.err
-      - fn [systemName](../../src/parser.ts#L1318) (n: Node, l: Line, rest: Token[], withText: boolean) → void <!-- internal -->
+      - fn [systemName](../../src/parser.ts#L1338) (n: Node, l: Line, rest: Token[], withText: boolean) → void <!-- internal -->
         - calls lang.parser.isSegment, lang.parser.Parser.err, lang.ir.kindLabel, lang.parser.nfc, lang.parser.Parser.freeText
-      - fn [column](../../src/parser.ts#L1336) (n: Node, tokens: Token[], hint: () => string) → void <!-- internal -->
+      - fn [column](../../src/parser.ts#L1356) (n: Node, tokens: Token[], hint: () => string) → void <!-- internal -->
         - calls lang.parser.isSegment, lang.parser.Parser.err, lang.parser.nfc, lang.parser.spanned, lang.parser.isId
-      - fn [message](../../src/parser.ts#L1369) (n: Node, tokens: Token[], hint: () => string) → void <!-- internal -->
+      - fn [message](../../src/parser.ts#L1389) (n: Node, tokens: Token[], hint: () => string) → void <!-- internal -->
         - calls lang.parser.isSegment, lang.parser.Parser.err, lang.parser.nfc, lang.parser.renderTokens
-      - fn [migrationRow](../../src/parser.ts#L1395) (n: Node, l: Line, rest: Token[]) → void <!-- internal -->
+      - fn [migrationRow](../../src/parser.ts#L1415) (n: Node, l: Line, rest: Token[]) → void <!-- internal -->
         - calls lang.parser.isId, lang.parser.Parser.err, lang.parser.nfc, lang.parser.spanned, lang.parser.Parser.freeText
-      - fn [freeText](../../src/parser.ts#L1414) (n: Node, l: Line, rest: Token[]) → void <!-- internal -->
+      - fn [freeText](../../src/parser.ts#L1434) (n: Node, l: Line, rest: Token[]) → void <!-- internal -->
         - calls lang.parser.renderTokens, lang.parser.Line.span, lang.parser.Parser.err, lang.ir.kindLabel
-    - fn [spanned](../../src/parser.ts#L1429) (t: Token) → Spanned<string> <!-- internal -->
-    - type [Lead](../../src/parser.ts#L1433) <!-- internal -->
-    - fn [leadingWhitespace](../../src/parser.ts#L1442) (text: string) → Lead <!-- internal -->
-    - type [FenceOpen](../../src/parser.ts#L1460) <!-- internal -->
-    - fn [openFence](../../src/parser.ts#L1469) (text: string) → FenceOpen | null <!-- internal -->
+    - fn [spanned](../../src/parser.ts#L1449) (t: Token) → Spanned<string> <!-- internal -->
+    - type [Lead](../../src/parser.ts#L1453) <!-- internal -->
+    - fn [leadingWhitespace](../../src/parser.ts#L1462) (text: string) → Lead <!-- internal -->
+    - type [FenceOpen](../../src/parser.ts#L1480) <!-- internal -->
+    - fn [openFence](../../src/parser.ts#L1489) (text: string) → FenceOpen | null <!-- internal -->
       - calls lang.parser.leadingWhitespace
-    - fn [opensFence](../../src/parser.ts#L1491) (text: string, listOpen: boolean) → boolean <!-- internal -->
+    - fn [opensFence](../../src/parser.ts#L1511) (text: string, listOpen: boolean) → boolean <!-- internal -->
       - calls lang.parser.openFence
-    - fn [closesFence](../../src/parser.ts#L1497) (text: string, open: { char: string; len: number; columns: number }) → boolean <!-- internal -->
+    - fn [closesFence](../../src/parser.ts#L1517) (text: string, open: { char: string; len: number; columns: number }) → boolean <!-- internal -->
       - calls lang.parser.leadingWhitespace
-    - fn [dedentFenceLines](../../src/parser.ts#L1519) (lines: string[]) → string[]
+    - fn [dedentFenceLines](../../src/parser.ts#L1539) (lines: string[]) → string[]
       - calls lang.parser.openFence, lang.parser.closesFence
-    - fn [htmlBlockStart](../../src/parser.ts#L1545) (rest: string) → { end: (line: string) => boolean } | null <!-- internal -->
-    - fn [headingEnd](../../src/parser.ts#L1567) (text: string) → number <!-- internal -->
-    - fn [isBullet](../../src/parser.ts#L1574) (rest: string) → boolean <!-- internal -->
-    - fn [nfc](../../src/parser.ts#L1585) (text: string) → string <!-- internal -->
-    - fn [isSegment](../../src/parser.ts#L1590) (s: string) → boolean
-    - fn [isId](../../src/parser.ts#L1596) (s: string) → boolean
+    - fn [htmlBlockStart](../../src/parser.ts#L1565) (rest: string) → { end: (line: string) => boolean } | null <!-- internal -->
+    - fn [headingEnd](../../src/parser.ts#L1587) (text: string) → number <!-- internal -->
+    - fn [isBullet](../../src/parser.ts#L1594) (rest: string) → boolean <!-- internal -->
+    - fn [nfc](../../src/parser.ts#L1605) (text: string) → string <!-- internal -->
+    - fn [isSegment](../../src/parser.ts#L1610) (s: string) → boolean
+    - fn [isId](../../src/parser.ts#L1616) (s: string) → boolean
       - calls lang.parser.isSegment
-    - fn [linkTextSpan](../../src/parser.ts#L1602) (t: Token) → Span
+    - fn [linkTextSpan](../../src/parser.ts#L1622) (t: Token) → Span
       - calls lang.parser.parseLink, lang.parser.codePoints
-    - fn [parseLink](../../src/parser.ts#L1609) (t: Token) → Link <!-- internal -->
+    - fn [parseLink](../../src/parser.ts#L1629) (t: Token) → Link <!-- internal -->
       - calls lang.parser.decodeLinkPath
-    - fn [decodeLinkPath](../../src/parser.ts#L1632) (path: string) → string <!-- internal -->
-    - fn [lex](../../src/parser.ts#L1646) (l: Line, start: number, errs: [Span, string][]) → { tokens: Token[]; comment: Spanned<string> | null } <!-- internal -->
+    - fn [decodeLinkPath](../../src/parser.ts#L1652) (path: string) → string <!-- internal -->
+    - type [LexedLine](../../src/parser.ts#L1660) = { tokens: Token[]; comment: Spanned<string> | null } <!-- internal -->
+    - fn [lex](../../src/parser.ts#L1668) (l: Line, start: number, errs: [Span, string][]) → LexedLine <!-- internal -->
       - calls lang.parser.Line.span, lang.parser.linkEnd
-    - fn [linkEnd](../../src/parser.ts#L1722) (s: string, i: number) → number | null <!-- internal -->
-    - fn [renderMeaning](../../src/parser.ts#L1749) (node: Node) → string
+    - fn [linkEnd](../../src/parser.ts#L1744) (s: string, i: number) → number | null <!-- internal -->
+    - fn [renderMeaning](../../src/parser.ts#L1771) (node: Node) → string
       - calls lang.parser.renderTokens
-    - fn [renderTokens](../../src/parser.ts#L1756) (tokens: readonly Token[]) → string
+    - fn [renderTokens](../../src/parser.ts#L1778) (tokens: readonly Token[]) → string
   - module [spec-ir](../../src/spec-ir.ts#L1)
     - config base.config
     - diag base.diag
@@ -207,47 +212,49 @@
     - fn [walkFlow](../../src/spec-ir.ts#L218) (flow: Flow, visit: (item: Trigger | FlowItem) => void) → void
     - type [LayerCandidate](../../src/spec-ir.ts#L232) <!-- internal -->
     - type [PlacedRule](../../src/spec-ir.ts#L243) <!-- internal -->
-    - fn [compileSpec](../../src/spec-ir.ts#L248) (docs: readonly Document[]) → { spec: SpecIR; diagnostics: Diagnostic[] }
+    - type [CompiledSpec](../../src/spec-ir.ts#L248) = { spec: SpecIR; diagnostics: Diagnostic[] } <!-- internal -->
+    - fn [compileSpec](../../src/spec-ir.ts#L250) (docs: readonly Document[]) → CompiledSpec
       - calls lang.spec-ir.compileRules, lang.spec-ir.compileFlow, lang.spec-ir.compileWires, lang.spec-ir.settleLayers
-    - fn [compileRules](../../src/spec-ir.ts#L275) ( file: string, generated: boolean, section: Section, placed: PlacedRule[], candidates: LayerCandidate[], modules: SpecModule[], diagnostics: Diagnostic[], nextSeq: () => number, ) → void <!-- internal -->
+    - fn [compileRules](../../src/spec-ir.ts#L277) ( file: string, generated: boolean, section: Section, placed: PlacedRule[], candidates: LayerCandidate[], modules: SpecModule[], diagnostics: Diagnostic[], nextSeq: () => number, ) → void <!-- internal -->
       - calls lang.ir.sectionNodes, lang.spec-ir.considerLayers, lang.spec-ir.dependency, lang.spec-ir.entryLine, lang.spec-ir.noCycles, lang.spec-ir.exportsRule
-    - fn [considerLayers](../../src/spec-ir.ts#L322) (file: string, node: Node, diagnostics: Diagnostic[]) → Omit<LayerCandidate, "seq"> | null <!-- internal -->
+    - fn [considerLayers](../../src/spec-ir.ts#L324) (file: string, node: Node, diagnostics: Diagnostic[]) → Omit<LayerCandidate, "seq"> | null <!-- internal -->
       - calls base.diag.diagnostic
-    - fn [settleLayers](../../src/spec-ir.ts#L354) (candidates: readonly LayerCandidate[], diagnostics: Diagnostic[]) → { orders: PlacedRule[]; rejectedLayers: RejectedLayers[] } <!-- internal -->
+    - type [SettledLayers](../../src/spec-ir.ts#L351) = { orders: PlacedRule[]; rejectedLayers: RejectedLayers[] } <!-- internal -->
+    - fn [settleLayers](../../src/spec-ir.ts#L358) (candidates: readonly LayerCandidate[], diagnostics: Diagnostic[]) → SettledLayers <!-- internal -->
       - calls base.diag.diagnostic, lang.spec-ir.layersAbove, lang.spec-ir.at
-    - fn [layersAbove](../../src/spec-ir.ts#L419) (direct: ReadonlyMap<string, ReadonlySet<string>>) → Map<string, Set<string>> <!-- internal -->
-    - fn [dependency](../../src/spec-ir.ts#L440) (file: string, node: Node, effect: "allow" | "deny", generated: boolean) → DependencyRule | null <!-- internal -->
+    - fn [layersAbove](../../src/spec-ir.ts#L421) (direct: ReadonlyMap<string, ReadonlySet<string>>) → Map<string, Set<string>> <!-- internal -->
+    - fn [dependency](../../src/spec-ir.ts#L442) (file: string, node: Node, effect: "allow" | "deny", generated: boolean) → DependencyRule | null <!-- internal -->
       - calls lang.spec-ir.nonEmpty, lang.spec-ir.at
-    - fn [nonEmpty](../../src/spec-ir.ts#L449) (refs: readonly Ref[]) → NonEmpty<Ref> | null <!-- internal -->
-    - fn [entryLine](../../src/spec-ir.ts#L455) (file: string, node: Node) → Entry | null <!-- internal -->
+    - fn [nonEmpty](../../src/spec-ir.ts#L451) (refs: readonly Ref[]) → NonEmpty<Ref> | null <!-- internal -->
+    - fn [entryLine](../../src/spec-ir.ts#L457) (file: string, node: Node) → Entry | null <!-- internal -->
       - calls lang.spec-ir.at
-    - fn [noCycles](../../src/spec-ir.ts#L464) (file: string, node: Node, under: Ref | null) → NoCycles <!-- internal -->
+    - fn [noCycles](../../src/spec-ir.ts#L466) (file: string, node: Node, under: Ref | null) → NoCycles <!-- internal -->
       - calls lang.spec-ir.at
-    - fn [exportsRule](../../src/spec-ir.ts#L468) (file: string, node: Node, module: Ref) → ExportsRule | null <!-- internal -->
+    - fn [exportsRule](../../src/spec-ir.ts#L470) (file: string, node: Node, module: Ref) → ExportsRule | null <!-- internal -->
       - calls lang.spec-ir.at
-    - fn [compileFlow](../../src/spec-ir.ts#L477) (file: string, section: Section, planned: Planned[], diagnostics: Diagnostic[]) → Flow <!-- internal -->
+    - fn [compileFlow](../../src/spec-ir.ts#L479) (file: string, section: Section, planned: Planned[], diagnostics: Diagnostic[]) → Flow <!-- internal -->
       - calls lang.ir.sectionNodes, lang.spec-ir.plannedDecl, lang.spec-ir.triggerItem, lang.spec-ir.flowItems, lang.spec-ir.flowNode, lang.spec-ir.emptyParallel
-    - fn [emptyParallel](../../src/spec-ir.ts#L525) (file: string, node: Node, diagnostics: Diagnostic[]) → void <!-- internal -->
+    - fn [emptyParallel](../../src/spec-ir.ts#L527) (file: string, node: Node, diagnostics: Diagnostic[]) → void <!-- internal -->
       - calls base.diag.diagnostic
-    - fn [flowNode](../../src/spec-ir.ts#L533) (file: string, flow: string, node: Node) → FlowItem[] <!-- internal -->
+    - fn [flowNode](../../src/spec-ir.ts#L535) (file: string, flow: string, node: Node) → FlowItem[] <!-- internal -->
       - calls lang.spec-ir.flowItems, lang.spec-ir.flowAt, lang.parser.scheduleText
-    - fn [flowItems](../../src/spec-ir.ts#L621) (file: string, flow: string, nodes: readonly Node[]) → FlowItem[] <!-- internal -->
+    - fn [flowItems](../../src/spec-ir.ts#L623) (file: string, flow: string, nodes: readonly Node[]) → FlowItem[] <!-- internal -->
       - calls lang.spec-ir.flowNode
-    - fn [triggerItem](../../src/spec-ir.ts#L625) (file: string, flow: string, node: Node) → Trigger | null <!-- internal -->
+    - fn [triggerItem](../../src/spec-ir.ts#L627) (file: string, flow: string, node: Node) → Trigger | null <!-- internal -->
       - calls lang.parser.isTriggerKind, lang.spec-ir.flowItems, lang.spec-ir.flowAt
-    - fn [plannedDeclKind](../../src/spec-ir.ts#L636) (value: string) → Planned["decl"] | null <!-- internal -->
-    - fn [plannedDecl](../../src/spec-ir.ts#L642) (file: string, node: Node) → Planned | null <!-- internal -->
+    - fn [plannedDeclKind](../../src/spec-ir.ts#L638) (value: string) → Planned["decl"] | null <!-- internal -->
+    - fn [plannedDecl](../../src/spec-ir.ts#L644) (file: string, node: Node) → Planned | null <!-- internal -->
       - calls lang.spec-ir.plannedDeclKind, lang.spec-ir.at, lang.parser.renderMeaning
-    - fn [compileWires](../../src/spec-ir.ts#L650) (file: string, section: Section, wires: Wire[], diagnostics: Diagnostic[]) → void <!-- internal -->
+    - fn [compileWires](../../src/spec-ir.ts#L652) (file: string, section: Section, wires: Wire[], diagnostics: Diagnostic[]) → void <!-- internal -->
       - calls lang.ir.sectionNodes, lang.spec-ir.at, lang.parser.renderMeaning, lang.spec-ir.wireWhen
-    - fn [wireWhen](../../src/spec-ir.ts#L684) (file: string, option: Node, diagnostics: Diagnostic[]) → WireWhen | null <!-- internal -->
+    - fn [wireWhen](../../src/spec-ir.ts#L686) (file: string, option: Node, diagnostics: Diagnostic[]) → WireWhen | null <!-- internal -->
       - calls lang.spec-ir.wireConditionText, base.diag.diagnostic, lang.spec-ir.at, lang.parser.renderMeaning
-    - fn [wireConditionText](../../src/spec-ir.ts#L707) (node: Node) → string <!-- internal -->
-    - fn [at](../../src/spec-ir.ts#L722) (file: string, node: Node, text: string) → Located <!-- internal -->
-    - fn [flowAt](../../src/spec-ir.ts#L726) (file: string, flow: string, node: Node) → Located <!-- internal -->
+    - fn [wireConditionText](../../src/spec-ir.ts#L709) (node: Node) → string <!-- internal -->
+    - fn [at](../../src/spec-ir.ts#L724) (file: string, node: Node, text: string) → Located <!-- internal -->
+    - fn [flowAt](../../src/spec-ir.ts#L728) (file: string, flow: string, node: Node) → Located <!-- internal -->
       - calls lang.spec-ir.at, lang.parser.renderMeaning
-    - type [PlannedDeclaration](../../src/spec-ir.ts#L733)
-    - fn [plannedDeclaration](../../src/spec-ir.ts#L747) (docs: readonly Document[], id: string) → PlannedDeclaration | null
+    - type [PlannedDeclaration](../../src/spec-ir.ts#L735)
+    - fn [plannedDeclaration](../../src/spec-ir.ts#L749) (docs: readonly Document[], id: string) → PlannedDeclaration | null
       - calls lang.ir.sectionNodes
-    - fn [flowsUsing](../../src/spec-ir.ts#L774) (spec: SpecIR, id: string) → string[]
+    - fn [flowsUsing](../../src/spec-ir.ts#L776) (spec: SpecIR, id: string) → string[]
       - calls lang.spec-ir.walkFlow

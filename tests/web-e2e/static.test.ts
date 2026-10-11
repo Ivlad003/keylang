@@ -27,7 +27,12 @@ const skip = options === null ? "no Chromium: set KEYLANG_CHROMIUM or PLAYWRIGHT
 
 const bin = join(root, "bin/keylang.js");
 
-const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".wasm": "application/wasm", ".json": "application/json" };
+const TYPES = new Map([[".html", "text/html; charset=utf-8"], [".js", "text/javascript"], [".css", "text/css"], [".wasm", "application/wasm"], [".json", "application/json"]]);
+
+/** The transport the exported app exposes as `globalThis.keylangTransport` (web/src/api.ts `Transport`). */
+type AppPage = typeof globalThis & {
+  keylangTransport: { send<Body>(method: "GET" | "POST" | "PUT", path: string, query: URLSearchParams, body?: Body): Promise<{ status: number; text: string }> };
+};
 
 /** A static file server over a directory: what a person would host the export on. */
 async function serveDirectory(t: { after: (f: () => void | Promise<void>) => void }, dir: string): Promise<string> {
@@ -37,7 +42,7 @@ async function serveDirectory(t: { after: (f: () => void | Promise<void>) => voi
 
     try {
       if (!file.startsWith(dir) || !statSync(file).isFile()) throw new Error("not a file");
-      res.writeHead(200, { "Content-Type": TYPES[extname(file)] ?? "application/octet-stream" });
+      res.writeHead(200, { "Content-Type": TYPES.get(extname(file)) ?? "application/octet-stream" });
       res.end(readFileSync(file));
     } catch {
       res.writeHead(404);
@@ -48,6 +53,7 @@ async function serveDirectory(t: { after: (f: () => void | Promise<void>) => voi
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
   t.after(() => new Promise<void>((done) => server.close(() => done())));
 
+  // SAFETY: a server listening on a TCP host and port reports an AddressInfo, not a pipe name.
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 }
 
@@ -114,7 +120,8 @@ test("web --export: app.html analyses a folder opened in the tab and answers as 
   ];
 
   const inBrowser = await page.evaluate(async (list) => {
-    const transport = (globalThis as unknown as { keylangTransport: { send(method: string, path: string, query: URLSearchParams): Promise<{ status: number; text: string }> } }).keylangTransport;
+    // SAFETY: app.html sets globalThis.keylangTransport before it lists the views, which the test awaited.
+    const transport = (globalThis as AppPage).keylangTransport;
     const out: { status: number; text: string }[] = [];
 
     for (const [path, query] of list) out.push(await transport.send("GET", path, new URLSearchParams(query)));
@@ -129,7 +136,8 @@ test("web --export: app.html analyses a folder opened in the tab and answers as 
     assert.equal(inBrowser[i]!.text, node.body, `${path}?${query}`);
   }
 
-  const refused = await page.evaluate(() => (globalThis as unknown as { keylangTransport: { send(method: string, path: string, query: URLSearchParams, body: unknown): Promise<{ status: number }> } }).keylangTransport.send("PUT", "/api/layout", new URLSearchParams({ view: "layers" }), { layout: {} }));
+  // SAFETY: app.html sets globalThis.keylangTransport before it lists the views, which the test awaited.
+  const refused = await page.evaluate(() => (globalThis as AppPage).keylangTransport.send("PUT", "/api/layout", new URLSearchParams({ view: "layers" }), { layout: {} }));
   assert.equal(refused.status, 403);
   assert.deepEqual(requests.filter((url) => !url.startsWith(base) && !url.startsWith("data:") && !url.startsWith("blob:")), [], "nothing leaves the tab");
   assert.deepEqual(problems, []);
@@ -160,7 +168,8 @@ test("web --export: app.html reads the .git of the folder and answers /api/git a
   ];
 
   const inBrowser = await page.evaluate(async (list) => {
-    const transport = (globalThis as unknown as { keylangTransport: { send(method: string, path: string, query: URLSearchParams): Promise<{ status: number; text: string }> } }).keylangTransport;
+    // SAFETY: app.html sets globalThis.keylangTransport once the opened folder is analysed, which the test awaited.
+    const transport = (globalThis as AppPage).keylangTransport;
     const out: { status: number; text: string }[] = [];
 
     for (const [path, query] of list) out.push(await transport.send("GET", path, new URLSearchParams(query)));
@@ -174,7 +183,8 @@ test("web --export: app.html reads the .git of the folder and answers /api/git a
     assert.equal(inBrowser[i]!.text, node.body, `${path}?${query}`);
   }
 
-  const unknown = await page.evaluate(() => (globalThis as unknown as { keylangTransport: { send(method: string, path: string, query: URLSearchParams): Promise<{ status: number }> } }).keylangTransport.send("GET", "/api/changes", new URLSearchParams({ since: "no-such-branch" })));
+  // SAFETY: app.html sets globalThis.keylangTransport once the opened folder is analysed, which the test awaited.
+  const unknown = await page.evaluate(() => (globalThis as AppPage).keylangTransport.send("GET", "/api/changes", new URLSearchParams({ since: "no-such-branch" })));
   assert.equal(unknown.status, 400);
   // The tab over it.
   await page.click('#modes button[data-mode="changes"]');

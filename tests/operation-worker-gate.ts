@@ -5,6 +5,8 @@
 
 import { workerData } from "node:worker_threads";
 
+// SAFETY: the tests start this entry with no workerData, `{ gate }` or `{ crashes }`
+// (tests/tui-helpers.ts, tests/tui-operations.test.ts), each a SharedArrayBuffer.
 const { gate, crashes } = (workerData ?? {}) as { gate?: SharedArrayBuffer; crashes?: SharedArrayBuffer };
 
 if (crashes && Atomics.sub(new Int32Array(crashes), 0, 1) > 0) process.exit(3);

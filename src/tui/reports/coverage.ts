@@ -22,7 +22,7 @@ export function coveragePlaces(payload: CoveragePayload): ReportItem[] {
   ];
 }
 
-export const COVERAGE_REPORTS: { [K in CoverageKind]: Report<K> } = {
+export const COVERAGE_REPORTS = {
   coverage: {
     label: () => "coverage",
     summary: (_record, result) => `${result.payload.reach.reachable}/${result.payload.reach.fns} fn reached · ${result.payload.orphans.length} orphan(s) · ${result.payload.holes.total} hole(s) · ${result.payload.dataLogic.sites.length} in data${codeOf(result.exitCode)}`,
@@ -43,7 +43,7 @@ export const COVERAGE_REPORTS: { [K in CoverageKind]: Report<K> } = {
     },
     items: { noun: "place", of: (_state, result) => coveragePlaces(result.payload) },
   },
-};
+} satisfies { [K in CoverageKind]: Report<K> };
 
 /** The places of the inventory: each call site, then each webhook. */
 export function integrationPlaces(payload: IntegrationsPayload): ReportItem[] {
@@ -53,7 +53,7 @@ export function integrationPlaces(payload: IntegrationsPayload): ReportItem[] {
   ];
 }
 
-export const INTEGRATIONS_REPORTS: { integrations: Report<"integrations"> } = {
+export const INTEGRATIONS_REPORTS = {
   integrations: {
     label: () => "integrations",
     summary: (_record, result) => `${result.payload.outgoing.length} integration(s) · ${result.payload.outgoing.reduce((sum, integration) => sum + integration.sites.length, 0)} call site(s) · ${result.payload.webhooks.length} webhook(s)${codeOf(result.exitCode)}`,
@@ -74,9 +74,9 @@ export const INTEGRATIONS_REPORTS: { integrations: Report<"integrations"> } = {
     },
     items: { noun: "call site", of: (_state, result) => integrationPlaces(result.payload) },
   },
-};
+} satisfies { integrations: Report<"integrations"> };
 
-export const SYSTEM_REPORTS: { system: Report<"system"> } = {
+export const SYSTEM_REPORTS = {
   system: {
     label: (request) => `system ${request.action}${request.name ? ` ${request.name}` : ""}`,
     summary: (_record, result) => `${result.payload.systems.length} system(s)${result.payload.verdicts.length > 0 ? ` · ${result.payload.verdicts.length} verdict(s)` : ""}${codeOf(result.exitCode)}`,
@@ -88,7 +88,7 @@ export const SYSTEM_REPORTS: { system: Report<"system"> } = {
       ];
     },
   },
-};
+} satisfies { system: Report<"system"> };
 
 /** The places of the tour: the fns to read first, then the modules with most holes. */
 export function tourPlaces(payload: TourPayload): ReportItem[] {
@@ -98,7 +98,7 @@ export function tourPlaces(payload: TourPayload): ReportItem[] {
   ];
 }
 
-export const TOUR_REPORTS: { tour: Report<"tour"> } = {
+export const TOUR_REPORTS = {
   tour: {
     label: () => "tour",
     summary: (_record, result) => `${result.payload.layers.length} layer(s) · ${result.payload.entries.total} entry point(s) · ${result.payload.processes.domains.reduce((sum, domain) => sum + domain.processes.reduce((n, p) => n + p.flows.length, 0), 0)} discovered flow(s) · ${result.payload.integrations.outgoing.length} integration(s)${codeOf(result.exitCode)}`,
@@ -119,7 +119,7 @@ export const TOUR_REPORTS: { tour: Report<"tour"> } = {
     },
     items: { noun: "place", of: (_state, result) => tourPlaces(result.payload) },
   },
-};
+} satisfies { tour: Report<"tour"> };
 
 /** The places of the parity: each counterpart flow of this repository (its spec), then each dropped row of the table. */
 export function migrationPlaces(payload: MigrationStatusPayload): ReportItem[] {
@@ -129,7 +129,7 @@ export function migrationPlaces(payload: MigrationStatusPayload): ReportItem[] {
   ];
 }
 
-export const MIGRATION_REPORTS: { "migration-status": Report<"migration-status"> } = {
+export const MIGRATION_REPORTS = {
   "migration-status": {
     label: () => "migration status",
     summary: (_record, result) => `${result.payload.counts.fail} fail · ${result.payload.counts.unverified} unverified · ${result.payload.counts.ok} ok · ${result.payload.notMigrated.flows.length} flow(s) not migrated${codeOf(result.exitCode)}`,
@@ -150,4 +150,4 @@ export const MIGRATION_REPORTS: { "migration-status": Report<"migration-status">
     },
     items: { noun: "flow", of: (_state, result) => migrationPlaces(result.payload) },
   },
-};
+} satisfies { "migration-status": Report<"migration-status"> };

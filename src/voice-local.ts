@@ -26,12 +26,42 @@ interface WhisperContext {
   release(): Promise<void>;
 }
 
-interface Whisper {
-  initWhisper: (options: { filePath: string; useGpu: boolean }) => Promise<WhisperContext>;
-  loadWhisperModule: () => Promise<unknown>;
+/** The native binding `loadWhisperModule` resolves to; only its `WhisperContext` class is checked. */
+interface WhisperBinding {
+  WhisperContext: new (...args: never[]) => WhisperContext;
 }
 
-type MicrophoneClass = new (options: { sampleRate: number; channels: number }) => unknown;
+interface Whisper {
+  initWhisper: (options: { filePath: string; useGpu: boolean }) => Promise<WhisperContext>;
+  loadWhisperModule: () => Promise<Partial<WhisperBinding> | null>;
+}
+
+/** A `decibri` microphone: 16-bit PCM chunks until `stop()`. */
+type MicrophoneStream = AsyncIterable<Buffer> & { stop: () => void };
+
+// Unchecked until `isMicrophoneStream`: any member may be missing.
+type MicrophoneClass = new (options: { sampleRate: number; channels: number }) => Partial<MicrophoneStream> | null;
+
+interface Decibri {
+  Microphone: MicrophoneClass;
+}
+
+/** The README's shape of `@fugood/whisper.node`: both entry points are functions. */
+function isWhisper(exports: Partial<Whisper> | null): exports is Whisper {
+  return typeof exports?.initWhisper === "function" && typeof exports.loadWhisperModule === "function";
+}
+
+function isWhisperBinding(binding: Partial<WhisperBinding> | null): binding is WhisperBinding {
+  return typeof binding?.WhisperContext === "function";
+}
+
+function isDecibri(exports: Partial<Decibri> | null): exports is Decibri {
+  return typeof exports?.Microphone === "function";
+}
+
+function isMicrophoneStream(mic: Partial<MicrophoneStream> | null): mic is MicrophoneStream {
+  return typeof mic?.stop === "function" && typeof mic[Symbol.asyncIterator] === "function";
+}
 
 /**
  * `@fugood/whisper.node` with its platform binary: the package itself loads
@@ -42,22 +72,18 @@ async function loadWhisper(): Promise<{ module: Whisper } | Exclude<ModuleStatus
   const loaded = optional("@fugood/whisper.node", () => require("@fugood/whisper.node"));
 
   if (!("module" in loaded)) return loaded;
-  const module = loaded.module as Partial<Whisper> | null;
+  const { module } = loaded;
 
-  if (typeof module?.initWhisper !== "function" || typeof module.loadWhisperModule !== "function") {
-    return { status: "unavailable", reason: "@fugood/whisper.node has no initWhisper/loadWhisperModule export; update it" };
-  }
+  if (!isWhisper(module)) return { status: "unavailable", reason: "@fugood/whisper.node has no initWhisper/loadWhisperModule export; update it" };
 
   const load = module.loadWhisperModule;
   const binary = await quietly(() => load());
 
   if ("error" in binary) return { status: "unavailable", reason: [binary.error, ...binary.warnings].join("; ") };
 
-  if (typeof (binary.value as { WhisperContext?: unknown } | null)?.WhisperContext !== "function") {
-    return { status: "unavailable", reason: ["@fugood/whisper.node loaded no WhisperContext", ...binary.warnings].join("; ") };
-  }
+  if (!isWhisperBinding(binary.value)) return { status: "unavailable", reason: ["@fugood/whisper.node loaded no WhisperContext", ...binary.warnings].join("; ") };
 
-  return { module: module as Whisper };
+  return { module };
 }
 
 /** What `@fugood/whisper.node` can do on this machine. */
@@ -72,15 +98,15 @@ export async function localAvailable(): Promise<boolean> {
   return (await localStatus()).status === "ok";
 }
 
-function loadDecibri(): { module: { Microphone: MicrophoneClass } } | Exclude<ModuleStatus, { status: "ok" }> {
+function loadDecibri(): { module: Decibri } | Exclude<ModuleStatus, { status: "ok" }> {
   const loaded = optional("decibri", () => require("decibri"));
 
   if (!("module" in loaded)) return loaded;
-  const module = loaded.module as { Microphone?: unknown } | null;
+  const { module } = loaded;
 
-  if (typeof module?.Microphone !== "function") return { status: "unavailable", reason: "decibri has no Microphone export; update decibri" };
+  if (!isDecibri(module)) return { status: "unavailable", reason: "decibri has no Microphone export; update decibri" };
 
-  return { module: module as { Microphone: MicrophoneClass } };
+  return { module };
 }
 
 /** What `decibri` can do on this machine. */
@@ -104,9 +130,9 @@ export async function defaultMicrophone(): Promise<Microphone | null> {
     throw new Error(`voice: the microphone is unavailable: ${loaded.reason}`);
   }
 
-  const mic = new loaded.module.Microphone({ sampleRate: 16000, channels: 1 }) as AsyncIterable<Buffer> & { stop?: () => void };
+  const mic = new loaded.module.Microphone({ sampleRate: 16000, channels: 1 });
 
-  if (typeof mic.stop !== "function" || typeof mic[Symbol.asyncIterator] !== "function") throw new Error("voice: decibri's Microphone is not a readable stream; update decibri");
+  if (!isMicrophoneStream(mic)) throw new Error("voice: decibri's Microphone is not a readable stream; update decibri");
 
   return {
     chunks: (async function* () {
@@ -118,7 +144,7 @@ export async function defaultMicrophone(): Promise<Microphone | null> {
         yield pcm;
       }
     })(),
-    stop: () => mic.stop!(),
+    stop: () => mic.stop(),
   };
 }
 
@@ -137,7 +163,8 @@ export async function transcribeLocal(modelFile: string, pcm: Int16Array, terms:
     const texts: string[] = [];
 
     for (const window of windows(pcm)) {
-      const data = window.buffer.slice(window.byteOffset, window.byteOffset + window.byteLength) as ArrayBuffer;
+      // A copy of the window's samples in an ArrayBuffer of its own, as whisper.node takes.
+      const data = new Int16Array(window).buffer;
       const { promise } = context.transcribeData(data, { prompt: terms.join(", ") });
       texts.push((await promise).result ?? "");
     }
@@ -153,7 +180,7 @@ export async function transcribeLocal(modelFile: string, pcm: Int16Array, terms:
  * prebuilt binary for this platform throws on `require`). Literal specifiers,
  * so the map sees which packages voice may load.
  */
-function optional(name: string, load: () => unknown): { module: unknown } | Exclude<ModuleStatus, { status: "ok" }> {
+function optional<T>(name: string, load: () => T): { module: T } | Exclude<ModuleStatus, { status: "ok" }> {
   try {
     return { module: load() };
   } catch (error) {

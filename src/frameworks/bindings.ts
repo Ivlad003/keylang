@@ -124,6 +124,12 @@ interface Plugin {
   owner: string | null;
 }
 
+/** A type with its aliases followed: the type they end at, and the aliases it went through. */
+interface Unaliased {
+  type: TypeName;
+  aliases: string[];
+}
+
 const GLOBAL = "global";
 
 const KINDS = [
@@ -161,7 +167,7 @@ export class FrameworkBindings {
 
     for (const { facts } of configs) for (const a of facts.aliases) aliases.set(key(a.name), [...(aliases.get(key(a.name)) ?? []), { type: a.type, scope: facts.scope }]);
 
-    const unalias = (t: TypeName, scope: string): { type: TypeName; aliases: string[] } => {
+    const unalias = (t: TypeName, scope: string): Unaliased => {
       const seen: string[] = [];
       let cur = t;
 

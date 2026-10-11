@@ -16,7 +16,11 @@ const REPOS = [
   "Ivlad003/health-tracker",
 ];
 
-function parseArgs(argv: string[]): { voiceTranscriber: string | null } {
+interface CloneArgs {
+  voiceTranscriber: string | null;
+}
+
+function parseArgs(argv: string[]): CloneArgs {
   let voiceTranscriber: string | null = null;
 
   for (let i = 0; i < argv.length; i++) {

@@ -32,6 +32,7 @@ import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "n
 import { join, relative, sep } from "node:path";
 import { posix } from "node:path";
 import { toPosix, withoutBom } from "./config.ts";
+import { isJsonBoolean, isJsonObject, isJsonString, parseJson, type JsonObject, type JsonValue } from "./json.ts";
 import { isNodeBuiltin } from "./extract/ts.ts";
 import { languageOf } from "./languages.ts";
 import { exactExistence, nodeFs, type ExactFs } from "./exact-path.ts";
@@ -109,7 +110,7 @@ export class ImportResolver {
   private readonly workspaces: string[];
   /** A config file's text (null: absent), and its JSONC value (null: absent or no JSON). */
   private readonly text: (file: string) => string | null;
-  private readonly read: (file: string) => unknown;
+  private readonly read: (file: string) => JsonValue;
   /** Source files of the analysis: they exist even when the disk does not have them (yet). */
   private readonly sources: ReadonlySet<string>;
   /** A file on disk, spelled exactly so: `existsSync` alone finds `User.ts` through `user.ts` on APFS and NTFS. */
@@ -155,7 +156,7 @@ export class ImportResolver {
       return read;
     };
 
-    const read = (file: string): unknown => {
+    const read = (file: string): JsonValue => {
       const known = text(file);
 
       return known === null ? null : parseJsonc(known);
@@ -165,12 +166,13 @@ export class ImportResolver {
     this.read = read;
     // The root config is an input of the snapshot id whether or not a bare import asks for it.
     this.governingConfig(".");
-    const pkg = read("package.json") as { workspaces?: unknown } | null;
+    const pkg = read("package.json");
     this.declared = dependencies(pkg);
-    const workspaces = Array.isArray(pkg?.workspaces) ? pkg.workspaces : isObject(pkg?.workspaces) && Array.isArray(pkg.workspaces.packages) ? pkg.workspaces.packages : [];
+    const declared = isJsonObject(pkg) ? pkg.workspaces : undefined;
+    const workspaces = Array.isArray(declared) ? declared : isJsonObject(declared) && Array.isArray(declared.packages) ? declared.packages : [];
     // pnpm keeps the list in its own file and hoists no workspace link to the root `node_modules`.
     const pnpm = text("pnpm-workspace.yaml");
-    this.workspaces = [...workspaces.filter((w): w is string => typeof w === "string"), ...(pnpm === null ? [] : pnpmWorkspacePackages(pnpm))];
+    this.workspaces = [...workspaces.filter(isJsonString), ...(pnpm === null ? [] : pnpmWorkspacePackages(pnpm))];
   }
 
   /**
@@ -193,9 +195,9 @@ export class ImportResolver {
     let held = this.verbatimSetting(config, 0);
     const raw = this.read(config);
 
-    for (const ref of isObject(raw) && Array.isArray(raw.references) ? raw.references : []) {
+    for (const ref of isJsonObject(raw) && Array.isArray(raw.references) ? raw.references : []) {
       if (held === true || held === "unknown") break;
-      const target = isObject(ref) && typeof ref.path === "string" ? posix.normalize(posix.join(posix.dirname(config), toPosix(ref.path))) : null;
+      const target = isJsonObject(ref) && isJsonString(ref.path) ? posix.normalize(posix.join(posix.dirname(config), toPosix(ref.path))) : null;
 
       if (target === null) held = "unknown";
       // A project outside the root governs no file of this analysis.
@@ -277,17 +279,16 @@ export class ImportResolver {
     if (depth > 5) return "unknown";
     const raw = this.read(file);
 
-    if (!isObject(raw)) return "unknown";
-    const options = isObject(raw.compilerOptions) ? raw.compilerOptions : {};
-    const own = options.verbatimModuleSyntax;
+    if (!isJsonObject(raw)) return "unknown";
+    const own = isJsonObject(raw.compilerOptions) ? raw.compilerOptions.verbatimModuleSyntax : undefined;
 
-    if (typeof own === "boolean") return own;
+    if (isJsonBoolean(own)) return own;
 
     if (own !== undefined) return "unknown";
-    const parents: unknown[] = raw.extends === undefined ? [] : Array.isArray(raw.extends) ? raw.extends : [raw.extends];
+    const parents = raw.extends === undefined ? [] : Array.isArray(raw.extends) ? raw.extends : [raw.extends];
 
     for (const parent of [...parents].reverse()) {
-      const target = typeof parent === "string" ? this.extendedConfig(posix.dirname(file), parent) : null;
+      const target = isJsonString(parent) ? this.extendedConfig(posix.dirname(file), parent) : null;
       const setting = target === null ? "unknown" : this.verbatimSetting(target, depth + 1);
 
       if (setting !== "unset") return setting;
@@ -319,8 +320,9 @@ export class ImportResolver {
 
     for (let at = dir; ; at = posix.dirname(at)) {
       const base = at === "." ? `node_modules/${name}` : `${at}/node_modules/${name}`;
-      const field = name.endsWith(".json") ? null : (this.read(`${base}/package.json`) as { tsconfig?: unknown } | null)?.tsconfig;
-      const candidates = name.endsWith(".json") ? [base] : [`${base}.json`, ...(typeof field === "string" ? [posix.normalize(posix.join(base, field))] : []), `${base}/tsconfig.json`];
+      const manifest = name.endsWith(".json") ? null : this.read(`${base}/package.json`);
+      const field = isJsonObject(manifest) ? manifest.tsconfig : undefined;
+      const candidates = name.endsWith(".json") ? [base] : [`${base}.json`, ...(isJsonString(field) ? [posix.normalize(posix.join(base, field))] : []), `${base}/tsconfig.json`];
       const found = candidates.find((candidate) => this.text(candidate) !== null);
 
       if (found !== undefined) return found;
@@ -363,7 +365,11 @@ export class ImportResolver {
     }
 
     if (found === null) {
-      const dir = this.workspaceDirs().find((d) => (this.read(`${d}/package.json`) as { name?: unknown } | null)?.name === pkg);
+      const dir = this.workspaceDirs().find((d) => {
+        const manifest = this.read(`${d}/package.json`);
+
+        return isJsonObject(manifest) && manifest.name === pkg;
+      });
 
       if (dir !== undefined) found = { kind: "workspace", dir };
     }
@@ -407,14 +413,15 @@ export class ImportResolver {
    * `main`, `index`. A declaration file is not source. Null when none exists.
    */
   private packageEntry(dir: string, subpath: string): string | null {
-    const manifest = this.read(`${dir}/package.json`) as { exports?: unknown; module?: unknown; main?: unknown } | null;
+    const raw = this.read(`${dir}/package.json`);
+    const manifest = isJsonObject(raw) ? raw : null;
     const key = `.${subpath}`;
     const candidates: string[] = [];
     const exports = manifest?.exports;
 
-    if (typeof exports === "string" || Array.isArray(exports)) {
+    if (isJsonString(exports) || Array.isArray(exports)) {
       if (key === ".") candidates.push(...flattenTarget(exports));
-    } else if (isObject(exports)) {
+    } else if (isJsonObject(exports)) {
       const subpaths = Object.keys(exports).some((k) => k.startsWith("."));
 
       if (!subpaths) {
@@ -428,7 +435,7 @@ export class ImportResolver {
         }
       }
     } else if (key === ".") {
-      for (const field of [manifest?.module, manifest?.main]) if (typeof field === "string") candidates.push(field);
+      for (const field of [manifest?.module, manifest?.main]) if (isJsonString(field)) candidates.push(field);
       candidates.push("index");
     } else candidates.push(key);
 
@@ -599,7 +606,7 @@ export class ImportResolver {
 
     if (known !== undefined) return known;
     const manifest = this.read(dir === "" ? "package.json" : `${dir}/package.json`);
-    const imports = isObject(manifest) && isObject(manifest.imports) ? manifest.imports : {};
+    const imports = isJsonObject(manifest) && isJsonObject(manifest.imports) ? manifest.imports : {};
     const rules = manifest === null ? null : Object.entries(imports).map(([pattern, t]) => ({ pattern, targets: flattenTarget(t) }));
     this.scopes.set(dir, rules);
 
@@ -797,23 +804,19 @@ export function inside(root: string, abs: string): string | null {
   return posixRel.split("/").includes("node_modules") ? null : posixRel;
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 /** Ranges that name code in this repository rather than a version to install (as `src/declared-packages.ts` reads them). */
 const LOCAL_RANGE = /^(workspace|file|link|portal):/;
 
 /** The packages a manifest's dependency fields declare: name → range as written (null when it is no string); the first field that has a name wins. */
-function dependencies(manifest: unknown): Map<string, string | null> {
+function dependencies(manifest: JsonValue): Map<string, string | null> {
   const out = new Map<string, string | null>();
 
   for (const field of ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"]) {
-    const deps = isObject(manifest) ? manifest[field] : undefined;
+    const deps = isJsonObject(manifest) ? manifest[field] : undefined;
 
-    if (!isObject(deps)) continue;
+    if (!isJsonObject(deps)) continue;
 
-    for (const [name, range] of Object.entries(deps)) if (!out.has(name)) out.set(name, typeof range === "string" ? range : null);
+    for (const [name, range] of Object.entries(deps)) if (!out.has(name)) out.set(name, isJsonString(range) ? range : null);
   }
 
   return out;
@@ -875,9 +878,9 @@ export function listWorkspaceGlob(root: string, glob: string): string {
 }
 
 /** `dirs` without those a `!pattern` of `patterns` names (npm `workspaces` negation). */
-export function withoutNegated(dirs: readonly string[], patterns: readonly unknown[]): string[] {
+export function withoutNegated(dirs: readonly string[], patterns: readonly JsonValue[]): string[] {
   const negated = patterns.flatMap((pattern) => {
-    const glob = typeof pattern === "string" && pattern.startsWith("!") ? workspaceGlob(pattern.slice(1)) : null;
+    const glob = isJsonString(pattern) && pattern.startsWith("!") ? workspaceGlob(pattern.slice(1)) : null;
 
     return glob === null ? [] : [globToRegExp(glob)];
   });
@@ -955,12 +958,12 @@ function matchPattern(pattern: string, spec: string): string | null {
   return null;
 }
 
-function flattenTarget(t: unknown): string[] {
-  if (typeof t === "string") return [t];
+function flattenTarget(t: JsonValue | undefined): string[] {
+  if (isJsonString(t)) return [t];
 
   if (Array.isArray(t)) return t.flatMap(flattenTarget);
 
-  if (t && typeof t === "object") return Object.values(t).flatMap(flattenTarget);
+  if (isJsonObject(t)) return Object.values(t).flatMap(flattenTarget);
 
   return [];
 }
@@ -972,24 +975,24 @@ export function packageName(spec: string): string {
 }
 
 /** JSON with comments and trailing commas (tsconfig style). */
-export function readJsonc(path: string): unknown {
+export function readJsonc(path: string): JsonValue {
   const text = readText(path);
 
   return text === null ? null : parseJsonc(text);
 }
 
 /** The value of JSONC text; null when it does not parse. */
-export function parseJsonc(text: string): unknown {
+export function parseJsonc(text: string): JsonValue {
   try {
-    return JSON.parse(stripJsonc(text));
+    return parseJson(stripJsonc(text));
   } catch {
     return null;
   }
 }
 
 /** The value of JSONC text; throws the `JSON.parse` error when it does not parse. */
-export function parseJsoncStrict(text: string): unknown {
-  return JSON.parse(stripJsonc(text));
+export function parseJsoncStrict(text: string): JsonValue {
+  return parseJson(stripJsonc(text));
 }
 
 /**
@@ -1048,7 +1051,7 @@ interface LoadedTsconfig {
 interface MergedOptions {
   baseUrl: string | null;
   /** `paths` as written, with the directory of the config that declares them. */
-  paths: { rules: Record<string, unknown>; dir: string } | null;
+  paths: { rules: JsonObject; dir: string } | null;
 }
 
 /**
@@ -1061,18 +1064,18 @@ interface MergedOptions {
  * directory, for `optionsFor` to hand to the files under each; a project
  * outside the root is skipped.
  */
-function loadTsconfig(read: (file: string) => unknown, file: string): LoadedTsconfig {
+function loadTsconfig(read: (file: string) => JsonValue, file: string): LoadedTsconfig {
   const own = mergedOptions(read, file, 0);
   const result: LoadedTsconfig = { own: { baseUrl: own.baseUrl, paths: placePaths(own) }, references: [] };
 
   // Own `paths` win outright, so the referenced configs are read (and become inputs) only when they can matter.
   if (result.own.paths.length > 0) return result;
   const raw = read(file);
-  const references = isObject(raw) && Array.isArray(raw.references) ? raw.references : [];
+  const references = isJsonObject(raw) && Array.isArray(raw.references) ? raw.references : [];
   const dir = posix.dirname(toPosix(file));
 
   for (const ref of references) {
-    if (!isObject(ref) || typeof ref.path !== "string") continue;
+    if (!isJsonObject(ref) || !isJsonString(ref.path)) continue;
     const target = posix.normalize(posix.join(dir, toPosix(ref.path)));
     const refFile = target.endsWith(".json") ? target : posix.join(target, "tsconfig.json");
 
@@ -1084,13 +1087,13 @@ function loadTsconfig(read: (file: string) => unknown, file: string): LoadedTsco
   return result;
 }
 
-function mergedOptions(read: (file: string) => unknown, file: string, depth: number): MergedOptions {
+function mergedOptions(read: (file: string) => JsonValue, file: string, depth: number): MergedOptions {
   const raw = read(file);
   let result: MergedOptions = { baseUrl: null, paths: null };
 
-  if (!isObject(raw) || depth > 5) return result;
+  if (!isJsonObject(raw) || depth > 5) return result;
   const dir = posix.dirname(toPosix(file));
-  const parents = typeof raw.extends === "string" ? [raw.extends] : Array.isArray(raw.extends) ? raw.extends.filter((e): e is string => typeof e === "string") : [];
+  const parents = isJsonString(raw.extends) ? [raw.extends] : Array.isArray(raw.extends) ? raw.extends.filter(isJsonString) : [];
 
   for (const e of parents) {
     if (!e.startsWith(".")) continue; // package configs (`@tsconfig/node22`) carry no paths
@@ -1101,11 +1104,11 @@ function mergedOptions(read: (file: string) => unknown, file: string, depth: num
     result = { baseUrl: p.baseUrl ?? result.baseUrl, paths: p.paths ?? result.paths };
   }
 
-  const co = isObject(raw.compilerOptions) ? raw.compilerOptions : {};
+  const co = isJsonObject(raw.compilerOptions) ? raw.compilerOptions : undefined;
 
-  if (typeof co.baseUrl === "string" && co.baseUrl !== "") result.baseUrl = posix.normalize(posix.join(dir, toPosix(co.baseUrl)));
+  if (isJsonString(co?.baseUrl) && co.baseUrl !== "") result.baseUrl = posix.normalize(posix.join(dir, toPosix(co.baseUrl)));
 
-  if (isObject(co.paths)) result.paths = { rules: co.paths, dir };
+  if (isJsonObject(co?.paths)) result.paths = { rules: co.paths, dir };
 
   return result;
 }
@@ -1116,6 +1119,6 @@ function placePaths(options: MergedOptions): PathRule[] {
 
   return Object.entries(options.paths.rules).map(([pattern, targets]) => ({
     pattern,
-    targets: (Array.isArray(targets) ? targets : []).filter((t): t is string => typeof t === "string").map((t) => posix.normalize(posix.join(base, toPosix(t)))),
+    targets: (Array.isArray(targets) ? targets : []).filter(isJsonString).map((t) => posix.normalize(posix.join(base, toPosix(t)))),
   }));
 }

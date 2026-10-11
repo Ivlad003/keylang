@@ -13,15 +13,20 @@
 
 import { ApiError, readOnlyPage, transport } from "./api.ts";
 import { button, make } from "./dom.ts";
-import { PALETTE, type Editor } from "./editor.ts";
+import { PALETTE, type Editor, type EditorModel } from "./editor.ts";
 import "./greenfield.css";
 
+interface LaneTemplate {
+  text: string;
+  lanes: readonly string[];
+}
+
 /** The lanes of a template, from the highest layer to the lowest. */
-export const TEMPLATES: Readonly<Record<string, { text: string; lanes: readonly string[] }>> = {
-  layers: { text: "4 шари", lanes: ["presentation", "application", "infrastructure", "domain"] },
-  hexagonal: { text: "hexagonal", lanes: ["adapters", "ports", "domain"] },
-  empty: { text: "порожньо", lanes: [] },
-};
+export const TEMPLATES: ReadonlyMap<string, LaneTemplate> = new Map([
+  ["layers", { text: "4 шари", lanes: ["presentation", "application", "infrastructure", "domain"] }],
+  ["hexagonal", { text: "hexagonal", lanes: ["adapters", "ports", "domain"] }],
+  ["empty", { text: "порожньо", lanes: [] }],
+]);
 
 const LANGUAGES: readonly [string, string][] = [
   ["typescript", "TypeScript"],
@@ -49,18 +54,33 @@ interface Answer {
   next: string[];
 }
 
-async function call<T>(method: "GET" | "POST", body?: unknown): Promise<{ status: number; body: T }> {
+/** What «Створити специфікацію» sends: the canvas, the languages ticked, the idea. */
+interface GreenfieldRequest {
+  model: EditorModel;
+  languages: string[];
+  idea: string;
+}
+
+async function call<T>(method: "GET" | "POST", body?: GreenfieldRequest): Promise<{ status: number; body: T }> {
   const response = await transport().send(method, "/api/greenfield", new URLSearchParams(), body);
   const text = response.text;
-  let parsed: unknown = null;
+  let parsed: T;
 
   try {
-    parsed = JSON.parse(text);
+    // SAFETY: `/api/greenfield` (src/tui/web.ts) answers GET with an `Availability` and POST with an `Answer`, the `T` each caller names; the page trusts its own server.
+    parsed = JSON.parse(text) as T;
   } catch {
     throw new ApiError(response.status, text.trim() || "request failed");
   }
 
-  return { status: response.status, body: parsed as T };
+  return { status: response.status, body: parsed };
+}
+
+declare global {
+  interface Window {
+    /** The open panel, for the browser tests. */
+    keylangGreenfield?: Greenfield;
+  }
 }
 
 /** The panel above the editor while a new project is drawn. */
@@ -86,7 +106,7 @@ class Greenfield {
     this.template = make("select", { title: "Шаблон доріжок" });
     this.template.id = "greenfield-template";
 
-    for (const [value, template] of Object.entries(TEMPLATES)) {
+    for (const [value, template] of TEMPLATES) {
       const option = make("option", { text: template.text });
       option.value = value;
       this.template.append(option);
@@ -153,7 +173,7 @@ class Greenfield {
 
   /** The lanes of the chosen template below what the canvas has, each renamed to its layer. */
   applyTemplate(): void {
-    const lanes = TEMPLATES[this.template.value]?.lanes ?? [];
+    const lanes = TEMPLATES.get(this.template.value)?.lanes ?? [];
     const entry = PALETTE.find((item) => item.kind === "lane");
 
     if (!entry || lanes.length === 0) return;
@@ -269,7 +289,7 @@ export async function mountGreenfield(editor: Editor, status: (text: string) => 
   }
 
   const greenfield = new Greenfield(editor, status);
-  (window as unknown as { keylangGreenfield: unknown }).keylangGreenfield = greenfield;
+  window.keylangGreenfield = greenfield;
 
   if (wanted) await greenfield.open();
 }

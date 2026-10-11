@@ -8,17 +8,18 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import type { JsonObject } from "../src/json.ts";
 
 const bin = join(dirname(fileURLToPath(import.meta.url)), "../bin/keylang.js");
 
-function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+function keylang(cwd: string, args: string[]) {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8" });
 
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
 /** A temp repository; layers default to `src/<layer>/**`. */
-function repo(t: { after: (f: () => void) => void }, files: Record<string, string>, config: Record<string, unknown> = {}): string {
+function repo(t: { after: (f: () => void) => void }, files: Record<string, string>, config: JsonObject = {}): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-analyzer-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const layers = Object.fromEntries([...new Set(Object.keys(files).filter((p) => p.startsWith("src/")).map((p) => p.split("/")[1]!))].map((l) => [l, `src/${l}/**`]));
@@ -40,15 +41,17 @@ function statics(dir: string): string[] {
 interface Snapshot {
   snapshotId: string;
   nodes: Record<string, { kind: string; class?: true; static?: true; name?: string; file: string | null; members?: string; escapes?: { reason: string } }>;
-  edges: { kind: string; source: string; target: string | null; resolution: string; text: string; alias?: string; reason?: string; closure?: true; typeOnly?: true; via?: string }[];
+  edges: { kind: string; source: string; target: string | null; resolution: string; text: string; alias?: string; reason?: string; closure?: true; typeOnly?: true; via?: string; site?: string }[];
   coverage: { kind: string; file: string; line: number; reason: string }[];
   exports: { module: string; name: string; symbol: string | null; kind: string; form?: string; local?: string; from?: string; reason?: string }[];
+  stats: { callsResolved: number };
 }
 
 function snapshot(dir: string): Snapshot {
   const o = keylang(dir, ["map"]);
   assert.equal(o.status, 0, o.stdout + o.stderr);
 
+  // SAFETY: `map` writes `.keylang/index.json` in the snapshot format of docs/snapshot.md, described by `Snapshot`.
   return JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as Snapshot;
 }
 
@@ -613,6 +616,7 @@ test("modules: two paths of one ID are an opaque module with a hole; scoped pack
   assert.equal(o.status, 0, o.stderr);
   assert.match(o.stderr, /src\/lib\/foo_bar\.ts: module ID collision: same module ID as `src\/lib\/foo\.bar\.ts` \(`lib\.foo_bar`\)/);
   assert.match(o.stderr, /`@scope\/pkg` is `external\.scope-pkg-2`/);
+  // SAFETY: `map` writes `.keylang/index.json` in the snapshot format of docs/snapshot.md, described by `Snapshot`.
   const snap = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as Snapshot;
   assert.equal(snap.nodes["lib.foo_bar"]?.members, "opaque");
   // A directory node stands for its own directory, not the one of the index file below it.
@@ -637,6 +641,7 @@ test("modules: two paths of one ID are an opaque module with a hole; scoped pack
   const mapped = keylang(dirMode, ["map"]);
   assert.equal(mapped.status, 0, mapped.stderr);
   assert.doesNotMatch(mapped.stderr, /same module ID/);
+  // SAFETY: `map` writes `.keylang/index.json` in the snapshot format of docs/snapshot.md, described by `Snapshot`.
   const nodes = (JSON.parse(readFileSync(join(dirMode, ".keylang/index.json"), "utf8")) as Snapshot).nodes;
   assert.equal(nodes["lib.a"]?.file, "src/lib/a/index.ts");
   assert.equal(nodes["lib.a.index"]?.file, "src/lib/a/index/y.ts");
@@ -659,6 +664,7 @@ test("colliding package names get one ID space over declared and imported names 
   assert.equal(o.status, 0, o.stderr);
   // `scope-pkg` is declared but not imported; it still keeps the segment, so `@scope/pkg` is `-2`.
   assert.match(o.stderr, /packages `scope-pkg` and `@scope\/pkg` share the ID segment `scope-pkg`; `@scope\/pkg` is `external\.scope-pkg-2`/);
+  // SAFETY: `map` writes `.keylang/index.json` in the snapshot format of docs/snapshot.md, described by `Snapshot`.
   const snap = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as Snapshot;
   assert.deepEqual(snap.edges.filter((e) => e.kind === "import" && e.source === "app.a").map((e) => e.target), ["external.scope-pkg-2"]);
   assert.equal(snap.nodes["external.scope-pkg"], undefined);
@@ -671,6 +677,7 @@ test("a manifest on an analysed file's path enters the snapshot id; a broken one
   });
 
   assert.equal(keylang(dir, ["map"]).status, 0);
+  // SAFETY: `map` writes `.keylang/index.json` in the snapshot format of docs/snapshot.md, described by `Snapshot`.
   const id = (): string => (JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as Snapshot).snapshotId;
   const before = id();
   writeFileSync(join(dir, "src/app/package.json"), '{"devDependencies":{"vitest":"2"}}\n');
@@ -963,6 +970,7 @@ test("jsx: `memo` / `forwardRef` / `lazy` from `react` unwrap a `const` into the
     "ui.wrapped.Named: fetchCart → ui.api.fetchCart",
     "ui.wrapped.Ns: price → ui.api.price",
   ]);
+  // SAFETY: `.keylang/cache/facts.json` stores `{ files: { [path]: { facts: FileFacts } } }` (src/extract/facts.ts).
   const facts = JSON.parse(readFileSync(join(dir, ".keylang/cache/facts.json"), "utf8")) as { files: Record<string, { facts: { moduleCalls: { callee: string }[] } }> };
   const moduleCalls = (file: string) => facts.files[file]!.facts.moduleCalls.map((c) => c.callee);
   // The wrapper call itself stays a module-level call; the wrapped body moves into the fn.
@@ -1027,6 +1035,7 @@ test("jsx: `createElement` / `jsx` / `jsxs` / `jsxDEV` imported from React call 
   ]);
   assert.ok(!calls.some((line) => line.includes("div") && !line.endsWith("(callable)")), calls.join("\n"));
 
+  // SAFETY: `.keylang/cache/facts.json` stores `{ files: { [path]: { facts: FileFacts } } }` (src/extract/facts.ts).
   const facts = JSON.parse(readFileSync(join(dir, ".keylang/cache/facts.json"), "utf8")) as {
     files: Record<string, { facts: { decls: { name: string; calls: { callee: string; passes?: { arg: number; callee: string }[] }[] }[] } }>;
   };
@@ -1063,6 +1072,7 @@ test("jsx: a type-only import from React binds no factory: `import type React`, 
   // The factory call goes into the `react` package (no edge); only a value import adds the component call. Elsewhere `Cart` is a callable passed to an ordinary call.
   assert.deepEqual(calls, ["app.default.Page: Cart → ui.cart.Cart (callable)", "app.named.Page: Cart → ui.cart.Cart (callable)", "app.ns.Page: Cart → ui.cart.Cart (callable)", "app.value.Page: Cart → ui.cart.Cart"]);
 
+  // SAFETY: `.keylang/cache/facts.json` stores `{ files: { [path]: { facts: FileFacts } } }` (src/extract/facts.ts).
   const facts = JSON.parse(readFileSync(join(dir, ".keylang/cache/facts.json"), "utf8")) as {
     files: Record<string, { facts: { decls: { name: string; calls: { callee: string; passes?: { arg: number; callee: string }[] }[] }[] } }>;
   };
@@ -1110,6 +1120,7 @@ test("jsx: a local `createElement` or one imported from another module does not 
   // No component call; `Cart` is a callable passed as the argument itself, `go: save` inside an object is not.
   assert.deepEqual(calls, ["app.page.Page: Cart → ui.cart.Cart (callable)", "app.page.Page: createElement → app.dom.createElement", "local.own.Page: Cart → local.own.Cart (callable)", "local.own.Page: createElement → null"]);
 
+  // SAFETY: `.keylang/cache/facts.json` stores `{ files: { [path]: { facts: FileFacts } } }` (src/extract/facts.ts).
   const facts = JSON.parse(readFileSync(join(dir, ".keylang/cache/facts.json"), "utf8")) as {
     files: Record<string, { facts: { decls: { name: string; calls: { callee: string; passes?: { arg: number; path: string; callee: string }[] }[] }[] } }>;
   };
@@ -1180,7 +1191,7 @@ test("static: a callable passed as an argument (`this.m.bind(this)`, `this.m`, `
   assert.match(shape, /static unverified lib\.x\.save: no resolved path from app\.a\.A\.main; the callable `save` passed as an argument \(not followed in static mode shape, set by --static\) at src\/app\/a\.ts:10:9 may reach it/);
   assert.match(shape, /static unverified app\.a\.A\.each: no resolved path from app\.a\.A\.main; the closure passed at src\/app\/a\.ts:9:19 \(not followed in static mode shape, set by --static\) at src\/app\/a\.ts:9:26 may reach it/);
   assert.doesNotMatch(shape, /static ok/);
-  const snap = snapshot(dir) as Snapshot & { edges: { via?: string; site?: string }[]; stats: { callsResolved: number } };
+  const snap = snapshot(dir);
 
   const main = snap.edges
     .filter((e) => e.kind === "call" && e.source === "app.a.A.main" && e.resolution === "resolved")

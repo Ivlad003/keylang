@@ -27,7 +27,9 @@ interface Node {
   h: number;
 }
 
-const box = { w: 150, h: 70, tests: [] as string[], id: "" };
+const noTests: string[] = [];
+
+const box = { w: 150, h: 70, tests: noTests, id: "" };
 
 test("diagram propose system:<name>: components, zones and relations from the canvas; code, tables, notes and sequences kept", (t) => {
   const dir = tempDir(t, "keylang-system-editor-");

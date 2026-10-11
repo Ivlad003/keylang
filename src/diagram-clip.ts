@@ -15,6 +15,7 @@
 
 import { shapeBase, twinsApart } from "./diagram-layout.ts";
 import type { Bundle, LayerChoice } from "./flow-bundle.ts";
+import { isJsonObject, isJsonString, parseJson, type JsonValue } from "./json.ts";
 import { isId } from "./parser.ts";
 import { compareText } from "./span.ts";
 
@@ -50,13 +51,20 @@ export interface ClipEdge {
   points?: { x: number; y: number }[];
 }
 
+/** One line of the layout block, keyed by the stable keys of its ends. */
+export interface ClipLayoutEdge {
+  kind: string;
+  label?: string;
+  points?: { x: number; y: number }[];
+}
+
 /** The layout block: shapes by stable key, edges by the stable keys of their ends. */
 export interface ClipLayout {
   format: number;
   /** The view it was copied from (`flow:checkout`), or "". */
   view: string;
   shapes: Record<string, Omit<ClipShape, "key">>;
-  edges: Record<string, { kind: string; label?: string; points?: { x: number; y: number }[] }>;
+  edges: Record<string, ClipLayoutEdge>;
 }
 
 /** A shape as the paste answers it: its stable key (what the edges name) and the rest. */
@@ -68,6 +76,13 @@ export interface PastedEdge {
   kind: string;
   label?: string;
   points?: { x: number; y: number }[];
+}
+
+/** What a paste draws: its shapes and lines, and whether they were laid out here (the bundle had no layout block). */
+export interface PastedFragment {
+  shapes: PastedShape[];
+  edges: PastedEdge[];
+  laidOut: boolean;
 }
 
 const KINDS: ReadonlySet<string> = new Set(["layer", "module", "fn", "type", "start", "task", "gateway", "parallel", "event", "timer", "external", "hole", "note"]);
@@ -83,24 +98,22 @@ const MAX_TEXT = 2000;
 
 const round = (value: number): number => Math.round(value * 100) / 100;
 
-const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
+const finite = (value: JsonValue | undefined): value is number => typeof value === "number" && Number.isFinite(value);
 
-const isObject = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
-
-const short = (value: unknown): string | undefined => (typeof value === "string" ? value.slice(0, MAX_TEXT) : undefined);
+const short = (value: JsonValue | undefined): string | undefined => (isJsonString(value) ? value.slice(0, MAX_TEXT) : undefined);
 
 /** An ID as a shape may carry it: a dotted ID, optionally `planned:`; anything else is none. */
-function cleanId(value: unknown): string {
-  if (typeof value !== "string") return "";
+function cleanId(value: JsonValue | undefined): string {
+  if (!isJsonString(value)) return "";
   const bare = value.replace(/^planned:/, "");
 
   return bare !== "" && isId(bare) ? value : "";
 }
 
 /** One shape from untrusted JSON, or null: a known kind, finite numbers, short strings. */
-function cleanShape(raw: unknown, key: string): ClipShape | null {
-  if (!isObject(raw) || !finite(raw.x) || !finite(raw.y)) return null;
-  const kind = typeof raw.kind === "string" && KINDS.has(raw.kind) ? raw.kind : null;
+function cleanShape(raw: JsonValue, key: string): ClipShape | null {
+  if (!isJsonObject(raw) || !finite(raw.x) || !finite(raw.y)) return null;
+  const kind = isJsonString(raw.kind) && KINDS.has(raw.kind) ? raw.kind : null;
 
   if (kind === null) return null;
 
@@ -109,7 +122,7 @@ function cleanShape(raw: unknown, key: string): ClipShape | null {
     id: cleanId(raw.id),
     kind,
     label: short(raw.label) ?? "",
-    layer: typeof raw.layer === "string" && isId(raw.layer) ? raw.layer : null,
+    layer: isJsonString(raw.layer) && isId(raw.layer) ? raw.layer : null,
     x: round(raw.x),
     y: round(raw.y),
     w: finite(raw.w) && raw.w > 0 ? round(Math.min(raw.w, 5000)) : 160,
@@ -120,7 +133,7 @@ function cleanShape(raw: unknown, key: string): ClipShape | null {
 
   if (signature) shape.signature = signature;
 
-  if (typeof raw.trigger === "string" && TRIGGERS.has(raw.trigger)) shape.trigger = raw.trigger;
+  if (isJsonString(raw.trigger) && TRIGGERS.has(raw.trigger)) shape.trigger = raw.trigger;
 
   if (raw.role === "split" || raw.role === "join") shape.role = raw.role;
   const description = short(raw.description);
@@ -128,25 +141,25 @@ function cleanShape(raw: unknown, key: string): ClipShape | null {
   if (description) shape.description = description;
 
   if (Array.isArray(raw.tests)) {
-    const tests = raw.tests.filter((t): t is string => typeof t === "string").map((t) => t.slice(0, MAX_TEXT)).slice(0, 50);
+    const tests = raw.tests.filter(isJsonString).map((t) => t.slice(0, MAX_TEXT)).slice(0, 50);
 
     if (tests.length > 0) shape.tests = tests;
   }
 
-  if (typeof raw.colour === "string" && /^#[0-9a-fA-F]{6}$/.test(raw.colour)) shape.colour = raw.colour;
+  if (isJsonString(raw.colour) && /^#[0-9a-fA-F]{6}$/.test(raw.colour)) shape.colour = raw.colour;
 
   return shape;
 }
 
-function cleanPoints(raw: unknown): { x: number; y: number }[] | undefined {
+function cleanPoints(raw: JsonValue | undefined): { x: number; y: number }[] | undefined {
   if (!Array.isArray(raw)) return undefined;
-  const points = raw.filter((p): p is { x: number; y: number } => isObject(p) && finite(p.x) && finite(p.y)).slice(0, 100).map((p) => ({ x: round(p.x), y: round(p.y) }));
+  const points = raw.filter((p): p is { x: number; y: number } => isJsonObject(p) && finite(p.x) && finite(p.y)).slice(0, 100).map((p) => ({ x: round(p.x), y: round(p.y) }));
 
   return points.length > 0 ? points : undefined;
 }
 
 /** The shapes and edges of a request body (`{shapes, edges}`), or what is wrong with them. */
-export function parseClipSelection(shapesRaw: unknown, edgesRaw: unknown): { shapes: ClipShape[]; edges: ClipEdge[] } | string {
+export function parseClipSelection(shapesRaw: JsonValue | undefined, edgesRaw: JsonValue | undefined): { shapes: ClipShape[]; edges: ClipEdge[] } | string {
   if (shapesRaw === undefined) return { shapes: [], edges: [] };
 
   if (!Array.isArray(shapesRaw)) return "shapes: an array of {key, id, kind, label, layer, x, y, w, h}";
@@ -155,7 +168,7 @@ export function parseClipSelection(shapesRaw: unknown, edgesRaw: unknown): { sha
   const shapes: ClipShape[] = [];
 
   for (const [i, raw] of shapesRaw.entries()) {
-    const key = isObject(raw) && typeof raw.key === "string" && raw.key !== "" ? raw.key.slice(0, 200) : null;
+    const key = isJsonObject(raw) && isJsonString(raw.key) && raw.key !== "" ? raw.key.slice(0, 200) : null;
     const shape = key === null ? null : cleanShape(raw, key);
 
     if (shape === null) return `shapes[${i}]: needs key, a known kind, x and y`;
@@ -168,8 +181,8 @@ export function parseClipSelection(shapesRaw: unknown, edgesRaw: unknown): { sha
     if (!Array.isArray(edgesRaw)) return "edges: an array of {from, to, kind}";
 
     for (const raw of edgesRaw.slice(0, MAX_SHAPES * 2)) {
-      if (!isObject(raw) || typeof raw.from !== "string" || typeof raw.to !== "string") continue;
-      const edge: ClipEdge = { from: raw.from, to: raw.to, kind: typeof raw.kind === "string" && LINKS.has(raw.kind) ? raw.kind : "sequence" };
+      if (!isJsonObject(raw) || !isJsonString(raw.from) || !isJsonString(raw.to)) continue;
+      const edge: ClipEdge = { from: raw.from, to: raw.to, kind: isJsonString(raw.kind) && LINKS.has(raw.kind) ? raw.kind : "sequence" };
       const label = short(raw.label);
 
       if (label) edge.label = label;
@@ -223,38 +236,47 @@ export function clipLayout(view: string, shapes: readonly ClipShape[], edges: re
 
   for (const [i, key] of twinsApart(pairs)) {
     const edge = byPair.get(i)!;
-    out.edges[key] = { kind: edge.kind, ...(edge.label ? { label: edge.label } : {}), ...(edge.points ? { points: edge.points.map((p) => ({ x: round(p.x - dx), y: round(p.y - dy) })) } : {}) };
+    const entry: ClipLayoutEdge = { kind: edge.kind };
+
+    if (edge.label) entry.label = edge.label;
+
+    if (edge.points) entry.points = edge.points.map((p) => ({ x: round(p.x - dx), y: round(p.y - dy) }));
+    out.edges[key] = entry;
   }
 
   return out;
 }
 
-function sorted(value: unknown): unknown {
+function sorted(value: JsonValue): JsonValue {
   if (Array.isArray(value)) return value.map(sorted);
 
-  if (isObject(value)) return Object.fromEntries(Object.keys(value).sort(compareText).map((key) => [key, sorted(value[key])]));
+  if (isJsonObject(value)) return Object.fromEntries(Object.keys(value).sort(compareText).map((key) => [key, sorted(value[key]!)]));
 
   return value;
 }
 
 /** The block's text: JSON with sorted keys, two-space indent, no fence it could close (`` ` `` never stays raw). */
 export function clipLayoutText(layout: ClipLayout): string {
-  return JSON.stringify({ format: layout.format, view: layout.view, shapes: sorted(layout.shapes), edges: sorted(layout.edges) }, null, 2).replaceAll("`", "\\u0060");
+  // The interfaces hold only JSON values; a round trip turns them into `JsonValue` (dropping `undefined` fields, as the output would).
+  const shapes = sorted(parseJson(JSON.stringify(layout.shapes)));
+  const edges = sorted(parseJson(JSON.stringify(layout.edges)));
+
+  return JSON.stringify({ format: layout.format, view: layout.view, shapes, edges }, null, 2).replaceAll("`", "\\u0060");
 }
 
 /** The layout block of a bundle read leniently: null when it is empty or no layout; a shape or an edge of the wrong form is left out. */
 export function parseClipLayout(text: string): ClipLayout | null {
   if (text.trim() === "") return null;
-  let value: unknown;
+  let value: JsonValue;
 
   try {
-    value = JSON.parse(text);
+    value = parseJson(text);
   } catch {
     return null;
   }
 
-  if (!isObject(value) || !isObject(value.shapes)) return null;
-  const out: ClipLayout = { format: finite(value.format) ? value.format : CLIP_FORMAT, view: typeof value.view === "string" ? value.view.slice(0, 500) : "", shapes: {}, edges: {} };
+  if (!isJsonObject(value) || !isJsonObject(value.shapes)) return null;
+  const out: ClipLayout = { format: finite(value.format) ? value.format : CLIP_FORMAT, view: isJsonString(value.view) ? value.view.slice(0, 500) : "", shapes: {}, edges: {} };
 
   for (const [key, raw] of Object.entries(value.shapes).slice(0, MAX_SHAPES)) {
     const shape = cleanShape(raw, key);
@@ -264,13 +286,17 @@ export function parseClipLayout(text: string): ClipLayout | null {
     out.shapes[key] = rest;
   }
 
-  if (isObject(value.edges)) {
+  if (isJsonObject(value.edges)) {
     for (const [key, raw] of Object.entries(value.edges).slice(0, MAX_SHAPES * 2)) {
-      if (!key.startsWith("edge:") || !isObject(raw) || edgeEnds(key, out.shapes) === null) continue;
-      const kind = typeof raw.kind === "string" && LINKS.has(raw.kind) ? raw.kind : "sequence";
+      if (!key.startsWith("edge:") || !isJsonObject(raw) || edgeEnds(key, out.shapes) === null) continue;
+      const entry: ClipLayoutEdge = { kind: isJsonString(raw.kind) && LINKS.has(raw.kind) ? raw.kind : "sequence" };
       const label = short(raw.label);
       const points = cleanPoints(raw.points);
-      out.edges[key] = { kind, ...(label ? { label } : {}), ...(points ? { points } : {}) };
+
+      if (label) entry.label = label;
+
+      if (points) entry.points = points;
+      out.edges[key] = entry;
     }
   }
 
@@ -278,7 +304,7 @@ export function parseClipLayout(text: string): ClipLayout | null {
 }
 
 /** The two ends of a layout edge key. */
-function edgeEnds(key: string, shapes: Record<string, unknown>): [string, string] | null {
+function edgeEnds(key: string, shapes: ClipLayout["shapes"]): [string, string] | null {
   // A key may hold `->` inside a `when:` label: the split that names two shapes wins.
   const bare = key.replace(/#\d+$/, "").slice("edge:".length);
 
@@ -341,7 +367,7 @@ export function fragmentName(shapes: readonly ClipShape[]): string {
  * Without a layout block the bundle's flows are laid out: a row per layer,
  * their IDs left to right, a sequence line between neighbours.
  */
-export function pastedShapes(bundle: Bundle, ids: readonly { from: string; to: string; planned: boolean }[], choices: readonly LayerChoice[]): { shapes: PastedShape[]; edges: PastedEdge[]; laidOut: boolean } {
+export function pastedShapes(bundle: Bundle, ids: readonly { from: string; to: string; planned: boolean }[], choices: readonly LayerChoice[]): PastedFragment {
   const byId = new Map(ids.map((x) => [x.from, x]));
   const layerTo = new Map(choices.map((c) => [c.from, c.to]));
 
@@ -417,7 +443,8 @@ export function pastedShapes(bundle: Bundle, ids: readonly { from: string; to: s
         key = start ? `trigger:${id.replace(/^planned:/, "")}` : `step:${id.replace(/^planned:/, "")}`;
         keyOf.set(source, key);
         const node = bundle.nodes.find((n) => n.id === source);
-        shapes.push({
+
+        const shape: PastedShape = {
           key,
           id,
           kind: start ? "start" : "task",
@@ -427,9 +454,12 @@ export function pastedShapes(bundle: Bundle, ids: readonly { from: string; to: s
           y: rows.get(layer)! * 130,
           w: start ? 36 : 160,
           h: start ? 36 : 60,
-          ...(start ? { trigger: "fn" } : {}),
-          ...(node?.signature && id.startsWith("planned:") ? { signature: node.signature } : {}),
-        });
+        };
+
+        if (start) shape.trigger = "fn";
+
+        if (node?.signature && id.startsWith("planned:")) shape.signature = node.signature;
+        shapes.push(shape);
       }
 
       if (previous !== null && previous !== key && !edges.some((e) => e.from === previous && e.to === key)) edges.push({ from: previous, to: key, kind: "sequence" });

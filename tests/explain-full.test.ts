@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
+import { isJsonObject, parseJson } from "../src/json.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -46,6 +47,7 @@ async function mockAnthropic(t: TestContext): Promise<Mock> {
     let data = "";
     req.on("data", (chunk: Buffer) => (data += chunk.toString()));
     req.on("end", () => {
+      // SAFETY: the only client of this mock is the Anthropic SDK, which posts a Messages request.
       const body = JSON.parse(data) as { system: string; messages: { content: string }[] };
       mock.requests.push({ system: body.system, prompt: body.messages[0]?.content ?? "" });
       const text = body.system.includes("five sections") ? FULL : "Sums the prices. It folds the items.";
@@ -56,6 +58,7 @@ async function mockAnthropic(t: TestContext): Promise<Mock> {
 
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(() => server.close());
+  // SAFETY: the server listens on a TCP port, so its address is an AddressInfo, not a pipe name.
   mock.url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
   return mock;
@@ -76,7 +79,8 @@ async function repo(t: TestContext): Promise<{ dir: string; mock: Mock; env: Rec
   const dir = mkdtempSync(join(tmpdir(), "keylang-explain-full-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   cpSync(join(root, "tests/fixtures/explained"), dir, { recursive: true });
-  const config = JSON.parse(readFileSync(join(dir, "keylang.json"), "utf8")) as Record<string, unknown>;
+  const config = parseJson(readFileSync(join(dir, "keylang.json"), "utf8"));
+  assert.ok(isJsonObject(config), "keylang.json is an object");
   writeFileSync(join(dir, "keylang.json"), JSON.stringify({ ...config, agent: "anthropic:claude-opus-5" }));
   const mock = await mockAnthropic(t);
 
@@ -117,12 +121,14 @@ test("a full answer is saved with its headings, shown as written offline, and ke
 
 test("explain leaves an import of a file `assume` names out of what keylang did not resolve: the summary and the --full prompt", async (t) => {
   const { dir, mock, env } = await repo(t);
-  const config = JSON.parse(readFileSync(join(dir, "keylang.json"), "utf8")) as Record<string, unknown>;
+  const config = parseJson(readFileSync(join(dir, "keylang.json"), "utf8"));
+  assert.ok(isJsonObject(config), "keylang.json is an object");
   writeFileSync(join(dir, "keylang.json"), JSON.stringify({ ...config, assume: ["src/domain/settings.ts"] }));
   const order = readFileSync(join(dir, "src/domain/order.ts"), "utf8");
   writeFileSync(join(dir, "src/domain/order.ts"), order.replace('import type { Money } from "./money.ts";', 'import type { Money } from "./money.ts";\nimport { settings } from "./settings";\nexport const rounding = settings;'));
   const index = await run(dir, ["map"], env);
   assert.equal(index.status, 0, index.stderr);
+  // SAFETY: `keylang map` exited 0 above, so the index holds the snapshot's coverage items.
   const assumed = (JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as { coverage: { kind: string; source: string | null }[] }).coverage.filter((item) => item.kind === "assumed-import");
   assert.deepEqual(assumed.map((item) => item.source), ["domain.order"], "the module's import is assumed");
   // The offline summary's "not resolved" line does not count it.

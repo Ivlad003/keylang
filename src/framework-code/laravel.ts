@@ -46,7 +46,12 @@ const AS_COMMAND = "Symfony\\Component\\Console\\Attribute\\AsCommand";
 /** Container methods that bind an abstract to a concrete class. */
 const BIND_METHODS = new Set(["bind", "singleton", "scoped", "bindif", "singletonif", "scopedif"]);
 
-const VERBS: Record<string, string[]> = { get: ["GET"], post: ["POST"], put: ["PUT"], patch: ["PATCH"], delete: ["DELETE"], options: ["OPTIONS"], any: [] };
+/** The HTTP methods of a `Route::<verb>` registration, by the verb in lower case; `any` names none. */
+interface RouteVerbs {
+  readonly [verb: string]: string[];
+}
+
+const VERBS: RouteVerbs = { get: ["GET"], post: ["POST"], put: ["PUT"], patch: ["PATCH"], delete: ["DELETE"], options: ["OPTIONS"], any: [] };
 
 /** `Route::resource` actions: method, path after the resource, HTTP methods; `apiResource` leaves out `create` and `edit`. */
 const RESOURCE_ACTIONS: [string, string, string[]][] = [
@@ -347,7 +352,13 @@ function readRoutes(code: PhpCode, file: FileFacts, facts: ConfigFacts): void {
         continue;
       }
 
-      const entry: EntryConfigFact = { kind: "route", label, files: handler.type === null ? [file.path] : [], fn: handler.fn, line: call.line, col: call.col, ...(handler.type !== null ? { type: type(handler.type) } : {}), ...(method !== null ? { method } : {}), ...(handler.note ? { note: handler.note } : {}) };
+      const entry: EntryConfigFact = { kind: "route", label, files: handler.type === null ? [file.path] : [], fn: handler.fn, line: call.line, col: call.col };
+
+      if (handler.type !== null) entry.type = type(handler.type);
+
+      if (method !== null) entry.method = method;
+
+      if (handler.note) entry.note = handler.note;
       facts.entries!.push(entry);
     }
   }

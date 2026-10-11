@@ -36,11 +36,13 @@ import { exportBundle, exportFlows, gitOf, runFlowImport } from "../operations/f
 import { clipLayout, clipLayoutText, fragmentFlow, fragmentName, parseClipSelection, pastedShapes } from "../diagram-clip.ts";
 import { parseBundle, usedLayers, type ExportFlow } from "../flow-bundle.ts";
 import { keylangVersion } from "../harness.ts";
+import { isJsonNumber, isJsonObject, isJsonString, parseJson, type JsonValue } from "../json.ts";
 import { flowCandidate } from "../operations/draft.ts";
+import type { FlowImportRequest } from "../operations/types.ts";
 import { commitProposal, generatedIn, proposalRefusal, rootRelative } from "../operations/shared.ts";
-import { App, MAX_COLS, MAX_ROWS, type Analyzer, type OperationRunner } from "./app.ts";
+import { App, MAX_COLS, MAX_ROWS, type Analyzer, type AppOptions, type OperationRunner } from "./app.ts";
 import { SnapshotWorker } from "./background.ts";
-import { createReadApi, READ_PATHS, type ReadAnswer } from "./read-api.ts";
+import { createReadApi, isRefusal, READ_PATHS, type ReadAnswer } from "./read-api.ts";
 import { inputsOf, stampOf } from "./tree-stamp.ts";
 import { ENTER } from "./screen.ts";
 
@@ -52,6 +54,18 @@ const PING_MS = 30 * 1000;
 
 /** One message larger than this closes the connection (the client sends keys and sizes). */
 const MAX_MESSAGE = 1 << 20;
+
+/** The text with C0 controls and DEL as spaces: an error's text shown in the terminal must not move the cursor or start a sequence. */
+function withoutControls(text: string): string {
+  let out = "";
+
+  for (const char of text) {
+    const code = char.charCodeAt(0);
+    out += code < 0x20 || code === 0x7f ? " " : char;
+  }
+
+  return out;
+}
 
 /** Close codes the page understands: another tab took the session; the session ended. */
 export const CLOSE_TAKEN = 4000;
@@ -73,6 +87,14 @@ const BUILT = {
 } as const;
 
 type BuiltName = keyof typeof BUILT;
+
+function isBuiltName(name: string): name is BuiltName {
+  return Object.hasOwn(BUILT, name);
+}
+
+function isAssetName(name: string): name is AssetName {
+  return Object.hasOwn(ASSETS, name);
+}
 
 // Literal directory URLs: `dist/tui/web.js` and `src/tui/web.ts` both sit two levels below the package root.
 const PACKAGE_ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -162,8 +184,14 @@ interface Session {
   audio: AudioQueue | null;
 }
 
+/** What the page is told besides ANSI: the microphone goes on or off. */
+interface ControlMessage {
+  type: "mic";
+  on: boolean;
+}
+
 /** A control message for the page: a frame that starts with NUL, which no ANSI frame does. */
-function control(message: object): string {
+function control(message: ControlMessage): string {
   return `\u0000${JSON.stringify(message)}`;
 }
 
@@ -216,8 +244,8 @@ class AudioQueue {
 }
 
 /** s16le PCM from base64; an odd byte count or bad base64 is dropped, not trusted. */
-function pcmOf(data: unknown): Int16Array | null {
-  if (typeof data !== "string" || data.length > MAX_MESSAGE) return null;
+function pcmOf(data: JsonValue | undefined): Int16Array | null {
+  if (!isJsonString(data) || data.length > MAX_MESSAGE) return null;
   const bytes = Buffer.from(data, "base64");
 
   if (bytes.length === 0 || bytes.length % 2 !== 0) return null;
@@ -229,14 +257,14 @@ function pcmOf(data: unknown): Int16Array | null {
 }
 
 /** A size from the client: an integer within the grid limits, else the fallback. */
-export function clampSize(value: unknown, fallback: number, max: number): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+export function clampSize(value: JsonValue | undefined, fallback: number, max: number): number {
+  if (!isJsonNumber(value) || !Number.isFinite(value)) return fallback;
 
   return Math.max(1, Math.min(max, Math.floor(value)));
 }
 
 function sameSecret(given: string | null | undefined, token: string): boolean {
-  if (typeof given !== "string") return false;
+  if (given === null || given === undefined) return false;
   const a = Buffer.from(given);
   const b = Buffer.from(token);
 
@@ -288,6 +316,24 @@ export interface WebApp {
   close(): Promise<void>;
 }
 
+/** One analysis of the tree and the stamp of its inputs, kept while no input changes. */
+interface CachedAnalysis {
+  /** Null while the analysis runs: its inputs are known only when it ends. */
+  inputs: string[] | null;
+  stamp: string;
+  done: Promise<Analysis>;
+}
+
+/** A request's `flows`: flow names, absent, or null when it is no array of names. */
+function flowNamesOf(value: JsonValue | undefined): string[] | undefined | null {
+  if (value === undefined) return undefined;
+
+  if (!Array.isArray(value)) return null;
+  const names = value.filter(isJsonString);
+
+  return names.length === value.length && names.every((name) => /^[\p{L}\p{N}_.-]+$/u.test(name)) ? names : null;
+}
+
 export function createWebApp(options: WebOptions): WebApp {
   const host = options.host ?? "127.0.0.1";
   const token = randomBytes(16).toString("hex");
@@ -318,13 +364,13 @@ export function createWebApp(options: WebOptions): WebApp {
   // One analysis per state of the tree: a request reuses it while no file under the root changed
   // (`treeStamp`: paths, sizes, modification times — tens of ms where an analysis takes seconds).
   // Before, every request (a click, the page's poll every 5 s) analysed the repository again.
-  let cached: { inputs: string[] | null; stamp: string; done: Promise<Analysis> } | null = null;
+  let cached: CachedAnalysis | null = null;
 
   const analysis = (): Promise<Analysis> => {
     // While the first analysis runs its inputs are unknown: requests meanwhile share it.
     if (cached !== null && (cached.inputs === null || stampOf(options.root, cached.inputs) === cached.stamp)) return cached.done;
     const done = Promise.resolve().then(() => analyzer({ root: options.root }));
-    const entry: { inputs: string[] | null; stamp: string; done: Promise<Analysis> } = { inputs: null, stamp: "", done };
+    const entry: CachedAnalysis = { inputs: null, stamp: "", done };
     cached = entry;
     done.then(
       (result) => {
@@ -350,19 +396,19 @@ export function createWebApp(options: WebOptions): WebApp {
    * origin can set without a preflight this server never answers), a JSON body and the same origin guard it.
    */
   const flowProposal = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
-    const json = (status: number, body: unknown): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
+    const json = <Body>(status: number, body: Body): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
     const body = await jsonBody(request, response, "flow-proposal", "POST", MAX_BODY);
 
     if (body === NO_BODY) return;
     const wanted = parseExplorerFlow(body);
 
-    if (typeof wanted === "string") return json(400, { error: wanted });
+    if (isRefusal(wanted)) return json(400, { error: wanted });
     const done = await analysis();
 
     if (!done.snapshot) return json(409, { error: "no code to read (`languages` in keylang.json is empty)" });
     const draft = explorerFlow(done.snapshot, wanted);
 
-    if (typeof draft === "string") return json(400, { error: draft });
+    if (isRefusal(draft)) return json(400, { error: draft });
     const specDir = rootRelative(options.root, done.config.dir);
     const generated = generatedIn(done.docs);
     let candidate;
@@ -405,7 +451,7 @@ export function createWebApp(options: WebOptions): WebApp {
    * it; the same guards as every write (token, JSON, origin).
    */
   const layoutRequest = async (request: IncomingMessage, response: ServerResponse, query: URLSearchParams): Promise<void> => {
-    const json = (status: number, body: unknown): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
+    const json = <Body>(status: number, body: Body): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
     const view = query.get("view") ?? "";
 
     if (request.method !== "GET" && request.method !== "PUT") {
@@ -421,7 +467,7 @@ export function createWebApp(options: WebOptions): WebApp {
     const done = await analysis();
     const diagram = read.keyedDiagram(done, view);
 
-    if (typeof diagram === "string") return json(400, { error: diagram });
+    if (isRefusal(diagram)) return json(400, { error: diagram });
     const specDir = rootRelative(options.root, done.config.dir);
     let saved: { path: string; file: LayoutFile | null };
 
@@ -433,7 +479,7 @@ export function createWebApp(options: WebOptions): WebApp {
 
     const layout = parseClientLayout(body);
 
-    if (typeof layout === "string") return json(400, { error: layout });
+    if (isRefusal(layout)) return json(400, { error: layout });
     const file = layoutToFile(view, layout, diagram);
 
     if (saved.file !== null && layoutText(saved.file) === layoutText(file)) return json(200, { view, file: saved.path, written: false });
@@ -454,22 +500,23 @@ export function createWebApp(options: WebOptions): WebApp {
    * proposal waits; 200 with the targets, their hunks and the K108 warnings.
    */
   const diagramProposal = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
-    const json = (status: number, body: unknown): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
+    const json = <Body>(status: number, body: Body): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
     const body = await jsonBody(request, response, "diagram-proposal", "POST", MAX_MODEL_BODY);
 
     if (body === NO_BODY) return;
 
-    if (body === null || typeof body !== "object" || Array.isArray(body)) return json(400, { error: "the body: {model, specHash}" });
-    const { model, specHash: hash } = body as { model?: unknown; specHash?: unknown };
-    const view = model !== null && typeof model === "object" && typeof (model as { view?: unknown }).view === "string" ? (model as { view: string }).view : null;
+    if (!isJsonObject(body)) return json(400, { error: "the body: {model, specHash}" });
+    const { model, specHash: hash } = body;
+    const modelView = isJsonObject(model) ? model.view : undefined;
+    const view = isJsonString(modelView) ? modelView : null;
 
     if (view === null) return json(400, { error: "model.view: a view key such as `flow:checkout`" });
 
-    if (hash !== undefined && hash !== null && typeof hash !== "string") return json(400, { error: "specHash: the string /api/diagram answered" });
+    if (hash !== undefined && hash !== null && !isJsonString(hash)) return json(400, { error: "specHash: the string /api/diagram answered" });
     const done = await runDiagramPropose({ root: options.root, view, model, specHash: hash ?? null }, { analyze: () => analysis() });
     const status = done.status === "invalid" ? 400 : done.status === "conflict" || done.status === "refused" ? 409 : done.status === "failed" ? 500 : 200;
 
-    return json(status, { ...done, ...(done.error !== null ? { error: done.error } : {}) });
+    return json(status, done);
   };
 
   /**
@@ -479,15 +526,15 @@ export function createWebApp(options: WebOptions): WebApp {
    * written); the same guards as every write (token, JSON, origin).
    */
   const greenfieldRequest = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
-    const json = (status: number, body: unknown): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
+    const json = <Body>(status: number, body: Body): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
 
     if (request.method === "GET") return json(200, { root: options.root, ...greenfieldAvailability(options.root), languages: Object.keys(GREENFIELD_LANGUAGES) });
     const body = await jsonBody(request, response, "greenfield", "POST", MAX_MODEL_BODY);
 
     if (body === NO_BODY) return;
 
-    if (body === null || typeof body !== "object" || Array.isArray(body)) return json(400, { error: "the body: {model, languages, idea}" });
-    const { model, languages, idea } = body as { model?: unknown; languages?: unknown; idea?: unknown };
+    if (!isJsonObject(body)) return json(400, { error: "the body: {model, languages, idea}" });
+    const { model, languages, idea } = body;
     const done = runGreenfield({ root: options.root, model, languages, idea });
     const status = done.status === "invalid" ? 400 : done.status === "conflict" ? 409 : done.status === "failed" ? 500 : 200;
 
@@ -502,27 +549,28 @@ export function createWebApp(options: WebOptions): WebApp {
    * `text/plain` the page puts in the clipboard: no custom MIME type.
    */
   const bundleRequest = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
-    const json = (status: number, body: unknown): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
+    const json = <Body>(status: number, body: Body): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
     const body = await jsonBody(request, response, "bundle", "POST", MAX_MODEL_BODY);
 
     if (body === NO_BODY) return;
 
-    if (body === null || typeof body !== "object" || Array.isArray(body)) return json(400, { error: "the body: {view?, flows?, shapes?, edges?, withCallees?}" });
-    const raw = body as { view?: unknown; flows?: unknown; shapes?: unknown; edges?: unknown; withCallees?: unknown };
-    const view = typeof raw.view === "string" ? raw.view : "";
+    if (!isJsonObject(body)) return json(400, { error: "the body: {view?, flows?, shapes?, edges?, withCallees?}" });
+    const raw = body;
+    const view = isJsonString(raw.view) ? raw.view : "";
+    const named = flowNamesOf(raw.flows);
 
-    if (raw.flows !== undefined && (!Array.isArray(raw.flows) || !raw.flows.every((f) => typeof f === "string" && /^[\p{L}\p{N}_.-]+$/u.test(f)))) return json(400, { error: "flows: an array of flow names" });
+    if (named === null) return json(400, { error: "flows: an array of flow names" });
     const withCallees = raw.withCallees ?? 1;
 
-    if (typeof withCallees !== "number" || !Number.isInteger(withCallees) || withCallees < 0 || withCallees > 10) return json(400, { error: "withCallees: a whole number from 0 to 10" });
+    if (!isJsonNumber(withCallees) || !Number.isInteger(withCallees) || withCallees < 0 || withCallees > 10) return json(400, { error: "withCallees: a whole number from 0 to 10" });
     const selection = parseClipSelection(raw.shapes, raw.edges);
 
-    if (typeof selection === "string") return json(400, { error: selection });
+    if (isRefusal(selection)) return json(400, { error: selection });
     const done = await analysis();
 
     if (!done.snapshot) return json(409, { error: "no code to read (`languages` in keylang.json is empty)" });
     const wanted = viewOfKey(view);
-    const names = (raw.flows as string[] | undefined) ?? (wanted?.view.kind === "flow" ? [wanted.view.name] : []);
+    const names = named ?? (wanted?.view.kind === "flow" ? [wanted.view.name] : []);
     const flows: ExportFlow[] = [];
 
     if (names.length > 0) {
@@ -554,15 +602,16 @@ export function createWebApp(options: WebOptions): WebApp {
    * Either way the shapes to draw, re-homed, at the bundle's layout (or laid out here).
    */
   const bundleImport = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
-    const json = (status: number, body: unknown): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
+    const json = <Body>(status: number, body: Body): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
     const body = await jsonBody(request, response, "bundle-import", "POST", MAX_MODEL_BODY);
 
     if (body === NO_BODY) return;
 
-    if (body === null || typeof body !== "object" || Array.isArray(body)) return json(400, { error: "the body: {text, layerMap?, mode?, output?}" });
-    const raw = body as { text?: unknown; layerMap?: unknown; mode?: unknown; output?: unknown };
+    if (!isJsonObject(body)) return json(400, { error: "the body: {text, layerMap?, mode?, output?}" });
+    const raw = body;
+    const pastedText = raw.text;
 
-    if (typeof raw.text !== "string") return json(400, { error: "text: the pasted bundle" });
+    if (!isJsonString(pastedText)) return json(400, { error: "text: the pasted bundle" });
     const mode = raw.mode ?? "algo";
 
     if (mode !== "algo" && mode !== "hybrid") return json(400, { error: "mode: algo or hybrid" });
@@ -574,11 +623,14 @@ export function createWebApp(options: WebOptions): WebApp {
     if (raw.layerMap !== undefined) {
       const map = raw.layerMap;
 
-      if (map === null || typeof map !== "object" || Array.isArray(map) || !Object.entries(map).every(([from, to]) => /^[^=,\s]+$/.test(from) && typeof to === "string" && /^[^=,\s]+$/.test(to))) return json(400, { error: "layerMap: {<layer of the bundle>: <layer here>}" });
-      layerMap = Object.entries(map as Record<string, string>).map(([from, to]) => `${from}=${to}`).join(",");
+      const pairs = isJsonObject(map) ? Object.entries(map) : null;
+      const layers = pairs?.flatMap(([from, to]) => (isJsonString(to) && /^[^=,\s]+$/.test(from) && /^[^=,\s]+$/.test(to) ? [`${from}=${to}`] : []));
+
+      if (pairs === null || layers === undefined || layers.length !== pairs.length) return json(400, { error: "layerMap: {<layer of the bundle>: <layer here>}" });
+      layerMap = layers.join(",");
     }
 
-    const bundle = parseBundle(raw.text);
+    const bundle = parseBundle(pastedText);
 
     if ("error" in bundle) return json(400, { error: bundle.error });
     const here = gitOf(options.root);
@@ -589,7 +641,10 @@ export function createWebApp(options: WebOptions): WebApp {
       return json(200, { sameRepo: true, header: bundle.header, flows: bundle.flows.map((f) => f.name), ...pasted });
     }
 
-    const done = await runFlowImport({ kind: "flow-import", root: options.root, bundle: "clipboard.bundle.md", source: raw.text, mode, output, pending: "refuse", ...(layerMap !== undefined ? { layerMap } : {}) }, { analyze: () => analysis() });
+    const importRequest: FlowImportRequest = { kind: "flow-import", root: options.root, bundle: "clipboard.bundle.md", source: pastedText, mode, output, pending: "refuse" };
+
+    if (layerMap !== undefined) importRequest.layerMap = layerMap;
+    const done = await runFlowImport(importRequest, { analyze: () => analysis() });
     const notes = done.messages.filter((m) => m.level === "warning").map((m) => m.text);
 
     if (done.status !== "completed" || !done.payload) {
@@ -616,7 +671,8 @@ export function createWebApp(options: WebOptions): WebApp {
       agent: payload.agent,
       notes,
       ...pasted,
-      ...(payload.proposals.length > 0 ? { merge: `merge them with MERGE in the TUI (\`keylang\`, m on a proposal), or a person runs \`keylang proposals accept ${payload.target}\` and \`keylang proposals accept ${payload.migrationTarget}\`` } : {}),
+      // JSON.stringify leaves an undefined `merge` out: no proposals, no merge hint.
+      merge: payload.proposals.length > 0 ? `merge them with MERGE in the TUI (\`keylang\`, m on a proposal), or a person runs \`keylang proposals accept ${payload.target}\` and \`keylang proposals accept ${payload.migrationTarget}\`` : undefined,
     });
   };
 
@@ -662,8 +718,8 @@ export function createWebApp(options: WebOptions): WebApp {
     if (!allowedHost(request.headers.host)) return reply(response, 421, "text/plain", "unknown host\n");
 
     if (path === "/api" || path.startsWith("/api/")) {
-      api(request, response, path, new URL(request.url ?? "/", "http://localhost").searchParams).catch((error: unknown) => {
-        process.stderr.write(`keylang web: ${error instanceof Error ? error.message : String(error)}\n`);
+      api(request, response, path, new URL(request.url ?? "/", "http://localhost").searchParams).catch((cause: unknown) => {
+        process.stderr.write(`keylang web: ${cause instanceof Error ? cause.message : String(cause)}\n`);
 
         if (!response.headersSent) reply(response, 500, "text/plain", "server error\n");
         else response.destroy();
@@ -672,8 +728,10 @@ export function createWebApp(options: WebOptions): WebApp {
       return;
     }
 
-    if (path.startsWith("/assets/") && Object.hasOwn(BUILT, path.slice("/assets/".length))) {
-      const name = path.slice("/assets/".length) as BuiltName;
+    const assetName = path.startsWith("/assets/") ? path.slice("/assets/".length) : null;
+
+    if (assetName !== null && isBuiltName(assetName)) {
+      const name = assetName;
       ensureClient()
         .then(() => {
           const file = join(BUILT_DIR, name);
@@ -681,8 +739,8 @@ export function createWebApp(options: WebOptions): WebApp {
           if (!existsSync(file)) return reply(response, 404, "text/plain", "not built: run `npm run web:build`\n");
           reply(response, 200, BUILT[name], readFileSync(file));
         })
-        .catch((error: unknown) => {
-          process.stderr.write(`keylang web: ${error instanceof Error ? error.message : String(error)}\n`);
+        .catch((cause: unknown) => {
+          process.stderr.write(`keylang web: ${cause instanceof Error ? cause.message : String(cause)}\n`);
 
           if (!response.headersSent) reply(response, 500, "text/plain", "server error\n");
         });
@@ -690,13 +748,13 @@ export function createWebApp(options: WebOptions): WebApp {
       return;
     }
 
-    if (path.startsWith("/assets/")) {
-      const name = path.slice("/assets/".length) as AssetName;
-      const file = Object.hasOwn(ASSETS, name) ? assetPath(name) : null;
+    if (assetName !== null) {
+      if (!isAssetName(assetName)) return reply(response, 404, "text/plain", "not found\n");
+      const file = assetPath(assetName);
 
       if (!file) return reply(response, 404, "text/plain", "not found\n");
 
-      return reply(response, 200, ASSETS[name].type, readFileSync(file));
+      return reply(response, 200, ASSETS[assetName].type, readFileSync(file));
     }
 
     if (path === "/diagrams") {
@@ -766,15 +824,17 @@ export function createWebApp(options: WebOptions): WebApp {
     });
 
     const receive = (text: string): void => {
-      let message: { type?: unknown; session?: unknown; data?: unknown; cols?: unknown; rows?: unknown };
+      let parsed: JsonValue;
 
       try {
-        message = JSON.parse(text) as typeof message;
+        parsed = parseJson(text);
       } catch {
         return;
       }
 
-      if (typeof message !== "object" || message === null) return;
+      // Every message is an object; an array or a scalar is ignored.
+      if (!isJsonObject(parsed)) return;
+      const message = parsed;
       const cols = clampSize(message.cols, 80, MAX_COLS);
       const rows = clampSize(message.rows, 24, MAX_ROWS);
 
@@ -784,7 +844,7 @@ export function createWebApp(options: WebOptions): WebApp {
         } catch (error) {
           // No session could be opened: the tab says why instead of staying blank.
           const reason = error instanceof Error ? error.message : String(error);
-          connection.send(`\x1b[0m\x1b[2J\x1b[H keylang: cannot open a session: ${reason.replace(/[\x00-\x1f\x7f]/g, " ")}\r\n`);
+          connection.send(`\x1b[0m\x1b[2J\x1b[H keylang: cannot open a session: ${withoutControls(reason)}\r\n`);
           connection.close(CLOSE_ENDED, "no session");
         }
 
@@ -794,7 +854,7 @@ export function createWebApp(options: WebOptions): WebApp {
       // A connection whose session moved to another tab no longer drives it.
       if (!session || session.connection !== connection) return;
 
-      if (message.type === "input" && typeof message.data === "string") session.app.input(message.data, true);
+      if (message.type === "input" && isJsonString(message.data)) session.app.input(message.data, true);
       else if (message.type === "resize") session.app.resize(cols, rows);
       else if (message.type === "audio") {
         const pcm = pcmOf(message.data);
@@ -804,7 +864,7 @@ export function createWebApp(options: WebOptions): WebApp {
         session.audio?.end();
         session.audio = null;
       } else if (message.type === "audio-error") {
-        session.audio?.end(new Error(`voice: the browser gave no microphone${typeof message.data === "string" ? ` (${message.data.slice(0, 200)})` : ""}`));
+        session.audio?.end(new Error(`voice: the browser gave no microphone${isJsonString(message.data) ? ` (${message.data.slice(0, 200)})` : ""}`));
         session.audio = null;
       }
     };
@@ -827,17 +887,16 @@ export function createWebApp(options: WebOptions): WebApp {
     });
   };
 
-  const hello = (connection: WebSocket, requested: unknown, cols: number, rows: number): Session => {
-    const id = typeof requested === "string" && /^[\w-]{8,64}$/.test(requested) ? requested : randomBytes(8).toString("hex");
+  const hello = (connection: WebSocket, requested: JsonValue | undefined, cols: number, rows: number): Session => {
+    const id = isJsonString(requested) && /^[\w-]{8,64}$/.test(requested) ? requested : randomBytes(8).toString("hex");
     let found = sessions.get(id);
 
     if (!found) {
-      const app = new App({
+      const appOptions: AppOptions = {
         root: options.root,
         cols,
         rows,
         analyzer,
-        ...(options.operations ? { operations: options.operations } : {}),
         onQuit: () => {
           const ended = sessions.get(id);
           sessions.delete(id);
@@ -862,8 +921,10 @@ export function createWebApp(options: WebOptions): WebApp {
           // The page answers "mic off" with `audio-end`; without a page there is nobody to wait for.
           return { chunks: queue.chunks(), stop: () => (current.connection ? current.connection.send(control({ type: "mic", on: false })) : queue.end()) };
         },
-      });
+      };
 
+      if (options.operations) appOptions.operations = options.operations;
+      const app = new App(appOptions);
       found = { app, connection: null, timer: null, audio: null };
       sessions.set(id, found);
     }
@@ -924,8 +985,8 @@ export function createWebApp(options: WebOptions): WebApp {
 
 /** A rejection no session handled (a helper it did not track) would end the process, and every session's unsaved buffers with it: it is logged instead. */
 export function logUnhandled(): () => void {
-  const onRejection = (reason: unknown): void => {
-    process.stderr.write(`keylang web: unhandled rejection: ${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}\n`);
+  const onRejection = (cause: unknown): void => {
+    process.stderr.write(`keylang web: unhandled rejection: ${cause instanceof Error ? (cause.stack ?? cause.message) : String(cause)}\n`);
   };
 
   process.on("unhandledRejection", onRejection);
@@ -947,6 +1008,7 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
     server.once("error", reject);
     server.listen(options.port, host, () => resolve());
   });
+  // SAFETY: a server listening on a host and port reports an AddressInfo; a string comes only from a pipe or a Unix socket.
   const port = (server.address() as AddressInfo).port;
   app.setPort(port);
   const stopLogging = logUnhandled();
@@ -986,8 +1048,8 @@ const NO_BODY: unique symbol = Symbol("no body");
  * method is 405, a content type that is not `application/json` 415 (an HTML
  * form cannot send it), a body over `max` 413, no JSON 400.
  */
-async function jsonBody(request: IncomingMessage, response: ServerResponse, name: string, method: string, max: number): Promise<unknown> {
-  const json = (status: number, body: unknown): typeof NO_BODY => {
+async function jsonBody(request: IncomingMessage, response: ServerResponse, name: string, method: string, max: number): Promise<JsonValue | typeof NO_BODY> {
+  const json = (status: number, body: { error: string }): typeof NO_BODY => {
     reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
 
     return NO_BODY;
@@ -1005,23 +1067,22 @@ async function jsonBody(request: IncomingMessage, response: ServerResponse, name
   if (text === null) return json(413, { error: `the body is larger than ${max} bytes` });
 
   try {
-    return JSON.parse(text) as unknown;
+    return parseJson(text);
   } catch {
     return json(400, { error: "the body is no JSON" });
   }
 }
 
 /** The editor's layout from a `PUT /api/layout` body (`{layout: {key: {x, y, …}}}`), or what is wrong with it. */
-function parseClientLayout(body: unknown): ClientLayout | string {
-  const layout = body !== null && typeof body === "object" && !Array.isArray(body) ? (body as { layout?: unknown }).layout : undefined;
+function parseClientLayout(body: JsonValue): ClientLayout | string {
+  const layout = isJsonObject(body) ? body.layout : undefined;
 
-  if (layout === null || typeof layout !== "object" || Array.isArray(layout)) return "the body: {layout: {<shape key>: {x, y, w?, h?, points?}}}";
+  if (!isJsonObject(layout)) return "the body: {layout: {<shape key>: {x, y, w?, h?, points?}}}";
   const out: ClientLayout = {};
-  const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
+  const finite = (value: JsonValue | undefined): value is number => isJsonNumber(value) && Number.isFinite(value);
 
-  for (const [key, raw] of Object.entries(layout as Record<string, unknown>)) {
-    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return `layout.${key}: an object`;
-    const entry = raw as Record<string, unknown>;
+  for (const [key, entry] of Object.entries(layout)) {
+    if (!isJsonObject(entry)) return `layout.${key}: an object`;
 
     if (!finite(entry.x) || !finite(entry.y)) return `layout.${key}: needs x and y`;
     const clean: ClientEntry = { x: entry.x, y: entry.y };
@@ -1031,14 +1092,20 @@ function parseClientLayout(body: unknown): ClientLayout | string {
     if (finite(entry.h)) clean.h = entry.h;
 
     if (Array.isArray(entry.points)) {
-      if (!entry.points.every((p: unknown) => p !== null && typeof p === "object" && finite((p as { x?: unknown }).x) && finite((p as { y?: unknown }).y))) return `layout.${key}.points: {x, y} each`;
-      clean.points = (entry.points as { x: number; y: number }[]).map((p) => ({ x: p.x, y: p.y }));
+      const points: { x: number; y: number }[] = [];
+
+      for (const point of entry.points) {
+        if (!isJsonObject(point) || !finite(point.x) || !finite(point.y)) return `layout.${key}.points: {x, y} each`;
+        points.push({ x: point.x, y: point.y });
+      }
+
+      clean.points = points;
     }
 
     for (const field of ["id", "kind", "label", "note", "colour", "proposed", "from", "to"] as const) {
       const value = entry[field];
 
-      if (typeof value === "string") clean[field] = value;
+      if (isJsonString(value)) clean[field] = value;
     }
 
     out[key] = clean;

@@ -7,6 +7,7 @@ import { sameFinding } from "./assess.ts";
 import type { Diagnostic } from "./diag.ts";
 import { isError } from "./diag.ts";
 import type { Document } from "./ir.ts";
+import { isJsonBoolean, isJsonObject, parseJson, type JsonValue } from "./json.ts";
 import { walkFlow, type SpecIR } from "./spec-ir.ts";
 import type { Verdict } from "./verdict.ts";
 
@@ -49,7 +50,7 @@ interface RuleHit {
  * `deleted` are module ids whose file git removed: the node is gone, so a
  * flow step that named it is still in the report. Order is preserved.
  */
-export function filterChanged(input: ChangedInput, changed: ReadonlySet<string>, deleted: readonly string[] = []): { diagnostics: Diagnostic[]; verdicts: Verdict[] } {
+export function filterChanged(input: ChangedInput, changed: ReadonlySet<string>, deleted: readonly string[] = []): ChangedReport {
   const gone = (id: string): boolean => deleted.some((scope) => id === scope || id.startsWith(`${scope}.`));
 
   const modules = Object.entries(input.nodes)
@@ -72,6 +73,12 @@ export function filterChanged(input: ChangedInput, changed: ReadonlySet<string>,
   return { diagnostics, verdicts };
 }
 
+/** The diagnostics and verdicts a change touches. */
+export interface ChangedReport {
+  diagnostics: Diagnostic[];
+  verdicts: Verdict[];
+}
+
 /** Error diagnostics, then fail verdicts that are not the same finding. */
 export function hookFails(report: { diagnostics: readonly Diagnostic[]; verdicts: readonly Verdict[] }): HookFail[] {
   const diags = report.diagnostics.filter(isError);
@@ -86,11 +93,22 @@ export function hookFails(report: { diagnostics: readonly Diagnostic[]; verdicts
 }
 
 /** Stdin event plus the fails of one changed check. `stop_hook_active` never blocks. The same inputs return the same JSON. */
-export function hookDecision(event: { stop_hook_active?: boolean }, fails: readonly HookFail[]): string {
+export function hookDecision(event: HookEvent, fails: readonly HookFail[]): string {
   if (event.stop_hook_active === true || fails.length === 0) return "{}\n";
   const reason = fails.map((fail) => `${fail.file}:${fail.line}: ${fail.text}`).join("\n");
 
   return `${JSON.stringify({ decision: "block", reason })}\n`;
+}
+
+/** A turn the hook could not check: the line a person reads and the hook's JSON. */
+export interface UncheckedTurn {
+  line: string;
+  decision: string;
+}
+
+/** The stop hook's stdin event, as far as keylang reads it. */
+export interface HookEvent {
+  stop_hook_active?: boolean;
 }
 
 /**
@@ -101,7 +119,7 @@ export function hookDecision(event: { stop_hook_active?: boolean }, fails: reado
  * 0 reaches only Claude Code's debug log). The command's own `hook stop: `
  * prefix is dropped; a reason of several lines is kept on one.
  */
-export function uncheckedTurn(error: string): { line: string; decision: string } {
+export function uncheckedTurn(error: string): UncheckedTurn {
   const reason = error.replace(/^hook stop: /, "").trim().replace(/\s*\n\s*/g, " ");
   const line = `keylang: this turn was not checked: ${reason}`;
 
@@ -109,22 +127,22 @@ export function uncheckedTurn(error: string): { line: string; decision: string }
 }
 
 /** The object on stdin. Empty stdin is an event with no `stop_hook_active`. */
-export function parseHookEvent(text: string): { stop_hook_active?: boolean } {
+export function parseHookEvent(text: string): HookEvent {
   if (text.trim() === "") return {};
-  let value: unknown;
+  let value: JsonValue;
 
   try {
-    value = JSON.parse(text);
+    value = parseJson(text);
   } catch {
     throw new Error("hook stop: stdin is not JSON");
   }
 
-  if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error("hook stop: stdin is not a JSON object");
-  const active = (value as { stop_hook_active?: unknown }).stop_hook_active;
+  if (!isJsonObject(value)) throw new Error("hook stop: stdin is not a JSON object");
+  const active = value.stop_hook_active;
 
   if (active === undefined) return {};
 
-  if (typeof active !== "boolean") throw new Error("hook stop: stop_hook_active is not a boolean");
+  if (!isJsonBoolean(active)) throw new Error("hook stop: stop_hook_active is not a boolean");
 
   return { stop_hook_active: active };
 }

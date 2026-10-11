@@ -8,6 +8,6 @@ declare module "web-tree-sitter-package" {
 // globals clash with the `webworker` lib.
 declare const self: {
   location: { href: string };
-  postMessage(message: unknown): void;
+  postMessage(message: import("../src/local-protocol.ts").FromWorker): void;
   addEventListener(type: "message", listener: (event: { data: unknown }) => void): void;
 };

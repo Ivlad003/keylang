@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { appendFileSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
+import { isJsonString } from "../src/json.ts";
 import { keylang, mainRepo, repoCopy, tempDir, writeTree } from "./cli-helpers.ts";
 
 test("check sees a new denied import without writing the map", (t) => {
@@ -163,6 +164,7 @@ test("K001 in a generated file names its generator instead of planned; a manual 
   assert.ok(k001.some((line) => /^keylang\/old-users\.md:\d+:\d+: K001 dangling reference `db\.db` in a generated file; run `keylang map`$/.test(line)), o.stdout);
   assert.ok(k001.includes("keylang/rules.md:3:14: K001 dangling reference `ghost`; declare `planned` if this is an intention"), o.stdout);
   assert.equal(k001.filter((line) => /did you mean|planned/.test(line)).length, 1, o.stdout);
+  // SAFETY: `check --format json` prints `{ snapshotId, results, coverage }` (docs/cli.md); each result row carries these fields.
   const rows = (JSON.parse(keylang(dir, ["check", "--format", "json"]).stdout) as { results: { file: string; code: string | null; evidence: string }[] }).results;
   const evidence = rows.filter((row) => row.code === "K001" && row.file === "keylang/rules.baseline.md").map((row) => row.evidence);
   assert.deepEqual(evidence, Array(2).fill("dangling reference `db` in a generated file; run `keylang baseline`"));
@@ -206,18 +208,19 @@ function assertSarif(report: any): void {
   assert.match(report.$schema, /sarif-schema-2\.1\.0\.json$/);
   assert.ok(Array.isArray(report.runs) && report.runs.length === 1);
   const run = report.runs[0];
-  assert.equal(typeof run.tool.driver.name, "string");
+  assert.ok(isJsonString(run.tool.driver.name));
+  // SAFETY: SARIF 2.1.0 requires an `id` on every reportingDescriptor in `tool.driver.rules`.
   const ids = (run.tool.driver.rules as { id: string; shortDescription: { text: string } }[]).map((rule) => rule.id);
   assert.equal(new Set(ids).size, ids.length);
 
   for (const result of run.results) {
     assert.ok(["error", "warning", "note", "none"].includes(result.level), result.level);
-    assert.equal(typeof result.message.text, "string");
+    assert.ok(isJsonString(result.message.text));
     assert.equal(ids[result.ruleIndex], result.ruleId);
 
     for (const location of result.locations) {
       const physical = location.physicalLocation;
-      assert.equal(typeof physical.artifactLocation.uri, "string");
+      assert.ok(isJsonString(physical.artifactLocation.uri));
       assert.ok(Number.isInteger(physical.region.startLine) && physical.region.startLine >= 1);
       assert.ok(Number.isInteger(physical.region.startColumn) && physical.region.startColumn >= 1);
     }
@@ -232,6 +235,7 @@ test("formats carry fail, warning, unverified, and coverage; --strict exits alik
   const results = (args: string[]): { status: number | null; stdout: string } => keylang(dir, ["check", ...args]);
   const json = results(["--format", "json"]);
   assert.equal(json.status, 0, json.stdout);
+  // SAFETY: `check --format json` prints `{ snapshotId, results, coverage }` (docs/cli.md) with these row fields.
   const body = JSON.parse(json.stdout) as { snapshotId: string; results: { criterion: string; area: string; verdict: string; evidence: string; snapshotId: string; code: string | null }[]; coverage: { reason: string }[] };
   const k103 = body.results.find((row) => row.code === "K103");
   assert.ok(k103, json.stdout);
@@ -249,12 +253,14 @@ test("formats carry fail, warning, unverified, and coverage; --strict exits alik
 
   const sarif = JSON.parse(results(["--format", "sarif"]).stdout);
   assertSarif(sarif);
+  // SAFETY: `assertSarif` above checked that every SARIF result has a string level and ruleId.
   const levels = (sarif.runs[0].results as { level: string; ruleId: string }[]).map((result) => `${result.ruleId}:${result.level}`);
   assert.ok(levels.includes("K103:warning"), levels.join(" "));
   assert.ok(levels.includes("unverified:note"), levels.join(" "));
   const github = results(["--format", "github"]).stdout;
   assert.match(github, /^::warning file=src\/domain\/lonely\.ts,line=1,col=1,title=K103::absence: module `domain\.lonely`/m);
   assert.match(github, /^::notice file=keylang\/rules\.md,line=5,col=1,title=unverified::unresolved import `\.\/missing\.ts` \(src\/domain\/lonely\.ts:1:1\)$/m);
+  // SAFETY: `check --format json` prints `{ snapshotId, results, coverage }` (docs/cli.md); each result row carries these fields.
   const denyOk = JSON.parse(results(["--format", "json"]).stdout).results as { criterion: string; verdict: string; evidence: string; specHash?: string }[];
   const convergence = denyOk.filter((row) => row.verdict === "ok");
   assert.ok(convergence.every((row) => row.evidence.startsWith('convergence: ') && /^[0-9a-f]{64}$/.test(row.specHash ?? "")), JSON.stringify(convergence));

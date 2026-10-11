@@ -4,7 +4,7 @@
 const lines = (...rows: string[]): string => `${rows.join("\n")}\n`;
 
 /** Django with Celery: `urls.py` with `include` and a class-based view, signals, a management command, tasks and `beat_schedule`. */
-export const DJANGO: Record<string, string> = {
+export const DJANGO = {
   "keylang.json": JSON.stringify({ languages: ["python"], module: "file", layers: { shop: ["shop/**", "manage.py"], orders: ["orders/**"], notify: ["notify/**"] } }),
   "requirements.txt": lines("Django>=4.2", "celery[redis]>=5"),
   "manage.py": lines(
@@ -126,10 +126,10 @@ export const DJANGO: Record<string, string> = {
     "  - step orders.tasks.send_receipt",
     "  - step notify.handlers.email_customer",
   ),
-};
+} satisfies Record<string, string>;
 
 /** FastAPI: a router with a prefix mounted with another prefix, route decorators, `Depends`. */
-export const FASTAPI: Record<string, string> = {
+export const FASTAPI = {
   "keylang.json": JSON.stringify({ languages: ["python"], module: "file", layers: { api: ["api/**"] } }),
   "pyproject.toml": lines("[project]", 'name = "api"', 'dependencies = ["fastapi>=0.110"]'),
   "api/__init__.py": "",
@@ -183,10 +183,10 @@ export const FASTAPI: Record<string, string> = {
     "def cached(fn):",
     "    return fn",
   ),
-};
+} satisfies Record<string, string>;
 
 /** Flask: an app route with methods and a blueprint with a prefix, registered with another. */
-export const FLASK: Record<string, string> = {
+export const FLASK = {
   "keylang.json": JSON.stringify({ languages: ["python"], module: "file", layers: { web: ["web/**"] } }),
   "requirements.txt": lines("flask==3.0"),
   "web/__init__.py": "",
@@ -218,4 +218,4 @@ export const FLASK: Record<string, string> = {
     "def create():",
     '    return "created"',
   ),
-};
+} satisfies Record<string, string>;

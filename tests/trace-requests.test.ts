@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { isJsonObject, parseJson, type JsonObject } from "../src/json.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -19,14 +20,20 @@ const adapter = join(root, "src/adapters/trace.ts");
 
 type Context = { after: (f: () => void) => void };
 
-function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+interface Run {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+function keylang(cwd: string, args: string[]): Run {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8", maxBuffer: 1 << 28 });
 
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
 /** A temp repository of `files`; `config` is `keylang.json`. */
-function repo(t: Context, config: object, files: Record<string, string>): string {
+function repo(t: Context, config: JsonObject, files: Record<string, string>): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-trace-requests-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   writeFileSync(join(dir, "keylang.json"), `${JSON.stringify(config, null, 2)}\n`);
@@ -46,11 +53,18 @@ interface JsonResult {
   evidence: string;
 }
 
-function check(dir: string): { status: number | null; rows: JsonResult[]; stderr: string } {
+interface CheckRun {
+  status: number | null;
+  rows: JsonResult[];
+  stderr: string;
+}
+
+function check(dir: string): CheckRun {
   const o = keylang(dir, ["check", "--format", "json"]);
 
   if (!o.stdout.startsWith("{")) return { status: o.status, rows: [], stderr: o.stderr };
 
+  // SAFETY: `check --format json` prints a report whose `results` rows carry these fields (docs/cli.md).
   return { status: o.status, rows: (JSON.parse(o.stdout) as { results: JsonResult[] }).results, stderr: o.stderr };
 }
 
@@ -74,6 +88,7 @@ interface Event {
 }
 
 function events(file: string): Event[] {
+  // SAFETY: the adapters write trace JSONL, one event object per line with these fields.
   return readFileSync(file, "utf8")
     .trim()
     .split("\n")
@@ -98,11 +113,17 @@ function runsOf(all: Event[]): Map<string, { flow: string; testId: string; symbo
   return runs;
 }
 
+interface EntryPlan {
+  flow: string;
+  ids: string[];
+}
+
 /** The plan of entry `id` (`trace-plan --entry`), written to `plan.json`; its symbol ids. */
-function entryPlan(dir: string, id: string, name?: string): { flow: string; ids: string[] } {
+function entryPlan(dir: string, id: string, name?: string): EntryPlan {
   const plan = keylang(dir, ["trace-plan", "--entry", id, ...(name ? ["--name", name] : [])]);
   assert.equal(plan.status, 0, plan.stderr);
   writeFileSync(join(dir, "plan.json"), plan.stdout);
+  // SAFETY: `trace-plan` prints a plan with its schema version, flow and symbols (docs/cli.md).
   const parsed = JSON.parse(plan.stdout) as { schemaVersion: number; flow: string; symbols: { id: string }[] };
   assert.equal(parsed.schemaVersion, 1);
 
@@ -132,7 +153,8 @@ test("trace-plan --entry: the fns an entry reaches, with the values a call it ca
   assert.equal(entryPlan(dir, "app.main.main", "checkout").flow, "checkout");
   // A fn with no call it cannot resolve reaches only what it calls.
   assert.deepEqual(entryPlan(dir, "app.main.validate").ids, ["app.main.validate"]);
-  const plan = JSON.parse(readFileSync(join(dir, "plan.json"), "utf8")) as Record<string, unknown>;
+  const plan = parseJson(readFileSync(join(dir, "plan.json"), "utf8"));
+  assert.ok(isJsonObject(plan), "the plan is an object");
   assert.deepEqual(Object.keys(plan), ["schemaVersion", "snapshotId", "flow", "symbols"]);
 
   const unknown = keylang(dir, ["trace-plan", "--entry", "app.main.nope"]);
@@ -194,7 +216,7 @@ test("trace adapter: a server's two concurrent requests of two flows are two run
   );
   // The plan carries the snapshot id: plan after every file of the fixture exists (a new file outside the layers changes the id).
   assert.deepEqual(entryPlan(dir, "app.shop.handle", "server").ids, ["app.shop.buy", "app.shop.charge", "app.shop.credit", "app.shop.handle", "app.shop.refund", "app.shop.tick"]);
-  const env: Record<string, string | undefined> = { ...process.env, KEYLANG_TRACE: ".keylang/trace/server.jsonl", KEYLANG_TRACE_PLAN: "plan.json" };
+  const env: NodeJS.ProcessEnv = { ...process.env, KEYLANG_TRACE: ".keylang/trace/server.jsonl", KEYLANG_TRACE_PLAN: "plan.json" };
 
   for (const name of ["KEYLANG_TRACE_RUN", "KEYLANG_TRACE_TEST", "KEYLANG_TRACE_FLOW", "KEYLANG_FLOW"]) delete env[name];
   const r = spawnSync(process.execPath, ["--import", adapter, "run.mjs"], { cwd: dir, encoding: "utf8", env, timeout: 60_000 });
@@ -227,7 +249,7 @@ test("draft flow --from-trace: a step the static graph cannot see (a call throug
   entryPlan(dir, "app.main.main");
 
   const record = (kind: string, test: string): void => {
-    const env: Record<string, string | undefined> = { ...process.env, KEYLANG_TRACE: ".keylang/trace/checkout.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_FLOW: "checkout", KEYLANG_TRACE_TEST: test };
+    const env: NodeJS.ProcessEnv = { ...process.env, KEYLANG_TRACE: ".keylang/trace/checkout.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_FLOW: "checkout", KEYLANG_TRACE_TEST: test };
 
     for (const name of ["KEYLANG_TRACE_RUN", "KEYLANG_TRACE_FLOW"]) delete env[name];
     const r = spawnSync(process.execPath, ["--import", adapter, "run.mjs", kind], { cwd: dir, encoding: "utf8", env, timeout: 60_000 });
@@ -310,7 +332,7 @@ test("python: keylang_trace.flow() on two threads at once makes two runs of two 
   // Every file of the fixture exists before the plan: the plan carries the snapshot id.
   writeFileSync(join(dir, "cli.py"), "import threading\n\nfrom app.shop import buy\n\nprint(buy(threading.Barrier(1)))\n");
   entryPlan(dir, "app.shop.handle", "server");
-  const env: Record<string, string | undefined> = { ...process.env, KEYLANG_TRACE: ".keylang/trace/server.jsonl", KEYLANG_TRACE_PLAN: "plan.json" };
+  const env: NodeJS.ProcessEnv = { ...process.env, KEYLANG_TRACE: ".keylang/trace/server.jsonl", KEYLANG_TRACE_PLAN: "plan.json" };
 
   for (const name of ["KEYLANG_TRACE_RUN", "KEYLANG_TRACE_TEST", "KEYLANG_FLOW"]) delete env[name];
   const r = spawnSync("python3", [join(root, "adapters/python/keylang_trace.py"), "run.py"], { cwd: dir, encoding: "utf8", env, timeout: 60_000 });
@@ -409,7 +431,7 @@ fn block_on<F: std::future::Future>(future: F) -> F::Output {
   entryPlan(dir, "app.main.handle", "server");
   const build = spawnSync("rustc", ["--edition", "2021", "-A", "warnings", "-o", join(dir, "shop"), "src/main.rs"], { cwd: dir, encoding: "utf8" });
   assert.equal(build.status, 0, build.stderr);
-  const env: Record<string, string | undefined> = { ...process.env, KEYLANG_TRACE: ".keylang/trace/server.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_TRACE_TEST: "shop" };
+  const env: NodeJS.ProcessEnv = { ...process.env, KEYLANG_TRACE: ".keylang/trace/server.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_TRACE_TEST: "shop" };
 
   for (const name of ["KEYLANG_TRACE_RUN", "KEYLANG_TRACE_ROOT", "KEYLANG_FLOW"]) delete env[name];
   const exec = spawnSync(join(dir, "shop"), [], { cwd: dir, encoding: "utf8", env });
@@ -460,6 +482,7 @@ test("php: a DI-like call is a hole for static; the entry plan follows it by nam
   const { ids } = entryPlan(dir, "app.Checkout.Checkout.place", "web");
   assert.deepEqual(ids, ["app.Checkout.Checkout.place", "app.Container.Container.create", "app.Gateway.Gateway.capture"]);
   // The events the PHP adapter writes for `GET /index.php` with `X-Keylang-Flow: checkout`, as JSONL schema 1.
+  // SAFETY: `trace-plan` writes a plan with the snapshot's string `snapshotId` (docs/cli.md).
   const { snapshotId } = JSON.parse(readFileSync(join(dir, "plan.json"), "utf8")) as { snapshotId: string };
   const base = { schemaVersion: 1, snapshotId, runId: "19a.r1f2e3d4c", testId: "GET /index.php", flow: "checkout", traceId: "19a.r1f2e3d4c:GET /index.php" };
   const clock = "php-41-0a0b0c0d";

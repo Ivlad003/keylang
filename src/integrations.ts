@@ -13,6 +13,7 @@ import { callGraph, callMatches, callsOf, compileMatcher, importMatches, interna
 import type { Config } from "./config.ts";
 import { discoverFlows } from "./discover.ts";
 import { firstMatchingGlob } from "./glob.ts";
+import { isJsonObject, parseJson, type JsonObject, type JsonValue } from "./json.ts";
 import type { AnalysisSnapshot, EntryKind, EntryPoint } from "./snapshot.ts";
 import { compareText } from "./span.ts";
 
@@ -88,17 +89,24 @@ export interface IntegrationsReport {
 
 /** `resources/integrations.json`. */
 export function loadIntegrations(path = resourcePath("integrations.json")): IntegrationClient[] {
-  const value = JSON.parse(readFileSync(path, "utf8")) as { integrations?: unknown };
+  const value = parseJson(readFileSync(path, "utf8"));
+  const integrations = isJsonObject(value) ? value.integrations : undefined;
 
-  if (!Array.isArray(value.integrations)) throw new Error(`${path}: \`integrations\` must be an array`);
+  if (!Array.isArray(integrations)) throw new Error(`${path}: \`integrations\` must be an array`);
 
-  return value.integrations.map((item, i) => {
-    const client = item as Partial<IntegrationClient> | null;
+  return integrations.map((item, i) => {
+    if (!isIntegrationClient(item)) throw new Error(`${path}: \`integrations[${i}]\` needs an \`id\`, a \`label\` and a \`kind\``);
 
-    if (typeof client !== "object" || client === null || typeof client.id !== "string" || typeof client.label !== "string" || typeof client.kind !== "string") throw new Error(`${path}: \`integrations[${i}]\` needs an \`id\`, a \`label\` and a \`kind\``);
-
-    return client as IntegrationClient;
+    return item;
   });
+}
+
+/**
+ * A client of the data file: its `id`, `label` and `kind` are checked; the
+ * matcher fields are trusted as the data file (ours, in `resources/`) writes them.
+ */
+function isIntegrationClient(item: JsonValue): item is JsonObject & IntegrationClient {
+  return isJsonObject(item) && typeof item.id === "string" && typeof item.label === "string" && typeof item.kind === "string";
 }
 
 /** Route paths that name an incoming notification. */
@@ -122,7 +130,10 @@ export function findWebhooks(snapshot: AnalysisSnapshot, globs: readonly string[
 
     if (via === null) continue;
     seen.add(entry.id);
-    out.push({ via, kind: entry.kind, label: entry.label, id: entry.id, file: entry.file, line: entry.line, ...(via === "config" && glob !== null ? { glob } : {}) });
+    const webhook: Webhook = { via, kind: entry.kind, label: entry.label, id: entry.id, file: entry.file, line: entry.line };
+
+    if (via === "config" && glob !== null) webhook.glob = glob;
+    out.push(webhook);
   }
 
   // Handlers in the files the config names that nothing in the repository calls: the framework does.

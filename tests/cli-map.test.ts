@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { analyze } from "../src/analyze.ts";
+import type { Document, Node } from "../src/ir.ts";
 import { runOperation } from "../src/operations.ts";
 import { bin, keylang, mainRepo, repoCopy, root, tempDir, writeTree } from "./cli-helpers.ts";
 
@@ -35,8 +36,10 @@ test("map generates the expected map and index", (t) => {
   assert.deepEqual(index.nodes["domain.order.createOrder"].callers, ["app.checkout.checkout"]);
   assert.ok(index.exports.some((e: { module: string; name: string; kind: string }) => e.module === "domain.order" && e.name === "createOrder" && e.kind === "fn"));
 
+  // SAFETY: `map` writes `.keylang/index.json` in the snapshot format of docs/snapshot.md; nodes and edges are its fields.
   for (const node of Object.values(index.nodes) as { precision?: unknown }[]) assert.equal("precision" in node, false);
 
+  // SAFETY: `map` writes `.keylang/index.json` in the snapshot format of docs/snapshot.md; every edge has a resolution and a provenance.
   for (const edge of index.edges as { resolution: string; provenance: string }[]) {
     assert.ok(edge.resolution === "resolved" || edge.resolution === "ambiguous" || edge.resolution === "unresolved");
     assert.equal(edge.provenance, "syntactic");
@@ -90,10 +93,10 @@ test("map links are relative, encoded, and round-trip", (t) => {
   const parsed = keylang(dir, ["parse", "--json", "keylang/map/main.md"]);
   assert.equal(parsed.status, 0, parsed.stderr);
   const page = findNode(JSON.parse(parsed.stdout)[0], "main.app.$g-shop.page");
-  assert.equal(page.link.path, "../../src/app/(shop)/page.ts");
-  assert.equal(page.link.target, "../../src/app/(shop)/page.ts#L1");
+  assert.equal(page.link?.path, "../../src/app/(shop)/page.ts");
+  assert.equal(page.link?.target, "../../src/app/(shop)/page.ts#L1");
   const spaced = findNode(JSON.parse(parsed.stdout)[0], "main.my_file");
-  assert.equal(spaced.link.path, "../../src/my file.ts");
+  assert.equal(spaced.link?.path, "../../src/my file.ts");
 
   const checked = keylang(dir, ["check"]);
   assert.doesNotMatch(checked.stdout, /K005/);
@@ -124,6 +127,7 @@ test("Next route segments (shop) and [id] are different modules and resolve by t
   assert.match(map, /app\/%5Bid%5D\/page\.tsx#L1/);
   assert.doesNotMatch(map, /_shop_|_id_/);
 
+  // SAFETY: `map` writes `.keylang/index.json` in the snapshot format of docs/snapshot.md; these are fields of that format.
   const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as {
     nodes: Record<string, { kind: string; file?: string }>;
     edges: { source: string; target: string | null }[];
@@ -155,12 +159,12 @@ function hrefs(markdown: string): string[] {
   return [...markdown.matchAll(/\]\(([^)]*)\)/g)].map((m) => m[1] ?? "");
 }
 
-function findNode(doc: { sections: { items: unknown[] }[] }, id: string): { link: { path: string; target: string } } {
-  const walk = (node: { id?: string; children?: unknown[]; link?: { path: string; target: string } }): { link: { path: string; target: string } } | null => {
-    if (node.id === id) return node as { link: { path: string; target: string } };
+function findNode(doc: Document, id: string): Node {
+  const walk = (node: Node): Node | null => {
+    if (node.id === id) return node;
 
-    for (const child of node.children ?? []) {
-      const found = walk(child as { id?: string; children?: unknown[] });
+    for (const child of node.children) {
+      const found = walk(child);
 
       if (found) return found;
     }
@@ -170,8 +174,8 @@ function findNode(doc: { sections: { items: unknown[] }[] }, id: string): { link
 
   for (const section of doc.sections) {
     for (const item of section.items) {
-      if (item && typeof item === "object" && "id" in item) {
-        const found = walk(item as { id?: string; children?: unknown[] });
+      if (item.type === "node") {
+        const found = walk(item);
 
         if (found) return found;
       }
@@ -214,6 +218,7 @@ test("a bare import is external when a package.json between the file and the roo
   assert.equal(keylang(dir, ["map"]).status, 0);
 
   const unresolved = (): string[] =>
+    // SAFETY: `map` writes `.keylang/index.json` in the snapshot format of docs/snapshot.md; coverage rows carry kind, file and text.
     (JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")).coverage as { kind: string; file: string; text: string }[])
       .filter((c) => c.kind === "unresolved-import" && c.text.includes("left-pad"))
       .map((c) => c.file);
@@ -237,6 +242,7 @@ test("snapshot keeps unresolved imports, local calls, and completeness", (t) => 
   );
   assert.equal(keylang(dir, ["map"]).status, 0);
   const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8"));
+  // SAFETY: `map` writes `.keylang/index.json` in the snapshot format of docs/snapshot.md; coverage rows carry these fields.
   const coverage = index.coverage as { kind: string; file: string; line: number; reason: string }[];
   const missing = coverage.find((c) => c.kind === "unresolved-import" && c.file === "src/app/checkout.ts");
   assert.ok(missing, JSON.stringify(coverage));
@@ -252,6 +258,7 @@ test("snapshot keeps unresolved imports, local calls, and completeness", (t) => 
   assert.ok(parseError);
   assert.equal(parseError.line > 0, true);
 
+  // SAFETY: `map` writes `.keylang/index.json` in the snapshot format of docs/snapshot.md; edges carry these fields.
   const edge = (index.edges as { resolution: string; provenance: string; reason?: string; file: string | null; line: number }[]).find(
     (e) => e.resolution === "unresolved" && e.reason?.includes("missing.ts"),
   );
@@ -288,6 +295,7 @@ test("snapshot edges name type targets, ambiguity, and unsupported constructs", 
   );
   assert.equal(keylang(dir, ["map"]).status, 0, "map");
 
+  // SAFETY: `map` writes `.keylang/index.json` in the snapshot format of docs/snapshot.md; these are fields of that format.
   const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as {
     nodes: Record<string, { kind: string; line: number | null; col: number | null; endLine?: number; endCol?: number }>;
     edges: { kind: string; source: string; target: string | null; candidates?: string[]; resolution: string; provenance: string; text: string; line: number; col: number; endLine: number; endCol: number }[];
@@ -418,10 +426,12 @@ test("a computed import specifier is coverage, not an edge", (t) => {
   appendFileSync(join(dir, "src/domain/order.ts"), "export async function load(name: string): Promise<unknown> {\n  return import(`./${name}.ts`);\n}\n");
   assert.equal(keylang(dir, ["map"]).status, 0);
   const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8"));
+  // SAFETY: `map` writes `.keylang/index.json` in the snapshot format of docs/snapshot.md; coverage rows carry these fields.
   const hole = (index.coverage as { reason: string; file: string; line: number }[]).find((item) => item.reason === "computed specifier");
   assert.ok(hole, JSON.stringify(index.coverage));
   assert.equal(hole.file, "src/domain/order.ts");
   assert.equal(hole.line > 0, true);
+  // SAFETY: `map` writes `.keylang/index.json` in the snapshot format of docs/snapshot.md; edges carry these fields.
   const edges = index.edges as { reason?: string; target: string | null }[];
   assert.equal(edges.some((edge) => edge.reason === "computed specifier"), false);
 });
@@ -432,8 +442,10 @@ test("a shadowed parameter is not a confirmed call edge", (t) => {
   appendFileSync(join(dir, "src/domain/order.ts"), "export function target(): number { return 1; }\nexport function run(target: () => void): void { target(); }\n");
   assert.equal(keylang(dir, ["map"]).status, 0);
   const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8"));
+  // SAFETY: `map` writes `.keylang/index.json` in the snapshot format of docs/snapshot.md; edges carry these fields.
   const edges = index.edges as { source: string; target: string | null; resolution: string; reason?: string }[];
   assert.equal(edges.some((edge) => edge.source.endsWith(".run") && edge.target?.endsWith(".target") && edge.resolution === "resolved"), false);
+  // SAFETY: `map` writes `.keylang/index.json` in the snapshot format of docs/snapshot.md; coverage rows carry these fields.
   const hole = (index.coverage as { source: string | null; reason: string }[]).find((item) => item.reason.includes("shadowed by parameter"));
   assert.ok(hole);
 });
@@ -457,6 +469,7 @@ test("a local binding in any enclosing scope hides the module function", (t) => 
   writeFileSync(join(dir, "src/domain/order.ts"), `export function save(): void {}\nexport function pick(): () => void { return save; }\n${cases.join("\n")}\nexport function direct(): void { save(); }\n`);
   assert.equal(keylang(dir, ["map"]).status, 0);
   const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8"));
+  // SAFETY: `map` writes `.keylang/index.json` in the snapshot format of docs/snapshot.md; edges carry these fields.
   const edges = index.edges as { source: string; target: string | null; resolution: string; reason?: string }[];
 
   for (let i = 1; i <= 9; i++) {
@@ -465,6 +478,7 @@ test("a local binding in any enclosing scope hides the module function", (t) => 
   }
 
   assert.ok(edges.some((edge) => edge.source === "domain.order.direct" && edge.target === "domain.order.save" && edge.resolution === "resolved"));
+  // SAFETY: `map` writes `.keylang/index.json` in the snapshot format of docs/snapshot.md; coverage rows carry these fields.
   const reasons = (index.coverage as { source: string | null; reason: string }[]).filter((item) => item.source?.startsWith("domain.order.a")).map((item) => `${item.source} ${item.reason}`);
   assert.ok(reasons.includes("domain.order.a1 shadowed by parameter `save`"), reasons.join("\n"));
   assert.ok(reasons.includes("domain.order.a8 shadowed by local `save`"), reasons.join("\n"));

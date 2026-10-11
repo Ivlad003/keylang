@@ -46,13 +46,16 @@ export function promptText(prompt: Prompt): TextField {
 
 /** A text of a form object as a field. */
 export function fieldOf<K extends string>(form: Record<K, string>, key: K, digits = false): TextField {
-  return {
+  const field: TextField = {
     value: form[key],
     set: (value) => {
       form[key] = value;
     },
-    ...(digits ? { digits } : {}),
   };
+
+  if (digits) field.digits = digits;
+
+  return field;
 }
 
 function fieldIn(prompt: Prompt, keys: PromptKeys): TextField | null {

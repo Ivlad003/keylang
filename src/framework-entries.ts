@@ -36,7 +36,16 @@ export interface FrameworkEntryInputs {
   frameworks: readonly FrameworkInput[];
 }
 
-export function frameworkEntries({ config, graph, facts, frameworks }: FrameworkEntryInputs): { entries: EntryPoint[]; holes: Gap[]; warnings: string[]; supersedes: Set<string> } {
+/** The entries the frameworks give, with the holes and warnings of placing them. */
+export interface FrameworkEntryOutputs {
+  entries: EntryPoint[];
+  holes: Gap[];
+  warnings: string[];
+  /** `file:line` of the registrations placed here, whose language-level entry gives way. */
+  supersedes: Set<string>;
+}
+
+export function frameworkEntries({ config, graph, facts, frameworks }: FrameworkEntryInputs): FrameworkEntryOutputs {
   const scope = entryScope(graph, facts);
   const sources = new Set(facts.map((f) => f.path));
   const probe = (candidate: string): string | null => probeCandidates(candidate).find((p) => sources.has(p)) ?? null;
@@ -133,7 +142,13 @@ export function frameworkEntries({ config, graph, facts, frameworks }: Framework
 
 /** The HTTP method and the note an entry fact gives its entry. */
 function withExtras(entry: EntryPoint, fact: EntryConfigFact): EntryPoint {
-  return { ...entry, ...(fact.method !== undefined ? { method: fact.method } : {}), ...(fact.note !== undefined ? { note: fact.note } : {}) };
+  const out: EntryPoint = { ...entry };
+
+  if (fact.method !== undefined) out.method = fact.method;
+
+  if (fact.note !== undefined) out.note = fact.note;
+
+  return out;
 }
 
 /** PHP classes by their qualified name in ASCII lower case → the file and the name it declares. */
@@ -213,7 +228,12 @@ function guessedOrder(layout: CartridgeLayout, graph: Graph, facts: readonly Fil
 
 const CONTROLLER = /^(?:.*\/)?cartridges\/[^/]+\/cartridge\/controllers\/([^/]+)\.js$/;
 
-const HTTP_METHODS: Record<string, string> = { get: "GET", post: "POST" };
+/** The HTTP method of a registration, by the method or verb the code calls. */
+interface HttpMethods {
+  readonly [call: string]: string;
+}
+
+const HTTP_METHODS: HttpMethods = { get: "GET", post: "POST" };
 
 /**
  * `server.get('Show', …, handler)` in `controllers/Cart.js`: a `route`
@@ -242,14 +262,19 @@ function controllerEntries(graph: Graph, facts: readonly FileFacts[], scope: Ent
       const at = { file: file.path, line: fact.line };
       const found = frameworkEntry(scope, "sfcc", "route", fn ?? module.id, `${match[1]}-${fact.label}`, `${file.path}:${fact.line}`, at);
       const method = HTTP_METHODS[fact.method ?? ""];
-      out.push({ ...found, ...(fn === null ? at : {}), ...(method === undefined ? {} : { method }), ...(notes.length > 0 ? { note: notes.join("; ") } : {}) });
+      const point: EntryPoint = fn === null ? { ...found, file: at.file, line: at.line } : { ...found };
+
+      if (method !== undefined) point.method = method;
+
+      if (notes.length > 0) point.note = notes.join("; ");
+      out.push(point);
     }
   }
 
   return out;
 }
 
-const NEST_HTTP: Record<string, string> = { Get: "GET", Post: "POST", Put: "PUT", Patch: "PATCH", Delete: "DELETE", Options: "OPTIONS", Head: "HEAD", All: "ALL", Search: "SEARCH" };
+const NEST_HTTP: HttpMethods = { Get: "GET", Post: "POST", Put: "PUT", Patch: "PATCH", Delete: "DELETE", Options: "OPTIONS", Head: "HEAD", All: "ALL", Search: "SEARCH" };
 
 const NEST_GRAPHQL = new Set(["Query", "Mutation", "Subscription"]);
 
@@ -307,8 +332,12 @@ function nestEntries(facts: readonly FileFacts[], scope: EntryScope, files: Read
           const method = NEST_HTTP[d.name];
 
           if (method !== undefined && controllerPaths !== null) {
+            const extra: Partial<EntryPoint> = { method };
+
+            if (prefixNote !== null) extra.note = prefixNote;
+
             for (const base of controllerPaths) {
-              for (const path of pathsOf(d.args[0], "path") ?? [""]) add("route", `${method} ${joinPath(prefix, base, path)}`, { method, ...(prefixNote !== null ? { note: prefixNote } : {}) });
+              for (const path of pathsOf(d.args[0], "path") ?? [""]) add("route", `${method} ${joinPath(prefix, base, path)}`, extra);
             }
           } else if (d.name === "Cron" || d.name === "Interval" || d.name === "Timeout") {
             const schedule = d.name === "Cron" ? argText(d.args[0]) : `${d.name === "Interval" ? "every" : "after"} ${argText(d.args.at(-1))}ms`;
@@ -424,12 +453,19 @@ function pwaEntries(facts: readonly FileFacts[], scope: EntryScope, files: Reado
         const why = from !== undefined && !from.startsWith(".") ? `is imported from \`${from}\`, outside the analysis` : "does not resolve to a fn";
         const note = id === null ? `component \`${fact.callee ?? "?"}\` ${why}: the routes module stands for it` : null;
         const found = frameworkEntry(scope, "pwa-kit", "route", id ?? module.id, fact.label, `${file.path}:${fact.line}`, at);
-        out.push({ ...found, ...(id === null ? at : {}), ...(note !== null ? { note } : {}) });
+        const point: EntryPoint = id === null ? { ...found, file: at.file, line: at.line } : { ...found };
+
+        if (note !== null) point.note = note;
+        out.push(point);
       } else if (ssr && fact.kind === "route" && fact.label.endsWith(" *")) {
         const id = fact.callee === null ? null : fnIn(scope, file.path, fact.callee);
         const found = frameworkEntry(scope, "pwa-kit", "route", id ?? module.id, fact.label, `${file.path}:${fact.line}`, at);
         const note = id === null ? `\`${fact.callee ?? "?"}\`: the PWA Kit runtime renders the app's routes (\`routes.jsx\`) on the server` : null;
-        out.push({ ...found, ...(id === null ? at : {}), method: fact.label.slice(0, fact.label.indexOf(" ")), ...(note !== null ? { note } : {}) });
+        const point: EntryPoint = id === null ? { ...found, file: at.file, line: at.line } : { ...found };
+        point.method = fact.label.slice(0, fact.label.indexOf(" "));
+
+        if (note !== null) point.note = note;
+        out.push(point);
       }
     }
 

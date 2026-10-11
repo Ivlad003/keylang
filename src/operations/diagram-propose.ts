@@ -20,7 +20,7 @@ import { analyze, type Analysis } from "../analyze.ts";
 import { CONFIG_FILE } from "../config.ts";
 import { errorText } from "../diag.ts";
 import { layoutToFile, readLayout, writeLayout, type ClientLayout } from "../diagram-layout.ts";
-import { diagramChanges, parseEditorModel, type DiagramChanges } from "../diagram-proposal.ts";
+import { diagramChanges, parseEditorModel, type DiagramChanges, type EditorModel } from "../diagram-proposal.ts";
 import { codeSchemas } from "../schema-discover.ts";
 import { adoptedName, discoverSystem, DISCOVERED } from "../system-discover.ts";
 import { systemChanges } from "../system-proposal.ts";
@@ -38,6 +38,7 @@ import { specWeakenings } from "../weakening.ts";
 import { discoveredSpecOf } from "./diagram-export.ts";
 import { commitProposal, generatedIn, proposalRefusal, rootRelative } from "./shared.ts";
 import type { OperationContext } from "./types.ts";
+import type { JsonValue } from "../json.ts";
 
 /**
  * The specs a diagram was drawn from, as one hash: every hand-written spec
@@ -46,8 +47,7 @@ import type { OperationContext } from "./types.ts";
  */
 export function specHash(root: string, docs: readonly Document[]): string {
   const files = docs
-    .filter((doc) => doc.generated === null)
-    .map((doc) => doc.path)
+    .flatMap((doc) => (doc.generated === null ? [doc.path] : []))
     .sort(compareText)
     .map((path) => `${path}\u0000${sha256(readTextOrNull(join(root, path)) ?? "")}`);
 
@@ -59,7 +59,7 @@ export interface DiagramProposeRequest {
   /** The view key (`flow:checkout`, `layers`, "" for the empty canvas). */
   view: string;
   /** `window.keylangEditor.currentModel()`, as JSON. */
-  model: unknown;
+  model: JsonValue | undefined;
   /** The specs the drawing was opened with (`specHash` of `/api/diagram`); null or absent: not compared. */
   specHash?: string | null;
   /** Compute and answer; write nothing. */
@@ -104,6 +104,11 @@ function result(view: string, status: DiagramProposeResult["status"], exitCode: 
   return { exitCode, status, error, view, targets: [], weakenings: [], config: null, notes: [], merge: null };
 }
 
+/** Whether a parse gave its reason instead of the model or the diagram. */
+function isProblemText(value: EditorModel | Diagram | string): value is string {
+  return typeof value === "string";
+}
+
 /** The diagram of a view the drawing is compared with: the specs' flow, a discovered flow, an entry, the layers; empty for the empty canvas. */
 function baseDiagram(analysis: Analysis, root: string, view: string): Diagram | string {
   if (view === "") return { nodes: [], edges: [], groups: [] };
@@ -129,7 +134,7 @@ export async function runDiagramPropose(request: DiagramProposeRequest, context:
   if (!isAbsolute(root)) return result(view, "invalid", 2, "diagram propose: root must be an absolute path");
   const model = parseEditorModel(request.model);
 
-  if (typeof model === "string") return result(view, "invalid", 2, model);
+  if (isProblemText(model)) return result(view, "invalid", 2, model);
 
   if (model.view !== view && model.view !== "") return result(view, "invalid", 2, `the model draws \`${model.view}\`, not \`${view}\``);
   let analysis: Analysis;
@@ -148,7 +153,7 @@ export async function runDiagramPropose(request: DiagramProposeRequest, context:
   const system = /^system:(.+)$/.exec(view)?.[1] ?? null;
   const diagram = system !== null ? { nodes: [], edges: [], groups: [] } : baseDiagram(analysis, root, view);
 
-  if (typeof diagram === "string") return result(view, "invalid", 2, diagram);
+  if (isProblemText(diagram)) return result(view, "invalid", 2, diagram);
   const flowName = /^flow:(.+)$/.exec(view)?.[1] ?? null;
   const notes: string[] = [];
 
@@ -210,7 +215,7 @@ export async function runDiagramPropose(request: DiagramProposeRequest, context:
   const docs = analysis.docs.filter((doc) => doc.generated === null);
   const baseDocs = docs.map((doc) => parse(doc.path, readTextOrNull(join(root, doc.path)) ?? ""));
   const proposed = new Map(candidates.map((c) => [c.target, c.text]));
-  const nowDocs = [...baseDocs.filter((doc) => !proposed.has(doc.path)), ...[...proposed].filter(([path]) => path.endsWith(".md")).map(([path, text]) => parse(path, text))];
+  const nowDocs = [...baseDocs.filter((doc) => !proposed.has(doc.path)), ...[...proposed].flatMap(([path, text]) => (path.endsWith(".md") ? [parse(path, text)] : []))];
   out.weakenings = specWeakenings(baseDocs, nowDocs, specDir, "the specs on disk").map(({ file, line, col, message }) => ({ file, line, col, message: `K108 ${message}` }));
   const normal = (text: string): string[] => text.replace(/\r\n/g, "\n").split("\n");
   out.targets = candidates.map((c) => ({

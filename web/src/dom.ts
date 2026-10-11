@@ -5,6 +5,7 @@ export function element<T extends HTMLElement>(id: string): T {
 
   if (!found) throw new Error(`the page has no #${id}`);
 
+  // SAFETY: each caller names the element type its id has in the page markup src/tui/web.ts serves.
   return found as T;
 }
 

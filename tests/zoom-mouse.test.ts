@@ -9,12 +9,12 @@ import { ZOOM_ROOT } from "../src/tui/zoom.ts";
 import { checkoutRepo, click, KEY, locate } from "./tui-fixture.ts";
 import { VirtualTerminal } from "./vt.ts";
 
-function session(root: string, cols = 120, rows = 30): { app: App; send: (keys: string) => void; lines: () => string[] } {
+function session(root: string, cols = 120, rows = 30) {
   const vt = new VirtualTerminal(cols, rows);
   const app = new App({ root, cols, rows });
   app.attach({ write: (ansi) => vt.feed(ansi) }, cols, rows);
 
-  return { app, send: (keys) => app.input(keys), lines: () => vt.lines() };
+  return { app, send: (keys: string) => app.input(keys), lines: () => vt.lines() };
 }
 
 function zoom(s: ReturnType<typeof session>): void {

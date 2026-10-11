@@ -11,11 +11,12 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { analyze } from "../src/analyze.ts";
+import { isJsonObject, parseJson } from "../src/json.ts";
 import { nodeFacts, summarizeNode } from "../src/explain-node.ts";
 import { hover, hoverContent, hoverMarkdown, runsText, workspace } from "../src/lsp-features.ts";
 import { readStats, updateStats } from "../src/stats.ts";
 import { App, type AppOptions, type Surface } from "../src/tui/app.ts";
-import type { OperationWorker } from "../src/tui/background.ts";
+import { OperationWorker } from "../src/tui/background.ts";
 import { InputDecoder, type InputEvent } from "../src/tui/input.ts";
 import { mergeRows } from "../src/tui/merge.ts";
 import { ENTER, Grid, LEAVE } from "../src/tui/screen.ts";
@@ -43,7 +44,10 @@ function session(root: string, options: { cols?: number; rows?: number; surface?
   const cols = options.cols ?? 110;
   const rows = options.rows ?? 30;
   const vt = new VirtualTerminal(cols, rows);
-  const app = new App({ root, cols, rows, ...(options.operationWorker ? { operationWorker: options.operationWorker } : {}) });
+  const appOptions: AppOptions = { root, cols, rows };
+
+  if (options.operationWorker) appOptions.operationWorker = options.operationWorker;
+  const app = new App(appOptions);
   app.attach({ write: (ansi) => vt.feed(ansi), ...options.surface }, cols, rows);
 
   return { app, vt, send: (keys) => app.input(keys), lines: () => vt.lines(), text: () => vt.text() };
@@ -76,8 +80,17 @@ async function waitUntil(ready: () => boolean, what: string): Promise<void> {
   }
 }
 
+interface FakeTerminal {
+  host: TerminalHost;
+  out: string[];
+  screen: () => string;
+  suspended: () => number;
+  type: (keys: string) => void;
+  signal: (signal: TerminalSignal) => void;
+}
+
 /** A terminal and a process for `runTerminal`: what it writes, and a way to type and send signals. */
-function fakeTerminal(env: NodeJS.ProcessEnv = {}): { host: TerminalHost; out: string[]; screen: () => string; suspended: () => number; type: (keys: string) => void; signal: (signal: TerminalSignal) => void } {
+function fakeTerminal(env: NodeJS.ProcessEnv = {}): FakeTerminal {
   const out: string[] = [];
   let suspended = 0;
   const stdin = Object.assign(new EventEmitter(), { isTTY: true, setRawMode: () => {}, setEncoding: () => {}, pause: () => {}, resume: () => {} });
@@ -179,11 +192,18 @@ test("review-tui: a stats update that loses a race reads again: neither writer's
 test("review-tui: a helper that fails is a message in the session, never an unhandled rejection", async (t) => {
   const root = checkoutRepo(t, { "keylang/features/refund.md": "# flow refund\n\n- trigger presentation.terminal.checkout\n" });
   const unhandled: unknown[] = [];
-  const record = (reason: unknown): void => void unhandled.push(reason);
+  const record = (cause: unknown): void => void unhandled.push(cause);
   process.on("unhandledRejection", record);
   t.after(() => process.off("unhandledRejection", record));
+
   // The worker that reads a feature's plan at HEAD fails underneath the status line's refresh.
-  const worker = { featureBase: () => Promise.reject(new Error("the plan at HEAD could not be read")), close: () => {} } as unknown as OperationWorker;
+  class FailingBaseWorker extends OperationWorker {
+    override featureBase(): Promise<null> {
+      return Promise.reject(new Error("the plan at HEAD could not be read"));
+    }
+  }
+
+  const worker = new FailingBaseWorker();
   const s = session(root, { operationWorker: worker });
   t.after(() => s.app.close());
   await s.app.idle();
@@ -430,7 +450,7 @@ test("review-tui: Ctrl+Z in the view gives the screen back and stops keylang; SI
   const stopped = term.out.length;
   term.signal("SIGCONT");
   assert.equal(term.out[stopped], ENTER);
-  assert.match(term.out.slice(stopped).join(""), /\x1b\[2J/, "a full repaint");
+  assert.ok(term.out.slice(stopped).join("").includes("\x1b[2J"), "a full repaint");
   term.type("i");
   term.type("x");
   await waitUntil(() => /x# flow checkout/.test(term.screen()), "the typed x");
@@ -629,6 +649,7 @@ test("review-tui: the pointer moving along one ID reads its code once; an edit m
   t.after(() => s.app.close());
   await s.app.idle();
   const at = locate(s.lines(), "application.purchase.buy");
+  // SAFETY: require("node:fs") returns the CommonJS fs module, whose readFileSync this test wraps.
   const fs = createRequire(import.meta.url)("node:fs") as { readFileSync: typeof readFileSync };
   const read = fs.readFileSync;
   const reads: string[] = [];
@@ -639,6 +660,7 @@ test("review-tui: the pointer moving along one ID reads its code once; an edit m
   };
 
   t.after(restore);
+  // SAFETY: the wrapper passes its arguments to the original unchanged and returns its result, so it has every overload.
   fs.readFileSync = ((...args: Parameters<typeof readFileSync>) => {
     reads.push(String(args[0]));
 
@@ -667,7 +689,8 @@ test("review-tui: the pointer moving along one ID reads its code once; an edit m
 
 test("review-tui: the hover of a node whose file is a directory (an outside module) shows, with no code read", async (t) => {
   const root = checkoutRepo(t, { "tools/build.ts": "export function build(): void {}\n" });
-  const config = JSON.parse(readFileSync(join(root, "keylang.json"), "utf8")) as Record<string, unknown>;
+  const config = parseJson(readFileSync(join(root, "keylang.json"), "utf8"));
+  assert.ok(isJsonObject(config), "the fixture's keylang.json is an object");
   put(root, "keylang.json", `${JSON.stringify({ ...config, outside: ["tools/**"] }, null, 2)}\n`);
   const s = session(root);
   t.after(() => s.app.close());

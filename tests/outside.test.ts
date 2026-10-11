@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
+import type { JsonObject } from "../src/json.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -18,7 +19,13 @@ function write(dir: string, path: string, text: string): void {
   writeFileSync(join(dir, path), text);
 }
 
-function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+interface Run {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+function keylang(cwd: string, args: string[]): Run {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8" });
 
   if (r.error) throw r.error;
@@ -37,7 +44,7 @@ function repo(t: TestContext, files: Record<string, string>): string {
 
 const LAYERS = { a: "src/a/**", b: "src/b/**" };
 
-const config = (extra: Record<string, unknown> = {}): string => `${JSON.stringify({ languages: ["typescript"], layers: LAYERS, ...extra })}\n`;
+const config = (extra: JsonObject = {}): string => `${JSON.stringify({ languages: ["typescript"], layers: LAYERS, ...extra })}\n`;
 
 interface Row {
   criterion: string;
@@ -49,9 +56,16 @@ interface Row {
   code: string | null;
 }
 
-function check(dir: string): { status: number | null; stdout: string; results: Row[] } {
+interface CheckRun {
+  status: number | null;
+  stdout: string;
+  results: Row[];
+}
+
+function check(dir: string): CheckRun {
   const run = keylang(dir, ["check", "--format", "json"]);
 
+  // SAFETY: `check --format json` prints its report object, whose `results` are the rows of docs/cli.md.
   return { status: run.status, stdout: run.stdout, results: (JSON.parse(run.stdout) as { results: Row[] }).results };
 }
 
@@ -94,6 +108,7 @@ test("the map and the index list files outside the architecture", (t) => {
   assert.match(layer, /^- outside$/m);
   assert.match(layer, /- module \[run\]\(\.\.\/\.\.\/scripts\/run\.ts#L1\) <!-- outside -->/);
 
+  // SAFETY: `keylang map` exited 0 above, so the index holds the snapshot fields named here.
   const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as {
     manifest: { config: { outside: string[] } };
     nodes: Record<string, { layer: string; members?: string }>;

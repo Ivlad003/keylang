@@ -35,6 +35,11 @@ export interface ExportView {
   name: string;
 }
 
+/** Whether `parseExportView` gave a reason instead of a view. */
+function isViewProblem(view: ExportView | string): view is string {
+  return typeof view === "string";
+}
+
 /**
  * A view as the CLI names it: `<flow>` or `flow:<name>`, `discovered:<name>`,
  * `process:<domain>`, `entry:<id>`, `layers`; or why it names none.
@@ -168,7 +173,7 @@ export async function runDiagramExport(request: DiagramExportRequest, context: O
   if (format === undefined) return failed(`export: unknown format \`${request.format}\`; expected c4, ${DIAGRAM_FORMATS.join(", ")}`);
   const view = parseExportView(request.view);
 
-  if (typeof view === "string") return failed(`export ${format}: ${view}`);
+  if (isViewProblem(view)) return failed(`export ${format}: ${view}`);
 
   if (request.out !== undefined && request.out.trim() === "") return failed(`export ${format}: --out needs a file path`);
 

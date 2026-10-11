@@ -1,4 +1,4 @@
-Get(n=>{if(n.type==="text"&&typeof n.content==="string"&&n.content.includes("kosmo"))Update(n.id,{content:n.content.replace(/kosmo/g,"keylang")})})
+Get(n=>{if(n.type==="text"&&n.content!==undefined&&n.content.includes("kosmo"))Update(n.id,{content:n.content.replace(/kosmo/g,"keylang")})})
 
 Get((n,c)=>{if(c.depth===0){c.skipChildren();
 

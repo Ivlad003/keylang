@@ -11,7 +11,7 @@
 
 import type { ChangedTarget, EditorModel } from "./diagram-proposal.ts";
 import { sectionNodes, type Node } from "./ir.ts";
-import { COMPONENT_KINDS, isSegment, parse, RELATION_VERBS } from "./parser.ts";
+import { isComponentKind, isRelationVerb, isSegment, parse, RELATION_VERBS } from "./parser.ts";
 import { compareText } from "./span.ts";
 import type { SystemSpec } from "./system.ts";
 import { systemMarkdown } from "./system-discover.ts";
@@ -40,8 +40,10 @@ function block(lines: readonly string[], node: Node, indent: string): string[] {
   return own.map((line) => (line.trim() === "" ? "" : `${indent}${line.slice(Math.min(base, line.length - line.trimStart().length))}`));
 }
 
+type SystemChanges = { targets: ChangedTarget[]; notes: string[] };
+
 /** The section's text with its components and zones as the canvas draws them; null when the canvas says nothing new. */
-export function systemChanges(input: SystemChangeInput): { targets: ChangedTarget[]; notes: string[] } {
+export function systemChanges(input: SystemChangeInput): SystemChanges {
   const { model, system } = input;
   const notes: string[] = [];
   const adopting = system.file === "";
@@ -57,7 +59,7 @@ export function systemChanges(input: SystemChangeInput): { targets: ChangedTarge
   for (const node of components) {
     const kind = node.component ?? "service";
 
-    if (!(COMPONENT_KINDS as readonly string[]).includes(kind)) {
+    if (!isComponentKind(kind)) {
       notes.push(`${node.label}: \`${kind}\` is no component kind; left out`);
       continue;
     }
@@ -86,7 +88,7 @@ export function systemChanges(input: SystemChangeInput): { targets: ChangedTarge
     const label = (edge.label ?? "calls").trim();
     const verb = label.split(/[:\s]/)[0] ?? "";
 
-    if (!(RELATION_VERBS as readonly string[]).includes(verb)) {
+    if (!isRelationVerb(verb)) {
       notes.push(`${from} → ${to}: \`${label}\` does not start with a verb (${RELATION_VERBS.join(", ")}); left out`);
       continue;
     }
@@ -208,5 +210,5 @@ export function systemChanges(input: SystemChangeInput): { targets: ChangedTarge
 
   if (next === before) return { targets: [], notes };
 
-  return { targets: [{ target, before, text: next, shapes: components.filter((item) => names.has(item.key)).map((item) => item.key).sort(compareText) }], notes };
+  return { targets: [{ target, before, text: next, shapes: components.flatMap((item) => (names.has(item.key) ? [item.key] : [])).sort(compareText) }], notes };
 }

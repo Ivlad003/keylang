@@ -9,12 +9,19 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { collectMetrics, draftSteps, formatReport, normaliseReason, summaryLine } from "../bench/lib/metrics.mjs";
 import { benchConfig, parseArgs, reportHeader, WIDE_SPARSE_PATTERNS } from "../bench/magento/run.mjs";
+import { isJsonObject, parseJson, type JsonObject, type JsonValue } from "../src/json.ts";
 
 const fixture = join(import.meta.dirname, "fixtures", "bench-magento");
 
 const expect = JSON.parse(readFileSync(join(import.meta.dirname, "..", "bench", "magento", "expect.json"), "utf8"));
 
-const loadSnapshot = (): { coverage: unknown[] } & Record<string, unknown> => JSON.parse(readFileSync(join(fixture, "index.json"), "utf8"));
+function loadSnapshot(): JsonObject {
+  const snapshot = parseJson(readFileSync(join(fixture, "index.json"), "utf8"));
+
+  if (!isJsonObject(snapshot)) throw new Error("tests/fixtures/bench-magento/index.json: expected an object");
+
+  return snapshot;
+}
 
 const placeOrder = `# flow placeOrder
 
@@ -70,7 +77,10 @@ test("bench-magento: metrics of the fixture snapshot", () => {
 test("bench-magento: golden IDs found when the flow lists them; entries and events counted when present", () => {
   const snapshot = loadSnapshot();
   snapshot.entries = [{ kind: "webapi", id: "e1" }, { kind: "cron", id: "e2" }, { kind: "webapi", id: "e3" }];
-  snapshot.nodes = { ...(snapshot.nodes as object), "events.checkout_submit_before": { kind: "event", layer: "events" } };
+  const nodes = snapshot.nodes;
+
+  if (!isJsonObject(nodes)) throw new Error("tests/fixtures/bench-magento/index.json: `nodes` is not an object");
+  snapshot.nodes = { ...nodes, "events.checkout_submit_before": { kind: "event", layer: "events" } };
   const text = `# flow placeOrder\n\n- trigger quote.Model.QuoteManagement.QuoteManagement.placeOrder\n  - step quote.Model.QuoteManagement.QuoteManagement.placeOrderRun\n    - step quote.Model.QuoteManagement.QuoteManagement.submitQuote\n      - step events.checkout_submit_before\n`;
   const m = collectMetrics(snapshot, { drafts: [{ trigger: expect.flow, text }], expect });
   assert.deepEqual(m.entries, [["cron", 1], ["webapi", 2]]);
@@ -116,8 +126,11 @@ test("bench-magento: the Markdown report has every section and the run block las
 test("bench-magento: the report is deterministic across coverage order and repeated renders", () => {
   const a = loadSnapshot();
   const b = loadSnapshot();
-  b.coverage = [...b.coverage].reverse();
-  const render = (s: unknown): string => formatReport(collectMetrics(s, { drafts, expect }), { title: "t" });
+  const coverage = b.coverage;
+
+  if (!Array.isArray(coverage)) throw new Error("tests/fixtures/bench-magento/index.json: `coverage` is not an array");
+  b.coverage = [...coverage].reverse();
+  const render = (s: JsonValue): string => formatReport(collectMetrics(s, { drafts, expect }), { title: "t" });
   assert.equal(render(a), render(b));
   assert.equal(render(a), render(a));
 });

@@ -329,9 +329,11 @@ export function featureStatus(input: FeatureInput, slug: string): FeatureReport 
 
 /** The base as the report names it: the commit and its state first, as they always came, then how it was chosen. */
 function baseInfo(base: FeatureBase): FeatureBaseInfo {
-  const origin = { source: base.source, ...(base.main !== undefined ? { main: base.main } : {}) };
+  const info: FeatureBaseInfo = base.state === "unavailable" ? { ref: base.ref, state: "unavailable", reason: base.reason, source: base.source } : { ref: base.ref, state: base.state, source: base.source };
 
-  return base.state === "unavailable" ? { ref: base.ref, state: "unavailable", reason: base.reason, ...origin } : { ref: base.ref, state: base.state, ...origin };
+  if (base.main !== undefined) info.main = base.main;
+
+  return info;
 }
 
 /** A rule fail: an error diagnostic of a rule (K101, K102, K104, K105, K107), or a failed rule verdict that repeats none. */

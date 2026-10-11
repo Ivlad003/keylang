@@ -72,10 +72,12 @@ test("web: /api/git names HEAD, its branch and the base of a feature; /api/chang
   // The CLI's own report first: `check` keeps a fact cache, the read-only server must not.
   const cli = spawnSync(process.execPath, [bin, "check", "--changed", "--since", fork, "--format", "json"], { cwd: repo, encoding: "utf8" });
   assert.equal(cli.status, 1, cli.stderr);
+  // SAFETY: `check --format json` prints a CheckReport with snapshotId and results; the asserts below compare them field by field
   const report = JSON.parse(cli.stdout) as { snapshotId: string; results: unknown[] };
   const before = treeBytes(repo);
   const server = await readOnlyServer(t, repo);
 
+  // SAFETY: /api/git answers the server git summary in this shape; every field read is asserted below
   const summary = JSON.parse((await server.get("/api/git")).body) as { available: boolean; head: { commit: string; short: string; branch: string }; origin: string; base: Changes["base"]; bases: { ref: string; label: string }[] };
   assert.equal(summary.available, true);
   assert.deepEqual(summary.head, { commit: head, short: head.slice(0, 7), branch: "feature" });
@@ -83,6 +85,7 @@ test("web: /api/git names HEAD, its branch and the base of a feature; /api/chang
   assert.deepEqual(summary.base, { ref: fork, source: "merge-base", main: "main", label: `merge-base ${fork.slice(0, 7)} with main` });
   assert.deepEqual(summary.bases.map((base) => base.ref), [fork, "HEAD", "feature", "main"]);
 
+  // SAFETY: /api/changes answers the Changes shape declared above; the asserts below check each field read
   const changes = JSON.parse((await server.get("/api/changes")).body) as Changes;
   assert.deepEqual(changes.base, summary.base);
   assert.equal(changes.unborn, false);
@@ -98,6 +101,7 @@ test("web: /api/git names HEAD, its branch and the base of a feature; /api/chang
   assert.deepEqual(changes.check?.results, report.results, "the findings of the slice, as the CLI reports them");
   assert.equal(changes.check?.snapshotId, report.snapshotId);
 
+  // SAFETY: /api/changes answers the Changes shape declared above; the asserts below check each field read
   const sinceHead = JSON.parse((await server.get("/api/changes?since=HEAD")).body) as Changes;
   assert.deepEqual(sinceHead.base, { ref: "HEAD", source: "since", label: "HEAD" });
   assert.deepEqual(sinceHead.files.map((file) => file.path), ["docs/shot.png", "keylang/rules.md", "notes.txt"]);
@@ -118,6 +122,7 @@ test("web: without git /api/git is unavailable with the reason and /api/changes 
   writeFileSync(join(dir, "src/app/pay.ts"), "export const a = 1;\n");
   // No repository above the temporary directory either.
   const server = await readOnlyServer(t, dir);
+  // SAFETY: /api/git without a repository answers {available: false, reason}; both fields are asserted below
   const summary = JSON.parse((await server.get("/api/git")).body) as { available: boolean; reason: string };
   assert.equal(summary.available, false);
   assert.match(summary.reason, /not a git repository|git/i);

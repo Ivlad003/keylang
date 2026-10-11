@@ -6,12 +6,17 @@ import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
+import { parseJson } from "../src/json.ts";
 import { collectMetrics, formatReport, summaryLine } from "./lib/metrics.mjs";
 
 // Build output, dependencies, VCS data and an existing spec are not part of the benchmark input.
 const SKIPPED = new Set(["node_modules", "target", ".git", "keylang", ".keylang"]);
 
-function parseArgs(argv: string[]): { work: string } {
+interface RunArgs {
+  work: string;
+}
+
+function parseArgs(argv: string[]): RunArgs {
   let work = join(tmpdir(), "keylang-bench");
 
   for (let i = 0; i < argv.length; i++) {
@@ -65,7 +70,7 @@ for (const name of readdirSync(repos).sort()) {
   writeFileSync(join(work, `${name}.probes`), probes.stdout + probes.stderr);
   // The business-flows metrics (spec §6) of the same snapshot: resolved share, holes, entries, drafts — the same formatter as bench/magento.
   const index = join(copy, ".keylang", "index.json");
-  const metrics = existsSync(index) ? collectMetrics(JSON.parse(readFileSync(index, "utf8"))) : null;
+  const metrics = existsSync(index) ? collectMetrics(parseJson(readFileSync(index, "utf8"))) : null;
 
   if (metrics) writeFileSync(join(work, `${name}.metrics.md`), formatReport(metrics, { title: `${name}: метрики business-flows`, run: [["`map`", `${ms} ms`]] }));
   console.log(`${name} | ${ms} ms | ${lastLine(map.stderr)} | ${warnings} warning(s) | check: ${lastLine(check.stdout + check.stderr)} | probe: ${lastLine(probes.stdout + probes.stderr)}${metrics ? ` | ${summaryLine(metrics)}` : ""}`);

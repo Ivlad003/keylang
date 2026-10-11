@@ -11,7 +11,7 @@ export class Hash {
   private readonly state = sha256.create();
 
   update(data: string | Uint8Array): this {
-    this.state.update(typeof data === "string" ? encoder.encode(data) : data);
+    this.state.update(data instanceof Uint8Array ? data : encoder.encode(data));
 
     return this;
   }

@@ -38,7 +38,7 @@ interface Reading {
 // The corpus holds this repository's own generated map, whose IR grows with the code (67 MB on 2026-10-05).
 const MAX_OUTPUT = 256 * 1024 * 1024;
 
-function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+function keylang(cwd: string, args: string[]) {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8", maxBuffer: MAX_OUTPUT });
 
   if (r.error) throw r.error;
@@ -199,6 +199,7 @@ function parseDir(cwd: string, dir: string): KlDoc[] {
   const o = keylang(cwd, ["parse", "--json", dir]);
   assert.ok(o.stdout.startsWith("["), o.stderr);
 
+  // SAFETY: `parse --json` prints one IR document per input file (src/ir.ts), described by `KlDoc`.
   return JSON.parse(o.stdout) as KlDoc[];
 }
 
@@ -282,10 +283,11 @@ test("a backtick info string, a longer closer, and an indent-of-4 fence leave th
   writeFileSync(join(dir, "fence.md"), longer);
   o = keylang(dir, ["parse", "--json", "fence.md"]);
   assert.equal(o.status, 0, o.stderr);
+  // SAFETY: `parse --json` prints one IR document per input file (src/ir.ts), so index 0 is the only file.
   const longerDoc = (JSON.parse(o.stdout) as KlDoc[])[0]!;
-  const nodes = longerDoc.sections.flatMap((s) => s.items.filter((i) => i.type === "node"));
+  const nodes = longerDoc.sections.flatMap((s) => s.items.filter((i): i is KlNode => i.type === "node"));
   assert.equal(nodes.length, 1);
-  assert.equal((nodes[0] as KlNode).span.start.line, 5);
+  assert.equal(nodes[0]?.span.start.line, 5);
 
   writeFileSync(join(dir, "keylang/rules.md"), col4);
   o = keylang(dir, ["check", "keylang/rules.md"]);
@@ -297,6 +299,7 @@ test("a backtick info string, a longer closer, and an indent-of-4 fence leave th
   const four = "````\n```\ncode\n```\n````\n\n- layer z\n";
   writeFileSync(join(dir, "blocks.md"), `${tilde}\n${four}`);
   o = keylang(dir, ["parse", "--json", "blocks.md"]);
+  // SAFETY: `parse --json` prints one IR document per input file (src/ir.ts), so index 0 is the only file.
   const blocks = (JSON.parse(o.stdout) as KlDoc[])[0]!;
   const codes = blocks.sections.flatMap((s) => s.items.filter((i) => i.type === "code"));
   assert.equal(codes.length, 2);
@@ -348,6 +351,7 @@ test("multiline HTML blocks of types 1–5 are prose, and a rule after them is s
   assert.equal(check.status, 0, check.stdout + check.stderr);
   assert.equal(check.stdout, "");
   const parsed = keylang(dir, ["parse", "--json", "keylang/rules.md"]);
+  // SAFETY: `parse --json` prints one IR document per input file (src/ir.ts), so index 0 is the only file.
   const doc = (JSON.parse(parsed.stdout) as KlDoc[])[0]!;
   const prose = doc.sections.flatMap((s) => s.items.filter((i) => i.type === "prose"));
   assert.ok(prose.some((i) => i.type === "prose" && i.lines.includes("- deny a b")));
@@ -355,6 +359,7 @@ test("multiline HTML blocks of types 1–5 are prose, and a rule after them is s
 
   const flow = "# rules\n\n<!--\n# flow x\n-->\n\n- deny c d\n";
   writeFileSync(join(dir, "keylang/rules.md"), flow);
+  // SAFETY: `parse --json` prints one IR document per input file (src/ir.ts), so index 0 is the only file.
   const flowDoc = (JSON.parse(keylang(dir, ["parse", "--json", "keylang/rules.md"]).stdout) as KlDoc[])[0]!;
   assert.ok(flowDoc.sections.every((s) => s.kind !== "flow"));
   const still = keylang(dir, ["check", "keylang/rules.md"]);
@@ -363,6 +368,7 @@ test("multiline HTML blocks of types 1–5 are prose, and a rule after them is s
 
   const described = "# map\n\n- layer a\n  <!--\n  - module hidden\n  -->\n";
   writeFileSync(join(dir, "map.md"), described);
+  // SAFETY: `parse --json` prints one IR document per input file (src/ir.ts), so index 0 is the only file.
   const map = (JSON.parse(keylang(dir, ["parse", "--json", "map.md"]).stdout) as KlDoc[])[0]!;
   const layer = map.sections[0]!.items.find((i): i is KlNode => i.type === "node");
   assert.ok(layer);
@@ -394,6 +400,7 @@ test("multiline HTML blocks of types 1–5 are prose, and a rule after them is s
     assert.match(hidden.stdout, /keylang\/rules\.md:8:10: K001/, open);
     assert.doesNotMatch(hidden.stdout, /:4:/, open);
     assert.doesNotMatch(hidden.stdout, /:5:/, open);
+    // SAFETY: `parse --json` prints one IR document per input file (src/ir.ts), so index 0 is the only file.
     const doc = (JSON.parse(keylang(dir, ["parse", "--json", "keylang/rules.md"]).stdout) as KlDoc[])[0]!;
     assert.ok(doc.sections.every((s) => s.kind !== "flow"), open);
     const nodes = doc.sections.flatMap((s) => s.items.filter((i): i is KlNode => i.type === "node"));
@@ -438,6 +445,7 @@ test("a type-1 HTML block ends on any of the four end tags, and the following ru
   // A heading after the end tag opens a flow; it is not swallowed with the block.
   const flow = "# rules\n\n<style>\n</script>\n# flow pay\n- trigger save\n</style>\n";
   writeFileSync(join(dir, "keylang/rules.md"), flow);
+  // SAFETY: `parse --json` prints one IR document per input file (src/ir.ts), so index 0 is the only file.
   const flowDoc = (JSON.parse(keylang(dir, ["parse", "--json", "keylang/rules.md"]).stdout) as KlDoc[])[0]!;
   assert.ok(flowDoc.sections.some((s) => s.kind === "flow"));
   const flowCheck = keylang(dir, ["check", "keylang/rules.md"]);
@@ -446,6 +454,7 @@ test("a type-1 HTML block ends on any of the four end tags, and the following ru
 
 function nodesOf(dir: string, file: string): KlNode[] {
   const parsed = keylang(dir, ["parse", "--json", file]);
+  // SAFETY: `parse --json` prints one IR document per input file (src/ir.ts), so index 0 is the only file.
   const doc = (JSON.parse(parsed.stdout) as KlDoc[])[0]!;
 
   return doc.sections.flatMap((s) => s.items.filter((i): i is KlNode => i.type === "node"));

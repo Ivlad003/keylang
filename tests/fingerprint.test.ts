@@ -18,7 +18,13 @@ interface Node {
   closure?: { fingerprint: string; complete: boolean };
 }
 
-function repo(t: TestContext, files: Record<string, string>): { dir: string; write(file: string, text: string): void; map(): { snapshotId: string; nodes: Record<string, Node> } } {
+interface Repo {
+  dir: string;
+  write(file: string, text: string): void;
+  map(): { snapshotId: string; nodes: Record<string, Node> };
+}
+
+function repo(t: TestContext, files: Record<string, string>): Repo {
   const dir = mkdtempSync(join(tmpdir(), "keylang-fp-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 

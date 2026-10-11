@@ -1,6 +1,6 @@
 const s0=Get(n=>n.name==="TUI · редактор — автодоповнення з індексу + ghost агента"?n.id:undefined)[0]
 
-Get(s0,n=>{if(n.type==="text"&&typeof n.content==="string"){const m={"(order: Order) → Promise<void>":"(order) → void","(id: OrderId) → Promise<void>":"(id) → void","(id) → Order | undefined":"(id) → Order?"};
+Get(s0,n=>{if(n.type==="text"&&n.content!==undefined){const m={"(order: Order) → Promise<void>":"(order) → void","(id: OrderId) → Promise<void>":"(id) → void","(id) → Order | undefined":"(id) → Order?"};
 
 if(m[n.content])Update(n.id,{content:m[n.content]})}})
 
@@ -72,7 +72,7 @@ function msg(who,col,t){const m=F(rc,{name:"msg "+who,width:"fill_container",lay
 
 return m}
 
-const u=msg("ти · 🎙 голос","$accent","додай повернення коштів через той самий спосіб оплати, і щоб не можна було повернути пізніше 14 днів")
+msg("ти · 🎙 голос","$accent","додай повернення коштів через той самий спосіб оплати, і щоб не можна було повернути пізніше 14 днів")
 
 msg("агент","$l-infra","Додав крок infrastructure.payments.refund (його ще немає в коді — можу створити через spec-to-code) і гілку when для 14 днів із заготовкою e2e. Решту взяв з cancel-order.")
 

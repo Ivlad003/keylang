@@ -5,6 +5,7 @@
 import { readFileSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { toPosix } from "./config.ts";
+import { isJsonObject, isJsonString, parseJson, type JsonValue } from "./json.ts";
 
 export type TestStatus = "pass" | "fail" | "skip";
 
@@ -43,16 +44,16 @@ export function loadReports(root: string, files: readonly string[]): TestCase[] 
 }
 
 export function parseJsonReport(file: string, text: string): TestCase[] {
-  let body: unknown;
+  let body: JsonValue;
 
   try {
-    body = JSON.parse(text);
+    body = parseJson(text);
   } catch (e) {
     throw new Error(`${file}: invalid JSON report: ${e instanceof Error ? e.message : String(e)}`);
   }
 
-  if (typeof body !== "object" || body === null) throw new Error(`${file}: report must be an object`);
-  const report = body as Record<string, unknown>;
+  if (!isJsonObject(body)) throw new Error(`${file}: report must be an object`);
+  const report = body;
 
   if (report.schemaVersion === undefined) throw new Error(`${file}: \`schemaVersion\` is missing (expected ${REPORT_SCHEMA})`);
 
@@ -65,16 +66,16 @@ export function parseJsonReport(file: string, text: string): TestCase[] {
   return report.tests.map((item, i): TestCase => {
     const at = `${file}: tests[${i}]`;
 
-    if (typeof item !== "object" || item === null) throw new Error(`${at} must be an object`);
-    const row = item as Record<string, unknown>;
+    if (!isJsonObject(item)) throw new Error(`${at} must be an object`);
+    const row = item;
 
-    if (typeof row.file !== "string") throw new Error(`${at}.file must be a string`);
+    if (!isJsonString(row.file)) throw new Error(`${at}.file must be a string`);
 
-    if (typeof row.name !== "string") throw new Error(`${at}.name must be a string`);
+    if (!isJsonString(row.name)) throw new Error(`${at}.name must be a string`);
 
     if (row.status !== "pass" && row.status !== "fail" && row.status !== "skip") throw new Error(`${at}.status must be "pass", "fail" or "skip", got ${JSON.stringify(row.status)}`);
 
-    if (row.suite !== undefined && typeof row.suite !== "string") throw new Error(`${at}.suite must be a string`);
+    if (row.suite !== undefined && !isJsonString(row.suite)) throw new Error(`${at}.suite must be a string`);
     // A row may name its own snapshot; without one it has the report's.
     const own = optionalString(row.snapshotId, `${at}.snapshotId`);
 
@@ -83,10 +84,10 @@ export function parseJsonReport(file: string, text: string): TestCase[] {
 }
 
 /** A field that may be missing or null (no value) or a string; any other type is an error naming it. */
-function optionalString(value: unknown, field: string): string | null {
+function optionalString(value: JsonValue | undefined, field: string): string | null {
   if (value === undefined || value === null) return null;
 
-  if (typeof value !== "string") throw new Error(`${field} must be a string or null, got ${JSON.stringify(value)}`);
+  if (!isJsonString(value)) throw new Error(`${field} must be a string or null, got ${JSON.stringify(value)}`);
 
   return value;
 }
@@ -287,11 +288,17 @@ function parseXml(file: string, text: string): XmlElement {
   return root;
 }
 
-const NAMED_ENTITIES: Record<string, string> = { lt: "<", gt: ">", amp: "&", quot: '"', apos: "'" };
+const NAMED_ENTITIES = new Map([
+  ["lt", "<"],
+  ["gt", ">"],
+  ["amp", "&"],
+  ["quot", '"'],
+  ["apos", "'"],
+]);
 
 function decodeEntities(text: string): string {
   return text.replace(/&(lt|gt|amp|quot|apos|#\d+|#x[0-9a-fA-F]+);/g, (whole, entity: string) => {
-    if (!entity.startsWith("#")) return NAMED_ENTITIES[entity] ?? whole;
+    if (!entity.startsWith("#")) return NAMED_ENTITIES.get(entity) ?? whole;
     const code = entity[1] === "x" ? Number.parseInt(entity.slice(2), 16) : Number.parseInt(entity.slice(1), 10);
 
     return code <= 0x10ffff ? String.fromCodePoint(code) : whole;

@@ -14,17 +14,17 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { z } from "zod";
 import { contextForIds } from "./agent-context.ts";
-import { analyze, specPathProblem, within, type Analysis } from "./analyze.ts";
+import { analyze, specPathProblem, within, type Analysis, type AnalysisRequest } from "./analyze.ts";
 import { checkResults } from "./check-results.ts";
 import { keepsFactCache, saveFactCache } from "./fact-cache.ts";
 import { idsIn } from "./feature-status.ts";
-import { runOperation } from "./operations.ts";
+import { runOperation, type FeatureRequest, type FlowsDiscoverRequest, type MigrationStatusRequest } from "./operations.ts";
 import { specToCode } from "./spec-to-code.ts";
 import { CONFIG_FILE, evidenceFiles, loadConfig, specPath, toPosix } from "./config.ts";
 import { isStale, readExplanation } from "./explain-llm.ts";
 import { summarizeNode } from "./explain-node.ts";
 import { explanationOf, loadBriefs, type NodeExplanation } from "./explanations.ts";
-import { errorText } from "./diag.ts";
+import { errorText, type Diagnostic } from "./diag.ts";
 import { collectMdFiles, existingText } from "./files.ts";
 import { sectionNodes, walk } from "./ir.ts";
 import { generateMap } from "./map.ts";
@@ -34,7 +34,8 @@ import { ENTRY_KINDS } from "./snapshot.ts";
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
 
-const json = (value: unknown): ToolResult => ({ content: [{ type: "text", text: JSON.stringify(value, null, 2) }] });
+// Any payload `JSON.stringify` takes: the tools return their operations' own result types.
+const json = <Payload>(value: Payload): ToolResult => ({ content: [{ type: "text", text: JSON.stringify(value, null, 2) }] });
 
 const failure = (message: string): ToolResult => ({ content: [{ type: "text", text: message }], isError: true });
 
@@ -66,7 +67,10 @@ export function currentAnalysis(root: string): () => Promise<Analysis> {
     const key = JSON.stringify([raw, map?.index.snapshotId ?? null, specs.map(digest), evidence.map(digest)]);
 
     if (last?.key === key) return last.analysis;
-    const analysis = await analyze({ root, ...(map ? { generate: () => Promise.resolve(map) } : {}) });
+    const request: AnalysisRequest = { root };
+
+    if (map) request.generate = () => Promise.resolve(map);
+    const analysis = await analyze(request);
     last = { key, analysis };
 
     return analysis;
@@ -74,10 +78,41 @@ export function currentAnalysis(root: string): () => Promise<Analysis> {
 }
 
 /** A node's explanation for an agent: its text, where it comes from, and for a model's brief the model, the date and whether the code changed since. */
-function explanationJson(e: NodeExplanation | null): { text: string; origin: "doc" | "llm"; stale: boolean; agent?: string; date?: string } | null {
+function explanationJson(e: NodeExplanation | null): ExplanationJson | null {
   if (e === null) return null;
+  const row: ExplanationJson = { text: e.text, origin: e.origin, stale: e.stale };
 
-  return { text: e.text, origin: e.origin, stale: e.stale, ...(e.agent !== undefined ? { agent: e.agent } : {}), ...(e.date !== undefined ? { date: e.date } : {}) };
+  if (e.agent !== undefined) row.agent = e.agent;
+
+  if (e.date !== undefined) row.date = e.date;
+
+  return row;
+}
+
+interface ExplanationJson {
+  text: string;
+  origin: "doc" | "llm";
+  stale: boolean;
+  agent?: string;
+  date?: string;
+}
+
+/** A diagnostic for an agent: where it is and what it says; a K005's reason too. */
+function diagnosticJson(diag: Diagnostic): DiagnosticJson {
+  const row: DiagnosticJson = { code: diag.code, file: diag.file, line: diag.span.start.line, col: diag.span.start.col, message: diag.message };
+
+  if (diag.code === "K005" && diag.reason !== undefined) row.reason = diag.reason;
+
+  return row;
+}
+
+interface DiagnosticJson {
+  code: Diagnostic["code"];
+  file: string;
+  line: number;
+  col: number;
+  message: string;
+  reason?: NonNullable<Diagnostic["reason"]>;
 }
 
 export function mcpServer(root: string, version: string): McpServer {
@@ -283,7 +318,7 @@ export function mcpServer(root: string, version: string): McpServer {
 
       const diagnostics = analysis.diagnostics
         .filter((diag) => diag.file === rel)
-        .map((diag) => ({ code: diag.code, file: diag.file, line: diag.span.start.line, col: diag.span.start.col, message: diag.message, ...(diag.code === "K005" && diag.reason !== undefined ? { reason: diag.reason } : {}) }));
+        .map(diagnosticJson);
 
       const verdicts = analysis.verdicts
         .filter((verdict) => verdict.file === rel)
@@ -315,14 +350,7 @@ export function mcpServer(root: string, version: string): McpServer {
           tests: candidate.tests.map((test) => ({ file: test.file, diff: lineDiff("", test.after), text: test.after })),
           testNotes: candidate.testNotes,
           verdicts: candidate.verdicts.map((verdict) => ({ criterion: verdict.criterion, verdict: verdict.verdict, file: verdict.file, line: verdict.line, col: verdict.col, message: verdict.message })),
-          diagnostics: candidate.diagnostics.map((diag) => ({
-            code: diag.code,
-            file: diag.file,
-            line: diag.span.start.line,
-            col: diag.span.start.col,
-            message: diag.message,
-            ...(diag.code === "K005" && diag.reason !== undefined ? { reason: diag.reason } : {}),
-          })),
+          diagnostics: candidate.diagnostics.map(diagnosticJson),
         });
       } catch (error) {
         return failure(errorText(error));
@@ -339,7 +367,10 @@ export function mcpServer(root: string, version: string): McpServer {
     },
     async ({ slug, since }) => {
       // The shared operation of `keylang feature` and the TUI's readiness screen, on this server's analysis.
-      const result = await runOperation({ kind: "feature", root, slug, ...(since !== undefined ? { since } : {}) }, { analyze: () => fresh() });
+      const request: FeatureRequest = { kind: "feature", root, slug };
+
+      if (since !== undefined) request.since = since;
+      const result = await runOperation(request, { analyze: () => fresh() });
 
       if (result.payload === null) return failure(result.messages.find((message) => message.level === "error")?.text ?? `no feature \`${slug}\``);
 
@@ -372,7 +403,16 @@ export function mcpServer(root: string, version: string): McpServer {
       inputSchema: { kind: z.enum(ENTRY_KINDS).optional(), layer: z.string().min(1).optional(), limit: z.number().int().min(1).optional(), depth: z.number().int().min(0).optional() },
     },
     async ({ kind, layer, limit, depth }) => {
-      const result = await runOperation({ kind: "flows-discover", root, output: "print", ...(kind !== undefined ? { only: kind } : {}), ...(layer !== undefined ? { layer } : {}), ...(limit !== undefined ? { limit } : {}), ...(depth !== undefined ? { depth } : {}) });
+      const request: FlowsDiscoverRequest = { kind: "flows-discover", root, output: "print" };
+
+      if (kind !== undefined) request.only = kind;
+
+      if (layer !== undefined) request.layer = layer;
+
+      if (limit !== undefined) request.limit = limit;
+
+      if (depth !== undefined) request.depth = depth;
+      const result = await runOperation(request);
 
       if (result.payload === null) return failure(result.messages[0]?.text ?? "flows discover failed");
       const { snapshotId, summary, flows, specified, files } = result.payload;
@@ -440,7 +480,10 @@ export function mcpServer(root: string, version: string): McpServer {
       inputSchema: { from: z.string().min(1).optional() },
     },
     async ({ from }) => {
-      const result = await runOperation({ kind: "migration-status", root, ...(from !== undefined ? { from } : {}) }, { analyze: () => fresh() });
+      const request: MigrationStatusRequest = { kind: "migration-status", root };
+
+      if (from !== undefined) request.from = from;
+      const result = await runOperation(request, { analyze: () => fresh() });
 
       if (result.payload === null) return failure(result.messages[0]?.text ?? "migration status failed");
       const { text: _text, ...status } = result.payload;

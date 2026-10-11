@@ -49,7 +49,7 @@ export function generatedIn(docs: readonly Document[]): (path: string) => boolea
 
 /** The hand-written specs the candidate was built from, as they are on disk now: a planned signature or a flow's `test` changed meanwhile makes it unfit. */
 export function specHashes(root: string, docs: readonly Document[]): CandidateBasis["specs"] {
-  return docs.filter((doc) => doc.generated === null).map((doc) => ({ path: doc.path, sha256: hashOrNull(readTextOrNull(resolve(root, doc.path))) }));
+  return docs.flatMap((doc) => (doc.generated === null ? [{ path: doc.path, sha256: hashOrNull(readTextOrNull(resolve(root, doc.path))) }] : []));
 }
 
 /** The SHA-256 of a spec's text; null stays null (the spec could not be read). */

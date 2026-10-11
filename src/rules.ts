@@ -248,7 +248,7 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
       continue;
     }
 
-    edges.push({
+    const use: UseEdge = {
       from,
       to,
       fromUnit,
@@ -259,9 +259,12 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
       line: configured?.line ?? edge.line,
       col: configured?.col ?? edge.col,
       resolution: edge.resolution,
-      ...(edge.provenance === "docblock" ? { docblock: edge.docblock ?? `${edge.file}:${edge.line}:${edge.col}` } : {}),
-      ...(configured ? { config: configNote(edge) } : {}),
-    });
+    };
+
+    if (edge.provenance === "docblock") use.docblock = edge.docblock ?? `${edge.file}:${edge.line}:${edge.col}`;
+
+    if (configured) use.config = configNote(edge);
+    edges.push(use);
   }
 
   /** Every module node, classes included: the area of a scope. */
@@ -886,12 +889,14 @@ function areaWithin(id: string, scope: string): boolean {
   return id === scope || id.startsWith(`${scope}.`);
 }
 
+type Decision = { winners: RuleHit[]; denyWins: boolean };
+
 /**
  * First a manual hit drops a baseline hit over the same areas (both formats).
  * Format 1: the greatest depth sum, and every `deny` on that sum.
  * Format 2: drop dominated hits; any undominated `deny` wins (deny-overrides).
  */
-function decide(all: readonly RuleHit[], format: RuleFormat): { winners: RuleHit[]; denyWins: boolean } {
+function decide(all: readonly RuleHit[], format: RuleFormat): Decision {
   const hits = overManualRules(all);
 
   if (format === 1) {
@@ -932,10 +937,10 @@ function incomparableAside(deny: RuleHit, hits: readonly RuleHit[], format: Rule
 }
 
 function overrideEvidence(deny: Rule, targets: string, notes: readonly OverrideNote[]): string {
-  const manual = [...new Set(notes.filter((note) => note.baseline).map((note) => note.text))].sort();
-  const specific = [...new Set(notes.filter((note) => !note.incomparable && !note.baseline).map((note) => note.text))].sort();
+  const manual = [...new Set(notes.flatMap((note) => (note.baseline ? [note.text] : [])))].sort();
+  const specific = [...new Set(notes.flatMap((note) => (!note.incomparable && !note.baseline ? [note.text] : [])))].sort();
 
-  const cross = [...new Map(notes.filter((note) => note.incomparable).map((note) => [`${note.file}:${note.line}:${note.text}`, note])).values()].sort((a, b) =>
+  const cross = [...new Map(notes.flatMap((note) => (note.incomparable ? [[`${note.file}:${note.line}:${note.text}`, note] as const] : []))).values()].sort((a, b) =>
     a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line || (a.text < b.text ? -1 : a.text > b.text ? 1 : 0),
   );
 
@@ -1154,12 +1159,14 @@ function collectRules(spec: SpecIR, kindOf: (id: string) => string | undefined):
   return { any: spec.hasRules, orders, above, ordered, unordered, allows, denies, entries, entryNodes, noCycles, exportsRules, diagnostics };
 }
 
+type CombinedOrders = { orders: LayerOrder[]; above: Map<string, Set<string>> };
+
 /**
  * All `layers` lines as one partial order: `a < b` and `b < c` put `c` above
  * `a`, while `a < b` and `c < d` say nothing about `a` and `d`. A line that
  * contradicts the lines before it is K005 and left out.
  */
-function combineOrders(chains: readonly LayerOrder[], diagnostics: Diagnostic[]): { orders: LayerOrder[]; above: Map<string, Set<string>> } {
+function combineOrders(chains: readonly LayerOrder[], diagnostics: Diagnostic[]): CombinedOrders {
   const direct = new Map<string, Set<string>>();
   let above = new Map<string, Set<string>>();
   const orders: LayerOrder[] = [];

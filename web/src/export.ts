@@ -44,7 +44,7 @@ export function mountExport(toolbar: HTMLElement, active: () => ViewQuery | null
       const query = active();
 
       if (query === null) return report("pick a view first");
-      void download(query, format, report).catch((error: unknown) => report(`export failed: ${error instanceof Error ? error.message : String(error)}`));
+      void download(query, format, report).catch((cause: unknown) => report(`export failed: ${cause instanceof Error ? cause.message : String(cause)}`));
     });
     toolbar.append(button);
   }

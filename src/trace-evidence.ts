@@ -7,6 +7,7 @@
 import { closeSync, openSync, readSync } from "node:fs";
 import { join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
+import { isJsonBoolean, isJsonNumber, isJsonObject, isJsonString, parseJson, type JsonValue } from "./json.ts";
 
 export const TRACE_SCHEMA = 1;
 
@@ -122,23 +123,23 @@ function eachLine(path: string, visit: (text: string, line: number) => void): vo
 
 function readEvent(runs: Map<string, RunDraft>, file: string, line: number, text: string): void {
   const at = `${file}:${line}`;
-  let value: unknown;
+  let value: JsonValue;
 
   try {
-    value = JSON.parse(text);
+    value = parseJson(text);
   } catch (e) {
     throw new Error(`${at}: invalid JSON: ${e instanceof Error ? e.message : String(e)}`);
   }
 
-  if (typeof value !== "object" || value === null) throw new Error(`${at}: a trace event must be an object`);
-  const event = value as Record<string, unknown>;
+  if (!isJsonObject(value)) throw new Error(`${at}: a trace event must be an object`);
+  const event = value;
 
   if (event.schemaVersion !== TRACE_SCHEMA) throw new Error(`${at}: unsupported trace schemaVersion ${JSON.stringify(event.schemaVersion)}`);
 
   const str = (field: string): string => {
     const v = event[field];
 
-    if (typeof v !== "string" || v === "") throw new Error(`${at}: \`${field}\` must be a non-empty string`);
+    if (!isJsonString(v) || v === "") throw new Error(`${at}: \`${field}\` must be a non-empty string`);
 
     return v;
   };
@@ -146,7 +147,7 @@ function readEvent(runs: Map<string, RunDraft>, file: string, line: number, text
   const num = (field: string): number => {
     const v = event[field];
 
-    if (typeof v !== "number" || !Number.isFinite(v)) throw new Error(`${at}: \`${field}\` must be a number`);
+    if (!isJsonNumber(v) || !Number.isFinite(v)) throw new Error(`${at}: \`${field}\` must be a number`);
 
     return v;
   };
@@ -156,15 +157,15 @@ function readEvent(runs: Map<string, RunDraft>, file: string, line: number, text
 
     if (v === undefined) return undefined;
 
-    if (!Array.isArray(v) || !v.every((id) => typeof id === "string")) throw new Error(`${at}: \`${field}\` must be an array of ${what}`);
+    if (!Array.isArray(v) || !v.every(isJsonString)) throw new Error(`${at}: \`${field}\` must be an array of ${what}`);
 
-    return v as string[];
+    return v;
   };
 
   // A missing snapshot leaves the run unbound; a value of another type is an error, not a missing one.
   const snapshotId = event.snapshotId;
 
-  if (snapshotId !== undefined && snapshotId !== null && typeof snapshotId !== "string") throw new Error(`${at}: \`snapshotId\` must be a string or null`);
+  if (snapshotId !== undefined && snapshotId !== null && !isJsonString(snapshotId)) throw new Error(`${at}: \`snapshotId\` must be a string or null`);
   const key = JSON.stringify([str("runId"), str("testId"), str("flow")]);
   let run = runs.get(key);
 
@@ -182,7 +183,7 @@ function readEvent(runs: Map<string, RunDraft>, file: string, line: number, text
     const links = ids("links", "span ids") ?? [];
     const parent = event.parentSpanId;
 
-    if (parent !== undefined && parent !== null && typeof parent !== "string") throw new Error(`${at}: \`parentSpanId\` must be a string or null`);
+    if (parent !== undefined && parent !== null && !isJsonString(parent)) throw new Error(`${at}: \`parentSpanId\` must be a string or null`);
     const spanId = str("spanId");
 
     // Two starts of one span id would let one process's steps nest under another's trigger.
@@ -191,7 +192,7 @@ function readEvent(runs: Map<string, RunDraft>, file: string, line: number, text
     run.clocks.add(str("clockId"));
   } else if (kind === "end") {
     const spanId = str("spanId");
-    const end = { clockId: str("clockId"), seq: num("seq"), ts: num("ts"), outcome: typeof event.outcome === "string" ? event.outcome : "ok" };
+    const end = { clockId: str("clockId"), seq: num("seq"), ts: num("ts"), outcome: isJsonString(event.outcome) ? event.outcome : "ok" };
     run.clocks.add(end.clockId);
     const span = run.spans.get(spanId);
 
@@ -200,23 +201,23 @@ function readEvent(runs: Map<string, RunDraft>, file: string, line: number, text
     else span.end = end;
   } else if (kind === "run") {
     // Each process of a run writes its own `run` event: the run is complete only when all of them are.
-    if (event.complete !== undefined && typeof event.complete !== "boolean") throw new Error(`${at}: \`complete\` must be a boolean`);
+    if (event.complete !== undefined && !isJsonBoolean(event.complete)) throw new Error(`${at}: \`complete\` must be a boolean`);
     // The clock the record is for; a record without one (an adapter before the field) stands for one process.
     const clock = event.clockId;
 
-    if (clock !== undefined && clock !== null && (typeof clock !== "string" || clock === "")) throw new Error(`${at}: \`clockId\` must be a non-empty string`);
+    if (clock !== undefined && clock !== null && (!isJsonString(clock) || clock === "")) throw new Error(`${at}: \`clockId\` must be a non-empty string`);
 
-    if (typeof clock === "string") run.finished.add(clock);
+    if (isJsonString(clock)) run.finished.add(clock);
     else run.anonymous++;
     const dropped = event.dropped;
 
-    if (dropped !== undefined && (typeof dropped !== "number" || !Number.isInteger(dropped) || dropped < 0)) throw new Error(`${at}: \`dropped\` must be a non-negative integer`);
+    if (dropped !== undefined && (!isJsonNumber(dropped) || !Number.isInteger(dropped) || dropped < 0)) throw new Error(`${at}: \`dropped\` must be a non-negative integer`);
     const instrumented = ids("instrumented", "symbol ids");
     const reasons = event.uninstrumented;
 
-    if (reasons !== undefined && (typeof reasons !== "object" || reasons === null || Array.isArray(reasons) || Object.values(reasons).some((r) => typeof r !== "string"))) throw new Error(`${at}: \`uninstrumented\` must be an object of strings`);
+    if (reasons !== undefined && (!isJsonObject(reasons) || !Object.values(reasons).every(isJsonString))) throw new Error(`${at}: \`uninstrumented\` must be an object of strings`);
 
-    for (const [id, reason] of Object.entries((reasons ?? {}) as Record<string, string>)) if (!run.uninstrumented.has(id)) run.uninstrumented.set(id, reason);
+    for (const [id, reason] of Object.entries(reasons ?? {})) if (isJsonString(reason) && !run.uninstrumented.has(id)) run.uninstrumented.set(id, reason);
     const open = ids("open", "span ids") ?? [];
     run.complete &&= event.complete === true;
     run.dropped = run.dropped === null || dropped === undefined ? null : run.dropped + dropped;
@@ -381,6 +382,9 @@ function better(a: Assignment, b: Assignment): boolean {
   return a.ok !== b.ok ? a.ok > b.ok : a.fail < b.fail;
 }
 
+/** The run and the test a verdict is about. */
+type RunIdentity = { runId: string; testId: string };
+
 /**
  * Matches one run against a flow. A test may call the trigger or a step more
  * than once (an early `return` first, the real call later), so every span of a
@@ -432,7 +436,7 @@ class Matcher {
     return best.outcomes.map(([key, outcome]) => [key, outcome.verdict === "unverified" ? outcome : { ...outcome, verdict: "unverified", message: `${outcome.message}; ${doubt}` }]);
   }
 
-  private base(): { runId: string; testId: string } {
+  private base(): RunIdentity {
     return { runId: this.run.runId, testId: this.run.testId };
   }
 

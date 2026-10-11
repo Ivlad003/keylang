@@ -7,7 +7,7 @@
 // the snapshot and the flows of the specs; the operation writes.
 
 import { firstSentence } from "./brief.ts";
-import { distinctNames, draftFlow, type FlowDraft } from "./draft.ts";
+import { distinctNames, draftFlow, type DraftFlowOptions, type FlowDraft } from "./draft.ts";
 import { DISCOVERED_FLOWS_DIR } from "./map.ts";
 import { isTriggerKind } from "./parser.ts";
 import type { Flow } from "./spec-ir.ts";
@@ -147,7 +147,13 @@ export function discoverFlows(snapshot: AnalysisSnapshot, specified: ReadonlyMap
     chosen.map((entry) => {
       const event = observedEvent(snapshot, entry);
 
-      return draftFlow(snapshot, entry.id, { depth, ...(isTriggerKind(entry.kind) ? { entry: entry.kind } : {}), ...(event !== null ? { event } : {}) });
+      const draftOptions: DraftFlowOptions = { depth };
+
+      if (isTriggerKind(entry.kind)) draftOptions.entry = entry.kind;
+
+      if (event !== null) draftOptions.event = event;
+
+      return draftFlow(snapshot, entry.id, draftOptions);
     }),
   );
 
@@ -158,7 +164,10 @@ export function discoverFlows(snapshot: AnalysisSnapshot, specified: ReadonlyMap
     const layer = snapshot.nodes[entry.id]!.layer;
     const count = draft.steps.reduce((sum, id) => sum + (holes.get(id) ?? 0), 0);
     const described = offlineDescription(snapshot, entry.id, firstLevelSteps(draft.text));
-    const flow = { name: draft.name, trigger: entry.id, entry: { kind: entry.kind, label: entry.label }, layer, file: `${layer}.md`, steps: draft.steps, holes: count, ...(described ? { description: described.text } : {}) };
+    const flow: Omit<DiscoveredFlow, "text"> = { name: draft.name, trigger: entry.id, entry: { kind: entry.kind, label: entry.label }, layer, file: `${layer}.md`, steps: draft.steps, holes: count };
+
+    if (described) flow.description = described.text;
+
 
     return { ...flow, text: withComment(draft.text, `keylang:discover entry=${entry.kind} label="${quoted(entry.label)}" steps=${draft.steps.length} holes=${count}`, described) };
   });

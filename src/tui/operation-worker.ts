@@ -33,8 +33,25 @@ export type OperationReply =
 
 const post = (reply: OperationReply): void => parentPort?.postMessage(reply);
 
-/** The operations running here: their signal, and the answer their commit waits for. */
-const running = new Map<number, { controller: AbortController; proceed: ((gate: CommitGate) => void) | null }>();
+/** An operation running here: its signal, and the answer its commit waits for. */
+interface RunningOperation {
+  controller: AbortController;
+  proceed: ((gate: CommitGate) => void) | null;
+}
+
+const running = new Map<number, RunningOperation>();
+
+function progressReply(operationId: number, text: string, step: BatchStep | undefined): OperationReply {
+  const reply: OperationReply = { operationId, type: "progress", text };
+
+  if (step) reply.step = step;
+
+  return reply;
+}
+
+function failureText(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
+}
 
 parentPort?.on("message", (call: OperationCall) => {
   if (call.type === "base") {
@@ -59,19 +76,22 @@ parentPort?.on("message", (call: OperationCall) => {
     return;
   }
 
-  const entry = { controller: new AbortController(), proceed: null as ((gate: CommitGate) => void) | null };
+  const entry: RunningOperation = { controller: new AbortController(), proceed: null };
   running.set(operationId, entry);
 
   const beforeCommit = (plan?: CommitPlan): Promise<CommitGate> =>
     new Promise<CommitGate>((proceed) => {
       entry.proceed = proceed;
-      post({ operationId, type: "commit", ...(plan ? { plan } : {}) });
+      const reply: OperationReply = { operationId, type: "commit" };
+
+      if (plan) reply.plan = plan;
+      post(reply);
     });
 
-  runOperation(call.request, { signal: entry.controller.signal, beforeCommit, onProgress: ({ text, step }) => post({ operationId, type: "progress", text, ...(step ? { step } : {}) }) })
+  runOperation(call.request, { signal: entry.controller.signal, beforeCommit, onProgress: ({ text, step }) => post(progressReply(operationId, text, step)) })
     .then(
       (result) => post({ operationId, type: "result", result }),
-      (error: unknown) => post({ operationId, type: "error", error: error instanceof Error ? error.message : String(error) }),
+      (error) => post({ operationId, type: "error", error: failureText(error) }),
     )
     .finally(() => running.delete(operationId));
 });

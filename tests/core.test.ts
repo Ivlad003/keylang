@@ -16,6 +16,7 @@ import { analyze } from "../src/analyze.ts";
 import { RESERVED_LAYER_NAMES } from "../src/config.ts";
 import type { Document, Node, Ref } from "../src/ir.ts";
 import { sectionNodes, walk } from "../src/ir.ts";
+import type { JsonObject } from "../src/json.ts";
 import type { Span } from "../src/span.ts";
 import { keywordsAt, parse } from "../src/parser.ts";
 import * as api from "../src/index.ts";
@@ -39,13 +40,19 @@ function repo(t: { after: (f: () => void) => void }, files: Record<string, strin
   return dir;
 }
 
-function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+interface Run {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+function keylang(cwd: string, args: string[]): Run {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8" });
 
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
-const config = (layers: Record<string, string[]>, extra: object = {}): string => `${JSON.stringify({ languages: ["typescript"], layers, ...extra })}\n`;
+const config = (layers: Record<string, string[]>, extra: JsonObject = {}): string => `${JSON.stringify({ languages: ["typescript"], layers, ...extra })}\n`;
 
 test("an alias keylang cannot resolve is a hole, not an external package: deny is unverified, not ok", (t) => {
   const dir = repo(t, {
@@ -94,7 +101,9 @@ test("rules: exports of an opaque module and no-cycles over a hole are unverifie
   });
 
   const r = keylang(dir, ["check", "--format", "json"]);
+  // SAFETY: `check --format json` prints its report object, whose `results` are the rows of docs/cli.md.
   const verdicts = JSON.parse(r.stdout) as { results?: { verdict: string; criterion: string; message: string }[] };
+  // SAFETY: without a `results` field the output is the bare array of the same rows.
   const results = verdicts.results ?? (JSON.parse(r.stdout) as { verdict: string; criterion: string; message: string }[]);
   const of = (criterion: string) => results.filter((item) => item.criterion === criterion);
   assert.deepEqual(of("exports app.util").map((item) => item.verdict), ["unverified"], r.stdout);
@@ -124,9 +133,11 @@ test("the snapshot id changes with tsconfig paths, which decide edges", (t) => {
   });
 
   keylang(dir, ["map"]);
+  // SAFETY: `keylang map` ran just above, and every snapshot it writes carries a string `snapshotId`.
   const before = (JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as { snapshotId: string }).snapshotId;
   writeFileSync(join(dir, "tsconfig.json"), '{ "compilerOptions": { "paths": { "@/*": ["./src/*"] } } }\n');
   keylang(dir, ["map"]);
+  // SAFETY: `keylang map` ran again just above, rewriting the snapshot with its `snapshotId`.
   const after = (JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as { snapshotId: string }).snapshotId;
   assert.notEqual(after, before);
 });
@@ -154,15 +165,15 @@ test("config limits: dir outside the repository, a dotted layer name; brace glob
 test("fmt keeps a heading comment; a BOM does not turn a flow into a map", (t) => {
   const dir = repo(t, { "a.md": "# flow checkout <!-- owner: team-a -->\n\n- trigger a.b\n", "b.md": "﻿# flow x\n\n- trigger a.b\n" });
   assert.equal(keylang(dir, ["fmt", "--check", "a.md"]).status, 0);
+  // SAFETY: `parse --json` prints IR documents (src/ir.ts), each with its sections.
   const parsed = JSON.parse(keylang(dir, ["parse", "--json", "b.md"]).stdout) as { sections: { kind: string }[] }[] | { sections: { kind: string }[] };
   const doc = Array.isArray(parsed) ? parsed[0]! : parsed;
   assert.equal(doc.sections[0]!.kind, "flow");
 });
 
 test("no-cycles survives a chain of 5000 modules", (t) => {
-  const files: Record<string, string> = { "keylang.json": config({ app: ["src/**"] }), "keylang/rules.md": "# rules\n\n- no-cycles\n" };
-
-  for (let i = 0; i < 5000; i++) files[`src/m${i}.ts`] = i < 4999 ? `import "./m${i + 1}.ts";\nexport const v${i} = 1;\n` : "export const last = 1;\n";
+  const modules = Object.fromEntries(Array.from({ length: 5000 }, (_, i) => [`src/m${i}.ts`, i < 4999 ? `import "./m${i + 1}.ts";\nexport const v${i} = 1;\n` : "export const last = 1;\n"]));
+  const files = { "keylang.json": config({ app: ["src/**"] }), "keylang/rules.md": "# rules\n\n- no-cycles\n", ...modules };
   const dir = repo(t, files);
   const r = keylang(dir, ["check"]);
   assert.equal(r.status, 0, r.stderr.slice(0, 400));
@@ -247,6 +258,7 @@ test("trace: spans of two processes of one run never nest into each other; a sym
   spawnSync("ln", ["-s", dir, link]);
   rmSync(join(dir, ".keylang/trace"), { recursive: true, force: true });
   run("a", link);
+  // SAFETY: the trace runtime writes one JSON event object per line, with these optional fields.
   const lines = readFileSync(join(dir, ".keylang/trace/f.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line) as { event: string; instrumented?: string[]; symbolId?: string });
   assert.ok(lines.some((line) => line.event === "start" && line.symbolId === "app.main.a"), "the trigger was wrapped");
   assert.deepEqual(lines.find((line) => line.event === "run")?.instrumented, ["app.main.a", "app.main.c"]);
@@ -257,9 +269,12 @@ test("trace: spans of two processes of one run never nest into each other; a sym
 
 type Result = { criterion: string; area: string; verdict: string; evidence: string; code: string | null; line: number };
 
-function results(dir: string, args: string[] = []): { status: number | null; results: Result[]; stderr: string } {
+type CheckRun = { status: number | null; results: Result[]; stderr: string };
+
+function results(dir: string, args: string[] = []): CheckRun {
   const r = keylang(dir, ["check", "--format", "json", ...args]);
 
+  // SAFETY: `check --format json` prints its report object, whose `results` are the rows of docs/cli.md.
   return { status: r.status, results: (JSON.parse(r.stdout) as { results: Result[] }).results, stderr: r.stderr };
 }
 
@@ -272,6 +287,7 @@ test("headings: only a flow has a name; an empty heading says so; fmt writes one
   assert.match(r.stdout, /^a\.md:11:1: K006 section heading without a kind;/m);
   assert.match(r.stdout, /^a\.md:15:10: K005 unexpected words in heading$/m);
   assert.doesNotMatch(r.stdout, /unknown section `# `/);
+  // SAFETY: `parse --json` prints IR documents (src/ir.ts), whose sections carry a kind and a name.
   const sections = (JSON.parse(keylang(dir, ["parse", "--json", "a.md"]).stdout) as { sections: { kind: string; name: { value: string } | null }[] }[])[0]!.sections;
   assert.deepEqual(sections.map((s) => [s.kind, s.name?.value ?? null]), [["rules", null], ["map", null], ["wiring", null], ["map", null], ["map", null], ["flow", "f"]]);
   assert.equal(keylang(dir, ["fmt", "a.md"]).status, 0);
@@ -290,6 +306,7 @@ test("items: tabs matter only where they decide the tree, free text is canonical
   });
 
   assert.equal(keylang(dir, ["parse", "prose.md"]).status, 0, "a tab in prose or code is text");
+  // SAFETY: `parse --json` prints IR documents (src/ir.ts), whose items may carry a text.
   const text = (file: string): string | undefined => (JSON.parse(keylang(dir, ["parse", "--json", file]).stdout) as { sections: { items: { text?: { value: string } | null }[] }[] }[])[0]!.sections.at(-1)!.items.at(-1)!.text?.value;
   const before = text("prose.md");
   assert.equal(keylang(dir, ["fmt", "prose.md"]).status, 0);
@@ -338,6 +355,7 @@ test("config: `./keylang/` is the spec directory; reserved layer names are rejec
   const dir = repo(t, { "src/a.ts": "export const a = 1;\n", "keylang/tool.ts": "export const t = 1;\n" });
   writeFileSync(join(dir, "keylang.json"), `${JSON.stringify({ languages: ["typescript"], dir: "./keylang/", layers: { app: ["**"] } })}\n`);
   assert.equal(keylang(dir, ["map"]).status, 0);
+  // SAFETY: `keylang map` exited 0 just above, so the snapshot lists its manifest files.
   const files = (JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as { manifest: { files: { path: string }[] } }).manifest.files.map((f) => f.path);
   assert.deepEqual(files, ["src/a.ts"], "the spec directory is not code");
 
@@ -354,6 +372,7 @@ test("config: `./keylang/` is the spec directory; reserved layer names are rejec
   assert.match(init.stderr, /note: `src\/external\/` is layer `external_`: `external` is reserved/);
   assert.match(init.stderr, /note: `src\/module\/` is layer `module_`: `module` is a keyword/);
   assert.match(init.stderr, /note: `src\/_2fa\/` is layer `_2fa_2`: `_2fa` is already the layer of `src\/2fa\/`/);
+  // SAFETY: `init` exited 0 above, so keylang.json holds the `layers` record it wrote.
   const layers = (JSON.parse(readFileSync(join(guessed, "keylang.json"), "utf8")) as { layers: Record<string, string[]> }).layers;
   assert.deepEqual(layers, { _2fa: ["src/2fa/**"], _2fa_2: ["src/_2fa/**"], external_: ["src/external/**"], module_: ["src/module/**"] });
   const checked = keylang(guessed, ["check"]);
@@ -376,6 +395,7 @@ test("config: `README` in any case is a reserved layer name; init renames a gues
   const init = keylang(guessed, ["init", "--agents=none"]);
   assert.equal(init.status, 0, init.stderr);
   assert.match(init.stderr, /note: `src\/README\/` is layer `README_`: `README` is reserved/);
+  // SAFETY: `init` exited 0 above, so keylang.json holds the `layers` record it wrote.
   const layers = (JSON.parse(readFileSync(join(guessed, "keylang.json"), "utf8")) as { layers: Record<string, string[]> }).layers;
   assert.deepEqual(Object.keys(layers).sort(), ["README_", "app"]);
 });
@@ -711,6 +731,7 @@ test("exports with no names is only parser K005, and an empty entry has no verdi
 
   const entered = keylang(entryDir, ["check", "--format", "json"]);
   assert.equal(entered.status, 0, entered.stderr + entered.stdout);
+  // SAFETY: `check --format json` prints its report object, whose `results` are the rows of docs/cli.md.
   const body = JSON.parse(entered.stdout) as { results: { criterion: string; line: number }[] };
   const entries = body.results.filter((result) => result.criterion === "entry");
   assert.equal(entries.length, 1);
@@ -745,6 +766,7 @@ test("compileSpec canonical text matches the spec-forms golden, and a line with 
 
   for (const ref of assertionRefs(invalid.spec)) assertRefInParse(invalidDocs, ref);
 
+  // SAFETY: the golden file is a saved `check --format json` report of the same fixture.
   const golden = JSON.parse(readFileSync(join(root, "tests/fixtures/spec-forms/valid.expected/check.json"), "utf8")) as {
     results: { criterion: string; file: string; line: number; code: string | null; specHash: string; evidence: string }[];
   };
@@ -821,6 +843,7 @@ function parsedDocs(dir: string): Document[] {
   const parsed = keylang(dir, ["parse", "--json", "keylang"]);
   assert.ok(parsed.stdout.startsWith("["), parsed.stderr);
 
+  // SAFETY: stdout starts with `[`, the array of IR documents `parse --json` prints.
   return JSON.parse(parsed.stdout) as Document[];
 }
 

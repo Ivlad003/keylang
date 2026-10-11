@@ -14,7 +14,7 @@ import { checkoutRepo, KEY } from "./tui-fixture.ts";
 import { session } from "./tui-helpers.ts";
 
 /** Routes and a payment client in TypeScript, a script with an HTTP client in Python, a hand-written flow, a dynamic call, an environment read. */
-const MIXED: Record<string, string> = {
+const MIXED = {
   "keylang.json": JSON.stringify({ languages: ["typescript", "python"], module: "file", layers: { app: ["src/app/**"], shop: ["src/py/**"] } }),
   "README.md": "# Shop\n\nShop takes orders and charges cards. It also fetches tax rates.\n",
   "src/app/README.md": "# app\n\nThe HTTP side of the shop. Routes take and list orders.\n",
@@ -84,7 +84,7 @@ test("tour: all seven sections on a TypeScript and Python repository, the same b
   assert.equal(second.stdout, first.stdout, "deterministic");
   const after = treeBytes(dir);
 
-  for (const map of [before, after]) for (const path of [...map.keys()]) if (path.startsWith(".keylang/cache/")) map.delete(path);
+  for (const map of [before, after]) for (const path of Array.from(map.keys())) if (path.startsWith(".keylang/cache/")) map.delete(path);
   assert.deepEqual(after, before, "read-only but the fact cache");
 
   const md = first.stdout;
@@ -127,6 +127,7 @@ test("tour --json: the same data as the page", (t) => {
   writeTree(dir, MIXED);
   const r = tour(dir, ["--json"]);
   assert.equal(r.status, 0, r.stderr);
+  // SAFETY: `tour --json` prints the tour that Tour describes (docs/cli.md).
   const data = JSON.parse(r.stdout) as Tour;
   assert.equal("text" in data, false);
   assert.match(data.snapshotId, /^[0-9a-f]{64}$/);
@@ -187,6 +188,7 @@ test("tour: business processes from the names README, with their provenance; a f
       "",
     ].join("\n"),
   );
+  // SAFETY: `tour --json` prints the tour that Tour describes (docs/cli.md).
   const data = JSON.parse(tour(dir, ["--json"]).stdout) as Tour;
   assert.equal(data.processes.source, "names");
   assert.deepEqual(data.processes.domains.map((domain) => [domain.name, domain.processes.map((p) => [p.name, p.description, p.provenance?.agent ?? null, p.flows.map((f) => f.name)])]), [

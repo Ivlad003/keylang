@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
+import { isJsonObject, parseJson } from "../src/json.ts";
 import type { AnalysisSnapshot } from "../src/snapshot.ts";
 import { keylang, tempDir, writeTree } from "./cli-helpers.ts";
 
@@ -18,7 +19,7 @@ const CONFIG = {
 
 const MANIFEST = { name: "shop", private: true, dependencies: { "react-router": "7.0.0" }, devDependencies: { "@react-router/dev": "7.0.0", "@react-router/fs-routes": "7.0.0" } };
 
-const REPO: Record<string, string> = {
+const REPO = {
   "keylang.json": `${JSON.stringify(CONFIG, null, 2)}\n`,
   "package.json": `${JSON.stringify(MANIFEST, null, 2)}\n`,
   "app/root.tsx": "export default function Root() {\n  return null;\n}\n",
@@ -64,7 +65,7 @@ const REPO: Record<string, string> = {
   // Not route modules: a test, a helper of a folder route.
   "app/routes/about.test.tsx": "export function loader() {\n  return {};\n}\n",
   "app/routes/account/helpers.ts": "export function loader() {\n  return {};\n}\n",
-};
+} satisfies Record<string, string>;
 
 function shop(t: TestContext, extra: Record<string, string> = {}): string {
   const dir = tempDir(t, "keylang-react-router-");
@@ -77,6 +78,7 @@ function snapshotOf(dir: string): AnalysisSnapshot {
   const run = keylang(dir, ["map"]);
   assert.equal(run.status, 0, run.stderr);
 
+  // SAFETY: `keylang map` exited 0 just above, so the index holds the snapshot it writes.
   return JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as AnalysisSnapshot;
 }
 
@@ -133,7 +135,8 @@ test("react-router: a route config without `flatRoutes()` is a hole; `frameworks
   assert.deepEqual(rows(snapshot), []);
   assert.ok(snapshot.coverage.some((c) => c.file === "app/routes.ts" && c.reason.includes("without `flatRoutes()`")), JSON.stringify(snapshot.coverage));
   const off = shop(t);
-  const raw = JSON.parse(readFileSync(join(off, "keylang.json"), "utf8")) as Record<string, unknown>;
+  const raw = parseJson(readFileSync(join(off, "keylang.json"), "utf8"));
+  assert.ok(isJsonObject(raw), "keylang.json is an object");
   writeFileSync(join(off, "keylang.json"), `${JSON.stringify({ ...raw, frameworks: [] }, null, 2)}\n`);
   const without = snapshotOf(off);
   assert.deepEqual(rows(without), []);

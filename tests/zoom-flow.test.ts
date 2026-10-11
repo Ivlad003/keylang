@@ -40,12 +40,12 @@ test("flow overlay model: steps numbered in the order written on the level's uni
   assert.deepEqual(flowsThrough(analysis, "presentation"), ["checkout"]);
 });
 
-function session(root: string, cols = 140, rows = 32): { app: App; send: (keys: string) => void; text: () => string; lines: () => string[] } {
+function session(root: string, cols = 140, rows = 32) {
   const vt = new VirtualTerminal(cols, rows);
   const app = new App({ root, cols, rows });
   app.attach({ write: (ansi) => vt.feed(ansi) }, cols, rows);
 
-  return { app, send: (keys) => app.input(keys), text: () => vt.text(), lines: () => vt.lines() };
+  return { app, send: (keys: string) => app.input(keys), text: () => vt.text(), lines: () => vt.lines() };
 }
 
 function zoom(s: ReturnType<typeof session>): void {

@@ -60,6 +60,7 @@ test("# system: components in zones, relations, tables with columns, sequences a
   writeTree(dir, { "keylang/system/shortener.md": SYSTEM });
   const r = keylang(dir, ["parse", "--json", "keylang/system/shortener.md"]);
   assert.equal(r.status, 0, r.stderr);
+  // SAFETY: `parse --json` prints an array of documents in the IR's JSON form (src/ir.ts).
   const [doc] = JSON.parse(r.stdout) as { sections: { kind: string; name: { value: string }; items: (Item & { type: string })[] }[]; diagnostics: unknown[] }[];
   assert.deepEqual(doc!.diagnostics, []);
   const section = doc!.sections[0]!;

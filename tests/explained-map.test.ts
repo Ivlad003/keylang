@@ -12,12 +12,19 @@ import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { briefOf } from "../src/brief.ts";
+import { isJsonObject, parseJson, type JsonObject } from "../src/json.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 const bin = join(root, "bin/keylang.js");
 
-function keylang(cwd: string, args: string[], env: Record<string, string | undefined> = {}): { status: number | null; stdout: string; stderr: string } {
+interface Run {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+function keylang(cwd: string, args: string[], env: Record<string, string | undefined> = {}): Run {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8", env: { ...process.env, ...env } });
 
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
@@ -34,6 +41,7 @@ function copy(t: TestContext): string {
 type Nodes = Record<string, { doc: string | null; fingerprint?: string; closure?: { fingerprint: string } }>;
 
 function nodes(dir: string): Nodes {
+  // SAFETY: every caller runs `keylang map` first, and the snapshot it writes has these node fields.
   return (JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as { nodes: Nodes }).nodes;
 }
 
@@ -90,9 +98,10 @@ test("map: documentation comments reach the snapshot as `doc`; the canonical map
   assert.equal(after?.closure?.fingerprint, before?.closure?.fingerprint);
 });
 
-function configure(dir: string, explain: Record<string, unknown> | undefined): void {
+function configure(dir: string, explain: JsonObject | undefined): void {
   const file = join(dir, "keylang.json");
-  const config = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+  const config = parseJson(readFileSync(file, "utf8"));
+  assert.ok(isJsonObject(config), "keylang.json is an object");
 
   if (explain === undefined) delete config.explain;
   else config.explain = explain;
@@ -194,6 +203,7 @@ async function mockAnthropic(t: TestContext): Promise<Mock> {
     let data = "";
     req.on("data", (chunk: Buffer) => (data += chunk.toString()));
     req.on("end", () => {
+      // SAFETY: the only client of this mock is the Anthropic SDK, which posts a Messages request.
       const body = JSON.parse(data) as { system: string; messages: { content: string }[] };
       const prompt = body.messages[0]?.content ?? "";
       mock.prompts.push({ system: body.system, prompt });
@@ -213,6 +223,7 @@ async function mockAnthropic(t: TestContext): Promise<Mock> {
 
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(() => server.close());
+  // SAFETY: the server listens on a TCP port, so its address is an AddressInfo, not a pipe name.
   mock.url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
   return mock;
@@ -237,7 +248,10 @@ function askedId(prompt: string): string {
   return /^Node:\n(?:planned )?\S+ (\S+)/.exec(prompt)?.[1] ?? "?";
 }
 
-function withModel(dir: string, mock: Mock): Record<string, string | undefined> {
+/** What the CLI needs to reach the mock model with a home of its own. */
+type ModelEnv = { ANTHROPIC_BASE_URL: string; ANTHROPIC_API_KEY: string; ANTHROPIC_AUTH_TOKEN: undefined; HOME: string };
+
+function withModel(dir: string, mock: Mock): ModelEnv {
   configure(dir, { map: true });
   const file = join(dir, "keylang.json");
   writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), agent: "anthropic:claude-opus-5" }));
@@ -478,12 +492,12 @@ test("explain --stale: a changed module constant or class field no fn reads make
   const dir = mkdtempSync(join(tmpdir(), "keylang-explained-values-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
-  const sources: Record<string, string> = {
+  const sources = {
     "src/config.ts": "export const LIMIT = 100;\n\nexport function twice(n: number): number {\n  return n * 2;\n}\n\nexport class Box {\n  size = 3;\n  constructor(private cap = 10) {}\n  area(): number {\n    return 1;\n  }\n}\n",
     "src/limits.py": "MAX = 100\n\n\ndef twice(n):\n    return n * 2\n\n\nclass Box:\n    def __init__(self):\n        self.size = 3\n\n    def area(self):\n        return 1\n",
     "src/box.php": "<?php\n\nconst MAX = 100;\n\nfunction twice($n) {\n    return $n * 2;\n}\n\nclass Box {\n    public $size = 3;\n\n    public function area() {\n        return 1;\n    }\n}\n",
     "src/plain.ts": "export function once(n: number): number {\n  return n;\n}\n",
-  };
+  } satisfies Record<string, string>;
 
   writeFileSync(join(dir, "keylang.json"), JSON.stringify({ languages: ["typescript", "python", "php"], layers: { main: ["src/**"] } }));
   mkdirSync(join(dir, "src"));
@@ -503,7 +517,7 @@ test("explain --stale: a changed module constant or class field no fn reads make
       .sort();
 
   assert.deepEqual(stale(), []);
-  const edit = (file: string, from: string, to: string): void => writeFileSync(join(dir, file), sources[file]!.replace(from, to));
+  const edit = (file: keyof typeof sources, from: string, to: string): void => writeFileSync(join(dir, file), sources[file].replace(from, to));
 
   edit("src/config.ts", "export const LIMIT = 100;", "// The cap.\nexport const LIMIT =\n  100;");
   edit("src/limits.py", "MAX = 100", "# The cap.\nMAX  =  100");
@@ -515,7 +529,7 @@ test("explain --stale: a changed module constant or class field no fn reads make
   edit("src/box.php", "MAX = 100", "MAX = 5");
   assert.deepEqual(stale(), ["main", "main.box", "main.config", "main.limits"]);
 
-  for (const file of Object.keys(sources)) writeFileSync(join(dir, file), sources[file]!);
+  for (const [file, text] of Object.entries(sources)) writeFileSync(join(dir, file), text);
   edit("src/config.ts", "cap = 10", "cap = 3");
   edit("src/limits.py", "self.size = 3", "self.size = 4");
   edit("src/box.php", "$size = 3", "$size = 4");

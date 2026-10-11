@@ -330,8 +330,14 @@ export function systemRequest(analysis: Analysis, options: { lang: string; brief
   return { system, prompt: parts.join("\n\n"), maxTokens: 1024 };
 }
 
+/** Tokens a batch is expected to send and receive. */
+export interface TokenEstimate {
+  input: number;
+  output: number;
+}
+
 /** A rough size of the batch for `--dry-run`: about four characters a token, and a brief of about 80 tokens out. */
-export function estimateTokens(analysis: Analysis, plan: readonly PlannedBrief[], briefs: ReadonlyMap<string, StoredExplanation>): { input: number; output: number } {
+export function estimateTokens(analysis: Analysis, plan: readonly PlannedBrief[], briefs: ReadonlyMap<string, StoredExplanation>): TokenEstimate {
   let chars = 0;
 
   for (const { id } of plan) {

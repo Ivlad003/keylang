@@ -48,12 +48,12 @@ test("zoom edges model: an import of a file `assume` names is listed in coverage
   assert.deepEqual(reasons.flatMap((item) => Array<string>(item.count).fill(item.reason)).sort(), kinds.filter((kind) => kind !== "assumed-import").sort());
 });
 
-function session(root: string): { app: App; send: (keys: string) => void; text: () => string; lines: () => string[] } {
+function session(root: string) {
   const vt = new VirtualTerminal(130, 30);
   const app = new App({ root, cols: 130, rows: 30 });
   app.attach({ write: (ansi) => vt.feed(ansi) }, 130, 30);
 
-  return { app, send: (keys) => app.input(keys), text: () => vt.text(), lines: () => vt.lines() };
+  return { app, send: (keys: string) => app.input(keys), text: () => vt.text(), lines: () => vt.lines() };
 }
 
 function zoom(s: ReturnType<typeof session>): void {
@@ -102,8 +102,9 @@ test("tui zoom edges: x on an edge row explains its edges in F6; x then x on two
   s.send("x");
   await s.app.idle();
   const record = s.app.state.records.at(-1)!;
-  assert.equal(record.kind, "explain-edge");
-  assert.deepEqual([(record.params as { from: string }).from, (record.params as { to: string }).to], ["application", "domain"]);
+  const edge = record.params;
+  assert.ok(edge.kind === "explain-edge");
+  assert.deepEqual([edge.from, edge.to], ["application", "domain"]);
   assert.equal(record.result?.exitCode, 0);
   s.send(KEY.f6);
   assert.match(s.text(), /Check: explain the edge between two ids · application ↔ domain +completed · code 0/);
@@ -118,6 +119,7 @@ test("tui zoom edges: x on an edge row explains its edges in F6; x then x on two
   s.send("j");
   s.send("x");
   await s.app.idle();
-  const pair = s.app.state.records.at(-1)!;
-  assert.deepEqual([(pair.params as { from: string }).from, (pair.params as { to: string }).to], ["domain", "application"]);
+  const pair = s.app.state.records.at(-1)!.params;
+  assert.ok(pair.kind === "explain-edge");
+  assert.deepEqual([pair.from, pair.to], ["domain", "application"]);
 });

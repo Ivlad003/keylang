@@ -25,7 +25,8 @@ export type Microphone = () => Promise<{ chunks: AsyncIterable<Int16Array>; stop
 /** What the assists need from the session around them. */
 export interface AssistHost {
   readonly state: State;
-  readonly closed: boolean;
+  /** Whether the session has closed: work that settles after it changes nothing. */
+  closed(): boolean;
   buffer(): Buffer | null;
   contextPack(): ContextPack | null;
   edit(change: (lines: string[], cursor: Cursor) => void): void;
@@ -69,7 +70,7 @@ export function countSuggestion(state: Pick<State, "root" | "config">, source: "
       const tally = (stats.suggestions[source] ??= { proposed: 0, accepted: 0, rejected: 0, ms: 0 });
       tally[field]++;
 
-      if (field !== "proposed" && typeof shown === "number") tally.ms += Date.now() - shown;
+      if (field !== "proposed" && shown !== null && shown !== undefined) tally.ms += Date.now() - shown;
     });
   } catch {
     // Metrics never stop editing.
@@ -116,7 +117,7 @@ export class Assist {
   private at(spot: Spot): boolean {
     const buffer = this.host.buffer();
 
-    return !this.host.closed && buffer !== null && buffer.path === spot.path && buffer.version === spot.version && this.state.mode === spot.mode;
+    return !this.host.closed() && buffer !== null && buffer.path === spot.path && buffer.version === spot.version && this.state.mode === spot.mode;
   }
 
   // ---------- ghost text ----------
@@ -193,7 +194,7 @@ export class Assist {
         this.state.ghost = { path: spot.path, version: spot.version, line, variants, index: 0, shown: Date.now() };
         countSuggestion(this.state, "ghost", "proposed", null);
       })()
-        .catch((error: unknown) => {
+        .catch((error) => {
           this.state.message = `agent: ${errorText(error)}`;
         })
         .finally(() => {
@@ -285,7 +286,7 @@ export class Assist {
       recording.mic = mic;
       recording.phase = "recording";
 
-      if (recording.stopped || this.host.closed) mic.stop();
+      if (recording.stopped || this.host.closed()) mic.stop();
       else {
         this.state.message = "● voice: recording… Ctrl+R stops";
         this.host.draw();
@@ -312,7 +313,7 @@ export class Assist {
       const terms = glossary(analysis, buffer.path, buffer.text, line);
       const text = engine.kind === "openrouter" ? await transcribeOpenRouter(engine, pcm, terms) : await (await import("../voice-local.ts")).transcribeLocal(engine.modelFile, pcm, terms);
 
-      if (this.host.closed || text.trim() === "") return;
+      if (this.host.closed() || text.trim() === "") return;
 
       if (!this.at(spot)) {
         this.state.message = `voice: «${text.trim()}» not inserted: ${buffer.path} changed or edit mode was left while recording`;
@@ -322,7 +323,7 @@ export class Assist {
 
       this.insertSpeech(text, line, analysis);
     })()
-      .catch((error: unknown) => {
+      .catch((error) => {
         this.state.message = errorText(error);
       })
       .finally(() => {

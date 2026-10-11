@@ -15,6 +15,7 @@
 import { firstSentence } from "./brief.ts";
 import { globPrefix } from "./glob.ts";
 import { walk, type Node, type Section } from "./ir.ts";
+import { isJsonObject, isJsonString, parseJson, type JsonValue } from "./json.ts";
 import type { LlmRequest } from "./llm.ts";
 import { isId, parse } from "./parser.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
@@ -429,6 +430,12 @@ function unescapeText(value: string): string {
 
 // ---------------------------------------------------------------- import
 
+/** Source layers placed onto target layers, with what the person should know about each placement. */
+export interface LayerPlacement {
+  choices: LayerChoice[];
+  notes: string[];
+}
+
 /** The layers of the repository a bundle is imported into. */
 export interface TargetLayer {
   name: string;
@@ -483,7 +490,7 @@ export function usedLayers(bundle: Bundle): string[] {
  * The algorithm's choice for the layers the flag and the model left: the
  * layer of the same name, else the first layer of the target (noted).
  */
-export function algoLayers(layers: readonly string[], target: readonly TargetLayer[], taken: ReadonlyMap<string, LayerChoice> = new Map()): { choices: LayerChoice[]; notes: string[] } {
+export function algoLayers(layers: readonly string[], target: readonly TargetLayer[], taken: ReadonlyMap<string, LayerChoice> = new Map()): LayerPlacement {
   const choices: LayerChoice[] = [];
   const notes: string[] = [];
   const first = target[0]?.name;
@@ -538,9 +545,9 @@ export function untrusted(text: string): string {
 }
 
 /** The model's answer checked: each value a target layer, each key a layer asked for; anything else is noted and left to the algorithm. */
-export function parseLayerMapAnswer(answer: string, layers: readonly string[], target: readonly TargetLayer[]): { choices: LayerChoice[]; notes: string[] } {
+export function parseLayerMapAnswer(answer: string, layers: readonly string[], target: readonly TargetLayer[]): LayerPlacement {
   const value = jsonOf(answer);
-  const map = isRecord(value) && isRecord(value.layers) ? value.layers : isRecord(value) ? value : null;
+  const map = isJsonObject(value) && isJsonObject(value.layers) ? value.layers : isJsonObject(value) ? value : null;
 
   if (map === null) return { choices: [], notes: ["the model's layer map is not JSON with a `layers` object: the algorithm maps every layer"] };
   const names = new Set(target.map((t) => t.name));
@@ -550,14 +557,14 @@ export function parseLayerMapAnswer(answer: string, layers: readonly string[], t
   for (const layer of layers) {
     const to = map[layer];
 
-    if (typeof to === "string" && names.has(to)) choices.push({ from: layer, to, by: "model" });
-    else notes.push(`the model mapped layer \`${layer}\` to ${typeof to === "string" ? `\`${to}\`, which is no layer here` : "nothing"}: the algorithm maps it`);
+    if (isJsonString(to) && names.has(to)) choices.push({ from: layer, to, by: "model" });
+    else notes.push(`the model mapped layer \`${layer}\` to ${isJsonString(to) ? `\`${to}\`, which is no layer here` : "nothing"}: the algorithm maps it`);
   }
 
   return { choices, notes };
 }
 
-function jsonOf(answer: string): unknown {
+function jsonOf(answer: string): JsonValue | undefined {
   const text = answer.trim().replace(/^```[a-z]*\s*\n([\s\S]*)\n```$/i, "$1");
   const from = text.indexOf("{");
   const to = text.lastIndexOf("}");
@@ -565,14 +572,10 @@ function jsonOf(answer: string): unknown {
   if (from === -1 || to < from) return undefined;
 
   try {
-    return JSON.parse(text.slice(from, to + 1)) as unknown;
+    return parseJson(text.slice(from, to + 1));
   } catch {
     return undefined;
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** The layer whose root holds `path` (the longest root wins), with that root; null when none does. */

@@ -139,6 +139,6 @@ export function compareDiagnostics(a: Diagnostic, b: Diagnostic): number {
 }
 
 /** The text of a thrown value: an `Error`'s message, anything else as a string. */
-export function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+export function errorText(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }

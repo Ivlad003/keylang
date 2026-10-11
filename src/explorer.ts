@@ -12,6 +12,7 @@
 
 import { EXTERNAL } from "./external-ids.ts";
 import type { FlowDraft } from "./draft.ts";
+import { isJsonObject, isJsonString, type JsonValue } from "./json.ts";
 import { isTriggerKind } from "./parser.ts";
 import type { AnalysisSnapshot, CoverageItem, SnapshotEdge } from "./snapshot.ts";
 import { compareText } from "./span.ts";
@@ -165,17 +166,26 @@ export function callsOf(snapshot: AnalysisSnapshot, id: string): Calls {
     const node = snapshot.nodes[other];
     const first = [...edges].sort((a, b) => byPosition(a, b))[0]!;
 
+    // The marks sit between the node and the call site, in the order the JSON has always listed them.
+    const marks: Pick<CallRef, "external" | "via" | "hook" | "site" | "closure"> = {};
+
+    if (node?.layer === EXTERNAL) marks.external = true;
+
+    if (first.via) marks.via = first.via;
+
+    if (first.hook) marks.hook = first.hook;
+
+    if (first.site) marks.site = first.site;
+
+    if (first.closure) marks.closure = true;
+
     return {
       id: other,
       kind: node?.kind ?? "unknown",
       file: node?.file ?? null,
       line: node?.line ?? null,
       layer: node?.layer ?? null,
-      ...(node?.layer === EXTERNAL ? { external: true as const } : {}),
-      ...(first.via ? { via: first.via } : {}),
-      ...(first.hook ? { hook: first.hook } : {}),
-      ...(first.site ? { site: first.site } : {}),
-      ...(first.closure ? { closure: true as const } : {}),
+      ...marks,
       at: { file: first.file, line: first.line, col: first.col },
       text: first.text,
       count: edges.length,
@@ -220,7 +230,10 @@ function holesOf(index: Index, id: string): CallHole[] {
     if (seen.has(key)) continue;
     seen.add(key);
     const reason = edge.resolution === "ambiguous" ? `ambiguous call \`${edge.text}\`: ${(edge.candidates ?? []).join(", ")}` : (edge.reason ?? `unresolved call \`${edge.text}\``);
-    out.push({ kind: edge.resolution, reason, text: edge.text, at: { file: edge.file, line: edge.line, col: edge.col }, ...(edge.candidates ? { candidates: edge.candidates } : {}) });
+    const hole: CallHole = { kind: edge.resolution, reason, text: edge.text, at: { file: edge.file, line: edge.line, col: edge.col } };
+
+    if (edge.candidates) hole.candidates = edge.candidates;
+    out.push(hole);
   }
 
   for (const item of index.coverage.get(id) ?? []) {
@@ -274,15 +287,21 @@ export interface EventListing {
   subscribers: number;
 }
 
+/** The event nodes of a snapshot; `reason` says why there are none. */
+export interface EventListings {
+  events: EventListing[];
+  reason?: string;
+}
+
 /** The event nodes of the snapshot by ID, or why there are none. */
-export function eventsOf(snapshot: AnalysisSnapshot | null): { events: EventListing[]; reason?: string } {
+export function eventsOf(snapshot: AnalysisSnapshot | null): EventListings {
   if (!snapshot) return { events: [], reason: "no snapshot: the specs were checked without code" };
   const index = indexOf(snapshot);
   const events: EventListing[] = [];
 
   for (const [id, node] of Object.entries(snapshot.nodes)) {
     // `event` is the node kind ADR 0022 п. 6 adds; older snapshots have none.
-    if ((node.kind as string) !== "event") continue;
+    if (node.kind !== "event") continue;
     events.push({ id, file: node.file, line: node.line, publishers: new Set((index.in.get(id) ?? []).map((e) => e.source)).size, subscribers: new Set((index.out.get(id) ?? []).map((e) => e.target)).size });
   }
 
@@ -318,16 +337,16 @@ const MAX_LEVEL = 30;
  * The request body of `POST /api/flow-proposal` as a request, or why not:
  * `{name, trigger, steps}`, where a step is an ID or `{id, steps?}`.
  */
-export function parseExplorerFlow(body: unknown): ExplorerFlowRequest | string {
-  if (typeof body !== "object" || body === null || Array.isArray(body)) return "the body must be a JSON object {name, trigger, steps}";
-  const { name, trigger, steps } = body as Record<string, unknown>;
+export function parseExplorerFlow(body: JsonValue): ExplorerFlowRequest | string {
+  if (!isJsonObject(body)) return "the body must be a JSON object {name, trigger, steps}";
+  const { name, trigger, steps } = body;
 
-  if (typeof name !== "string" || !FLOW_NAME.test(name)) return "name: a flow name of letters, digits, `-` and `_`, starting with a letter or `_`";
+  if (!isJsonString(name) || !FLOW_NAME.test(name)) return "name: a flow name of letters, digits, `-` and `_`, starting with a letter or `_`";
 
-  if (typeof trigger !== "string" || trigger === "") return "trigger: the ID of a fn";
+  if (!isJsonString(trigger) || trigger === "") return "trigger: the ID of a fn";
   let count = 0;
 
-  const parse = (value: unknown, level: number, where: string): ExplorerStep[] | string => {
+  const parse = (value: JsonValue | undefined, level: number, where: string): ExplorerStep[] | string => {
     if (value === undefined) return [];
 
     if (!Array.isArray(value)) return `${where}: an array of steps`;
@@ -338,16 +357,21 @@ export function parseExplorerFlow(body: unknown): ExplorerFlowRequest | string {
     for (const [i, item] of value.entries()) {
       if (++count > MAX_STEPS) return `more than ${MAX_STEPS} steps`;
 
-      if (typeof item === "string" && item !== "") {
+      if (isJsonString(item) && item !== "") {
         out.push({ id: item });
         continue;
       }
 
-      if (typeof item !== "object" || item === null || typeof (item as { id?: unknown }).id !== "string" || (item as { id: string }).id === "") return `${where}[${i}]: an ID or {id, steps}`;
-      const children = parse((item as { steps?: unknown }).steps, level + 1, `${where}[${i}].steps`);
+      const id = isJsonObject(item) ? item.id : undefined;
 
-      if (typeof children === "string") return children;
-      out.push({ id: (item as { id: string }).id, ...(children.length > 0 ? { steps: children } : {}) });
+      if (!isJsonObject(item) || !isJsonString(id) || id === "") return `${where}[${i}]: an ID or {id, steps}`;
+      const children = parse(item.steps, level + 1, `${where}[${i}].steps`);
+
+      if (!Array.isArray(children)) return children;
+      const step: ExplorerStep = { id };
+
+      if (children.length > 0) step.steps = children;
+      out.push(step);
     }
 
     return out;
@@ -355,7 +379,7 @@ export function parseExplorerFlow(body: unknown): ExplorerFlowRequest | string {
 
   const parsed = parse(steps, 0, "steps");
 
-  if (typeof parsed === "string") return parsed;
+  if (!Array.isArray(parsed)) return parsed;
 
   return { name, trigger, steps: parsed };
 }

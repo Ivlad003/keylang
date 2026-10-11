@@ -15,6 +15,7 @@ import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { errorText } from "../diag.ts";
 import { existingText, readTextOrNull } from "../files.ts";
+import { isJsonNumber, isJsonObject, parseJson, type JsonObject, type JsonValue } from "../json.ts";
 import { landing, safeWrite, writeAtomic, writeProblem } from "../safe-write.ts";
 import { CHAT_MIN_COLS, CHAT_MIN_ROWS, type Cell, type ChatMessage, type ClipState } from "./clip.ts";
 
@@ -55,13 +56,13 @@ export function placeClip(clip: ClipState, place: ClipPlace): void {
  * null: the default. A field of the wrong shape throws, naming the file and
  * the field; a window is at least 30×7.
  */
-export function parsePlace(file: string, value: unknown): ClipPlace {
-  if (!isObject(value)) throw new Error(`${file}: must be a JSON object, got ${shown(value)}`);
+export function parsePlace(file: string, value: JsonValue): ClipPlace {
+  if (!isJsonObject(value)) throw new Error(`${file}: must be a JSON object, got ${shown(value)}`);
   const assistant = value.assistant;
 
   if (assistant === undefined || assistant === null) return NO_PLACE;
 
-  if (!isObject(assistant)) throw new Error(`${file}: \`assistant\` must be an object, got ${shown(assistant)}`);
+  if (!isJsonObject(assistant)) throw new Error(`${file}: \`assistant\` must be an object, got ${shown(assistant)}`);
   const clip = fieldsOf(file, "assistant.clip", assistant.clip, ["x", "y"]);
   const window = fieldsOf(file, "assistant.window", assistant.window, ["x", "y", "cols", "rows"]);
 
@@ -80,10 +81,10 @@ export function parsePlace(file: string, value: unknown): ClipPlace {
 }
 
 /** An object field with only `keys`, or null when it is left out. */
-function fieldsOf(file: string, field: string, value: unknown, keys: readonly string[]): Record<string, unknown> | null {
+function fieldsOf(file: string, field: string, value: JsonValue | undefined, keys: readonly string[]): JsonObject | null {
   if (value === undefined || value === null) return null;
 
-  if (!isObject(value)) throw new Error(`${file}: \`${field}\` must be an object of ${keys.join(", ")}, got ${shown(value)}`);
+  if (!isJsonObject(value)) throw new Error(`${file}: \`${field}\` must be an object of ${keys.join(", ")}, got ${shown(value)}`);
   const unknown = Object.keys(value).find((key) => !keys.includes(key));
 
   if (unknown !== undefined) throw new Error(`${file}: unknown field \`${field}.${unknown}\` (known: ${keys.join(", ")})`);
@@ -92,20 +93,22 @@ function fieldsOf(file: string, field: string, value: unknown, keys: readonly st
 }
 
 /** An integer of at least `least`; a missing one is named as missing. */
-function whole(file: string, field: string, value: unknown, least: number): number {
+function whole(file: string, field: string, value: JsonValue | undefined, least: number): number {
   if (value === undefined) throw new Error(`${file}: \`${field}\` is missing`);
 
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < least) throw new Error(`${file}: \`${field}\` must be an integer, at least ${least}, got ${shown(value)}`);
+  if (!isJsonNumber(value) || !Number.isSafeInteger(value) || value < least) throw new Error(`${file}: \`${field}\` must be an integer, at least ${least}, got ${shown(value)}`);
 
   return value;
 }
+
+type PlaceRead = { place: ClipPlace; problem: string | null };
 
 /**
  * The place tui.json holds as a session starts. No file: the default, and
  * nothing to say. A file that cannot be read or used: the default and why,
  * which the session says once; the file stays as it is until a drag.
  */
-export function readPlace(home: string): { place: ClipPlace; problem: string | null } {
+export function readPlace(home: string): PlaceRead {
   const file = tuiFile(home);
   let text: string | null;
 
@@ -116,10 +119,10 @@ export function readPlace(home: string): { place: ClipPlace; problem: string | n
   }
 
   if (text === null) return { place: NO_PLACE, problem: null };
-  let value: unknown;
+  let value: JsonValue;
 
   try {
-    value = JSON.parse(text);
+    value = parseJson(text);
   } catch (error) {
     return { place: NO_PLACE, problem: `${file}: invalid JSON: ${errorText(error)}` };
   }
@@ -138,20 +141,23 @@ export function readPlace(home: string): { place: ClipPlace; problem: string | n
  */
 export function withPlace(text: string | null, place: ClipPlace): string {
   const value = parsedObject(text);
-  const assistant = isObject(value.assistant) ? value.assistant : {};
-  const kept = Object.fromEntries(Object.entries(assistant).filter(([key]) => key !== "clip" && key !== "window"));
-  const next = { ...kept, ...(place.clip === null ? {} : { clip: place.clip }), ...(place.window === null ? {} : { window: place.window }) };
+  const assistant = isJsonObject(value.assistant) ? value.assistant : {};
+  const next: JsonObject = Object.fromEntries(Object.entries(assistant).filter(([key]) => key !== "clip" && key !== "window"));
+
+  if (place.clip !== null) next.clip = { x: place.clip.x, y: place.clip.y };
+
+  if (place.window !== null) next.window = { x: place.window.x, y: place.window.y, cols: place.window.cols, rows: place.window.rows };
 
   return `${JSON.stringify({ ...value, assistant: next }, null, 2)}\n`;
 }
 
-function parsedObject(text: string | null): Record<string, unknown> {
+function parsedObject(text: string | null): JsonObject {
   if (text === null) return {};
 
   try {
-    const value: unknown = JSON.parse(text);
+    const value = parseJson(text);
 
-    return isObject(value) ? value : {};
+    return isJsonObject(value) ? value : {};
   } catch {
     return {};
   }
@@ -438,10 +444,6 @@ export class ChatLog {
   }
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function shown(value: unknown): string {
+function shown(value: JsonValue | undefined): string {
   return JSON.stringify(value) ?? String(value);
 }

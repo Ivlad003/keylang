@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { decodeLayerName, layerName } from "../src/config.ts";
 import { isSegment } from "../src/parser.ts";
 
-const BRACKETS: Readonly<Record<string, string>> = {
+const BRACKETS = {
   "(shop)": "$g-shop",
   "[shop]": "$p-shop",
   _shop_: "_shop_",
@@ -18,7 +18,7 @@ const BRACKETS: Readonly<Record<string, string>> = {
   // Not a whole route form: the hex fallback, still reversible.
   "(my shop)": "$28my$20shop$29",
   "(.)photo": "$28$2e$29photo",
-};
+} satisfies Readonly<Record<string, string>>;
 
 test("bracket path segments encode to distinct reversible ID segments; other names stay sanitized", () => {
   const ids = Object.entries(BRACKETS).map(([raw, id]) => {

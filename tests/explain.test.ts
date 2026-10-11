@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
+import type { AddressInfo, Server } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
@@ -15,10 +15,22 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 const bin = join(root, "bin/keylang.js");
 
-function keylang(cwd: string, args: string[], env: Record<string, string | undefined> = {}): { status: number | null; stdout: string; stderr: string } {
+interface Run {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+function keylang(cwd: string, args: string[], env: Record<string, string | undefined> = {}): Run {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8", env: { ...process.env, ...env } });
 
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
+}
+
+/** The port a test server took: each listens on TCP port 0 of 127.0.0.1. */
+function portOf(server: Server): number {
+  // SAFETY: a server listening on a TCP port reports an AddressInfo, not a pipe name or null.
+  return (server.address() as AddressInfo).port;
 }
 
 function copy(t: TestContext): string {
@@ -52,7 +64,7 @@ test("explain <id>: an unknown id is exit 2 with the nearest id; a code is expla
 
 interface Mock {
   url: string;
-  requests: { path: string; body: { model: string; system: string; messages: { content: string }[] } }[];
+  requests: { path: string; body: { model: string; system: string; messages: { content: string }[]; fallbacks?: string } }[];
   reply: string;
 }
 
@@ -72,7 +84,7 @@ async function mockAnthropic(t: TestContext): Promise<Mock> {
 
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(() => server.close());
-  mock.url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  mock.url = `http://127.0.0.1:${portOf(server)}`;
 
   return mock;
 }
@@ -105,7 +117,7 @@ test("explain --llm: asks the model once, saves the answer with its baseline, re
   assert.equal(mock.requests.length, 1);
   const request = mock.requests[0]!;
   assert.equal(request.path, "/v1/messages?beta=true");
-  assert.equal((request.body as { fallbacks?: unknown }).fallbacks, "default", "a declined request is re-run server-side");
+  assert.equal(request.body.fallbacks, "default", "a declined request is re-run server-side");
   assert.equal(request.body.model, "claude-opus-5");
   assert.match(request.body.system, /language with code `uk`/);
   assert.match(request.body.messages[0]!.content, /export function checkout/, "the node's code goes to the model");
@@ -157,7 +169,7 @@ test("explain --llm through openrouter: streamed SSE deltas are joined into one 
 
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(() => server.close());
-  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const url = `http://127.0.0.1:${portOf(server)}`;
   const o = await keylangAsync(dir, ["explain", "app.checkout.checkout", "--llm"], { OPENROUTER_BASE_URL: url, OPENROUTER_API_KEY: "or-key", HOME: dir });
   assert.equal(o.status, 0, o.stderr);
   assert.equal(seen[0]?.path, "/api/v1/chat/completions");
@@ -179,7 +191,7 @@ async function mockOpenRouter(t: TestContext, respond: (res: import("node:http")
     server.close();
   });
 
-  return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  return `http://127.0.0.1:${portOf(server)}`;
 }
 
 test("explain --llm: an answer without text, an OpenRouter error as plain JSON, broken SSE or a stalled stream is exit 2 with the provider named; nothing is saved", async (t) => {
@@ -233,7 +245,7 @@ test("explain --llm: an Anthropic request that never answers ends within KEYLANG
     server.closeAllConnections();
     server.close();
   });
-  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const url = `http://127.0.0.1:${portOf(server)}`;
   const started = performance.now();
   const o = await keylangAsync(dir, ["explain", "app.checkout.checkout", "--llm"], { ANTHROPIC_BASE_URL: url, ANTHROPIC_API_KEY: "k", HOME: dir, KEYLANG_LLM_TIMEOUT_MS: "400" });
   const elapsed = performance.now() - started;
@@ -299,7 +311,7 @@ test("explain --llm: an answer the token limit cut (stop_reason max_tokens, fini
 
   await new Promise<void>((resolve) => anthropic.listen(0, "127.0.0.1", resolve));
   t.after(() => anthropic.close());
-  const cut = await keylangAsync(dir, ["explain", "app.checkout.checkout", "--llm"], { ANTHROPIC_BASE_URL: `http://127.0.0.1:${(anthropic.address() as AddressInfo).port}`, ANTHROPIC_API_KEY: "k", HOME: dir });
+  const cut = await keylangAsync(dir, ["explain", "app.checkout.checkout", "--llm"], { ANTHROPIC_BASE_URL: `http://127.0.0.1:${portOf(anthropic)}`, ANTHROPIC_API_KEY: "k", HOME: dir });
   assert.equal(cut.status, 2, cut.stdout);
   assert.match(cut.stderr, /^keylang: claude-opus-5: the answer was cut by the token limit \(max_tokens\)$/m);
   assert.doesNotMatch(cut.stdout, /загальну су/);
@@ -334,10 +346,10 @@ test("voice: local whisper.cpp transcribes a recording", { skip: !process.env.KE
   assert.ok(text.split(/\s+/).length >= 3, text);
 });
 
-const CASE_TWINS: Record<string, string> = {
+const CASE_TWINS = {
   "keylang.json": JSON.stringify({ languages: ["typescript"], layers: { domain: "src/domain/**" }, agent: "anthropic:claude-opus-5" }),
   "src/domain/order.ts": "export interface Order {\n  id: string;\n}\n\nexport function order(id: string): Order {\n  return { id };\n}\n",
-};
+} satisfies Record<string, string>;
 
 /** A Messages API stand-in whose n-th answer is `replies[n]`. */
 async function mockReplies(t: TestContext, replies: string[]): Promise<string> {
@@ -354,7 +366,7 @@ async function mockReplies(t: TestContext, replies: string[]): Promise<string> {
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(() => server.close());
 
-  return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  return `http://127.0.0.1:${portOf(server)}`;
 }
 
 test("explain --llm: IDs that differ only in letter case get files whose names differ in more than case", async (t) => {
@@ -406,7 +418,7 @@ test("explain --llm on a case-insensitive file system (casefold tmpfs): a type a
   ].join("\n");
 
   const run = await new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve) => {
-    const env: Record<string, string | undefined> = { ...process.env };
+    const env = { ...process.env };
     delete env.ANTHROPIC_AUTH_TOKEN;
     const child = spawn("unshare", ["-rm", "sh", "-c", script, "sh", mount, fixture, process.execPath, bin, url], { env });
     let stdout = "";

@@ -21,6 +21,9 @@ export interface ReadRow {
 
 const INLINE = /`([^`]+)`|\*\*([^*]+)\*\*|\[([^\]]+)\]\(([^)\s]+)\)|_([^_]+)_/gu;
 
+// A web link with no control character (C0, DEL, C1): only such a target becomes an OSC 8 link.
+const WEB_LINK = new RegExp(String.raw`^https?://[^\s\x00-\x1f\x7f-\x9f]+$`);
+
 export function inline(written: string, base: Style): Segment[] {
   // Anchors and line breaks written as HTML (the explained map's) show nothing, as on GitHub.
   const text = written
@@ -35,7 +38,12 @@ export function inline(written: string, base: Style): Segment[] {
 
     if (match[1] !== undefined) out.push({ text: match[1], style: { ...base, fg: 180 } });
     else if (match[2] !== undefined) out.push({ text: match[2], style: { ...base, bold: true } });
-    else if (match[3] !== undefined) out.push({ text: match[3], style: { ...base, ...THEME.link, ...(/^https?:\/\/[^\s\x00-\x1f\x7f-\x9f]+$/.test(match[4]!) ? { link: match[4]! } : {}) } });
+    else if (match[3] !== undefined) {
+      const style: Style = { ...base, ...THEME.link };
+
+      if (WEB_LINK.test(match[4]!)) style.link = match[4]!;
+      out.push({ text: match[3], style });
+    }
     else if (match[5] !== undefined) out.push({ text: match[5], style: { ...base, italic: true } });
     at = match.index + match[0].length;
   }

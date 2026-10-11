@@ -8,6 +8,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
+import { isJsonObject, parseJson } from "../src/json.ts";
 import { runOperation, type OperationContext, type OperationRequest, type OperationResult } from "../src/operations.ts";
 import { MERGE_REASON } from "../src/tui/actions.ts";
 import { App } from "../src/tui/app.ts";
@@ -15,6 +16,11 @@ import { checkoutRepo, CHECKOUT_FILES, CHECKOUT_FLOW, click, KEY, locate } from 
 import { answerAll, BIN, BUY_ANSWER, committedCheckout, draftField, draftForm, draftRow, esc, featureForm, FEATURES, FLOW_PATH, gitRun, heldModel, PAID, promptNote, propose, REFUND, repoWith, session, sleep, submitSlug, treeBytes, withConfig, workTree } from "./tui-helpers.ts";
 
 // ---------- algorithmic flow draft (ticket 22) ----------
+
+/** A step the operation runner calls while the work is under way: what a test does meanwhile. */
+interface DuringHook {
+  during: (() => void) | null;
+}
 
 /** A spec with prose and another flow: a draft into it keeps both. */
 const BUYING_SPEC = "# Buying\n\nHow an order is bought.\n\n# flow other\n\n- trigger presentation.terminal.checkout\n";
@@ -25,6 +31,7 @@ function draftRecord(app: App): DraftResult {
   const result = app.state.records.at(-1)?.result;
   assert.ok(result?.kind === "draft-flow" && result.payload !== null, JSON.stringify(result?.messages));
 
+  // SAFETY: the assertion above checked this record's kind and that its payload is not null.
   return result as DraftResult;
 }
 
@@ -206,7 +213,7 @@ test("tui: draft flow (algo) of a callable with two calls: the preview is the CL
 
 test("tui: draft flow refuses an unknown trigger, a waiting or just-created proposal and an unsaved target before it runs; a proposal or target changed during the work is kept; the CLI still replaces its own", async (t) => {
   const root = checkoutRepo(t);
-  const hook: { during: (() => void) | null } = { during: null };
+  const hook: DuringHook = { during: null };
 
   // The operation on this thread, with a hook between the computation and the commit: what another tool does meanwhile.
   const operations = (request: OperationRequest, context: OperationContext): Promise<OperationResult> =>
@@ -316,6 +323,7 @@ const F4 = "\x1bOS";
 function draftCounts(root: string): Record<string, { proposed: number }> {
   const file = join(root, ".keylang/stats.json");
 
+  // SAFETY: the session writes .keylang/stats.json with the draft counts by kind under `drafts`.
   return existsSync(file) ? ((JSON.parse(readFileSync(file, "utf8")) as { drafts?: Record<string, { proposed: number }> }).drafts ?? {}) : {};
 }
 
@@ -565,6 +573,7 @@ function rulesRecord(app: App): RulesResult {
   const result = app.state.records.at(-1)?.result;
   assert.ok(result?.kind === "draft-rules" && result.payload !== null, JSON.stringify(result?.messages));
 
+  // SAFETY: the assertion above checked this record's kind and that its payload is not null.
   return result as RulesResult;
 }
 
@@ -838,6 +847,7 @@ function layoutRecord(app: App): LayoutResult {
   const result = app.state.records.at(-1)?.result;
   assert.ok(result?.kind === "draft-layout" && result.payload !== null, JSON.stringify(result?.messages));
 
+  // SAFETY: the assertion above checked this record's kind and that its payload is not null.
   return result as LayoutResult;
 }
 
@@ -889,7 +899,8 @@ test("tui: draft map (algo) is the CLI's layout; Enter moves only layers into ke
   assert.equal(s.app.state.current, "keylang.json", s.app.state.message ?? "");
   assert.equal(s.app.state.mode, "edit");
   const buffer = s.app.state.buffers.get("keylang.json")!;
-  const moved = JSON.parse(buffer.text) as Record<string, unknown>;
+  const moved = parseJson(buffer.text);
+  assert.ok(isJsonObject(moved), buffer.text);
   assert.deepEqual(moved, { ...fields, layers: GUESSED_LAYERS }, "semantically only layers changed");
   assert.deepEqual(Object.keys(moved), Object.keys(fields), "the fields keep their order");
   assert.equal(buffer.text.split("\n")[s.app.state.cursor.line], '  "layers": {');
@@ -912,7 +923,7 @@ test("tui: draft map (algo) is the CLI's layout; Enter moves only layers into ke
   assert.equal(s.app.state.mode, "edit");
   s.send(KEY.ctrlS);
   await s.app.idle();
-  const saved = JSON.parse(readFileSync(config, "utf8")) as Record<string, unknown>;
+  const saved = parseJson(readFileSync(config, "utf8"));
   assert.deepEqual(saved, { ...fields, layers: GUESSED_LAYERS });
   assert.equal(s.app.state.config.kind, "configured");
   assert.deepEqual([...s.app.state.analysis!.config.layers.keys()], Object.keys(GUESSED_LAYERS), "the saved layers are the analysis's");
@@ -986,8 +997,10 @@ test("tui: a model layout is the validated answer; an edit of keylang.json durin
   s.send(KEY.down);
   s.send(KEY.enter);
   const buffer = s.app.state.buffers.get("keylang.json")!;
-  assert.deepEqual((JSON.parse(buffer.text) as { layers: unknown }).layers, JSON.parse(LAYOUT_ANSWER));
-  assert.equal((JSON.parse(buffer.text) as { agent: string }).agent, "anthropic:claude-opus-5");
+  const layout = parseJson(buffer.text);
+  assert.ok(isJsonObject(layout), buffer.text);
+  assert.deepEqual(layout.layers, JSON.parse(LAYOUT_ANSWER));
+  assert.equal(layout.agent, "anthropic:claude-opus-5");
   assert.deepEqual(treeBytes(root), before, "nothing written, the edit stays in the buffer");
   s.send("\x1a");
   assert.equal(buffer.text, edited, "Ctrl+Z gives back the text with the edit");
@@ -1123,6 +1136,7 @@ function codeRecord(app: App): CodeResult {
   const result = app.state.records.at(-1)?.result;
   assert.ok(result?.kind === "code-to-spec" && result.payload !== null, JSON.stringify(result?.messages));
 
+  // SAFETY: the assertion above checked this record's kind and that its payload is not null.
   return result as CodeResult;
 }
 
@@ -1234,7 +1248,7 @@ test("tui: code-to-spec of a file with two exports and a private fn is the CLI's
 
 test("tui: code-to-spec takes the code viewer's or the cursor's position; a line outside every fn, a file that is not source, a waiting proposal and an unsaved target keep the form; a target edited during the work gets no proposal", async (t) => {
   const root = checkoutRepo(t, { "src/application/purchase.ts": PURCHASE_TWO });
-  const hook: { during: (() => void) | null } = { during: null };
+  const hook: DuringHook = { during: null };
 
   // The operation on this thread, with a hook before the session's own answer to the commit.
   const operations = (request: OperationRequest, context: OperationContext): Promise<OperationResult> =>
@@ -1628,7 +1642,9 @@ test("code-to-spec operation: a Cancel between two flows asks no second request;
   assert.ok(!existsSync(join(root, ".keylang")), "no proposal, no stats");
   // llm without a model: 2 with the CLI's message, before any request.
   const config = join(root, "keylang.json");
-  const { agent: _agent, ...withoutAgent } = JSON.parse(readFileSync(config, "utf8")) as Record<string, unknown>;
+  const configured = parseJson(readFileSync(config, "utf8"));
+  assert.ok(isJsonObject(configured), "keylang.json is an object");
+  const { agent: _agent, ...withoutAgent } = configured;
   writeFileSync(config, JSON.stringify(withoutAgent));
   const noModel = await runOperation(request, {});
   assert.deepEqual([noModel.status, noModel.exitCode], ["failed", 2]);
@@ -1698,6 +1714,7 @@ function specRecord(app: App): SpecCodeResult {
   const result = app.state.records.at(-1)?.result;
   assert.ok(result?.kind === "spec-to-code" && result.payload !== null, JSON.stringify(result?.messages));
 
+  // SAFETY: the assertion above checked this record's kind and that its payload is not null.
   return result as SpecCodeResult;
 }
 
@@ -1831,7 +1848,7 @@ function specRowOf(s: ReturnType<typeof session>, path: string): void {
 
 test("tui: spec-to-code refuses an implemented ID with its place, a file of another module and a waiting proposal before the run; a test proposal waiting or a test file created during the work writes nothing; an I/O failure names the proposals written; g on a planned gap opens the form", async (t) => {
   const root = checkoutRepo(t, { "keylang/flows/refund.md": REFUND_PLAN, "keylang/features/later.md": FEATURES["keylang/features/refund.md"]! });
-  const hook: { during: (() => void) | null } = { during: null };
+  const hook: DuringHook = { during: null };
 
   const operations = (request: OperationRequest, context: OperationContext): Promise<OperationResult> =>
     runOperation(request, {
@@ -2187,7 +2204,9 @@ test("tui: spec-to-code llm — Cancel, an empty or wrong answer and a timeout w
   assert.match(noKey.messages.at(-1)!.text, /^spec-to-code --mode llm: /);
   assert.equal(model.prompts.length, count);
   // Without `agent` the form refuses llm on its mode row; algo still runs offline.
-  const { agent: _agent, ...withoutAgent } = JSON.parse(readFileSync(join(root, "keylang.json"), "utf8")) as Record<string, unknown>;
+  const configured = parseJson(readFileSync(join(root, "keylang.json"), "utf8"));
+  assert.ok(isJsonObject(configured), "keylang.json is an object");
+  const { agent: _agent, ...withoutAgent } = configured;
   writeFileSync(join(root, "keylang.json"), `${JSON.stringify(withoutAgent, null, 2)}\n`);
   await s.app.idle();
   const offline = session(root, { cols: 200, rows: 60 });
@@ -2215,6 +2234,7 @@ function applyRecord(app: App): ApplyCodeResult {
   const result = app.state.records.at(-1)?.result;
   assert.ok(result?.kind === "apply-code" && result.payload !== null, JSON.stringify(result?.messages));
 
+  // SAFETY: the assertion above checked this record's kind and that its payload is not null.
   return result as ApplyCodeResult;
 }
 
@@ -2319,7 +2339,7 @@ test("tui: a spec-to-code candidate is applied only by a in F6 after a step nami
 
 test("tui: applying a candidate checks every file and input first — a target created after the preview, a spec changed at the commit, an open MERGE or a waiting proposal refuse it with nothing written; a failed second write names the first as written and the rest as not attempted, as the CLI does", async (t) => {
   const root = checkoutRepo(t, { "keylang/flows/refund.md": REFUND_PLAN });
-  const hook: { during: (() => void) | null } = { during: null };
+  const hook: DuringHook = { during: null };
 
   const operations = (request: OperationRequest, context: OperationContext): Promise<OperationResult> =>
     runOperation(request, {

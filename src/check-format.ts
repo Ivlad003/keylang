@@ -20,7 +20,7 @@ export interface CheckReportData {
 }
 
 export function isCheckFormat(name: string): name is CheckFormat {
-  return (CHECK_FORMATS as readonly string[]).includes(name);
+  return CHECK_FORMATS.some((format) => format === name);
 }
 
 /** The stdout of `keylang check --format <format>` for `report`, every line ending with `\n`. */
@@ -46,7 +46,7 @@ function githubText(results: readonly CheckResult[]): string {
   return out;
 }
 
-function sarifLog(report: CheckReportData): unknown {
+function sarifLog(report: CheckReportData) {
   const { snapshotId, results } = report;
   const reported = results.filter((result) => result.verdict !== "ok");
   const ruleIds = [...new Set(reported.map(ruleOf))].sort();
@@ -65,20 +65,30 @@ function sarifLog(report: CheckReportData): unknown {
           level: result.verdict === "fail" ? "error" : result.verdict === "warning" ? "warning" : "note",
           message: { text: result.evidence },
           locations: [{ physicalLocation: { artifactLocation: { uri: result.file }, region: { startLine: result.line, startColumn: result.col } } }],
-          properties: {
-            verdict: result.verdict,
-            criterion: result.criterion,
-            area: result.area,
-            snapshotId: result.snapshotId,
-            specHash: result.specHash,
-            provenance: result.provenance,
-            ...(result.reason !== undefined ? { reason: result.reason } : {}),
-          },
+          properties: sarifProperties(result),
         })),
         properties: { snapshotId },
       },
     ],
   };
+}
+
+/** What SARIF keeps of a result beside its location and message. */
+type SarifProperties = Pick<CheckResult, "verdict" | "criterion" | "area" | "snapshotId" | "specHash" | "provenance" | "reason">;
+
+function sarifProperties(result: CheckResult): SarifProperties {
+  const properties: SarifProperties = {
+    verdict: result.verdict,
+    criterion: result.criterion,
+    area: result.area,
+    snapshotId: result.snapshotId,
+    specHash: result.specHash,
+    provenance: result.provenance,
+  };
+
+  if (result.reason !== undefined) properties.reason = result.reason;
+
+  return properties;
 }
 
 /** The SARIF rule and GitHub title: every unverified result is `unverified`, a finding its K-code or evidence kind. */
@@ -87,17 +97,17 @@ function ruleOf(result: CheckResult): string {
 }
 
 /** A flow verdict's evidence kind names its rule when it fails. */
-const EVIDENCE_RULES: Record<string, string> = {
-  ID: "flow: the id is not in the snapshot",
-  static: "flow: no call path can reach the step from its parent",
-  tests: "flow: the test of the claim failed",
-  trace: "flow: the trace of a test contradicts the step",
-};
+const EVIDENCE_RULES = new Map([
+  ["ID", "flow: the id is not in the snapshot"],
+  ["static", "flow: no call path can reach the step from its parent"],
+  ["tests", "flow: the test of the claim failed"],
+  ["trace", "flow: the trace of a test contradicts the step"],
+]);
 
 function ruleText(id: string): string {
   if (id === "unverified") return "evidence for this criterion is incomplete";
 
-  return EVIDENCE_RULES[id] ?? explainCode(id)?.split("\n")[0] ?? id;
+  return EVIDENCE_RULES.get(id) ?? explainCode(id)?.split("\n")[0] ?? id;
 }
 
 // GitHub workflow commands: https://docs.github.com/actions/reference/workflow-commands-for-github-actions

@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
+import { isJsonObject, parseJson } from "../src/json.ts";
 import { HOOK_FLOW, HOOKS } from "./hooks-fixture.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -16,7 +17,13 @@ const bin = join(root, "bin/keylang.js");
 
 const all = process.env.KEYLANG_METAMORPHIC === "all";
 
-function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+interface Run {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+function keylang(cwd: string, args: string[]): Run {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8" });
 
   if (r.error) throw r.error;
@@ -58,6 +65,7 @@ function results(dir: string, args: string[] = []): Row[] {
   const run = keylang(dir, ["check", "--format", "json", ...args]);
   assert.notEqual(run.status, 2, run.stderr);
 
+  // SAFETY: `check --format json` did not fail, so stdout is its report object, whose `results` are the rows `Row` names.
   return (JSON.parse(run.stdout) as { results: Row[] }).results;
 }
 
@@ -144,6 +152,17 @@ function aggregate(rows: readonly Row[], lines: readonly LayersLine[]): Map<stri
   return map;
 }
 
+/** `<label> <before> → <after>` of each key whose verdict moved, sorted; a key gone after is unverified. */
+function movedVerdicts(before: Map<string, { verdict: string }>, after: Map<string, { verdict: string }>, label: (key: string) => string | undefined = (key) => key): string[] {
+  return [...before]
+    .flatMap(([key, left]) => {
+      const right = after.get(key)?.verdict ?? "unverified";
+
+      return left.verdict === right ? [] : [`${label(key)} ${left.verdict} → ${right}`];
+    })
+    .sort();
+}
+
 function monotonic(fixture: string, operator: string, before: Map<string, { verdict: string; evidence: string }>, after: Map<string, { verdict: string; evidence: string }>): void {
   const bad: string[] = [];
 
@@ -189,8 +208,9 @@ function sourceFiles(dir: string): string[] {
 
 function withExclude(dir: string, file: string): void {
   const path = join(dir, "keylang.json");
-  const raw = JSON.parse(readFileSync(path, "utf8")) as { exclude?: string[] };
-  raw.exclude = [...(raw.exclude ?? []), file];
+  const raw = parseJson(readFileSync(path, "utf8"));
+  assert.ok(isJsonObject(raw), "keylang.json is an object");
+  raw.exclude = [...(Array.isArray(raw.exclude) ? raw.exclude : []), file];
   writeFileSync(path, `${JSON.stringify(raw, null, 2)}\n`);
 }
 
@@ -231,20 +251,20 @@ const STANDARD = `# rules
 `;
 
 /** PHP 7: a property typed only by its `@var`; the call through it is an edge of provenance `docblock`. */
-const PHP_DOCBLOCK: Record<string, string> = {
+const PHP_DOCBLOCK = {
   "keylang.json": `${JSON.stringify({ languages: ["php"], layers: { app: ["src/App/**"], domain: ["src/Domain/**"] } })}\n`,
   "src/Domain/Store.php": "<?php\nnamespace Shop\\Domain;\n\nclass Store\n{\n    public function save(): void {}\n}\n",
   "src/Domain/Mailer.php": "<?php\nnamespace Shop\\Domain;\n\nclass Mailer\n{\n    public function send(): void {}\n}\n",
   "src/App/Checkout.php": "<?php\nnamespace Shop\\App;\n\nuse Shop\\Domain\\Mailer;\nuse Shop\\Domain\\Store;\n\nclass Checkout\n{\n    private $store;\n    /** @var Mailer */\n    private $mailer;\n\n    public function __construct(Store $store)\n    {\n        $this->store = $store;\n    }\n\n    public function buy(): void\n    {\n        $this->store->save();\n        $this->mailer->send();\n    }\n}\n",
   "keylang/flows.md": "# flow buy\n\n- trigger app.Checkout.Checkout.buy\n  - step domain.Store.Store.save\n  - step domain.Mailer.Mailer.send\n",
-};
+} satisfies Record<string, string>;
 
 /**
  * PHP: receivers typed by declarations (business-flows 40) — a `@return` in another file (of a
  * variable's value and of a chain's link), an inline `@var`. Removing either may move a verdict only
  * to `unverified`: the hole of a chain names the member it calls, so a flow still sees it may reach it.
  */
-const PHP_RESULTS: Record<string, string> = {
+const PHP_RESULTS = {
   "keylang.json": `${JSON.stringify({ languages: ["php"], layers: { app: ["src/App/**"], domain: ["src/Domain/**"] } })}\n`,
   "src/Domain/Order.php": "<?php\nnamespace Shop\\Domain;\n\nclass Order\n{\n    public function ship(): void {}\n    public function pay(): void {}\n    public function cancel(): void {}\n}\n",
   "src/Domain/Repo.php": "<?php\nnamespace Shop\\Domain;\n\nclass Repo\n{\n    /** @return Order */\n    public function find() { return new Order(); }\n\n    public function make() { return null; }\n}\n",
@@ -252,7 +272,7 @@ const PHP_RESULTS: Record<string, string> = {
     "<?php\nnamespace Shop\\App;\n\nuse Shop\\Domain\\Order;\nuse Shop\\Domain\\Repo;\n\nclass Checkout\n{\n    public function __construct(private Repo $repo) {}\n\n    public function buy(): void\n    {\n        $found = $this->repo->find();\n        $found->ship();\n        $this->repo->find()->cancel();\n        /** @var Order $order */\n        $order = $this->repo->make();\n        $order->pay();\n    }\n}\n",
   "keylang/flows.md": "# flow buy\n\n- trigger app.Checkout.Checkout.buy\n  - step domain.Order.Order.ship\n  - step domain.Order.Order.pay\n  - step domain.Order.Order.cancel\n",
   "keylang/rules.md": "# rules\n\n- deny app domain.Order\n",
-};
+} satisfies Record<string, string>;
 
 test("php: removing a `@return` or an inline `@var` that types a receiver moves a verdict only to unverified", (t) => {
   const php = mkdtempSync(join(tmpdir(), "keylang-meta-php-results-"));
@@ -262,16 +282,13 @@ test("php: removing a `@return` or an inline `@var` that types a receiver moves 
   const before = aggregate(results(php), []);
   assert.equal(before.get("rule:deny app domain.Order")?.verdict, "fail");
 
-  const moves = (operator: string, path: string, from: string): string[] => {
-    write(php, path, PHP_RESULTS[path]!.replace(from, ""));
+  const moves = (operator: string, path: keyof typeof PHP_RESULTS, from: string): string[] => {
+    write(php, path, PHP_RESULTS[path].replace(from, ""));
     const after = aggregate(results(php), []);
-    write(php, path, PHP_RESULTS[path]!);
+    write(php, path, PHP_RESULTS[path]);
     monotonic("php-results", operator, before, after);
 
-    return [...before]
-      .filter(([key, left]) => left.verdict !== (after.get(key)?.verdict ?? "unverified"))
-      .map(([key, left]) => `${key.split(":")[2]} ${left.verdict} → ${after.get(key)?.verdict ?? "unverified"}`)
-      .sort();
+    return movedVerdicts(before, after, (key) => key.split(":")[2]);
   };
 
   assert.deepEqual(moves("remove @return", "src/Domain/Repo.php", "    /** @return Order */\n"), ["domain.Order.Order.cancel ok → unverified", "domain.Order.Order.ship ok → unverified"]);
@@ -279,14 +296,14 @@ test("php: removing a `@return` or an inline `@var` that types a receiver moves 
 });
 
 /** PHP: a base `outside` the architecture, read as declarations (business-flows 40). */
-const PHP_OUTSIDE: Record<string, string> = {
+const PHP_OUTSIDE = {
   "keylang.json": `${JSON.stringify({ languages: ["php"], layers: { app: ["src/App/**"], domain: ["src/Domain/**"] }, outside: ["lib/**"] })}\n`,
   "lib/Fw/AbstractModel.php": "<?php\nnamespace Fw;\n\nabstract class AbstractModel\n{\n    /** @return \\Shop\\Domain\\Repo */\n    public function getRepo() { return null; }\n\n    public function getData(string $key = '') { return null; }\n}\n",
   "src/Domain/Repo.php": "<?php\nnamespace Shop\\Domain;\n\nclass Repo\n{\n    public function store(): void {}\n}\n",
   "src/App/Order.php": "<?php\nnamespace Shop\\App;\n\nuse Fw\\AbstractModel;\n\nclass Order extends AbstractModel\n{\n    public function place(): void\n    {\n        $this->getData('id');\n        $this->getRepo()->store();\n    }\n}\n",
   "keylang/flows.md": "# flow place\n\n- trigger app.Order.Order.place\n  - step domain.Repo.Repo.store\n",
   "keylang/rules.md": "# rules\n\n- layers domain < app\n- deny domain app\n",
-};
+} satisfies Record<string, string>;
 
 test("php: removing a file `outside` the architecture whose declarations type a receiver moves a verdict only to unverified", (t) => {
   const php = mkdtempSync(join(tmpdir(), "keylang-meta-php-outside-"));
@@ -298,10 +315,7 @@ test("php: removing a file `outside` the architecture whose declarations type a 
   const after = aggregate(results(php), layersLines(rulesText(php)));
   monotonic("php-outside", "remove lib/Fw/AbstractModel.php", before, after);
 
-  const moved = [...before]
-    .filter(([key, left]) => left.verdict !== (after.get(key)?.verdict ?? "unverified"))
-    .map(([key, left]) => `${key.split(":").slice(0, 3).join(":")} ${left.verdict} → ${after.get(key)?.verdict ?? "unverified"}`)
-    .sort();
+  const moved = movedVerdicts(before, after, (key) => key.split(":").slice(0, 3).join(":"));
 
   // The step through the outside base's `@return`, and the K107 of the call into it.
   assert.deepEqual(moved, ["diag:K107:src/App/Order.php fail → unverified", "flow:static:domain.Repo.Repo.store ok → unverified"]);
@@ -315,7 +329,8 @@ test("magento: turning the adapter off, and with it the factories Magento genera
   write(dir, "keylang/rules.md", "# rules\n\n- deny sales checkout\n");
   const before = aggregate(results(dir), []);
   assert.equal(before.get("flow:static:sales.Model.Invoice.Invoice.register:keylang/flows/invoice.md:5")?.verdict, "ok");
-  const raw = JSON.parse(readFileSync(join(dir, "keylang.json"), "utf8")) as Record<string, unknown>;
+  const raw = parseJson(readFileSync(join(dir, "keylang.json"), "utf8"));
+  assert.ok(isJsonObject(raw), "keylang.json is an object");
   write(dir, "keylang.json", `${JSON.stringify({ ...raw, frameworks: [] }, null, 2)}\n`);
   monotonic("magento-shop", "frameworks: []", before, aggregate(results(dir), []));
 });
@@ -335,7 +350,8 @@ test("magento: turning the adapter off, and with it the ObjectManager and the pr
   );
   write(dir, "keylang/flows/locate.md", "# flow locate\n\n- trigger sales.Model.Locator.Locator.run\n  - step sales.Model.Invoice.Invoice\n  - step sales.Model.Invoice.Invoice.register\n");
   write(dir, "keylang/rules.md", "# rules\n\n- deny sales checkout\n");
-  const raw = JSON.parse(readFileSync(join(dir, "keylang.json"), "utf8")) as Record<string, unknown>;
+  const raw = parseJson(readFileSync(join(dir, "keylang.json"), "utf8"));
+  assert.ok(isJsonObject(raw), "keylang.json is an object");
   write(dir, "keylang.json", `${JSON.stringify({ ...raw, outside: ["lib/**", "app/code/Vendor/**"] }, null, 2)}\n`);
   const before = aggregate(results(dir), []);
   assert.equal(before.get("flow:static:sales.Model.Invoice.Invoice.register:keylang/flows/locate.md:5")?.verdict, "ok");
@@ -359,7 +375,8 @@ test("exclude and --static shape never switch ok and fail", (t) => {
 
   const rust = copyFixture(t, "rust-shop");
   assert.equal(keylang(rust, ["init", "--agents=none"]).status, 0);
-  const rustCfg = JSON.parse(readFileSync(join(rust, "keylang.json"), "utf8")) as { layers: Record<string, unknown> };
+  // SAFETY: `init` exited 0 just above, so keylang.json holds the `layers` record it wrote.
+  const rustCfg = JSON.parse(readFileSync(join(rust, "keylang.json"), "utf8")) as { layers: Record<string, string[]> };
   const names = Object.keys(rustCfg.layers);
   const low = names[0] ?? "domain";
   const high = names[1] ?? low;
@@ -384,10 +401,7 @@ test("exclude and --static shape never switch ok and fail", (t) => {
   const withoutDocblock = aggregate(results(php), []);
   monotonic("php-docblock", "remove @var", withDocblock, withoutDocblock);
 
-  const moved = [...withDocblock]
-    .filter(([key, left]) => left.verdict !== (withoutDocblock.get(key)?.verdict ?? "unverified"))
-    .map(([key, left]) => `${key.split(":")[2]} ${left.verdict} → ${withoutDocblock.get(key)?.verdict ?? "unverified"}`)
-    .sort();
+  const moved = movedVerdicts(withDocblock, withoutDocblock, (key) => key.split(":")[2]);
 
   assert.deepEqual(moved, ["domain.Mailer.Mailer.send ok → unverified"]);
 
@@ -402,10 +416,7 @@ test("exclude and --static shape never switch ok and fail", (t) => {
   const after = aggregate(results(hooks, ["--static", "shape"]), []);
   monotonic("hooks", "--static shape", before, after);
 
-  const changed = [...before]
-    .filter(([key, left]) => left.verdict !== (after.get(key)?.verdict ?? "unverified"))
-    .map(([key, left]) => `${key.split(":")[2]} ${left.verdict} → ${after.get(key)?.verdict ?? "unverified"}`)
-    .sort();
+  const changed = movedVerdicts(before, after, (key) => key.split(":")[2]);
 
   assert.deepEqual(changed, ["domain.build.build ok → unverified", "presentation.worker.Worker.generate ok → unverified"]);
 });
@@ -428,7 +439,9 @@ test("06: excluding the far side of a cycle is unverified, not ok", (t) => {
 });
 
 // A minimal pair: the fixture as written, then the same files with `file` excluded.
-function excludeCase(t: TestContext, name: string, files: Record<string, string>, file: string): { base: Row[]; excluded: Row[]; status: number | null } {
+type ExcludeCase = { base: Row[]; excluded: Row[]; status: number | null };
+
+function excludeCase(t: TestContext, name: string, files: Record<string, string>, file: string): ExcludeCase {
   const dir = mkdtempSync(join(tmpdir(), `keylang-meta-${name}-`));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -438,6 +451,7 @@ function excludeCase(t: TestContext, name: string, files: Record<string, string>
   withExclude(dir, file);
   const run = keylang(dir, ["check", "--format", "json"]);
   assert.notEqual(run.status, 2, run.stderr);
+  // SAFETY: `check --format json` did not fail, so stdout is its report object, whose `results` are the rows `Row` names.
   const excluded = (JSON.parse(run.stdout) as { results: Row[] }).results;
   monotonic(name, `exclude ${file}`, aggregate(base, lines), aggregate(excluded, lines));
 
@@ -562,13 +576,13 @@ test("08: excluding the only importer of an allowed package adds no K001", (t) =
 });
 
 /** PHP: a callable and a closure passed as arguments, a callable stored in a variable, and a plain call beside them. */
-const PHP_CALLABLES: Record<string, string> = {
+const PHP_CALLABLES = {
   "keylang.json": `${JSON.stringify({ languages: ["php"], layers: { app: ["src/App/**"], domain: ["src/Domain/**"] } })}\n`,
   "src/Domain/Store.php": "<?php\nnamespace Shop\\Domain;\n\nclass Store\n{\n    public function save(): void {}\n    public function flush(): void {}\n    public function audit(): void {}\n    public function later(): void {}\n}\n",
   "src/App/Checkout.php":
     "<?php\nnamespace Shop\\App;\n\nuse Shop\\Domain\\Store;\n\nclass Checkout\n{\n    public function __construct(private Store $store) {}\n\n    public function buy(): void\n    {\n        $this->store->save();\n        $this->lock(\\Closure::fromCallable([$this->store, 'flush']), fn() => $this->store->audit());\n        $cb = [$this->store, 'later'];\n    }\n\n    private function lock(callable $a, callable $b): void {}\n}\n",
   "keylang/flows.md": "# flow buy\n\n- trigger app.Checkout.Checkout.buy\n  - step domain.Store.Store.save\n  - step domain.Store.Store.flush\n  - step domain.Store.Store.audit\n  - step domain.Store.Store.later\n",
-};
+} satisfies Record<string, string>;
 
 test("--static shape only weakens a step through a callable or a closure passed as an argument: ok → unverified, never fail", (t) => {
   const php = mkdtempSync(join(tmpdir(), "keylang-meta-callables-"));
@@ -579,10 +593,7 @@ test("--static shape only weakens a step through a callable or a closure passed 
   const after = aggregate(results(php, ["--static", "shape"]), []);
   monotonic("php-callables", "--static shape", before, after);
 
-  const changed = [...before]
-    .filter(([key, left]) => left.verdict !== (after.get(key)?.verdict ?? "unverified"))
-    .map(([key, left]) => `${key.split(":")[2]} ${left.verdict} → ${after.get(key)?.verdict ?? "unverified"}`)
-    .sort();
+  const changed = movedVerdicts(before, after, (key) => key.split(":")[2]);
 
   // The plain call stays ok in both; the stored callable is unverified in both.
   assert.deepEqual(changed, ["domain.Store.Store.audit ok → unverified", "domain.Store.Store.flush ok → unverified"]);
@@ -600,15 +611,13 @@ test("a framework's config left unread (`frameworks: []`) or unparsed moves a ve
   const unread = mkdtempSync(join(tmpdir(), "keylang-meta-magento-"));
   t.after(() => rmSync(unread, { recursive: true, force: true }));
   cpSync(shop, unread, { recursive: true });
-  const raw = JSON.parse(readFileSync(join(unread, "keylang.json"), "utf8")) as Record<string, unknown>;
+  const raw = parseJson(readFileSync(join(unread, "keylang.json"), "utf8"));
+  assert.ok(isJsonObject(raw), "keylang.json is an object");
   write(unread, "keylang.json", `${JSON.stringify({ ...raw, frameworks: [] }, null, 2)}\n`);
   const without = aggregate(results(unread), []);
   monotonic("magento-shop", "frameworks: []", read, without);
 
-  const moved = [...read]
-    .filter(([key, left]) => left.verdict !== (without.get(key)?.verdict ?? "unverified"))
-    .map(([key, left]) => `${key} ${left.verdict} → ${without.get(key)?.verdict ?? "unverified"}`)
-    .sort();
+  const moved = movedVerdicts(read, without);
 
   assert.deepEqual(moved, [
     "flow:static:checkout.Model.Logger.Logger.log:keylang/flows.md:8 ok → unverified",

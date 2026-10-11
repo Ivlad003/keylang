@@ -16,6 +16,7 @@ import { isAnalysed, type Config } from "./config.ts";
 import type { CallFact, DeclFact, FileFacts } from "./extract/facts.ts";
 import { FACT_CACHE_FILE } from "./fact-cache.ts";
 import { frontendFor } from "./frontends.ts";
+import { isJsonObject, isJsonString, parseJson, type JsonObject, type JsonValue } from "./json.ts";
 import { languageOf, type Language } from "./languages.ts";
 import type { AnalysisSnapshot, SnapshotNode } from "./snapshot.ts";
 import { compareText } from "./span.ts";
@@ -86,8 +87,6 @@ export interface FileCalls {
   imports: { source: string; line: number; text: string }[];
 }
 
-type Stored = { schema?: unknown; files?: Record<string, { sha256?: unknown; facts?: unknown }> };
-
 /**
  * The facts of every analysed file of the snapshot, in path order: the fact
  * cache's entry when its hash is the manifest's (an analysis that saves the
@@ -95,12 +94,13 @@ type Stored = { schema?: unknown; files?: Record<string, { sha256?: unknown; fac
  * cannot be read or parsed gives none.
  */
 export async function snapshotFacts(config: Config, snapshot: AnalysisSnapshot): Promise<FileFacts[]> {
-  let stored: Stored["files"] = {};
+  // The fact cache's `files`: path → `{ sha256, facts }`.
+  let stored: JsonObject = {};
 
   try {
-    const value = JSON.parse(readFileSync(join(config.root, FACT_CACHE_FILE), "utf8")) as Stored;
+    const value = parseJson(readFileSync(join(config.root, FACT_CACHE_FILE), "utf8"));
 
-    if (typeof value === "object" && value !== null && typeof value.files === "object" && value.files !== null) stored = value.files;
+    if (isJsonObject(value) && isJsonObject(value.files)) stored = value.files;
   } catch {
     // No cache, or a damaged one: every file is extracted.
   }
@@ -111,7 +111,7 @@ export async function snapshotFacts(config: Config, snapshot: AnalysisSnapshot):
     if (!isAnalysed(path, config)) continue;
     const entry = stored[path];
 
-    if (entry !== undefined && entry.sha256 === sha256 && isFacts(entry.facts)) {
+    if (isJsonObject(entry) && entry.sha256 === sha256 && isFacts(entry.facts)) {
       out.push(entry.facts);
       continue;
     }
@@ -130,17 +130,20 @@ export async function snapshotFacts(config: Config, snapshot: AnalysisSnapshot):
   return out;
 }
 
-function isFacts(value: unknown): value is FileFacts {
-  if (typeof value !== "object" || value === null) return false;
-  const facts = value as Partial<FileFacts>;
-
-  return typeof facts.path === "string" && Array.isArray(facts.decls) && Array.isArray(facts.imports) && Array.isArray(facts.moduleCalls);
+function isFacts(value: JsonValue | undefined): value is JsonObject & FileFacts {
+  return isJsonObject(value) && isJsonString(value.path) && Array.isArray(value.decls) && Array.isArray(value.imports) && Array.isArray(value.moduleCalls);
 }
 
 /** Spans of the nodes declared in each file: what places a call in a fn. */
 type Span = { id: string; line: number; col: number; endLine: number; endCol: number; fn: boolean };
 
-function spansByFile(snapshot: AnalysisSnapshot): { spans: Map<string, Span[]>; modules: Map<string, string> } {
+/** Node spans by file, and the module id of each file. */
+interface FileSpans {
+  spans: Map<string, Span[]>;
+  modules: Map<string, string>;
+}
+
+function spansByFile(snapshot: AnalysisSnapshot): FileSpans {
   const spans = new Map<string, Span[]>();
   const modules = new Map<string, string>();
 
@@ -198,7 +201,11 @@ export function callsOf(snapshot: AnalysisSnapshot, facts: readonly FileFacts[])
 
       if (seen.has(key)) return;
       seen.add(key);
-      calls.push({ file: file.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, callee: c.callee, ...(c.receiver !== undefined ? { receiver: c.receiver } : {}), in: enclosing(fileSpans, module, c.line, c.col) });
+      const site: Omit<CallSite, "in"> = { file: file.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, callee: c.callee };
+
+      // `receiver` stays before `in`: the key order is the order callers print.
+      if (c.receiver !== undefined) site.receiver = c.receiver;
+      calls.push({ ...site, in: enclosing(fileSpans, module, c.line, c.col) });
     };
 
     const walk = (decl: DeclFact): void => {
@@ -390,7 +397,13 @@ export function internalCallPositions(snapshot: AnalysisSnapshot): Set<string> {
 }
 
 /** The resolved call edges as adjacency: source → targets, and target → sources. Hook (`via`) edges included. */
-export function callGraph(snapshot: AnalysisSnapshot): { out: Map<string, Set<string>>; in: Map<string, Set<string>> } {
+/** Adjacency of resolved calls in both directions. */
+export interface CallGraph {
+  out: Map<string, Set<string>>;
+  in: Map<string, Set<string>>;
+}
+
+export function callGraph(snapshot: AnalysisSnapshot): CallGraph {
   const out = new Map<string, Set<string>>();
   const inward = new Map<string, Set<string>>();
 
@@ -445,7 +458,13 @@ export function lineStarts(text: string): number[] {
  * no arguments, only literals that are no URL, or no argument list keylang
  * can read at its position.
  */
-export function urlOf(text: string, starts: readonly number[], line: number, col: number, callee: string): { url: "literal" | "dynamic" | "n/a"; host: string | null } {
+/** How a call names its URL, and the host of a literal one. */
+export interface CallUrl {
+  url: "literal" | "dynamic" | "n/a";
+  host: string | null;
+}
+
+export function urlOf(text: string, starts: readonly number[], line: number, col: number, callee: string): CallUrl {
   const args = firstArguments(text, starts, line, col, callee, 2);
 
   if (args === null || args.length === 0) return { url: "n/a", host: null };

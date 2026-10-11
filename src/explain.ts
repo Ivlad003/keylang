@@ -152,9 +152,13 @@ const K005_REASON_LINES = [
   "- scope: `deny app app.checkout.buy` names a fn instead of its module → `deny app app.checkout`",
 ];
 
+function isCode(text: string): text is Code {
+  return Object.hasOwn(EXPLANATIONS, text);
+}
+
 export function explainCode(code: string): string | null {
   const upper = code.toUpperCase();
-  const text = Object.hasOwn(EXPLANATIONS, upper) ? EXPLANATIONS[upper as Code] : undefined;
+  const text = isCode(upper) ? EXPLANATIONS[upper] : undefined;
 
   if (!text) return null;
   const lines = [`${upper}: ${text.cause}`, `example: ${text.example}`, `fix: ${text.fix}`];

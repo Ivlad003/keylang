@@ -41,8 +41,14 @@ function pick(path: string, file: File): Picked | null {
   return { path, file, read: inGit(path) || (file.size <= MAX_FILE && !BINARY.test(path)) };
 }
 
+/** The files kept for reading, with a note when `.git` was left out. */
+interface GitLimited {
+  files: Picked[];
+  note: string | null;
+}
+
 /** `.git` over `MAX_GIT` is left out whole; the note says why. */
-function withinGitLimit(picked: Picked[]): { files: Picked[]; note: string | null } {
+function withinGitLimit(picked: Picked[]): GitLimited {
   const size = picked.filter((p) => inGit(p.path)).reduce((sum, p) => sum + p.file.size, 0);
 
   if (size <= MAX_GIT) return { files: picked, note: null };
@@ -50,10 +56,14 @@ function withinGitLimit(picked: Picked[]): { files: Picked[]; note: string | nul
   return { files: picked.filter((p) => !inGit(p.path)), note: `.git is ${Math.round(size / 1048576)} MB, over ${MAX_GIT / 1048576} MB: «Зміни» is off` };
 }
 
+const isFileEntry = (entry: FileSystemEntry): entry is FileSystemFileEntry => entry.isFile;
+
+const isDirectoryEntry = (entry: FileSystemEntry): entry is FileSystemDirectoryEntry => entry.isDirectory;
+
 /** The files under a dropped directory entry, by their path below it. */
 async function walkEntry(entry: FileSystemEntry, prefix: string, out: Picked[]): Promise<void> {
-  if (entry.isFile) {
-    const file = await new Promise<File>((resolve, reject) => (entry as FileSystemFileEntry).file(resolve, reject));
+  if (isFileEntry(entry)) {
+    const file = await new Promise<File>((resolve, reject) => entry.file(resolve, reject));
     const picked = pick(`${prefix}${entry.name}`, file);
 
     if (picked) out.push(picked);
@@ -61,8 +71,8 @@ async function walkEntry(entry: FileSystemEntry, prefix: string, out: Picked[]):
     return;
   }
 
-  if (!entry.isDirectory || SKIPPED_DIRS.has(entry.name)) return;
-  const reader = (entry as FileSystemDirectoryEntry).createReader();
+  if (!isDirectoryEntry(entry) || SKIPPED_DIRS.has(entry.name)) return;
+  const reader = entry.createReader();
 
   // `readEntries` answers in batches until an empty one.
   for (;;) {
@@ -74,11 +84,17 @@ async function walkEntry(entry: FileSystemEntry, prefix: string, out: Picked[]):
   }
 }
 
+/** The folder's own name and the files below it. */
+interface RootedFiles {
+  name: string;
+  files: Picked[];
+}
+
 /** The picked files below the folder's own name: `repo/src/a.ts` → `src/a.ts`. */
-function underRoot(picked: Picked[]): { name: string; files: Picked[] } {
+function underRoot(picked: Picked[]): RootedFiles {
   const name = picked[0]?.path.split("/")[0] ?? "repository";
 
-  return { name, files: picked.filter((p) => p.path.startsWith(`${name}/`)).map((p) => ({ ...p, path: p.path.slice(name.length + 1) })) };
+  return { name, files: picked.flatMap((p) => (p.path.startsWith(`${name}/`) ? [{ ...p, path: p.path.slice(name.length + 1) }] : [])) };
 }
 
 /** Asks the worker as `keylang web` would be asked over HTTP; it answers GET only. */
@@ -173,7 +189,7 @@ export function openLocal(): Promise<Transport> {
       try {
         const read = files.filter((p) => p.read);
         const data = await Promise.all(read.map(async (p) => ({ path: p.path, data: await p.file.arrayBuffer(), mtime: p.file.lastModified })));
-        const unread: UnreadFile[] = files.filter((p) => !p.read).map((p) => ({ path: p.path, size: p.file.size, mtime: p.file.lastModified, binary: BINARY.test(p.path) }));
+        const unread: UnreadFile[] = files.flatMap((p) => (p.read ? [] : [{ path: p.path, size: p.file.size, mtime: p.file.lastModified, binary: BINARY.test(p.path) }]));
         const worker = new Worker(new URL("assets/analysis.js", location.href));
 
         const ready = await new Promise<FromWorker & { type: "ready" }>((done, fail) => {
@@ -201,7 +217,7 @@ export function openLocal(): Promise<Transport> {
     };
 
     input.addEventListener("change", () => {
-      const picked = [...(input.files ?? [])].map((file) => pick(file.webkitRelativePath || file.name, file)).filter((p): p is Picked => p !== null);
+      const picked = [...(input.files ?? [])].flatMap((file) => pick(file.webkitRelativePath || file.name, file) ?? []);
       void analyse(picked);
     });
     drop.addEventListener("dragover", (event) => {
@@ -212,13 +228,13 @@ export function openLocal(): Promise<Transport> {
     drop.addEventListener("drop", (event) => {
       event.preventDefault();
       drop.classList.remove("over");
-      const entries = [...(event.dataTransfer?.items ?? [])].map((item) => item.webkitGetAsEntry()).filter((entry): entry is FileSystemEntry => entry !== null);
+      const entries = [...(event.dataTransfer?.items ?? [])].flatMap((item) => item.webkitGetAsEntry() ?? []);
       const directory = entries.find((entry) => entry.isDirectory);
 
       if (!directory) return report("drop a folder, not files", true);
       const picked: Picked[] = [];
       report(`listing ${directory.name}…`);
-      void walkEntry(directory, "", picked).then(() => analyse(picked), (error: unknown) => report(String(error), true));
+      void walkEntry(directory, "", picked).then(() => analyse(picked), (error) => report(String(error), true));
     });
   });
 }

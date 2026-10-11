@@ -9,6 +9,7 @@
 import { createHash } from "node:crypto";
 import { dirname, join, posix } from "node:path";
 import { readJsonc } from "./imports.ts";
+import { isJsonObject, isJsonString, type JsonObject } from "./json.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
 import type { Wire, WireDep } from "./spec-ir.ts";
 import { wireImport, wireOrder, type WiringView } from "./wiring.ts";
@@ -227,7 +228,7 @@ function importExtension(root: string): "ts" | "js" | "none" {
 const NODE_RESOLUTION = /^node(16|next)$/;
 
 /** The module resolution tsc uses: the explicit one, else the one `module` implies (node16/node18/node20 → node16, nodenext → nodenext). */
-function moduleResolution(options: Record<string, unknown>): string {
+function moduleResolution(options: JsonObject): string {
   if (options.moduleResolution !== undefined) return String(options.moduleResolution).toLowerCase();
   const module = String(options.module ?? "").toLowerCase();
 
@@ -235,23 +236,23 @@ function moduleResolution(options: Record<string, unknown>): string {
 }
 
 /** `compilerOptions` of a tsconfig over those of its relative `extends`; package configs are not read. */
-function compilerOptions(file: string, depth: number): Record<string, unknown> {
-  const config = readJsonc(file) as { extends?: unknown; compilerOptions?: Record<string, unknown> } | null;
+function compilerOptions(file: string, depth: number): JsonObject {
+  const config = readJsonc(file);
 
-  if (config === null || typeof config !== "object" || depth > 5) return {};
-  const parents = typeof config.extends === "string" ? [config.extends] : Array.isArray(config.extends) ? config.extends.filter((e): e is string => typeof e === "string") : [];
-  let options: Record<string, unknown> = {};
+  if (!isJsonObject(config) || depth > 5) return {};
+  const extended = config.extends;
+  const parents = isJsonString(extended) ? [extended] : Array.isArray(extended) ? extended.filter(isJsonString) : [];
+  // Later layers win; `fromEntries` defines keys as a spread does, so a `__proto__` key stays a plain key.
+  const layers = parents.flatMap((parent) => (parent.startsWith(".") ? [compilerOptions(join(dirname(file), parent.endsWith(".json") ? parent : `${parent}.json`), depth + 1)] : []));
+  const own = config.compilerOptions;
 
-  for (const parent of parents) {
-    if (!parent.startsWith(".")) continue;
-    options = { ...options, ...compilerOptions(join(dirname(file), parent.endsWith(".json") ? parent : `${parent}.json`), depth + 1) };
-  }
+  if (isJsonObject(own)) layers.push(own);
 
-  return { ...options, ...config.compilerOptions };
+  return Object.fromEntries(layers.flatMap((layer) => Object.entries(layer)));
 }
 
 /** What a relative import names at run time for each source extension (`.mts` → `.mjs`); a bundler resolves the plain ones itself. */
-const RUNTIME_EXTENSION: Record<string, string> = { ".ts": ".js", ".tsx": ".js", ".mts": ".mjs", ".cts": ".cjs", ".js": ".js", ".jsx": ".jsx", ".mjs": ".mjs", ".cjs": ".cjs" };
+const RUNTIME_EXTENSION = new Map(Object.entries({ ".ts": ".js", ".tsx": ".js", ".mts": ".mjs", ".cts": ".cjs", ".js": ".js", ".jsx": ".jsx", ".mjs": ".mjs", ".cjs": ".cjs" }));
 
 function specifier(out: string, file: string, ext: "ts" | "js" | "none"): string {
   let rel = posix.relative(posix.dirname(out), file);
@@ -260,7 +261,7 @@ function specifier(out: string, file: string, ext: "ts" | "js" | "none"): string
 
   if (ext === "ts") return rel;
   const source = posix.extname(rel);
-  const runtime = RUNTIME_EXTENSION[source];
+  const runtime = RUNTIME_EXTENSION.get(source);
 
   if (runtime === undefined) return rel;
   const stem = rel.slice(0, -source.length);

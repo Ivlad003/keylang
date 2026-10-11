@@ -89,7 +89,7 @@ function linkItems(links: readonly { file: string | null; line: number; col: num
   return links.map((link) => ({ file: link.file ?? "", line: link.line, col: link.col, text: link.text }));
 }
 
-export const EXPLAIN_REPORTS: { [K in ExplainKind]: Report<K> } = {
+export const EXPLAIN_REPORTS = {
   explain: {
     label: (request) => `explain ${request.subject}`,
     params: (request) => request.subject,
@@ -262,8 +262,12 @@ export const EXPLAIN_REPORTS: { [K in ExplainKind]: Report<K> } = {
       // A batch: what it planned, what landed, what failed with why, what was never asked; Tab, then Enter opens a node.
       const { payload } = result;
 
+      const request: ExplainBatchRequest = { kind: "explain-batch", root: "", batch: payload.batch, jobs: payload.jobs };
+
+      if (payload.limit !== null) request.limit = payload.limit;
+
       const rows: ReportRow[] = [
-        { text: `Explain briefs with the model · keylang ${explainBatchLabel({ kind: "explain-batch", root: "", batch: payload.batch, ...(payload.limit !== null ? { limit: payload.limit } : {}), jobs: payload.jobs })} · lang ${payload.lang} · agent ${payload.agent || "none"} · snapshot ${shortId(payload.snapshotId)}`, style: BOLD },
+        { text: `Explain briefs with the model · keylang ${explainBatchLabel(request)} · lang ${payload.lang} · agent ${payload.agent || "none"} · snapshot ${shortId(payload.snapshotId)}`, style: BOLD },
         outcomeRow(view.summary, result.exitCode === 0),
       ];
 
@@ -297,4 +301,4 @@ export const EXPLAIN_REPORTS: { [K in ExplainKind]: Report<K> } = {
       of: (_state, result) => result.payload.plan.map((entry) => ({ file: entry.place?.file ?? "", line: entry.place?.line ?? 1, col: entry.place?.col ?? 1, text: `${entry.id} (${entry.level}): ${batchState(result.payload, entry.id)}` })),
     },
   },
-};
+} satisfies { [K in ExplainKind]: Report<K> };

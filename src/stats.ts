@@ -4,6 +4,7 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { isJsonNumber, isJsonObject, parseJson, type JsonValue } from "./json.ts";
 import { safeWrite } from "./safe-write.ts";
 
 export interface Tally {
@@ -26,8 +27,43 @@ export function readStats(root: string): Stats {
   return readStatsFile(root).stats;
 }
 
+type StatsFile = { text: string | null; stats: Stats };
+
+/** A tally as the file holds it; null when it is not one. */
+function tallyOf(value: JsonValue | undefined): Tally | null {
+  if (!isJsonObject(value)) return null;
+  const { proposed, accepted, rejected } = value;
+
+  return isJsonNumber(proposed) && isJsonNumber(accepted) && isJsonNumber(rejected) ? { proposed, accepted, rejected } : null;
+}
+
+/** A suggestion's tally, with its `ms`; null when it is not one. */
+function suggestionTallyOf(value: JsonValue | undefined): (Tally & { ms: number }) | null {
+  const tally = tallyOf(value);
+  const ms = isJsonObject(value) ? value.ms : undefined;
+
+  return tally !== null && isJsonNumber(ms) ? { ...tally, ms } : null;
+}
+
+/** Every entry of a table of tallies read by `read`; null when the table or one entry is damaged. A missing table (`null`) is empty. */
+function tableOf<T>(value: JsonValue | undefined, read: (entry: JsonValue) => T | null): Record<string, T> | null {
+  if (value === null) return {};
+
+  if (!isJsonObject(value)) return null;
+  const entries: [string, T][] = [];
+
+  for (const [key, entry] of Object.entries(value)) {
+    const tally = read(entry);
+
+    if (tally === null) return null;
+    entries.push([key, tally]);
+  }
+
+  return Object.fromEntries(entries);
+}
+
 /** The file as read — its text, null when there is none (or it cannot be read) — and the counts it holds. */
-function readStatsFile(root: string): { text: string | null; stats: Stats } {
+function readStatsFile(root: string): StatsFile {
   const empty: Stats = { schema: 1, drafts: {}, suggestions: {} };
   let text: string;
 
@@ -38,11 +74,15 @@ function readStatsFile(root: string): { text: string | null; stats: Stats } {
   }
 
   try {
-    const value = JSON.parse(text) as Partial<Stats>;
+    const value = parseJson(text);
 
-    if (value.schema !== 1 || typeof value.drafts !== "object" || typeof value.suggestions !== "object") return { text, stats: empty };
+    if (!isJsonObject(value) || value.schema !== 1) return { text, stats: empty };
+    const drafts = tableOf(value.drafts, tallyOf);
+    const suggestions = tableOf(value.suggestions, suggestionTallyOf);
 
-    return { text, stats: { schema: 1, drafts: value.drafts ?? {}, suggestions: value.suggestions ?? {} } };
+    if (drafts === null || suggestions === null) return { text, stats: empty };
+
+    return { text, stats: { schema: 1, drafts, suggestions } };
   } catch {
     return { text, stats: empty };
   }
@@ -71,20 +111,20 @@ export function updateStats(root: string, change: (stats: Stats) => void): void 
 }
 
 /** `status=` of every `keylang:llm` / `keylang:algo` provenance comment in the lines. */
-export function statusesIn(lines: readonly string[]): Record<string, number> {
-  const out: Record<string, number> = {};
+export function statusesIn(lines: readonly string[]): Map<string, number> {
+  const out = new Map<string, number>();
 
   for (const line of lines) {
     const m = /<!-- keylang:(?:llm|algo)\b[^>]*\bstatus=([a-z-]+)/.exec(line);
 
-    if (m) out[m[1]!] = (out[m[1]!] ?? 0) + 1;
+    if (m) out.set(m[1]!, (out.get(m[1]!) ?? 0) + 1);
   }
 
   return out;
 }
 
-export function addDrafts(stats: Stats, counts: Record<string, number>, field: keyof Tally): void {
-  for (const [status, n] of Object.entries(counts)) {
+export function addDrafts(stats: Stats, counts: Iterable<readonly [string, number]>, field: keyof Tally): void {
+  for (const [status, n] of counts) {
     const tally = (stats.drafts[status] ??= { proposed: 0, accepted: 0, rejected: 0 });
     tally[field] += n;
   }

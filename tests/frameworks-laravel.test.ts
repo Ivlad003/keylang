@@ -35,7 +35,7 @@ const FLOW = [
   "",
 ].join("\n");
 
-const APP: Record<string, string> = {
+const APP = {
   "composer.json": JSON.stringify({ name: "shop/app", require: { php: "^8.2", "laravel/framework": "^11.0" }, autoload: { "psr-4": { "App\\": "app/" } } }, null, 2),
   "keylang.json": JSON.stringify({ languages: ["php"], layers: LAYERS }),
   // The framework is a composer package: its classes are external, not holes.
@@ -212,7 +212,7 @@ const APP: Record<string, string> = {
     "Schedule::command('report:send')->daily();",
     "Schedule::job(new ProcessInvoice(0))->hourly();",
   ]),
-};
+} satisfies Record<string, string>;
 
 function app(t: TestContext, extra: Record<string, string> = {}): string {
   const dir = tempDir(t, "keylang-laravel-");
@@ -225,6 +225,7 @@ function snapshotOf(dir: string): AnalysisSnapshot {
   const run = keylang(dir, ["map"]);
   assert.equal(run.status, 0, run.stderr);
 
+  // SAFETY: `keylang map` exited 0 above, so the index holds the AnalysisSnapshot it writes.
   return JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as AnalysisSnapshot;
 }
 

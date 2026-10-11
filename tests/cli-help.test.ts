@@ -92,7 +92,7 @@ test("explain K005 shows the right form for every reason and the separate planne
   assert.equal(explained.status, 0, explained.stderr);
   assert.match(explained.stdout, /^fix: Write the keyword in one of its forms:/m);
 
-  const forms: Record<string, string> = {
+  const forms = {
     arguments: "`# flow checkout`",
     id: "`module order`",
     link: "`calls [a.b](src/a.ts)`",

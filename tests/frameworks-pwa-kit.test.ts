@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
+import { isJsonObject, parseJson, type JsonObject } from "../src/json.ts";
 import type { AnalysisSnapshot } from "../src/snapshot.ts";
 import { keylang, tempDir, writeTree } from "./cli-helpers.ts";
 
@@ -26,7 +27,7 @@ const MANIFEST = {
   ccExtensibility: { extends: BASE, overridesDir: "overrides" },
 };
 
-const REPO: Record<string, string> = {
+const REPO = {
   "keylang.json": `${JSON.stringify(CONFIG, null, 2)}\n`,
   "package.json": `${JSON.stringify(MANIFEST, null, 2)}\n`,
   "keylang/flows.md": [
@@ -97,7 +98,7 @@ const REPO: Record<string, string> = {
     "export const get = handler;",
     "",
   ].join("\n"),
-};
+} satisfies Record<string, string>;
 
 function storefront(t: TestContext, extra: Record<string, string> = {}): string {
   const dir = tempDir(t, "keylang-pwa-");
@@ -110,6 +111,7 @@ function snapshotOf(dir: string): AnalysisSnapshot {
   const run = keylang(dir, ["map"]);
   assert.equal(run.status, 0, run.stderr);
 
+  // SAFETY: `keylang map` exited 0 just above, so the index holds the snapshot it writes.
   return JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as AnalysisSnapshot;
 }
 
@@ -118,8 +120,9 @@ function imports(snapshot: AnalysisSnapshot, needle: string): string[] {
   return snapshot.edges.filter((e) => e.kind === "import" && e.text.includes(needle)).map((e) => `${e.source} -> ${e.target ?? "?"}`);
 }
 
-function setConfig(dir: string, change: (raw: Record<string, unknown>) => void): void {
-  const raw = JSON.parse(readFileSync(join(dir, "keylang.json"), "utf8")) as Record<string, unknown>;
+function setConfig(dir: string, change: (raw: JsonObject) => void): void {
+  const raw = parseJson(readFileSync(join(dir, "keylang.json"), "utf8"));
+  assert.ok(isJsonObject(raw), "keylang.json is an object");
   change(raw);
   writeFileSync(join(dir, "keylang.json"), `${JSON.stringify(raw, null, 2)}\n`);
 }

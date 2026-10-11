@@ -19,11 +19,12 @@
 
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, posix } from "node:path";
-import { parse as parseToml } from "smol-toml";
+import { parse as parseToml, type TomlTable, type TomlValue } from "smol-toml";
 import { isAnalysed, toPosix, withoutBom, type Config } from "./config.ts";
 import { assignExternalIds } from "./external-ids.ts";
 import { globToRegExp } from "./glob.ts";
 import { inside, isGlob, listWorkspaceGlob, parseJsonc, parseJsoncStrict, pnpmWorkspacePackages, withoutNegated, workspaceGlob } from "./imports.ts";
+import { isJsonObject, isJsonString, parseJson, type JsonValue } from "./json.ts";
 import { compareText } from "./span.ts";
 
 const PACKAGE_FIELDS = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"] as const;
@@ -64,6 +65,12 @@ const LOCAL_RANGE = /^(workspace|file|link|portal):/;
 
 type Add = (name: string, manifest: string, field: DependencyField, range: string | null) => void;
 
+/** The declared packages and every file read for them (null: absent). */
+export interface ManifestRead {
+  packages: DeclaredPackage[];
+  inputs: Map<string, string | null>;
+}
+
 /**
  * The packages declared by the manifests at the root and on the ancestors of
  * `files` (root-relative), sorted by id; their ids cover only these names.
@@ -71,7 +78,7 @@ type Add = (name: string, manifest: string, field: DependencyField, range: strin
  * a manifest is parsed from the same text that went into the snapshot id.
  * `inputs` are the files read here (null: absent), for the snapshot id.
  */
-export function readManifests(config: Config, files: readonly string[], known: ReadonlyMap<string, string | null> = new Map()): { packages: DeclaredPackage[]; inputs: Map<string, string | null> } {
+export function readManifests(config: Config, files: readonly string[], known: ReadonlyMap<string, string | null> = new Map()): ManifestRead {
   const inputs = new Map<string, string | null>();
 
   const read = (rel: string): string | null => {
@@ -185,18 +192,18 @@ function typesTarget(name: string): string {
  */
 function workspaceNames(read: (rel: string) => string | null, list: (rel: string) => string | null): Set<string> {
   const rootText = read("package.json");
-  const manifest = rootText === null ? null : parseJsonc(rootText);
-  const declared = isRecord(manifest) ? manifest.workspaces : undefined;
+  const manifest = rootText === null ? null : jsoncValue(rootText);
+  const declared = isJsonObject(manifest) ? manifest.workspaces : undefined;
   const pnpm = read("pnpm-workspace.yaml");
-  const patterns: unknown[] = [...(Array.isArray(declared) ? declared : isRecord(declared) && Array.isArray(declared.packages) ? declared.packages : []), ...(pnpm === null ? [] : pnpmWorkspacePackages(pnpm))];
+  const patterns = [...(Array.isArray(declared) ? declared : isJsonObject(declared) && Array.isArray(declared.packages) ? declared.packages : []), ...(pnpm === null ? [] : pnpmWorkspacePackages(pnpm))];
   const names = new Set<string>();
-  const dirs = patterns.flatMap((pattern) => (typeof pattern === "string" && !pattern.startsWith("!") ? workspaceDirs(pattern, list) : []));
+  const dirs = patterns.flatMap((pattern) => (isJsonString(pattern) && !pattern.startsWith("!") ? workspaceDirs(pattern, list) : []));
 
   for (const dir of withoutNegated(dirs, patterns)) {
     const text = read(`${dir}/package.json`);
-    const member = text === null ? null : parseJsonc(text);
+    const member = text === null ? null : jsoncValue(text);
 
-    if (isRecord(member) && typeof member.name === "string") names.add(member.name);
+    if (isJsonObject(member) && isJsonString(member.name)) names.add(member.name);
   }
 
   return names;
@@ -245,37 +252,27 @@ function linkedPackages(root: string, declared: ReadonlyMap<string, readonly Dec
  * inside the repository; every member of a workspace (and its root package)
  * is internal, as the resolver binds a member's name to its library.
  */
-function cargoWorkspaces(read: (rel: string) => string | null): {
-  local(dir: string, key: string, dep: unknown): boolean;
-  memberNames(crateDirs: readonly string[], list: (rel: string) => string | null): Set<string>;
-} {
-  const parsed = new Map<string, Record<string, unknown> | null>();
+function cargoWorkspaces(read: (rel: string) => string | null): CargoWorkspaces {
+  const parsed = new Map<string, TomlTable | null>();
 
-  const manifestAt = (dir: string): Record<string, unknown> | null => {
+  const manifestAt = (dir: string): TomlTable | null => {
     const cached = parsed.get(dir);
 
     if (cached !== undefined) return cached;
     const text = read(dir === "" ? "Cargo.toml" : `${dir}/Cargo.toml`);
-    let value: unknown = null;
-
-    try {
-      value = text === null ? null : parseToml(withoutBom(text));
-    } catch {
-      // Reported where its packages are read.
-    }
-
-    const manifest = isRecord(value) ? value : null;
+    // One that does not parse is reported where its packages are read.
+    const manifest = text === null ? null : tomlOrNull(text);
     parsed.set(dir, manifest);
 
     return manifest;
   };
 
-  const workspaceOf = (dir: string): { dir: string; table: Record<string, unknown> } | null => {
+  const workspaceOf = (dir: string): CargoWorkspace | null => {
     for (let at = dir; ; at = posix.dirname(at)) {
       const here = at === "." ? "" : at;
       const table = manifestAt(here)?.workspace;
 
-      if (isRecord(table)) return { dir: here, table };
+      if (isTomlTable(table)) return { dir: here, table };
 
       if (here === "") return null;
     }
@@ -289,16 +286,16 @@ function cargoWorkspaces(read: (rel: string) => string | null): {
 
   return {
     local(dir, key, dep) {
-      if (!isRecord(dep)) return false;
+      if (!isTomlTable(dep)) return false;
 
-      if (typeof dep.path === "string") return insideAt(dir, dep.path);
+      if (isTomlString(dep.path)) return insideAt(dir, dep.path);
 
       if (dep.workspace !== true) return false;
       const workspace = workspaceOf(dir);
       const dependencies = workspace?.table.dependencies;
-      const inherited = isRecord(dependencies) ? dependencies[key] : undefined;
+      const inherited = isTomlTable(dependencies) ? dependencies[key] : undefined;
 
-      return workspace !== null && isRecord(inherited) && typeof inherited.path === "string" && insideAt(workspace.dir, inherited.path);
+      return workspace !== null && isTomlTable(inherited) && isTomlString(inherited.path) && insideAt(workspace.dir, inherited.path);
     },
     memberNames(crateDirs, list) {
       const names = new Set<string>();
@@ -309,19 +306,32 @@ function cargoWorkspaces(read: (rel: string) => string | null): {
 
         if (workspace === null || seen.has(workspace.dir)) continue;
         seen.add(workspace.dir);
-        const members = Array.isArray(workspace.table.members) ? workspace.table.members.filter((m): m is string => typeof m === "string") : [];
+        const members = Array.isArray(workspace.table.members) ? workspace.table.members.filter(isTomlString) : [];
         const dirs = [workspace.dir, ...members.flatMap((member) => cargoMemberDirs(workspace.dir, member, list))];
 
         for (const dir of dirs) {
           const pkg = manifestAt(dir)?.package;
 
-          if (isRecord(pkg) && typeof pkg.name === "string") names.add(pkg.name);
+          if (isTomlTable(pkg) && isTomlString(pkg.name)) names.add(pkg.name);
         }
       }
 
       return names;
     },
   };
+}
+
+/** What `readManifests` asks of the Cargo workspaces around the crates it reads. */
+interface CargoWorkspaces {
+  /** Whether the dependency `key` of the crate in `dir` is this repository's code. */
+  local(dir: string, key: string, dep: TomlValue): boolean;
+  memberNames(crateDirs: readonly string[], list: (rel: string) => string | null): Set<string>;
+}
+
+/** The nearest `Cargo.toml` with `[workspace]`: its directory and that table. */
+interface CargoWorkspace {
+  dir: string;
+  table: TomlTable;
 }
 
 /** Directories one `[workspace] members` entry names, root-relative; a glob in the last segment is expanded, as the resolver does. */
@@ -346,31 +356,21 @@ function cargoMemberDirs(workspace: string, member: string, list: (rel: string) 
  */
 function composerPathNames(read: (rel: string) => string | null, list: (rel: string) => string | null): Set<string> {
   const rootText = read("composer.json");
-  let manifest: unknown = null;
-
-  try {
-    manifest = rootText === null ? null : JSON.parse(withoutBom(rootText));
-  } catch {
-    // Reported where its packages are read.
-  }
-
+  // One that does not parse is reported where its packages are read.
+  const manifest = rootText === null ? null : jsonOrNull(rootText);
   const names = new Set<string>();
 
-  if (!isRecord(manifest) || !Array.isArray(manifest.repositories)) return names;
+  if (!isJsonObject(manifest) || !Array.isArray(manifest.repositories)) return names;
 
   for (const repository of manifest.repositories) {
-    if (!isRecord(repository) || repository.type !== "path" || typeof repository.url !== "string") continue;
+    if (!isJsonObject(repository) || repository.type !== "path" || !isJsonString(repository.url)) continue;
 
     for (const dir of workspaceDirs(repository.url, list)) {
       const text = read(`${dir}/composer.json`);
+      // A member that does not parse names no package.
+      const member = text === null ? null : jsonOrNull(text);
 
-      try {
-        const member: unknown = text === null ? null : JSON.parse(withoutBom(text));
-
-        if (isRecord(member) && typeof member.name === "string") names.add(member.name);
-      } catch {
-        // A member that does not parse names no package.
-      }
+      if (isJsonObject(member) && isJsonString(member.name)) names.add(member.name);
     }
   }
 
@@ -411,26 +411,55 @@ function readText(path: string, rel: string): string {
   try {
     return withoutBom(readFileSync(path, "utf8"));
   } catch (error) {
-    const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
+    const code = error instanceof Error && "code" in error ? String(error.code) : "";
     throw new Error(`${rel}: cannot read${code === "" ? "" : ` (${code})`}`);
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+/** A JSON document's value, null when the text does not parse. */
+function jsonOrNull(text: string): JsonValue {
+  try {
+    return parseJson(withoutBom(text));
+  } catch {
+    return null;
+  }
 }
 
-function table(rel: string, field: string, value: unknown, kind: "object" | "table"): Record<string, unknown> | undefined {
+/** A JSONC document's value, null when the text does not parse. */
+function jsoncValue(text: string): JsonValue {
+  return parseJsonc(text);
+}
+
+/** A TOML document's root table, null when the text does not parse. */
+function tomlOrNull(text: string): TomlTable | null {
+  try {
+    return parseToml(withoutBom(text));
+  } catch {
+    return null;
+  }
+}
+
+/** A TOML table: not a scalar, an array or a date. */
+function isTomlTable(value: TomlValue | undefined): value is TomlTable {
+  return typeof value === "object" && !Array.isArray(value) && !(value instanceof Date);
+}
+
+function isTomlString(value: TomlValue | undefined): value is string {
+  return typeof value === "string";
+}
+
+/** The manifest field `value` as an object (JSON) or table (TOML); undefined when the field is absent. */
+function table<Value, Table extends Value>(rel: string, field: string, value: Value | undefined, kind: "object" | "table", isTable: (value: Value) => value is Table): Table | undefined {
   if (value === undefined) return undefined;
 
-  if (!isRecord(value)) throw new Error(`${rel}: \`${field}\` must be ${kind === "object" ? "an object" : "a table"}, got ${JSON.stringify(value)}`);
+  if (!isTable(value)) throw new Error(`${rel}: \`${field}\` must be ${kind === "object" ? "an object" : "a table"}, got ${JSON.stringify(value)}`);
 
   return value;
 }
 
 /** `dependencies`, `devDependencies`, `peerDependencies`, `optionalDependencies`. Not `node_modules`. */
 function addPackages(rel: string, text: string, add: Add): void {
-  let value: unknown;
+  let value: JsonValue;
 
   try {
     value = parseJsoncStrict(text);
@@ -438,20 +467,20 @@ function addPackages(rel: string, text: string, add: Add): void {
     throw new Error(`${rel}: invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
   }
 
-  if (!isRecord(value)) throw new Error(`${rel}: the document must be an object, got ${JSON.stringify(value)}`);
+  if (!isJsonObject(value)) throw new Error(`${rel}: the document must be an object, got ${JSON.stringify(value)}`);
 
   for (const key of PACKAGE_FIELDS) {
-    const names = table(rel, key, key in value ? value[key] : undefined, "object");
+    const names = table(rel, key, key in value ? value[key] : undefined, "object", isJsonObject);
 
     if (names === undefined) continue;
 
-    for (const [name, range] of Object.entries(names)) add(name, rel, key, typeof range === "string" ? range : null);
+    for (const [name, range] of Object.entries(names)) add(name, rel, key, isJsonString(range) ? range : null);
   }
 }
 
 /** `[dependencies]`, `[dev-dependencies]`, `[build-dependencies]`, and the same under `[target.*]`; `local` ones are left out. */
-function addCrates(rel: string, text: string, add: Add, local: (key: string, dep: unknown) => boolean): void {
-  let value: unknown;
+function addCrates(rel: string, text: string, add: Add, local: (key: string, dep: TomlValue) => boolean): void {
+  let value: TomlTable;
 
   try {
     value = parseToml(withoutBom(text));
@@ -459,14 +488,12 @@ function addCrates(rel: string, text: string, add: Add, local: (key: string, dep
     throw new Error(`${rel}: invalid TOML: ${error instanceof Error ? error.message : String(error)}`);
   }
 
-  if (!isRecord(value)) throw new Error(`${rel}: the document must be a table, got ${JSON.stringify(value)}`);
-
   // A workspace file without `[package]` is not a crate manifest.
-  if (!isRecord(value.package)) return;
-  const targets = table(rel, "target", "target" in value ? value.target : undefined, "table");
+  if (!isTomlTable(value.package)) return;
+  const targets = table(rel, "target", "target" in value ? value.target : undefined, "table", isTomlTable);
 
   const nested = targets === undefined ? [] : Object.entries(targets).flatMap(([name, item]) => {
-    const crate = table(rel, `target.${name}`, item, "table");
+    const crate = table(rel, `target.${name}`, item, "table", isTomlTable);
 
     return crate === undefined ? [] : crateTables(rel, crate, `target.${name}.`);
   });
@@ -475,8 +502,8 @@ function addCrates(rel: string, text: string, add: Add, local: (key: string, dep
     for (const [key, dep] of Object.entries(names)) {
       // This repository's crate (`path`, or a `path` the workspace gives): never an external package.
       if (local(key, dep)) continue;
-      const renamed = isRecord(dep) && typeof dep.package === "string" ? dep.package : key;
-      const range = typeof dep === "string" ? dep : isRecord(dep) && typeof dep.version === "string" ? dep.version : null;
+      const renamed = isTomlTable(dep) && isTomlString(dep.package) ? dep.package : key;
+      const range = isTomlString(dep) ? dep : isTomlTable(dep) && isTomlString(dep.version) ? dep.version : null;
       add(renamed, rel, field, range);
     }
   }
@@ -484,30 +511,30 @@ function addCrates(rel: string, text: string, add: Add, local: (key: string, dep
 
 /** `require` and `require-dev` of a `composer.json`, without PHP and its extensions. */
 function addComposer(rel: string, text: string, add: Add): void {
-  let value: unknown;
+  let value: JsonValue;
 
   try {
-    value = JSON.parse(withoutBom(text));
+    value = parseJson(withoutBom(text));
   } catch (error) {
     throw new Error(`${rel}: invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
   }
 
-  if (!isRecord(value)) throw new Error(`${rel}: the document must be an object, got ${JSON.stringify(value)}`);
+  if (!isJsonObject(value)) throw new Error(`${rel}: the document must be an object, got ${JSON.stringify(value)}`);
 
   for (const key of COMPOSER_FIELDS) {
-    const names = table(rel, key, key in value ? value[key] : undefined, "object");
+    const names = table(rel, key, key in value ? value[key] : undefined, "object", isJsonObject);
 
     if (names === undefined) continue;
 
-    for (const [name, range] of Object.entries(names)) if (!PLATFORM.test(name)) add(name, rel, key, typeof range === "string" ? range : null);
+    for (const [name, range] of Object.entries(names)) if (!PLATFORM.test(name)) add(name, rel, key, isJsonString(range) ? range : null);
   }
 }
 
-function crateTables(rel: string, source: Record<string, unknown>, prefix: string): [DependencyField, Record<string, unknown>][] {
-  const out: [DependencyField, Record<string, unknown>][] = [];
+function crateTables(rel: string, source: TomlTable, prefix: string): [DependencyField, TomlTable][] {
+  const out: [DependencyField, TomlTable][] = [];
 
   for (const key of CRATE_FIELDS) {
-    const names = table(rel, `${prefix}${key}`, key in source ? source[key] : undefined, "table");
+    const names = table(rel, `${prefix}${key}`, key in source ? source[key] : undefined, "table", isTomlTable);
 
     if (names !== undefined) out.push([key, names]);
   }

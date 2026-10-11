@@ -25,6 +25,10 @@ const post = (message: FromWorker): void => self.postMessage(message);
 
 let read: ReadApi | null = null;
 
+function failureText(cause: unknown): string {
+  return cause instanceof Error ? (cause.stack ?? cause.message) : String(cause);
+}
+
 /** The open folder's root and spec directory, for the git the «Зміни» tab asks. */
 let opened: { root: string; specDir: string } | null = null;
 
@@ -63,10 +67,11 @@ async function load(message: Extract<ToWorker, { type: "load" }>): Promise<void>
 }
 
 self.addEventListener("message", (event) => {
+  // SAFETY: the page's local.ts is the worker's only sender, and it posts `ToWorker` messages alone.
   const message = event.data as ToWorker;
 
   if (message.type === "load") {
-    load(message).catch((error: unknown) => post({ type: "failed", error: error instanceof Error ? (error.stack ?? error.message) : String(error) }));
+    load(message).catch((cause: unknown) => post({ type: "failed", error: failureText(cause) }));
 
     return;
   }
@@ -84,6 +89,11 @@ self.addEventListener("message", (event) => {
   const ready = opened !== null && (message.path === "/api/git" || message.path === "/api/changes") ? prepareGit(opened.root, message.path === "/api/changes" ? query.get("since") : null, opened.specDir) : Promise.resolve();
   ready
     .then(() => api.answer(message.path, query))
-    .then((answer) => post({ type: "reply", id: message.id, reply: { status: answer.status, type: answer.type, text: answer.body, ...(answer.file !== undefined ? { file: answer.file } : {}) } }))
-    .catch((error: unknown) => post({ type: "reply", id: message.id, reply: { status: 500, type: "application/json", text: JSON.stringify({ error: error instanceof Error ? error.message : String(error) }) } }));
+    .then((answer) => {
+      const reply: Extract<FromWorker, { type: "reply" }>["reply"] = { status: answer.status, type: answer.type, text: answer.body };
+
+      if (answer.file !== undefined) reply.file = answer.file;
+      post({ type: "reply", id: message.id, reply });
+    })
+    .catch((cause: unknown) => post({ type: "reply", id: message.id, reply: { status: 500, type: "application/json", text: JSON.stringify({ error: cause instanceof Error ? cause.message : String(cause) }) } }));
 });

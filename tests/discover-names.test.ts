@@ -18,7 +18,7 @@ import { processViews, readProcesses } from "../src/discover-names.ts";
 import { fakeAgents, type FakeAgents } from "./agent-fixture.ts";
 import { bin, tempDir, treeBytes, writeTree } from "./cli-helpers.ts";
 
-const REPO: Record<string, string> = {
+const REPO = {
   "keylang.json": JSON.stringify({ languages: ["typescript", "python"], module: "file", layers: { app: ["src/app/**"], shop: ["src/shop/**"] } }),
   "src/app/handlers.ts":
     'import { load } from "./store.ts";\n/** Lists the orders of the shopper. Used by the account page. */\nexport function listOrders(): string[] {\n  return load();\n}\n/** Pays for the cart. */\nexport function pay(): number {\n  return 1;\n}\n',
@@ -27,7 +27,7 @@ const REPO: Record<string, string> = {
   "pyproject.toml": '[project]\nname = "shop"\n\n[project.scripts]\nshop-py = "shop.cli:main"\n',
   "src/shop/__init__.py": "",
   "src/shop/cli.py": 'def helper() -> int:\n    """Computes the exit code. Always one."""\n    return 1\n\n\ndef main() -> int:\n    """Runs the shop command line."""\n    return helper()\n',
-};
+} satisfies Record<string, string>;
 
 const VIEW = "keylang/flows-discovered";
 
@@ -55,13 +55,15 @@ function read(dir: string, path: string): string {
   return readFileSync(join(dir, path), "utf8");
 }
 
+type Run = { status: number | null; stdout: string; stderr: string };
+
 /** `keylang` with the fake agents first on PATH, a home of its own (no agents.json) and `env`. */
-function run(t: { after: (fn: () => void) => void }, cwd: string, args: string[], fake: FakeAgents | null, env: Record<string, string> = {}): { status: number | null; stdout: string; stderr: string } {
+function run(t: { after: (fn: () => void) => void }, cwd: string, args: string[], fake: FakeAgents | null, env: Record<string, string> = {}): Run {
   const home = tempDir(t, "keylang-names-home-");
   mkdirSync(join(home, ".config"), { recursive: true });
-  const base: Record<string, string | undefined> = { ...process.env, HOME: home, KEYLANG_AGENT: undefined, KEYLANG_NESTED: undefined, ANTHROPIC_API_KEY: undefined, OPENROUTER_API_KEY: undefined };
+  const base = { ...process.env, HOME: home, KEYLANG_AGENT: undefined, KEYLANG_NESTED: undefined, ANTHROPIC_API_KEY: undefined, OPENROUTER_API_KEY: undefined };
   const path = fake ? `${fake.bin}:${process.env.PATH ?? ""}` : (process.env.PATH ?? "");
-  const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8", env: { ...base, PATH: path, ...fake?.env, ...env } as NodeJS.ProcessEnv });
+  const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8", env: { ...base, PATH: path, ...fake?.env, ...env } });
 
   if (r.error) throw r.error;
 

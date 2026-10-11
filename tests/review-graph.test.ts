@@ -9,17 +9,24 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
+import type { JsonObject } from "../src/json.ts";
 
 const bin = join(dirname(fileURLToPath(import.meta.url)), "../bin/keylang.js");
 
-function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+interface Run {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+function keylang(cwd: string, args: string[]): Run {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8" });
 
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
 /** A repository of `files` with `config` as its keylang.json (TypeScript and one layer `app` over `src/**` unless it says otherwise). */
-function repo(t: TestContext, files: Record<string, string>, config: Record<string, unknown> = {}): string {
+function repo(t: TestContext, files: Record<string, string>, config: JsonObject = {}): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-review-graph-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   writeFileSync(join(dir, "keylang.json"), JSON.stringify({ languages: ["typescript"], layers: { app: ["src/**"] }, ...config }));
@@ -39,10 +46,16 @@ interface Snapshot {
   exports: { module: string; name: string; symbol: string | null; kind: string; form?: string; from?: string }[];
 }
 
-function map(dir: string): { snapshot: Snapshot; stderr: string } {
+interface MapRun {
+  snapshot: Snapshot;
+  stderr: string;
+}
+
+function map(dir: string): MapRun {
   const o = keylang(dir, ["map"]);
   assert.equal(o.status, 0, o.stdout + o.stderr);
 
+  // SAFETY: `keylang map` writes .keylang/index.json as a snapshot with these fields (docs/snapshot.md).
   return { snapshot: JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as Snapshot, stderr: o.stderr };
 }
 

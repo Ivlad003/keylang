@@ -259,6 +259,7 @@ export class Docs {
   /** The lines of an item not drawn yet (it was folded when the file opened). */
   private drawRest(item: Block): void {
     if (item.drawn >= item.children.length) return;
+    // SAFETY: `draw` builds an item's box as its line, then its `md-children` div, so the last element child is that div.
     const into = item.box!.lastElementChild as HTMLElement;
 
     for (const child of item.children.slice(item.drawn)) into.append(this.draw(child));
@@ -328,7 +329,9 @@ export class Docs {
 
       if (line.trim() !== "" && kind !== "code" && !(kind === "fence" && !fence)) while (stack.length > 0 && indent <= stack[stack.length - 1]!.indent) stack.pop();
       const parent = stack[stack.length - 1];
-      const block: Block = { line, kind, indent, anchors: [...line.matchAll(/<a id="([^"]+)">/g)].map((m) => m[1]!), children: [], depth: (parent?.depth ?? 0) + (kind === "item" ? 1 : 0), drawn: 0, ...(parent ? { parent } : {}) };
+      const block: Block = { line, kind, indent, anchors: [...line.matchAll(/<a id="([^"]+)">/g)].map((m) => m[1]!), children: [], depth: (parent?.depth ?? 0) + (kind === "item" ? 1 : 0), drawn: 0 };
+
+      if (parent) block.parent = parent;
       (parent ? parent.children : roots).push(block);
       this.blocks.push(block);
 

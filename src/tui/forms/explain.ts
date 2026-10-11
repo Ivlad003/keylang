@@ -284,7 +284,14 @@ export class ExplainForms {
 
     if (jobsProblem !== null) return { field: "jobs", text: jobsProblem };
 
-    return { kind: "explain-plan", root: this.state.root, list: "briefs", batch: form.list, ...(limit !== "" ? { limit: Number(limit) } : {}), ...(jobs !== "" ? { jobs: Number(jobs) } : {}), estimate: true };
+    const request: ExplainPlanRequest = { kind: "explain-plan", root: this.state.root, list: "briefs", batch: form.list };
+
+    if (limit !== "") request.limit = Number(limit);
+
+    if (jobs !== "") request.jobs = Number(jobs);
+    request.estimate = true;
+
+    return request;
   }
 
   /** The rows (the list; limit and jobs for a brief plan; run), what the selected list is and is not, and a note on the selected row. */
@@ -368,7 +375,12 @@ export class ExplainForms {
     const batch = plan.list === "briefs" ? plan.batch : "missing";
     const limit = plan.list === "briefs" ? plan.limit : undefined;
 
-    return { kind: "explain-batch", root: this.state.root, batch, ...(limit !== undefined ? { limit } : {}), jobs: (plan.list === "briefs" ? plan.jobs : undefined) ?? defaultBriefJobs(this.host.agentName()) };
+    const request: ExplainBatchRequest = { kind: "explain-batch", root: this.state.root, batch };
+
+    if (limit !== undefined) request.limit = limit;
+    request.jobs = (plan.list === "briefs" ? plan.jobs : undefined) ?? defaultBriefJobs(this.host.agentName());
+
+    return request;
   }
 
   /** Who the batch row would ask, by the session's configuration, or why no request can be made. */

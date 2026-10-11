@@ -687,6 +687,7 @@ async function modelFlows(
 
       for (const line of answer.dropped) notes.push({ level: "warning", text: `dropped from the model's draft: ${line}` });
 
+      // SAFETY: `answer.counts` is a Record<DraftStatus, number>, so every key Object.entries yields is a DraftStatus.
       for (const [status, n] of Object.entries(answer.counts) as [DraftStatus, number][]) model.counts[status] += n;
       model.flows.push({ name: answer.name, rounds: answer.rounds, unknown: answer.unknown, dropped: answer.dropped });
       drafts.push({ name: answer.name, text: answer.text, steps: flowSteps(answer.text, trigger) });
@@ -708,7 +709,7 @@ function rulesCountText(rules: string): string {
 /** The drafted lines count as proposed once the proposal exists; a count that cannot be written never fails the draft: its error, or null. */
 function countProposed(root: string, counts: Record<DraftStatus, number>): string | null {
   try {
-    updateStats(root, (stats) => addDrafts(stats, counts, "proposed"));
+    updateStats(root, (stats) => addDrafts(stats, Object.entries(counts), "proposed"));
 
     return null;
   } catch (error) {

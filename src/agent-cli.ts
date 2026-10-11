@@ -16,10 +16,15 @@ import { homedir, tmpdir } from "node:os";
 import { delimiter, isAbsolute, join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { AGENT_CLI_PRESETS, AGENT_FORMS, isAgent } from "./config.ts";
+import { isJsonNumber, isJsonObject, isJsonString, parseJson, type JsonObject, type JsonValue } from "./json.ts";
 
 type Env = Readonly<Record<string, string | undefined>>;
 
 type Preset = (typeof AGENT_CLI_PRESETS)[number];
+
+function isPreset(name: string): name is Preset {
+  return AGENT_CLI_PRESETS.some((preset) => preset === name);
+}
 
 /** A user's own CLI: `command[0]` is the binary; `{prompt_file}` and `{model}` are placeholders. A preset name takes only `bin`. */
 export type CliDefinition = { command: string[] } | { bin: string };
@@ -32,6 +37,12 @@ export interface AgentSettings {
 
 /** Where the effective agent came from. */
 export type AgentSource = "KEYLANG_AGENT" | "agents.json" | "keylang.json";
+
+/** The agent in effect, or null, and where it came from. */
+export interface EffectiveAgent {
+  agent: string | null;
+  source: AgentSource | null;
+}
 
 export interface CliRequest {
   system: string;
@@ -89,10 +100,10 @@ export function readAgentSettings(home: string): AgentSettings {
   const file = agentsFile(home);
 
   if (!existsSync(file)) return { use: null, clis: {} };
-  let value: unknown;
+  let value: JsonValue;
 
   try {
-    value = JSON.parse(readFileSync(file, "utf8")) as unknown;
+    value = parseJson(readFileSync(file, "utf8"));
   } catch (error) {
     throw new Error(`${file}: invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -101,18 +112,16 @@ export function readAgentSettings(home: string): AgentSettings {
 }
 
 /** The settings of an agents.json already parsed as JSON. */
-export function parseAgentSettings(file: string, value: unknown): AgentSettings {
-  const shown = (v: unknown): string => JSON.stringify(v) ?? String(v);
-
-  if (!isObject(value)) throw new Error(`${file}: must be a JSON object, got ${shown(value)}`);
+export function parseAgentSettings(file: string, value: JsonValue): AgentSettings {
+  if (!isJsonObject(value)) throw new Error(`${file}: must be a JSON object, got ${shown(value)}`);
   const settings: AgentSettings = { use: null, clis: {} };
 
   for (const [key, v] of Object.entries(value)) {
     if (key === "use") {
-      if (typeof v !== "string" || !isAgent(v)) throw new Error(`${file}: \`use\` must be ${AGENT_FORMS}, got ${shown(v)}`);
+      if (!isJsonString(v) || !isAgent(v)) throw new Error(`${file}: \`use\` must be ${AGENT_FORMS}, got ${shown(v)}`);
       settings.use = v;
     } else if (key === "clis") {
-      if (!isObject(v)) throw new Error(`${file}: \`clis\` must be an object of name → { "command": [...] } or { "bin": "..." }, got ${shown(v)}`);
+      if (!isJsonObject(v)) throw new Error(`${file}: \`clis\` must be an object of name → { "command": [...] } or { "bin": "..." }, got ${shown(v)}`);
 
       for (const [name, def] of Object.entries(v)) settings.clis[name] = cliDefinition(file, name, def);
     } else throw new Error(`${file}: unknown field \`${key}\` (known: use, clis)`);
@@ -121,14 +130,18 @@ export function parseAgentSettings(file: string, value: unknown): AgentSettings 
   return settings;
 }
 
-function cliDefinition(file: string, name: string, def: unknown): CliDefinition {
-  const shown = (v: unknown): string => JSON.stringify(v) ?? String(v);
+/** A JSON value as an error message shows it. */
+function shown(value: JsonValue | undefined): string {
+  return JSON.stringify(value) ?? String(value);
+}
+
+function cliDefinition(file: string, name: string, def: JsonValue): CliDefinition {
   const field = `clis.${name}`;
 
   if (!/^[a-z][a-z0-9-]*$/.test(name)) throw new Error(`${file}: \`${field}\`: a name is lowercase letters, digits and \`-\`, starting with a letter`);
 
-  if (!isObject(def)) throw new Error(`${file}: \`${field}\` must be { "command": [...] } or { "bin": "..." }, got ${shown(def)}`);
-  const preset = (AGENT_CLI_PRESETS as readonly string[]).includes(name);
+  if (!isJsonObject(def)) throw new Error(`${file}: \`${field}\` must be { "command": [...] } or { "bin": "..." }, got ${shown(def)}`);
+  const preset = isPreset(name);
 
   for (const key of Object.keys(def)) {
     if (key !== "command" && key !== "bin") throw new Error(`${file}: unknown field \`${field}.${key}\``);
@@ -137,7 +150,7 @@ function cliDefinition(file: string, name: string, def: unknown): CliDefinition 
   if (def.bin !== undefined) {
     if (def.command !== undefined) throw new Error(`${file}: \`${field}\` takes \`command\` or \`bin\`, not both`);
 
-    if (typeof def.bin !== "string" || def.bin === "") throw new Error(`${file}: \`${field}.bin\` must be a path or a name on PATH, got ${shown(def.bin)}`);
+    if (!isJsonString(def.bin) || def.bin === "") throw new Error(`${file}: \`${field}.bin\` must be a path or a name on PATH, got ${shown(def.bin)}`);
 
     return { bin: def.bin };
   }
@@ -145,11 +158,11 @@ function cliDefinition(file: string, name: string, def: unknown): CliDefinition 
   if (preset) throw new Error(`${file}: \`${field}\`: a preset takes only \`bin\``);
   const command = def.command;
 
-  if (!Array.isArray(command) || command.length === 0 || !command.every((part) => typeof part === "string")) {
+  if (!Array.isArray(command) || command.length === 0 || !command.every(isJsonString)) {
     throw new Error(`${file}: \`${field}.command\` must be a non-empty array of strings, got ${shown(command)}`);
   }
 
-  const parts = command as string[];
+  const parts = command;
 
   if (parts[0] === "") throw new Error(`${file}: \`${field}.command[0]\` must name the binary`);
   parts.forEach((part, i) => {
@@ -168,7 +181,7 @@ function cliDefinition(file: string, name: string, def: unknown): CliDefinition 
  * variable is unset), else agents.json "use", else keylang.json `agent`.
  * An invalid variable or agents.json throws, naming it.
  */
-export function resolveAgent(configAgent: string | null, env: Env, home: string): { agent: string | null; source: AgentSource | null } {
+export function resolveAgent(configAgent: string | null, env: Env, home: string): EffectiveAgent {
   const fromEnv = env.KEYLANG_AGENT;
 
   if (fromEnv !== undefined && fromEnv !== "") {
@@ -216,7 +229,7 @@ export function cliClient(agent: string, options: { root: string; env: Env; home
   const { name, model } = parseCliAgent(agent);
   const settings = readAgentSettings(options.home);
   const defined = settings.clis[name];
-  const preset = (AGENT_CLI_PRESETS as readonly string[]).includes(name) ? (name as Preset) : null;
+  const preset = isPreset(name) ? name : null;
   let runner: Runner;
 
   if (preset === null) {
@@ -482,19 +495,16 @@ export function invocation(runner: Runner, model: string, request: CliRequest, r
 
 /** The user's `OPENCODE_CONFIG_CONTENT` with keylang's agent on top: every permission denied. */
 function opencodeConfig(existing: string | undefined, system: string): string {
-  let config: Record<string, unknown> = {};
+  let config: JsonObject = {};
 
   if (existing !== undefined && existing !== "") {
-    try {
-      const parsed = JSON.parse(existing) as unknown;
+    // Not JSON: opencode would reject it too; keylang's agent replaces it.
+    const parsed = parseJsonOrNothing(existing);
 
-      if (isObject(parsed)) config = parsed;
-    } catch {
-      // Not JSON: opencode would reject it too; keylang's agent replaces it.
-    }
+    if (isJsonObject(parsed)) config = parsed;
   }
 
-  const agents = isObject(config.agent) ? config.agent : {};
+  const agents = isJsonObject(config.agent) ? config.agent : {};
 
   return JSON.stringify({ ...config, agent: { ...agents, keylang: { mode: "primary", prompt: system, permission: "deny" } } });
 }
@@ -503,16 +513,22 @@ function wellFormed(text: string): string {
   return text.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "�");
 }
 
-type ResultLine = { text: string; model: string | null } | { error: string };
+/** An agent's answer, with the model that wrote it when the CLI's output names it. */
+interface Answer {
+  text: string;
+  model: string | null;
+}
+
+type ResultLine = Answer | { error: string };
 
 /** A `{"type":"result"}` line of Claude Code or Cursor: the answer with the model that wrote it, an error, or null for any other line. */
 export function parseResultLine(line: string): ResultLine | null {
-  const value = parseJson(line.trim());
+  const value = parseJsonOrNothing(line.trim());
 
-  if (!isObject(value) || value.type !== "result") return null;
-  const result = typeof value.result === "string" ? value.result : "";
+  if (!isJsonObject(value) || value.type !== "result") return null;
+  const result = isJsonString(value.result) ? value.result : "";
 
-  if (value.is_error === true || (typeof value.subtype === "string" && value.subtype.startsWith("error"))) return { error: result || String(value.subtype ?? "error") };
+  if (value.is_error === true || (isJsonString(value.subtype) && value.subtype.startsWith("error"))) return { error: result || String(value.subtype ?? "error") };
 
   return { text: result, model: answeringModel(value.modelUsage) };
 }
@@ -522,16 +538,16 @@ export function parseResultLine(line: string): ResultLine | null {
  * that wrote the most output: the CLI may also use a small model on the side.
  * Null when the line has none (Cursor) or its shape is not that.
  */
-function answeringModel(usage: unknown): string | null {
-  if (!isObject(usage)) return null;
+function answeringModel(usage: JsonValue | undefined): string | null {
+  if (!isJsonObject(usage)) return null;
   let best: { model: string; output: number } | null = null;
 
   for (const model of Object.keys(usage).sort()) {
     const entry = usage[model];
 
     // It goes into the `<!-- keylang:explain agent=… -->` header: no spaces, `<`, `>` or `--` (ADR 0012).
-    if (!/^[\w.\-/@[\]]+$/.test(model) || model.includes("--") || !isObject(entry)) continue;
-    const output = typeof entry.outputTokens === "number" ? entry.outputTokens : 0;
+    if (!/^[\w.\-/@[\]]+$/.test(model) || model.includes("--") || !isJsonObject(entry)) continue;
+    const output = isJsonNumber(entry.outputTokens) ? entry.outputTokens : 0;
 
     if (best === null || output > best.output) best = { model, output };
   }
@@ -544,21 +560,21 @@ export function parseOpencodeEvents(output: string): { text: string } | { error:
   let parts: string[] = [];
 
   for (const line of output.split("\n")) {
-    const event = parseJson(line.trim());
+    const event = parseJsonOrNothing(line.trim());
 
-    if (!isObject(event)) continue;
+    if (!isJsonObject(event)) continue;
 
     if (event.type === "error") {
-      const error = isObject(event.error) ? event.error : {};
-      const data = isObject(error.data) ? error.data : {};
-      const message = typeof error.message === "string" ? error.message : typeof data.message === "string" ? data.message : JSON.stringify(event.error);
+      const error = isJsonObject(event.error) ? event.error : {};
+      const data = isJsonObject(error.data) ? error.data : {};
+      const message = isJsonString(error.message) ? error.message : isJsonString(data.message) ? data.message : JSON.stringify(event.error);
 
       return { error: message };
     }
 
     if (event.type === "step_start") parts = [];
 
-    if (event.type === "text" && isObject(event.part) && typeof event.part.text === "string") parts.push(event.part.text);
+    if (event.type === "text" && isJsonObject(event.part) && isJsonString(event.part.text)) parts.push(event.part.text);
   }
 
   return { text: parts.join("") };
@@ -599,7 +615,7 @@ interface RunResult {
 }
 
 /** The answer, with the model that wrote it when the CLI's output names it. */
-function readAnswer(agent: string, inv: Invocation, run: RunResult): { text: string; model: string | null } {
+function readAnswer(agent: string, inv: Invocation, run: RunResult): Answer {
   switch (inv.answer) {
     case "result-json": {
       const result = run.result ?? lastResult(run.stdout);
@@ -802,16 +818,13 @@ function stripAnsi(text: string): string {
   return text.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
 }
 
-function parseJson(text: string): unknown {
+/** A line of a CLI's output as JSON; undefined when it is empty or not JSON. */
+function parseJsonOrNothing(text: string): JsonValue | undefined {
   if (text === "") return undefined;
 
   try {
-    return JSON.parse(text) as unknown;
+    return parseJson(text);
   } catch {
     return undefined;
   }
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

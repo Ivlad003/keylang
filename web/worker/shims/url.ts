@@ -1,7 +1,7 @@
 // `node:url` for the analysis in the browser: file URLs to POSIX paths and back.
 
 export function fileURLToPath(url: string | URL): string {
-  const parsed = typeof url === "string" ? new URL(url) : url;
+  const parsed = url instanceof URL ? url : new URL(url);
 
   if (parsed.protocol !== "file:") throw new TypeError(`The URL must be of scheme file: ${String(url)}`);
 

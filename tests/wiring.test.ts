@@ -16,7 +16,7 @@ const bin = join(root, "bin/keylang.js");
 
 const tsc = join(root, "node_modules/typescript/bin/tsc");
 
-function run(cwd: string, file: string, args: string[], env: Record<string, string> = {}): { status: number | null; stdout: string; stderr: string } {
+function run(cwd: string, file: string, args: string[], env: Record<string, string> = {}) {
   const r = spawnSync(process.execPath, [file, ...args], { cwd, encoding: "utf8", env: { ...process.env, ...env } });
 
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };

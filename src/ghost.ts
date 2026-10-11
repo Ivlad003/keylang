@@ -9,7 +9,7 @@
 import type { Analysis } from "./analyze.ts";
 import { contextText, type ContextPack } from "./agent-context.ts";
 import { sectionNodes, walk } from "./ir.ts";
-import type { LlmClient } from "./llm.ts";
+import type { LlmCallOptions, LlmClient } from "./llm.ts";
 import { parse } from "./parser.ts";
 
 /** The cursor line starts a new list item (`- ` and nothing after it) inside a `# flow` with a trigger. */
@@ -41,11 +41,15 @@ export async function ghostSuggestions(analysis: Analysis, client: LlmClient, pa
   const lines = text.split("\n");
   const indent = /^\s*/.exec(lines[line] ?? "")![0];
 
+  const call: LlmCallOptions = { timeoutMs: GHOST_TIMEOUT_MS };
+
+  if (signal) call.signal = signal;
+
   const answer = await client.complete({
     system: "You continue a keylang flow by one line. Reply with up to three alternatives, one per line, each a complete list item such as `- step <id>`, `- when <condition>` or `- invariant <text>`. Use only IDs from the input. No other text.",
     prompt: [`The flow so far (the cursor is on the last line):\n${lines.slice(0, line + 1).join("\n")}`, ...(pack ? [`Context:\n${contextText(pack)}`] : [])].join("\n\n"),
     maxTokens: 256,
-  }, { timeoutMs: GHOST_TIMEOUT_MS, ...(signal ? { signal } : {}) });
+  }, call);
 
   const planned = new Set<string>();
 

@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { bin, git, keylang, LAYERS, ORDER, PAY, root, tempDir, treeBytes, writeTree } from "./cli-helpers.ts";
 
+// SAFETY: package.json of this repository has a string `version`.
 const VERSION = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version as string;
 
 test("init: managed AGENTS.md block keeps foreign CRLF text, is idempotent, and baseline adds no fail", (t) => {
@@ -87,7 +88,7 @@ test("agents: --agents=none writes no harness files; unknown name and broken mar
 
 test("agents: a removal through a harness directory linked out of the repository is refused before the first step (init --agents=none and clone)", (t) => {
   // The repository commits `.cursor` and `.claude` as links to a person's dotfiles outside it.
-  const make = (prefix: string): { repo: string; outside: string } => {
+  const make = (prefix: string) => {
     const dir = tempDir(t, prefix);
     const repo = join(dir, "repo");
     const outside = join(dir, "outside");
@@ -204,15 +205,18 @@ test("agents: MCP servers, skill copies, Claude deny and a stale --check that wr
   mkdirSync(join(dir, ".cursor"));
   const init = keylang(dir, ["init", "--agents=claude,codex,opencode,cursor"]);
   assert.equal(init.status, 0, init.stderr);
+  // SAFETY: `init` writes `.mcp.json` with an `mcpServers` record and keeps the user's `keep` key.
   const mcp = JSON.parse(readFileSync(join(dir, ".mcp.json"), "utf8")) as { keep: boolean; mcpServers: Record<string, { command: string; args?: string[] }> };
   assert.equal(mcp.keep, true);
   assert.deepEqual(mcp.mcpServers.other, { command: "echo", args: ["hi"] });
   assert.deepEqual(mcp.mcpServers.keylang, { command: "npx", args: ["-y", `keylang@${VERSION}`, "mcp"] });
+  // SAFETY: `init` writes `.cursor/mcp.json` with a `keylang` entry under `mcpServers`.
   const cursor = JSON.parse(readFileSync(join(dir, ".cursor/mcp.json"), "utf8")) as { mcpServers: { keylang: { args: string[] } } };
   assert.deepEqual(cursor.mcpServers.keylang.args, ["-y", `keylang@${VERSION}`, "mcp"]);
   const toml = readFileSync(join(dir, ".codex/config.toml"), "utf8");
   assert.match(toml, /keylang@/);
   assert.match(toml, new RegExp(`keylang@${VERSION.replace(/\./g, "\\.")}`));
+  // SAFETY: `init` writes `opencode.json` with an `mcp` record of local servers.
   const open = JSON.parse(readFileSync(join(dir, "opencode.json"), "utf8")) as { mcp: Record<string, { type?: string; command?: string[] }> };
   assert.deepEqual(open.mcp.other, { type: "local", command: ["echo"] });
   assert.equal(open.mcp.keylang?.type, "local");
@@ -224,6 +228,7 @@ test("agents: MCP servers, skill copies, Claude deny and a stale --check that wr
   assert.match(skillA, /^description: /m);
   assert.equal(statSync(join(dir, ".claude/skills/keylang-feature/SKILL.md")).isSymbolicLink(), false);
 
+  // SAFETY: `init` writes `.claude/settings.json` in Claude Code's settings format with these fields.
   const settings = JSON.parse(readFileSync(join(dir, ".claude/settings.json"), "utf8")) as {
     permissions: { allow: string[]; deny: string[] };
     hooks: { PostToolUse: unknown[]; Stop: { hooks: { command: string }[] }[] };
@@ -457,11 +462,13 @@ test("init on a repository with opencode.jsonc (comments, trailing comma): JSONC
   const auto = make();
   const init = keylang(auto, ["init"]);
   assert.equal(init.status, 0, init.stderr);
+  // SAFETY: `init` writes `opencode.jsonc` as plain JSON with the user's `model` and the `keylang` server.
   const parsed = JSON.parse(readFileSync(join(auto, "opencode.jsonc"), "utf8")) as { model: string; mcp: { keylang: { command: string[] } } };
   assert.equal(parsed.model, "x");
   assert.deepEqual(parsed.mcp.keylang.command, ["npx", "-y", `keylang@${VERSION}`, "mcp"]);
   assert.equal(keylang(auto, ["agents", "--check"]).status, 0);
   assert.equal(keylang(auto, ["agents", "--agents=none"]).status, 0);
+  // SAFETY: `opencode.jsonc` stays a JSON object after `agents --agents=none`; only `mcp` is read.
   assert.equal((JSON.parse(readFileSync(join(auto, "opencode.jsonc"), "utf8")) as { mcp?: unknown }).mcp, undefined);
 
   // A broken file is still code 2 and nothing is written.

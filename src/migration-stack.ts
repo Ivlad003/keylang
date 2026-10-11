@@ -13,6 +13,7 @@ import { evidenceFiles, toPosix } from "./config.ts";
 import { discoverFlows, specifiedTriggers, DISCOVERED_DIR } from "./discover.ts";
 import { findIntegrations, loadIntegrations } from "./integrations.ts";
 import type { Document } from "./ir.ts";
+import type { JsonObject } from "./json.ts";
 import { readOldIndex, type Stack, type StackFlow } from "./migration.ts";
 import { SNAPSHOT_SCHEMA, type AnalysisSnapshot } from "./snapshot.ts";
 import { walkFlow, type Flow } from "./spec-ir.ts";
@@ -64,7 +65,11 @@ function specFlow(flow: Flow, docs: readonly Document[]): StackFlow {
   const section = docs.find((doc) => doc.path === flow.file)?.sections.find((s) => s.kind === "flow" && s.name?.value === flow.name);
   const imported = section !== undefined && (section.comment?.value.includes("keylang:import ") === true || section.items.some((item) => item.type === "prose" && item.lines.some((line) => line.includes("<!-- keylang:import "))));
 
-  return { name: flow.name, source: "spec", file: flow.file, trigger: flow.triggers[0]?.target.target ?? null, steps, tests, ...(imported ? { imported: true as const } : {}) };
+  const stackFlow: StackFlow = { name: flow.name, source: "spec", file: flow.file, trigger: flow.triggers[0]?.target.target ?? null, steps, tests };
+
+  if (imported) stackFlow.imported = true;
+
+  return stackFlow;
 }
 
 /** The test results `check.tests` names; null when it names none. */
@@ -126,6 +131,7 @@ export async function loadOldStack(abs: string): Promise<LoadedStack> {
   }
 
   const body = readOldIndex(abs);
+  // SAFETY: a `migration` block is what `map --export-index` writes; its schema and flows are checked below before use.
   const migration = body.migration as MigrationExport | undefined;
 
   if (migration !== undefined) {
@@ -140,11 +146,16 @@ export async function loadOldStack(abs: string): Promise<LoadedStack> {
   const notes = ["the old snapshot is a plain index.json: its hand-written flows, test results and integrations are not in it (`keylang map --export-index <file>` in the old repository writes them); its flows are the drafts `flows discover` makes from its entry points"];
   let flows: StackFlow[] = [];
 
-  if (body.schema === SNAPSHOT_SCHEMA) {
-    flows = discoverFlows({ ...(body.raw as unknown as AnalysisSnapshot), entries: body.entries as AnalysisSnapshot["entries"] }, new Map()).flows.map((flow) => ({ name: flow.name, source: "discovered" as const, file: null, trigger: flow.trigger, steps: [...new Set(flow.steps)], tests: [] }));
+  if (isCurrentSnapshot(body.raw)) {
+    flows = discoverFlows({ ...body.raw, entries: body.raw.entries ?? [] }, new Map()).flows.map((flow) => ({ name: flow.name, source: "discovered" as const, file: null, trigger: flow.trigger, steps: [...new Set(flow.steps)], tests: [] }));
   } else notes.push(`the old snapshot has schema ${String(body.schema)}, this keylang reads ${SNAPSHOT_SCHEMA}: no flows drafted from it`);
 
   return { stack: { snapshotId: body.snapshotId, nodes: body.nodes, entries: body.entries, flows, tests: null, integrations: null }, notes };
+}
+
+/** An index file of this keylang's snapshot schema is an index.json as `keylang map` writes it. */
+function isCurrentSnapshot(raw: JsonObject): raw is JsonObject & AnalysisSnapshot {
+  return raw.schema === SNAPSHOT_SCHEMA;
 }
 
 /** `keylang map --export-index <file>`: the snapshot of this repository with the `migration` block, as JSON text. */

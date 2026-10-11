@@ -22,6 +22,7 @@
 // config files are the analysed sources that import `@nestjs/…`.
 
 import { posix } from "node:path";
+import { isJsonObject, parseJson, type JsonValue } from "../json.ts";
 import type { CodeDecl, CodeFacts, ConfigFacts, DecoratorArg, FrameworkAdapter, ProviderFact, TokenRef } from "./adapter.ts";
 
 const NEST_PACKAGES = ["@nestjs/core", "@nestjs/common"];
@@ -35,9 +36,9 @@ export const nestjs: FrameworkAdapter = {
   version: "1",
   detect(context) {
     if (context.read("nest-cli.json") !== null) return true;
-    const manifest = parseJson(context.read("package.json"));
+    const manifest = readJson(context.read("package.json"));
 
-    return DEPENDENCY_FIELDS.some((field) => NEST_PACKAGES.some((pkg) => isRecord(manifest) && isRecord(manifest[field]) && pkg in manifest[field]));
+    return DEPENDENCY_FIELDS.some((field) => NEST_PACKAGES.some((pkg) => isJsonObject(manifest) && isJsonObject(manifest[field]) && pkg in manifest[field]));
   },
   files(context) {
     const out: { path: string; owner: string | null }[] = [];
@@ -142,16 +143,12 @@ function classes(decls: readonly CodeDecl[]): CodeDecl[] {
   return decls.flatMap((d) => (d.kind === "class" ? [d] : []));
 }
 
-function parseJson(text: string | null): unknown {
+function readJson(text: string | null): JsonValue {
   if (text === null) return null;
 
   try {
-    return JSON.parse(text.replace(/^﻿/, ""));
+    return parseJson(text.replace(/^\uFEFF/, ""));
   } catch {
     return null;
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

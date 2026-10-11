@@ -25,7 +25,7 @@ export function isBundle(text: string): boolean {
 }
 
 /** A modal over the page: a titled box with a body and buttons; `close()` removes it. */
-function modal(id: string, title: string): { box: HTMLDivElement; body: HTMLDivElement; actions: HTMLDivElement; close: () => void } {
+function modal(id: string, title: string) {
   document.getElementById(id)?.remove();
   const overlay = make("div", { className: "bundle-overlay" });
   overlay.id = id;
@@ -123,7 +123,7 @@ export function mapLayers(preview: BundleImport, askModel: (current: Record<stri
         if (select && targets.some((t) => t.name === choice.to)) select.value = choice.to;
         const cell = how.get(choice.from);
 
-        if (cell) cell.textContent = BY[choice.by] ?? choice.by;
+        if (cell) cell.textContent = BY.get(choice.by) ?? choice.by;
       }
     };
 
@@ -139,7 +139,7 @@ export function mapLayers(preview: BundleImport, askModel: (current: Record<stri
       }
 
       const cell = make("td");
-      select.addEventListener("change", () => (cell.textContent = BY["flag"]!));
+      select.addEventListener("change", () => (cell.textContent = BY.get("flag") ?? "flag"));
       selects.set(layer, select);
       how.set(layer, cell);
       table.append(make("tr", {}, make("td", { title: sources.get(layer) ?? "" }, make("code", { text: layer })), make("td", {}, select), cell));
@@ -167,7 +167,7 @@ export function mapLayers(preview: BundleImport, askModel: (current: Record<stri
           fill(answer);
           showNotes([...(answer.agent ? [`модель: ${answer.agent}`] : []), ...(answer.notes ?? [])]);
         })
-        .catch((error: unknown) => showNotes([`модель не відповіла: ${error instanceof Error ? error.message : String(error)}`]))
+        .catch((cause: unknown) => showNotes([`модель не відповіла: ${cause instanceof Error ? cause.message : String(cause)}`]))
         .finally(() => {
           ask.disabled = false;
           ask.textContent = "запитати модель";
@@ -185,4 +185,9 @@ export function mapLayers(preview: BundleImport, askModel: (current: Record<stri
 }
 
 /** How a layer's choice was made, in the words of the dialog. */
-const BY: Record<string, string> = { same: "та сама назва", first: "перший шар (за браком кращого)", model: "модель", flag: "ви" };
+const BY = new Map([
+  ["same", "та сама назва"],
+  ["first", "перший шар (за браком кращого)"],
+  ["model", "модель"],
+  ["flag", "ви"],
+]);

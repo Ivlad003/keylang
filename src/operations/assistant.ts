@@ -10,7 +10,7 @@
 import { isAbsolute } from "node:path";
 import { loadConfig, type Config } from "../config.ts";
 import { errorText } from "../diag.ts";
-import type { LlmRequest, LlmSetup } from "../llm.ts";
+import type { LlmCallOptions, LlmRequest, LlmSetup } from "../llm.ts";
 import { empty, rootRelative } from "./shared.ts";
 import type { AssistantReplyPayload, AssistantReplyRequest, ChatTurn, OperationContext, OperationEnvelope, OperationMessage } from "./types.ts";
 
@@ -41,12 +41,14 @@ export function assistantSystem(specDir: string): string {
   ].join("\n");
 }
 
+type RecentTurns = { turns: ChatTurn[]; dropped: number };
+
 /**
  * The newest messages whose texts take at most `budget` characters
  * together, oldest first, and how many older ones were left out. The last
  * one — the person's new message — is kept however long it is.
  */
-export function recentTurns(history: readonly ChatTurn[], budget = HISTORY_CHARS): { turns: ChatTurn[]; dropped: number } {
+export function recentTurns(history: readonly ChatTurn[], budget = HISTORY_CHARS): RecentTurns {
   let used = 0;
   let from = history.length;
 
@@ -61,12 +63,14 @@ export function recentTurns(history: readonly ChatTurn[], budget = HISTORY_CHARS
   return { turns: history.slice(from), dropped: from };
 }
 
+type FileWindow = { first: number; last: number; total: number; text: string };
+
 /**
  * At most `count` lines of `text` around the 0-based `line`, the cursor's
  * line in their middle where the file allows; `first` and `last` are
  * 1-based and inclusive.
  */
-export function fileWindow(text: string, line: number, count = FILE_LINES): { first: number; last: number; total: number; text: string } {
+export function fileWindow(text: string, line: number, count = FILE_LINES): FileWindow {
   const lines = text.split("\n");
 
   // A final line break ends the last line; it starts none.
@@ -248,8 +252,13 @@ export async function runAssistantReply(request: AssistantReplyRequest, context:
   let answer: string;
   let reported: string | null = null;
 
+  const options: LlmCallOptions = {};
+
+  if (context.signal) options.signal = context.signal;
+  options.onModel = (model) => (reported = model);
+
   try {
-    answer = await client.complete(assistantPrompt(request, rootRelative(root, config.dir)), { ...(context.signal ? { signal: context.signal } : {}), onModel: (model) => (reported = model) });
+    answer = await client.complete(assistantPrompt(request, rootRelative(root, config.dir)), options);
   } catch (error) {
     if (error instanceof LlmCancelled || context.signal?.aborted) return empty("assistant-reply", "cancelled", null);
 

@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import type { Code, Nodes } from "mdast";
 import { fromMarkdown } from "mdast-util-from-markdown";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -21,15 +22,6 @@ const bin = join(root, "bin/keylang.js");
 
 /** The format spec, split by section; every executable example lives in one of these. */
 const specSources = ["docs/grammar.md", "docs/semantics.md", "docs/snapshot.md"];
-
-interface Md {
-  type: string;
-  lang?: string | null;
-  meta?: string | null;
-  value?: string;
-  position?: { start: { line: number } };
-  children?: Md[];
-}
 
 interface ExampleFile {
   path: string;
@@ -53,17 +45,16 @@ interface Cli {
   stderr: string;
 }
 
-function codes(markdown: string): Md[] {
-  const tree = fromMarkdown(markdown) as unknown as Md;
-  const out: Md[] = [];
+function codes(markdown: string): Code[] {
+  const out: Code[] = [];
 
-  const walk = (node: Md): void => {
+  const walk = (node: Nodes): void => {
     if (node.type === "code") out.push(node);
 
-    for (const child of node.children ?? []) walk(child);
+    if ("children" in node) for (const child of node.children) walk(child);
   };
 
-  walk(tree);
+  walk(fromMarkdown(markdown));
 
   return out;
 }
@@ -78,8 +69,13 @@ function ruleTokens(meta: string): string[] {
   return meta.split(/\s+/).filter((part) => /^Р\d+$/u.test(part)).map((part) => part.slice(1));
 }
 
+interface Collected {
+  groups: Group[];
+  errors: string[];
+}
+
 /** Groups in `markdown`, or harness errors that name a fence line. */
-function collectGroups(markdown: string, source: string): { groups: Group[]; errors: string[] } {
+function collectGroups(markdown: string, source: string): Collected {
   const groups: Group[] = [];
   const errors: string[] = [];
   let open: Group | null = null;
@@ -92,7 +88,7 @@ function collectGroups(markdown: string, source: string): { groups: Group[]; err
 
     if (!hasPath && lang !== "keylang" && lang !== "diagnostics" && lang !== "fmt") continue;
     const line = node.position?.start.line ?? 0;
-    const value = node.value ?? "";
+    const value = node.value;
 
     if (lang === "diagnostics") {
       if (open === null) errors.push(`${source}:${line}: diagnostics fence without a group`);
@@ -567,6 +563,7 @@ test("format spec examples run through check and fmt, and the ebnf matches the p
         if (parsed.status === 2) throw new Error(`parse --json failed\n${parsed.stderr}`);
         const docs = new Map<string, DocJson>();
 
+        // SAFETY: `parse --json` did not fail, so stdout is its array of IR documents.
         for (const doc of JSON.parse(parsed.stdout) as DocJson[]) docs.set(doc.path, doc);
         const diff = grammarDiff(ebnf, docs);
 

@@ -16,7 +16,17 @@ import type { SystemSpec } from "../system.ts";
 import { empty, rootRelative } from "./shared.ts";
 import type { OperationContext, OperationEnvelope, SystemPayload, SystemRequest } from "./types.ts";
 
-const GLYPH: Record<string, string> = { ok: "✓", fail: "✗", unverified: "◌" };
+const GLYPH = new Map([
+  ["ok", "✓"],
+  ["fail", "✗"],
+  ["unverified", "◌"],
+]);
+
+type CountedVerdict = "ok" | "unverified" | "fail";
+
+function isCountedVerdict(verdict: string): verdict is CountedVerdict {
+  return verdict === "ok" || verdict === "unverified" || verdict === "fail";
+}
 
 function listing(systems: readonly SystemSpec[]): SystemPayload["systems"] {
   return systems.map((system) => ({
@@ -40,7 +50,7 @@ export function systemText(system: SystemSpec, verdicts: SystemPayload["verdicts
     for (const relation of system.relations) {
       if (relation.from !== item.name) continue;
       const verdict = byArea.get(`${relation.from} ${relation.verb} ${relation.to}`);
-      lines.push(`${indent}  ${verdict ? `${GLYPH[verdict.verdict] ?? "·"} ` : "· "}${relation.verb} ${relation.to}${relation.caption ? ` ${relation.caption}` : ""}${verdict ? ` — ${verdict.message.slice(verdict.area.length + 2)}` : ""}`);
+      lines.push(`${indent}  ${verdict ? `${GLYPH.get(verdict.verdict) ?? "·"} ` : "· "}${relation.verb} ${relation.to}${relation.caption ? ` ${relation.caption}` : ""}${verdict ? ` — ${verdict.message.slice(verdict.area.length + 2)}` : ""}`);
     }
 
     if (item.scale) lines.push(`${indent}  scale ${item.scale}`);
@@ -69,9 +79,9 @@ export function systemText(system: SystemSpec, verdicts: SystemPayload["verdicts
   }
 
   for (const note of system.notes) lines.push(`  ${note.kind === "question" ? "?" : note.kind} ${note.text}`);
-  const counts = { ok: 0, unverified: 0, fail: 0 };
+  const counts: Record<CountedVerdict, number> = { ok: 0, unverified: 0, fail: 0 };
 
-  for (const verdict of verdicts) if (verdict.verdict in counts) counts[verdict.verdict as keyof typeof counts]++;
+  for (const verdict of verdicts) if (isCountedVerdict(verdict.verdict)) counts[verdict.verdict]++;
   lines.push(`${counts.fail} fail, ${counts.unverified} unverified, ${counts.ok} ok`);
 
   return `${lines.join("\n")}\n`;

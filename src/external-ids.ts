@@ -11,13 +11,19 @@ export function externalSegment(pkg: string): string {
   return layerName(pkg.replace(/^@/, "").replace("/", "-"));
 }
 
+/** The ID of each package name, and a warning for each name that lost its plain segment. */
+export interface ExternalIds {
+  ids: Map<string, string>;
+  warnings: string[];
+}
+
 /**
  * Module IDs of package names. Two names that sanitize to one segment
  * (`@scope/pkg` and `scope-pkg`) get two IDs: the one whose name is the
  * segment keeps it, the others get `-2`, `-3`… in name order, with a warning.
  * The IDs depend only on the set of names, not on their order.
  */
-export function assignExternalIds(names: Iterable<string>): { ids: Map<string, string>; warnings: string[] } {
+export function assignExternalIds(names: Iterable<string>): ExternalIds {
   const bySegment = new Map<string, string[]>();
 
   for (const pkg of [...new Set(names)].sort()) {

@@ -18,7 +18,7 @@ import { languageOf } from "./languages.ts";
 import { DIAGRAMS_DIR } from "./diagram-layout.ts";
 import { DISCOVERED_FLOWS_DIR, EXPLAINED_MAP_DIR } from "./map.ts";
 import { parse } from "./parser.ts";
-import { allCrlf, isGeneratedText, landing, safeWrite, writeProblem } from "./safe-write.ts";
+import { allCrlf, isGeneratedText, landing, safeWrite, writeProblem, type WriteOptions } from "./safe-write.ts";
 import { compareText } from "./span.ts";
 import { addDrafts, statusesIn, updateStats } from "./stats.ts";
 import { WIRE_MARKER } from "./wire-gen.ts";
@@ -155,7 +155,11 @@ export function proposalProblem(root: string, specDir: string, path: string, gen
   const specRoot = landing(resolve(root, specDir));
 
   if (specRoot === null || !within(specRoot, realpathSync(root))) return "the spec directory leads out of the repository through a link";
-  const problem = writeProblem(root, path, { ...(specDir === "" ? {} : { under: specDir }), generated: true });
+  const writeOptions: WriteOptions = {};
+
+  if (specDir !== "") writeOptions.under = specDir;
+  writeOptions.generated = true;
+  const problem = writeProblem(root, path, writeOptions);
 
   if (problem !== null) return problem.startsWith("leads out of") ? `leads out of ${specDir || "."}/ through a link` : problem;
   const lands = landing(resolve(root, path))!;
@@ -258,7 +262,11 @@ export function writeProposal(root: string, path: string, text: string, basis?: 
     if (problem !== null) throw new Error(problem);
   }
 
-  return safeWrite(root, `${PROPOSALS_DIR}/${path}`, text, { under: PROPOSALS_DIR, generated: true, ...(basis !== undefined ? { expect: basis.proposal } : {}) });
+  const writeOptions: WriteOptions = { under: PROPOSALS_DIR, generated: true };
+
+  if (basis !== undefined) writeOptions.expect = basis.proposal;
+
+  return safeWrite(root, `${PROPOSALS_DIR}/${path}`, text, writeOptions);
 }
 
 /**
@@ -375,8 +383,10 @@ function readProposal(root: string, specDir: string, target: string): ReadPropos
   return { proposal: readFileSync(entry.abs, "utf8"), before: existingText(abs) };
 }
 
+type LineCounts = { added: number; removed: number };
+
 /** `+` and `-` lines `lineDiff` prints. */
-function lineCounts(before: string, after: string): { added: number; removed: number } {
+function lineCounts(before: string, after: string): LineCounts {
   const lines = lineDiff(before, after).split("\n").slice(1);
 
   return { added: lines.filter((line) => line.startsWith("+")).length, removed: lines.filter((line) => line.startsWith("-")).length };
@@ -436,6 +446,7 @@ export function acceptProposal(root: string, specDir: string, target: string): A
     try {
       accessSync(abs, constants.W_OK);
     } catch (error) {
+      // SAFETY: accessSync throws only Node's system errors, which are ErrnoExceptions.
       return { state: "refused", reason: `not writable (${(error as NodeJS.ErrnoException).code ?? "error"})` };
     }
   }
@@ -443,7 +454,10 @@ export function acceptProposal(root: string, specDir: string, target: string): A
   if (read.before === read.proposal) return { state: "unchanged", kept: dropProposal(root, target, read.proposal) };
   const spec = target.endsWith(".md");
   // MERGE's boundary: the spec directory for a spec, the repository for code; and the target as it was read.
-  const options = { ...(spec && specDir !== "" ? { under: specDir } : {}), expect: read.before };
+  const options: WriteOptions = {};
+
+  if (spec && specDir !== "") options.under = specDir;
+  options.expect = read.before;
   const problem = writeProblem(root, target, options);
 
   if (problem !== null) return { state: "refused", reason: problem };
@@ -501,7 +515,7 @@ function countDecision(root: string, before: string, after: string, decision: "a
 
   const counts = statusesIn(added);
 
-  if (Object.keys(counts).length === 0) return;
+  if (counts.size === 0) return;
 
   try {
     updateStats(root, (stats) => addDrafts(stats, counts, decision));

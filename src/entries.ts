@@ -8,10 +8,11 @@
 // the graph and the manifest texts; a computed path or a handler keylang
 // cannot name is no entry, and a framework's routes are its adapter's.
 
-import { parse as parseToml } from "smol-toml";
+import { parse as parseToml, type TomlTable, type TomlValue } from "smol-toml";
 import type { FileFacts } from "./extract/facts.ts";
 import type { Graph, Module } from "./graph.ts";
 import { parseJsonc } from "./imports.ts";
+import { isJsonObject, isJsonString, type JsonObject } from "./json.ts";
 import type { EntryPoint } from "./snapshot.ts";
 
 /** The manifests the collectors read, by POSIX path from the root; null when absent. */
@@ -112,16 +113,16 @@ export function compareEntries(a: EntryPoint, b: EntryPoint): number {
 export function binTargets(packageJson: string | null): { name: string; path: string }[] {
   const manifest = packageJson === null ? null : parseJsonc(packageJson);
 
-  if (!isRecord(manifest)) return [];
+  if (!isParsedJsonObject(manifest)) return [];
   const bin = manifest.bin;
   const out: { name: string; path: string }[] = [];
 
-  if (typeof bin === "string") {
-    const name = typeof manifest.name === "string" ? manifest.name.replace(/^@[^/]+\//, "") : null;
+  if (isJsonString(bin)) {
+    const name = isJsonString(manifest.name) ? manifest.name.replace(/^@[^/]+\//, "") : null;
 
     if (name !== null) out.push({ name, path: normalizePath(bin) });
-  } else if (isRecord(bin)) {
-    for (const [name, path] of Object.entries(bin)) if (typeof path === "string") out.push({ name, path: normalizePath(path) });
+  } else if (isJsonObject(bin)) {
+    for (const [name, path] of Object.entries(bin)) if (isJsonString(path)) out.push({ name, path: normalizePath(path) });
   }
 
   return out;
@@ -237,7 +238,7 @@ function pythonMainEntries(facts: readonly FileFacts[], scope: EntryScope): Entr
 /** `[project.scripts]` of pyproject.toml: script name → `pkg.module:func` (or `pkg.module` alone). Empty for no manifest or an unreadable one. */
 export function pyprojectScripts(pyproject: string | null): { name: string; module: string; fn: string | null }[] {
   if (pyproject === null) return [];
-  let parsed: unknown;
+  let parsed: TomlTable;
 
   try {
     parsed = parseToml(pyproject);
@@ -245,13 +246,14 @@ export function pyprojectScripts(pyproject: string | null): { name: string; modu
     return [];
   }
 
-  const scripts = isRecord(parsed) && isRecord(parsed.project) && isRecord(parsed.project.scripts) ? parsed.project.scripts : null;
+  const project = parsed.project;
+  const scripts = isTomlTable(project) && isTomlTable(project.scripts) ? project.scripts : null;
 
   if (scripts === null) return [];
   const out: { name: string; module: string; fn: string | null }[] = [];
 
   for (const [name, target] of Object.entries(scripts)) {
-    if (typeof target !== "string") continue;
+    if (!isTomlString(target)) continue;
     const [module, fn] = target.split(":", 2);
 
     if (module === undefined || module === "") continue;
@@ -297,7 +299,7 @@ export function rustBinTarget(file: string, cargoToml: string | null, exists: (p
   if (match !== null && exists(`${match[1] ?? ""}Cargo.toml`)) return true;
 
   if (cargoToml === null) return false;
-  let parsed: unknown;
+  let parsed: TomlTable;
 
   try {
     parsed = parseToml(cargoToml);
@@ -305,9 +307,9 @@ export function rustBinTarget(file: string, cargoToml: string | null, exists: (p
     return false;
   }
 
-  const bins = isRecord(parsed) && Array.isArray(parsed.bin) ? parsed.bin : [];
+  const bins = Array.isArray(parsed.bin) ? parsed.bin : [];
 
-  return bins.some((bin) => isRecord(bin) && typeof bin.path === "string" && normalizePath(bin.path) === file);
+  return bins.some((bin) => isTomlTable(bin) && isTomlString(bin.path) && normalizePath(bin.path) === file);
 }
 
 function rustMainEntries(facts: readonly FileFacts[], scope: EntryScope, cargoToml: string | null, exists: (path: string) => boolean): EntryPoint[] {
@@ -415,8 +417,18 @@ function normalizePath(path: string): string {
   return path.replace(/\\/g, "/").replace(/^\.\//, "");
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+/** A JSON object out of `parseJsonc`, which returns what `JSON.parse` does, or null for unreadable text. */
+function isParsedJsonObject(value: unknown): value is JsonObject {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/** A TOML table: an object that is neither an array nor a date. */
+function isTomlTable(value: TomlValue | undefined): value is TomlTable {
+  return value !== undefined && typeof value === "object" && !Array.isArray(value) && !(value instanceof Date);
+}
+
+function isTomlString(value: TomlValue | undefined): value is string {
+  return typeof value === "string";
 }
 
 function cmp(a: string, b: string): number {

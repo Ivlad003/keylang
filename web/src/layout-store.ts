@@ -49,6 +49,7 @@ export class MemoryLayoutStore implements LayoutStore {
   load(view: string): Promise<Layout | null> {
     const text = this.layouts.get(view);
 
+    // SAFETY: the text is `JSON.stringify` of a `Layout` that `save` was given, and a Layout is plain JSON.
     return Promise.resolve(text === undefined ? null : (JSON.parse(text) as Layout));
   }
 

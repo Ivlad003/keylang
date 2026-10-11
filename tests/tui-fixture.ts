@@ -26,7 +26,7 @@ export function tempHome(): string {
   return join(HOMES, `session-${++homes}`);
 }
 
-export const CHECKOUT_FILES: Record<string, string> = {
+export const CHECKOUT_FILES = {
   "src/domain/order.ts": "export function create(): void {}\n",
   "src/infrastructure/store.ts": "export function save(): void {}\n",
   "src/application/purchase.ts": [
@@ -39,7 +39,7 @@ export const CHECKOUT_FILES: Record<string, string> = {
     "",
   ].join("\n"),
   "src/presentation/terminal.ts": 'import { buy } from "../application/purchase.ts";\nexport function checkout(): void {\n  buy();\n}\n',
-};
+} satisfies Record<string, string>;
 
 export const CHECKOUT_FLOW = [
   "# flow checkout",
@@ -101,8 +101,14 @@ export function drag(from: { x: number; y: number }, to: { x: number; y: number 
   return `\x1b[<0;${from.x + 1};${from.y + 1}M\x1b[<32;${to.x + 1};${to.y + 1}M\x1b[<0;${to.x + 1};${to.y + 1}m`;
 }
 
+/** A cell on screen: column and row from 0. */
+export interface Cell {
+  x: number;
+  y: number;
+}
+
 /** Cell position of the first occurrence of `text` on screen (ASCII rows). */
-export function locate(lines: readonly string[], text: string): { x: number; y: number } {
+export function locate(lines: readonly string[], text: string): Cell {
   for (let y = 0; y < lines.length; y++) {
     const at = lines[y]!.indexOf(text);
 

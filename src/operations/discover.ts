@@ -54,12 +54,15 @@ export async function runFlowsDiscover(request: FlowsDiscoverRequest, context: O
   context.onProgress?.({ text: "reading a fresh snapshot of the saved code" });
 
   // With --names the view is whole: `layer` and `limit` narrow the requests, not the flows.
-  const options: DiscoverOptions = {
-    ...(request.only !== undefined ? { kind: request.only } : {}),
-    ...(request.layer !== undefined && request.names === undefined ? { layer: request.layer } : {}),
-    ...(request.limit !== undefined && request.names === undefined ? { limit: request.limit } : {}),
-    ...(request.depth !== undefined ? { depth: request.depth } : {}),
-  };
+  const options: DiscoverOptions = {};
+
+  if (request.only !== undefined) options.kind = request.only;
+
+  if (request.layer !== undefined && request.names === undefined) options.layer = request.layer;
+
+  if (request.limit !== undefined && request.names === undefined) options.limit = request.limit;
+
+  if (request.depth !== undefined) options.depth = request.depth;
 
   const found = await discoveryOf(root, options, context);
 
@@ -80,10 +83,12 @@ export async function runFlowsDiscover(request: FlowsDiscoverRequest, context: O
   const filtered = Object.keys(options).some((key) => key !== "depth");
   const extra = filtered ? [] : extraGenerated(join(root, dir), discovery.files).map((name) => `${dir}/${name}`);
   const changed = files.filter((file) => readOrNull(join(root, file.path)) !== file.text);
-  const conflicts = changed.filter((file) => existsSync(join(root, file.path)) && !isGeneratedText(readFileSync(join(root, file.path), "utf8"))).map((file) => file.path);
+  const conflicts = changed.flatMap((file) => (existsSync(join(root, file.path)) && !isGeneratedText(readFileSync(join(root, file.path), "utf8")) ? [file.path] : []));
   const stale = [...changed.map((file) => file.path), ...extra];
   const summary = discoverySummary(discovery);
-  const payload: FlowsDiscoverPayload = { snapshotId: analyzed.snapshot!.snapshotId, output: request.output, dir, flows: discovery.flows, specified: discovery.specified, notFns: discovery.notFns, files, stale, conflicts, summary, ...(named !== null ? { names: named.payload } : {}) };
+  const payload: FlowsDiscoverPayload = { snapshotId: analyzed.snapshot!.snapshotId, output: request.output, dir, flows: discovery.flows, specified: discovery.specified, notFns: discovery.notFns, files, stale, conflicts, summary };
+
+  if (named !== null) payload.names = named.payload;
 
   const notes: OperationMessage[] = [
     ...discovery.specified.map((s) => ({ level: "info" as const, text: `already specified: ${s.trigger} (${s.file}, flow ${s.flow})` })),

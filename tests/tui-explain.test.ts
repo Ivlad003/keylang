@@ -40,6 +40,7 @@ function explainRecord(app: App): ExplainResult {
   const result = app.state.records.at(-1)?.result;
   assert.ok(result?.kind === "explain" && result.payload !== null, JSON.stringify(result?.messages));
 
+  // SAFETY: the assertion above checked this record's kind and that its payload is not null.
   return result as ExplainResult;
 }
 
@@ -308,6 +309,7 @@ function explainLlmRecord(app: App): ExplainLlmResult {
   const result = app.state.records.at(-1)?.result;
   assert.ok(result?.kind === "explain-llm" && result.payload !== null, JSON.stringify(result?.messages));
 
+  // SAFETY: the assertion above checked this record's kind and that its payload is not null.
   return result as ExplainLlmResult;
 }
 
@@ -525,6 +527,7 @@ test("tui: explain with the model keeps the saved answer on Cancel, a timeout, a
   await new Promise<void>((resolve) => sse.listen(0, "127.0.0.1", resolve));
   t.after(() => sse.close());
   withConfig(root, { agent: "openrouter:some/model" });
+  // SAFETY: a server listening on a TCP host and port reports an AddressInfo, not a pipe name.
   process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${(sse.address() as AddressInfo).port}`;
   process.env.OPENROUTER_API_KEY = "test";
   t.after(() => {
@@ -589,6 +592,7 @@ function explainPlanRecord(app: App): ExplainPlanResult {
   const result = app.state.records.at(-1)?.result;
   assert.ok(result?.kind === "explain-plan" && result.payload !== null, JSON.stringify(result?.messages));
 
+  // SAFETY: the assertion above checked this record's kind and that its payload is not null.
   return result as ExplainPlanResult;
 }
 
@@ -763,6 +767,7 @@ function explainBatchRecord(app: App): ExplainBatchResult {
   const result = app.state.records.at(-1)?.result;
   assert.ok(result?.kind === "explain-batch" && result.payload !== null, JSON.stringify(result?.messages));
 
+  // SAFETY: the assertion above checked this record's kind and that its payload is not null.
   return result as ExplainBatchResult;
 }
 

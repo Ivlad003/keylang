@@ -1,5 +1,7 @@
 // Types of bench/lib/metrics.mjs for the TypeScript callers (bench/run.ts, tests).
 
+import type { JsonValue } from "../../src/json.ts";
+
 export interface Draft {
   trigger: string;
   text: string;
@@ -30,6 +32,6 @@ export interface Metrics {
 export function normaliseReason(reason: string): string;
 export function draftSteps(text: string): string[];
 export function percent(part: number, total: number): string;
-export function collectMetrics(snapshot: unknown, options?: { drafts?: Draft[]; expect?: Expect | null }): Metrics;
+export function collectMetrics(snapshot: JsonValue, options?: { drafts?: Draft[]; expect?: Expect | null }): Metrics;
 export function formatReport(metrics: Metrics, options?: { title?: string; intro?: string[]; run?: [string, string][] }): string;
 export function summaryLine(metrics: Metrics): string;

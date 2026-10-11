@@ -3,10 +3,10 @@
 import { createHash } from "node:crypto";
 import { compareDiagnostics, type Diagnostic } from "./diag.ts";
 import type { StaticMode, StaticSource } from "./config.ts";
-import { evaluateFlows, type FlowInput } from "./flows.ts";
+import { evaluateFlows, type FlowEvaluation, type FlowInput } from "./flows.ts";
 import { sectionNodes, type Document, type Node } from "./ir.ts";
 import { migrationCheck, type OldSnapshot } from "./migration.ts";
-import { check, type Index } from "./resolve.ts";
+import { check, type Index, type ResolveContext } from "./resolve.ts";
 import type { RuleFormat } from "./config.ts";
 import { canonicalRuleSpec, dependencyKindOf, evaluateRules } from "./rules.ts";
 import { compileSpec, type SpecIR } from "./spec-ir.ts";
@@ -24,7 +24,7 @@ export type SnapshotInput = NonNullable<Parameters<typeof evaluateRules>[2]> & {
   /** Entry points (`keylang entries`); absent from a snapshot written before them. */
   entries?: FlowInput["entries"];
   /** The configured layers, which exist before any module is in them. */
-  manifest?: { config: { layers: Record<string, unknown> } };
+  manifest?: { config: { layers: Record<string, readonly string[]> } };
 };
 
 export interface Assessment {
@@ -37,26 +37,29 @@ export interface Assessment {
   systems: SystemSpec[];
 }
 
+/** Evidence and options of one assessment beside the specs and the snapshot. */
+export interface AssessEvidence {
+  tests: TestCase[] | null;
+  traces: TraceRun[] | null;
+  static?: StaticMode;
+  staticSetBy?: StaticSource;
+  knownExternal?: ReadonlySet<string>;
+  testFileExists?: FlowInput["testFileExists"];
+  /** The old stack the old IDs of `# migration` rows resolve against; absent: none (they stay unverified). */
+  migration?: OldSnapshot;
+  /**
+   * The spec files whose claims are assessed (`check <file>`): the others are
+   * context only — their declarations, `planned` and flow names resolve
+   * references, but their rules, flows and diagnostics are not reported.
+   * Absent: every file.
+   */
+  assessed?: (file: string) => boolean;
+}
+
 export function assess(
   docs: readonly Document[],
   snapshot: SnapshotInput | null,
-  evidence: {
-    tests: TestCase[] | null;
-    traces: TraceRun[] | null;
-    static?: StaticMode;
-    staticSetBy?: StaticSource;
-    knownExternal?: ReadonlySet<string>;
-    testFileExists?: FlowInput["testFileExists"];
-    /** The old stack the old IDs of `# migration` rows resolve against; absent: none (they stay unverified). */
-    migration?: OldSnapshot;
-    /**
-     * The spec files whose claims are assessed (`check <file>`): the others are
-     * context only — their declarations, `planned` and flow names resolve
-     * references, but their rules, flows and diagnostics are not reported.
-     * Absent: every file.
-     */
-    assessed?: (file: string) => boolean;
-  } = { tests: null, traces: null },
+  evidence: AssessEvidence = { tests: null, traces: null },
   format: RuleFormat = 1,
 ): Assessment {
   const { spec: whole, diagnostics: allSpecDiags } = compileSpec(docs);
@@ -77,31 +80,18 @@ export function assess(
     return node?.kind !== "module" ? undefined : node.members === "opaque" ? "opaque" : "complete";
   };
 
-  const refined = check(docs, {
-    layers: Object.keys(snapshot?.manifest?.config.layers ?? {}),
-    ...(nodes ? { members } : {}),
-    ...(evidence.knownExternal ? { knownExternal: evidence.knownExternal } : {}),
-  });
+  const resolveContext: ResolveContext = { layers: Object.keys(snapshot?.manifest?.config.layers ?? {}) };
+
+  if (nodes) resolveContext.members = members;
+
+  if (evidence.knownExternal) resolveContext.knownExternal = evidence.knownExternal;
+  const refined = check(docs, resolveContext);
 
   const { index } = refined;
   const resolveDiags = own(refined.diagnostics);
   const rules = evaluateRules(spec, index, snapshot, ownDocs, format);
 
-  const flows =
-    snapshot === null
-      ? { diagnostics: [] as Diagnostic[], verdicts: [] as Verdict[] }
-      : evaluateFlows(spec, index, {
-          snapshotId: snapshot.snapshotId,
-          nodes: snapshot.nodes,
-          edges: snapshot.edges,
-          coverage: snapshot.coverage,
-          ...(snapshot.entries ? { entries: snapshot.entries } : {}),
-          tests: evidence.tests,
-          traces: evidence.traces,
-          ...(evidence.static ? { static: evidence.static } : {}),
-          ...(evidence.staticSetBy ? { staticSetBy: evidence.staticSetBy } : {}),
-          ...(evidence.testFileExists ? { testFileExists: evidence.testFileExists } : {}),
-        });
+  const flows: FlowEvaluation = snapshot === null ? { diagnostics: [], verdicts: [] } : evaluateFlows(spec, index, flowInput(snapshot, evidence));
 
   const planned = new Set(spec.planned.map((item) => item.id));
   const kindOf = dependencyKindOf(spec, index, snapshot?.nodes);
@@ -194,6 +184,28 @@ export function sameFinding(verdict: Verdict, diagnostics: readonly Diagnostic[]
 
     return verdict.criterion === "ID" && verdict.verdict === "fail" && diag.code === "K001" && diag.target === verdict.area;
   });
+}
+
+/** What flows read of the snapshot and the evidence. */
+function flowInput(snapshot: SnapshotInput, evidence: AssessEvidence): FlowInput {
+  const input: FlowInput = {
+    snapshotId: snapshot.snapshotId,
+    nodes: snapshot.nodes,
+    edges: snapshot.edges,
+    coverage: snapshot.coverage,
+    tests: evidence.tests,
+    traces: evidence.traces,
+  };
+
+  if (snapshot.entries) input.entries = snapshot.entries;
+
+  if (evidence.static) input.static = evidence.static;
+
+  if (evidence.staticSetBy) input.staticSetBy = evidence.staticSetBy;
+
+  if (evidence.testFileExists) input.testFileExists = evidence.testFileExists;
+
+  return input;
 }
 
 /** Snapshot kinds, with a class told apart by its marker. */

@@ -66,6 +66,7 @@ test("packed tarball runs the CLI from node_modules", async (t) => {
   t.after(() => rmSync(source, { recursive: true, force: true }));
   const pack = spawnSync("npm", ["pack", "--json"], { cwd: source, encoding: "utf8" });
   assert.equal(pack.status, 0, pack.stderr);
+  // SAFETY: `npm pack --json` prints an array with one entry per packed tarball, each with a `filename`.
   const packed = JSON.parse(pack.stdout) as { filename: string }[];
   const tarball = join(source, packed[0]!.filename);
   const tmp = mkdtempSync(join(tmpdir(), "keylang-pack-"));
@@ -91,6 +92,7 @@ test("packed tarball runs the CLI from node_modules", async (t) => {
   assert.ok(names.some((n) => n.endsWith("/dist/tui/analysis-worker.js")));
   assert.ok(names.some((n) => n.endsWith("/dist/tui/operation-worker.js")));
   assert.equal(names.some((n) => n.includes("/src/")), false);
+  // SAFETY: package.json of this repository has a string `version` and a `files` list.
   const published = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { version: string; files: string[] };
   assert.ok(published.files.includes("bin"));
   assert.ok(published.files.includes("dist"));
@@ -195,6 +197,7 @@ test("packed tarball runs the CLI from node_modules", async (t) => {
   // The package names its grammars from dist/wasm/grammars.json and its runtime from web-tree-sitter's own package.json.
   assert.deepEqual(packedIndex.manifest.grammars, localIndex.manifest.grammars);
 
+  // SAFETY: the packed index manifest maps each grammar name to its version string (docs/snapshot.md).
   for (const version of Object.values(packedIndex.manifest.grammars as Record<string, string>)) assert.match(version, /^\d+\.\d+\.\d+/);
 
   // Rust, Python and PHP parse with the package's own grammars too: the same map and snapshot as the checkout.
@@ -214,6 +217,7 @@ test("packed tarball runs the CLI from node_modules", async (t) => {
     assert.ok(maps.length > 0, fixture);
 
     for (const name of maps) assert.equal(readFileSync(join(packedCopy, "keylang/map", name), "utf8"), readFileSync(join(local, "keylang/map", name), "utf8"), `${fixture}: ${name}`);
+    // SAFETY: `map` writes `.keylang/index.json` in the snapshot format of docs/snapshot.md, which has a `snapshotId`.
     const snapshotOf = (dir: string): string => (JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as { snapshotId: string }).snapshotId;
     assert.equal(snapshotOf(packedCopy), snapshotOf(local), fixture);
   }
@@ -266,6 +270,7 @@ test("@flow check: check reports a denied import without writing the map", (t) =
   assert.equal(r.status, 1, r.stderr);
   assert.match(r.stdout, /K102 divergence: `domain\.order` depends on `infra\.db`/);
   assert.equal(existsSync(join(dir, ".keylang/index.json")), false);
+  // SAFETY: the trace file is JSON Lines of trace events, each with an `event` name.
   const events = readFileSync(trace, "utf8").trim().split("\n").map((line) => JSON.parse(line) as { event: string; symbolId?: string; complete?: boolean });
   assert.equal(events.at(-1)?.event, "run");
   assert.equal(events.at(-1)?.complete, true);
@@ -291,6 +296,7 @@ test("@flow tui: F5 reanalyses with the snapshot from the worker", (t) => {
 
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /^[0-9a-f]{64}\n$/, "the session got a snapshot");
+  // SAFETY: the trace file is JSON Lines of trace events, each with an `event` name.
   const events = readFileSync(trace, "utf8").trim().split("\n").map((line) => JSON.parse(line) as { event: string; symbolId?: string; complete?: boolean });
   assert.equal(events.at(-1)?.event, "run");
   assert.equal(events.at(-1)?.complete, true);
@@ -302,6 +308,7 @@ test("@flow tui: F5 reanalyses with the snapshot from the worker", (t) => {
 
 test("the in-repo check flow reports ID, static, tests, and trace separately", () => {
   const checked = keylang(root, ["check", "--format", "json"]);
+  // SAFETY: `check --format json` prints `{ snapshotId, results, coverage }` (docs/cli.md); each result row carries these fields.
   const rows = (JSON.parse(checked.stdout) as { results: { criterion: string; area: string; verdict: string; evidence: string }[] }).results;
   const steps = ["cli.cli.run", "cli.cli.cmdCheck", "map.analyze.analyze", "map.map.generateMap", "lang.parser.parse", "check.assess.assess", "check.resolve.check", "check.rules.evaluateRules", "check.flows.evaluateFlows", "features.check-format.checkReportText"];
 
@@ -356,7 +363,7 @@ test("check --changed filters to the touched files; hook stop blocks once and wr
 
   const event = JSON.stringify({ hook_event_name: "Stop", stop_hook_active: false });
 
-  const hook = (input: string): { status: number | null; stdout: string } => {
+  const hook = (input: string) => {
     const r = spawnSync(process.execPath, [bin, "hook", "stop"], { cwd: dir, input, encoding: "utf8" });
 
     return { status: r.status, stdout: r.stdout };
@@ -367,6 +374,7 @@ test("check --changed filters to the touched files; hook stop blocks once and wr
   const again = hook(event);
   assert.equal(blocked.status, 0, blocked.stdout);
   assert.equal(again.stdout, blocked.stdout);
+  // SAFETY: the hook prints a Claude Code hook decision object `{ decision, reason }` when it blocks.
   const decision = JSON.parse(blocked.stdout) as { decision: string; reason: string };
   assert.equal(decision.decision, "block");
   assert.match(decision.reason, /src\/app\/pay\.ts:\d+/);

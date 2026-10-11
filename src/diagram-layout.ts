@@ -20,6 +20,7 @@
 
 import { lstatSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { isJsonObject, isJsonString, parseJson, type JsonValue } from "./json.ts";
 import { isGeneratedText, safeWrite, targetProblem, writeProblem } from "./safe-write.ts";
 import { compareText } from "./span.ts";
 
@@ -212,14 +213,14 @@ const round = (value: number): number => Math.round(value * 100) / 100;
 function cleanShape(entry: ClientEntry): LayoutShape {
   const shape: LayoutShape = { x: round(entry.x), y: round(entry.y) };
 
-  if (typeof entry.w === "number") shape.w = round(entry.w);
+  if (entry.w !== undefined) shape.w = round(entry.w);
 
-  if (typeof entry.h === "number") shape.h = round(entry.h);
+  if (entry.h !== undefined) shape.h = round(entry.h);
 
   for (const field of ["id", "kind", "label", "note", "colour", "proposed"] as const) {
     const value = entry[field];
 
-    if (typeof value === "string" && value !== "") shape[field] = value;
+    if (value !== undefined && value !== "") shape[field] = value;
   }
 
   return shape;
@@ -247,7 +248,7 @@ export function layoutToFile(view: string, layout: ClientLayout, diagram: KeyDia
     if (nodeKeys.has(key)) byClient.set(key, nodeKeys.get(key)!);
     else if (key.startsWith("lane:") && laneIds.has(key.slice("lane:".length))) byClient.set(key, key);
     else if (entry.kind === "note") byClient.set(key, `note:${key.replace(/^note:/, "")}`);
-    else if (typeof entry.kind === "string" && entry.kind !== "") drawn.push([key, shapeBase(entry.kind, entry.id ?? "", entry.label ?? "")]);
+    else if (entry.kind !== undefined && entry.kind !== "") drawn.push([key, shapeBase(entry.kind, entry.id ?? "", entry.label ?? "")]);
   }
 
   for (const [key, stable] of twinsApart(drawn, byClient.values())) byClient.set(key, stable);
@@ -297,7 +298,7 @@ export function layoutToFile(view: string, layout: ClientLayout, diagram: KeyDia
  * what is needed to draw them. `pending` names the proposals still waiting:
  * a drawn shape whose proposal waits is `pending`, else `rejected`.
  */
-export function layoutFromFile(file: LayoutFile, diagram: KeyDiagram, pending: ReadonlySet<string> = new Set()): ClientLayout {
+export function layoutFromFile(file: LayoutFile, diagram: KeyDiagram, pending: ReadonlySet<string> = new Set()) {
   const nodeKeys = diagramKeys(diagram);
   const byStable = new Map([...nodeKeys].map(([id, key]) => [key, id]));
   const laneIds = new Set(diagram.groups.map((group) => group.id));
@@ -306,8 +307,16 @@ export function layoutFromFile(file: LayoutFile, diagram: KeyDiagram, pending: R
   for (const [stable, shape] of Object.entries(file.shapes)) {
     const id = byStable.get(stable);
 
-    if (id !== undefined) out[id] = { x: shape.x, y: shape.y, ...(shape.w !== undefined ? { w: shape.w } : {}), ...(shape.h !== undefined ? { h: shape.h } : {}), ...(shape.colour ? { colour: shape.colour } : {}) };
-    else if (stable.startsWith("lane:") && laneIds.has(stable.slice("lane:".length))) out[stable] = { ...shape };
+    if (id !== undefined) {
+      const entry: ClientEntry = { x: shape.x, y: shape.y };
+
+      if (shape.w !== undefined) entry.w = shape.w;
+
+      if (shape.h !== undefined) entry.h = shape.h;
+
+      if (shape.colour) entry.colour = shape.colour;
+      out[id] = entry;
+    } else if (stable.startsWith("lane:") && laneIds.has(stable.slice("lane:".length))) out[stable] = { ...shape };
     else if (stable.startsWith("note:")) out[stable.slice("note:".length)] = { ...shape, kind: "note" };
     else if (shape.proposed && shape.kind) out[stable] = { ...shape, status: pending.has(shape.proposed) ? "pending" : "rejected" };
   }
@@ -339,66 +348,115 @@ export function layoutFromFile(file: LayoutFile, diagram: KeyDiagram, pending: R
   return out;
 }
 
+/** A node's saved box: what `layout(diagram, positions)` takes per node. */
+export interface SavedBox {
+  x: number;
+  y: number;
+  w?: number;
+  h?: number;
+}
+
 /** The saved boxes of a diagram's nodes, by node id: what `layout(diagram, positions)` takes. */
-export function savedPositions(file: LayoutFile | null, diagram: KeyDiagram): Record<string, { x: number; y: number; w?: number; h?: number }> {
-  if (file === null) return {};
-  const out: Record<string, { x: number; y: number; w?: number; h?: number }> = {};
+export function savedPositions(file: LayoutFile | null, diagram: KeyDiagram) {
+  const out: Record<string, SavedBox> = {};
+
+  if (file === null) return out;
 
   for (const [id, key] of diagramKeys(diagram)) {
     const shape = Object.hasOwn(file.shapes, key) ? file.shapes[key] : undefined;
 
-    if (shape) out[id] = { x: shape.x, y: shape.y, ...(shape.w !== undefined ? { w: shape.w } : {}), ...(shape.h !== undefined ? { h: shape.h } : {}) };
+    if (!shape) continue;
+    const box: SavedBox = { x: shape.x, y: shape.y };
+
+    if (shape.w !== undefined) box.w = shape.w;
+
+    if (shape.h !== undefined) box.h = shape.h;
+    out[id] = box;
   }
 
   return out;
 }
 
-function sorted(value: unknown): unknown {
+function sorted(value: JsonValue): JsonValue {
   if (Array.isArray(value)) return value.map(sorted);
 
-  if (value !== null && typeof value === "object") {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort(compareText)
-        .map((key) => [key, sorted((value as Record<string, unknown>)[key])]),
-    );
-  }
+  if (isJsonObject(value)) return Object.fromEntries(Object.keys(value).sort(compareText).map((key) => [key, sorted(value[key]!)]));
 
   return value;
 }
 
 /** The file's text: the format and the view first, then shapes and edges with their keys sorted. Same layout, same bytes. */
 export function layoutText(file: LayoutFile): string {
-  return `${JSON.stringify({ format: file.format, view: file.view, shapes: sorted(file.shapes), edges: sorted(file.edges) }, null, 2)}\n`;
+  // The interfaces hold only JSON values; a round trip turns them into `JsonValue` (dropping `undefined` fields, as the output would).
+  const shapes = sorted(parseJson(JSON.stringify(file.shapes)));
+  const edges = sorted(parseJson(JSON.stringify(file.edges)));
+
+  return `${JSON.stringify({ format: file.format, view: file.view, shapes, edges }, null, 2)}\n`;
 }
 
-const isObject = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
+const isFiniteNumber = (value: JsonValue | undefined): value is number => typeof value === "number" && Number.isFinite(value);
 
-const isPoint = (value: unknown): value is { x: number; y: number } => isObject(value) && Number.isFinite(value.x) && Number.isFinite(value.y);
+function readPoint(value: JsonValue): { x: number; y: number } | null {
+  return isJsonObject(value) && isFiniteNumber(value.x) && isFiniteNumber(value.y) ? { x: value.x, y: value.y } : null;
+}
+
+/** A shape of a layout file as the editor holds it, or null without a finite `x` and `y`; a field of the wrong form is left out. */
+function readEntry(value: JsonValue): ClientEntry | null {
+  if (!isJsonObject(value) || !isFiniteNumber(value.x) || !isFiniteNumber(value.y)) return null;
+  const entry: ClientEntry = { x: value.x, y: value.y };
+
+  if (isFiniteNumber(value.w)) entry.w = value.w;
+
+  if (isFiniteNumber(value.h)) entry.h = value.h;
+
+  for (const field of ["id", "kind", "label", "note", "colour", "proposed"] as const) {
+    const text = value[field];
+
+    if (isJsonString(text)) entry[field] = text;
+  }
+
+  return entry;
+}
+
+function readEdge(value: JsonValue): LayoutEdge | null {
+  if (!isJsonObject(value) || !Array.isArray(value.points)) return null;
+  const points: { x: number; y: number }[] = [];
+
+  for (const raw of value.points) {
+    const point = readPoint(raw);
+
+    if (point === null) return null;
+    points.push(point);
+  }
+
+  return { points };
+}
 
 /** A layout file's text read leniently: a shape or an edge of the wrong form is left out; not JSON at all is an error. */
 export function parseLayout(text: string, view: string): LayoutFile {
-  const value: unknown = JSON.parse(text);
+  const value = parseJson(text);
 
-  if (!isObject(value)) throw new Error("not a layout: the JSON is no object");
+  if (!isJsonObject(value)) throw new Error("not a layout: the JSON is no object");
   const shapes: Record<string, LayoutShape> = {};
   const edges: Record<string, LayoutEdge> = {};
 
-  if (isObject(value.shapes)) {
+  if (isJsonObject(value.shapes)) {
     for (const [key, raw] of Object.entries(value.shapes)) {
-      if (!isPoint(raw)) continue;
-      const entry = raw as unknown as ClientEntry;
-      shapes[key] = cleanShape({ ...entry, ...(Number.isFinite(entry.w) ? {} : { w: undefined }), ...(Number.isFinite(entry.h) ? {} : { h: undefined }) } as ClientEntry);
+      const entry = readEntry(raw);
+
+      if (entry !== null) shapes[key] = cleanShape(entry);
     }
   }
 
-  if (isObject(value.edges)) {
+  if (isJsonObject(value.edges)) {
     for (const [key, raw] of Object.entries(value.edges)) {
-      if (isObject(raw) && Array.isArray(raw.points) && raw.points.every(isPoint)) edges[key] = { points: (raw.points as { x: number; y: number }[]).map((p) => ({ x: p.x, y: p.y })) };
+      const edge = readEdge(raw);
+
+      if (edge !== null) edges[key] = edge;
     }
   }
 
-  return { format: typeof value.format === "number" ? value.format : LAYOUT_FORMAT, view: typeof value.view === "string" ? value.view : view, shapes, edges };
+  return { format: isFiniteNumber(value.format) ? value.format : LAYOUT_FORMAT, view: isJsonString(value.view) ? value.view : view, shapes, edges };
 }
 
 /** Where the layout of a view is, or why it may not be read or written there (a link out of the directory, a generated file). */
@@ -406,12 +464,18 @@ function placeProblem(root: string, path: string, specDir: string): string | nul
   return targetProblem(root, path, { under: `${specDir === "" ? "" : `${specDir}/`}${DIAGRAMS_DIR}` }) ?? targetProblem(root, path);
 }
 
+/** A view's layout file: where it is, and what it holds (null when there is none). */
+export interface SavedLayout {
+  path: string;
+  file: LayoutFile | null;
+}
+
 /**
  * The saved layout of a view, or null when there is none. A file reached
  * through a link out of the directory, one with a generated marker or one
  * that is no layout throws with the reason.
  */
-export function readLayout(root: string, specDir: string, view: string): { path: string; file: LayoutFile | null } {
+export function readLayout(root: string, specDir: string, view: string): SavedLayout {
   const path = layoutPath(specDir, view);
   // The directory itself must be there before a link in it can be judged; nothing there, no layout.
   let exists = true;

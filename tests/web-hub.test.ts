@@ -29,7 +29,12 @@ function send(port: number, method: string, path: string, headers: Record<string
     const req = request({ host: "localhost", port, path, method, headers: { Host: `localhost:${port}`, ...headers } }, (res) => {
       let text = "";
       res.on("data", (chunk: Buffer) => (text += chunk.toString()));
-      res.on("end", () => resolve({ status: res.statusCode ?? 0, body: text, ...(res.headers.location ? { location: res.headers.location } : {}) }));
+      res.on("end", () => {
+        const answer: Answer = { status: res.statusCode ?? 0, body: text };
+
+        if (res.headers.location) answer.location = res.headers.location;
+        resolve(answer);
+      });
     });
 
     req.on("upgrade", (res, socket) => {
@@ -85,6 +90,7 @@ test("web --hub: a path is cloned into the cache, inited and mounted under /r/<i
 
   const fetched = await send(port, "POST", "/hub/api/fetch", json, JSON.stringify({ source: repo }));
   assert.equal(fetched.status, 200, fetched.body);
+  // SAFETY: /hub/api/fetch answers {id, viewer, action} on 200, asserted just above
   const opened = JSON.parse(fetched.body) as { id: string; viewer: string; action: string };
   assert.equal(opened.action, "cloned");
   const match = /^\/r\/([^/]+)\/#t=([0-9a-f]{32})$/.exec(opened.viewer);
@@ -102,6 +108,7 @@ test("web --hub: a path is cloned into the cache, inited and mounted under /r/<i
   assert.equal((await send(port, "GET", `${prefix}/assets/diagrams.js`)).status, 200);
   const views = await send(port, "GET", `${prefix}/api/views`, { Authorization: `Bearer ${viewerToken}` });
   assert.equal(views.status, 200, views.body);
+  // SAFETY: /api/views answers the views payload whose `layers` is a string array
   assert.ok((JSON.parse(views.body) as { layers: string[] }).layers.includes("domain"));
   assert.equal((await send(port, "GET", `${prefix}/api/views`, { Authorization: `Bearer ${token}` })).status, 403, "the hub's token is no repository's");
   const socket = await send(port, "GET", `${prefix}/ws`, { Connection: "Upgrade", Upgrade: "websocket", "Sec-WebSocket-Version": "13", "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==", "Sec-WebSocket-Protocol": `keylang, keylang.t.${viewerToken}` });
@@ -109,6 +116,7 @@ test("web --hub: a path is cloned into the cache, inited and mounted under /r/<i
   assert.equal((await send(port, "GET", "/r/nope/")).status, 404);
 
   // Listed, reopened with the same token, updated.
+  // SAFETY: /hub/api/repos answers {repos: [...]} with these fields; the deepEqual below checks them
   const repos = JSON.parse((await send(port, "GET", "/hub/api/repos", json)).body) as { repos: { id: string; source: string; cloned: boolean; open: string | null }[] };
   assert.deepEqual(repos.repos.map((r) => [r.id, r.source, r.cloned, r.open]), [[opened.id, repo, true, opened.viewer]]);
   assert.equal(JSON.parse((await send(port, "POST", "/hub/api/open", json, JSON.stringify({ id: opened.id }))).body).viewer, opened.viewer);
@@ -124,6 +132,7 @@ test("web --hub --read-only: every repository opens as web --read-only — the d
   const repo = branchRepo(t);
   const { port, token } = await hub(t, ["--read-only"]);
   const json = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+  // SAFETY: /hub/api/fetch answers {viewer} on success; the regex assert below checks it
   const opened = JSON.parse((await send(port, "POST", "/hub/api/fetch", json, JSON.stringify({ source: repo }))).body) as { viewer: string };
   const match = /^(\/r\/[^/]+\/)diagrams#t=([0-9a-f]{32})$/.exec(opened.viewer);
   assert.ok(match, opened.viewer);

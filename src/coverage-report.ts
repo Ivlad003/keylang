@@ -13,6 +13,7 @@ import { readFileSync } from "node:fs";
 import type { Config } from "./config.ts";
 import { appliesTo, callMatches, callsOf, compileMatcher, internalCallPositions, isTestFile, placer, readMatches, reachable, callGraph, resourcePath, snapshotFacts, sourceReader, textMatches, type Matcher } from "./call-sites.ts";
 import { discoverFlows } from "./discover.ts";
+import { isJsonObject, isJsonString, parseJson, type JsonObject, type JsonValue } from "./json.ts";
 import { leavesUnresolved, type AnalysisSnapshot, type EntryKind } from "./snapshot.ts";
 import { compareText } from "./span.ts";
 
@@ -76,15 +77,21 @@ export interface CoverageReport {
 
 /** `resources/data-logic.json`: the configuration readers whose calls are «logic in data». */
 export function loadDataLogic(path = resourcePath("data-logic.json")): DataLogicSignal[] {
-  const value = JSON.parse(readFileSync(path, "utf8")) as { signals?: unknown };
+  const value = parseJson(readFileSync(path, "utf8"));
+  const signals = isJsonObject(value) ? value.signals : undefined;
 
-  if (!Array.isArray(value.signals)) throw new Error(`${path}: \`signals\` must be an array`);
+  if (!Array.isArray(signals)) throw new Error(`${path}: \`signals\` must be an array`);
 
-  return value.signals.map((signal, i) => {
-    if (typeof signal !== "object" || signal === null || typeof (signal as DataLogicSignal).id !== "string" || typeof (signal as DataLogicSignal).label !== "string") throw new Error(`${path}: \`signals[${i}]\` needs an \`id\` and a \`label\``);
+  return signals.map((signal, i) => {
+    if (!isDataLogicSignal(signal)) throw new Error(`${path}: \`signals[${i}]\` needs an \`id\` and a \`label\``);
 
-    return signal as DataLogicSignal;
+    return signal;
   });
+}
+
+/** The names are checked; the matcher fields come from keylang's own resource file as written. */
+function isDataLogicSignal(value: JsonValue): value is JsonObject & DataLogicSignal {
+  return isJsonObject(value) && isJsonString(value.id) && isJsonString(value.label);
 }
 
 /** Calls and reads of the snapshot's files that the signals match, in signal order, then file and position. */
@@ -231,7 +238,7 @@ export function coverageReport(
     orphans,
     holes: { total, modules, reasons: reasonList(all) },
     unflowed,
-    dataLogic: { signals: signals.filter((signal) => counts.has(signal.id)).map((signal) => ({ id: signal.id, label: signal.label, count: counts.get(signal.id)! })), sites: [...dataLogic] },
+    dataLogic: { signals: signals.flatMap((signal) => (counts.has(signal.id) ? [{ id: signal.id, label: signal.label, count: counts.get(signal.id)! }] : [])), sites: [...dataLogic] },
   };
 }
 

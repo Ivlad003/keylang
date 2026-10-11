@@ -14,7 +14,7 @@ export const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 export const bin = join(root, "bin/keylang.js");
 
 /** Run `keylang` with `cwd` as working directory. */
-export function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+export function keylang(cwd: string, args: string[]) {
   // `check --format json` on this repository is over the default 1 MiB buffer; a cut output must fail, not parse half.
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
 

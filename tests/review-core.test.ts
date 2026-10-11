@@ -19,7 +19,13 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 const bin = join(root, "bin/keylang.js");
 
-function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+interface Run {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+function keylang(cwd: string, args: string[]): Run {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8" });
 
   if (r.error) throw r.error;
@@ -63,8 +69,16 @@ interface Row {
   hole?: string;
 }
 
-function checkJson(dir: string, args: string[] = []): { status: number | null; stderr: string; results: Row[]; coverage: { kind: string; file: string; line: number; col: number }[] } {
+interface CheckRun {
+  status: number | null;
+  stderr: string;
+  results: Row[];
+  coverage: { kind: string; file: string; line: number; col: number }[];
+}
+
+function checkJson(dir: string, args: string[] = []): CheckRun {
   const run = keylang(dir, ["check", "--format", "json", ...args]);
+  // SAFETY: `check --format json` prints a report with `results` rows and `coverage` holes (docs/cli.md).
   const parsed = JSON.parse(run.stdout) as { results: Row[]; coverage: { kind: string; file: string; line: number; col: number }[] };
 
   return { status: run.status, stderr: run.stderr, results: parsed.results, coverage: parsed.coverage };
@@ -88,6 +102,7 @@ interface JsonDoc {
 function parseJson(dir: string, files: string[]): JsonDoc[] {
   const o = keylang(dir, ["parse", "--json", ...files]);
 
+  // SAFETY: `parse --json` prints an array of documents in the IR's JSON form (src/ir.ts).
   return JSON.parse(o.stdout) as JsonDoc[];
 }
 
@@ -307,7 +322,7 @@ test("an id is NFC: a decomposed and a composed name are one id, while the file 
 
 // ---------- 9. a static fail says what to do ----------
 
-const BY_NAME: Record<string, string> = {
+const BY_NAME = {
   "src/domain/order.ts": "export function create(): void {}\nexport function other(): void {}\n",
   "src/application/purchase.ts": 'import { create } from "../domain/order.ts";\nexport function buy(): void {\n  create();\n}\n',
 };

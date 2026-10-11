@@ -91,7 +91,7 @@ const CHECK_FAILS = 5;
 
 /** The answer to free text without a model (spec §4.3); `reason` says what is missing when an agent is set. */
 export function noModelAnswer(reason: string | null): string {
-  const offline = COMMANDS.filter((command) => command.offline).map((command) => `/${command.name}`);
+  const offline = COMMANDS.flatMap((command) => (command.offline ? [`/${command.name}`] : []));
 
   return `немає моделі: ${reason ?? "задайте `agent` у keylang.json або `KEYLANG_AGENT`"}; без неї працюють ${offline.join(", ")}`;
 }

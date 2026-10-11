@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { isJsonObject, parseJson, type JsonObject, type JsonValue } from "../src/json.ts";
 import { HOOK_FLOW, HOOKS } from "./hooks-fixture.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -16,8 +17,8 @@ const bin = join(root, "bin/keylang.js");
 interface Message {
   id?: number;
   method?: string;
-  params?: { uri?: string; diagnostics?: Item[] };
-  result?: unknown;
+  params?: { uri?: string; diagnostics?: Item[]; type?: number; message?: string };
+  result?: JsonValue;
   error?: { code: number; message: string };
 }
 
@@ -52,13 +53,14 @@ class Session {
         const length = Number(/Content-Length: (\d+)/i.exec(this.buffer.subarray(0, end).toString())?.[1]);
 
         if (this.buffer.length < end + 4 + length) return;
+        // SAFETY: the server writes JSON-RPC 2.0 messages, whose fields `Message` names.
         this.messages.push(JSON.parse(this.buffer.subarray(end + 4, end + 4 + length).toString()) as Message);
         this.buffer = this.buffer.subarray(end + 4 + length);
       }
     });
   }
 
-  notify(method: string, params: unknown): void {
+  notify(method: string, params: JsonValue): void {
     const json = JSON.stringify({ jsonrpc: "2.0", method, params });
     this.child.stdin.write(`Content-Length: ${Buffer.byteLength(json)}\r\n\r\n${json}`);
   }
@@ -68,7 +70,7 @@ class Session {
     this.child.stdin.write(raw);
   }
 
-  send(method: string, params: unknown): number {
+  send(method: string, params: JsonValue): number {
     const id = this.next++;
     const json = JSON.stringify({ jsonrpc: "2.0", id, method, params });
     this.child.stdin.write(`Content-Length: ${Buffer.byteLength(json)}\r\n\r\n${json}`);
@@ -77,10 +79,10 @@ class Session {
   }
 
   /** A request and its cancellation in one write, so the server sees both before answering. */
-  sendThenCancel(method: string, params: unknown): number {
+  sendThenCancel(method: string, params: JsonValue): number {
     const id = this.next++;
 
-    const frame = (message: unknown): string => {
+    const frame = (message: JsonValue): string => {
       const json = JSON.stringify(message);
 
       return `Content-Length: ${Buffer.byteLength(json)}\r\n\r\n${json}`;
@@ -91,11 +93,12 @@ class Session {
     return id;
   }
 
-  async request<T>(method: string, params: unknown): Promise<T> {
+  async request<T>(method: string, params: JsonValue): Promise<T> {
     const response = await this.response(this.send(method, params));
 
     if (response.error) throw new Error(`${method}: ${response.error.message}`);
 
+    // SAFETY: each caller names the result shape the LSP specification gives its method; its assertions check it.
     return response.result as T;
   }
 
@@ -128,7 +131,7 @@ class Session {
   }
 }
 
-async function open(t: { after: (f: () => void) => void }, dir: string, capabilities: object = {}): Promise<Session> {
+async function open(t: { after: (f: () => void) => void }, dir: string, capabilities: JsonObject = {}): Promise<Session> {
   const session = new Session(dir);
   t.after(() => session.close());
   await session.request("initialize", { rootUri: pathToFileURL(dir).href, capabilities });
@@ -171,6 +174,7 @@ interface CheckRow {
 function checkRows(dir: string, file: string): CheckRow[] {
   const o = spawnSync(process.execPath, [bin, "check", "--format", "json"], { cwd: dir, encoding: "utf8" });
 
+  // SAFETY: `check --format json` prints its report object, whose `results` are the rows of docs/cli.md.
   return (JSON.parse(o.stdout) as { results: CheckRow[] }).results.filter((row) => row.file === file);
 }
 
@@ -365,9 +369,8 @@ test("lsp: an invalid keylang.json is shown to the client and in stderr; once fi
   const flowUri = uri(dir, "keylang/flows/draft.md");
   s.notify("textDocument/didOpen", { textDocument: { uri: flowUri, languageId: "markdown", version: 1, text: "# flow draft\n\n- step domain.order.missingFn\n" } });
   const shown = await s.until(() => s.messages.find((m) => m.method === "window/showMessage"));
-  const message = shown.params as unknown as { type: number; message: string };
-  assert.equal(message.type, 1);
-  assert.match(message.message, /keylang\.json.*languages/);
+  assert.equal(shown.params?.type, 1);
+  assert.match(shown.params?.message ?? "", /keylang\.json.*languages/);
   await s.until(() => (/keylang\.json.*languages/.test(s.stderr) ? true : undefined));
   writeFileSync(join(dir, "keylang.json"), config);
   s.notify("workspace/didChangeWatchedFiles", { changes: [{ uri: uri(dir, "keylang.json"), type: 2 }] });
@@ -379,15 +382,15 @@ test("lsp: an invalid keylang.json is shown to the client and in stderr; once fi
 
 test("lsp: format 3 is shown to the client and the server stays up", async (t) => {
   const dir = fixture(t);
-  const config = JSON.parse(readFileSync(join(dir, "keylang.json"), "utf8")) as Record<string, unknown>;
+  const config = parseJson(readFileSync(join(dir, "keylang.json"), "utf8"));
+  assert.ok(isJsonObject(config), "keylang.json is an object");
   writeFileSync(join(dir, "keylang.json"), `${JSON.stringify({ ...config, format: 3 })}\n`);
   const s = await open(t, dir);
   const flowUri = uri(dir, "keylang/flows/draft.md");
   s.notify("textDocument/didOpen", { textDocument: { uri: flowUri, languageId: "markdown", version: 1, text: "# flow draft\n\n- step domain.order.missingFn\n" } });
   const shown = await s.until(() => s.messages.find((m) => m.method === "window/showMessage"));
-  const message = shown.params as unknown as { type: number; message: string };
-  assert.equal(message.type, 1);
-  assert.match(message.message, /`format` 3 is newer than this keylang reads \(2\)/);
+  assert.equal(shown.params?.type, 1);
+  assert.match(shown.params?.message ?? "", /`format` 3 is newer than this keylang reads \(2\)/);
   assert.equal(await Promise.race([s.exited.then(() => "exited"), new Promise((done) => setTimeout(() => done("up"), 200))]), "up");
 });
 
@@ -397,7 +400,9 @@ test("lsp: format 2 completion hides a symbol an incomparable deny wins over", a
     "keylang/rules.md": "# rules\n\n- allow app.x.y domain\n- deny app domain.order\n",
   });
 
-  const config = JSON.parse(readFileSync(join(dir, "keylang.json"), "utf8")) as Record<string, unknown>;
+  const config = parseJson(readFileSync(join(dir, "keylang.json"), "utf8"));
+  assert.ok(isJsonObject(config), "keylang.json is an object");
+
   const mapPath = join(dir, "keylang/map/app.md");
   const map = readFileSync(mapPath, "utf8");
   const moduleLine = lineOf(map, "module [y]");
@@ -567,6 +572,7 @@ test("lsp: code columns count code points in the snapshot and UTF-16 characters 
   const line = '/* 😀 é */ export function wave(): number { return ["😀", total([1])].length; }';
   const dir = fixture(t, { "src/app/wave.ts": `import { total } from "../domain/order.ts";\n${line}\n`, "keylang/flows/wave.md": "# flow wave\n\n- trigger app.wave.wave\n" });
   const before = (needle: string): string => line.slice(0, line.indexOf(needle));
+  // SAFETY: `fixture` ran `keylang map`, whose snapshot places nodes and edges by line and column.
   const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as { nodes: Record<string, { line: number; col: number }>; edges: { kind: string; source: string; target: string | null; line: number; col: number }[] };
   assert.deepEqual([index.nodes["app.wave.wave"]?.line, index.nodes["app.wave.wave"]?.col], [2, [...before("function")].length + 1]);
   const call = index.edges.find((e) => e.kind === "call" && e.source === "app.wave.wave" && e.target === "domain.order.total");
@@ -655,6 +661,7 @@ test("lsp: a frame without Content-Length ends the server with code 2 and says w
   const initialize = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { rootUri: pathToFileURL(dir).href, capabilities: {} } });
   s.write(`Content-Length:${Buffer.byteLength(initialize)}\r\n\r\n${initialize}`);
   const response = await s.response(1);
+  // SAFETY: the answer to `initialize` is an InitializeResult, which names the server in `serverInfo`.
   assert.equal((response.result as { serverInfo: { name: string } }).serverInfo.name, "keylang");
   s.write('Content-Type: application/vscode-jsonrpc\r\n\r\n{"jsonrpc":"2.0","method":"initialized"}');
   assert.equal(await s.exited, 2);
@@ -859,9 +866,9 @@ test("lsp: references find the flow and rules lines; code lens names the flows; 
   const usedIn = uses.map((ref) => ref.uri.slice(pathToFileURL(dir).href.length + 1));
   assert.equal(usedIn.includes("keylang/map/domain.md"), false, usedIn.join("\n"));
   assert.equal(uses.length, refs.length - 1);
-  const lenses = await s.request<{ range: { start: { line: number } }; command: { title: string } }[]>("textDocument/codeLens", { textDocument: { uri: uri(dir, "src/domain/order.ts") } });
+  const lenses = await s.request<{ range: { start: { line: number } }; command: { title: string; command: string; arguments: string[][] } }[]>("textDocument/codeLens", { textDocument: { uri: uri(dir, "src/domain/order.ts") } });
   assert.deepEqual(lenses.map((lens) => [lens.range.start.line, lens.command.title]), [[9, "flows: buy"]]);
-  assert.deepEqual((lenses[0] as unknown as { command: { command: string; arguments: string[][] } }).command, { title: "flows: buy", command: "keylang.flows", arguments: [["buy"]] });
+  assert.deepEqual(lenses[0]?.command, { title: "flows: buy", command: "keylang.flows", arguments: [["buy"]] });
   const text = "# flow sig\n\n- step domain.order.createOrder ";
   const sigUri = uri(dir, "keylang/flows/sig.md");
   s.notify("textDocument/didOpen", { textDocument: { uri: sigUri, languageId: "markdown", version: 1, text } });

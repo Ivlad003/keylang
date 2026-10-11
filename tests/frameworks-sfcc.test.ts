@@ -17,13 +17,30 @@ const BASE = "cartridges/app_storefront_base/cartridge";
 
 const CUSTOM = "cartridges/app_custom/cartridge";
 
-function config(sfcc: unknown): string {
-  const layers = { custom: ["cartridges/app_custom/**"], base: ["cartridges/app_storefront_base/**"], modules: ["cartridges/modules/**"] };
-
-  return JSON.stringify({ languages: ["javascript"], module: "file", layers, ...(sfcc === undefined ? {} : { sfcc }) });
+interface SfccConfig {
+  cartridgePath: string[] | string;
 }
 
-const REPO: Record<string, string> = {
+interface Config {
+  languages: string[];
+  module: string;
+  layers: Record<string, string[]>;
+  sfcc?: SfccConfig;
+}
+
+function configOf(sfcc: SfccConfig | undefined): Config {
+  const config: Config = { languages: ["javascript"], module: "file", layers: { custom: ["cartridges/app_custom/**"], base: ["cartridges/app_storefront_base/**"], modules: ["cartridges/modules/**"] } };
+
+  if (sfcc !== undefined) config.sfcc = sfcc;
+
+  return config;
+}
+
+function config(sfcc: SfccConfig | undefined): string {
+  return JSON.stringify(configOf(sfcc));
+}
+
+const REPO = {
   "keylang.json": config({ cartridgePath: ["app_custom", "app_storefront_base"] }),
   "keylang/rules.md": "# rules\n\n- deny base custom\n",
   "cartridges/modules/server.js": "'use strict';\nfunction exportsOf() {\n  return {};\n}\nmodule.exports = { exports: exportsOf };\n",
@@ -76,12 +93,13 @@ const REPO: Record<string, string> = {
   [`${CUSTOM}/controllers/Cart.js`]: ["'use strict';", "var server = require('server');", "server.extend(module.superModule);", "server.append('Show', function (req, res, next) {", "  next();", "});", "module.exports = server.exports();", ""].join("\n"),
   [`${CUSTOM}/scripts/jobs/clean.js`]: "'use strict';\nfunction execute() {\n  return 0;\n}\nmodule.exports = { execute: execute };\n",
   "cartridges/app_custom/steptypes.json": JSON.stringify({ "step-types": { "script-module-step": [{ "@type-id": "custom.CleanBaskets", module: "app_custom/cartridge/scripts/jobs/clean.js", function: "execute" }] } }, null, 2),
-};
+} satisfies Record<string, string>;
 
 function snapshotOf(dir: string): AnalysisSnapshot {
   const run = keylang(dir, ["map"]);
   assert.equal(run.status, 0, run.stderr);
 
+  // SAFETY: `keylang map` exited 0 just above, so the index holds the snapshot it writes.
   return JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as AnalysisSnapshot;
 }
 
@@ -182,7 +200,7 @@ test("sfcc: `frameworks` without sfcc turns off the cartridge path and the entri
   assert.deepEqual(on.manifest.frameworks?.map((f) => [f.name, f.files.map((file) => file.path)]), [
     ["sfcc", ["cartridges/app_custom/steptypes.json", "cartridges/app_storefront_base/cartridge/scripts/hooks.json", "cartridges/app_storefront_base/package.json"]],
   ]);
-  writeTree(dir, { "keylang.json": JSON.stringify({ ...(JSON.parse(config({ cartridgePath: ["app_custom", "app_storefront_base"] })) as object), frameworks: [] }) });
+  writeTree(dir, { "keylang.json": JSON.stringify({ ...configOf({ cartridgePath: ["app_custom", "app_storefront_base"] }), frameworks: [] }) });
   const off = snapshotOf(dir);
   assert.deepEqual(off.entries.filter((e) => e.framework === "sfcc"), []);
   assert.ok(off.coverage.some((c) => c.kind === "unresolved-import" && c.text.includes("*/cartridge/scripts/helpers/cartHelpers")));

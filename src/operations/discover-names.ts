@@ -14,6 +14,7 @@ import { defaultBriefJobs } from "../explain-inventory.ts";
 import { loadBriefs } from "../explanations.ts";
 import { selectedAgent } from "../agent-cli.ts";
 import type { FlowsDiscoverRequest, FlowsNamesPayload, OperationContext, OperationMessage } from "./types.ts";
+import type { LlmCallOptions } from "../llm.ts";
 
 export type NamesOutcome = { fail: string } | { cancelled: true } | { payload: FlowsNamesPayload; messages: OperationMessage[]; file: { path: string; text: string } | null; failed: boolean };
 
@@ -25,7 +26,12 @@ export async function nameProcesses(analyzed: Analysis, discovery: Discovery, sp
   const snapshot = analyzed.snapshot!;
   const config = analyzed.config;
   const saved = readProcesses(config.root, specDir);
-  const plan = planNames(snapshot, discovery.flows, saved, { stale: names.stale, ...(layer !== undefined ? { layer } : {}), ...(names.limit !== undefined ? { limit: names.limit } : {}) });
+  const planOptions: Parameters<typeof planNames>[3] = { stale: names.stale };
+
+  if (layer !== undefined) planOptions.layer = layer;
+
+  if (names.limit !== undefined) planOptions.limit = names.limit;
+  const plan = planNames(snapshot, discovery.flows, saved, planOptions);
   const briefs = loadBriefs(config);
   const lang = config.explain.lang;
   const requests = plan.groups.map((group) => ({ group, request: namesRequest(snapshot, group, { lang, briefs }) }));
@@ -85,7 +91,11 @@ export async function nameProcesses(analyzed: Analysis, discovery: Discovery, sp
     let reported: string | null = null;
 
     try {
-      answer = await client.complete(request, { ...(context.signal ? { signal: context.signal } : {}), onModel: (model) => (reported = model) });
+      const options: LlmCallOptions = {};
+
+      if (context.signal) options.signal = context.signal;
+      options.onModel = (model) => (reported = model);
+      answer = await client.complete(request, options);
     } catch (error) {
       if (error instanceof LlmCancelled) return;
       payload.failed.push({ layer: group.layer, reason: errorText(error) });

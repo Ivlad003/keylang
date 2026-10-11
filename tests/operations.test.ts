@@ -47,21 +47,31 @@ function treeBytes(dir: string): Map<string, string> {
   return out;
 }
 
+function isText(chunk: string | Uint8Array): chunk is string {
+  return typeof chunk === "string";
+}
+
+interface Capture {
+  restore: () => void;
+  calls: string[];
+}
+
 /** Everything an operation writes to stdout/stderr, captured instead of printed. */
-function captureWrites(): { restore: () => void; calls: string[] } {
+function captureWrites(): Capture {
   const calls: string[] = [];
   const out = process.stdout.write;
   const err = process.stderr.write;
-  process.stdout.write = ((chunk: string | Uint8Array): boolean => {
-    calls.push(`stdout: ${typeof chunk === "string" ? chunk : Buffer.from(chunk).toString()}`);
+  process.stdout.write = (chunk: string | Uint8Array): boolean => {
+    calls.push(`stdout: ${isText(chunk) ? chunk : Buffer.from(chunk).toString()}`);
 
     return true;
-  }) as typeof process.stdout.write;
-  process.stderr.write = ((chunk: string | Uint8Array): boolean => {
-    calls.push(`stderr: ${typeof chunk === "string" ? chunk : Buffer.from(chunk).toString()}`);
+  };
+
+  process.stderr.write = (chunk: string | Uint8Array): boolean => {
+    calls.push(`stderr: ${isText(chunk) ? chunk : Buffer.from(chunk).toString()}`);
 
     return true;
-  }) as typeof process.stderr.write;
+  };
 
   return {
     restore: () => {

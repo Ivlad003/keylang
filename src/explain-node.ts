@@ -92,27 +92,32 @@ export function summarizeNode(analysis: Analysis, id: string): ExplainResult {
 
     for (const c of analysis.snapshot?.coverage ?? []) if (c.source === id && leavesUnresolved(c)) holes[c.kind] = (holes[c.kind] ?? 0) + 1;
 
-    return {
-      summary: {
-        id,
-        kind: facts.isClass ? "class" : facts.kind,
-        signature: facts.signature,
-        doc: node.doc ?? null,
-        at,
-        exported: node.exported ?? null,
-        calls: node.calls ?? [],
-        callers: node.callers ?? [],
-        interceptedBy: (node.interceptedBy ?? []).map((i) => `${i.plugin} (${i.via} \`${i.name}\`, ${i.site}${i.scope !== "global" ? `, scope ${i.scope}` : ""})`),
-        ...(node.kind === "event" ? { event: { name: node.name ?? id.slice(id.indexOf(".") + 1), observers: observersOf(analysis, id) } } : {}),
-        deps: node.deps ?? [],
-        dependents: node.dependents ?? [],
-        flows,
-        rules,
-        holes,
-        fingerprint: node.fingerprint && node.closure ? { own: node.fingerprint, closure: node.closure.fingerprint, complete: node.closure.complete } : null,
-        planned: facts.implementsPlan,
-      },
+    const head = {
+      id,
+      kind: facts.isClass ? "class" : facts.kind,
+      signature: facts.signature,
+      doc: node.doc ?? null,
+      at,
+      exported: node.exported ?? null,
+      calls: node.calls ?? [],
+      callers: node.callers ?? [],
+      interceptedBy: (node.interceptedBy ?? []).map((i) => `${i.plugin} (${i.via} \`${i.name}\`, ${i.site}${i.scope !== "global" ? `, scope ${i.scope}` : ""})`),
     };
+
+    const tail = {
+      deps: node.deps ?? [],
+      dependents: node.dependents ?? [],
+      flows,
+      rules,
+      holes,
+      fingerprint: node.fingerprint && node.closure ? { own: node.fingerprint, closure: node.closure.fingerprint, complete: node.closure.complete } : null,
+      planned: facts.implementsPlan,
+    };
+
+    // An event's summary carries its observers between the callers and the deps, as the JSON has always listed them.
+    if (node.kind === "event") return { summary: { ...head, event: { name: node.name ?? id.slice(id.indexOf(".") + 1), observers: observersOf(analysis, id) }, ...tail } };
+
+    return { summary: { ...head, ...tail } };
   }
 
   return {

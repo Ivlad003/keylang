@@ -21,7 +21,7 @@ export interface ChangesHost {
   pick(since: string): void;
 }
 
-const KIND_GROUP: Record<string, string> = { spec: "Змінені специфікації", code: "Змінений код", other: "Інші файли" };
+const KIND_GROUP = { spec: "Змінені специфікації", code: "Змінений код", other: "Інші файли" } satisfies Record<ChangesAnswer["files"][number]["kind"], string>;
 
 /** The list of the «Зміни» mode: the changed files by kind, then the deleted ones. */
 export function changeItems(changes: ChangesAnswer, since: string): ListItem[] {

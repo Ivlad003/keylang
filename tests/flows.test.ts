@@ -8,20 +8,27 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { isJsonObject, parseJson, type JsonObject, type JsonValue } from "../src/json.ts";
 import { HOOK_FLOW, HOOKS } from "./hooks-fixture.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 const bin = join(root, "bin/keylang.js");
 
-function keylang(cwd: string, args: string[], env: Record<string, string> = {}, node: string[] = []): { status: number | null; stdout: string; stderr: string } {
+interface Run {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+function keylang(cwd: string, args: string[], env: Record<string, string> = {}, node: string[] = []): Run {
   const r = spawnSync(process.execPath, [...node, bin, ...args], { cwd, encoding: "utf8", env: { ...process.env, ...env } });
 
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
 // The checkout fixture of design §3.4: `buy() { validate(); create(); save(); }`.
-const CHECKOUT: Record<string, string> = {
+const CHECKOUT = {
   "src/domain/order.ts": "export function create(): void {}\n",
   "src/infrastructure/store.ts": "export function save(): void {}\n",
   "src/application/purchase.ts": [
@@ -42,7 +49,7 @@ const CHECKOUT: Record<string, string> = {
     "",
   ].join("\n"),
   "src/presentation/terminal.ts": 'import { buy } from "../application/purchase.ts";\nexport function checkout(): void {\n  buy();\n}\n',
-};
+} satisfies Record<string, string>;
 
 const CHECKOUT_FLOW = "# flow checkout\n\n- trigger presentation.terminal.checkout\n- step application.purchase.buy\n  - step domain.order.create\n  - step infrastructure.store.save\n";
 
@@ -64,6 +71,7 @@ function repo(t: { after: (f: () => void) => void }, files: Record<string, strin
 function snapshotOf(dir: string): string {
   assert.equal(keylang(dir, ["map"]).status, 0);
 
+  // SAFETY: `keylang map` exited 0 just above, and every snapshot it writes carries a string `snapshotId`.
   return JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")).snapshotId as string;
 }
 
@@ -80,10 +88,13 @@ interface JsonResult {
   testId?: string;
 }
 
-function results(dir: string, args: string[] = []): { status: number | null; rows: JsonResult[] } {
+type ResultRows = { status: number | null; rows: JsonResult[] };
+
+function results(dir: string, args: string[] = []): ResultRows {
   const o = keylang(dir, ["check", "--format", "json", ...args]);
   assert.ok(o.stdout.startsWith("{"), o.stdout + o.stderr);
 
+  // SAFETY: `check --format json` printed its report object, whose `results` are the rows `JsonResult` names.
   return { status: o.status, rows: (JSON.parse(o.stdout) as { results: JsonResult[] }).results };
 }
 
@@ -221,11 +232,11 @@ test("K003: ok on a recovered line and its subtree is unverified, fail stays fai
 
 // A step that only its own name can reach: a call whose receiver keylang does
 // not know can still be it when the method name matches, never otherwise.
-const BY_NAME: Record<string, string> = {
+const BY_NAME = {
   "src/domain/order.ts": "export function create(): void {}\nexport function other(x: { sell(): void }): void {\n  x.sell();\n}\nexport function poke(x: { buy(): void }): void {\n  x.buy();\n}\n",
   "src/application/purchase.ts": 'import { create } from "../domain/order.ts";\nexport function buy(): void {\n  create();\n}\n',
   "src/presentation/terminal.ts": 'import { buy } from "../application/purchase.ts";\nexport function checkout(): void {\n  buy();\n}\n',
-};
+} satisfies Record<string, string>;
 
 test("static: a step no call can reach is a confirmed absence; a call with the step's name keeps it unverified", (t) => {
   const flow = "# flow by-name\n\n- trigger domain.order.create\n- step application.purchase.buy\n";
@@ -418,7 +429,8 @@ test("check.static in keylang.json is the mode; --static overrides it and names 
 
   for (const bad of ["runtime", 1]) {
     const dir = repo(t, HOOKS, { "flows/hooks.md": HOOK_FLOW });
-    const config = JSON.parse(readFileSync(join(dir, "keylang.json"), "utf8")) as { check: { static: unknown } };
+    const config = parseJson(readFileSync(join(dir, "keylang.json"), "utf8"));
+    assert.ok(isJsonObject(config), "keylang.json is an object");
     config.check = { static: bad };
     writeFileSync(join(dir, "keylang.json"), `${JSON.stringify(config)}\n`);
 
@@ -444,9 +456,14 @@ const INVARIANT_FLOW = `${CHECKOUT_FLOW}- invariant total is the sum of the line
   - test tests/purchase.test.ts "computes total"
 `;
 
-function report(dir: string, snapshotId: string | null, tests: object[], name = "node-test.json"): void {
+function report(dir: string, snapshotId: string | null, tests: JsonObject[], name = "node-test.json"): void {
+  const body: JsonObject = { schemaVersion: 1 };
+
+  if (snapshotId) body.snapshotId = snapshotId;
+  body.runId = "r1";
+  body.tests = tests;
   mkdirSync(join(dir, ".keylang/reports"), { recursive: true });
-  writeFileSync(join(dir, ".keylang/reports", name), JSON.stringify({ schemaVersion: 1, ...(snapshotId ? { snapshotId } : {}), runId: "r1", tests }));
+  writeFileSync(join(dir, ".keylang/reports", name), JSON.stringify(body));
 }
 
 test("tests: a passing test proves its invariant, a failing one fails, none is unverified", (t) => {
@@ -551,17 +568,23 @@ interface SpanSpec {
 }
 
 /** One test run as trace JSONL. `end` omitted leaves the span open; `endClock` ends it on another clock. */
-function traceRun(snapshotId: string, flow: string, spans: (SpanSpec & { endClock?: string })[], run: { testId?: string; complete?: boolean; dropped?: unknown; instrumented?: string[]; open?: string[] } = {}): string {
+function traceRun(snapshotId: string, flow: string, spans: (SpanSpec & { endClock?: string })[], run: { testId?: string; complete?: boolean; dropped?: JsonValue; instrumented?: string[]; open?: string[] } = {}): string {
   const base = { schemaVersion: 1, snapshotId, runId: "r1", testId: run.testId ?? "t1", flow, traceId: "tr" };
-  const events: object[] = [];
+  const events: JsonObject[] = [];
 
   for (const span of spans) {
-    events.push({ ...base, event: "start", spanId: span.id, parentSpanId: span.parent ?? null, symbolId: span.symbol, clockId: span.clock ?? "c", seq: span.start, ts: 1, ...(span.links ? { links: span.links } : {}) });
+    const start: JsonObject = { ...base, event: "start", spanId: span.id, parentSpanId: span.parent ?? null, symbolId: span.symbol, clockId: span.clock ?? "c", seq: span.start, ts: 1 };
+
+    if (span.links) start.links = span.links;
+    events.push(start);
 
     if (span.end !== undefined) events.push({ ...base, event: "end", spanId: span.id, outcome: "ok", clockId: span.endClock ?? span.clock ?? "c", seq: span.end, ts: 1 });
   }
 
-  events.push({ ...base, event: "run", complete: run.complete ?? true, dropped: run.dropped ?? 0, instrumented: run.instrumented ?? [...new Set(spans.map((s) => s.symbol))], ...(run.open ? { open: run.open } : {}) });
+  const last: JsonObject = { ...base, event: "run", complete: run.complete ?? true, dropped: run.dropped ?? 0, instrumented: run.instrumented ?? [...new Set(spans.map((s) => s.symbol))] };
+
+  if (run.open) last.open = run.open;
+  events.push(last);
 
   return `${events.map((e) => JSON.stringify(e)).join("\n")}\n`;
 }
@@ -576,7 +599,9 @@ const SAVE = "infrastructure.store.save";
 
 const ALL = [T, BUY, CREATE, SAVE];
 
-function traced(t: { after: (f: () => void) => void }, flow = CHECKOUT_FLOW): { dir: string; snapshot: string; write: (text: string) => JsonResult[] } {
+type Traced = { dir: string; snapshot: string; write: (text: string) => JsonResult[] };
+
+function traced(t: { after: (f: () => void) => void }, flow = CHECKOUT_FLOW): Traced {
   const dir = repo(t, CHECKOUT, { "flows/checkout.md": flow }, { trace: ".keylang/trace/*.jsonl" });
   const snapshot = snapshotOf(dir);
 
@@ -744,7 +769,7 @@ test("trace: check.trace is validated on input", (t) => {
   writeFileSync(join(dir, ".keylang/trace/t.jsonl"), '{"schemaVersion":1,"runId":"r","testId":"t","flow":"f","event":"start","spanId":"a"}\n');
   assert.match(keylang(dir, ["check"]).stderr, /t\.jsonl:1: `symbolId` must be a non-empty string/);
   // Metadata of a `run` event is validated too: a string count is not zero.
-  const bad = (field: string, value: unknown): string => `{"schemaVersion":1,"runId":"r","testId":"t","flow":"f","event":"run","complete":true,"dropped":0,"instrumented":[],"open":[],"${field}":${JSON.stringify(value)}}\n`;
+  const bad = (field: string, value: JsonValue): string => `{"schemaVersion":1,"runId":"r","testId":"t","flow":"f","event":"run","complete":true,"dropped":0,"instrumented":[],"open":[],"${field}":${JSON.stringify(value)}}\n`;
 
   for (const [field, value, message] of [
     ["dropped", "5", /t\.jsonl:1: `dropped` must be a non-negative integer/],
@@ -967,6 +992,7 @@ test("check formats: every result has specHash and provenance; an unverified flo
   const dir = repo(t, CHECKOUT, specs, { tests: ".keylang/reports/*.json", static: "shape" });
   const json = keylang(dir, ["check", "--format", "json"]);
   assert.equal(json.status, 1, json.stderr);
+  // SAFETY: `check --format json` prints its report object; each result row carries a `specHash`.
   const rows = (JSON.parse(json.stdout) as { results: (JsonResult & { specHash?: string })[] }).results;
 
   for (const code of ["K102", "K001"]) assert.ok(rows.some((r) => r.code === code), code);
@@ -981,12 +1007,14 @@ test("check formats: every result has specHash and provenance; an unverified flo
   assert.equal(k102.criterion, "deny application infrastructure");
   assert.equal(k102.provenance, "syntactic");
   const sarif = JSON.parse(keylang(dir, ["check", "--format", "sarif"]).stdout);
+  // SAFETY: `--format sarif` prints SARIF 2.1.0, whose results carry these fields (src/check-format.ts).
   const results = sarif.runs[0].results as { ruleId: string; level: string; properties: { criterion: string; verdict: string; provenance?: string } }[];
   const note = results.find((r) => r.properties.criterion === "static" && r.properties.verdict === "unverified");
   assert.equal(note?.ruleId, "unverified");
   assert.equal(note?.level, "note");
   assert.equal(note?.properties.provenance, "syntactic");
   assert.ok(results.filter((r) => r.properties.verdict === "unverified").every((r) => r.ruleId === "unverified"));
+  // SAFETY: a SARIF 2.1.0 driver lists its rules, each with an `id`.
   const rules = (sarif.runs[0].tool.driver.rules as { id: string }[]).map((rule) => rule.id);
   assert.ok(!rules.includes("static") && !rules.includes("tests"), rules.join(" "));
   const github = keylang(dir, ["check", "--format", "github"]).stdout;
@@ -1000,6 +1028,7 @@ test("check formats: columns count code points, and SARIF says so", (t) => {
   assert.match(keylang(dir, ["check"]).stdout, /flows\/f\.md:7:26: K005 unterminated quote/);
   const sarif = JSON.parse(keylang(dir, ["check", "--format", "sarif"]).stdout);
   assert.equal(sarif.runs[0].columnKind, "unicodeCodePoints");
+  // SAFETY: `--format sarif` prints SARIF 2.1.0, whose results carry a rule id and physical locations.
   const k005 = (sarif.runs[0].results as { ruleId: string; locations: { physicalLocation: { region: { startLine: number; startColumn: number } } }[] }[]).find((r) => r.ruleId === "K005");
   assert.deepEqual(k005?.locations[0]?.physicalLocation.region, { startLine: 7, startColumn: 26 });
   assert.match(keylang(dir, ["check", "--format", "github"]).stdout, /^::error file=keylang\/flows\/f\.md,line=7,col=26,title=K005::unterminated quote$/m);

@@ -139,7 +139,9 @@ export function reachableFrom(index: AnalysisSnapshot, entry: string): Set<strin
   return reached;
 }
 
-function planOf(index: AnalysisSnapshot, flow: string, wanted: ReadonlySet<string>): { plan: TracePlan; index: AnalysisSnapshot; omitted: string[] } {
+type TraceScope = { plan: TracePlan; index: AnalysisSnapshot; omitted: string[] };
+
+function planOf(index: AnalysisSnapshot, flow: string, wanted: ReadonlySet<string>): TraceScope {
   const hashes = new Map(index.manifest.files.map((f) => [f.path, f.sha256]));
   const symbols: TracePlan["symbols"] = [];
   const omitted: string[] = [];

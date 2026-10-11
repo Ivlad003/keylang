@@ -17,7 +17,14 @@ const answers = new Map<string, Answer>();
 
 const loading = new Map<number, Promise<void>>();
 
-(window as unknown as { keylangData: (batch: Record<string, Answer>) => void }).keylangData = (batch) => {
+declare global {
+  interface Window {
+    /** What each data script of the export calls with its answers, by request key. */
+    keylangData: (batch: Record<string, Answer>) => void;
+  }
+}
+
+window.keylangData = (batch) => {
   for (const [key, answer] of Object.entries(batch)) answers.set(key, answer);
 };
 
@@ -59,6 +66,10 @@ export class StaticTransport implements Transport {
 
     if (!answer) return { status: 404, type: "application/json", text: JSON.stringify({ error: `not in this export: ${key}` }) };
 
-    return { status: answer.status, type: answer.type, text: answer.body, ...(answer.file ? { file: answer.file } : {}) };
+    const reply: Reply = { status: answer.status, type: answer.type, text: answer.body };
+
+    if (answer.file) reply.file = answer.file;
+
+    return reply;
   }
 }

@@ -251,6 +251,16 @@ export function viewOfKey(key: string): { view: DiagramView; discovered: boolean
   return null;
 }
 
+/** The views there are to draw, as the page lists them. */
+export interface DiagramViews {
+  flows: string[];
+  entries: { id: string; kind: string; label: string }[];
+  layers: string[];
+  domains: string[];
+  processes: { name: string; domain: string; flows: string[] }[];
+  systems: SystemListing[];
+}
+
 /**
  * What there is to draw: flow names in spec order, entry points as the
  * snapshot lists them, layers in their order, the domains of the business
@@ -262,7 +272,7 @@ export function viewsOf(
   processes: readonly DiagramProcess[] = [],
   systems: readonly SystemSpec[] = [],
   schemas?: SchemaRead,
-): { flows: string[]; entries: { id: string; kind: string; label: string }[]; layers: string[]; domains: string[]; processes: { name: string; domain: string; flows: string[] }[]; systems: SystemListing[] } {
+): DiagramViews {
   return {
     systems: systemListing(snapshot, systems, schemas),
     flows: [...new Set(spec.flows.map((flow) => flow.name))],
@@ -428,14 +438,50 @@ function empty(reason: string): Diagram {
   return { nodes: [], edges: [], groups: [], reason };
 }
 
+/** The diagram with why it is empty or cut short, when there is a reason. */
+function withReason(diagram: Diagram, reason: string | null): Diagram {
+  if (reason !== null) diagram.reason = reason;
+
+  return diagram;
+}
+
+type Box = Pick<DiagramNode, "x" | "y" | "w" | "h">;
+
+/** A shape in its lane when it has one, `group` written before the box as every view writes it; at the origin unless placed. */
+function shapeOf(shape: Omit<DiagramNode, keyof Box>, group: string | null | undefined, box: Box = { x: 0, y: 0, w: 0, h: 0 }): DiagramNode {
+  const node = { ...shape };
+
+  if (group) node.group = group;
+
+  return { ...node, ...box };
+}
+
+/** The code a shape stands for: its ID, and the file and line when the snapshot knows them. */
+function codeRef(id: string, code: { file: string | null; line: number | null } | undefined): NonNullable<DiagramNode["ref"]> {
+  const ref: NonNullable<DiagramNode["ref"]> = { id };
+
+  if (code?.file) ref.file = code.file;
+
+  if (code?.line) ref.line = code.line;
+
+  return ref;
+}
+
 // ── verdicts ────────────────────────────────────────────────────────────────
 
-const RANK: Record<string, number> = { fail: 3, unverified: 2, ok: 1 };
+type RankedVerdict = "fail" | "unverified" | "ok";
+
+const RANK = { fail: 3, unverified: 2, ok: 1 } satisfies Record<RankedVerdict, number>;
+
+/** A verdict `check` ranks; any other text (`""`, an unknown word) counts for nothing. */
+function isRanked(value: string): value is RankedVerdict {
+  return Object.hasOwn(RANK, value);
+}
 
 function worst(values: readonly string[]): DiagramVerdict {
-  let best: DiagramVerdict = null;
+  let best: RankedVerdict | null = null;
 
-  for (const value of values) if ((RANK[value] ?? 0) > (best === null ? 0 : RANK[best]!)) best = value as DiagramVerdict;
+  for (const value of values) if (isRanked(value) && (best === null || RANK[value] > RANK[best])) best = value;
 
   return best;
 }
@@ -463,7 +509,7 @@ function byArea(results: readonly DiagramResult[]): Map<string, DiagramVerdict> 
   const out = new Map<string, DiagramVerdict>();
 
   for (const result of results) {
-    if (!result.area || RANK[result.verdict] === undefined) continue;
+    if (!result.area || !isRanked(result.verdict)) continue;
     const parts = result.area.split(".");
 
     for (let i = 1; i <= parts.length; i++) {
@@ -504,7 +550,7 @@ function lanes(snapshot: AnalysisSnapshot | null, nodes: readonly DiagramNode[])
   const order = snapshot ? layerOrder(snapshot) : [];
   const rest = [...used].filter((id) => !order.includes(id)).sort(compareText);
 
-  return [...order, ...rest].filter((id) => used.has(id)).map((id) => ({ id, label: id, kind: "lane", x: 0, y: 0, w: 0, h: 0 }));
+  return [...order, ...rest].flatMap((id): DiagramGroup[] => (used.has(id) ? [{ id, label: id, kind: "lane", x: 0, y: 0, w: 0, h: 0 }] : []));
 }
 
 // ── flow ────────────────────────────────────────────────────────────────────
@@ -522,21 +568,29 @@ function flowDiagram(input: DiagramInput, name: string): Diagram {
   const at = (item: { span: { start: { line: number } } }): number => item.span.start.line;
   const resultsAt = (item: { span: { start: { line: number } } }): DiagramResult[] => lines.get(`${flow.file}:${at(item)}`) ?? [];
 
-  const add = (node: Omit<DiagramNode, "x" | "y" | "w" | "h">): DiagramNode => {
-    const placed = { ...node, x: 0, y: 0, w: 0, h: 0 };
+  const add = (node: Omit<DiagramNode, keyof Box>, group?: string): DiagramNode => {
+    const placed = shapeOf(node, group);
     nodes.push(placed);
 
     return placed;
   };
 
-  const link = (from: string | null, to: string, kind: DiagramEdge["kind"], extra: { label?: string; verdict?: DiagramVerdict } = {}): void => {
-    if (from !== null) edges.push({ from, to, kind, ...(extra.label !== undefined ? { label: extra.label } : {}), ...(extra.verdict !== undefined ? { verdict: extra.verdict } : {}) });
+  const link = (from: string | null, to: string, kind: DiagramEdge["kind"], label?: string, verdict?: DiagramVerdict): void => {
+    if (from === null) return;
+    const edge: DiagramEdge = { from, to, kind };
+
+    if (label !== undefined) edge.label = label;
+
+    if (verdict !== undefined) edge.verdict = verdict;
+    edges.push(edge);
   };
 
   const refOf = (id: string, line: number): NonNullable<DiagramNode["ref"]> => {
-    const code = snapshot?.nodes[id];
+    const ref = codeRef(id, snapshot?.nodes[id]);
+    ref.specFile = flow.file;
+    ref.specLine = line;
 
-    return { id, ...(code?.file ? { file: code.file } : {}), ...(code?.line ? { line: code.line } : {}), specFile: flow.file, specLine: line };
+    return ref;
   };
 
   const isExternal = (id: string): boolean => id === EXTERNAL || id.startsWith(`${EXTERNAL}.`) || snapshot?.nodes[id]?.layer === EXTERNAL;
@@ -556,13 +610,13 @@ function flowDiagram(input: DiagramInput, name: string): Diagram {
 
     if (unproven) {
       const hole = add({ id: `hole:${line}`, kind: "hole", label: "?", reason: stripLead(messageOf(unproven), id), ref: { specFile: flow.file, specLine: line }, verdict: "unverified" });
-      link(into, hole.id, "sequence", label !== undefined ? { label } : {});
+      link(into, hole.id, "sequence", label);
       into = hole.id;
       label = undefined;
     }
 
-    const node = add({ id: `${item.kind}:${line}`, kind, label: id, ref: refOf(id, line), verdict, ...(group ? { group } : {}) });
-    link(into, node.id, "sequence", { ...(label !== undefined ? { label } : {}), ...(routeVerdict !== null ? { verdict: routeVerdict } : {}) });
+    const node = add({ id: `${item.kind}:${line}`, kind, label: id, ref: refOf(id, line), verdict }, group);
+    link(into, node.id, "sequence", label, routeVerdict ?? undefined);
 
     return node.id;
   };
@@ -587,7 +641,7 @@ function flowDiagram(input: DiagramInput, name: string): Diagram {
 
       case "when": {
         const line = at(item);
-        const gateway = add({ id: `when:${line}`, kind: "gateway", label: item.condition, ref: { specFile: flow.file, specLine: line }, verdict: worst(resultsAt(item).map((r) => r.verdict)), ...(group ? { group } : {}) });
+        const gateway = add({ id: `when:${line}`, kind: "gateway", label: item.condition, ref: { specFile: flow.file, specLine: line }, verdict: worst(resultsAt(item).map((r) => r.verdict)) }, group);
         link(from, gateway.id, "sequence");
         // The branch hangs off the gateway under its condition; the default path goes on from the gateway.
         let tail: string | null = gateway.id;
@@ -614,7 +668,7 @@ function flowDiagram(input: DiagramInput, name: string): Diagram {
         }
 
         const line = at(item);
-        const task = add({ id: `then:${line}`, kind: "task", label: item.prose, ref: { specFile: flow.file, specLine: line }, verdict: worst(resultsAt(item).map((r) => r.verdict)), ...(group ? { group } : {}) });
+        const task = add({ id: `then:${line}`, kind: "task", label: item.prose, ref: { specFile: flow.file, specLine: line }, verdict: worst(resultsAt(item).map((r) => r.verdict)) }, group);
         link(from, task.id, "sequence");
 
         return block(item.children, task.id, group);
@@ -639,8 +693,8 @@ function flowDiagram(input: DiagramInput, name: string): Diagram {
           const id = ref.target;
           const verdict = worst(found.filter((r) => r.area === id).map((r) => r.verdict));
           const g = layerOf(snapshot, id);
-          const node = add({ id: `calls:${line}:${i}`, kind: isExternal(id) ? "external" : "task", label: id, ref: refOf(id, line), verdict, ...(g ? { group: g } : {}) });
-          link(from, node.id, "call", verdict !== null ? { verdict } : {});
+          const node = add({ id: `calls:${line}:${i}`, kind: isExternal(id) ? "external" : "task", label: id, ref: refOf(id, line), verdict }, g);
+          link(from, node.id, "call", undefined, verdict ?? undefined);
         });
 
         return from;
@@ -650,9 +704,9 @@ function flowDiagram(input: DiagramInput, name: string): Diagram {
         // A parallel gateway splits into one branch per step and joins them: the next item follows the join (ADR 0023).
         const line = at(item);
         const ref = { specFile: flow.file, specLine: line };
-        const split = add({ id: `parallel:${line}`, kind: "parallel", label: "parallel", ref, verdict: null, ...(group ? { group } : {}) });
+        const split = add({ id: `parallel:${line}`, kind: "parallel", label: "parallel", ref, verdict: null }, group);
         link(from, split.id, "sequence");
-        const join = add({ id: `parallel:${line}:join`, kind: "parallel", label: "parallel", ref, verdict: null, ...(group ? { group } : {}) });
+        const join = add({ id: `parallel:${line}:join`, kind: "parallel", label: "parallel", ref, verdict: null }, group);
 
         for (const child of item.children) link(one(child, split.id, group), join.id, "sequence");
 
@@ -663,7 +717,7 @@ function flowDiagram(input: DiagramInput, name: string): Diagram {
       case "every": {
         // An intermediate timer event beside the sequence, as `calls` sits beside it.
         const line = at(item);
-        const timer = add({ id: `${item.kind}:${line}`, kind: "timer", label: `${item.kind} ${item.value}`, ref: { specFile: flow.file, specLine: line }, verdict: worst(resultsAt(item).map((r) => r.verdict)), ...(group ? { group } : {}) });
+        const timer = add({ id: `${item.kind}:${line}`, kind: "timer", label: `${item.kind} ${item.value}`, ref: { specFile: flow.file, specLine: line }, verdict: worst(resultsAt(item).map((r) => r.verdict)) }, group);
         link(from, timer.id, "sequence");
 
         return from;
@@ -717,12 +771,12 @@ function eventDiagram(snapshot: AnalysisSnapshot, results: readonly DiagramResul
 
     if (nodes.some((n) => n.id === nodeId)) return nodeId;
     const code = snapshot.nodes[target];
-    nodes.push({ id: nodeId, kind: code?.layer === EXTERNAL ? "external" : "fn", label: target, ref: { id: target, ...(code?.file ? { file: code.file } : {}), ...(code?.line ? { line: code.line } : {}) }, verdict: areas.get(target) ?? null, ...(code?.layer ? { group: code.layer } : {}), x: 0, y: 0, w: 0, h: 0 });
+    nodes.push(shapeOf({ id: nodeId, kind: code?.layer === EXTERNAL ? "external" : "fn", label: target, ref: codeRef(target, code), verdict: areas.get(target) ?? null }, code?.layer));
 
     return nodeId;
   };
 
-  const center: DiagramNode = { id: `event:${id}`, kind: "event", label: event.name ?? id.slice(id.indexOf(".") + 1), ref: { id, ...(event.file ? { file: event.file } : {}), ...(event.line ? { line: event.line } : {}) }, verdict: areas.get(id) ?? null, group: event.layer, x: 0, y: 0, w: 0, h: 0 };
+  const center: DiagramNode = { id: `event:${id}`, kind: "event", label: event.name ?? id.slice(id.indexOf(".") + 1), ref: codeRef(id, event), verdict: areas.get(id) ?? null, group: event.layer, x: 0, y: 0, w: 0, h: 0 };
 
   for (const publisher of event.callers ?? []) edges.push({ from: fn(publisher), to: center.id, kind: "emits", label: "dispatch" });
   nodes.push(center);
@@ -733,7 +787,7 @@ function eventDiagram(snapshot: AnalysisSnapshot, results: readonly DiagramResul
     edges.push({ from: center.id, to: fn(edge.target), kind: "call", label: `${observer ? `observer ${observer}` : (edge.via ?? "call")}${edge.scope && edge.scope !== "global" ? ` (${edge.scope})` : ""}` });
   }
 
-  return { nodes, edges, groups: lanes(snapshot, nodes), ...(edges.length === 0 ? { reason: `\`${id}\` has neither a dispatch nor an observer keylang read` } : {}) };
+  return withReason({ nodes, edges, groups: lanes(snapshot, nodes) }, edges.length === 0 ? `\`${id}\` has neither a dispatch nor an observer keylang read` : null);
 }
 
 function entryDiagram(snapshot: AnalysisSnapshot, results: readonly DiagramResult[], id: string, depth: number): Diagram {
@@ -765,35 +819,32 @@ function entryDiagram(snapshot: AnalysisSnapshot, results: readonly DiagramResul
     const code = snapshot.nodes[target];
     const layer = code?.layer;
     const nodeId = `fn:${target}`;
-    nodes.push({
-      id: nodeId,
-      kind: layer === EXTERNAL ? "external" : code?.kind === "module" ? "module" : code?.kind === "event" ? "event" : "fn",
-      label: target,
-      ref: { id: target, ...(code?.file ? { file: code.file } : {}), ...(code?.line ? { line: code.line } : {}) },
-      verdict: areas.get(target) ?? null,
-      ...(layer ? { group: layer } : {}),
-      x: 0,
-      y: 0,
-      w: 0,
-      h: 0,
-    });
+    nodes.push(
+      shapeOf(
+        {
+          id: nodeId,
+          kind: layer === EXTERNAL ? "external" : code?.kind === "module" ? "module" : code?.kind === "event" ? "event" : "fn",
+          label: target,
+          ref: codeRef(target, code),
+          verdict: areas.get(target) ?? null,
+        },
+        layer,
+      ),
+    );
     shown.set(target, nodeId);
 
     return nodeId;
   };
 
-  const start: DiagramNode = {
-    id: `entry:${id}`,
-    kind: "start",
-    label: entry?.label ?? id,
-    ref: { id, ...(root?.file ? { file: root.file } : entry ? { file: entry.file } : {}), ...(root?.line ? { line: root.line } : entry ? { line: entry.line } : {}) },
-    verdict: areas.get(id) ?? null,
-    ...(root?.layer ? { group: root.layer } : {}),
-    x: 0,
-    y: 0,
-    w: 0,
-    h: 0,
-  };
+  // Where the entry starts: the fn's own place, else the place the entry point names.
+  const startRef: NonNullable<DiagramNode["ref"]> = { id };
+  const startFile = root?.file ? root.file : entry?.file;
+  const startLine = root?.line ? root.line : entry?.line;
+
+  if (startFile !== undefined) startRef.file = startFile;
+
+  if (startLine !== undefined) startRef.line = startLine;
+  const start = shapeOf({ id: `entry:${id}`, kind: "start", label: entry?.label ?? id, ref: startRef, verdict: areas.get(id) ?? null }, root?.layer);
 
   nodes.push(start);
   shown.set(id, start.id);
@@ -853,12 +904,16 @@ function entryDiagram(snapshot: AnalysisSnapshot, results: readonly DiagramResul
   for (const [from, own] of holes) {
     const caller = nodes.find((node) => node.id === from)!;
     const count = own.reasons.size;
-    const hole: DiagramNode = { id: `hole:${caller.ref?.id ?? from}`, kind: "hole", label: count > 1 ? `? ${count}` : "?", reason: [...own.reasons.values()].join("\n"), ref: { ...(own.file ? { file: own.file } : {}), line: own.line }, verdict: "unverified", ...(caller.group ? { group: caller.group } : {}), x: 0, y: 0, w: 0, h: 0 };
+    const holeRef: NonNullable<DiagramNode["ref"]> = {};
+
+    if (own.file) holeRef.file = own.file;
+    holeRef.line = own.line;
+    const hole = shapeOf({ id: `hole:${caller.ref?.id ?? from}`, kind: "hole", label: count > 1 ? `? ${count}` : "?", reason: [...own.reasons.values()].join("\n"), ref: holeRef, verdict: "unverified" }, caller.group);
     nodes.push(hole);
     edges.push({ from, to: hole.id, kind: "call", verdict: "unverified" });
   }
 
-  return { nodes, edges, groups: lanes(snapshot, nodes), ...(cut ? { reason: `cut at ${MAX_NODES} nodes` } : {}) };
+  return withReason({ nodes, edges, groups: lanes(snapshot, nodes) }, cut ? `cut at ${MAX_NODES} nodes` : null);
 }
 
 // ── process ─────────────────────────────────────────────────────────────────
@@ -879,16 +934,10 @@ function processDiagram(snapshot: AnalysisSnapshot, processes: readonly DiagramP
   const edges: DiagramEdge[] = [];
   const placed = new Set<string>();
 
-  const codeRef = (id: string): NonNullable<DiagramNode["ref"]> => {
-    const code = snapshot.nodes[id];
-
-    return { id, ...(code?.file ? { file: code.file } : {}), ...(code?.line ? { line: code.line } : {}) };
-  };
-
   const shape = (id: string, kind: DiagramNode["kind"], label: string, code: string): void => {
     placed.add(id);
     const layer = layerOf(snapshot, code);
-    nodes.push({ id, kind, label, ref: codeRef(code), verdict: areas.get(code) ?? null, ...(layer ? { group: layer } : {}), x: 0, y: 0, w: 0, h: 0 });
+    nodes.push(shapeOf({ id, kind, label, ref: codeRef(code, snapshot.nodes[code]), verdict: areas.get(code) ?? null }, layer));
   };
 
   for (const process of shown) {
@@ -953,18 +1002,7 @@ function moduleDiagram(snapshot: AnalysisSnapshot, results: readonly DiagramResu
     shown.add(moduleId);
     const code = snapshot.nodes[moduleId];
     const layer = code?.layer ?? (moduleId.startsWith(`${EXTERNAL}.`) ? EXTERNAL : undefined);
-    nodes.push({
-      id: `mod:${moduleId}`,
-      kind: layer === EXTERNAL ? "external" : "module",
-      label: moduleId,
-      ref: { id: moduleId, ...(code?.file ? { file: code.file } : {}), ...(code?.line ? { line: code.line } : {}) },
-      verdict: areas.get(moduleId) ?? null,
-      ...(layer ? { group: layer } : {}),
-      x: 0,
-      y: 0,
-      w: 0,
-      h: 0,
-    });
+    nodes.push(shapeOf({ id: `mod:${moduleId}`, kind: layer === EXTERNAL ? "external" : "module", label: moduleId, ref: codeRef(moduleId, code), verdict: areas.get(moduleId) ?? null }, layer));
   };
 
   add(root);
@@ -972,6 +1010,7 @@ function moduleDiagram(snapshot: AnalysisSnapshot, results: readonly DiagramResu
   const pairs = [...counts].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
 
   for (const [key, count] of pairs) {
+    // SAFETY: every key is `${from}\u0000${to}` and module IDs hold no NUL, so the split has exactly two parts.
     const [from, to] = key.split("\u0000") as [string, string];
     add(from);
     add(to);
@@ -979,7 +1018,7 @@ function moduleDiagram(snapshot: AnalysisSnapshot, results: readonly DiagramResu
     if (shown.has(from) && shown.has(to)) edges.push({ from: `mod:${from}`, to: `mod:${to}`, kind: "dependency", label: String(count) });
   }
 
-  return { nodes, edges, groups: lanes(snapshot, nodes), ...(nodes.length >= MAX_NODES ? { reason: `cut at ${MAX_NODES} nodes` } : {}) };
+  return withReason({ nodes, edges, groups: lanes(snapshot, nodes) }, nodes.length >= MAX_NODES ? `cut at ${MAX_NODES} nodes` : null);
 }
 
 // ── layers ──────────────────────────────────────────────────────────────────
@@ -1001,6 +1040,7 @@ function layersDiagram(snapshot: AnalysisSnapshot, spec: SpecIR, results: readon
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
 
+  // SAFETY: every key is `${from}\u0000${to}` and layer names hold no NUL, so each split has exactly two parts.
   const pairs = [...counts.keys()].map((key) => key.split("\u0000") as [string, string]);
   pairs.sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]) || order.indexOf(a[1]) - order.indexOf(b[1]));
 
@@ -1034,7 +1074,7 @@ function layersDiagram(snapshot: AnalysisSnapshot, spec: SpecIR, results: readon
     }
   }
 
-  return { nodes, edges: edges.map((edge) => ("count" in edge ? (({ count: _count, ...rest }) => rest)(edge as DiagramEdge & { count: number }) : edge)), groups: [], direction: "down" };
+  return { nodes, edges: edges.map((edge) => ("count" in edge ? (({ count: _count, ...rest }) => rest)(edge) : edge)), groups: [], direction: "down" };
 }
 
 // ── layout ──────────────────────────────────────────────────────────────────
@@ -1307,32 +1347,39 @@ function systemDiagram(system: SystemSpec, results: readonly DiagramResult[]): D
 
     if (verdict) byComponent.set(relation.from, [...(byComponent.get(relation.from) ?? []), verdict]);
 
-    return { from: `component:${relation.from}`, to: `component:${relation.to}`, kind: "relation", label: relation.caption ? `${relation.verb}: ${relation.caption}` : relation.verb, ...(ASYNC_VERBS.has(relation.verb) ? { async: true } : {}), ...(verdict ? { verdict } : {}) };
+    const edge: DiagramEdge = { from: `component:${relation.from}`, to: `component:${relation.to}`, kind: "relation", label: relation.caption ? `${relation.verb}: ${relation.caption}` : relation.verb };
+
+    if (ASYNC_VERBS.has(relation.verb)) edge.async = true;
+
+    if (verdict) edge.verdict = verdict;
+
+    return edge;
   });
 
   const nodes: DiagramNode[] = system.components.map((component) => {
-    const group = zonePath(component.zone);
+    // `tech` sits between the kind and the label, as the view always wrote a component.
+    const head: Pick<DiagramNode, "id" | "kind" | "component" | "tech"> = { id: `component:${component.name}`, kind: "component", component: component.kind };
 
-    return {
-      id: `component:${component.name}`,
-      kind: "component",
-      component: component.kind,
-      ...(component.tech ? { tech: component.tech } : {}),
-      label: component.name,
-      ref: { ...(component.code[0] ? { id: component.code[0] } : {}), ...(system.name === CODE_SYSTEM ? {} : { specFile: system.file, specLine: component.line }) },
-      verdict: worst((byComponent.get(component.name) ?? []).filter((v): v is NonNullable<DiagramVerdict> => v !== null)),
-      ...(group ? { group } : {}),
-      x: 0,
-      y: 0,
-      w: 0,
-      h: 0,
-    };
+    if (component.tech) head.tech = component.tech;
+    const ref: NonNullable<DiagramNode["ref"]> = {};
+
+    if (component.code[0]) ref.id = component.code[0];
+
+    // The code system is read from the code, not from a spec line.
+    if (system.name !== CODE_SYSTEM) {
+      ref.specFile = system.file;
+      ref.specLine = component.line;
+    }
+
+    const verdict = worst((byComponent.get(component.name) ?? []).filter((v): v is NonNullable<DiagramVerdict> => v !== null));
+
+    return shapeOf({ ...head, label: component.name, ref, verdict }, zonePath(component.zone));
   });
 
-  const groupIds = [...new Set(nodes.map((node) => node.group).filter((group): group is string => group !== undefined))];
+  const groupIds = [...new Set(nodes.flatMap((node) => (node.group === undefined ? [] : [node.group])))];
   const groups: DiagramGroup[] = groupIds.map((id) => ({ id, label: id, kind: "lane", x: 0, y: 0, w: 0, h: 0 }));
 
-  return { nodes, edges, groups, system: summaryOf(system), ...(nodes.length === 0 ? { reason: `system \`${system.name}\` has no components` } : {}) };
+  return withReason({ nodes, edges, groups, system: summaryOf(system) }, nodes.length === 0 ? `system \`${system.name}\` has no components` : null);
 }
 
 const TABLE_W = 230;
@@ -1381,7 +1428,10 @@ function erDiagram(system: SystemSpec): Diagram {
         const lines = table.columns.map(columnLine);
         const h = TABLE_HEAD + Math.max(1, lines.length) * TABLE_ROW + 8;
         tallest = Math.max(tallest, h);
-        nodes.push({ id, kind: "table", label: table.name, lines, ...(system.name === CODE_SYSTEM ? {} : { ref: { specFile: system.file, specLine: table.line } }), group: component.name, x: 20 + i * (TABLE_W + TABLE_GAP), y, w: TABLE_W, h });
+        const shape: Omit<DiagramNode, keyof Box> = { id, kind: "table", label: table.name, lines };
+
+        if (system.name !== CODE_SYSTEM) shape.ref = { specFile: system.file, specLine: table.line };
+        nodes.push(shapeOf(shape, component.name, { x: 20 + i * (TABLE_W + TABLE_GAP), y, w: TABLE_W, h }));
       });
       y += tallest + TABLE_GAP;
     }
@@ -1406,7 +1456,7 @@ function erDiagram(system: SystemSpec): Diagram {
     }
   }
 
-  return { nodes, edges, groups, placed: true, system: summaryOf(system), ...(nodes.length === 0 ? { reason: `system \`${system.name}\` has no tables: add \`- table <name>\` under a data store` } : {}) };
+  return withReason({ nodes, edges, groups, placed: true, system: summaryOf(system) }, nodes.length === 0 ? `system \`${system.name}\` has no tables: add \`- table <name>\` under a data store` : null);
 }
 
 const LIFELINE_GAP = 190;
@@ -1436,7 +1486,13 @@ function sequenceDiagram(system: SystemSpec, name: string): Diagram {
   const nodes: DiagramNode[] = order.map((who) => {
     const component = kinds.get(who);
 
-    return { id: `participant:${who}`, kind: "participant", label: who, ...(component ? { component: component.kind, ...(component.tech ? { tech: component.tech } : {}) } : {}), x: center(who) - PARTICIPANT_W / 2, y: 0, w: PARTICIPANT_W, h: PARTICIPANT_H };
+    const shape: Omit<DiagramNode, keyof Box> = { id: `participant:${who}`, kind: "participant", label: who };
+
+    if (component) shape.component = component.kind;
+
+    if (component?.tech) shape.tech = component.tech;
+
+    return shapeOf(shape, undefined, { x: center(who) - PARTICIPANT_W / 2, y: 0, w: PARTICIPANT_W, h: PARTICIPANT_H });
   });
 
   const edges: DiagramEdge[] = [];
@@ -1448,7 +1504,10 @@ function sequenceDiagram(system: SystemSpec, name: string): Diagram {
     const self = message.from === message.to;
     nodes.push({ id: from, kind: "anchor", label: "", x: center(message.from) - 1, y, w: 2, h: 2 });
     nodes.push({ id: to, kind: "anchor", label: "", x: center(message.to) - 1 + (self ? 0 : 0), y: y + (self ? MESSAGE_GAP / 2 : 0), w: 2, h: 2 });
-    edges.push({ from, to, kind: "message", label: `${i + 1}. ${message.text ?? ""}`.trim(), ...(message.async ? { async: true } : {}) });
+    const edge: DiagramEdge = { from, to, kind: "message", label: `${i + 1}. ${message.text ?? ""}`.trim() };
+
+    if (message.async) edge.async = true;
+    edges.push(edge);
   });
   const bottom = top + sequence.messages.length * MESSAGE_GAP;
 
@@ -1457,5 +1516,5 @@ function sequenceDiagram(system: SystemSpec, name: string): Diagram {
     edges.unshift({ from: `participant:${who}`, to: `anchor:end:${who}`, kind: "lifeline" });
   }
 
-  return { nodes, edges, groups: [], placed: true, system: summaryOf(system), ...(sequence.messages.length === 0 ? { reason: `sequence \`${name}\` has no messages` } : {}) };
+  return withReason({ nodes, edges, groups: [], placed: true, system: summaryOf(system) }, sequence.messages.length === 0 ? `sequence \`${name}\` has no messages` : null);
 }

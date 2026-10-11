@@ -15,7 +15,13 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 const bin = join(root, "bin/keylang.js");
 
-function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+interface Run {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+function keylang(cwd: string, args: string[]): Run {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8" });
 
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
@@ -45,6 +51,7 @@ function map(dir: string): Snapshot {
   const o = keylang(dir, ["map"]);
   assert.equal(o.status, 0, o.stdout + o.stderr);
 
+  // SAFETY: `keylang map` writes .keylang/index.json as a snapshot with these fields (docs/snapshot.md).
   return JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as Snapshot;
 }
 
@@ -76,7 +83,7 @@ const python3 = spawnSync("python3", ["--version"], { encoding: "utf8" }).status
 test("python: without KEYLANG_TRACE the trace wrapper records nothing and runs the script as python3 would, exit code included; with it, a missing plan or test is named", { skip: python3 ? false : "python3 is not installed" }, (t) => {
   const wrapper = join(root, "adapters/python/keylang_trace.py");
   const dir = repo(t, { "run.py": 'import os\nimport sys\n\nprint(__name__, sys.argv[1:], os.environ.get("KEYLANG_TRACE_RUN"))\nsys.exit(3)\n' });
-  const env: Record<string, string | undefined> = { ...process.env };
+  const env = { ...process.env };
 
   for (const name of ["KEYLANG_TRACE", "KEYLANG_TRACE_PLAN", "KEYLANG_TRACE_TEST", "KEYLANG_TRACE_RUN", "KEYLANG_TRACE_ROOT"]) delete env[name];
   const plain = spawnSync("python3", [wrapper, "run.py", "a", "b"], { cwd: dir, encoding: "utf8", env });

@@ -15,6 +15,7 @@ import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
+import { isJsonObject, parseJson, type JsonObject } from "../src/json.ts";
 import { keylang, root, writeTree } from "./cli-helpers.ts";
 
 interface Edge {
@@ -27,6 +28,8 @@ interface Edge {
   site?: string;
   scope?: string;
   owner?: string;
+  member?: string;
+  indirect?: true;
   binding?: string;
   intercepts?: string;
   reason?: string;
@@ -73,6 +76,7 @@ function map(dir: string): Snapshot {
   const r = keylang(dir, ["map"]);
   assert.equal(r.status, 0, r.stderr);
 
+  // SAFETY: `keylang map` exited 0 just above, so the index holds the snapshot it writes.
   return JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as Snapshot;
 }
 
@@ -80,8 +84,9 @@ function calls(index: Snapshot, source: string): Edge[] {
   return index.edges.filter((e) => e.kind === "call" && e.source === source && e.resolution === "resolved");
 }
 
-function setConfig(dir: string, change: (raw: Record<string, unknown>) => void): void {
-  const raw = JSON.parse(readFileSync(join(dir, "keylang.json"), "utf8")) as Record<string, unknown>;
+function setConfig(dir: string, change: (raw: JsonObject) => void): void {
+  const raw = parseJson(readFileSync(join(dir, "keylang.json"), "utf8"));
+  assert.ok(isJsonObject(raw), "keylang.json is an object");
   change(raw);
   writeFileSync(join(dir, "keylang.json"), `${JSON.stringify(raw, null, 2)}\n`);
 }
@@ -418,7 +423,7 @@ test("magento: entry points of every kind come from the config, labelled as the 
 });
 
 /** Factories Magento generates (business-flows 40): `InvoiceFactory` is declared nowhere, `TotalsFactory` by hand. */
-const FACTORIES: Record<string, string> = {
+const FACTORIES = {
   "app/code/Shop/Sales/Model/Invoice.php": "<?php\nnamespace Shop\\Sales\\Model;\n\nclass Invoice\n{\n    public function register(): void {}\n    public function pay(): void {}\n}\n",
   "app/code/Shop/Sales/Model/TotalsFactory.php": "<?php\nnamespace Shop\\Sales\\Model;\n\nclass TotalsFactory\n{\n    public function create(): Totals { return new Totals(); }\n}\n",
   "app/code/Shop/Sales/Model/InvoiceService.php": [
@@ -447,7 +452,7 @@ const FACTORIES: Record<string, string> = {
     "",
   ].join("\n"),
   "keylang/flows/invoice.md": "# flow invoice\n\n- trigger sales.Model.InvoiceService.InvoiceService.invoice\n  - step sales.Model.Invoice.Invoice.register\n",
-};
+} satisfies Record<string, string>;
 
 test("magento: a factory Magento generates (`XFactory` no file declares) makes an `X` — an edge `via: generated-factory` and the class of its result; off with the adapter", (t) => {
   const dir = shop(t, FACTORIES);
@@ -480,7 +485,7 @@ test("magento: a factory Magento generates (`XFactory` no file declares) makes a
  * The ObjectManager (business-flows 40): the Framework and a module `Vendor_Store` are `outside`
  * the architecture — read as declarations, the module's `di.xml` for its preferences only.
  */
-const LOCATOR: Record<string, string> = {
+const LOCATOR = {
   "lib/Fw/ObjectManagerInterface.php": "<?php\nnamespace Magento\\Framework;\n\ninterface ObjectManagerInterface\n{\n    public function get($type);\n    public function create($type, array $arguments = []);\n}\n",
   "lib/Fw/ObjectManager/ObjectManager.php": "<?php\nnamespace Magento\\Framework\\ObjectManager;\n\nclass ObjectManager implements \\Magento\\Framework\\ObjectManagerInterface\n{\n    public function get($type) {}\n    public function create($type, array $arguments = []) {}\n}\n",
   "lib/Fw/App/ObjectManager.php": "<?php\nnamespace Magento\\Framework\\App;\n\nclass ObjectManager extends \\Magento\\Framework\\ObjectManager\\ObjectManager\n{\n    /** @return ObjectManager */\n    public static function getInstance() {}\n}\n",
@@ -517,7 +522,7 @@ const LOCATOR: Record<string, string> = {
     "",
   ].join("\n"),
   "keylang/flows/locate.md": "# flow locate\n\n- trigger sales.Model.Locator.Locator.run\n  - step sales.Model.Invoice.Invoice.register\n",
-};
+} satisfies Record<string, string>;
 
 test("magento: `$objectManager->get(X::class)` and `->create('X')` give an `X` — an edge `via: object-manager`, through the preferences for an interface (an `outside` module's `di.xml` too); a class computed at run time stays a hole; off with the adapter", (t) => {
   const dir = shop(t, LOCATOR);
@@ -547,9 +552,9 @@ test("magento: `$objectManager->get(X::class)` and `->create('X')` give an `X` �
   const scopes = calls(index, source).filter((e) => e.line === 18 && e.via === "object-manager").map((e) => `${e.target} ${e.scope} ${e.site}`);
   assert.deepEqual(scopes.sort(), ["sales.Model.AdminOrderService.AdminOrderService adminhtml app/code/Shop/Checkout/etc/adminhtml/di.xml:3:5", "sales.Model.OrderService.OrderService global app/code/Shop/Checkout/etc/di.xml:3:5"]);
   const outsideCall = calls(index, source).find((e) => e.line === 19 && e.via === "preference");
-  assert.equal((outsideCall as Edge & { member?: string; indirect?: true })?.member, "Vendor\\Store\\Model\\StoreManager::getStore");
+  assert.equal(outsideCall?.member, "Vendor\\Store\\Model\\StoreManager::getStore");
   // Not a dependency for rules: the class is written in the config.
-  assert.ok(calls(index, source).filter((e) => e.via === "object-manager" || (e.line === 19 && e.via === "preference")).every((e) => (e as Edge & { indirect?: true }).indirect === true));
+  assert.ok(calls(index, source).filter((e) => e.via === "object-manager" || (e.line === 19 && e.via === "preference")).every((e) => e.indirect === true));
   // A class computed at run time: the ObjectManager's `get` (no preference binds the interface) and what it gives stay holes.
   assert.deepEqual(index.coverage.filter((c) => c.source === source && c.line === 21).map((c) => c.reason).sort(), ["call through an expression `$this->objectManager->get($name)->register()`", "call through an interface `ObjectManagerInterface`"]);
   // The module outside gives its preferences, not its plugins.

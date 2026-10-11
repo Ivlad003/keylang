@@ -207,7 +207,7 @@ export interface XmlElement {
 
 /** The root element of an XML file, or why it does not parse. */
 export function parseXml(path: string, text: string): { root: XmlElement | null; error: { line: number; reason: string } | null } {
-  const parser = new SaxesParser({ position: true });
+  const parser = new SaxesParser({ position: true, xmlns: false });
   const stack: XmlElement[] = [];
   let root: XmlElement | null = null;
   let start = { line: 1, col: 1 };
@@ -216,7 +216,7 @@ export function parseXml(path: string, text: string): { root: XmlElement | null;
     start = { line: parser.line, col: Math.max(1, parser.column - tag.name.length - 1) };
   });
   parser.on("opentag", (tag) => {
-    const element: XmlElement = { name: tag.name, attributes: tag.attributes as Record<string, string>, line: start.line, col: start.col, text: "", children: [] };
+    const element: XmlElement = { name: tag.name, attributes: tag.attributes, line: start.line, col: start.col, text: "", children: [] };
     const parent = stack.at(-1);
 
     if (parent) parent.children.push(element);

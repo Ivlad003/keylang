@@ -19,6 +19,7 @@
 // `ssr.*` of `app/` and of the overrides' `app/`.
 
 import { posix } from "node:path";
+import { isJsonObject, isJsonString, parseJson, type JsonValue } from "../json.ts";
 import type { ConfigFacts, FrameworkAdapter, FrameworkContext } from "./adapter.ts";
 
 const RUNTIME = "@salesforce/pwa-kit-runtime";
@@ -37,11 +38,11 @@ export interface Extensibility {
 }
 
 /** `ccExtensibility` of a parsed `package.json`; null when it writes none or no base package. */
-export function extensibilityOf(manifest: unknown): Extensibility | null {
-  const cc = isRecord(manifest) ? manifest.ccExtensibility : undefined;
+export function extensibilityOf(manifest: JsonValue): Extensibility | null {
+  const cc = isJsonObject(manifest) ? manifest.ccExtensibility : undefined;
 
-  if (!isRecord(cc) || typeof cc.extends !== "string" || cc.extends === "") return null;
-  const dir = typeof cc.overridesDir === "string" ? posix.normalize(cc.overridesDir.replace(/\\/g, "/").replace(/^\/+/, "")).replace(/^\.\/?/, "").replace(/\/$/, "") : "";
+  if (!isJsonObject(cc) || !isJsonString(cc.extends) || cc.extends === "") return null;
+  const dir = isJsonString(cc.overridesDir) ? posix.normalize(cc.overridesDir.replace(/\\/g, "/").replace(/^\/+/, "")).replace(/^\.\/?/, "").replace(/\/$/, "") : "";
 
   return { base: cc.extends, overridesDir: dir === "." ? "" : dir };
 }
@@ -109,9 +110,9 @@ export function projects(context: Pick<FrameworkContext, "sources" | "read">): {
   const out: { dir: string; extensibility: Extensibility | null }[] = [];
 
   for (const dir of [...dirs].sort()) {
-    const manifest = parseJson(context.read(dir === "" ? "package.json" : `${dir}/package.json`));
+    const manifest = readJson(context.read(dir === "" ? "package.json" : `${dir}/package.json`));
     const extensibility = extensibilityOf(manifest);
-    const runtime = DEPENDENCY_FIELDS.some((field) => isRecord(manifest) && isRecord(manifest[field]) && RUNTIME in manifest[field]);
+    const runtime = DEPENDENCY_FIELDS.some((field) => isJsonObject(manifest) && isJsonObject(manifest[field]) && RUNTIME in manifest[field]);
 
     if (extensibility !== null || runtime) out.push({ dir, extensibility });
   }
@@ -119,16 +120,12 @@ export function projects(context: Pick<FrameworkContext, "sources" | "read">): {
   return out;
 }
 
-function parseJson(text: string | null): unknown {
+function readJson(text: string | null): JsonValue {
   if (text === null) return null;
 
   try {
-    return JSON.parse(text.replace(/^﻿/, ""));
+    return parseJson(text.replace(/^\uFEFF/, ""));
   } catch {
     return null;
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

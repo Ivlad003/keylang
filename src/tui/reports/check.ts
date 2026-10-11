@@ -73,7 +73,7 @@ function c4Label(request: ExportC4Request): string {
   return ["export c4", `--format ${request.format}`, `--level ${request.level}`, ...(request.layer !== undefined ? [`--layer ${request.layer}`] : []), ...(request.out !== undefined ? [`--out ${request.out}`] : [])].join(" ");
 }
 
-export const CHECK_REPORTS: { [K in CheckKind]: Report<K> } = {
+export const CHECK_REPORTS = {
   feature: {
     label: (request) => `feature ${request.slug}`,
     params: (request) => request.slug,
@@ -353,4 +353,4 @@ export const CHECK_REPORTS: { [K in CheckKind]: Report<K> } = {
       return rows;
     },
   },
-};
+} satisfies { [K in CheckKind]: Report<K> };

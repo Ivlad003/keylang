@@ -220,8 +220,10 @@ function sectionText(root: string, analyzed: Analysis, file: string, name: strin
   return `${lines.slice(from, to).join("\n").trimEnd()}\n`;
 }
 
+type GitOrigin = { repo: string; commit: string };
+
 /** The repository as git names it (the `origin` URL without credentials, else the directory) and HEAD; `n/a` without git. */
-export function gitOf(root: string): { repo: string; commit: string } {
+export function gitOf(root: string): GitOrigin {
   const run = (args: string[]): string | null => {
     try {
       const r = spawnSync("git", args, { cwd: root, stdio: ["ignore", "pipe", "pipe"], encoding: "utf8" });

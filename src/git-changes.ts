@@ -30,8 +30,14 @@ export interface ChangedFiles {
   unborn: boolean;
 }
 
+/** Git in one root: `run` returns what git did, `git` its stdout or throws. */
+interface GitRunner {
+  run: (args: string[]) => SpawnSyncReturns<string>;
+  git: (args: string[]) => string;
+}
+
 /** A git runner for `root`; `label` names the caller in its errors (`check --changed`). */
-function gitIn(root: string, label: string): { run: (args: string[]) => SpawnSyncReturns<string>; git: (args: string[]) => string } {
+function gitIn(root: string, label: string): GitRunner {
   // Paths as they are, not C-quoted octal escapes, whatever the user's `core.quotePath`.
   // stdin is the null device, never a pipe: the Codex sandbox (seccomp) forbids
   // the `shutdown` that closes a piped stdin, so spawnSync failed with EPERM and

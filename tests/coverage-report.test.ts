@@ -12,7 +12,7 @@ import { checkoutRepo, KEY } from "./tui-fixture.ts";
 import { session } from "./tui-helpers.ts";
 
 /** TypeScript routes, a Python script and a PHP class: an orphan in each language, holes, readers of configuration, a test file. */
-const MIXED: Record<string, string> = {
+const MIXED = {
   "keylang.json": JSON.stringify({ languages: ["typescript", "python", "php"], module: "file", layers: { app: ["src/app/**"], shop: ["src/py/**"], web: ["src/php/**"] } }),
   "src/app/server.ts": [
     "const app = { get: (_p: string, ..._h: unknown[]) => 0, post: (_p: string, ..._h: unknown[]) => 0 };",
@@ -76,9 +76,15 @@ const MIXED: Record<string, string> = {
   // Test helpers outside the default exclusions (Magento's `Test/` directories): no orphans.
   "src/app/Test/helpers.ts": "export function fixtureHelper(): number {\n  return 0;\n}\n",
   "keylang/flows/checkout.md": "# flow checkout\n\n- trigger app.server.checkout\n",
-};
+} satisfies Record<string, string>;
 
-function coverage(dir: string, args: string[] = []): { status: number | null; stdout: string; stderr: string } {
+interface Run {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+function coverage(dir: string, args: string[] = []): Run {
   return keylang(dir, ["coverage", ...args]);
 }
 
@@ -96,6 +102,7 @@ test("coverage: an orphan, a hole, an entry point without a flow and logic in da
   writeTree(dir, MIXED);
   const r = coverage(dir, ["--json"]);
   assert.equal(r.status, 0, r.stderr);
+  // SAFETY: `coverage --json` exited 0 above, so stdout is its report; `Report` names the fields asserted here.
   const report = JSON.parse(r.stdout) as Report;
   assert.match(report.snapshotId, /^[0-9a-f]{64}$/);
   assert.equal("text" in report, false, "--json is the report without the CLI's text");
@@ -156,12 +163,13 @@ test("coverage: --json is the same bytes for the same inputs; writes nothing but
   assert.equal(second.stdout, first.stdout);
   const after = treeBytes(dir);
 
-  for (const map of [before, after]) for (const path of [...map.keys()]) if (path.startsWith(".keylang/cache/")) map.delete(path);
+  for (const map of [before, after]) for (const path of Array.from(map.keys())) if (path.startsWith(".keylang/cache/")) map.delete(path);
   assert.deepEqual(after, before);
   assert.ok(![...after.keys()].some((path) => path.startsWith("keylang/map") || path.startsWith("keylang/flows-discovered")), "coverage writes no view");
 
   const discovered = keylang(dir, ["flows", "discover"]);
   assert.equal(discovered.status, 0, discovered.stderr);
+  // SAFETY: `coverage --json` prints its report; `Report` names the fields asserted here.
   const report = JSON.parse(coverage(dir, ["--json"]).stdout) as Report;
   assert.deepEqual(report.unflowed.map((entry) => entry.discovered?.inView), [true, true]);
   assert.match(coverage(dir).stdout, /discovered flow listOrders in keylang\/flows-discovered\/app\.md/);

@@ -19,8 +19,9 @@ const adapter: FrameworkAdapter = {
   name: "test-di",
   version: "1",
   detect: (context) => context.read("di.json") !== null,
-  files: (context) => ["di.admin.json", "di.json"].filter((path) => context.read(path) !== null).map((path) => ({ path, owner: "src/wiring" })),
+  files: (context) => ["di.admin.json", "di.json"].flatMap((path) => (context.read(path) === null ? [] : [{ path, owner: "src/wiring" }])),
   parse(path, text): ConfigFacts {
+    // SAFETY: the test writes `di.json` and `di.admin.json` itself as arrays of these rows (see FILES below).
     const rows = JSON.parse(text) as { from: [string, string]; to: [string, string]; line: number }[];
 
     return {
@@ -38,7 +39,7 @@ const adapter: FrameworkAdapter = {
   },
 };
 
-const FILES: Record<string, string> = {
+const FILES = {
   "keylang.json": JSON.stringify({ languages: ["typescript"], layers: { app: ["src/app/**"], core: ["src/core/**"], wiring: ["src/wiring/**"] } }),
   "src/core/repo.ts": "export interface Repo {\n  save(x: number): void;\n}\n",
   "src/core/sql.ts": 'import type { Repo } from "./repo";\n\nexport class SqlRepo implements Repo {\n  save(x: number): void {\n    this.flush(x);\n  }\n\n  flush(x: number): void {\n    console.log(x);\n  }\n}\n',

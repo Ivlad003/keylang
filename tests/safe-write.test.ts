@@ -9,7 +9,12 @@ import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { keepLineEndings, safeWrite, safeWriteAll, writeProblem } from "../src/safe-write.ts";
 
-function dirs(t: TestContext): { repo: string; outside: string } {
+interface Dirs {
+  repo: string;
+  outside: string;
+}
+
+function dirs(t: TestContext): Dirs {
   const base = mkdtempSync(join(tmpdir(), "keylang-write-"));
   t.after(() => rmSync(base, { recursive: true, force: true }));
   mkdirSync(join(base, "repo"));

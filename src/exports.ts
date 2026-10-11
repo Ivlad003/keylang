@@ -97,7 +97,10 @@ export function resolveExports(inputs: ReadonlyMap<string, ModuleExportsInput>, 
 
   /** Run `compute` for `key` at the next depth; cache the value when it read nothing still in progress above it. */
   const guarded = <T>(key: string, memo: Map<string, T>, empty: T, compute: () => Result<T>): Result<T> => {
-    if (memo.has(key)) return { value: memo.get(key) as T, low: Infinity };
+    const cached = memo.get(key);
+
+    // Memoized values are entries, null or name lists, never undefined: undefined means not computed yet.
+    if (cached !== undefined) return { value: cached, low: Infinity };
     const at = onStack.get(key);
 
     if (at !== undefined) return { value: empty, low: at };
@@ -139,7 +142,15 @@ export function resolveExports(inputs: ReadonlyMap<string, ModuleExportsInput>, 
 
         const kind = row.target.kind === "namespace" ? "value" : symbol !== null ? (symbolKind(symbol) ?? row.kind) : row.kind;
 
-        return { value: { module, name, symbol, kind, ...(row.form ? { form: row.form } : {}), ...(row.local !== undefined && row.local !== name ? { local: row.local } : {}), ...(row.from ? { from: row.from } : {}) }, low };
+        const value: ExportEntry = { module, name, symbol, kind };
+
+        if (row.form) value.form = row.form;
+
+        if (row.local !== undefined && row.local !== name) value.local = row.local;
+
+        if (row.from) value.from = row.from;
+
+        return { value, low };
       }
 
       // `export *` re-exports every name of its source except `default`.
@@ -228,7 +239,14 @@ function pickStar(module: string, name: string, found: readonly { entry: ExportE
   // A value (`export const V`) has no symbol: its origin is the module that declares it and its name
   // there. A name from no module of the snapshot (the standard library) has no origin to compare.
   const originOf = (e: ExportEntry): string | null => e.symbol ?? (e.from !== undefined ? `${e.from}\0${e.local ?? e.name}` : e.form === undefined ? `${e.module}\0${e.name}` : null);
-  const origins = new Set(known.filter((f) => f.entry.name !== UNKNOWN_EXPORT).map((f) => originOf(f.entry)).filter((o) => o !== null));
+
+  const origins = new Set(
+    known.flatMap((f) => {
+      const origin = f.entry.name === UNKNOWN_EXPORT ? null : originOf(f.entry);
+
+      return origin === null ? [] : [origin];
+    }),
+  );
 
   if (origins.size > 1 && !lastWins) return null;
   // Python binds names in statement order: the last `from .x import *` that has the name wins.

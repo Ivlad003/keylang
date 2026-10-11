@@ -11,6 +11,7 @@ import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { answerObject } from "../src/draft-llm.ts";
+import { isJsonObject, parseJson, type JsonObject } from "../src/json.ts";
 import { answerText, briefText } from "../src/explain-llm.ts";
 import { exportTargetProblem, featureSlugOf, runOperation } from "../src/operations.ts";
 import { fakeAgents, type FakeAgents } from "./agent-fixture.ts";
@@ -40,7 +41,7 @@ function keylang(dir: string, args: string[], fake: FakeAgents | null, env: Reco
         ANTHROPIC_API_KEY: undefined,
         ANTHROPIC_AUTH_TOKEN: undefined,
         OPENROUTER_API_KEY: undefined,
-        ...(fake ? fake.env : {}),
+        ...fake?.env,
         ...env,
       },
     });
@@ -61,7 +62,7 @@ function tempDir(t: TestContext, prefix: string): string {
 }
 
 /** A copy of `tests/fixtures/repo` with `config` merged into its keylang.json and `files` written over it. */
-function copy(t: TestContext, config: Record<string, unknown> = {}, files: Record<string, string> = {}): string {
+function copy(t: TestContext, config: JsonObject = {}, files: Record<string, string> = {}): string {
   const dir = tempDir(t, "keylang-review-ops-");
   cpSync(join(root, "tests/fixtures/repo"), dir, { recursive: true });
   mkdirSync(join(dir, ".home"));
@@ -236,7 +237,9 @@ test("draft map --mode llm: the ```json block, else the first balanced object of
     const fake = fakeAgents(t, ["claude"], { reply });
     const o = await keylang(dir, ["draft", "map", "--mode", "llm"], fake);
     assert.equal(o.status, 0, `${reply}: ${o.stderr}`);
-    assert.deepEqual((JSON.parse(o.stdout) as { layers: unknown }).layers, layers, reply);
+    const drafted = parseJson(o.stdout);
+    assert.ok(isJsonObject(drafted), o.stdout);
+    assert.deepEqual(drafted.layers, layers, reply);
   }
 
   for (const reply of ["I cannot group these files.", "```json\n[\"src/**\"]\n```", "{\"domain\": [\"src/domain/**\"]"]) {

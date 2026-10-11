@@ -157,7 +157,7 @@ export const TRIGGER_KINDS = ["route", "cron", "consumer", "webhook"] as const;
 export type TriggerKind = (typeof TRIGGER_KINDS)[number];
 
 export function isTriggerKind(word: string): word is TriggerKind {
-  return (TRIGGER_KINDS as readonly string[]).includes(word);
+  return TRIGGER_KINDS.some((kind) => kind === word);
 }
 
 /**
@@ -211,17 +211,29 @@ export const COMPONENT_KINDS = ["client", "cdn", "dns", "lb", "gateway", "servic
 
 export type ComponentKind = (typeof COMPONENT_KINDS)[number];
 
+export function isComponentKind(word: string): word is ComponentKind {
+  return COMPONENT_KINDS.some((kind) => kind === word);
+}
+
 /** Components that keep data: only they hold `table` lines. */
 export const DATA_STORES: ReadonlySet<string> = new Set(["db", "cache", "storage", "search", "warehouse"]);
 
 /** How a component talks to another (Р4): `<verb> <component> [caption…]`. */
 export const RELATION_VERBS = ["calls", "reads", "writes", "publishes", "consumes", "replicates", "uses"] as const;
 
+export function isRelationVerb(word: string): word is (typeof RELATION_VERBS)[number] {
+  return RELATION_VERBS.some((verb) => verb === word);
+}
+
 /** Flags of a column after its type (Р5); `fk` takes `<table>.<column>`. */
 export const COLUMN_FLAGS: ReadonlySet<string> = new Set(["pk", "unique", "null", "fk"]);
 
 /** Free-text lines of an interview at the top of `# system` (Р7). */
 const INTERVIEW = ["requirement", "nfr", "estimate", "tradeoff"] as const;
+
+function isInterviewKind(word: string): word is (typeof INTERVIEW)[number] {
+  return INTERVIEW.some((kind) => kind === word);
+}
 
 function isSystemCtx(ctx: Ctx): boolean {
   return ctx === "system-top" || ctx === "zone" || ctx === "component" || ctx === "table" || ctx === "sequence";
@@ -329,14 +341,14 @@ function placeHint(word: string, ctx: Ctx, section: SectionKind): string {
   return `; \`${word}\` goes ${listed}`;
 }
 
-const RULE_ROLES: Partial<Record<NodeKind, string>> = {
-  layers: "a layer order: a dependency may only point down, to a layer on the left",
-  allow: "a rule: the first ID may depend on the rest",
-  deny: "a rule: the first ID must not depend on the rest",
-  entry: "entry points: a module the nested IDs do not reach is K103",
-  "rule-module": "a reference to a module the nested rules apply to",
-  "no-cycles": "a rule: no import cycle anywhere",
-};
+const RULE_ROLES = [
+  ["layers", "a layer order: a dependency may only point down, to a layer on the left"],
+  ["allow", "a rule: the first ID may depend on the rest"],
+  ["deny", "a rule: the first ID must not depend on the rest"],
+  ["entry", "entry points: a module the nested IDs do not reach is K103"],
+  ["rule-module", "a reference to a module the nested rules apply to"],
+  ["no-cycles", "a rule: no import cycle anywhere"],
+] as const;
 
 const TEST_ROLE = "a test that must pass in the `check.tests` report";
 
@@ -352,114 +364,119 @@ const AFTER_ROLE = "a timer: the parent runs this long after the step before; on
 
 const EVERY_ROLE = "a schedule: the parent runs on it; a nested `test` checks it, and a cron entry point's schedule when the snapshot has one";
 
+// Maps, not objects: `then` is a keyword, and an object with a `then` key is a thenable.
+function roles(entries: readonly (readonly [NodeKind, string])[]): ReadonlyMap<NodeKind, string> {
+  return new Map(entries);
+}
+
 /**
  * What an item does where it stands (grammar.md §5), for hover. Keyed like
  * `keywordsOf`, which K004 reads, so the roles follow the allowed keywords.
  */
-const ROLES: { readonly [C in Ctx]?: Partial<Record<NodeKind, string>> } = {
-  "map-top": { layer: "a layer declaration", ...RULE_ROLES },
-  "rules-top": RULE_ROLES,
-  "flow-top": {
-    kind: "the kind of the flow: `business` or `technical`",
-    trigger: "where the flow starts: a trace is matched from the first trigger; `trigger route|cron|consumer|webhook <id>` names an entry point of that kind, `trigger event <id>` an event whose subscribers run the steps",
-    continues: "this flow continues another one in a later request (a webhook after a checkout): both flows must exist; one trace does not cross requests",
-    parallel: PARALLEL_ROLE,
-    after: AFTER_ROLE,
-    every: EVERY_ROLE,
-    step: "a step the trigger must reach: a call path in code (static) and a run in a trace",
-    reads: "data the trigger reads: only that the ID exists is checked",
-    emits: "an event the flow emits: an event ID (`events.<name>`) is checked for a dispatch in the trigger's code; any other name is prose",
-    calls: "a direct call of the trigger, checked without order",
-    invariant: "an invariant: text; the nested `test` lines are its evidence",
-    when: "a branch: text, its steps are optional in a trace",
-    test: `evidence for the flow: ${TEST_ROLE}`,
-    planned: "an intention: an ID that is not implemented yet; steps refer to it as usual",
-    question: QUESTION_ROLE,
-  },
-  "wiring-top": { wire: "the wiring of a module: how its dependencies are built" },
-  "system-top": {
-    component: COMPONENT_ROLE,
-    zone: ZONE_ROLE,
-    sequence: "a sequence: messages between components, top to bottom",
-    requirement: "a functional requirement of the system: text",
-    nfr: "a non-functional requirement (latency, availability, scale): text",
-    estimate: "a back-of-the-envelope estimate (users, QPS, storage): text",
-    tradeoff: "a trade-off the design makes: text",
-    question: QUESTION_ROLE,
-  },
-  zone: { component: COMPONENT_ROLE, zone: ZONE_ROLE },
-  component: {
-    code: "the map IDs this component is built from: `check` reads its dependencies there",
-    relation: "how this component talks to another: with `code`, `check` looks for the import that proves it",
-    scale: "how the component scales (replicas, shards): text",
-    table: "a table of this data store: its columns and indexes",
-  },
-  table: { column: "a column: name, type and flags `pk`, `unique`, `null`, `fk <table>.<column>`", index: "an index over columns of the table" },
-  sequence: { message: "a message from one component to another: `<from> → <to> [text]`, `⇢` for an asynchronous one" },
-  "migration-top": {
-    migrate: "an ID of the old stack and its counterpart in this repository (`planned` while it is not written yet)",
-    dropped: "an ID of the old stack that is not carried over, with the reason",
-  },
-  layer: { module: "a module declaration in this layer", event: "an event of the generated group `events`: dispatched by code, observed by the framework's config" },
-  module: {
-    module: "a submodule declaration",
-    fn: "a function declaration of this module",
-    type: "a type declaration of this module",
-    event: "an event declaration of this module",
-    dep: "a dependency of this module: an alias and the ID it points at",
-  },
-  fn: { calls: "calls this function makes in code" },
-  event: { calls: "the observers the framework calls when the event is dispatched" },
-  "rule-module": {
-    exports: "the public names of this module, compared with the code both ways",
-    "no-cycles": "a rule: no import cycle through this module or its submodules",
-  },
-  step: {
-    step: "a step the parent step must reach: a call path in code (static) and a run in a trace",
-    parallel: PARALLEL_ROLE,
-    after: AFTER_ROLE,
-    every: EVERY_ROLE,
-    reads: "data the parent step reads: only that the ID exists is checked",
-    emits: "an event the parent step emits: an event ID (`events.<name>`) is checked for a dispatch in the step's code; any other name is prose",
-    calls: "a direct call of the parent step, checked without order",
-    when: "a branch: text, its steps are optional in a trace",
-    test: `evidence for the parent step: ${TEST_ROLE}`,
-    invariant: "an invariant of the parent step: text; the nested `test` lines are its evidence",
-    question: QUESTION_ROLE,
-  },
-  when: {
-    then: "the outcome of the branch",
-    step: "a step of the branch: optional in a trace that does not take the branch",
-    parallel: PARALLEL_ROLE,
-    test: `evidence for the branch: ${TEST_ROLE}`,
-    question: QUESTION_ROLE,
-  },
-  invariant: { test: `evidence for the invariant: ${TEST_ROLE}` },
-  then: { test: `evidence for the outcome: ${TEST_ROLE}` },
-  parallel: { step: "a step of the parallel group: reached from the group's parent, in any order with the other steps of the group" },
-  timer: { test: `evidence for the timer: ${TEST_ROLE}` },
-  wire: { "wire-dep": "an override of a dependency of the wired module" },
-  "wire-dep": { when: "a condition → id: the dependency is that ID when the condition holds", compose: "a decorator composed around the dependency" },
-};
+const ROLES = new Map<Ctx, ReadonlyMap<NodeKind, string>>([
+  ["map-top", roles([["layer", "a layer declaration"], ...RULE_ROLES])],
+  ["rules-top", roles(RULE_ROLES)],
+  ["flow-top", roles([
+    ["kind", "the kind of the flow: `business` or `technical`"],
+    ["trigger", "where the flow starts: a trace is matched from the first trigger; `trigger route|cron|consumer|webhook <id>` names an entry point of that kind, `trigger event <id>` an event whose subscribers run the steps"],
+    ["continues", "this flow continues another one in a later request (a webhook after a checkout): both flows must exist; one trace does not cross requests"],
+    ["parallel", PARALLEL_ROLE],
+    ["after", AFTER_ROLE],
+    ["every", EVERY_ROLE],
+    ["step", "a step the trigger must reach: a call path in code (static) and a run in a trace"],
+    ["reads", "data the trigger reads: only that the ID exists is checked"],
+    ["emits", "an event the flow emits: an event ID (`events.<name>`) is checked for a dispatch in the trigger's code; any other name is prose"],
+    ["calls", "a direct call of the trigger, checked without order"],
+    ["invariant", "an invariant: text; the nested `test` lines are its evidence"],
+    ["when", "a branch: text, its steps are optional in a trace"],
+    ["test", `evidence for the flow: ${TEST_ROLE}`],
+    ["planned", "an intention: an ID that is not implemented yet; steps refer to it as usual"],
+    ["question", QUESTION_ROLE],
+  ])],
+  ["wiring-top", roles([["wire", "the wiring of a module: how its dependencies are built"]])],
+  ["system-top", roles([
+    ["component", COMPONENT_ROLE],
+    ["zone", ZONE_ROLE],
+    ["sequence", "a sequence: messages between components, top to bottom"],
+    ["requirement", "a functional requirement of the system: text"],
+    ["nfr", "a non-functional requirement (latency, availability, scale): text"],
+    ["estimate", "a back-of-the-envelope estimate (users, QPS, storage): text"],
+    ["tradeoff", "a trade-off the design makes: text"],
+    ["question", QUESTION_ROLE],
+  ])],
+  ["zone", roles([["component", COMPONENT_ROLE], ["zone", ZONE_ROLE]])],
+  ["component", roles([
+    ["code", "the map IDs this component is built from: `check` reads its dependencies there"],
+    ["relation", "how this component talks to another: with `code`, `check` looks for the import that proves it"],
+    ["scale", "how the component scales (replicas, shards): text"],
+    ["table", "a table of this data store: its columns and indexes"],
+  ])],
+  ["table", roles([["column", "a column: name, type and flags `pk`, `unique`, `null`, `fk <table>.<column>`"], ["index", "an index over columns of the table"]])],
+  ["sequence", roles([["message", "a message from one component to another: `<from> → <to> [text]`, `⇢` for an asynchronous one"]])],
+  ["migration-top", roles([
+    ["migrate", "an ID of the old stack and its counterpart in this repository (`planned` while it is not written yet)"],
+    ["dropped", "an ID of the old stack that is not carried over, with the reason"],
+  ])],
+  ["layer", roles([["module", "a module declaration in this layer"], ["event", "an event of the generated group `events`: dispatched by code, observed by the framework's config"]])],
+  ["module", roles([
+    ["module", "a submodule declaration"],
+    ["fn", "a function declaration of this module"],
+    ["type", "a type declaration of this module"],
+    ["event", "an event declaration of this module"],
+    ["dep", "a dependency of this module: an alias and the ID it points at"],
+  ])],
+  ["fn", roles([["calls", "calls this function makes in code"]])],
+  ["event", roles([["calls", "the observers the framework calls when the event is dispatched"]])],
+  ["rule-module", roles([
+    ["exports", "the public names of this module, compared with the code both ways"],
+    ["no-cycles", "a rule: no import cycle through this module or its submodules"],
+  ])],
+  ["step", roles([
+    ["step", "a step the parent step must reach: a call path in code (static) and a run in a trace"],
+    ["parallel", PARALLEL_ROLE],
+    ["after", AFTER_ROLE],
+    ["every", EVERY_ROLE],
+    ["reads", "data the parent step reads: only that the ID exists is checked"],
+    ["emits", "an event the parent step emits: an event ID (`events.<name>`) is checked for a dispatch in the step's code; any other name is prose"],
+    ["calls", "a direct call of the parent step, checked without order"],
+    ["when", "a branch: text, its steps are optional in a trace"],
+    ["test", `evidence for the parent step: ${TEST_ROLE}`],
+    ["invariant", "an invariant of the parent step: text; the nested `test` lines are its evidence"],
+    ["question", QUESTION_ROLE],
+  ])],
+  ["when", roles([
+    ["then", "the outcome of the branch"],
+    ["step", "a step of the branch: optional in a trace that does not take the branch"],
+    ["parallel", PARALLEL_ROLE],
+    ["test", `evidence for the branch: ${TEST_ROLE}`],
+    ["question", QUESTION_ROLE],
+  ])],
+  ["invariant", roles([["test", `evidence for the invariant: ${TEST_ROLE}`]])],
+  ["then", roles([["test", `evidence for the outcome: ${TEST_ROLE}`]])],
+  ["parallel", roles([["step", "a step of the parallel group: reached from the group's parent, in any order with the other steps of the group"]])],
+  ["timer", roles([["test", `evidence for the timer: ${TEST_ROLE}`]])],
+  ["wire", roles([["wire-dep", "an override of a dependency of the wired module"]])],
+  ["wire-dep", roles([["when", "a condition → id: the dependency is that ID when the condition holds"], ["compose", "a decorator composed around the dependency"]])],
+]);
 
 /** The role of an item of `kind` under `parent` (or at the top of `section`), or `null` when it has none there. */
 export function roleAt(section: SectionKind, parent: NodeKind | undefined, kind: NodeKind): string | null {
   if (kind === "ref") return parent === "entry" ? "an entry point: what it reaches counts as used" : "a layer outside the order: a dependency into it is free unless denied";
 
-  return ROLES[ctxOf(section, parent)]?.[kind] ?? null;
+  return ROLES.get(ctxOf(section, parent))?.get(kind) ?? null;
 }
 
 function keywordKind(ctx: Ctx, kw: string): NodeKind {
   if (ctx === "migration-top") return kw === "map" ? "migrate" : kw === "dropped" ? "dropped" : "unknown";
 
   if (isSystemCtx(ctx)) {
-    if ((COMPONENT_KINDS as readonly string[]).includes(kw)) return "component";
+    if (isComponentKind(kw)) return "component";
 
-    if ((RELATION_VERBS as readonly string[]).includes(kw)) return "relation";
+    if (isRelationVerb(kw)) return "relation";
 
     if (kw === "?") return "question";
 
-    return kw === "zone" || kw === "sequence" || kw === "code" || kw === "scale" || kw === "table" || kw === "index" || (INTERVIEW as readonly string[]).includes(kw) ? (kw as NodeKind) : "unknown";
+    return kw === "zone" || kw === "sequence" || kw === "code" || kw === "scale" || kw === "table" || kw === "index" || isInterviewKind(kw) ? kw : "unknown";
   }
 
   switch (kw) {
@@ -731,7 +748,9 @@ class Parser {
       if (extra) this.err("K005", extra.span, named ? "unexpected words in heading" : `unexpected words in heading; only \`# flow\`, \`# migration\` and \`# system\` take a name`, "arguments");
     }
 
-    this.doc.sections.push({ kind, heading: { value: title, span: full }, name, ...(comment ? { comment } : {}), items: [] });
+    const heading = { value: title, span: full };
+
+    this.doc.sections.push(comment ? { kind, heading, name, comment, items: [] } : { kind, heading, name, items: [] });
   }
 
   private item(l: Line, wsLen: number, indent: number): void {
@@ -1139,6 +1158,7 @@ class Parser {
         break;
       default: {
         if (ctx.startsWith("leaf:")) {
+          // SAFETY: a Ctx that starts with `leaf:` is `leaf:${NodeKind}`, so the rest of it is a NodeKind.
           const k = ctx.slice("leaf:".length) as NodeKind;
           this.err("K004", n.span, `\`${kindLabel(k)}\` cannot have nested items`);
         } else {
@@ -1637,13 +1657,15 @@ function decodeLinkPath(path: string): string {
   }
 }
 
+type LexedLine = { tokens: Token[]; comment: Spanned<string> | null };
+
 /**
  * Split an item head into tokens. Words end at whitespace or `,`;
  * `[text](target)` and `"quoted"` are single tokens (a `[` that opens no link
  * is an ordinary word); `<!-- … -->` ends the
  * head and is returned separately.
  */
-function lex(l: Line, start: number, errs: [Span, string][]): { tokens: Token[]; comment: Spanned<string> | null } {
+function lex(l: Line, start: number, errs: [Span, string][]): LexedLine {
   const s = l.text;
   let i = start;
   const tokens: Token[] = [];

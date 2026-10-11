@@ -27,7 +27,7 @@ const lines = (...rows: string[]): string => `${rows.join("\n")}\n`;
  * dispatches `order_placed` by a literal; `refund` dispatches a computed
  * name; `cancel` dispatches nothing. `events.xml` subscribes `Mailer`.
  */
-const MAGENTO: Record<string, string> = {
+const MAGENTO = {
   "keylang.json": JSON.stringify({ languages: ["php"], layers: { sales: ["app/code/Shop/Sales/**"] } }),
   "app/code/Shop/Sales/registration.php": lines(
     "<?php",
@@ -98,7 +98,7 @@ const MAGENTO: Record<string, string> = {
     "    }",
     "}",
   ),
-};
+} satisfies Record<string, string>;
 
 const SERVICE = "sales.Model.OrderService.OrderService";
 
@@ -152,6 +152,7 @@ function rows(dir: string, args: string[] = []): Row[] {
   const o = keylang(dir, ["check", "--format", "json", ...args]);
   assert.ok(o.stdout.startsWith("{"), o.stdout + o.stderr);
 
+  // SAFETY: `check --format json` prints its report object, whose `results` are the rows of docs/cli.md.
   return (JSON.parse(o.stdout) as { results: Row[] }).results;
 }
 
@@ -243,6 +244,7 @@ test("magento: an unknown event is K204 with the nearest event; a fn after `trig
   // Not a dangling K001 as well, and no static verdict on a line that is a K-code already.
   assert.doesNotMatch(o.stdout, /K001/);
   assert.doesNotMatch(o.stdout, /broken\.md:(3|7|12|13):\d+: static/);
+  // SAFETY: `parse --json` prints one IR document per file, each carrying its diagnostics.
   const parsed = JSON.parse(keylang(dir, ["parse", "--json", "keylang/flows/broken.md"]).stdout) as { diagnostics: { code: string }[] }[];
   assert.deepEqual(parsed[0]!.diagnostics, []);
 

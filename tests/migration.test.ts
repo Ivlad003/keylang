@@ -16,6 +16,7 @@ import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import type { JsonObject, JsonValue } from "../src/json.ts";
 import { migrationStatus, type Stack } from "../src/migration.ts";
 import { bin, keylang, tempDir, treeBytes, writeTree } from "./cli-helpers.ts";
 
@@ -24,7 +25,7 @@ const PLACE = "quote.Model.QuoteManagement.QuoteManagement.placeOrder";
 const SERVICE = "sales.Model.OrderService.OrderService";
 
 /** The old stack: PHP, Magento-shaped; three hand-written flows, the first and second with tests. */
-const OLD: Record<string, string> = {
+const OLD = {
   "keylang.json": JSON.stringify({ languages: ["php"], layers: { quote: ["app/code/Quote/**"], sales: ["app/code/Sales/**"] }, check: { tests: ".keylang/reports/*.json" } }),
   "app/code/Quote/Model/QuoteManagement.php":
     "<?php\nnamespace Magento\\Quote\\Model;\n\nuse Magento\\Sales\\Model\\OrderService;\n\nclass QuoteManagement\n{\n    private OrderService $orders;\n\n    public function __construct(OrderService $orders)\n    {\n        $this->orders = $orders;\n    }\n\n    /** Places the order for a cart. */\n    public function placeOrder(int $cartId): int\n    {\n        return $this->orders->place($cartId);\n    }\n}\n",
@@ -33,26 +34,31 @@ const OLD: Record<string, string> = {
   "keylang/flows/checkout.md": `# flow checkout\n\n- trigger ${PLACE}\n  - step ${SERVICE}.place\n    - test app/code/Quote/Test/Unit/QuoteManagementTest.php "places an order"\n`,
   "keylang/flows/refund.md": `# flow refund\n\n- trigger ${SERVICE}.refund\n  - test app/code/Sales/Test/Unit/OrderServiceTest.php "refunds an order"\n`,
   "keylang/flows/report.md": `# flow report\n\n- trigger ${SERVICE}.dailyReport\n`,
-};
+} satisfies Record<string, string>;
 
 const TABLE = `# migration magento\n\n- map ${PLACE} → storefront.checkout.placeOrder\n- map ${SERVICE}.place → orders.service.place\n- map ${SERVICE}.dailyReport → orders.service.dailyReport\n`;
 
 /** The new stack: TypeScript, a storefront; checkout with the same test name, a daily report without tests, the table. */
-function newFiles(from: string | null): Record<string, string> {
+function newFiles(from: string | null) {
+  const config: JsonObject = { languages: ["typescript"], module: "file", layers: { storefront: ["src/storefront/**"], orders: ["src/orders/**"] }, check: { tests: ".keylang/reports/*.json" } };
+
+  if (from !== null) config.migration = { from };
+
   return {
-    "keylang.json": JSON.stringify({ languages: ["typescript"], module: "file", layers: { storefront: ["src/storefront/**"], orders: ["src/orders/**"] }, check: { tests: ".keylang/reports/*.json" }, ...(from === null ? {} : { migration: { from } }) }),
+    "keylang.json": JSON.stringify(config),
     "src/storefront/checkout.ts": 'import { place } from "../orders/service.ts";\n/** Places the order for a cart. */\nexport function placeOrder(cartId: number): number {\n  return place(cartId);\n}\n',
     "src/orders/service.ts": "export function place(cartId: number): number {\n  return cartId;\n}\nexport function dailyReport(): string[] {\n  return [];\n}\n",
     "keylang/flows/checkout.md": '# flow checkout\n\n- trigger storefront.checkout.placeOrder\n  - step orders.service.place\n    - test tests/checkout.test.ts "places an order"\n',
     "keylang/flows/daily-report.md": "# flow daily-report\n\n- trigger orders.service.dailyReport\n",
     "keylang/migration.md": TABLE,
-  };
+  } satisfies Record<string, string>;
 }
 
 function snapshotIdOf(dir: string): string {
   const r = keylang(dir, ["map"]);
   assert.equal(r.status, 0, r.stderr);
 
+  // SAFETY: `keylang map` exited 0 just above, and every snapshot it writes carries a string `snapshotId`.
   return (JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as { snapshotId: string }).snapshotId;
 }
 
@@ -60,8 +66,10 @@ function report(dir: string, snapshotId: string, tests: { file: string; name: st
   writeTree(dir, { ".keylang/reports/tests.json": JSON.stringify({ schemaVersion: 1, snapshotId, runId: "r1", tests }) });
 }
 
+type Stacks = { old: string; next: string };
+
 /** Both repositories with their maps and test reports: both checkout tests pass, the old refund test passes. */
-function setup(t: TestContext, withFrom = false): { old: string; next: string } {
+function setup(t: TestContext, withFrom = false): Stacks {
   const old = tempDir(t, "keylang-migration-old-");
   writeTree(old, OLD);
   report(old, snapshotIdOf(old), [
@@ -93,6 +101,7 @@ test("migration status --from <old dir>: checkout ok by the same test name, refu
   const before = treeBytes(old);
   const r = keylang(next, ["migration", "status", "--from", old, "--json"]);
   assert.equal(r.status, 1, r.stderr + r.stdout);
+  // SAFETY: `migration status --json` prints the status object of docs/cli.md that `Status` names.
   const status = JSON.parse(r.stdout) as Status;
   assert.deepEqual(verdicts(status), [
     ["checkout", "ok", "checkout"],
@@ -123,14 +132,18 @@ test("migration status --from <old dir>: checkout ok by the same test name, refu
 
 test("migration status: a failing shared test in the new report fails the flow; a failing old one leaves it unverified", (t) => {
   const { old, next } = setup(t);
+  // SAFETY: `setup` mapped `next`, and every snapshot carries a string `snapshotId`.
   const id = (JSON.parse(readFileSync(join(next, ".keylang/index.json"), "utf8")) as { snapshotId: string }).snapshotId;
   report(next, id, [{ file: "tests/checkout.test.ts", name: "places an order", status: "fail" }]);
+  // SAFETY: `migration status --json` prints the status object of docs/cli.md that `Status` names.
   const failed = JSON.parse(keylang(next, ["migration", "status", "--from", old, "--json"]).stdout) as Status;
   assert.equal(failed.flows[0]!.verdict, "fail");
   assert.match(failed.flows[0]!.reasons[0]!, /^test "places an order" fails in the new stack/);
   report(next, id, [{ file: "tests/checkout.test.ts", name: "places an order", status: "pass" }]);
+  // SAFETY: `setup` mapped `old`, and every snapshot carries a string `snapshotId`.
   const oldId = (JSON.parse(readFileSync(join(old, ".keylang/index.json"), "utf8")) as { snapshotId: string }).snapshotId;
   report(old, oldId, [{ file: "app/code/Quote/Test/Unit/QuoteManagementTest.php", name: "places an order", status: "fail" }]);
+  // SAFETY: `migration status --json` prints the status object of docs/cli.md that `Status` names.
   const shaky = JSON.parse(keylang(next, ["migration", "status", "--from", old, "--json"]).stdout) as Status;
   assert.equal(shaky.flows[0]!.verdict, "unverified");
   assert.match(shaky.flows[0]!.reasons.join("\n"), /test "places an order" in the old stack: failed in/);
@@ -142,7 +155,8 @@ test("map --export-index: the old stack as one file gives the same parity as its
   const r = keylang(old, ["map", "--export-index", exported]);
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stderr, /wrote .*old-index\.json/);
-  const body = JSON.parse(readFileSync(exported, "utf8")) as { snapshotId: string; nodes: object; migration: { schema: number; flows: { name: string; source: string }[]; tests: unknown[] } };
+  // SAFETY: `map --export-index` exited 0 above, so the file is a snapshot with its `migration` block.
+  const body = JSON.parse(readFileSync(exported, "utf8")) as { snapshotId: string; nodes: JsonObject; migration: { schema: number; flows: { name: string; source: string }[]; tests: JsonValue[] } };
   assert.equal(body.migration.schema, 1);
   assert.deepEqual(body.migration.flows.map((flow) => [flow.name, flow.source]), [["checkout", "spec"], ["refund", "spec"], ["report", "spec"]]);
   assert.equal(body.migration.tests.length, 2);
@@ -151,8 +165,10 @@ test("map --export-index: the old stack as one file gives the same parity as its
   const again = keylang(next, ["migration", "status", "--from", "old-index.json", "--json"]);
   assert.equal(again.stdout, fromFile.stdout, "deterministic");
   const fromDir = keylang(next, ["migration", "status", "--from", old, "--json"]);
-  const strip = (text: string): object => ({ ...(JSON.parse(text) as Status), from: "" });
+  // SAFETY: both runs printed the status object of `migration status --json` that `Status` names.
+  const strip = (text: string): Status => ({ ...(JSON.parse(text) as Status), from: "" });
   assert.deepEqual(strip(fromFile.stdout), strip(fromDir.stdout));
+  // SAFETY: `migration status --json` prints the status object of docs/cli.md that `Status` names.
   assert.equal((JSON.parse(fromFile.stdout) as Status).from, "old-index.json");
   assert.equal(keylang(old, ["map", "--check", "--export-index", exported]).status, 2);
 });
@@ -161,6 +177,7 @@ test("migration status --from a plain .keylang/index.json: flows only as discove
   const { old, next } = setup(t);
   const plain = keylang(next, ["migration", "status", "--from", join(old, ".keylang/index.json"), "--json"]);
   assert.equal(plain.status, 0, plain.stderr);
+  // SAFETY: `migration status --json` prints the status object of docs/cli.md that `Status` names.
   const status = JSON.parse(plain.stdout) as Status;
   assert.deepEqual(status.flows, [], "PHP without a framework adapter has no entry points to draft from");
   assert.match(status.notes.join("\n"), /plain index\.json/);
@@ -209,6 +226,7 @@ test("migration status with migration.from of keylang.json; a dropped trigger is
   writeTree(next, { "keylang/migration.md": `${TABLE}- dropped ${SERVICE}.refund refunds move to the payment provider\n` });
   const r = keylang(next, ["migration", "status", "--json"]);
   assert.equal(r.status, 0, r.stderr + r.stdout);
+  // SAFETY: `migration status --json` prints the status object of docs/cli.md that `Status` names.
   const status = JSON.parse(r.stdout) as Status & { droppedFlows: { name: string; reason: string }[]; dropped: { id: string }[] };
   assert.deepEqual(verdicts(status), [["checkout", "ok", "checkout"], ["report", "unverified", "daily-report"]]);
   assert.deepEqual(status.droppedFlows, [{ name: "refund", reason: "refunds move to the payment provider" }]);
@@ -220,6 +238,7 @@ test("migration status with migration.from of keylang.json; a dropped trigger is
   t.after(() => client.close());
   assert.ok((await client.listTools()).tools.some((tool) => tool.name === "migration_status"));
   const before = [...treeBytes(next)].filter(([path]) => !path.startsWith(".keylang/cache"));
+  // SAFETY: an MCP tool answers with text content blocks and an optional `isError` (src/mcp.ts).
   const answer = (await client.callTool({ name: "migration_status", arguments: {} })) as { content: { text: string }[]; isError?: boolean };
   assert.notEqual(answer.isError, true, answer.content[0]?.text);
   assert.deepEqual(JSON.parse(answer.content.map((c) => c.text).join("")), JSON.parse(r.stdout));

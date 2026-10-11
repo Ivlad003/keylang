@@ -13,7 +13,7 @@ import { createHash } from "node:crypto";
 import { diagnostic, type Diagnostic } from "./diag.ts";
 import { externalPackageId, EXTERNAL } from "./external-ids.ts";
 import { sectionNodes, type Document, type Node } from "./ir.ts";
-import type { ComponentKind } from "./parser.ts";
+import { isComponentKind, isRelationVerb, type ComponentKind } from "./parser.ts";
 import { nearestName } from "./resolve.ts";
 import { compareText, type Span } from "./span.ts";
 import { evidenceIds, technologiesOfPackage, technologyOf, type Technology } from "./system-catalog.ts";
@@ -103,8 +103,10 @@ export interface SystemSpec {
   notes: { kind: NoteKind; text: string; line: number }[];
 }
 
+type SystemsOf = { systems: SystemSpec[]; diagnostics: Diagnostic[] };
+
 /** Every `# system` section of the documents in file and line order, and the diagnostics of their names (K002, K401, K402). */
-export function systemsOf(docs: readonly Document[]): { systems: SystemSpec[]; diagnostics: Diagnostic[] } {
+export function systemsOf(docs: readonly Document[]): SystemsOf {
   const systems: SystemSpec[] = [];
   const diagnostics: Diagnostic[] = [];
   const seen = new Map<string, { file: string; span: Span }>();
@@ -153,17 +155,17 @@ function compileSystem(file: string, name: string, line: number, nodes: readonly
       if (declare("zone", declared, node.name.value, node.name.span)) system.zones.push({ name: node.name.value, label: node.text?.value ?? null, parent: zone, line: node.span.start.line });
 
       for (const child of node.children) visit(child, node.name.value);
-    } else if (node.kind === "component" && node.name && node.label) {
+    } else if (node.kind === "component" && node.name && node.label && isComponentKind(node.label.value)) {
       if (!declare("component", declared, node.name.value, node.name.span)) return;
-      const component: SystemComponent = { name: node.name.value, kind: node.label.value as ComponentKind, tech: node.text?.value ?? null, zone, code: [], scale: null, description: text(node), tables: [], line: node.span.start.line, col: node.name.span.start.col };
+      const component: SystemComponent = { name: node.name.value, kind: node.label.value, tech: node.text?.value ?? null, zone, code: [], scale: null, description: text(node), tables: [], line: node.span.start.line, col: node.name.span.start.col };
       system.components.push(component);
       const tables = new Map<string, Span>();
 
       for (const child of node.children) {
         if (child.kind === "code") component.code.push(...child.refs.map((ref) => ref.target));
         else if (child.kind === "scale") component.scale = child.text?.value ?? null;
-        else if (child.kind === "relation" && child.name && child.label) {
-          system.relations.push({ from: component.name, verb: child.label.value as RelationVerb, to: child.name.value, caption: child.text?.value ?? null, line: child.span.start.line, col: child.span.start.col, span: child.name.span });
+        else if (child.kind === "relation" && child.name && child.label && isRelationVerb(child.label.value)) {
+          system.relations.push({ from: component.name, verb: child.label.value, to: child.name.value, caption: child.text?.value ?? null, line: child.span.start.line, col: child.span.start.col, span: child.name.span });
           pendingRefs.push({ name: child.name.value, span: child.name.span, what: `\`${child.label.value}\`` });
         } else if (child.kind === "table" && child.name && declare("table", tables, child.name.value, child.name.span)) {
           component.tables.push(compileTable(file, component.name, child, diagnostics));
@@ -358,8 +360,10 @@ function pathText(path: readonly string[]): string {
   return path.length <= 3 ? path.map((id) => `\`${id}\``).join(" → ") : `\`${path[0]}\` → … → \`${path.at(-1)}\` (${path.length - 1} imports)`;
 }
 
+type SystemCheck = { systems: SystemSpec[]; diagnostics: Diagnostic[]; verdicts: Verdict[] };
+
 /** `check` of every `# system`: K002/K401/K402 of the names, the `system` verdicts of relations from bound code, K403. */
-export function systemCheck(docs: readonly Document[], snapshot: SystemSnapshot | null): { systems: SystemSpec[]; diagnostics: Diagnostic[]; verdicts: Verdict[] } {
+export function systemCheck(docs: readonly Document[], snapshot: SystemSnapshot | null): SystemCheck {
   const { systems, diagnostics } = systemsOf(docs);
   const verdicts: Verdict[] = [];
 

@@ -13,7 +13,7 @@ import { checkoutRepo } from "./tui-fixture.ts";
 
 const bin = join(dirname(fileURLToPath(import.meta.url)), "..", "bin/keylang.js");
 
-export const DIAGRAM_FILES: Record<string, string> = {
+export const DIAGRAM_FILES = {
   "src/presentation/orders.ts": 'import { create } from "../domain/order.ts";\nexport function listOrders(): void {\n  create();\n}\n',
   "src/presentation/server.ts": [
     'import { checkout } from "./terminal.ts";',
@@ -23,7 +23,7 @@ export const DIAGRAM_FILES: Record<string, string> = {
     'app.get("/orders", listOrders);',
     "",
   ].join("\n"),
-};
+} satisfies Record<string, string>;
 
 /** The checkout repository with routes and its discovered flows written. */
 export function diagramsRepo(t: { after: (f: () => void) => void }): string {
@@ -58,7 +58,11 @@ export function editorModelOf(
       const n = seen.get(base) ?? 0;
       seen.set(base, n + 1);
 
-      return { key: n === 0 ? base : `${base}#${n}`, kind: e.kind, from: e.from, to: e.to, ...(e.label ? { label: e.label } : {}) };
+      const edge: FixtureModel["edges"][number] = { key: n === 0 ? base : `${base}#${n}`, kind: e.kind, from: e.from, to: e.to };
+
+      if (e.label) edge.label = e.label;
+
+      return edge;
     }),
     lanes: diagram.groups.map((g) => ({ key: `lane:${g.id}`, id: g.id, label: g.label, x: g.x, y: g.y, w: g.w, h: g.h })),
   };
@@ -72,11 +76,11 @@ export function targetRepo(t: { after: (f: () => void) => void }): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-target-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
-  const files: Record<string, string> = {
+  const files = {
     "keylang.json": `${JSON.stringify({ languages: ["typescript"], layers: { api: ["src/api/**"], core: ["src/core/**"] } }, null, 2)}\n`,
     "src/core/base.ts": "/** The shared base. */\nexport function base(): number {\n  return 1;\n}\n",
     "src/api/http.ts": 'import { base } from "../core/base.ts";\nexport function serve(): number {\n  return base();\n}\n',
-  };
+  } satisfies Record<string, string>;
 
   for (const [path, text] of Object.entries(files)) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });

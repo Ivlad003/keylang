@@ -31,8 +31,13 @@ import type { Language } from "./languages.ts";
 import { compareText } from "./span.ts";
 import type { SpecIR } from "./spec-ir.ts";
 
+/** A choice of the dialog, by what it shows: the languages it stands for. */
+interface LanguageChoices {
+  readonly [choice: string]: readonly Language[];
+}
+
 /** The languages the dialog offers, by what it shows. */
-export const GREENFIELD_LANGUAGES: Readonly<Record<string, readonly Language[]>> = {
+export const GREENFIELD_LANGUAGES: LanguageChoices = {
   typescript: ["typescript"],
   python: ["python"],
   php: ["php"],

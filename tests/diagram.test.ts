@@ -12,7 +12,7 @@ import { analyze, type Analysis } from "../src/analyze.ts";
 import { checkResults } from "../src/check-results.ts";
 import { diagramOf, layout, parseView, viewsOf, type Diagram, type DiagramView } from "../src/diagram.ts";
 
-const TS_SHOP: Record<string, string> = {
+const TS_SHOP = {
   "keylang.json": JSON.stringify({ languages: ["typescript"], layers: { domain: ["src/domain/**"], infrastructure: ["src/infrastructure/**"], application: ["src/application/**"], presentation: ["src/presentation/**"] } }),
   "package.json": JSON.stringify({ name: "shop", bin: { shop: "src/presentation/cli.ts" } }),
   "src/domain/order.ts": 'import { save } from "../infrastructure/store.ts";\nexport function create(): void { save(); }\nexport function reject(): void {}\nexport function charge(): void {}\n',
@@ -36,9 +36,9 @@ const TS_SHOP: Record<string, string> = {
     "- emits event order.placed",
     "",
   ].join("\n"),
-};
+} satisfies Record<string, string>;
 
-const PY_SHOP: Record<string, string> = {
+const PY_SHOP = {
   "keylang.json": JSON.stringify({ languages: ["python"], layers: { domain: ["shop/domain/**"], app: ["shop/app/**"] } }),
   "pyproject.toml": '[project]\nname = "shop"\nversion = "1.0"\n\n[project.scripts]\nshop = "shop.app.main:run"\n',
   "shop/__init__.py": "",
@@ -47,7 +47,7 @@ const PY_SHOP: Record<string, string> = {
   "shop/app/__init__.py": "",
   "shop/app/main.py": "from shop.domain.order import create\n\n\ndef run(handler):\n    create()\n    handler.notify()\n",
   "keylang/flows/order.md": "# flow order\n\n- trigger app.main.run\n- step domain.order.create\n  - step domain.order.validate\n",
-};
+} satisfies Record<string, string>;
 
 async function analyzed(t: { after: (f: () => void) => void }, files: Record<string, string>): Promise<Analysis> {
   const dir = mkdtempSync(join(tmpdir(), "keylang-diagram-"));
@@ -59,6 +59,11 @@ async function analyzed(t: { after: (f: () => void) => void }, files: Record<str
   }
 
   return analyze({ root: dir });
+}
+
+/** `parseView` answers a query it refuses with the reason text instead of a view. */
+function isRefusal(view: DiagramView | string): view is string {
+  return typeof view === "string";
 }
 
 function draw(analysis: Analysis, view: DiagramView): Diagram {
@@ -257,7 +262,7 @@ test("diagram: views list the flows, entries, layers and processes; a query name
   assert.deepEqual(q("view=process&domain=sales"), { kind: "process", domain: "sales" });
 
   for (const bad of ["", "view=nope", "view=flow", "view=entry", "view=entry&id=a&depth=x", "view=entry&id=a&depth=0", "view=entry&id=a&depth=99"]) {
-    assert.equal(typeof q(bad), "string", bad);
+    assert.ok(isRefusal(q(bad)), bad);
   }
 });
 

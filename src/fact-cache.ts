@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { CONFIG_FILE } from "./config.ts";
 import type { FileFacts } from "./extract/facts.ts";
 import { isConfigFacts, type ConfigFacts } from "./frameworks/adapter.ts";
+import { isJsonBoolean, isJsonNumber, isJsonObject, isJsonString, parseJson, type JsonObject, type JsonValue } from "./json.ts";
 import { landing, writeAtomic, writeProblem } from "./safe-write.ts";
 import { compareText } from "./span.ts";
 
@@ -33,13 +34,16 @@ interface Stored {
   configs?: Record<string, { sha256: string; facts: ConfigFacts }>;
 }
 
+/** A field of a parsed cache entry: absent, or any JSON value. */
+type Field = JsonValue | undefined;
+
 /** Config entries of a cache of this schema and version; one of the wrong shape is parsed again. */
-function storedConfigs(value: unknown, version: string): NonNullable<Stored["configs"]> {
-  if (!isRecord(value) || value.schema !== CACHE_SCHEMA || value.version !== version || !isRecord(value.configs)) return {};
+function storedConfigs(value: JsonValue, version: string): NonNullable<Stored["configs"]> {
+  if (!isJsonObject(value) || value.schema !== CACHE_SCHEMA || value.version !== version || !isJsonObject(value.configs)) return {};
   const configs: NonNullable<Stored["configs"]> = {};
 
   for (const [path, entry] of Object.entries(value.configs)) {
-    if (!isRecord(entry) || typeof entry.sha256 !== "string" || !isConfigFacts(entry.facts) || entry.facts.path !== path) continue;
+    if (!isJsonObject(entry) || !isJsonString(entry.sha256) || !isConfigFacts(entry.facts) || entry.facts.path !== path) continue;
     configs[path] = { sha256: entry.sha256, facts: entry.facts };
   }
 
@@ -51,23 +55,24 @@ function storedConfigs(value: unknown, version: string): NonNullable<Stored["con
  * shape — any field the graph reads, at any depth — is dropped, so its file is
  * extracted again instead of trusted or thrown on.
  */
-function storedFiles(value: unknown, version: string): Stored["files"] {
-  if (!isRecord(value) || value.schema !== CACHE_SCHEMA || value.version !== version || !isRecord(value.files)) return {};
+function storedFiles(value: JsonValue, version: string): Stored["files"] {
+  if (!isJsonObject(value) || value.schema !== CACHE_SCHEMA || value.version !== version || !isJsonObject(value.files)) return {};
   const files: Stored["files"] = {};
 
   for (const [path, entry] of Object.entries(value.files)) {
-    if (!isRecord(entry) || typeof entry.sha256 !== "string" || !isStoredFacts(entry.facts) || entry.facts.path !== path) continue;
+    if (!isJsonObject(entry) || !isJsonString(entry.sha256) || !isStoredFacts(entry.facts) || entry.facts.path !== path) continue;
     files[path] = { sha256: entry.sha256, facts: entry.facts };
   }
 
   return files;
 }
 
-function isStoredFacts(value: unknown): value is StoredFacts {
-  if (!isRecord(value)) return false;
+/** A JSON object with every field of `StoredFacts`, checked at any depth. */
+function isStoredFacts(value: Field): value is JsonObject & StoredFacts {
+  if (!isJsonObject(value)) return false;
 
   return (
-    typeof value.path === "string" &&
+    isJsonString(value.path) &&
     isPosition(value.endLine) &&
     isPosition(value.endCol) &&
     every(value.imports, isImport) &&
@@ -75,41 +80,41 @@ function isStoredFacts(value: unknown): value is StoredFacts {
     every(value.exports, isString) &&
     every(value.reexportsAll, isString) &&
     every(value.exportRows, isExportRow) &&
-    every(value.unsupported, (u) => isRecord(u) && isRange(u) && typeof u.text === "string" && typeof u.reason === "string" && optional(u.symbol, isString)) &&
-    every(value.valueRefs, (r) => isRecord(r) && typeof r.name === "string" && optionalTrue(r.member) && isPosition(r.line) && isPosition(r.col)) &&
+    every(value.unsupported, (u) => isJsonObject(u) && isRange(u) && isJsonString(u.text) && isJsonString(u.reason) && optional(u.symbol, isString)) &&
+    every(value.valueRefs, (r) => isJsonObject(r) && isJsonString(r.name) && optionalTrue(r.member) && isPosition(r.line) && isPosition(r.col)) &&
     every(value.moduleCalls, isCall) &&
     (value.completeness === "complete" || value.completeness === "opaque") &&
-    (value.parseError === null || (isRecord(value.parseError) && isPosition(value.parseError.line) && typeof value.parseError.reason === "string")) &&
+    (value.parseError === null || (isJsonObject(value.parseError) && isPosition(value.parseError.line) && isJsonString(value.parseError.reason))) &&
     optional(value.doc, isString) &&
-    optional(value.symbols, (symbols) => every(symbols, (s) => isRecord(s) && typeof s.name === "string" && typeof s.qualified === "string" && (s.table === "class" || s.table === "function" || s.table === "const")))
+    optional(value.symbols, (symbols) => every(symbols, (s) => isJsonObject(s) && isJsonString(s.name) && isJsonString(s.qualified) && (s.table === "class" || s.table === "function" || s.table === "const")))
   );
 }
 
-function isImport(value: unknown): boolean {
+function isImport(value: Field): boolean {
   return (
-    isRecord(value) &&
-    typeof value.source === "string" &&
+    isJsonObject(value) &&
+    isJsonString(value.source) &&
     isRange(value) &&
-    typeof value.text === "string" &&
-    typeof value.reexport === "boolean" &&
+    isJsonString(value.text) &&
+    isJsonBoolean(value.reexport) &&
     optionalTrue(value.optional) &&
     optionalTrue(value.glob) &&
     optionalTrue(value.typeOnly) &&
     optionalTrue(value.inlineTypeOnly) &&
-    every(value.bindings, (b) => isRecord(b) && typeof b.local === "string" && ((b.kind === "module" && optionalTrue(b.namespace)) || b.kind === "default" || (b.kind === "named" && typeof b.imported === "string")))
+    every(value.bindings, (b) => isJsonObject(b) && isJsonString(b.local) && ((b.kind === "module" && optionalTrue(b.namespace)) || b.kind === "default" || (b.kind === "named" && isJsonString(b.imported))))
   );
 }
 
-function isDecl(value: unknown): boolean {
+function isDecl(value: Field): boolean {
   return (
-    isRecord(value) &&
+    isJsonObject(value) &&
     (value.kind === "fn" || value.kind === "class" || value.kind === "type") &&
-    typeof value.name === "string" &&
+    isJsonString(value.name) &&
     isRange(value) &&
-    (value.signature === null || typeof value.signature === "string") &&
-    typeof value.exported === "boolean" &&
+    (value.signature === null || isJsonString(value.signature)) &&
+    isJsonBoolean(value.exported) &&
     every(value.calls, isCall) &&
-    every(value.types, (t) => isRecord(t) && typeof t.name === "string" && isRange(t) && typeof t.text === "string") &&
+    every(value.types, (t) => isJsonObject(t) && isJsonString(t.name) && isRange(t) && isJsonString(t.text)) &&
     every(value.members, isDecl) &&
     optional(value.fingerprint, isString) &&
     optionalTrue(value.accessor) &&
@@ -123,10 +128,10 @@ function isDecl(value: unknown): boolean {
   );
 }
 
-function isCall(value: unknown): boolean {
+function isCall(value: Field): boolean {
   return (
-    isRecord(value) &&
-    typeof value.callee === "string" &&
+    isJsonObject(value) &&
+    isJsonString(value.callee) &&
     isRange(value) &&
     optionalTrue(value.opaque) &&
     optional(value.bound, isBound) &&
@@ -138,64 +143,60 @@ function isCall(value: unknown): boolean {
   );
 }
 
-function isHook(value: unknown): boolean {
+function isHook(value: Field): boolean {
   return (
-    isRecord(value) &&
-    typeof value.name === "string" &&
-    typeof value.fallback === "string" &&
+    isJsonObject(value) &&
+    isJsonString(value.name) &&
+    isJsonString(value.fallback) &&
     (value.param === null || (isInteger(value.param) && value.param >= 0)) &&
-    typeof value.path === "string" &&
+    isJsonString(value.path) &&
     (value.owner === "self" || value.owner === "constructor")
   );
 }
 
-function isPass(value: unknown): boolean {
-  return isRecord(value) && Number.isInteger(value.arg) && typeof value.path === "string" && typeof value.callee === "string" && optional(value.bound, isBound) && optional(value.receiver, isString);
+function isPass(value: Field): boolean {
+  return isJsonObject(value) && Number.isInteger(value.arg) && isJsonString(value.path) && isJsonString(value.callee) && optional(value.bound, isBound) && optional(value.receiver, isString);
 }
 
 const ROW_KINDS = new Set(["fn", "value", "class", "type", "alias", "default", "reexport"]);
 
 const ROW_FORMS = new Set(["alias", "default", "reexport", "namespace"]);
 
-function isExportRow(value: unknown): boolean {
-  return isRecord(value) && typeof value.name === "string" && typeof value.kind === "string" && ROW_KINDS.has(value.kind) && (value.local === null || typeof value.local === "string") && optional(value.form, (f) => typeof f === "string" && ROW_FORMS.has(f)) && optional(value.from, isString);
+function isExportRow(value: Field): boolean {
+  return isJsonObject(value) && isJsonString(value.name) && isJsonString(value.kind) && ROW_KINDS.has(value.kind) && (value.local === null || isJsonString(value.local)) && optional(value.form, (f) => isJsonString(f) && ROW_FORMS.has(f)) && optional(value.from, isString);
 }
 
-function isBound(value: unknown): boolean {
+function isBound(value: Field): boolean {
   return value === "parameter" || value === "local";
 }
 
 /** 1-based `line`, `col`, `endLine`, `endCol`. */
-function isRange(value: Record<string, unknown>): boolean {
+function isRange(value: JsonObject): boolean {
   return isPosition(value.line) && isPosition(value.col) && isPosition(value.endLine) && isPosition(value.endCol);
 }
 
-function isPosition(value: unknown): boolean {
+function isPosition(value: Field): boolean {
   return isInteger(value) && value >= 1;
 }
 
-function isInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isInteger(value);
+function isInteger(value: Field): value is number {
+  return isJsonNumber(value) && Number.isInteger(value);
 }
 
-function isString(value: unknown): boolean {
-  return typeof value === "string";
+function isString(value: Field): boolean {
+  return isJsonString(value);
 }
 
-function every(value: unknown, check: (item: unknown) => boolean): boolean {
+function every(value: Field, check: (item: JsonValue) => boolean): boolean {
   return Array.isArray(value) && value.every(check);
 }
 
-function optional(value: unknown, check: (item: unknown) => boolean): boolean {
+function optional(value: Field, check: (item: JsonValue) => boolean): boolean {
   return value === undefined || check(value);
 }
 
-function optionalTrue(value: unknown): boolean {
+function optionalTrue(value: Field): boolean {
   return value === undefined || value === true;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 const memory = new Map<string, { hash: string; facts: FileFacts }>();
@@ -228,7 +229,7 @@ export class FactCache {
 
     if (existsSync(file)) {
       try {
-        const value: unknown = JSON.parse(readFileSync(file, "utf8"));
+        const value = parseJson(readFileSync(file, "utf8"));
         disk = storedFiles(value, version);
         configs = storedConfigs(value, version);
       } catch {
@@ -319,7 +320,9 @@ export class FactCache {
     const configs: NonNullable<Stored["configs"]> = {};
 
     for (const [path, entry] of [...this.usedConfigs].sort(([a], [b]) => compareText(a, b))) configs[path] = entry;
-    const stored: Stored = { schema: CACHE_SCHEMA, version: this.version, files, ...(this.usedConfigs.size > 0 ? { configs } : {}) };
+    const stored: Stored = { schema: CACHE_SCHEMA, version: this.version, files };
+
+    if (this.usedConfigs.size > 0) stored.configs = configs;
 
     return `${JSON.stringify(stored)}\n`;
   }

@@ -11,6 +11,7 @@ import { sha1 } from "@noble/hashes/legacy.js";
 import * as git from "isomorphic-git";
 import type { BaseOrigin } from "../../src/feature-status.ts";
 import type { ChangedFiles, GitSummary } from "../../src/git-changes.ts";
+import { isJsonObject, isJsonString, parseJson } from "../../src/json.ts";
 import { compareText } from "../../src/span.ts";
 import type { UnreadFile } from "../src/local-protocol.ts";
 import * as memory from "./shims/fs.ts";
@@ -68,8 +69,8 @@ function fsFor() {
 
   return {
     promises: {
-      readFile: async (path: string, options?: unknown) => memory.readFileSync(path, options),
-      readdir: async (path: string) => memory.readdirSync(path) as string[],
+      readFile: async (path: string, options?: memory.ReadOptions) => memory.readFileSync(path, options),
+      readdir: async (path: string) => memory.readdirSync(path),
       stat: async (path: string) => withIds(memory.statSync(path)!),
       lstat: async (path: string) => withIds(memory.lstatSync(path)!),
       readlink: async (path: string) => memory.readlinkSync(path),
@@ -89,6 +90,11 @@ const ownState = (path: string): boolean => path === ".keylang" || path.startsWi
 const isBinary = (bytes: Uint8Array): boolean => bytes.subarray(0, 8000).includes(0);
 
 const decoder = new TextDecoder();
+
+/** isomorphic-git types a config value and a merge base as `any`: a string is what keylang asks for. */
+function isGitText(value: unknown): value is string {
+  return typeof value === "string";
+}
 
 const MAIN_BRANCHES: readonly (readonly [string, string])[] = [
   ["refs/heads/main", "main"],
@@ -126,7 +132,7 @@ class Reader {
     try {
       const oid = /^[0-9a-f]{4,40}$/.test(name) ? await git.expandOid({ ...this.base, oid: name }) : await git.resolveRef({ ...this.base, ref: name });
       const object = await git.readObject({ ...this.base, oid });
-      let commit = object.type === "tag" ? (object.object as { object: string }).object : object.type === "commit" ? oid : null;
+      let commit = object.format === "parsed" && object.type === "tag" ? object.object.object : object.type === "commit" ? oid : null;
 
       for (const [, op, digits] of suffix.matchAll(/([~^])(\d*)/g)) {
         if (commit === null) return null;
@@ -154,7 +160,8 @@ class Reader {
       branch = null;
     }
 
-    const origin = ((await git.getConfig({ fs: this.fs, dir: this.root, path: "remote.origin.url" })) as string | undefined) ?? null;
+    const configured = await git.getConfig({ fs: this.fs, dir: this.root, path: "remote.origin.url" });
+    const origin = isGitText(configured) ? configured : null;
     const local = (await git.listBranches({ ...this.base })).sort(compareText);
     const remotes = (await git.listRemotes({ fs: this.fs, dir: this.root })).map((remote) => remote.remote).sort(compareText);
     const remote: string[] = [];
@@ -190,9 +197,9 @@ class Reader {
     const tip = await this.commit(main[0]);
 
     if (head === null || tip === null) return { ...headBase, main: main[1] };
-    const [fork] = (await git.findMergeBase({ ...this.base, oids: [head, tip] })) as string[];
+    const [fork] = await git.findMergeBase({ ...this.base, oids: [head, tip] });
 
-    if (!fork || fork === head) return { ...headBase, main: main[1] };
+    if (!isGitText(fork) || fork === "" || fork === head) return { ...headBase, main: main[1] };
 
     // Git's abbreviation is the shortest unambiguous one, seven characters at least; a repository the browser holds rarely needs more.
     return { ref: fork, source: "merge-base", main: main[1], label: `merge-base ${fork.slice(0, 7)} with ${main[1]}` };
@@ -274,7 +281,7 @@ class Reader {
         continue;
       }
 
-      const bytes = memory.readFileSync(abs) as Uint8Array;
+      const bytes = memory.readFileSync(abs);
       const oid = asIndexed ? entry.stage : blobOid(bytes);
 
       if (oid === entry.base) continue;
@@ -286,7 +293,7 @@ class Reader {
     }
 
     // `ls-files --others --exclude-standard`: in the folder, not in the index, not ignored.
-    const candidates = [...(memory.readdirSync(this.root, { recursive: true }) as string[]).filter((path) => !path.startsWith(".git/") && path !== ".git" && memory.statSync(`${this.root}/${path}`)!.isFile()), ...unread.keys()];
+    const candidates = [...memory.readdirSync(this.root, { recursive: true }).filter((path) => !path.startsWith(".git/") && path !== ".git" && memory.statSync(`${this.root}/${path}`)!.isFile()), ...unread.keys()];
 
     for (const path of candidates) {
       if (ownState(path) || tracked.get(path)?.stage) continue;
@@ -325,9 +332,13 @@ function specDirOf(config: string | null, fallback: string): string {
   if (config === null) return fallback;
 
   try {
-    const dir = (JSON.parse(config) as { dir?: unknown }).dir;
+    const parsed = parseJson(config);
 
-    return typeof dir === "string" && dir !== "" ? dir.replace(/\/+$/, "") : "keylang";
+    // `null` has no `dir` to read: as unreadable as malformed JSON.
+    if (parsed === null) return fallback;
+    const dir = isJsonObject(parsed) ? parsed.dir : undefined;
+
+    return isJsonString(dir) && dir !== "" ? dir.replace(/\/+$/, "") : "keylang";
   } catch {
     return fallback;
   }

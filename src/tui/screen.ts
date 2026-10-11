@@ -144,13 +144,15 @@ function sgr(style: Style): string {
   return `${ESC}[${codes.join(";")}m`;
 }
 
+const CONTROL_CHARACTER = new RegExp(String.raw`[\x00-\x1f\x7f-\x9f]`);
+
 /**
  * An OSC 8 target that is safe to send: a control character (ESC, BEL, C1)
  * would end the sequence early and let the rest of a URL from a spec reach
  * the terminal as its own escape sequence. Such a link is dropped.
  */
 export function safeLink(link: string | undefined): string | undefined {
-  if (link === undefined || link === "" || /[\x00-\x1f\x7f-\x9f]/.test(link)) return undefined;
+  if (link === undefined || link === "" || CONTROL_CHARACTER.test(link)) return undefined;
 
   return link;
 }

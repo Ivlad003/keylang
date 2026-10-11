@@ -27,6 +27,30 @@ export interface PanelEditor {
 /** Kinds a person may give a shape in the panel: a lane stays a lane, a group a group. */
 const SHAPE_CHOICES: readonly ShapeKind[] = ["module", "fn", "type", "start", "task", "gateway", "parallel", "event", "timer", "external", "hole", "note", "layer"];
 
+/** A select's value is one of the options it was filled with. */
+function isChoice<Value extends string>(choices: readonly Value[], value: string): value is Value {
+  return choices.some((choice) => choice === value);
+}
+
+function isLinkKind(value: string): value is LinkKind {
+  return Object.hasOwn(LINK_NAMES, value);
+}
+
+/** The editor keeps a shape's keylang side as a vertex's value and a link's as an edge's; both carry `kind`. */
+function hasKind(value: unknown): value is Shape | Link {
+  return value !== null && typeof value === "object" && "kind" in value;
+}
+
+function isShapeOf(cell: Cell, value: unknown): value is Shape {
+  return hasKind(value) && cell.isVertex();
+}
+
+function isLinkOf(cell: Cell, value: unknown): value is Link {
+  return hasKind(value) && cell.isEdge();
+}
+
+const ROLES = ["split", "join"] as const;
+
 /** Kinds whose shape names a keylang entity, so it has an ID. */
 const NAMED: ReadonlySet<ShapeKind> = new Set(["lane", "layer", "module", "fn", "type", "start", "task", "event", "external"]);
 
@@ -55,8 +79,8 @@ export class Properties {
     const value: unknown = cell?.getValue();
     const body: Node[] = [];
 
-    if (value && typeof value === "object" && "kind" in value && cell?.isVertex()) body.push(...this.shapeFields(cell, value as Shape));
-    else if (value && typeof value === "object" && "kind" in value && cell?.isEdge()) body.push(...this.linkFields(cell, value as Link));
+    if (cell && isShapeOf(cell, value)) body.push(...this.shapeFields(cell, value));
+    else if (cell && isLinkOf(cell, value)) body.push(...this.linkFields(cell, value));
     else body.push(make("p", { className: "empty", text: "Виберіть фігуру чи з'єднання: тут їхні ID, вид, сигнатура, тести й опис. Нове з'єднання — тягніть від стрілки, що з'являється над фігурою в «чернетці»." }));
     this.root.replaceChildren(...body, this.ids);
   }
@@ -155,7 +179,9 @@ export class Properties {
         kind.append(option);
       }
 
-      kind.addEventListener("change", () => apply({ kind: kind.value as ShapeKind }));
+      kind.addEventListener("change", () => {
+        if (isChoice(SHAPE_CHOICES, kind.value)) apply({ kind: kind.value });
+      });
       out.push(this.field("вид", kind));
     }
 
@@ -180,14 +206,16 @@ export class Properties {
       role.id = "prop-role";
       role.disabled = locked;
 
-      for (const choice of ["split", "join"] as const) {
+      for (const choice of ROLES) {
         const option = make("option", { text: choice === "split" ? "розгалуження" : "злиття" });
         option.value = choice;
         option.selected = choice === shape.role;
         role.append(option);
       }
 
-      role.addEventListener("change", () => apply({ role: role.value as "split" | "join" }));
+      role.addEventListener("change", () => {
+        if (isChoice(ROLES, role.value)) apply({ role: role.value });
+      });
       out.push(this.field("роль", role));
     }
 
@@ -280,7 +308,9 @@ export class Properties {
       else kind.value = link.kind;
     };
 
-    kind.addEventListener("change", () => apply({ kind: kind.value as LinkKind }));
+    kind.addEventListener("change", () => {
+      if (isLinkKind(kind.value)) apply({ kind: kind.value });
+    });
     out.push(this.field("значення", kind));
     const label = make("input");
     label.id = "prop-link-label";

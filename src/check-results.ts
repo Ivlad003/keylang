@@ -38,7 +38,7 @@ export function checkResults(verdicts: Verdict[], snapshotId: string | null, dia
   const fromDiags = diags.map((diag): CheckResult => {
     const owner = verdicts.find((verdict) => sameFinding(verdict, [diag]));
 
-    return {
+    const result: CheckResult = {
       criterion: owner?.criterion ?? diag.criterion ?? diag.code,
       area: owner?.area ?? diag.area ?? diag.file,
       verdict: isError(diag) ? "fail" : "warning",
@@ -50,13 +50,17 @@ export function checkResults(verdicts: Verdict[], snapshotId: string | null, dia
       code: diag.code,
       specHash: owner?.specHash ?? diag.specHash ?? createHash("sha256").update(`${diag.code}\0${diag.message}`).digest("hex"),
       ...(owner?.evidence ?? { provenance: "syntactic" }),
-      ...(diag.code === "K005" && diag.reason !== undefined ? { reason: diag.reason } : {}),
     };
+
+    if (diag.code === "K005" && diag.reason !== undefined) result.reason = diag.reason;
+
+    return result;
   });
 
-  const fromVerdicts = verdicts
-    .filter((verdict) => !sameFinding(verdict, diags))
-    .map((verdict): CheckResult => ({
+  const fromVerdicts = verdicts.flatMap((verdict): CheckResult[] => {
+    if (sameFinding(verdict, diags)) return [];
+
+    const result: CheckResult = {
       criterion: verdict.criterion,
       area: verdict.area,
       verdict: verdict.verdict,
@@ -68,8 +72,12 @@ export function checkResults(verdicts: Verdict[], snapshotId: string | null, dia
       code: verdict.code,
       specHash: verdict.specHash,
       ...(verdict.evidence ?? { provenance: "syntactic" }),
-      ...(verdict.hole !== undefined ? { hole: verdict.hole } : {}),
-    }));
+    };
+
+    if (verdict.hole !== undefined) result.hole = verdict.hole;
+
+    return [result];
+  });
 
   return [...fromDiags, ...fromVerdicts];
 }
@@ -104,15 +112,18 @@ export function checkReport(verdicts: Verdict[], snapshotId: string | null, diag
   const fromHoles = verdicts.filter((verdict) => verdict.verdict === "unverified" && verdict.hole !== undefined);
   const holes = new Set(fromHoles.map((verdict) => verdict.hole)).size;
 
+  const counts: CheckCounts = {
+    fail: diags.filter(isError).length + own.filter((verdict) => verdict.verdict === "fail").length,
+    unverified: verdicts.filter((verdict) => verdict.verdict === "unverified").length,
+    ok: verdicts.filter((verdict) => verdict.verdict === "ok").length,
+  };
+
+  if (fromHoles.length > holes) counts.holes = { unverified: fromHoles.length, holes };
+
   return {
     results: checkResults(verdicts, snapshotId, diags),
-    lines: [...diags.map(formatDiagnostic), ...own.filter((verdict) => verdict.verdict !== "ok" || CHANNELS.has(verdict.criterion)).map(formatVerdict)],
-    counts: {
-      fail: diags.filter(isError).length + own.filter((verdict) => verdict.verdict === "fail").length,
-      unverified: verdicts.filter((verdict) => verdict.verdict === "unverified").length,
-      ok: verdicts.filter((verdict) => verdict.verdict === "ok").length,
-      ...(fromHoles.length > holes ? { holes: { unverified: fromHoles.length, holes } } : {}),
-    },
+    lines: [...diags.map(formatDiagnostic), ...own.flatMap((verdict) => (verdict.verdict !== "ok" || CHANNELS.has(verdict.criterion) ? [formatVerdict(verdict)] : []))],
+    counts,
   };
 }
 

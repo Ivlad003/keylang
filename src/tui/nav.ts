@@ -36,6 +36,12 @@ interface Tree {
   rules: NavItem[];
 }
 
+/** The code part of `Tree`, read-only for its readers. */
+export interface CodeTree {
+  layers: readonly string[];
+  children: ReadonlyMap<string, readonly string[]>;
+}
+
 const trees = new WeakMap<Analysis, Tree>();
 
 function markOver(evidence: Map<number, LineEvidence>, from: number, to: number): Mark | null {
@@ -118,7 +124,7 @@ function treeOf(analysis: Analysis): Tree {
  * and class (top modules of a layer; nested modules and members of a
  * module): one index for this panel and the zoom screen (`zoom.ts`).
  */
-export function codeTree(analysis: Analysis): { layers: readonly string[]; children: ReadonlyMap<string, readonly string[]> } {
+export function codeTree(analysis: Analysis): CodeTree {
   const tree = treeOf(analysis);
 
   return { layers: tree.layers, children: tree.children };

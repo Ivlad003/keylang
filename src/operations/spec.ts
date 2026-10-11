@@ -3,7 +3,7 @@
 
 import { closeSync, existsSync, openSync, readFileSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
-import { analyze, within, type Analysis } from "../analyze.ts";
+import { analyze, within, type Analysis, type AnalysisRequest } from "../analyze.ts";
 import { filterChanged } from "../changed.ts";
 import { checkExitCode, checkReport, type CheckCounts } from "../check-results.ts";
 import { CONFIG_FILE, assertFormatOnly, loadConfig, resolveStatic, toPosix, type Config } from "../config.ts";
@@ -267,16 +267,18 @@ export async function runCheck(request: CheckRequest, context: OperationContext)
   const analyzeSaved = context.analyze ?? analyze;
   let analyzed: Analysis;
 
+  const analysisRequest: AnalysisRequest = { root: request.root, specs: scoped ? [specDir, ...specs] : specs };
+
+  if (scoped) analysisRequest.assessed = assessed;
+  analysisRequest.display = display;
+  analysisRequest.saveFacts = true;
+
+  if (request.static) analysisRequest.static = request.static;
+
+  if (withoutCode) analysisRequest.withoutCode = true;
+
   try {
-    analyzed = await analyzeSaved({
-      root: request.root,
-      specs: scoped ? [specDir, ...specs] : specs,
-      ...(scoped ? { assessed } : {}),
-      display,
-      saveFacts: true,
-      ...(request.static ? { static: request.static } : {}),
-      ...(withoutCode ? { withoutCode: true } : {}),
-    });
+    analyzed = await analyzeSaved(analysisRequest);
   } catch (error) {
     return empty("check", "failed", 2, errorText(error));
   }

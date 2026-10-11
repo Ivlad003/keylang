@@ -16,6 +16,9 @@ import { tempDir, writeTree } from "../cli-helpers.ts";
 import { SHOP } from "../system-fixture.ts";
 import { browserOptions, startWeb, watch } from "./browser.ts";
 
+/** The editor object the diagrams page exposes as `globalThis.keylangEditor`. */
+type EditorPage = typeof globalThis & { keylangEditor: { currentModel(): { nodes: { kind: string; label: string; component?: string; layer: string | null }[] } } };
+
 const options = browserOptions();
 
 const skip = options === null ? "no Chromium: set KEYLANG_CHROMIUM or PLAYWRIGHT_BROWSERS_PATH" : false;
@@ -42,11 +45,16 @@ test("a system on the page: listed with its views, schema with zones and verdict
     groups: { label: string }[];
   }
 
+  /** The transport the diagrams page exposes as `globalThis.keylangTransport`. */
+  type TransportPage = typeof globalThis & { keylangTransport: { send(method: string, path: string, query: URLSearchParams): Promise<{ text: string }> } };
+
   // The page's own transport, as the page asks.
   const diagram = (query: Record<string, string>): Promise<Drawn> =>
     page.evaluate(async (q) => {
-      const transport = (globalThis as unknown as { keylangTransport: { send(method: string, path: string, query: URLSearchParams): Promise<{ text: string }> } }).keylangTransport;
+      // SAFETY: the diagrams page sets globalThis.keylangTransport before its list of views renders, which the test waits for.
+      const transport = (globalThis as TransportPage).keylangTransport;
 
+      // SAFETY: /api/diagram answers the drawn diagram with nodes, edges and groups; the asserts check every field read.
       return JSON.parse((await transport.send("GET", "/api/diagram", new URLSearchParams(q))).text) as Drawn;
     }, query);
 
@@ -57,7 +65,7 @@ test("a system on the page: listed with its views, schema with zones and verdict
   for (const label of ["shortener: схема", "shortener: ER", "shortener: redirect"]) await page.locator("#views").getByText(label).waitFor();
 
   await page.locator("#views").getByText("shortener: схема").click();
-  await page.waitForFunction(() => /system:shortener · 8 shapes · 9 edges · ✗ 0 · ◌ 2/.test((globalThis as unknown as { document: { querySelector(s: string): { textContent: string | null } | null } }).document.querySelector("#status")?.textContent ?? ""));
+  await page.locator("#status").filter({ hasText: /system:shortener · 8 shapes · 9 edges · ✗ 0 · ◌ 2/ }).waitFor();
   // The interview notes stand in the panel while no shape is picked.
   assert.match(await page.locator("#details").innerText(), /Система shortener[\s\S]*НЕФУНКЦІОНАЛЬНІ[\s\S]*p99 редиректу < 50 мс[\s\S]*ВІДКРИТІ ПИТАННЯ/i);
   assert.equal(await page.locator("#export-bpmn").isVisible(), false, "no BPMN of a system");
@@ -69,24 +77,24 @@ test("a system on the page: listed with its views, schema with zones and verdict
   await shot("system");
 
   await page.locator("#system-bar").getByRole("button", { name: "ER", exact: true }).click();
-  await page.waitForFunction(() => /er:shortener · 2 shapes · 1 edges/.test((globalThis as unknown as { document: { querySelector(s: string): { textContent: string | null } | null } }).document.querySelector("#status")?.textContent ?? ""));
+  await page.locator("#status").filter({ hasText: /er:shortener · 2 shapes · 1 edges/ }).waitFor();
   await shot("er");
 
   await page.locator("#system-bar").getByRole("button", { name: "↧ redirect" }).click();
-  await page.waitForFunction(() => /sequence:shortener\/redirect · 6 shapes · 6 edges/.test((globalThis as unknown as { document: { querySelector(s: string): { textContent: string | null } | null } }).document.querySelector("#status")?.textContent ?? ""));
+  await page.locator("#status").filter({ hasText: /sequence:shortener\/redirect · 6 shapes · 6 edges/ }).waitFor();
   await page.getByText("5. click").waitFor();
   await shot("sequence");
 
   await page.locator("#search").fill("система з коду");
   await page.locator("#views").getByText("система з коду: get-l-code").waitFor();
   await page.locator("#views").getByText("система з коду: схема").click();
-  await page.waitForFunction(() => /system:@code · 6 shapes · 4 edges/.test((globalThis as unknown as { document: { querySelector(s: string): { textContent: string | null } | null } }).document.querySelector("#status")?.textContent ?? ""));
+  await page.locator("#status").filter({ hasText: /system:@code · 6 shapes · 4 edges/ }).waitFor();
   assert.match(await page.locator("#details").innerText(), /Система з коду/);
   await shot("code");
   // A shape's panel: its kind, technology and the verdicts of its relations.
   await page.locator("#search").fill("shortener");
   await page.locator("#views").getByText("shortener: схема").click();
-  await page.waitForFunction(() => /system:shortener/.test((globalThis as unknown as { document: { querySelector(s: string): { textContent: string | null } | null } }).document.querySelector("#status")?.textContent ?? ""));
+  await page.locator("#status").filter({ hasText: /system:shortener/ }).waitFor();
   const api = await diagram({ view: "system", name: "shortener" });
   assert.deepEqual(api.nodes.find((node) => node.id === "component:api")?.results?.map((result) => result.verdict), ["ok", "ok", "unverified", "ok"]);
   assert.deepEqual(problems, []);
@@ -102,14 +110,16 @@ test("the editor on a system: its palette, a component drawn into a zone and «�
   const problems = watch(page);
   await page.goto(`${url.origin}/diagrams${url.hash.replace(/^#/, "#view=editor&of=system%3Ashortener&")}`);
   await page.locator(".editor-palette .palette-head", { hasText: "Палітра системи" }).waitFor();
-  const items = await page.locator(".editor-palette .palette-item").evaluateAll((buttons) => buttons.map((button) => (button as unknown as { dataset: Record<string, string> }).dataset["item"]));
+  const buttons = await page.locator(".editor-palette .palette-item").all();
+  const items = await Promise.all(buttons.map((button) => button.getAttribute("data-item")));
   assert.deepEqual(items.slice(0, 3), ["sys-client", "sys-cdn", "sys-dns"]);
   assert.ok(items.includes("sys-db") && items.includes("zone"));
   assert.equal(await page.locator("#editor-link-kind").inputValue(), "relation");
   await page.click("#editor-mode-draft");
   // A click drops the shape in the middle of the canvas: inside the zone, which fills it.
   await page.locator('.editor-palette .palette-item[data-item="sys-search"]').click();
-  const model = await page.evaluate(() => (globalThis as unknown as { keylangEditor: { currentModel(): { nodes: { kind: string; label: string; component?: string; layer: string | null }[] } } }).keylangEditor.currentModel());
+  // SAFETY: the page script sets globalThis.keylangEditor when the editor opens, before its palette appears.
+  const model = await page.evaluate(() => (globalThis as EditorPage).keylangEditor.currentModel());
   const drawn = model.nodes.find((node) => node.label === "search");
   assert.deepEqual([drawn?.kind, drawn?.component], ["component", "search"]);
   await page.click("#editor-propose");

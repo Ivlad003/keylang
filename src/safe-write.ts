@@ -106,6 +106,9 @@ export function safeWriteAll(root: string, writes: readonly PlannedWrite[]): str
   });
 }
 
+/** How the temporary file of `writeAtomic` is created: `mode` copies the replaced file's permissions. */
+type TemporaryWriteOptions = { flag: "wx"; mode?: number };
+
 /**
  * A temporary file in the target's directory renamed over the target, so a
  * crash never leaves half a file; missing directories are created. The new
@@ -123,7 +126,10 @@ export function writeAtomic(abs: string, text: string, options: { exact?: boolea
 
   try {
     // `wx`: a link planted at the temporary name is never followed.
-    writeFileSync(temporary, out, { flag: "wx", ...(mode === undefined ? {} : { mode }) });
+    const writeOptions: TemporaryWriteOptions = { flag: "wx" };
+
+    if (mode !== undefined) writeOptions.mode = mode;
+    writeFileSync(temporary, out, writeOptions);
 
     if (mode !== undefined) chmodSync(temporary, mode);
     renameSync(temporary, abs);

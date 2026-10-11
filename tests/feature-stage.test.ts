@@ -12,6 +12,7 @@ import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { isJsonObject, parseJson } from "../src/json.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -21,7 +22,13 @@ const LAYERS = { languages: ["typescript"], module: "file", layers: { app: ["src
 
 const SHOP = "export function buy(id: string): void {\n  pay(id);\n}\nexport function pay(id: string): void {}\n";
 
-function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+interface Run {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+function keylang(cwd: string, args: string[]): Run {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8" });
 
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
@@ -30,9 +37,8 @@ function keylang(cwd: string, args: string[]): { status: number | null; stdout: 
 function repo(t: TestContext, features: Record<string, string>): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-feature-stage-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  const files: Record<string, string> = { "keylang.json": `${JSON.stringify(LAYERS)}\n`, "src/app/shop.ts": SHOP, "src/domain/order.ts": "export type Order = { id: string };\n" };
-
-  for (const [slug, text] of Object.entries(features)) files[`keylang/features/${slug}.md`] = text;
+  const specs = Object.fromEntries(Object.entries(features).map(([slug, text]) => [`keylang/features/${slug}.md`, text]));
+  const files = { "keylang.json": `${JSON.stringify(LAYERS)}\n`, "src/app/shop.ts": SHOP, "src/domain/order.ts": "export type Order = { id: string };\n", ...specs };
 
   for (const [path, text] of Object.entries(files)) {
     mkdirSync(join(dir, dirname(path)), { recursive: true });
@@ -46,9 +52,12 @@ type Item = { kind: string; id: string; line: number; col: number; reason: strin
 
 type Report = { done: boolean; stage: string; gaps: Item[]; hints: Item[] };
 
-function report(dir: string, slug: string): { status: number | null; body: Report } {
+type ReportRun = { status: number | null; body: Report };
+
+function report(dir: string, slug: string): ReportRun {
   const r = keylang(dir, ["feature", slug, "--format", "json"]);
 
+  // SAFETY: `feature --format json` prints the report object of docs/cli.md that `Report` names.
   return { status: r.status, body: JSON.parse(r.stdout) as Report };
 }
 
@@ -127,7 +136,8 @@ test("feature: only the implementation missing is ready; nothing missing is done
 
   const done = keylang(dir, ["feature", "buy", "--format", "json"]);
   assert.equal(done.status, 0, done.stdout + done.stderr);
-  const body = JSON.parse(done.stdout) as Record<string, unknown>;
+  const body = parseJson(done.stdout);
+  assert.ok(isJsonObject(body), done.stdout);
   assert.deepEqual(Object.keys(body), ["done", "stage", "gaps", "hints", "info"]);
   assert.deepEqual([body.done, body.stage, body.gaps, body.hints], [true, "done", [], []]);
   // Nothing is written: the feature command only reads.
@@ -139,7 +149,9 @@ test("mcp: feature_status returns the same stage, gaps and hints as the CLI", as
   const client = new Client({ name: "keylang-test", version: "0" });
   await client.connect(new StdioClientTransport({ command: process.execPath, args: [bin, "mcp"], cwd: dir, stderr: "pipe" }));
   t.after(() => client.close());
+  // SAFETY: `feature_status` answers with text content blocks that hold its JSON report (src/mcp.ts).
   const result = (await client.callTool({ name: "feature_status", arguments: { slug: "payments" } })) as { content: { text: string }[] };
+  // SAFETY: the text is the same report object `feature --format json` prints, which `Report` names.
   const mcp = JSON.parse(result.content.map((c) => c.text).join("")) as Report;
   const cli = report(dir, "payments").body;
   assert.deepEqual([mcp.stage, mcp.gaps, mcp.hints], [cli.stage, cli.gaps, cli.hints]);

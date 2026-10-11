@@ -4,6 +4,11 @@
 
 import { graphemes, graphemeWidth } from "../src/tui/width.ts";
 
+// ANSI sequences start with ESC (U+001B): an OSC 8 hyperlink up to its ST, and a CSI with its parameters and final letter.
+const OSC_LINK = new RegExp(String.raw`^\u001b\]8;;([^\u001b]*)\u001b\\`);
+
+const CSI = new RegExp(String.raw`^\u001b\[([?\d;]*)([A-Za-z])`);
+
 export class VirtualTerminal {
   cols: number;
   rows: number;
@@ -36,7 +41,7 @@ export class VirtualTerminal {
 
     while (text.length > 0) {
       if (text[0] === "\x1b") {
-        const osc = /^\x1b\]8;;([^\x1b]*)\x1b\\/.exec(text);
+        const osc = OSC_LINK.exec(text);
 
         if (osc) {
           if (osc[1]) this.links.push(osc[1]);
@@ -44,7 +49,7 @@ export class VirtualTerminal {
           continue;
         }
 
-        const csi = /^\x1b\[([?\d;]*)([A-Za-z])/.exec(text);
+        const csi = CSI.exec(text);
 
         if (!csi) {
           this.pending = text;

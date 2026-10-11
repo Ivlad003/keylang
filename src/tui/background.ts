@@ -11,9 +11,10 @@
 
 import { Worker } from "node:worker_threads";
 import type { Config } from "../config.ts";
+import { errorText } from "../diag.ts";
 import { HEAD_BASE, type FeatureBase } from "../feature-status.ts";
 import { generateMap, type MapResult } from "../map.ts";
-import { resultWithout, type CommitGate, type CommitPlan, type OperationContext, type OperationRequest, type OperationResult } from "../operations.ts";
+import { resultWithout, type CommitGate, type CommitPlan, type OperationContext, type OperationProgress, type OperationRequest, type OperationResult } from "../operations.ts";
 import type { OperationCall, OperationReply } from "./operation-worker.ts";
 
 interface Reply {
@@ -142,7 +143,7 @@ export class OperationWorker {
     try {
       worker = this.start();
     } catch (error) {
-      return Promise.resolve(resultWithout(request.kind, "failed", 2, `the operation worker did not start: ${messageOf(error)}`));
+      return Promise.resolve(resultWithout(request.kind, "failed", 2, `the operation worker did not start: ${errorText(error)}`));
     }
 
     const operationId = ++this.next;
@@ -165,7 +166,7 @@ export class OperationWorker {
       try {
         worker.postMessage({ type: "run", operationId, request } satisfies OperationCall);
       } catch (error) {
-        this.settle(operationId, resultWithout(request.kind, "failed", 2, `the operation could not be sent to the worker: ${messageOf(error)}`));
+        this.settle(operationId, resultWithout(request.kind, "failed", 2, `the operation could not be sent to the worker: ${errorText(error)}`));
       }
     });
   };
@@ -184,7 +185,7 @@ export class OperationWorker {
     try {
       worker = this.start();
     } catch (error) {
-      return Promise.resolve({ ...HEAD_BASE, state: "unavailable", reason: `the operation worker did not start: ${messageOf(error)}` });
+      return Promise.resolve({ ...HEAD_BASE, state: "unavailable", reason: `the operation worker did not start: ${errorText(error)}` });
     }
 
     const baseId = ++this.nextBase;
@@ -207,12 +208,12 @@ export class OperationWorker {
     this.closed = true;
 
     // A closed session shows no status line: a base read in flight is dropped.
-    for (const baseId of [...this.bases.keys()]) this.settleBase(baseId, null);
-    const committing = [...this.pending].filter(([, pending]) => pending.committing);
+    for (const baseId of Array.from(this.bases.keys())) this.settleBase(baseId, null);
+    const committing = Array.from(this.pending).filter(([, pending]) => pending.committing);
 
     if (committing.length === 0) return this.stop((kind) => resultWithout(kind, "cancelled", null));
 
-    for (const [operationId, pending] of [...this.pending]) {
+    for (const [operationId, pending] of Array.from(this.pending)) {
       if (pending.committing) this.post({ type: "cancel", operationId });
       else this.settle(operationId, resultWithout(pending.kind, "cancelled", null));
     }
@@ -255,7 +256,10 @@ export class OperationWorker {
 
       if (pending.signal?.aborted) return this.post({ type: "cancel", operationId });
       pending.committing = true;
-      this.post({ type: "commit", operationId, ...(gate && gate.refused.length > 0 ? { refused: gate.refused } : {}) });
+      const call: Extract<OperationCall, { type: "commit" }> = { type: "commit", operationId };
+
+      if (gate && gate.refused.length > 0) call.refused = gate.refused;
+      this.post(call);
     };
 
     let told: Promise<CommitGate> | CommitGate;
@@ -289,7 +293,7 @@ export class OperationWorker {
       // A reply for a settled request (cancelled, or its worker replaced) changes nothing.
       if (!pending || this.worker !== worker) return;
 
-      if (reply.type === "progress") pending.onProgress?.({ text: reply.text, ...(reply.step ? { step: reply.step } : {}) });
+      if (reply.type === "progress") pending.onProgress?.(progressOf(reply));
       else if (reply.type === "commit") this.commit(worker, reply.operationId, reply.plan);
       else if (reply.type === "result") this.settle(reply.operationId, reply.result);
       else this.settle(reply.operationId, resultWithout(pending.kind, "failed", 2, reply.error));
@@ -312,9 +316,9 @@ export class OperationWorker {
 
     if (worker) void worker.terminate();
 
-    for (const [operationId, pending] of [...this.pending]) this.settle(operationId, outcome(pending.kind));
+    for (const [operationId, pending] of Array.from(this.pending)) this.settle(operationId, outcome(pending.kind));
 
-    for (const baseId of [...this.bases.keys()]) this.settleBase(baseId, null);
+    for (const baseId of Array.from(this.bases.keys())) this.settleBase(baseId, null);
   }
 
   private settleBase(baseId: number, base: FeatureBase | null): void {
@@ -347,6 +351,11 @@ export class OperationWorker {
   }
 }
 
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+/** The progress a worker reports, as the operation's `onProgress` takes it. */
+function progressOf(reply: Extract<OperationReply, { type: "progress" }>): OperationProgress {
+  const progress: OperationProgress = { text: reply.text };
+
+  if (reply.step) progress.step = reply.step;
+
+  return progress;
 }

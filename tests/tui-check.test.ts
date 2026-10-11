@@ -9,7 +9,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { runOperation, type OperationResult } from "../src/operations.ts";
+import { runOperation, type CheckRequest, type OperationResult } from "../src/operations.ts";
 import { App } from "../src/tui/app.ts";
 import { findingsOf } from "../src/tui/findings.ts";
 import { runTerminal } from "../src/tui/terminal.ts";
@@ -21,6 +21,17 @@ import { VirtualTerminal } from "./vt.ts";
 // ---------- full check: paths, strict, static ----------
 
 const LEFT = "\x1b[D";
+
+/** ESC of an ANSI sequence or a word of the session's own report: neither belongs in what the CLI prints. */
+const NOT_CLI_TEXT = new RegExp(String.raw`\u001b|code 0|completed|F6`);
+
+/** The request of a check record: the palette's check form ran `check` with these options. */
+function checkRequest(record: App["state"]["records"][number]): CheckRequest {
+  const params = record.params;
+  assert.ok(params.kind === "check", params.kind);
+
+  return params;
+}
 
 function cliCheck(root: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
   return spawnSync(process.execPath, [BIN, "check", ...args], { cwd: root, encoding: "utf8" });
@@ -210,7 +221,7 @@ test("tui: static behavior and shape match the CLI on a hook's default and are n
     const cli = cliCheck(root, [...flags, "--format", "json"]);
     assert.equal(record.result!.exitCode, cli.status, mode);
     assert.deepEqual(checkJson(record), JSON.parse(cli.stdout), mode);
-    assert.equal((record.params as { static?: string }).static, mode === "config" ? undefined : mode);
+    assert.equal(checkRequest(record).static, mode === "config" ? undefined : mode);
   }
 
   const [plain, behavior, shape] = s.app.state.records.map(checkPayload);
@@ -387,8 +398,8 @@ test("tui: changed check is the CLI's --changed slice for a changed source, an u
   const cleanSlice = checkPayload(clean).changed!;
   assert.deepEqual([clean.result!.exitCode, checkPayload(clean).results.length], [0, 0]);
   assert.deepEqual({ ...cleanSlice }, { since: "HEAD", unborn: false, files: [], deleted: [], shown: 0, hidden: checkPayload(full).results.length, weakening: { accepted: [], note: null } });
-  assert.deepEqual((clean.params as { changed?: boolean; since?: string }).changed, true);
-  assert.equal((clean.params as { since?: string }).since, undefined, "HEAD is the default ref");
+  assert.deepEqual(checkRequest(clean).changed, true);
+  assert.equal(checkRequest(clean).since, undefined, "HEAD is the default ref");
   // A changed source: the checkout flow steps into it; the other flow stays hidden.
   const before = workTree(root);
   writeFileSync(join(root, "src/domain/order.ts"), "export function create(): void {\n  return;\n}\n");
@@ -427,7 +438,7 @@ test("tui: changed check is the CLI's --changed slice for a changed source, an u
   assert.equal(checkPayload(head).results.length, 0, "everything is committed");
   const older = await changedCheck(s, root, { since: "HEAD~1" });
   assert.equal(checkPayload(older).changed!.since, "HEAD~1");
-  assert.equal((older.params as { since?: string }).since, "HEAD~1");
+  assert.equal(checkRequest(older).since, "HEAD~1");
   assert.ok(checkPayload(older).changed!.files.includes("src/domain/leak.ts"));
   assert.deepEqual(workTree(root), edited, "no check wrote a file");
   // F6 names the slice: the ref, the changed files, and what the full report had besides.
@@ -567,6 +578,7 @@ function initRecord(app: App): Extract<OperationResult, { kind: "init" }> & { pa
   const result = app.state.records.at(-1)?.result;
   assert.ok(result?.kind === "init" && result.payload !== null, JSON.stringify(result?.messages));
 
+  // SAFETY: the assertion above checked this record's kind and that its payload is not null.
   return result as Extract<OperationResult, { kind: "init" }> & { payload: NonNullable<Extract<OperationResult, { kind: "init" }>["payload"]> };
 }
 
@@ -1051,7 +1063,7 @@ test("tui: export saves the selected check report in each format byte for byte a
     assert.equal(cli.status, 1);
     const saved = readFileSync(join(root, paths[format]), "utf8");
     assert.equal(saved, cli.stdout, `${format}: the file is the CLI's stdout`);
-    assert.doesNotMatch(saved, /\x1b/, `${format}: no ANSI`);
+    assert.ok(!saved.includes("\x1b"), `${format}: no ANSI`);
     assert.doesNotMatch(saved, /\d+ fail, \d+ unverified, \d+ ok/, `${format}: the stderr summary is not in the file`);
 
     if (format === "json" || format === "sarif") JSON.parse(saved);
@@ -1223,6 +1235,7 @@ function parseRecord(app: App): Extract<OperationResult, { kind: "parse" }> & { 
   const result = app.state.records.at(-1)?.result;
   assert.ok(result?.kind === "parse" && result.payload !== null, JSON.stringify(result?.messages));
 
+  // SAFETY: the assertion above checked this record's kind and that its payload is not null.
   return result as Extract<OperationResult, { kind: "parse" }> & { payload: NonNullable<Extract<OperationResult, { kind: "parse" }>["payload"]> };
 }
 
@@ -1272,7 +1285,7 @@ test("tui: parse of the current spec with Unicode and a nested list gives the CL
   assert.equal(cliJson.stderr, "");
   assert.equal(result.payload.text, cliJson.stdout);
   assert.deepEqual(result.payload.documents, JSON.parse(cliJson.stdout));
-  assert.doesNotMatch(result.payload.text, /\x1b|code 0|completed|F6/);
+  assert.doesNotMatch(result.payload.text, NOT_CLI_TEXT);
   // The spans are the parser's: UTF-16 offsets that slice the source, 1-based code-point columns.
   const [doc] = result.payload.documents;
   const buy = doc!.sections[0]!.items.flatMap((item) => (item.type === "node" ? [item] : []))[1]!;
@@ -1428,6 +1441,7 @@ function tracePlanRecord(app: App): TracePlanResult {
   const result = app.state.records.at(-1)?.result;
   assert.ok(result?.kind === "trace-plan" && result.payload !== null, JSON.stringify(result?.messages));
 
+  // SAFETY: the assertion above checked this record's kind and that its payload is not null.
   return result as TracePlanResult;
 }
 
@@ -1468,7 +1482,7 @@ test("tui: trace-plan of a flow with a trigger and nested steps gives the CLI's 
   assert.deepEqual([cli.status, cli.stderr], [0, ""]);
   assert.equal(result.payload.text, cli.stdout, "the CLI's stdout, byte for byte");
   assert.deepEqual(result.payload.plan, JSON.parse(cli.stdout));
-  assert.doesNotMatch(result.payload.text, /\x1b|code 0|completed|F6/);
+  assert.doesNotMatch(result.payload.text, NOT_CLI_TEXT);
   const { plan } = result.payload;
   assert.deepEqual([plan.schemaVersion, plan.flow], [1, "checkout"]);
   assert.equal(plan.snapshotId, s.app.state.analysis?.snapshot?.snapshotId, "the same saved code, the same snapshot");

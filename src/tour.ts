@@ -293,7 +293,9 @@ function processesOf(inputs: TourInputs, flows: readonly DiscoveredFlow[], specD
       return [tourFlow(flow)];
     });
 
-    domain.processes.push({ name: process.name, description: process.description === "" ? null : process.description, ...(process.agent !== "" ? { provenance: { agent: process.agent, date: process.date } } : {}), flows: own });
+    const description = process.description === "" ? null : process.description;
+
+    domain.processes.push(process.agent === "" ? { name: process.name, description, flows: own } : { name: process.name, description, provenance: { agent: process.agent, date: process.date }, flows: own });
   }
 
   const rest = flows.filter((flow) => !named.has(flow.name));
@@ -322,10 +324,15 @@ function entriesOf(snapshot: AnalysisSnapshot): Tour["entries"] {
   return { total: snapshot.entries.length, kinds };
 }
 
+/** A node kind of a framework adapter's events, which the snapshot's kinds do not name yet. */
+function isEventKind(kind: string): boolean {
+  return kind === "event";
+}
+
 /** Event nodes, should the snapshot hold them (a framework adapter's events): who dispatches each, and who listens. */
 function eventsOf(snapshot: AnalysisSnapshot): Tour["events"] {
   const events = Object.entries(snapshot.nodes)
-    .filter(([, node]) => (node.kind as string) === "event")
+    .filter(([, node]) => isEventKind(node.kind))
     .map(([id, node]) => ({ id, publishers: [...(node.callers ?? node.dependents ?? [])].sort(compareText), subscribers: [...(node.calls ?? node.deps ?? [])].sort(compareText) }))
     .sort((a, b) => compareText(a.id, b.id));
 

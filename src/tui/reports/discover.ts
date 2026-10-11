@@ -20,7 +20,7 @@ function flowPlaces(payload: FlowsDiscoverPayload): ReportItem[] {
   });
 }
 
-export const DISCOVER_REPORTS: { [K in DiscoverKind]: Report<K> } = {
+export const DISCOVER_REPORTS = {
   "flows-discover": {
     label: (request) => `flows discover${request.output === "check" ? " --check" : request.output === "print" ? " --print" : ""}${request.only !== undefined ? ` --kind ${request.only}` : ""}${request.layer !== undefined ? ` --layer ${request.layer}` : ""}`,
     params: (request) => request.output,
@@ -84,4 +84,4 @@ export const DISCOVER_REPORTS: { [K in DiscoverKind]: Report<K> } = {
       return rows;
     },
   },
-};
+} satisfies { [K in DiscoverKind]: Report<K> };

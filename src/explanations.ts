@@ -33,13 +33,21 @@ export function isStoredExplanation(text: string): boolean {
   return HEADER.test(text);
 }
 
+function isExplanationDetail(text: string): text is ExplanationDetail {
+  return text === "short" || text === "full" || text === "brief";
+}
+
 /** The saved form; null for a file keylang did not write, which is not an explanation it can date. */
 export function parseStoredExplanation(text: string): StoredExplanation | null {
   const m = HEADER.exec(text);
 
   if (!m) return null;
 
-  return { agent: m[1]!, date: m[2]!, closure: m[3]!, lang: m[4]!, detail: m[5] as ExplanationDetail, text: text.slice(m[0].length).trimEnd() };
+  const detail = m[5]!;
+
+  if (!isExplanationDetail(detail)) return null;
+
+  return { agent: m[1]!, date: m[2]!, closure: m[3]!, lang: m[4]!, detail, text: text.slice(m[0].length).trimEnd() };
 }
 
 export function formatStoredExplanation(e: StoredExplanation): string {
@@ -238,7 +246,13 @@ export function explanationOf(snapshot: AnalysisSnapshot, briefs: ReadonlyMap<st
   if (id === SYSTEM_ID) {
     const system = snapshot.system;
 
-    if (system?.brief) return { text: system.brief, origin: "doc", stale: false, ...(system.source ? { source: system.source } : {}) };
+    if (system?.brief) {
+      const explanation: NodeExplanation = { text: system.brief, origin: "doc", stale: false };
+
+      if (system.source) explanation.source = system.source;
+
+      return explanation;
+    }
 
     return briefExplanation(briefs.get(id), () => systemBaseline(snapshot, briefs));
   }

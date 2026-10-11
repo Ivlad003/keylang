@@ -10,12 +10,19 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
+import { isJsonObject, parseJson } from "../src/json.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 const bin = join(root, "bin/keylang.js");
 
-function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+interface Run {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+function keylang(cwd: string, args: string[]): Run {
   const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8" });
 
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
@@ -47,14 +54,16 @@ function write(dir: string, files: Record<string, string>): void {
 }
 
 interface Snapshot {
+  snapshotId: string;
   system: { name: string | null; brief: string | null; source: string | null };
   manifest: { files: { path: string }[] };
   nodes: Record<string, { kind: string; doc: string | null; escapes?: { reason: string } }>;
-  edges: { kind: string; source: string; target: string | null; resolution: string; text: string; provenance: string; docblock?: string; via?: string; closure?: true; site?: string; line: number; col: number }[];
+  edges: { kind: string; source: string; target: string | null; resolution: string; text: string; provenance: string; docblock?: string; via?: string; closure?: true; site?: string; member?: string; indirect?: true; line: number; col: number }[];
   coverage: { kind: string; file: string; line: number; reason: string; source: string | null; text?: string }[];
 }
 
 function snapshot(dir: string): Snapshot {
+  // SAFETY: callers run `keylang map` in `dir` first, which writes this snapshot.
   return JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as Snapshot;
 }
 
@@ -494,6 +503,7 @@ test("php: a callable passed as an argument (`\\Closure::fromCallable([$this, 'm
   // The snapshot: `via` and position on each edge; a callable passed is no call, so it is not counted as one.
   assert.equal(keylang(dir, ["map"]).status, 0);
 
+  // SAFETY: `keylang map` exited 0 just above; the snapshot's nodes and edges carry these fields.
   const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as Snapshot & {
     nodes: Record<string, { calls?: string[] }>;
     edges: { via?: string; site?: string; closure?: true; line: number; col: number }[];
@@ -542,7 +552,8 @@ test("php: init on a Laravel layout takes composer's PSR-4 root for the layers; 
 test("php: spec-to-code puts a planned method into its class, a new class into a file with the namespace beside it, and writes a failing PHPUnit test", (t) => {
   const dir = shop(t);
   writeFileSync(join(dir, "keylang.json"), JSON.stringify(SHOP_LAYERS));
-  const composer = JSON.parse(readFileSync(join(dir, "composer.json"), "utf8")) as Record<string, unknown>;
+  const composer = parseJson(readFileSync(join(dir, "composer.json"), "utf8"));
+  assert.ok(isJsonObject(composer), "composer.json is an object");
   writeFileSync(join(dir, "composer.json"), JSON.stringify({ ...composer, "autoload-dev": { "psr-4": { "Shop\\Tests\\": "tests/" } } }));
   write(dir, {
     "keylang/refund.md": [
@@ -601,7 +612,7 @@ const phpunit = php ? (process.env.KEYLANG_PHPUNIT ?? (spawnSync("sh", ["-c", "c
 
 const ADAPTER = join(root, "adapters/php/keylang_trace.php");
 
-const TRACE_FILES: Record<string, string> = {
+const TRACE_FILES = {
   "keylang.json": JSON.stringify({ languages: ["php"], layers: { app: ["src/App/**"], domain: ["src/Domain/**"] }, exclude: ["run.php"], check: { trace: ".keylang/trace/*.jsonl", tests: ".keylang/reports/*.json" } }),
   "src/App/Checkout.php": [
     "<?php",
@@ -657,7 +668,7 @@ const TRACE_FILES: Record<string, string> = {
   "autoload.php": "<?php\nspl_autoload_register(static function (string $class): void {\n    require __DIR__ . '/src/' . str_replace('\\\\', '/', substr($class, strlen('Shop\\\\'))) . '.php';\n});\n",
   "run.php": "<?php\nrequire __DIR__ . '/autoload.php';\n\n$checkout = new Shop\\App\\Checkout();\necho $checkout->buy(), \"\\n\";\nif (($argv[1] ?? '') === 'crash') {\n    $checkout->fails();\n}\n",
   "keylang/flows.md": "# flow buy\n\n- trigger app.Checkout.Checkout.buy\n  - step domain.Order.Order.add\n  - step domain.Order.Order.each\n  - step domain.Order.Order.total\n",
-};
+} satisfies Record<string, string>;
 
 /** The trace plan of `flow`, written to `plan.json`. */
 function planOf(dir: string, flow: string): string[] {
@@ -665,6 +676,7 @@ function planOf(dir: string, flow: string): string[] {
   assert.equal(plan.status, 0, plan.stderr);
   writeFileSync(join(dir, "plan.json"), plan.stdout);
 
+  // SAFETY: `trace-plan` exited 0 above, so stdout is the plan whose `symbols` carry ids.
   return (JSON.parse(plan.stdout) as { symbols: { id: string }[] }).symbols.map((s) => s.id);
 }
 
@@ -676,7 +688,7 @@ test("php: `keylang trace-plan` + the PHP adapter give trace evidence; a generat
   const dir = repo(t, TRACE_FILES);
   assert.deepEqual(planOf(dir, "buy"), ["app.Checkout.Checkout.buy", "domain.Order.Order.add", "domain.Order.Order.each", "domain.Order.Order.total"]);
 
-  const trace = (...args: string[]): { status: number | null; stdout: string; stderr: string } => {
+  const trace = (...args: string[]): Run => {
     const r = spawnSync("php", [ADAPTER, "run.php", ...args], { cwd: dir, encoding: "utf8", env: { ...process.env, KEYLANG_TRACE: ".keylang/trace/buy.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_TRACE_TEST: "run.php > @flow buy" } });
 
     return { status: r.status, stdout: r.stdout, stderr: r.stderr };
@@ -749,8 +761,10 @@ test("php: keylang's PHPUnit extension writes a report bound to the snapshot, an
   planOf(dir, "buy");
   const r = spawnSync("php", ["-d", `auto_prepend_file=${ADAPTER}`, phpunit!], { cwd: dir, encoding: "utf8", env: { ...process.env, KEYLANG_TRACE: ".keylang/trace/buy.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_TRACE_TEST: undefined } });
   assert.equal(r.status, 0, r.stdout + r.stderr);
+  // SAFETY: the PHPUnit adapter writes its test report with these fields (adapters/php/keylang_phpunit.php).
   const report = JSON.parse(readFileSync(join(dir, ".keylang/reports/phpunit.json"), "utf8")) as { schemaVersion: number; snapshotId: string; tests: { file: string; suite: string; name: string; status: string }[] };
   assert.equal(report.schemaVersion, 1);
+  // SAFETY: `planOf` wrote the trace plan, which names the snapshot it was made for.
   assert.equal(report.snapshotId, (JSON.parse(readFileSync(join(dir, "plan.json"), "utf8")) as { snapshotId: string }).snapshotId);
   assert.deepEqual(report.tests, [
     { file: "tests/BuyTest.php", suite: "BuyTest", name: "testBuy", status: "pass" },
@@ -795,7 +809,7 @@ test("php: `insteadof` and `as` in a trait `use` block decide which method `$thi
 });
 
 /** Values whose class the declarations give (business-flows 40): `new`, result types, `@return`, inline `@var`, `foreach`, `instanceof`, chains. */
-const LOCAL_FILES: Record<string, string> = {
+const LOCAL_FILES = {
   "keylang.json": JSON.stringify({ languages: ["php"], layers: { app: ["src/App/**"], domain: ["src/Domain/**"] } }),
   "src/Domain/Money.php": "<?php\nnamespace Shop\\Domain;\n\nclass Money\n{\n    public function round(): void {}\n}\n",
   "src/Domain/Line.php": "<?php\nnamespace Shop\\Domain;\n\nclass Line\n{\n    public function price(): void {}\n    public function discount(): void {}\n}\n",
@@ -867,7 +881,7 @@ const LOCAL_FILES: Record<string, string> = {
     "}",
     "",
   ].join("\n"),
-};
+} satisfies Record<string, string>;
 
 test("php: a local value has the class its declarations give — `new`, a declared or `@return` result type (`static`, `$this`, `{@inheritdoc}` of an interface), inline `@var`, `foreach` over `Foo[]`, `instanceof`, a chain; conflicting assignments stay a hole", (t) => {
   const dir = repo(t, LOCAL_FILES);
@@ -877,7 +891,7 @@ test("php: a local value has the class its declarations give — `new`, a declar
 
   const calls = index.edges
     .filter((e) => e.kind === "call" && e.source === "app.Checkout.Checkout.buy" && e.resolution === "resolved")
-    .map((e) => `${e.line} ${e.target} ${e.provenance}${e.docblock ? ` ${e.docblock}` : ""}${(e as { indirect?: true }).indirect ? " indirect" : ""}`)
+    .map((e) => `${e.line} ${e.target} ${e.provenance}${e.docblock ? ` ${e.docblock}` : ""}${e.indirect ? " indirect" : ""}`)
     .sort((a, b) => Number(a.split(" ")[0]) - Number(b.split(" ")[0]) || (a < b ? -1 : 1));
 
   assert.deepEqual(calls, [
@@ -918,7 +932,7 @@ test("php: a local value has the class its declarations give — `new`, a declar
 });
 
 /** A framework `outside` the architecture (ADR 0011) whose classes the architecture extends and calls. */
-const OUTSIDE_FILES: Record<string, string> = {
+const OUTSIDE_FILES = {
   "keylang.json": JSON.stringify({ languages: ["php"], layers: { app: ["src/App/**"], domain: ["src/Domain/**"] }, outside: ["lib/**"] }),
   "lib/Fw/DataObject.php": "<?php\nnamespace Fw;\n\nclass DataObject\n{\n    public function __construct(array $data = []) {}\n\n    public function getData(string $key = '') { return null; }\n\n    public function __call($method, $args) { return null; }\n}\n",
   "lib/Fw/AbstractModel.php": [
@@ -970,7 +984,7 @@ const OUTSIDE_FILES: Record<string, string> = {
     "}",
     "",
   ].join("\n"),
-};
+} satisfies Record<string, string>;
 
 test("php: a file `outside` the architecture is read as declarations only — members of its classes are calls to its module, with the member named; no node, no K102, and its result types and `@var` properties type values", (t) => {
   const dir = repo(t, OUTSIDE_FILES);
@@ -980,7 +994,7 @@ test("php: a file `outside` the architecture is read as declarations only — me
 
   const calls = index.edges
     .filter((e) => e.kind === "call" && e.source.startsWith("app.Order.Order.") && e.resolution === "resolved")
-    .map((e) => `${e.source.slice("app.Order.Order.".length)} ${e.line} ${e.target}${(e as { member?: string }).member ? ` ${(e as { member?: string }).member}` : ""} ${e.provenance}${e.docblock ? ` ${e.docblock}` : ""}${(e as { indirect?: true }).indirect ? " indirect" : ""}`)
+    .map((e) => `${e.source.slice("app.Order.Order.".length)} ${e.line} ${e.target}${e.member ? ` ${e.member}` : ""} ${e.provenance}${e.docblock ? ` ${e.docblock}` : ""}${e.indirect ? " indirect" : ""}`)
     .sort();
 
   assert.deepEqual(calls, [
@@ -1015,10 +1029,10 @@ test("php: a file `outside` the architecture is read as declarations only — me
   assert.doesNotMatch(o.stdout, /K10[12]/);
   assert.equal(keylang(dir, ["map", "--check"]).status, 0);
   // An outside file's declarations are an input of the snapshot: changing them changes its ID.
-  const id = (JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as { snapshotId: string }).snapshotId;
+  const id = snapshot(dir).snapshotId;
   write(dir, { "lib/Fw/Registry.php": "<?php\nnamespace Fw;\n\nclass Registry\n{\n    public function lookup(string $key) { return null; }\n}\n" });
   assert.equal(keylang(dir, ["map"]).status, 0);
-  const after = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as Snapshot & { snapshotId: string };
+  const after = snapshot(dir);
   assert.notEqual(after.snapshotId, id);
   assert.ok(after.coverage.some((c) => c.source === "app.Order.Order.place" && c.line === 18 && c.reason === "unresolved call `this.registry.registry`"), JSON.stringify(after.coverage));
 });

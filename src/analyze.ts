@@ -6,7 +6,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
-import { assess, type Assessment } from "./assess.ts";
+import { assess, type AssessEvidence, type Assessment } from "./assess.ts";
 import { CONFIG_FILE, evidenceFiles, loadConfig, resolveStatic, toPosix, type Config, type StaticMode } from "./config.ts";
 import { readManifests, type DeclaredPackage } from "./declared-packages.ts";
 import { DIAGRAMS_DIR } from "./diagram-layout.ts";
@@ -128,20 +128,23 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
       ? { state: "absent" }
       : await oldSnapshotFor(root, config.migration.from);
 
-  const assessment = assess(
-    docs,
-    snapshot,
-    {
-      tests: testFiles === null ? null : loadReports(root, testFiles),
-      traces: traceFiles === null ? null : loadTraces(root, traceFiles),
-      static: staticMode.mode,
-      migration,
-      ...(request.assessed ? { assessed: request.assessed } : {}),
-      ...(staticMode.setBy ? { staticSetBy: staticMode.setBy } : {}),
-      ...(request.withoutCode ? {} : { knownExternal: new Set(packages.map((p) => p.id)), testFileExists: (path: string) => repositoryFile(root, path) }),
-    },
-    config.format,
-  );
+  const evidenceInput: AssessEvidence = {
+    tests: testFiles === null ? null : loadReports(root, testFiles),
+    traces: traceFiles === null ? null : loadTraces(root, traceFiles),
+    static: staticMode.mode,
+    migration,
+  };
+
+  if (request.assessed) evidenceInput.assessed = request.assessed;
+
+  if (staticMode.setBy) evidenceInput.staticSetBy = staticMode.setBy;
+
+  if (!request.withoutCode) {
+    evidenceInput.knownExternal = new Set(packages.map((p) => p.id));
+    evidenceInput.testFileExists = (path: string) => repositoryFile(root, path);
+  }
+
+  const assessment = assess(docs, snapshot, evidenceInput, config.format);
 
   return { ...assessment, config, map, snapshot, docs, notSpecs, packages };
 }

@@ -42,12 +42,14 @@ function exported(t: { after: (f: () => void) => void }): (key: string) => { sta
 
 test("system views: listed, the schema with zones and verdicts, ER with keys, a sequence with lifelines, and the system of the code", (t) => {
   const answer = exported(t);
+  // SAFETY: /api/views answers with the listed views, systems among them, as JSON (docs/tui.md).
   const views = JSON.parse(answer("/api/views")!.body) as { systems: { name: string; file: string | null; sequences: string[]; tables: number; components: number }[] };
   assert.deepEqual(views.systems, [
     { name: "shortener", file: "keylang/system/shortener.md", line: 1, sequences: ["redirect"], tables: 2, components: 8 },
     { name: "@code", file: null, line: null, sequences: ["get-l-code", "clicks-count-0"], tables: 0, components: 6 },
   ]);
 
+  // SAFETY: /api/diagram answers with the drawn view as JSON, in the shape Drawn lists (docs/tui.md).
   const system = JSON.parse(answer("/api/diagram?name=shortener&view=system")!.body) as Drawn;
   assert.deepEqual(system.groups.map((group) => group.label), ["vpc"]);
   assert.deepEqual(system.nodes.map((node) => [node.label, node.component, node.tech ?? null, node.group ?? null, node.verdict ?? null]), [
@@ -71,6 +73,7 @@ test("system views: listed, the schema with zones and verdicts, ER with keys, a 
   assert.ok(y("web") < y("lb"));
   assert.deepEqual(system.system?.notes.map((note) => note.kind), ["requirement", "nfr", "estimate", "tradeoff", "question"]);
 
+  // SAFETY: /api/diagram answers with the drawn view as JSON, in the shape Drawn lists (docs/tui.md).
   const er = JSON.parse(answer("/api/diagram?name=shortener&view=er")!.body) as Drawn;
   assert.deepEqual(er.nodes.map((node) => [node.label, node.lines]), [
     ["urls", ["🔑 id: bigint", "◆ code: text", "owner_id: bigint null → users.id"]],
@@ -79,6 +82,7 @@ test("system views: listed, the schema with zones and verdicts, ER with keys, a 
   assert.deepEqual(er.edges.map((edge) => [edge.from, edge.to, edge.label]), [["table:db.urls", "table:db.users", "owner_id N:1"]]);
   assert.deepEqual(er.groups.map((group) => group.label), ["db (postgres)"]);
 
+  // SAFETY: /api/diagram answers with the drawn view as JSON, in the shape Drawn lists (docs/tui.md).
   const seq = JSON.parse(answer("/api/diagram?name=shortener&seq=redirect&view=sequence")!.body) as Drawn;
   assert.deepEqual(seq.nodes.filter((node) => node.kind === "participant").map((node) => node.label), ["web", "lb", "api", "cache", "db", "clicks"]);
   assert.deepEqual(seq.edges.filter((edge) => edge.kind === "message").map((edge) => [edge.label, edge.async ?? false]), [
@@ -91,8 +95,10 @@ test("system views: listed, the schema with zones and verdicts, ER with keys, a 
   ]);
   assert.equal(seq.edges.filter((edge) => edge.kind === "lifeline").length, 6);
 
+  // SAFETY: /api/diagram answers with the drawn view as JSON, in the shape Drawn lists (docs/tui.md).
   const code = JSON.parse(answer("/api/diagram?name=%40code&view=system")!.body) as Drawn;
   assert.deepEqual(code.nodes.map((node) => `${node.component} ${node.label}`), ["client client", "service app", "worker worker", "cache redis", "queue kafka", "db postgres"]);
+  // SAFETY: /api/diagram answers with the drawn view as JSON, in the shape Drawn lists (docs/tui.md).
   const codeSeq = JSON.parse(answer("/api/diagram?name=%40code&seq=get-l-code&view=sequence")!.body) as Drawn;
   assert.deepEqual(codeSeq.edges.filter((edge) => edge.kind === "message").map((edge) => edge.label), ["1. GET /l/:code", "2. kafka.producer().send", "3. pool.query"]);
 });

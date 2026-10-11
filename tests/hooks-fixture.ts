@@ -1,7 +1,7 @@
 // A hook with a default: the code calls what it is given, or its default.
 // Shared by the flow tests and the metamorphic `--static` pair.
 
-export const HOOKS: Record<string, string> = {
+export const HOOKS = {
   "src/domain/build.ts": "export function build(): void {}\n",
   "src/application/analyze.ts": [
     'import { build } from "../domain/build.ts";',
@@ -34,7 +34,7 @@ export const HOOKS: Record<string, string> = {
     "}",
     "",
   ].join("\n"),
-};
+} satisfies Record<string, string>;
 
 export const HOOK_FLOW = `# flow hooks
 
